@@ -2,7 +2,7 @@
 //
 // misc/niclist.c
 // by Don Becker <x-odus@iname.com>
-// $Id: niclist.c,v 1.15 2009/04/14 09:45:22 sshwarts Exp $
+// $Id: niclist.c 10409 2011-06-19 05:37:30Z vruppert $
 //
 // This program is for win32 only.  It lists the network interface cards
 // that you can use in the "ethdev" field of the ne2k line in your bochsrc.
@@ -20,6 +20,10 @@
 #include <stdio.h>
 #include <conio.h>
 #include <stdlib.h>
+
+#if defined(_MSC_VER)
+#define getch _getch
+#endif
 
 #define MAX_ADAPTERS 10
 #define NIC_BUFFER_SIZE 2048

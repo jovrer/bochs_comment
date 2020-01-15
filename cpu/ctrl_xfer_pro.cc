@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer_pro.cc,v 1.86 2010/04/22 17:51:37 sshwarts Exp $
+// $Id: ctrl_xfer_pro.cc 10451 2011-07-06 20:01:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -23,11 +23,6 @@
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
-#if BX_SUPPORT_X86_64==0
-// Make life easier merging cpu64 & cpu code.
-#define RIP EIP
-#endif
 
 /* pass zero in check_rpl if no needed selector RPL checking for
    non-conforming segments */

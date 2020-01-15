@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_hid.cc,v 1.22 2011/02/12 14:00:34 vruppert Exp $
+// $Id: usb_hid.cc 10448 2011-07-04 19:42:47Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009-2011  The Bochs Project
@@ -391,6 +391,7 @@ usb_hid_device_c::usb_hid_device_c(usbdev_type type)
   d.type = type;
   d.maxspeed = USB_SPEED_LOW;
   d.speed = d.maxspeed;
+  // TODO: d.max_packet_size = ???
   if (d.type == USB_DEV_TYPE_MOUSE) {
     strcpy(d.devname, "USB Mouse");
     DEV_register_removable_mouse((void*)this, mouse_enq_static, mouse_enabled_changed);

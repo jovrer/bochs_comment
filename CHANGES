@@ -1,3 +1,234 @@
+Changes in 2.5 (November 27, 2011):
+
+         Bochs repository moved to the SVN version control !
+
+Brief summary :
+
+! Fully configurable CPU to emulate with a single .bochsrc option !
+- 10% (ST) to 50% (SMP) CPU emulation speedup !
+- Implemented support for new x86 ISA extensions, Bochs is aligned with
+  latest published Intel Architecture Manual (rev 040, AVX rev 011):
+     - XSAVEOPT, AVX/AVX2/FMA/F16C, BMI1/BMI2, SMEP, INVPCID, TSC-Deadline
+     - VMX: VMX Preemption Timer, Pause Loop Exiting and VM Functions
+- Implemented support for AMD SSE4A/XOP/FMA4/TBM instruction sets
+- Networking: introduced new networking module 'slirp'
+- Harddrive: fixed buffer overflow causing Bochs crash in LBA48 mode
+- VGA: Added PCI ROM support to cirrus and pcivga and moved ROM loading
+       for the ISA case to the vga code (SeaBIOS now usable by Bochs)
+- Sound: ported ES1370 soundcard emulation from Qemu
+- Continuing configure rework, check for more removed configure and .bochsrc
+  options and their replacements !
+- LGPL'd VGABIOS updated to version 0.7a
+
+Detailed change log :
+
+- CPU
+  - Now you can configure CPU to emulate using a single .bochsrc option !
+    The option selects CPU configuration to emulate from pre-defined list
+    of supported configurations. When this option is used, Bochs CPU emulation
+    engine is automatically configured to emulate a specific real hardware CPU,
+    including exact CPUID matching reference hardware. Check .bochsrc example
+    or check user manual for list of supported configurations and more details.
+  * It is also possible to choose the CPU to emulate from Bochs command line
+    using command line interface to .bochsrc: "cpu::model <cpu_name>"
+  * Query for supported CPU models using command line option: -help cpu.
+
+  - 10% emulation speedup with handlers chaining optimization implemented. The
+    feature is enabled by default when configure with --enable-all-optimizations
+    option, to disable handlers chaining speedups configure with
+        --disable-handlers-chaining
+  - New way of CPUs scheduling in SMP mode brings up to 50% speedup to the
+    SMP emulation. New implementation uses dynamic CPU quantum value and takes
+    full advantage of the trace cache. Each emulated processor will execute
+    the whole trace before switching to the next processor.
+  * It is also safe to use large (up to 16 instructions) quantum values for
+    the SMP emulation now and improve performance even further.
+
+  - Implemented Supervisor Mode Execution Protection (SMEP), the feature can
+    be enabled using .bochsrc CPUID option.
+  - Added support for XSAVEOPT instruction, the instruction can be enabled
+    using .bochsrc CPUID option.
+  - Added support for AVX and AVX2 instructions emulation, to enable configure
+    with --enable-avx option. When compiled in, AVX still has to be enabled
+    using .bochsrc CPUID option.
+  - Added emulation of AVX float16 convert instructions, the feature can be
+    enabled using .bochsrc CPUID option.
+  - Added support for AVX2 FMA instructions emulation. The implementation
+    was ported (with few bugfixes) from QEMU patch by Peter Maydell.
+    The FMA instructions support can be enabled using .bochsrc CPUID option.
+  - Added support for Bit Manipulation Instructions (BMI1/BMI2) emulation.
+    The BMI instructions support can be enabled using .bochsrc CPUID option.
+  - Added support for AMD SSE4A/XOP/FMA4/TBM extensions emulation, the
+    instructions can be enabled using .bochsrc CPUID option.
+  - Implemented VMX preemption timer VMEXIT control (patch by Jianan Hao)
+  - Implemented Pause-Loop Exiting Secondary VMEXIT control.
+  - Implemented VM Functions support and EPTP-Switching VM Function.
+  - Added INVPCID instruction emulation support.
+  - Added APIC timer TSC-Deadline mode emulation support.
+  - Now you could disable x86-64 from .bochsrc so it become possible to
+    emulate 32-bit CPUs using Bochs binary compiled with x86-64 support.
+  - Updated/fixed instrumentation callbacks.
+  - Bugfixes for CPU emulation correctness and stability.
+
+- Bochs Internal Debugger and Debugger GUI
+  - Bochs disassembler fixes / new instructions support.
+  - Fixed timer breakpoint handling in Bochs internal debugger.
+  - Fixed bug in Bochs internal debugger 'show off' command.
+  - Added Bochs internal debugger command 'vmexitbp' to set breakpoint on
+    VMX guest VMEXIT (patch by Jianan Hao). Type 'vmexitbp' in debugger
+    command window to switch it on/off (similar to modebp).
+  - Fixed linear to physical address translation by Bochs internal debugger
+    for EPT unrestricted guest (VMX guest with paging disabled under EPT)
+  - Fixed bug in GUI debugger SSE registers display.
+  - Correctly display current CPU mode in GUI debugger status bar.
+  - Turn off the mouse capture when the internal debugger or gdbstub enter
+    the input loop.
+
+- Memory
+  - Added new configure option which enables RAM file backing for large guest
+    memory with a smaller amount host memory, without causing a panic when
+    host memory is exhausted (patch by Gary Cameron). To enable configure with
+        --enable-large-ramfile option.
+
+- Configure and compile
+  - Fixed Bochs manifest for Win64 compilation using Microsoft Visual Studio
+    command line compiler.
+  - Added ability to configure CPUID family through .bochsrc.
+    The default family value determined by configure option --enable-cpu-level.
+  - Added ability to configure CPUID model through .bochsrc.
+    The default model value is 3.
+  - Added ability to configure x2apic support through .bochsrc.
+    The APIC configuration could be selected using new CPUID .bochsrc APIC option.
+    Possible configurations are: "legacy", "xapic" and "x2apic".
+    Configure option --enable-x2apic and Bochs 2.4.6 .bochsrc XAPIC option are
+    deprecated and should not be used anymore.
+  - Configure option --enable-vbe is deprecated and should not be used anymore.
+    The VBE support is always automatically compiled in, in order to enable
+    VBE support the .bochsrc option "vga: extension=" has to be set to "vbe".
+    If PCI is present, the "pcivga" device can be assigned to PCI slot.
+  - Configure option --enable-acpi is deprecated and should not be used anymore.
+    The ACPI support is always automatically compiled in if PCI is compiled in.
+    The ACPI still could be disabled using .bochsrc 'plugin_ctrl' option.
+  - Removed --enable-trace-cache configure option. The option will be always ON
+    for any Bochs configuration.
+  - Compile in MONITOR/MWAIT support by default for all cpu-level=6 configurations.
+  - added support for MSVC DLL plugins with a separate workspace package.
+    VS2008Ex can now create a BOCHS.EXE with a set of plugin DLLs.
+    TODO: nmake still cannot create plugin DLLs.
+  - removed some outdated / unmaintained parts from the Bochs code: BeOS host
+    support, plex86 support, networking module 'arpback', text snapshot check
+    feature.
+
+- I/O Devices
+  - Networking
+    - new networking module 'slirp' (user mode networking using Slirp and a
+      builtin DHCP server)
+  - Hard drive / cdrom
+    - fixed buffer overflow causing Bochs crash in LBA48 mode
+    - implemented ATA commands "READ NATIVE MAX ADDRESS" and
+      "READ NATIVE MAX ADDRESS EXT"
+  - Sound
+    - ported ES1370 soundcard emulation from Qemu, to enable configure with
+      the option --enable-es1370
+    - sound input implemented in the sound lowlevel modules for Windows and
+      Linux (ALSA / OSS)
+  - PCI
+    - added framework for PCI ROM support
+    - new bochsrc option 'pci' replaces the 'i440fxsupport' option. The 'chipset'
+      parameter for now only accepts the value 'i440fx'.
+  - VGA
+    - added PCI ROM support to cirrus and pcivga and moved ROM loading for the ISA
+      case to the vga code (SeaBIOS now usable by Bochs)
+    - log prefix now depends on the selected extension (new prefix BXVGA for
+      Bochs VBE support)
+  - USB
+    - experimental USB xHCI support (written by Ben Lunt)
+
+  - LGPL'd VGABIOS updated to version 0.7a
+    - implemented vgabios functions with AX=0x112x (patch by Hugo Mercier)
+    - fixed DAC palette in 8 bpp VBE and Cirrus modes (using the same palette
+      as VGA mode 0x13)
+    - VBE: added HDTV resolutions (patch by Tristan Schmelcher)
+    - VBE: added PCI ROM signature and data structure
+
+  - ROM BIOS
+    - Report memory above 4GB to BIOS (patch by Sebastian Herbszt)
+    - added PCI ROM init code for BIOS-bochs-latest
+      (WARNING: legacy BIOS no longer works with a PCI display adapter)
+
+- GUI and display libraries
+  - new parameter 'update_freq' for the 'vga' bochsrc option replaces the
+    'vga_update_interval' option
+  - vga update frequency now uses host timing if the realtime synchronization
+    is enabled with the "clock" option (FIXME: it should always be used -
+    independent from the "clock" setting)
+  - Implemented graphics mode snapshot for VBE, Cirrus and standard VGA modes.
+    CGA modes are not supported yet.
+  - added 'x' display library option 'nokeyrepeat' to turn off keyboard repeat
+
+- Config interface
+  - win32paramdlg: dialog size now adjusted to support larger label text
+  - win32paramdlg: added tooltip support using the parameter description
+
+- SF patches applied
+  [3412431] Enabling raw devices as hdimage by affiss
+  [3435049] rombios: fix package size in pointing device flags 2 by Sebastian Herbszt
+  [3426460] [PATCH] PIC: remove never-executed code by Christian Inci
+  [3370604] Ctrl-Break support for the bochs BIOS by Nikolay Nikolov
+  [3302668] VMX preemption timer by Jianan Hao
+  [3327510] Fix wrong address translation in debugger by Jianan Hao
+  [3323758] Ctrl-Break support for the Win32 gui by Nikolay Nikolov
+  [3316785] Ctrl-Break support for the X11 gui by Nikolay Nikolov
+  [3298173] Breakpoint on VMEXIT event by Jianan Hao
+  [3295737] Fix CopyHost*WordLittleEndian macros by Heikki Lindholm
+  [3289448] optimized powerpc byte swapping by Heikki Lindholm
+  [3292581] Core Audio first aid by Heikki Lindholm
+  [3205979] Compilation fixes for OpenBSD by Brad Smith
+  [3290979] acpi/muldiv64 endian bug by Heikki Lindholm
+  [3289459] Mac OS X audio missing framework dependency by Heikki Lindholm
+  [3267459] fix xrandr related crash by Heikki Lindholm
+  [3190995] add eth backend based on Slirp by Heikki Lindholm
+
+- these S.F. bugs were closed/fixed
+  [3365456] block device dimensions problem
+  [3441564] interrupts vectors 0x67 should also be NULL ! cf: 2902118
+  [2829847] Mouse locked during magic-break
+  [3418621] release mouse when debugger breakpoint was hit
+  [1947077] sb command bug
+  [2802677] Unable to install Cirrus SVGA driver in guest Windows ME
+  [3422638] large ramfile support broken on anything but Linux
+  [3312237] stepN command might be not working properly
+  [3392760] Bochs does not compile with linux3.0
+  [3403746] segfault crash with sparse disk images
+  [3062054] Problems with BIOS pointing device services (int 15h)
+  [3277639] incompatible colours in palette
+  [1788739] Abort on large memory setting
+  [3012207] Int 13h FN 48h incorrect return values
+  [3363289] holding shift key causes capslock hang
+  [1819639] Two incompatible crc32 modules
+  [3324111] configure for VCPP.NET issues
+  [3190970] Installing linux causes a crash in pci_ide
+  [3077616] Fedora 13 installation fails on Bochs 2.4.5
+  [3294671] ./configure --enable-pci --disable-cdrom
+  [3303818] wrong memory size is reported to GRUB (e820 problem?)
+  [3297475] trace cache disabled mode will miss SMC
+  [3170157] BIOS32 PCI service wrong length
+  [3025030] PIT mistakenly connected to IRQ0 IOAPIC instead of IRQ2
+  [3266738] GUI debugger does not update CPU mode correctly
+  [3292571] SB16 doesn't reinit correctly
+  [3175168] Cirrus CL-GD5446 emulation incorrect
+  [3260134] Failed to compile when trace cache disabled
+  [3197425] Error compile with vmx in vs2008/2010 and for correct x64
+
+- these S.F. feature requests were closed/implemented
+  [3424738] Legacy BIOS int13 AL=17/18h diskette issue
+  [1197067] Screenshot for graphical
+  [2800839] VMX-preemption timer
+  [1507519] configurable CPUID
+   [579002] Allow user to specify architecture
+  [1228567] CPU option
+
+-------------------------------------------------------------------------
 Changes in 2.4.6 (February 22, 2011):
 
 Brief summary :
@@ -7,7 +238,7 @@ Brief summary :
 - BIOS: Support for up to 2M ROM BIOS images.
 - GUI: select mouse capture toggle method in .bochsrc.
 - Ported most of Qemu's 'virtual VFAT' block driver
-  (except runtime write support, but plus FAT32 suppport)
+  (except runtime write support, but plus FAT32 support)
 - Added write protect option for floppy drives.
 - Bugfixes / improved internal debugger + instrumentation.
 

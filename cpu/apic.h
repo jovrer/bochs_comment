@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.h,v 1.55 2010/04/08 15:50:39 sshwarts Exp $
+// $Id: apic.h 10782 2011-11-21 12:51:50Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2002-2009 Zwane Mwaikambo, Stanislav Shwartsman
@@ -92,8 +92,9 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
 #define APIC_LVT_LINT1   4
 #define APIC_LVT_ERROR   5
 
-  Bit32u timer_initial;         // Initial timer count
-  Bit32u timer_current;         // current timer count
+  Bit32u timer_initial;         // Initial timer count (in order to reload periodic timer)
+  Bit32u timer_current;         // Current timer count
+  Bit64u ticksInitial;          // Timer value when it started to count, also holds TSC-Deadline value
 
   Bit32u timer_divconf;         // Timer divide configuration register
   Bit32u timer_divide_factor;
@@ -101,7 +102,6 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
   // Internal timer state, not accessible from bus
   bx_bool timer_active;
   int timer_handle;
-  Bit64u ticksInitial;
 
 /* APIC delivery modes */
 #define APIC_DM_FIXED	0
@@ -112,6 +112,15 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
 #define APIC_DM_INIT	5
 #define APIC_DM_SIPI	6
 #define APIC_DM_EXTINT	7
+
+#if BX_SUPPORT_VMX >= 2
+  int vmx_timer_handle;
+  Bit32u vmx_preemption_timer_value;
+  Bit64u vmx_preemption_timer_initial;    //The value of system tick when set the timer (absolute value)
+  Bit64u vmx_preemption_timer_fire;       //The value of system tick when fire the exception (absolute value)
+  Bit32u vmx_preemption_timer_rate;       //rate stated in MSR_VMX_MISC
+  bx_bool vmx_timer_active;
+#endif 
 
   BX_CPU_C *cpu;
 
@@ -129,7 +138,7 @@ public:
   void write(bx_phy_address addr, void *data, unsigned len);
   void write_aligned(bx_phy_address addr, Bit32u data);
   Bit32u read_aligned(bx_phy_address address);
-#if BX_SUPPORT_X2APIC
+#if BX_CPU_LEVEL >= 6
   bx_bool read_x2apic(unsigned index, Bit64u *msr);
   bx_bool write_x2apic(unsigned index, Bit64u msr);
 #endif
@@ -152,16 +161,31 @@ public:
   Bit8u get_ppr(void);
   Bit8u get_apr(void);
   bx_bool is_focus(Bit8u vector);
+  void set_lvt_entry(unsigned apic_reg, Bit32u val);
+
   static void periodic_smf(void *);
   void periodic(void);
   void set_divide_configuration(Bit32u value);
   void set_initial_timer_count(Bit32u value);
+  Bit32u get_current_timer_count(void);
+
+#if BX_CPU_LEVEL >= 6
+  Bit64u get_tsc_deadline(void);
+  void set_tsc_deadline(Bit64u value);
+#endif
+
   void startup_msg(Bit8u vector);
   void register_state(bx_param_c *parent);
+#if BX_SUPPORT_VMX >= 2
+  Bit32u read_vmx_preemption_timer(void);
+  void set_vmx_preemption_timer(Bit32u value);
+  void deactivate_vmx_preemption_timer(void);
+  static void vmx_preemption_timer_expired(void *);
+#endif  
 };
 
 int apic_bus_deliver_lowest_priority(Bit8u vector, apic_dest_t dest, bx_bool trig_mode, bx_bool broadcast);
-int apic_bus_deliver_interrupt(Bit8u vector, apic_dest_t dest, Bit8u delivery_mode, bx_bool logical_dest, bx_bool level, bx_bool trig_mode);
+BOCHSAPI_MSVCONLY int apic_bus_deliver_interrupt(Bit8u vector, apic_dest_t dest, Bit8u delivery_mode, bx_bool logical_dest, bx_bool level, bx_bool trig_mode);
 int apic_bus_broadcast_interrupt(Bit8u vector, Bit8u delivery_mode, bx_bool trig_mode, int exclude_cpu);
 
 #endif // if BX_SUPPORT_APIC

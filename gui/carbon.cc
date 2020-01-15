@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: carbon.cc,v 1.44 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: carbon.cc 10589 2011-08-16 20:07:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -789,10 +789,10 @@ void CreateWindows(void)
 // ::SPECIFIC_INIT()
 //
 // Called from gui.cc, once upon program startup, to allow for the
-// specific GUI code (X11, BeOS, ...) to be initialized.
+// specific GUI code (X11, Win32, ...) to be initialized.
 //
 // argc, argv: not used right now, but the intention is to pass native GUI
-//     specific options from the command line.  (X11 options, BeOS options,...)
+//     specific options from the command line.  (X11 options, Win32 options,...)
 //
 // tilewidth, tileheight: for optimization, graphics_tile_update() passes
 //     only updated regions of the screen to the gui code to be redrawn.

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: xsave.cc,v 1.29 2010/10/18 22:19:45 sshwarts Exp $
+// $Id: xsave.cc 10729 2011-10-09 09:19:49Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008-2009 Stanislav Shwartsman
+//   Copyright (c) 2008-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -26,14 +26,8 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-// Make code more tidy with a few macros.
-#if BX_SUPPORT_X86_64==0
-#define RAX EAX
-#define RDX EDX
-#endif
-
 /* 0F AE /4 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   unsigned index;
@@ -59,8 +53,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 
   Bit64u header1 = read_virtual_qword(i->seg(), (eaddr + 512) & asize_mask);
 
+  Bit32u features_save_enable_mask = BX_CPU_THIS_PTR xcr0.get32() & EAX;
+
   /////////////////////////////////////////////////////////////////////////////
-  if (BX_CPU_THIS_PTR xcr0.get_FPU() && (EAX & BX_XCR0_FPU_MASK) != 0)
+  if ((features_save_enable_mask & BX_XCR0_FPU_MASK) != 0)
   {
     xmm.xmm16u(0) = BX_CPU_THIS_PTR the_i387.get_control_word();
     xmm.xmm16u(1) = BX_CPU_THIS_PTR the_i387.get_status_word();
@@ -131,11 +127,16 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  if (BX_CPU_THIS_PTR xcr0.get_SSE() && (EAX & BX_XCR0_SSE_MASK) != 0)
+  if ((features_save_enable_mask & (BX_XCR0_SSE_MASK | BX_XCR0_AVX_MASK)) != 0)
   {
+    // store MXCSR
     write_virtual_dword(i->seg(), (eaddr + 24) & asize_mask, BX_MXCSR_REGISTER);
     write_virtual_dword(i->seg(), (eaddr + 28) & asize_mask, MXCSR_MASK);
+  }
 
+  /////////////////////////////////////////////////////////////////////////////
+  if ((features_save_enable_mask & BX_XCR0_SSE_MASK) != 0)
+  {
     /* store XMM register file */
     for(index=0; index < BX_XMM_REGISTERS; index++)
     {
@@ -149,13 +150,33 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
     header1 |= BX_XCR0_SSE_MASK;
   }
 
+#if BX_SUPPORT_AVX
+  /////////////////////////////////////////////////////////////////////////////
+  if ((features_save_enable_mask & BX_XCR0_AVX_MASK) != 0)
+  {
+    /* store AVX state */
+    for(index=0; index < BX_XMM_REGISTERS; index++)
+    {
+      // save YMM8-YMM15 only in 64-bit mode
+      if (index < 8 || long64_mode()) {
+        write_virtual_dqword(i->seg(),
+           (eaddr+index*16+576) & asize_mask, (Bit8u *)(&BX_READ_AVX_REG_LINE(index, 1)));
+      }
+    }
+
+    header1 |= BX_XCR0_AVX_MASK;
+  }
+#endif
+
   // always update header to 'dirty' state
   write_virtual_qword(i->seg(), (eaddr + 512) & asize_mask, header1);
 #endif
+
+  BX_NEXT_INSTR(i);
 }
 
 /* 0F AE /5 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   unsigned index;
@@ -193,8 +214,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
   // We will go feature-by-feature and not run over all XCR0 bits
   //
 
+  Bit32u features_load_enable_mask = BX_CPU_THIS_PTR xcr0.get32() & EAX;
+
   /////////////////////////////////////////////////////////////////////////////
-  if (BX_CPU_THIS_PTR xcr0.get_FPU() && (EAX & BX_XCR0_FPU_MASK) != 0)
+  if ((features_load_enable_mask & BX_XCR0_FPU_MASK) != 0)
   {
     if (header1 & BX_XCR0_FPU_MASK) {
       // load FPU state from XSAVE area
@@ -203,6 +226,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
       BX_CPU_THIS_PTR the_i387.cwd =  xmm.xmm16u(0);
       BX_CPU_THIS_PTR the_i387.swd =  xmm.xmm16u(1);
       BX_CPU_THIS_PTR the_i387.tos = (xmm.xmm16u(1) >> 11) & 0x07;
+
+      /* always set bit 6 as '1 */
+      BX_CPU_THIS_PTR the_i387.cwd =
+         (BX_CPU_THIS_PTR the_i387.cwd & ~FPU_CW_Reserved_Bits) | 0x0040;
 
       /* Restore x87 FPU Opcode */
       /* The lower 11 bits contain the FPU opcode, upper 5 bits are reserved */
@@ -268,20 +295,26 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
       BX_CPU_THIS_PTR the_i387.init();
 
       for (index=0;index<8;index++) {
-        floatx80 reg = { 0, 0 };
+        static floatx80 reg = { 0, 0 };
         BX_FPU_REG(index) = reg;
       }
     }
   }
 
   /////////////////////////////////////////////////////////////////////////////
-  if (BX_CPU_THIS_PTR xcr0.get_SSE() && (EAX & BX_XCR0_SSE_MASK) != 0)
+  if ((features_load_enable_mask & (BX_XCR0_SSE_MASK | BX_XCR0_AVX_MASK)) != 0)
   {
     Bit32u new_mxcsr = read_virtual_dword(i->seg(), (eaddr + 24) & asize_mask);
     if(new_mxcsr & ~MXCSR_MASK)
        exception(BX_GP_EXCEPTION, 0);
     BX_MXCSR_REGISTER = new_mxcsr;
+  }
 
+  static BxPackedXmmRegister xmmnil; /* compiler will clear the variable */
+
+  /////////////////////////////////////////////////////////////////////////////
+  if ((features_load_enable_mask & BX_XCR0_SSE_MASK) != 0)
+  {
     if (header1 & BX_XCR0_SSE_MASK) {
       // load SSE state from XSAVE area
       for(index=0; index < BX_XMM_REGISTERS; index++)
@@ -297,18 +330,46 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
        // initialize SSE with reset values
        for(index=0; index < BX_XMM_REGISTERS; index++) {
          // set XMM8-XMM15 only in 64-bit mode
+         if (index < 8 || long64_mode())
+           BX_WRITE_XMM_REG(index, xmmnil);
+       }
+    }
+  }
+
+#if BX_SUPPORT_AVX
+  /////////////////////////////////////////////////////////////////////////////
+  if ((features_load_enable_mask & BX_XCR0_AVX_MASK) != 0)
+  {
+    if (header1 & BX_XCR0_AVX_MASK) {
+      // load AVX state from XSAVE area
+      for(index=0; index < BX_XMM_REGISTERS; index++)
+      {
+         // restore YMM8-YMM15 only in 64-bit mode
          if (index < 8 || long64_mode()) {
-           BX_CPU_THIS_PTR xmm[index].xmm64u(0) = 0;
-           BX_CPU_THIS_PTR xmm[index].xmm64u(1) = 0;
+           read_virtual_dqword(i->seg(),
+               (eaddr+index*16+576) & asize_mask, (Bit8u *)(&BX_READ_AVX_REG_LINE(index, 1)));
+         }
+      }
+    }
+    else {
+       // initialize upper part of AVX registers with reset values
+       for(index=0; index < BX_XMM_REGISTERS; index++) {
+         // set YMM8-YMM15 only in 64-bit mode
+         if (index < 8 || long64_mode()) {
+           for (int j=2;j < BX_VLMAX*2;j++)
+             BX_CPU_THIS_PTR vmm[index].avx64u(j) = 0;
          }
        }
     }
   }
 #endif
+#endif
+
+  BX_NEXT_INSTR(i);
 }
 
 /* 0F 01 D0 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::XGETBV(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XGETBV(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   if(! BX_CPU_THIS_PTR cr4.get_OSXSAVE()) {
@@ -326,10 +387,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XGETBV(bxInstruction_c *i)
   RDX = 0;
   RAX = BX_CPU_THIS_PTR xcr0.get32();
 #endif
+
+  BX_NEXT_INSTR(i);
 }
 
 /* 0F 01 D1 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   if(! BX_CPU_THIS_PTR cr4.get_OSXSAVE()) {
@@ -337,7 +400,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
   }
 
-  if (v8086_mode() || CPL != 0) {
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    BX_ERROR(("VMEXIT: XSETBV in VMX non-root operation"));
+    VMexit(i, VMX_VMEXIT_XSETBV, 0);
+  }
+#endif
+
+  // CPL is always 3 in vm8086 mode
+  if (/* v8086_mode() || */ CPL != 0) {
     BX_ERROR(("XSETBV: The current priveledge level is not 0"));
     exception(BX_GP_EXCEPTION, 0);
   }
@@ -349,11 +420,25 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (EDX != 0 || (EAX & ~BX_XCR0_SUPPORTED_BITS) != 0 || (EAX & 1) == 0) {
+  if (EDX != 0 || (EAX & ~BX_CPU_THIS_PTR xcr0_suppmask) != 0 || (EAX & 1) == 0) {
     BX_ERROR(("XSETBV: Attempting to change reserved bits!"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  BX_CPU_THIS_PTR xcr0.set32(EAX);
+#if BX_SUPPORT_AVX
+  if ((EAX & (BX_XCR0_AVX_BIT | BX_XCR0_SSE_BIT)) == BX_XCR0_AVX_BIT) {
+    BX_ERROR(("XSETBV: Attempting to set AVX without SSE!"));
+    exception(BX_GP_EXCEPTION, 0);
+  }
 #endif
+
+  BX_CPU_THIS_PTR xcr0.set32(EAX);
+
+#if BX_SUPPORT_AVX
+  handleAvxModeChange();
+#endif
+
+#endif // BX_CPU_LEVEL >= 6
+
+  BX_NEXT_TRACE(i);
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.h,v 1.26 2009/12/04 19:50:28 sshwarts Exp $
+// $Id: ne2k.h 10419 2011-06-23 15:56:02Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -193,7 +193,6 @@ typedef struct {
     bx_bool pci_enabled;
 #if BX_SUPPORT_PCI
     Bit8u devfunc;
-    Bit8u pci_conf[256];
 #endif
 } bx_ne2k_t;
 

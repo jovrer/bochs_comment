@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tap.cc,v 1.38 2011/01/24 20:35:51 vruppert Exp $
+// $Id: eth_tap.cc 10582 2011-08-16 17:27:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -84,10 +84,9 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "netmod.h"
 
-#if BX_NETWORKING && defined(HAVE_ETHERTAP)
-
-#include "eth.h"
+#if BX_NETWORKING && BX_NETMOD_TAP
 
 #define LOG_THIS netdev->
 
@@ -412,4 +411,4 @@ void bx_tap_pktmover_c::rx_timer()
   (*rxh)(netdev, rxbuf, nbytes);
 }
 
-#endif /* if BX_NETWORKING && defined HAVE_ETHERTAP */
+#endif /* if BX_NETWORKING && BX_NETMOD_TAP */

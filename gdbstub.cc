@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gdbstub.cc,v 1.43 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: gdbstub.cc 10779 2011-11-20 16:21:53Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2006  The Bochs Project Team
@@ -436,11 +436,21 @@ static void debug_loop(void)
 
   while (ne == 0)
   {
+    SIM->get_param_bool(BXPN_MOUSE_ENABLED)->set(0);
     get_command(buffer);
     BX_DEBUG(("get_buffer '%s'", buffer));
 
+    // At a minimum, a stub is required to support the ‘g’ and ‘G’ commands for register access,
+    // and the ‘m’ and ‘M’ commands for memory access. Stubs that only control single-threaded
+    // targets can implement run control with the ‘c’ (continue), and ‘s’ (step) commands. Stubs
+    // that support multi-threading targets should support the ‘vCont’ command. All other commands
+    // are optional.
+
     switch (buffer[0])
     {
+      // 'c [addr]' Continue. addr is address to resume.
+      // If addr is omitted, resume at current address.
+      // This packet is deprecated for multi-threading support. See [vCont packet]
       case 'c':
       {
         char buf[255];
@@ -461,7 +471,7 @@ static void debug_loop(void)
         }
 
         stub_trace_flag = 0;
-        bx_cpu.cpu_loop(0);
+        bx_cpu.cpu_loop();
 
         DEV_vga_refresh();
 
@@ -486,13 +496,16 @@ static void debug_loop(void)
         break;
       }
 
+      // 's [addr]' Single step. addr is the address at which to resume.
+      // If addr is omitted, resume at same address.
+      // This packet is deprecated for multi-threading support. See [vCont packet]
       case 's':
       {
         char buf[255];
 
         BX_INFO(("stepping"));
         stub_trace_flag = 1;
-        bx_cpu.cpu_loop(0);
+        bx_cpu.cpu_loop();
         DEV_vga_refresh();
         stub_trace_flag = 0;
         BX_INFO(("stopped with %x", last_stop_reason));
@@ -510,6 +523,9 @@ static void debug_loop(void)
         break;
       }
 
+      // ‘M addr,length:XX...’
+      // Write length bytes of memory starting at address addr. XX... is the data;
+      // each byte is transmitted as a two-digit hexadecimal number.
       case 'M':
       {
         unsigned char mem[255];
@@ -542,6 +558,15 @@ static void debug_loop(void)
         break;
       }
 
+      // ‘m addr,length’
+      // Read length bytes of memory starting at address addr. Note that addr may
+      // not be aligned to any particular boundary.
+
+      // The stub need not use any particular size or alignment when gathering data
+      // from memory for the response; even if addr is word-aligned and length is a
+      // multiple of the word size, the stub is free to use byte accesses, or not. For
+      // this reason, this packet may not be suitable for accessing memory-mapped I/O
+      // devices.
       case 'm':
       {
         Bit64u addr;
@@ -550,7 +575,7 @@ static void debug_loop(void)
 
         addr = strtoull(&buffer[1], &ebuf, 16);
         len = strtoul(ebuf + 1, NULL, 16);
-        BX_INFO(("addr %Lx len %x", addr, len));
+        BX_INFO(("addr "FMT_ADDRX64" len %x", addr, len));
 
         access_linear(addr, len, BX_READ, mem);
         mem2hex(mem, obuf, len);
@@ -558,6 +583,9 @@ static void debug_loop(void)
         break;
       }
 
+      // ‘P n...=r...’
+      // Write register n... with value r... The register number n is in hexadecimal,
+      // and r... contains two hex digits for each byte in the register (target byte order).
       case 'P':
       {
         int reg;
@@ -568,40 +596,19 @@ static void debug_loop(void)
         ++ebuf;
         value = read_little_endian_hex(ebuf);
 
-        BX_INFO(("reg %d set to %Lx", reg, value));
+        BX_INFO(("reg %d set to "FMT_ADDRX64, reg, value));
 #if BX_SUPPORT_X86_64 == 0
         switch (reg)
         {
           case 0:
-            EAX = value;
-            break;
-
           case 1:
-            ECX = value;
-            break;
-
           case 2:
-            EBX = value;
-            break;
-
           case 3:
-            EDX = value;
-            break;
-
           case 4:
-            ESP = value;
-            break;
-
           case 5:
-            EBP = value;
-            break;
-
           case 6:
-            ESI = value;
-            break;
-
           case 7:
-            EDI = value;
+            BX_CPU_THIS_PTR set_reg32(reg, value);
             break;
 
           case 8:
@@ -616,67 +623,22 @@ static void debug_loop(void)
         switch (reg)
         {
           case 0:
-            RAX = value;
-            break;
-
           case 1:
-            RBX = value;
-            break;
-
           case 2:
-            RCX = value;
-            break;
-
           case 3:
-            RDX = value;
-            break;
-
           case 4:
-            RSP = value;
-            break;
-
           case 5:
-            RBP = value;
-            break;
-
           case 6:
-            RSI = value;
-            break;
-
           case 7:
-            RDI = value;
-            break;
-
           case 8:
-            R8 = value;
-            break;
-
           case 9:
-            R9 = value;
-            break;
-
           case 10:
-            R10 = value;
-            break;
-
           case 11:
-            R11 = value;
-            break;
-
           case 12:
-            R12 = value;
-            break;
-
           case 13:
-            R13 = value;
-            break;
-
           case 14:
-            R15 = value;
-            break;
-
           case 15:
-            R15 = value;
+            BX_CPU_THIS_PTR set_reg64(reg, value);
             break;
 
           case 16:
@@ -693,6 +655,7 @@ static void debug_loop(void)
         break;
       }
 
+      // ‘g’ Read general registers.
       case 'g':
       {
 #if BX_SUPPORT_X86_64 == 0
@@ -773,6 +736,12 @@ static void debug_loop(void)
         put_reply(obuf);
         break;
 
+      // ‘H op thread-id’
+      // Set thread for subsequent operations (‘m’, ‘M’, ‘g’, ‘G’, et.al.). op depends on the
+      // operation to be performed: it should be ‘c’ for step and continue operations
+      // (note that this is deprecated, supporting the ‘vCont’ command is a better option),
+      // ‘g’ for other operations. The thread designator thread-id has the format
+      // and interpretation described in [thread-id syntax]
       case 'H':
         if (buffer[1] == 'c')
         {
@@ -790,10 +759,14 @@ static void debug_loop(void)
         }
         break;
 
+      // ‘q name params...’
+      // ‘Q name params...’
+      // General query (‘q’) and set (‘Q’). These packets are described fully in
+      // Section E.4 [General Query Packets]
       case 'q':
         if (buffer[1] == 'C')
         {
-          sprintf(obuf,"%Lx", (Bit64u)1);
+          sprintf(obuf, FMT_ADDRX64, (Bit64u)1);
           put_reply(obuf);
         }
         else if (strncmp(&buffer[1], "Offsets", strlen("Offsets")) == 0)
@@ -814,15 +787,22 @@ static void debug_loop(void)
         }
         break;
 
+      // ‘z type,addr,kind’
+      // ‘Z type,addr,kind’
+      // Insert (‘Z’) or remove (‘z’) a type breakpoint or watchpoint starting at address
+      // address of kind kind.
       case 'Z':
         do_breakpoint(1, buffer+1);
         break;
       case 'z':
         do_breakpoint(0, buffer+1);
         break;
+
+      // ‘k’ Kill request.
       case 'k':
         BX_PANIC(("Debugger asked us to quit"));
         break;
+
       case 'D':
         BX_INFO(("Debugger detached"));
         put_reply("OK");
@@ -937,5 +917,5 @@ void bx_gdbstub_init(void)
   debug_loop();
 
   /* CPU loop */
-  bx_cpu.cpu_loop(0);
+  bx_cpu.cpu_loop();
 }

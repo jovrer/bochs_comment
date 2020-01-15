@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.cc,v 1.164 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: wxmain.cc 10589 2011-08-16 20:07:08Z sshwarts $
 /////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -352,7 +352,7 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   // toolbar events
   EVT_TOOL(ID_Edit_FD_0, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Edit_FD_1, MyFrame::OnToolbarClick)
-  EVT_TOOL(ID_Edit_Cdrom, MyFrame::OnToolbarClick)
+  EVT_TOOL(ID_Edit_Cdrom1, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_Reset, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_Power, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_SaveRestore, MyFrame::OnToolbarClick)
@@ -518,7 +518,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
 
   BX_ADD_TOOL(ID_Edit_FD_0, floppya_xpm, wxT("Change Floppy A"));
   BX_ADD_TOOL(ID_Edit_FD_1, floppyb_xpm, wxT("Change Floppy B"));
-  BX_ADD_TOOL(ID_Edit_Cdrom, cdromd_xpm, wxT("Change CDROM"));
+  BX_ADD_TOOL(ID_Edit_Cdrom1, cdromd_xpm, wxT("Change CDROM"));
   BX_ADD_TOOL(ID_Toolbar_Reset, reset_xpm, wxT("Reset the system"));
   BX_ADD_TOOL(ID_Toolbar_Power, power_xpm, wxT("Turn power on/off"));
   BX_ADD_TOOL(ID_Toolbar_SaveRestore, saverestore_xpm, wxT("Save simulation state"));
@@ -610,7 +610,7 @@ void MyFrame::OnEditCPU(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("cpu");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
 }
@@ -619,7 +619,7 @@ void MyFrame::OnEditMemory(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("memory");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
 }
@@ -628,7 +628,7 @@ void MyFrame::OnEditClockCmos(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("clock_cmos");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
 }
@@ -637,7 +637,7 @@ void MyFrame::OnEditPCI(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("pci");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
 }
@@ -646,7 +646,7 @@ void MyFrame::OnEditDisplay(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("display");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.SetRuntimeFlag(sim_thread != NULL);
   dlg.ShowModal();
@@ -656,7 +656,7 @@ void MyFrame::OnEditKeyboard(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("keyboard_mouse");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.SetRuntimeFlag(sim_thread != NULL);
   dlg.ShowModal();
@@ -684,7 +684,7 @@ void MyFrame::OnEditBoot(wxCommandEvent& WXUNUSED(event))
   }
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("boot_params");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
 }
@@ -693,7 +693,7 @@ void MyFrame::OnEditSerialParallel(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("ports");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.SetRuntimeFlag(sim_thread != NULL);
   dlg.ShowModal();
@@ -703,7 +703,7 @@ void MyFrame::OnEditNet(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("network");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
 }
@@ -711,8 +711,8 @@ void MyFrame::OnEditNet(wxCommandEvent& WXUNUSED(event))
 void MyFrame::OnEditSound(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
-  bx_list_c *list = (bx_list_c*) SIM->get_param(BXPN_SB16);
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  bx_list_c *list = (bx_list_c*) SIM->get_param("sound");
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.SetRuntimeFlag(sim_thread != NULL);
   dlg.ShowModal();
@@ -722,7 +722,7 @@ void MyFrame::OnEditOther(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("misc");
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.SetRuntimeFlag(sim_thread != NULL);
   dlg.ShowModal();
@@ -1002,7 +1002,7 @@ void MyFrame::simStatusChanged(StatusChange change, bx_bool popupNotify) {
   value = SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE)->get();
   menuEdit->Enable(ID_Edit_FD_1, canConfigure || (value != BX_FDD_NONE));
   bxToolBar->EnableTool(ID_Edit_FD_1, canConfigure || (value != BX_FDD_NONE));
-  bxToolBar->EnableTool(ID_Edit_Cdrom, canConfigure || (SIM->get_first_cdrom() != NULL));
+  bxToolBar->EnableTool(ID_Edit_Cdrom1, canConfigure || (SIM->get_first_cdrom() != NULL));
 }
 
 void MyFrame::OnStartSim(wxCommandEvent& event)
@@ -1053,6 +1053,7 @@ void MyFrame::OnPauseResumeSim(wxCommandEvent& WXUNUSED(event))
   wxCriticalSectionLocker lock(sim_thread_lock);
   if (sim_thread) {
     if (sim_thread->IsPaused()) {
+      SIM->update_runtime_options();
       simStatusChanged(Resume);
       sim_thread->Resume();
     } else {
@@ -1317,7 +1318,7 @@ void MyFrame::OnEditATA(wxCommandEvent& event)
   sprintf(ata_name, "ata.%d", channel);
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param(ata_name);
-  dlg.SetTitle(wxString(list->get_title()->getptr(), wxConvUTF8));
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.SetRuntimeFlag(sim_thread != NULL);
   dlg.ShowModal();
@@ -1340,7 +1341,7 @@ void MyFrame::OnToolbarClick(wxCommandEvent& event)
       // floppy config dialog box
       editFloppyConfig(1);
       break;
-    case ID_Edit_Cdrom:
+    case ID_Edit_Cdrom1:
       // cdrom config dialog box (first cd only)
       editFirstCdrom();
       break;

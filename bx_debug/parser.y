@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y,v 1.45 2010/01/05 13:59:08 sshwarts Exp $
+// $Id: parser.y 10731 2011-10-09 19:26:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -55,8 +55,9 @@
 %token <sval> BX_TOKEN_REGS
 %token <sval> BX_TOKEN_CPU
 %token <sval> BX_TOKEN_FPU
-%token <sval> BX_TOKEN_SSE
 %token <sval> BX_TOKEN_MMX
+%token <sval> BX_TOKEN_SSE
+%token <sval> BX_TOKEN_AVX
 %token <sval> BX_TOKEN_IDT
 %token <sval> BX_TOKEN_IVT
 %token <sval> BX_TOKEN_GDT
@@ -94,9 +95,8 @@
 %token <sval> BX_TOKEN_PTIME
 %token <sval> BX_TOKEN_TIMEBP_ABSOLUTE
 %token <sval> BX_TOKEN_TIMEBP
-%token <sval> BX_TOKEN_RECORD
-%token <sval> BX_TOKEN_PLAYBACK
 %token <sval> BX_TOKEN_MODEBP
+%token <sval> BX_TOKEN_VMEXITBP
 %token <sval> BX_TOKEN_PRINT_STACK
 %token <sval> BX_TOKEN_WATCH
 %token <sval> BX_TOKEN_UNWATCH
@@ -151,6 +151,7 @@ command:
     | fpu_regs_command
     | mmx_regs_command
     | sse_regs_command
+    | avx_regs_command
     | segment_regs_command
     | debug_regs_command
     | control_regs_command
@@ -174,9 +175,8 @@ command:
     | trace_mem_command
     | ptime_command
     | timebp_command
-    | record_command
-    | playback_command
     | modebp_command
+    | vmexitbp_command
     | print_stack_command
     | watch_point_command
     | page_command
@@ -227,22 +227,6 @@ timebp_command:
       }
     ;
 
-record_command:
-      BX_TOKEN_RECORD BX_TOKEN_STRING '\n'
-      {
-          bx_dbg_record_command($2);
-          free($1); free($2);
-      }
-    ;
-
-playback_command:
-      BX_TOKEN_PLAYBACK BX_TOKEN_STRING '\n'
-      {
-          bx_dbg_playback_command($2);
-          free($1); free($2);
-      }
-    ;
-
 modebp_command:
       BX_TOKEN_MODEBP '\n'
       {
@@ -250,12 +234,25 @@ modebp_command:
           free($1);
       }
     ;
-
+    
+vmexitbp_command:
+      BX_TOKEN_VMEXITBP '\n'
+      {
+          bx_dbg_vmexitbp_command();
+          free($1);
+      }
+    ;
+    
 show_command:
       BX_TOKEN_SHOW BX_TOKEN_COMMAND '\n'
       {
           bx_dbg_show_command($2);
           free($1); free($2);
+      }
+    | BX_TOKEN_SHOW BX_TOKEN_OFF '\n'
+      {
+          bx_dbg_show_command("off");
+          free($1);
       }
     | BX_TOKEN_SHOW BX_TOKEN_STRING '\n'
       {
@@ -567,7 +564,7 @@ info_command:
       }
     | BX_TOKEN_INFO BX_TOKEN_CPU '\n'
       {
-        bx_dbg_info_registers_command(BX_INFO_GENERAL_PURPOSE_REGS | BX_INFO_FPU_REGS | BX_INFO_SSE_REGS);
+        bx_dbg_info_registers_command(-1);
         free($1); free($2);
       }
     | BX_TOKEN_INFO BX_TOKEN_IDT optional_numeric optional_numeric '\n'
@@ -684,6 +681,14 @@ sse_regs_command:
       BX_TOKEN_SSE '\n'
       {
         bx_dbg_info_registers_command(BX_INFO_SSE_REGS);
+        free($1);
+      }
+    ;
+
+avx_regs_command:
+      BX_TOKEN_AVX '\n'
+      {
+        bx_dbg_info_registers_command(BX_INFO_AVX_REGS);
         free($1);
       }
     ;
@@ -948,6 +953,11 @@ help_command:
          dbg_printf("modebp - toggles mode switch breakpoint\n");
          free($1);free($2);
        }
+     | BX_TOKEN_HELP BX_TOKEN_VMEXITBP '\n'
+       {
+         dbg_printf("vmexitbp - toggles VMEXIT switch breakpoint\n");
+         free($1);free($2);
+       }
      | BX_TOKEN_HELP BX_TOKEN_CRC '\n'
        {
          dbg_printf("crc <addr1> <addr2> - show CRC32 for physical memory range addr1..addr2\n");
@@ -999,16 +1009,6 @@ help_command:
          dbg_printf("print-stack [num_words] - print the num_words top 16 bit words on the stack\n");
          free($1);free($2);
        }
-     | BX_TOKEN_HELP BX_TOKEN_RECORD '\n'
-       {
-         dbg_printf("record <filename> - record console input to file filename\n");
-         free($1);free($2);
-       }
-     | BX_TOKEN_HELP BX_TOKEN_PLAYBACK '\n'
-       {
-         dbg_printf("playback <filename> - playback console input from file filename\n");
-         free($1);free($2);
-       }
      | BX_TOKEN_HELP BX_TOKEN_LOAD_SYMBOLS '\n'
        {
          dbg_printf("ldsym [global] <filename> [offset] - load symbols from file\n");
@@ -1036,7 +1036,12 @@ help_command:
        }
      | BX_TOKEN_HELP BX_TOKEN_SSE '\n'
        {
-         dbg_printf("sse|xmm - print SSE state\n");
+         dbg_printf("xmm|sse - print SSE state\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_AVX '\n'
+       {
+         dbg_printf("ymm - print AVX state\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_SEGMENT_REGS '\n'

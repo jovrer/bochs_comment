@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc,v 1.147 2011/01/20 16:54:42 vruppert Exp $
+// $Id: keyboard.cc 10360 2011-05-10 20:04:20Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -120,7 +120,7 @@ void bx_keyb_c::resetinternals(bx_bool powerup)
 
 void bx_keyb_c::init(void)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc,v 1.147 2011/01/20 16:54:42 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: keyboard.cc 10360 2011-05-10 20:04:20Z sshwarts $"));
   Bit32u   i;
 
   DEV_register_irq(1, "8042 Keyboard controller");
@@ -974,17 +974,16 @@ void bx_keyb_c::controller_enQ(Bit8u data, unsigned source)
 
 void bx_keyb_c::kbd_enQ_imm(Bit8u val)
 {
-  int tail;
-
   if (BX_KEY_THIS s.kbd_internal_buffer.num_elements >= BX_KBD_ELEMENTS) {
     BX_PANIC(("internal keyboard buffer full (imm)"));
     return;
   }
 
   /* enqueue scancode in multibyte internal keyboard buffer */
-  tail = (BX_KEY_THIS s.kbd_internal_buffer.head + BX_KEY_THIS s.kbd_internal_buffer.num_elements) %
+/*
+  int tail = (BX_KEY_THIS s.kbd_internal_buffer.head + BX_KEY_THIS s.kbd_internal_buffer.num_elements) %
     BX_KBD_ELEMENTS;
-
+*/
   BX_KEY_THIS s.kbd_controller.kbd_output_buffer = val;
   BX_KEY_THIS s.kbd_controller.outb = 1;
 

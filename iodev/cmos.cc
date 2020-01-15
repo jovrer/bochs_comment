@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc,v 1.71 2009/12/04 19:50:26 sshwarts Exp $
+// $Id: cmos.cc 10209 2011-02-24 22:05:47Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -139,7 +139,7 @@ bx_cmos_c::~bx_cmos_c(void)
 
 void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc,v 1.71 2009/12/04 19:50:26 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: cmos.cc 10209 2011-02-24 22:05:47Z sshwarts $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);

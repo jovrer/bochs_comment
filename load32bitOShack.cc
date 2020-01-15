@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: load32bitOShack.cc,v 1.35 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: load32bitOShack.cc 10409 2011-06-19 05:37:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -150,7 +150,7 @@ static void bx_load_linux_setup_params(Bit32u initrd_start, Bit32u initrd_size)
   params->orig_video_ega_bx = 3;
 
   /* Memory size (total mem - 1MB, in KB) */
-  params->memory_size_ext = (BX_MEM(0)->get_memory_len()/(1024*1024) - 1) * 1024;
+  params->memory_size_ext = (Bit32u)(BX_MEM(0)->get_memory_len()/(1024*1024) - 1) * 1024;
 
   /* Boot parameters */
   params->loader_type = 1;

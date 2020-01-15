@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# $Id: makesym.perl,v 1.3 2009/12/30 20:28:23 sshwarts Exp $
+# $Id: makesym.perl,v 1.3 2009-12-30 20:28:23 sshwarts Exp $
 #
 # Read output file from as86 (e.g. rombios.txt) and write out a symbol
 # table suitable for the Bochs debugger.

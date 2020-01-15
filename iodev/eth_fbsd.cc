@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_fbsd.cc,v 1.41 2011/01/24 20:35:51 vruppert Exp $
+// $Id: eth_fbsd.cc 10582 2011-08-16 17:27:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -49,12 +49,13 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "netmod.h"
 
-#if BX_NETWORKING && defined(ETH_FBSD)
-
-#include "eth.h"
+#if BX_NETWORKING && BX_NETMOD_FBSD
 
 #define LOG_THIS netdev->
+
+#define BX_ETH_FBSD_LOGGING 0
 
 extern "C" {
 #include <fcntl.h>
@@ -369,5 +370,4 @@ bx_fbsd_pktmover_c::rx_timer(void)
   }
 }
 
-#endif /* if BX_NETWORKING && defined(ETH_FBSD) */
-
+#endif /* if BX_NETWORKING && BX_NETMOD_FBSD */

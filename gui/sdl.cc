@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.91 2010/05/18 15:33:41 vruppert Exp $
+// $Id: sdl.cc 10575 2011-08-14 20:21:07Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -1610,7 +1610,7 @@ void bx_sdl_gui_c::set_display_mode(disp_mode_t newmode)
 void bx_sdl_gui_c::show_ips(Bit32u ips_count)
 {
   if (!sdl_ips_update) {
-    sprintf(sdl_ips_text, "IPS: %9u", ips_count);
+    sprintf(sdl_ips_text, "IPS: %3.3fM", ips_count / 1000000.0);
     sdl_ips_update = 1;
   }
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom_amigaos.cc,v 1.17 2009/12/04 19:50:26 sshwarts Exp $
+// $Id: cdrom_amigaos.cc 10718 2011-10-03 07:23:44Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000-2009  The Bochs Project
@@ -261,11 +261,4 @@ int DoSCSI(UBYTE *data, int datasize, Bit8u *cmd,int cmdsize, UBYTE direction)
   }
 
   return CDIO->iotd_Req.io_Error;
-}
-
-void cdrom_interface::seek(int lba)
-{
-  unsigned char buffer[BX_CD_FRAMESIZE];
-
-  read_block(buffer, lba, BX_CD_FRAMESIZE);
 }

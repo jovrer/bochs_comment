@@ -42,11 +42,11 @@ TODO (know issues in CPU model):
     Currently Bochs emulation is according to Intel version.
     Do we need to support both ?
 
-[!] More flexible CPUID - vendor and etc
-
 [!] VMX:
 
    - Dual-monitor treatment of SMIs and SMM not implemented yet
    - VMENTER to not-active state not supported yet
 
-[!] SSE4A, SMX, SVM, AVX
+[!] SMX, SVM (AMD)
+
+[!] TODO: Convert CPUDB to plugins and search for them in runtime

@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/documentation/documentation.dbk
-$Id: documentation.dbk,v 1.16 2008/02/05 22:33:34 sshwarts Exp $
+$Id: documentation.dbk 10760 2011-11-01 17:44:56Z sshwarts $
 
 This is the top level file for the Bochs Documentation Manual.
 ================================================================
@@ -288,7 +288,7 @@ documentation.
 <tip>
 <para>
 The rendering process is one-way.  That is, the DocBook source files will be
-downloaded from CVS, edited, and uploaded to CVS as .dbk files.  Along the
+downloaded from SVN, edited, and uploaded to SVN as .dbk files.  Along the
 way, it will probably be necessary to render them into HTML, but only to
 check one's work or to post them as part of a web page.  (I hope I'm not the
 only person to spend nine minutes trying to figure out how to 'compile' HTML

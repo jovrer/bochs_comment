@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.h,v 1.8 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: smm.h 10557 2011-08-10 22:04:33Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2009 Stanislav Shwartsman
@@ -156,6 +156,7 @@ enum SMMRAM_Fields {
   SMRAM_FIELD_CR0,
   SMRAM_FIELD_CR3,
   SMRAM_FIELD_CR4,
+  SMRAM_FIELD_EFER,
   SMRAM_FIELD_IO_INSTRUCTION_RESTART,
   SMRAM_FIELD_AUTOHALT_RESTART,
   SMRAM_FIELD_NMI_MASK,

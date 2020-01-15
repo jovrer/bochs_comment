@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_win32.cc,v 1.34 2011/01/24 20:35:51 vruppert Exp $
+// $Id: eth_win32.cc 10582 2011-08-16 17:27:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -38,10 +38,9 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "netmod.h"
 
-#if BX_NETWORKING && defined(ETH_WIN32)
-
-#include "eth.h"
+#if BX_NETWORKING && BX_NETMOD_WIN32
 
 // windows.h included by bochs.h
 #define LOG_THIS netdev->
@@ -383,4 +382,4 @@ void bx_win32_pktmover_c::rx_timer(void)
     }
   }
 }
-#endif /* if BX_NETWORKING && defined ETH_WIN32 */
+#endif /* if BX_NETWORKING && BX_NETMOD_WIN32 */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc,v 1.89 2011/02/12 17:50:48 vruppert Exp $
+// $Id: textconfig.cc 10716 2011-10-01 12:48:48Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -297,7 +297,7 @@ static const char *startup_options_prompt =
 "11. Disk & Boot options\n"
 "12. Serial / Parallel / USB options\n"
 "13. Network card options\n"
-"14. Sound Blaster 16 options\n"
+"14. Sound card options\n"
 "15. Other options\n"
 #if BX_PLUGINS
 "16. User-defined options\n"
@@ -480,7 +480,7 @@ int bx_config_interface(int menu)
           case 11: do_menu(BXPN_MENU_DISK); break;
           case 12: do_menu("ports"); break;
           case 13: do_menu("network"); break;
-          case 14: do_menu(BXPN_SB16); break;
+          case 14: do_menu("sound"); break;
           case 15: do_menu("misc"); break;
 #if BX_PLUGINS
           case 16: do_menu("user"); break;
@@ -522,7 +522,10 @@ int bx_config_interface(int menu)
             case BX_CI_RT_INST_TR: NOT_IMPLEMENTED(choice); break;
             case BX_CI_RT_USB: do_menu(BXPN_MENU_RUNTIME_USB); break;
             case BX_CI_RT_MISC: do_menu(BXPN_MENU_RUNTIME_MISC); break;
-            case BX_CI_RT_CONT: fprintf(stderr, "Continuing simulation\n"); return 0;
+            case BX_CI_RT_CONT:
+              SIM->update_runtime_options();
+              fprintf(stderr, "Continuing simulation\n");
+              return 0;
             case BX_CI_RT_QUIT:
               fprintf(stderr, "You chose quit on the configuration interface.\n");
               bx_user_quit = 1;
@@ -548,9 +551,9 @@ static void bx_print_log_action_table()
 {
   // just try to print all the prefixes first.
   fprintf(stderr, "Current log settings:\n");
-  fprintf(stderr, "                 Debug      Info       Error       Panic       Pass\n");
-  fprintf(stderr, "ID    Device     Action     Action     Action      Action      Action\n");
-  fprintf(stderr, "----  ---------  ---------  ---------  ----------  ----------  ----------\n");
+  fprintf(stderr, "                 Debug      Info       Error       Panic\n");
+  fprintf(stderr, "ID    Device     Action     Action     Action      Action\n");
+  fprintf(stderr, "----  ---------  ---------  ---------  ----------  ----------\n");
   int i, j, imax=SIM->get_n_log_modules();
   for (i=0; i<imax; i++) {
     if (strcmp(SIM->get_prefix(i), "[     ]")) {
@@ -576,17 +579,17 @@ void bx_log_options(int individual)
       Bit32s id, level, action;
       Bit32s maxid = SIM->get_n_log_modules();
       if (ask_int(log_options_prompt1, "", -1, maxid-1, -1, &id) < 0)
-	return;
+        return;
       if (id < 0) return;
       fprintf(stderr, "Editing log options for the device %s\n", SIM->get_prefix(id));
       for (level=0; level<SIM->get_max_log_level(); level++) {
-	char prompt[1024];
-	int default_action = SIM->get_log_action(id, level);
-	sprintf(prompt, "Enter action for %s event: [%s] ", SIM->get_log_level_name(level), SIM->get_action_name(default_action));
-	// don't show the no change choice (choices=3)
-	if (ask_menu(prompt, "", log_level_n_choices_normal, log_level_choices, default_action, &action)<0)
-	  return;
-	SIM->set_log_action(id, level, action);
+        char prompt[1024];
+        int default_action = SIM->get_log_action(id, level);
+        sprintf(prompt, "Enter action for %s event: [%s] ", SIM->get_log_level_name(level), SIM->get_action_name(default_action));
+        // don't show the no change choice (choices=3)
+        if (ask_menu(prompt, "", log_level_n_choices_normal, log_level_choices, default_action, &action)<0)
+          return;
+        SIM->set_log_action(id, level, action);
       }
     }
   } else {
@@ -596,12 +599,12 @@ void bx_log_options(int individual)
       char prompt[1024];
       int action, default_action = 3;  // default to no change
       sprintf(prompt, "Enter action for %s event on all devices: [no change] ", SIM->get_log_level_name(level));
-	// do show the no change choice (choices=4)
+      // do show the no change choice (choices=4)
       if (ask_menu(prompt, "", log_level_n_choices_normal+1, log_level_choices, default_action, &action)<0)
-	return;
+        return;
       if (action < 3) {
-	SIM->set_default_log_action(level, action);
-	SIM->set_log_action(-1, level, action);
+        SIM->set_default_log_action(level, action);
+        SIM->set_log_action(-1, level, action);
       }
     }
   }
@@ -950,7 +953,7 @@ int bx_list_c::text_ask(FILE *fpin, FILE *fpout)
 {
   bx_list_c *child;
 
-  char *my_title = title->getptr();
+  const char *my_title = title;
   fprintf(fpout, "\n");
   int i, imax = strlen(my_title);
   for (i=0; i<imax; i++) fprintf(fpout, "-");
@@ -975,7 +978,7 @@ int bx_list_c::text_ask(FILE *fpin, FILE *fpout)
           (!SIM->get_init_done() || list[i]->get_runtime_param())) {
         if (list[i]->get_type() == BXT_LIST) {
           child = (bx_list_c*)list[i];
-          fprintf(fpout, "%s\n", child->get_title()->getptr());
+          fprintf(fpout, "%s\n", child->get_title());
         } else {
           if ((options & SHOW_GROUP_NAME) && (list[i]->get_group() != NULL))
             fprintf(fpout, "%s ", list[i]->get_group());
@@ -985,7 +988,7 @@ int bx_list_c::text_ask(FILE *fpin, FILE *fpout)
       } else {
         if (list[i]->get_type() == BXT_LIST) {
           child = (bx_list_c*)list[i];
-          fprintf(fpout, "%s (disabled)\n", child->get_title()->getptr());
+          fprintf(fpout, "%s (disabled)\n", child->get_title());
         } else {
           fprintf(fpout, "(disabled)\n");
         }

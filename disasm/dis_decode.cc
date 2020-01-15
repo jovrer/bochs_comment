@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_decode.cc,v 1.56 2010/05/23 19:17:41 sshwarts Exp $
+// $Id: dis_decode.cc 10786 2011-11-23 19:43:50Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//   Copyright (c) 2005-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -199,7 +199,36 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
   entry = opcode_table + insn.b1;
 
-  if (instruction_has_modrm[insn.b1])
+  if ((insn.b1 & ~1) == 0xc4 && (is_64 || (peek_byte() & 0xc0) == 0xc0))
+  {
+    if (sse_prefix)
+      dis_sprintf("(bad vex+rex prefix) ");
+    if (rex_prefix)
+      dis_sprintf("(bad vex+sse prefix) ");
+
+    // decode 0xC4 or 0xC5 VEX prefix
+    sse_prefix = decode_vex(&insn);
+    if (insn.b1 < 256 || insn.b1 >= 1024)
+      entry = &BxDisasmGroupSSE_ERR[0];
+    else
+      entry = BxDisasmOpcodesAVX + (insn.b1 - 256);
+  }
+  else if (insn.b1 == 0x8f && (is_64 || (peek_byte() & 0xc0) == 0xc0) && (peek_byte() & 0x8) == 0x8)
+  {
+    if (sse_prefix)
+      dis_sprintf("(bad xop+rex prefix) ");
+    if (rex_prefix)
+      dis_sprintf("(bad xop+sse prefix) ");
+    
+    // decode 0x8F XOP prefix
+    sse_prefix = decode_xop(&insn);
+    if (insn.b1 >= 768 || sse_prefix != 0)
+      entry = &BxDisasmGroupSSE_ERR[0];
+    else
+      entry = BxDisasmOpcodesXOP + insn.b1;
+  }
+
+  if (insn.b1 >= 512 || instruction_has_modrm[insn.b1] || insn.is_xop > 0)
   {
     // take 3rd byte for 3-byte opcode
     if (entry->Attr == _GRP3BOP) {
@@ -274,6 +303,10 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
          entry = &(OPCODE_TABLE(entry)[insn.os_64 ? 2 : insn.os_32]);
          break;
 
+       case _GRPVEXW:
+         entry = &(OPCODE_TABLE(entry)[insn.vex_w]);
+         break;
+
        default:
          printf("Internal disassembler error - unknown attribute !\n");
          return x86_insn(is_32, is_64);
@@ -293,42 +326,43 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
   {
     Bit8u prefix_byte = *(instr+i);
 
-    if (prefix_byte == 0xF0) {
-      const BxDisasmOpcodeTable_t *prefix = &(opcode_table[prefix_byte]);
-      dis_sprintf("%s ", OPCODE(prefix)->IntelOpcode);
-    }
+    if (prefix_byte == 0xF0) dis_sprintf("lock ");
 
-    if (insn.b1 == 0x90 && !insn.rex_b && prefix_byte == 0xF3)
-      continue;
+    if (! insn.is_xop && ! insn.is_vex) {
+      if (insn.b1 == 0x90 && !insn.rex_b && prefix_byte == 0xF3)
+        continue;
 
-    if (prefix_byte == 0xF3 || prefix_byte == 0xF2) {
-      if (! sse_opcode) {
-        const BxDisasmOpcodeTable_t *prefix = &(opcode_table[prefix_byte]);
-        dis_sprintf("%s ", OPCODE(prefix)->IntelOpcode);
+      if (prefix_byte == 0xF3 || prefix_byte == 0xF2) {
+        if (! sse_opcode) {
+          const BxDisasmOpcodeTable_t *prefix = &(opcode_table[prefix_byte]);
+          dis_sprintf("%s ", OPCODE(prefix)->IntelOpcode);
+        }
       }
-    }
 
-    // branch hint for jcc instructions
-    if ((insn.b1 >= 0x070 && insn.b1 <= 0x07F) ||
-        (insn.b1 >= 0x180 && insn.b1 <= 0x18F))
-    {
-      if (prefix_byte == BRANCH_NOT_TAKEN || prefix_byte == BRANCH_TAKEN)
-        branch_hint = prefix_byte;
+      // branch hint for jcc instructions
+      if ((insn.b1 >= 0x070 && insn.b1 <= 0x07F) ||
+          (insn.b1 >= 0x180 && insn.b1 <= 0x18F))
+      {
+        if (prefix_byte == BRANCH_NOT_TAKEN || prefix_byte == BRANCH_TAKEN)
+          branch_hint = prefix_byte;
+      }
     }
   }
 
   const BxDisasmOpcodeInfo_t *opcode = OPCODE(entry);
 
-  // patch jecx opcode
-  if (insn.b1 == 0xE3 && insn.as_32 && !insn.as_64)
-    opcode = &Ia_jecxz_Jb;
+  if (! insn.is_xop && ! insn.is_vex) {
+    // patch jecx opcode
+    if (insn.b1 == 0xE3 && insn.as_32 && !insn.as_64)
+      opcode = &Ia_jecxz_Jb;
 
-  // fix nop opcode
-  if (insn.b1 == 0x90) {
-    if (sse_prefix == SSE_PREFIX_F3)
-      opcode = &Ia_pause;
-    else if (!insn.rex_b)
-      opcode = &Ia_nop;
+    // fix nop opcode
+    if (insn.b1 == 0x90) {
+      if (sse_prefix == SSE_PREFIX_F3)
+        opcode = &Ia_pause;
+      else if (!insn.rex_b)
+        opcode = &Ia_nop;
+    }
   }
 
   // print instruction disassembly
@@ -346,9 +380,73 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
     dis_sprintf(", taken");
   }
 
+  if (insn.is_vex < 0)
+    dis_sprintf(" (bad vex)");
+
   insn.ilen = (unsigned)(instruction - instruction_begin);
 
   return insn;
+}
+
+unsigned disassembler::decode_vex(x86_insn *insn)
+{
+  insn->is_vex = 1;
+
+  unsigned b2 = fetch_byte(), vex_opcode_extension = 1;
+
+  insn->rex_r = (b2 & 0x80) ? 0 : 0x8;
+
+  if (insn->b1 == 0xc4) {
+    // decode 3-byte VEX prefix
+    insn->rex_x = (b2 & 0x40) ? 0 : 0x8;
+    if (insn->is_64)
+      insn->rex_b = (b2 & 0x20) ? 0 : 0x8;
+
+    vex_opcode_extension = b2 & 0x1f;
+    if (! vex_opcode_extension || vex_opcode_extension > 3)
+      insn->is_vex = -1;
+
+    b2 = fetch_byte(); // fetch VEX3 byte
+    if (b2 & 0x80) {
+      insn->os_64 = 1;
+      insn->os_32 = 1;
+      insn->vex_w = 1;
+    }
+  }
+
+  insn->vex_vvv = 15 - ((b2 >> 3) & 0xf);
+  insn->vex_l = (b2 >> 2) & 0x1;
+  insn->b1 = fetch_byte() + 256 * vex_opcode_extension;
+  return b2 & 0x3;
+}
+
+unsigned disassembler::decode_xop(x86_insn *insn)
+{
+  insn->is_xop = 1;
+
+  unsigned b2 = fetch_byte(), xop_opcode_extension = 1;
+
+  insn->rex_r = (b2 & 0x80) ? 0 : 0x8;
+  insn->rex_x = (b2 & 0x40) ? 0 : 0x8;
+  if (insn->is_64)
+    insn->rex_b = (b2 & 0x20) ? 0 : 0x8;
+
+  xop_opcode_extension = (b2 & 0x1f) - 8;
+  if (xop_opcode_extension >= 3)
+    insn->is_xop = -1;
+
+  b2 = fetch_byte(); // fetch VEX3 byte
+  if (b2 & 0x80) {
+    insn->os_64 = 1;
+    insn->os_32 = 1;
+    insn->vex_w = 1;
+  }
+
+  insn->vex_vvv = 15 - ((b2 >> 3) & 0xf);
+  insn->vex_l = (b2 >> 2) & 0x1;
+  insn->b1 = fetch_byte() + 256 * xop_opcode_extension;
+
+  return b2 & 0x3;
 }
 
 void disassembler::dis_sprintf(const char *fmt, ...)

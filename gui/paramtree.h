@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paramtree.h,v 1.1 2010/09/16 21:46:45 sshwarts Exp $
+// $Id: paramtree.h 10489 2011-07-22 17:46:06Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010  The Bochs Project
@@ -51,6 +51,19 @@
 // whatever means and override it.
 //
 // The parameter concept is similar to the use of parameters in JavaBeans.
+
+// list of possible types for bx_param_c and descendant objects
+typedef enum {
+  BXT_OBJECT = 201,
+  BXT_PARAM,
+  BXT_PARAM_NUM,
+  BXT_PARAM_BOOL,
+  BXT_PARAM_ENUM,
+  BXT_PARAM_STRING,
+  BXT_PARAM_DATA,
+  BXT_PARAM_FILEDATA,
+  BXT_LIST
+} bx_objtype;
 
 class bx_object_c;
 class bx_param_c;
@@ -356,6 +369,7 @@ public:
   void set_dependent_list(bx_list_c *l);
   Bit32s get(char *buf, int len);
   char *getptr() {return val; }
+  const char *getptr() const {return val; }
   void set(const char *buf);
   bx_bool equals(const char *buf);
   void set_separator(char sep) {separator = sep; }
@@ -380,8 +394,8 @@ public:
       const char *description,
       const char *initial_val,
       int maxsize=-1);
-  const char *get_extension() {return ext;}
-  void set_extension(const char *ext) {this->ext = ext;}
+  const char *get_extension() const {return ext;}
+  void set_extension(const char *newext) {ext = newext;}
 };
 
 class BOCHSAPI bx_shadow_data_c : public bx_param_c {
@@ -394,6 +408,25 @@ public:
       Bit32u data_size);
   Bit8u *getptr() {return data_ptr;}
   Bit32u get_size() const {return data_size;}
+};
+
+typedef void (*filedata_save_handler)(void *devptr, FILE *save_fp);
+typedef void (*filedata_restore_handler)(void *devptr, FILE *save_fp);
+
+class BOCHSAPI bx_shadow_filedata_c : public bx_param_c {
+protected:
+  FILE **scratch_fpp;       // Point to scratch file used for backing store
+  void *sr_devptr;
+  filedata_save_handler    save_handler;
+  filedata_restore_handler restore_handler;
+
+public:
+  bx_shadow_filedata_c(bx_param_c *parent,
+      const char *name, FILE **scratch_file_ptr_ptr);
+  void set_sr_handlers(void *devptr, filedata_save_handler save, filedata_restore_handler restore);
+  FILE **get_fpp() {return scratch_fpp;}
+  void save(FILE *save_file);
+  void restore(FILE *save_file);
 };
 
 #define BX_DEFAULT_LIST_SIZE 6
@@ -410,7 +443,7 @@ protected:
   // to 1 in the constructor.
   bx_param_num_c *choice;
   // title of the menu or series
-  bx_param_string_c *title;
+  char *title;
   void init(const char *list_title);
 public:
   enum {
@@ -446,7 +479,7 @@ public:
   bx_param_c *get_by_name(const char *name);
   int get_size() const { return size; }
   bx_param_num_c *get_choice() { return choice; }
-  bx_param_string_c *get_title() { return title; }
+  char *get_title() { return title; }
   void set_parent(bx_param_c *newparent);
   bx_param_c *get_parent() { return parent; }
   virtual void reset();

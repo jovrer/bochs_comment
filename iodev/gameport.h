@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gameport.h,v 1.9 2009/12/04 19:50:27 sshwarts Exp $
+// $Id: gameport.h 10289 2011-03-31 16:54:06Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003-2009  The Bochs Project
@@ -31,16 +31,17 @@
 #endif
 
 
-class bx_gameport_c : public bx_devmodel_c {
+class bx_gameport_c : public bx_game_stub_c {
 public:
   bx_gameport_c();
   virtual ~bx_gameport_c();
   virtual void init(void);
   virtual void reset(unsigned type);
   virtual void register_state(void);
+  virtual void set_enabled(bx_bool val) {enabled = val;}
 
 private:
-
+  bx_bool enabled;
   int     joyfd;
   Bit8u   port;
   Bit16u  delay_x;

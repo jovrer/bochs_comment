@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.257 2011/01/26 09:52:02 sshwarts Exp $
+// $Id: rombios.c 10789 2011-11-24 16:03:51Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -892,9 +892,9 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.257 $ $Date: 2011/01/26 09:52:02 $";
+static char bios_cvs_version_string[] = "$Revision: 10789 $ $Date: 2011-11-24 17:03:51 +0100 (Do, 24. Nov 2011) $";
 
-#define BIOS_COPYRIGHT_STRING "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
+#define BIOS_COPYRIGHT_STRING "(c) 2002-2010 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
 #if DEBUG_ATA
 #  define BX_DEBUG_ATA(a...) BX_DEBUG(a)
@@ -4257,7 +4257,7 @@ BX_DEBUG_INT15("case 1 or 5:\n");
               return;
             }
             mouse_flags_2 = read_byte(ebda_seg, &EbdaData->mouse_flag2);
-            mouse_flags_2 = (mouse_flags_2 & 0x00) | regs.u.r8.bh;
+            mouse_flags_2 = (mouse_flags_2 & 0xF8) | regs.u.r8.bh - 1;
             mouse_flags_1 = 0x00;
             write_byte(ebda_seg, &EbdaData->mouse_flag1, mouse_flags_1);
             write_byte(ebda_seg, &EbdaData->mouse_flag2, mouse_flags_2);
@@ -5110,16 +5110,37 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       }
       break;
 
-    case 0x46: /* Scroll Lock press */
-      mf2_flags |= 0x10;
-      write_byte(0x0040, 0x18, mf2_flags);
-      shift_flags ^= 0x10;
-      write_byte(0x0040, 0x17, shift_flags);
+    case 0x46: /* Scroll Lock or Ctrl-Break press */
+      if ((mf2_state & 0x02) || (!(mf2_state & 0x10) && (shift_flags & 0x04))) {
+        /* Ctrl-Break press */
+        mf2_state &= ~0x02;
+        write_byte(0x0040, 0x96, mf2_state);
+        write_byte(0x0040, 0x71, 0x80);
+        write_word(0x0040, 0x001C, read_word(0x0040, 0x001A));
+
+        ASM_START
+        int #0x1B
+        ASM_END
+
+        enqueue_key(0, 0);
+      } else {
+        /* Scroll Lock press */
+        mf2_flags |= 0x10;
+        write_byte(0x0040, 0x18, mf2_flags);
+        shift_flags ^= 0x10;
+        write_byte(0x0040, 0x17, shift_flags);
+      }
       break;
 
-    case 0xc6: /* Scroll Lock release */
-      mf2_flags &= ~0x10;
-      write_byte(0x0040, 0x18, mf2_flags);
+    case 0xc6: /* Scroll Lock or Ctrl-Break release */
+      if ((mf2_state & 0x02) || (!(mf2_state & 0x10) && (shift_flags & 0x04))) {
+        /* Ctrl-Break release */
+        /* nothing to do */
+      } else {
+        /* Scroll Lock release */
+        mf2_flags &= ~0x10;
+        write_byte(0x0040, 0x18, mf2_flags);
+      }
       break;
 
     default:
@@ -5129,6 +5150,14 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       if (scancode > MAX_SCAN_CODE) {
         BX_INFO("KBD: int09h_handler(): unknown scancode read: 0x%02x!\n", scancode);
         return;
+      }
+      if (scancode == 0x53) { /* DEL */
+        if ((shift_flags & 0x0f) == 0x0c) { /* CTRL+ALT */
+          write_word(0x0040, 0x0072, 0x1234);
+ASM_START
+          jmp 0xf000:post;
+ASM_END
+        }
       }
       if (shift_flags & 0x08) { /* ALT */
         asciicode = scan_to_scanascii[scancode].alt;
@@ -5231,7 +5260,7 @@ BX_DEBUG_INT74("int74: read byte %02x\n", in_byte);
   index = mouse_flags_1 & 0x07;
   write_byte(ebda_seg, &EbdaData->mouse_data[index], in_byte);
 
-  if ( (index+1) >= package_count ) {
+  if (index >= package_count) {
 BX_DEBUG_INT74("int74_function: make_farcall=1\n");
     status = read_byte(ebda_seg, &EbdaData->mouse_data[0]);
     X      = read_byte(ebda_seg, &EbdaData->mouse_data[1]);
@@ -7149,8 +7178,8 @@ int13_diskette_function(DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
   Bit16u base_address, base_count, base_es;
   Bit8u  page, mode_register, val8, dor;
   Bit8u  return_status[7];
-  Bit8u  drive_type, num_floppies, ah;
-  Bit16u es, last_addr;
+  Bit8u  drive_type, num_floppies, ah, spt;
+  Bit16u es, last_addr, maxCyl;
 
   BX_DEBUG_INT13_FL("int13_diskette: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
 
@@ -7813,17 +7842,264 @@ BX_DEBUG_INT13_FL("floppy f16\n");
 
     case 0x17: // set diskette type for format(old)
 BX_DEBUG_INT13_FL("floppy f17\n");
-      /* not used for 1.44M floppies */
-      SET_AH(0x01); // not supported
-      set_diskette_ret_status(1); /* not supported */
-      SET_CF();
+      // NOTE: 1.44M diskette not supported by this function,
+      // should use Int13 al=0x18 instead.
+      // Intr Reference: http://www.ctyme.com/intr
+      //
+      // ** media state byte **
+      // Bitfields for diskette drive media state byte that we might
+      // change in this function:
+      // Bit(s) Description (Table M0030)
+      // 7-6 data rate
+      // 00=500kbps, 01=300kbps, 10=250kbps, 11=1Mbps
+      // 5 double stepping required (e.g. 360kB in 1.2MB)
+      // 4 media type established
+
+      // Drive number (0 or 1) values allowed
+      drive = GET_ELDL();
+
+      // Drive type (AL)
+      // 00 - NOT USED
+      // 01 - DISKETTE 320/360K IN 360K DRIVE
+      // 02 - DISKETTE 360K IN 1.2M DRIVE
+      // 03 - DISKETTE 1.2M IN 1.2M DRIVE
+      // 04 - DISKETTE 720K IN 720K DRIVE
+      drive_type = GET_AL();
+
+      if (drive > 1) {
+        SET_AH(0x01); // invalid drive
+        set_diskette_ret_status(1); // bad parameter
+        SET_CF();
+        return;
+      }
+
+      // see if drive exists
+      if (floppy_drive_exists(drive) == 0) {
+        SET_AH(0x80); // not responding/time out
+        set_diskette_ret_status(0x80);
+        SET_CF();
+        return;
+      }
+
+      // Get current drive status into 'status'. Set 'base_address' to media status offset address
+      base_address = (drive) ? 0x0091 : 0x0090;
+      status = read_byte(0x0040, base_address);
+
+      // Mask out (clear) bits 4-7 (4:media type established, 5:double stepping, 6-7:data rate),
+      val8 = status & 0x0f;
+
+      switch(drive_type) {
+        case 1:
+          // 320/360K media in 360K drive
+          val8 |= 0x90; // 1001 0000 (media type established, data rate=250)
+          break;
+        case 2:
+          // 360K media in 1.2M drive
+          val8 |= 0x70; // 0111 0000 (media type established, double stepping, data rate=300)
+          break;
+        case 3:
+          // 1.2M media in 1.2M drive
+          val8 |= 0x10; // 0001 0000 (media type established, data rate=500)
+          break;
+        case 4:
+          // 720K media in 720K drive
+          if (((status >> 4) & 0x01) && ((status >> 1) & 0x01))
+          {
+            // Media type already determined, and multiple format capable, so assume a higher data rate.
+            val8 |= 0x50; // 0101 0000 (media type established, data rate=300)
+          }
+          else
+          {
+            // Media type not yet determined, or not multiple format capable, assume a lower data rate.
+            val8 |= 0x90; // 1001 0000 (media type established, data rate=250)
+          }
+          break;
+        default:
+          // bad parameter
+          SET_AH(0x01); // invalid drive
+          set_diskette_ret_status(1); // bad parameter
+          SET_CF();
+          return;
+      }
+
+BX_DEBUG_INT13_FL("floppy f17 - media status set to: %02x\n", val8);
+
+      // Update media status
+      write_byte(0x0040, base_address, val8);
+
+      // return success!
+      SET_AH(0);
+      set_diskette_ret_status(0);
+      CLEAR_CF();
       return;
 
     case 0x18: // set diskette type for format(new)
 BX_DEBUG_INT13_FL("floppy f18\n");
-      SET_AH(0x01); // do later
-      set_diskette_ret_status(1);
-      SET_CF();
+      // Set Media Type for Format verifies that the device supports a specific geometry.
+      // Unlike Int13 al=0x17 entry point, this version supports higher capacity
+      // drives like 1.44M and even 2.88M.
+
+      // Drive number (0 or 1) values allowed
+      drive = GET_ELDL();
+
+      val8 = GET_CL();
+      spt = val8 & 0x3f; // sectors per track
+      maxCyl = ((val8 >> 6) << 8) + GET_CH(); // max cylinder number (max cylinders - 1)
+
+BX_DEBUG_INT13_FL("floppy f18 - drive: %d, max cylinder number: %d, sectors-per-tracks: %d\n", drive, maxCyl, spt);
+
+      if (drive > 1) {
+        SET_AH(0x01); // invalid drive
+        set_diskette_ret_status(1); // bad parameter
+        SET_CF();
+        return;
+      }
+
+      // see if drive exists
+      if (floppy_drive_exists(drive) == 0) {
+        SET_AH(0x80); // not responding/time out
+        set_diskette_ret_status(0x80);
+        SET_CF();
+        return;
+      }
+
+      // see if media in drive, and type is known
+      if (floppy_media_known(drive) == 0) {
+        if (floppy_media_sense(drive) == 0) {
+          SET_AH(0x0C); // drive type unknown
+          set_diskette_ret_status(0x0C);
+          SET_CF();
+          return;
+        }
+      }
+
+      // get current drive type
+      drive_type = inb_cmos(0x10);
+      if (drive == 0)
+        drive_type >>= 4;
+      else
+        drive_type &= 0x0f;
+
+      // Get current drive status into 'status'. Set 'base_address' to media status offset address
+      base_address = (drive) ? 0x0091 : 0x0090;
+      status = read_byte(0x0040, base_address);
+
+      // Mask out (clear) bits 4-7 (4:media type established, 5:double stepping, 6-7:data rate),
+      val8 = status & 0x0f;
+
+      SET_AH(0x0C); // Assume error - unsupported combination of drive-type/max-cylinders/sectors-per-track
+      switch (drive_type) {
+        case 0: // none
+          break;
+
+        case 1: // 360KB, 5.25"
+        case 6: // 160k, 5.25"
+        case 7: // 180k, 5.25"
+        case 8: // 320k, 5.25"
+          if (maxCyl == 39 && (spt == 8 || spt == 9))
+          {
+            val8 |= 0x90; // 1001 0000 (media type established, data rate=250)
+            SET_AH(0);
+          }
+          break;
+
+        case 2: // 1.2MB, 5.25"
+          if (maxCyl == 39 && (spt == 8 || spt == 9))
+          {
+            // 320K/360K disk in 1.2M drive
+            val8 |= 0x70; // 0111 0000 (media type established, double stepping, data rate=300)
+            SET_AH(0);
+          }
+          else if (maxCyl == 79 && spt == 15)
+          {
+            // 1.2M disk in 1.2M drive
+            val8 |= 0x10; // 0001 0000 (media type established, data rate=500)
+            SET_AH(0);
+          }
+          break;
+
+        case 3: // 720KB, 3.5"
+          if (maxCyl == 79 && spt == 9)
+          {
+            val8 |= 0x90; // 1001 0000 (media type established, data rate=250)
+            SET_AH(0);
+          }
+          break;
+
+        case 4: // 1.44MB, 3.5"
+          if (maxCyl == 79)
+          {
+            if (spt == 9)
+            {
+              // 720K disk in 1.44M drive
+              val8 |= 0x90; // 1001 0000 (media type established, data rate=250)
+              SET_AH(0);
+            }
+            else if (spt == 18)
+            {
+              // 1.44M disk in 1.44M drive
+              val8 |= 0x10; // 0001 0000 (media type established, data rate=500)
+              SET_AH(0);
+            }
+          }
+          break;
+
+        case 5: // 2.88MB, 3.5"
+          if (maxCyl == 79)
+          {
+            if (spt == 9)
+            {
+              // 720K disk in 2.88M drive
+              val8 |= 0x90; // 1001 0000 (media type established, data rate=250)
+              SET_AH(0);
+            }
+            else if (spt == 18)
+            {
+              // 1.44M disk in 2.88M drive
+              val8 |= 0x10; // 0001 0000 (media type established, data rate=500)
+              SET_AH(0);
+            }
+            else if (spt == 36)
+            {
+              // 2.88M disk in 2.88M drive
+              val8 |= 0xD0; // 1101 0000 (media type established, data rate=1mb/s)
+              SET_AH(0);
+            }
+          }
+          break;
+
+        default:
+          break;
+      }
+
+      if (0 != GET_AH())
+      {
+        // Error - assume requested max-cylinder/sectors-per-track not supported
+        // for current drive type - or drive type is unknown!
+        set_diskette_ret_status(GET_AH());
+        SET_CF();
+        return;
+      }
+
+BX_DEBUG_INT13_FL("floppy f18 - media status set to: %02x\n", val8);
+
+      // Update media status
+      write_byte(0x0040, base_address, val8);
+
+      // set es & di to point to 11 byte diskette param table in ROM
+      // Note that we do not update the table, as I don't see it being used anywhere...
+ASM_START
+      push bp
+      mov bp, sp
+      mov ax, #diskette_param_table2
+      mov _int13_diskette_function.DI+2[bp], ax
+      mov _int13_diskette_function.ES+2[bp], cs
+      pop bp
+ASM_END
+
+      // return success!
+      set_diskette_ret_status(0);
+      CLEAR_CF();
       return;
 
     default:
@@ -9310,7 +9586,7 @@ bios32_entry_point:
   je unknown_service
 #endif
   mov ebx, #0x000f0000
-  mov ecx, #0
+  mov ecx, #0x10000
   mov edx, #pcibios_protected
   xor al, al
   jmp bios32_end
@@ -10458,9 +10734,9 @@ post_default_ints:
   ;; System Services
   SET_INT_VECTOR(0x15, #0xF000, #int15_handler)
 
-  ;; set vectors 0x60 - 0x66h to zero (0:180..0:19b)
+  ;; set vectors 0x60 - 0x67h to zero (0:180..0:19f)
   xor  ax, ax
-  mov  cx, #0x000E ;; 14 words
+  mov  cx, #0x0010 ;; 16 words
   mov  di, #0x0180
   cld
   rep
@@ -10700,12 +10976,6 @@ normal_post:
   ;; PIC
   call post_init_pic
 
-  mov  cx, #0xc000  ;; init vga bios
-  mov  ax, #0xc780
-  call rom_scan
-
-  call _print_bios_banner
-
 #if BX_ROMBIOS32
   call rombios32_init
 #else
@@ -10714,6 +10984,12 @@ normal_post:
   call pcibios_init_irqs
 #endif //BX_PCIBIOS
 #endif
+
+  mov  cx, #0xc000  ;; init vga bios
+  mov  ax, #0xc780
+  call rom_scan
+
+  call _print_bios_banner
 
   ;;
   ;; Floppy setup

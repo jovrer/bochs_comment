@@ -1,6 +1,6 @@
 %{
 /////////////////////////////////////////////////////////////////////////
-// $Id: lexer.l,v 1.36 2010/01/05 13:59:08 sshwarts Exp $
+// $Id: lexer.l 10731 2011-10-09 19:26:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdlib.h>
@@ -78,8 +78,8 @@ r               { bxlval.sval = strdup(bxtext); return(BX_TOKEN_R); }
 reg|regs        |
 registers       { bxlval.sval = strdup(bxtext); return(BX_TOKEN_REGS); }
 fp|fpu          { bxlval.sval = strdup(bxtext); return(BX_TOKEN_FPU); }
-sse             |
-xmm             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_SSE); }
+sse|xmm         { bxlval.sval = strdup(bxtext); return(BX_TOKEN_SSE); }
+ymm             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_AVX); }
 mmx             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_MMX); }
 cpu             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CPU); }
 idt		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_IDT); }
@@ -121,9 +121,8 @@ size		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_SIZE); }
 ptime           { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PTIME); }
 sb              { bxlval.sval = strdup(bxtext); return(BX_TOKEN_TIMEBP); }
 sba             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_TIMEBP_ABSOLUTE); }
-record          { bxlval.sval = strdup(bxtext); return(BX_TOKEN_RECORD); }
-playback        { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PLAYBACK); }
 modebp          { bxlval.sval = strdup(bxtext); return(BX_TOKEN_MODEBP); }
+vmexitbp        { bxlval.sval = strdup(bxtext); return(BX_TOKEN_VMEXITBP); }
 print-stack     { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PRINT_STACK); }
 watch           { bxlval.sval = strdup(bxtext); return(BX_TOKEN_WATCH); }
 unwatch         { bxlval.sval = strdup(bxtext); return(BX_TOKEN_UNWATCH); }

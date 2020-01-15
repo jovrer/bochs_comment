@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pic.cc,v 1.57 2010/05/18 17:48:48 vruppert Exp $
+// $Id: pic.cc 10747 2011-10-23 21:53:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -319,12 +319,6 @@ void bx_pic_c::write(Bit32u address, Bit32u value, unsigned io_len)
         case 0x80: // Rotate in auto eoi mode set
           BX_PIC_THIS s.master_pic.rotate_on_autoeoi = (value != 0);
           break;
-        case 0x0A: /* select read interrupt request register */
-         BX_PIC_THIS s.master_pic.read_reg_select = 0;
-         break;
-        case 0x0B: /* select read interrupt in-service register */
-         BX_PIC_THIS s.master_pic.read_reg_select = 1;
-         break;
 
         case 0xA0: // Rotate on non-specific end of interrupt
         case 0x20: /* end of interrupt command */
@@ -497,13 +491,6 @@ void bx_pic_c::write(Bit32u address, Bit32u value, unsigned io_len)
         case 0x80: // Rotate in auto eoi mode set
           BX_PIC_THIS s.slave_pic.rotate_on_autoeoi = (value != 0);
           break;
-
-       case 0x0A: /* select read interrupt request register */
-         BX_PIC_THIS s.slave_pic.read_reg_select = 0;
-         break;
-       case 0x0B: /* select read interrupt in-service register */
-         BX_PIC_THIS s.slave_pic.read_reg_select = 1;
-         break;
 
         case 0xA0: // Rotate on non-specific end of interrupt
         case 0x20: /* end of interrupt command */
@@ -712,6 +699,7 @@ void bx_pic_c::service_master_pic(void)
     return;
   }
 
+  isr = BX_PIC_THIS s.master_pic.isr;
   if (BX_PIC_THIS s.master_pic.special_mask) {
     /* all priorities may be enabled.  check all IRR bits except ones
      * which have corresponding ISR bits set
@@ -720,9 +708,8 @@ void bx_pic_c::service_master_pic(void)
   }
   else { /* normal mode */
     /* Find the highest priority IRQ that is enabled due to current ISR */
-    isr = BX_PIC_THIS s.master_pic.isr;
+    max_irq = highest_priority;
     if (isr) {
-      max_irq = highest_priority;
       while ((isr & (1 << max_irq)) == 0) {
         max_irq++;
         if(max_irq > 7)
@@ -732,8 +719,6 @@ void bx_pic_c::service_master_pic(void)
                                                 * no other priorities allowed */
       if (max_irq > 7) BX_PANIC(("error in service_master_pic()"));
     }
-    else
-      max_irq = highest_priority; /* 0..7 bits in ISR are cleared */
   }
 
   /* now, see if there are any higher priority requests */
@@ -743,7 +728,7 @@ void bx_pic_c::service_master_pic(void)
       /* for special mode, since we're looking at all IRQ's, skip if
        * current IRQ is already in-service
        */
-      if (! (BX_PIC_THIS s.master_pic.special_mask && ((BX_PIC_THIS s.master_pic.isr >> irq) & 0x01))) {
+      if (! (BX_PIC_THIS s.master_pic.special_mask && ((isr >> irq) & 0x01))) {
         if (unmasked_requests & (1 << irq)) {
           BX_DEBUG(("signalling IRQ(%u)", (unsigned) irq));
           BX_PIC_THIS s.master_pic.INT = 1;
@@ -773,6 +758,7 @@ void bx_pic_c::service_slave_pic(void)
     return;
   }
 
+  isr = BX_PIC_THIS s.slave_pic.isr;
   if (BX_PIC_THIS s.slave_pic.special_mask) {
     /* all priorities may be enabled.  check all IRR bits except ones
      * which have corresponding ISR bits set
@@ -781,9 +767,8 @@ void bx_pic_c::service_slave_pic(void)
   }
   else { /* normal mode */
     /* Find the highest priority IRQ that is enabled due to current ISR */
-    isr = BX_PIC_THIS s.slave_pic.isr;
+    max_irq = highest_priority;
     if (isr) {
-      max_irq = highest_priority;
       while ((isr & (1 << max_irq)) == 0) {
         max_irq++;
         if(max_irq > 7)
@@ -791,10 +776,8 @@ void bx_pic_c::service_slave_pic(void)
       }
       if (max_irq == highest_priority) return; /* Highest priority interrupt in-service,
                                                 * no other priorities allowed */
-      if (max_irq > 7) BX_PANIC(("error in service_master_pic()"));
+      if (max_irq > 7) BX_PANIC(("error in service_slave_pic()"));
     }
-    else
-      max_irq = highest_priority; /* 0..7 bits in ISR are cleared */
   }
 
   /* now, see if there are any higher priority requests */
@@ -804,7 +787,7 @@ void bx_pic_c::service_slave_pic(void)
       /* for special mode, since we're looking at all IRQ's, skip if
        * current IRQ is already in-service
        */
-      if (! (BX_PIC_THIS s.slave_pic.special_mask && ((BX_PIC_THIS s.slave_pic.isr >> irq) & 0x01))) {
+      if (! (BX_PIC_THIS s.slave_pic.special_mask && ((isr >> irq) & 0x01))) {
         if (unmasked_requests & (1 << irq)) {
           BX_DEBUG(("slave: signalling IRQ(%u)", (unsigned) 8 + irq));
 

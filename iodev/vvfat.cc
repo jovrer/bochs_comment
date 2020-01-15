@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vvfat.cc,v 1.23 2011/01/24 20:35:51 vruppert Exp $
+// $Id: vvfat.cc 10793 2011-11-26 15:09:00Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010/2011  The Bochs Project
@@ -367,8 +367,8 @@ bx_bool vvfat_image_t::sector2CHS(Bit32u spos, mbr_chs_t *chs)
 {
   Bit32u head, sector;
 
-  sector = spos % sectors;
-  spos   /= sectors;
+  sector = spos % spt;
+  spos   /= spt;
   head   = spos % heads;
   spos   /= heads;
   if (spos > 1023) {
@@ -680,7 +680,8 @@ int vvfat_image_t::read_directory(int mapping_index)
   while ((entry=readdir(dir))) {
     if ((first_cluster == 0) && (directory.next >= (Bit16u)(root_entries - 1))) {
       BX_ERROR(("Too many entries in root directory, using only %d", count));
-      break;
+      closedir(dir);
+      return -2;
     }
     unsigned int length = strlen(dirname) + 2 + strlen(entry->d_name);
     char* buffer;
@@ -731,10 +732,10 @@ int vvfat_image_t::read_directory(int mapping_index)
     else
       direntry->begin = 0; // do that later
     if (st.st_size > 0x7fffffff) {
-      BX_ERROR(("File %s is larger than 2GB", buffer));
+      BX_ERROR(("File '%s' is larger than 2GB", buffer));
       free(buffer);
       closedir(dir);
-      return -2;
+      return -3;
     }
     direntry->size = htod32(S_ISDIR(st.st_mode) ? 0:st.st_size);
 
@@ -790,7 +791,8 @@ int vvfat_image_t::read_directory(int mapping_index)
   do {
     if ((first_cluster == 0) && (directory.next >= (Bit16u)(root_entries - 1))) {
       BX_ERROR(("Too many entries in root directory, using only %d", count));
-      break;
+      FindClose(hFind);
+      return -2;
     }
     unsigned int length = lstrlen(dirname) + 2 + lstrlen(finddata.cFileName);
     char* buffer;
@@ -832,10 +834,10 @@ int vvfat_image_t::read_directory(int mapping_index)
     else
       direntry->begin = 0; // do that later
     if (finddata.nFileSizeLow > 0x7fffffff) {
-      BX_ERROR(("File %s is larger than 2GB", buffer));
+      BX_ERROR(("File '%s' is larger than 2GB", buffer));
       free(buffer);
       FindClose(hFind);
-      return -2;
+      return -3;
     }
     direntry->size = htod32((finddata.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? 0:finddata.nFileSizeLow);
 
@@ -980,7 +982,7 @@ int vvfat_image_t::init_directories(const char* dirname)
     if (mapping->mode & MODE_DIRECTORY) {
       mapping->begin = cluster;
       if (read_directory(i)) {
-        BX_ERROR(("Could not read directory %s", mapping->path));
+        BX_PANIC(("Could not read directory '%s'", mapping->path));
         return -1;
       }
       mapping = (mapping_t*)array_get(&this->mapping, i);
@@ -1005,10 +1007,10 @@ int vvfat_image_t::init_directories(const char* dirname)
     cluster = mapping->end;
 
     if (cluster >= (cluster_count + 2)) {
-      sprintf(size_txt, "%dMB", (sector_count >> 11));
-      BX_ERROR(("Directory does not fit in FAT%d (capacity %s)",
+      sprintf(size_txt, "%d", (sector_count >> 11));
+      BX_PANIC(("Directory does not fit in FAT%d (capacity %s MB)",
                 fat_type,
-                (fat_type == 12) ? (sector_count == 2880) ? "1.44 MB":"2.88 MB"
+                (fat_type == 12) ? (sector_count == 2880) ? "1.44":"2.88"
                 : size_txt));
       return -EINVAL;
     }
@@ -1052,7 +1054,7 @@ int vvfat_image_t::init_directories(const char* dirname)
     if (fat_type != 32) {
       bootsector->sectors_per_fat = htod16(sectors_per_fat);
     }
-    bootsector->sectors_per_track = htod16(sectors);
+    bootsector->sectors_per_track = htod16(spt);
     bootsector->number_of_heads = htod16(heads);
     bootsector->hidden_sectors = htod32(offset_to_bootsector);
     bootsector->total_sectors = htod32((volume_sector_count > 0xffff) ? volume_sector_count:0);
@@ -1202,14 +1204,14 @@ int vvfat_image_t::open(const char* dirname)
       }
       if (fat_type != 0) {
         sector_count = partition->start_sector_long + partition->length_sector_long;
-        sectors = partition->start_sector_long;
+        spt = partition->start_sector_long;
         if (partition->end_CHS.head > 15) {
           heads = 16;
         } else {
           heads = partition->end_CHS.head + 1;
         }
-        cylinders = sector_count / (heads * sectors);
-        offset_to_bootsector = sectors;
+        cylinders = sector_count / (heads * spt);
+        offset_to_bootsector = spt;
         memcpy(&first_sectors[0], sector_buffer, 0x200);
         use_mbr_file = 1;
         BX_INFO(("VVFAT: using MBR from file"));
@@ -1246,13 +1248,13 @@ int vvfat_image_t::open(const char* dirname)
       }
       if ((fat_type != 0) && (bs->number_of_fats == 2)) {
         sector_count = bs->total_sectors16 + bs->total_sectors + bs->hidden_sectors;
-        sectors = bs->sectors_per_track;
+        spt = bs->sectors_per_track;
         if (bs->number_of_heads > 15) {
           heads = 16;
         } else {
           heads = bs->number_of_heads;
         }
-        cylinders = sector_count / (heads * sectors);
+        cylinders = sector_count / (heads * spt);
         offset_to_bootsector = bs->hidden_sectors;
         use_boot_file = 1;
       }
@@ -1272,7 +1274,7 @@ int vvfat_image_t::open(const char* dirname)
       // floppy support
       cylinders = 80;
       heads = 2;
-      sectors = 18;
+      spt = 18;
       offset_to_bootsector = 0;
       fat_type = 12;
       sectors_per_cluster = 1;
@@ -1283,11 +1285,11 @@ int vvfat_image_t::open(const char* dirname)
       if (cylinders == 0) {
         cylinders = 1024;
         heads = 16;
-        sectors = 63;
+        spt = 63;
       }
-      offset_to_bootsector = sectors;
+      offset_to_bootsector = spt;
     }
-    sector_count = cylinders * heads * sectors;
+    sector_count = cylinders * heads * spt;
   }
 
   hd_size = sector_count * 512;
@@ -1938,7 +1940,10 @@ ssize_t vvfat_image_t::write(const void* buf, size_t count)
   Bit32u scount = (Bit32u)(count / 512);
 
   while (scount-- > 0) {
-    if ((fat_type == 32) && (sector_num == (offset_to_bootsector + 1))) {
+    if (sector_num == 0) {
+      // allow writing to MBR (except partition table)
+      memcpy(&first_sectors[0], cbuf, 0x1b8);
+    } else if ((fat_type == 32) && (sector_num == (offset_to_bootsector + 1))) {
       // allow writing to FS info sector
       memcpy(&first_sectors[sector_num * 0x200], cbuf, 0x200);
     } else if (sector_num < (offset_to_bootsector + reserved_sectors)) {

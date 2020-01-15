@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: unmapped.cc,v 1.37 2009/12/04 19:50:29 sshwarts Exp $
+// $Id: unmapped.cc 10731 2011-10-09 19:26:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -256,12 +256,12 @@ void bx_unmapped_c::write(Bit32u address, Bit32u value, unsigned io_len)
         BX_PANIC(("Shutdown port: shutdown requested"));
       }
       break;
-
+/*
     case 0xfedc:
-      bx_dbg.debugger = (value > 0);
-      BX_DEBUG(("DEBUGGER = %u", (unsigned) bx_dbg.debugger));
+      bx_dbg.io_debugger = (value > 0);
+      BX_DEBUG(("DEBUGGER = %u", (unsigned) bx_dbg.io_debugger));
       break;
-
+*/
     default:
       break;
   }

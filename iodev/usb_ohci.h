@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_ohci.h,v 1.17 2011/01/16 12:46:48 vruppert Exp $
+// $Id: usb_ohci.h 10424 2011-06-25 12:43:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin D Lunt (fys at frontiernet net)
@@ -136,8 +136,6 @@ struct OHCI_ISO_TD {
 
 
 typedef struct {
-  Bit32u base_addr;
-
   int   frame_index;
   int   interval_index;
 
@@ -232,7 +230,6 @@ typedef struct {
     } HcRhPortStatus;
   } usb_port[BX_N_USB_OHCI_PORTS];
 
-  Bit8u pci_conf[256];
   Bit8u devfunc;
   unsigned ohci_done_count;
   bx_bool  use_control_head;
@@ -297,6 +294,8 @@ private:
   static void iolight_timer_handler(void *);
   void iolight_timer(void);
 
+  static void runtime_config_handler(void *);
+  void runtime_config(void);
 };
 
 #endif  // BX_IODEV_USB_OHCI_H

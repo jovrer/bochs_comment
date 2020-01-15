@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tuntap.cc,v 1.35 2011/01/24 20:35:51 vruppert Exp $
+// $Id: eth_tuntap.cc 10582 2011-08-16 17:27:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -28,10 +28,9 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "netmod.h"
 
-#if BX_NETWORKING && defined(HAVE_TUNTAP)
-
-#include "eth.h"
+#if BX_NETWORKING && BX_NETMOD_TUNTAP
 
 #define LOG_THIS netdev->
 
@@ -376,4 +375,4 @@ int tun_alloc(char *dev)
   return fd;
 }
 
-#endif /* if BX_NETWORKING && defined HAVE_TUNTAP */
+#endif /* if BX_NETWORKING && BX_NETMOD_TUNTAP */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial.h,v 1.39 2010/11/23 14:59:36 sshwarts Exp $
+// $Id: serial.h 10339 2011-04-30 18:22:35Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004-2009  The Bochs Project
@@ -203,7 +203,7 @@ public:
   bx_serial_c();
   virtual ~bx_serial_c();
   virtual void init(void);
-  virtual void reset(unsigned type);
+  virtual void reset(unsigned type) {}
   virtual void register_state(void);
 
 private:

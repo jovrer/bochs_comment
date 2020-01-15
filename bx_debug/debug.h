@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debug.h,v 1.66 2011/02/11 09:56:23 sshwarts Exp $
+// $Id: debug.h 10731 2011-10-09 19:26:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2011  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -184,7 +184,7 @@ typedef enum _show_flags {
   Flag_softint = 0x4,
   Flag_iret    = 0x8,
   Flag_intsig  = 0x10,
-  Flag_mode    = 0x20
+  Flag_mode    = 0x20,
 } show_flags_t;
 
 // Flex defs
@@ -226,9 +226,8 @@ void bx_dbg_timebp_command(bx_bool absolute, Bit64u time);
 extern int timebp_timer;
 extern Bit64u timebp_queue[MAX_CONCURRENT_BPS];
 extern int timebp_queue_size;
-void bx_dbg_record_command(char*);
-void bx_dbg_playback_command(char*);
 void bx_dbg_modebp_command(void);
+void bx_dbg_vmexitbp_command(void);
 void bx_dbg_where_command(void);
 void bx_dbg_print_string_command(bx_address addr);
 void bx_dbg_xlate_address(bx_lin_address address);
@@ -258,10 +257,11 @@ int bx_dbg_lbreakpoint_command(BreakpointKind bk, bx_address laddress);
 int bx_dbg_pbreakpoint_command(BreakpointKind bk, bx_phy_address paddress);
 void bx_dbg_info_bpoints_command(void);
 void bx_dbg_quit_command(void);
-#define BX_INFO_GENERAL_PURPOSE_REGS 1 /* bitmasks - choices for bx_dbg_info_registers_command */
-#define BX_INFO_FPU_REGS 2
-#define BX_INFO_MMX_REGS 4
-#define BX_INFO_SSE_REGS 8
+#define BX_INFO_GENERAL_PURPOSE_REGS 0x01 /* bitmasks - choices for bx_dbg_info_registers_command */
+#define BX_INFO_FPU_REGS 0x02
+#define BX_INFO_MMX_REGS 0x04
+#define BX_INFO_SSE_REGS 0x08
+#define BX_INFO_AVX_REGS 0x10
 void bx_dbg_info_registers_command(int);
 void bx_dbg_info_ivt_command(unsigned from, unsigned to);
 void bx_dbg_info_idt_command(unsigned from, unsigned to);
@@ -334,7 +334,8 @@ typedef enum {
   STOP_WRITE_WATCH_POINT,
   STOP_MAGIC_BREAK_POINT,
   STOP_MODE_BREAK_POINT,
-  STOP_CPU_HALTED
+  STOP_VMEXIT_BREAK_POINT,
+  STOP_CPU_HALTED,
 } stop_reason_t;
 
 typedef enum {
@@ -377,7 +378,7 @@ void bx_dbg_exit(int code);
                                 BX_DBG_GUARD_IADDR_LIN | \
                                 BX_DBG_GUARD_IADDR_PHY)
 
-#define BX_DBG_GUARD_CTRL_C        0x0100
+#define BX_DBG_GUARD_ICOUNT        0x0010
 
 typedef struct {
   unsigned guard_for;
@@ -413,7 +414,7 @@ typedef struct {
 #endif
   } iaddr;
 
-  // user typed Ctrl-C, requesting simulator stop at next convient spot
+  // user typed Ctrl-C, requesting simulator stop at next convinient spot
   volatile bx_bool interrupt_requested;
 
   // booleans to control whether simulator should report events
@@ -452,15 +453,13 @@ typedef struct {
 // is reached (found)
 typedef struct bx_guard_found_t {
   unsigned guard_found;
+  Bit64u icount_max; // stop after completing this many instructions
   unsigned iaddr_index;
-  Bit64u icount; // number of completed instructions from last breakpoint hit
-  Bit32u cs;     // cs:eip and linear addr of instruction at guard point
+  Bit32u cs; // cs:eip and linear addr of instruction at guard point
   bx_address eip;
   bx_address laddr;
   // 00 - 16 bit, 01 - 32 bit, 10 - 64-bit, 11 - illegal
   unsigned code_32_64; // CS seg size at guard point
-  bx_bool ctrl_c; // simulator stopped due to Ctrl-C request
-  Bit64u  time_tick; // time tick when guard reached
 } bx_guard_found_t;
 
 struct bx_watchpoint {

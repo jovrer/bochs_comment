@@ -1,5 +1,5 @@
 .\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
-.TH bochsrc 5 "20 Feb 2011" "bochsrc" "The Bochs Project"
+.TH bochsrc 5 "27 Nov 2011" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -74,7 +74,6 @@ The choices are:
   x           X windows interface, cross platform
   win32       native win32 libraries
   carbon      Carbon library (for MacOS X)
-  beos        native BeOS libraries
   macintosh   MacOS pre-10
   amigaos     native AmigaOS libraries
   sdl         SDL library, cross platform
@@ -96,6 +95,7 @@ Examples:
   display_library: sdl, options="fullscreen"  # startup in fullscreen mode
   display_library: x, options="hideIPS" # disable IPS output in status bar
   display_library: x, options="gui_debug" # use GTK debugger gui
+  display_library: x, options="nokeyrepeat" # turn off host keyboard repeat
 
 
 .TP
@@ -140,6 +140,11 @@ Reset the CPU when triple fault occur (highly recommended) rather than
 PANIC. Remember that if you trying to continue after triple fault the
 simulation will be completely bogus !
 
+cpuid_limit_winnt:
+
+Determine whether to limit maximum CPUID function to 2. This mode is
+required to workaround WinNT installation and boot issues.
+
 msrs:
 
 Define path to user CPU Model Specific Registers (MSRs) specification.
@@ -170,12 +175,12 @@ BogoMips and other benchmarks.
 
 Example Specifications[1]
  Bochs Machine/Compiler                                Mips
- -------------------------------------------------------------------
- 2.3.7 3.2Ghz Intel Core 2 Q9770 with WinXP/g++ 3.4    50 to 55 Mips
- 2.3.7 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      38 to 43 Mips
- 2.2.6 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      21 to 25 Mips
- 2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4         12 to 15 Mips
- 2.0.1 1.6Ghz Intel P4 with Win2000/g++ 3.3             5 to  7 Mips
+ --------------------------------------------------------------------
+ 2.4.6 3.4Ghz Intel Core i7 2600 with Win7x64/g++ 4.5.2 85 to 95 Mips
+ 2.3.7 3.2Ghz Intel Core 2 Q9770 with WinXP/g++ 3.4     50 to 55 Mips
+ 2.3.7 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4       38 to 43 Mips
+ 2.2.6 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4       21 to 25 Mips
+ 2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4          12 to 15 Mips
 
  [1]  IPS measurements depend on OS and compiler
 configuration  in addition  to processor clock
@@ -193,6 +198,11 @@ mmx:
 Select MMX instruction set support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
 
+apic:
+
+Select APIC configuration (LEGACY/XAPIC/X2APIC).
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
+
 sep:
 
 Select SYSENTER/SYSEXIT instruction set support.
@@ -204,9 +214,9 @@ Select SSE instruction set support.
 Any of NONE/SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2 could be selected.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 
-xapic:
+sse4a:
 
-Select XAPIC extensions support.
+Select AMD SSE4A instructions support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 
 aes:
@@ -224,6 +234,51 @@ xsave:
 Select XSAVE extensions support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 
+xsaveopt:
+
+Select XSAVEOPT instruction support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+avx:
+
+Select AVX/AVX2 instruction set support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+avx_f16c:
+
+Select AVX float16 convert instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+avx_fma:
+
+Select AVX fused multiply add (FMA) instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+bmi:
+
+Select BMI1/BMI2 instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+fma4:
+
+Select AMD four operand FMA instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+xop:
+
+Select AMD XOP instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+tbm:
+
+Select AMD TBM instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+
+x86_64:
+
+Enable x85-64 and long mode support.
+This option exists only if Bochs compiled with x86-64 support.
+
 1g_pages:
 
 Enable 1G page size support in long mode.
@@ -234,6 +289,11 @@ pcid:
 Enable Process-Context Identifiers (PCID) support in long mode.
 This option exists only if Bochs compiled with x86-64 support.
 
+smep:
+
+Enable Supervisor Mode Execution Protection (SMEP) support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
 mwait:
 
 Select MONITOR/MWAIT instructions support.
@@ -243,6 +303,15 @@ mwait_is_nop:
 
 When this option is enabled MWAIT will not put the CPU into a sleep state.
 This option exists only if Bochs compiled with --enable-monitor-mwait.
+
+family:
+
+Set family information returned by CPUID. Default family value determined
+by configure option --enable-cpu-level.
+
+model:
+
+Set model information returned by CPUID. Default model value is 3.
 
 stepping:
 
@@ -258,13 +327,8 @@ brand_string:
 Set the CPUID vendor string returned by CPUID(0x80000002 .. 0x80000004).
 This should be at most a forty-eight-character ASCII string.
 
-cpuid_limit_winnt:
-
-Determine whether to limit maximum CPUID function to 3. This mode is
-required to workaround WinNT installation and boot issues.
-
 Example:
-  cpuid: mmx=1, sep=1, sse=sse4_2, xapic=1, aes=1, movbe=1, xsave=1, cpuid_limit_winnt=0
+  cpuid: mmx=1, sep=1, sse=sse4_2, xapic=1, aes=1, movbe=1, xsave=1
 
 .TP
 .I "megs:"
@@ -300,12 +364,25 @@ Examples:
 
 .TP
 .I "vga:"
-Here you can specify the display extension to be used. With the value 'none'
-you can use standard VGA with no extension. Other supported values are 'vbe'
-for Bochs VBE and 'cirrus' for Cirrus SVGA support.
+This defines parameters related to the VGA display.
+
+extension:
+
+Here you can specify the display extension to be used. With the value
+'none' you can use standard VGA with no extension. Other supported
+values are 'vbe' for Bochs VBE and 'cirrus' for Cirrus SVGA support.
+
+update_freq:
+
+The VGA update frequency is based on the emulated clock and the default
+value is 5. Keep in mind that you must tweak the 'cpu: ips=N' directive
+to be as close to the number of emulated instructions-per-second your
+workstation can do, for this to be accurate. If the realtime sync is
+enabled with the 'clock' option, the value is based on the real time.
+This parameter can be changed at runtime.
 
 Examples:
-  vga: extension=cirrus
+  vga: extension=cirrus, update_freq=10
   vga: extension=vbe
 
 .TP
@@ -670,17 +747,16 @@ formatting  reasons, but  it should all be  on
 one line in the actual bochsrc file.
 
 .TP
-.I "vga_update_interval:"
-Video memory is scanned for updates and screen updated
-every so many virtual seconds. The default value is
-50000, about 20Hz. Keep in mind that you must tweak
-the 'cpu: ips=N' directive to be as close to the number of
-emulated instructions-per-second your  workstation can
-do, for this to be accurate.
+.I "es1370:"
+This defines the ES1370 sound emulation. The parameter 'enabled' controls the
+presence of the device. In addition to this, it must be assigned to a PCI
+slot. The 'wavedev' parameter is similar to the 'wave' parameter of the SB16
+soundcard. The emulation supports recording and playback (except DAC1+DAC2
+output at the same time).
 
-Example:
-  vga_update_interval: 250000
-
+Examples:
+  es1370: enabled=1, wavedev=""       # win32
+  es1370: enabled=1, wavedev=alsa     # Linux with ALSA
 
 .TP
 .I "keyboard_serial_delay:"
@@ -784,15 +860,14 @@ Example:
   private_colormap: enabled=1
 
 .TP
-.I "i440fxsupport:"
-This option controls the presence of the i440FX PCI chipset. You can
-also specify the devices connected to PCI slots. Up to 5 slots are
-available now. These devices are currently supported: ne2k, pcivga,
-pcidev, pcipnic and usb_ohci. If Bochs is compiled with Cirrus SVGA
-support you'll have the additional choice 'cirrus'.
+.I "pci:"
+This option controls the presence of a PCI chipset in Bochs. Currently it only
+supports the i440FX chipset. You can also specify the devices connected to
+PCI slots. Up to 5 slots are available. These devices are currently supported:
+cirrus, es1370, ne2k, pcivga, pcidev, pcipnic, usb_ohci and usb_xhci.
 
 Example:
-  i440fxsupport: enabled=1, slot1=pcivga, slot2=ne2k
+  pci: enabled=1, chipset=i440fx, slot1=pcivga, slot2=ne2k
 
 .TP
 .I "pcidev:"
@@ -837,11 +912,11 @@ to access physical ethernet interface. Current implemented values include
  - win32  : ethernet on win32
  - tap    : ethernet through a linux tap interface
  - tuntap : ethernet through a linux tuntap interface
+ - slirp  : ethernet backend for Slirp and a builtin DHCP server
 
 If you don't want to make connections to any physical networks,
 you can use the following 'ethmod's to simulate a virtual network.
  - null   : All packets are discarded, but logged to a few files
- - arpback: ARP is simulated (disabled by default)
  - vde    : Virtual Distributed Ethernet
  - vnet   : ARP, ICMP-echo(ping), DHCP and TFTP are simulated
             The virtual host uses 192.168.10.1

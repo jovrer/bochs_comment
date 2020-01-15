@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc,v 1.92 2010/07/03 05:34:27 vruppert Exp $
+// $Id: win32dialog.cc 10714 2011-10-01 07:24:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -180,7 +180,6 @@ static BOOL CALLBACK StringParamProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
       SetWindowText(GetDlgItem(hDlg, IDSTRING), param->getptr());
       SendMessage(GetDlgItem(hDlg, IDSTRING), EM_SETLIMITTEXT, param->get_maxsize(), 0);
       return TRUE;
-      break;
     case WM_CLOSE:
       EndDialog(hDlg, -1);
       break;
@@ -250,11 +249,9 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
         SetWindowText(GetDlgItem(hDlg, IDPATH), path);
       }
       return TRUE;
-      break;
     case WM_CLOSE:
       EndDialog(hDlg, -1);
       return TRUE;
-      break;
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
         case IDBROWSE:
@@ -266,7 +263,6 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
             EnableWindow(GetDlgItem(hDlg, IDCREATE), FALSE);
           }
           return TRUE;
-          break;
         case IDOK:
           status->set(0);
           if (SendMessage(GetDlgItem(hDlg, IDSTATUS), BM_GETCHECK, 0, 0) == BST_CHECKED) {
@@ -287,11 +283,9 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           }
           EndDialog(hDlg, 1);
           return TRUE;
-          break;
         case IDCANCEL:
           EndDialog(hDlg, -1);
           return TRUE;
-          break;
         case IDMEDIATYPE:
           if (HIWORD(wParam) == CBN_SELCHANGE) {
             i = SendMessage(GetDlgItem(hDlg, IDMEDIATYPE), CB_GETCURSEL, 0, 0);
@@ -307,7 +301,6 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
             MessageBox(hDlg, mesg, "Image created", MB_OK);
           }
           return TRUE;
-          break;
       }
   }
   return FALSE;
@@ -318,7 +311,7 @@ void SetStandardLogOptions(HWND hDlg)
   int level, idx;
   int defchoice[5];
 
-  for (level=0; level<5; level++) {
+  for (level=0; level<N_LOGLEV; level++) {
     int mod = 0;
     int first = SIM->get_log_action (mod, level);
     BOOL consensus = true;
@@ -335,11 +328,11 @@ void SetStandardLogOptions(HWND hDlg)
     else
       defchoice[level] = 4;
   }
-  for (level=0; level<5; level++) {
+  for (level=0; level<N_LOGLEV; level++) {
     idx = 0;
     SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_RESETCONTENT, 0, 0);
     for (int action=0; action<5; action++) {
-      if (((level > 1) && (action > 0)) || ((level < 2) && ((action < 2) || (action > 3)))) {
+      if ((level > 1 && action > 0) || (level < 2 && (action < 2 || action > 3))) {
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_ADDSTRING, 0, (LPARAM)log_choices[action]);
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_SETITEMDATA, idx, action);
         if (action == defchoice[level]) {
@@ -358,11 +351,11 @@ void SetAdvancedLogOptions(HWND hDlg)
 
   idx = SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_GETCURSEL, 0, 0);
   mod = SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_GETITEMDATA, idx, 0);
-  for (level=0; level<5; level++) {
+  for (level=0; level<N_LOGLEV; level++) {
     idx = 0;
     SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_RESETCONTENT, 0, 0);
     for (int action=0; action<4; action++) {
-      if (((level > 1) && (action > 0)) || ((level < 2) && (action < 2))) {
+      if ((level > 1 && action > 0) || (level < 2 && action < 2)) {
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_ADDSTRING, 0, (LPARAM)log_choices[action]);
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_SETITEMDATA, idx, action);
         if (action == SIM->get_log_action (mod, level)) {
@@ -398,21 +391,21 @@ void ApplyLogOptions(HWND hDlg, BOOL advanced)
   if (advanced) {
     idx = SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_GETCURSEL, 0, 0);
     mod = SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_GETITEMDATA, idx, 0);
-    for (level=0; level<5; level++) {
+    for (level=0; level<N_LOGLEV; level++) {
       idx = SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_GETCURSEL, 0, 0);
       value = SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_GETITEMDATA, idx, 0);
       SIM->set_log_action (mod, level, value);
     }
     EnableWindow(GetDlgItem(hDlg, IDDEVLIST), TRUE);
   } else {
-    for (level=0; level<5; level++) {
+    for (level=0; level<N_LOGLEV; level++) {
       idx = SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_GETCURSEL, 0, 0);
       value = SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_GETITEMDATA, idx, 0);
       if (value < 4) {
         // set new default
-        SIM->set_default_log_action (level, value);
+        SIM->set_default_log_action(level, value);
         // apply that action to all modules (devices)
-        SIM->set_log_action (-1, level, value);
+        SIM->set_log_action(-1, level, value);
       }
     }
   }
@@ -508,7 +501,9 @@ edit_opts_t start_options[] = {
   {"Logfile", "log"},
   {"Log Options", "*"},
   {"CPU", "cpu"},
+#if BX_CPU_LEVEL >= 4
   {"CPUID", "cpuid"},
+#endif
   {"Memory", "memory"},
   {"Clock & CMOS", "clock_cmos"},
   {"PCI", "pci"},
@@ -517,7 +512,7 @@ edit_opts_t start_options[] = {
   {"Disk & Boot", BXPN_MENU_DISK_WIN32},
   {"Serial / Parallel / USB", "ports"},
   {"Network card", "network"},
-  {"Sound Blaster 16", BXPN_SB16},
+  {"Sound card", "sound"},
   {"Other", "misc"},
 #if BX_PLUGINS
   {"User-defined Options", "user"},
@@ -636,6 +631,9 @@ static BOOL CALLBACK MainMenuDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
           }
           break;
         case IDOK:
+          if (runtime) {
+            SIM->update_runtime_options();
+          }
           EndDialog(hDlg, 1);
           break;
         case IDCANCEL:

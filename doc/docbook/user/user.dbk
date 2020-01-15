@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.288 2011/02/21 21:50:54 vruppert Exp $
+$Id: user.dbk 10797 2011-11-27 12:13:22Z vruppert $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -94,9 +94,9 @@ interactions between Bochs and the host operating system can be complicated,
 and in some cases they are host platform specific.  Sending a network packet in
 FreeBSD requires different code than sending the packet in Windows XP, for
 example.  For this reason, certain features are supported on some host
-platforms and not others.  On GNU/Linux, Bochs can simulate a network card that
-communicates with the world, but on BeOS the simulated network card may not
-work because the communication code between the device model and the BeOS
+platforms and not others. On GNU/Linux, Bochs can simulate a network card that
+communicates with the world, but on MacOSX the simulated network card may not
+work because the communication code between the device model and the MacOSX
 operating system has not been written.
 </para>
 
@@ -141,7 +141,7 @@ regular basis, but a few statistics give an indication.  The <link
 linkend="bochs-developers">bochs-developers mailing list</link>, which is the
 primary source of news on bugs and releases, has over 400 subscribers.  The
 latest version has been downloaded over 150,000 times from SourceForge, not
-counting any mirror website or CVS users.
+counting any mirror website or SVN users.
 </para>
 
 <para>
@@ -237,7 +237,7 @@ disk to assist you in the process of installing a guest operating system.
 Bochs only provides you with the "virtual hardware", and it is up to you to do the rest.
 </para>
 
-<para>Bochs will run on Windows, GNU/Linux, FreeBSD, OpenBSD, or BeOS.
+<para>Bochs will run on Windows, GNU/Linux, FreeBSD, OpenBSD, or MacOSX.
 If you are running on x86 hardware, you have a range of choices.
 Check the installation section for your host platform to see what options
 Bochs supports on your platform.  If the most important factor is speed,
@@ -247,8 +247,8 @@ you may want to try a virtualization product instead of Bochs (VMware, VirtualBo
 <para>
 If you are using a non-x86 machine, then Bochs is one of the few choices for
 running x86 software.  Bochs has been known to work on Solaris (Sparc),
-GNU/Linux (PowerPC/Alpha), MacOS (PowerPC), IRIX (MIPS), BeOS (PowerPC), Digital
-Unix (Alpha), and AIX (PowerPC).
+GNU/Linux (PowerPC/Alpha), MacOS (PowerPC), IRIX (MIPS), Digital Unix (Alpha),
+and AIX (PowerPC).
 </para>
 
 <para>
@@ -401,7 +401,7 @@ currently work with.
     <entry>VBE (VESA) Support</entry>
     <entry>Yes</entry>
     <entry>Currently resolutions up to 2560x1600x32bpp are supported.
-    You must compile Bochs with VBE enabled and use the LGPL'd VGABIOS.
+    You must enable VBE with the VGA extension option and use the LGPL'd VGABIOS.
     For more information see <xref linkend="vesa-notes">.
     </entry>
   </row>
@@ -443,7 +443,7 @@ currently work with.
     <entry>Yes</entry>
     <entry>Emulates ATAPI-4/IDE CD-ROM.  The CD-ROMs can read from an ISO disk image
     on any platform. On Windows (9x/ME/NT/2000/XP), Linux, SunOS, FreeBSD,
-    NetBSD, OpenBSD, Amiga/MorphOS, MacOSX and BeOS, Bochs can read from the
+    NetBSD, OpenBSD, Amiga/MorphOS and MacOSX, Bochs can read from the
     physical CD-ROM drive. Starting with version 1.4, Bochs is even able to boot from
     a bootable CD or bootable ISO image.
     </entry>
@@ -621,20 +621,6 @@ code that displays the Bochs VGA screen and handles keyboard and mouse events.
     </row>
 
     <row>
-      <entry>BeOS</entry>
-      <entry>
-        Kevin Lawton wrote this port, originally to R3/PPC using
-        CodeWarrior. It now works on R4/x86 with egcs. Simon Huet picked up
-        maintaining/reworking the BeOS GUI port. In September 2001, Bernd Korz
-        of Yellow Tab, Inc.
-        (<ulink url="http://www.yellowtab.com">www.yellowtab.com</ulink>), took
-        over the BeOS/Zeta port, and is working on raw CD-ROM and raw floppy
-        support. For compiling, see <xref linkend="compile-beos">.
-      </entry>
-      <entry>beos, sdl</entry>
-    </row>
-
-    <row>
       <entry>MacOS X</entry>
       <entry>
         Emmanuel Mailliard ported the Macintosh code to MacOS X with Carbon API.
@@ -806,7 +792,7 @@ code that displays the Bochs VGA screen and handles keyboard and mouse events.
      Does Bochs support a CD-ROM?
      </para></question>
      <answer><para>
-     Yes, a CD-ROM is supported in Linux, Windows, BeOS, and most BSDs. The
+     Yes, a CD-ROM is supported in Linux, Windows, and most BSDs. The
      CD-ROM drivers for Bochs allow the guest operating system to access the
      host operating system's CD-ROM data directly.
      </para></answer>
@@ -884,12 +870,12 @@ to mention, running DOOM, though at then-pathetic speeds.
 
 <para>
 The change log is stored in the Bochs source code in a file called
-CHANGES.  Click <ulink url="http://bochs.cvs.sourceforge.net/bochs/bochs/CHANGES?view=markup&amp;content-type=text/vnd.viewcvs-markup&amp;rev=HEAD">here</ulink>
+CHANGES.  Click <ulink url="http://bochs.svn.sourceforge.net/viewvc/bochs/trunk/bochs/CHANGES">here</ulink>
 to see the latest version of the CHANGES file.
 </para>
 <para>
 The link above is provided by Source Forge and might change one day.  If it
-stops working, you can download the current source code with CVS and read
+stops working, you can download the current source code with SVN and read
 the CHANGES file there.
 </para>
 
@@ -952,132 +938,126 @@ Bochs are in the section, <link linkend="compiling">Compiling Bochs</link>.
 </para>
 
 <para>
-Alternatively, you can also obtain the sources for any Bochs version using CVS.
-See the <link linkend="get-src-cvs">CVS instructions</link> for details.
+Alternatively, you can also obtain the sources for any Bochs version using SVN.
+See the <link linkend="get-src-svn">SVN instructions</link> for details.
 </para>
 </section>  <!-- End of Installation:Downloading Bochs section -->
 
-<section id="get-src-cvs"><title>Tracking the source code with CVS</title>
+<section id="get-src-svn"><title>Tracking the source code with SVN</title>
 <para>
-CVS, or Concurrent Version System, is a software development tool that helps
-to keep track of the different revisions of each file.  It is used by many
-open source (and commercial) projects to allow multiple developers to share
-their changes to the source code.  The Bochs source code and documentation
-are available using CVS<footnote>
+SVN (Subversion) is a tool used by many software developers to manage changes
+within their source code tree. SVN provides the means to store not only the
+current version of a piece of source code, but a record of all changes (and who
+made those changes) that have occurred to that source code. Use of SVN is
+particularly common on projects with multiple developers, since SVN ensures
+changes made by one developer are not accidentally removed when another
+developer posts their changes to the source tree. The Bochs source code and
+documentation are available using SVN<footnote>
 <para>
-You can download CVS software and documentation from
-<ulink url="http://www.cvshome.org">www.cvshome.org</ulink>.
+You can download SVN software and documentation from
+<ulink url="http://subversion.apache.org">subversion.apache.org</ulink>.
 </para>
 </footnote>.
 </para>
 
 <section><title>Checking out Bochs</title>
 <para>
-When you have CVS installed, the first step is to do a login and checkout.  The
-initial checkout command is long and ugly, but usually you only have to do it
-once.  The example below shows the CVS checkout process in Unix.  On the
-Windows platform, you can download a CVS client from cvshome.com, or
-use CVS within Cygwin<footnote>
+When you have SVN installed, the first step is to do a checkout. The initial
+checkout command is long and ugly, but usually you only have to do it
+once. The example below shows the SVN checkout process of the Bochs trunk in Unix.
+On the Windows platform, you can download a SVN client from
+<ulink url="http://subversion.apache.org/packages.html#windows">subversion.apache.org</ulink>,
+or use SVN within Cygwin<footnote>
 <para>
 Cygwin is an open source Unix-like environment for Windows platforms,
 available at <ulink url="http://www.cygwin.com">www.cygwin.com</ulink>.
 </para>
 </footnote>.
 
-<figure><title>Checking out Bochs in CVS</title>
+<figure><title>Checking out Bochs in SVN</title>
 <screen>
-  user$ <command>cvs -d:pserver:anonymous@bochs.cvs.sourceforge.net:/cvsroot/bochs login</command>
-  (Logging in to anonymous@bochs.cvs.sourceforge.net)
-  CVS password:    <replaceable>(there is no password, just press Enter)</replaceable>
-  user$ <command>cvs -z3 -d:pserver:anonymous@bochs.cvs.sourceforge.net:/cvsroot/bochs checkout bochs</command>
-  cvs server: Updating bochs
-  U bochs/.bochsrc
-  U bochs/.conf.beos-x86-R4
-  U bochs/.conf.macos
-     .
-     .   <lineannotation>(This might take a few minutes, depending on your network connection.)</lineannotation>
-     .
-  U bochs/patches/patch.seg-limit-real
+  user$ <command>svn co https://bochs.svn.sourceforge.net/svnroot/bochs/trunk/bochs bochs</command>
+  A    bochs/ltdl.c
+  A    bochs/Makefile.in
+  A    bochs/bochs.h
+  .
+  .   <lineannotation>(This might take a few minutes, depending on your network connection.)</lineannotation>
+  .
+  A    bochs/install.sh
+   U   bochs
+  Checkout, Revision 10754.
   user$ <command>cd bochs</command>
   user$ <command>ls</command>
-  Bochs.proj.hqx  bxversion.h   fpu/                osdep.cc
-  CHANGES         config.h.in   gui/                osdep.h
-  COPYING         configure*    install-x11-fonts*  patches/
-  CVS/            configure.in  instrument/         pc_system.cc
-  Makefile.in     cpu/          iodev/              pc_system.h
-  README          bx_debug/     load32bitOShack.cc  state_file.cc
-  TESTFORM.txt    disasm/       logio.cc            state_file.h
-  bios/           doc/          macintosh.txt       win32.txt
-  bochs.h         docs-html/    main.cc
-  bochs.rsrc.hqx  dynamic/      memory/
-  build/          font/         misc/
+  aclocal.m4       cpu                 logio.cc        pc_system.cc
+  bios             cpudb.h             ltdl.c          pc_system.h
+  bochs.h          crc.cc              ltdlconf.h.in   plugin.cc
+  build            disasm              ltdl.h          plugin.h
+  bx_debug         doc                 ltmain.sh       README
+  bxversion.h.in   docs-html           main.cc         README-plugins
+  bxversion.rc.in  extplugin.h         Makefile.in     README.rfb
+  CHANGES          fpu                 memory          README-wxWindows
+  config.cc        gdbstub.cc          misc            TESTFORM.txt
+  config.guess     gui                 msrs.def        TODO
+  config.h.in      host                osdep.cc        win32_enh_dbg.rc
+  config.sub       install-sh          osdep.h         win32res.rc
+  configure        instrument          param_names.h   wxbochs.rc
+  configure.in     iodev               PARAM_TREE.txt
+  COPYING          load32bitOShack.cc  patches
   user$ _
 </screen>
 </figure>
 </para>
 
 <note><para>
-  This is just an example output of a checkout of an older version of Bochs.
-  You most likely will see more/other files.
+  This is just an example output of a checkout of specific version of the Bochs
+  trunk and folder. Depending on the checkout command and revision, you most
+  likely will see more/other files.
 </para></note>
 
 <tip>
 <para>
-If you have write access to the Bochs CVS tree, the checkout
-command is different for you.  See the Developers Guide<footnote>
+If you have write access to the Bochs SVN tree, see the Developers Guide
+<footnote>
 <para>
 See the <ulink url="../development/resources.html">Developers Guide</ulink>
-and/or look at <ulink url="http://sourceforge.net/cvs/?group_id=12580">CVS repository information</ulink>,
-section "Developer CVS Access via SSH", for instructions.
+and/or look at
+<ulink url="http://sourceforge.net/apps/trac/sourceforge/wiki/Subversion#Access">SourceForge's Subversion documentation</ulink>,
+for instructions.
 </para>
 </footnote> for details.
 </para>
 </tip>
 
-<tip>
 <para>
-If you use remote CVS for other projects, you might have already set
-the environment variable <varname>CVS_RSH</varname> in your configuration
-files.  For the CVS checkout to work as shown above, the
-<varname>CVS_RSH</varname> variable should either be empty or set to
-<constant>rsh</constant>.
-</para>
-</tip>
-
-<para>
-The CVS checkout process (above) gives you a directory called bochs that
+The SVN checkout process (above) gives you a directory called bochs that
 contains the very latest source code.  I will refer to this directory
 as &bochsdir;.  In each subdirectory directory there's also a
-directory called "CVS" which tells the cvs software where the code was checked
+directory called ".svn" which tells the SVN software where the code was checked
 out, what version you have, and where to go for future updates.
 </para>
 </section>
 
 <section><title>Getting the Latest Version</title>
 <para>
-Most developers use CVS to always give them the latest source code.  The minute
+Most developers use SVN to always give them the latest source code.  The minute
 that any developer checks in a change, they are available to everyone else
-through  CVS.  You just have to type <command>cvs update -d -A</command> in the
-&bochsdir; directory, and CVS will retrieve any files and directories that have
+through SVN. You just have to type <command>svn update</command> in the
+&bochsdir; directory, and SVN will retrieve any files and directories that have
 been changed since you did a checkout.  If you update regularly, each update
-takes a short time because it downloads only the files that changed.  The
-<command>-d</command> option tells cvs to download new directories that
-have been checked in, not just files.  The <command>-A</command> option means
-to get the most recent version of each file, as opposed to a release version.
-See <link linkend="cvs-release-version">Getting a release version</link>
-Both <command>-d</command> and <command>-A</command> can be omitted in many
-cases, once you are familiar with the process.  </para>
+takes a short time because it downloads only the files that changed.
+See also <link linkend="svn-release-version">Getting a release version</link>.
+</para>
 
 <para>
-The <command>cvs update -A -d</command> command tells you if any new files have
+The <command>svn update</command> command tells you if any new files have
 been downloaded from the server, and it also tells you if you have modified any
-of the CVS-controlled files.  As it checks through the source directories, it
+of the SVN-controlled files.  As it checks through the source directories, it
 will list files that have changed, with a single letter before the name that
 tells the status of that file.  The most common status letters are listed
 below.
 
 <table frame="all">
-<title>Status letters in a CVS update</title>
+<title>Status letters in a SVN update</title>
   <tgroup cols="3">
     <thead>
       <row>
@@ -1091,7 +1071,7 @@ below.
         <entry>?</entry>
         <entry>unknown</entry>
         <entry>
-        This file is in your bochs directory, but CVS does not know anything
+        This file is in your bochs directory, but SVN does not know anything
         about it.  For example, when you compile Bochs, any files created
         during the build process appear as ?.
         </entry>
@@ -1100,26 +1080,23 @@ below.
         <entry>U</entry>
         <entry>update</entry>
         <entry>
-        cvs downloaded a new version of this file because it changed on the
+        SVN downloaded a new version of this file because it changed on the
         server, usually because someone else did a checkin.
         </entry>
       </row>
       <row>
-        <entry>P</entry>
-        <entry>patch</entry>
+        <entry>A</entry>
+        <entry>added</entry>
         <entry>
-        This does the same as U, but instead of sending the whole file
-        (update), only a diff/patch is sent, thus, less bandwidth is used.
+        SVN downloaded a newly added file from the server.
         </entry>
       </row>
       <row>
-        <entry>M</entry>
-        <entry>modified</entry>
+        <entry>D</entry>
+        <entry>deleted</entry>
         <entry>
-        You have changed this file on your disk, so it no longer matches the
-        version on the server.  This is not a problem; it's just for your
-        information.  If you want, you can discard your changes and
-        get a fresh copy by deleting the file and running cvs update again.
+        This file has been deleted on the server and SVN removed it from your
+        local copy.
         </entry>
       </row>
       <row>
@@ -1131,7 +1108,7 @@ below.
         the same line of code in different ways.  You need to edit the
         conflicting file(s) and clean it up by hand.  Or, sometimes it's
         easiest to discard your own edits and download a fresh copy, by
-        deleting the conflicting file and running cvs update again.
+        deleting the conflicting file and running svn update again.
         </entry>
       </row>
     </tbody>
@@ -1139,33 +1116,39 @@ below.
 </table>
 </para>
 
-<para>
-If you have been using <command>cvs update</command> with "sticky tags" to
-retrieve other versions, as described later, cvs will remember which version
-you were looking at.  In this case, a <command>cvs update</command> will keep
-your sources consistent with that version.  If you want to get back to looking
-at the latest code again, be sure to use the <command>-A</command> option to
-clears the sticky tags.  </para>
-
 </section>
 
-<section id="cvs-release-version"><title>Getting a Release Version</title>
+<section id="svn-release-version"><title>Getting a Release Version</title>
 <para>
-Once you have a CVS checkout, you can also use the update command to
-get the Bochs source code for any release since March 2000.  The command
-is <command>cvs update -d -r <replaceable>tagname</replaceable></command>.
+You can also use the SVN checkout command to get the Bochs source code for
+any release since March 2000.  The command is
+<screen>
+  user$ <command>svn co https://bochs.svn.sourceforge.net/svnroot/bochs/tags/<replaceable>tagname</replaceable> bochs</command>
+</screen>
 The tag tells which release you want, and it can be one of the following:
 
 <table frame="all">
-<title>CVS Release Tags</title>
+<title>Bochs Release Tags</title>
   <tgroup cols="2">
     <thead>
       <row>
         <entry>Bochs version</entry>
-        <entry>Release tag for CVS</entry>
+        <entry>Release tag for SVN</entry>
       </row>
     </thead>
     <tbody>
+      <row>
+        <entry>2.4.6</entry>
+        <entry>REL_2_4_6_FINAL</entry>
+      </row>
+      <row>
+        <entry>2.4.5</entry>
+        <entry>REL_2_4_5_FINAL</entry>
+      </row>
+      <row>
+        <entry>2.4.2</entry>
+        <entry>REL_2_4_2_FINAL</entry>
+      </row>
       <row>
         <entry>2.4.1</entry>
         <entry>REL_2_4_1_FINAL</entry>
@@ -1262,55 +1245,29 @@ The tag tells which release you want, and it can be one of the following:
    </tgroup>
 </table>
 
-<tip>
-<para>
-To get a complete list of allowed tags, type <command>cvs stat -v README</command>.  Many of the tags are not generally useful.
-</para>
-</tip>
-
-Once you have done an update with <command>-r <replaceable>tagname</replaceable></command>, you have made a "sticky tag."  The stickiness refers to the fact
-that CVS remembers which tag you have used most recently.  The tag is stored
-in the CVS subdirectory, so it stays around even if you log off and
-return later.  After creating a sticky tag, any future cvs updates will
-try to keep your directory in sync with the version you chose.  In other
-words, when developers check in changes you will not
-see them because your directory is "stuck" looking at an old version.
-To clear the sticky tag, use <command>cvs update -A</command>.
 </para>
 
-<para>
-A variation on the sticky tag concept is a sticky date<footnote>
-<para>
-According to some sources, this is when you eat dinner with someone, and
-accidentally spill a drink on him/her.
-</para>
-</footnote>.  If some feature was working at some time in the past, but
-is no longer working, you can ask CVS to give you the sources from any
-date.  <command>cvs update -D 2001-06-14</command> will download the
-Bochs source as they were on June 14, 2001.  Again, use <command>-A</command>
-to clear the sticky date and track the current sources.
-</para>
 </section>
 
-<section><title>More about CVS</title>
+<section><title>More about SVN</title>
 <para>
-Entire books have been written on CVS, so there's no sense in duplicating
+Entire books have been written on SVN, so there's no sense in duplicating
 it all here in the Bochs documentation.  Some sources of additional
 information are listed below.
 </para>
 <itemizedlist>
-<listitem><para>The <ulink url="http://www.cvshome.org">cvshome.com
-site</ulink> has tons of CVS FAQs and documentation, including the official CVS
-manual by Per Cederqvist.</para></listitem>
+<listitem><para>The <ulink url="http://subversion.apache.org">subversion.apache.org
+site</ulink> has tons of SVN FAQs and documentation.</para></listitem>
 <listitem><para>
-Another <ulink url="http://www.cs.utah.edu/dept/old/texinfo/cvs/FAQ.txt">CVS FAQ</ulink> is available at University of Utah.
+A German <ulink url="http://pvs.uni-muenster.de/pvs/lehre/WS06/projekt/svn-faq.html">SVN FAQ</ulink>
+is available at University of Muenster.
 </para></listitem>
 </itemizedlist>
 
 </section>
 
 
-</section> <!-- End of Installation:Getting the source code with CVS -->
+</section> <!-- End of Installation:Getting the source code with SVN -->
 
 
 <section id="install-binary"><title>Installing a Binary</title>
@@ -1475,8 +1432,9 @@ bochs-dlx, bximage and bxcommit.  First, let's try out the DLX Linux demo by typ
   Entering /usr/users/bryce/.bochsdlx
   Running bochs
   ========================================================================
-			Bochs x86 Emulator 2.0.pre3
-		Build from CVS snapshot on December 4, 2002
+			Bochs x86 Emulator 2.4.6.svn
+		Build from SVN snapshot, after release 2.4.6
+                     Compiled on Oct 20 2011 at 19:40:05
   ========================================================================
 </screen>
 
@@ -1649,7 +1607,7 @@ descriptions or tool-tips).
 Bochs is written in C++, so you need a C++ compiler on your system.  Most
 platforms have been tested with GNU gcc/g++, but other compilers are known
 to work too.  By now, you should have unpacked your source TAR file or checked
-out Bochs from CVS.  If not, you can return to <link
+out Bochs from SVN.  If not, you can return to <link
 linkend="downloading">Downloading Bochs</link> for details.  The top level
 directory of the source code will be referred to as &bochsdir;.  (&bochsdir;
 contains the files <filename>bochs.h</filename> and
@@ -1661,7 +1619,7 @@ contains the files <filename>bochs.h</filename> and
 The standard compile process has three basic steps:
 <command>configure</command>, <command>make</command>, and <command>make
 install</command>.  Each step is described in a separate section below.  The
-standard compile process is used on all Unix machines, MacOS X, BeOS, and
+standard compile process is used on all Unix machines, MacOS X, and
 Cygwin (win32).  There are separate instructions for <link
 linkend="compiling-win32">compiling for Win32 with Microsoft VC++</link>.
 </para>
@@ -1744,7 +1702,6 @@ been tested in recent Bochs versions:
   .conf.macosx
   .conf.win32-vcpp
   .conf.win32-cygwin
-  .conf.beos
 </screen>
 </para>
 
@@ -1902,12 +1859,6 @@ In Bochs 1.3 and before, the X11 GUI was always the default.
     </entry>
   </row>
   <row>
-    <entry>BeOS</entry>
-    <entry>--with-beos</entry>
-    <entry>none
-    </entry>
-  </row>
-  <row>
     <entry>AmigaOS</entry>
     <entry>--with-amigaos</entry>
     <entry>none
@@ -1966,11 +1917,6 @@ In Bochs 1.3 and before, the X11 GUI was always the default.
     <row>
       <entry>--with-sdl</entry>
       <entry>Enable support for the SDL GUI interface; see <xref linkend="compile-sdl">.</entry>
-    </row>
-    <row>
-      <entry>--with-beos</entry>
-      <entry>Use BeOS GUI.  The configure script will run natively
-       on BeOS; use this option when doing so.</entry>
     </row>
     <row>
       <entry>--with-term</entry>
@@ -2082,6 +2028,11 @@ turn it off.
       <entry>Intel Virtualization Extensions (VMX) support</entry>
     </row>
     <row>
+      <entry>--enable-avx</entry>
+      <entry>no</entry>
+      <entry>AVX instructions support</entry>
+    </row>
+    <row>
       <entry>--enable-x86-debugger</entry>
       <entry>no</entry>
       <entry>X86 debugger support.  If the software you run in bochs
@@ -2126,16 +2077,22 @@ turn it off.
       </entry>
     </row>
     <row>
-      <entry>--enable-sb16={<option>dummy</option>}</entry>
+      <entry>--enable-sb16</entry>
       <entry>no</entry>
       <entry>
-      Enable Sound Blaster emulation.
-      The <constant>dummy</constant> option means to support an SB16, but don't
-      use an output device. By default (without a parameter) the lowlevel sound interface is autodetected.
+      Enable Sound Blaster emulation. The lowlevel sound interface is autodetected.
       See section <link linkend="sb16-emulation">Sound Blaster 16 Emulation</link>
-      for supported platforms and more info. This option also enables the standard PC gameport which is a
-      part of the SB16. If you don't want to use it, you might use
-      <option>--disable-gameport</option>.
+      for supported platforms and more info. This option also enables the standard
+      PC gameport which is a part of the SB16. If you don't want to use it, you
+      might use <option>--disable-gameport</option>.
+      </entry>
+    </row>
+    <row>
+      <entry>--enable-es1370</entry>
+      <entry>no</entry>
+      <entry>
+      Enable ES1370 sound emulation. Just like the SB16 option, the lowlevel sound
+      interface is autodetected and the gameport is turned on.
       </entry>
     </row>
     <row>
@@ -2177,13 +2134,6 @@ turn it off.
       <entry>Enable PCI pseudo NIC (network card) support.</entry>
     </row>
     <row>
-      <entry>--enable-vbe</entry>
-      <entry>no</entry>
-      <entry>Use VGA BIOS Extensions (VBE) by Jeroen Janssen, see <xref linkend="vesa-notes">
-      for more information.
-      </entry>
-    </row>
-    <row>
       <entry>--enable-clgd54xx</entry>
       <entry>no</entry>
       <entry>Enable Cirrus Logic GD54xx (CL-GD5430 ISA or CL-GD5446 PCI) video
@@ -2204,22 +2154,17 @@ turn it off.
     <row>
       <entry>--enable-repeat-speedups</entry>
       <entry>no</entry>
-      <entry>support repeated I/O and memory copy speedups</entry>
-    </row>
-    <row>
-      <entry>--enable-trace-cache</entry>
-      <entry>no</entry>
-      <entry>support instruction trace cache for faster execution</entry>
-    </row>
-    <row>
-      <entry>--enable-host-specific-asms</entry>
-      <entry>yes</entry>
-      <entry>support for running native x86 instructions on an x86 machine</entry>
+      <entry>enable support repeated I/O and memory copy speedups</entry>
     </row>
     <row>
       <entry>--enable-fast-function-calls</entry>
       <entry>no</entry>
-      <entry>support for fast function calls (gcc on x86 only)</entry>
+      <entry>enable support for fast function calls (gcc on x86 only)</entry>
+    </row>
+    <row>
+      <entry>--enable-handlers-chaining</entry>
+      <entry>no</entry>
+      <entry>enable support for handlers chaining optimization</entry>
     </row>
     <row>
       <entry>--enable-all-optimizations</entry>
@@ -2227,10 +2172,9 @@ turn it off.
       <entry>
         Turn on the enables for all speed optimizations that the
         developers believe are safe to use:
-         --enable-trace-cache,
          --enable-repeat-speedups,
-         --enable-host-specific-asms,
-         --enable-fast-function-calls.
+         --enable-fast-function-calls,
+         --enable-handlers-chaining.
       </entry>
     </row>
     <row>
@@ -2295,14 +2239,6 @@ turn it off.
       </entry>
     </row>
     <row>
-      <entry>--enable-compressed-hd</entry>
-      <entry>no</entry>
-      <entry>
-      Add support for compressed disk (not implemented yet).
-      zlib must be installed on your system, as it will be dynamically linked to Bochs.
-      </entry>
-    </row>
-    <row>
       <entry>--enable-pci</entry>
       <entry>no</entry>
       <entry>Enable limited i440FX PCI support. This is still incomplete, but usable.
@@ -2340,8 +2276,7 @@ turn it off.
       instrumentation data from bochs as it executes code.  You have to create
       your own instrumentation library and define the instrumentation macros
       (hooks in bochs) to either call your library functions or not, depending
-      upon whether you want to collect each piece of data.  [Kevin wrote: I
-      broke some of the hooks when I recoded the fetch/decode loop.]
+      upon whether you want to collect each piece of data.
       </entry>
     </row>
     <row>
@@ -2608,21 +2543,6 @@ Bochs GUIs. Use <option>--with-x11</option> for X windows,
 </para>
 </section><!-- end: Compiling on MacOS X -->
 
-<section id="compile-beos"><title>Compiling on BeOS</title>
-<para>
-  Kevin Lawton ported Bochs to BeOS. Bernd Korz has taken over the port.
-  Since Bochs 1.4, you can use the same compile and install process as on
-  Unix, that is, configure will detect the BeOS platform and assume you
-  want the BeOS GUI.
-<screen>
-  configure
-  make
-</screen>
-  Optionally, you can use the configure shortcut script for BeOS,
-  <filename>.conf.beos</filename>, which uses the SDL GUI by default.
-</para>
-</section><!-- end: Compiling on BeOS -->
-
 <section id="compile-morphos"><title>Compiling on Amiga/MorphOS</title>
 <para>
   Nicholai Benalal created this port to MorphOS running on Amiga. It should
@@ -2671,7 +2591,7 @@ Bochs GUIs. Use <option>--with-x11</option> for X windows,
   Dave Poirier has written an SDL interface for Bochs. Simple DirectMedia
   Layer, or SDL, is a cross-platform multimedia library distributed from
   <ulink url="http://libsdl.org/">libsdl.org</ulink>. SDL is available
-  for many platforms including Win32, Linux, BSD, IRIX, MacOS, MacOS X, BeOS,
+  for many platforms including Win32, Linux, BSD, IRIX, MacOS, MacOS X,
   and AmigaOS.
 </para>
 <para>
@@ -2789,7 +2709,7 @@ what if make fails?
 fpu/fpu.cc, you could try --disable-fpu.
 - search for the error on the Bochs website (bug reports, patches)
 - if familiar with C++, many minor problems can be corrected
-- move to more stable code.  if it's CVS, see if a release version will
+- move to more stable code.  if it's SVN, see if a release version will
   compile.  Report problem to bochs-developers.
 - report the problem with a source forge bug report.
 </screen>
@@ -3000,6 +2920,11 @@ Reset the CPU when triple fault occur (highly recommended) rather than PANIC.
 Remember that if you are trying to continue after triple fault the simulation
 will be completely bogus !
 </para>
+<para><command>cpuid_limit_winnt</command></para>
+<para>
+Determine whether to limit maximum CPUID function to 2. This mode is required
+to workaround WinNT installation and boot issues.
+</para>
 <para><command>msrs</command></para>
 <para>
 Define path to user CPU Model Specific Registers (MSRs) specification.
@@ -3041,11 +2966,11 @@ speed.</para></footnote>.
   </row>
 </thead>
   <tbody>
+<row><entry>2.4.6</entry><entry>3.4Ghz</entry><entry>Intel Core i7 2600 with Win7x64/g++ 4.5.2 </entry><entry> 85 to 95 MIPS</entry></row>
 <row><entry>2.3.7</entry><entry>3.2Ghz</entry><entry>Intel Core 2 Q9770 with WinXP/g++ 3.4 </entry><entry> 50 to 55 MIPS</entry></row>
 <row><entry>2.3.7</entry><entry>2.6Ghz</entry><entry>Intel Core 2 Duo with WinXP/g++ 3.4 </entry><entry> 38 to 43 MIPS</entry></row>
 <row><entry>2.2.6</entry><entry>2.6Ghz</entry><entry>Intel Core 2 Duo with WinXP/g++ 3.4 </entry><entry> 21 to 25 MIPS</entry></row>
 <row><entry>2.2.6</entry><entry>2.1Ghz</entry><entry>Athlon XP with Linux 2.6/g++ 3.4 </entry><entry> 12 to 15 MIPS</entry></row>
-<row><entry>2.0.1</entry><entry>1.6Ghz</entry><entry>Intel P4 with Win2000/g++ 3.3 </entry><entry> 5 to  7 MIPS</entry></row>
 </tbody>
 </tgroup>
 </table>
@@ -3055,13 +2980,18 @@ speed.</para></footnote>.
 <para>
 Example:
 <screen>
-  cpuid: mmx=1, sep=1, sse=sse4_2, xapic=1, aes=1, movbe=1, xsave=1, cpuid_limit_winnt=0
+  cpuid: mmx=1, sep=1, sse=sse4_2, apic=xapic, aes=1, movbe=1, xsave=1
 </screen>
 This defines features and functionality supported by Bochs emulated CPU:
 </para>
 <para><command>mmx</command></para>
 <para>
 Select MMX instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
+</para>
+<para><command>apic</command></para>
+<para>
+Select APIC configuration (LEGACY/XAPIC/X2APIC).
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
 </para>
 <para><command>sep</command></para>
@@ -3075,9 +3005,9 @@ Select SSE instruction set support.
 Any of NONE/SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2 could be selected.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 </para>
-<para><command>xapic</command></para>
+<para><command>sse4a</command></para>
 <para>
-Select XAPIC extensions support.
+Select AMD SSE4A instructions support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 </para>
 <para><command>aes</command></para>
@@ -3095,6 +3025,51 @@ This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 Select XSAVE extensions support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 </para>
+<para><command>xsaveopt</command></para>
+<para>
+Select XSAVEOPT instruction support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>avx</command></para>
+<para>
+Select AVX/AVX2 instruction set support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>avx_f16c</command></para>
+<para>
+Select AVX float16 convert instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>avx_fma</command></para>
+<para>
+Select AVX fused multiply add (FMA) instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>bmi</command></para>
+<para>
+Select BMI1/BMI2 instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>fma4</command></para>
+<para>
+Select AMD four operand FMA instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>xop</command></para>
+<para>
+Select AMD XOP instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>tbm</command></para>
+<para>
+Select AMD TBM instructions support.
+This option exists only if Bochs compiled with --enable-avx option.
+</para>
+<para><command>x86_64</command></para>
+<para>
+Enable x86-64 and long mode support.
+This option exists only if Bochs compiled with x86-64 support.
+</para>
 <para><command>1g_pages</command></para>
 <para>
 Enable 1G page size support in long mode.
@@ -3105,6 +3080,11 @@ This option exists only if Bochs compiled with x86-64 support.
 Enable Process-Context Identifiers (PCID) support in long mode.
 This option exists only if Bochs compiled with x86-64 support.
 </para>
+<para><command>smep</command></para>
+<para>
+Enable Supervisor Mode Execution Protection (SMEP) support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
 <para><command>mwait</command></para>
 <para>
 Select MONITOR/MWAIT instructions support.
@@ -3114,6 +3094,15 @@ This option exists only if Bochs compiled with --enable-monitor-mwait.
 <para>
 When this option is enabled MWAIT will not put the CPU into a sleep state.
 This option exists only if Bochs compiled with --enable-monitor-mwait.
+</para>
+<para><command>family</command></para>
+<para>
+Set family information returned by CPUID. Default family value determined
+by configure option --enable-cpu-level.
+</para>
+<para><command>model</command></para>
+<para>
+Set model information returned by CPUID. Default model value is 3.
 </para>
 <para><command>stepping</command></para>
 <para>
@@ -3128,11 +3117,6 @@ twelve-character ASCII string.
 <para>
 Set the CPUID brand string returned by CPUID(0x80000002 .. 0x80000004]).  This should be
 at most a forty-eight-character ASCII string.
-</para>
-<para><command>cpuid_limit_winnt</command></para>
-<para>
-Determine whether to limit maximum CPUID function to 3. This mode is required
-to workaround WinNT installation and boot issues.
 </para>
 </section>
 
@@ -3206,15 +3190,26 @@ are provided in the source and binary distributions.</para>
 <para>
 Examples:
 <screen>
-  vga: extension=cirrus
+  vga: extension=cirrus, update_freq=10
   vga: extension=vbe
 </screen>
-Here you can specify the display extension to be used. With the value
-'none' you can use standard VGA with no extension. Other supported
+This defines parameters related to the VGA display
+</para>
+<para>
+The 'extension' option can be used to specify the VGA display extension.
+With the value 'none' you can use standard VGA with no extension. Other supported
 values are 'vbe' for Bochs VBE (needs <filename>VGABIOS-lgpl-latest</filename> as
 VGA BIOS, see <link linkend="bochsopt-vgaromimage">vgaromimage option</link>)
 and 'cirrus' for Cirrus SVGA support (needs
 <filename>VGABIOS-lgpl-latest-cirrus</filename> as VGA BIOS).
+</para>
+<para>
+The VGA update frequency is based on the emulated clock and the default
+value is 5. Keep in mind that you must tweak the 'cpu: ips=N' directive
+to be as close to the number of emulated instructions-per-second your
+workstation can do, for this to be accurate. If the realtime sync is
+enabled with the <link linkend="bochsopt-clock">clock option</link>, the value
+is based on the real time. This parameter can be changed at runtime.
 </para>
 </section>
 
@@ -3524,6 +3519,7 @@ behaviour. See the examples below for currently supported options.
   display_library: win32, options="gui_debug" # use win32 debugger gui frontend
   display_library: x, options="hideIPS"       # disable IPS output in status bar
   display_library: x, options="gui_debug"     # use GTK debugger gui frontend
+  display_library: x, options="nokeyrepeat"   # turn off host keyboard repeat
 </screen>
 </para>
 
@@ -3548,10 +3544,6 @@ behaviour. See the examples below for currently supported options.
 <row>
   <entry>carbon</entry>
   <entry>use Carbon library (for MacOS X)</entry>
-</row>
-<row>
-  <entry>beos</entry>
-  <entry>use native BeOS libraries</entry>
 </row>
 <row>
   <entry>macintosh</entry>
@@ -3836,18 +3828,18 @@ are in the usual "property=value" format.
 </para>
 </section>
 
-<section><title>vga_update_interval</title>
+<section><title>es1370</title>
 <para>
 Examples:
 <screen>
-  vga_update_interval: 50000 # default
-  vga_update_interval: 250000
+  es1370: enabled=1, wavedev=""    # win32
+  es1370: enabled=1, wavedev=alsa  # Linux with ALSA
 </screen>
-Video memory is scanned for updates and screen updated every so many virtual
-microseconds. Keep in mind that you must tweak the <command>ips</command>
-parameter of the <link linkend="bochsopt-cpu">cpu option</link> to be as close
-to the number of emulated instructions-per-second your workstation can do,
-for this to be accurate.
+This defines the ES1370 sound emulation. The parameter 'enabled' controls the
+presence of the device. In addition to this, it must be assigned to a PCI
+slot. The 'wavedev' parameter is similar to the 'wave' parameter of the SB16
+soundcard. The emulation supports recording and playback (except DAC1+DAC2
+output at the same time).
 </para>
 </section>
 
@@ -3973,18 +3965,17 @@ turns on this feature and 0 turns it off.
 </para>
 </section>
 
-<section><title>i440fxsupport</title>
+<section><title>pci</title>
 <para>
 Examples:
 <screen>
-  i440fxsupport: enabled=1 # default if compiled with PCI support
-  i440fxsupport: enabled=1, slot1=pcivga, slot2=ne2k
+  pci: enabled=1, chipset=i440fx # default if compiled with PCI support
+  pci: enabled=1, chipset=i440fx, slot1=pcivga, slot2=ne2k
 </screen>
-This option controls the presence of the i440FX PCI chipset. You can also
-specify the devices connected to PCI slots. Up to 5 slots are available.
-These devices are currently supported: ne2k, pcivga, pcidev, pcipnic and
-usb_ohci. If Bochs is compiled with Cirrus SVGA support you'll have the
-additional choice 'cirrus'.
+This option controls the presence of a PCI chipset in Bochs. Currently it only
+supports the i440FX chipset. You can also specify the devices connected to
+PCI slots. Up to 5 slots are available. These devices are currently supported:
+cirrus, es1370, ne2k, pcivga, pcidev, pcipnic, usb_ohci and usb_xhci.
 </para>
 </section>
 
@@ -4114,6 +4105,7 @@ ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.c
 ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
 ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
 ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
+ne2k: mac=fe:fd:00:00:00:01, ethmod=slirp, script=/usr/local/bin/slirp
 
 ioaddr, irq: You probably won't need to change ioaddr and irq, unless there
 are IRQ conflicts. These parameters are ignored if the NE2000 is assigned to
@@ -4162,14 +4154,6 @@ version where this module was added.
   </row>
 </thead>
 <tbody>
-  <row>
-    <entry>arpback</entry>
-    <entry>ARP simulator - disabled by default.
-    </entry>
-    <entry>No</entry>
-    <entry>No</entry>
-    <entry>1.3</entry>
-  </row>
   <row>
     <entry>fbsd</entry>
     <entry>FreeBSD / OpenBSD packetmover.
@@ -4229,6 +4213,17 @@ version where this module was added.
     </entry>
     <entry>Yes, for TFTP</entry>
     <entry>No</entry>
+    <entry>2.2</entry>
+  </row>
+  <row>
+    <entry>slirp</entry>
+    <entry>Ethernet backend for Slirp and a builtin DHCP server. Adds user mode
+    networking to Bochs using Slirp. Only tested with the most recent Slirp
+    version with Debian patches applied. The fullbolt Slirp version should be
+    used. The "script" parameter should point to the Slirp binary.
+    </entry>
+    <entry>No</entry>
+    <entry>Yes</entry>
     <entry>2.2</entry>
   </row>
   <row>
@@ -4878,7 +4873,7 @@ For other arguments, see section <link linkend="bochsrc">bochsrc</link>.
 </row>
 <row>
   <entry>-r <replaceable>path</replaceable></entry>
-  <entry>specify path for restoring state (if save/restore support is compiled in)</entry>
+  <entry>specify path for restoring state</entry>
 </row>
 <row>
   <entry>--help</entry>
@@ -5115,13 +5110,13 @@ file yet.
 Starting with version 2.3, Bochs has limited save/restore support. The state of
 cpu(s), memory and all devices can be saved now. When running Bochs with there
 will be a button in the header bar called "Suspend". Depending on config interface
-and gui there will be a prompt where you can enter a path or a gui folder
-selection dialog box. It is possible to save the state at any time, but we
-recommend to do it when the simulation is idle. After pressing OK/Enter, Bochs
-will save a set of files into the selected folder. The state of hard disk images
-is not handled yet, so Bochs will ask you if you want to continue after saving
-state. We don't recommend to continue unless you are running a read-only guest
-system (e.g. Live-CD).
+and gui there will be a prompt where you can enter a path to an existing directory
+or a gui folder selection dialog box. It is possible to save the state at any time,
+but we recommend to do it when the simulation is idle. After pressing OK/Enter,
+Bochs will save a set of files into the selected folder. The state of hard disk
+images is not handled yet, so Bochs will ask you if you want to continue after
+saving state. We don't recommend to continue unless you are running a read-only
+guest system (e.g. Live-CD).
 </para>
 <para>
 To restore the saved simulation state you can select the restore function in the
@@ -5336,8 +5331,8 @@ will get 2 copies of every announcement.
 
 <section id="bochs-cvs"><title>bochs-cvs mailing list</title>
 <para>
-This is the cvs commit mailinglist (a unified diff email will be sent
-whenever someone does a checkin in the bochs cvs repository).
+This is the svn commit mailinglist (a unified diff email will be sent
+whenever someone does a checkin in the bochs SVN repository).
 </para>
 
 <para>
@@ -5963,7 +5958,7 @@ structures are dynamically created by Bochs.
 </para></listitem>
 <listitem><para> ACPI support is required to boot SMP system in most of modern
 operating systems. For example WinXP 64 bit require ACPI support even for
-single processor configuration. Still not supported by Bochs. (FIXME)
+single processor configuration.
 </para></listitem>
 </itemizedlist>
 </para>
@@ -6458,7 +6453,8 @@ From here, you may use the following commands:
   r|reg|regs|registers         List of CPU integer registers and their contents
   fp|fpu                       List of all FPU registers and their contents
   mmx                          List of all MMX registers and their contents
-  sse                          List of all SSE registers and their contents
+  sse|xmm                      List of all SSE registers and their contents
+  ymm                          List of all AVX registers and their contents
   sreg                         Show segment registers and their contents
   dreg                         Show debug registers and their contents
   creg                         Show control registers and their contents
@@ -6587,20 +6583,6 @@ Insert a time break point "delta" instructions into the future ("delta" is a 64-
 <screen>sba <varname>time</varname></screen>
 
 Insert a time break point at "time" ("time" is a 64-bit integer followed by "L", for example 1000L).
-
-<screen>record <varname>filename</varname></screen>
-
-Record console input to file <varname>filename</varname>. The file consists of
-zero or more lines of the form "%s %d %x", where the first word is the
-event type, the second is a time stamp and the third is event specific
-data.
-
-<screen>playback <varname>filename</varname></screen>
-
-Playback console input from file <varname>filename</varname>. Additional input can
-be given directly in the console window. Events in the file will be
-played back at times relative to the time when the playback command
-was executed.
 
 <screen>print-stack [<varname>num words</varname>]</screen>
 
@@ -7180,8 +7162,7 @@ it may even be possible to edit the shortcut before sending it.
   </para>
 
   <para>
-    In order to use VESA VBE, you need to compile Bochs using the <option>--enable-vbe</option>
-    option and enable it in your <filename>bochsrc</filename> by setting the
+    In order to use VESA VBE, you need to enable it in your <filename>bochsrc</filename> by setting the
     <link linkend="bochsopt-vga">vga option</link> to <parameter>vbe</parameter>.
     Finally, you need to use the
     <ulink url="http://savannah.nongnu.org/projects/vgabios/">LGPL'd VGABIOS</ulink>
@@ -7271,7 +7252,7 @@ Bochs VBE Display Drivers for Windows NT/2000
   # Enable CL-GD5446 PCI
   vga: extension=cirrus
   vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest-cirrus
-  i440fxsupport: enabled=1, slot1=cirrus
+  pci: enabled=1, chipset=i440fx, slot1=cirrus
   </screen>
 
   <note><para>
@@ -7368,15 +7349,6 @@ If unspecified, the default "mode" is flat.
 </tgroup>
 </table>
 </para>
-
-<!--
-<note>
-<para>
-z-undoable and z-volatile modes are only available if the "- -enable-compressed-hd" parameter
-was set at compile time.
-</para>
-</note>
--->
 
 <section id="harddisk-mode-flat"><title>flat</title>
 <para>
@@ -8036,65 +8008,6 @@ The flat disk images must be created with the bximage utility
 </section>
 -->
 
-<!--
-<section><title>z-undoable</title>
-<para>
-</para>
-<section><title>description</title>
-<para>
-</para>
-</section>
-<section><title>image creation</title>
-<para>
-</para>
-</section>
-<section><title>path</title>
-<para>
-</para>
-</section>
-<section><title>external tools</title>
-<para>
-</para>
-</section>
-<section><title>typical use</title>
-<para>
-</para>
-</section>
-<section><title>limitations</title>
-<para>
-</para>
-</section>
-</section>
-
-<section><title>z-volatile</title>
-<para>
-</para>
-<section><title>description</title>
-<para>
-</para>
-</section>
-<section><title>image creation</title>
-<para>
-</para>
-</section>
-<section><title>path</title>
-<para>
-</para>
-</section>
-<section><title>external tools</title>
-<para>
-</para>
-</section>
-<section><title>typical use</title>
-<para>
-</para>
-</section>
-<section><title>limitations</title>
-<para>
-</para>
-</section>
-</section>
--->
 
 </section>
 
@@ -8136,10 +8049,6 @@ This tool can commit redologs into flat images.
 </para>
 <para>
 For now, only "undoable" redologs to flat image commits are supported.
-<!--
-"z-undoable" redologs can also be used, but you have to manually
-decompress the gzipped flat file before using bxcommit.
--->
 Sparse disk image commits may be added in the future.
 </para>
 <para>
@@ -8581,10 +8490,9 @@ linux-$ tar -xzvf bochs-2.0.2.tar.gz
 Next, I configured and compiled Bochs...
 <screen>
 linux-$ cd bochs-2.0.2
-linux-$ ./configure --enable-cdrom --enable-ne2000 --enable-host-specific-asms
+linux-$ ./configure --enable-cdrom --enable-ne2000
 linux-$ make
 </screen>
-The --enable-host-specific-asms should only be used if the host OS is an Intel x86 based OS.
 </para>
 
 <para>
@@ -8644,15 +8552,14 @@ com1: enabled=0
 # no sb16
 boot: cdrom
 floppy_bootsig_check: disabled=0
-vga_update_interval: 300000
+vga: update_freq=5
 keyboard_serial_delay: 250
 keyboard_paste_delay: 100000
 cpu: ips=3000000
 clock: sync=realtime, time0=0
-text_snapshot_check: 0
 mouse: enabled=0
 private_colormap: enabled=0
-i440fxsupport: enabled=0
+pci: enabled=0
 # no ne2k
 # no loader
 log: osr5.log
@@ -8662,7 +8569,6 @@ panic: action=ask
 error: action=report
 info: action=report
 debug: action=ignore
-pass: action=fatal
 keyboard_mapping: enabled=0, map=
 keyboard_type: mf
 user_shortcut: keys=none

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amigaos.cc,v 1.29 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: amigaos.cc 10588 2011-08-16 19:58:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000-2009  The Bochs Project
@@ -25,6 +25,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "bxversion.h"
 #include "param_names.h"
 #include "iodev.h"
 #if BX_WITH_AMIGAOS

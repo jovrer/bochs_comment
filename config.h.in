@@ -131,7 +131,11 @@
 #define BX_HAVE_TIMELOCAL 0
 #define BX_HAVE_GMTIME 0
 #define BX_HAVE_MKTIME 0
+#define BX_HAVE_FSEEK64 0
+#define BX_HAVE_FSEEKO64 0
 #define BX_HAVE_NET_IF_H 0
+#define BX_HAVE___BUILTIN_BSWAP32 0
+#define BX_HAVE___BUILTIN_BSWAP64 0
 
 // This turns on Roland Mainz's idle hack.  Presently it is specific to the X11
 // and term gui. If people try to enable it elsewhere, give a compile error
@@ -141,10 +145,10 @@
 // Minimum Emulated IPS.
 // This is used in the realtime PIT as well as for checking the
 // IPS value set in the config file.
-#define BX_MIN_IPS 200000
+#define BX_MIN_IPS 1000000
 
 // Minimum and maximum values for SMP quantum variable. Defines
-// how many instructions each CPU could execute execute in one
+// how many instructions each CPU could execute in one
 // shot (one cpu_loop call)
 #define BX_SMP_QUANTUM_MIN  1
 #define BX_SMP_QUANTUM_MAX 16
@@ -180,7 +184,8 @@
 #define BX_USE_SER_SMF      1  // Serial
 #define BX_USE_UM_SMF       1  // Unmapped
 #define BX_USE_VGA_SMF      1  // VGA
-#define BX_USE_SB16_SMF     1  // Sound (SB 16)
+#define BX_USE_SB16_SMF     1  // SB 16 soundcard
+#define BX_USE_ES1370_SMF   1  // ES1370 soundcard
 #define BX_USE_DEV_SMF      1  // System Devices (port92)
 #define BX_USE_PCI_SMF      1  // PCI
 #define BX_USE_P2I_SMF      1  // PCI-to-ISA bridge
@@ -189,6 +194,7 @@
 #define BX_USE_PCIDEV_SMF   1  // PCI-DEV
 #define BX_USE_USB_UHCI_SMF 1  // USB UHCI hub
 #define BX_USE_USB_OHCI_SMF 1  // USB OHCI hub
+#define BX_USE_USB_XHCI_SMF 1  // USB xHCI hub
 #define BX_USE_PCIPNIC_SMF  1  // PCI pseudo NIC
 #define BX_USE_NE2K_SMF     1  // NE2K
 #define BX_USE_EFI_SMF      1  // External FPU IRQ
@@ -206,37 +212,20 @@
    || !BX_USE_DMA_SMF || !BX_USE_FD_SMF || !BX_USE_KEY_SMF \
    || !BX_USE_PAR_SMF || !BX_USE_PIC_SMF || !BX_USE_PIT_SMF \
    || !BX_USE_SER_SMF || !BX_USE_UM_SMF || !BX_USE_VGA_SMF \
-   || !BX_USE_SB16_SMF || !BX_USE_DEV_SMF || !BX_USE_PCI_SMF \
-   || !BX_USE_P2I_SMF || !BX_USE_PCIVGA_SMF || !BX_USE_USB_UHCI_SMF \
-   || !BX_USE_USB_OHCI_SMF || !BX_USE_PCIPNIC_SMF || !BX_USE_PIDE_SMF \
-   || !BX_USE_ACPI_SMF || !BX_USE_NE2K_SMF || !BX_USE_EFI_SMF \
-   || !BX_USE_GAMEPORT_SMF || !BX_USE_PCIDEV_SMF || !BX_USE_CIRRUS_SMF)
+   || !BX_USE_SB16_SMF || !BX_USE_ES1370_SMF || !BX_USE_DEV_SMF \
+   || !BX_USE_PCI_SMF || !BX_USE_P2I_SMF || !BX_USE_PCIVGA_SMF \
+   || !BX_USE_USB_UHCI_SMF || !BX_USE_USB_OHCI_SMF || !BX_USE_USB_XHCI_SMF \
+   || !BX_USE_PCIPNIC_SMF || !BX_USE_PIDE_SMF || !BX_USE_ACPI_SMF \
+   || !BX_USE_NE2K_SMF || !BX_USE_EFI_SMF || !BX_USE_GAMEPORT_SMF \
+   || !BX_USE_PCIDEV_SMF || !BX_USE_CIRRUS_SMF)
 #error You must use SMF to have plugins
-#endif
-
-#define BX_SUPPORT_SB16     0
-#define BX_SUPPORT_GAMEPORT 0
-
-#if BX_SUPPORT_SB16
-// Determines which sound output class is to be used.
-// Currently the following are available:
-//    bx_sound_linux_c      Output for Linux, to /dev/dsp and /dev/midi00
-//    bx_sound_windows_c    Output for Windows midi and wave mappers
-//    bx_sound_output_c     Dummy functions, no output
-#define BX_SOUND_OUTPUT_C  bx_sound_output_c
-// Use ALSA sound interface on Linux
-#define BX_HAVE_ALSASOUND  0
 #endif
 
 #define USE_RAW_SERIAL 0
 
-// This option enables compressed (zlib) hd support
-#define BX_COMPRESSED_HD_SUPPORT 0
-#define BX_HAVE_ZLIB 0
-
-#if BX_COMPRESSED_HD_SUPPORT && !BX_HAVE_ZLIB
-  #error You must have zlib to enable compressed hd support
-#endif
+// This option enables RAM file backing for large guest memory with a smaller
+// amount host memory, without causing a panic when host memory is exhausted.
+#define BX_LARGE_RAMFILE 0
 
 // This option defines the number of supported ATA channels.
 // There are up to two drives per ATA channel.
@@ -287,7 +276,6 @@
 
 
 #define BX_WITH_X11 0
-#define BX_WITH_BEOS 0
 #define BX_WITH_WIN32 0
 #define BX_WITH_MACOS 0
 #define BX_WITH_CARBON 0
@@ -387,10 +375,11 @@
   typedef   signed short     Bit16s;
   typedef unsigned int       Bit32u;
   typedef   signed int       Bit32s;
-#ifdef __MINGW32__
+#ifdef __GNUC__
   typedef unsigned long long Bit64u;
   typedef   signed long long Bit64s;
 #include <sys/types.h>
+#include <unistd.h>
 #else
   typedef unsigned __int64   Bit64u;
   typedef   signed __int64   Bit64s;
@@ -579,19 +568,6 @@ typedef
 // is permitted, it defines inline to be empty.
 #define inline inline
 
-// inline functions in headers that are compiled with C compiler
-// (e.g. fpu code) are declared with BX_C_INLINE macro.  Note that
-// the word "inline" itself may now be redefined by the above #define.
-// Many compilers are known to work with "static inline".  If the
-// compiler can put the function inline, it does so and never creates
-// a symbol for the function.  If optimization is off, or inline is
-// defined to be empty, the static keyword causes the function to create
-// a symbol that's visible only to that .c file.  Each .c file that
-// includes the header will produde another local version of the
-// BX_C_INLINE function (not ideal).  However without "static" you can
-// duplicate symbol problems which are even worse.
-#define BX_C_INLINE static inline
-
 // Use BX_CPP_INLINE for all C++ inline functions.  Note that the
 // word "inline" itself may now be redefined by the above #define.
 #define BX_CPP_INLINE inline
@@ -649,21 +625,8 @@ typedef
 // limited i440FX PCI support
 #define BX_SUPPORT_PCI 0
 
-// Bochs VBE display interface
-#define BX_SUPPORT_VBE 0
-
 // CLGD54XX emulation
 #define BX_SUPPORT_CLGD54XX 0
-
-// ACPI controller
-#define BX_SUPPORT_ACPI 0
-
-#if (BX_SUPPORT_ACPI && !BX_SUPPORT_PCI)
-  #error To enable ACPI support, you must also enable PCI
-#endif
-
-// Experimental VGA on PCI
-#define BX_SUPPORT_PCIVGA 0
 
 // Experimental host PCI device mapping
 #define BX_SUPPORT_PCIDEV 0
@@ -672,10 +635,11 @@ typedef
   #error To enable PCI host device mapping, you must also enable PCI
 #endif
 
-// limited USB on PCI
+// USB host controllers
 #define BX_SUPPORT_USB_UHCI 0
 #define BX_SUPPORT_USB_OHCI 0
-#define BX_SUPPORT_PCIUSB (BX_SUPPORT_USB_UHCI || BX_SUPPORT_USB_OHCI)
+#define BX_SUPPORT_USB_XHCI 0
+#define BX_SUPPORT_PCIUSB (BX_SUPPORT_USB_UHCI || BX_SUPPORT_USB_OHCI || BX_SUPPORT_USB_XHCI)
 
 #if (BX_SUPPORT_PCIUSB && !BX_SUPPORT_PCI)
   #error To enable USB, you must also enable PCI
@@ -690,15 +654,22 @@ typedef
 #define BX_SUPPORT_MISALIGNED_SSE 0
 #define BX_SUPPORT_MONITOR_MWAIT 0
 #define BX_SUPPORT_VMX 0
+#define BX_SUPPORT_AVX 0
 
 #if BX_SUPPORT_VMX >= 2 && BX_SUPPORT_X86_64 == 0
   #error "VMXx2 require x86-64 support"
 #endif
 
-#define BX_SupportRepeatSpeedups 0
-#define BX_SupportHostAsms 0
+#if BX_SUPPORT_AVX && BX_SUPPORT_X86_64 == 0
+  #error "AVX require x86-64 support"
+#endif
 
-#define BX_SUPPORT_TRACE_CACHE 0
+#define BX_SUPPORT_REPEAT_SPEEDUPS 0
+#define BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS 0
+
+#if (BX_DEBUGGER || BX_GDBSTUB) && BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
+ #error "Handler-chaining-speedups are not supported together with internal debugger or gdb-stub!"
+#endif
 
 #if BX_SUPPORT_3DNOW
   #define BX_CPU_VENDOR_INTEL 0
@@ -757,12 +728,6 @@ typedef
   #define BX_SUPPORT_APIC 1
 #else
   #define BX_SUPPORT_APIC 0
-#endif
-
-#define BX_SUPPORT_X2APIC 0
-
-#if (BX_SUPPORT_X2APIC && !BX_SUPPORT_APIC)
-  #error APIC is required for X2APIC emulation !
 #endif
 
 #define BX_HAVE_GETENV 0
@@ -845,36 +810,40 @@ typedef
 // this enables the lowlevel stuff below if one of the NICs is present
 #define BX_NETWORKING 0
 
-#define BX_ETH_NULL_LOGGING 1
-#define BX_ETH_FBSD_LOGGING 1
+// which networking modules will be enabled
+// determined by configure script
+#define BX_NETMOD_FBSD    0
+#define BX_NETMOD_LINUX   0
+#define BX_NETMOD_WIN32   0
+#define BX_NETMOD_TAP     0
+#define BX_NETMOD_TUNTAP  0
+#define BX_NETMOD_VDE     0
+#define BX_NETMOD_SLIRP   0
 
-// determine which NE2K packet mover modules will be enabled
-// (this was moved from iodev/eth.h)
-#define ETH_NULL  1
-#ifdef BX_USE_ETH_ARPBACK
-#  define ETH_ARPBACK 1
+// Soundcard and gameport support
+#define BX_SUPPORT_SB16     0
+#define BX_SUPPORT_ES1370   0
+#define BX_SUPPORT_GAMEPORT 0
+#define BX_SUPPORT_SOUNDLOW 0
+
+#if BX_SUPPORT_SOUNDLOW
+// Determines which sound lowlevel class is to be used.
+// Currently the following are available:
+//    bx_sound_linux_c      Output for Linux, to /dev/dsp and /dev/midi00
+//                          or ALSA PCM and sequencer interface
+//    bx_sound_windows_c    Output for Windows midi and wave mappers
+//    bx_sound_osx_c        Output for MacOSX midi and wave device
+//    bx_sound_lowlevel_c   Dummy functions, no output
+#define BX_SOUND_LOWLEVEL_C bx_sound_lowlevel_c
+// Use ALSA sound interface on Linux
+#define BX_HAVE_ALSASOUND  0
 #endif
-#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__NetBSD_kernel__) || defined(__APPLE__)
-#define ETH_FBSD  1
-#endif
-#if defined(linux)
-#define ETH_LINUX 1
-#endif
-#if defined(WIN32)
-#define ETH_WIN32 1
+
+#if (BX_SUPPORT_ES1370 && !BX_SUPPORT_PCI)
+  #error To enable the ES1370 soundcard, you must also enable PCI
 #endif
 
-// this enables Ethertap packet mover; determined by configure script
-#define HAVE_ETHERTAP 0
-
-// this enables TUN/TAP packet mover; determined by configure script
-#define HAVE_TUNTAP 0
-
-// this enables VDE packet mover; determined by configure script
-#define HAVE_VDE 0
-
-
-// I/O Interface to debug
+// I/O Interface to debugger
 #define BX_SUPPORT_IODEBUG 0
 
 #ifdef WIN32
@@ -883,6 +852,10 @@ typedef
 #else
 #define BX_FLOPPY0_NAME "Floppy Disk 0"
 #define BX_FLOPPY1_NAME "Floppy Disk 1"
+#endif
+
+#if defined(__GNUC__) && (__GNUC__ == 4 && __GNUC_MINOR__ == 0)
+#error "gcc 4.0.0 is known to produce incorrect code which breaks Bochs emulation"
 #endif
 
 #endif  // _BX_CONFIG_H

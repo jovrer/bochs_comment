@@ -37,11 +37,15 @@ these four paragraphs for those parts of this code that are retained.
 #ifndef _SOFTFLOAT_H_
 #define _SOFTFLOAT_H_
 
+#define FLOAT16
 #define FLOATX80
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE floating-point types.
 *----------------------------------------------------------------------------*/
+#ifdef FLOAT16
+typedef Bit16u float16;
+#endif
 typedef Bit32u float32;
 typedef Bit64u float64;
 
@@ -102,6 +106,18 @@ enum {
 };
 
 /*----------------------------------------------------------------------------
+| Options to indicate which negations to perform in float*_muladd()
+| Using these differs from negating an input or output before calling
+| the muladd function in that this means that a NaN doesn't have its
+| sign bit inverted before it is propagated.
+*----------------------------------------------------------------------------*/
+enum {
+    float_muladd_negate_c       = 1,
+    float_muladd_negate_product = 2,
+    float_muladd_negate_result  = float_muladd_negate_c | float_muladd_negate_product
+};
+
+/*----------------------------------------------------------------------------
 | Software IEC/IEEE floating-point status structure.
 *----------------------------------------------------------------------------*/
 struct float_status_t
@@ -114,6 +130,7 @@ struct float_status_t
     int float_exception_masks;
     int float_nan_handling_mode;	/* flag register */
     int flush_underflow_to_zero;	/* flag register */
+    int denormals_are_zeros;            /* flag register */
 };
 
 /*----------------------------------------------------------------------------
@@ -131,7 +148,7 @@ BX_CPP_INLINE void float_raise(float_status_t &status, int flags)
 | exceptions are masked.
 *----------------------------------------------------------------------------*/
 
-BX_CPP_INLINE int float_exception_masked(float_status_t &status, int flag)
+BX_CPP_INLINE int float_exception_masked(const float_status_t &status, int flag)
 {
     return status.float_exception_masks & flag;
 }
@@ -140,7 +157,7 @@ BX_CPP_INLINE int float_exception_masked(float_status_t &status, int flag)
 | Returns current floating point rounding mode specified by status word.
 *----------------------------------------------------------------------------*/
 
-BX_CPP_INLINE int get_float_rounding_mode(float_status_t &status)
+BX_CPP_INLINE int get_float_rounding_mode(const float_status_t &status)
 {
     return status.float_rounding_mode;
 }
@@ -150,7 +167,7 @@ BX_CPP_INLINE int get_float_rounding_mode(float_status_t &status)
 *----------------------------------------------------------------------------*/
 
 #ifdef FLOATX80
-BX_CPP_INLINE int get_float_rounding_precision(float_status_t &status)
+BX_CPP_INLINE int get_float_rounding_precision(const float_status_t &status)
 {
     return status.float_rounding_precision;
 }
@@ -161,7 +178,7 @@ BX_CPP_INLINE int get_float_rounding_precision(float_status_t &status)
 | by status word.
 *----------------------------------------------------------------------------*/
 
-BX_CPP_INLINE int get_float_nan_handling_mode(float_status_t &status)
+BX_CPP_INLINE int get_float_nan_handling_mode(const float_status_t &status)
 {
     return status.float_nan_handling_mode;
 }
@@ -173,16 +190,26 @@ BX_CPP_INLINE int get_float_nan_handling_mode(float_status_t &status)
 #ifdef FLOATX80
 BX_CPP_INLINE void set_float_rounding_up(float_status_t &status)
 {
-    status.float_exception_flags |= (float_flag_inexact | RAISE_SW_C1);
+    status.float_exception_flags |= RAISE_SW_C1;
 }
 #endif
+
+/*----------------------------------------------------------------------------
+| Returns 1 if the <denormals-are-zeros> feature is supported;
+| otherwise returns 0.
+*----------------------------------------------------------------------------*/
+
+BX_CPP_INLINE int get_denormals_are_zeros(const float_status_t &status)
+{
+    return status.denormals_are_zeros;
+}
 
 /*----------------------------------------------------------------------------
 | Returns 1 if the <flush-underflow-to-zero> feature is supported;
 | otherwise returns 0.
 *----------------------------------------------------------------------------*/
 
-BX_CPP_INLINE int get_flush_underflow_to_zero(float_status_t &status)
+BX_CPP_INLINE int get_flush_underflow_to_zero(const float_status_t &status)
 {
     return status.flush_underflow_to_zero;
 }
@@ -213,6 +240,28 @@ float32 float32_sub(float32, float32, float_status_t &status);
 float32 float32_mul(float32, float32, float_status_t &status);
 float32 float32_div(float32, float32, float_status_t &status);
 float32 float32_sqrt(float32, float_status_t &status);
+float32 float32_frc(float32, float_status_t &status);
+float32 float32_muladd(float32, float32, float32, int flags, float_status_t &status);
+
+BX_CPP_INLINE float32 float32_fmadd(float32 a, float32 b, float32 c, float_status_t &status)
+{
+  return float32_muladd(a, b, c, 0, status);
+}
+
+BX_CPP_INLINE float32 float32_fmsub(float32 a, float32 b, float32 c, float_status_t &status)
+{
+  return float32_muladd(a, b, c, float_muladd_negate_c, status);
+}
+
+BX_CPP_INLINE float32 float32_fnmadd(float32 a, float32 b, float32 c, float_status_t &status)
+{
+  return float32_muladd(a, b, c, float_muladd_negate_product, status);
+}
+
+BX_CPP_INLINE float32 float32_fnmsub(float32 a, float32 b, float32 c, float_status_t &status)
+{
+  return float32_muladd(a, b, c, float_muladd_negate_result, status);
+}
 
 int float32_compare(float32, float32, float_status_t &status);
 int float32_compare_quiet(float32, float32, float_status_t &status);
@@ -220,6 +269,10 @@ int float32_compare_quiet(float32, float32, float_status_t &status);
 float_class_t float32_class(float32);
 int float32_is_signaling_nan(float32);
 int float32_is_nan(float32);
+int float32_is_denormal(float32);
+
+float32 float32_min(float32 a, float32 b, float_status_t &status);
+float32 float32_max(float32 a, float32 b, float_status_t &status);
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE double-precision conversion routines.
@@ -239,6 +292,28 @@ float64 float64_sub(float64, float64, float_status_t &status);
 float64 float64_mul(float64, float64, float_status_t &status);
 float64 float64_div(float64, float64, float_status_t &status);
 float64 float64_sqrt(float64, float_status_t &status);
+float64 float64_frc(float64, float_status_t &status);
+float64 float64_muladd(float64, float64, float64, int flags, float_status_t &status);
+
+BX_CPP_INLINE float64 float64_fmadd(float64 a, float64 b, float64 c, float_status_t &status)
+{
+  return float64_muladd(a, b, c, 0, status);
+}
+
+BX_CPP_INLINE float64 float64_fmsub(float64 a, float64 b, float64 c, float_status_t &status)
+{
+  return float64_muladd(a, b, c, float_muladd_negate_c, status);
+}
+
+BX_CPP_INLINE float64 float64_fnmadd(float64 a, float64 b, float64 c, float_status_t &status)
+{
+  return float64_muladd(a, b, c, float_muladd_negate_product, status);
+}
+
+BX_CPP_INLINE float64 float64_fnmsub(float64 a, float64 b, float64 c, float_status_t &status)
+{
+  return float64_muladd(a, b, c, float_muladd_negate_result, status);
+}
 
 int float64_compare(float64, float64, float_status_t &status);
 int float64_compare_quiet(float64, float64, float_status_t &status);
@@ -246,6 +321,20 @@ int float64_compare_quiet(float64, float64, float_status_t &status);
 float_class_t float64_class(float64);
 int float64_is_signaling_nan(float64);
 int float64_is_nan(float64);
+int float64_is_denormal(float64);
+
+float64 float64_min(float64 a, float64 b, float_status_t &status);
+float64 float64_max(float64 a, float64 b, float_status_t &status);
+
+#ifdef FLOAT16
+float32 float16_to_float32(float16, float_status_t &status);
+float16 float32_to_float16(float32, float_status_t &status);
+
+float_class_t float16_class(float16);
+int float16_is_signaling_nan(float16);
+int float16_is_nan(float16);
+int float16_is_denormal(float16);
+#endif
 
 #ifdef FLOATX80
 

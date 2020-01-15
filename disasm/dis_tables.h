@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_tables.h,v 1.46 2010/07/22 15:12:07 sshwarts Exp $
+// $Id: dis_tables.h 10749 2011-10-30 08:58:49Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2010 Stanislav Shwartsman
+//   Copyright (c) 2005-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -34,9 +34,11 @@
 #define _GRPRM         9
 #define _GRP3BOP       10
 #define _GRP64B        11
+#define _GRPVEXW       12
 
 /* ************************************************************************ */
 #define GRPSSE(n)       _GRPSSE,   BxDisasmGroupSSE_##n
+#define GRPAVX(n)       _GRPSSE,   BxDisasmGroupAVX_##n
 #define GRPN(n)         _GROUPN,   BxDisasmGroup##n
 #define GRPRM(n)        _GRPRM,    BxDisasmGroupRm##n
 #define GRPMOD(n)       _SPLIT11B, BxDisasmGroupMod##n
@@ -44,6 +46,7 @@
 #define GRP3DNOW        _GRP3DNOW, BxDisasm3DNowGroup
 #define GR3BTAB(n)      _GRP3BOP,  BxDisasm3ByteOpTable##n
 #define GR64BIT(n)      _GRP64B,   BxDisasmGrpOs64B_##n
+#define GRPVEXW(n)      _GRPVEXW,  BxDisasmGrpVexW_##n
 /* ************************************************************************ */
 
 /* ************************************************************************ */
@@ -99,6 +102,8 @@
 #define Gq &disassembler::Gq
 #define Gy &disassembler::Gy
 
+#define By &disassembler::By
+
 #define I1 &disassembler::I1
 #define Ib &disassembler::Ib
 #define Iw &disassembler::Iw
@@ -132,11 +137,14 @@
 #define Vsd &disassembler::Vsd
 #define Vps &disassembler::Vps
 #define Vpd &disassembler::Vpd
+#define VIb &disassembler::VIb
 
 #define Ups &disassembler::Ups
 #define Upd &disassembler::Upd
 #define Udq &disassembler::Udq
+#define Uq  &disassembler::Uq
 
+#define  Wb &disassembler::Wb
 #define  Ww &disassembler::Ww
 #define  Wd &disassembler::Wd
 #define  Wq &disassembler::Wq
@@ -145,6 +153,12 @@
 #define Wsd &disassembler::Wsd
 #define Wps &disassembler::Wps
 #define Wpd &disassembler::Wpd
+
+#define Hdq &disassembler::Hdq
+#define Hps &disassembler::Hps
+#define Hpd &disassembler::Hpd
+#define Hss &disassembler::Hss
+#define Hsd &disassembler::Hsd
 
 #define Ob &disassembler::Ob
 #define Ow &disassembler::Ow
@@ -165,6 +179,8 @@
 #define Mpd &disassembler::Mpd
 #define Mss &disassembler::Mss
 #define Msd &disassembler::Msd
+
+#define VSib &disassembler::VSib
 
 #define Xb &disassembler::Xb
 #define Xw &disassembler::Xw
@@ -189,6 +205,8 @@ const struct BxDisasmOpcodeInfo_t
 #include "opcodes.inc"
 #include "dis_tables_x87.inc"
 #include "dis_tables_sse.inc"
+#include "dis_tables_avx.inc"
+#include "dis_tables_xop.inc"
 #include "dis_tables.inc"
 
 #undef XX

@@ -1,4 +1,4 @@
-$Id: misc.txt,v 1.33 2008/02/05 22:33:34 sshwarts Exp $
+$Id: misc.txt,v 1.33 2008-02-05 22:33:34 sshwarts Exp $
 
 This is a temporary place to paste in stuff that should go into the docs one
 day.  When it is transferred into docbook, let's remove it from misc.txt.

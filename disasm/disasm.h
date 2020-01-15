@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: disasm.h,v 1.63 2010/07/22 15:12:07 sshwarts Exp $
+// $Id: disasm.h 10795 2011-11-26 18:38:43Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//   Copyright (c) 2005-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -39,34 +39,43 @@
 }
 
 /* Instruction set attributes (duplicated in cpu.h) */
-#define IA_X87              0x00000001        /* FPU (X87) instruction */
-#define IA_486              0x00000002        /* 486 new instruction */
-#define IA_PENTIUM          0x00000004        /* Pentium new instruction */
-#define IA_P6               0x00000008        /* P6 new instruction */
-#define IA_MMX              0x00000010        /* MMX instruction */
-#define IA_3DNOW            0x00000020        /* 3DNow! instruction */
-#define IA_FXSAVE_FXRSTOR   0x00000040        /* FXSAVE/FXRSTOR instruction */
-#define IA_SYSENTER_SYSEXIT 0x00000080        /* SYSENTER/SYSEXIT instruction */
-#define IA_CLFLUSH          0x00000100        /* CLFLUSH instruction */
-#define IA_SSE              0x00000200        /* SSE  instruction */
-#define IA_SSE2             0x00000400        /* SSE2 instruction */
-#define IA_SSE3             0x00000800        /* SSE3 instruction */
-#define IA_SSSE3            0x00001000        /* SSSE3 instruction */
-#define IA_SSE4_1           0x00002000        /* SSE4_1 instruction */
-#define IA_SSE4_2           0x00004000        /* SSE4_2 instruction */
-#define IA_SSE4A            0x00008000        /* SSE4A instruction */
-#define IA_MONITOR_MWAIT    0x00010000        /* MONITOR/MWAIT instruction */
-#define IA_VMX              0x00020000        /* VMX instruction */
-#define IA_SMX              0x00040000        /* SMX instruction */
-#define IA_SVM              0x00080000        /* SVM instruction */
-#define IA_XSAVE            0x00100000        /* XSAVE/XRSTOR extensions instruction */
-#define IA_XSAVEOPT         0x00200000        /* XSAVEOPT instruction */
-#define IA_AES_PCLMULQDQ    0x00400000        /* AES+PCLMULQDQ instructions */
-#define IA_MOVBE            0x00800000        /* MOVBE Intel Atom(R) instruction */
-#define IA_FSGSBASE         0x01000000        /* FS/GS BASE access instructions */
-#define IA_AVX              0x02000000        /* AVX instruction */
-#define IA_AVX_FMA          0x04000000        /* AVX FMA instruction */
-#define IA_X86_64           0x08000000        /* x86-64 instruction */
+#define IA_X87              (BX_CONST64(1) << 0)   /* FPU (X87) instruction */
+#define IA_486              (BX_CONST64(1) << 1)   /* 486 new instruction */
+#define IA_PENTIUM          (BX_CONST64(1) << 2)   /* Pentium new instruction */
+#define IA_P6               (BX_CONST64(1) << 3)   /* P6 new instruction */
+#define IA_MMX              (BX_CONST64(1) << 4)   /* MMX instruction */
+#define IA_3DNOW            (BX_CONST64(1) << 5)   /* 3DNow! instruction (AMD) */
+#define IA_SYSCALL_SYSRET   (BX_CONST64(1) << 6)   /* SYSCALL/SYSRET in legacy mode (AMD) */
+#define IA_SYSENTER_SYSEXIT (BX_CONST64(1) << 7)   /* SYSENTER/SYSEXIT instruction */
+#define IA_CLFLUSH          (BX_CONST64(1) << 8)   /* CLFLUSH instruction */
+#define IA_SSE              (BX_CONST64(1) << 9)   /* SSE  instruction */
+#define IA_SSE2             (BX_CONST64(1) << 10)  /* SSE2 instruction */
+#define IA_SSE3             (BX_CONST64(1) << 11)  /* SSE3 instruction */
+#define IA_SSSE3            (BX_CONST64(1) << 12)  /* SSSE3 instruction */
+#define IA_SSE4_1           (BX_CONST64(1) << 13)  /* SSE4_1 instruction */
+#define IA_SSE4_2           (BX_CONST64(1) << 14)  /* SSE4_2 instruction */
+#define IA_MONITOR_MWAIT    (BX_CONST64(1) << 15)  /* MONITOR/MWAIT instruction */
+#define IA_VMX              (BX_CONST64(1) << 16)  /* VMX instruction */
+#define IA_SMX              (BX_CONST64(1) << 17)  /* SMX instruction */
+#define IA_LM_LAHF_SAHF     (BX_CONST64(1) << 18)  /* Long Mode LAHF/SAHF instruction */
+#define IA_RDTSCP           (BX_CONST64(1) << 19)  /* RDTSCP instruction */
+#define IA_XSAVE            (BX_CONST64(1) << 20)  /* XSAVE/XRSTOR extensions instruction */
+#define IA_XSAVEOPT         (BX_CONST64(1) << 21)  /* XSAVEOPT instruction */
+#define IA_AES_PCLMULQDQ    (BX_CONST64(1) << 22)  /* AES+PCLMULQDQ instruction */
+#define IA_MOVBE            (BX_CONST64(1) << 23)  /* MOVBE Intel Atom(R) instruction */
+#define IA_FSGSBASE         (BX_CONST64(1) << 24)  /* FS/GS BASE access instruction */
+#define IA_INVPCID          (BX_CONST64(1) << 25)  /* INVPCID instruction */
+#define IA_AVX              (BX_CONST64(1) << 26)  /* AVX instruction */
+#define IA_AVX2             (BX_CONST64(1) << 27)  /* AVX2 instruction */
+#define IA_AVX_F16C         (BX_CONST64(1) << 28)  /* AVX F16 convert instruction */
+#define IA_AVX_FMA          (BX_CONST64(1) << 29)  /* AVX FMA instruction */
+#define IA_SSE4A            (BX_CONST64(1) << 30)  /* SSE4A instruction (AMD) */
+#define IA_LZCNT            (BX_CONST64(1) << 31)  /* LZCNT instruction */
+#define IA_BMI1             (BX_CONST64(1) << 32)  /* BMI1 instruction */
+#define IA_BMI2             (BX_CONST64(1) << 33)  /* BMI2 instruction */
+#define IA_FMA4             (BX_CONST64(1) << 34)  /* FMA4 instruction (AMD) */
+#define IA_XOP              (BX_CONST64(1) << 35)  /* XOP instruction (AMD) */
+#define IA_TBM              (BX_CONST64(1) << 36)  /* TBM instruction (AMD) */
 
 /* general purpose bit register */
 enum {
@@ -106,7 +115,7 @@ struct BxDisasmOpcodeInfo_t
     BxDisasmPtr_t Operand2;
     BxDisasmPtr_t Operand3;
     BxDisasmPtr_t Operand4;
-    Bit32u Attr;
+    Bit64u Feature;
 };
 
 struct BxDisasmOpcodeTable_t
@@ -119,16 +128,17 @@ struct BxDisasmOpcodeTable_t
 #define NO_SEG_OVERRIDE 0xFF
 
 // datasize attributes
-#define X_SIZE      0x0000
-#define B_SIZE      0x0100
-#define W_SIZE      0x0200
-#define D_SIZE      0x0300
-#define Q_SIZE      0x0400
-#define Z_SIZE      0x0500
-#define V_SIZE      0x0600
-#define O_SIZE      0x0700
-#define T_SIZE      0x0800
-#define P_SIZE      0x0900
+#define   X_SIZE      0x00 /* no size */
+#define   B_SIZE      0x01 /* byte */
+#define   W_SIZE      0x02 /* word */
+#define   D_SIZE      0x03 /* double word */
+#define   Q_SIZE      0x04 /* quad word */
+#define   Z_SIZE      0x05 /* double word in 32-bit mode, quad word in 64-bit mode */
+#define   T_SIZE      0x06 /* 10-byte x87 floating point */
+#define XMM_SIZE      0x07 /* double quad word (XMM) */
+#define YMM_SIZE      0x08 /* quadruple quad word (YMM) */
+
+#define VSIB_Index    0x80
 
 // branch hint attribute
 #define BRANCH_HINT 0x1000
@@ -153,6 +163,11 @@ public:
   unsigned b1;
   unsigned ilen;
 
+#define BX_AVX_VL128 0
+#define BX_AVX_VL256 1
+  Bit8u vex_vvv, vex_l, vex_w;
+  int is_vex; // 0 - no VEX used, 1 - VEX is used, -1 - invalid VEX
+  int is_xop; // 0 - no XOP used, 1 - XOP is used, -1 - invalid XOP
   Bit8u modrm, mod, nnn, rm;
   Bit8u sib, scale, index, base;
   union {
@@ -185,6 +200,11 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
   ilen = 0;
   b1 = 0;
 
+  is_vex = 0;
+  is_xop = 0;
+  vex_vvv = 0;
+  vex_l = BX_AVX_VL128;
+  vex_w = 0;
   modrm = mod = nnn = rm = 0;
   sib = scale = index = base = 0;
   displacement.displ32 = 0;
@@ -234,6 +254,7 @@ private:
 
   const char **segment_name;
   const char **index16;
+  const char **vector_reg_name;
 
   const char *sreg_mod00_base32[16];
   const char *sreg_mod01or10_base32[16];
@@ -287,6 +308,8 @@ private:
   void dis_putc(char symbol);
   void dis_sprintf(const char *fmt, ...);
   void decode_modrm(x86_insn *insn);
+  unsigned decode_vex(x86_insn *insn);
+  unsigned decode_xop(x86_insn *insn);
 
   void resolve16_mod0   (const x86_insn *insn, unsigned mode);
   void resolve16_mod1or2(const x86_insn *insn, unsigned mode);
@@ -354,11 +377,11 @@ public:
  * R  - The mod field of the ModR/M byte may refer only to a general register.
  * S  - The reg field of the ModR/M byte selects a segment register.
  * T  - The reg field of the ModR/M byte selects a test register.
- * U  - The R/M field of the ModR/M byte selects a 128-bit XMM register.
- * V  - The reg field of the ModR/M byte selects a 128-bit XMM register.
+ * U  - The R/M field of the ModR/M byte selects a 128-bit XMM/256-bit YMM register.
+ * V  - The reg field of the ModR/M byte selects a 128-bit XMM/256-bit YMM register.
  * W  - A ModR/M byte follows the opcode and specifies the operand. The
- *      operand is either a 128-bit XMM register or a memory address. If
- *      it is a memory address, the address is computed from a segment
+ *      operand is either a 128-bit XMM/256-bit YMM register or a memory address.
+ *      If it is a memory address, the address is computed from a segment
  *      register and any of the following values: a base register, an
  *      index register, a scaling factor, and a displacement.
  * X  - Memory addressed by the DS:rSI register pair.
@@ -375,14 +398,14 @@ public:
  * d  - Doubleword, regardless of operand-size attribute.
  * dq - Double-quadword, regardless of operand-size attribute.
  * p  - 32-bit or 48-bit pointer, depending on operand-size attribute.
- * pd - 128-bit packed double-precision floating-point data.
+ * pd - 128-bit/256-bit packed double-precision floating-point data.
  * pi - Quadword MMX technology register (packed integer)
- * ps - 128-bit packed single-precision floating-point data.
+ * ps - 128-bit/256-bit packed single-precision floating-point data.
  * q  - Quadword, regardless of operand-size attribute.
  * s  - 6-byte or 10-byte pseudo-descriptor.
  * si - Doubleword integer register (scalar integer)
- * ss - Scalar element of a 128-bit packed single-precision floating data.
- * sd - Scalar element of a 128-bit packed double-precision floating data.
+ * ss - Scalar element of a packed single-precision floating data.
+ * sd - Scalar element of a packed double-precision floating data.
  * v  - Word, doubleword or quadword, depending on operand-size attribute.
  * w  - Word, regardless of operand-size attr.
  * y  - Doubleword or quadword (in 64-bit mode) depending on 32/64 bit
@@ -449,6 +472,7 @@ public:
   void Ey(const x86_insn *insn);
   void Ebd(const x86_insn *insn);
   void Ewd(const x86_insn *insn);
+  void Edq(const x86_insn *insn);
 
   // general purpose register
   void Gb(const x86_insn *insn);
@@ -456,6 +480,9 @@ public:
   void Gd(const x86_insn *insn);
   void Gq(const x86_insn *insn);
   void Gy(const x86_insn *insn);
+
+  // vex encoded general purpose register
+  void By(const x86_insn *insn);
 
   // immediate
   void I1(const x86_insn *insn);
@@ -493,18 +520,22 @@ public:
   void Vq(const x86_insn *insn);
   void Nq(const x86_insn *insn);
 
-  // xmm register
+  // xmm/ymm register
   void Ups(const x86_insn *insn);
   void Upd(const x86_insn *insn);
   void Udq(const x86_insn *insn);
+  void Uq(const x86_insn *insn);
 
   void Vdq(const x86_insn *insn);
   void Vss(const x86_insn *insn);
   void Vsd(const x86_insn *insn);
   void Vps(const x86_insn *insn);
   void Vpd(const x86_insn *insn);
+  // xmm/ymm register through imm byte
+  void VIb(const x86_insn *insn);
 
-  // xmm register or memory operand
+  // xmm/ymm register or memory operand
+  void Wb(const x86_insn *insn);
   void Ww(const x86_insn *insn);
   void Wd(const x86_insn *insn);
   void Wq(const x86_insn *insn);
@@ -514,6 +545,13 @@ public:
   void Wsd(const x86_insn *insn);
   void Wps(const x86_insn *insn);
   void Wpd(const x86_insn *insn);
+
+  // vex encoded xmm/ymm register
+  void Hdq(const x86_insn *insn);
+  void Hps(const x86_insn *insn);
+  void Hpd(const x86_insn *insn);
+  void Hss(const x86_insn *insn);
+  void Hsd(const x86_insn *insn);
 
   // direct memory access
   void OP_O(const x86_insn *insn, unsigned size);
@@ -538,6 +576,9 @@ public:
   void Mpd(const x86_insn *insn);
   void Mss(const x86_insn *insn);
   void Msd(const x86_insn *insn);
+
+  // gather VSib
+  void VSib(const x86_insn *insn);
 
   // string instructions
   void OP_X(const x86_insn *insn, unsigned size);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: tasking.cc,v 1.97 2010/12/22 21:16:02 sshwarts Exp $
+// $Id: tasking.cc 10553 2011-08-09 20:50:51Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2010  The Bochs Project
@@ -161,7 +161,8 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   }
 
 #if BX_SUPPORT_VMX
-  VMexit_TaskSwitch(i, tss_selector->value, source);
+  if (BX_CPU_THIS_PTR in_vmx_guest)
+    VMexit_TaskSwitch(i, tss_selector->value, source);
 #endif
 
   // Gather info about old TSS
@@ -188,8 +189,8 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   // used in the task switch are paged in.
   if (BX_CPU_THIS_PTR cr0.get_PG())
   {
-    dtranslate_linear(nbase32, 0, BX_READ);  // old TSS
-    dtranslate_linear(nbase32 + new_TSS_max, 0, BX_READ);
+    translate_linear(nbase32, 0, BX_READ);  // old TSS
+    translate_linear(nbase32 + new_TSS_max, 0, BX_READ);
 
     // ??? Humm, we check the new TSS region with READ above,
     // but sometimes we need to write the link field in that
@@ -200,8 +201,8 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
 
     if (source == BX_TASK_FROM_CALL || source == BX_TASK_FROM_INT)
     {
-      dtranslate_linear(nbase32,     0, BX_WRITE);
-      dtranslate_linear(nbase32 + 1, 0, BX_WRITE);
+      translate_linear(nbase32,     0, BX_WRITE);
+      translate_linear(nbase32 + 1, 0, BX_WRITE);
     }
   }
 
@@ -242,8 +243,8 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   if (BX_CPU_THIS_PTR tr.cache.type <= 3) {
     // check that we won't page fault while writing
     if (BX_CPU_THIS_PTR cr0.get_PG()) {
-      dtranslate_linear(Bit32u(obase32 + 14), 0, BX_WRITE);
-      dtranslate_linear(Bit32u(obase32 + 41), 0, BX_WRITE);
+      translate_linear(Bit32u(obase32 + 14), 0, BX_WRITE);
+      translate_linear(Bit32u(obase32 + 41), 0, BX_WRITE);
     }
 
     system_write_word(Bit32u(obase32 + 14), IP);
@@ -269,8 +270,8 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   else {
     // check that we won't page fault while writing
     if (BX_CPU_THIS_PTR cr0.get_PG()) {
-      dtranslate_linear(Bit32u(obase32 + 0x20), 0, BX_WRITE);
-      dtranslate_linear(Bit32u(obase32 + 0x5d), 0, BX_WRITE);
+      translate_linear(Bit32u(obase32 + 0x20), 0, BX_WRITE);
+      translate_linear(Bit32u(obase32 + 0x5d), 0, BX_WRITE);
     }
 
     system_write_dword(Bit32u(obase32 + 0x20), EIP);
@@ -404,7 +405,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   BX_CPU_THIS_PTR cr0.set_TS(1);
 
   // Task switch clears LE/L3/L2/L1/L0 in DR7
-  BX_CPU_THIS_PTR dr7 &= ~0x00000155;
+  BX_CPU_THIS_PTR dr7.val32 &= ~0x00000155;
 
   // Step 10: If call or interrupt, set the NT flag in the eflags
   //          image stored in new task's TSS.  If IRET or JMP,
@@ -683,6 +684,9 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
 
 #if BX_CPU_LEVEL >= 6
   handleSseModeChange(); /* CR0.TS changes */
+#if BX_SUPPORT_AVX
+  handleAvxModeChange();
+#endif
 #endif
 
   //

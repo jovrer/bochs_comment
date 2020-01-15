@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.80 2011/01/12 18:49:11 sshwarts Exp $
+// $Id: pc_system.cc 10783 2011-11-21 13:21:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -287,8 +287,7 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
 
   timer[i].inUse      = 1;
   timer[i].period     = ticks;
-  timer[i].timeToFire = (ticksTotal + Bit64u(currCountdownPeriod-currCountdown)) +
-                        ticks;
+  timer[i].timeToFire = (ticksTotal + Bit64u(currCountdownPeriod-currCountdown)) + ticks;
   timer[i].active     = active;
   timer[i].continuous = continuous;
   timer[i].funct      = funct;
@@ -422,11 +421,11 @@ void bx_pc_system_c::timebp_handler(void* this_ptr)
 
    if (timebp_queue_size > 1) {
      Bit64s new_diff = timebp_queue[1] - bx_pc_system.time_ticks();
-     bx_pc_system.activate_timer_ticks(timebp_timer, new_diff, 1);
+     bx_pc_system.activate_timer_ticks(timebp_timer, new_diff, 0);
    }
    timebp_queue_size--;
    for (int i = 0; i < timebp_queue_size; i++)
-   timebp_queue[i] = timebp_queue[i+1];
+     timebp_queue[i] = timebp_queue[i+1];
 }
 #endif // BX_DEBUGGER
 
@@ -474,8 +473,7 @@ void bx_pc_system_c::activate_timer_ticks(unsigned i, Bit64u ticks, bx_bool cont
   }
 
   timer[i].period = ticks;
-  timer[i].timeToFire = (ticksTotal + Bit64u(currCountdownPeriod-currCountdown)) +
-                        ticks;
+  timer[i].timeToFire = (ticksTotal + Bit64u(currCountdownPeriod-currCountdown)) + ticks;
   timer[i].active     = 1;
   timer[i].continuous = continuous;
 

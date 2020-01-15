@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.h,v 1.16 2011/01/16 12:46:48 vruppert Exp $
+// $Id: usb_msd.h 10414 2011-06-21 19:54:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Volker Ruppert
@@ -64,7 +64,9 @@ private:
     int result;
     Bit8u image_mode;
     device_image_t *hdimage;
+#ifdef LOWLEVEL_CDROM
     LOWLEVEL_CDROM *cdrom;
+#endif
     scsi_device_t *scsi_dev;
     USBPacket *packet;
     bx_list_c *sr_list;

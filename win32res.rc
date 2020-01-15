@@ -5,13 +5,8 @@
 ICON_BOCHS ICON build\win32\nsis\logo.ico
 1 ICON build\win32\nsis\bochs.ico
 
-#ifndef _WIN64
-// Manifest for 32-bit Windows
-1 24 build\win32\bochs.win32.manifest
-#else
-// Manifest for 64-bit Windows
-1 24 build\win32\bochs.win64.manifest
-#endif
+// Manifest for both 32-bit and 64-bit Windows
+1 24 build\win32\bochs.manifest
 
 ASK_DLG DIALOG 30, 30, 200, 100
 STYLE DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | WS_SYSMENU
@@ -93,9 +88,6 @@ BEGIN
                     WS_VSCROLL | WS_TABSTOP
     LTEXT           "Panic events", IDLOGLBL4, 70, 87, 55, 14
     COMBOBOX        IDLOGEVT4, 155, 85, 65, 56, CBS_DROPDOWNLIST | CBS_AUTOHSCROLL |
-                    WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Pass events", IDLOGLBL5, 70, 107, 55, 14
-    COMBOBOX        IDLOGEVT5, 155, 105, 65, 56, CBS_DROPDOWNLIST | CBS_AUTOHSCROLL |
                     WS_VSCROLL | WS_TABSTOP
     AUTOCHECKBOX    "Specify log options per device", IDADVLOGOPT, 50, 135, 112, 14, BS_LEFTTEXT | WS_TABSTOP
     DEFPUSHBUTTON   "OK", IDOK, 35, 155, 50, 14

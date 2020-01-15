@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_hub.h,v 1.6 2011/01/16 12:46:48 vruppert Exp $
+// $Id: usb_hub.h 10396 2011-06-11 19:38:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Volker Ruppert
@@ -38,7 +38,7 @@ public:
   virtual int handle_data(USBPacket *p);
   virtual void register_state_specific(bx_list_c *parent);
   virtual void after_restore_state();
-  virtual void timer();
+  virtual void runtime_config();
 
 private:
   struct {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_null.cc,v 1.29 2011/01/24 20:35:51 vruppert Exp $
+// $Id: eth_null.cc 10582 2011-08-16 17:27:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -32,13 +32,13 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "netmod.h"
 
 #if BX_NETWORKING
 
-#include "eth.h"
-
 #define LOG_THIS netdev->
 
+#define BX_ETH_NULL_LOGGING 1
 
 //
 //  Define the class. This is private to this module

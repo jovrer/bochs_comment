@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h,v 1.39 2011/01/09 19:20:11 vruppert Exp $
+// $Id: osdep.h 10734 2011-10-15 19:29:42Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -94,6 +94,7 @@ extern "C" {
 #define strrev _strrev
 #define stricmp _stricmp
 #define getch _getch
+#define strtoull _strtoui64
 #endif
 
 #else   /* __MINGW32__ defined */
@@ -103,7 +104,10 @@ extern "C" {
 #define FMT_ADDRX64 "%016I64x"
 
 #define off_t __int64
+// mingw gcc 4.6.1 already has lseek defined
+#ifndef lseek
 #define lseek _lseeki64
+#endif
 #endif  /* __MINGW32__ defined */
 
 #else    /* not WIN32 definitions */
@@ -193,7 +197,7 @@ typedef int socklen_t;
 
 #if !BX_HAVE_MKSTEMP
 #define mkstemp bx_mkstemp
-  extern int bx_mkstemp(char *tpl);
+  BOCHSAPI_MSVCONLY extern int bx_mkstemp(char *tpl);
 #endif
 
 //////////////////////////////////////////////////////////////////////
@@ -236,5 +240,22 @@ extern Bit64u bx_get_realtime64_usec (void);
 #ifdef __cplusplus
 }
 #endif   /* __cplusplus */
+
+#if BX_LARGE_RAMFILE
+
+// these macros required for large ramfile option functionality
+#if BX_HAVE_TMPFILE64 == 0
+  #define tmpfile64 tmpfile /* use regular tmpfile() function */
+#endif
+
+#if BX_HAVE_FSEEKO64 == 0
+#if BX_HAVE_FSEEK64
+  #define fseeko64 fseek64 /* use fseek64() function */
+#else
+  #define fseeko64 fseeko  /* use regular fseeko() function */
+#endif
+#endif
+
+#endif // BX_LARGE_RAMFILE
 
 #endif /* ifdef BX_OSDEP_H */

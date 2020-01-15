@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ltdl.c,v 1.5 2009/02/08 09:05:51 vruppert Exp $
+// $Id: ltdl.c 10209 2011-02-24 22:05:47Z sshwarts $
 //
 // NOTE: The ltdl library comes from the Libtool package.  Bochs uses
 // ltdl and libtool to build and load plugins.  The libtool

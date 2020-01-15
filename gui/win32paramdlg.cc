@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32paramdlg.cc,v 1.20 2011/02/10 22:59:34 vruppert Exp $
+// $Id: win32paramdlg.cc 10743 2011-10-20 19:10:06Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Volker Ruppert
@@ -29,6 +29,8 @@
 #define ID_PARAM 1000
 #define ID_BROWSE 2000
 #define ID_UPDOWN 3000
+
+// dialog item list code
 
 typedef struct _dlg_list_t {
   bx_list_c *list;
@@ -142,6 +144,110 @@ void cleanupDlgLists()
   }
 }
 
+// tooltips code
+
+HWND hwndTT, tt_hwndDlg;
+HHOOK tt_hhk;
+const char *tt_text;
+
+BOOL EnumChildProc(HWND hwndCtrl, LPARAM lParam);
+LRESULT CALLBACK GetMsgProc(int nCode, WPARAM wParam, LPARAM lParam);
+
+BOOL CreateParamDlgTooltip(HWND hwndDlg)
+{
+  InitCommonControls();
+  tt_hwndDlg = hwndDlg;
+  hwndTT = CreateWindowEx(0, TOOLTIPS_CLASS, (LPSTR) NULL,
+    TTS_ALWAYSTIP, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+    CW_USEDEFAULT, tt_hwndDlg, (HMENU) NULL, NULL, NULL);
+
+  if (hwndTT == NULL)
+    return FALSE;
+
+  if (!EnumChildWindows(tt_hwndDlg, (WNDENUMPROC) EnumChildProc, 0))
+    return FALSE;
+
+  tt_hhk = SetWindowsHookEx(WH_GETMESSAGE, GetMsgProc,
+    (HINSTANCE) NULL, GetCurrentThreadId());
+
+  if (tt_hhk == (HHOOK) NULL)
+    return FALSE;
+
+  return TRUE;
+}
+
+BOOL EnumChildProc(HWND hwndCtrl, LPARAM lParam)
+{
+  TOOLINFO ti;
+  char szClass[64];
+
+  GetClassName(hwndCtrl, szClass, sizeof(szClass));
+  if (lstrcmp(szClass, "STATIC")) {
+    ti.cbSize = sizeof(TOOLINFO);
+    ti.uFlags = TTF_IDISHWND;
+
+    ti.hwnd = tt_hwndDlg;
+    ti.uId = (UINT_PTR) hwndCtrl;
+    ti.hinst = 0;
+    ti.lpszText = LPSTR_TEXTCALLBACK;
+    SendMessage(hwndTT, TTM_ADDTOOL, 0, (LPARAM) (LPTOOLINFO) &ti);
+  }
+  return TRUE;
+}
+
+LRESULT CALLBACK GetMsgProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+  MSG *lpmsg;
+
+  lpmsg = (MSG *) lParam;
+  if (nCode < 0 || !(IsChild(tt_hwndDlg, lpmsg->hwnd)))
+    return (CallNextHookEx(tt_hhk, nCode, wParam, lParam));
+
+  switch (lpmsg->message) {
+    case WM_MOUSEMOVE:
+    case WM_LBUTTONDOWN:
+    case WM_LBUTTONUP:
+    case WM_RBUTTONDOWN:
+    case WM_RBUTTONUP:
+      if (hwndTT != NULL) {
+        MSG msg;
+
+        msg.lParam = lpmsg->lParam;
+        msg.wParam = lpmsg->wParam;
+        msg.message = lpmsg->message;
+        msg.hwnd = lpmsg->hwnd;
+        SendMessage(hwndTT, TTM_RELAYEVENT, 0, (LPARAM) (LPMSG) &msg);
+      }
+      break;
+    default:
+      break;
+  }
+  return (CallNextHookEx(tt_hhk, nCode, wParam, lParam));
+}
+
+VOID OnWMNotify(LPARAM lParam)
+{
+  LPTOOLTIPTEXT lpttt;
+  int idCtrl;
+
+  if ((((LPNMHDR) lParam)->code) == TTN_NEEDTEXT) {
+    idCtrl = GetDlgCtrlID((HWND) ((LPNMHDR) lParam)->idFrom);
+    lpttt = (LPTOOLTIPTEXT) lParam;
+
+    if ((idCtrl >= ID_PARAM) && (idCtrl < ID_BROWSE)) {
+      bx_param_c *param = findParamFromDlgID(idCtrl - ID_PARAM);
+      if (param != NULL) {
+        tt_text = param->get_description();
+        if (lstrlen(tt_text) > 0) {
+          lpttt->lpszText = (LPSTR)tt_text;
+        }
+      }
+    }
+  }
+}
+
+// gui functions
+
 int AskFilename(HWND hwnd, bx_param_filename_c *param, char *buffer)
 {
   OPENFILENAME ofn;
@@ -184,6 +290,8 @@ int AskFilename(HWND hwnd, bx_param_filename_c *param, char *buffer)
     ofn.lpstrFilter = "Keymap files (*.map)\0*.map\0All files (*.*)\0*.*\0";
   } else if (!lstrcmp(ext, "txt")) {
     ofn.lpstrFilter = "Text files (*.txt)\0*.txt\0All files (*.*)\0*.*\0";
+  } else if (!lstrcmp(ext, "bmp")) {
+    ofn.lpstrFilter = "Windows bitmap files (*.bmp)\0*.bmp\0All files (*.*)\0*.*\0";
   } else {
     ofn.lpstrFilter = "All files (*.*)\0*.*\0";
   }
@@ -255,7 +363,7 @@ LRESULT CALLBACK EditHexWndProc(HWND Window, UINT msg, WPARAM wParam, LPARAM lPa
   return CallWindowProc(DefEditWndProc, Window, msg, wParam, lParam);
 }
 
-HWND CreateLabel(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, const char *text)
+HWND CreateLabel(HWND hDlg, UINT cid, UINT xpos, UINT ypos, UINT width, BOOL hide, const char *text)
 {
   HWND Label;
   RECT r;
@@ -264,8 +372,8 @@ HWND CreateLabel(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, const cha
   code = ID_LABEL + cid;
   r.left = xpos;
   r.top = ypos + 2;
-  r.right = r.left + 78;
-  r.bottom = r.top + 15;
+  r.right = r.left + width;
+  r.bottom = r.top + 16;
   MapDialogRect(hDlg, &r);
   Label = CreateWindow("STATIC", text, WS_CHILD, r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   SendMessage(Label, WM_SETFONT, (WPARAM)DlgFont, TRUE);
@@ -287,7 +395,7 @@ HWND CreateGroupbox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, SIZE size, BOOL h
   r.bottom = r.top + size.cy;
   MapDialogRect(hDlg, &r);
   if (list->get_options() & list->USE_BOX_TITLE) {
-    title = list->get_title()->getptr();
+    title = list->get_title();
   }
   Groupbox = CreateWindow("BUTTON", title, BS_GROUPBOX | WS_CHILD, r.left, r.top,
                           r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
@@ -311,12 +419,12 @@ HWND CreateTabControl(HWND hDlg, UINT cid, UINT xpos, UINT ypos, SIZE size, BOOL
   r.bottom = r.top + size.cy;
   MapDialogRect(hDlg, &r);
   TabControl = CreateWindow(WC_TABCONTROL, "", WS_CHILD | WS_CLIPSIBLINGS | WS_VISIBLE,
-                            r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL); 
+                            r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   for (i = 0; i < list->get_size(); i++) {
     item = list->get(i);
     if (item->get_type() == BXT_LIST) {
-      tie.mask = TCIF_TEXT; 
-      tie.pszText = ((bx_list_c*)item)->get_title()->getptr(); 
+      tie.mask = TCIF_TEXT;
+      tie.pszText = ((bx_list_c*)item)->get_title();
       TabCtrl_InsertItem(TabControl, i, &tie);
     }
   }
@@ -334,7 +442,7 @@ HWND CreateBrowseButton(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide)
   int code;
 
   code = ID_BROWSE + cid;
-  r.left = xpos + 190;
+  r.left = xpos;
   r.top = ypos;
   r.right = r.left + 50;
   r.bottom = r.top + 14;
@@ -352,7 +460,7 @@ HWND CreateCheckbox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   int code, val;
 
   code = ID_PARAM + cid;
-  r.left = xpos + 80;
+  r.left = xpos;
   r.top = ypos;
   r.right = r.left + 20;
   r.bottom = r.top + 14;
@@ -410,7 +518,7 @@ HWND CreateInput(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_param_
       spinctrl = TRUE;
     }
   }
-  r.left = xpos + 80;
+  r.left = xpos;
   r.top = ypos;
   r.right = r.left + 100;
   r.bottom = r.top + 14;
@@ -419,11 +527,7 @@ HWND CreateInput(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_param_
                          style, r.left, r.top, r.right-r.left+1,
                          r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   if (hexedit) {
-#ifndef _WIN64
-    DefEditWndProc = (WNDPROC)SetWindowLong(Input, GWL_WNDPROC, (long)EditHexWndProc);
-#else
     DefEditWndProc = (WNDPROC)SetWindowLongPtr(Input, GWLP_WNDPROC, (LONG_PTR)EditHexWndProc);
-#endif
   }
   if (spinctrl) {
     style = WS_CHILD | WS_BORDER | WS_VISIBLE | UDS_NOTHOUSANDS | UDS_ARROWKEYS |
@@ -445,7 +549,7 @@ HWND CreateCombobox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   const char *choice;
 
   code = ID_PARAM + cid;
-  r.left = xpos + 80;
+  r.left = xpos;
   r.top = ypos;
   r.right = r.left + 100;
   r.bottom = r.top + 14;
@@ -485,22 +589,50 @@ void EnableParam(HWND hDlg, UINT cid, bx_param_c *param, BOOL val)
   }
 }
 
+UINT GetLabelText(bx_param_c *param, bx_list_c *list, char *buffer)
+{
+  const char *label, *tmpstr;
+  char tmpbuf[512];
+  int len;
+
+  label = param->get_label();
+  if (label == NULL) {
+    label = param->get_name();
+  }
+  if ((list->get_options() & list->SHOW_GROUP_NAME) && (param->get_group() != NULL)) {
+    wsprintf(tmpbuf, "%s %s", param->get_group(), label);
+  } else {
+    lstrcpyn(tmpbuf, label, 512);
+  }
+  if (buffer != NULL) {
+    lstrcpy(buffer, tmpbuf);
+  }
+  len = lstrlen(tmpbuf);
+  tmpstr = strchr(tmpbuf, 10);
+  if (tmpstr != NULL) {
+    if (lstrlen(tmpstr) > (len / 2)) {
+      len = lstrlen(tmpstr) - 1;
+    } else {
+      len -= lstrlen(tmpstr);
+    }
+  }
+  return (len * 4);
+}
+
 SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_list_c *list)
 {
-  HWND ltext, control = NULL, browse;
   SIZE size, lsize;
   bx_param_c *param;
   bx_param_string_c *sparam;
-  const char *label;
   char buffer[512];
   int options;
-  UINT cid, i, items, x, y;
+  UINT cid, i, items, lw, w1, x0, x1, x2, y;
   BOOL ihide;
 
   items = list->get_size();
   options = list->get_options();
   cid = registerDlgList(lid, list);
-  x = xpos + 5;
+  x0 = xpos + 5;
   size.cx = 195;
   if (options & list->USE_TAB_WINDOW) {
     y = ypos + 15;
@@ -509,14 +641,32 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
     y = ypos + 10;
     size.cy = 13;
   }
+  // find out longest label text
+  w1 = 78;
   for (i = 0; i < items; i++) {
     param = list->get(i);
     if (!SIM->get_init_done() || (param->get_enabled() && param->get_runtime_param())) {
-      ltext = NULL;
-      browse = NULL;
+      if (param->get_type() != BXT_LIST) {
+        lw = GetLabelText(param, list, NULL);
+        if (lw > w1) {
+          w1 = lw;
+        }
+      }
+    }
+  }
+  // set columns and width
+  x1 = x0 + w1 + 2;
+  x2 = x1 + 110;
+  if (size.cx < (int)(x2 + 5)) {
+    size.cx = x2 + 5;
+  }
+  // create controls
+  for (i = 0; i < items; i++) {
+    param = list->get(i);
+    if (!SIM->get_init_done() || (param->get_enabled() && param->get_runtime_param())) {
       ihide = hide || ((i != 0) && (options & list->USE_TAB_WINDOW));
       if (param->get_type() == BXT_LIST) {
-        lsize = CreateParamList(hDlg, cid, x + 4, y + 1, ihide, (bx_list_c*)param);
+        lsize = CreateParamList(hDlg, cid, x0 + 4, y + 1, ihide, (bx_list_c*)param);
         if ((lsize.cx + 18) > size.cx) {
           size.cx = lsize.cx + 18;
         }
@@ -529,28 +679,22 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
           }
         }
       } else {
-        label = param->get_label();
-        if (label == NULL) {
-          label = param->get_name();
-        }
-        if ((options & list->SHOW_GROUP_NAME) && (param->get_group() != NULL)) {
-          wsprintf(buffer, "%s %s", param->get_group(), label);
-        } else {
-          lstrcpyn(buffer, label, 512);
-        }
-        ltext = CreateLabel(hDlg, cid, x, y, hide, buffer);
+        lw = GetLabelText(param, list, buffer);
+        /* HWND ltext = */ CreateLabel(hDlg, cid, x0, y, w1, hide, buffer);
         if (param->get_type() == BXT_PARAM_BOOL) {
-          control = CreateCheckbox(hDlg, cid, x, y, hide, (bx_param_bool_c*)param);
+          /* HWND control = */ CreateCheckbox(hDlg, cid, x1, y, hide, (bx_param_bool_c*)param);
         } else if (param->get_type() == BXT_PARAM_ENUM) {
-          control = CreateCombobox(hDlg, cid, x, y, hide, (bx_param_enum_c*)param);
+          /* HWND control = */ CreateCombobox(hDlg, cid, x1, y, hide, (bx_param_enum_c*)param);
         } else if (param->get_type() == BXT_PARAM_NUM) {
-          control = CreateInput(hDlg, cid, x, y, hide, param);
+          /* HWND control = */ CreateInput(hDlg, cid, x1, y, hide, param);
         } else if (param->get_type() == BXT_PARAM_STRING) {
-          control = CreateInput(hDlg, cid, x, y, hide, param);
+          /* HWND control = */ CreateInput(hDlg, cid, x1, y, hide, param);
           sparam = (bx_param_string_c*)param;
           if (sparam->get_options() & sparam->IS_FILENAME) {
-            browse = CreateBrowseButton(hDlg, cid, x, y, hide);
-            if (size.cx < 255) size.cx = 255;
+            /* HWND browse = */ CreateBrowseButton(hDlg, cid, x2, y, hide);
+            if (size.cx < (int)(x2 + 60)) {
+              size.cx = x2 + 60;
+            }
           }
         }
         if (!param->get_enabled()) {
@@ -729,7 +873,6 @@ void ProcessDependentList(HWND hDlg, bx_param_c *param, BOOL enabled)
 static INT_PTR CALLBACK ParamDlgProc(HWND Window, UINT AMessage, WPARAM wParam, LPARAM lParam)
 {
   static bx_list_c *list = NULL;
-  static int items = 0;
   bx_param_c *param;
   bx_param_string_c *sparam;
   bx_list_c *tmplist;
@@ -744,12 +887,12 @@ static INT_PTR CALLBACK ParamDlgProc(HWND Window, UINT AMessage, WPARAM wParam, 
   switch (AMessage) {
     case WM_CLOSE:
       cleanupDlgLists();
+      DestroyWindow(hwndTT);
       EndDialog(Window, -1);
       break;
     case WM_INITDIALOG:
       list = (bx_list_c*)SIM->get_param((const char*)lParam);
-      items = list->get_size();
-      SetWindowText(Window, list->get_title()->getptr());
+      SetWindowText(Window, list->get_title());
       nextDlgID = 1;
       size = CreateParamList(Window, 0, 6, 6, FALSE, list);
       r.left = size.cx / 2 - 50;
@@ -771,17 +914,20 @@ static INT_PTR CALLBACK ParamDlgProc(HWND Window, UINT AMessage, WPARAM wParam, 
       r.bottom = size.cy + 52;
       MapDialogRect(Window, &r);
       MoveWindow(Window, r2.left, r2.top, r.right, r.bottom, TRUE);
+      CreateParamDlgTooltip(Window);
       return TRUE;
     case WM_COMMAND:
       code = LOWORD(wParam);
       switch (code) {
         case IDCANCEL:
           cleanupDlgLists();
+          DestroyWindow(hwndTT);
           EndDialog(Window, -1);
           break;
         case IDOK:
           SetParamList(Window, list);
           cleanupDlgLists();
+          DestroyWindow(hwndTT);
           EndDialog(Window, 1);
           break;
         default:
@@ -823,6 +969,8 @@ static INT_PTR CALLBACK ParamDlgProc(HWND Window, UINT AMessage, WPARAM wParam, 
         if (id >= ID_UPDOWN) {
           PostMessage(GetDlgItem(Window, ID_PARAM + (id - ID_UPDOWN)), EM_SETMODIFY, TRUE, 0);
         }
+      } else {
+        OnWMNotify(lParam);
       }
       break;
     case WM_CTLCOLOREDIT:

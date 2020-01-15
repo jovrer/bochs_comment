@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcivga.h,v 1.10 2009/04/10 11:10:32 vruppert Exp $
+// $Id: pcivga.h 10426 2011-06-26 17:42:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002,2003  Mike Nordell
@@ -23,8 +23,10 @@
 
 #if BX_USE_PCIVGA_SMF
 #  define BX_PCIVGA_THIS thePciVgaAdapter->
+#  define BX_PCIVGA_SMF static
 #else
 #  define BX_PCIVGA_THIS this->
+#  define BX_PCIVGA_SMF
 #endif
 
 class bx_pcivga_c : public bx_devmodel_c, public bx_pci_device_stub_c {
@@ -36,14 +38,14 @@ public:
   virtual void register_state(void);
   virtual void after_restore_state(void);
 
+  BX_PCIVGA_SMF bx_bool mem_read_handler(bx_phy_address addr, unsigned len, void *data, void *param);
+  BX_PCIVGA_SMF bx_bool mem_write_handler(bx_phy_address addr, unsigned len, void *data, void *param);
+
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
 private:
-  struct {
-    Bit32u base_address;
-    Bit8u pci_conf[256];
-  } s;
+  bx_bool vbe_present;
 };
 
 #endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.h,v 1.9 2009/12/04 20:02:12 sshwarts Exp $
+// $Id: rfb.h 10490 2011-07-22 20:42:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000-2009  The Bochs Project
@@ -20,6 +20,9 @@
 /////////////////////////////////////////////////////////////////////////
 
 // This file includes the rfb spec header and the port numbers
+
+#ifndef BX_RFB_GUI
+#define BX_RFB_GUI
 
 // Define the RFB types
 typedef Bit32u         U32;
@@ -390,3 +393,4 @@ typedef union {
 	rfbServerCutTextMessage     sct;
 } rfbServerToClientMessage;
 
+#endif

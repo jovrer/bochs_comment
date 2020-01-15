@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc,v 1.46 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: term.cc 10470 2011-07-11 17:36:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000-2009  The Bochs Project
@@ -164,10 +164,10 @@ void bx_term_gui_c::sighandler(int signo)
 // ::SPECIFIC_INIT()
 //
 // Called from gui.cc, once upon program startup, to allow for the
-// specific GUI code (X11, BeOS, ...) to be initialized.
+// specific GUI code (X11, Win32, ...) to be initialized.
 //
 // argc, argv: not used right now, but the intention is to pass native GUI
-//     specific options from the command line.  (X11 options, BeOS options,...)
+//     specific options from the command line.  (X11 options, Win32 options,...)
 //
 // tilewidth, tileheight: for optimization, graphics_tile_update() passes
 //     only updated regions of the screen to the gui code to be redrawn.

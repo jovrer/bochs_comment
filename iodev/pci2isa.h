@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.h,v 1.18 2009/12/04 19:50:28 sshwarts Exp $
+// $Id: pci2isa.h 10419 2011-06-23 15:56:02Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -46,7 +46,6 @@ public:
 private:
 
   struct {
-    Bit8u pci_conf[256];
     Bit8u elcr1;
     Bit8u elcr2;
     Bit8u apmc;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: acpi.h,v 1.9 2009/02/08 09:05:52 vruppert Exp $
+// $Id: acpi.h 10419 2011-06-23 15:56:02Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2006  Volker Ruppert
@@ -61,7 +61,6 @@ private:
   static void timer_handler(void *);
 
   struct {
-    Bit8u pci_conf[256];
     Bit8u devfunc;
     Bit32u pm_base;
     Bit32u sm_base;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_printer.cc,v 1.6 2011/02/12 14:00:34 vruppert Exp $
+// $Id: usb_printer.cc 10448 2011-07-04 19:42:47Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin David Lunt
@@ -114,6 +114,7 @@ usb_printer_device_c::usb_printer_device_c(usbdev_type type, const char *filenam
   d.type = type;
   d.maxspeed = USB_SPEED_FULL;
   d.speed = d.maxspeed;
+  // TODO: d.max_packet_size = ???
   memset((void*)&s, 0, sizeof(s));
   strcpy(d.devname, "USB Printer");
   s.fname = filename;

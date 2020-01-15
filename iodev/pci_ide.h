@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.h,v 1.16 2009/12/04 19:50:29 sshwarts Exp $
+// $Id: pci_ide.h 10424 2011-06-25 12:43:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -57,8 +57,6 @@ public:
 private:
 
   struct {
-    Bit8u pci_conf[256];
-    Bit32u bmdma_addr;
     struct {
       bx_bool cmd_ssbm;
       bx_bool cmd_rwcon;

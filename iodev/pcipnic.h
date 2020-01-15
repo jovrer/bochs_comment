@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcipnic.h,v 1.10 2009/02/08 09:05:52 vruppert Exp $
+// $Id: pcipnic.h 10424 2011-06-25 12:43:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  Fen Systems Ltd.
@@ -39,7 +39,6 @@
 
 typedef struct {
 
-  Bit32u	base_ioaddr;
   Bit8u		macaddr[6];
   Bit8u		irqEnabled;
 
@@ -55,7 +54,6 @@ typedef struct {
   Bit16u	recvRingLength[PNIC_RECV_RINGS];
 
   Bit8u devfunc;
-  Bit8u pci_conf[256];
 
 } bx_pnic_t;
 

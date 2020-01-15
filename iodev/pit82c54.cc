@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit82c54.cc,v 1.38 2009/06/30 08:09:38 vruppert Exp $
+// $Id: pit82c54.cc 10728 2011-10-09 08:21:12Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  The Bochs Project
@@ -825,7 +825,7 @@ void pit_82C54::set_GATE(Bit8u cnum, bx_bool data)
   } else {
     counter_type &thisctr = counter[cnum];
     if (!((thisctr.GATE&&data) || (!(thisctr.GATE||data)))) {
-      BX_INFO(("Changing GATE %d to: %d",cnum,data));
+      BX_DEBUG(("Changing GATE %d to: %d",cnum,data));
       thisctr.GATE=data;
       if (thisctr.GATE) {
         thisctr.triggerGATE=1;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_linux.cc,v 1.29 2011/01/24 20:35:51 vruppert Exp $
+// $Id: eth_linux.cc 10582 2011-08-16 17:27:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -41,10 +41,9 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "netmod.h"
 
-#if BX_NETWORKING && defined (ETH_LINUX)
-
-#include "eth.h"
+#if BX_NETWORKING && BX_NETMOD_LINUX
 
 #define LOG_THIS netdev->
 
@@ -281,4 +280,4 @@ bx_linux_pktmover_c::rx_timer(void)
     (*rxh)(netdev, rxbuf, nbytes);
 //  }
 }
-#endif /* if BX_NETWORKING && defined ETH_LINUX */
+#endif /* if BX_NETWORKING && BX_NETMOD_LINUX */

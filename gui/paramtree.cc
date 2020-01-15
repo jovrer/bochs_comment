@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paramtree.cc,v 1.1 2010/09/16 21:46:45 sshwarts Exp $
+// $Id: paramtree.cc 10549 2011-08-09 09:56:00Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010  The Bochs Project
@@ -603,7 +603,7 @@ bx_bool bx_param_enum_c::set_by_name(const char *string)
 void bx_param_enum_c::set_dependent_list(bx_list_c *l, bx_bool enable_all)
 {
   dependent_list = l;
-  deps_bitmap = (Bit64u*)malloc(sizeof(Bit64u) * (max - min + 1));
+  deps_bitmap = (Bit64u*)malloc((size_t)(sizeof(Bit64u) * (max - min + 1)));
   for (int i=0; i<(max-min+1); i++) {
     if (enable_all) {
       deps_bitmap[i] = (1 << (l->get_size())) - 1;
@@ -697,7 +697,12 @@ bx_param_filename_c::bx_param_filename_c(bx_param_c *parent,
   : bx_param_string_c(parent, name, label, description, initial_val, maxsize)
 {
   set_options(IS_FILENAME);
-  ext = NULL;
+  int len = strlen(initial_val);
+  if ((len > 4) && (initial_val[len - 4] == '.')) {
+    ext = &initial_val[len - 3];
+  } else {
+    ext = NULL;
+  }
 }
 
 bx_param_string_c::~bx_param_string_c()
@@ -816,6 +821,41 @@ bx_shadow_data_c::bx_shadow_data_c(bx_param_c *parent,
     this->parent->add(this);
   }
 }
+  
+bx_shadow_filedata_c::bx_shadow_filedata_c(bx_param_c *parent,
+    const char *name, FILE **scratch_file_ptr_ptr)
+  : bx_param_c(SIM->gen_param_id(), name, "")
+{
+  set_type(BXT_PARAM_FILEDATA);
+  this->scratch_fpp = scratch_file_ptr_ptr;
+  this->save_handler = NULL;
+  this->restore_handler = NULL;
+  if (parent) {
+    BX_ASSERT(parent->get_type() == BXT_LIST);
+    this->parent = (bx_list_c *)parent;
+    this->parent->add(this);
+  }
+}
+
+// Save handler: called before file save, Restore handler: called after file restore
+void bx_shadow_filedata_c::set_sr_handlers(void *devptr, filedata_save_handler save, filedata_restore_handler restore)
+{
+  this->sr_devptr = devptr;
+  this->save_handler = save;
+  this->restore_handler = restore;
+}
+
+void bx_shadow_filedata_c::save(FILE *save_fp)
+{
+  if (save_handler)
+    (*save_handler)(sr_devptr, save_fp);
+}
+
+void bx_shadow_filedata_c::restore(FILE *save_fp)
+{
+  if (restore_handler)
+    (*restore_handler)(sr_devptr, save_fp);
+}
 
 bx_list_c::bx_list_c(bx_param_c *parent, int maxsize)
   : bx_param_c(SIM->gen_param_id(), "list", "")
@@ -849,8 +889,7 @@ bx_list_c::bx_list_c(bx_param_c *parent, const char *name, int maxsize)
   init("");
 }
 
-bx_list_c::bx_list_c(bx_param_c *parent, const char *name, const char *title,
-    int maxsize)
+bx_list_c::bx_list_c(bx_param_c *parent, const char *name, const char *title, int maxsize)
   : bx_param_c(SIM->gen_param_id(), name, "")
 {
   set_type (BXT_LIST);
@@ -894,19 +933,18 @@ bx_list_c::~bx_list_c()
     }
     delete [] list;
   }
-  if (title != NULL) delete title;
+  if (title != NULL) delete [] title;
   if (choice != NULL) delete choice;
 }
 
 void bx_list_c::init(const char *list_title)
 {
-  // the title defaults to the name
-  this->title = new bx_param_string_c(NULL,
-      "list_title",
-      "", "",
-      get_name(), 80);
-  if ((list_title != NULL) && (strlen(list_title) > 0)) {
-    this->title->set((char *)list_title);
+  if (list_title) {
+    this->title = new char[strlen(list_title)+1];
+    strcpy(this->title, list_title);
+  } else {
+    this->title = new char[1];
+    this->title[0] = 0;
   }
   this->options = 0;
   this->choice = new bx_param_num_c(NULL,
@@ -931,7 +969,7 @@ void bx_list_c::set_parent(bx_param_c *newparent)
 
 bx_list_c* bx_list_c::clone()
 {
-  bx_list_c *newlist = new bx_list_c(NULL, name, title->getptr(), maxsize);
+  bx_list_c *newlist = new bx_list_c(NULL, name, title, maxsize);
   for (int i=0; i<get_size(); i++)
     newlist->add(get(i));
   newlist->set_options(options);

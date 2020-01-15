@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.h,v 1.33 2009/12/04 19:50:29 sshwarts Exp $
+// $Id: pit_wrap.h 10382 2011-06-04 06:40:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -50,13 +50,13 @@ private:
 
   struct s_type {
     pit_82C54 timer;
-    Bit8u   speaker_data_on;
+    bx_bool speaker_data_on;
     bx_bool refresh_clock_div2;
-    Bit64u last_usec;
-    Bit32u last_next_event_time;
-    Bit64u total_ticks;
-    Bit64u total_usec;
-    int  timer_handle[3];
+    Bit64u  last_usec;
+    Bit32u  last_next_event_time;
+    Bit64u  total_ticks;
+    Bit64u  total_usec;
+    int     timer_handle[3];
   } s;
 
   static void timer_handler(void *this_ptr);

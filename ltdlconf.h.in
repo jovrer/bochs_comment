@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ltdlconf.h.in,v 1.2 2002/10/24 21:04:38 bdenney Exp $
+// $Id: ltdlconf.h.in,v 1.2 2002-10-24 21:04:38 bdenney Exp $
 //
 // The configure script reads this file and produces ltdlconf.h, which
 // tells ltdl.c how to compile.  It was copied out of the libtool package
