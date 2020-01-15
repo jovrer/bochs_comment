@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_printer.cc 11027 2012-02-12 18:43:20Z vruppert $
+// $Id: usb_printer.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009       Benjamin D Lunt (fys at frontiernet net)
@@ -121,7 +121,7 @@ usb_printer_device_c::usb_printer_device_c(usbdev_type type, const char *filenam
   s.fname = filename;
   s.fp = NULL;
 
-  put("usb_printer", "USBPR");
+  put("usb_printer", "USBPRN");
 }
 
 usb_printer_device_c::~usb_printer_device_c(void)

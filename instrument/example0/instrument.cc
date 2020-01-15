@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc 11295 2012-07-24 15:32:55Z sshwarts $
+// $Id: instrument.cc 11908 2013-10-23 21:18:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2012 Stanislav Shwartsman
@@ -88,8 +88,8 @@ void bx_print_instruction(unsigned cpu, const instruction_t *i)
   if(length != 0)
   {
     fprintf(stderr, "----------------------------------------------------------\n");
-    fprintf(stderr, "CPU: %d: %s\n", cpu, disasm_tbuf);
-    fprintf(stderr, "LEN: %d\tBYTES: ", length);
+    fprintf(stderr, "CPU %d: %s\n", cpu, disasm_tbuf);
+    fprintf(stderr, "LEN %d\tBYTES: ", length);
     for(n=0;n < length;n++) fprintf(stderr, "%02x", i->opcode[n]);
     if(i->is_branch)
     {

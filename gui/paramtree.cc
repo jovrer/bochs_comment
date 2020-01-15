@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paramtree.cc 11634 2013-02-17 08:27:43Z vruppert $
+// $Id: paramtree.cc 12325 2014-05-13 21:10:31Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2010-2013  The Bochs Project
+//  Copyright (C) 2010-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -50,6 +50,7 @@ bx_param_c::bx_param_c(Bit32u id, const char *param_name, const char *param_desc
   this->long_text_format = default_text_format;
   this->runtime_param = 0;
   this->enabled = 1;
+  this->options = 0;
   // dependent_list must be initialized before the set(),
   // because set calls update_dependents().
   dependent_list = NULL;
@@ -72,6 +73,7 @@ bx_param_c::bx_param_c(Bit32u id, const char *param_name, const char *param_labe
   this->long_text_format = default_text_format;
   this->runtime_param = 0;
   this->enabled = 1;
+  this->options = 0;
   // dependent_list must be initialized before the set(),
   // because set calls update_dependents().
   dependent_list = NULL;
@@ -538,9 +540,9 @@ Bit64s bx_shadow_bool_c::get64()
 void bx_shadow_bool_c::set(Bit64s newval)
 {
   // only change the bitnum bit
-  Bit64s tmp = (newval&1) << bitnum;
-  *(val.pbool) &= ~tmp;
-  *(val.pbool) |= tmp;
+  Bit64s mask = 1 << bitnum;
+  *(val.pbool) &= ~mask;
+  *(val.pbool) |= ((newval & 1) << bitnum);
   if (handler) {
     // the handler can override the new value and/or perform some side effect
     (*handler)(this, 1, newval&1);
@@ -809,7 +811,11 @@ void bx_param_string_c::set_initial_val(const char *buf)
 
 bx_bool bx_param_string_c::isempty()
 {
-  return ((strlen(val) == 0) || !strcmp(val, "none"));
+  if (options & RAW_BYTES) {
+    return (memcmp(val, initial_val, maxsize) == 0);
+  } else {
+    return ((strlen(val) == 0) || !strcmp(val, "none"));
+  }
 }
 
 int bx_param_string_c::sprint(char *buf, int len, bx_bool dquotes)
@@ -1023,6 +1029,9 @@ void bx_list_c::add(bx_param_c *param)
       temp = temp->next;
     temp->next = item;
   }
+  if (runtime_param) {
+    param->set_runtime_param(1);
+  }
   size++;
 }
 
@@ -1098,6 +1107,18 @@ void bx_list_c::remove(const char *name)
       break;
     } else {
       prev = item;
+    }
+  }
+}
+
+void bx_list_c::set_runtime_param(int val)
+{
+  bx_listitem_t *item;
+
+  runtime_param = val;
+  if (runtime_param) {
+    for (item = list; item; item = item->next) {
+      item->param->set_runtime_param(1);
     }
   }
 }

@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vpc-img.cc 11528 2012-11-01 15:43:12Z vruppert $
+// $Id: vpc-img.cc 11896 2013-10-19 21:16:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Block driver for Connectix / Microsoft Virtual PC images (ported from QEMU)
 //
 // Copyright (c) 2005  Alex Beregszaszi
 // Copyright (c) 2009  Kevin Wolf <kwolf@suse.de>
-// Copyright (C) 2012  The Bochs Project
+// Copyright (C) 2012-2013  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -33,24 +33,29 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
+#ifdef BXIMAGE
+#include "config.h"
+#include "misc/bxcompat.h"
+#include "osdep.h"
+#include "misc/bswap.h"
+#else
 #include "iodev.h"
+#endif
 #include "hdimage.h"
 #include "vpc-img.h"
 
 #define LOG_THIS bx_devices.pluginHDImageCtl->
 
-// be*_to_cpu : convert disk (big) to host endianness
-#if defined (BX_LITTLE_ENDIAN)
-#define be16_to_cpu(val) bx_bswap16(val)
-#define be32_to_cpu(val) bx_bswap32(val)
-#define be64_to_cpu(val) bx_bswap64(val)
-#define cpu_to_be32(val) bx_bswap32(val)
-#else
-#define be16_to_cpu(val) (val)
-#define be32_to_cpu(val) (val)
-#define be64_to_cpu(val) (val)
-#define cpu_to_be32(val) (val)
-#endif
+Bit32u vpc_checksum(Bit8u *buf, size_t size)
+{
+  Bit32u res = 0;
+  unsigned i;
+
+  for (i = 0; i < size; i++)
+    res += buf[i];
+
+  return ~res;
+}
 
 int vpc_image_t::check_format(int fd, Bit64u imgsize)
 {
@@ -283,6 +288,7 @@ Bit32u vpc_image_t::get_capabilities(void)
   return HDIMAGE_HAS_GEOMETRY;
 }
 
+#ifndef BXIMAGE
 bx_bool vpc_image_t::save_state(const char *backup_fname)
 {
   return hdimage_backup_file(fd, backup_fname);
@@ -311,17 +317,7 @@ void vpc_image_t::restore_state(const char *backup_fname)
   }
   device_image_t::open(pathname);
 }
-
-Bit32u vpc_image_t::vpc_checksum(Bit8u *buf, size_t size)
-{
-  Bit32u res = 0;
-  unsigned i;
-
-  for (i = 0; i < size; i++)
-    res += buf[i];
-
-  return ~res;
-}
+#endif
 
 /*
  * Returns the absolute byte offset of the given sector in the image file.

@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_common.cc 11606 2013-02-01 19:13:58Z vruppert $
+// $Id: usb_common.cc 12128 2014-01-21 20:56:50Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Generic USB emulation code
 //
 // Copyright (c) 2005       Fabrice Bellard
 // Copyright (C) 2009       Benjamin D Lunt (fys at frontiernet net)
-//               2009-2013  The Bochs Project
+//               2009-2014  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -62,14 +62,21 @@ void libusb_common_LTX_plugin_fini(void)
   delete theUsbDevCtl;
 }
 
+bx_usb_devctl_c::bx_usb_devctl_c()
+{
+  put("usbdevctl", "USBCTL");
+}
+
 int bx_usb_devctl_c::init_device(bx_list_c *portconf, logfunctions *hub, void **dev, bx_list_c *sr_list)
 {
   usbdev_type type = USB_DEV_TYPE_NONE;
   int ports;
   usb_device_c **device = (usb_device_c**)dev;
   const char *devname = NULL;
+  size_t dnlen;
 
   devname = ((bx_param_string_c*)portconf->get_by_name("device"))->getptr();
+  dnlen = strlen(devname);
   if (!strcmp(devname, "mouse")) {
     type = USB_DEV_TYPE_MOUSE;
     *device = new usb_hid_device_c(type);
@@ -80,7 +87,7 @@ int bx_usb_devctl_c::init_device(bx_list_c *portconf, logfunctions *hub, void **
     type = USB_DEV_TYPE_KEYPAD;
     *device = new usb_hid_device_c(type);
   } else if (!strncmp(devname, "disk", 4)) {
-    if ((strlen(devname) > 5) && (devname[4] == ':')) {
+    if ((dnlen > 5) && (devname[4] == ':')) {
       type = USB_DEV_TYPE_DISK;
       *device = new usb_msd_device_c(type, devname+5);
     } else {
@@ -88,9 +95,13 @@ int bx_usb_devctl_c::init_device(bx_list_c *portconf, logfunctions *hub, void **
       return type;
     }
   } else if (!strncmp(devname, "cdrom", 5)) {
-    if ((strlen(devname) > 6) && (devname[5] == ':')) {
+    if ((dnlen == 5) || (devname[5] == ':')) {
       type = USB_DEV_TYPE_CDROM;
-      *device = new usb_msd_device_c(type, devname+6);
+      if (dnlen > 6) {
+        *device = new usb_msd_device_c(type, devname+6);
+      } else {
+        *device = new usb_msd_device_c(type, devname+dnlen);
+      }
     } else {
       hub->panic("USB device 'cdrom' needs a filename separated with a colon");
       return type;
@@ -98,7 +109,7 @@ int bx_usb_devctl_c::init_device(bx_list_c *portconf, logfunctions *hub, void **
   } else if (!strncmp(devname, "hub", 3)) {
     type = USB_DEV_TYPE_HUB;
     ports = 4;
-    if (strlen(devname) > 3) {
+    if (dnlen > 3) {
       if (devname[3] == ':') {
         ports = atoi(&devname[4]);
         if ((ports < 2) || (ports > BX_N_USB_HUB_PORTS)) {
@@ -110,7 +121,7 @@ int bx_usb_devctl_c::init_device(bx_list_c *portconf, logfunctions *hub, void **
     }
     *device = new usb_hub_device_c(ports);
   } else if (!strncmp(devname, "printer", 7)) {
-    if ((strlen(devname) > 8) && (devname[7] == ':')) {
+    if ((dnlen > 8) && (devname[7] == ':')) {
       type = USB_DEV_TYPE_PRINTER;
       *device = new usb_printer_device_c(type, devname+8);
     } else {

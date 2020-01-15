@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_common.h 11384 2012-08-31 12:08:19Z vruppert $
+// $Id: usb_common.h 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Generic USB emulation code
 //
 // Copyright (c) 2005       Fabrice Bellard
 // Copyright (C) 2009       Benjamin D Lunt (fys at frontiernet net)
-//               2009-2012  The Bochs Project
+//               2009-2013  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -136,7 +136,7 @@ enum usbdev_type {
 
 class bx_usb_devctl_c : public bx_usb_devctl_stub_c {
 public:
-  bx_usb_devctl_c() {}
+  bx_usb_devctl_c();
   virtual ~bx_usb_devctl_c() {}
   virtual int init_device(bx_list_c *portconf, logfunctions *hub, void **dev, bx_list_c *sr_list);
   virtual void usb_send_msg(void *dev, int msg);

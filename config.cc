@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc 11679 2013-04-17 19:46:11Z sshwarts $
+// $Id: config.cc 12346 2014-05-31 17:24:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -220,7 +220,7 @@ void bx_init_usb_options(const char *usb_name, const char *pname, int maxports)
   menu->set_options(menu->SHOW_PARENT);
   sprintf(label, "Enable %s emulation", usb_name);
   sprintf(descr, "Enables the %s emulation", usb_name);
-  bx_param_bool_c *enabled = new bx_param_bool_c(menu, "enabled", label, descr, 0);
+  bx_param_bool_c *enabled = new bx_param_bool_c(menu, "enabled", label, descr, 1);
   bx_list_c *deplist = new bx_list_c(NULL);
   for (int i = 0; i < maxports; i++) {
     sprintf(name, "port%d", i+1);
@@ -446,7 +446,7 @@ void bx_init_options()
   new bx_param_num_c(cpuid_param,
       "level", "CPU Level",
       "CPU level",
-      5, BX_CPU_LEVEL,
+     (BX_CPU_LEVEL < 5) ? BX_CPU_LEVEL : 5, BX_CPU_LEVEL,
       BX_CPU_LEVEL);
 
   new bx_param_num_c(cpuid_param,
@@ -515,11 +515,27 @@ void bx_init_options()
 
 #if BX_CPU_LEVEL >= 6
   // configure defaults to CPU_LEVEL = 6 with SSE2 enabled
-  static const char *sse_names[] = { "none", "sse", "sse2", "sse3", "ssse3", "sse4_1", "sse4_2", NULL };
+  static const char *simd_names[] = {
+      "none",
+      "sse",
+      "sse2",
+      "sse3",
+      "ssse3",
+      "sse4_1",
+      "sse4_2",
+#if BX_SUPPORT_AVX
+      "avx",
+      "avx2",
+#if BX_SUPPORT_EVEX
+      "avx512",
+#endif
+#endif
+      NULL };
+
   new bx_param_enum_c(cpuid_param,
-      "sse", "Support for SSE instruction set",
-      "Support for SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2 instruction set",
-      sse_names,
+      "simd", "Support for SIMD instruction set",
+      "Support for SIMD (SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2/AVX/AVX2/AVX512) instruction set",
+      simd_names,
       BX_CPUID_SUPPORT_SSE2,
       BX_CPUID_SUPPORT_NOSSE);
 
@@ -549,6 +565,10 @@ void bx_init_options()
       "Support for AES instruction set",
       0);
   new bx_param_bool_c(cpuid_param,
+      "sha", "Support for SHA instruction set",
+      "Support for SHA instruction set",
+      0);
+  new bx_param_bool_c(cpuid_param,
       "xsave", "Support for XSAVE extensions",
       "Support for XSAVE extensions",
       0);
@@ -557,11 +577,6 @@ void bx_init_options()
       "Support for XSAVEOPT instruction",
       0);
 #if BX_SUPPORT_AVX
-  new bx_param_num_c(cpuid_param,
-      "avx", "Support for AVX instruction set",
-      "Support for AVX instruction set",
-      0, 2,
-      0);
   new bx_param_bool_c(cpuid_param,
       "avx_f16c", "Support for AVX F16 convert instructions",
       "Support for AVX F16 convert instructions",
@@ -884,6 +899,9 @@ void bx_init_options()
 #if BX_WITH_RFB
     "rfb",
 #endif
+#if BX_WITH_VNCSRV
+    "vncsrv",
+#endif
 #if BX_WITH_WX
     "wx",
 #endif
@@ -981,12 +999,11 @@ void bx_init_options()
   deplist->add(keymap);
   use_kbd_mapping->set_dependent_list(deplist);
 
-  bx_param_string_c *user_shortcut = new bx_param_string_c(keyboard,
+  new bx_param_string_c(keyboard,
       "user_shortcut",
       "Userbutton shortcut",
       "Defines the keyboard shortcut to be sent when you press the 'user' button in the headerbar.",
       "none", 20);
-  user_shortcut->set_runtime_param(1);
 
   static const char *mouse_type_list[] = {
     "none",
@@ -1151,7 +1168,7 @@ void bx_init_options()
       "Status",
       "Floppy media status (inserted / ejected)",
       media_status_names,
-      BX_INSERTED,
+      BX_EJECTED,
       BX_EJECTED);
     status->set_ask_format("Is the device inserted or ejected? [%s] ");
 
@@ -1298,7 +1315,7 @@ void bx_init_options()
         "Status",
         "CD-ROM media status (inserted / ejected)",
         media_status_names,
-        BX_INSERTED,
+        BX_EJECTED,
         BX_EJECTED);
       status->set_ask_format("Is the device inserted or ejected? [%s] ");
 
@@ -1462,6 +1479,27 @@ void bx_init_options()
   // sound subtree
   bx_list_c *sound = new bx_list_c(root_param, "sound", "Sound Configuration");
   sound->set_options(sound->USE_TAB_WINDOW | sound->SHOW_PARENT);
+  bx_list_c *soundlow = new bx_list_c(sound, "lowlevel", "Lowlevel Sound Configuration");
+  soundlow->set_options(soundlow->SHOW_PARENT | soundlow->SERIES_ASK);
+  soundlow->set_enabled(BX_SUPPORT_SOUNDLOW);
+
+#if BX_SUPPORT_SOUNDLOW
+  new bx_param_string_c(soundlow,
+    "driver",
+    "Sound driver",
+    "This is the lowlevel driver to use for emulated sound devices",
+    "default", BX_PATHNAME_LEN);
+  new bx_param_filename_c(soundlow,
+    "waveout",
+    "Wave output device",
+    "This is the device where the wave output is sent to",
+    "", BX_PATHNAME_LEN);
+  new bx_param_filename_c(soundlow,
+    "wavein",
+    "Wave input device",
+    "This is the device to be used as the wave input source",
+    "", BX_PATHNAME_LEN);
+#endif
   // sound device options initialized in the devive plugin code
 
   // misc options subtree
@@ -1545,7 +1583,7 @@ void bx_init_options()
       "prefix",
       "Log output prefix",
       "Prefix prepended to log output",
-      "%t%e%d", BX_PATHNAME_LEN);
+      "%t%e%d", BX_LOGPREFIX_LEN);
   prefix->set_ask_format("Enter log prefix: [%s] ");
 
   path = new bx_param_filename_c(menu,
@@ -1560,11 +1598,14 @@ void bx_init_options()
   // runtime options
   menu = new bx_list_c(special_menus, "runtime", "Runtime options");
   bx_list_c *cdrom = new bx_list_c(menu, "cdrom", "CD-ROM options");
+  cdrom->set_runtime_param(1);
   cdrom->set_options(cdrom->SHOW_PARENT);
   usb = new bx_list_c(menu, "usb", "USB options");
+  usb->set_runtime_param(1);
   usb->set_options(usb->SHOW_PARENT | usb->USE_TAB_WINDOW);
   // misc runtime options
   misc = new bx_list_c(menu, "misc", "Misc options");
+  misc->set_runtime_param(1);
   misc->add(SIM->get_param(BXPN_VGA_UPDATE_FREQUENCY));
   misc->add(SIM->get_param(BXPN_MOUSE_ENABLED));
   misc->add(SIM->get_param(BXPN_KBD_PASTE_DELAY));
@@ -1838,21 +1879,33 @@ static int parse_line_unformatted(const char *context, char *line)
           *pv = 0;
           if (strlen(varname)<1 || !(value = getenv(varname))) {
             if ((value = get_builtin_variable(varname))) {
+              if ((string_i + strlen(value)) < 512) {
+                // append value to the string
+                for (pv=(char *)value; *pv; pv++)
+                    string[string_i++] = *pv;
+              } else {
+                BX_PANIC(("parse_line_unformatted(): out of memory"));
+              }
+            } else {
+              BX_PANIC(("could not look up environment variable '%s'", varname));
+            }
+          } else {
+            if ((string_i + strlen(value)) < 512) {
               // append value to the string
               for (pv=(char *)value; *pv; pv++)
                   string[string_i++] = *pv;
             } else {
-              BX_PANIC (("could not look up environment variable '%s'", varname));
+              BX_PANIC(("parse_line_unformatted(): out of memory"));
             }
-          } else {
-            // append value to the string
-            for (pv=(char *)value; *pv; pv++)
-                string[string_i++] = *pv;
           }
         }
 #endif
         if (!isspace(ptr[i]) || inquotes) {
-          string[string_i++] = ptr[i];
+          if (string_i < 511) {
+            string[string_i++] = ptr[i];
+          } else {
+            BX_PANIC(("parse_line_unformatted(): out of memory"));
+          }
         }
       }
     }
@@ -2178,22 +2231,36 @@ int bx_parse_nic_params(const char *context, const char *param, bx_list_c *base)
   return valid;
 }
 
+bx_bool is_deprecated_option(const char *oldparam, const char **newparam)
+{
+  if (!strcmp(oldparam, "i440fxsupport")) {
+    // replaced v2.5 / removed v2.6.1
+    *newparam = "pci";
+    return 1;
+  } else if (!strcmp(oldparam, "vga_update_interval")) {
+    // replaced v2.5 / removed v2.6.1
+    *newparam = "vga";
+    return 1;
+#if BX_SUPPORT_PCIPNIC
+  } else if (!strcmp(oldparam, "pnic")) {
+    // replaced v2.6 / removed v2.6.5
+    *newparam = "pcipnic";
+    return 1;
+#endif
+  }
+  return 0;
+}
+
 static int parse_line_formatted(const char *context, int num_params, char *params[])
 {
   int i, slot, t;
   bx_list_c *base;
+  const char *newparam;
 
   if (num_params < 1) return 0;
   if (num_params < 2) {
     PARSE_ERR(("%s: a bochsrc option needs at least one parameter", context));
   }
-
-#if BX_SUPPORT_PCIPNIC
-  // Temporary HACK for the PCI Pseudo NIC's bochsrc option name change
-  if (!strcmp(params[0], "pnic")) {
-    strcpy(params[0], "pcipnic");
-  }
-#endif
 
   if (!strcmp(params[0], "#include")) {
     if (num_params != 2) {
@@ -2206,8 +2273,43 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: maximum include level exceeded (limit = 2).", context));
     }
     bx_read_configuration(params[1]);
-  }
-  else if ((!strcmp(params[0], "floppya")) ||
+  } else if (!strcmp(params[0], "plugin_ctrl")) {
+    char *param, *pname, *val;
+    for (i=1; i<num_params; i++) {
+      param = strdup(params[i]);
+      pname = strtok(param, "=");
+      val = strtok(NULL, "");
+      if (val != NULL) {
+        if (isdigit(val[0])) {
+          SIM->opt_plugin_ctrl(pname, atoi(val));
+        } else {
+          PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
+        }
+      } else {
+        PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
+      }
+      free(param);
+    }
+  } else if (!strcmp(params[0], "config_interface")) {
+    if (num_params != 2) {
+      PARSE_ERR(("%s: config_interface directive: wrong # args.", context));
+    }
+    if (!SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->set_by_name(params[1]))
+      PARSE_ERR(("%s: config_interface '%s' not available", context, params[1]));
+  } else if (!strcmp(params[0], "display_library")) {
+    if ((num_params < 2) || (num_params > 3)) {
+      PARSE_ERR(("%s: display_library directive: wrong # args.", context));
+    }
+    if (!SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY)->set_by_name(params[1]))
+      PARSE_ERR(("%s: display library '%s' not available", context, params[1]));
+    if (num_params == 3) {
+      if (!strncmp(params[2], "options=", 8)) {
+        SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->set(&params[2][8]);
+      } else {
+        PARSE_ERR(("%s: display_library directive malformed", context));
+      }
+    }
+  } else if ((!strcmp(params[0], "floppya")) ||
            (!strcmp(params[0], "floppyb"))) {
     if (!strcmp(params[0], "floppya")) {
       base = (bx_list_c*) SIM->get_param(BXPN_FLOPPYA);
@@ -2293,9 +2395,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
           params[i]));
       }
     }
-  }
-
-  else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) == 4)) {
+  } else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) == 4)) {
     char tmpname[80];
     Bit8u channel = params[0][3];
 
@@ -2316,10 +2416,8 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         PARSE_ERR(("%s: ataX directive malformed.", context));
       }
     }
-  }
-
-  // ataX-master, ataX-slave
-  else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) > 4)) {
+  } else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) > 4)) {
+    // ataX-master, ataX-slave
     Bit8u channel = params[0][3];
     int type = -1;
     Bit32u cylinders = 0, heads = 0, sectors = 0;
@@ -2378,7 +2476,6 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         SIM->get_param_enum("type", base)->set(BX_ATA_DEVICE_NONE);
       }
     }
-
   } else if (!strcmp(params[0], "boot")) {
     char tmppath[80];
     if (num_params < 2) {
@@ -2617,26 +2714,6 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         PARSE_ERR(("%s: keyboard directive malformed.", context));
       }
     }
-  } else if (!strcmp(params[0], "keyboard_serial_delay")) {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: keyboard_serial_delay directive: wrong # args.", context));
-    }
-    SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->set(atol(params[1]));
-    if (SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->get() < 5) {
-      PARSE_ERR (("%s: keyboard_serial_delay not big enough!", context));
-    }
-    PARSE_WARN(("%s: 'keyboard_serial_delay' will be replaced by new 'keyboard' option.", context));
-  } else if (!strcmp(params[0], "keyboard_paste_delay")) {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: keyboard_paste_delay directive: wrong # args.", context));
-    }
-    SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set(atol(params[1]));
-    if (SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->get() < 1000) {
-      PARSE_ERR (("%s: keyboard_paste_delay not big enough!", context));
-    }
-    PARSE_WARN(("%s: 'keyboard_paste_delay' will be replaced by new 'keyboard' option.", context));
-  } else if (!strcmp(params[0], "text_snapshot_check")) {
-    PARSE_ERR(("%s: the 'text_snapshot_check' feature has been removed.", context));
   } else if (!strcmp(params[0], "mouse")) {
     if (num_params < 2) {
       PARSE_ERR(("%s: mouse directive malformed.", context));
@@ -2729,6 +2806,10 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       SIM->get_param_bool(BXPN_CMOSIMAGE_ENABLED)->set(1);
     }
   } else if (!strcmp(params[0], "clock")) {
+    const char months[] = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec ";
+    char wday[4], mon[4];
+    int n, year;
+    struct tm tm_time;
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "sync=", 5)) {
         SIM->get_param_enum(BXPN_CLOCK_SYNC)->set_by_name(&params[i][5]);
@@ -2743,14 +2824,36 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         SIM->get_param_num(BXPN_CLOCK_TIME0)->set(BX_CLOCK_TIME0_UTC);
       }
       else if (!strncmp(params[i], "time0=", 6)) {
-        SIM->get_param_num(BXPN_CLOCK_TIME0)->set(atoi(&params[i][6]));
+        if (isalpha(params[i][6])) {
+          memset(&tm_time, 0, sizeof(tm_time));
+          n = sscanf(&params[i][6], "%3s %3s%3d %2d:%2d:%2d %d", wday, mon, &tm_time.tm_mday,
+                     &tm_time.tm_hour, &tm_time.tm_min, &tm_time.tm_sec, &year);
+          if ((n == 7) && (year >= 1980) && (strstr(months, mon) != NULL)) {
+            tm_time.tm_year = year - 1900;
+            tm_time.tm_mon = 12 - (strlen(strstr(months, mon)) / 4);
+            SIM->get_param_num(BXPN_CLOCK_TIME0)->set(mktime(&tm_time));
+          } else {
+            PARSE_ERR(("%s: time0 string format malformed.", context));
+          }
+        } else {
+          SIM->get_param_num(BXPN_CLOCK_TIME0)->set(atoi(&params[i][6]));
+        }
       }
       else {
         BX_ERROR(("%s: unknown parameter for clock ignored.", context));
       }
     }
-  }
-  else if (!strcmp(params[0], "gdbstub")) {
+  } else if (!strcmp(params[0], "sound")) {
+#if BX_SUPPORT_SOUNDLOW
+    for (i=1; i<num_params; i++) {
+      if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param(BXPN_SOUNDLOW)) < 0) {
+        BX_ERROR(("%s: unknown parameter for sound ignored.", context));
+      }
+    }
+#else
+    PARSE_ERR(("%s: Bochs is not compiled with lowlevel sound support", context));
+#endif
+  } else if (!strcmp(params[0], "gdbstub")) {
 #if BX_GDBSTUB
     if (num_params < 2) {
       PARSE_ERR(("%s: gdbstub directive: wrong # args.", context));
@@ -2791,8 +2894,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
 #else
     PARSE_ERR(("%s: Bochs is not compiled with gdbstub support", context));
 #endif
-  }
-  else if (!strcmp(params[0], "magic_break")) {
+  } else if (!strcmp(params[0], "magic_break")) {
 #if BX_DEBUGGER
     if (num_params != 2) {
       PARSE_ERR(("%s: magic_break directive: wrong # args.", context));
@@ -2814,13 +2916,11 @@ static int parse_line_formatted(const char *context, int num_params, char *param
 #else
     PARSE_WARN(("%s: Bochs is not compiled with internal debugger support", context));
 #endif
-  }
-  else if (!strcmp(params[0], "debug_symbols")) {
+  } else if (!strcmp(params[0], "debug_symbols")) {
     if (parse_debug_symbols(context, (const char **)(params + 1), num_params - 1) < 0) {
       return -1;
     }
-  }
-  else if (!strcmp(params[0], "print_timestamps")) {
+  } else if (!strcmp(params[0], "print_timestamps")) {
     if (num_params != 2) {
       PARSE_ERR(("%s: print_timestamps directive: wrong # args.", context));
     }
@@ -2833,8 +2933,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     else {
       PARSE_ERR(("%s: print_timestamps directive malformed.", context));
     }
-  }
-  else if (!strcmp(params[0], "port_e9_hack")) {
+  } else if (!strcmp(params[0], "port_e9_hack")) {
     if (num_params != 2) {
       PARSE_ERR(("%s: port_e9_hack directive: wrong # args.", context));
     }
@@ -2844,8 +2943,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     if (parse_param_bool(params[1], 8, BXPN_PORT_E9_HACK) < 0) {
       PARSE_ERR(("%s: port_e9_hack directive malformed.", context));
     }
-  }
-  else if (!strcmp(params[0], "load32bitOSImage")) {
+  } else if (!strcmp(params[0], "load32bitOSImage")) {
     if ((num_params!=4) && (num_params!=5)) {
       PARSE_ERR(("%s: load32bitOSImage directive: wrong # args.", context));
     }
@@ -2875,8 +2973,28 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       }
       SIM->get_param_string(BXPN_LOAD32BITOS_INITRD)->set(&params[4][7]);
     }
-  }
-  else if (!strcmp(params[0], "keyboard_type")) {
+  } else if (!strcmp(params[0], "keyboard_serial_delay")) {
+    // handled by 'keyboard' option since Bochs 2.6
+    if (num_params != 2) {
+      PARSE_ERR(("%s: keyboard_serial_delay directive: wrong # args.", context));
+    }
+    SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->set(atol(params[1]));
+    if (SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->get() < 5) {
+      PARSE_ERR (("%s: keyboard_serial_delay not big enough!", context));
+    }
+    PARSE_WARN(("%s: 'keyboard_serial_delay' will be replaced by new 'keyboard' option.", context));
+  } else if (!strcmp(params[0], "keyboard_paste_delay")) {
+    // handled by 'keyboard' option since Bochs 2.6
+    if (num_params != 2) {
+      PARSE_ERR(("%s: keyboard_paste_delay directive: wrong # args.", context));
+    }
+    SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set(atol(params[1]));
+    if (SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->get() < 1000) {
+      PARSE_ERR (("%s: keyboard_paste_delay not big enough!", context));
+    }
+    PARSE_WARN(("%s: 'keyboard_paste_delay' will be replaced by new 'keyboard' option.", context));
+  } else if (!strcmp(params[0], "keyboard_type")) {
+    // handled by 'keyboard' option since Bochs 2.6
     if (num_params != 2) {
       PARSE_ERR(("%s: keyboard_type directive: wrong # args.", context));
     }
@@ -2884,9 +3002,9 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: keyboard_type directive: wrong arg '%s'.", context,params[1]));
     }
     PARSE_WARN(("%s: 'keyboard_type' will be replaced by new 'keyboard' option.", context));
-  }
-  else if (!strcmp(params[0], "keyboard_mapping")
+  } else if (!strcmp(params[0], "keyboard_mapping")
          ||!strcmp(params[0], "keyboardmapping")) {
+    // handled by 'keyboard' option since Bochs 2.6
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "enabled=", 8)) {
         SIM->get_param_bool(BXPN_KBD_USEMAPPING)->set(atol(&params[i][8]));
@@ -2896,9 +3014,8 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       }
     }
     PARSE_WARN(("%s: '%s' will be replaced by new 'keyboard' option.", context, params[0]));
-  }
-  else if (!strcmp(params[0], "user_shortcut"))
-  {
+  } else if (!strcmp(params[0], "user_shortcut")) {
+    // handled by 'keyboard' option since Bochs 2.6.1
     if (num_params != 2) {
       PARSE_ERR(("%s: user_shortcut directive: wrong # args.", context));
     }
@@ -2908,29 +3025,8 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: user_shortcut directive malformed.", context));
     }
     PARSE_WARN(("%s: 'user_shortcut' will be replaced by new 'keyboard' option.", context));
-  }
-  else if (!strcmp(params[0], "config_interface"))
-  {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: config_interface directive: wrong # args.", context));
-    }
-    if (!SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->set_by_name(params[1]))
-      PARSE_ERR(("%s: config_interface '%s' not available", context, params[1]));
-  }
-  else if (!strcmp(params[0], "display_library")) {
-    if ((num_params < 2) || (num_params > 3)) {
-      PARSE_ERR(("%s: display_library directive: wrong # args.", context));
-    }
-    if (!SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY)->set_by_name(params[1]))
-      PARSE_ERR(("%s: display library '%s' not available", context, params[1]));
-    if (num_params == 3) {
-      if (!strncmp(params[2], "options=", 8)) {
-        SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->set(&params[2][8]);
-      }
-    }
-  }
+  } else if (!strcmp(params[0], "user_plugin")) {
 #if BX_PLUGINS
-  else if (!strcmp(params[0], "user_plugin")) {
     char tmpname[80];
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "name=", 5)) {
@@ -2944,43 +3040,23 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         PARSE_ERR(("%s: unknown user plugin parameter '%s'", context, params[i]));
       }
     }
-  }
+#else
+    PARSE_ERR(("%s: Bochs is not compiled with plugin support", context));
 #endif
-  else if (!strcmp(params[0], "plugin_ctrl")) {
-    char *param, *pname, *val;
-    for (i=1; i<num_params; i++) {
-      param = strdup(params[i]);
-      pname = strtok(param, "=");
-      val = strtok(NULL, "");
-      if (val != NULL) {
-        if (isdigit(val[0])) {
-          SIM->opt_plugin_ctrl(pname, atoi(val));
-        } else {
-          PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
-        }
-      } else {
-        PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
-      }
-      free(param);
-    }
-  }
-  // add-on options handled by registered functions
-  else if (SIM->is_addon_option(params[0]))
-  {
+  } else if (SIM->is_addon_option(params[0])) {
+    // add-on options handled by registered functions
     return SIM->parse_addon_option(context, num_params, &params[0]);
-  }
-  // treat unknown option as plugin name and try to load it
-  else if (SIM->opt_plugin_ctrl(params[0], 1))
-  {
-    // after loading the plugin a bochsrc option with it's name must exist
+  } else if (is_deprecated_option(params[0], &newparam)) {
+    PARSE_ERR(("%s: '%s' is deprecated - use '%s' option instead.", context, params[0], newparam));
+  } else if (SIM->opt_plugin_ctrl(params[0], 1)) {
+    // treat unknown option as plugin name and try to load it
     if (SIM->is_addon_option(params[0])) {
+      // after loading the plugin a bochsrc option with it's name must exist
       return SIM->parse_addon_option(context, num_params, &params[0]);
     } else {
       PARSE_ERR(("%s: directive '%s' not understood", context, params[0]));
     }
-  }
-  else
-  {
+  } else {
     PARSE_ERR(("%s: directive '%s' not understood", context, params[0]));
   }
   return 0;
@@ -3367,6 +3443,7 @@ int bx_write_configuration(const char *rc, int overwrite)
   bx_write_log_options(fp, (bx_list_c*) SIM->get_param("log"));
   bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_KEYBOARD), NULL, 0);
   bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_MOUSE), NULL, 0);
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_SOUNDLOW),"sound", 0);
   SIM->save_addon_options(fp);
   fclose(fp);
   return 0;

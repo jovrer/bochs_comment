@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: xop.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: xop.cc 12115 2014-01-18 20:10:05Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -36,99 +36,99 @@ extern void mxcsr_to_softfloat_status_word(float_status_t &status, bx_mxcsr_t mx
 typedef void (*simd_compare_method)(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2);
 
 // comparison predicate for PCOMB
-static simd_compare_method compare8[8] = {
-  sse_pcmpltb,
-  sse_pcmpleb,
-  sse_pcmpgtb,
-  sse_pcmpgeb,
-  sse_pcmpeqb,
-  sse_pcmpneb,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare8[8] = {
+  xmm_pcmpltb,
+  xmm_pcmpleb,
+  xmm_pcmpgtb,
+  xmm_pcmpgeb,
+  xmm_pcmpeqb,
+  xmm_pcmpneb,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMUB
-static simd_compare_method compare8u[8] = {
-  sse_pcmpltub,
-  sse_pcmpleub,
-  sse_pcmpgtub,
-  sse_pcmpgeub,
-  sse_pcmpeqb,
-  sse_pcmpneb,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare8u[8] = {
+  xmm_pcmpltub,
+  xmm_pcmpleub,
+  xmm_pcmpgtub,
+  xmm_pcmpgeub,
+  xmm_pcmpeqb,
+  xmm_pcmpneb,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMW
-static simd_compare_method compare16[8] = {
-  sse_pcmpltw,
-  sse_pcmplew,
-  sse_pcmpgtw,
-  sse_pcmpgew,
-  sse_pcmpeqw,
-  sse_pcmpnew,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare16[8] = {
+  xmm_pcmpltw,
+  xmm_pcmplew,
+  xmm_pcmpgtw,
+  xmm_pcmpgew,
+  xmm_pcmpeqw,
+  xmm_pcmpnew,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMUW
-static simd_compare_method compare16u[8] = {
-  sse_pcmpltuw,
-  sse_pcmpleuw,
-  sse_pcmpgtuw,
-  sse_pcmpgeuw,
-  sse_pcmpeqw,
-  sse_pcmpnew,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare16u[8] = {
+  xmm_pcmpltuw,
+  xmm_pcmpleuw,
+  xmm_pcmpgtuw,
+  xmm_pcmpgeuw,
+  xmm_pcmpeqw,
+  xmm_pcmpnew,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMD
-static simd_compare_method compare32[8] = {
-  sse_pcmpltd,
-  sse_pcmpled,
-  sse_pcmpgtd,
-  sse_pcmpged,
-  sse_pcmpeqd,
-  sse_pcmpned,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare32[8] = {
+  xmm_pcmpltd,
+  xmm_pcmpled,
+  xmm_pcmpgtd,
+  xmm_pcmpged,
+  xmm_pcmpeqd,
+  xmm_pcmpned,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMUD
-static simd_compare_method compare32u[8] = {
-  sse_pcmpltud,
-  sse_pcmpleud,
-  sse_pcmpgtud,
-  sse_pcmpgeud,
-  sse_pcmpeqd,
-  sse_pcmpned,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare32u[8] = {
+  xmm_pcmpltud,
+  xmm_pcmpleud,
+  xmm_pcmpgtud,
+  xmm_pcmpgeud,
+  xmm_pcmpeqd,
+  xmm_pcmpned,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMQ
-static simd_compare_method compare64[8] = {
-  sse_pcmpltq,
-  sse_pcmpleq,
-  sse_pcmpgtq,
-  sse_pcmpgeq,
-  sse_pcmpeqq,
-  sse_pcmpneq,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare64[8] = {
+  xmm_pcmpltq,
+  xmm_pcmpleq,
+  xmm_pcmpgtq,
+  xmm_pcmpgeq,
+  xmm_pcmpeqq,
+  xmm_pcmpneq,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 // comparison predicate for PCOMUQ
-static simd_compare_method compare64u[8] = {
-  sse_pcmpltuq,
-  sse_pcmpleuq,
-  sse_pcmpgtuq,
-  sse_pcmpgeuq,
-  sse_pcmpeqq,
-  sse_pcmpneq,
-  sse_pcmpfalse,
-  sse_pcmptrue
+static simd_compare_method xop_compare64u[8] = {
+  xmm_pcmpltuq,
+  xmm_pcmpleuq,
+  xmm_pcmpgtuq,
+  xmm_pcmpgeuq,
+  xmm_pcmpeqq,
+  xmm_pcmpneq,
+  xmm_pcmpfalse,
+  xmm_pcmptrue
 };
 
 typedef Bit8u (*vpperm_operation)(Bit8u byte);
@@ -167,16 +167,16 @@ static vpperm_operation vpperm_op[8] = {
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCMOV_VdqHdqWdqVIb(bxInstruction_c *i)
 {
-  BxPackedAvxRegister op1 = BX_READ_AVX_REG(i->src1());
-  BxPackedAvxRegister op2 = BX_READ_AVX_REG(i->src2());
-  BxPackedAvxRegister op3 = BX_READ_AVX_REG(i->src3());
+  BxPackedYmmRegister op1 = BX_READ_YMM_REG(i->src1());
+  BxPackedYmmRegister op2 = BX_READ_YMM_REG(i->src2());
+  BxPackedYmmRegister op3 = BX_READ_YMM_REG(i->src3());
   unsigned len = i->getVL();
 
   for (unsigned n=0; n < len; n++) {
-    sse_pselect(&op1.avx128(n), &op2.avx128(n), &op3.avx128(n));
+    xmm_pselect(&op1.ymm128(n), &op2.ymm128(n), &op3.ymm128(n));
   }
 
-  BX_WRITE_AVX_REGZ(i->dst(), op1, len);
+  BX_WRITE_YMM_REGZ_VLEN(i->dst(), op1, len);
 
   BX_NEXT_INSTR(i);
 }
@@ -215,20 +215,20 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPPERM_VdqHdqWdqVIb(bxInstruction_
     BX_NEXT_INSTR(i);                                                                       \
   }
 
-XOP_SHIFT_ROTATE(VPSHAB_VdqWdqHdq, sse_pshab);
-XOP_SHIFT_ROTATE(VPSHAW_VdqWdqHdq, sse_pshaw);
-XOP_SHIFT_ROTATE(VPSHAD_VdqWdqHdq, sse_pshad);
-XOP_SHIFT_ROTATE(VPSHAQ_VdqWdqHdq, sse_pshaq);
+XOP_SHIFT_ROTATE(VPSHAB_VdqWdqHdq, xmm_pshab);
+XOP_SHIFT_ROTATE(VPSHAW_VdqWdqHdq, xmm_pshaw);
+XOP_SHIFT_ROTATE(VPSHAD_VdqWdqHdq, xmm_pshad);
+XOP_SHIFT_ROTATE(VPSHAQ_VdqWdqHdq, xmm_pshaq);
 
-XOP_SHIFT_ROTATE(VPSHLB_VdqWdqHdq, sse_pshlb);
-XOP_SHIFT_ROTATE(VPSHLW_VdqWdqHdq, sse_pshlw);
-XOP_SHIFT_ROTATE(VPSHLD_VdqWdqHdq, sse_pshld);
-XOP_SHIFT_ROTATE(VPSHLQ_VdqWdqHdq, sse_pshlq);
+XOP_SHIFT_ROTATE(VPSHLB_VdqWdqHdq, xmm_pshlb);
+XOP_SHIFT_ROTATE(VPSHLW_VdqWdqHdq, xmm_pshlw);
+XOP_SHIFT_ROTATE(VPSHLD_VdqWdqHdq, xmm_pshld);
+XOP_SHIFT_ROTATE(VPSHLQ_VdqWdqHdq, xmm_pshlq);
 
-XOP_SHIFT_ROTATE(VPROTB_VdqWdqHdq, sse_protb);
-XOP_SHIFT_ROTATE(VPROTW_VdqWdqHdq, sse_protw);
-XOP_SHIFT_ROTATE(VPROTD_VdqWdqHdq, sse_protd);
-XOP_SHIFT_ROTATE(VPROTQ_VdqWdqHdq, sse_protq);
+XOP_SHIFT_ROTATE(VPROTB_VdqWdqHdq, xmm_protb);
+XOP_SHIFT_ROTATE(VPROTW_VdqWdqHdq, xmm_protw);
+XOP_SHIFT_ROTATE(VPROTD_VdqWdqHdq, xmm_protd);
+XOP_SHIFT_ROTATE(VPROTQ_VdqWdqHdq, xmm_protq);
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPMACSSWW_VdqHdqWdqVIbR(bxInstruction_c *i)
 {
@@ -449,11 +449,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPROTB_VdqWdqIbR(bxInstruction_c *
 
   if (count > 0) {
     // rotate left
-    sse_prolb(&op,  count);
+    xmm_prolb(&op,  count);
   }
   else if (count < 0) {
     // rotate right
-    sse_prorb(&op, -count);
+    xmm_prorb(&op, -count);
   }
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op);
@@ -468,11 +468,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPROTW_VdqWdqIbR(bxInstruction_c *
 
   if (count > 0) {
     // rotate left
-    sse_prolw(&op,  count);
+    xmm_prolw(&op,  count);
   }
   else if (count < 0) {
     // rotate right
-    sse_prorw(&op, -count);
+    xmm_prorw(&op, -count);
   }
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op);
@@ -487,11 +487,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPROTD_VdqWdqIbR(bxInstruction_c *
 
   if (count > 0) {
     // rotate left
-    sse_prold(&op,  count);
+    xmm_prold(&op,  count);
   }
   else if (count < 0) {
     // rotate right
-    sse_prord(&op, -count);
+    xmm_prord(&op, -count);
   }
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op);
@@ -506,11 +506,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPROTQ_VdqWdqIbR(bxInstruction_c *
 
   if (count > 0) {
     // rotate left
-    sse_prolq(&op,  count);
+    xmm_prolq(&op,  count);
   }
   else if (count < 0) {
     // rotate right
-    sse_prorq(&op, -count);
+    xmm_prorq(&op, -count);
   }
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op);
@@ -522,7 +522,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMB_VdqHdqWdqIbR(bxInstruction_
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare8[i->Ib() & 7](&op1, &op2);
+  xop_compare8[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -533,7 +533,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMW_VdqHdqWdqIbR(bxInstruction_
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare16[i->Ib() & 7](&op1, &op2);
+  xop_compare16[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -544,7 +544,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMD_VdqHdqWdqIbR(bxInstruction_
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare32[i->Ib() & 7](&op1, &op2);
+  xop_compare32[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -555,7 +555,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMQ_VdqHdqWdqIbR(bxInstruction_
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare64[i->Ib() & 7](&op1, &op2);
+  xop_compare64[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -566,7 +566,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMUB_VdqHdqWdqIbR(bxInstruction
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare8u[i->Ib() & 7](&op1, &op2);
+  xop_compare8u[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -577,7 +577,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMUW_VdqHdqWdqIbR(bxInstruction
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare16u[i->Ib() & 7](&op1, &op2);
+  xop_compare16u[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -588,7 +588,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMUD_VdqHdqWdqIbR(bxInstruction
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare32u[i->Ib() & 7](&op1, &op2);
+  xop_compare32u[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -599,7 +599,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMUQ_VdqHdqWdqIbR(bxInstruction
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->src1()), op2 = BX_READ_XMM_REG(i->src2());
 
-  compare64u[i->Ib() & 7](&op1, &op2);
+  xop_compare64u[i->Ib() & 7](&op1, &op2);
 
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), op1);
 
@@ -608,37 +608,37 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPCOMUQ_VdqHdqWdqIbR(bxInstruction
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VFRCZPS_VpsWpsR(bxInstruction_c *i)
 {
-  BxPackedAvxRegister op = BX_READ_AVX_REG(i->src());
+  BxPackedYmmRegister op = BX_READ_YMM_REG(i->src());
   unsigned len = i->getVL();
 
   float_status_t status;
   mxcsr_to_softfloat_status_word(status, MXCSR);
 
-  for (unsigned n=0; n < (4*len); n++) {
-    op.avx32u(n) = float32_frc(op.avx32u(n), status);
+  for (unsigned n=0; n < DWORD_ELEMENTS(len); n++) {
+    op.ymm32u(n) = float32_frc(op.ymm32u(n), status);
   }
 
-  check_exceptionsSSE(status.float_exception_flags);
-  BX_WRITE_AVX_REGZ(i->dst(), op, len);
+  check_exceptionsSSE(get_exception_flags(status));
+  BX_WRITE_YMM_REGZ_VLEN(i->dst(), op, len);
 
   BX_NEXT_INSTR(i);
 }
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VFRCZPD_VpdWpdR(bxInstruction_c *i)
 {
-  BxPackedAvxRegister op = BX_READ_AVX_REG(i->src());
+  BxPackedYmmRegister op = BX_READ_YMM_REG(i->src());
   unsigned len = i->getVL();
   
   float_status_t status;
   mxcsr_to_softfloat_status_word(status, MXCSR);
 
-  for (unsigned n=0; n < (2*len); n++) {
-    op.avx64u(n) = float64_frc(op.avx64u(n), status);
+  for (unsigned n=0; n < QWORD_ELEMENTS(len); n++) {
+    op.ymm64u(n) = float64_frc(op.ymm64u(n), status);
   }
 
-  check_exceptionsSSE(status.float_exception_flags);
+  check_exceptionsSSE(get_exception_flags(status));
 
-  BX_WRITE_AVX_REGZ(i->dst(), op, len);
+  BX_WRITE_YMM_REGZ_VLEN(i->dst(), op, len);
 
   BX_NEXT_INSTR(i);
 }
@@ -654,7 +654,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VFRCZSS_VssWssR(bxInstruction_c *i
   r.xmm64u(0) = (Bit64u) float32_frc(op, status);
   r.xmm64u(1) = 0;
 
-  check_exceptionsSSE(status.float_exception_flags);
+  check_exceptionsSSE(get_exception_flags(status));
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), r);
 
   BX_NEXT_INSTR(i);
@@ -671,7 +671,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VFRCZSD_VsdWsdR(bxInstruction_c *i
   r.xmm64u(0) = float64_frc(op, status);
   r.xmm64u(1) = 0;
 
-  check_exceptionsSSE(status.float_exception_flags);
+  check_exceptionsSSE(get_exception_flags(status));
   BX_WRITE_XMM_REG_CLEAR_HIGH(i->dst(), r);
 
   BX_NEXT_INSTR(i);
@@ -911,32 +911,32 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPHSUBDQ_VdqWdqR(bxInstruction_c *
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPERMIL2PS_VdqHdqWdqIbR(bxInstruction_c *i)
 {
-  BxPackedAvxRegister op1 = BX_READ_AVX_REG(i->src1());
-  BxPackedAvxRegister op2 = BX_READ_AVX_REG(i->src2());
-  BxPackedAvxRegister op3 = BX_READ_AVX_REG(i->src3()), result;
+  BxPackedYmmRegister op1 = BX_READ_YMM_REG(i->src1());
+  BxPackedYmmRegister op2 = BX_READ_YMM_REG(i->src2());
+  BxPackedYmmRegister op3 = BX_READ_YMM_REG(i->src3()), result;
   unsigned len = i->getVL();
 
   for (unsigned n=0; n < len; n++) {
-    sse_permil2ps(&result.avx128(n), &op1.avx128(n), &op2.avx128(n), &op3.avx128(n), i->Ib() & 3);
+    xmm_permil2ps(&result.ymm128(n), &op1.ymm128(n), &op2.ymm128(n), &op3.ymm128(n), i->Ib() & 3);
   }
 
-  BX_WRITE_AVX_REGZ(i->dst(), result, len);
+  BX_WRITE_YMM_REGZ_VLEN(i->dst(), result, len);
 
   BX_NEXT_INSTR(i);
 }
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VPERMIL2PD_VdqHdqWdqIbR(bxInstruction_c *i)
 {
-  BxPackedAvxRegister op1 = BX_READ_AVX_REG(i->src1());
-  BxPackedAvxRegister op2 = BX_READ_AVX_REG(i->src2());
-  BxPackedAvxRegister op3 = BX_READ_AVX_REG(i->src3()), result;
+  BxPackedYmmRegister op1 = BX_READ_YMM_REG(i->src1());
+  BxPackedYmmRegister op2 = BX_READ_YMM_REG(i->src2());
+  BxPackedYmmRegister op3 = BX_READ_YMM_REG(i->src3()), result;
   unsigned len = i->getVL();
 
   for (unsigned n=0; n < len; n++) {
-    sse_permil2pd(&result.avx128(n), &op1.avx128(n), &op2.avx128(n), &op3.avx128(n), i->Ib() & 3);
+    xmm_permil2pd(&result.ymm128(n), &op1.ymm128(n), &op2.ymm128(n), &op3.ymm128(n), i->Ib() & 3);
   }
 
-  BX_WRITE_AVX_REGZ(i->dst(), result, len);
+  BX_WRITE_YMM_REGZ_VLEN(i->dst(), result, len);
 
   BX_NEXT_INSTR(i);
 }

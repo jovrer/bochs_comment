@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc 11629 2013-02-14 21:06:20Z vruppert $
+// $Id: x.cc 12303 2014-05-01 14:34:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -996,7 +996,7 @@ void send_keyboard_mouse_status(void)
             prev_x, prev_y, current_x, current_y));
 
   if (x11_mouse_mode_absxy) {
-    if ((current_y >= (int)bx_headerbar_y) && (current_y < (dimension_y + bx_headerbar_y))) {
+    if ((current_y >= (int)bx_headerbar_y) && (current_y < (int)(dimension_y + bx_headerbar_y))) {
       dx = current_x * 0x7fff / dimension_x;
       dy = (current_y - bx_headerbar_y) * 0x7fff / dimension_y;
       dz = current_z;
@@ -2032,6 +2032,7 @@ void bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
     SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
     *xres = xrrs[original_size_id].width;
     *yres = xrrs[original_size_id].height;
+    free(conf);
   }
   else {
     int screen = DefaultScreen(dpy);
@@ -2459,7 +2460,7 @@ int x11_ask_dialog(BxEvent *event)
   int level, cpos;
   int retcode = -1;
   int control = num_ctrls - 1;
-  char name[16], device[16], message[512];
+  char name[16], device[18], message[512];
 
   level = event->u.logmsg.level;
   strcpy(name, SIM->get_log_level_name(level));

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: speaker.h 11195 2012-05-24 18:06:40Z vruppert $
+// $Id: speaker.h 11720 2013-06-16 18:52:34Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright 2003 by David N. Welton <davidw@dedasys.com>.
@@ -41,6 +41,7 @@ public:
 private:
     float beep_frequency;  // 0 : beep is off
     bx_bool outputinit;
+    unsigned output_mode;
 #ifdef __linux__
     /* Do we have access?  If not, just skip everything else. */
     signed int consolefd;

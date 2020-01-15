@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h 11162 2012-05-06 19:19:00Z sshwarts $
+// $Id: harddrv.h 12237 2014-03-11 18:29:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -38,7 +38,7 @@ typedef enum _asc {
 } asc_t;
 
 class device_image_t;
-class LOWLEVEL_CDROM;
+class cdrom_base_c;
 
 typedef struct {
   struct {
@@ -132,11 +132,10 @@ struct cdrom_t
 {
   bx_bool ready;
   bx_bool locked;
-#ifdef LOWLEVEL_CDROM
-  LOWLEVEL_CDROM* cd;
-#endif
-  Bit32u capacity;
-  int next_lba;
+  cdrom_base_c *cd;
+  Bit32u max_lba;
+  Bit32u curr_lba;
+  Bit32u next_lba;
   int remaining_blocks;
   struct currentStruct {
     error_recovery_t error_recovery;
@@ -222,6 +221,7 @@ private:
   BX_HD_SMF bx_bool ide_read_sector(Bit8u channel, Bit8u *buffer, Bit32u buffer_size);
   BX_HD_SMF bx_bool ide_write_sector(Bit8u channel, Bit8u *buffer, Bit32u buffer_size);
   BX_HD_SMF void lba48_transform(controller_t *controller, bx_bool lba48);
+  BX_HD_SMF void start_seek(Bit8u channel);
 
   static Bit64s cdrom_status_handler(bx_param_c *param, int set, Bit64s val);
   static const char* cdrom_path_handler(bx_param_string_c *param, int set,
@@ -232,7 +232,6 @@ private:
   // and an array of two drive structs
   struct channel_t {
     struct drive_t {
-      device_image_t* hdimage;
       device_type_t device_type;
       // 512 byte buffer for ID drive command
       // These words are stored in native word endian format, as
@@ -246,10 +245,15 @@ private:
       sense_info_t sense;
       atapi_t atapi;
 
+      device_image_t* hdimage;
+      Bit64s curr_lsector;
+      Bit64s next_lsector;
+
       Bit8u model_no[41];
       int statusbar_id;
       Bit8u device_num; // for ATAPI identify & inquiry
       bx_bool status_changed;
+      int seek_timer_index;
     } drives[2];
     unsigned drive_select;
 
@@ -259,7 +263,6 @@ private:
 
   } channels[BX_MAX_ATA_CHANNEL];
 
-  int seek_timer_index;
   Bit8u cdrom_count;
   bx_bool pci_enabled;
 };

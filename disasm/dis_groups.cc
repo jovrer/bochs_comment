@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_groups.cc 10857 2011-12-25 19:35:29Z sshwarts $
+// $Id: dis_groups.cc 11885 2013-10-15 17:19:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -33,14 +33,14 @@ void disassembler::Apw(const x86_insn *insn)
 {
   Bit16u imm16 = fetch_word();
   Bit16u cs_selector = fetch_word();
-  dis_sprintf("%04x:%04x", (unsigned) cs_selector, (unsigned) imm16);
+  dis_sprintf("0x%04x:%04x", (unsigned) cs_selector, (unsigned) imm16);
 }
 
 void disassembler::Apd(const x86_insn *insn)
 {
   Bit32u imm32 = fetch_dword();
   Bit16u cs_selector = fetch_word();
-  dis_sprintf("%04x:%08x", (unsigned) cs_selector, (unsigned) imm32);
+  dis_sprintf("0x%04x:%08x", (unsigned) cs_selector, (unsigned) imm32);
 }
 
 // 8-bit general purpose registers
@@ -82,15 +82,6 @@ void disassembler::FS(const x86_insn *insn) { dis_sprintf("%s", segment_name[FS_
 void disassembler::GS(const x86_insn *insn) { dis_sprintf("%s", segment_name[GS_REG]); }
 
 void disassembler::Sw(const x86_insn *insn) { dis_sprintf("%s", segment_name[insn->nnn]); }
-
-// test registers
-void disassembler::Td(const x86_insn *insn)
-{
-  if (intel_mode)
-    dis_sprintf  ("tr%d", insn->nnn);
-  else
-    dis_sprintf("%%tr%d", insn->nnn);
-}
 
 // control register
 void disassembler::Cd(const x86_insn *insn)
@@ -512,11 +503,11 @@ void disassembler::OP_O(const x86_insn *insn, unsigned size)
   }
   else if (insn->as_32) {
     Bit32u imm32 = fetch_dword();
-    dis_sprintf("%s:0x%x", seg, (unsigned) imm32);
+    dis_sprintf("%s:0x%08x", seg, (unsigned) imm32);
   }
   else {
     Bit16u imm16 = fetch_word();
-    dis_sprintf("%s:0x%x", seg, (unsigned) imm16);
+    dis_sprintf("%s:0x%04x", seg, (unsigned) imm16);
   }
 }
 
@@ -667,9 +658,9 @@ void disassembler::Jb(const x86_insn *insn)
       dis_sprintf(".%+d", (int) imm8);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
       Bit64u target = db_eip + imm64;
-      target += db_base;
+      target += db_cs_base;
       dis_sprintf(" (0x%08x%08x)", GET32H(target), GET32L(target));
     }
 
@@ -686,8 +677,8 @@ void disassembler::Jb(const x86_insn *insn)
       dis_sprintf(".%+d", (int) imm8);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit32u target = (Bit32u)(db_base + db_eip + (Bit32s) imm32);
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+      Bit32u target = (Bit32u)(db_cs_base + db_eip + (Bit32s) imm32);
       dis_sprintf(" (0x%08x)", target);
     }
   }
@@ -701,9 +692,9 @@ void disassembler::Jb(const x86_insn *insn)
       dis_sprintf(".%+d", (int) imm8);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
       Bit16u target = (Bit16u)((db_eip + (Bit16s) imm16) & 0xffff);
-      dis_sprintf(" (0x%08x)", target + db_base);
+      dis_sprintf(" (0x%08x)", target + db_cs_base);
     }
   }
 }
@@ -722,9 +713,9 @@ void disassembler::Jw(const x86_insn *insn)
     dis_sprintf(".%+d", (int) imm16);
   }
 
-  if (db_base != BX_JUMP_TARGET_NOT_REQ) {
+  if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
     Bit16u target = (db_eip + imm16) & 0xffff;
-    dis_sprintf(" (0x%08x)", target + db_base);
+    dis_sprintf(" (0x%08x)", target + db_cs_base);
   }
 }
 
@@ -742,8 +733,8 @@ void disassembler::Jd(const x86_insn *insn)
       dis_sprintf(".%+d", (int) imm32);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit64u target = db_base + db_eip + (Bit64s) imm64;
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+      Bit64u target = db_cs_base + db_eip + (Bit64s) imm64;
       dis_sprintf(" (0x%08x%08x)", GET32H(target), GET32L(target));
     }
 
@@ -757,8 +748,8 @@ void disassembler::Jd(const x86_insn *insn)
     dis_sprintf(".%+d", (int) imm32);
   }
 
-  if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-    Bit32u target = (Bit32u)(db_base + db_eip + (Bit32s) imm32);
+  if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+    Bit32u target = (Bit32u)(db_cs_base + db_eip + (Bit32s) imm32);
     dis_sprintf(" (0x%08x)", target);
   }
 }

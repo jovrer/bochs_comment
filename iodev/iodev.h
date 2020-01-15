@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h 11553 2012-11-25 19:06:03Z vruppert $
+// $Id: iodev.h 12117 2014-01-19 18:13:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -83,7 +83,7 @@ class BOCHSAPI bx_devmodel_c : public logfunctions {
 
 class bx_list_c;
 class device_image_t;
-class LOWLEVEL_CDROM;
+class cdrom_base_c;
 
 // the best should be deriving of bx_pci_device_stub_c from bx_devmodel_c
 // but it make serious problems for cirrus_svga device
@@ -100,8 +100,8 @@ public:
 
   virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len) {}
 
+  void init_pci_conf(Bit16u vid, Bit16u did, Bit8u rev, Bit32u classc, Bit8u headt);
   void register_pci_state(bx_list_c *list);
-
   void load_pci_rom(const char *path);
 
 protected:
@@ -277,6 +277,7 @@ public:
   virtual bx_bool bmdma_present(void) {
     return 0;
   }
+  virtual void bmdma_start_transfer(Bit8u channel) {}
   virtual void bmdma_set_irq(Bit8u channel) {}
 };
 
@@ -338,18 +339,16 @@ public:
   virtual device_image_t* init_image(Bit8u image_mode, Bit64u disk_size, const char *journal) {
     STUBFUNC(hdimage_ctl, init_image); return NULL;
   }
-#ifdef LOWLEVEL_CDROM
-  virtual LOWLEVEL_CDROM* init_cdrom(const char *dev) {
+  virtual cdrom_base_c* init_cdrom(const char *dev) {
     STUBFUNC(hdimage_ctl, init_cdrom); return NULL;
   }
-#endif
 };
 
 #if BX_SUPPORT_SOUNDLOW
 class BOCHSAPI bx_soundmod_ctl_stub_c : public bx_devmodel_c {
 public:
-  virtual void* init_module(const char *type, logfunctions *dev) {
-    STUBFUNC(soundmod_ctl, init_module); return NULL;
+  virtual void* get_module() {
+    STUBFUNC(soundmod_ctl, get_module); return NULL;
   }
   virtual bx_bool beep_on(float frequency) {
     return 0;
@@ -357,6 +356,11 @@ public:
   virtual bx_bool beep_off() {
     return 0;
   }
+  virtual void VOC_init_file(FILE *stream) {}
+  virtual void VOC_write_block(FILE *stream, int block, Bit32u headerlen,
+                               Bit8u header[], Bit32u datalen, Bit8u data[]) {}
+  virtual void pcm_apply_volume(Bit32u datalen, Bit8u data[], Bit16u volume,
+                                Bit8u bits, bx_bool stereo, bx_bool issigned) {}
 };
 #endif
 

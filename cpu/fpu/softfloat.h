@@ -54,7 +54,8 @@ typedef Bit64u float64;
 *----------------------------------------------------------------------------*/
 typedef enum {
     float_zero,
-    float_NaN,
+    float_SNaN,
+    float_QNaN,
     float_negative_inf,
     float_positive_inf,
     float_denormal,
@@ -90,6 +91,8 @@ enum float_exception_flag_t {
     float_flag_underflow = 0x10,
     float_flag_inexact   = 0x20
 };
+
+const unsigned float_all_exceptions_mask = 0x3f;
 
 #ifdef FLOATX80
 #define RAISE_SW_C1 0x0200
@@ -128,6 +131,7 @@ struct float_status_t
     int float_rounding_mode;
     int float_exception_flags;
     int float_exception_masks;
+    int float_suppress_exception;
     int float_nan_handling_mode;	/* flag register */
     int flush_underflow_to_zero;	/* flag register */
     int denormals_are_zeros;            /* flag register */
@@ -141,6 +145,15 @@ struct float_status_t
 BX_CPP_INLINE void float_raise(float_status_t &status, int flags)
 {
     status.float_exception_flags |= flags;
+}
+
+/*----------------------------------------------------------------------------
+| Returns raised IEC/IEEE floating-point exception flags.
+*----------------------------------------------------------------------------*/
+
+BX_CPP_INLINE int get_exception_flags(const float_status_t &status)
+{
+    return status.float_exception_flags & ~status.float_suppress_exception;
 }
 
 /*----------------------------------------------------------------------------
@@ -222,6 +235,11 @@ float64 int32_to_float64(Bit32s);
 float32 int64_to_float32(Bit64s, float_status_t &status);
 float64 int64_to_float64(Bit64s, float_status_t &status);
 
+float32 uint32_to_float32(Bit32u, float_status_t &status);
+float64 uint32_to_float64(Bit32u);
+float32 uint64_to_float32(Bit64u, float_status_t &status);
+float64 uint64_to_float64(Bit64u, float_status_t &status);
+
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE single-precision conversion routines.
 *----------------------------------------------------------------------------*/
@@ -229,12 +247,17 @@ Bit32s float32_to_int32(float32, float_status_t &status);
 Bit32s float32_to_int32_round_to_zero(float32, float_status_t &status);
 Bit64s float32_to_int64(float32, float_status_t &status);
 Bit64s float32_to_int64_round_to_zero(float32, float_status_t &status);
+Bit32u float32_to_uint32(float32, float_status_t &status);
+Bit32u float32_to_uint32_round_to_zero(float32, float_status_t &status);
+Bit64u float32_to_uint64(float32, float_status_t &status);
+Bit64u float32_to_uint64_round_to_zero(float32, float_status_t &status);
 float64 float32_to_float64(float32, float_status_t &status);
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE single-precision operations.
 *----------------------------------------------------------------------------*/
 float32 float32_round_to_int(float32, float_status_t &status);
+float32 float32_round_to_int(float32, Bit8u scale, float_status_t &status);
 float32 float32_add(float32, float32, float_status_t &status);
 float32 float32_sub(float32, float32, float_status_t &status);
 float32 float32_mul(float32, float32, float_status_t &status);
@@ -242,6 +265,12 @@ float32 float32_div(float32, float32, float_status_t &status);
 float32 float32_sqrt(float32, float_status_t &status);
 float32 float32_frc(float32, float_status_t &status);
 float32 float32_muladd(float32, float32, float32, int flags, float_status_t &status);
+float32 float32_scalef(float32, float32, float_status_t &status);
+
+BX_CPP_INLINE float32 float32_round_to_int(float32 a, float_status_t &status)
+{
+  return float32_round_to_int(a, 0, status);
+}
 
 BX_CPP_INLINE float32 float32_fmadd(float32 a, float32 b, float32 c, float_status_t &status)
 {
@@ -274,6 +303,9 @@ int float32_is_denormal(float32);
 float32 float32_min(float32 a, float32 b, float_status_t &status);
 float32 float32_max(float32 a, float32 b, float_status_t &status);
 
+float32 float32_getexp(float32 a, float_status_t &status);
+float32 float32_getmant(float32 a, float_status_t &status, int sign_ctrl, int interv);
+
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE double-precision conversion routines.
 *----------------------------------------------------------------------------*/
@@ -281,12 +313,17 @@ Bit32s float64_to_int32(float64, float_status_t &status);
 Bit32s float64_to_int32_round_to_zero(float64, float_status_t &status);
 Bit64s float64_to_int64(float64, float_status_t &status);
 Bit64s float64_to_int64_round_to_zero(float64, float_status_t &status);
+Bit32u float64_to_uint32(float64, float_status_t &status);
+Bit32u float64_to_uint32_round_to_zero(float64, float_status_t &status);
+Bit64u float64_to_uint64(float64, float_status_t &status);
+Bit64u float64_to_uint64_round_to_zero(float64, float_status_t &status);
 float32 float64_to_float32(float64, float_status_t &status);
 
 /*----------------------------------------------------------------------------
 | Software IEC/IEEE double-precision operations.
 *----------------------------------------------------------------------------*/
 float64 float64_round_to_int(float64, float_status_t &status);
+float64 float64_round_to_int(float64, Bit8u scale, float_status_t &status);
 float64 float64_add(float64, float64, float_status_t &status);
 float64 float64_sub(float64, float64, float_status_t &status);
 float64 float64_mul(float64, float64, float_status_t &status);
@@ -294,6 +331,12 @@ float64 float64_div(float64, float64, float_status_t &status);
 float64 float64_sqrt(float64, float_status_t &status);
 float64 float64_frc(float64, float_status_t &status);
 float64 float64_muladd(float64, float64, float64, int flags, float_status_t &status);
+float64 float64_scalef(float64, float64, float_status_t &status);
+
+BX_CPP_INLINE float64 float64_round_to_int(float64 a, float_status_t &status)
+{
+  return float64_round_to_int(a, 0, status);
+}
 
 BX_CPP_INLINE float64 float64_fmadd(float64 a, float64 b, float64 c, float_status_t &status)
 {
@@ -325,6 +368,9 @@ int float64_is_denormal(float64);
 
 float64 float64_min(float64 a, float64 b, float_status_t &status);
 float64 float64_max(float64 a, float64 b, float_status_t &status);
+
+float64 float64_getexp(float64 a, float_status_t &status);
+float64 float64_getmant(float64 a, float_status_t &status, int sign_ctrl, int interv);
 
 #ifdef FLOAT16
 float32 float16_to_float32(float16, float_status_t &status);

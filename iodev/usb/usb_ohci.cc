@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_ohci.cc 11634 2013-02-17 08:27:43Z vruppert $
+// $Id: usb_ohci.cc 12087 2013-12-30 22:39:21Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009       Benjamin D Lunt (fys at frontiernet net)
-//                2009-2012  The Bochs Project
+//                2009-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -160,7 +160,7 @@ void bx_usb_ohci_c::init(void)
   unsigned i;
   char pname[6];
   bx_list_c *ohci, *port;
-  bx_param_string_c *device, *options;
+  bx_param_string_c *device;
 
   // Read in values from config interface
   ohci = (bx_list_c*) SIM->get_param(BXPN_USB_OHCI);
@@ -183,8 +183,8 @@ void bx_usb_ohci_c::init(void)
   DEV_register_pci_handlers(this, &BX_OHCI_THIS hub.devfunc, BX_PLUGIN_USB_OHCI,
                             "Experimental USB OHCI");
 
-  for (i=0; i<256; i++)
-    BX_OHCI_THIS pci_conf[i] = 0x0;
+  // initialize readonly registers
+  init_pci_conf(0x11c1, 0x5803, 0x11, 0x0c0310, 0x00);
 
   BX_OHCI_THIS pci_base_address[0] = 0x0;
   BX_OHCI_THIS hub.ohci_done_count = 7;
@@ -196,18 +196,14 @@ void bx_usb_ohci_c::init(void)
   BX_OHCI_THIS hub.statusbar_id = bx_gui->register_statusitem("OHCI", 1);
 
   bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
-  ohci->set_options(ohci->SHOW_PARENT);
-  ohci->set_runtime_param(1);
-  usb_rt->add(ohci);
+  bx_list_c *ohci_rt = new bx_list_c(usb_rt, "ohci", "OHCI Runtime Options");
+  ohci_rt->set_options(ohci_rt->SHOW_PARENT);
   for (i=0; i<BX_N_USB_OHCI_PORTS; i++) {
     sprintf(pname, "port%d", i+1);
     port = (bx_list_c*)SIM->get_param(pname, ohci);
-    port->set_runtime_param(1);
+    ohci_rt->add(port);
     device = (bx_param_string_c*)port->get_by_name("device");
     device->set_handler(usb_param_handler);
-    device->set_runtime_param(1);
-    options = (bx_param_string_c*)port->get_by_name("options");
-    options->set_runtime_param(1);
     BX_OHCI_THIS hub.usb_port[i].device = NULL;
     BX_OHCI_THIS hub.usb_port[i].HcRhPortStatus.ccs = 0;
     BX_OHCI_THIS hub.usb_port[i].HcRhPortStatus.csc = 0;
@@ -229,16 +225,9 @@ void bx_usb_ohci_c::reset(unsigned type)
       unsigned      addr;
       unsigned char val;
     } reset_vals[] = {
-      { 0x00, 0xC1 }, { 0x01, 0x11 }, // 0x11C1 = vendor
-      { 0x02, 0x03 }, { 0x03, 0x58 }, // 0x5803 = device
       { 0x04, 0x06 }, { 0x05, 0x00 }, // command_io
       { 0x06, 0x10 }, { 0x07, 0x02 }, // status (bit 4 = 1, has capabilities list.)
-      { 0x08, 0x11 },                 // revision number
-      { 0x09, 0x10 },                 // interface
-      { 0x0a, 0x03 },                 // class_sub  USB Host Controller
-      { 0x0b, 0x0c },                 // class_base Serial Bus Controller
-      { 0x0D, 0x40 },                 // bus latency
-      { 0x0e, 0x00 },                 // header_type_generic
+      { 0x0d, 0x40 },                 // bus latency
 
       // address space 0x10 - 0x13
       { 0x10, 0x00 }, { 0x11, 0x50 }, //

@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.h 11390 2012-09-02 09:37:47Z vruppert $
+// $Id: usb_msd.h 12128 2014-01-21 20:56:50Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  USB mass storage device support (ported from QEMU)
 //
 //  Copyright (c) 2006 CodeSourcery.
 //  Written by Paul Brook
-//  Copyright (C) 2009-2012  The Bochs Project
+//  Copyright (C) 2009-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -27,7 +27,7 @@
 #define BX_IODEV_USB_MSD_H
 
 class device_image_t;
-class LOWLEVEL_CDROM;
+class cdrom_base_c;
 class scsi_device_t;
 
 class usb_msd_device_c : public usb_device_c {
@@ -44,7 +44,7 @@ public:
   virtual int handle_data(USBPacket *p);
   virtual void register_state_specific(bx_list_c *parent);
   virtual void cancel_packet(USBPacket *p);
-  void set_inserted(bx_bool value);
+  bx_bool set_inserted(bx_bool value);
   bx_bool get_inserted();
 
 protected:
@@ -66,9 +66,7 @@ private:
     int result;
     Bit8u image_mode;
     device_image_t *hdimage;
-#ifdef LOWLEVEL_CDROM
-    LOWLEVEL_CDROM *cdrom;
-#endif
+    cdrom_base_c *cdrom;
     scsi_device_t *scsi_dev;
     USBPacket *packet;
     bx_list_c *sr_list;

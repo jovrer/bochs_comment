@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: scsi_device.cc 11675 2013-04-09 20:35:24Z sshwarts $
+// $Id: scsi_device.cc 12159 2014-01-31 18:49:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  SCSI emulation layer (ported from QEMU)
@@ -9,7 +9,7 @@
 //
 //  Written by Paul Brook
 //
-//  Copyright (C) 2007-2012  The Bochs Project
+//  Copyright (C) 2007-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -45,13 +45,42 @@
 static SCSIRequest *free_requests = NULL;
 static Bit32u serial_number = 12345678;
 
+Bit64s scsireq_save_handler(void *class_ptr, bx_param_c *param)
+{
+  char fname[BX_PATHNAME_LEN];
+  char path[BX_PATHNAME_LEN];
+
+  param->get_param_path(fname, BX_PATHNAME_LEN);
+  if (!strncmp(fname, "bochs.", 6)) {
+    strcpy(fname, fname+6);
+  }
+  if (SIM->get_param_string(BXPN_RESTORE_PATH)->isempty()) {
+    return 0;
+  }
+  sprintf(path, "%s/%s", SIM->get_param_string(BXPN_RESTORE_PATH)->getptr(), fname);
+  return ((scsi_device_t*)class_ptr)->save_requests(path);
+}
+
+void scsireq_restore_handler(void *class_ptr, bx_param_c *param, Bit64s value)
+{
+  char fname[BX_PATHNAME_LEN];
+  char path[BX_PATHNAME_LEN];
+
+  if (value != 0) {
+    param->get_param_path(fname, BX_PATHNAME_LEN);
+    if (!strncmp(fname, "bochs.", 6)) {
+      strcpy(fname, fname+6);
+    }
+    sprintf(path, "%s/%s", SIM->get_param_string(BXPN_RESTORE_PATH)->getptr(), fname);
+    ((scsi_device_t*)class_ptr)->restore_requests(path);
+  }
+}
+
 scsi_device_t::scsi_device_t(device_image_t *_hdimage, int _tcq,
                            scsi_completionfn _completion, void *_dev)
 {
   type = SCSIDEV_TYPE_DISK;
-#ifdef LOWLEVEL_CDROM
   cdrom = NULL;
-#endif
   hdimage = _hdimage;
   requests = NULL;
   sense = 0;
@@ -63,12 +92,13 @@ scsi_device_t::scsi_device_t(device_image_t *_hdimage, int _tcq,
   inserted = 1;
   max_lba = (hdimage->hd_size / 512) - 1;
   sprintf(drive_serial_str, "%d", serial_number++);
+  seek_timer_index =
+    DEV_register_timer(this, seek_timer_handler, 1000, 0, 0, "USB HD seek");
 
-  put("SCSID");
+  put("SCSIHD");
 }
 
-#ifdef LOWLEVEL_CDROM
-scsi_device_t::scsi_device_t(LOWLEVEL_CDROM *_cdrom, int _tcq,
+scsi_device_t::scsi_device_t(cdrom_base_c *_cdrom, int _tcq,
                            scsi_completionfn _completion, void *_dev)
 {
   type = SCSIDEV_TYPE_CDROM;
@@ -81,13 +111,14 @@ scsi_device_t::scsi_device_t(LOWLEVEL_CDROM *_cdrom, int _tcq,
   dev = _dev;
   cluster_size = 4;
   locked = 0;
-  inserted = 1;
-  max_lba = cdrom->capacity() - 1;
+  inserted = 0;
+  max_lba = 0;
   sprintf(drive_serial_str, "%d", serial_number++);
+  seek_timer_index =
+    DEV_register_timer(this, seek_timer_handler, 1000, 0, 0, "USB CD seek");
 
-  put("SCSIC");
+  put("SCSICD");
 }
-#endif
 
 scsi_device_t::~scsi_device_t(void)
 {
@@ -97,6 +128,7 @@ scsi_device_t::~scsi_device_t(void)
     r = requests;
     while (r != NULL) {
       next = r->next;
+      delete [] r->dma_buf;
       delete r;
       r = next;
     }
@@ -105,19 +137,26 @@ scsi_device_t::~scsi_device_t(void)
     r = free_requests;
     while (r != NULL) {
       next = r->next;
+      delete [] r->dma_buf;
       delete r;
       r = next;
     }
     free_requests = NULL;
   }
+  bx_pc_system.deactivate_timer(seek_timer_index);
+  bx_pc_system.unregisterTimer(seek_timer_index);
 }
 
 void scsi_device_t::register_state(bx_list_c *parent, const char *name)
 {
   bx_list_c *list = new bx_list_c(parent, name, "");
   new bx_shadow_num_c(list, "sense", &sense);
-  // TODO: save/restore for SCSI requests
+  new bx_shadow_bool_c(list, "locked", &locked);
+  bx_param_bool_c *requests = new bx_param_bool_c(list, "requests", NULL, NULL, 0);
+  requests->set_sr_handlers(this, scsireq_save_handler, scsireq_restore_handler);
 }
+
+// SCSI request handling
 
 SCSIRequest* scsi_device_t::scsi_new_request(Bit32u tag)
 {
@@ -128,8 +167,8 @@ SCSIRequest* scsi_device_t::scsi_new_request(Bit32u tag)
     free_requests = r->next;
   } else {
     r = new SCSIRequest;
+    r->dma_buf = new Bit8u[SCSI_DMA_BUF_SIZE];
   }
-  r->dev = this;
   r->tag = tag;
   r->sector_count = 0;
   r->buf_len = 0;
@@ -176,6 +215,137 @@ SCSIRequest* scsi_device_t::scsi_find_request(Bit32u tag)
   return r;
 }
 
+bx_bool scsi_device_t::save_requests(const char *path)
+{
+  char tmppath[BX_PATHNAME_LEN];
+  FILE *fp, *fp2;
+
+  if (requests != NULL) {
+    fp = fopen(path, "w");
+    if (fp != NULL) {
+      SCSIRequest *r = requests;
+      Bit32u i = 0;
+      while (r != NULL) {
+        fprintf(fp, "%u = {\n", i);
+        fprintf(fp, "  tag = %u\n", r->tag);
+        fprintf(fp, "  sector = "FMT_LL"u\n", r->sector);
+        fprintf(fp, "  sector_count = %u\n", r->sector_count);
+        fprintf(fp, "  buf_len = %d\n", r->buf_len);
+        fprintf(fp, "  status = %u\n", r->status);
+        fprintf(fp, "}\n");
+        if (r->buf_len > 0) {
+          sprintf(tmppath, "%s.%u", path, i);
+          fp2 = fopen(tmppath, "wb");
+          if (fp2 != NULL) {
+            fwrite(r->dma_buf, 1, (size_t)r->buf_len, fp2);
+          }
+          fclose(fp2);
+        }
+        r = r->next;
+        i++;
+      }
+      fclose(fp);
+      return 1;
+    } else {
+      return 0;
+    }
+  } else {
+    return 0;
+  }
+}
+
+void scsi_device_t::restore_requests(const char *path)
+{
+  char line[512], pname[16], tmppath[BX_PATHNAME_LEN];
+  char *ret, *ptr;
+  FILE *fp, *fp2;
+  int i, reqid = -1;
+  Bit64s value;
+  Bit32u tag = 0;
+  SCSIRequest *r = NULL;
+  bx_bool rrq_error = 0;
+
+  fp = fopen(path, "r");
+  if (fp != NULL) {
+    do {
+      ret = fgets(line, sizeof(line)-1, fp);
+      line[sizeof(line) - 1] = '\0';
+      int len = strlen(line);
+      if ((len > 0) && (line[len-1] < ' '))
+        line[len-1] = '\0';
+      i = 0;
+      if ((ret != NULL) && strlen(line) > 0) {
+        ptr = strtok(line, " ");
+        while (ptr) {
+          if (i == 0) {
+            if (!strcmp(ptr, "}")) {
+              if (r != NULL) {
+                if (r->buf_len > 0) {
+                  sprintf(tmppath, "%s.%u", path, reqid);
+                  fp2 = fopen(tmppath, "wb");
+                  if (fp2 != NULL) {
+                    fread(r->dma_buf, 1, (size_t)r->buf_len, fp2);
+                  }
+                  fclose(fp2);
+                }
+              }
+              reqid = -1;
+              r = NULL;
+              tag = 0;
+              break;
+            } else if (reqid < 0) {
+              reqid = (int)strtol(ptr, NULL, 10);
+              break;
+            } else {
+              strcpy(pname, ptr);
+            }
+          } else if (i == 2) {
+            if (reqid >= 0) {
+              if (!strcmp(pname, "tag")) {
+                if (tag == 0) {
+                  tag = (Bit32u)strtoul(ptr, NULL, 10);
+                  r = scsi_new_request(tag);
+                  if (r == NULL) {
+                    BX_ERROR(("restore_requests(): cannot create request"));
+                    rrq_error = 1;
+                  }
+                } else {
+                  BX_ERROR(("restore_requests(): data format error"));
+                  rrq_error = 1;
+                }
+              } else {
+                value = (Bit64s)strtoll(ptr, NULL, 10);
+                if (!strcmp(pname, "sector")) {
+                  r->sector = (Bit64u)value;
+                } else if (!strcmp(pname, "sector_count")) {
+                  r->sector_count = (Bit32u)value;
+                } else if (!strcmp(pname, "buf_len")) {
+                  r->buf_len = (int)value;
+                } else if (!strcmp(pname, "status")) {
+                  r->status = (Bit32u)value;
+                } else {
+                  BX_ERROR(("restore_requests(): data format error"));
+                  rrq_error = 1;
+                }
+              }
+            } else {
+              BX_ERROR(("restore_requests(): data format error"));
+              rrq_error = 1;
+            }
+          }
+          i++;
+          ptr = strtok(NULL, " ");
+        }
+      }
+    } while (!feof(fp) && !rrq_error);
+    fclose(fp);
+  } else {
+    BX_ERROR(("restore_requests(): error in file open"));
+  }
+}
+
+// SCSI command implementation
+
 void scsi_device_t::scsi_command_complete(SCSIRequest *r, int status, int _sense)
 {
   Bit32u tag;
@@ -212,14 +382,12 @@ void scsi_device_t::scsi_read_complete(void *req, int ret)
 
 void scsi_device_t::scsi_read_data(Bit32u tag)
 {
-  Bit32u n;
-  int ret;
+  Bit32u i, n;
+  int ret = 0;
 
   SCSIRequest *r = scsi_find_request(tag);
   if (!r) {
     BX_ERROR(("bad read tag 0x%x", tag));
-    // ??? This is the wrong error.
-    scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
     return;
   }
   if (r->sector_count == (Bit32u)-1) {
@@ -239,22 +407,22 @@ void scsi_device_t::scsi_read_data(Bit32u tag)
     n = SCSI_DMA_BUF_SIZE / (512 * cluster_size);
   r->buf_len = n * 512 * cluster_size;
   if (type == SCSIDEV_TYPE_CDROM) {
-#ifdef LOWLEVEL_CDROM
-    if (!cdrom->read_block(r->dma_buf, (Bit32u)r->sector, 2048)) {
-      scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
+    i = 0;
+    do {
+      ret = (int)cdrom->read_block(r->dma_buf + (i * 2048), (Bit32u)(r->sector + i), 2048);
+    } while ((++i < n) && (ret == 1));
+    if (ret == 0) {
+      scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_MEDIUM_ERROR);
     } else {
       scsi_read_complete((void*)r, 0);
     }
-#else
-    scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
-#endif
   } else {
     ret = (int)hdimage->lseek(r->sector * 512, SEEK_SET);
     if (ret < 0) {
       BX_ERROR(("could not lseek() hard drive image file"));
       scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
     }
-    ret = hdimage->read((bx_ptr_t)r->dma_buf, r->buf_len);
+    ret = (int)hdimage->read((bx_ptr_t)r->dma_buf, r->buf_len);
     if (ret < r->buf_len) {
       BX_ERROR(("could not read() hard drive image file"));
       scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
@@ -300,7 +468,6 @@ int scsi_device_t::scsi_write_data(Bit32u tag)
   r = scsi_find_request(tag);
   if (!r) {
     BX_ERROR(("bad write tag 0x%x", tag));
-    scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
     return 1;
   }
   if (type == SCSIDEV_TYPE_DISK) {
@@ -311,7 +478,7 @@ int scsi_device_t::scsi_write_data(Bit32u tag)
         BX_ERROR(("could not lseek() hard drive image file"));
         scsi_command_complete(r, STATUS_CHECK_CONDITION, SENSE_HARDWARE_ERROR);
       }
-      ret = hdimage->write((bx_ptr_t)r->dma_buf, r->buf_len);
+      ret = (int)hdimage->write((bx_ptr_t)r->dma_buf, r->buf_len);
       r->sector += n;
       r->sector_count -= n;
       if (ret < r->buf_len) {
@@ -637,9 +804,7 @@ Bit32s scsi_device_t::scsi_send_command(Bit32u tag, Bit8u *buf, int lun)
       if (type == SCSIDEV_TYPE_CDROM && (buf[4] & 2)) {
         if (!(buf[4] & 1)) {
           // eject medium
-#ifdef LOWLEVEL_CDROM
           cdrom->eject_cdrom();
-#endif
           inserted = 0;
         }
       }
@@ -653,17 +818,13 @@ Bit32s scsi_device_t::scsi_send_command(Bit32u tag, Bit8u *buf, int lun)
       // The normal LEN field for this command is zero
       memset(outbuf, 0, 8);
       if (type == SCSIDEV_TYPE_CDROM) {
-#ifdef LOWLEVEL_CDROM
-        nb_sectors = cdrom->capacity();
-#else
-        nb_sectors = 0;
-#endif
+        nb_sectors = max_lba;
       } else {
         nb_sectors = hdimage->hd_size / 512;
+        nb_sectors--;
       }
       /* Returned value is the address of the last sector.  */
       if (nb_sectors) {
-        nb_sectors--;
         outbuf[0] = (Bit8u)((nb_sectors >> 24) & 0xff);
         outbuf[1] = (Bit8u)((nb_sectors >> 16) & 0xff);
         outbuf[2] = (Bit8u)((nb_sectors >> 8) & 0xff);
@@ -704,14 +865,15 @@ Bit32s scsi_device_t::scsi_send_command(Bit32u tag, Bit8u *buf, int lun)
       break;
     case 0x43:
       {
-        int start_track, format, msf, toclen;
+        int start_track, format, msf, toclen = 0;
 
         if (type == SCSIDEV_TYPE_CDROM) {
+          if (!inserted)
+            goto notready;
           msf = buf[1] & 2;
           format = buf[2] & 0xf;
           start_track = buf[6];
           BX_DEBUG(("Read TOC (track %d format %d msf %d)", start_track, format, msf >> 1));
-#ifdef LOWLEVEL_CDROM
           cdrom->read_toc(outbuf, &toclen, msf, start_track, format);
           if (toclen > 0) {
             if (len > toclen)
@@ -719,7 +881,6 @@ Bit32s scsi_device_t::scsi_send_command(Bit32u tag, Bit8u *buf, int lun)
             r->buf_len = len;
             break;
           }
-#endif
           BX_ERROR(("Read TOC error"));
           goto fail;
         } else {
@@ -770,13 +931,10 @@ Bit32s scsi_device_t::scsi_send_command(Bit32u tag, Bit8u *buf, int lun)
 
       // Current/Max Cap Header
       if (type == SCSIDEV_TYPE_CDROM) {
-#ifdef LOWLEVEL_CDROM
-        nb_sectors = cdrom->capacity();
-#else
-        nb_sectors = 0;
-#endif
+        nb_sectors = max_lba;
       } else {
         nb_sectors = (hdimage->hd_size / 512);
+        nb_sectors--;
       }
       /* Returned value is the address of the last sector.  */
       outbuf[4] = (Bit8u)((nb_sectors >> 24) & 0xff);
@@ -812,6 +970,27 @@ Bit32s scsi_device_t::scsi_send_command(Bit32u tag, Bit8u *buf, int lun)
       r->sector_count = (Bit32u) -1;
     return len;
   }
+}
+
+void scsi_device_t::set_inserted(bx_bool value)
+{
+  inserted = value;
+  if (inserted) {
+    max_lba = cdrom->capacity() - 1;
+  } else {
+    max_lba = 0;
+  }
+}
+
+void scsi_device_t::seek_timer_handler(void *this_ptr)
+{
+  scsi_device_t *class_ptr = (scsi_device_t *) this_ptr;
+  class_ptr->seek_timer();
+}
+
+void scsi_device_t::seek_timer()
+{
+  // TODO
 }
 
 #endif // BX_SUPPORT_PCI && BX_SUPPORT_PCIUSB

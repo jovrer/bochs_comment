@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_compare.cc 11415 2012-09-12 21:08:40Z vruppert $
+// $Id: fpu_compare.cc 12234 2014-03-09 21:42:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2012 Stanislav Shwartsman
@@ -529,7 +529,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXAM(bxInstruction_c *i)
            setcc(FPU_SW_C3|FPU_SW_C1);
            break;
 
-        case float_NaN:
+        case float_SNaN:
+        case float_QNaN:
            // unsupported handled as NaNs
            if (floatx80_is_unsupported(reg)) {
                setcc(FPU_SW_C1);

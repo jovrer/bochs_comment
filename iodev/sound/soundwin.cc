@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundwin.cc 11150 2012-04-23 18:52:11Z sshwarts $
+// $Id: soundwin.cc 11934 2013-11-11 20:44:38Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -32,10 +32,10 @@
 
 #if defined(WIN32) && BX_SUPPORT_SOUNDLOW
 
-#define LOG_THIS device->
+#define LOG_THIS
 
-bx_sound_windows_c::bx_sound_windows_c(logfunctions *dev)
-  :bx_sound_lowlevel_c(dev)
+bx_sound_windows_c::bx_sound_windows_c()
+  :bx_sound_lowlevel_c()
 {
   MidiOpen = 0;
   WaveOutOpen = 0;
@@ -82,7 +82,7 @@ bx_sound_windows_c::bx_sound_windows_c(logfunctions *dev)
 #undef ALIGN
 #undef NEWBUFFER
 
-  BX_INFO(("Sound output module 'win' initialized"));
+  BX_INFO(("Sound lowlevel module 'win' initialized"));
 }
 
 bx_sound_windows_c::~bx_sound_windows_c()
@@ -114,11 +114,18 @@ int bx_sound_windows_c::midiready()
 
 int bx_sound_windows_c::openmidioutput(const char *mididev)
 {
-  // could make the output device selectable,
-  // but currently only the midi mapper is supported
-  UNUSED(mididev);
+  UINT deviceid;
 
-  UINT deviceid = (UINT) MIDIMAPPER;
+  if (strlen(mididev) == 0) {
+    deviceid = (UINT) MIDIMAPPER;
+  } else {
+    deviceid = atoi(mididev);
+    if (((deviceid < 0) || (deviceid >= midiOutGetNumDevs())) &&
+        (deviceid != (UINT) MIDIMAPPER)) {
+      BX_ERROR(("MIDI device ID out of range - using default MIDI mapper"));
+      deviceid = (UINT) MIDIMAPPER;
+    }
+  }
 
   MidiOpen = 0;
 
@@ -640,7 +647,7 @@ void bx_sound_windows_c::record_timer_handler(void *this_ptr)
 
 void bx_sound_windows_c::record_timer(void)
 {
-  record_handler(this->device, record_packet_size);
+  record_handler(this, record_packet_size);
 }
 
 #endif // defined(WIN32)

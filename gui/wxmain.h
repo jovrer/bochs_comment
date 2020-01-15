@@ -1,9 +1,25 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h 11633 2013-02-16 12:22:13Z vruppert $
+// $Id: wxmain.h 12108 2014-01-12 19:27:01Z vruppert $
 /////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////
+
 // This file defines variables and classes that the wxWidgets .cc files
 // share.  It should be included only by wx.cc and wxmain.cc.
 
@@ -13,9 +29,7 @@ class MyFrame;
 class MyPanel;
 class SimThread;
 class ParamDialog;
-#if BX_DEBUGGER
-class DebugLogDialog;
-#endif
+class LogViewDialog;
 
 //hack alert; yuck; FIXME
 extern MyFrame *theFrame;
@@ -69,7 +83,6 @@ enum
   ID_Toolbar_Copy,
   ID_Toolbar_Paste,
   ID_Toolbar_Snapshot,
-  ID_Toolbar_Config,
   ID_Toolbar_Mouse_en,
   ID_Toolbar_User,
   ID_Toolbar_SaveRestore,
@@ -168,9 +181,10 @@ public:
   void OnAbout(wxCommandEvent& event);
   void OnStartSim(wxCommandEvent& event);
   void OnPauseResumeSim(wxCommandEvent& event);
+  bx_bool SimThreadControl(bx_bool resume);
   void OnKillSim(wxCommandEvent& event);
   void OnSim2CIEvent(wxCommandEvent& event);
-  void OnLogMsg(BxEvent *logMsgEvent);
+  void OnLogAsk(BxEvent *be);
   void OnEditPluginCtrl(wxCommandEvent& event);
   void OnEditCPU(wxCommandEvent& event);
   void OnEditCPUID(wxCommandEvent& event);
@@ -186,6 +200,7 @@ public:
   void OnEditOther(wxCommandEvent& event);
   void OnLogPrefs(wxCommandEvent& event);
   void OnLogPrefsDevice(wxCommandEvent& event);
+  void OnLogView(wxCommandEvent& event);
   void OnEditATA(wxCommandEvent& event);
   void editFloppyConfig(int drive);
   void editFirstCdrom();
@@ -197,6 +212,9 @@ public:
   void OnSimThreadExit();
   SimThread *GetSimThread() { return sim_thread; }
 
+  void UpdateToolBar(bool simPresent);
+  void SetToolBarHelp(int id, wxString& text);
+
 private:
   wxCriticalSection sim_thread_lock;
   SimThread *sim_thread; // get the lock before accessing sim_thread
@@ -204,10 +222,10 @@ private:
   wxMenu *menuConfiguration;
   wxMenu *menuEdit;
   wxMenu *menuSimulate;
-  wxMenu *menuDebug;
   wxMenu *menuLog;
   wxMenu *menuHelp;
   wxToolBar *bxToolBar;
+  LogViewDialog *showLogView;
 public:
 
 DECLARE_EVENT_TABLE()

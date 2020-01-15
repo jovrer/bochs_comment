@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom_amigaos.cc 11678 2013-04-12 17:26:27Z vruppert $
+// $Id: cdrom_amigaos.cc 11927 2013-11-10 11:14:42Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000-2013  The Bochs Project
@@ -27,8 +27,11 @@
 
 
 #include "bochs.h"
+#if BX_SUPPORT_CDROM
+
 #include "scsi_commands.h"
 #include "cdrom.h"
+#include "cdrom_amigaos.h"
 
 #include <exec/types.h>
 #include <exec/memory.h>
@@ -84,10 +87,12 @@ unsigned char sensebuf[SENSELEN];
 
 int DoSCSI(UBYTE * data, int datasize, UBYTE * cmd, int cmdsize, UBYTE flags);
 
-cdrom_interface::cdrom_interface(const char *dev)
+cdrom_amigaos_c::cdrom_amigaos_c(const char *dev)
 {
-  char buf[256];
+  char buf[256], prefix[6];
 
+  sprintf(prefix, "CD%d", ++bx_cdrom_count);
+  put(prefix);
   fd = -1;
   fda = NULL;
 
@@ -125,7 +130,7 @@ cdrom_interface::cdrom_interface(const char *dev)
   }
 }
 
-cdrom_interface::~cdrom_interface(void)
+cdrom_amigaos_c::~cdrom_amigaos_c(void)
 {
   if(fda)
     Close(fda);
@@ -142,7 +147,7 @@ cdrom_interface::~cdrom_interface(void)
   }
 }
 
-bx_bool cdrom_interface::insert_cdrom(const char *dev)
+bx_bool cdrom_amigaos_c::insert_cdrom(const char *dev)
 {
   Bit8u cdb[6];
   Bit8u buf[2*BX_CD_FRAMESIZE];
@@ -192,8 +197,7 @@ bx_bool cdrom_interface::insert_cdrom(const char *dev)
 }
 
 
-  void
-cdrom_interface::eject_cdrom()
+void cdrom_amigaos_c::eject_cdrom()
 {
   Bit8u cdb[6];
 
@@ -214,7 +218,7 @@ cdrom_interface::eject_cdrom()
 }
 
 
-bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format)
+bx_bool cdrom_amigaos_c::read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format)
 {
   Bit8u cdb[10];
   TOC *toc;
@@ -251,8 +255,7 @@ bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int star
 }
 
 
-  Bit32u
-cdrom_interface::capacity()
+Bit32u cdrom_amigaos_c::capacity()
 {
   CAPACITY cap;
   Bit8u cdb[10];
@@ -285,8 +288,7 @@ cdrom_interface::capacity()
   }
 }
 
-  bx_bool
-cdrom_interface::read_block(Bit8u* buf, Bit32u lba, int blocksize)
+bx_bool cdrom_amigaos_c::read_block(Bit8u* buf, Bit32u lba, int blocksize)
 {
   int n;
   Bit8u try_count = 3;
@@ -323,17 +325,6 @@ cdrom_interface::read_block(Bit8u* buf, Bit32u lba, int blocksize)
   }
 }
 
-bx_bool cdrom_interface::start_cdrom()
-{
-  // Spin up the cdrom drive.
-
-  if (fd >= 0) {
-    BX_INFO(("start_cdrom: your OS is not supported yet."));
-    return 0; // OS not supported yet, return 0 always.
-  }
-  return 0;
-}
-
 
 int DoSCSI(UBYTE *data, int datasize, Bit8u *cmd,int cmdsize, UBYTE direction)
 {
@@ -360,3 +351,5 @@ int DoSCSI(UBYTE *data, int datasize, Bit8u *cmd,int cmdsize, UBYTE direction)
 
   return CDIO->iotd_Req.io_Error;
 }
+
+#endif /* if BX_SUPPORT_CDROM */

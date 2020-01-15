@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h 11689 2013-05-24 17:58:49Z vruppert $
+// $Id: osdep.h 12172 2014-02-06 22:00:29Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -43,9 +43,6 @@ extern "C" {
 //////////////////////////////////////////////////////////////////////
 #ifdef WIN32
 
-// Definitions that are needed for all WIN32 compilers.
-#  define ssize_t long
-
 #ifndef __MINGW32__
 
 // Definitions that are needed for WIN32 compilers EXCEPT FOR
@@ -71,6 +68,7 @@ extern "C" {
 #  define S_ISCHR(m)      (((m) & S_IFMT) == S_IFCHR)
 #endif
 
+#if defined(_MSC_VER)
 // win32 has snprintf though with different name.
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
@@ -79,7 +77,6 @@ extern "C" {
 #define BX_HAVE_SNPRINTF 1
 #define BX_HAVE_VSNPRINTF 1
 
-#if defined(_MSC_VER)
 #define access _access
 #define fdopen _fdopen
 #define mktemp _mktemp
@@ -97,6 +94,7 @@ extern "C" {
 #define strrev _strrev
 #define stricmp _stricmp
 #define getch _getch
+#define strtoll _strtoi64
 #define strtoull _strtoui64
 #endif
 
@@ -199,6 +197,11 @@ extern "C" {
 #if !BX_HAVE_SOCKLEN_T
 // needed on MacOS X 10.1
 typedef int socklen_t;
+#endif
+
+#if !BX_HAVE_SSIZE_T
+// needed on Windows
+typedef Bit64s ssize_t;
 #endif
 
 #if !BX_HAVE_MKSTEMP

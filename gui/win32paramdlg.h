@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32paramdlg.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: win32paramdlg.h 12010 2013-12-08 21:22:50Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Volker Ruppert
@@ -26,7 +26,8 @@
 #if BX_USE_TEXTCONFIG && defined(WIN32)
 
 int AskFilename(HWND hwnd, bx_param_filename_c *param, char *buffer);
-int win32ParamDialog(HWND parent, const char *menu);
+INT_PTR win32ParamDialog(HWND parent, const char *menu);
+INT_PTR win32FloppyParamDialog(HWND parent, const char *menu);
 
 #endif
 

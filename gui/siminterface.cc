@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc 11634 2013-02-17 08:27:43Z vruppert $
+// $Id: siminterface.cc 12325 2014-05-13 21:10:31Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -74,6 +74,7 @@ class bx_real_sim_c : public bx_simulator_interface_c {
   int exit_code;
   unsigned param_id;
   bx_bool bx_debug_gui;
+  bx_bool bx_log_viewer;
   bx_bool wxsel;
 public:
   bx_real_sim_c();
@@ -115,12 +116,14 @@ public:
   virtual int set_log_prefix(const char *prefix);
   virtual int get_debugger_log_file(char *path, int len);
   virtual int set_debugger_log_file(const char *path);
-  virtual int get_cdrom_options(int drive, bx_list_c **out, int *device = NULL);
   virtual int hdimage_get_mode(const char *mode);
   virtual void set_notify_callback(bxevent_handler func, void *arg);
   virtual void get_notify_callback(bxevent_handler *func, void **arg);
   virtual BxEvent* sim_to_ci_event(BxEvent *event);
-  virtual int log_msg(const char *prefix, int level, const char *msg);
+  virtual int log_ask(const char *prefix, int level, const char *msg);
+  virtual void log_msg(const char *prefix, int level, const char *msg);
+  virtual void set_log_viewer(bx_bool val) { bx_log_viewer = val; }
+  virtual bx_bool has_log_viewer() const { return bx_log_viewer; }
   virtual int ask_param(bx_param_c *param);
   virtual int ask_param(const char *pname);
   // ask the user for a pathname
@@ -151,8 +154,8 @@ public:
   virtual bx_bool is_pci_device(const char *name);
 #if BX_DEBUGGER
   virtual void debug_break();
-  virtual void debug_interpret_cmd (char *cmd);
-  virtual char *debug_get_next_command ();
+  virtual void debug_interpret_cmd(char *cmd);
+  virtual char *debug_get_next_command();
   virtual void debug_puts(const char *cmd);
 #endif
   virtual void register_configuration_interface (
@@ -311,10 +314,11 @@ bx_param_enum_c *bx_real_sim_c::get_param_enum(const char *pname, bx_param_c *ba
 
 void bx_init_siminterface()
 {
-  siminterface_log = new logfunctions();
-  siminterface_log->put("siminterface", "CTRL");
-  if (SIM == NULL)
+  if (SIM == NULL) {
+    siminterface_log = new logfunctions();
+    siminterface_log->put("siminterface", "SIM");
     SIM = new bx_real_sim_c();
+  }
   if (root_param == NULL) {
     root_param = new bx_list_c(NULL,
       "bochs",
@@ -331,6 +335,7 @@ bx_real_sim_c::bx_real_sim_c()
   ci_callback_data = NULL;
   is_sim_thread_func = NULL;
   bx_debug_gui = 0;
+  bx_log_viewer = 0;
   wxsel = 0;
 
   enabled = 1;
@@ -485,28 +490,6 @@ int bx_real_sim_c::set_debugger_log_file(const char *path)
   return 0;
 }
 
-int bx_real_sim_c::get_cdrom_options(int level, bx_list_c **out, int *where)
-{
-  char pname[80];
-
-  for (Bit8u channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
-    for (Bit8u device=0; device<2; device++) {
-      sprintf(pname, "ata.%d.%s", channel, (device==0)?"master":"slave");
-      bx_list_c *devlist = (bx_list_c*) SIM->get_param(pname);
-      if (SIM->get_param_enum("type", devlist)->get() == BX_ATA_DEVICE_CDROM) {
-        if (level==0) {
-          *out = devlist;
-          if (where != NULL) *where = (channel * 2) + device;
-          return 1;
-        } else {
-          level--;
-        }
-      }
-    }
-  }
-  return 0;
-}
-
 const char *floppy_devtype_names[] = { "none", "5.25\" 360K", "5.25\" 1.2M", "3.5\" 720K", "3.5\" 1.44M", "3.5\" 2.88M", NULL };
 const char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", "auto", NULL };
 int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8, -1 };
@@ -560,7 +543,7 @@ BxEvent *bx_real_sim_c::sim_to_ci_event(BxEvent *event)
 }
 
 // returns 0 for continue, 1 for alwayscontinue, 2 for die.
-int bx_real_sim_c::log_msg(const char *prefix, int level, const char *msg)
+int bx_real_sim_c::log_ask(const char *prefix, int level, const char *msg)
 {
   BxEvent be;
   be.type = BX_SYNC_EVT_LOG_ASK;
@@ -570,8 +553,23 @@ int bx_real_sim_c::log_msg(const char *prefix, int level, const char *msg)
   // default return value in case something goes wrong.
   be.retcode = BX_LOG_NOTIFY_FAILED;
   // calling notify
-  sim_to_ci_event (&be);
+  sim_to_ci_event(&be);
   return be.retcode;
+}
+
+void bx_real_sim_c::log_msg(const char *prefix, int level, const char *msg)
+{
+  if (SIM->has_log_viewer()) {
+    // send message to the log viewer
+    char *logmsg = (char*)malloc(strlen(prefix) + strlen(msg) + 4);
+    sprintf(logmsg, "%s %s\n", prefix, msg);
+    BxEvent *event = new BxEvent();
+    event->type = BX_ASYNC_EVT_LOG_MSG;
+    event->u.logmsg.prefix = NULL;
+    event->u.logmsg.level = level;
+    event->u.logmsg.msg = logmsg;
+    sim_to_ci_event(event);
+  }
 }
 
 // Called by simulator whenever it needs the user to choose a new value
@@ -1016,8 +1014,8 @@ void bx_real_sim_c::cleanup_save_restore()
 bx_bool bx_real_sim_c::save_state(const char *checkpoint_path)
 {
   char sr_file[BX_PATHNAME_LEN];
-  char prefix[8];
-  int i, dev, ndev = SIM->get_n_log_modules();
+  char devname[20];
+  int dev, ndev = SIM->get_n_log_modules();
   int type, ntype = SIM->get_max_log_level();
 
   get_param_string(BXPN_RESTORE_PATH)->set(checkpoint_path);
@@ -1028,13 +1026,9 @@ bx_bool bx_real_sim_c::save_state(const char *checkpoint_path)
   FILE *fp = fopen(sr_file, "w");
   if (fp != NULL) {
     for (dev=0; dev<ndev; dev++) {
-      strcpy(prefix, get_prefix(dev));
-      strcpy(prefix, prefix+1);
-      prefix[strlen(prefix) - 1] = 0;
-      i = strlen(prefix) - 1;
-      while ((i >= 0) && (prefix[i] == ' ')) prefix[i--] = 0;
-      if (strlen(prefix) > 0) {
-        fprintf(fp, "%s: ", prefix);
+      strcpy(devname, get_logfn_name(dev));
+      if ((strlen(devname) > 0) && (strcmp(devname, "?"))) {
+        fprintf(fp, "%s: ", devname);
         for (type=0; type<ntype; type++) {
           if (type > 0) fprintf(fp, ", ");
           fprintf(fp, "%s=%s", get_log_level_name(type), get_action_name(get_log_action(dev, type)));
@@ -1073,10 +1067,9 @@ bx_bool bx_real_sim_c::restore_config()
 bx_bool bx_real_sim_c::restore_logopts()
 {
   char logopts[BX_PATHNAME_LEN];
-  char line[512], string[512], prefix[8];
+  char line[512], string[512], devname[20];
   char *ret, *ptr;
-  int d, i, j, dev = 0, type = 0, action = 0;
-  int ndev = SIM->get_n_log_modules();
+  int i, j, p, dev = 0, type = 0, action = 0;
   FILE *fp;
 
   sprintf(logopts, "%s/logopts", get_param_string(BXPN_RESTORE_PATH)->getptr());
@@ -1093,17 +1086,13 @@ bx_bool bx_real_sim_c::restore_logopts()
       if ((ret != NULL) && strlen(line)) {
         ptr = strtok(line, ":");
         while (ptr) {
-          strcpy(string, ptr);
-          while (isspace(string[0])) strcpy(string, string+1);
+          p = 0;
+          while (isspace(ptr[p])) p++;
+          strcpy(string, ptr+p);
           while (isspace(string[strlen(string)-1])) string[strlen(string)-1] = 0;
           if (i == 0) {
-            sprintf(prefix, "[%-5s]", string);
-            dev = -1;
-            for (d = 0; d < ndev; d++) {
-              if (!strcmp(prefix, get_prefix(d))) {
-                dev = d;
-              }
-            }
+            strcpy(devname, string);
+            dev = get_logfn_id(devname);
           } else if (dev >= 0) {
             j = 6;
             if (!strncmp(string, "DEBUG=", 6)) {
@@ -1128,7 +1117,7 @@ bx_bool bx_real_sim_c::restore_logopts()
             set_log_action(dev, type, action);
           } else {
             if (i == 1) {
-              BX_ERROR(("restore_logopts(): log module '%s' not found", prefix));
+              BX_ERROR(("restore_logopts(): log module '%s' not found", devname));
             }
           }
           i++;
@@ -1252,7 +1241,7 @@ bx_bool bx_real_sim_c::restore_bochs_param(bx_list_c *root, const char *sr_path,
                   base = (bx_list_c*)param;
                   break;
                 default:
-                  BX_ERROR(("restore_sr_param(): unknown parameter type"));
+                  BX_ERROR(("restore_bochs_param(): unknown parameter type"));
               }
             }
           }

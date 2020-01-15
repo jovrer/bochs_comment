@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.cc 11591 2013-01-25 17:56:40Z vruppert $
+// $Id: usb_msd.cc 12302 2014-05-01 08:42:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  USB mass storage device support (ported from QEMU)
 //
 //  Copyright (c) 2006 CodeSourcery.
 //  Written by Paul Brook
-//  Copyright (C) 2009-2012  The Bochs Project
+//  Copyright (C) 2009-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -132,7 +132,7 @@ static const Bit8u bx_msd_config_descriptor[] = {
   0x00        /*  u8  ep_bInterval; */
 };
 
-static int cdrom_count = 0;
+static int usb_cdrom_count = 0;
 
 
 usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
@@ -167,16 +167,14 @@ usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
     s.fname = filename;
     // config options
     bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
-    sprintf(pname, "cdrom%d", ++cdrom_count);
-    sprintf(label, "USB CD-ROM #%d Configuration", cdrom_count);
+    sprintf(pname, "cdrom%d", ++usb_cdrom_count);
+    sprintf(label, "USB CD-ROM #%d Configuration", usb_cdrom_count);
     s.config = new bx_list_c(usb_rt, pname, label);
     s.config->set_options(bx_list_c::SERIES_ASK | bx_list_c::USE_BOX_TITLE);
-    s.config->set_runtime_param(1);
     s.config->set_device_param(this);
     path = new bx_param_string_c(s.config, "path", "Path", "", "", BX_PATHNAME_LEN);
     path->set(s.fname);
     path->set_handler(cd_param_string_handler);
-    path->set_runtime_param(1);
     status = new bx_param_enum_c(s.config,
       "status",
       "Status",
@@ -185,15 +183,14 @@ usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
       BX_INSERTED,
       BX_EJECTED);
     status->set_handler(cd_param_handler);
-    status->set_runtime_param(1);
     status->set_ask_format("Is the device inserted or ejected? [%s] ");
-#if BX_WITH_WX
-    bx_list_c *usb = (bx_list_c*)SIM->get_param("ports.usb");
-    usb->add(s.config);
-#endif
+    if (SIM->is_wx_selected()) {
+      bx_list_c *usb = (bx_list_c*)SIM->get_param("ports.usb");
+      usb->add(s.config);
+    }
   }
 
-  put("usb_msd", "USBMS");
+  put("usb_msd", "USBMSD");
 }
 
 usb_msd_device_c::~usb_msd_device_c(void)
@@ -202,16 +199,14 @@ usb_msd_device_c::~usb_msd_device_c(void)
     delete s.scsi_dev;
   if (s.hdimage != NULL) {
     delete s.hdimage;
-#ifdef LOWLEVEL_CDROM
   } else if (s.cdrom != NULL) {
     delete s.cdrom;
-#if BX_WITH_WX
-    bx_list_c *usb = (bx_list_c*)SIM->get_param("ports.usb");
-    usb->remove(s.config->get_name());
-#endif
+    if (SIM->is_wx_selected()) {
+      bx_list_c *usb = (bx_list_c*)SIM->get_param("ports.usb");
+      usb->remove(s.config->get_name());
+    }
     bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
     usb_rt->remove(s.config->get_name());
-#endif
   }
 }
 
@@ -236,19 +231,13 @@ bx_bool usb_msd_device_c::init()
     }
     sprintf(s.info_txt, "USB HD: path='%s', mode='%s'", s.fname, hdimage_mode_names[s.image_mode]);
   } else if (d.type == USB_DEV_TYPE_CDROM) {
-#ifdef LOWLEVEL_CDROM
     s.cdrom = DEV_hdimage_init_cdrom(s.fname);
-    if (!s.cdrom->insert_cdrom()) {
-      BX_ERROR(("could not open cdrom image file '%s'", s.fname));
-      return 0;
+    s.scsi_dev = new scsi_device_t(s.cdrom, 0, usb_msd_command_complete, (void*)this);
+    if (set_inserted(1)) {
+      sprintf(s.info_txt, "USB CD: path='%s'", s.fname);
     } else {
-      s.scsi_dev = new scsi_device_t(s.cdrom, 0, usb_msd_command_complete, (void*)this);
+      sprintf(s.info_txt, "USB CD: media not present");
     }
-    sprintf(s.info_txt, "USB CD: path='%s'", s.fname);
-#else
-    BX_PANIC(("missing LOWLEVEL_CDROM support"));
-    return 0;
-#endif
   }
   s.scsi_dev->register_state(s.sr_list, "scsidev");
   s.mode = USB_MSDM_CBW;
@@ -659,24 +648,21 @@ void usb_msd_device_c::cancel_packet(USBPacket *p)
   s.scsi_len = 0;
 }
 
-void usb_msd_device_c::set_inserted(bx_bool value)
+bx_bool usb_msd_device_c::set_inserted(bx_bool value)
 {
-#ifdef LOWLEVEL_CDROM
   const char *path;
 
   if (value) {
     path = SIM->get_param_string("path", s.config)->getptr();
     if (!s.cdrom->insert_cdrom(path)) {
-      SIM->get_param_bool("status", s.config)->set(0);
-      return;
+      SIM->get_param_enum("status", s.config)->set(BX_EJECTED);
+      return 0;
     }
   } else {
     s.cdrom->eject_cdrom();
   }
   s.scsi_dev->set_inserted(value);
-#else
-  SIM->get_param_bool("status", s.config)->set(0);
-#endif
+  return value;
 }
 
 bx_bool usb_msd_device_c::get_inserted()
@@ -703,7 +689,7 @@ const char *usb_msd_device_c::cd_param_string_handler(bx_param_string_c *param, 
           param->set("none");
         }
       } else {
-        SIM->get_param_bool("status", param->get_parent())->set(0);
+        SIM->get_param_enum("status", param->get_parent())->set(BX_EJECTED);
       }
     } else {
       BX_PANIC(("cd_param_string_handler: cdrom not found"));

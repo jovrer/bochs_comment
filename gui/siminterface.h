@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h 11612 2013-02-04 18:51:07Z vruppert $
+// $Id: siminterface.h 12103 2014-01-12 08:26:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -172,6 +172,8 @@ typedef enum {
   ACT_FATAL,
   N_ACT
 } bx_log_actions;
+
+#define BX_NULL_PREFIX  "[      ]"
 
 // normally all action choices are available for all event types. The exclude
 // expression allows some choices to be eliminated if they don't make any
@@ -369,7 +371,7 @@ typedef struct {
 // some kind of "flow control" since the simulator will be able to produce
 // new events much faster than the gui can accept them.
 
-// Event type: BX_ASYNC_EVT_LOG_MSG   (unused)
+// Event type: BX_ASYNC_EVT_LOG_MSG
 //
 // Asynchronous event from the simulator to the CI.  When a BX_PANIC,
 // BX_ERROR, BX_INFO, or BX_DEBUG is found in the simulator code, this
@@ -445,7 +447,7 @@ typedef struct {
 // a type and a spot for a return code (only used for synchronous events).
 typedef struct {
   BxEventType type; // what kind is this?
-  Bit32s retcode;   // sucess or failure. only used for synchronous events.
+  Bit32s retcode;   // success or failure. only used for synchronous events.
   union {
     BxKeyEvent key;
     BxMouseEvent mouse;
@@ -569,7 +571,14 @@ enum {
   BX_CPUID_SUPPORT_SSE3,
   BX_CPUID_SUPPORT_SSSE3,
   BX_CPUID_SUPPORT_SSE4_1,
-  BX_CPUID_SUPPORT_SSE4_2
+  BX_CPUID_SUPPORT_SSE4_2,
+#if BX_SUPPORT_AVX
+  BX_CPUID_SUPPORT_AVX,
+  BX_CPUID_SUPPORT_AVX2,
+#if BX_SUPPORT_EVEX
+  BX_CPUID_SUPPORT_AVX512
+#endif
+#endif
 };
 
 enum {
@@ -665,7 +674,6 @@ public:
   virtual int set_log_prefix(char *prefix) {return -1;}
   virtual int get_debugger_log_file(char *path, int len) {return -1;}
   virtual int set_debugger_log_file(char *path) {return -1;}
-  virtual int get_cdrom_options(int drive, bx_list_c **out, int *where = NULL) {return -1;}
   virtual int hdimage_get_mode(const char *mode)  {return -1;}
 
   // The CI calls set_notify_callback to register its event handler function.
@@ -686,7 +694,12 @@ public:
 
   // called from simulator when it hits serious errors, to ask if the user
   // wants to continue or not
-  virtual int log_msg(const char *prefix, int level, const char *msg) {return -1;}
+  virtual int log_ask(const char *prefix, int level, const char *msg) {return -1;}
+  // called from simulator when writing a message to log file
+  virtual void log_msg(const char *prefix, int level, const char *msg) {}
+  // set this to 1 if the gui has a log viewer
+  virtual void set_log_viewer(bx_bool val) {}
+  virtual bx_bool has_log_viewer() const {return 0;}
 
   // tell the CI to ask the user for the value of a parameter.
   virtual int ask_param(bx_param_c *param) {return -1;}
@@ -774,8 +787,7 @@ public:
 
 BOCHSAPI extern bx_simulator_interface_c *SIM;
 
-BOCHSAPI extern void bx_init_siminterface();
-BOCHSAPI extern int bx_init_main(int argc, char *argv[]);
+extern void bx_init_siminterface();
 
 #if defined(__WXMSW__) || defined(WIN32)
 // Just to provide HINSTANCE, etc. in files that have not included bochs.h.

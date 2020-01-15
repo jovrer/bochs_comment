@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundsdl.cc 11214 2012-06-09 10:12:05Z vruppert $
+// $Id: soundsdl.cc 11753 2013-07-25 18:47:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2012  The Bochs Project
+//  Copyright (C) 2012-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,7 +26,7 @@
 
 #if BX_WITH_SDL && BX_SUPPORT_SOUNDLOW
 
-#define LOG_THIS device->
+#define LOG_THIS
 
 #if BX_WITH_SDL
 #include <SDL.h>
@@ -41,14 +41,14 @@ static struct {
 } audio_buffer;
 
 
-bx_sound_sdl_c::bx_sound_sdl_c(logfunctions *dev)
-    :bx_sound_lowlevel_c(dev)
+bx_sound_sdl_c::bx_sound_sdl_c()
+    :bx_sound_lowlevel_c()
 {
   WaveOpen = 0;
   if (SDL_InitSubSystem(SDL_INIT_AUDIO)) {
-    BX_PANIC(("Initialization of sound output module 'sdl' failed"));
+    BX_PANIC(("Initialization of sound lowlevel module 'sdl' failed"));
   } else {
-    BX_INFO(("Sound output module 'sdl' initialized"));
+    BX_INFO(("Sound lowlevel module 'sdl' initialized"));
   }
 }
 

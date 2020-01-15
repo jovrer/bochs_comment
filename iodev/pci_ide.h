@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.h 11549 2012-11-12 18:56:07Z vruppert $
+// $Id: pci_ide.h 12117 2014-01-19 18:13:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2004-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -38,6 +38,7 @@ public:
   virtual void init(void);
   virtual void reset(unsigned type);
   virtual bx_bool bmdma_present(void);
+  virtual void bmdma_start_transfer(Bit8u channel);
   virtual void bmdma_set_irq(Bit8u channel);
   virtual void register_state(void);
   virtual void after_restore_state(void);
@@ -68,6 +69,7 @@ private:
       Bit8u *buffer;
       Bit8u *buffer_top;
       Bit8u *buffer_idx;
+      bx_bool data_ready;
     } bmdma[2];
   } s;
 

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.cc 11606 2013-02-01 19:13:58Z vruppert $
+// $Id: ne2k.cc 12320 2014-05-09 13:49:42Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -59,7 +59,7 @@ void ne2k_init_options(void)
     "enabled",
     "Enable NE2K NIC emulation",
     "Enables the NE2K NIC emulation",
-    0);
+    1);
   bx_param_num_c *ioaddr = new bx_param_num_c(menu,
     "ioaddr",
     "NE2K I/O Address",
@@ -76,7 +76,6 @@ void ne2k_init_options(void)
   irq->set_options(irq->USE_SPIN_CONTROL);
   SIM->init_std_nic_options("NE2K", menu);
   enabled->set_dependent_list(menu->clone());
-
 }
 
 Bit32s ne2k_options_parser(const char *context, int num_params, char *params[])
@@ -90,6 +89,10 @@ Bit32s ne2k_options_parser(const char *context, int num_params, char *params[])
     }
     if (SIM->is_pci_device(BX_PLUGIN_NE2K)) {
       valid |= 0x03;
+    }
+    if (!SIM->get_param_string("mac", base)->isempty()) {
+      // MAC address is already initialized
+      valid |= 0x04;
     }
     for (int i = 1; i < num_params; i++) {
       if (!strncmp(params[i], "ioaddr=", 7)) {
@@ -171,9 +174,9 @@ void bx_ne2k_c::init(void)
 {
   char devname[16];
   Bit8u macaddr[6];
-  const char *bootrom;
+  bx_param_string_c *bootrom;
 
-  BX_DEBUG(("Init $Id: ne2k.cc 11606 2013-02-01 19:13:58Z vruppert $"));
+  BX_DEBUG(("Init $Id: ne2k.cc 12320 2014-05-09 13:49:42Z vruppert $"));
 
   // Read in values from config interface
   bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_NE2K);
@@ -195,25 +198,17 @@ void bx_ne2k_c::init(void)
     DEV_register_pci_handlers(this, &BX_NE2K_THIS s.devfunc,
         BX_PLUGIN_NE2K, devname);
 
-    for (unsigned i=0; i<256; i++)
-      BX_NE2K_THIS pci_conf[i] = 0x0;
-    // readonly registers
-    BX_NE2K_THIS pci_conf[0x00] = 0xec;
-    BX_NE2K_THIS pci_conf[0x01] = 0x10;
-    BX_NE2K_THIS pci_conf[0x02] = 0x29;
-    BX_NE2K_THIS pci_conf[0x03] = 0x80;
+    // initialize readonly registers
+    init_pci_conf(0x10ec, 0x8029, 0x00, 0x020000, 0x00);
     BX_NE2K_THIS pci_conf[0x04] = 0x01;
     BX_NE2K_THIS pci_conf[0x07] = 0x02;
-    BX_NE2K_THIS pci_conf[0x0a] = 0x00;
-    BX_NE2K_THIS pci_conf[0x0b] = 0x02;
-    BX_NE2K_THIS pci_conf[0x0e] = 0x00;
     BX_NE2K_THIS pci_conf[0x10] = 0x01;
     BX_NE2K_THIS pci_conf[0x3d] = BX_PCI_INTA;
     BX_NE2K_THIS s.base_address = 0x0;
     BX_NE2K_THIS pci_rom_address = 0;
-    bootrom = SIM->get_param_string("bootrom", base)->getptr();
-    if ((strlen(bootrom) > 0) && (strcmp(bootrom, "none"))) {
-      BX_NE2K_THIS load_pci_rom(bootrom);
+    bootrom = SIM->get_param_string("bootrom", base);
+    if (!bootrom->isempty()) {
+      BX_NE2K_THIS load_pci_rom(bootrom->getptr());
     }
   }
 #endif
@@ -251,8 +246,8 @@ void bx_ne2k_c::init(void)
                                  BX_NE2K_THIS s.base_address + 0x1F,
                                  devname, 1);
 
-    bootrom = SIM->get_param_string("bootrom", base)->getptr();
-    if (strlen(bootrom) > 0) {
+    bootrom = SIM->get_param_string("bootrom", base);
+    if (!bootrom->isempty()) {
       BX_PANIC(("%s: boot ROM support not present yet", devname));
     }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc 11674 2013-04-09 15:43:15Z sshwarts $
+// $Id: init.cc 12222 2014-03-02 16:40:13Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -367,15 +367,20 @@ void BX_CPU_C::register_state(void)
     for (n=0; n<BX_XMM_REGISTERS; n++) {
       for(unsigned j=0;j < BX_VLMAX*2;j++) {
         sprintf(name, "xmm%02d_%d", n, j);
-#if BX_SUPPORT_AVX
-        new bx_shadow_num_c(sse, name, &vmm[n].avx64u(j), BASE_HEX);
-#else
-        new bx_shadow_num_c(sse, name, &vmm[n].xmm64u(j), BASE_HEX);
-#endif
+        new bx_shadow_num_c(sse, name, &vmm[n].vmm64u(j), BASE_HEX);
       }
     }
   }
+#if BX_SUPPORT_EVEX
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX512)) {
+    bx_list_c *mask = new bx_list_c(cpu, "OPMASK");
+    for (n=0; n<8; n++) {
+      sprintf(name, "k%d", n);
+      new bx_shadow_num_c(mask, name, &opmask[n].rrx, BASE_HEX);
+    }
+  }
 #endif
+#endif // BX_CPU_LEVEL >= 6
 
 #if BX_SUPPORT_MONITOR_MWAIT
   bx_list_c *monitor_list = new bx_list_c(cpu, "MONITOR");
@@ -738,9 +743,13 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR xcr0_suppmask = 0x3;
 #if BX_SUPPORT_AVX
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX))
-    BX_CPU_THIS_PTR xcr0_suppmask |= BX_XCR0_AVX_MASK;
+    BX_CPU_THIS_PTR xcr0_suppmask |= BX_XCR0_YMM_MASK;
+#if BX_SUPPORT_EVEX
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX512))
+    BX_CPU_THIS_PTR xcr0_suppmask |= BX_XCR0_OPMASK_MASK | BX_XCR0_ZMM_HI256_MASK | BX_XCR0_HI_ZMM_MASK;
 #endif
-#endif
+#endif // BX_SUPPORT_AVX
+#endif // BX_CPU_LEVEL >= 6
 
 /* initialise MSR registers to defaults */
 #if BX_CPU_LEVEL >= 5
@@ -863,11 +872,18 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR avx_ok = 0;
 #endif
 
+#if BX_SUPPORT_EVEX
+  BX_CPU_THIS_PTR opmask_ok = BX_CPU_THIS_PTR evex_ok = 0;
+
+  for (n=0; n<8; n++)
+    BX_WRITE_OPMASK(n, 0);
+#endif
+
   // Reset XMM state - unchanged on #INIT
   if (source == BX_RESET_HARDWARE) {
-    static BxPackedXmmRegister xmmnil; /* compiler will clear the variable */
-    for(n=0; n<BX_XMM_REGISTERS; n++)
-      BX_WRITE_XMM_REG_CLEAR_HIGH(n, xmmnil);
+    for(n=0; n<BX_XMM_REGISTERS; n++) {
+      BX_CLEAR_AVX_REG(n);
+    }
 
     BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
     BX_CPU_THIS_PTR mxcsr_mask = 0x0000ffbf;
@@ -883,9 +899,11 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR in_smm_vmx = BX_CPU_THIS_PTR in_smm_vmx_guest = 0;
   BX_CPU_THIS_PTR vmcsptr = BX_CPU_THIS_PTR vmxonptr = BX_INVALID_VMCSPTR;
   BX_CPU_THIS_PTR vmcshostptr = 0;
-  /* enable VMX, should be done in BIOS instead */
-  BX_CPU_THIS_PTR msr.ia32_feature_ctrl =
-    /*BX_IA32_FEATURE_CONTROL_LOCK_BIT | */BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT;
+  if (source == BX_RESET_HARDWARE) {
+    /* enable VMX, should be done in BIOS instead */
+    BX_CPU_THIS_PTR msr.ia32_feature_ctrl =
+      /*BX_IA32_FEATURE_CONTROL_LOCK_BIT | */BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT;
+  }
 #endif
 
 #if BX_SUPPORT_SVM

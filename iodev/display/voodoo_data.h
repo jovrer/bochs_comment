@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: voodoo_data.h 11550 2012-11-13 20:28:36Z vruppert $
+// $Id: voodoo_data.h 12101 2014-01-07 22:32:22Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 /*
  *  Portion of this software comes with the following license
@@ -715,7 +715,7 @@ static const char *const voodoo_reg_name[] =
   "nccTable1.3",  "nccTable1.4",  "nccTable1.5",  "nccTable1.6",
   "nccTable1.7",  "nccTable1.8",  "nccTable1.9",  "nccTable1.A",
   /* 0x380 */
-  "nccTable1.B"
+  "nccTable1.B",  "reserved384",  "reserved388",  "reserved38c"
 };
 
 
@@ -1635,6 +1635,11 @@ struct _dac_state
 {
   Bit8u reg[8];       /* 8 registers */
   Bit8u read_result;  /* pending read result */
+  Bit8u data_size;
+  Bit8u clk0_m;
+  Bit8u clk0_n;
+  Bit8u clk0_p;
+  Bit32u clk0_freq;
 };
 
 

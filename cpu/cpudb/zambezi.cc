@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: zambezi.cc 11570 2013-01-08 21:03:22Z sshwarts $
+// $Id: zambezi.cc 12242 2014-03-15 20:19:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2012-2013 Stanislav Shwartsman
+//   Copyright (c) 2012-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -46,6 +46,8 @@ zambezi_t::zambezi_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
 void zambezi_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
 {
+  static const char* brand_string = "AMD FX(tm)-4100 Quad-Core Processor            ";
+
   static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
   if (cpuid_limit_winnt)
     if (function > 1 && function < 0x80000000) function = 1;
@@ -60,7 +62,7 @@ void zambezi_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_functi
   case 0x80000002:
   case 0x80000003:
   case 0x80000004:
-    get_ext_cpuid_brand_string_leaf(function, leaf);
+    get_ext_cpuid_brand_string_leaf(brand_string, function, leaf);
     return;
   case 0x80000005:
     get_ext_cpuid_leaf_5(leaf);
@@ -152,8 +154,7 @@ Bit64u zambezi_t::get_isa_extensions_bitmask(void) const
 #if BX_SUPPORT_SVM
          BX_ISA_SVM |
 #endif
-         BX_ISA_XOP |
-         BX_ISA_TBM;
+         BX_ISA_XOP;
 }
 
 Bit32u zambezi_t::get_cpu_extensions_bitmask(void) const
@@ -399,29 +400,28 @@ void zambezi_t::get_std_cpuid_leaf_6(cpuid_function_t *leaf) const
 void zambezi_t::get_std_cpuid_xsave_leaf(Bit32u subfunction, cpuid_function_t *leaf) const
 {
   switch(subfunction) {
-  case 0:
     // EAX - valid bits of XCR0 (lower part)
     // EBX - Maximum size (in bytes) required by enabled features
     // ECX - Maximum size (in bytes) required by CPU supported features
     // EDX - valid bits of XCR0 (upper part)
     leaf->eax = cpu->xcr0_suppmask;
     leaf->ebx = 512+64;
-    if (cpu->xcr0.get_AVX())
-      leaf->ebx += 256;
-    leaf->ecx = 512+64+256 /* AVX */;
+    if (cpu->xcr0.get_YMM())
+      leaf->ebx = XSAVE_YMM_STATE_OFFSET + XSAVE_YMM_STATE_LEN;
+    leaf->ecx = XSAVE_YMM_STATE_OFFSET + XSAVE_YMM_STATE_LEN;
     leaf->edx = 0;
     return;
 
   case 1:
-    leaf->eax = 0; /* XSAVEOPT supported */
+    leaf->eax = 0; /* XSAVEOPT not supported */
     leaf->ebx = 0;
     leaf->ecx = 0;
     leaf->edx = 0;
     return;
 
-  case 2: // AVX leaf
-    leaf->eax = 256;
-    leaf->ebx = 576;
+  case 2: // YMM leaf
+    leaf->eax = XSAVE_YMM_STATE_LEN;
+    leaf->ebx = XSAVE_YMM_STATE_OFFSET;
     leaf->ecx = 0;
     leaf->edx = 0;
     return;
@@ -586,41 +586,6 @@ void zambezi_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const
 // leaf 0x80000002 //
 // leaf 0x80000003 //
 // leaf 0x80000004 //
-void zambezi_t::get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const
-{
-  // CPUID function 0x80000002-0x80000004 - Processor Name String Identifier
-  static const char* brand_string = "AMD FX(tm)-4100 Quad-Core Processor            ";
-
-  switch(function) {
-  case 0x80000002:
-    memcpy(&(leaf->eax), brand_string     , 4);
-    memcpy(&(leaf->ebx), brand_string +  4, 4);
-    memcpy(&(leaf->ecx), brand_string +  8, 4);
-    memcpy(&(leaf->edx), brand_string + 12, 4);
-    break;
-  case 0x80000003:
-    memcpy(&(leaf->eax), brand_string + 16, 4);
-    memcpy(&(leaf->ebx), brand_string + 20, 4);
-    memcpy(&(leaf->ecx), brand_string + 24, 4);
-    memcpy(&(leaf->edx), brand_string + 28, 4);
-    break;
-  case 0x80000004:
-    memcpy(&(leaf->eax), brand_string + 32, 4);
-    memcpy(&(leaf->ebx), brand_string + 36, 4);
-    memcpy(&(leaf->ecx), brand_string + 40, 4);
-    memcpy(&(leaf->edx), brand_string + 44, 4);
-    break;
-  default:
-    break;
-  }
-
-#ifdef BX_BIG_ENDIAN
-  leaf->eax = bx_bswap32(leaf->eax);
-  leaf->ebx = bx_bswap32(leaf->ebx);
-  leaf->ecx = bx_bswap32(leaf->ecx);
-  leaf->edx = bx_bswap32(leaf->edx);
-#endif
-}
 
 // leaf 0x80000005 //
 void zambezi_t::get_ext_cpuid_leaf_5(cpuid_function_t *leaf) const
@@ -686,8 +651,7 @@ void zambezi_t::get_ext_cpuid_leaf_A(cpuid_function_t *leaf) const
   // * [10:10] Pause filter support
   //   [11:11] Reserved
   // * [12:12] Pause filter threshold support
-  //   [31:13] Reserved
-
+  //   [13:13] Advanced Virtual Interrupt Controller
   leaf->edx = get_svm_extensions_bitmask();
 }
 

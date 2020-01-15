@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: extfpuirq.cc 10898 2011-12-30 11:13:37Z vruppert $
+// $Id: extfpuirq.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -48,7 +48,7 @@ void libextfpuirq_LTX_plugin_fini(void)
 
 bx_extfpuirq_c::bx_extfpuirq_c(void)
 {
-  put("extfpuirq", "EFIRQ");
+  put("extfpuirq", "EXFIRQ");
 }
 
 bx_extfpuirq_c::~bx_extfpuirq_c(void)

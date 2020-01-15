@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: extplugin.h 10966 2012-01-10 17:45:18Z vruppert $
+// $Id: extplugin.h 12082 2013-12-29 20:04:16Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // extplugin.h
@@ -17,11 +17,11 @@
 #ifndef __EXTPLUGIN_H
 #define __EXTPLUGIN_H
 
-#if BX_PLUGINS
+#if BX_PLUGINS && !defined(WIN32)
 #if BX_HAVE_LTDL
 #include <ltdl.h>
-#elif !defined(_MSC_VER)
-#include "ltdl.h"
+#else
+#include "ltdl-bochs.h"
 #endif
 #endif
 
@@ -43,7 +43,7 @@ typedef struct _plugin_t
     plugintype_t type;
     int  initialized;
 #if BX_PLUGINS
-#if defined(_MSC_VER)
+#if defined(WIN32)
     HINSTANCE handle;
 #else
     lt_dlhandle handle;

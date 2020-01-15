@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc 11501 2012-10-14 18:29:44Z vruppert $
+// $Id: term.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2000-2012  The Bochs Project
+//  Copyright (C) 2000-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -176,7 +176,7 @@ void bx_term_gui_c::sighandler(int signo)
 
 void bx_term_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
-  put("TGUI");
+  put("TERM");
 
   // the ask menu causes trouble
   io->set_log_action(LOGLEV_PANIC, ACT_FATAL);

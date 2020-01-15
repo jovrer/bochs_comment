@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer8.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: data_xfer8.cc 11831 2013-09-24 05:21:00Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -24,16 +24,9 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RLIb(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EbIbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->dst(), i->extend8bitL(), i->Ib());
-
-  BX_NEXT_INSTR(i);
-}
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RHIb(bxInstruction_c *i)
-{
-  BX_WRITE_8BIT_REGH(i->dst() & 0x3, i->Ib());
 
   BX_NEXT_INSTR(i);
 }

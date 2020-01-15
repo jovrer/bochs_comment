@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.h 11471 2012-10-01 18:19:09Z sshwarts $
+// $Id: icache.h 11732 2013-06-29 10:25:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -101,7 +101,7 @@ BX_CPP_INLINE void bxPageWriteStampTable::resetWriteStamps(void)
 
 extern bxPageWriteStampTable pageWriteStampTable;
 
-#define BxICacheEntries (256 * 1024)  // Must be a power of 2.
+#define BxICacheEntries (64  * 1024)  // Must be a power of 2.
 #define BxICacheMemPool (576 * 1024)
 
 #define BX_MAX_TRACE_LENGTH 32
@@ -123,8 +123,9 @@ BX_CPP_INLINE void flushSMC(bxICacheEntry_c *e)
     e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
 #if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
     extern void genDummyICacheEntry(bxInstruction_c *i);
-    for (unsigned instr=0;instr < e->tlen; instr++)
-      genDummyICacheEntry(e->i + instr);
+//  for (unsigned instr=0;instr < e->tlen; instr++)
+//    genDummyICacheEntry(e->i + instr);
+    genDummyICacheEntry(e->i);
 #endif
   }
 }
@@ -134,6 +135,8 @@ public:
   bxICacheEntry_c entry[BxICacheEntries];
   bxInstruction_c mpool[BxICacheMemPool];
   unsigned mpindex;
+
+  Bit32u traceLinkTimeStamp;
 
 #define BX_ICACHE_PAGE_SPLIT_ENTRIES 8 /* must be power of two */
   struct pageSplitEntryIndex {
@@ -243,11 +246,19 @@ BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
     victimCache[i].vc_entry.pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
 
   mpindex = 0;
+
+  traceLinkTimeStamp = 0;
 }
 
 BX_CPP_INLINE void bxICache_c::handleSMC(bx_phy_address pAddr, Bit32u mask)
 {
   Bit32u pAddrIndex = bxPageWriteStampTable::hash(pAddr);
+
+  // break all links bewteen traces
+  if (++traceLinkTimeStamp == 0xffffffff) {
+    flushICacheEntries();
+    return;
+  }
 
   // Need to invalidate all traces in the trace cache that might include an
   // instruction that was modified.  But this is not enough, it is possible

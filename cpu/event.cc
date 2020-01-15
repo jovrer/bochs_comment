@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: event.cc 11683 2013-05-04 19:10:50Z sshwarts $
+// $Id: event.cc 11804 2013-09-05 18:40:14Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -42,12 +42,11 @@ bx_bool BX_CPU_C::handleWaitForEvent(void)
   while (1)
   {
     if ((is_pending(BX_EVENT_PENDING_INTR | BX_EVENT_PENDING_LAPIC_INTR) && (BX_CPU_THIS_PTR get_IF() || BX_CPU_THIS_PTR activity_state == BX_ACTIVITY_STATE_MWAIT_IF)) ||
-         is_pending(BX_EVENT_NMI | BX_EVENT_SMI | BX_EVENT_INIT |
+         is_unmasked_event_pending(BX_EVENT_NMI | BX_EVENT_SMI | BX_EVENT_INIT |
             BX_EVENT_VMX_VTPR_UPDATE |
             BX_EVENT_VMX_VEOI_UPDATE |
             BX_EVENT_VMX_VIRTUAL_APIC_WRITE |
             BX_EVENT_VMX_MONITOR_TRAP_FLAG |
-            BX_EVENT_VMX_PREEMPTION_TIMER_EXPIRED |
             BX_EVENT_VMX_VIRTUAL_NMI))
     {
       // interrupt ends the HALT condition
@@ -57,6 +56,11 @@ bx_bool BX_CPU_C::handleWaitForEvent(void)
 #endif
       BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
       BX_CPU_THIS_PTR inhibit_mask = 0; // clear inhibits for after resume
+      break;
+    }
+
+    if (is_unmasked_event_pending(BX_EVENT_VMX_PREEMPTION_TIMER_EXPIRED)) {
+      // Exit from waiting loop and proceed to VMEXIT
       break;
     }
 
@@ -375,7 +379,7 @@ void BX_CPU_C::inhibit_interrupts(unsigned mask)
 {
   // Loading of SS disables interrupts until the next instruction completes
   // but only under assumption that previous instruction didn't load SS also.
-  if (! interrupts_inhibited(BX_INHIBIT_INTERRUPTS_BY_MOVSS)) {
+  if (mask != BX_INHIBIT_INTERRUPTS_BY_MOVSS || ! interrupts_inhibited(BX_INHIBIT_INTERRUPTS_BY_MOVSS)) {
     BX_DEBUG(("inhibit interrupts mask = %d", mask));
     BX_CPU_THIS_PTR inhibit_mask = mask;
     BX_CPU_THIS_PTR inhibit_icount = get_icount() + 1; // inhibit for next instruction

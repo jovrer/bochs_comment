@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc 11622 2013-02-12 21:08:35Z vruppert $
+// $Id: gui.cc 12339 2014-05-26 17:04:02Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,7 @@
 
 #include <signal.h>
 #include "iodev.h"
+#include "virt_timer.h"
 #include "keymap.h"
 #include "gui/bitmaps/floppya.h"
 #include "gui/bitmaps/floppyb.h"
@@ -176,31 +177,20 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
                           BX_SAVE_RESTORE_BMAP_X, BX_SAVE_RESTORE_BMAP_Y);
 
   // Add the initial bitmaps to the headerbar, and enable callback routine, for use
-  // when that bitmap is clicked on
+  // when that bitmap is clicked on. The floppy and cdrom devices are not
+  // initialized yet. so we just set the bitmaps to ejected for now.
 
   // Floppy A:
-  BX_GUI_THIS floppyA_status = (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED);
-  if (BX_GUI_THIS floppyA_status)
-    BX_GUI_THIS floppyA_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyA_bmap_id,
-                          BX_GRAVITY_LEFT, floppyA_handler);
-  else
-    BX_GUI_THIS floppyA_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyA_eject_bmap_id,
+  BX_GUI_THIS floppyA_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyA_eject_bmap_id,
                           BX_GRAVITY_LEFT, floppyA_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS floppyA_hbar_id, "Change floppy A: media");
 
   // Floppy B:
-  BX_GUI_THIS floppyB_status = (SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->get() == BX_INSERTED);
-  if (BX_GUI_THIS floppyB_status)
-    BX_GUI_THIS floppyB_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyB_bmap_id,
-                          BX_GRAVITY_LEFT, floppyB_handler);
-  else
-    BX_GUI_THIS floppyB_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyB_eject_bmap_id,
+  BX_GUI_THIS floppyB_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyB_eject_bmap_id,
                           BX_GRAVITY_LEFT, floppyB_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS floppyB_hbar_id, "Change floppy B: media");
 
-  // CDROM,
-  // the harddrive object is not initialised yet,
-  // so we just set the bitmap to ejected for now
+  // First CD-ROM
   BX_GUI_THIS cdrom1_hbar_id = headerbar_bitmap(BX_GUI_THIS cdrom1_eject_bmap_id,
                           BX_GRAVITY_LEFT, cdrom1_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS cdrom1_hbar_id, "Change first CDROM media");
@@ -236,7 +226,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
   // Snapshot button
   BX_GUI_THIS snapshot_hbar_id = headerbar_bitmap(BX_GUI_THIS snapshot_bmap_id,
                           BX_GRAVITY_RIGHT, snapshot_handler);
-  BX_GUI_THIS set_tooltip(BX_GUI_THIS snapshot_hbar_id, "Save snapshot of the text mode screen");
+  BX_GUI_THIS set_tooltip(BX_GUI_THIS snapshot_hbar_id, "Save snapshot of the Bochs screen");
   // Paste button
   BX_GUI_THIS paste_hbar_id = headerbar_bitmap(BX_GUI_THIS paste_bmap_id,
                           BX_GRAVITY_RIGHT, paste_handler);
@@ -260,7 +250,8 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
   // register timer for status bar LEDs
   if (BX_GUI_THIS led_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_GUI_THIS led_timer_index =
-      DEV_register_timer(this, led_timer_handler, 100000, 1, 1, "status bar LEDs");
+      bx_virt_timer.register_timer(this, led_timer_handler, 100000, 1, 1,
+                                   "status bar LEDs");
   }
 }
 
@@ -311,7 +302,7 @@ void bx_gui_c::floppyA_handler(void)
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, bring up a dialog asking what disk
     // image you want to switch to.
-    int ret = SIM->ask_param(BXPN_FLOPPYA_PATH);
+    int ret = SIM->ask_param(BXPN_FLOPPYA);
     if (ret > 0) {
       SIM->update_runtime_options();
     }
@@ -329,7 +320,7 @@ void bx_gui_c::floppyB_handler(void)
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, bring up a dialog asking what disk
     // image you want to switch to.
-    int ret = SIM->ask_param(BXPN_FLOPPYB_PATH);
+    int ret = SIM->ask_param(BXPN_FLOPPYB);
     if (ret > 0) {
       SIM->update_runtime_options();
     }

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.h 11674 2013-04-09 15:43:15Z sshwarts $
+// $Id: vmx.h 12170 2014-02-06 17:06:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2013 Stanislav Shwartsman
+//   Copyright (c) 2009-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -25,7 +25,6 @@
 #define _BX_VMX_INTEL_H_
 
 #define VMX_VMCS_AREA_SIZE   4096
-#define VMX_VMCS_REVISION_ID 0x10 /* better to be uniq bochs VMCS revision id */
 
 // VMCS pointer is always 64-bit variable
 #define BX_INVALID_VMCSPTR BX_CONST64(0xFFFFFFFFFFFFFFFF)
@@ -133,6 +132,9 @@ enum VMX_vmexit_reason {
    VMX_VMEXIT_VMFUNC = 59,
    VMX_VMEXIT_RESERVED60 = 60,
    VMX_VMEXIT_RDSEED = 61,
+   VMX_VMEXIT_RESERVED62 = 62,
+   VMX_VMEXIT_XSAVES = 63,
+   VMX_VMEXIT_XRSTORS = 64,
    VMX_VMEXIT_LAST_REASON
 };
 
@@ -255,6 +257,8 @@ enum VMFunctions {
 #define VMCS_64BIT_CONTROL_VMWRITE_BITMAP_ADDR_HI          0x00002029
 #define VMCS_64BIT_CONTROL_VE_EXCEPTION_INFO_ADDR          0x0000202A /* #VE Exception */
 #define VMCS_64BIT_CONTROL_VE_EXCEPTION_INFO_ADDR_HI       0x0000202B
+#define VMCS_64BIT_CONTROL_XSS_EXITING_BITMAP              0x0000202C /* XSAVES */
+#define VMCS_64BIT_CONTROL_XSS_EXITING_BITMAP_HI           0x0000202D
 
 /* VMCS 64-bit read only data fields */
 /* binary 0010_01xx_xxxx_xxx0 */
@@ -629,6 +633,7 @@ typedef struct bx_VMCS
 #define VMX_VM_EXEC_CTRL3_VMCS_SHADOWING            (1 << 14) /* VMCS Shadowing */
 #define VMX_VM_EXEC_CTRL3_RDSEED_VMEXIT             (1 << 16)
 #define VMX_VM_EXEC_CTRL3_EPT_VIOLATION_EXCEPTION   (1 << 18) /* #VE Exception */
+#define VMX_VM_EXEC_CTRL3_XSAVES_XRSTORS            (1 << 20) /* XSAVES */
 
 #define VMX_VM_EXEC_CTRL3_SUPPORTED_BITS \
     (BX_CPU_THIS_PTR vmx_cap.vmx_vmexec_ctrl2_supported_bits)
@@ -803,7 +808,7 @@ typedef struct bx_VMCS
 // 56:63 reserved, must be zero
 //
 
-#define VMX_MSR_VMX_BASIC_LO (VMX_VMCS_REVISION_ID)
+#define VMX_MSR_VMX_BASIC_LO (BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id())
 #define VMX_MSR_VMX_BASIC_HI \
      (VMX_VMCS_AREA_SIZE | ((!bx_cpuid_support_x86_64()) << 16) | \
      (BX_MEMTYPE_WB << 18) | (1<<22)) | ((BX_SUPPORT_VMX >= 2) ? (1<<23) : 0)

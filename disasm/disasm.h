@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: disasm.h 11496 2012-10-09 15:16:48Z sshwarts $
+// $Id: disasm.h 12170 2014-02-06 17:06:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2012 Stanislav Shwartsman
+//   Copyright (c) 2005-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -83,6 +83,14 @@
 #define IA_ADX              (BX_CONST64(1) << 41)  /* ADCX/ADOX instruction */
 #define IA_SMAP             (BX_CONST64(1) << 42)  /* SMAP support */
 #define IA_RDSEED           (BX_CONST64(1) << 43)  /* RDSEED instruction */
+#define IA_SHA              (BX_CONST64(1) << 44)  /* SHA instruction */
+#define IA_AVX512           (BX_CONST64(1) << 45)  /* AVX-512 instruction */
+#define IA_AVX512_CD        (BX_CONST64(1) << 46)  /* AVX-512 Conflict Detection instruction */
+#define IA_AVX512_PF        (BX_CONST64(1) << 47)  /* AVX-512 Sparse Prefetch instruction */
+#define IA_AVX512_ER        (BX_CONST64(1) << 48)  /* AVX-512 Exponential/Reciprocal instruction */
+#define IA_CLFLUSHOPT       (BX_CONST64(1) << 49)  /* CLFLUSHOPT instruction */
+#define IA_XSAVEC           (BX_CONST64(1) << 50)  /* XSAVEC instruction */
+#define IA_XSAVES           (BX_CONST64(1) << 51)  /* XSAVES instruction */
 
 /* general purpose bit register */
 enum {
@@ -174,6 +182,7 @@ public:
 #define BX_AVX_VL256 1
   Bit8u vex_vvv, vex_l, vex_w;
   int is_vex; // 0 - no VEX used, 1 - VEX is used, -1 - invalid VEX
+  int is_evex; // 0 - no EVEX used, 1 - EVEX is used, -1 - invalid EVEX
   int is_xop; // 0 - no XOP used, 1 - XOP is used, -1 - invalid XOP
   Bit8u modrm, mod, nnn, rm;
   Bit8u sib, scale, index, base;
@@ -181,6 +190,10 @@ public:
      Bit16u displ16;
      Bit32u displ32;
   } displacement;
+
+  bx_bool evex_b;
+  bx_bool evex_z;
+  unsigned evex_ll_rc; 
 };
 
 BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
@@ -208,6 +221,7 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
   b1 = 0;
 
   is_vex = 0;
+  is_evex = 0;
   is_xop = 0;
   vex_vvv = 0;
   vex_l = BX_AVX_VL128;
@@ -215,43 +229,48 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
   modrm = mod = nnn = rm = 0;
   sib = scale = index = base = 0;
   displacement.displ32 = 0;
+
+  evex_b = 0;
+  evex_ll_rc = 0;
+  evex_z = 0;
 }
 
 class disassembler {
 public:
-  disassembler(): offset_mode_hex(0) { set_syntax_intel(); }
+  disassembler(): offset_mode_hex(0), print_mem_datasize(1) { set_syntax_intel(); }
 
-  unsigned disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf);
+  unsigned disasm(bx_bool is_32, bx_bool is_64, bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf);
 
-  unsigned disasm16(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return disasm(0, 0, base, ip, instr, disbuf); }
+  unsigned disasm16(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(0, 0, cs_base, ip, instr, disbuf); }
 
-  unsigned disasm32(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return disasm(1, 0, base, ip, instr, disbuf); }
+  unsigned disasm32(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(1, 0, cs_base, ip, instr, disbuf); }
 
-  unsigned disasm64(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return disasm(1, 1, base, ip, instr, disbuf); }
+  unsigned disasm64(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(1, 1, cs_base, ip, instr, disbuf); }
 
-  x86_insn decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf);
+  x86_insn decode(bx_bool is_32, bx_bool is_64, bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf);
 
-  x86_insn decode16(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return decode(0, 0, base, ip, instr, disbuf); }
+  x86_insn decode16(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(0, 0, cs_base, ip, instr, disbuf); }
 
-  x86_insn decode32(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return decode(1, 0, base, ip, instr, disbuf); }
+  x86_insn decode32(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(1, 0, cs_base, ip, instr, disbuf); }
 
-  x86_insn decode64(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return decode(1, 1, base, ip, instr, disbuf); }
+  x86_insn decode64(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(1, 1, cs_base, ip, instr, disbuf); }
 
   void set_syntax_intel();
   void set_syntax_att();
 
   void set_offset_mode_hex(bx_bool mode) { offset_mode_hex = mode; }
+  void set_mem_datasize_print(bx_bool mode) { print_mem_datasize = mode; }
 
   void toggle_syntax_mode();
 
 private:
-  bx_bool intel_mode, offset_mode_hex;
+  bx_bool intel_mode, offset_mode_hex, print_mem_datasize;
 
   const char **general_16bit_regname;
   const char **general_8bit_regname;
@@ -270,7 +289,7 @@ private:
 
 private:
 
-  bx_address db_eip, db_base;
+  bx_address db_eip, db_cs_base;
 
   const Bit8u *instruction;        // for fetching of next byte of instruction
 
@@ -316,6 +335,7 @@ private:
   void dis_sprintf(const char *fmt, ...);
   void decode_modrm(x86_insn *insn);
   unsigned decode_vex(x86_insn *insn);
+  unsigned decode_evex(x86_insn *insn);
   unsigned decode_xop(x86_insn *insn);
 
   void resolve16_mod0   (const x86_insn *insn, unsigned mode);
@@ -448,9 +468,6 @@ public:
 
   // segment registers
   void Sw(const x86_insn *insn);
-
-  // test registers
-  void Td(const x86_insn *insn);
 
   // control register
   void Cd(const x86_insn *insn);

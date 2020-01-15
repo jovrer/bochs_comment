@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei7_sandy_bridge_2600K.cc 11685 2013-05-07 15:34:58Z sshwarts $
+// $Id: corei7_sandy_bridge_2600K.cc 12242 2014-03-15 20:19:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -35,9 +35,6 @@ corei7_sandy_bridge_2600k_t::corei7_sandy_bridge_2600k_t(BX_CPU_C *cpu): bx_cpui
   if (! BX_SUPPORT_X86_64)
     BX_PANIC(("You must enable x86-64 for Intel Core i7 Sandy Bridge configuration"));
 
-  if (! BX_SUPPORT_AVX)
-    BX_PANIC(("You must enable AVX for Intel Core i7 Sandy Bridge configuration"));
-
   if (BX_SUPPORT_VMX == 1)
     BX_INFO(("You must compile with --enable-vmx=2 for Intel Core i7 Sandy Bridge VMX configuration"));
 
@@ -47,6 +44,8 @@ corei7_sandy_bridge_2600k_t::corei7_sandy_bridge_2600k_t(BX_CPU_C *cpu): bx_cpui
 
 void corei7_sandy_bridge_2600k_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
 {
+  static const char* brand_string = "       Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz";
+
   static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
   if (cpuid_limit_winnt)
     if (function > 2 && function < 0x80000000) function = 2;
@@ -61,7 +60,7 @@ void corei7_sandy_bridge_2600k_t::get_cpuid_leaf(Bit32u function, Bit32u subfunc
   case 0x80000002:
   case 0x80000003:
   case 0x80000004:
-    get_ext_cpuid_brand_string_leaf(function, leaf);
+    get_ext_cpuid_brand_string_leaf(brand_string, function, leaf);
     return;
   case 0x80000005:
     get_reserved_leaf(leaf);
@@ -615,9 +614,9 @@ void corei7_sandy_bridge_2600k_t::get_std_cpuid_xsave_leaf(Bit32u subfunction, c
     // EDX - valid bits of XCR0 (upper part)
     leaf->eax = cpu->xcr0_suppmask;
     leaf->ebx = 512+64;
-    if (cpu->xcr0.get_AVX())
-      leaf->ebx += 256;
-    leaf->ecx = 512+64+256 /* AVX */;
+    if (cpu->xcr0.get_YMM())
+      leaf->ebx = XSAVE_YMM_STATE_OFFSET + XSAVE_YMM_STATE_LEN;
+    leaf->ecx = XSAVE_YMM_STATE_OFFSET + XSAVE_YMM_STATE_LEN;
     leaf->edx = 0;
     return;
 
@@ -628,9 +627,9 @@ void corei7_sandy_bridge_2600k_t::get_std_cpuid_xsave_leaf(Bit32u subfunction, c
     leaf->edx = 0;
     return;
 
-  case 2: // AVX leaf
-    leaf->eax = 256;
-    leaf->ebx = 576;
+  case 2: // YMM leaf
+    leaf->eax = XSAVE_YMM_STATE_LEN;
+    leaf->ebx = XSAVE_YMM_STATE_OFFSET;
     leaf->ecx = 0;
     leaf->edx = 0;
     return;
@@ -674,7 +673,7 @@ void corei7_sandy_bridge_2600k_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) c
   //   [3:3]   Extended APIC Space
   //   [4:4]   AltMovCR8: LOCK MOV CR0 means MOV CR8
   //   [5:5]   LZCNT: LZCNT instruction support
-  //   [6:6]   SSE4A: SSE4A Instructions support (deprecated?)
+  //   [6:6]   SSE4A: SSE4A Instructions support
   //   [7:7]   Misaligned SSE support
   //   [8:8]   PREFETCHW: PREFETCHW instruction support
   //   [9:9]   OSVW: OS visible workarounds (AMD)
@@ -709,41 +708,6 @@ void corei7_sandy_bridge_2600k_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) c
 // leaf 0x80000002 //
 // leaf 0x80000003 //
 // leaf 0x80000004 //
-void corei7_sandy_bridge_2600k_t::get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const
-{
-  // CPUID function 0x80000002-0x80000004 - Processor Name String Identifier
-  static const char* brand_string = "       Intel(R) Core(TM) i7-2600K CPU @ 3.40GHz";
-
-  switch(function) {
-  case 0x80000002:
-    memcpy(&(leaf->eax), brand_string     , 4);
-    memcpy(&(leaf->ebx), brand_string +  4, 4);
-    memcpy(&(leaf->ecx), brand_string +  8, 4);
-    memcpy(&(leaf->edx), brand_string + 12, 4);
-    break;
-  case 0x80000003:
-    memcpy(&(leaf->eax), brand_string + 16, 4);
-    memcpy(&(leaf->ebx), brand_string + 20, 4);
-    memcpy(&(leaf->ecx), brand_string + 24, 4);
-    memcpy(&(leaf->edx), brand_string + 28, 4);
-    break;
-  case 0x80000004:
-    memcpy(&(leaf->eax), brand_string + 32, 4);
-    memcpy(&(leaf->ebx), brand_string + 36, 4);
-    memcpy(&(leaf->ecx), brand_string + 40, 4);
-    memcpy(&(leaf->edx), brand_string + 44, 4);
-    break;
-  default:
-    break;
-  }
-
-#ifdef BX_BIG_ENDIAN
-  leaf->eax = bx_bswap32(leaf->eax);
-  leaf->ebx = bx_bswap32(leaf->ebx);
-  leaf->ecx = bx_bswap32(leaf->ecx);
-  leaf->edx = bx_bswap32(leaf->edx);
-#endif
-}
 
 // leaf 0x80000005 - L1 Cache and TLB Identifiers (reserved for Intel)
 

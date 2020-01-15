@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: voodoo_func.h 11528 2012-11-01 15:43:12Z vruppert $
+// $Id: voodoo_func.h 12112 2014-01-15 17:29:28Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 /*
  *  Portion of this software comes with the following license
@@ -1207,29 +1207,12 @@ void swap_buffers(voodoo_state *v)
     swapbuffer - execute the 'swapbuffer'
     command
 -------------------------------------------------*/
-//#include "vga.h"
-bool dump_lfb=false;
-bool dump_tmu=false;
 Bit32s swapbuffer(voodoo_state *v, Bit32u data)
 {
   /* set the don't swap value for Voodoo 2 */
   v->fbi.vblank_swap_pending = 1;
   v->fbi.vblank_swap = (data >> 1) & 0xff;
   v->fbi.vblank_dont_swap = (data >> 9) & 1;
-
-  if (dump_lfb) {
-    FILE *f=fopen("e:/lfb.raw","wb");
-    fwrite(v->fbi.ram,4<<20,1,f);
-    fclose(f);
-  }
-  if (dump_tmu) {
-    FILE*f=fopen("e:/tmu0.raw","wb");
-    fwrite(v->tmu[0].ram,4<<20,1,f);
-    fclose(f);
-    f=fopen("e:/tmu1.raw","wb");
-    fwrite(v->tmu[1].ram,4<<20,1,f);
-    fclose(f);
-  }
 
   /* if we're not syncing to the retrace, process the command immediately */
 //  if (!(data & 1))
@@ -1315,7 +1298,7 @@ void recompute_video_memory(voodoo_state *v)
   Bit32u memory_config;
   int buf;
 
-  BX_DEBUG(("buffer_pages %x",buffer_pages));
+  BX_DEBUG(("buffer_pages 0x%x", buffer_pages));
   /* memory config is determined differently between V1 and V2 */
   memory_config = FBIINIT2_ENABLE_TRIPLE_BUF(v->reg[fbiInit2].u);
   if (v->type == VOODOO_2 && memory_config == 0)
@@ -1343,26 +1326,26 @@ void recompute_video_memory(voodoo_state *v)
     v->fbi.rgboffs[1] = buffer_pages * 0x1000;
 
     /* remaining buffers are based on the config */
-    switch (memory_config)
-    {
-    case 3: /* reserved */
-      BX_DEBUG(("VOODOO.%d.ERROR:Unexpected memory configuration in recompute_video_memory!", v->index));
+    switch (memory_config) {
+      case 3: /* reserved */
+        BX_ERROR(("Unexpected memory configuration in recompute_video_memory!"));
+        break;
 
-    case 0: /* 2 color buffers, 1 aux buffer */
-      v->fbi.rgboffs[2] = ~0;
-      v->fbi.auxoffs = 2 * buffer_pages * 0x1000;
-      break;
+      case 0: /* 2 color buffers, 1 aux buffer */
+        v->fbi.rgboffs[2] = ~0;
+        v->fbi.auxoffs = 2 * buffer_pages * 0x1000;
+        break;
 
-    case 1: /* 3 color buffers, 0 aux buffers */
-      v->fbi.rgboffs[2] = 2 * buffer_pages * 0x1000;
-      //v->fbi.auxoffs = ~0;
-      v->fbi.auxoffs = 3 * buffer_pages * 0x1000;
-      break;
+      case 1: /* 3 color buffers, 0 aux buffers */
+        v->fbi.rgboffs[2] = 2 * buffer_pages * 0x1000;
+        //v->fbi.auxoffs = ~0;
+        v->fbi.auxoffs = 3 * buffer_pages * 0x1000;
+        break;
 
-    case 2: /* 3 color buffers, 1 aux buffers */
-      v->fbi.rgboffs[2] = 2 * buffer_pages * 0x1000;
-      v->fbi.auxoffs = 3 * buffer_pages * 0x1000;
-      break;
+      case 2: /* 3 color buffers, 1 aux buffers */
+        v->fbi.rgboffs[2] = 2 * buffer_pages * 0x1000;
+        v->fbi.auxoffs = 3 * buffer_pages * 0x1000;
+        break;
     }
   }
 
@@ -1414,6 +1397,37 @@ void recompute_video_memory(voodoo_state *v)
 void dacdata_w(dac_state *d, Bit8u regnum, Bit8u data)
 {
   d->reg[regnum] = data;
+
+  /* switch off the DAC register requested */
+  switch (regnum) {
+    case 4: // PLLWMA
+    case 7: // PLLRMA
+      if (data == 0x0e) {
+        d->data_size = 1;
+      } else {
+        d->data_size = 2;
+      }
+      break;
+    case 5: // PLLDATA
+      switch (d->reg[4]) { // PLLWMA
+        case 0x00:
+          if (d->data_size == 2) {
+            d->clk0_m = data;
+          } else if (d->data_size == 1) {
+            d->clk0_n = data & 0x1f;
+            d->clk0_p = data >> 5;
+          }
+          break;
+        case 0x0e:
+          if ((d->data_size == 1) && ((data & 0x21) == 0x21)) {
+            d->clk0_freq = (Bit32u)((14318.0 * (d->clk0_m + 2)) / ((1 << d->clk0_p) * (d->clk0_n + 2)));
+            Voodoo_update_timing();
+          }
+          break;
+      }
+      d->data_size--;
+      break;
+  }
 }
 
 
@@ -1422,16 +1436,22 @@ void dacdata_r(dac_state *d, Bit8u regnum)
   Bit8u result = 0xff;
 
   /* switch off the DAC register requested */
-  switch (regnum)
-  {
-    case 5:
-      /* this is just to make startup happy */
-      switch (d->reg[7])
-      {
+  switch (regnum) {
+    case 5: // PLLDATA
+      switch (d->reg[7]) { // PLLRMA
+        case 0x00:
+          if (d->data_size == 2) {
+            result = d->clk0_m;
+          } else if (d->data_size == 1) {
+            result = d->clk0_n | (d->clk0_p << 5);
+          }
+          break;
+        /* this is just to make startup happy */
         case 0x01:  result = 0x55; break;
         case 0x07:  result = 0x71; break;
         case 0x0b:  result = 0x79; break;
       }
+      d->data_size--;
       break;
 
     default:
@@ -1445,7 +1465,8 @@ void dacdata_r(dac_state *d, Bit8u regnum)
 
 voodoo_reg reg;
 
-void register_w(Bit32u offset, Bit32u data) {
+void register_w(Bit32u offset, Bit32u data)
+{
   Bit32u regnum  = (offset) & 0xff;
   Bit32u chips   = (offset>>8) & 0xf;
   reg.u = data;
@@ -1454,7 +1475,7 @@ void register_w(Bit32u offset, Bit32u data) {
 //  Bit32s cycles = 0;
   Bit64s data64;
 
-  BX_DEBUG(("V3D:WR chip %x reg %x value %08x(%s)", chips, regnum<<2, data, voodoo_reg_name[regnum]));
+  BX_DEBUG(("write chip 0x%x reg 0x%x value 0x%08x(%s)", chips, regnum<<2, data, voodoo_reg_name[regnum]));
   voodoo_last_msg=regnum;
 
   if (chips == 0)
@@ -1466,10 +1487,9 @@ void register_w(Bit32u offset, Bit32u data) {
   else
     regnum = offset & 0xff;
 
-  /* first make sure this register is readable */
-  if (!(v->regaccess[regnum] & REGISTER_WRITE))
-  {
-    BX_DEBUG(("VOODOO.%d.ERROR:Invalid attempt to write %s", v->index, v->regnames[regnum]));
+  /* first make sure this register is writable */
+  if (!(v->regaccess[regnum] & REGISTER_WRITE)) {
+    BX_ERROR(("Invalid attempt to write %s", v->regnames[regnum]));
     return;
   }
 
@@ -1863,7 +1883,7 @@ void register_w(Bit32u offset, Bit32u data) {
 #endif
 
           /* configure the new framebuffer info */
-          v->fbi.width = hvis;
+          v->fbi.width = hvis + 1;
           v->fbi.height = vvis;
           v->fbi.xoffs = hbp;
           v->fbi.yoffs = vbp;
@@ -1884,9 +1904,8 @@ void register_w(Bit32u offset, Bit32u data) {
     /* fbiInit0 can only be written if initEnable says we can -- Voodoo/Voodoo2 only */
     case fbiInit0:
       poly_wait(v->poly, v->regnames[regnum]);
-      Voodoo_Output_Enable(data&1);
-      if (v->type <= VOODOO_2 && (chips & 1) && INITEN_ENABLE_HW_INIT(v->pci.init_enable))
-      {
+      if (v->type <= VOODOO_2 && (chips & 1) && INITEN_ENABLE_HW_INIT(v->pci.init_enable)) {
+        Voodoo_Output_Enable(data & 1);
         v->reg[fbiInit0].u = data;
         if (FBIINIT0_GRAPHICS_RESET(data))
           soft_reset(v);
@@ -1901,6 +1920,9 @@ void register_w(Bit32u offset, Bit32u data) {
     case fbiInit1:
     case fbiInit2:
     case fbiInit4:
+    case fbiInit5:
+    case fbiInit6:
+    case fbiInit7:
       poly_wait(v->poly, v->regnames[regnum]);
 
       if (v->type <= VOODOO_2 && (chips & 1) && INITEN_ENABLE_HW_INIT(v->pci.init_enable))
@@ -2056,7 +2078,7 @@ default_case:
 Bit32s texture_w(Bit32u offset, Bit32u data)
 {
   int tmunum = (offset >> 19) & 0x03;
-  BX_DEBUG(("V3D:write TMU%x offset %X value %X", tmunum, offset, data));
+  BX_DEBUG(("write TMU%d offset 0x%x value 0x%x", tmunum, offset, data));
 
   tmu_state *t;
 
@@ -2064,7 +2086,7 @@ Bit32s texture_w(Bit32u offset, Bit32u data)
   v->stats.tex_writes++;
 
   /* point to the right TMU */
-  if (!(v->chipmask & (2 << tmunum)))
+  if (!(v->chipmask & (2 << tmunum)) || (tmunum >= MAX_TMU))
     return 0;
   t = &v->tmu[tmunum];
 
@@ -2111,13 +2133,13 @@ Bit32s texture_w(Bit32u offset, Bit32u data)
       tbaseaddr = t->lodoffset[lod];
       tbaseaddr += tt * ((t->wmask >> lod) + 1) + ts;
 
-      if (LOG_TEXTURE_RAM) BX_DEBUG(("Texture 8-bit w: lod=%d s=%d t=%d data=%08X", lod, ts, tt, data));
+      if (LOG_TEXTURE_RAM) BX_DEBUG(("Texture 8-bit w: lod=%d s=%d t=%d data=0x%08x", lod, ts, tt, data));
     }
     else
     {
       tbaseaddr = t->lodoffset[0] + offset*4;
 
-      if (LOG_TEXTURE_RAM) BX_DEBUG(("Texture 16-bit w: offset=%X data=%08X", offset*4, data));
+      if (LOG_TEXTURE_RAM) BX_DEBUG(("Texture 16-bit w: offset=0x%x data=0x%08x", offset*4, data));
     }
 
     /* write the four bytes in little-endian order */
@@ -2158,7 +2180,7 @@ Bit32s texture_w(Bit32u offset, Bit32u data)
     {
       tbaseaddr = t->lodoffset[0] + offset*4;
 
-      if (LOG_TEXTURE_RAM) BX_DEBUG(("Texture 16-bit w: offset=%X data=%08X", offset*4, data));
+      if (LOG_TEXTURE_RAM) BX_DEBUG(("Texture 16-bit w: offset=0x%x data=0x%08x", offset*4, data));
     }
 
     /* write the two words in little-endian order */
@@ -2172,9 +2194,8 @@ Bit32s texture_w(Bit32u offset, Bit32u data)
   return 0;
 }
 
- Bit32u lfb_w(Bit32u offset, Bit32u data, Bit32u mem_mask)
+Bit32u lfb_w(Bit32u offset, Bit32u data, Bit32u mem_mask)
 {
-  BX_DEBUG(("V3D:WR LFB offset %X value %08X", offset, data));
   Bit16u *dest, *depth;
   Bit32u destmax, depthmax;
 //  Bit32u mem_mask=0xffffffff;
@@ -2183,6 +2204,8 @@ Bit32s texture_w(Bit32u offset, Bit32u data)
   int sr[2], sg[2], sb[2], sa[2], sw[2];
   int x, y, scry, mask;
   int pix, destbuf;
+
+  BX_DEBUG(("write LFB offset 0x%x value 0x%08x", offset, data));
 
   /* statistics */
   v->stats.lfb_writes++;
@@ -2378,7 +2401,7 @@ Bit32s texture_w(Bit32u offset, Bit32u data)
 
   /* compute X,Y */
   x = (offset << 0) & ((1 << v->fbi.lfb_stride) - 1);
-  y = (offset >> v->fbi.lfb_stride) & ((1 << v->fbi.lfb_stride) - 1);
+  y = (offset >> v->fbi.lfb_stride) & 0x7ff;
 
   /* adjust the mask based on which half of the data is written */
   if (!ACCESSING_BITS_0_15)
@@ -2544,9 +2567,15 @@ Bit32u register_r(Bit32u offset)
   Bit32u regnum  = (offset) & 0xff;
   Bit32u chips   = (offset>>8) & 0xf;
 
-  if (!((voodoo_last_msg==regnum) && (regnum==status))) //show status reg only once
-    BX_DEBUG(("Voodoo:read chip %x reg %x (%s)", chips, regnum<<2, voodoo_reg_name[regnum]));
-  voodoo_last_msg=regnum;
+  if (!((voodoo_last_msg == regnum) && (regnum == status))) //show status reg only once
+    BX_DEBUG(("read chip 0x%x reg 0x%x (%s)", chips, regnum<<2, voodoo_reg_name[regnum]));
+  voodoo_last_msg = regnum;
+
+  /* first make sure this register is readable */
+  if (!(v->regaccess[regnum] & REGISTER_READ)) {
+    BX_ERROR(("Invalid attempt to read %s", v->regnames[regnum]));
+    return 0;
+  }
 
   Bit32u result;
 
@@ -2554,8 +2583,7 @@ Bit32u register_r(Bit32u offset)
   result = v->reg[regnum].u;
 
   /* some registers are dynamic; compute them */
-  switch (regnum)
-  {
+  switch (regnum) {
     case status:
 
       /* start with a blank slate */
@@ -2573,8 +2601,7 @@ Bit32u register_r(Bit32u offset)
       }
 
       /* bit 6 is the vertical retrace */
-      //result |= v->fbi.vblank << 6;
-      result |= Voodoo_get_retrace() << 6;
+      result |= (Voodoo_get_retrace() > 0) << 6;
 
       /* bit 7 is FBI graphics engine busy */
       if (v->pci.op_pending)
@@ -2636,6 +2663,10 @@ Bit32u register_r(Bit32u offset)
         result = v->dac.read_result;
       break;
 
+    case vRetrace:
+    case hvRetrace:
+      result = Voodoo_get_retrace() & 0x1fff;
+      break;
   }
 
   return result;
@@ -2643,7 +2674,6 @@ Bit32u register_r(Bit32u offset)
 
 Bit32u lfb_r(Bit32u offset)
 {
-  BX_DEBUG(("Voodoo:read LFB offset %X", offset));
   Bit16u *buffer;
   Bit32u bufmax;
   Bit32u bufoffs;
@@ -2652,12 +2682,14 @@ Bit32u lfb_r(Bit32u offset)
   int x, y, scry;
   Bit32u destbuf;
 
+  BX_DEBUG(("read LFB offset 0x%x", offset));
+
   /* statistics */
   v->stats.lfb_reads++;
 
   /* compute X,Y */
   x = (offset << 1) & 0x3fe;
-  y = (offset >> 9) & 0x3ff;
+  y = (offset >> 9) & 0x7ff;
 
   /* select the target buffer */
   destbuf = (v->type >= VOODOO_BANSHEE) ? (!forcefront) : LFBMODE_READ_BUFFER_SELECT(v->reg[lfbMode].u);
@@ -2776,9 +2808,7 @@ void init_tmu(voodoo_state *v, tmu_state *t, voodoo_reg *reg, void *memory, int 
   {
     t->texaddr_mask = 0x0fffff;
     t->texaddr_shift = 3;
-  }
-  else
-  {
+  } else {
     t->texaddr_mask = 0xfffff0;
     t->texaddr_shift = 0;
   }
@@ -2789,8 +2819,7 @@ void init_tmu_shared(tmu_shared_state *s)
   int val;
 
   /* build static 8-bit texel tables */
-  for (val = 0; val < 256; val++)
-  {
+  for (val = 0; val < 256; val++) {
     int r, g, b, a;
 
     /* 8-bit RGB (3-3-2) */
@@ -2810,8 +2839,7 @@ void init_tmu_shared(tmu_shared_state *s)
   }
 
   /* build static 16-bit texel tables */
-  for (val = 0; val < 65536; val++)
-  {
+  for (val = 0; val < 65536; val++) {
     int r, g, b, a;
 
     /* table 10 = 16-bit RGB (5-6-5) */
@@ -2828,7 +2856,7 @@ void init_tmu_shared(tmu_shared_state *s)
   }
 }
 
-void voodoo_init()
+void voodoo_init(Bit8u _type)
 {
   int pen;
   int val;
@@ -2841,19 +2869,24 @@ void voodoo_init()
   v->reg[fbiInit3].u = (2 << 13) | (0xf << 17);
   v->reg[fbiInit4].u = (1 << 0);
   v->alt_regmap = 0;
-  v->regaccess = voodoo_register_access;
-  v->regnames = voodoo_reg_name;
   v->fbi.lfb_stride = 10;
-  v->type = VOODOO_1;
-  v->pci.init_enable = (1<<2) | 1;
+  v->type = _type;
+  if (v->type == VOODOO_2) {
+    v->regaccess = voodoo2_register_access;
+  } else {
+    v->regaccess = voodoo_register_access;
+  }
+  v->regnames = voodoo_reg_name;
   v->chipmask = 0x01 | 0x02 | 0x04 | 0x08;
   memset(v->dac.reg, 0, sizeof(v->dac.reg));
   v->dac.read_result = 0;
+  v->dac.clk0_m = 0x37;
+  v->dac.clk0_n = 0x02;
+  v->dac.clk0_p = 0x03;
 
   /* create a table of precomputed 1/n and log2(n) values */
   /* n ranges from 1.0000 to 2.0000 */
-  for (val = 0; val <= (1 << RECIPLOG_LOOKUP_BITS); val++)
-  {
+  for (val = 0; val <= (1 << RECIPLOG_LOOKUP_BITS); val++) {
     Bit32u value = (1 << RECIPLOG_LOOKUP_BITS) + val;
     voodoo_reciplog[val*2 + 0] = (1 << (RECIPLOG_LOOKUP_PREC + RECIPLOG_LOOKUP_BITS)) / value;
     voodoo_reciplog[val*2 + 1] = (Bit32u)(LOGB2((double)value / (double)(1 << RECIPLOG_LOOKUP_BITS)) * (double)(1 << RECIPLOG_LOOKUP_PREC));
@@ -2864,20 +2897,16 @@ void voodoo_init()
     add_rasterizer(v, info);
 
   /* create dithering tables */
-  for (int val = 0; val < 256*16*2; val++)
-  {
+  for (int val = 0; val < 256*16*2; val++) {
     int g = (val >> 0) & 1;
     int x = (val >> 1) & 3;
     int color = (val >> 3) & 0xff;
     int y = (val >> 11) & 3;
 
-    if (!g)
-    {
+    if (!g) {
       dither4_lookup[val] = DITHER_RB(color, dither_matrix_4x4[y * 4 + x]) >> 3;
       dither2_lookup[val] = DITHER_RB(color, dither_matrix_2x2[y * 4 + x]) >> 3;
-    }
-    else
-    {
+    } else {
       dither4_lookup[val] = DITHER_G(color, dither_matrix_4x4[y * 4 + x]) >> 2;
       dither2_lookup[val] = DITHER_G(color, dither_matrix_2x2[y * 4 + x]) >> 2;
     }
@@ -2885,14 +2914,11 @@ void voodoo_init()
 
   /* init the pens */
   v->fbi.clut_dirty = 1;
-  if (v->type <= VOODOO_2)
-  {
+  if (v->type <= VOODOO_2) {
     for (pen = 0; pen < 32; pen++)
       v->fbi.clut[pen] = MAKE_ARGB(pen, pal5bit(pen), pal5bit(pen), pal5bit(pen));
     v->fbi.clut[32] = MAKE_ARGB(32,0xff,0xff,0xff);
-  }
-  else
-  {
+  } else {
     for (pen = 0; pen < 512; pen++)
       v->fbi.clut[pen] = MAKE_RGB(pen,pen,pen);
   }

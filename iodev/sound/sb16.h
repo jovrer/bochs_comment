@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.h 11282 2012-07-14 14:20:36Z vruppert $
+// $Id: sb16.h 12030 2013-12-15 17:09:18Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -182,18 +182,25 @@ public:
   // return midimode and wavemode setting (for lowlevel output class)
   int get_midimode() const {return midimode;}
   int get_wavemode() const {return wavemode;}
-  // runtimer parameter handler
+  // runtime options
   static Bit64s sb16_param_handler(bx_param_c *param, int set, Bit64s val);
+  static const char* sb16_param_string_handler(bx_param_string_c *param, int set,
+                                               const char *oldval, const char *val,
+                                               int maxlen);
+  static void runtime_config_handler(void *);
+  void runtime_config(void);
 
 private:
 
   int midimode, wavemode, loglevel;
+  bx_bool midi_changed, wave_changed;
   Bit32u dmatimer;
   FILE *logfile, *midifile, *wavefile; // the output files or devices
   bx_sound_lowlevel_c *soundmod; // the lowlevel class
   int currentirq;
   int currentdma8;
   int currentdma16;
+  Bit16u wave_vol;
 
   // the MPU 401 relevant variables
   struct bx_sb16_mpu_struct {
@@ -351,15 +358,14 @@ private:
   BX_SB16_SMF void   midiremapprogram(int channel);  // remap program change
   BX_SB16_SMF int    converttodeltatime(Bit32u deltatime, Bit8u value[4]);
   BX_SB16_SMF void   writemidicommand(int command, int length, Bit8u data[]);
-  BX_SB16_SMF void   writedeltatime(Bit32u deltatime);
-						// write in delta time coding
+  BX_SB16_SMF void   writedeltatime(Bit32u deltatime); // write in delta time coding
 
-  BX_SB16_SMF void   initmidifile();            // Write midi file header
+  BX_SB16_SMF void   initmidifile();            // write midi file header
+  BX_SB16_SMF void   closemidioutput();         // close midi file / device
+  BX_SB16_SMF void   closewaveoutput();         // close wave file
   BX_SB16_SMF void   finishmidifile();          // write track length etc.
-  BX_SB16_SMF void   initvocfile();             // Write voc file header
-  BX_SB16_SMF void   writevocblock(int block, Bit32u headerlen, Bit8u header[],
-				   Bit32u datalen, Bit8u data[]);
   BX_SB16_SMF void   finishvocfile();           // close voc file
+  BX_SB16_SMF void   create_logfile();
 
       /* The port IO multiplexer functions */
 

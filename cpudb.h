@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpudb.h 11679 2013-04-17 19:46:11Z sshwarts $
+// $Id: cpudb.h 12241 2014-03-15 19:24:42Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2013 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -42,8 +42,10 @@ bx_define_cpudb(corei5_lynnfield_750)
 bx_define_cpudb(corei5_arrandale_m520)
 #if BX_SUPPORT_AVX
 bx_define_cpudb(zambezi)
+bx_define_cpudb(trinity_apu)
 bx_define_cpudb(corei7_sandy_bridge_2600k)
 bx_define_cpudb(corei7_ivy_bridge_3770k)
+bx_define_cpudb(corei7_haswell_4770)
 #endif
 #endif
 #endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware3.h 11494 2012-10-07 18:36:22Z vruppert $
+// $Id: vmware3.h 11879 2013-10-13 14:33:55Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -43,8 +43,10 @@ class vmware3_image_t : public device_image_t
       Bit32u get_capabilities();
       static int check_format(int fd, Bit64u imgsize);
 
+#ifndef BXIMAGE
       bx_bool save_state(const char *backup_fname);
       void restore_state(const char *backup_fname);
+#endif
 
   private:
       static const off_t INVALID_OFFSET;

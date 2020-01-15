@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc 11674 2013-04-09 15:43:15Z sshwarts $
+// $Id: proc_ctrl.cc 11988 2013-12-02 20:06:59Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -199,7 +199,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("INVD: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -230,7 +230,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("WBINVD: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -268,7 +268,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
     if (! IsCanonical(laddr)) {
-      BX_ERROR(("CLFLUSH: non-canonical access !"));
+      BX_ERROR(("%s: non-canonical access !", i->getIaOpcodeNameShort()));
       exception(int_number(i->seg()), 0);
     }
   }
@@ -282,7 +282,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
     }
     else {
       if (eaddr > seg->cache.u.segment.limit_scaled) {
-        BX_ERROR(("CLFLUSH: segment limit violation"));
+        BX_ERROR(("%s: segment limit violation", i->getIaOpcodeNameShort()));
         exception(int_number(i->seg()), 0);
       }
     }
@@ -422,10 +422,32 @@ void BX_CPU_C::handleAvxModeChange(void)
   }
   else {
     if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE() ||
-        (~BX_CPU_THIS_PTR xcr0.val32 & 0x6) != 0) BX_CPU_THIS_PTR avx_ok = 0;
-    else
+        (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK)) != 0) {
+      BX_CPU_THIS_PTR avx_ok = 0;
+    }
+    else {
       BX_CPU_THIS_PTR avx_ok = 1;
+
+#if BX_SUPPORT_EVEX
+      if ((~BX_CPU_THIS_PTR xcr0.val32 & BX_XCR0_OPMASK_MASK) != 0) {
+        BX_CPU_THIS_PTR opmask_ok = BX_CPU_THIS_PTR evex_ok = 0;
+      }
+      else {
+        BX_CPU_THIS_PTR opmask_ok = 1;
+
+        if ((~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_ZMM_HI256_MASK | BX_XCR0_HI_ZMM_MASK)) != 0)
+          BX_CPU_THIS_PTR evex_ok = 0;
+        else
+          BX_CPU_THIS_PTR evex_ok = 1;
+      }
+#endif
+    }
   }
+
+#if BX_SUPPORT_EVEX
+  if (! BX_CPU_THIS_PTR avx_ok)
+        BX_CPU_THIS_PTR opmask_ok = BX_CPU_THIS_PTR evex_ok = 0;
+#endif
 
   updateFetchModeMask(); /* AVX_OK changed */
 }  
@@ -435,7 +457,41 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoAVX(bxInstruction_c *i)
   if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (~BX_CPU_THIS_PTR xcr0.val32 & 0x6)
+  if (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK))
+    exception(BX_UD_EXCEPTION, 0);
+
+  if(BX_CPU_THIS_PTR cr0.get_TS())
+    exception(BX_NM_EXCEPTION, 0);
+
+  BX_ASSERT(0);
+
+  BX_NEXT_TRACE(i); // keep compiler happy
+}
+#endif
+
+#if BX_SUPPORT_EVEX
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoOpMask(bxInstruction_c *i)
+{
+  if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  if (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK | BX_XCR0_OPMASK_MASK))
+    exception(BX_UD_EXCEPTION, 0);
+
+  if(BX_CPU_THIS_PTR cr0.get_TS())
+    exception(BX_NM_EXCEPTION, 0);
+
+  BX_ASSERT(0);
+
+  BX_NEXT_TRACE(i); // keep compiler happy
+}
+
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoEVEX(bxInstruction_c *i)
+{
+  if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  if (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK | BX_XCR0_OPMASK_MASK | BX_XCR0_ZMM_HI256_MASK | BX_XCR0_HI_ZMM_MASK))
     exception(BX_UD_EXCEPTION, 0);
 
   if(BX_CPU_THIS_PTR cr0.get_TS())
@@ -476,7 +532,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   if (! BX_CPU_THIS_PTR cr4.get_PCE() && CPL != 0 ) {
-    BX_ERROR(("RDPMC: not allowed to use instruction !"));
+    BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -550,7 +606,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   if (BX_CPU_THIS_PTR cr4.get_TSD() && CPL != 0) {
-    BX_ERROR(("RDTSC: not allowed to use instruction !"));
+    BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -587,14 +643,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
   // RDTSCP will always #UD in legacy VMX mode
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_RDTSCP)) {
-       BX_ERROR(("RDTSCP in VMX guest: not allowed to use instruction !"));
+       BX_ERROR(("%s in VMX guest: not allowed to use instruction !", i->getIaOpcodeNameShort()));
        exception(BX_UD_EXCEPTION, 0);
     }
   }
 #endif
 
   if (BX_CPU_THIS_PTR cr4.get_TSD() && CPL != 0) {
-    BX_ERROR(("RDTSCP: not allowed to use instruction !"));
+    BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -698,7 +754,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
     }
     else {
       if (offset > seg->cache.u.segment.limit_scaled) {
-        BX_ERROR(("MONITOR: segment limit violation"));
+        BX_ERROR(("%s: segment limit violation", i->getIaOpcodeNameShort()));
         exception(int_number(i->seg()), 0);
       }
     }
@@ -730,7 +786,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
 #if BX_SUPPORT_MONITOR_MWAIT
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL != 0) {
-    BX_DEBUG(("MWAIT instruction not recognized when CPL != 0"));
+    BX_DEBUG(("%s: instruction not recognized when CPL != 0", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
@@ -804,7 +860,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   if (real_mode()) {
-    BX_ERROR(("SYSENTER not recognized in real mode !"));
+    BX_ERROR(("%s: not recognized in real mode !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
   if ((BX_CPU_THIS_PTR msr.sysenter_cs_msr & BX_SELECTOR_RPL_MASK) == 0) {
@@ -1135,7 +1191,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
   }
 
   if(!protected_mode() || CPL != 0) {
-    BX_ERROR(("SYSRET: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1269,77 +1325,93 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SWAPGS(bxInstruction_c *i)
 }
 
 /* F3 0F AE /0 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    BX_WRITE_64BIT_REG(i->dst(), MSR_FSBASE);
-  }
-  else {
-    BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_FSBASE);
-  }
+  BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_FSBASE);
+  BX_NEXT_INSTR(i);
+}
 
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  BX_WRITE_64BIT_REG(i->dst(), MSR_FSBASE);
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /1 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    BX_WRITE_64BIT_REG(i->dst(), MSR_GSBASE);
-  }
-  else {
-    BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_GSBASE);
-  }
+  BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_GSBASE);
+  BX_NEXT_INSTR(i);
+}
 
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  BX_WRITE_64BIT_REG(i->dst(), MSR_GSBASE);
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /2 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    Bit64u fsbase = BX_READ_64BIT_REG(i->src());
-    if (!IsCanonical(fsbase)) {
-      BX_ERROR(("WRFSBASE: canonical failure !"));
-      exception(BX_GP_EXCEPTION, 0);
-    }
-    MSR_FSBASE = fsbase;
+  // 32-bit value is always canonical
+  MSR_FSBASE = BX_READ_32BIT_REG(i->src());
+
+  BX_NEXT_INSTR(i);
+}
+
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  Bit64u fsbase = BX_READ_64BIT_REG(i->src());
+  if (!IsCanonical(fsbase)) {
+    BX_ERROR(("%s: canonical failure !", i->getIaOpcodeNameShort()));
+    exception(BX_GP_EXCEPTION, 0);
   }
-  else {
-    // 32-bit value is always canonical
-    MSR_FSBASE = BX_READ_32BIT_REG(i->src());
-  }
+  MSR_FSBASE = fsbase;
 
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /3 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    Bit64u gsbase = BX_READ_64BIT_REG(i->src());
-    if (!IsCanonical(gsbase)) {
-      BX_ERROR(("WRGSBASE: canonical failure !"));
-      exception(BX_GP_EXCEPTION, 0);
-    }
-    MSR_GSBASE = gsbase;
+  // 32-bit value is always canonical
+  MSR_GSBASE = BX_READ_32BIT_REG(i->src());
+
+  BX_NEXT_INSTR(i);
+}
+
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  Bit64u gsbase = BX_READ_64BIT_REG(i->src());
+  if (!IsCanonical(gsbase)) {
+    BX_ERROR(("%s: canonical failure !", i->getIaOpcodeNameShort()));
+    exception(BX_GP_EXCEPTION, 0);
   }
-  else {
-    // 32-bit value is always canonical
-    MSR_GSBASE = BX_READ_32BIT_REG(i->src());
-  }
+  MSR_GSBASE = gsbase;
 
   BX_NEXT_INSTR(i);
 }

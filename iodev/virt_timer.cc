@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.cc 11183 2012-05-17 09:11:48Z vruppert $
+// $Id: virt_timer.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -115,7 +115,7 @@ bx_virt_timer_c bx_virt_timer;
 
 bx_virt_timer_c::bx_virt_timer_c()
 {
-  put("virt_timer", "VTIME");
+  put("virt_timer", "VTIMER");
 
   setup();
 }

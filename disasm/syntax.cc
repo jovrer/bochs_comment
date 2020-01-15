@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: syntax.cc 10619 2011-08-22 17:19:04Z sshwarts $
+// $Id: syntax.cc 11968 2013-11-29 20:49:20Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -67,8 +67,8 @@ static const char *intel_index16[8] = {
     "bx"
 };
 
-static const char *intel_vector_reg_name[2] = {
-    "xmm", "ymm"
+static const char *intel_vector_reg_name[4] = {
+    "xmm", "ymm", "???", "zmm"
 };
 
 //////////////////
@@ -114,8 +114,8 @@ static const char *att_index16[8] = {
     "%bx"
 };
 
-static const char *att_vector_reg_name[2] = {
-    "%xmm", "%ymm"
+static const char *att_vector_reg_name[4] = {
+    "%xmm", "%ymm", "%???", "%zmm"
 };
 
 #define NULL_SEGMENT_REGISTER 7

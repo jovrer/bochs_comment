@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundosx.h 11213 2012-06-08 20:49:39Z vruppert $
+// $Id: soundosx.h 11726 2013-06-24 19:19:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004-2011  The Bochs Project
@@ -38,7 +38,7 @@
 
 class bx_sound_osx_c : public bx_sound_lowlevel_c {
 public:
-    bx_sound_osx_c(logfunctions *dev);
+    bx_sound_osx_c();
     virtual ~bx_sound_osx_c();
 
     virtual int get_type() {return BX_SOUNDLOW_OSX;}

@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcipnic.cc 11606 2013-02-01 19:13:58Z vruppert $
+// $Id: pcipnic.cc 12320 2014-05-09 13:49:42Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2003  Fen Systems Ltd.
-//  http://www.fensystems.co.uk/
+//  Copyright (C) 2003  Fen Systems Ltd. (http://www.fensystems.co.uk/)
+//  Copyright (C) 2003-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -50,7 +50,7 @@ void pnic_init_options(void)
     "enabled",
     "Enable Pseudo NIC emulation",
     "Enables the Pseudo NIC emulation",
-    0);
+    1);
   SIM->init_std_nic_options("Pseudo NIC", menu);
   enabled->set_dependent_list(menu->clone());
 }
@@ -63,6 +63,10 @@ Bit32s pnic_options_parser(const char *context, int num_params, char *params[])
     bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_PNIC);
     if (!SIM->get_param_bool("enabled", base)->get()) {
       SIM->get_param_enum("ethmod", base)->set_by_name("null");
+    }
+    if (!SIM->get_param_string("mac", base)->isempty()) {
+      // MAC address is already initialized
+      valid |= 0x04;
     }
     for (int i = 1; i < num_params; i++) {
       ret = SIM->parse_nic_params(context, params[i], base);
@@ -133,7 +137,7 @@ bx_pcipnic_c::~bx_pcipnic_c()
 void bx_pcipnic_c::init(void)
 {
   bx_list_c *base;
-  const char *bootrom;
+  bx_param_string_c *bootrom;
 
   // Read in values from config interface
   base = (bx_list_c*) SIM->get_param(BXPN_PNIC);
@@ -151,9 +155,9 @@ void bx_pcipnic_c::init(void)
   DEV_register_pci_handlers(this, &BX_PNIC_THIS s.devfunc, BX_PLUGIN_PCIPNIC,
                             "Experimental PCI Pseudo NIC");
 
-  for (unsigned i=0; i<256; i++) {
-    BX_PNIC_THIS pci_conf[i] = 0x0;
-  }
+  // initialize readonly registers
+  init_pci_conf(PNIC_PCI_VENDOR, PNIC_PCI_DEVICE, 0x01, 0x020000, 0x00);
+  BX_PNIC_THIS pci_conf[0x3d] = BX_PCI_INTA;
 
   BX_PNIC_THIS s.statusbar_id = bx_gui->register_statusitem("PNIC", 1);
 
@@ -162,9 +166,9 @@ void bx_pcipnic_c::init(void)
 
   BX_PNIC_THIS pci_base_address[4] = 0;
   BX_PNIC_THIS pci_rom_address = 0;
-  bootrom = SIM->get_param_string("bootrom", base)->getptr();
-  if ((strlen(bootrom) > 0) && (strcmp(bootrom, "none"))) {
-    BX_PNIC_THIS load_pci_rom(bootrom);
+  bootrom = SIM->get_param_string("bootrom", base);
+  if (!bootrom->isempty()) {
+    BX_PNIC_THIS load_pci_rom(bootrom->getptr());
   }
 
   BX_INFO(("PCI Pseudo NIC initialized"));
@@ -178,23 +182,13 @@ void bx_pcipnic_c::reset(unsigned type)
     unsigned      addr;
     unsigned char val;
   } reset_vals[] = {
-    { 0x00, PNIC_PCI_VENDOR & 0xff },
-    { 0x01, PNIC_PCI_VENDOR >> 8 },
-    { 0x02, PNIC_PCI_DEVICE & 0xff },
-    { 0x03, PNIC_PCI_DEVICE >> 8 },
     { 0x04, 0x01 }, { 0x05, 0x00 }, // command_io
     { 0x06, 0x00 }, { 0x07, 0x00 }, // status
-    { 0x08, 0x01 },                 // revision number
-    { 0x09, 0x00 },                 // interface
-    { 0x0a, 0x00 },                 // class_sub
-    { 0x0b, 0x02 },                 // class_base Network Controller
-    { 0x0D, 0x20 },                 // bus latency
-    { 0x0e, 0x00 },                 // header_type_generic
+    { 0x0d, 0x20 },                 // bus latency
     // address space 0x20 - 0x23
     { 0x20, 0x01 }, { 0x21, 0x00 },
     { 0x22, 0x00 }, { 0x23, 0x00 },
     { 0x3c, 0x00, },                // IRQ
-    { 0x3d, BX_PCI_INTA },          // INT
     { 0x6a, 0x01 },                 // PNIC clock
     { 0xc1, 0x20 }                  // PIRQ enable
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith8.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: arith8.cc 11752 2013-07-24 21:06:24Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -503,6 +503,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EbGbM(bxInstruction_c *i)
   }
   else {
     // accumulator <-- dest
+    write_RMW_virtual_byte(op1_8);
     AL = op1_8;
   }
 

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.cc 11649 2013-03-08 18:25:32Z vruppert $
+// $Id: hdimage.cc 12272 2014-04-04 19:14:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,8 +24,18 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
+#ifdef BXIMAGE
+#include "config.h"
+#include "misc/bxcompat.h"
+#include "osdep.h"
+#else
 #include "iodev.h"
 #include "cdrom.h"
+#include "cdrom_amigaos.h"
+#include "cdrom_misc.h"
+#include "cdrom_osx.h"
+#include "cdrom_win32.h"
+#endif
 #include "hdimage.h"
 #include "vmware3.h"
 #include "vmware4.h"
@@ -38,9 +48,12 @@
 #ifdef linux
 #include <linux/fs.h>
 #include <sys/ioctl.h>
+#include <sys/wait.h>
 #endif
 
 #define LOG_THIS theHDImageCtl->
+
+#ifndef BXIMAGE
 
 bx_hdimage_ctl_c* theHDImageCtl = NULL;
 
@@ -73,7 +86,7 @@ device_image_t* bx_hdimage_ctl_c::init_image(Bit8u image_mode, Bit64u disk_size,
   switch (image_mode) {
 
     case BX_HDIMAGE_MODE_FLAT:
-      hdimage = new default_image_t();
+      hdimage = new flat_image_t();
       break;
 
     case BX_HDIMAGE_MODE_CONCAT:
@@ -131,12 +144,16 @@ device_image_t* bx_hdimage_ctl_c::init_image(Bit8u image_mode, Bit64u disk_size,
   return hdimage;
 }
 
-#ifdef LOWLEVEL_CDROM
-LOWLEVEL_CDROM* bx_hdimage_ctl_c::init_cdrom(const char *dev)
+cdrom_base_c* bx_hdimage_ctl_c::init_cdrom(const char *dev)
 {
+#if BX_SUPPORT_CDROM
   return new LOWLEVEL_CDROM(dev);
-}
+#else
+  return new cdrom_base_c(dev);
 #endif
+}
+
+#endif // ifndef BXIMAGE
 
 // helper functions
 int bx_read_image(int fd, Bit64s offset, void *buf, int count)
@@ -236,7 +253,7 @@ int hdimage_detect_image_mode(const char *pathname)
     result = BX_HDIMAGE_MODE_GROWING;
   } else if (vpc_image_t::check_format(fd, image_size) >= HDIMAGE_FORMAT_OK) {
     result = BX_HDIMAGE_MODE_VPC;
-  } else if (default_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
+  } else if (flat_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
     result = BX_HDIMAGE_MODE_FLAT;
   }
   ::close(fd);
@@ -244,6 +261,35 @@ int hdimage_detect_image_mode(const char *pathname)
   return result;
 }
 
+// if return_time==0, this returns the fat_date, else the fat_time
+#ifndef WIN32
+Bit16u fat_datetime(time_t time, int return_time)
+{
+  struct tm* t;
+  struct tm t1;
+
+  t = &t1;
+  localtime_r(&time, t);
+  if (return_time)
+    return htod16((t->tm_sec/2) | (t->tm_min<<5) | (t->tm_hour<<11));
+  return htod16((t->tm_mday) | ((t->tm_mon+1)<<5) | ((t->tm_year-80)<<9));
+}
+#else
+Bit16u fat_datetime(FILETIME time, int return_time)
+{
+  SYSTEMTIME gmtsystime, systime;
+  TIME_ZONE_INFORMATION tzi;
+
+  FileTimeToSystemTime(&time, &gmtsystime);
+  GetTimeZoneInformation(&tzi);
+  SystemTimeToTzSpecificLocalTime(&tzi, &gmtsystime, &systime);
+  if (return_time)
+    return htod16((systime.wSecond/2) | (systime.wMinute<<5) | (systime.wHour<<11));
+  return htod16((systime.wDay) | (systime.wMonth<<5) | ((systime.wYear-1980)<<9));
+}
+#endif
+
+#ifndef BXIMAGE
 // generic save/restore functions
 Bit64s hdimage_save_handler(void *class_ptr, bx_param_c *param)
 {
@@ -315,11 +361,28 @@ bx_bool hdimage_backup_file(int fd, const char *backup_fname)
   }
   return 0;
 }
+#endif
 
 bx_bool hdimage_copy_file(const char *src, const char *dst)
 {
 #ifdef WIN32
   return (bx_bool)CopyFile(src, dst, FALSE);
+#elif defined(linux)
+  pid_t pid, ws;
+
+  if ((src == NULL) || (dst == NULL)) {
+    return 0;
+  }
+
+  if (!(pid = fork())) {
+    execl("/bin/cp", "/bin/cp", src, dst, (char *)0);
+    return 0;
+  }
+  wait(&ws);
+  if (!WIFEXITED(ws)) {
+    return -1;
+  }
+  return (WEXITSTATUS(ws) == 0);
 #else
   int fd1, fd2;
   char *buf;
@@ -389,15 +452,17 @@ Bit32u device_image_t::get_timestamp()
   return (fat_datetime(mtime, 1) | (fat_datetime(mtime, 0) << 16));
 }
 
+#ifndef BXIMAGE
 void device_image_t::register_state(bx_list_c *parent)
 {
   bx_param_bool_c *image = new bx_param_bool_c(parent, "image", NULL, NULL, 0);
   image->set_sr_handlers(this, hdimage_save_handler, hdimage_restore_handler);
 }
+#endif
 
-/*** default_image_t function definitions ***/
+/*** flat_image_t function definitions ***/
 
-int default_image_t::open(const char* _pathname, int flags)
+int flat_image_t::open(const char* _pathname, int flags)
 {
   pathname = _pathname;
   if ((fd = hdimage_open_file(pathname, flags, &hd_size, &mtime)) < 0) {
@@ -409,29 +474,29 @@ int default_image_t::open(const char* _pathname, int flags)
   return fd;
 }
 
-void default_image_t::close()
+void flat_image_t::close()
 {
   if (fd > -1) {
     ::close(fd);
   }
 }
 
-Bit64s default_image_t::lseek(Bit64s offset, int whence)
+Bit64s flat_image_t::lseek(Bit64s offset, int whence)
 {
   return (Bit64s)::lseek(fd, (off_t)offset, whence);
 }
 
-ssize_t default_image_t::read(void* buf, size_t count)
+ssize_t flat_image_t::read(void* buf, size_t count)
 {
   return ::read(fd, (char*) buf, count);
 }
 
-ssize_t default_image_t::write(const void* buf, size_t count)
+ssize_t flat_image_t::write(const void* buf, size_t count)
 {
   return ::write(fd, (char*) buf, count);
 }
 
-int default_image_t::check_format(int fd, Bit64u imgsize)
+int flat_image_t::check_format(int fd, Bit64u imgsize)
 {
   char buffer[512];
 
@@ -444,12 +509,13 @@ int default_image_t::check_format(int fd, Bit64u imgsize)
   }
 }
 
-bx_bool default_image_t::save_state(const char *backup_fname)
+#ifndef BXIMAGE
+bx_bool flat_image_t::save_state(const char *backup_fname)
 {
   return hdimage_backup_file(fd, backup_fname);
 }
 
-void default_image_t::restore_state(const char *backup_fname)
+void flat_image_t::restore_state(const char *backup_fname)
 {
   close();
   if (!hdimage_copy_file(backup_fname, pathname)) {
@@ -460,6 +526,7 @@ void default_image_t::restore_state(const char *backup_fname)
     BX_PANIC(("Failed to open restored image '%s'", pathname));
   }
 }
+#endif
 
 // helper function for concat and sparse mode images
 
@@ -472,7 +539,7 @@ char increment_string(char *str, int diff)
   p--;  // point to last character of the string
   (*p) += diff;  // increment to next/previous ascii code.
   BX_DEBUG(("increment string returning '%s'", str));
- return (*p);
+  return (*p);
 }
 
 /*** concat_image_t function definitions ***/
@@ -484,7 +551,7 @@ concat_image_t::concat_image_t()
 
 void concat_image_t::increment_string(char *str)
 {
- ::increment_string(str, +1);
+  ::increment_string(str, +1);
 }
 
 int concat_image_t::open(const char* _pathname0, int flags)
@@ -492,7 +559,7 @@ int concat_image_t::open(const char* _pathname0, int flags)
   UNUSED(flags);
   pathname0 = _pathname0;
   char *pathname = strdup(pathname0);
-  BX_DEBUG(("concat_image_t.open"));
+  BX_DEBUG(("concat_image_t::open"));
   Bit64s start_offset = 0;
   for (int i=0; i<BX_CONCAT_MAX_IMAGES; i++) {
     fd_table[i] = ::open(pathname, O_RDWR
@@ -537,6 +604,7 @@ int concat_image_t::open(const char* _pathname0, int flags)
   thismax = length_table[0]-1;
   seek_was_last_op = 0;
   hd_size = start_offset;
+  BX_INFO(("hd_size: "FMT_LL"u", hd_size));
   return 0; // success.
 }
 
@@ -555,6 +623,7 @@ Bit64s concat_image_t::lseek(Bit64s offset, int whence)
   if ((offset % 512) != 0)
     BX_PANIC(("lseek HD with offset not multiple of 512"));
   BX_DEBUG(("concat_image_t.lseek(%d)", whence));
+  total_offset = offset;
   // is this offset in this disk image?
   if (offset < thismin) {
     // no, look at previous images
@@ -594,26 +663,61 @@ Bit64s concat_image_t::lseek(Bit64s offset, int whence)
 
 ssize_t concat_image_t::read(void* buf, size_t count)
 {
+  size_t count1;
+  ssize_t ret = -1;
+  char *buf1 = (char*)buf;
+
   BX_DEBUG(("concat_image_t.read %ld bytes", (long)count));
   // notice if anyone does sequential read or write without seek in between.
   // This can be supported pretty easily, but needs additional checks for
   // end of a partial image.
   if (!seek_was_last_op)
     BX_PANIC(("no seek before read"));
-  return ::read(fd, (char*) buf, count);
+  if ((Bit64s)(total_offset + count - 1) <= thismax) {
+    return ::read(fd, buf1, count);
+  } else {
+    count1 = (size_t)(thismax - total_offset + 1);
+    ret = ::read(fd, buf1, count1);
+    if (ret >= 0) {
+      buf1 += count1;
+      ret = lseek(thismax + 1, SEEK_SET);
+      if (ret >= 0) {
+        ret = ::read(fd, buf1, count - count1);
+      }
+    }
+  }
+  return (ret < 0) ? ret : count;
 }
 
 ssize_t concat_image_t::write(const void* buf, size_t count)
 {
+  size_t count1;
+  ssize_t ret = -1;
+  char *buf1 = (char*)buf;
+
   BX_DEBUG(("concat_image_t.write %ld bytes", (long)count));
   // notice if anyone does sequential read or write without seek in between.
   // This can be supported pretty easily, but needs additional checks for
   // end of a partial image.
   if (!seek_was_last_op)
     BX_PANIC(("no seek before write"));
-  return ::write(fd, (char*) buf, count);
+  if ((Bit64s)(total_offset + count - 1) <= thismax) {
+    return ::write(fd, buf1, count);
+  } else {
+    count1 = (size_t)(thismax - total_offset + 1);
+    ret = ::write(fd, buf1, count1);
+    if (ret >= 0) {
+      buf1 += count1;
+      ret = lseek(thismax + 1, SEEK_SET);
+      if (ret >= 0) {
+        ret = ::write(fd, buf1, count - count1);
+      }
+    }
+  }
+  return (ret < 0) ? ret : count;
 }
 
+#ifndef BXIMAGE
 bx_bool concat_image_t::save_state(const char *backup_fname)
 {
   bx_bool ret = 1;
@@ -645,6 +749,7 @@ void concat_image_t::restore_state(const char *backup_fname)
   free(image_name);
   device_image_t::open(pathname0);
 }
+#endif
 
 /*** sparse_image_t function definitions ***/
 
@@ -759,7 +864,7 @@ int sparse_image_t::read_header()
 int sparse_image_t::open(const char* pathname0, int flags)
 {
   pathname = strdup(pathname0);
-  BX_DEBUG(("sparse_image_t.open"));
+  BX_DEBUG(("sparse_image_t::open"));
 
   if ((fd = hdimage_open_file(pathname, flags, &underlying_filesize, &mtime)) < 0) {
     return -1;
@@ -848,7 +953,7 @@ Bit64s sparse_image_t::lseek(Bit64s offset, int whence)
   if (whence != SEEK_SET)
     BX_PANIC(("lseek HD with whence not SEEK_SET"));
 
-  BX_DEBUG(("sparse_image_t.lseek(%d)", whence));
+  BX_DEBUG(("sparse_image_t::lseek(%d)", whence));
 
   if (offset > total_size)
   {
@@ -943,7 +1048,7 @@ ssize_t sparse_image_t::read(void* buf, size_t count)
 
     BX_ASSERT (can_read != 0);
 
-    size_t was_read = read_page_fragment(position_virtual_page, position_page_offset, can_read, buf);
+    size_t was_read = (size_t)read_page_fragment(position_virtual_page, position_page_offset, can_read, buf);
 
     if (was_read != can_read) {
       BX_PANIC(("could not read from sparse disk"));
@@ -1178,6 +1283,7 @@ int sparse_image_t::check_format(int fd, Bit64u imgsize)
   return HDIMAGE_FORMAT_OK;
 }
 
+#ifndef BXIMAGE
 bx_bool sparse_image_t::save_state(const char *backup_fname)
 {
   return hdimage_backup_file(fd, backup_fname);
@@ -1211,6 +1317,7 @@ void sparse_image_t::restore_state(const char *backup_fname)
   }
   free(temp_pathname);
 }
+#endif
 
 #ifdef WIN32
 
@@ -1743,10 +1850,73 @@ int redolog_t::check_format(int fd, const char *subtype)
   return HDIMAGE_FORMAT_OK;
 }
 
+#ifdef BXIMAGE
+int redolog_t::commit(device_image_t *base_image)
+{
+  int ret = 0;
+  Bit32u i;
+  Bit8u buffer[512];
+
+  printf("\nCommitting changes to base image file: [  0%%]");
+
+  for (i = 0; i < dtoh32(header.specific.catalog); i++) {
+    printf("\x8\x8\x8\x8\x8%3d%%]", (i+1)*100/dtoh32(header.specific.catalog));
+    fflush(stdout);
+
+    if (dtoh32(catalog[i]) != REDOLOG_PAGE_NOT_ALLOCATED) {
+      Bit64s bitmap_offset;
+      Bit32u bitmap_size, j;
+
+      bitmap_offset  = (Bit64s)STANDARD_HEADER_SIZE + (dtoh32(header.specific.catalog) * sizeof(Bit32u));
+      bitmap_offset += (Bit64s)512 * dtoh32(catalog[i]) * (extent_blocks + bitmap_blocks);
+
+      // Read bitmap
+      bitmap_size = dtoh32(header.specific.bitmap);
+      if ((Bit32u)bx_read_image(fd, (off_t)bitmap_offset, bitmap, bitmap_size) != bitmap_size) {
+        ret = -1;
+        break;
+      }
+
+      for (j = 0; j < dtoh32(header.specific.bitmap); j++) {
+        Bit32u bit;
+
+        for (bit = 0; bit < 8; bit++) {
+          if ( (bitmap[j] & (1 << bit)) != 0) {
+            Bit64s base_offset, block_offset;
+
+            block_offset = bitmap_offset + ((Bit64s)512 * (bitmap_blocks + ((j * 8) + bit)));
+
+            if (bx_read_image(fd, (off_t)block_offset, buffer, 512) != 512) {
+              ret = -1;
+              break;
+            }
+
+            base_offset  = (Bit64s)i * (dtoh32(header.specific.extent));
+            base_offset += (Bit64s)512 * ((j * 8) + bit);
+
+            if (base_image->lseek(base_offset, SEEK_SET) < 0) {
+              ret = -1;
+              break;
+            }
+            if (base_image->write(buffer, 512) < 0) {
+              ret = -1;
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  return ret;
+}
+#endif
+
+#ifndef BXIMAGE
 bx_bool redolog_t::save_state(const char *backup_fname)
 {
   return hdimage_backup_file(fd, backup_fname);
 }
+#endif
 
 /*** growing_image_t function definitions ***/
 
@@ -1806,11 +1976,17 @@ ssize_t growing_image_t::write(const void* buf, size_t count)
   return (ret < 0) ? ret : count;
 }
 
+Bit32u growing_image_t::get_timestamp()
+{
+  return redolog->get_timestamp();
+}
+
 int growing_image_t::check_format(int fd, Bit64u imgsize)
 {
   return redolog_t::check_format(fd, REDOLOG_SUBTYPE_GROWING);
 }
 
+#ifndef BXIMAGE
 bx_bool growing_image_t::save_state(const char *backup_fname)
 {
   return redolog->save_state(backup_fname);
@@ -1841,12 +2017,14 @@ void growing_image_t::restore_state(const char *backup_fname)
     BX_PANIC(("Failed to open restored growing image '%s'", pathname));
   }
 }
+#endif
 
 // compare hd_size and modification time of r/o disk and journal
 
 bx_bool coherency_check(device_image_t *ro_disk, redolog_t *redolog)
 {
   Bit32u timestamp1, timestamp2;
+  char buffer[24];
 
   if (ro_disk->hd_size != redolog->get_size()) {
     BX_PANIC(("size reported by redolog doesn't match r/o disk size"));
@@ -1856,7 +2034,11 @@ bx_bool coherency_check(device_image_t *ro_disk, redolog_t *redolog)
   timestamp2 = redolog->get_timestamp();
   if (timestamp2 != 0) {
     if (timestamp1 != timestamp2) {
-      BX_PANIC(("unexpected modification time of the r/o disk"));
+      sprintf(buffer, "%02d.%02d.%04d %02d:%02d:%02d", (timestamp2 >> 16) & 0x001f,
+              (timestamp2 >> 21) & 0x000f, ((timestamp2 >> 25) & 0x007f) + 1980,
+              (timestamp2 & 0xf800) >> 11, (timestamp2 & 0x07e0) >> 5,
+              (timestamp2 & 0x001f) << 1);
+      BX_PANIC(("unexpected modification time of the r/o disk (should be %s)", buffer));
       return 0;
     }
   } else if (timestamp1 != 0) {
@@ -1887,12 +2069,17 @@ undoable_image_t::~undoable_image_t()
 int undoable_image_t::open(const char* pathname, int flags)
 {
   UNUSED(flags);
+  if (access(pathname, F_OK) < 0) {
+    BX_PANIC(("r/o disk image doesn't exist"));
+  }
   int mode = hdimage_detect_image_mode(pathname);
   if (mode == BX_HDIMAGE_MODE_UNKNOWN) {
     BX_PANIC(("r/o disk image mode not detected"));
     return -1;
+  } else {
+    BX_INFO(("base image mode = '%s'", hdimage_mode_names[mode]));
   }
-  ro_disk = theHDImageCtl->init_image(mode, 0, NULL);
+  ro_disk = DEV_hdimage_init_image(mode, 0, NULL);
   if (ro_disk == NULL) {
     return -1;
   }
@@ -1965,6 +2152,7 @@ ssize_t undoable_image_t::write(const void* buf, size_t count)
   return (ret < 0) ? ret : count;
 }
 
+#ifndef BXIMAGE
 bx_bool undoable_image_t::save_state(const char *backup_fname)
 {
   return redolog->save_state(backup_fname);
@@ -1993,6 +2181,7 @@ void undoable_image_t::restore_state(const char *backup_fname)
     }
   }
 }
+#endif
 
 /*** volatile_image_t function definitions ***/
 
@@ -2020,12 +2209,17 @@ int volatile_image_t::open(const char* pathname, int flags)
   Bit32u timestamp;
 
   UNUSED(flags);
+  if (access(pathname, F_OK) < 0) {
+    BX_PANIC(("r/o disk image doesn't exist"));
+  }
   int mode = hdimage_detect_image_mode(pathname);
   if (mode == BX_HDIMAGE_MODE_UNKNOWN) {
     BX_PANIC(("r/o disk image mode not detected"));
     return -1;
+  } else {
+    BX_INFO(("base image mode = '%s'", hdimage_mode_names[mode]));
   }
-  ro_disk = theHDImageCtl->init_image(mode, 0, NULL);
+  ro_disk = DEV_hdimage_init_image(mode, 0, NULL);
   if (ro_disk == NULL) {
     return -1;
   }
@@ -2117,6 +2311,7 @@ ssize_t volatile_image_t::write(const void* buf, size_t count)
   return (ret < 0) ? ret : count;
 }
 
+#ifndef BXIMAGE
 bx_bool volatile_image_t::save_state(const char *backup_fname)
 {
   return redolog->save_state(backup_fname);
@@ -2150,3 +2345,4 @@ void volatile_image_t::restore_state(const char *backup_fname)
   unlink(redolog_temp);
 #endif
 }
+#endif

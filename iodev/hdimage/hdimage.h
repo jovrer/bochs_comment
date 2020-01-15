@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.h 11649 2013-03-08 18:25:32Z vruppert $
+// $Id: hdimage.h 12272 2014-04-04 19:14:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2005-2013  The Bochs Project
+//  Copyright (C) 2005-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -20,6 +20,11 @@
 
 #ifndef BX_HDIMAGE_H
 #define BX_HDIMAGE_H
+
+// required for access() checks
+#ifndef F_OK
+#define F_OK 0
+#endif
 
 // hdimage capabilities
 #define HDIMAGE_READONLY      1
@@ -118,11 +123,15 @@
 // htod : convert host to disk (little) endianness
 // dtoh : convert disk (little) to host endianness
 #if defined (BX_LITTLE_ENDIAN)
+#define htod16(val) (val)
+#define dtoh16(val) (val)
 #define htod32(val) (val)
 #define dtoh32(val) (val)
 #define htod64(val) (val)
 #define dtoh64(val) (val)
 #else
+#define htod16(val) ((((val)&0xff00)>>8) | (((val)&0xff)<<8))
+#define dtoh16(val) htod16(val)
 #define htod32(val) bx_bswap32(val)
 #define dtoh32(val) htod32(val)
 #define htod64(val) bx_bswap64(val)
@@ -131,6 +140,9 @@
 
 #ifndef HDIMAGE_HEADERS_ONLY
 
+class device_image_t;
+class redolog_t;
+
 int bx_read_image(int fd, Bit64s offset, void *buf, int count);
 int bx_write_image(int fd, Bit64s offset, void *buf, int count);
 #ifndef WIN32
@@ -138,8 +150,15 @@ int hdimage_open_file(const char *pathname, int flags, Bit64u *fsize, time_t *mt
 #else
 int hdimage_open_file(const char *pathname, int flags, Bit64u *fsize, FILETIME *mtime);
 #endif
+int hdimage_detect_image_mode(const char *pathname);
 bx_bool hdimage_backup_file(int fd, const char *backup_fname);
 bx_bool hdimage_copy_file(const char *src, const char *dst);
+bx_bool coherency_check(device_image_t *ro_disk, redolog_t *redolog);
+#ifndef WIN32
+Bit16u fat_datetime(time_t time, int return_time);
+#else
+Bit16u fat_datetime(FILETIME time, int return_time);
+#endif
 
 // base class
 class device_image_t
@@ -174,15 +193,17 @@ class device_image_t
       virtual Bit32u get_capabilities();
 
       // Get modification time in FAT format
-      Bit32u get_timestamp();
+      virtual Bit32u get_timestamp();
 
       // Check image format
       static int check_format(int fd, Bit64u imgsize) {return HDIMAGE_NO_SIGNATURE;}
 
+#ifndef BXIMAGE
       // Save/restore support
       virtual void register_state(bx_list_c *parent);
       virtual bx_bool save_state(const char *backup_fname) {return 0;}
       virtual void restore_state(const char *backup_fname) {}
+#endif
 
       unsigned cylinders;
       unsigned heads;
@@ -197,7 +218,7 @@ class device_image_t
 };
 
 // FLAT MODE
-class default_image_t : public device_image_t
+class flat_image_t : public device_image_t
 {
   public:
       // Open an image with specific flags. Returns non-negative if successful.
@@ -221,9 +242,11 @@ class default_image_t : public device_image_t
       // Check image format
       static int check_format(int fd, Bit64u imgsize);
 
+#ifndef BXIMAGE
       // Save/restore support
       bx_bool save_state(const char *backup_fname);
       void restore_state(const char *backup_fname);
+#endif
 
   private:
       int fd;
@@ -255,9 +278,11 @@ class concat_image_t : public device_image_t
       // written (count).
       ssize_t write(const void* buf, size_t count);
 
+#ifndef BXIMAGE
       // Save/restore support
       bx_bool save_state(const char *backup_fname);
       void restore_state(const char *backup_fname);
+#endif
 
   private:
 #define BX_CONCAT_MAX_IMAGES 8
@@ -278,6 +303,7 @@ class concat_image_t : public device_image_t
       int index;  // index into table
       int fd;     // fd to use for reads and writes
       Bit64s thismin, thismax; // byte offset boundary of this image
+      Bit64s total_offset;     // current byte offset
       const char *pathname0;
 };
 
@@ -315,9 +341,11 @@ class sparse_image_t : public device_image_t
     // Check image format
     static int check_format(int fd, Bit64u imgsize);
 
+#ifndef BXIMAGE
     // Save/restore support
     bx_bool save_state(const char *backup_fname);
     void restore_state(const char *backup_fname);
+#endif
 
   private:
     int fd;
@@ -418,7 +446,11 @@ class redolog_t
 
       static int check_format(int fd, const char *subtype);
 
+#ifdef BXIMAGE
+      int commit(device_image_t *base_image);
+#else
       bx_bool save_state(const char *backup_fname);
+#endif
 
   private:
       void             print_header();
@@ -463,12 +495,17 @@ class growing_image_t : public device_image_t
       // written (count).
       ssize_t write(const void* buf, size_t count);
 
+      // Get modification time in FAT format
+      virtual Bit32u get_timestamp();
+
       // Check image format
       static int check_format(int fd, Bit64u imgsize);
 
+#ifndef BXIMAGE
       // Save/restore support
       bx_bool save_state(const char *backup_fname);
       void restore_state(const char *backup_fname);
+#endif
 
   private:
       redolog_t *redolog;
@@ -501,9 +538,11 @@ class undoable_image_t : public device_image_t
       // written (count).
       ssize_t write(const void* buf, size_t count);
 
+#ifndef BXIMAGE
       // Save/restore support
       bx_bool save_state(const char *backup_fname);
       void restore_state(const char *backup_fname);
+#endif
 
   private:
       redolog_t       *redolog;       // Redolog instance
@@ -538,9 +577,11 @@ class volatile_image_t : public device_image_t
       // written (count).
       ssize_t write(const void* buf, size_t count);
 
+#ifndef BXIMAGE
       // Save/restore support
       bx_bool save_state(const char *backup_fname);
       void restore_state(const char *backup_fname);
+#endif
 
   private:
       redolog_t       *redolog;       // Redolog instance
@@ -550,15 +591,15 @@ class volatile_image_t : public device_image_t
 };
 
 
+#ifndef BXIMAGE
 class bx_hdimage_ctl_c : public bx_hdimage_ctl_stub_c {
 public:
   bx_hdimage_ctl_c();
   virtual ~bx_hdimage_ctl_c() {}
   virtual device_image_t *init_image(Bit8u image_mode, Bit64u disk_size, const char *journal);
-#ifdef LOWLEVEL_CDROM
-  virtual LOWLEVEL_CDROM* init_cdrom(const char *dev);
-#endif
+  virtual cdrom_base_c *init_cdrom(const char *dev);
 };
+#endif // BXIMAGE
 
 #endif // HDIMAGE_HEADERS_ONLY
 

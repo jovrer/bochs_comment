@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ltdl.c 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: ltdl.c 12044 2013-12-17 19:57:40Z vruppert $
 //
 // NOTE: The ltdl library comes from the Libtool package.  Bochs uses
 // ltdl and libtool to build and load plugins.  The libtool
@@ -109,7 +109,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 #define LTDEBUG_PRINTF(x) /* debug output disabled */
 //#define LTDEBUG_PRINTF(x) do{ printf("LT_DEBUG: "); printf x; } while (0)
 
-#include "ltdl.h"
+#include "ltdl-bochs.h"
 
 
 

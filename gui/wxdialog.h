@@ -1,9 +1,25 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h 11633 2013-02-16 12:22:13Z vruppert $
+// $Id: wxdialog.h 12109 2014-01-13 18:03:40Z vruppert $
 ////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////
+
 // wxWidgets dialogs for Bochs
 
 #include <wx/spinctrl.h>
@@ -14,18 +30,12 @@
 ////////////////////////////////////////////////////////////////////
 #define MSG_NO_HELP wxT("No help is available yet.")
 #define MSG_NO_HELP_CAPTION wxT("No help")
-#define MSG_ENABLED wxT("Enabled")
 #define BTNLABEL_HELP wxT("Help")
 #define BTNLABEL_CANCEL wxT("Cancel")
 #define BTNLABEL_OK wxT("Ok")
+#define BTNLABEL_CLOSE wxT("Close")
 #define BTNLABEL_CREATE_IMG wxT("Create Image")
 #define BTNLABEL_BROWSE wxT("<--Browse")
-#define BTNLABEL_DEBUG_CONTINUE wxT("Continue")
-#define BTNLABEL_DEBUG_STOP wxT("Stop")
-#define BTNLABEL_DEBUG_STEP wxT("Step")
-#define BTNLABEL_DEBUG_COMMIT wxT("Commit")
-#define BTNLABEL_CLOSE wxT("Close")
-#define BTNLABEL_EXECUTE wxT("Execute")
 
 #if defined(WIN32)
 // On win32, apparantly the spinctrl depends on a native control which only
@@ -153,6 +163,7 @@ private:
   wxButton *applyDefault;
   // 2d array of wxChoice pointers. Each wxChoice* is action[dev][type].
   wxChoice*  **action;
+  bool runtime;
 public:
   AdvancedLogOptionsDialog(wxWindow* parent, wxWindowID id);
   ~AdvancedLogOptionsDialog();
@@ -164,6 +175,7 @@ public:
   void CopyGuiToParam();
   void SetAction(int dev, int evtype, int act);
   int GetAction(int dev, int evtype);
+  void SetRuntimeFlag(bool val) { runtime = val; }
 DECLARE_EVENT_TABLE()
 };
 
@@ -184,6 +196,29 @@ public:
   ~PluginControlDialog() {}
   void OnEvent(wxCommandEvent& event);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
+DECLARE_EVENT_TABLE()
+};
+
+////////////////////////////////////////////////////////////////////////////
+// LogViewDialog
+////////////////////////////////////////////////////////////////////////////
+class LogViewDialog: public wxDialog
+{
+private:
+  wxBoxSizer *mainSizer, *logSizer, *buttonSizer;
+  wxTextCtrl *log;
+  Bit32u lengthMax;
+  Bit32u lengthTolerance;
+#define LOG_VIEW_DEFAULT_LENGTH_MAX (400*80)
+#define LOG_VIEW_DEFAULT_TOLERANCE (200*80)
+  void CheckLogLength();
+public:
+  LogViewDialog(wxWindow* parent, wxWindowID id);
+  ~LogViewDialog() {}
+  void Init();
+  bool Show(bool val);
+  void AppendText(int level, wxString msg);
+  void OnEvent(wxCommandEvent& event);
 DECLARE_EVENT_TABLE()
 };
 
@@ -244,15 +279,12 @@ class ParamDialog: public wxDialog
 {
 private:
   void ShowHelp();
-  wxChoice *type;
-  wxTextCtrl *serialDelay, *pasteDelay, *mappingFile;
-  wxCheckBox *enableKeymap;
   int genId();
   bool isShowing;
   int nbuttons;
   bool runtime;
 protected:
-  wxBoxSizer *mainSizer, *buttonSizer;
+  wxBoxSizer *mainSizer, *buttonSizer, *infoSizer;
   // hash table that maps the ID of a wxWidgets control (e.g. wxChoice,
   // wxTextCtrl) to the associated ParamStruct object.  Data in the hash table
   // is of ParamStruct*.
@@ -320,7 +352,7 @@ class LogOptionsDialog : public ParamDialog
 private:
 #define LOG_OPTS_TITLE wxT("Configure Log Events")
 #define LOG_OPTS_PROMPT wxT("How should Bochs respond to each type of event?")
-#define LOG_OPTS_TYPE_NAMES { wxT("Debug events: "), wxT("Info events: "), wxT("Error events: "), wxT("Panic events: ") }
+#define LOG_OPTS_TYPE_NAMES { wxT("Debug events"), wxT("Info events"), wxT("Error events"), wxT("Panic events") }
 #define LOG_OPTS_N_TYPES 4
 #define LOG_OPTS_CHOICES { wxT("ignore"), wxT("log"), wxT("ask user"), wxT("end simulation"), wxT("no change") }
 #define LOG_OPTS_N_CHOICES_NORMAL 4
@@ -442,24 +474,6 @@ Or if you choose the CD-ROM, you get to edit the settings for it.
 |                                                     [Help] [Cancel] [Ok]  |
 +---------------------------------------------------------------------------+
 
-The CD-ROM media can still be configured during the simulation.  In this
-context we can just show the Media section.  The same code can be written to
-serve both purposes.  This is the dialog that would appear when you click the
-CD-ROM button on the toolbar at runtime.
-
-+-- CD-ROM Media -----------------------------+
-|                                             |
-|  Bochs can use a physical CD-ROM drive as   |
-|  the data source, or use an image file.     |
-|                                             |
-|   [X]  Ejected                              |
-|   [ ]  Physical CD-ROM drive /dev/cdrom     |
-|   [ ]  Disk image: [_____________] [Browse] |
-|                                             |
-|                                             |
-|                       [Help] [Cancel] [Ok]  |
-+---------------------------------------------+
-
 ////////////////////////////////////////////////////////////////////////////
 // ChooseConfigDialog
 ////////////////////////////////////////////////////////////////////////////
@@ -490,48 +504,6 @@ could grow.
 |    ??      Create new configuration                    |
 |                                                        |
 +--------------------------------------------------------+
-
-////////////////////////////////////////////////////////////////////////////
-// ChooseBootDialog
-////////////////////////////////////////////////////////////////////////////
-
-This dialog basically lets you choose which disk you want to boot: floppy A,
-disk c, or cdrom.  The boot selection could be as simple as
-+-------------------------------------------+
-|  Choose boot drive                        |
-|    [ ] Floppy A                           |
-|    [X] Hard Disk C                        |
-|    [ ] CD-ROM                             |
-|                [ Help ] [ Cancel ] [ Ok ] |
-+-------------------------------------------+
-or fancier with icons for the device types, and Edit buttons that
-let you go right to the configure screen for that disk drive.
-+---------------------------------------------------------------+
-|                                                               |
-|          /----+                                               |
-|          |=  =|   A Drive                             +----+  |
-| [    ]   | __ |   Raw Floppy Drive                    |Edit|  |
-|          ||  ||   A:                                  +----+  |
-|          ++--++                                               |
-|                                                               |
-|          /----+                                               |
-|          |=  =|   B Drive                             +----+  |
-| [    ]   | __ |   Floppy Disk Image                   |Edit|  |
-|          ||  ||   C:\Bochs\Images\A.img               +----+  |
-|          ++--++                                               |
-|                                                               |
-|          +-----+  C Drive                                     |
-|          |=====|  Hard Disk Image                     +----+  |
-| [BOOT]   |    o|  C:\Bochs\Images\HD30meg.img         |Edit|  |
-|          +-----+                                      +----+  |
-|                                                               |
-|            ___                                                |
-|           /   \   D Drive                             +----+  |
-| [    ]   |  O  |  ISO CD Image                        |Edit|  |
-|           \___/   C:\Bochs\Images\BootCD.img          +----+  |
-|                                                               |
-|                                    [ Help ] [ Cancel ] [ Ok ] |
-+---------------------------------------------------------------+
 
 ////////////////////////////////////////////////////////////////////////////
 // KeymappingDialog

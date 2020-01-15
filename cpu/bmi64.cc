@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bmi64.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: bmi64.cc 12224 2014-03-02 19:18:05Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,6 +28,8 @@
 #if BX_SUPPORT_X86_64 
 
 #if BX_SUPPORT_AVX
+
+#include "scalar_arith.h"
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ANDN_GqBqEqR(bxInstruction_c *i)
 {
@@ -169,28 +171,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BEXTR_GqEqBqR(bxInstruction_c *i)
   Bit16u control = BX_READ_16BIT_REG(i->src2());
   unsigned start = control & 0xff;
   unsigned len   = control >> 8;
-  Bit64u op1_64 = 0;
-  
-  if (start < 64 && len > 0) {
-    op1_64 = BX_READ_64BIT_REG(i->src1());
-    op1_64 >>= start;
 
-    if (len < 64) {
-      Bit64u extract_mask = (BX_CONST64(1) << len) - 1;
-      op1_64 &= extract_mask;
-    }
-  }
-
+  Bit64u op1_64 = bextrq(BX_READ_64BIT_REG(i->src1()), start, len);
   SET_FLAGS_OSZAPC_LOGIC_64(op1_64);
-
   BX_WRITE_64BIT_REG(i->dst(), op1_64);
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BZHI_GqEqBqR(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BZHI_GqBqEqR(bxInstruction_c *i)
 {
-  unsigned control = BX_READ_16BIT_REG(i->src1()) & 0xff;
+  unsigned control = BX_READ_8BIT_REGL(i->src1());
   bx_bool tmpCF = 0;
   Bit64u op1_64 = BX_READ_64BIT_REG(i->src2());
   
@@ -210,7 +201,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BZHI_GqEqBqR(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PEXT_GqEqBqR(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PEXT_GqBqEqR(bxInstruction_c *i)
 {
   Bit64u op1_64 = BX_READ_64BIT_REG(i->src1());
   Bit64u op2_64 = BX_READ_64BIT_REG(i->src2()), result_64 = 0;
@@ -231,7 +222,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PEXT_GqEqBqR(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PDEP_GqEqBqR(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PDEP_GqBqEqR(bxInstruction_c *i)
 {
   Bit64u op1_64 = BX_READ_64BIT_REG(i->src1());
   Bit64u op2_64 = BX_READ_64BIT_REG(i->src2()), result_64 = 0;

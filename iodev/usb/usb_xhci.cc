@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_xhci.cc 11634 2013-02-17 08:27:43Z vruppert $
+// $Id: usb_xhci.cc 12087 2013-12-30 22:39:21Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010-2011  Benjamin D Lunt (fys [at] fysnet [dot] net)
-//                2011-2012  The Bochs Project
+//                2011-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -157,7 +157,7 @@ void bx_usb_xhci_c::init(void)
   unsigned i;
   char pname[6];
   bx_list_c *xhci, *port;
-  bx_param_string_c *device, *options;
+  bx_param_string_c *device;
 
   // Read in values from config interface
   xhci = (bx_list_c*) SIM->get_param(BXPN_USB_XHCI);
@@ -181,8 +181,10 @@ void bx_usb_xhci_c::init(void)
   DEV_register_pci_handlers(this, &BX_XHCI_THIS hub.devfunc, BX_PLUGIN_USB_XHCI,
                             "Experimental USB xHCI");
 
-  for (i=0; i<256; i++)
-    BX_XHCI_THIS pci_conf[i] = 0x0;
+  // initialize readonly registers
+  // TODO: Change the VendorID and DeviceID to something else ????
+  init_pci_conf(0x1033, 0x0194, 0x03, 0x0c0330, 0x00);
+  BX_XHCI_THIS pci_conf[0x3d] = BX_PCI_INTD;
 
   BX_XHCI_THIS pci_base_address[0] = 0x0;
 
@@ -190,9 +192,8 @@ void bx_usb_xhci_c::init(void)
   BX_XHCI_THIS hub.statusbar_id = bx_gui->register_statusitem("xHCI", 1);
 
   bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
-  xhci->set_options(xhci->SHOW_PARENT | xhci->USE_BOX_TITLE);
-  xhci->set_runtime_param(1);
-  usb_rt->add(xhci);
+  bx_list_c *xhci_rt = new bx_list_c(usb_rt, "xhci", "xHCI Runtime Options");
+  xhci_rt->set_options(xhci_rt->SHOW_PARENT | xhci_rt->USE_BOX_TITLE);
   for (i=0; i<USB_XHCI_PORTS; i++) {
     // check to see if the speed matches the port given
 //    if (((get_speed(i) <= SPEED_HI)    && (port_speed_allowed[i] != USB2)) ||
@@ -200,12 +201,9 @@ void bx_usb_xhci_c::init(void)
 //        BX_PANIC(("Speed of port given in Bochsrc.txt file doesn't match controllers' port's speed."));
     sprintf(pname, "port%d", i+1);
     port = (bx_list_c*)SIM->get_param(pname, xhci);
-    port->set_runtime_param(1);
+    xhci_rt->add(port);
     device = (bx_param_string_c*)port->get_by_name("device"); 
-    device->set_handler(usb_param_handler); 
-    device->set_runtime_param(1); 
-    options = (bx_param_string_c*)port->get_by_name("options"); 
-    options->set_runtime_param(1); 
+    device->set_handler(usb_param_handler);
     BX_XHCI_THIS hub.usb_port[i].device = NULL;
     BX_XHCI_THIS hub.usb_port[i].portsc.ccs = 0;
     BX_XHCI_THIS hub.usb_port[i].portsc.csc = 0;
@@ -227,17 +225,10 @@ void bx_usb_xhci_c::reset(unsigned type)
       unsigned      addr;
       unsigned char val;
     } reset_vals[] = {
-      { 0x00, 0x33 }, { 0x01, 0x10 }, // 0x1033 = vendor  // TODO: Change the VendorID and DeviceID to something else ????
-      { 0x02, 0x94 }, { 0x03, 0x01 }, // 0x0194 = device
       { 0x04, 0x06 }, { 0x05, 0x01 }, // command_io
       { 0x06, 0x10 }, { 0x07, 0x00 }, // status (has caps list)
-      { 0x08, 0x03 },                 // revision number = 0x03
-      { 0x09, 0x30 },                 // interface
-      { 0x0A, 0x03 },                 // class_sub  USB Host Controller
-      { 0x0B, 0x0C },                 // class_base Serial Bus Controller
-      { 0x0C, 0x10 },                 // cache line size
-      { 0x0D, 0x00 },                 // bus latency
-      { 0x0E, 0x00 },                 // header_type_generic
+      { 0x0c, 0x10 },                 // cache line size
+      { 0x0d, 0x00 },                 // bus latency
 
       // address space 0x10 - 0x13
       { 0x10, 0x04 }, { 0x11, 0x00 }, //
@@ -249,7 +240,6 @@ void bx_usb_xhci_c::reset(unsigned type)
       { 0x34, 0x50 },                 // offset of capabilities list within configuration space
 
       { 0x3C, 0x0A },                 // IRQ
-      { 0x3D, BX_PCI_INTD },          // INT
       { 0x3E, 0x00 },                 // minimum time bus master needs PCI bus ownership, in 250ns units
       { 0x3F, 0x00 },                 // maximum latency, in 250ns units (bus masters only) (read-only)
 
@@ -329,7 +319,7 @@ void bx_usb_xhci_c::reset_hc()
   BX_XHCI_THIS hub.op_regs.HcStatus.hch     = 1;
 
   // Page Size
-  BX_XHCI_THIS hub.op_regs.HcPageSize.pagesize = PAGE_SIZE;
+  BX_XHCI_THIS hub.op_regs.HcPageSize.pagesize = XHCI_PAGE_SIZE;
 
   // Device Notification Control Register
   BX_XHCI_THIS hub.op_regs.HcNotification.RsvdP = 0;
@@ -1518,7 +1508,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
 {
   struct TRB trb;
   Bit64u address = 0, org_addr;
-  int int_target, td_size, transfer_length;
+  int int_target, /*td_size,*/ transfer_length;
   int ret, len;
   int port_num = BX_XHCI_THIS hub.slots[slot].slot_context.rh_port_num;
   USBPacket packet;
@@ -1573,7 +1563,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
     // these are used in some/most items.
     // If not used, won't hurt to extract bad data.
     int_target = TRB_GET_TARGET(trb.status);
-    td_size = TRB_GET_TDSIZE(trb.status);
+//  td_size = TRB_GET_TDSIZE(trb.status);
     transfer_length = TRB_GET_TX_LEN(trb.status);
     is_transfer_trb = 0;  // assume not a transfer
     ioc = TRB_IOC(trb.command);
@@ -1763,7 +1753,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
 void bx_usb_xhci_c::process_command_ring(void)
 {
   struct TRB trb;
-  int i, slot, slot_type, ep, comp_code = 0, new_addr = 0, bsr = 0;
+  int i, slot, /*slot_type,*/ ep, comp_code = 0, new_addr = 0, bsr = 0;
   Bit32u a_flags = 0, d_flags, tmpval1, tmpval2;
   Bit64u org_addr;
   Bit8u buffer[CONTEXT_SIZE + 2048];
@@ -1803,7 +1793,7 @@ void bx_usb_xhci_c::process_command_ring(void)
       case ENABLE_SLOT:
         comp_code = NO_SLOTS_ERROR;  // assume no slots
         slot = 0;
-        slot_type = TRB_GET_STYPE(trb.command);  // currently not used
+//      slot_type = TRB_GET_STYPE(trb.command);  // currently not used
         for (i=1; i<MAX_SLOTS; i++) {  // slots are one based
           if (BX_XHCI_THIS hub.slots[i].enabled == 0) {
             memset(&BX_XHCI_THIS hub.slots[i], 0, sizeof(struct HC_SLOT_CONTEXT));

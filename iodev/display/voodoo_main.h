@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: voodoo_main.h 11421 2012-09-15 09:47:31Z sshwarts $
+// $Id: voodoo_main.h 12101 2014-01-07 22:32:22Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 /*
  *  Portion of this software comes with the following license
@@ -52,10 +52,10 @@ enum
 };
 
 
-#define STD_VOODOO_1_CLOCK      50000000
-#define STD_VOODOO_2_CLOCK      90000000
-#define STD_VOODOO_BANSHEE_CLOCK  90000000
-#define STD_VOODOO_3_CLOCK      132000000
+#define STD_VOODOO_1_CLOCK       50000000.0
+#define STD_VOODOO_2_CLOCK       90000000.0
+#define STD_VOODOO_BANSHEE_CLOCK 90000000.0
+#define STD_VOODOO_3_CLOCK      132000000.0
 
 
 /***************************************************************************
@@ -150,5 +150,6 @@ READ32_DEVICE_HANDLER( banshee_rom_r );
 #define Voodoo_UpdateScreenStart() theVoodooDevice->update_screen_start()
 #define Voodoo_Output_Enable(x)    theVoodooDevice->output_enable(x)
 #define Voodoo_get_retrace()       theVoodooDevice->get_retrace()
+#define Voodoo_update_timing()       theVoodooDevice->update_timing()
 
 #endif

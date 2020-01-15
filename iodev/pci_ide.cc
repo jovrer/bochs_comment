@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.cc 11549 2012-11-12 18:56:07Z vruppert $
+// $Id: pci_ide.cc 12117 2014-01-19 18:13:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2004-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -87,6 +87,7 @@ void bx_pci_ide_c::init(void)
     if (BX_PIDE_THIS s.bmdma[i].timer_index == BX_NULL_TIMER_HANDLE) {
       BX_PIDE_THIS s.bmdma[i].timer_index =
         DEV_register_timer(this, timer_handler, 1000, 0,0, "PIIX3 BM-DMA timer");
+        bx_pc_system.setTimerParam(BX_PIDE_THIS s.bmdma[i].timer_index, i);
     }
   }
 
@@ -94,22 +95,12 @@ void bx_pci_ide_c::init(void)
   BX_PIDE_THIS s.bmdma[1].buffer = new Bit8u[0x20000];
 
   BX_PIDE_THIS s.chipset = SIM->get_param_enum(BXPN_PCI_CHIPSET)->get();
-  for (i=0; i<256; i++)
-    BX_PIDE_THIS pci_conf[i] = 0x0;
-  // readonly registers
-  BX_PIDE_THIS pci_conf[0x00] = 0x86;
-  BX_PIDE_THIS pci_conf[0x01] = 0x80;
+  // initialize readonly registers
   if (BX_PIDE_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
-    BX_PIDE_THIS pci_conf[0x02] = 0x10;
-    BX_PIDE_THIS pci_conf[0x03] = 0x70;
+    init_pci_conf(0x8086, 0x7010, 0x00, 0x010180, 0x00);
   } else {
-    BX_PIDE_THIS pci_conf[0x02] = 0x30;
-    BX_PIDE_THIS pci_conf[0x03] = 0x12;
+    init_pci_conf(0x8086, 0x1230, 0x00, 0x010180, 0x00);
   }
-  BX_PIDE_THIS pci_conf[0x09] = 0x80;
-  BX_PIDE_THIS pci_conf[0x0a] = 0x01;
-  BX_PIDE_THIS pci_conf[0x0b] = 0x01;
-  BX_PIDE_THIS pci_conf[0x0e] = 0x00;
   BX_PIDE_THIS pci_conf[0x20] = 0x01;
   BX_PIDE_THIS pci_base_address[4] = 0;
 }
@@ -136,6 +127,7 @@ void bx_pci_ide_c::reset(unsigned type)
     BX_PIDE_THIS s.bmdma[i].prd_current = 0;
     BX_PIDE_THIS s.bmdma[i].buffer_top = BX_PIDE_THIS s.bmdma[i].buffer;
     BX_PIDE_THIS s.bmdma[i].buffer_idx = BX_PIDE_THIS s.bmdma[i].buffer;
+    BX_PIDE_THIS s.bmdma[i].data_ready = 0;
   }
 }
 
@@ -163,6 +155,7 @@ void bx_pci_ide_c::register_state(void)
        BX_PIDE_THIS param_save_handler, BX_PIDE_THIS param_restore_handler);
     BXRS_PARAM_SPECIAL32(ctrl, buffer_idx,
        BX_PIDE_THIS param_save_handler, BX_PIDE_THIS param_restore_handler);
+    BXRS_PARAM_BOOL(ctrl, data_ready, BX_PIDE_THIS s.bmdma[i].data_ready);
   }
 }
 
@@ -224,6 +217,13 @@ bx_bool bx_pci_ide_c::bmdma_present(void)
   return (BX_PIDE_THIS pci_base_address[4] > 0);
 }
 
+void bx_pci_ide_c::bmdma_start_transfer(Bit8u channel)
+{
+  if (channel < 2) {
+    BX_PIDE_THIS s.bmdma[channel].data_ready = 1;
+  }
+}
+
 void bx_pci_ide_c::bmdma_set_irq(Bit8u channel)
 {
   if (channel < 2) {
@@ -239,22 +239,21 @@ void bx_pci_ide_c::timer_handler(void *this_ptr)
 
 void bx_pci_ide_c::timer()
 {
-  int timer_id, count;
-  Bit8u channel;
+  int count;
   Bit32u size, sector_size;
   struct {
     Bit32u addr;
     Bit32u size;
   } prd;
 
-  timer_id = bx_pc_system.triggeredTimerID();
-  if (timer_id == BX_PIDE_THIS s.bmdma[0].timer_index) {
-    channel = 0;
-  } else {
-    channel = 1;
-  }
+  Bit8u channel = bx_pc_system.triggeredTimerParam();
   if (((BX_PIDE_THIS s.bmdma[channel].status & 0x01) == 0) ||
       (BX_PIDE_THIS s.bmdma[channel].prd_current == 0)) {
+    return;
+  }
+  if (BX_PIDE_THIS s.bmdma[channel].cmd_rwcon &&
+      !BX_PIDE_THIS s.bmdma[channel].data_ready) {
+    bx_pc_system.activate_timer(BX_PIDE_THIS s.bmdma[channel].timer_index, 1000, 0);
     return;
   }
   DEV_MEM_READ_PHYSICAL(BX_PIDE_THIS s.bmdma[channel].prd_current, 4, (Bit8u *)&prd.addr);
@@ -400,6 +399,7 @@ void bx_pci_ide_c::write(Bit32u address, Bit32u value, unsigned io_len)
         BX_PIDE_THIS s.bmdma[channel].prd_current = BX_PIDE_THIS s.bmdma[channel].dtpr;
         BX_PIDE_THIS s.bmdma[channel].buffer_top = BX_PIDE_THIS s.bmdma[channel].buffer;
         BX_PIDE_THIS s.bmdma[channel].buffer_idx = BX_PIDE_THIS s.bmdma[channel].buffer;
+        BX_PIDE_THIS s.bmdma[channel].data_ready = 0;
         bx_pc_system.activate_timer(BX_PIDE_THIS s.bmdma[channel].timer_index, 1000, 0);
       } else if (!(value & 0x01) && BX_PIDE_THIS s.bmdma[channel].cmd_ssbm) {
         BX_PIDE_THIS s.bmdma[channel].cmd_ssbm = 0;

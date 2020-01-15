@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer16.cc 11648 2013-03-06 21:11:23Z sshwarts $
+// $Id: ctrl_xfer16.cc 11988 2013-12-02 20:06:59Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -57,7 +57,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
 
   if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
-    BX_ERROR(("RETnear16_Iw: IP > limit"));
+    BX_ERROR(("%s: offset outside of CS limits", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -91,7 +91,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear16(bxInstruction_c *i)
 
   if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
-    BX_ERROR(("RETnear16: IP > limit"));
+    BX_ERROR(("%s: offset outside of CS limits", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -128,7 +128,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RETfar16_Iw(bxInstruction_c *i)
 
   // CS.LIMIT can't change when in real/v8086 mode
   if (ip > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-    BX_ERROR(("RETfar16_Iw: instruction pointer not within code segment limits"));
+    BX_ERROR(("%s: instruction pointer not within code segment limits", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -168,7 +168,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL_Jw(bxInstruction_c *i)
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, PREV_RIP, EIP);
 
-  BX_NEXT_TRACE(i);
+  BX_LINK_TRACE(i);
 }
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL16_Ap(bxInstruction_c *i)
@@ -196,7 +196,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL16_Ap(bxInstruction_c *i)
 
   // CS.LIMIT can't change when in real/v8086 mode
   if (disp16 > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-    BX_ERROR(("CALL16_Ap: instruction pointer not within code segment limits"));
+    BX_ERROR(("%s: instruction pointer not within code segment limits", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -262,7 +262,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL16_Ep(bxInstruction_c *i)
 
   // CS.LIMIT can't change when in real/v8086 mode
   if (op1_16 > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-    BX_ERROR(("CALL16_Ep: instruction pointer not within code segment limits"));
+    BX_ERROR(("%s: instruction pointer not within code segment limits", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -525,7 +525,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP16_Ep(bxInstruction_c *i)
 
   // CS.LIMIT can't change when in real/v8086 mode
   if (op1_16 > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-    BX_ERROR(("JMP16_Ep: instruction pointer not within code segment limits"));
+    BX_ERROR(("%s: instruction pointer not within code segment limits", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -584,7 +584,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::IRET16(bxInstruction_c *i)
 
     // CS.LIMIT can't change when in real/v8086 mode
     if(ip > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-      BX_ERROR(("IRET16: instruction pointer not within code segment limits"));
+      BX_ERROR(("%s: instruction pointer not within code segment limits", i->getIaOpcodeNameShort()));
       exception(BX_GP_EXCEPTION, 0);
     }
 

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_slirp.cc 11342 2012-08-16 11:59:44Z vruppert $
+// $Id: eth_slirp.cc 12282 2014-04-18 17:14:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2011  Heikki Lindholm
+//  Copyright (C) 2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -19,7 +19,7 @@
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 
-// eth_slirp.cc  - slirp backend to eth
+// eth_slirp.cc  - Bochs port of Qemu's slirp implementation
 
 #define BX_PLUGGABLE
 
@@ -28,211 +28,50 @@
 
 #if BX_NETWORKING && BX_NETMOD_SLIRP
 
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/wait.h>
-#include <stdint.h>
-#include <arpa/inet.h> /* ntohs, htons */
+#include "slirp/slirp.h"
+#include "slirp/libslirp.h"
 
 #define LOG_THIS netdev->
 
-#define BX_ETH_SLIRP_LOGGING 0
+#define MAX_HOSTFWD 5
 
-#if defined(_MSC_VER)
-#pragma pack(push, 1)
-#elif defined(__MWERKS__) && defined(macintosh)
-#pragma options align=packed
+static int rx_timer_index = BX_NULL_TIMER_HANDLE;
+static unsigned int bx_slirp_instances = 0;
+fd_set rfds, wfds, xfds;
+int nfds;
+
+extern int slirp_hostfwd(Slirp *s, const char *redir_str, int legacy_format);
+#ifndef WIN32
+extern int slirp_smb(Slirp *s, char *smb_tmpdir, const char *exported_dir,
+                     struct in_addr vserver_addr);
+void slirp_smb_cleanup(Slirp *s, char *smb_tmpdir);
 #endif
-
-// this should not be smaller than an arp reply with an ethernet header
-#define MIN_RX_PACKET_LEN 60
-
-#define ETHERNET_MAC_ADDR_LEN   6
-#define ETHERNET_TYPE_IPV4 0x0800
-#define ETHERNET_TYPE_ARP  0x0806
-
-typedef struct ethernet_header {
-#if defined(_MSC_VER) && (_MSC_VER>=1300)
-  __declspec(align(1))
-#endif
-  Bit8u  dst_mac_addr[ETHERNET_MAC_ADDR_LEN];
-  Bit8u  src_mac_addr[ETHERNET_MAC_ADDR_LEN];
-  Bit16u type;
-} 
-#if !defined(_MSC_VER)
-  GCC_ATTRIBUTE((packed))
-#endif
-ethernet_header_t;
-
-#define ARP_OPCODE_REQUEST 1
-#define ARP_OPCODE_REPLY   2
-
-typedef struct arp_header {
-#if defined(_MSC_VER) && (_MSC_VER>=1300)
-  __declspec(align(1))
-#endif
-  Bit16u  hw_addr_space;
-  Bit16u  proto_addr_space;
-  Bit8u   hw_addr_len;
-  Bit8u   proto_addr_len;
-  Bit16u  opcode;
-  /* HW address of sender */
-  /* Protocol address of sender */
-  /* HW address of target*/
-  /* Protocol address of target */
-}
-#if !defined(_MSC_VER)
-  GCC_ATTRIBUTE((packed))
-#endif
-arp_header_t;
-
-#if defined(_MSC_VER)
-#pragma pack(pop)
-#elif defined(__MWERKS__) && defined(macintosh)
-#pragma options align=reset
-#endif
-
-const Bit8u default_host_ipv4addr[4] = {10, 0, 2, 2};
-const Bit8u default_dns_ipv4addr[4] = {10, 0, 2, 3};
-const Bit8u default_guest_ipv4addr[4] = {10, 0, 2, 15};
-const Bit8u broadcast_ipv4addr[3][4] =
-{
-  {  0,  0,  0,  0},
-  {255,255,255,255},
-  { 10,  0,  2,255},
-};
-
-
-#define SLIP_END     192
-#define SLIP_ESC     219
-#define SLIP_ESC_END 220
-#define SLIP_ESC_ESC 221
-
-static size_t encode_slip(Bit8u *src, Bit8u *dst, size_t src_len)
-{
-  Bit8u *dst_start = dst;
-  Bit8u *src_end = src + src_len;
-
-  while (src < src_end) {
-    switch (*src) {
-      case SLIP_END:
-        *dst++ = SLIP_ESC;
-        *dst++ = SLIP_ESC_END;
-        break;
-      case SLIP_ESC:
-        *dst++ = SLIP_ESC;
-        *dst++ = SLIP_ESC_ESC;
-        break;
-      default:
-        *dst++ = *src;
-        break;
-    }
-    src++;
-  }
-  *dst++ = SLIP_END;
-
-  return dst - dst_start;
-}
-
-static int decode_slip(Bit8u *src, size_t *src_len, Bit8u *dst, size_t *dst_len)
-{
-  Bit8u *dst_start = dst;
-  Bit8u *src_start = src;
-  Bit8u *src_end = src + *src_len;
-  int got_packet = 0;
-
-  if (*src_len == 0) {
-    *dst_len = 0;
-    return 0;
-  }
-
-  while ((src < (src_end - 1)) && (!got_packet)) {
-    switch (*src) {
-      case SLIP_END:
-        if (dst != dst_start) // discard empty packets
-          got_packet = 1;
-        src++;
-        break;
-      case SLIP_ESC:
-        switch (*++src) {
-          case SLIP_ESC_ESC:
-            *dst++ = SLIP_ESC;
-            src++;
-            break;
-          case SLIP_ESC_END:
-            *dst++ = SLIP_END;
-            src++;
-            break;
-          default:
-            *dst++ = *src++;
-            break;
-        }
-        break;
-      default:
-        *dst++ = *src++;
-        break;
-    }
-  }
-  if ((!got_packet) && (src < src_end)) {
-    switch (*src) {
-      case SLIP_END:
-        got_packet = 1;
-        src++;
-        break;
-      case SLIP_ESC:
-        break;
-      default:
-        *dst++ = *src++;
-        break;
-    }
-  }
-
-  *src_len = src - src_start;
-  *dst_len = dst - dst_start;
-
-  return got_packet;
-}
-
-
 
 class bx_slirp_pktmover_c : public eth_pktmover_c {
 public:
   bx_slirp_pktmover_c(const char *netif, const char *macaddr,
-                     eth_rx_handler_t rxh, eth_rx_status_t rxstat,
-                     bx_devmodel_c *dev, const char *script);
+                      eth_rx_handler_t rxh, eth_rx_status_t rxstat,
+                      bx_devmodel_c *dev, const char *script);
+  virtual ~bx_slirp_pktmover_c();
   void sendpkt(void *buf, unsigned io_len);
+  void receive(void *pkt, unsigned pkt_len);
+  int can_receive(void);
 private:
-  pid_t slirp_pid;
-  int slirp_pipe_fds[2];
-  Bit8u slip_output_buffer[4096]; // TODO: reasonable size for these?
-  Bit8u slip_input_buffer[4096];
-  size_t slip_input_buffer_filled;
-  size_t slip_input_buffer_decoded;
-
-  Bit8u reply_buffer[1024];
-  int pending_reply_size;
-
-  dhcp_cfg_t dhcp;
-
-  tftp_data_t tftp;
-
-  int rx_timer_index;
+  Slirp *slirp;
   unsigned netdev_speed;
-  unsigned tx_time;
 
-  static void rx_timer_handler(void *);
-  void rx_timer();
-
-  bx_bool handle_ipv4(const Bit8u *buf, unsigned len);
-  void handle_arp(void *buf, unsigned len);
-  void prepare_builtin_reply(unsigned type);
-
-#if BX_ETH_SLIRP_LOGGING
-  FILE *pktlog_txt;
+  int restricted;
+  struct in_addr net, mask, host, dhcp, dns;
+  char *bootfile, *hostname, **dnssearch;
+  char *hostfwd[MAX_HOSTFWD];
+  int n_hostfwd;
+#ifndef WIN32
+  char *smb_export, *smb_tmpdir;
+  struct in_addr smb_srv;
 #endif
+
+  bx_bool parse_slirp_conf(const char *conf);
+  static void rx_timer_handler(void *);
 };
 
 class bx_slirp_locator_c : public eth_locator_c {
@@ -246,6 +85,182 @@ protected:
   }
 } bx_slirp_match;
 
+
+bx_slirp_pktmover_c::~bx_slirp_pktmover_c()
+{
+  if (slirp != NULL) {
+    slirp_cleanup(slirp);
+#ifndef WIN32
+    if ((smb_export != NULL) && (smb_tmpdir != NULL)) {
+      slirp_smb_cleanup(slirp, smb_tmpdir);
+      free(smb_tmpdir);
+      free(smb_export);
+    }
+#endif
+    if (bootfile != NULL) free(bootfile);
+    if (hostname != NULL) free(hostname);
+    if (dnssearch != NULL) {
+      size_t i = 0;
+      while (dnssearch[i] != NULL) {
+        free(dnssearch[i++]);
+      }
+      free(dnssearch);
+    }
+    while (n_hostfwd > 0) {
+      free(hostfwd[--n_hostfwd]);
+    }
+    if (--bx_slirp_instances == 0) {
+      bx_pc_system.deactivate_timer(rx_timer_index);
+#ifndef WIN32
+      signal(SIGPIPE, SIG_DFL);
+#endif
+    }
+  }
+}
+
+static size_t strip_whitespace(char *s)
+{
+  size_t ptr = 0;
+  char *tmp = (char*)malloc(strlen(s)+1);
+  strcpy(tmp, s);
+  while (s[ptr] == ' ') ptr++;
+  if (ptr > 0) strcpy(s, tmp+ptr);
+  free(tmp);
+  ptr = strlen(s);
+  while ((ptr > 0) && (s[ptr-1] == ' ')) {
+    s[--ptr] = 0;
+  }
+  return ptr;
+}
+
+bx_bool bx_slirp_pktmover_c::parse_slirp_conf(const char *conf)
+{
+  FILE *fd = NULL;
+  char line[512];
+  char *ret, *param, *val, *tmp;
+  bx_bool format_checked = 0;
+  unsigned i, count;
+
+  fd = fopen(conf, "r");
+  if (fd == NULL) return 0;
+
+  do {
+    ret = fgets(line, sizeof(line)-1, fd);
+    line[sizeof(line) - 1] = '\0';
+    size_t len = strlen(line);
+    if ((len>0) && (line[len-1] < ' '))
+      line[len-1] = '\0';
+    if ((ret != NULL) && (strlen(line) > 0)) {
+      if (!format_checked) {
+        if (!strncmp(line, "# slirp config", 14)) {
+          format_checked = 1;
+        } else {
+          BX_ERROR(("slirp config: wrong file format"));
+          fclose(fd);
+          return 0;
+        }
+      } else {
+        if (line[0] == '#') continue;
+        param = strtok(line, "=");
+        if (param != NULL) {
+          val = strtok(NULL, "");
+        } else {
+          continue;
+        }
+        size_t len1 = strip_whitespace(param);
+        size_t len2 = strip_whitespace(val);
+        if ((len1 == 0) || (len2 == 0)) continue;
+        if (!stricmp(param, "restricted")) {
+          restricted = atoi(val);
+        } else if (!stricmp(param, "hostname")) {
+          if (len2 < 33) {
+            hostname = (char*)malloc(len2+1);
+            strcpy(hostname, val);
+          } else {
+            BX_ERROR(("slirp: wrong format for 'hostname'"));
+          }
+        } else if (!stricmp(param, "bootfile")) {
+          if (len2 < 128) {
+            bootfile = (char*)malloc(len2+1);
+            strcpy(bootfile, val);
+          } else {
+            BX_ERROR(("slirp: wrong format for 'bootfile'"));
+          }
+        } else if (!stricmp(param, "dnssearch")) {
+          if (len2 < 256) {
+            count = 1;
+            for (i = 0; i < len2; i++) {
+              if (val[i] == ',') count++;
+            }
+            dnssearch = (char**)malloc((count + 1) * sizeof(char*));
+            i = 0;
+            tmp = strtok(val, ",");
+            while (tmp != NULL) {
+              len2 = strip_whitespace(tmp);
+              dnssearch[i] = (char*)malloc(len2+1);
+              strcpy(dnssearch[i], tmp);
+              i++;
+              tmp = strtok(NULL, ",");
+            }
+            dnssearch[i] = NULL;
+          } else {
+            BX_ERROR(("slirp: wrong format for 'dnssearch'"));
+          }
+        } else if (!stricmp(param, "net")) {
+          if (!inet_aton(val, &net)) {
+            BX_ERROR(("slirp: wrong format for 'net'"));
+          }
+        } else if (!stricmp(param, "mask")) {
+          if (!inet_aton(val, &mask)) {
+            BX_ERROR(("slirp: wrong format for 'mask'"));
+          }
+        } else if (!stricmp(param, "host")) {
+          if (!inet_aton(val, &host)) {
+            BX_ERROR(("slirp: wrong format for 'host'"));
+          }
+        } else if (!stricmp(param, "dhcpstart")) {
+          if (!inet_aton(val, &dhcp)) {
+            BX_ERROR(("slirp: wrong format for 'dhcpstart'"));
+          }
+        } else if (!stricmp(param, "dns")) {
+          if (!inet_aton(val, &dns)) {
+            BX_ERROR(("slirp: wrong format for 'dns'"));
+          }
+#ifndef WIN32
+        } else if (!stricmp(param, "smb_export")) {
+          if ((len2 < 256) && (val[0] == '/')) {
+            smb_export = (char*)malloc(len2+1);
+            strcpy(smb_export, val);
+          } else {
+            BX_ERROR(("slirp: wrong format for 'smb_export'"));
+          }
+        } else if (!stricmp(param, "smb_srv")) {
+          if (!inet_aton(val, &smb_srv)) {
+            BX_ERROR(("slirp: wrong format for 'smb_srv'"));
+          }
+#endif
+        } else if (!stricmp(param, "hostfwd")) {
+          if (len2 < 256) {
+            if (n_hostfwd < MAX_HOSTFWD) {
+              hostfwd[n_hostfwd] = (char*)malloc(len2+1);
+              strcpy(hostfwd[n_hostfwd], val);
+              n_hostfwd++;
+            } else {
+              BX_ERROR(("slirp: too many 'hostfwd' rules"));
+            }
+          } else {
+            BX_ERROR(("slirp: wrong format for 'hostfwd'"));
+          }
+        } else {
+          BX_ERROR(("slirp: unknown option '%s'", line));
+        }
+      }
+    }
+  } while (!feof(fd));
+  fclose(fd);
+  return 1;
+}
+
 bx_slirp_pktmover_c::bx_slirp_pktmover_c(const char *netif,
                                          const char *macaddr,
                                          eth_rx_handler_t rxh,
@@ -253,360 +268,120 @@ bx_slirp_pktmover_c::bx_slirp_pktmover_c(const char *netif,
                                          bx_devmodel_c *dev,
                                          const char *script)
 {
-  int flags;
+  logfunctions *slirplog;
+  char prefix[10];
+
+  restricted = 0;
+  slirp = NULL;
+  hostname = NULL;
+  bootfile = NULL;
+  dnssearch = NULL;
+  n_hostfwd = 0;
+  /* default settings according to historic slirp */
+  net.s_addr  = htonl(0x0a000200); /* 10.0.2.0 */
+  mask.s_addr = htonl(0xffffff00); /* 255.255.255.0 */
+  host.s_addr = htonl(0x0a000202); /* 10.0.2.2 */
+  dhcp.s_addr = htonl(0x0a00020f); /* 10.0.2.15 */
+  dns.s_addr  = htonl(0x0a000203); /* 10.0.2.3 */
+#ifndef WIN32
+  smb_export = NULL;
+  smb_tmpdir = NULL;
+  smb_srv.s_addr = 0;
+#endif
 
   this->netdev = dev;
+  if (sizeof(struct arphdr) != 28) {
+    BX_PANIC(("system error: invalid ARP header structure size"));
+  }
   BX_INFO(("slirp network driver"));
-
-  if (socketpair(AF_UNIX, SOCK_STREAM, 0, slirp_pipe_fds))
-    BX_PANIC(("socketpair() failed: %s", strerror(errno)));
-
-  // mark our end of the pipe non-blocking because of the timer based poll
-  flags = fcntl(slirp_pipe_fds[0], F_GETFL);
-  if (flags == -1)
-    BX_PANIC(("fcntl(,F_GETFL) failed: %s", strerror(errno)));
-  flags |= O_NONBLOCK;
-  if (fcntl (slirp_pipe_fds[0], F_SETFL, flags) != 0)
-    BX_PANIC(("fcntl(,F_SETFL,) failed: %s", strerror(errno)));
-
-  slirp_pid = fork();
-  if (slirp_pid == -1) {
-   BX_PANIC(("fork() failed: %s", strerror(errno)));
-  }
-  else if (slirp_pid == 0) {
-    int ret;
-    int nfd;
-
-    nfd = open("/dev/null", O_RDWR);
-    if (nfd != -1) {
-      dup2(nfd, STDERR_FILENO);
-    }
-
-    if (dup2(slirp_pipe_fds[1], STDIN_FILENO) == -1) {
-      BX_PANIC(("dup2() failed: %s", strerror(errno)));
-    }
-    /* XXX slirp seems to use stdin bidirectionally 
-     * instead of using stdout for SLIP output */
-    if (dup2(slirp_pipe_fds[1], STDOUT_FILENO) == -1) {
-      BX_PANIC(("dup2() failed: %s", strerror(errno)));
-    }
-    close(slirp_pipe_fds[0]);
-    ret = execlp(script == NULL ? "slirp" : script, 
-                 script == NULL ? "slirp" : script, /*"-d", "-1", "-S",*/ NULL);
-    if (ret == -1) {
-      BX_PANIC(("execlp() failed: %s", strerror(errno)));
-    }
-  }
 
   this->rxh   = rxh;
   this->rxstat = rxstat;
-  strcpy(this->tftp.rootdir, netif);
-  this->tftp.tid = 0;
-  this->tftp.write = 0;
   Bit32u status = this->rxstat(this->netdev) & BX_NETDEV_SPEED;
   this->netdev_speed = (status == BX_NETDEV_1GBIT) ? 1000 :
                        (status == BX_NETDEV_100MBIT) ? 100 : 10;
-  this->rx_timer_index =
-    bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
+  if (bx_slirp_instances == 0) {
+    rx_timer_index =
+      bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
                                 1, 1, "eth_slirp");
-  memcpy(&dhcp.guest_macaddr[0], macaddr, ETHERNET_MAC_ADDR_LEN);
-  // ensure the slirp host has a different mac address
-  memcpy(&dhcp.host_macaddr[0], macaddr, ETHERNET_MAC_ADDR_LEN);
-  dhcp.host_macaddr[5] ^= 0x03;
-
-  memcpy(&dhcp.host_ipv4addr[0], &default_host_ipv4addr[0], 4);
-  memcpy(&dhcp.guest_ipv4addr[0], &broadcast_ipv4addr[1][0], 4);
-  dhcp.default_guest_ipv4addr = default_guest_ipv4addr;
-  memcpy(&dhcp.dns_ipv4addr[0], &default_dns_ipv4addr[0], 4);
-
-  pending_reply_size = 0;
-  slip_input_buffer_filled = slip_input_buffer_decoded = 0;
-
-  close(slirp_pipe_fds[1]);
-
-#if BX_ETH_SLIRP_LOGGING
-  pktlog_txt = fopen("ne2k-pktlog.txt", "wb");
-  if (!pktlog_txt) BX_PANIC(("ne2k-pktlog.txt failed"));
-  fprintf(pktlog_txt, "slirp packetmover readable log file\n");
-  fprintf(pktlog_txt, "host MAC address = ");
-  int i;
-  for (i=0; i<6; i++)
-    fprintf(pktlog_txt, "%02x%s", 0xff & host_mac_addr[i], i<5?":" : "\n");
-  fprintf(pktlog_txt, "guest MAC address = ");
-  for (i=0; i<6; i++)
-    fprintf(pktlog_txt, "%02x%s", 0xff & guest_mac_addr[i], i<5?":" : "\n");
-  fprintf(pktlog_txt, "--\n");
-  fflush(pktlog_txt);
+#ifndef WIN32
+    signal(SIGPIPE, SIG_IGN);
 #endif
-}
-
-void bx_slirp_pktmover_c::handle_arp(void *buf, unsigned len)
-{
-  arp_header_t *arphdr = (arp_header_t *)((Bit8u *)buf +
-                                          sizeof(ethernet_header_t));
-
-  if (pending_reply_size > 0)
-    return;
-
-  if ((ntohs(arphdr->hw_addr_space) != 0x0001) ||
-      (ntohs(arphdr->proto_addr_space) != 0x0800) ||
-      (arphdr->hw_addr_len != ETHERNET_MAC_ADDR_LEN) ||
-      (arphdr->proto_addr_len != 4)) {
-    BX_ERROR(("Unhandled ARP message hw: %04x (%d) proto: %04x (%d)\n",
-              ntohs(arphdr->hw_addr_space), arphdr->hw_addr_len,
-              ntohs(arphdr->proto_addr_space), arphdr->proto_addr_len));
-    return;
   }
 
-  arp_header_t *arprhdr = (arp_header_t *)((Bit8u *)reply_buffer +
-                                                    sizeof(ethernet_header_t));
-  switch(ntohs(arphdr->opcode)) {
-    case ARP_OPCODE_REQUEST:
-      // Slirp uses addresses x.x.x.0 - x.x.x.3
-      if (((Bit8u *)arphdr)[27] > 3)
-        break;
-      memset(reply_buffer, 0, MIN_RX_PACKET_LEN);
-      arprhdr->hw_addr_space = htons(0x0001);
-      arprhdr->proto_addr_space = htons(0x0800);
-      arprhdr->hw_addr_len = ETHERNET_MAC_ADDR_LEN;
-      arprhdr->proto_addr_len = 4;
-      arprhdr->opcode = htons(ARP_OPCODE_REPLY);
-      memcpy((Bit8u *)arprhdr+8, dhcp.host_macaddr, ETHERNET_MAC_ADDR_LEN);
-      memcpy((Bit8u *)arprhdr+14, (Bit8u *)arphdr+24, 4);
-      memcpy((Bit8u *)arprhdr+18, dhcp.guest_macaddr, ETHERNET_MAC_ADDR_LEN);
-      memcpy((Bit8u *)arprhdr+24, (Bit8u *)arphdr+14, 4);
-      pending_reply_size = MIN_RX_PACKET_LEN;
-      prepare_builtin_reply(ETHERNET_TYPE_ARP);
-      break;
-    case ARP_OPCODE_REPLY:
-      break;
-    default:
-      break;
-  }
-}
-
-// detect and handle DHCP request (partly copy & paste from eth_vnet.cc)
-bx_bool bx_slirp_pktmover_c::handle_ipv4(const Bit8u *buf, unsigned len)
-{
-  unsigned total_len;
-  unsigned fragment_flags;
-  unsigned fragment_offset;
-  unsigned ipproto;
-  unsigned l3header_len;
-  const Bit8u *l4pkt;
-  unsigned l4pkt_len;
-  unsigned udp_sourceport;
-  unsigned udp_targetport;
-  unsigned udp_reply_size;
-
-  // guest-to-host IPv4
-  if (len < (14U+20U)) {
-    return 0;
-  }
-  if ((buf[14+0] & 0xf0) != 0x40) {
-    return 0;
-  }
-  l3header_len = ((unsigned)(buf[14+0] & 0x0f) << 2);
-  if (l3header_len != 20) {
-    return 0;
-  }
-  if (len < (14U+l3header_len)) return 0;
-  if (ip_checksum(&buf[14],l3header_len) != (Bit16u)0xffff) {
-    return 0;
-  }
-
-  total_len = get_net2(&buf[14+2]);
-
-  if (memcmp(&buf[14+16],dhcp.host_ipv4addr, 4) &&
-      memcmp(&buf[14+16],broadcast_ipv4addr[0],4) &&
-      memcmp(&buf[14+16],broadcast_ipv4addr[1],4) &&
-      memcmp(&buf[14+16],broadcast_ipv4addr[2],4))
-  {
-    return 0;
-  }
-
-  fragment_flags = (unsigned)buf[14+6] >> 5;
-  fragment_offset = ((unsigned)get_net2(&buf[14+6]) & 0x1fff) << 3;
-  ipproto = buf[14+9];
-
-  if ((fragment_flags & 0x1) || (fragment_offset != 0)) {
-    return 0;
-  } else {
-    l4pkt = &buf[14 + l3header_len];
-    l4pkt_len = total_len - l3header_len;
-  }
-
-  if (ipproto == 0x11) {
-    // guest-to-host UDP IPv4
-    if (l4pkt_len < 8) return 0;
-    udp_sourceport = get_net2(&l4pkt[0]);
-    udp_targetport = get_net2(&l4pkt[2]);
-    if ((udp_targetport == 67) || (udp_targetport == 69)) { // BOOTP & TFTP
-      if (udp_targetport == 67) { // BOOTP
-        udp_reply_size = process_dhcp(netdev, &l4pkt[8], l4pkt_len-8, &reply_buffer[42], &dhcp);
-      } else {
-        udp_reply_size = process_tftp(netdev, &l4pkt[8], l4pkt_len-8, udp_sourceport, &reply_buffer[42], &tftp);
-      }
-      if (udp_reply_size > 0) {
-        pending_reply_size = udp_reply_size + 42;
-        // host-to-guest UDP IPv4: pseudo-header
-        reply_buffer[22] = 0;
-        reply_buffer[23] = 0x11; // UDP
-        put_net2(&reply_buffer[24], 8U+udp_reply_size);
-        memcpy(&reply_buffer[26], dhcp.host_ipv4addr, 4);
-        memcpy(&reply_buffer[30], dhcp.guest_ipv4addr, 4);
-        // udp header
-        put_net2(&reply_buffer[34], udp_targetport);
-        put_net2(&reply_buffer[36], udp_sourceport);
-        put_net2(&reply_buffer[38], 8U+udp_reply_size);
-        put_net2(&reply_buffer[40], 0);
-        put_net2(&reply_buffer[40], ip_checksum(&reply_buffer[22], 12U+8U+udp_reply_size) ^ (Bit16u)0xffff);
-        // ip header
-        memset(&reply_buffer[14], 0, 20);
-        reply_buffer[14] = 0x45;
-        reply_buffer[15] = 0x00;
-        put_net2(&reply_buffer[16], 20U+8U+udp_reply_size);
-        put_net2(&reply_buffer[18], 1);
-        reply_buffer[20] = 0x00;
-        reply_buffer[21] = 0x00;
-        reply_buffer[22] = 0x07; // TTL
-        reply_buffer[23] = 0x11; // UDP
-        // host-to-guest IPv4
-        reply_buffer[14] = (reply_buffer[14] & 0x0f) | 0x40;
-        l3header_len = ((unsigned)(reply_buffer[14] & 0x0f) << 2);
-        memcpy(&reply_buffer[26], &dhcp.host_ipv4addr[0], 4);
-        memcpy(&reply_buffer[30], &dhcp.guest_ipv4addr[0], 4);
-        put_net2(&reply_buffer[24], 0);
-        put_net2(&reply_buffer[24], ip_checksum(&reply_buffer[14], l3header_len) ^ (Bit16u)0xffff);
-        prepare_builtin_reply(ETHERNET_TYPE_IPV4);
-      }
-      // don't forward DHCP / TFTP requests to Slirp
-      return 1;
+  if ((strlen(script) > 0) && (strcmp(script, "none"))) {
+    if (!parse_slirp_conf(script)) {
+      BX_ERROR(("reading slirp config failed"));
     }
   }
-  return 0;
+  slirplog = new logfunctions();
+  sprintf(prefix, "SLIRP%d", bx_slirp_instances);
+  slirplog->put(prefix);
+  slirp = slirp_init(restricted, net, mask, host, hostname, netif, bootfile, dhcp, dns,
+                     (const char**)dnssearch, this, slirplog);
+  if (n_hostfwd > 0) {
+    for (int i = 0; i < n_hostfwd; i++) {
+      slirp_hostfwd(slirp, hostfwd[i], 0);
+    }
+  }
+#ifndef WIN32
+  if (smb_export != NULL) {
+    smb_tmpdir = (char*)malloc(128);
+    if (slirp_smb(slirp, smb_tmpdir, smb_export, smb_srv) < 0) {
+      BX_ERROR(("failed to initialize SMB support"));
+    }
+  }
+#endif
+  bx_slirp_instances++;
 }
 
 void bx_slirp_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
-  size_t len;
-  ethernet_header_t *ethhdr = (ethernet_header_t *)buf;
-
-#if BX_ETH_SLIRP_LOGGING
-  write_pktlog_txt(pktlog_txt, (Bit8u*)buf, io_len, 0);
-#endif
-  this->tx_time = (64 + 96 + 4 * 8 + io_len * 8) / this->netdev_speed;
-  switch (ntohs(ethhdr->type)) {
-    case ETHERNET_TYPE_IPV4: 
-      if (!handle_ipv4((Bit8u*)buf, io_len)) {
-        len = encode_slip((Bit8u *)buf+sizeof(ethernet_header_t),
-                          slip_output_buffer,
-                          io_len-sizeof(ethernet_header_t));
-        len = write(slirp_pipe_fds[0], slip_output_buffer, len);
-      }
-      break;
-    case ETHERNET_TYPE_ARP:
-      handle_arp(buf, io_len);
-      break;
-    default:
-      break;
-  }
-}
-
-void bx_slirp_pktmover_c::prepare_builtin_reply(unsigned type)
-{
-  ethernet_header_t *ethhdr;
-  unsigned rx_time;
-
-  ethhdr = (ethernet_header_t *)reply_buffer;
-  memcpy(ethhdr->dst_mac_addr, dhcp.guest_macaddr, ETHERNET_MAC_ADDR_LEN);
-  memcpy(ethhdr->src_mac_addr, dhcp.host_macaddr, ETHERNET_MAC_ADDR_LEN);
-  ethhdr->type = htons(type);
-  rx_time = (64 + 96 + 4 * 8 + pending_reply_size * 8) / this->netdev_speed;
-  bx_pc_system.activate_timer(this->rx_timer_index, this->tx_time + rx_time + 100, 0);
+  slirp_input(slirp, (Bit8u*)buf, io_len);
 }
 
 void bx_slirp_pktmover_c::rx_timer_handler(void *this_ptr)
 {
-  bx_slirp_pktmover_c *class_ptr = (bx_slirp_pktmover_c *)this_ptr;
-  class_ptr->rx_timer();
+  Bit32u timeout = 0;
+  int ret;
+  struct timeval tv;
+
+  nfds = -1;
+  FD_ZERO(&rfds);
+  FD_ZERO(&wfds);
+  FD_ZERO(&xfds);
+  slirp_select_fill(&nfds, &rfds, &wfds, &xfds, &timeout);
+  tv.tv_sec = 0;
+  tv.tv_usec = 0;
+  ret = select(nfds + 1, &rfds, &wfds, &xfds, &tv);
+  slirp_select_poll(&rfds, &wfds, &xfds, (ret < 0));
 }
 
-void bx_slirp_pktmover_c::rx_timer()
+int slirp_can_output(void *this_ptr)
 {
-  Bit8u *packet;
-  Bit8u padded_packet[MIN_RX_PACKET_LEN];
-  ethernet_header_t *ethhdr;
-  size_t packet_len;
+  bx_slirp_pktmover_c *class_ptr = (bx_slirp_pktmover_c *)this_ptr;
+  return class_ptr->can_receive();
+}
 
-  if (pending_reply_size > 0) {
-#if BX_ETH_SLIRP_LOGGING
-    write_pktlog_txt(pktlog_txt, reply_buffer, pending_reply_size, 1);
-#endif
-    if (this->rxstat(this->netdev) & BX_NETDEV_RXREADY) {
-      this->rxh(this->netdev, reply_buffer, pending_reply_size);
-    } else {
-      BX_ERROR(("device not ready to receive data"));
-    }
-    pending_reply_size = 0;
-    // restore timer
-    bx_pc_system.activate_timer(this->rx_timer_index, 1000, 1);
-    return;
+int bx_slirp_pktmover_c::can_receive()
+{
+  return ((this->rxstat(this->netdev) & BX_NETDEV_RXREADY) != 0);
+}
+
+void slirp_output(void *this_ptr, const Bit8u *pkt, int pkt_len)
+{
+  bx_slirp_pktmover_c *class_ptr = (bx_slirp_pktmover_c *)this_ptr;
+  class_ptr->receive((void*)pkt, pkt_len);
+}
+
+void bx_slirp_pktmover_c::receive(void *pkt, unsigned pkt_len)
+{
+  if (this->rxstat(this->netdev) & BX_NETDEV_RXREADY) {
+    if (pkt_len < 60) pkt_len = 60;
+    this->rxh(this->netdev, pkt, pkt_len);
+  } else {
+    BX_ERROR(("device not ready to receive data"));
   }
-
-  Bit8u *buf = slip_input_buffer + sizeof(ethernet_header_t);
-  ssize_t n;
-  int got_packet;
-  size_t ilen, olen, pos;
-
-  if (slip_input_buffer_filled + sizeof(ethernet_header_t) <
-      sizeof(slip_input_buffer)) {
-    n = read(slirp_pipe_fds[0], buf+slip_input_buffer_filled,
-             (sizeof(slip_input_buffer) - sizeof(ethernet_header_t)) -
-             slip_input_buffer_filled);
-    if (n < 1)
-      return;
-    slip_input_buffer_filled += n;
-  }
-
-  packet = (Bit8u *)slip_input_buffer;
-
-  ethhdr = (ethernet_header_t *)packet;
-  memcpy(ethhdr->dst_mac_addr, dhcp.guest_macaddr, ETHERNET_MAC_ADDR_LEN);
-  memcpy(ethhdr->src_mac_addr, dhcp.host_macaddr, ETHERNET_MAC_ADDR_LEN);
-  ethhdr->type = htons(ETHERNET_TYPE_IPV4);
-
-  olen = 0;
-  pos = slip_input_buffer_decoded; 
-  do {
-    ilen = slip_input_buffer_filled - slip_input_buffer_decoded;
-    got_packet = decode_slip(buf + pos, &ilen, 
-                             buf + slip_input_buffer_decoded, &olen);
-    pos += ilen;
-    slip_input_buffer_filled -= ilen;
-    slip_input_buffer_filled += olen;
-    slip_input_buffer_decoded += olen;
-    if (got_packet) {
-      packet_len = sizeof(ethernet_header_t) + slip_input_buffer_decoded;
-      if (packet_len < MIN_RX_PACKET_LEN) {
-        packet = padded_packet;
-        bzero(packet, MIN_RX_PACKET_LEN);
-        memcpy(packet, slip_input_buffer, packet_len);
-        packet_len = MIN_RX_PACKET_LEN;
-      }
-#if BX_ETH_SLIRP_LOGGING
-      write_pktlog_txt(pktlog_txt, packet, packet_len, 1);
-#endif
-      (*rxh)(this->netdev, packet, packet_len);
-      slip_input_buffer_filled -= slip_input_buffer_decoded;
-      slip_input_buffer_decoded = 0;
-    }
-  } while (got_packet);
-
-  if ((slip_input_buffer_filled - slip_input_buffer_decoded) > 0)
-    memmove(slip_input_buffer + slip_input_buffer_decoded,
-            slip_input_buffer + pos, 
-            (slip_input_buffer_filled - slip_input_buffer_decoded));
 }
 
 #endif /* if BX_NETWORKING && BX_NETMOD_SLIRP */

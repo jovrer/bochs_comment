@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit16.cc 11437 2012-09-21 14:56:56Z sshwarts $
+// $Id: bit16.cc 12222 2014-03-02 16:40:13Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,8 @@
 
 #if BX_CPU_LEVEL >= 3
 
+#include "scalar_arith.h"
+
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BSF_GwEwR(bxInstruction_c *i)
 {
   Bit16u op2_16 = BX_READ_16BIT_REG(i->src());
@@ -34,12 +36,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BSF_GwEwR(bxInstruction_c *i)
     assert_ZF(); /* op1_16 undefined */
   }
   else {
-    Bit16u op1_16 = 0;
-    while ((op2_16 & 0x01) == 0) {
-      op1_16++;
-      op2_16 >>= 1;
-    }
-
+    Bit16u op1_16 = tzcntw(op2_16);
     SET_FLAGS_OSZAPC_LOGIC_16(op1_16);
     clear_ZF();
 
@@ -343,18 +340,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BTR_EwIbR(bxInstruction_c *i)
 /* F3 0F B8 */
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GwEwR(bxInstruction_c *i)
 {
-  Bit16u op2_16 = BX_READ_16BIT_REG(i->src());
+  Bit16u op_16 = popcntw(BX_READ_16BIT_REG(i->src()));
 
-  Bit16u op1_16 = 0;
-  while (op2_16 != 0) {
-    op2_16 &= (op2_16-1);
-    op1_16++;
-  }
-
-  Bit32u flags = op1_16 ? 0 : EFlagsZFMask;
+  Bit32u flags = op_16 ? 0 : EFlagsZFMask;
   setEFlagsOSZAPC(flags);
 
-  BX_WRITE_16BIT_REG(i->dst(), op1_16);
+  BX_WRITE_16BIT_REG(i->dst(), op_16);
 
   BX_NEXT_INSTR(i);
 }
@@ -363,12 +354,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GwEwR(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::TZCNT_GwEwR(bxInstruction_c *i)
 {
   Bit16u op1_16 = BX_READ_16BIT_REG(i->src());
-  Bit16u mask = 0x1, result_16 = 0;
-
-  while ((op1_16 & mask) == 0 && mask) {
-    mask <<= 1;
-    result_16++;
-  }
+  Bit16u result_16 = (Bit16u) tzcntw(op1_16);
 
   set_CF(! op1_16);
   set_ZF(! result_16);
@@ -382,12 +368,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::TZCNT_GwEwR(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LZCNT_GwEwR(bxInstruction_c *i)
 {
   Bit16u op1_16 = BX_READ_16BIT_REG(i->src());
-  Bit16u mask = 0x8000, result_16 = 0;
-
-  while ((op1_16 & mask) == 0 && mask) {
-    mask >>= 1;
-    result_16++;
-  }
+  Bit16u result_16 = (Bit16u) lzcntw(op1_16);
 
   set_CF(! op1_16);
   set_ZF(! result_16);

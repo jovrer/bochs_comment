@@ -1,10 +1,11 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svga_cirrus.h 11519 2012-10-28 08:23:39Z vruppert $
+// $Id: svga_cirrus.h 12049 2013-12-18 17:55:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-// Copyright (c) 2004 Makoto Suzuki (suzu)
-//                    Volker Ruppert (vruppert)
-//                    Robin Kay (komadori)
+//  Copyright (c) 2004 Makoto Suzuki (suzu)
+//                     Volker Ruppert (vruppert)
+//                     Robin Kay (komadori)
+//  Copyright (C) 2004-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -210,6 +211,7 @@ private:
 
   Bit32u bank_base[2];
   Bit32u bank_limit[2];
+  Bit32u memsize_mask;
   Bit8u *disp_ptr;
 
   struct {

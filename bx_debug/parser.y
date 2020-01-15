@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y 11571 2013-01-14 17:02:07Z sshwarts $
+// $Id: parser.y 12184 2014-02-11 20:51:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -33,6 +33,7 @@
 %token <uval> BX_TOKEN_DS
 %token <uval> BX_TOKEN_FS
 %token <uval> BX_TOKEN_GS
+%token <uval> BX_TOKEN_OPMASK_REG
 %token <uval> BX_TOKEN_FLAGS
 %token <bval> BX_TOKEN_ON
 %token <bval> BX_TOKEN_OFF
@@ -55,7 +56,9 @@
 %token <sval> BX_TOKEN_CPU
 %token <sval> BX_TOKEN_FPU
 %token <sval> BX_TOKEN_MMX
-%token <sval> BX_TOKEN_SSE
+%token <sval> BX_TOKEN_XMM
+%token <sval> BX_TOKEN_YMM
+%token <sval> BX_TOKEN_ZMM
 %token <sval> BX_TOKEN_AVX
 %token <sval> BX_TOKEN_IDT
 %token <sval> BX_TOKEN_IVT
@@ -114,9 +117,7 @@
 %token <sval> BX_TOKEN_PAGE
 %token <sval> BX_TOKEN_HELP
 %token <sval> BX_TOKEN_CALC
-%token <sval> BX_TOKEN_VGA
 %token <sval> BX_TOKEN_DEVICE
-%token <sval> BX_TOKEN_COMMAND
 %token <sval> BX_TOKEN_GENERIC
 %token BX_TOKEN_RSHIFT
 %token BX_TOKEN_LSHIFT
@@ -149,8 +150,9 @@ command:
     | regs_command
     | fpu_regs_command
     | mmx_regs_command
-    | sse_regs_command
-    | avx_regs_command
+    | xmm_regs_command
+    | ymm_regs_command
+    | zmm_regs_command
     | segment_regs_command
     | debug_regs_command
     | control_regs_command
@@ -216,12 +218,12 @@ BX_TOKEN_SEGREG:
 ;
 
 timebp_command:
-      BX_TOKEN_TIMEBP BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_TIMEBP expression '\n'
       {
           bx_dbg_timebp_command(0, $2);
           free($1);
       }
-    | BX_TOKEN_TIMEBP_ABSOLUTE BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_TIMEBP_ABSOLUTE expression '\n'
       {
           bx_dbg_timebp_command(1, $2);
           free($1);
@@ -245,7 +247,7 @@ vmexitbp_command:
     ;
     
 show_command:
-      BX_TOKEN_SHOW BX_TOKEN_COMMAND '\n'
+      BX_TOKEN_SHOW BX_TOKEN_GENERIC '\n'
       {
           bx_dbg_show_command($2);
           free($1); free($2);
@@ -392,7 +394,7 @@ symbol_command:
         bx_dbg_symbol_command($2, 0, 0);
         free($1); free($2);
       }
-    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_STRING BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_STRING expression '\n'
       {
         bx_dbg_symbol_command($2, 0, $3);
         free($1); free($2);
@@ -402,7 +404,7 @@ symbol_command:
         bx_dbg_symbol_command($3, 1, 0);
         free($1); free($2); free($3);
       }
-    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_GLOBAL BX_TOKEN_STRING BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_GLOBAL BX_TOKEN_STRING expression '\n'
       {
         bx_dbg_symbol_command($3, 1, $4);
         free($1); free($2); free($3);
@@ -418,7 +420,7 @@ where_command:
     ;
 
 print_string_command:
-      BX_TOKEN_PRINT_STRING BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_PRINT_STRING expression '\n'
       {
         bx_dbg_print_string_command($2);
         free($1);
@@ -470,7 +472,7 @@ set_command:
         bx_dbg_set_auto_disassemble($3);
         free($1); free($2);
       }
-    | BX_TOKEN_SET BX_TOKEN_SYMBOLNAME '=' BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_SET BX_TOKEN_SYMBOLNAME '=' expression '\n'
       {
         bx_dbg_set_symbol_command($2, $4);
         free($1); free($2);
@@ -639,6 +641,16 @@ info_command:
         bx_dbg_info_device("", "");
         free($1); free($2);
       }
+    | BX_TOKEN_INFO BX_TOKEN_DEVICE BX_TOKEN_GENERIC '\n'
+      {
+        bx_dbg_info_device($3, "");
+        free($1); free($2);
+      }
+    | BX_TOKEN_INFO BX_TOKEN_DEVICE BX_TOKEN_GENERIC BX_TOKEN_STRING '\n'
+      {
+        bx_dbg_info_device($3, $4);
+        free($1); free($2);
+      }
     | BX_TOKEN_INFO BX_TOKEN_DEVICE BX_TOKEN_STRING '\n'
       {
         bx_dbg_info_device($3, "");
@@ -653,7 +665,7 @@ info_command:
 
 optional_numeric :
    /* empty */ { $$ = EMPTY_ARG; }
-   | BX_TOKEN_NUMERIC;
+   | expression;
    
 regs_command:
       BX_TOKEN_REGISTERS '\n'
@@ -679,18 +691,26 @@ mmx_regs_command:
       }
     ;
 
-sse_regs_command:
-      BX_TOKEN_SSE '\n'
+xmm_regs_command:
+      BX_TOKEN_XMM '\n'
       {
         bx_dbg_info_registers_command(BX_INFO_SSE_REGS);
         free($1);
       }
     ;
 
-avx_regs_command:
-      BX_TOKEN_AVX '\n'
+ymm_regs_command:
+      BX_TOKEN_YMM '\n'
       {
-        bx_dbg_info_registers_command(BX_INFO_AVX_REGS);
+        bx_dbg_info_registers_command(BX_INFO_YMM_REGS);
+        free($1);
+      }
+    ;
+
+zmm_regs_command:
+      BX_TOKEN_ZMM '\n'
+      {
+        bx_dbg_info_registers_command(BX_INFO_ZMM_REGS);
         free($1);
       }
     ;
@@ -782,7 +802,7 @@ restore_command:
     ;
 
 writemem_command:
-      BX_TOKEN_WRITEMEM BX_TOKEN_STRING BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_WRITEMEM BX_TOKEN_STRING expression expression '\n'
       {
         bx_dbg_writemem_command($2, $3, $4);
         free($1); free($2);
@@ -790,7 +810,7 @@ writemem_command:
     ;
 
 setpmem_command:
-      BX_TOKEN_SETPMEM BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_SETPMEM expression expression expression '\n'
       {
         bx_dbg_setpmem_command($2, $3, $4);
         free($1);
@@ -877,7 +897,7 @@ instrument_command:
         bx_dbg_instrument_command($2);
         free($1); free($2);
       }
-    | BX_TOKEN_INSTRUMENT BX_TOKEN_COMMAND '\n'
+    | BX_TOKEN_INSTRUMENT BX_TOKEN_GENERIC '\n'
       {
         bx_dbg_instrument_command($2);
         free($1); free($2);
@@ -885,7 +905,7 @@ instrument_command:
     ;
 
 doit_command:
-      BX_TOKEN_DOIT BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_DOIT expression '\n'
       {
         bx_dbg_doit_command($2);
         free($1);
@@ -893,7 +913,7 @@ doit_command:
     ;
 
 crc_command:
-      BX_TOKEN_CRC BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_CRC expression expression '\n'
       {
         bx_dbg_crc_command($2, $3);
         free($1);
@@ -1044,14 +1064,19 @@ help_command:
          dbg_printf("mmx - print MMX state\n");
          free($1);free($2);
        }
-     | BX_TOKEN_HELP BX_TOKEN_SSE '\n'
+     | BX_TOKEN_HELP BX_TOKEN_XMM '\n'
        {
          dbg_printf("xmm|sse - print SSE state\n");
          free($1);free($2);
        }
-     | BX_TOKEN_HELP BX_TOKEN_AVX '\n'
+     | BX_TOKEN_HELP BX_TOKEN_YMM '\n'
        {
          dbg_printf("ymm - print AVX state\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_ZMM '\n'
+       {
+         dbg_printf("zmm - print AVX-512 state\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_SEGMENT_REGS '\n'
@@ -1143,6 +1168,7 @@ help_command:
      | BX_TOKEN_HELP BX_TOKEN_INFO '\n'
        {
          dbg_printf("info break - show information about current breakpoint status\n");
+         dbg_printf("info cpu - show dump of all cpu registers\n");
          dbg_printf("info idt - show interrupt descriptor table\n");
          dbg_printf("info ivt - show interrupt vector table\n");
          dbg_printf("info gdt - show global descriptor table\n");
@@ -1170,11 +1196,11 @@ help_command:
      | BX_TOKEN_HELP BX_TOKEN_CALC '\n'
        {
          dbg_printf("calc|? <expr> - calculate a expression and display the result.\n");
-         dbg_printf("    'expr' can reference any general-purpose and segment\n");
+         dbg_printf("    'expr' can reference any general-purpose, opmask and segment\n");
          dbg_printf("    registers, use any arithmetic and logic operations, and\n");
          dbg_printf("    also the special ':' operator which computes the linear\n");
-         dbg_printf("    address for a segment:offset (in real and v86 mode) or\n");
-         dbg_printf("    of a selector:offset (in protected mode) pair.\n");
+         dbg_printf("    address of a segment:offset (in real and v86 mode) or of\n");
+         dbg_printf("    a selector:offset (in protected mode) pair.\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_HELP '\n'
@@ -1203,6 +1229,7 @@ BX_TOKEN_NONSEG_REG:
    | BX_TOKEN_16B_REG
    | BX_TOKEN_32B_REG
    | BX_TOKEN_64B_REG
+   | BX_TOKEN_OPMASK_REG
    { $$=$1; }
 ;
 
@@ -1215,6 +1242,7 @@ vexpression:
    | BX_TOKEN_16B_REG                { $$ = bx_dbg_get_reg16_value($1); }
    | BX_TOKEN_32B_REG                { $$ = bx_dbg_get_reg32_value($1); }
    | BX_TOKEN_64B_REG                { $$ = bx_dbg_get_reg64_value($1); }
+   | BX_TOKEN_OPMASK_REG             { $$ = bx_dbg_get_opmask_value($1); }
    | BX_TOKEN_SEGREG                 { $$ = bx_dbg_get_selector_value($1); }
    | BX_TOKEN_REG_IP                 { $$ = bx_dbg_get_ip (); }
    | BX_TOKEN_REG_EIP                { $$ = bx_dbg_get_eip(); }
@@ -1243,6 +1271,7 @@ expression:
    | BX_TOKEN_16B_REG                { $$ = bx_dbg_get_reg16_value($1); }
    | BX_TOKEN_32B_REG                { $$ = bx_dbg_get_reg32_value($1); }
    | BX_TOKEN_64B_REG                { $$ = bx_dbg_get_reg64_value($1); }
+   | BX_TOKEN_OPMASK_REG             { $$ = bx_dbg_get_opmask_value($1); }
    | BX_TOKEN_SEGREG                 { $$ = bx_dbg_get_selector_value($1); }
    | BX_TOKEN_REG_IP                 { $$ = bx_dbg_get_ip (); }
    | BX_TOKEN_REG_EIP                { $$ = bx_dbg_get_eip(); }

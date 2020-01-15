@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc 11679 2013-04-17 19:46:11Z sshwarts $
+// $Id: main.cc 12079 2013-12-29 08:45:28Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -58,19 +58,12 @@ extern "C" {
 bx_bool bx_gui_sighandler = 0;
 #endif
 
-// some prototypes from iodev/
-// I want to stay away from including iodev/iodev.h here
-Bit32u bx_unmapped_io_read_handler(Bit32u address, unsigned io_len);
-void   bx_unmapped_io_write_handler(Bit32u address, Bit32u value,
-                                    unsigned io_len);
-
+int  bx_init_main(int argc, char *argv[]);
 void bx_init_hardware(void);
 void bx_init_options(void);
 void bx_init_bx_dbg(void);
 
 static const char *divider = "========================================================================";
-static logfunctions thePluginLog;
-logfunctions *pluginlog = &thePluginLog;
 
 bx_startup_flags_t bx_startup_flags;
 bx_bool bx_user_quit;
@@ -555,7 +548,7 @@ int bx_init_main(int argc, char *argv[])
   SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_RUN_START);
 
   // interpret the args that start with -, like -q, -f, etc.
-  int arg = 1, load_rcfile=1, i = 0;
+  int arg = 1, load_rcfile=1;
   while (arg < argc) {
     // parse next arg
     if (!strcmp("--help", argv[arg]) || !strncmp("-h", argv[arg], 2)
@@ -610,6 +603,7 @@ int bx_init_main(int argc, char *argv[])
         }
 #if BX_CPU_LEVEL > 4
         else if (!strcmp("cpu", argv[arg+1])) {
+          int i = 0;
           fprintf(stderr, "Supported CPU models:\n\n");
           do {
             fprintf(stderr, "%s\n", SIM->get_param_enum(BXPN_CPU_MODEL)->get_choice(i));
@@ -912,6 +906,10 @@ bx_bool load_and_init_display_lib(void)
   if (!strcmp(gui_name, "term"))
     PLUG_load_plugin (term, PLUGTYPE_OPTIONAL);
 #endif
+#if BX_WITH_VNCSRV
+  if (!strcmp(gui_name, "vncsrv"))
+    PLUG_load_plugin (vncsrv, PLUGTYPE_OPTIONAL);
+#endif
 #if BX_WITH_WIN32
   if (!strcmp(gui_name, "win32"))
     PLUG_load_plugin (win32, PLUGTYPE_OPTIONAL);
@@ -1153,11 +1151,12 @@ void bx_init_hardware()
 
   unsigned cpu_model = SIM->get_param_enum(BXPN_CPU_MODEL)->get();
   if (! cpu_model) {
+#if BX_CPU_LEVEL >= 5
     unsigned cpu_level = SIM->get_param_num(BXPN_CPUID_LEVEL)->get();
     BX_INFO(("  level: %d", cpu_level));
-#if BX_CPU_LEVEL >= 5
     BX_INFO(("  APIC support: %s", SIM->get_param_enum(BXPN_CPUID_APIC)->get_selected()));
 #else
+    BX_INFO(("  level: %d", BX_CPU_LEVEL));
     BX_INFO(("  APIC support: no"));
 #endif
     BX_INFO(("  FPU support: %s", BX_SUPPORT_FPU?"yes":"no"));
@@ -1169,15 +1168,15 @@ void bx_init_hardware()
 #if BX_CPU_LEVEL >= 6
     bx_bool sep_enabled = SIM->get_param_bool(BXPN_CPUID_SEP)->get();
     BX_INFO(("  SEP support: %s", sep_enabled?"yes":"no"));
-    bx_bool sse4a_enabled = SIM->get_param_bool(BXPN_CPUID_SSE4A)->get();
-    BX_INFO(("  SSE support: %s%s", SIM->get_param_enum(BXPN_CPUID_SSE)->get_selected(),
-      sse4a_enabled ? "+sse4a" : ""));
+    BX_INFO(("  SIMD support: %s", SIM->get_param_enum(BXPN_CPUID_SIMD)->get_selected()));
     bx_bool xsave_enabled = SIM->get_param_bool(BXPN_CPUID_XSAVE)->get();
     bx_bool xsaveopt_enabled = SIM->get_param_bool(BXPN_CPUID_XSAVEOPT)->get();
     BX_INFO(("  XSAVE support: %s %s",
       xsave_enabled?"xsave":"no", xsaveopt_enabled?"xsaveopt":""));
     bx_bool aes_enabled = SIM->get_param_bool(BXPN_CPUID_AES)->get();
     BX_INFO(("  AES support: %s", aes_enabled?"yes":"no"));
+    bx_bool sha_enabled = SIM->get_param_bool(BXPN_CPUID_SHA)->get();
+    BX_INFO(("  SHA support: %s", sha_enabled?"yes":"no"));
     bx_bool movbe_enabled = SIM->get_param_bool(BXPN_CPUID_MOVBE)->get();
     BX_INFO(("  MOVBE support: %s", movbe_enabled?"yes":"no"));
     bx_bool adx_enabled = SIM->get_param_bool(BXPN_CPUID_ADX)->get();
@@ -1193,16 +1192,6 @@ void bx_init_hardware()
 #if BX_SUPPORT_MONITOR_MWAIT
     bx_bool mwait_enabled = SIM->get_param_bool(BXPN_CPUID_MWAIT)->get();
     BX_INFO(("  MWAIT support: %s", mwait_enabled?"yes":"no"));
-#endif
-#if BX_SUPPORT_AVX
-    unsigned avx_enabled = SIM->get_param_num(BXPN_CPUID_AVX)->get();
-    bx_bool avx_fma_enabled = SIM->get_param_bool(BXPN_CPUID_AVX_FMA)->get();
-    if (avx_enabled) {
-      BX_INFO(("  AVX support: %d%s", avx_enabled, avx_fma_enabled ? " (with FMA)" : ""));
-    }
-    else {
-      BX_INFO(("  AVX support: no"));
-    }
 #endif
 #if BX_SUPPORT_VMX
     unsigned vmx_enabled = SIM->get_param_num(BXPN_CPUID_VMX)->get();

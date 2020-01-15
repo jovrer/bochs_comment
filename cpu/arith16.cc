@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith16.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: arith16.cc 11831 2013-09-24 05:21:00Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -24,7 +24,7 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INC_RX(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INC_EwR(bxInstruction_c *i)
 {
   Bit32u rx = ++BX_READ_16BIT_REG(i->dst());
   SET_FLAGS_OSZAP_ADD_16(rx - 1, 0, rx);
@@ -32,7 +32,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INC_RX(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_RX(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_EwR(bxInstruction_c *i)
 {
   Bit32u rx = --BX_READ_16BIT_REG(i->dst());
   SET_FLAGS_OSZAP_SUB_16(rx + 1, 0, rx);
@@ -518,6 +518,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EwGwM(bxInstruction_c *i)
   }
   else {
     // accumulator <-- dest
+    write_RMW_virtual_word(op1_16);
     AX = op1_16;
   }
 

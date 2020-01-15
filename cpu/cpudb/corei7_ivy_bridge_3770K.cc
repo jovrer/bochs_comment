@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei7_ivy_bridge_3770K.cc 11687 2013-05-20 18:15:35Z sshwarts $
+// $Id: corei7_ivy_bridge_3770K.cc 12242 2014-03-15 20:19:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2012 Stanislav Shwartsman
+//   Copyright (c) 2013-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -35,9 +35,6 @@ corei7_ivy_bridge_3770k_t::corei7_ivy_bridge_3770k_t(BX_CPU_C *cpu): bx_cpuid_t(
   if (! BX_SUPPORT_X86_64)
     BX_PANIC(("You must enable x86-64 for Intel Core i7 Ivy Bridge configuration"));
 
-  if (! BX_SUPPORT_AVX)
-    BX_PANIC(("You must enable AVX for Intel Core i7 Ivy Bridge configuration"));
-
   if (BX_SUPPORT_VMX == 1)
     BX_INFO(("You must compile with --enable-vmx=2 for Intel Core i7 Ivy Bridge VMX configuration"));
 
@@ -49,6 +46,8 @@ corei7_ivy_bridge_3770k_t::corei7_ivy_bridge_3770k_t(BX_CPU_C *cpu): bx_cpuid_t(
 
 void corei7_ivy_bridge_3770k_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
 {
+  static const char* brand_string = "       Intel(R) Core(TM) i7-3770K CPU @ 3.50GHz";
+
   static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
   if (cpuid_limit_winnt)
     if (function > 2 && function < 0x80000000) function = 2;
@@ -63,7 +62,7 @@ void corei7_ivy_bridge_3770k_t::get_cpuid_leaf(Bit32u function, Bit32u subfuncti
   case 0x80000002:
   case 0x80000003:
   case 0x80000004:
-    get_ext_cpuid_brand_string_leaf(function, leaf);
+    get_ext_cpuid_brand_string_leaf(brand_string, function, leaf);
     return;
   case 0x80000005:
     get_reserved_leaf(leaf);
@@ -523,17 +522,25 @@ void corei7_ivy_bridge_3770k_t::get_std_cpuid_leaf_7(Bit32u subfunction, cpuid_f
   case 0:
     leaf->eax = 0; /* report max sub-leaf that supported in leaf 7 */
 
-    // * [0:0]    FS/GS BASE access instructions
-    //   [2:1]    reserved
-    //   [3:3]    BMI1: Advanced Bit Manipulation Extensions
-    //   [4:4]    reserved
-    //   [5:5]    AVX2
-    //   [6:6]    reserved
-    // * [7:7]    SMEP: Supervisor Mode Execution Protection
-    //   [8:8]    BMI2: Advanced Bit Manipulation Extensions
-    // * [9:9]    Support for Enhanced REP MOVSB/STOSB
-    //   [10:10]  Support for INVPCID instruction
-    //   [31:10]  reserved
+    // * [0:0]   FS/GS BASE access instructions
+    //   [1:1]   Support for IA32_TSC_ADJUST MSR
+    //   [2:2]   reserved
+    //   [3:3]   BMI1: Advanced Bit Manipulation Extensions
+    //   [4:4]   HLE: Hardware Lock Elision
+    //   [5:5]   AVX2
+    //   [6:6]   reserved
+    // * [7:7]   SMEP: Supervisor Mode Execution Protection
+    //   [8:8]   BMI2: Advanced Bit Manipulation Extensions
+    // * [9:9]   Support for Enhanced REP MOVSB/STOSB
+    //   [10:10] Support for INVPCID instruction
+    //   [11:11] RTM: Restricted Transactional Memory
+    //   [12:12] Supports Quality of Service (QoS) capability
+    //   [13:13] Deprecates FPU CS and FPU DS values
+    //   [17:14] reserved
+    //   [18:18] RDSEED instruction support
+    //   [19:19] ADCX/ADOX instructions support
+    //   [20:20] SMAP: Supervisor Mode Access Prevention
+    //   [31:21] reserved
     leaf->ebx = BX_CPUID_EXT3_FSGSBASE | 
                 BX_CPUID_EXT3_SMEP | 
                 BX_CPUID_EXT3_ENCHANCED_REP_STRINGS;
@@ -656,9 +663,9 @@ void corei7_ivy_bridge_3770k_t::get_std_cpuid_xsave_leaf(Bit32u subfunction, cpu
     // EDX - valid bits of XCR0 (upper part)
     leaf->eax = cpu->xcr0_suppmask;
     leaf->ebx = 512+64;
-    if (cpu->xcr0.get_AVX())
-      leaf->ebx += 256;
-    leaf->ecx = 512+64+256 /* AVX */;
+    if (cpu->xcr0.get_YMM())
+      leaf->ebx = XSAVE_YMM_STATE_OFFSET + XSAVE_YMM_STATE_LEN;
+    leaf->ecx = XSAVE_YMM_STATE_OFFSET + XSAVE_YMM_STATE_LEN;
     leaf->edx = 0;
     return;
 
@@ -669,9 +676,9 @@ void corei7_ivy_bridge_3770k_t::get_std_cpuid_xsave_leaf(Bit32u subfunction, cpu
     leaf->edx = 0;
     return;
 
-  case 2: // AVX leaf
-    leaf->eax = 256;
-    leaf->ebx = 576;
+  case 2: // YMM leaf
+    leaf->eax = XSAVE_YMM_STATE_LEN;
+    leaf->ebx = XSAVE_YMM_STATE_OFFSET;
     leaf->ecx = 0;
     leaf->edx = 0;
     return;
@@ -715,14 +722,26 @@ void corei7_ivy_bridge_3770k_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) con
   //   [3:3]   Extended APIC Space
   //   [4:4]   AltMovCR8: LOCK MOV CR0 means MOV CR8
   //   [5:5]   LZCNT: LZCNT instruction support
-  //   [6:6]   SSE4A: SSE4A Instructions support (deprecated?)
+  //   [6:6]   SSE4A: SSE4A Instructions support
   //   [7:7]   Misaligned SSE support
   //   [8:8]   PREFETCHW: PREFETCHW instruction support
   //   [9:9]   OSVW: OS visible workarounds (AMD)
-  //   [11:10] reserved
+  //   [10:10] IBS: Instruction based sampling
+  //   [11:11] XOP: Extended Operations Support and XOP Prefix
   //   [12:12] SKINIT support
   //   [13:13] WDT: Watchdog timer support
-  //   [31:14] reserved
+  //   [14:14] Reserved
+  //   [15:15] LWP: Light weight profiling
+  //   [16:16] FMA4: Four-operand FMA instructions support
+  //   [17:17] Reserved
+  //   [18:18] Reserved
+  //   [19:19] NodeId: Indicates support for NodeId MSR (0xc001100c)
+  //   [20:20] Reserved
+  //   [21:21] TBM: trailing bit manipulation instructions support
+  //   [22:22] Topology extensions support
+  //   [23:23] PerfCtrExtCore: core perf counter extensions support
+  //   [24:24] PerfCtrExtNB: NB perf counter extensions support
+  //   [31:25] Reserved
 
   leaf->ecx = BX_CPUID_EXT2_LAHF_SAHF;
 
@@ -750,41 +769,6 @@ void corei7_ivy_bridge_3770k_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) con
 // leaf 0x80000002 //
 // leaf 0x80000003 //
 // leaf 0x80000004 //
-void corei7_ivy_bridge_3770k_t::get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const
-{
-  // CPUID function 0x80000002-0x80000004 - Processor Name String Identifier
-  static const char* brand_string = "       Intel(R) Core(TM) i7-3770K CPU @ 3.50GHz";
-
-  switch(function) {
-  case 0x80000002:
-    memcpy(&(leaf->eax), brand_string     , 4);
-    memcpy(&(leaf->ebx), brand_string +  4, 4);
-    memcpy(&(leaf->ecx), brand_string +  8, 4);
-    memcpy(&(leaf->edx), brand_string + 12, 4);
-    break;
-  case 0x80000003:
-    memcpy(&(leaf->eax), brand_string + 16, 4);
-    memcpy(&(leaf->ebx), brand_string + 20, 4);
-    memcpy(&(leaf->ecx), brand_string + 24, 4);
-    memcpy(&(leaf->edx), brand_string + 28, 4);
-    break;
-  case 0x80000004:
-    memcpy(&(leaf->eax), brand_string + 32, 4);
-    memcpy(&(leaf->ebx), brand_string + 36, 4);
-    memcpy(&(leaf->ecx), brand_string + 40, 4);
-    memcpy(&(leaf->edx), brand_string + 44, 4);
-    break;
-  default:
-    break;
-  }
-
-#ifdef BX_BIG_ENDIAN
-  leaf->eax = bx_bswap32(leaf->eax);
-  leaf->ebx = bx_bswap32(leaf->ebx);
-  leaf->ecx = bx_bswap32(leaf->ecx);
-  leaf->edx = bx_bswap32(leaf->edx);
-#endif
-}
 
 // leaf 0x80000005 - L1 Cache and TLB Identifiers (reserved for Intel)
 

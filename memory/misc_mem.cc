@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc 11635 2013-02-18 20:52:19Z vruppert $
+// $Id: misc_mem.cc 12285 2014-04-20 12:50:05Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -87,7 +87,7 @@ void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
 {
   unsigned i, idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc 11635 2013-02-18 20:52:19Z vruppert $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc 12285 2014-04-20 12:50:05Z vruppert $"));
 
   // accept only memory size which is multiply of 1M
   BX_ASSERT((host & 0xfffff) == 0);
@@ -158,12 +158,12 @@ void BX_MEM_C::read_block(Bit32u block)
   const Bit64u block_address = ((Bit64u)block)*BX_MEM_BLOCK_LEN;
 
   if (fseeko64(BX_MEM_THIS overflow_file, block_address, SEEK_SET))
-    BX_PANIC(("FATAL ERROR: Could not seek to 0x%lx in memory overflow file!", block_address));
+    BX_PANIC(("FATAL ERROR: Could not seek to 0x"FMT_LL"x in memory overflow file!", block_address));
 
   // We could legitimately get an EOF condition if we are reading the last bit of memory.ram
   if ((fread(BX_MEM_THIS blocks[block], BX_MEM_BLOCK_LEN, 1, BX_MEM_THIS overflow_file) != 1) && 
       (!feof(BX_MEM_THIS overflow_file))) 
-    BX_PANIC(("FATAL ERROR: Could not read from 0x%lx in memory overflow file!", block_address)); 
+    BX_PANIC(("FATAL ERROR: Could not read from 0x"FMT_LL"x in memory overflow file!", block_address)); 
 }
 #endif
 
@@ -215,12 +215,11 @@ void BX_MEM_C::allocate_block(Bit32u block)
     BX_MEM_THIS blocks[BX_MEM_THIS next_swapout_idx] = BX_MEM_C::swapped_out;
     BX_MEM_THIS blocks[block] = buffer;
     read_block(block);
-          BX_INFO(("allocate_block: block=0x%x, replaced 0x%x",   
-                block, BX_MEM_THIS next_swapout_idx));
+    BX_DEBUG(("allocate_block: block=0x%x, replaced 0x%x", block, BX_MEM_THIS next_swapout_idx));
   }
   else {
-          BX_MEM_THIS blocks[block] = BX_MEM_THIS vector + (BX_MEM_THIS used_blocks++ * BX_MEM_BLOCK_LEN);
-        BX_INFO(("allocate_block: block=0x%x used 0x%x of 0x%x",
+    BX_MEM_THIS blocks[block] = BX_MEM_THIS vector + (BX_MEM_THIS used_blocks++ * BX_MEM_BLOCK_LEN);
+    BX_DEBUG(("allocate_block: block=0x%x used 0x%x of 0x%x",
           block, BX_MEM_THIS used_blocks, max_blocks));
   }
 #else

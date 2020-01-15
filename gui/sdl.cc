@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc 11629 2013-02-14 21:06:20Z vruppert $
+// $Id: sdl.cc 11912 2013-10-27 15:13:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2013  The Bochs Project
@@ -1048,7 +1048,7 @@ void bx_sdl_gui_c::handle_events(void)
           new_mousebuttons &= 0x07;
         // send motion information
         if (sdl_mouse_mode_absxy) {
-          if ((new_mousey >= headerbar_height) && (new_mousey < (res_y + headerbar_height))) {
+          if ((new_mousey >= headerbar_height) && (new_mousey < (int)(res_y + headerbar_height))) {
             dx = new_mousex * 0x7fff / res_x;
             dy = (new_mousey - headerbar_height) * 0x7fff / res_y;
             DEV_mouse_motion(dx, dy, wheel_status, new_mousebuttons, 1);

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h 11478 2012-10-03 15:49:45Z sshwarts $
+// $Id: pc_system.h 12137 2014-01-24 17:22:34Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -52,7 +52,8 @@ private:
     void *this_ptr;            // The this-> pointer for C++ callbacks
                                //   has to be stored as well.
 #define BxMaxTimerIDLen 32
-    char id[BxMaxTimerIDLen]; // String ID of timer.
+    char id[BxMaxTimerIDLen];  // String ID of timer.
+    Bit32u param;              // Device-specific value assigned to timer (optional)
   } timer[BX_MAX_TIMERS];
 
   unsigned   numTimers;  // Number of currently allocated timers.
@@ -91,11 +92,15 @@ public:
   int    register_timer(void *this_ptr, bx_timer_handler_t, Bit32u useconds,
                          bx_bool continuous, bx_bool active, const char *id);
   bx_bool unregisterTimer(unsigned timerID);
+  void   setTimerParam(unsigned timerID, Bit32u param);
   void   start_timers(void);
   void   activate_timer(unsigned timer_index, Bit32u useconds, bx_bool continuous);
   void   deactivate_timer(unsigned timer_index);
   unsigned triggeredTimerID(void) {
     return triggeredTimer;
+  }
+  Bit32u triggeredTimerParam(void) {
+    return timer[triggeredTimer].param;
   }
   static BX_CPP_INLINE void tick1(void) {
     if (--bx_pc_system.currCountdown == 0) {

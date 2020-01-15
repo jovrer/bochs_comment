@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack32.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: stack32.cc 11831 2013-09-24 05:21:00Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,13 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EdR(bxInstruction_c *i)
+{
+  BX_WRITE_32BIT_REGZ(i->dst(), pop_32());
+
+  BX_NEXT_INSTR(i);
+}
+
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EdM(bxInstruction_c *i)
 {
   RSP_SPECULATIVE;
@@ -42,16 +49,20 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EdM(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_ERX(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EdR(bxInstruction_c *i)
 {
   push_32(BX_READ_32BIT_REG(i->dst()));
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_ERX(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EdM(bxInstruction_c *i)
 {
-  BX_WRITE_32BIT_REGZ(i->dst(), pop_32());
+  Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
+  Bit32u op1_32 = read_virtual_dword_32(i->seg(), eaddr);
+
+  push_32(op1_32);
 
   BX_NEXT_INSTR(i);
 }
@@ -106,18 +117,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_Id(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EdM(bxInstruction_c *i)
-{
-  Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  Bit32u op1_32 = read_virtual_dword_32(i->seg(), eaddr);
-
-  push_32(op1_32);
-
-  BX_NEXT_INSTR(i);
-}
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHAD32(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHA32(bxInstruction_c *i)
 {
   Bit32u temp_ESP = ESP;
   Bit16u temp_SP  = SP;
@@ -150,7 +150,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHAD32(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPAD32(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPA32(bxInstruction_c *i)
 {
   Bit32u edi, esi, ebp, ebx, edx, ecx, eax;
 

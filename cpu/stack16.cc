@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack16.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: stack16.cc 12161 2014-02-01 19:23:41Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,9 +24,19 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_RX(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EwR(bxInstruction_c *i)
 {
   push_16(BX_READ_16BIT_REG(i->dst()));
+
+  BX_NEXT_INSTR(i);
+}
+
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EwM(bxInstruction_c *i)
+{
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  Bit16u op1_16 = read_virtual_word(i->seg(), eaddr);
+
+  push_16(op1_16);
 
   BX_NEXT_INSTR(i);
 }
@@ -58,7 +68,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP16_Sw(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_RX(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EwR(bxInstruction_c *i)
 {
   BX_WRITE_16BIT_REG(i->dst(), pop_16());
 
@@ -90,18 +100,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_Iw(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EwM(bxInstruction_c *i)
-{
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  Bit16u op1_16 = read_virtual_word(i->seg(), eaddr);
-
-  push_16(op1_16);
-
-  BX_NEXT_INSTR(i);
-}
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHAD16(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHA16(bxInstruction_c *i)
 {
   Bit32u temp_ESP = ESP;
   Bit16u temp_SP  = SP;
@@ -134,7 +133,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHAD16(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPAD16(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPA16(bxInstruction_c *i)
 {
   Bit16u di, si, bp, bx, dx, cx, ax;
 
@@ -207,7 +206,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ENTER16_IwIb(bxInstruction_c *i)
     // ENTER finishes with memory write check on the final stack pointer
     // the memory is touched but no write actually occurs
     // emulate it by doing RMW read access from SS:ESP
-    read_RMW_virtual_word(BX_SEG_REG_SS, ESP);
+    read_RMW_virtual_word_32(BX_SEG_REG_SS, ESP);
 
     BP = frame_ptr16;
   }

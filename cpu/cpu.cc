@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc 11598 2013-01-27 19:27:30Z sshwarts $
+// $Id: cpu.cc 12304 2014-05-01 18:30:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -236,7 +236,7 @@ bxICacheEntry_c* BX_CPU_C::getICacheEntry(void)
   return entry;
 }
 
-#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
+#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS && BX_ENABLE_TRACE_LINKING
 
 // The function is called after taken branch instructions and tries to link the branch to the next trace
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
@@ -252,25 +252,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
   if(delta >= bx_pc_system.getNumCpuTicksLeftNextEvent())
     return;
 
-  bxInstruction_c *next = i->getNextTrace();
+  bxInstruction_c *next = i->getNextTrace(BX_CPU_THIS_PTR iCache.traceLinkTimeStamp);
   if (next) {
+    bx_address eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
+    if (eipBiased >= BX_CPU_THIS_PTR eipPageWindowSize) {
+      prefetch();
+    }
+
     BX_EXECUTE_INSTRUCTION(next);
     return;
   }
 
-  bx_address eipBiased = EIP + BX_CPU_THIS_PTR eipPageBias;
+  bx_address eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
   if (eipBiased >= BX_CPU_THIS_PTR eipPageWindowSize) {
-/*
     prefetch();
     eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
-*/
-    // You would like to have the prefetch() instead of this return; statement and link also
-    // branches that cross page boundary but this potentially could cause functional failure.
-    // An OS might modify the page tables and invalidate the TLB but it won't affect Bochs
-    // execution because of a trace linked into another old trace with data before the page
-    // invalidation. The case would be detected if doing prefetch() properly.
-
-    return;
   }
 
   InstrICache_Increment(iCacheLookups);
@@ -281,7 +277,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
 
   if (entry != NULL) // link traces - handle only hit cases
   {
-    i->setNextTrace(entry->i);
+    i->setNextTrace(entry->i, BX_CPU_THIS_PTR iCache.traceLinkTimeStamp);
     i = entry->i;
     BX_EXECUTE_INSTRUCTION(i);
   }
@@ -377,10 +373,10 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat(bxInstruction_c *i, BxRepIterationP
 
 void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat_ZF(bxInstruction_c *i, BxRepIterationPtr_tR execute)
 {
-  unsigned rep = i->repUsedValue();
+  unsigned rep = i->lockRepUsedValue();
 
   // non repeated instruction
-  if (! rep) {
+  if (rep < 2) {
     BX_CPU_CALL_REP_ITERATION(execute, (i));
     return;
   }

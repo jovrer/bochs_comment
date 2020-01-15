@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware4.h 11494 2012-10-07 18:36:22Z vruppert $
+// $Id: vmware4.h 11921 2013-11-03 07:41:29Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -10,6 +10,7 @@
  * Contact: snrrrub@gmail.com
  *
  * Copyright (C) 2006 Sharvil Nanavati.
+ * Copyright (C) 2006-2013  The Bochs Project
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,6 +30,38 @@
 #ifndef _VMWARE4_H
 #define _VMWARE4_H 1
 
+#if defined(_MSC_VER)
+#pragma pack(push, 1)
+#elif defined(__MWERKS__) && defined(macintosh)
+#pragma options align=packed
+#endif
+typedef struct _VM4_Header
+{
+    Bit8u  id[4];
+    Bit32u version;
+    Bit32u flags;
+    Bit64u total_sectors;
+    Bit64u tlb_size_sectors;
+    Bit64u description_offset_sectors;
+    Bit64u description_size_sectors;
+    Bit32u slb_count;
+    Bit64u flb_offset_sectors;
+    Bit64u flb_copy_offset_sectors;
+    Bit64u tlb_offset_sectors;
+    Bit8u  filler;
+    Bit8u  check_bytes[4];
+}
+#if !defined(_MSC_VER)
+GCC_ATTRIBUTE((packed))
+#endif
+VM4_Header;
+
+#if defined(_MSC_VER)
+#pragma pack(pop)
+#elif defined(__MWERKS__) && defined(macintosh)
+#pragma options align=reset
+#endif
+
 class vmware4_image_t : public device_image_t
 {
     public:
@@ -44,42 +77,14 @@ class vmware4_image_t : public device_image_t
         Bit32u get_capabilities();
         static int check_format(int fd, Bit64u imgsize);
 
+#ifndef BXIMAGE
         bx_bool save_state(const char *backup_fname);
         void restore_state(const char *backup_fname);
+#endif
 
     private:
         static const off_t INVALID_OFFSET;
         static const int SECTOR_SIZE;
-
-#if defined(_MSC_VER)
-#pragma pack(push, 1)
-#elif defined(__MWERKS__) && defined(macintosh)
-#pragma options align=packed
-#endif
-        typedef struct _VM4_Header
-        {
-            Bit8u  id[4];
-            Bit32u version;
-            Bit32u flags;
-            Bit64u total_sectors;
-            Bit64u tlb_size_sectors;
-            Bit64u description_offset_sectors;
-            Bit64u description_size_sectors;
-            Bit32u slb_count;
-            Bit64u flb_offset_sectors;
-            Bit64u flb_copy_offset_sectors;
-            Bit64u tlb_offset_sectors;
-        }
-#if !defined(_MSC_VER)
-        GCC_ATTRIBUTE((packed))
-#endif
-        VM4_Header;
-
-#if defined(_MSC_VER)
-#pragma pack(pop)
-#elif defined(__MWERKS__) && defined(macintosh)
-#pragma options align=reset
-#endif
 
         bx_bool is_open() const;
 

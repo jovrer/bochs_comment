@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_move.cc 11557 2012-12-09 16:42:48Z sshwarts $
+// $Id: sse_move.cc 12258 2014-03-23 20:01:58Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003-2012 Stanislav Shwartsman
+//   Copyright (c) 2003-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -32,10 +32,10 @@
 
 void BX_CPU_C::print_state_SSE(void)
 {
-  BX_DEBUG(("MXCSR: 0x%08x\n", BX_MXCSR_REGISTER));
+  BX_DEBUG(("MXCSR: 0x%08x", BX_MXCSR_REGISTER));
   for(unsigned n=0;n<BX_XMM_REGISTERS;n++) {
     BxPackedXmmRegister xmm = BX_READ_XMM_REG(n);
-    BX_DEBUG(("XMM%02u: %08x%08x:%08x%08x\n", n,
+    BX_DEBUG(("XMM%02u: %08x%08x:%08x%08x", n,
        xmm.xmm32u(3), xmm.xmm32u(2), xmm.xmm32u(1), xmm.xmm32u(0)));
   }
 }
@@ -191,12 +191,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXSAVE(bxInstruction_c *i)
 #endif
   {
     xmm.xmm32u(2) = (Bit32u)(BX_CPU_THIS_PTR the_i387.fip);
-    xmm.xmm32u(3) =         (BX_CPU_THIS_PTR the_i387.fcs);
+    xmm.xmm32u(3) = x87_get_FCS();
   }
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  write_virtual_xmmword_aligned(i->seg(), eaddr, (Bit8u *) &xmm);
+  write_virtual_xmmword_aligned(i->seg(), eaddr, &xmm);
 
   bx_address asize_mask = i->asize_mask();
 
@@ -219,7 +219,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXSAVE(bxInstruction_c *i)
 #endif
   {
     xmm.xmm32u(0) = (Bit32u)(BX_CPU_THIS_PTR the_i387.fdp);
-    xmm.xmm32u(1) =         (BX_CPU_THIS_PTR the_i387.fds);
+    xmm.xmm32u(1) = x87_get_FDS();
   }
 
   if (bx_cpuid_support_sse()) {
@@ -231,7 +231,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXSAVE(bxInstruction_c *i)
     xmm.xmm32u(3) = 0;
   }
 
-  write_virtual_xmmword(i->seg(), (eaddr + 16) & asize_mask, (Bit8u *) &xmm);
+  write_virtual_xmmword(i->seg(), (eaddr + 16) & asize_mask, &xmm);
 
   /* store i387 register file */
   for(index=0; index < 8; index++)
@@ -242,7 +242,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXSAVE(bxInstruction_c *i)
     xmm.xmm64u(1) = 0;
     xmm.xmm16u(4) = fp.exp;
 
-    write_virtual_xmmword(i->seg(), (eaddr+index*16+32) & asize_mask, (Bit8u *) &xmm);
+    write_virtual_xmmword(i->seg(), (eaddr+index*16+32) & asize_mask, &xmm);
   }
 
 #if BX_SUPPORT_X86_64
@@ -254,12 +254,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXSAVE(bxInstruction_c *i)
   if(BX_CPU_THIS_PTR cr4.get_OSFXSR() && bx_cpuid_support_sse())
   {
     /* store XMM register file */
-    for(index=0; index < BX_XMM_REGISTERS; index++)
+    for(index=0; index < 16; index++)
     {
       // save XMM8-XMM15 only in 64-bit mode
       if (index < 8 || long64_mode()) {
          write_virtual_xmmword(i->seg(),
-             (eaddr+index*16+160) & asize_mask, (Bit8u *)(&BX_READ_XMM_REG(index)));
+             (eaddr+index*16+160) & asize_mask, &BX_READ_XMM_REG(index));
       }
     }
   }
@@ -284,7 +284,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXRSTOR(bxInstruction_c *i)
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  read_virtual_xmmword_aligned(i->seg(), eaddr, (Bit8u *) &xmm);
+  read_virtual_xmmword_aligned(i->seg(), eaddr, &xmm);
 
   bx_address asize_mask = i->asize_mask();
 
@@ -316,7 +316,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXRSTOR(bxInstruction_c *i)
   Bit32u tag_byte = xmm.xmmubyte(4);
 
   /* Restore x87 FPU DP */
-  read_virtual_xmmword(i->seg(), (eaddr + 16) & asize_mask, (Bit8u *) &xmm);
+  read_virtual_xmmword(i->seg(), (eaddr + 16) & asize_mask, &xmm);
 
 #if BX_SUPPORT_X86_64
   if (i->os64L()) {
@@ -374,12 +374,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FXRSTOR(bxInstruction_c *i)
   if(BX_CPU_THIS_PTR cr4.get_OSFXSR() && bx_cpuid_support_sse())
   {
     /* load XMM register file */
-    for(index=0; index < BX_XMM_REGISTERS; index++)
+    for(index=0; index < 16; index++)
     {
       // restore XMM8-XMM15 only in 64-bit mode
       if (index < 8 || long64_mode()) {
          read_virtual_xmmword(i->seg(),
-             (eaddr+index*16+160) & asize_mask, (Bit8u *)(&BX_READ_XMM_REG(index)));
+             (eaddr+index*16+160) & asize_mask, &BX_READ_XMM_REG(index));
 
       }
     }
@@ -549,7 +549,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVLPS_VpsMq(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVDDUP_VpdWqR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  sse_pbroadcastq(&BX_XMM_REG(i->dst()), BX_READ_XMM_REG_LO_QWORD(i->src()));
+  xmm_pbroadcastq(&BX_XMM_REG(i->dst()), BX_READ_XMM_REG_LO_QWORD(i->src()));
 #endif
 
   BX_NEXT_INSTR(i);
@@ -653,10 +653,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MASKMOVDQU_VdqUdq(bxInstruction_c 
 }
 
 /* 0F 50 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVMSKPS_GdVRps(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVMSKPS_GdUps(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  Bit32u mask = sse_pmovmskd(&BX_XMM_REG(i->src()));
+  Bit32u mask = xmm_pmovmskd(&BX_XMM_REG(i->src()));
   BX_WRITE_32BIT_REGZ(i->dst(), mask);
 #endif
 
@@ -664,10 +664,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVMSKPS_GdVRps(bxInstruction_c *i
 }
 
 /* 66 0F 50 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVMSKPD_GdVRpd(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVMSKPD_GdUpd(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  Bit32u mask = sse_pmovmskq(&BX_XMM_REG(i->src()));
+  Bit32u mask = xmm_pmovmskq(&BX_XMM_REG(i->src()));
   BX_WRITE_32BIT_REGZ(i->dst(), mask);
 #endif
 
@@ -741,7 +741,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVQ_VqWqR(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVQ_VqWqM(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVSD_VsdWsdM(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   BxPackedXmmRegister op;
@@ -756,7 +756,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVQ_VqWqM(bxInstruction_c *i)
 }
 
 /* F2 0F D6 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVDQ2Q_PqVRq(bxInstruction_c *i)
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVDQ2Q_PqUdq(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR FPU_check_pending_exceptions(); /* check floating point status word for a pending FPU exceptions */
@@ -793,7 +793,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVQ2DQ_VdqQq(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PMOVMSKB_GdUdq(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  Bit32u mask = sse_pmovmskb(&BX_XMM_REG(i->src()));
+  Bit32u mask = xmm_pmovmskb(&BX_XMM_REG(i->src()));
   BX_WRITE_32BIT_REGZ(i->dst(), mask);
 #endif
 
@@ -1011,7 +1011,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PALIGNR_VdqWdqIbR(bxInstruction_c 
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->dst()), op2 = BX_READ_XMM_REG(i->src());
 
-  sse_palignr(&op2, &op1, i->Ib());
+  xmm_palignr(&op2, &op1, i->Ib());
 
   BX_WRITE_XMM_REG(i->dst(), op2);
 

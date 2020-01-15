@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc 11555 2012-11-27 15:40:45Z sshwarts $
+// $Id: win32.cc 12343 2014-05-30 10:12:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -44,7 +44,7 @@
 
 class bx_win32_gui_c : public bx_gui_c {
 public:
-  bx_win32_gui_c (void) {}
+  bx_win32_gui_c(void) {}
   DECLARE_GUI_VIRTUAL_METHODS();
   virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
@@ -98,7 +98,7 @@ static int ms_lastx=0, ms_lasty=0;
 static int ms_savedx=0, ms_savedy=0;
 static BOOL mouseCaptureMode, mouseCaptureNew, mouseToggleReq;
 static BOOL win32MouseModeAbsXY = 0;
-static UINT_PTR workerThread = 0;
+static HANDLE workerThread = 0;
 static DWORD workerThreadID = 0;
 static int mouse_buttons = 3;
 static bx_bool win32_nokeyrepeat = 0;
@@ -117,6 +117,7 @@ static RECT desktop;
 static BOOL queryFullScreen = FALSE;
 static int desktop_x, desktop_y;
 static BOOL toolbarVisible, statusVisible;
+static BOOL fullscreenMode;
 
 // Text mode screen stuff
 static unsigned prev_cursor_x = 0;
@@ -165,7 +166,7 @@ bx_bool SB_ActiveW[BX_MAX_STATUSITEMS];
 // Misc stuff
 static unsigned dimension_x, dimension_y, current_bpp;
 static unsigned stretched_x, stretched_y;
-static unsigned stretch_factor=1;
+static unsigned stretch_factor_x, stretch_factor_y;
 static BOOL fix_size = FALSE;
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
 static BOOL gui_debug = FALSE;
@@ -195,15 +196,14 @@ typedef struct {
 
 sharedThreadInfo stInfo;
 
-LRESULT CALLBACK mainWndProc (HWND, UINT, WPARAM, LPARAM);
-LRESULT CALLBACK simWndProc (HWND, UINT, WPARAM, LPARAM);
-VOID CDECL UIThread(PVOID);
+LRESULT CALLBACK mainWndProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK simWndProc(HWND, UINT, WPARAM, LPARAM);
+DWORD WINAPI UIThread(PVOID);
 void SetStatusText(unsigned Num, const char *Text, bx_bool active, bx_bool w=0);
 void terminateEmul(int);
 void create_vga_font(void);
 static unsigned char reverse_bitorder(unsigned char);
-void DrawBitmap (HDC, HBITMAP, int, int, int, int, int, int, DWORD, unsigned char);
-void DrawChar (HDC, unsigned char, int, int, unsigned char cColor, int, int);
+void DrawBitmap(HDC, HBITMAP, int, int, int, int, int, int, DWORD, unsigned char);
 void updateUpdated(int,int,int,int);
 static void headerbar_click(int x);
 
@@ -595,7 +595,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   bx_bool gui_ci;
 
   gui_ci = !strcmp(SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected(), "win32config");
-  put("WGUI");
+  put("WINGUI");
 
   // prepare for possible fullscreen mode
   desktopWindow = GetDesktopWindow();
@@ -603,6 +603,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   desktop_x = desktop.right - desktop.left;
   desktop_y = desktop.bottom - desktop.top;
   hotKeyReceiver = stInfo.simWnd;
+  fullscreenMode = FALSE;
   BX_INFO(("Desktop Window dimensions: %d x %d", desktop_x, desktop_y));
 
   static RGBQUAD black_quad={ 0, 0, 0, 0};
@@ -673,7 +674,8 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   current_bpp = 8;
   stretched_x = dimension_x;
   stretched_y = dimension_y;
-  stretch_factor = 1;
+  stretch_factor_x = 1;
+  stretch_factor_y = 1;
 
   for(unsigned c=0; c<256; c++) vgafont[c] = NULL;
   create_vga_font();
@@ -701,7 +703,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   }
 
   if (stInfo.hInstance)
-    workerThread = _beginthread (UIThread, 0, NULL);
+    workerThread = CreateThread(NULL, 0, UIThread, NULL, 0, &workerThreadID);
   else
     terminateEmul(EXIT_GMH_FAILURE);
 
@@ -726,42 +728,35 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   }
 }
 
-void resize_main_window()
+void set_fullscreen_mode(BOOL enable)
 {
-  RECT R;
-  int toolbar_y = 0;
-  int statusbar_y = 0;
-  unsigned long mainStyle;
+  unsigned long mainStyle, simExStyle;
 
-  if (IsWindowVisible(hwndTB)) {
-    toolbarVisible = TRUE;
-    GetWindowRect(hwndTB, &R);
-    toolbar_y = R.bottom - R.top;
-  }
-
-  if (IsWindowVisible(hwndSB)) {
-    statusVisible = TRUE;
-    GetWindowRect(hwndSB, &R);
-    statusbar_y = R.bottom - R.top;
-  }
-
-  // stretched_x and stretched_y were set in dimension_update()
-  // if we need to do any additional resizing, do it now
-  if ((desktop_y > 0) && (stretched_y >= (unsigned)desktop_y)) {
+  if (enable) {
+    if (desktop_y > 0) {
+      stretched_x = desktop_x;
+      stretched_y = desktop_y;
+    } else {
+      return;
+    }
     if (!queryFullScreen) {
       MessageBox(NULL,
         "Going into fullscreen mode -- Alt-Enter to revert",
         "Going fullscreen",
         MB_APPLMODAL);
       queryFullScreen = TRUE;
+      enq_key_event(0x38, BX_KEY_RELEASED); // send lost ALT keyup event
     }
     // hide toolbar and status bars to get some additional space
     ShowWindow(hwndTB, SW_HIDE);
     ShowWindow(hwndSB, SW_HIDE);
-    // hide title bar
+    // hide title bar and border
     mainStyle = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
-    mainStyle &= ~(WS_CAPTION | WS_BORDER);
+    mainStyle &= ~WS_CAPTION;
     SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
+    simExStyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
+    simExStyle &= ~WS_EX_CLIENTEDGE;
+    SetWindowLong(stInfo.simWnd, GWL_EXSTYLE, simExStyle);
     // maybe need to adjust stInfo.simWnd here also?
     saveParent = SetParent(stInfo.mainWnd, desktopWindow);
     if (saveParent) {
@@ -769,7 +764,10 @@ void resize_main_window()
       SetWindowPos(stInfo.mainWnd, HWND_TOPMOST, desktop.left, desktop.top,
        desktop.right, desktop.bottom, SWP_SHOWWINDOW);
     }
+    fullscreenMode = TRUE;
   } else {
+    stretched_x = dimension_x;
+    stretched_y = dimension_y;
     if (saveParent) {
       BX_DEBUG(("Restoring parent window"));
       SetParent(stInfo.mainWnd, saveParent);
@@ -777,10 +775,52 @@ void resize_main_window()
     }
     // put back the title bar, border, etc...
     mainStyle = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
-    mainStyle |= WS_CAPTION | WS_BORDER;
+    mainStyle |= WS_CAPTION;
     SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
-    if (toolbarVisible) ShowWindow(hwndTB, SW_SHOW);
-    if (statusVisible) ShowWindow(hwndSB, SW_SHOW);
+    simExStyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
+    simExStyle |= WS_EX_CLIENTEDGE;
+    SetWindowLong(stInfo.simWnd, GWL_EXSTYLE, simExStyle);
+    fullscreenMode = FALSE;
+  }
+}
+
+void resize_main_window(BOOL disable_fullscreen)
+{
+  RECT R;
+  int toolbar_y = 0;
+  int statusbar_y = 0;
+
+  if (IsWindowVisible(hwndTB)) {
+    toolbarVisible = TRUE;
+  }
+  if (IsWindowVisible(hwndSB)) {
+    statusVisible = TRUE;
+  }
+
+  if ((desktop_y > 0) && (dimension_y >= (unsigned)desktop_y)) {
+    set_fullscreen_mode(true);
+  } else {
+    if (fullscreenMode && disable_fullscreen) {
+      set_fullscreen_mode(false);
+    }
+    if (stretch_factor_x > 1) {
+      stretched_x *= stretch_factor_x;
+    }
+    if (stretch_factor_y > 1) {
+      stretched_y *= stretch_factor_y;
+    }
+    if (!fullscreenMode) {
+      if (toolbarVisible) {
+        ShowWindow(hwndTB, SW_SHOW);
+        GetWindowRect(hwndTB, &R);
+        toolbar_y = R.bottom - R.top;
+      }
+      if (statusVisible) {
+        ShowWindow(hwndSB, SW_SHOW);
+        GetWindowRect(hwndSB, &R);
+        statusbar_y = R.bottom - R.top;
+      }
+    }
     SetRect(&R, 0, 0, stretched_x, stretched_y);
     DWORD style = GetWindowLong(stInfo.simWnd, GWL_STYLE);
     DWORD exstyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
@@ -788,14 +828,13 @@ void resize_main_window()
     style = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
     AdjustWindowRect(&R, style, FALSE);
     SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, R.right - R.left,
-               R.bottom - R.top + toolbar_y + statusbar_y,
-               SWP_NOMOVE | SWP_NOZORDER);
+                 R.bottom - R.top + toolbar_y + statusbar_y,
+                 SWP_NOMOVE | SWP_NOZORDER);
   }
-  fix_size = FALSE;
 }
 
 // This thread controls the GUI window.
-VOID CDECL UIThread(PVOID pvoid)
+DWORD WINAPI UIThread(LPVOID)
 {
   MSG msg;
   HDC hdc;
@@ -917,7 +956,7 @@ VOID CDECL UIThread(PVOID pvoid)
     ReleaseDC(stInfo.simWnd, hdc);
 
     if (MemoryBitmap && MemoryDC) {
-      resize_main_window();
+      resize_main_window(FALSE);
       ShowWindow(stInfo.mainWnd, SW_SHOW);
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       if (gui_debug) {
@@ -943,7 +982,7 @@ VOID CDECL UIThread(PVOID pvoid)
 
   stInfo.kill = EXIT_GUI_SHUTDOWN;
 
-  _endthread();
+  return 0;
 }
 
 void SetStatusText(unsigned Num, const char *Text, bx_bool active, bx_bool w)
@@ -1111,7 +1150,8 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       cursorWarped();
     }
     if (fix_size) {
-      resize_main_window();
+      set_fullscreen_mode(TRUE);
+      fix_size = FALSE;
     }
     return 0;
 
@@ -1122,7 +1162,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     hdcMem = CreateCompatibleDC (hdc);
     SelectObject (hdcMem, MemoryBitmap);
 
-    if (stretch_factor == 1) {
+    if ((stretch_factor_x == 1) && (stretch_factor_y == 1)) {
       BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
              ps.rcPaint.right - ps.rcPaint.left + 1,
              ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
@@ -1131,9 +1171,9 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       StretchBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
                  ps.rcPaint.right - ps.rcPaint.left + 1,
                  ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
-                 ps.rcPaint.left/stretch_factor, ps.rcPaint.top,
-                 (ps.rcPaint.right - ps.rcPaint.left+1)/stretch_factor,
-                 (ps.rcPaint.bottom - ps.rcPaint.top+1), SRCCOPY);
+                 ps.rcPaint.left/stretch_factor_x, ps.rcPaint.top/stretch_factor_y,
+                 (ps.rcPaint.right - ps.rcPaint.left+1)/stretch_factor_x,
+                 (ps.rcPaint.bottom - ps.rcPaint.top+1)/stretch_factor_y, SRCCOPY);
     }
     DeleteDC (hdcMem);
     EndPaint (hwnd, &ps);
@@ -1256,12 +1296,10 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
         ((HIWORD(lParam) & BX_SYSKEY) == (KF_ALTDOWN | KF_UP))) {
       if (!saveParent) {
         BX_INFO(("entering fullscreen mode"));
-        theGui->dimension_update(desktop_x, desktop_y,
-                                 0, 0, current_bpp);
+        set_fullscreen_mode(TRUE);
       } else {
         BX_INFO(("leaving fullscreen mode"));
-        theGui->dimension_update(dimension_x, desktop_y - 1,
-                               0, 0, current_bpp);
+        resize_main_window(TRUE);
       }
     } else {
       if (wParam == VK_CONTROL) {
@@ -1286,12 +1324,10 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       if ((HIWORD(lParam) & BX_SYSKEY) == KF_ALTDOWN) {
         if (!saveParent) {
           BX_INFO(("entering fullscreen mode"));
-          theGui->dimension_update(desktop_x, desktop_y,
-                                   0, 0, current_bpp);
+          set_fullscreen_mode(TRUE);
         } else {
           BX_INFO(("leaving fullscreen mode"));
-          theGui->dimension_update(dimension_x, desktop_y - 1,
-                                   0, 0, current_bpp);
+          resize_main_window(TRUE);
         }
       }
     }
@@ -1857,25 +1893,34 @@ void bx_win32_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   guest_textmode = (fheight > 0);
+  xChar = fwidth;
+  yChar = fheight;
   guest_xres = x;
   guest_yres = y;
   if (guest_textmode) {
     text_cols = x / fwidth;
     text_rows = y / fheight;
-    xChar = fwidth;
-    yChar = fheight;
   }
 
-  if (x == dimension_x && y == dimension_y && bpp == current_bpp)
+  if ((x == dimension_x) && (y == dimension_y) && (bpp == current_bpp))
     return;
   dimension_x = x;
   dimension_y = y;
-  stretched_x = dimension_x;
-  stretched_y = dimension_y;
-  stretch_factor = 1;
-  if (guest_textmode && (stretched_x<400)) {
-    stretched_x *= 2;
-    stretch_factor *= 2;
+
+  if ((desktop_y > 0) && (((int)x > desktop_x) | ((int)y > desktop_y))) {
+    BX_ERROR(("dimension_update(): resolution of out of desktop bounds - screen only partly visible"));
+  }
+  if (!fullscreenMode) {
+    stretched_x = x;
+    stretched_y = y;
+  }
+  stretch_factor_x = 1;
+  stretch_factor_y = 1;
+  if (guest_textmode && (x < 400)) {
+    stretch_factor_x = 2;
+  } else if (x < 400) {
+    stretch_factor_x = 2;
+    stretch_factor_y = 2;
   }
 
   bitmap_info->bmiHeader.biBitCount = bpp;
@@ -1903,7 +1948,7 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, 
   }
   current_bpp = guest_bpp = bpp;
 
-  resize_main_window();
+  resize_main_window(FALSE);
 
   BX_INFO(("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
 
@@ -2019,7 +2064,7 @@ void bx_win32_gui_c::show_headerbar(void)
   if (!IsWindowVisible(hwndTB)) {
     SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
     ShowWindow(hwndTB, SW_SHOW);
-    resize_main_window();
+    resize_main_window(FALSE);
     bx_gui->set_tooltip(bx_gui->get_mouse_headerbar_id(), szMouseTooltip);
   }
 }
@@ -2151,8 +2196,10 @@ void DrawBitmap(HDC hdc, HBITMAP hBitmap, int xStart, int yStart, int width,
 
 void updateUpdated(int x1, int y1, int x2, int y2)
 {
-  x1*=stretch_factor;
-  x2*=stretch_factor;
+  x1 *= stretch_factor_x;
+  y1 *= stretch_factor_y;
+  x2 *= stretch_factor_x;
+  y2 *= stretch_factor_y;
   if (!updated_area_valid) {
     updated_area.left = x1 ;
     updated_area.top = y1 ;

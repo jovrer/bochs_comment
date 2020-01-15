@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vvfat.cc 11606 2013-02-01 19:13:58Z vruppert $
+// $Id: vvfat.cc 12255 2014-03-23 09:19:44Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Virtual VFAT image support (shadows a local directory)
 // ported from QEMU block driver with some additions (see below)
 //
 // Copyright (c) 2004,2005  Johannes E. Schindelin
-// Copyright (C) 2010-2013  The Bochs Project
+// Copyright (C) 2010-2014  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -58,17 +58,6 @@
 #define VVFAT_MBR  "vvfat_mbr.bin"
 #define VVFAT_BOOT "vvfat_boot.bin"
 #define VVFAT_ATTR "vvfat_attr.cfg"
-
-#if defined (BX_LITTLE_ENDIAN)
-#define htod16(val) (val)
-#else
-#define htod16(val) ( (((val)&0xff00)>>8) | (((val)&0xff)<<8) )
-#endif
-#define dtoh16 htod16
-
-#ifndef F_OK
-#define F_OK 0
-#endif
 
 // portable mkdir / rmdir
 static int bx_mkdir(const char *path)
@@ -350,6 +339,10 @@ infosector_t;
 
 vvfat_image_t::vvfat_image_t(Bit64u size, const char* _redolog_name)
 {
+  if (sizeof(bootsector_t) != 512) {
+    BX_PANIC(("system error: invalid bootsector structure size"));
+  }
+
   first_sectors = new Bit8u[0xc000];
   memset(&first_sectors[0], 0, 0xc000);
 
@@ -490,33 +483,6 @@ static inline Bit8u fat_chksum(const direntry_t* entry)
 
   return chksum;
 }
-
-// if return_time==0, this returns the fat_date, else the fat_time
-#ifndef WIN32
-Bit16u fat_datetime(time_t time, int return_time)
-{
-  struct tm* t;
-  struct tm t1;
-
-  t = &t1;
-  localtime_r(&time, t);
-  if (return_time)
-    return htod16((t->tm_sec/2) | (t->tm_min<<5) | (t->tm_hour<<11));
-  return htod16((t->tm_mday) | ((t->tm_mon+1)<<5) | ((t->tm_year-80)<<9));
-}
-#else
-Bit16u fat_datetime(FILETIME time, int return_time)
-{
-  FILETIME localtime;
-  SYSTEMTIME systime;
-
-  FileTimeToLocalFileTime(&time, &localtime);
-  FileTimeToSystemTime(&localtime, &systime);
-  if (return_time)
-    return htod16((systime.wSecond/2) | (systime.wMinute<<5) | (systime.wHour<<11));
-  return htod16((systime.wDay) | (systime.wMonth<<5) | ((systime.wYear-1980)<<9));
-}
-#endif
 
 void vvfat_image_t::fat_set(unsigned int cluster, Bit32u value)
 {
@@ -1168,6 +1134,10 @@ void vvfat_image_t::set_file_attributes(void)
         if (fpath[strlen(fpath) - 1] == 34) {
           fpath[strlen(fpath) - 1] = '\0';
         }
+        if (strncmp(fpath, vvfat_path, strlen(vvfat_path))) {
+          strcpy(path, fpath);
+          sprintf(fpath, "%s/%s", vvfat_path, path);
+        }
         mapping_t* mapping = find_mapping_for_path(fpath);
         if (mapping != NULL) {
           direntry_t* entry = (direntry_t*)array_get(&directory, mapping->dir_index);
@@ -1596,6 +1566,7 @@ void vvfat_image_t::parse_directory(const char *path, Bit32u start_cluster)
   char filename[BX_PATHNAME_LEN];
   char full_path[BX_PATHNAME_LEN];
   char attr_txt[4];
+  const char *rel_path;
   mapping_t *mapping;
 
   csize = sectors_per_cluster * 0x200;
@@ -1634,7 +1605,12 @@ void vvfat_image_t::parse_directory(const char *path, Bit32u start_cluster)
           if (newentry->attributes & 0x04) strcpy(attr_txt, "S");
           if (newentry->attributes & 0x02) strcat(attr_txt, "H");
           if (newentry->attributes & 0x01) strcat(attr_txt, "R");
-          fprintf(vvfat_attr_fd, "\"%s\":%s\n", full_path, attr_txt);
+          if (!strncmp(full_path, vvfat_path, strlen(vvfat_path))) {
+            rel_path = (const char*)(full_path + strlen(vvfat_path) + 1);
+          } else {
+            rel_path = (const char*)full_path;
+          }
+          fprintf(vvfat_attr_fd, "\"%s\":%s\n", rel_path, attr_txt);
         }
       }
       fstart = dtoh16(newentry->begin) | (dtoh16(newentry->begin_hi) << 16);

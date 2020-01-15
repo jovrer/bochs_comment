@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_vnet.cc 11343 2012-08-16 12:25:55Z vruppert $
+// $Id: eth_vnet.cc 12278 2014-04-13 13:32:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2011  The Bochs Project
+//  Copyright (C) 2005-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -43,9 +43,17 @@
 #define BX_ETH_VNET_LOGGING 1
 #define BX_ETH_VNET_PCAP_LOGGING 0
 
+#if !defined(WIN32) || defined(__CYGWIN__)
+#include <arpa/inet.h> /* ntohs, htons */
+#else
+#include <winsock2.h>
+#endif
+
 #if BX_ETH_VNET_PCAP_LOGGING
 #include <pcap.h>
 #endif
+
+static unsigned int bx_vnet_instances = 0;
 
 /////////////////////////////////////////////////////////////////////////
 // handler to send/receive packets
@@ -94,6 +102,7 @@ typedef void (*layer4_handler_t)(
 class bx_vnet_pktmover_c : public eth_pktmover_c {
 public:
   bx_vnet_pktmover_c();
+  virtual ~bx_vnet_pktmover_c();
   void pktmover_init(
     const char *netif, const char *macaddr,
     eth_rx_handler_t rxh, eth_rx_status_t rxstat,
@@ -152,7 +161,7 @@ private:
 
   dhcp_cfg_t dhcp;
 
-  tftp_data_t tftp;
+  char tftp_rootdir[BX_PATHNAME_LEN];
 
   struct {
     unsigned ipprotocol;
@@ -203,13 +212,13 @@ void bx_vnet_pktmover_c::pktmover_init(
   eth_rx_handler_t rxh, eth_rx_status_t rxstat,
   bx_devmodel_c *dev, const char *script)
 {
+  if (bx_vnet_instances > 0) {
+    BX_PANIC(("only one 'vnet' instance supported yet"));
+  }
   this->netdev = dev;
-  BX_INFO(("vnet network driver"));
   this->rxh    = rxh;
   this->rxstat = rxstat;
-  strcpy(this->tftp.rootdir, netif);
-  this->tftp.tid = 0;
-  this->tftp.write = 0;
+  strcpy(this->tftp_rootdir, netif);
 
   memcpy(&dhcp.host_macaddr[0], macaddr, 6);
   memcpy(&dhcp.guest_macaddr[0], macaddr, 6);
@@ -232,6 +241,9 @@ void bx_vnet_pktmover_c::pktmover_init(
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
                               	 0, 0, "eth_vnet");
 
+  BX_INFO(("'vnet' network driver initialized"));
+  bx_vnet_instances++;
+
 #if BX_ETH_VNET_LOGGING
   pktlog_txt = fopen("ne2k-pktlog.txt", "wb");
   if (!pktlog_txt) BX_PANIC(("ne2k-pktlog.txt failed"));
@@ -252,6 +264,11 @@ void bx_vnet_pktmover_c::pktmover_init(
   pktlog_pcap = pcap_dump_open(pcapp, "ne2k-pktlog.pcap");
   if (pktlog_pcap == NULL) BX_PANIC(("ne2k-pktlog.pcap failed"));
 #endif
+}
+
+bx_vnet_pktmover_c::~bx_vnet_pktmover_c()
+{
+  bx_vnet_instances--;
 }
 
 void bx_vnet_pktmover_c::sendpkt(void *buf, unsigned io_len)
@@ -282,14 +299,14 @@ void bx_vnet_pktmover_c::guest_to_host(const Bit8u *buf, unsigned io_len)
       (!memcmp(&buf[0],&dhcp.host_macaddr[0],6) ||
        !memcmp(&buf[0],&broadcast_macaddr[0],6))) {
     switch (get_net2(&buf[12])) {
-    case 0x0800: // IPv4.
-      process_ipv4(buf, io_len);
-      break;
-    case 0x0806: // ARP.
-      process_arp(buf, io_len);
-      break;
-    default: // unknown packet type.
-      break;
+      case ETHERNET_TYPE_IPV4:
+        process_ipv4(buf, io_len);
+        break;
+      case ETHERNET_TYPE_ARP:
+        process_arp(buf, io_len);
+        break;
+      default: // unknown packet type.
+        break;
     }
   }
 }
@@ -355,7 +372,7 @@ void bx_vnet_pktmover_c::process_arp(const Bit8u *buf, unsigned io_len)
 {
   unsigned opcode;
   unsigned protocol;
-  Bit8u replybuf[60];
+  Bit8u replybuf[MIN_RX_PACKET_LEN];
 
   if (io_len < 22) return;
   if (io_len < (unsigned)(22+buf[18]*2+buf[19]*2)) return;
@@ -363,7 +380,7 @@ void bx_vnet_pktmover_c::process_arp(const Bit8u *buf, unsigned io_len)
   if (buf[14] != 0x00 || buf[15] != 0x01 || buf[18] != 0x06) return;
   opcode = get_net2(&buf[20]);
   protocol = get_net2(&buf[16]);
-  memset(&replybuf[0],0,60);
+  memset(&replybuf[0], 0, MIN_RX_PACKET_LEN);
 
   // protocol
   switch (protocol) {
@@ -382,7 +399,7 @@ void bx_vnet_pktmover_c::process_arp(const Bit8u *buf, unsigned io_len)
             memcpy(&replybuf[32],&dhcp.guest_macaddr[0],6);
             memcpy(&replybuf[38],&dhcp.guest_ipv4addr[0],4);
 
-            host_to_guest_arp(replybuf,60);
+            host_to_guest_arp(replybuf, MIN_RX_PACKET_LEN);
           }
         }
         break;
@@ -396,17 +413,15 @@ void bx_vnet_pktmover_c::process_arp(const Bit8u *buf, unsigned io_len)
         BX_INFO(("unexpected RARP REPLY"));
         break;
       default:
-        BX_INFO(("arp: unknown ARP opcode %04x",opcode));
+        BX_INFO(("arp: unknown ARP opcode %04x", opcode));
         break;
       }
-    }
-    else
-    {
-      BX_INFO(("arp: unknown address length %u",(unsigned)buf[19]));
+    } else {
+      BX_INFO(("arp: unknown address length %u", (unsigned)buf[19]));
     }
     break;
   default:
-    BX_INFO(("arp: unknown protocol 0x%04x",protocol));
+    BX_INFO(("arp: unknown protocol 0x%04x", protocol));
     break;
   }
 }
@@ -439,30 +454,34 @@ void bx_vnet_pktmover_c::process_ipv4(const Bit8u *buf, unsigned io_len)
     BX_INFO(("ip packet - too small packet"));
     return;
   }
-  if ((buf[14+0] & 0xf0) != 0x40) {
-    BX_INFO(("ipv%u packet - not implemented",((unsigned)buf[14+0] >> 4)));
+
+  ip_header_t *iphdr = (ip_header_t *)((Bit8u *)buf +
+                                       sizeof(ethernet_header_t));
+  if (iphdr->version != 4) {
+    BX_INFO(("ipv%u packet - not implemented", iphdr->version));
     return;
   }
-  l3header_len = ((unsigned)(buf[14+0] & 0x0f) << 2);
+  l3header_len = (iphdr->header_len << 2);
   if (l3header_len != 20) {
     BX_ERROR(("ip: option header is not implemented"));
     return;
   }
   if (io_len < (14U+l3header_len)) return;
-  if (ip_checksum(&buf[14],l3header_len) != (Bit16u)0xffff) {
+  if (ip_checksum((Bit8u*)iphdr, l3header_len) != (Bit16u)0xffff) {
     BX_INFO(("ip: invalid checksum"));
     return;
   }
 
-  total_len = get_net2(&buf[14+2]);
+  total_len = ntohs(iphdr->total_len);
+
   // FIXED By EaseWay
   // Ignore this check to tolerant some cases
   //if (io_len > (14U+total_len)) return;
 
-  if (memcmp(&buf[14+16],dhcp.host_ipv4addr,4) &&
-      memcmp(&buf[14+16],broadcast_ipv4addr[0],4) &&
-      memcmp(&buf[14+16],broadcast_ipv4addr[1],4) &&
-      memcmp(&buf[14+16],broadcast_ipv4addr[2],4))
+  if (memcmp(&iphdr->dst_addr, dhcp.host_ipv4addr, 4) &&
+      memcmp(&iphdr->dst_addr, broadcast_ipv4addr[0],4) &&
+      memcmp(&iphdr->dst_addr, broadcast_ipv4addr[1],4) &&
+      memcmp(&iphdr->dst_addr, broadcast_ipv4addr[2],4))
   {
     BX_INFO(("target IP address %u.%u.%u.%u is unknown",
       (unsigned)buf[14+16],(unsigned)buf[14+17],
@@ -470,10 +489,9 @@ void bx_vnet_pktmover_c::process_ipv4(const Bit8u *buf, unsigned io_len)
     return;
   }
 
-//  packet_id = get_net2(&buf[14+4]);
-  fragment_flags = (unsigned)buf[14+6] >> 5;
-  fragment_offset = ((unsigned)get_net2(&buf[14+6]) & 0x1fff) << 3;
-  ipproto = buf[14+9];
+  fragment_flags = ntohs(iphdr->frag_offs) >> 13;
+  fragment_offset = (ntohs(iphdr->frag_offs) & 0x1fff) << 3;
+  ipproto = iphdr->protocol;
 
   if ((fragment_flags & 0x1) || (fragment_offset != 0)) {
     BX_INFO(("ignore fragmented packet!"));
@@ -626,16 +644,17 @@ void bx_vnet_pktmover_c::process_udpipv4(
   layer4_handler_t func;
 
   if (l4pkt_len < 8) return;
-  udp_sourceport = get_net2(&l4pkt[0]);
-  udp_targetport = get_net2(&l4pkt[2]);
-//  udp_len = get_net2(&l4pkt[4]);
+  udp_header_t *udphdr = (udp_header_t *)l4pkt;
+  udp_sourceport = ntohs(udphdr->src_port);
+  udp_targetport = ntohs(udphdr->dst_port);
+//  udp_len = ntohs(udphdr->length);
 
-  func = get_layer4_handler(0x11,udp_targetport);
+  func = get_layer4_handler(0x11, udp_targetport);
   if (func != (layer4_handler_t)NULL) {
-    (*func)((void *)this,ipheader,ipheader_len,
-      udp_sourceport,udp_targetport,&l4pkt[8],l4pkt_len-8);
+    (*func)((void *)this,ipheader, ipheader_len,
+      udp_sourceport, udp_targetport, &l4pkt[8], l4pkt_len-8);
   } else {
-    BX_INFO(("udp - unhandled port %u",udp_targetport));
+    BX_INFO(("udp - unhandled port %u", udp_targetport));
   }
 }
 
@@ -749,7 +768,7 @@ void bx_vnet_pktmover_c::udpipv4_tftp_handler_ns(
   Bit8u replybuf[TFTP_BUFFER_SIZE + 4];
   int len;
 
-  len = process_tftp(netdev, data, data_len, sourceport, replybuf, &tftp);
+  len = process_tftp(netdev, data, data_len, sourceport, replybuf, tftp_rootdir);
   if (len > 0) {
     host_to_guest_udpipv4_packet(sourceport, targetport, replybuf, len);
   }

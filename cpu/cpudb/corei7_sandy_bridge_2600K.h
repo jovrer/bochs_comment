@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei7_sandy_bridge_2600K.h 11217 2012-06-14 18:56:47Z sshwarts $
+// $Id: corei7_sandy_bridge_2600K.h 12241 2014-03-15 19:24:42Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -59,7 +59,6 @@ private:
 
   void get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const;
-  void get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_6(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_7(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_8(cpuid_function_t *leaf) const;

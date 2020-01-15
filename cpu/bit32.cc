@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit32.cc 11437 2012-09-21 14:56:56Z sshwarts $
+// $Id: bit32.cc 12222 2014-03-02 16:40:13Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,8 @@
 
 #if BX_CPU_LEVEL >= 3
 
+#include "scalar_arith.h"
+
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BSF_GdEdR(bxInstruction_c *i)
 {
   Bit32u op2_32 = BX_READ_32BIT_REG(i->src());
@@ -34,12 +36,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BSF_GdEdR(bxInstruction_c *i)
     assert_ZF(); /* op1_32 undefined */
   }
   else {
-    Bit32u op1_32 = 0;
-    while ((op2_32 & 0x01) == 0) {
-      op1_32++;
-      op2_32 >>= 1;
-    }
-
+    Bit32u op1_32 = tzcntd(op2_32);
     SET_FLAGS_OSZAPC_LOGIC_32(op1_32);
     clear_ZF();
 
@@ -348,18 +345,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BTR_EdIbR(bxInstruction_c *i)
 /* F3 0F B8 */
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 {
-  Bit32u op2_32 = BX_READ_32BIT_REG(i->src());
+  Bit32u op_32 = popcntd(BX_READ_32BIT_REG(i->src()));
 
-  Bit32u op1_32 = 0;
-  while (op2_32 != 0) {
-    op2_32 &= (op2_32-1);
-    op1_32++;
-  }
-
-  Bit32u flags = op1_32 ? 0 : EFlagsZFMask;
+  Bit32u flags = op_32 ? 0 : EFlagsZFMask;
   setEFlagsOSZAPC(flags);
 
-  BX_WRITE_32BIT_REGZ(i->dst(), op1_32);
+  BX_WRITE_32BIT_REGZ(i->dst(), op_32);
 
   BX_NEXT_INSTR(i);
 }
@@ -368,12 +359,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::TZCNT_GdEdR(bxInstruction_c *i)
 {
   Bit32u op1_32 = BX_READ_32BIT_REG(i->src());
-  Bit32u mask = 0x1, result_32 = 0;
-
-  while ((op1_32 & mask) == 0 && mask) {
-    mask <<= 1;
-    result_32++;
-  }
+  Bit32u result_32 = tzcntd(op1_32);
 
   set_CF(! op1_32);
   set_ZF(! result_32);
@@ -387,12 +373,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::TZCNT_GdEdR(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LZCNT_GdEdR(bxInstruction_c *i)
 {
   Bit32u op1_32 = BX_READ_32BIT_REG(i->src());
-  Bit32u mask = 0x80000000, result_32 = 0;
-
-  while ((op1_32 & mask) == 0 && mask) {
-    mask >>= 1;
-    result_32++;
-  }
+  Bit32u result_32 = lzcntd(op1_32);
 
   set_CF(! op1_32);
   set_ZF(! result_32);

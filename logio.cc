@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc 11637 2013-02-20 18:51:39Z vruppert $
+// $Id: logio.cc 12305 2014-05-01 20:26:54Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -176,7 +176,9 @@ void iofunctions::set_log_prefix(const char* prefix)
 
 void iofunctions::out(int level, const char *prefix, const char *fmt, va_list ap)
 {
-  char c=' ', *s;
+  char c = ' ', *s;
+  char tmpstr[80], msgpfx[80], msg[1024];
+
   assert(magic==MAGIC_LOGNUM);
   assert(this != NULL);
   assert(logfd != NULL);
@@ -189,48 +191,53 @@ void iofunctions::out(int level, const char *prefix, const char *fmt, va_list ap
     default: break;
   }
 
-  s=logprefix;
-  while(*s) {
-    switch(*s) {
+  s = logprefix;
+  msgpfx[0] = 0;
+  while (*s) {
+    switch (*s) {
       case '%':
         if(*(s+1)) s++;
         else break;
         switch(*s) {
           case 'd':
-            fprintf(logfd, "%s", prefix==NULL?"":prefix);
+            sprintf(tmpstr, "%s", prefix==NULL?"":prefix);
             break;
           case 't':
-            fprintf(logfd, FMT_TICK, bx_pc_system.time_ticks());
+            sprintf(tmpstr, FMT_TICK, bx_pc_system.time_ticks());
             break;
           case 'i':
 #if BX_SUPPORT_SMP == 0
-            fprintf(logfd, "%08x", BX_CPU(0)->get_eip());
+            sprintf(tmpstr, "%08x", BX_CPU(0)->get_eip());
 #endif
             break;
           case 'e':
-            fprintf(logfd, "%c", c);
+            sprintf(tmpstr, "%c", c);
             break;
           case '%':
-            fprintf(logfd,"%%");
+            sprintf(tmpstr,"%%");
             break;
           default:
-            fprintf(logfd,"%%%c",*s);
+            sprintf(tmpstr,"%%%c",*s);
         }
         break;
-      default :
-        fprintf(logfd,"%c",*s);
+      default:
+        sprintf(tmpstr,"%c",*s);
     }
+    strcat(msgpfx, tmpstr);
     s++;
   }
 
-  fprintf(logfd," ");
+  fprintf(logfd,"%s ", msgpfx);
 
   if(level==LOGLEV_PANIC)
     fprintf(logfd, ">>PANIC<< ");
 
-  vfprintf(logfd, fmt, ap);
-  fprintf(logfd, "\n");
+  vsnprintf(msg, sizeof(msg), fmt, ap);
+  fprintf(logfd, "%s\n", msg);
   fflush(logfd);
+  if (SIM->has_log_viewer()) {
+    SIM->log_msg(msgpfx, level, msg);
+  }
 }
 
 iofunctions::iofunctions(FILE *fs)
@@ -322,15 +329,19 @@ void logfunctions::setio(iofunc_t *i)
 
 void logfunctions::put(const char *p)
 {
-  const char *n = p;
-  put(n, p);
+  char *n = strdup(p);
+
+  for (unsigned i=0; i<strlen(p); i++)
+    n[i] = tolower(p[i]);
+
+  put((const char*)n, p);
+  free(n);
 }
 
 void logfunctions::put(const char *n, const char *p)
 {
-  char *tmpbuf=strdup("[     ]");   // if we ever have more than 32 chars,
-                                    // we need to rethink this
-
+  char *tmpbuf=strdup(BX_NULL_PREFIX); // if we ever have more than 32 chars,
+                                       // we need to rethink this
   if (tmpbuf == NULL)
     return;                         // allocation not successful
 
@@ -362,15 +373,21 @@ void logfunctions::info(const char *fmt, ...)
 
   assert(logio != NULL);
 
-  if(!onoff[LOGLEV_INFO]) return;
+  if (!onoff[LOGLEV_INFO]) return;
 
   va_start(ap, fmt);
   logio->out(LOGLEV_INFO, prefix, fmt, ap);
-  if (onoff[LOGLEV_INFO] == ACT_ASK)
-    ask(LOGLEV_INFO, prefix, fmt, ap);
-  if (onoff[LOGLEV_INFO] == ACT_FATAL)
-    fatal(prefix, fmt, ap, 1);
   va_end(ap);
+
+  if (onoff[LOGLEV_INFO] == ACT_ASK) {
+    va_start(ap, fmt);
+    ask(LOGLEV_INFO, prefix, fmt, ap);
+    va_end(ap);
+  }
+  if (onoff[LOGLEV_INFO] == ACT_FATAL) {
+    va_start(ap, fmt);
+    fatal(prefix, fmt, ap, 1);
+  }
 }
 
 void logfunctions::error(const char *fmt, ...)
@@ -383,11 +400,17 @@ void logfunctions::error(const char *fmt, ...)
 
   va_start(ap, fmt);
   logio->out(LOGLEV_ERROR, prefix, fmt, ap);
-  if (onoff[LOGLEV_ERROR] == ACT_ASK)
-    ask(LOGLEV_ERROR, prefix, fmt, ap);
-  if (onoff[LOGLEV_ERROR] == ACT_FATAL)
-    fatal(prefix, fmt, ap, 1);
   va_end(ap);
+
+  if (onoff[LOGLEV_ERROR] == ACT_ASK) {
+    va_start(ap, fmt);
+    ask(LOGLEV_ERROR, prefix, fmt, ap);
+    va_end(ap);
+  }
+  if (onoff[LOGLEV_ERROR] == ACT_FATAL) {
+    va_start(ap, fmt);
+    fatal(prefix, fmt, ap, 1);
+  }
 }
 
 void logfunctions::panic(const char *fmt, ...)
@@ -396,22 +419,22 @@ void logfunctions::panic(const char *fmt, ...)
 
   assert(logio != NULL);
 
-  // Special case for panics since they are so important.  Always print
+  // Special case for panics since they are so important. Always print
   // the panic to the log, no matter what the log action says.
-  //if(!onoff[LOGLEV_PANIC]) return;
 
   va_start(ap, fmt);
   logio->out(LOGLEV_PANIC, prefix, fmt, ap);
-
-  // This fixes a funny bug on linuxppc where va_list is no pointer but a struct
   va_end(ap);
-  va_start(ap, fmt);
 
-  if (onoff[LOGLEV_PANIC] == ACT_ASK)
+  if (onoff[LOGLEV_PANIC] == ACT_ASK) {
+    va_start(ap, fmt);
     ask(LOGLEV_PANIC, prefix, fmt, ap);
-  if (onoff[LOGLEV_PANIC] == ACT_FATAL)
+    va_end(ap);
+  }
+  if (onoff[LOGLEV_PANIC] == ACT_FATAL) {
+    va_start(ap, fmt);
     fatal(prefix, fmt, ap, 1);
-  va_end(ap);
+  }
 }
 
 void logfunctions::ldebug(const char *fmt, ...)
@@ -424,11 +447,9 @@ void logfunctions::ldebug(const char *fmt, ...)
 
   va_start(ap, fmt);
   logio->out(LOGLEV_DEBUG, prefix, fmt, ap);
-  if (onoff[LOGLEV_DEBUG] == ACT_ASK)
-    ask(LOGLEV_DEBUG, prefix, fmt, ap);
-  if (onoff[LOGLEV_DEBUG] == ACT_FATAL)
-    fatal(prefix, fmt, ap, 1);
   va_end(ap);
+
+  // the actions ask() and fatal() are not supported here
 }
 
 void logfunctions::ask(int level, const char *prefix, const char *fmt, va_list ap)
@@ -455,7 +476,7 @@ void logfunctions::ask(int level, const char *prefix, const char *fmt, va_list a
 
   // ensure the text screen is showing
   SIM->set_display_mode(DISP_MODE_CONFIG);
-  int val = SIM->log_msg(prefix, level, buf1);
+  int val = SIM->log_ask(prefix, level, buf1);
   switch(val)
   {
     case BX_LOG_ASK_CHOICE_CONTINUE:
@@ -467,11 +488,10 @@ void logfunctions::ask(int level, const char *prefix, const char *fmt, va_list a
     case BX_LOG_ASK_CHOICE_DIE:
     case BX_LOG_NOTIFY_FAILED:
       bx_user_quit = (val==BX_LOG_ASK_CHOICE_DIE)?1:0;
-      in_ask_already = 0;  // because fatal will longjmp out
-      fatal(prefix, buf1, ap, 1);
-      // should never get here
-      BX_PANIC(("in ask(), fatal() should never return!"));
-      break;
+      // fatal() quits the simulation in the calling method
+      setonoff(level, ACT_FATAL);
+      in_ask_already = 0;
+      return;
     case BX_LOG_ASK_CHOICE_DUMP_CORE:
       fprintf(stderr, "User chose to dump core...\n");
 #if BX_HAVE_ABORT
@@ -550,14 +570,15 @@ static void carbonFatalDialog(const char *error, const char *exposition)
 
 void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int exit_status)
 {
-#if !BX_WITH_WX
-  // store prefix and message in 'exit_msg' before unloading device plugins
   char tmpbuf[1024];
   char exit_msg[1024];
 
-  vsprintf(tmpbuf, fmt, ap);
-  sprintf(exit_msg, "%s %s", prefix, tmpbuf);
-#endif
+  if (!SIM->is_wx_selected()) {
+    // store prefix and message in 'exit_msg' before unloading device plugins
+    vsnprintf(tmpbuf, sizeof(tmpbuf), fmt, ap);
+    va_end(ap);
+    sprintf(exit_msg, "%s %s", prefix, tmpbuf);
+  }
 #if !BX_DEBUGGER
   bx_atexit();
 #endif
@@ -572,13 +593,13 @@ void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int ex
       "For more information, try running Bochs within Terminal by clicking on \"bochs.scpt\".");
   }
 #endif
-#if !BX_WITH_WX
-  static const char *divider = "========================================================================";
-  fprintf(stderr, "%s\n", divider);
-  fprintf(stderr, "Bochs is exiting with the following message:\n");
-  fprintf(stderr, "%s", exit_msg);
-  fprintf(stderr, "\n%s\n", divider);
-#endif
+  if (!SIM->is_wx_selected()) {
+    static const char *divider = "========================================================================";
+    fprintf(stderr, "%s\n", divider);
+    fprintf(stderr, "Bochs is exiting with the following message:\n");
+    fprintf(stderr, "%s", exit_msg);
+    fprintf(stderr, "\n%s\n", divider);
+  }
 #if !BX_DEBUGGER
   BX_EXIT(exit_status);
 #else

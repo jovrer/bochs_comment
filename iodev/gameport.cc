@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gameport.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: gameport.cc 12187 2014-02-15 00:23:36Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2003-2009  The Bochs Project
+//  Copyright (C) 2003-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -40,6 +40,7 @@
 
 #elif defined(WIN32)
 
+#include <mmsystem.h>
 #ifndef JOY_BUTTON1
 #define JOY_BUTTON1 1
 #define JOY_BUTTON2 2

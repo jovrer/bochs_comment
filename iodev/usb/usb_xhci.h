@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_xhci.h 10972 2012-01-14 12:36:32Z vruppert $
+// $Id: usb_xhci.h 11912 2013-10-27 15:13:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010       Benjamin D Lunt (fys [at] fysnet [dot] net)
@@ -76,7 +76,7 @@
 #define EXT_CAPS_OFFSET      0x500
   #define EXT_CAPS_SIZE         48
 
-#define PAGE_SIZE                1  // Page size operational register value
+#define XHCI_PAGE_SIZE           1  // Page size operational register value
 
 #define PORT_SET_OFFSET  (0x400 + OPS_REGS_OFFSET)
 #define RUNTIME_OFFSET    0x600

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: voodoo.cc 11528 2012-11-01 15:43:12Z vruppert $
+// $Id: voodoo.cc 12143 2014-01-25 17:07:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2012  The Bochs Project
+//  Copyright (C) 2012-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -77,9 +77,56 @@ bx_voodoo_c* theVoodooDevice = NULL;
 
 #include "voodoo_types.h"
 #include "voodoo_data.h"
-voodoo_state *v;
 #include "voodoo_main.h"
+voodoo_state *v;
 #include "voodoo_func.h"
+
+// builtin configuration handling functions
+
+void voodoo_init_options(void)
+{
+  static const char *voodoo_model_list[] = {
+    "voodoo1",
+    "voodoo2",
+    NULL
+  };
+
+  bx_param_c *display = SIM->get_param("display");
+  bx_list_c *menu = new bx_list_c(display, "voodoo", "Voodoo Graphics");
+  menu->set_options(menu->SHOW_PARENT);
+  bx_param_bool_c *enabled = new bx_param_bool_c(menu,
+    "enabled",
+    "Enable Voodoo Graphics emulation",
+    "Enables the 3dfx Voodoo Graphics emulation",
+    1);
+  new bx_param_enum_c(menu,
+    "model",
+    "Voodoo model",
+    "Selects the Voodoo model to emulate.",
+    voodoo_model_list,
+    VOODOO_1, VOODOO_1);
+  enabled->set_dependent_list(menu->clone());
+}
+
+Bit32s voodoo_options_parser(const char *context, int num_params, char *params[])
+{
+  if (!strcmp(params[0], "voodoo")) {
+    bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_VOODOO);
+    for (int i = 1; i < num_params; i++) {
+      if (SIM->parse_param_from_list(context, params[i], base) < 0) {
+        BX_ERROR(("%s: unknown parameter for voodoo ignored.", context));
+      }
+    }
+  } else {
+    BX_PANIC(("%s: unknown directive '%s'", context, params[0]));
+  }
+  return 0;
+}
+
+Bit32s voodoo_options_save(FILE *fp)
+{
+  return SIM->write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_VOODOO), NULL, 0);
+}
 
 // device plugin entry points
 
@@ -87,11 +134,18 @@ int libvoodoo_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
 {
   theVoodooDevice = new bx_voodoo_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theVoodooDevice, BX_PLUGIN_VOODOO);
+  // add new configuration parameter for the config interface
+  voodoo_init_options();
+  // register add-on option for bochsrc and command line
+  SIM->register_addon_option("voodoo", voodoo_options_parser, voodoo_options_save);
   return 0; // Success
 }
 
 void libvoodoo_LTX_plugin_fini(void)
 {
+  SIM->unregister_addon_option("voodoo");
+  bx_list_c *menu = (bx_list_c*)SIM->get_param("display");
+  menu->remove("voodoo");
   delete theVoodooDevice;
 }
 
@@ -99,31 +153,38 @@ void libvoodoo_LTX_plugin_fini(void)
 
 bx_voodoo_c::bx_voodoo_c()
 {
-  put("voodoo", "SST-1");
+  put("VOODOO");
   s.mode_change_timer_id = BX_NULL_TIMER_HANDLE;
   s.update_timer_id = BX_NULL_TIMER_HANDLE;
+  v = NULL;
 }
 
 bx_voodoo_c::~bx_voodoo_c()
 {
-  free(v->fbi.ram);
-  free(v->tmu[0].ram);
-  free(v->tmu[1].ram);
-  delete v;
+  if (v != NULL) {
+    free(v->fbi.ram);
+    free(v->tmu[0].ram);
+    free(v->tmu[1].ram);
+    delete v;
+  }
 
   BX_DEBUG(("Exit"));
 }
 
 void bx_voodoo_c::init(void)
 {
+  // Read in values from config interface
+  bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_VOODOO);
+  // Check if the device is disabled or not configured
+  if (!SIM->get_param_bool("enabled", base)->get()) {
+    BX_INFO(("Voodoo disabled"));
+    // mark unused plugin for removal
+    ((bx_param_bool_c*)((bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL))->get_by_name("voodoo"))->set(0);
+    return;
+  }
   BX_VOODOO_THIS s.devfunc = 0x00;
   DEV_register_pci_handlers(this, &BX_VOODOO_THIS s.devfunc, BX_PLUGIN_VOODOO,
                             "Experimental 3dfx Voodoo Graphics (SST-1/2)");
-
-  for (unsigned i=0; i<256; i++) {
-    BX_VOODOO_THIS pci_conf[i] = 0x0;
-  }
-  BX_VOODOO_THIS pci_base_address[0] = 0;
 
   if (BX_VOODOO_THIS s.mode_change_timer_id == BX_NULL_TIMER_HANDLE) {
     BX_VOODOO_THIS s.mode_change_timer_id = bx_virt_timer.register_timer(this, mode_change_timer_handler,
@@ -134,11 +195,25 @@ void bx_voodoo_c::init(void)
        50000, 1, 0, "voodoo_update");
   }
   BX_VOODOO_THIS s.vdraw.clock_enabled = 1;
+  BX_VOODOO_THIS s.vdraw.output_on = 0;
+  BX_VOODOO_THIS s.vdraw.override_on = 0;
+  BX_VOODOO_THIS s.vdraw.screen_update_pending = 0;
 
   v = new voodoo_state;
-  voodoo_init();
+  Bit8u model = (Bit8u)SIM->get_param_enum("model", base)->get();
+  if (model == VOODOO_2) {
+    init_pci_conf(0x121a, 0x0002, 0x02, 0x038000, 0x00);
+    BX_VOODOO_THIS pci_conf[0x10] = 0x08;
+  } else {
+    init_pci_conf(0x121a, 0x0001, 0x02, 0x000000, 0x00);
+  }
+  BX_VOODOO_THIS pci_conf[0x3d] = BX_PCI_INTA;
+  BX_VOODOO_THIS pci_base_address[0] = 0;
 
-  BX_INFO(("Voodoo initialized"));
+  voodoo_init(model);
+
+  BX_INFO(("3dfx Voodoo Graphics adapter (model=%s) initialized",
+           SIM->get_param_enum("model", base)->get_selected()));
 }
 
 void bx_voodoo_c::reset(unsigned type)
@@ -149,20 +224,12 @@ void bx_voodoo_c::reset(unsigned type)
     unsigned      addr;
     unsigned char val;
   } reset_vals[] = {
-    { 0x00, 0x1a }, { 0x01, 0x12 },
-    { 0x02, 0x01 }, { 0x03, 0x00 },
     { 0x04, 0x00 }, { 0x05, 0x00 }, // command io / memory
     { 0x06, 0x00 }, { 0x07, 0x00 }, // status
-    { 0x08, 0x01 },                 // revision number
-    { 0x09, 0x00 },                 // interface
-    { 0x0a, 0x00 },                 // class_sub
-    { 0x0b, 0x00 },                 // class_base generic
-    { 0x0e, 0x00 },                 // header type generic
     // address space 0x10 - 0x13
-    { 0x10, 0x00 }, { 0x11, 0x00 },
+    { 0x11, 0x00 },
     { 0x12, 0x00 }, { 0x13, 0x00 },
     { 0x3c, 0x00 },                 // IRQ
-    { 0x3d, BX_PCI_INTA },          // INT
     // initEnable
     { 0x40, 0x00 }, { 0x41, 0x00 },
     { 0x42, 0x00 }, { 0x43, 0x00 },
@@ -177,6 +244,7 @@ void bx_voodoo_c::reset(unsigned type)
   for (i = 0; i < sizeof(reset_vals) / sizeof(*reset_vals); ++i) {
       BX_VOODOO_THIS pci_conf[reset_vals[i].addr] = reset_vals[i].val;
   }
+  v->pci.init_enable = 0x00;
 
   // Deassert IRQ
   set_irq_level(0);
@@ -255,7 +323,7 @@ void bx_voodoo_c::register_state(void)
   new bx_shadow_data_c(fbi, "clut", (Bit8u*)v->fbi.clut, sizeof(v->fbi.clut));
   new bx_shadow_bool_c(fbi, "clut_dirty", &v->fbi.clut_dirty);
   bx_list_c *tmu = new bx_list_c(vstate, "tmu", "textures");
-  for (i = 0; i < 2; i++) {
+  for (i = 0; i < MAX_TMU; i++) {
     sprintf(name, "%d", i);
     bx_list_c *num = new bx_list_c(tmu, name, "");
     new bx_shadow_data_c(num, "ram", v->tmu[i].ram, (4 << 20));
@@ -372,32 +440,46 @@ void bx_voodoo_c::mode_change_timer_handler(void *this_ptr)
     bx_virt_timer.deactivate_timer(BX_VOODOO_THIS s.update_timer_id);
     DEV_vga_set_override(0, NULL);
     BX_VOODOO_THIS s.vdraw.override_on = 0;
+    BX_VOODOO_THIS s.vdraw.width = 0;
+    BX_VOODOO_THIS s.vdraw.height = 0;
   }
 
   if ((BX_VOODOO_THIS s.vdraw.clock_enabled && BX_VOODOO_THIS s.vdraw.output_on) && !BX_VOODOO_THIS s.vdraw.override_on) {
-    if ((v->reg[hSync].u == 0) || (v->reg[vSync].u == 0))
-      return;
     // switching on
-    int htotal = ((v->reg[hSync].u >> 16) & 0x3ff) + 1 + (v->reg[hSync].u & 0xff) + 1;
-    int vtotal = ((v->reg[vSync].u >> 16) & 0xfff) + (v->reg[vSync].u & 0xfff);
-    int vsync = ((v->reg[vSync].u >> 16) & 0xfff);
-    double hfreq = 50000000.0 / htotal; // Voodoo1 50 MHz
-    if (((v->reg[fbiInit1].u >> 20) & 3) == 1) { // VCLK div 2
-      hfreq /= 2;
-    }
-    unsigned vfreq = (unsigned)(hfreq / vtotal);
-    BX_VOODOO_THIS s.vdraw.vtotal_usec = 1000000 / vfreq;
-    BX_VOODOO_THIS s.vdraw.vsync_usec = vsync * (unsigned)(1000000 / hfreq);
+    if (!BX_VOODOO_THIS update_timing())
+      return;
     DEV_vga_set_override(1, BX_VOODOO_THIS_PTR);
     BX_VOODOO_THIS s.vdraw.override_on = 1;
-
-    BX_VOODOO_THIS s.vdraw.width = v->fbi.width+1;
-    BX_VOODOO_THIS s.vdraw.height = v->fbi.height;
-    BX_INFO(("Voodoo output %dx%d@%uHz", v->fbi.width, v->fbi.height, vfreq));
-    bx_gui->dimension_update(v->fbi.width+1, v->fbi.height, 0, 0, 16);
-    update_timer_handler(NULL);
-    bx_virt_timer.activate_timer(BX_VOODOO_THIS s.update_timer_id, (Bit32u)BX_VOODOO_THIS s.vdraw.vtotal_usec, 1);
   }
+}
+
+bx_bool bx_voodoo_c::update_timing(void)
+{
+  if (!BX_VOODOO_THIS s.vdraw.clock_enabled || !BX_VOODOO_THIS s.vdraw.output_on)
+    return 0;
+  if ((v->reg[hSync].u == 0) || (v->reg[vSync].u == 0))
+    return 0;
+  int htotal = ((v->reg[hSync].u >> 16) & 0x3ff) + 1 + (v->reg[hSync].u & 0xff) + 1;
+  int vtotal = ((v->reg[vSync].u >> 16) & 0xfff) + (v->reg[vSync].u & 0xfff);
+  int vsync = ((v->reg[vSync].u >> 16) & 0xfff);
+  double hfreq = (double)(v->dac.clk0_freq * 1000) / htotal;
+  if (((v->reg[fbiInit1].u >> 20) & 3) == 1) { // VCLK div 2
+    hfreq /= 2;
+  }
+  double vfreq = hfreq / (double)vtotal;
+  BX_VOODOO_THIS s.vdraw.vtotal_usec = (unsigned)(1000000.0 / vfreq);
+  BX_VOODOO_THIS s.vdraw.htotal_usec = (unsigned)(1000000.0 / hfreq);
+  BX_VOODOO_THIS s.vdraw.vsync_usec = vsync * BX_VOODOO_THIS s.vdraw.htotal_usec;
+  if ((BX_VOODOO_THIS s.vdraw.width != v->fbi.width) ||
+      (BX_VOODOO_THIS s.vdraw.height != v->fbi.height)) {
+    BX_VOODOO_THIS s.vdraw.width = v->fbi.width;
+    BX_VOODOO_THIS s.vdraw.height = v->fbi.height;
+    bx_gui->dimension_update(v->fbi.width, v->fbi.height, 0, 0, 16);
+    update_timer_handler(NULL);
+  }
+  BX_INFO(("Voodoo output %dx%d@%uHz", v->fbi.width, v->fbi.height, (unsigned)vfreq));
+  bx_virt_timer.activate_timer(BX_VOODOO_THIS s.update_timer_id, (Bit32u)BX_VOODOO_THIS s.vdraw.vtotal_usec, 1);
+  return 1;
 }
 
 void bx_voodoo_c::refresh_display(void *this_ptr, bx_bool redraw)
@@ -500,11 +582,14 @@ void bx_voodoo_c::redraw_area(unsigned x0, unsigned y0, unsigned width,
   v->fbi.video_changed = 1;
 }
 
-bx_bool bx_voodoo_c::get_retrace(void)
+Bit16u bx_voodoo_c::get_retrace(void)
 {
   Bit64u time_in_frame = bx_pc_system.time_usec()  - BX_VOODOO_THIS s.vdraw.frame_start;
-  if (time_in_frame > BX_VOODOO_THIS s.vdraw.vsync_usec) return 1;
-  else return 0;
+  if (time_in_frame > BX_VOODOO_THIS s.vdraw.vsync_usec) {
+    return 0;
+  } else {
+    return (Bit16u)((BX_VOODOO_THIS s.vdraw.vsync_usec - time_in_frame) / BX_VOODOO_THIS s.vdraw.htotal_usec + 1);
+  }
 }
 
 void bx_voodoo_c::output_enable(bx_bool enabled)
@@ -579,6 +664,8 @@ void bx_voodoo_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len
         break;
       case 0x40:
       case 0x41:
+      case 0x42:
+      case 0x43:
         v->pci.init_enable &= ~(0xff << (i*8));
         v->pci.init_enable |= (value8 << (i*8));
         break;

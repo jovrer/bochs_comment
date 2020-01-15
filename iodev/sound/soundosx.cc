@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundosx.cc 10977 2012-01-15 07:52:04Z vruppert $
+// $Id: soundosx.cc 11753 2013-07-25 18:47:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2004-2011  The Bochs Project
+//  Copyright (C) 2004-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -30,7 +30,7 @@
 
 #if defined(macintosh) && BX_SUPPORT_SOUNDLOW
 
-#define LOG_THIS device->
+#define LOG_THIS
 
 #if BX_WITH_MACOS
 #include <QuickTimeMusic.h>
@@ -76,8 +76,8 @@ AudioUnit WaveOutputUnit = NULL;
 AudioConverterRef WaveConverter = NULL;
 #endif
 
-bx_sound_osx_c::bx_sound_osx_c(logfunctions *dev)
-    :bx_sound_lowlevel_c(dev)
+bx_sound_osx_c::bx_sound_osx_c()
+    :bx_sound_lowlevel_c()
 {
     MidiOpen = 0;
     WaveOpen = 0;
@@ -85,7 +85,7 @@ bx_sound_osx_c::bx_sound_osx_c(logfunctions *dev)
     tail = 0;
     for (int i=0; i<BX_SOUND_OSX_NBUF; i++)
         WaveLength[i] = 0;
-    BX_INFO(("Sound output module 'osx' initialized"));
+    BX_INFO(("Sound lowlevel module 'osx' initialized"));
 }
 
 bx_sound_osx_c::~bx_sound_osx_c()
@@ -634,7 +634,7 @@ void bx_sound_osx_c::record_timer_handler(void *this_ptr)
 
 void bx_sound_osx_c::record_timer(void)
 {
-  record_handler(this->device, record_packet_size);
+  record_handler(this, record_packet_size);
 }
 
 #endif  // defined(macintosh)

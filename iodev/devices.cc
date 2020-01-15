@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.cc 11560 2012-12-14 16:10:25Z vruppert $
+// $Id: devices.cc 12339 2014-05-26 17:04:02Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -105,7 +105,7 @@ void bx_devices_c::init(BX_MEM_C *newmem)
   const char def_name[] = "Default";
   const char *vga_ext;
 
-  BX_DEBUG(("Init $Id: devices.cc 11560 2012-12-14 16:10:25Z vruppert $"));
+  BX_DEBUG(("Init $Id: devices.cc 12339 2014-05-26 17:04:02Z vruppert $"));
   mem = newmem;
 
   /* set builtin default handlers, will be overwritten by the real default handler */
@@ -167,8 +167,10 @@ void bx_devices_c::init(BX_MEM_C *newmem)
 #endif
 #if BX_SUPPORT_SOUNDLOW
   sound_enabled = is_sound_enabled();
-  if (sound_enabled)
+  if (sound_enabled) {
     PLUG_load_plugin(soundmod, PLUGTYPE_CORE);
+    pluginSoundModCtl->init();
+  }
 #endif
   // PCI logic (i440FX)
   pci.enabled = SIM->get_param_bool(BXPN_PCI_ENABLED)->get();
@@ -200,17 +202,17 @@ void bx_devices_c::init(BX_MEM_C *newmem)
   PLUG_load_plugin(dma, PLUGTYPE_CORE);
   PLUG_load_plugin(pic, PLUGTYPE_CORE);
   PLUG_load_plugin(pit, PLUGTYPE_CORE);
-  PLUG_load_plugin(floppy, PLUGTYPE_CORE);
   vga_ext = SIM->get_param_string(BXPN_VGA_EXTENSION)->getptr();
   if (!strcmp(vga_ext, "cirrus")) {
 #if BX_SUPPORT_CLGD54XX
     PLUG_load_plugin(svga_cirrus, PLUGTYPE_CORE);
 #else
-    BX_ERROR(("Bochs is not compiled with Cirrus support"));
+    BX_PANIC(("Bochs is not compiled with Cirrus support"));
 #endif
   } else {
     PLUG_load_plugin(vga, PLUGTYPE_CORE);
   }
+  PLUG_load_plugin(floppy, PLUGTYPE_CORE);
 
 #if BX_SUPPORT_APIC
   PLUG_load_plugin(ioapic, PLUGTYPE_STANDARD);
@@ -1030,7 +1032,8 @@ bx_bool bx_devices_c::is_network_enabled(void)
 bx_bool bx_devices_c::is_sound_enabled(void)
 {
   if (PLUG_device_present("es1370") ||
-      PLUG_device_present("sb16")) {
+      PLUG_device_present("sb16") ||
+      PLUG_device_present("speaker")) {
     return 1;
   }
   return 0;
@@ -1135,6 +1138,20 @@ void bx_devices_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned 
 }
 
 // generic PCI support
+void bx_pci_device_stub_c::init_pci_conf(Bit16u vid, Bit16u did, Bit8u rev, Bit32u classc, Bit8u headt)
+{
+  memset(pci_conf, 0, 256);
+  pci_conf[0x00] = (Bit8u)(vid & 0xff);
+  pci_conf[0x01] = (Bit8u)(vid >> 8);
+  pci_conf[0x02] = (Bit8u)(did & 0xff);
+  pci_conf[0x03] = (Bit8u)(did >> 8);
+  pci_conf[0x08] = rev;
+  pci_conf[0x09] = (Bit8u)(classc & 0xff);
+  pci_conf[0x0a] = (Bit8u)((classc >> 8) & 0xff);
+  pci_conf[0x0b] = (Bit8u)((classc >> 16) & 0xff);
+  pci_conf[0x0e] = headt;
+}
+
 void bx_pci_device_stub_c::register_pci_state(bx_list_c *list)
 {
   char name[6];

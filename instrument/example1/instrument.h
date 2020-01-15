@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h 11575 2013-01-18 08:12:36Z sshwarts $
+// $Id: instrument.h 11908 2013-10-23 21:18:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2012 Stanislav Shwartsman
@@ -155,6 +155,9 @@ extern bxInstrumentation *icpu;
 /* wrmsr callback */
 #define BX_INSTR_WRMSR(cpu_id, addr, value)
 
+/* vmexit callback */
+#define BX_INSTR_VMEXIT(cpu_id, reason, qualification)
+
 #else // BX_INSTRUMENTATION
 
 /* initialization/deinitialization of instrumentalization */
@@ -210,5 +213,8 @@ extern bxInstrumentation *icpu;
 
 /* wrmsr callback */
 #define BX_INSTR_WRMSR(cpu_id, addr, value)
+
+/* vmexit callback */
+#define BX_INSTR_VMEXIT(cpu_id, reason, qualification)
 
 #endif // BX_INSTRUMENTATION

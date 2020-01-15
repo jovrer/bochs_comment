@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial_raw.cc 11638 2013-02-23 15:15:59Z vruppert $
+// $Id: serial_raw.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004-2013  The Bochs Project
@@ -45,7 +45,7 @@ serial_raw::serial_raw(const char *devname)
 #endif
 #endif
 
-  put("serial_raw", "SERR");
+  put("serial_raw", "SERRAW");
 #ifdef WIN32
   memset(&dcb, 0, sizeof(DCB));
   dcb.DCBlength = sizeof(DCB);

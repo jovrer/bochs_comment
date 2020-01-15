@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: e1000.cc 11606 2013-02-01 19:13:58Z vruppert $
+// $Id: e1000.cc 12320 2014-05-09 13:49:42Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Intel(R) 82540EM Gigabit Ethernet support (ported from QEMU)
@@ -12,7 +12,7 @@
 //  Copyright (c) 2007 Dan Aloni
 //  Copyright (c) 2004 Antony T Curtis
 //
-//  Copyright (C) 2011-2013  The Bochs Project
+//  Copyright (C) 2011-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -296,7 +296,7 @@ void e1000_init_options(void)
     "enabled",
     "Enable Intel(R) Gigabit Ethernet emulation",
     "Enables the Intel(R) Gigabit Ethernet emulation",
-    0);
+    1);
   SIM->init_std_nic_options("Intel(R) Gigabit Ethernet", menu);
   enabled->set_dependent_list(menu->clone());
 }
@@ -309,6 +309,10 @@ Bit32s e1000_options_parser(const char *context, int num_params, char *params[])
     bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_E1000);
     if (!SIM->get_param_bool("enabled", base)->get()) {
       SIM->get_param_enum("ethmod", base)->set_by_name("null");
+    }
+    if (!SIM->get_param_string("mac", base)->isempty()) {
+      // MAC address is already initialized
+      valid |= 0x04;
     }
     for (int i = 1; i < num_params; i++) {
       ret = SIM->parse_nic_params(context, params[i], base);
@@ -358,32 +362,17 @@ void libe1000_LTX_plugin_fini(void)
   delete theE1000Device;
 }
 
-// temporary helper functions 
-// we should use host from/to little endian conversion directly
+// macros and helper functions
 
-Bit16u cpu_to_le16(Bit16u value)
-{
-  Bit16u hvalue;
-
-  WriteHostWordToLittleEndian(&hvalue, value);
-  return hvalue;
-}
-
-Bit32u cpu_to_le32(Bit32u value)
-{
-  Bit32u hvalue;
-
-  WriteHostDWordToLittleEndian(&hvalue, value);
-  return hvalue;
-}
-
-Bit64u cpu_to_le64(Bit64u value)
-{
-  Bit64u hvalue;
-
-  WriteHostQWordToLittleEndian(&hvalue, value);
-  return hvalue;
-}
+#if defined (BX_LITTLE_ENDIAN)
+#define cpu_to_le16(val) (val)
+#define cpu_to_le32(val) (val)
+#define cpu_to_le64(val) (val)
+#else
+#define cpu_to_le16(val) bx_bswap16(val)
+#define cpu_to_le32(val) bx_bswap32(val)
+#define cpu_to_le64(val) bx_bswap64(val)
+#endif
 
 #define le16_to_cpu  cpu_to_le16
 #define le32_to_cpu  cpu_to_le32
@@ -441,7 +430,7 @@ void bx_e1000_c::init(void)
   Bit8u macaddr[6];
   int i;
   Bit16u checksum = 0;
-  const char *bootrom;
+  bx_param_string_c *bootrom;
 
   // Read in values from config interface
   bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_E1000);
@@ -470,15 +459,16 @@ void bx_e1000_c::init(void)
   DEV_register_pci_handlers(this, &BX_E1000_THIS s.devfunc, BX_PLUGIN_E1000,
                             "Experimental Intel(R) Gigabit Ethernet");
 
-  for (unsigned i=0; i<256; i++) {
-    BX_E1000_THIS pci_conf[i] = 0x0;
-  }
+  // initialize readonly registers
+  init_pci_conf(0x8086, 0x100e, 0x03, 0x020000, 0x00);
+  BX_E1000_THIS pci_conf[0x3d] = BX_PCI_INTA;
+
   BX_E1000_THIS pci_base_address[0] = 0;
   BX_E1000_THIS pci_base_address[1] = 0;
   BX_E1000_THIS pci_rom_address = 0;
-  bootrom = SIM->get_param_string("bootrom", base)->getptr();
-  if ((strlen(bootrom) > 0) && (strcmp(bootrom, "none"))) {
-    BX_E1000_THIS load_pci_rom(bootrom);
+  bootrom = SIM->get_param_string("bootrom", base);
+  if (!bootrom->isempty()) {
+    BX_E1000_THIS load_pci_rom(bootrom->getptr());
   }
 
   if (BX_E1000_THIS s.tx_timer_index == BX_NULL_TIMER_HANDLE) {
@@ -503,15 +493,8 @@ void bx_e1000_c::reset(unsigned type)
     unsigned      addr;
     unsigned char val;
   } reset_vals[] = {
-    { 0x00, 0x86 }, { 0x01, 0x80 },
-    { 0x02, 0x0e }, { 0x03, 0x10 },
     { 0x04, 0x03 }, { 0x05, 0x00 }, // command io / memory
     { 0x06, 0x00 }, { 0x07, 0x00 }, // status
-    { 0x08, 0x03 },                 // revision number
-    { 0x09, 0x00 },                 // interface
-    { 0x0a, 0x00 },                 // class_sub
-    { 0x0b, 0x02 },                 // class_base Network Controller
-    { 0x0e, 0x00 },                 // header type generic
     // address space 0x10 - 0x13
     { 0x10, 0x00 }, { 0x11, 0x00 },
     { 0x12, 0x00 }, { 0x13, 0x00 },
@@ -519,8 +502,6 @@ void bx_e1000_c::reset(unsigned type)
     { 0x14, 0x01 }, { 0x15, 0x00 },
     { 0x16, 0x00 }, { 0x17, 0x00 },
     { 0x3c, 0x00 },                 // IRQ
-    { 0x3d, BX_PCI_INTA },          // INT
-
   };
   for (i = 0; i < sizeof(reset_vals) / sizeof(*reset_vals); ++i) {
       BX_E1000_THIS pci_conf[reset_vals[i].addr] = reset_vals[i].val;

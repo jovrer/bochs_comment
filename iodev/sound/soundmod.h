@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundmod.h 11214 2012-06-09 10:12:05Z vruppert $
+// $Id: soundmod.h 12030 2013-12-15 17:09:18Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2011-2012  The Bochs Project
+//  Copyright (C) 2011-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -35,6 +35,7 @@
 #define BX_SOUNDLOW_OSX     2
 #define BX_SOUNDLOW_WIN     3
 #define BX_SOUNDLOW_SDL     4
+#define BX_SOUNDLOW_ALSA    5
 
 typedef Bit32u (*sound_record_handler_t)(void *arg, Bit32u len);
 
@@ -44,10 +45,16 @@ class bx_sound_lowlevel_c;
 class bx_soundmod_ctl_c : public bx_soundmod_ctl_stub_c {
 public:
   bx_soundmod_ctl_c();
-  virtual ~bx_soundmod_ctl_c() {}
-  virtual void* init_module(const char *type, logfunctions *device);
+  virtual ~bx_soundmod_ctl_c();
+  virtual void init(void);
+  virtual void* get_module();
   virtual bx_bool beep_on(float frequency);
   virtual bx_bool beep_off();
+  virtual void VOC_init_file(FILE *stream);
+  virtual void VOC_write_block(FILE *stream, int block, Bit32u headerlen,
+                               Bit8u header[], Bit32u datalen, Bit8u data[]);
+  virtual void pcm_apply_volume(Bit32u datalen, Bit8u data[], Bit16u volume,
+                                Bit8u bits, bx_bool stereo, bx_bool issigned);
 private:
   bx_sound_lowlevel_c *soundmod;
 };
@@ -63,7 +70,7 @@ public:
   non-portable, while everything in the soundcard code is portable
   */
 
-  bx_sound_lowlevel_c(logfunctions *dev);
+  bx_sound_lowlevel_c();
   virtual ~bx_sound_lowlevel_c();
 
   virtual int get_type() {return BX_SOUNDLOW_DUMMY;}
@@ -90,7 +97,6 @@ public:
   static void record_timer_handler(void *);
   void record_timer(void);
 protected:
-  logfunctions *device;
   int record_timer_index;
   int record_packet_size;
   sound_record_handler_t record_handler;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_hid.cc 11390 2012-09-02 09:37:47Z vruppert $
+// $Id: usb_hid.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // USB HID emulation support (mouse and tablet) ported from QEMU
@@ -429,7 +429,7 @@ usb_hid_device_c::usb_hid_device_c(usbdev_type type)
   d.connected = 1;
   memset((void*)&s, 0, sizeof(s));
 
-  put("usb_hid", "USBHI");
+  put("usb_hid", "USBHID");
 }
 
 usb_hid_device_c::~usb_hid_device_c(void)

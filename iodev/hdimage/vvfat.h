@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vvfat.h 11494 2012-10-07 18:36:22Z vruppert $
+// $Id: vvfat.h 11879 2013-10-13 14:33:55Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Virtual VFAT image support (shadows a local directory)
@@ -113,12 +113,6 @@ typedef struct mapping_t {
 
   int read_only;
 } mapping_t;
-
-#ifndef WIN32
-Bit16u fat_datetime(time_t time, int return_time);
-#else
-Bit16u fat_datetime(FILETIME time, int return_time);
-#endif
 
 class vvfat_image_t : public device_image_t
 {

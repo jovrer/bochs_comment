@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amd_k6_2_chomper.h 11679 2013-04-17 19:46:11Z sshwarts $
+// $Id: amd_k6_2_chomper.h 12241 2014-03-15 19:24:42Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -49,7 +49,6 @@ private:
 
   void get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const;
-  void get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_5(cpuid_function_t *leaf) const;
 
   void get_cpuid_hidden_level(cpuid_function_t *leaf) const;

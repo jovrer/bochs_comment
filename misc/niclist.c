@@ -2,7 +2,7 @@
 //
 // misc/niclist.c
 // by Don Becker <x-odus@iname.com>
-// $Id: niclist.c 10409 2011-06-19 05:37:30Z vruppert $
+// $Id: niclist.c 11919 2013-11-01 18:19:52Z vruppert $
 //
 // This program is for win32 only.  It lists the network interface cards
 // that you can use in the "ethdev" field of the ne2k line in your bochsrc.
@@ -18,7 +18,11 @@
 
 #include <windows.h>
 #include <stdio.h>
+#ifdef __CYGWIN__
+#include <wchar.h>
+#else
 #include <conio.h>
+#endif
 #include <stdlib.h>
 
 #if defined(_MSC_VER)
@@ -48,8 +52,10 @@ PCHAR   (*PacketGetVersion)() = NULL;
 
 void myexit (int code)
 {
+#ifndef __CYGWIN__
   printf ("\nPress any key to continue\n");
   getch();
+#endif
   exit(code);
 }
 
@@ -59,7 +65,7 @@ int CDECL main(int argc, char **argv)
     HINSTANCE     hPacket;
     DWORD         dwVersion, dwMajorVersion;
     char          AdapterInfo[NIC_BUFFER_SIZE] = { '\0','\0' };
-    unsigned long AdapterLength = NIC_BUFFER_SIZE;
+    ULONG         AdapterLength = NIC_BUFFER_SIZE;
     LPWSTR        wstrName;
     LPSTR         strName, strDesc;
     int           nAdapterCount;

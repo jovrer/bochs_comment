@@ -38,8 +38,7 @@ these four paragraphs for those parts of this code that are retained.
 
 Bit16s floatx80_to_int16(floatx80 a, float_status_t &status)
 {
-   if (floatx80_is_unsupported(a))
-   {
+   if (floatx80_is_unsupported(a)) {
         float_raise(status, float_flag_invalid);
         return int16_indefinite;
    }
@@ -47,7 +46,7 @@ Bit16s floatx80_to_int16(floatx80 a, float_status_t &status)
    Bit32s v32 = floatx80_to_int32(a, status);
 
    if ((v32 > 32767) || (v32 < -32768)) {
-        status.float_exception_flags = float_flag_invalid; // throw way other flags
+        status.float_exception_flags = float_flag_invalid; // throw away other flags
         return int16_indefinite;
    }
 
@@ -65,8 +64,7 @@ Bit16s floatx80_to_int16(floatx80 a, float_status_t &status)
 
 Bit16s floatx80_to_int16_round_to_zero(floatx80 a, float_status_t &status)
 {
-   if (floatx80_is_unsupported(a))
-   {
+   if (floatx80_is_unsupported(a)) {
         float_raise(status, float_flag_invalid);
         return int16_indefinite;
    }
@@ -74,7 +72,7 @@ Bit16s floatx80_to_int16_round_to_zero(floatx80 a, float_status_t &status)
    Bit32s v32 = floatx80_to_int32_round_to_zero(a, status);
 
    if ((v32 > 32767) || (v32 < -32768)) {
-        status.float_exception_flags = float_flag_invalid; // throw way other flags
+        status.float_exception_flags = float_flag_invalid; // throw away other flags
         return int16_indefinite;
    }
 
@@ -226,7 +224,7 @@ float_class_t floatx80_class(floatx80 a)
 
    /* valid numbers have the MS bit set */
    if (!(aSig & BX_CONST64(0x8000000000000000)))
-       return float_NaN; /* report unsupported as NaNs */
+       return float_SNaN; /* report unsupported as SNaNs */
 
    if(aExp == 0x7fff) {
        int aSign = extractFloatx80Sign(a);
@@ -234,7 +232,7 @@ float_class_t floatx80_class(floatx80 a)
        if (((Bit64u) (aSig<< 1)) == 0)
            return (aSign) ? float_negative_inf : float_positive_inf;
 
-       return float_NaN;
+       return (aSig & BX_CONST64(0x4000000000000000)) ? float_QNaN : float_SNaN;
    }
 
    return float_normalized;
@@ -253,14 +251,13 @@ int floatx80_compare(floatx80 a, floatx80 b, float_status_t &status)
     float_class_t aClass = floatx80_class(a);
     float_class_t bClass = floatx80_class(b);
 
-    if (aClass == float_NaN || bClass == float_NaN)
+    if (aClass == float_SNaN || aClass == float_QNaN || bClass == float_SNaN || bClass == float_QNaN)
     {
         float_raise(status, float_flag_invalid);
         return float_relation_unordered;
     }
 
-    if (aClass == float_denormal || bClass == float_denormal)
-    {
+    if (aClass == float_denormal || bClass == float_denormal) {
         float_raise(status, float_flag_denormal);
     }
 
@@ -312,19 +309,18 @@ int floatx80_compare_quiet(floatx80 a, floatx80 b, float_status_t &status)
     float_class_t aClass = floatx80_class(a);
     float_class_t bClass = floatx80_class(b);
 
-    if (aClass == float_NaN || bClass == float_NaN)
+    if (aClass == float_SNaN || bClass == float_SNaN)
     {
-        if (floatx80_is_unsupported(a) || floatx80_is_unsupported(b))
-            float_raise(status, float_flag_invalid);
-
-        if (floatx80_is_signaling_nan(a) || floatx80_is_signaling_nan(b))
-            float_raise(status, float_flag_invalid);
-
+        /* unsupported reported as SNaN */
+        float_raise(status, float_flag_invalid);
         return float_relation_unordered;
     }
 
-    if (aClass == float_denormal || bClass == float_denormal)
-    {
+    if (aClass == float_QNaN || bClass == float_QNaN) {
+        return float_relation_unordered;
+    }
+
+    if (aClass == float_denormal || bClass == float_denormal) {
         float_raise(status, float_flag_denormal);
     }
 

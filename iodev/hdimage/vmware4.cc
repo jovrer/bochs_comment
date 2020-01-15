@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware4.cc 11494 2012-10-07 18:36:22Z vruppert $
+// $Id: vmware4.cc 11921 2013-11-03 07:41:29Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -10,6 +10,7 @@
  * Contact: snrrrub@gmail.com
  *
  * Copyright (C) 2006 Sharvil Nanavati.
+ * Copyright (C) 2006-2013  The Bochs Project
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -31,7 +32,13 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
+#ifdef BXIMAGE
+#include "config.h"
+#include "misc/bxcompat.h"
+#include "osdep.h"
+#else
 #include "iodev.h"
+#endif
 #include "hdimage.h"
 #include "vmware4.h"
 
@@ -47,6 +54,9 @@ vmware4_image_t::vmware4_image_t()
   current_offset(INVALID_OFFSET),
   is_dirty(0)
 {
+  if (sizeof(_VM4_Header) != 77) {
+    BX_PANIC(("system error: invalid header structure size"));
+  }
 }
 
 vmware4_image_t::~vmware4_image_t()
@@ -80,7 +90,7 @@ int vmware4_image_t::open(const char* _pathname, int flags)
   is_dirty = 0;
 
   hd_size = header.total_sectors * SECTOR_SIZE;
-  cylinders = (unsigned)hd_size / (16 * 63);
+  cylinders = (unsigned)(header.total_sectors / (16 * 63));
   heads = 16;
   spt = 63;
 
@@ -336,6 +346,7 @@ Bit32u vmware4_image_t::get_capabilities(void)
   return HDIMAGE_HAS_GEOMETRY;
 }
 
+#ifndef BXIMAGE
 bx_bool vmware4_image_t::save_state(const char *backup_fname)
 {
   return hdimage_backup_file(file_descriptor, backup_fname);
@@ -364,3 +375,4 @@ void vmware4_image_t::restore_state(const char *backup_fname)
   }
   device_image_t::open(pathname);
 }
+#endif

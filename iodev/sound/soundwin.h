@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundwin.h 11213 2012-06-08 20:49:39Z vruppert $
+// $Id: soundwin.h 12187 2014-02-15 00:23:36Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -23,7 +23,7 @@
 
 #if defined(WIN32)
 
-#include <windows.h>
+#include <mmsystem.h>
 
 // uncomment one of the following two #defines
 //#define usesndPlaySnd
@@ -166,7 +166,7 @@ typedef struct {
 
 class bx_sound_windows_c : public bx_sound_lowlevel_c {
 public:
-  bx_sound_windows_c(logfunctions *dev);
+  bx_sound_windows_c();
   virtual ~bx_sound_windows_c();
 
   virtual int get_type() {return BX_SOUNDLOW_WIN;}

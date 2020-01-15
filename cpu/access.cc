@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: access.cc 11574 2013-01-16 17:28:20Z sshwarts $
+// $Id: access.cc 12054 2013-12-21 21:56:55Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2005-2010  The Bochs Project
@@ -33,6 +33,16 @@ bx_address bx_asize_mask[] = {
   BX_CONST64(0xffffffffffffffff)  // as64 (asize = '11)
 #endif
 };
+
+#if BX_SUPPORT_EVEX
+  #define BX_MAX_MEM_ACCESS_LENGTH 64
+#else
+  #if BX_SUPPORT_AVX
+    #define BX_MAX_MEM_ACCESS_LENGTH 32
+  #else
+    #define BX_MAX_MEM_ACCESS_LENGTH 16
+  #endif
+#endif
 
   bx_bool BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned length)
@@ -68,7 +78,7 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned le
         BX_ERROR(("write_virtual_checks(): write beyond limit, r/w"));
         return 0;
       }
-      if (seg->cache.u.segment.limit_scaled >= 31) {
+      if (seg->cache.u.segment.limit_scaled >= (BX_MAX_MEM_ACCESS_LENGTH-1)) {
         // Mark cache as being OK type for succeeding read/writes. The limit
         // checks still needs to be done though, but is more simple. We
         // could probably also optimize that out with a flag for the case
@@ -128,7 +138,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned len
         BX_ERROR(("read_virtual_checks(): read beyond limit"));
         return 0;
       }
-      if (seg->cache.u.segment.limit_scaled >= 31) {
+      if (seg->cache.u.segment.limit_scaled >= (BX_MAX_MEM_ACCESS_LENGTH-1)) {
         // Mark cache as being OK type for succeeding reads. See notes for
         // write checks; similar code.
         seg->cache.valid |= SegAccessROK;
@@ -190,7 +200,7 @@ BX_CPU_C::execute_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned 
         BX_ERROR(("execute_virtual_checks(): read beyond limit"));
         return 0;
       }
-      if (seg->cache.u.segment.limit_scaled >= 31) {
+      if (seg->cache.u.segment.limit_scaled >= (BX_MAX_MEM_ACCESS_LENGTH-1)) {
         // Mark cache as being OK type for succeeding reads. See notes for
         // write checks; similar code.
         seg->cache.valid |= SegAccessROK;
@@ -304,13 +314,15 @@ BX_CPU_C::system_read_word(bx_address laddr)
   }
 
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr) || ! IsCanonical(laddr+1)) {
+  if (! IsCanonical(laddr)) {
     BX_ERROR(("system_read_word(): canonical failure"));
     exception(BX_GP_EXCEPTION, 0);
   }
 #endif
 
-  access_read_linear(laddr, 2, 0, BX_READ, (void *) &data);
+  if (access_read_linear(laddr, 2, 0, BX_READ, (void *) &data) < 0)
+    exception(BX_GP_EXCEPTION, 0);
+
   return data;
 }
 
@@ -336,13 +348,15 @@ BX_CPU_C::system_read_dword(bx_address laddr)
   }
 
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr) || ! IsCanonical(laddr+3)) {
+  if (! IsCanonical(laddr)) {
     BX_ERROR(("system_read_dword(): canonical failure"));
     exception(BX_GP_EXCEPTION, 0);
   }
 #endif
 
-  access_read_linear(laddr, 4, 0, BX_READ, (void *) &data);
+  if (access_read_linear(laddr, 4, 0, BX_READ, (void *) &data) < 0)
+    exception(BX_GP_EXCEPTION, 0);
+
   return data;
 }
 
@@ -368,13 +382,15 @@ BX_CPU_C::system_read_qword(bx_address laddr)
   }
 
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr) || ! IsCanonical(laddr+7)) {
+  if (! IsCanonical(laddr)) {
     BX_ERROR(("system_read_qword(): canonical failure"));
     exception(BX_GP_EXCEPTION, 0);
   }
 #endif
 
-  access_read_linear(laddr, 8, 0, BX_READ, (void *) &data);
+  if (access_read_linear(laddr, 8, 0, BX_READ, (void *) &data) < 0)
+    exception(BX_GP_EXCEPTION, 0);
+
   return data;
 }
 
@@ -431,13 +447,14 @@ BX_CPU_C::system_write_word(bx_address laddr, Bit16u data)
   }
 
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr) || ! IsCanonical(laddr+1)) {
+  if (! IsCanonical(laddr)) {
     BX_ERROR(("system_write_word(): canonical failure"));
     exception(BX_GP_EXCEPTION, 0);
   }
 #endif
 
-  access_write_linear(laddr, 2, 0, (void *) &data);
+  if (access_write_linear(laddr, 2, 0, (void *) &data) < 0)
+    exception(BX_GP_EXCEPTION, 0);
 }
 
   void BX_CPP_AttrRegparmN(2)
@@ -462,13 +479,14 @@ BX_CPU_C::system_write_dword(bx_address laddr, Bit32u data)
   }
 
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr) || ! IsCanonical(laddr+3)) {
+  if (! IsCanonical(laddr)) {
     BX_ERROR(("system_write_dword(): canonical failure"));
     exception(BX_GP_EXCEPTION, 0);
   }
 #endif
 
-  access_write_linear(laddr, 4, 0, (void *) &data);
+  if (access_write_linear(laddr, 4, 0, (void *) &data) < 0)
+    exception(BX_GP_EXCEPTION, 0);
 }
 
   Bit8u* BX_CPP_AttrRegparmN(2)

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_win32.cc 10975 2012-01-14 17:03:00Z vruppert $
+// $Id: eth_win32.cc 12188 2014-02-15 12:18:15Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -41,6 +41,10 @@
 #include "netmod.h"
 
 #if BX_NETWORKING && BX_NETMOD_WIN32
+
+#ifndef __CYGWIN__
+#include <winsock2.h>
+#endif
 
 // windows.h included by bochs.h
 #define LOG_THIS netdev->

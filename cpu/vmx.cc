@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.cc 11676 2013-04-09 20:36:02Z sshwarts $
+// $Id: vmx.cc 12294 2014-04-24 18:02:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009-2013 Stanislav Shwartsman
@@ -77,14 +77,14 @@ static const char *VMX_vmexit_reason_name[] =
   "WRMSR",
   "VMEntry failure due to invalid guest state",
   "VMEntry failure due to MSR loading",
-  "Reserved",
+  "Reserved35",
   "MWAIT",
   "MTF (Monitor Trap Flag)",
-  "Reserved",
+  "Reserved38",
   "MONITOR",
   "PAUSE",
   "VMEntry failure due to machine check",
-  "Reserved",
+  "Reserved42",
   "TPR Below Threshold",
   "APIC Access",
   "Virtualized EOI",
@@ -102,8 +102,11 @@ static const char *VMX_vmexit_reason_name[] =
   "RDRAND",
   "INVPCID",
   "VMFUNC",
-  "Reserved",
+  "Reserved60",
   "RDSEED"
+  "Reserved62",
+  "XSAVES",
+  "XRSTORS"
 };
 
 ////////////////////////////////////////////////////////////
@@ -423,6 +426,7 @@ bx_bool BX_CPU_C::is_eptptr_valid(Bit64u eptptr)
   Bit32u walk_length = (eptptr >> 3) & 7;
   if (walk_length != 3) return 0;
 
+  // [6]   EPT A/D Enable
   if (! BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT_ACCESS_DIRTY)) {
     if (eptptr & 0x40) {
       BX_ERROR(("is_eptptr_valid: EPTPTR A/D enabled when not supported by CPU"));
@@ -430,7 +434,7 @@ bx_bool BX_CPU_C::is_eptptr_valid(Bit64u eptptr)
     }
   }
 
-#define BX_EPTPTR_RESERVED_BITS 0xf80 /* bits 11:5 are reserved */
+#define BX_EPTPTR_RESERVED_BITS 0xf80 /* bits 11:7 are reserved */
   if (eptptr & BX_EPTPTR_RESERVED_BITS) {
     BX_ERROR(("is_eptptr_valid: EPTPTR reserved bits set"));
     return 0;
@@ -1649,9 +1653,9 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
       }
       revision &= ~BX_VMCS_SHADOW_BIT_MASK;
     }
-    if (revision != VMX_VMCS_REVISION_ID) {
+    if (revision != BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id()) {
       *qualification = (Bit64u) VMENTER_ERR_GUEST_STATE_LINK_POINTER;
-      BX_ERROR(("VMFAIL: VMCS link pointer incorrect revision ID %d != %d", revision, VMX_VMCS_REVISION_ID));
+      BX_ERROR(("VMFAIL: VMCS link pointer incorrect revision ID %d != %d", revision, BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id()));
       return VMX_VMEXIT_VMENTRY_FAILURE_GUEST_STATE;
     }
 
@@ -1928,7 +1932,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
   BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_CONTEXT_SWITCH, 0);
 
   if (guest.activity_state) {
-    BX_ERROR(("VMEntry to non-active CPU state %d", guest.activity_state));
+    BX_DEBUG(("VMEntry to non-active CPU state %d", guest.activity_state));
     enter_sleep_state(guest.activity_state);
   }
 
@@ -2408,6 +2412,8 @@ void BX_CPU_C::VMexit(Bit32u reason, Bit64u qualification)
       BX_PANIC(("PANIC: VMEXIT not in VMX guest mode !"));
   }
 
+  BX_INSTR_VMEXIT(BX_CPU_ID, reason, qualification);
+
   //
   // STEP 0: Update VMEXIT reason
   //
@@ -2423,7 +2429,7 @@ void BX_CPU_C::VMexit(Bit32u reason, Bit64u qualification)
   if (reason >= VMX_VMEXIT_LAST_REASON)
     BX_PANIC(("PANIC: broken VMEXIT reason %d", reason));
   else
-    BX_ERROR(("VMEXIT reason = %d (%s) qualification=0x" FMT_LL "x", reason, VMX_vmexit_reason_name[reason], qualification));
+    BX_DEBUG(("VMEXIT reason = %d (%s) qualification=0x" FMT_LL "x", reason, VMX_vmexit_reason_name[reason], qualification));
 
   if (reason != VMX_VMEXIT_EXCEPTION_NMI && reason != VMX_VMEXIT_EXTERNAL_INTERRUPT) {
     VMwrite32(VMCS_32BIT_VMEXIT_INTERRUPTION_INFO, 0);
@@ -2446,6 +2452,7 @@ void BX_CPU_C::VMexit(Bit32u reason, Bit64u qualification)
     if (BX_CPU_THIS_PTR speculative_rsp)
       RSP = BX_CPU_THIS_PTR prev_rsp;
   }
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   //
   // STEP 1: Saving Guest State to VMCS
@@ -2543,8 +2550,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMXON(bxInstruction_c *i)
 
     // not allowed to be shadow VMCS
     Bit32u revision = VMXReadRevisionID((bx_phy_address) pAddr);
-    if (revision != VMX_VMCS_REVISION_ID) {
-      BX_ERROR(("VMXON: not expected (%d != %d) VMCS revision id !", revision, VMX_VMCS_REVISION_ID));
+    if (revision != BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id()) {
+      BX_ERROR(("VMXON: not expected (%d != %d) VMCS revision id !", revision, BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id()));
       VMfailInvalid();
       BX_NEXT_INSTR(i);
     }
@@ -2568,7 +2575,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMXON(bxInstruction_c *i)
   else {
     // in VMX root operation mode
     if (CPL != 0) {
-      BX_ERROR(("VMXON with CPL!=0 cause #GP(0)"));
+      BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
       exception(BX_GP_EXCEPTION, 0);
     }
 
@@ -2590,7 +2597,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMXOFF(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMXOFF with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -2628,7 +2635,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMCALL(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("VMCALL with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -2710,7 +2717,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMLAUNCH(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMLAUNCH/VMRESUME with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -2915,8 +2922,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMPTRLD(bxInstruction_c *i)
     if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VMCS_SHADOWING))
       revision &= ~BX_VMCS_SHADOW_BIT_MASK; // allowed to be shadow VMCS
 
-    if (revision != VMX_VMCS_REVISION_ID) {
-       BX_ERROR(("VMPTRLD: not expected (%d != %d) VMCS revision id !", revision, VMX_VMCS_REVISION_ID));
+    if (revision != BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id()) {
+       BX_ERROR(("VMPTRLD: not expected (%d != %d) VMCS revision id !", revision, BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id()));
        VMfail(VMXERR_VMPTRLD_INCORRECT_VMCS_REVISION_ID);
     }
     else {
@@ -2940,7 +2947,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMPTRST(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMPTRST with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3086,7 +3093,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMREAD_EdGd(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMREAD with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3146,7 +3153,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMREAD_EqGq(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMREAD with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3211,7 +3218,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMWRITE_GdEd(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMWRITE with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3281,7 +3288,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMWRITE_GqEq(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMWRITE with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3350,7 +3357,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMCLEAR(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("VMCLEAR with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3401,7 +3408,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVEPT(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("INVEPT with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3415,7 +3422,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVEPT(bxInstruction_c *i)
 
   BxPackedXmmRegister inv_eptp;
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  read_virtual_xmmword(i->seg(), eaddr, (Bit8u *) &inv_eptp);
+  read_virtual_xmmword(i->seg(), eaddr, &inv_eptp);
 
   switch(type) {
   case BX_INVEPT_INVVPID_SINGLE_CONTEXT_INVALIDATION:
@@ -3459,7 +3466,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVVPID(bxInstruction_c *i)
   }
 
   if (CPL != 0) {
-    BX_ERROR(("INVVPID with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3473,7 +3480,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVVPID(bxInstruction_c *i)
 
   BxPackedXmmRegister invvpid_desc;
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  read_virtual_xmmword(i->seg(), eaddr, (Bit8u *) &invvpid_desc);
+  read_virtual_xmmword(i->seg(), eaddr, &invvpid_desc);
 
   if (invvpid_desc.xmm64u(0) > 0xffff) {
     BX_ERROR(("INVVPID: INVVPID_DESC reserved bits set"));
@@ -3553,7 +3560,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVPCID(bxInstruction_c *i)
 #endif
 
   if (CPL != 0) {
-    BX_ERROR(("INVPCID with CPL!=0 cause #GP(0)"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -3570,7 +3577,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVPCID(bxInstruction_c *i)
 
   BxPackedXmmRegister invpcid_desc;
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  read_virtual_xmmword(i->seg(), eaddr, (Bit8u *) &invpcid_desc);
+  read_virtual_xmmword(i->seg(), eaddr, &invpcid_desc);
 
   if (invpcid_desc.xmm64u(0) > 0xfff) {
     BX_ERROR(("INVPCID: INVPCID_DESC reserved bits set"));

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c 11682 2013-04-21 20:09:49Z sshwarts $
+// $Id: rombios.c 11761 2013-08-02 15:59:49Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -927,7 +927,7 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 11682 $ $Date: 2013-04-21 22:09:49 +0200 (So, 21. Apr 2013) $";
+static char bios_cvs_version_string[] = "$Revision: 11761 $ $Date: 2013-08-02 17:59:49 +0200 (Fr, 02. Aug 2013) $";
 
 #define BIOS_COPYRIGHT_STRING "(c) 2002-2010 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
@@ -4319,7 +4319,7 @@ BX_DEBUG_INT15("case 1: enable mouse\n");
         case 5: // Initialize Mouse
 BX_DEBUG_INT15("case 1 or 5:\n");
           if (regs.u.r8.al == 5) {
-            if (regs.u.r8.bh != 3) {
+            if ((regs.u.r8.bh != 3) && (regs.u.r8.bh != 4)) {
               SET_CF();
               regs.u.r8.ah = 0x02; // invalid input
               return;
@@ -9561,7 +9561,7 @@ bios32_entry_point:
   in  eax, dx
 #ifdef PCI_FIXED_HOST_BRIDGE
   cmp eax, #PCI_FIXED_HOST_BRIDGE
-  jne unknown_service
+  je pci_found
 #ifdef PCI_FIXED_HOST_BRIDGE2
   cmp eax, #PCI_FIXED_HOST_BRIDGE2
   jne unknown_service
@@ -9571,6 +9571,7 @@ bios32_entry_point:
   cmp eax, #0xffffffff
   je unknown_service
 #endif
+pci_found:
   mov ebx, #0x000f0000
   mov ecx, #0x10000
   mov edx, #pcibios_protected

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h 11556 2012-12-02 19:59:23Z vruppert $
+// $Id: plugin.h 12117 2014-01-19 18:13:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -232,6 +232,8 @@ extern "C" {
   (bx_devices.pci_set_base_io(a,b,c,d,e,f,g,h))
 #define DEV_ide_bmdma_present() bx_devices.pluginPciIdeController->bmdma_present()
 #define DEV_ide_bmdma_set_irq(a) bx_devices.pluginPciIdeController->bmdma_set_irq(a)
+#define DEV_ide_bmdma_start_transfer(a) \
+  bx_devices.pluginPciIdeController->bmdma_start_transfer(a)
 #define DEV_acpi_generate_smi(a) bx_devices.pluginACPIController->generate_smi(a)
 
 ///////// Speaker macros
@@ -251,11 +253,17 @@ extern "C" {
 #define DEV_usb_init_device(a,b,c,d) (usbdev_type)bx_devices.pluginUsbDevCtl->init_device(a,b,(void**)c,d)
 #define DEV_usb_send_msg(a,b) bx_devices.pluginUsbDevCtl->usb_send_msg((void*)a,b)
 
-///////// Sound module macro
-#define DEV_sound_init_module(a,b) \
-  ((bx_sound_lowlevel_c*)bx_devices.pluginSoundModCtl->init_module(a,b))
+///////// Sound module macros
+#define DEV_sound_get_module() \
+  ((bx_sound_lowlevel_c*)bx_devices.pluginSoundModCtl->get_module())
 #define DEV_soundmod_beep_on(a) bx_devices.pluginSoundModCtl->beep_on(a)
 #define DEV_soundmod_beep_off() bx_devices.pluginSoundModCtl->beep_off()
+#define DEV_soundmod_VOC_init_file(a) \
+  (bx_devices.pluginSoundModCtl->VOC_init_file(a))
+#define DEV_soundmod_VOC_write_block(a,b,c,d,e,f) \
+  (bx_devices.pluginSoundModCtl->VOC_write_block(a,b,c,d,e,f))
+#define DEV_soundmod_pcm_apply_volume(a,b,c,d,e,f) \
+  (bx_devices.pluginSoundModCtl->pcm_apply_volume(a,b,c,d,e,f))
 
 ///////// Networking module macro
 #define DEV_net_init_module(a,b,c,d) \
@@ -417,6 +425,7 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(rfb)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(sdl)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(svga)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(term)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(vncsrv)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(win32)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(wx)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(x)

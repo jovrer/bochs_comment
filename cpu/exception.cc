@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: exception.cc 11580 2013-01-19 20:45:03Z sshwarts $
+// $Id: exception.cc 11908 2013-10-23 21:18:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -865,6 +865,7 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
     RIP = BX_CPU_THIS_PTR prev_rip;
     if (BX_CPU_THIS_PTR speculative_rsp)
       RSP = BX_CPU_THIS_PTR prev_rsp;
+    BX_CPU_THIS_PTR speculative_rsp = 0;
 
     if (BX_CPU_THIS_PTR last_exception_type == BX_ET_DOUBLE_FAULT)
     {

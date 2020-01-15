@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit.h 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pit.h 12321 2014-05-10 06:50:06Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -39,6 +39,7 @@ public:
   virtual void init(void);
   virtual void reset(unsigned type);
   virtual void register_state(void);
+  virtual void after_restore_state(void);
 #if BX_DEBUGGER
   virtual void debug_dump(int argc, char **argv);
 #endif
@@ -69,6 +70,7 @@ private:
   BX_PIT_SMF void  irq_handler(bx_bool value);
 
   BX_PIT_SMF Bit16u get_timer(int Timer);
+  BX_PIT_SMF Bit16u new_timer_count(int Timer);
 };
 
 #endif  // #ifndef _BX_PIT_H

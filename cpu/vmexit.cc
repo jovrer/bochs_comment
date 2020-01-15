@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmexit.cc 11648 2013-03-06 21:11:23Z sshwarts $
+// $Id: vmexit.cc 11988 2013-12-02 20:06:59Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009-2013 Stanislav Shwartsman
@@ -86,7 +86,8 @@ Bit32u gen_instruction_info(bxInstruction_c *i, Bit32u reason, bx_bool rw_form)
 
     instr_info |= i->seg() << 15;
 
-    if (i->sibIndex() != BX_NIL_REGISTER)
+    // index field is always initialized because of gather but not always valid
+    if (i->sibIndex() != BX_NIL_REGISTER && i->sibIndex() != 4)
         instr_info |= i->sibScale() | (i->sibIndex() << 18);
     else
         instr_info |= 1 << 22; // index invalid
@@ -430,7 +431,7 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_IO(bxInstruction_c *i, unsigned por
          break;
 
        default:
-         BX_PANIC(("VMexit_IO: I/O instruction %s unknown", i->getIaOpcodeName()));
+         BX_PANIC(("VMexit_IO: I/O instruction %s unknown", i->getIaOpcodeNameShort()));
      }
 
      if (qualification & VMX_VMEXIT_IO_INSTR_STRING) {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundsdl.h 11214 2012-06-09 10:12:05Z vruppert $
+// $Id: soundsdl.h 11726 2013-06-24 19:19:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2012  The Bochs Project
@@ -27,7 +27,7 @@
 
 class bx_sound_sdl_c : public bx_sound_lowlevel_c {
 public:
-  bx_sound_sdl_c(logfunctions *dev);
+  bx_sound_sdl_c();
   virtual ~bx_sound_sdl_c();
 
   virtual int get_type() {return BX_SOUNDLOW_SDL;}

@@ -1,5 +1,5 @@
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -137,6 +137,7 @@
 #define BX_HAVE_NET_IF_H 0
 #define BX_HAVE___BUILTIN_BSWAP32 0
 #define BX_HAVE___BUILTIN_BSWAP64 0
+#define BX_HAVE_SSIZE_T 0
 
 // This turns on Roland Mainz's idle hack.  Presently it is specific to the X11
 // and term gui. If people try to enable it elsewhere, give a compile error
@@ -283,6 +284,7 @@
 #define BX_WITH_NOGUI 0
 #define BX_WITH_TERM 0
 #define BX_WITH_RFB 0
+#define BX_WITH_VNCSRV 0
 #define BX_WITH_AMIGAOS 0
 #define BX_WITH_SDL 0
 #define BX_WITH_SVGA 0
@@ -307,7 +309,7 @@
 // have __declspec(dllexport) on variables, functions, or classes that the
 // plugins can access.  The plugins should #define PLUGGABLE which will
 // activate the __declspec(dllimport) instead.
-#if defined(WIN32) || defined(__CYGWIN__)
+#if (defined(WIN32) || defined(__CYGWIN__)) && !defined(BXIMAGE)
 #  if BX_PLUGINS && defined(BX_PLUGGABLE)
 //   #warning I will import DLL symbols from Bochs main program.
 #    define BOCHSAPI __declspec(dllimport)
@@ -566,11 +568,15 @@ typedef
 
 #define HAVE_SIGACTION 1
 
+#ifndef __cplusplus
+
 // configure will change the definition of "inline" to the value
 // that the C compiler allows.  It tests the following keywords to
 // see if any is permitted: inline, __inline__, __inline.  If none
 // is permitted, it defines inline to be empty.
 #define inline inline
+
+#endif
 
 // Use BX_CPP_INLINE for all C++ inline functions.  Note that the
 // word "inline" itself may now be redefined by the above #define.
@@ -601,11 +607,27 @@ typedef
                           __attribute__ ((format (printf, formatArg, firstArg)))
 #define BX_CPP_AttrNoReturn() __attribute__ ((noreturn))
 
+#ifndef likely
+#define likely(x)      __builtin_expect(!!(x), 1)
+#endif
+
+#ifndef unlikely
+#define unlikely(x)    __builtin_expect(!!(x), 0)
+#endif
+
 #else
 
 #define BX_CPP_AlignN(n) /* Not supported. */
 #define BX_CPP_AttrPrintf(formatArg, firstArg)  /* Not supported. */
 #define BX_CPP_AttrNoReturn() /* Not supported. */
+
+#ifndef likely
+#define likely(x)      (x)
+#endif
+
+#ifndef unlikely
+#define unlikely(x)    (x)
+#endif
 
 #endif
 
@@ -626,35 +648,6 @@ typedef
 // enable BX_ASSERT checks
 #define BX_ASSERT_ENABLE 0
 
-// limited i440FX PCI support
-#define BX_SUPPORT_PCI 0
-
-// CLGD54XX emulation
-#define BX_SUPPORT_CLGD54XX 0
-
-// Experimental 3dfx Voodoo (SST-1/2) emulation
-#define BX_SUPPORT_VOODOO 0
-
-// Experimental host PCI device mapping
-#define BX_SUPPORT_PCIDEV 0
-
-#if (BX_SUPPORT_PCIDEV && !BX_SUPPORT_PCI)
-  #error To enable PCI host device mapping, you must also enable PCI
-#endif
-
-// USB host controllers
-#define BX_SUPPORT_USB_UHCI 0
-#define BX_SUPPORT_USB_OHCI 0
-#define BX_SUPPORT_USB_XHCI 0
-#define BX_SUPPORT_PCIUSB (BX_SUPPORT_USB_UHCI || BX_SUPPORT_USB_OHCI || BX_SUPPORT_USB_XHCI)
-
-#if (BX_SUPPORT_PCIUSB && !BX_SUPPORT_PCI)
-  #error To enable USB, you must also enable PCI
-#endif
-
-// Experimental bus mouse support
-#define BX_SUPPORT_BUSMOUSE 0
-
 #define BX_SUPPORT_ALIGNMENT_CHECK 0
 #define BX_SUPPORT_FPU 0
 #define BX_SUPPORT_3DNOW 0
@@ -662,6 +655,7 @@ typedef
 #define BX_SUPPORT_SVM 0
 #define BX_SUPPORT_VMX 0
 #define BX_SUPPORT_AVX 0
+#define BX_SUPPORT_EVEX 0
 
 #if BX_SUPPORT_SVM && BX_SUPPORT_X86_64 == 0
   #error "SVM require x86-64 support"
@@ -675,8 +669,13 @@ typedef
   #error "AVX require x86-64 support"
 #endif
 
+#if BX_SUPPORT_EVEX && BX_SUPPORT_AVX == 0
+  #error "EVEX and AVX-512 support require AVX to be compiled in"
+#endif
+
 #define BX_SUPPORT_REPEAT_SPEEDUPS 0
 #define BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS 0
+#define BX_ENABLE_TRACE_LINKING 0
 
 #if (BX_DEBUGGER || BX_GDBSTUB) && BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
  #error "Handler-chaining-speedups are not supported together with internal debugger or gdb-stub!"
@@ -799,12 +798,41 @@ typedef
 // not the optional built-in debugger.
 #define BX_X86_DEBUGGER 0
 
+// limited i440FX PCI support
+#define BX_SUPPORT_PCI 0
+
+// Experimental host PCI device mapping
+#define BX_SUPPORT_PCIDEV 0
+
+#if (BX_SUPPORT_PCIDEV && !BX_SUPPORT_PCI)
+  #error To enable PCI host device mapping, you must also enable PCI
+#endif
+
+// CLGD54XX emulation
+#define BX_SUPPORT_CLGD54XX 0
+
+// Experimental 3dfx Voodoo (SST-1/2) emulation
+#define BX_SUPPORT_VOODOO 0
+
+// USB host controllers
+#define BX_SUPPORT_USB_UHCI 0
+#define BX_SUPPORT_USB_OHCI 0
+#define BX_SUPPORT_USB_XHCI 0
+#define BX_SUPPORT_PCIUSB (BX_SUPPORT_USB_UHCI || BX_SUPPORT_USB_OHCI || BX_SUPPORT_USB_XHCI)
+
+#if (BX_SUPPORT_PCIUSB && !BX_SUPPORT_PCI)
+  #error To enable USB, you must also enable PCI
+#endif
+
+// Experimental bus mouse support
+#define BX_SUPPORT_BUSMOUSE 0
+
 #define BX_SUPPORT_CDROM 0
 
 #if BX_SUPPORT_CDROM
    // This is the C++ class name to use if we are supporting
    // low-level CDROM.
-#  define LOWLEVEL_CDROM cdrom_interface
+#  define LOWLEVEL_CDROM cdrom_base_c
 #endif
 
 // NE2K network emulation
@@ -844,12 +872,13 @@ typedef
 #define BX_SUPPORT_SOUNDLOW 0
 
 #if BX_SUPPORT_SOUNDLOW
-// Determines which sound lowlevel class is to be used.
+// Determines which sound lowlevel class is to be used as the default.
 // Currently the following are available:
+//    bx_sound_alsa_c       Output for Linux with ALSA PCM and sequencer interface
 //    bx_sound_linux_c      Output for Linux, to /dev/dsp and /dev/midi00
-//                          or ALSA PCM and sequencer interface
 //    bx_sound_windows_c    Output for Windows midi and wave mappers
 //    bx_sound_osx_c        Output for MacOSX midi and wave device
+//    bx_sound_sdl_c        Wave output with SDL
 //    bx_sound_lowlevel_c   Dummy functions, no output
 #define BX_SOUND_LOWLEVEL_C bx_sound_lowlevel_c
 // Use ALSA sound interface on Linux

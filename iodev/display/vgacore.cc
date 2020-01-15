@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vgacore.cc 11608 2013-02-02 16:02:08Z vruppert $
+// $Id: vgacore.cc 11956 2013-11-25 21:07:39Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -266,10 +266,10 @@ void bx_vgacore_c::init_systemtimer(bx_timer_handler_t f_timer, param_event_hand
     BX_VGA_THIS timer_id = bx_virt_timer.register_timer(this, f_timer,
        BX_VGA_THIS update_interval, 1, 1, "vga");
     vga_update_freq->set_handler(f_param);
-    vga_update_freq->set_runtime_param(1);
   }
-  if (BX_VGA_THIS update_interval < 300000) {
-    BX_VGA_THIS s.blink_counter = 300000 / (unsigned)BX_VGA_THIS update_interval;
+  // VGA text mode cursor blink frequency 1.875 Hz
+  if (BX_VGA_THIS update_interval < 266666) {
+    BX_VGA_THIS s.blink_counter = 266666 / (unsigned)BX_VGA_THIS update_interval;
   } else {
     BX_VGA_THIS s.blink_counter = 1;
   }
@@ -399,7 +399,7 @@ void bx_vgacore_c::determine_screen_dimensions(unsigned *piHeight, unsigned *piW
 {
   int ai[0x20];
   int i,h,v;
-  for (i = 0 ; i < 0x20 ; i++)
+  for (i = 0 ; i < 0x19 ; i++)
    ai[i] = BX_VGA_THIS s.CRTC.reg[i];
 
   h = (ai[1] + 1) * 8;

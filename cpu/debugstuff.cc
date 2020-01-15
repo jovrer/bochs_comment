@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc 11538 2012-11-06 20:01:02Z sshwarts $
+// $Id: debugstuff.cc 11910 2013-10-25 05:36:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -108,8 +108,14 @@ const char* cpu_state_string(unsigned state)
 
 void BX_CPU_C::debug(bx_address offset)
 {
+#if BX_SUPPORT_VMX
+  BX_INFO(("CPU is in %s (%s%s)", cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode()),
+    cpu_state_string(BX_CPU_THIS_PTR activity_state),
+    BX_CPU_THIS_PTR in_vmx_guest ? ", vmx guest" : ""));
+#else
   BX_INFO(("CPU is in %s (%s)", cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode()),
     cpu_state_string(BX_CPU_THIS_PTR activity_state)));
+#endif
   BX_INFO(("CS.mode = %u bit",
     long64_mode() ? 64 : (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b ? 32 : 16)));
   BX_INFO(("SS.mode = %u bit",
@@ -147,10 +153,8 @@ void BX_CPU_C::debug(bx_address offset)
   else
 #endif
   {
-    BX_INFO(("| EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x",
-          (unsigned) EAX, (unsigned) EBX, (unsigned) ECX, (unsigned) EDX));
-    BX_INFO(("| ESP=%08x  EBP=%08x  ESI=%08x  EDI=%08x",
-          (unsigned) ESP, (unsigned) EBP, (unsigned) ESI, (unsigned) EDI));
+    BX_INFO(("| EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x", EAX, EBX, ECX, EDX));
+    BX_INFO(("| ESP=%08x  EBP=%08x  ESI=%08x  EDI=%08x", ESP, EBP, ESI, EDI));
   }
   BX_INFO(("| IOPL=%1u %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
     BX_CPU_THIS_PTR get_IOPL(),

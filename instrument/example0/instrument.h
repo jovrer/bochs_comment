@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h 11295 2012-07-24 15:32:55Z sshwarts $
+// $Id: instrument.h 11908 2013-10-23 21:18:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2012 Stanislav Shwartsman
@@ -104,6 +104,9 @@ void bx_instr_lin_access(unsigned cpu, bx_address lin, bx_phy_address phy, unsig
 /* wrmsr callback */
 #define BX_INSTR_WRMSR(cpu_id, addr, value)
 
+/* vmexit callback */
+#define BX_INSTR_VMEXIT(cpu_id, reason, qualification)
+
 #else // BX_INSTRUMENTATION
 
 /* initialization/deinitialization of instrumentalization */
@@ -159,5 +162,8 @@ void bx_instr_lin_access(unsigned cpu, bx_address lin, bx_phy_address phy, unsig
 
 /* wrmsr callback */
 #define BX_INSTR_WRMSR(cpu_id, addr, value)
+
+/* vmexit callback */
+#define BX_INSTR_VMEXIT(cpu_id, reason, qualification)
 
 #endif // BX_INSTRUMENTATION

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundlnx.h 11213 2012-06-08 20:49:39Z vruppert $
+// $Id: soundlnx.h 11738 2013-07-14 15:14:53Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -21,21 +21,15 @@
 /////////////////////////////////////////////////////////////////////////
 
 // Josef Drexler coded the original version of the lowlevel sound support
-// for Linux using OSS. The current version also supports OSS on FreeBSD and
-// ALSA PCM input/output on Linux.
+// for Linux using OSS. The current version also supports OSS on FreeBSD.
 
 #if (defined(linux) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
 
 #define BX_SOUND_LINUX_BUFSIZE   BX_SOUNDLOW_WAVEPACKETSIZE * 2
 
-#if BX_HAVE_ALSASOUND
-#define ALSA_PCM_NEW_HW_PARAMS_API
-#include <alsa/asoundlib.h>
-#endif
-
 class bx_sound_linux_c : public bx_sound_lowlevel_c {
 public:
-  bx_sound_linux_c(logfunctions *dev);
+  bx_sound_linux_c();
   virtual ~bx_sound_linux_c();
 
   virtual int get_type() {return BX_SOUNDLOW_LINUX;}
@@ -62,25 +56,6 @@ public:
   static void record_timer_handler(void *);
   void record_timer(void);
 private:
-#if BX_HAVE_ALSASOUND
-  int alsa_seq_open(const char *alsadev);
-  int alsa_seq_output(int delta, int command, int length, Bit8u data[]);
-  int alsa_pcm_open(bx_bool input, int frequency, int bits, bx_bool stereo, int format);
-  int alsa_pcm_write();
-
-  bx_bool use_alsa_seq;
-  bx_bool use_alsa_pcm;
-  struct {
-    snd_seq_t *handle;
-    int source_port;
-  } alsa_seq;
-  struct {
-    snd_pcm_t *handle;
-    snd_pcm_uframes_t frames;
-    int alsa_bufsize, audio_bufsize;
-    char *buffer;
-  } alsa_pcm[2];
-#endif
   FILE *midi;
   char *wave_device[2];
   int  wave_fd[2];

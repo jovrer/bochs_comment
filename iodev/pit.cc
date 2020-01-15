@@ -1,8 +1,8 @@
 ///////////////////////////////////////////////////////////////////////
-// $Id: pit.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pit.cc 12321 2014-05-10 06:50:06Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -169,6 +169,15 @@ void bx_pit_c::register_state(void)
   BX_PIT_THIS s.timer.register_state(counter);
 }
 
+void bx_pit_c::after_restore_state(void)
+{
+  if (BX_PIT_THIS s.speaker_active) {
+    Bit32u value32 = BX_PIT_THIS get_timer(2);
+    if (value32 == 0) value32 = 0x10000;
+    DEV_speaker_beep_on((float)(1193180.0 / value32));
+  }
+}
+
 void bx_pit_c::timer_handler(void *this_ptr)
 {
   bx_pit_c * class_ptr = (bx_pit_c *) this_ptr;
@@ -278,7 +287,7 @@ void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
   Bit32u value32, time_passed32 = (Bit32u)time_passed;
   bx_bool new_speaker_active;
 
-  if(time_passed32) {
+  if (time_passed32) {
     periodic(time_passed32);
   }
   BX_PIT_THIS s.last_usec = BX_PIT_THIS s.last_usec + time_passed;
@@ -298,6 +307,11 @@ void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
 
     case 0x42: /* timer 2: write count register */
       BX_PIT_THIS s.timer.write(2, value);
+      if (BX_PIT_THIS s.speaker_active && BX_PIT_THIS new_timer_count(2)) {
+        value32 = BX_PIT_THIS get_timer(2);
+        if (value32 == 0) value32 = 0x10000;
+        DEV_speaker_beep_on((float)(1193180.0 / value32));
+      }
       break;
 
     case 0x43: /* timer 0-2 mode control */
@@ -381,6 +395,11 @@ void bx_pit_c::irq_handler(bx_bool value)
 Bit16u bx_pit_c::get_timer(int Timer)
 {
   return BX_PIT_THIS s.timer.get_inlatch(Timer);
+}
+
+Bit16u bx_pit_c::new_timer_count(int Timer)
+{
+  return BX_PIT_THIS s.timer.new_count_ready(Timer);
 }
 
 #if BX_DEBUGGER

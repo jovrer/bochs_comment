@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h 11689 2013-05-24 17:58:49Z vruppert $
+// $Id: bochs.h 12187 2014-02-15 00:23:36Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -38,6 +38,7 @@ extern "C" {
 // In a win32 compile (including cygwin), windows.h is required for several
 // files in gui and iodev.  It is important to include it here in a header
 // file so that WIN32-specific data types can be used in fields of classes.
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #endif
 
@@ -291,11 +292,11 @@ public:
   }
 } logfunc_t;
 
-#define BX_LOGPREFIX_SIZE 51
+#define BX_LOGPREFIX_LEN 20
 
 class BOCHSAPI iofunctions {
   int magic;
-  char logprefix[BX_LOGPREFIX_SIZE];
+  char logprefix[BX_LOGPREFIX_LEN + 1];
   FILE *logfd;
   class logfunctions *log;
   void init(void);
@@ -331,7 +332,7 @@ protected:
   const char *logfn;
 };
 
-typedef class BOCHSAPI iofunctions iofunc_t;
+typedef class iofunctions iofunc_t;
 
 #define SAFE_GET_IOFUNC() \
   ((io==NULL)? (io=new iofunc_t("/dev/stderr")) : io)

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpuid.h 11686 2013-05-17 19:41:57Z sshwarts $
+// $Id: cpuid.h 12317 2014-05-05 20:11:14Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2010-2013 Stanislav Shwartsman
+//   Copyright (c) 2010-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -57,6 +57,12 @@ public:
   virtual int wrmsr(Bit32u index, Bit64u  msr) { return -1; }
 #endif
 
+#define BX_VMX_VMCS_REVISION_ID 0x2B /* better to be unique bochs VMCS revision id */
+
+#if BX_SUPPORT_VMX
+  virtual Bit32u get_vmcs_revision_id(void) const { return BX_VMX_VMCS_REVISION_ID; }
+#endif
+
 protected:
   BX_CPU_C *cpu;
 
@@ -71,6 +77,40 @@ protected:
      leaf->ecx = 0;
      leaf->edx = 0;
   }
+
+  void get_ext_cpuid_brand_string_leaf(const char *brand_string, Bit32u function, cpuid_function_t *leaf) const
+  {
+    switch(function) {
+    case 0x80000002:
+      memcpy(&(leaf->eax), brand_string     , 4);
+      memcpy(&(leaf->ebx), brand_string +  4, 4);
+      memcpy(&(leaf->ecx), brand_string +  8, 4);
+      memcpy(&(leaf->edx), brand_string + 12, 4);
+      break;
+    case 0x80000003:
+      memcpy(&(leaf->eax), brand_string + 16, 4);
+      memcpy(&(leaf->ebx), brand_string + 20, 4);
+      memcpy(&(leaf->ecx), brand_string + 24, 4);
+      memcpy(&(leaf->edx), brand_string + 28, 4);
+      break;
+    case 0x80000004:
+      memcpy(&(leaf->eax), brand_string + 32, 4);
+      memcpy(&(leaf->ebx), brand_string + 36, 4);
+      memcpy(&(leaf->ecx), brand_string + 40, 4);
+      memcpy(&(leaf->edx), brand_string + 44, 4);
+      break;
+    default:
+      break;
+    }
+
+#ifdef BX_BIG_ENDIAN
+    leaf->eax = bx_bswap32(leaf->eax);
+    leaf->ebx = bx_bswap32(leaf->ebx);
+    leaf->ecx = bx_bswap32(leaf->ecx);
+    leaf->edx = bx_bswap32(leaf->edx);
+#endif
+  }
+
 };
 
 typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
@@ -120,6 +160,14 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_ISA_ADX                   (BX_CONST64(1) << 41)  /* ADCX/ADOX instruction */
 #define BX_ISA_SMAP                  (BX_CONST64(1) << 42)  /* SMAP support */
 #define BX_ISA_RDSEED                (BX_CONST64(1) << 43)  /* RDSEED instruction */
+#define BX_ISA_SHA                   (BX_CONST64(1) << 44)  /* SHA instruction */
+#define BX_ISA_AVX512                (BX_CONST64(1) << 45)  /* AVX-512 instruction */
+#define BX_ISA_AVX512_CD             (BX_CONST64(1) << 46)  /* AVX-512 Conflict Detection instruction */
+#define BX_ISA_AVX512_PF             (BX_CONST64(1) << 47)  /* AVX-512 Sparse Prefetch instruction */
+#define BX_ISA_AVX512_ER             (BX_CONST64(1) << 48)  /* AVX-512 Exponential/Reciprocal instruction */
+#define BX_ISA_CLFLUSHOPT            (BX_CONST64(1) << 49)  /* CLFLUSHOPT instruction */
+#define BX_ISA_XSAVEC                (BX_CONST64(1) << 50)  /* XSAVEC instruction */
+#define BX_ISA_XSAVES                (BX_CONST64(1) << 51)  /* XSAVES instruction */
 
 // cpuid non-ISA features
 #define BX_CPU_DEBUG_EXTENSIONS      (1 <<  0)              /* Debug Extensions support */
@@ -142,6 +190,7 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_CPU_ALT_MOV_CR8           (1 << 17)              /* LOCK CR0 access CR8 */
 #define BX_CPU_TSC_DEADLINE          (1 << 18)              /* TSC-Deadline */
 #define BX_CPU_MISALIGNED_SSE        (1 << 19)              /* Misaligned SSE */
+#define BX_CPU_FCS_FDS_DEPRECATION   (1 << 20)              /* FCS/FDS Deprecation */
 
 // cpuid VMX features
 #define BX_VMX_TPR_SHADOW            (1 <<  0)              /* TPR shadow */
@@ -250,7 +299,7 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 // [8:8]   TM2: Thermal Monitor 2
 // [9:9]   SSSE3: SSSE3 Instructions
 // [10:10] CNXT-ID: L1 context ID
-// [11:11] reserved
+// [11:11] IA32_DEBUG_INTERFACE MSR for silicon debug support
 // [12:12] FMA Instructions support
 // [13:13] CMPXCHG16B: CMPXCHG16B instruction support
 // [14:14] xTPR update control
@@ -283,7 +332,7 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_CPUID_EXT_THERMAL_MONITOR2        (1 <<  8)
 #define BX_CPUID_EXT_SSSE3                   (1 <<  9)
 #define BX_CPUID_EXT_CNXT_ID                 (1 << 10)
-#define BX_CPUID_EXT_RESERVED11              (1 << 11)
+#define BX_CPUID_EXT_DEBUG_INTERFACE         (1 << 11)
 #define BX_CPUID_EXT_FMA                     (1 << 12)
 #define BX_CPUID_EXT_CMPXCHG16B              (1 << 13)
 #define BX_CPUID_EXT_xTPR                    (1 << 14)
@@ -309,7 +358,8 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 // -----------------------------
 
 //   [0:0]    FS/GS BASE access instructions
-//   [2:1]    reserved
+//   [1:1]    Support for IA32_TSC_ADJUST MSR
+//   [2:2]    reserved
 //   [3:3]    BMI1: Advanced Bit Manipulation Extensions
 //   [4:4]    HLE: Hardware Lock Elision
 //   [5:5]    AVX2
@@ -319,16 +369,27 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 //   [9:9]    Support for Enhanced REP MOVSB/STOSB
 //   [10:10]  Support for INVPCID instruction
 //   [11:11]  RTM: Restricted Transactional Memory
-//   [12:12]  Supports Quality of Service (QoS) capability
+//   [12:12]  Supports Platform Quality of Service Monitoring (PQM) capability
 //   [13:13]  Deprecates FPU CS and FPU DS values
-//   [17:14]  reserved
+//   [14:14]  Intel Memory Protection Extensions
+//   [15:15]  Supports Platform Quality of Service Enforcement (PQE) capability
+//   [16:16]  AVX512F instructions support
+//   [17:17]  reserved
 //   [18:18]  RDSEED instruction support
 //   [19:19]  ADCX/ADOX instructions support
 //   [20:20]  SMAP: Supervisor Mode Access Prevention
-//   [31:21]  reserved
+//   [22:21]  reserved
+//   [23:23]  CLFLUSHOPT instruction
+//   [24:24]  reserved
+//   [25:25]  Intel Processor Trace
+//   [26:26]  AVX512PF instructions support
+//   [27:27]  AVX512ER instructions support
+//   [28:28]  AVX512CD instructions support
+//   [29:29]  SHA instructions support
+//   [31:30]  reserved
 
 #define BX_CPUID_EXT3_FSGSBASE               (1 <<  0)
-#define BX_CPUID_EXT3_RESERVED1              (1 <<  1)
+#define BX_CPUID_EXT3_TSC_ADJUST             (1 <<  1)
 #define BX_CPUID_EXT3_RESERVED2              (1 <<  2)
 #define BX_CPUID_EXT3_BMI1                   (1 <<  3)
 #define BX_CPUID_EXT3_HLE                    (1 <<  4)
@@ -339,16 +400,34 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_CPUID_EXT3_ENCHANCED_REP_STRINGS  (1 <<  9)
 #define BX_CPUID_EXT3_INVPCID                (1 << 10)
 #define BX_CPUID_EXT3_RTM                    (1 << 11)
-#define BX_CPUID_EXT3_QOS                    (1 << 12)
+#define BX_CPUID_EXT3_QOS_MONITORING         (1 << 12)
 #define BX_CPUID_EXT3_DEPRECATE_FCS_FDS      (1 << 13)
-#define BX_CPUID_EXT3_RESERVED14             (1 << 14)
-#define BX_CPUID_EXT3_RESERVED15             (1 << 15)
-#define BX_CPUID_EXT3_RESERVED16             (1 << 16)
+#define BX_CPUID_EXT3_MPX                    (1 << 14)
+#define BX_CPUID_EXT3_QOS_ENFORCEMENT        (1 << 15)
+#define BX_CPUID_EXT3_AVX512F                (1 << 16)
 #define BX_CPUID_EXT3_RESERVED17             (1 << 17)
 #define BX_CPUID_EXT3_RDSEED                 (1 << 18)
 #define BX_CPUID_EXT3_ADX                    (1 << 19)
 #define BX_CPUID_EXT3_SMAP                   (1 << 20)
-// ...
+#define BX_CPUID_EXT3_RESERVED21             (1 << 21)
+#define BX_CPUID_EXT3_RESERVED22             (1 << 22)
+#define BX_CPUID_EXT3_CLFLUSHOPT             (1 << 23)
+#define BX_CPUID_EXT3_RESERVED24             (1 << 24)
+#define BX_CPUID_EXT3_PROCESSOR_TRACE        (1 << 25)
+#define BX_CPUID_EXT3_AVX512PF               (1 << 26)
+#define BX_CPUID_EXT3_AVX512ER               (1 << 27)
+#define BX_CPUID_EXT3_AVX512CD               (1 << 28)
+#define BX_CPUID_EXT3_SHA                    (1 << 29)
+#define BX_CPUID_EXT3_RESERVED30             (1 << 30)
+#define BX_CPUID_EXT3_RESERVED31             (1 << 31)
+
+// CPUID defines - EXT4 features CPUID[0x00000007].ECX
+// -----------------------------
+
+//   [0:0]    PREFETCHWT1 instruction support
+//  [31:1]    reserved
+
+#define BX_CPUID_EXT4_PREFETCHWT1            (1 <<  0)
 
 
 // CPUID defines - STD2 features CPUID[0x80000001].EDX
@@ -397,10 +476,11 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 // [22:22] Topology extensions support
 // [23:23] PerfCtrExtCore: core performance counter extensions support
 // [24:24] PerfCtrExtNB: NB performance counter extensions support
-// [25:25] Streaming performance monitor architecture.
+// [25:25] reserved
 // [26:26] Data breakpoint extension. Indicates support for MSR 0xC0011027 and MSRs 0xC001101[B:9].
 // [27:27] Performance time-stamp counter. Indicates support for MSR 0xC0010280.
-// [31:28] reserved
+// [28:28] PerfCtrExtL2I: L2I performance counter extensions support.
+// [31:29] reserved
 
 #define BX_CPUID_EXT2_LAHF_SAHF              (1 <<  0)
 #define BX_CPUID_EXT2_CMP_LEGACY             (1 <<  1)
@@ -427,9 +507,10 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_CPUID_EXT2_TOPOLOGY_EXTENSIONS    (1 << 22)
 #define BX_CPUID_EXT2_PERFCTR_EXT_CORE       (1 << 23)
 #define BX_CPUID_EXT2_PERFCTR_EXT_NB         (1 << 24)
-#define BX_CPUID_EXT2_STREAMING_PERFMON      (1 << 25)
+#define BX_CPUID_EXT2_RESERVED25             (1 << 25)
 #define BX_CPUID_EXT2_DATA_BREAKPOINT_EXT    (1 << 26)
 #define BX_CPUID_EXT2_PERF_TSC               (1 << 27)
+#define BX_CPUID_EXT2_PERFCTR_EXT_L2I        (1 << 28)
 
 // CPUID defines - SVM features CPUID[0x8000000A].EDX
 // ----------------------------

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcidev.cc 11545 2012-11-11 08:11:17Z vruppert $
+// $Id: pcidev.cc 12089 2013-12-31 09:20:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -137,7 +137,7 @@ void libpcidev_LTX_plugin_fini(void)
 
 bx_pcidev_c::bx_pcidev_c()
 {
-  put("pcidev", "PCI2H");
+  put("PCIDEV");
 }
 
 bx_pcidev_c::~bx_pcidev_c()

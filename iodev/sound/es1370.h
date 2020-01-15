@@ -1,11 +1,11 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: es1370.h 11384 2012-08-31 12:08:19Z vruppert $
+// $Id: es1370.h 12030 2013-12-15 17:09:18Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // ES1370 soundcard support (ported from QEMU)
 //
 // Copyright (c) 2005  Vassili Karpov (malc)
-// Copyright (C) 2011  The Bochs Project
+// Copyright (C) 2011-2013  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -39,6 +39,8 @@
 #  define BX_ES1370_THIS_PTR this
 #endif
 
+#define BX_ES1370_CODEC_REGS 0x1a
+
 typedef struct {
     Bit32u shift;
     Bit32u leftover;
@@ -52,7 +54,9 @@ typedef struct {
   Bit32u ctl;
   Bit32u status;
   Bit32u mempage;
-  Bit32u codec;
+  Bit8u codec_index;
+  Bit8u codec_reg[BX_ES1370_CODEC_REGS];
+  Bit16u wave_vol;
   Bit32u sctl;
 
   int dac1_timer_index;
@@ -81,6 +85,14 @@ public:
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
+  // runtime options
+  static Bit64s es1370_param_handler(bx_param_c *param, int set, Bit64s val);
+  static const char* es1370_param_string_handler(bx_param_string_c *param, int set,
+                                                 const char *oldval, const char *val,
+                                                 int maxlen);
+  static void runtime_config_handler(void *);
+  void runtime_config(void);
+
 private:
   bx_es1370_t s;
 
@@ -89,6 +101,8 @@ private:
   BX_ES1370_SMF void check_lower_irq(Bit32u sctl);
   BX_ES1370_SMF void update_voices(Bit32u ctl, Bit32u sctl, bx_bool force);
   BX_ES1370_SMF void run_channel(unsigned channel, int timer_id, Bit32u buflen);
+  BX_ES1370_SMF void sendwavepacket(unsigned channel, Bit32u buflen, Bit8u *buffer);
+  BX_ES1370_SMF void closewaveoutput();
 
   static void es1370_timer_handler(void *);
   void es1370_timer(void);
@@ -103,6 +117,9 @@ private:
 #endif
 
   bx_sound_lowlevel_c *soundmod;
+  int wavemode;
+  bx_bool wave_changed;
+  FILE *wavefile;
 };
 
 #endif
