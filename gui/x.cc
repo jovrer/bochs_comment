@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.76 2003/08/11 19:27:57 vruppert Exp $
+// $Id: x.cc,v 1.89 2005/04/29 19:06:24 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -33,6 +33,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "iodev.h"
 #if BX_WITH_X11
 
 extern "C" {
@@ -58,9 +59,14 @@ class bx_x_gui_c : public bx_gui_c {
 public:
   bx_x_gui_c (void);
   DECLARE_GUI_VIRTUAL_METHODS()
+  DECLARE_GUI_NEW_VIRTUAL_METHODS()
 #if BX_USE_IDLE_HACK
   virtual void sim_is_idle(void);
 #endif
+  virtual void beep_on(float frequency);
+  virtual void beep_off();
+  virtual void statusbar_setitem(int element, bx_bool active);
+  virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -77,6 +83,7 @@ IMPLEMENT_GUI_PLUGIN_CODE(x)
  * additional source files, they would be declared extern there. */
 Display *bx_x_display;
 int bx_x_screen_num;
+static Visual *default_visual;
 static Colormap default_cmap;
 static unsigned long white_pixel=0, black_pixel=0;
 
@@ -84,6 +91,7 @@ static char *progname; /* name this program was invoked by */
 
 static unsigned int text_rows=25, text_cols=80;
 static Bit8u h_panning = 0, v_panning = 0;
+static Bit16u line_compare = 1023;
 
 static Window win;
 static GC gc, gc_inv, gc_headerbar, gc_headerbar_inv;
@@ -96,8 +104,9 @@ static unsigned imDepth, imWide, imBPP;
 
 // current cursor coordinates
 static int prev_x=-1, prev_y=-1;
-static int current_x=-1, current_y=-1;
+static int current_x=-1, current_y=-1, current_z=0;
 static unsigned mouse_button_state = 0;
+static bx_bool CTRL_pressed = 0;
 
 static unsigned prev_cursor_x=0;
 static unsigned prev_cursor_y=0;
@@ -140,10 +149,17 @@ static unsigned bx_headerbar_entries = 0;
 static unsigned bx_bitmap_left_xorigin = 0;  // pixels from left
 static unsigned bx_bitmap_right_xorigin = 0; // pixels from right
 
+static unsigned bx_statusbar_y = 18;
+static unsigned bx_statusitem_pos[12] = {
+  0, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600
+  };
+static bx_bool bx_statusitem_active[12];
+static long bx_status_led_green, bx_status_graytext;
+static char bx_status_info_text[34];
+
 static void headerbar_click(int x, int y);
 static void send_keyboard_mouse_status(void);
-
-
+static void set_status_text(int element, const char *text, bx_bool active);
 
 
 Bit32u ascii_to_key_event[0x5f] = {
@@ -331,17 +347,7 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   unsigned i;
   int x, y;   /* window position */
   unsigned int border_width = 4;  /* four pixels */
-#if BX_CPU_LEVEL < 2
-  char *window_name = "Bochs 8086 emulator, http://bochs.sourceforge.net/";
-#elif BX_CPU_LEVEL == 2
-  char *window_name = "Bochs 80286 emulator, http://bochs.sourceforge.net/";
-#elif BX_CPU_LEVEL == 3
-  char *window_name = "Bochs 80386 emulator, http://bochs.sourceforge.net/";
-#elif BX_CPU_LEVEL == 4
-  char *window_name = "Bochs 80486 emulator, http://bochs.sourceforge.net/";
-#else
-  char *window_name = "Bochs Pentium emulator, http://bochs.sourceforge.net/";
-#endif
+  char *window_name = BOCHS_WINDOW_NAME;
   char *icon_name = "Bochs";
   Pixmap icon_pixmap;
 #if BX_HAVE_XPM_H
@@ -352,7 +358,6 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   /* create GC for text and drawing */
   unsigned long valuemask = 0; /* ignore XGCvalues and use defaults */
   XGCValues values;
-  Visual  *default_visual;
   int      default_depth;
   XEvent report;
   XSetWindowAttributes win_attr;
@@ -388,13 +393,13 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   font_height = 16;
 
   dimension_x = text_cols * font_width;
-  dimension_y = text_rows * font_height + headerbar_y;
+  dimension_y = text_rows * font_height;
 
   /* create opaque window */
   win = XCreateSimpleWindow(bx_x_display, RootWindow(bx_x_display,bx_x_screen_num),
     x, y,
     dimension_x,
-    dimension_y,
+    dimension_y + bx_headerbar_y + bx_statusbar_y,
     border_width,
     BlackPixel(bx_x_display, bx_x_screen_num),
     BlackPixel(bx_x_display, bx_x_screen_num));
@@ -486,7 +491,8 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
 
   size_hints.flags = PPosition | PSize | PMinSize | PMaxSize;
   size_hints.max_width = size_hints.min_width = dimension_x;
-  size_hints.max_height = size_hints.min_height = dimension_y;
+  size_hints.max_height = size_hints.min_height = dimension_y + bx_headerbar_y +
+                          bx_statusbar_y;
 
   {
   XWMHints wm_hints;
@@ -589,8 +595,24 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
     BX_PANIC(("vga_x: bits_per_pixel < depth ?"));
     }
 
-  x_init_done = true;
+  for (i=0; i<12; i++) bx_statusitem_active[i] = 0;
+  switch (imBPP) {
+    case 16:
+      bx_status_led_green = 0x07e0;
+      bx_status_graytext = 0x8410;
+      break;
+    case 24:
+    case 32:
+      bx_status_led_green = 0x00ff00;
+      bx_status_graytext = 0x808080;
+      break;
+    default:
+      bx_status_led_green = 0;
+      bx_status_graytext = 0;
+  }
+  strcpy(bx_status_info_text, "CTRL + 3rd button enables mouse");
 
+  x_init_done = true;
 }
 
   curr_background = 0;
@@ -607,8 +629,53 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   if(bx_options.keyboard.OuseMapping->get()) {
     bx_keymap.loadKeymap(convertStringToXKeysym);
     }
+
+  new_gfx_api = 1;
 }
 
+  void
+set_status_text(int element, const char *text, bx_bool active)
+{
+  int xleft, xsize, sb_ypos;
+
+  xleft = bx_statusitem_pos[element] + 2;
+  xsize = bx_statusitem_pos[element+1] - xleft;
+  sb_ypos = dimension_y + bx_headerbar_y;
+  if (element < 1) {
+    if (strcmp(bx_status_info_text, text)) {
+      strcpy(bx_status_info_text, text);
+    }
+    XFillRectangle(bx_x_display, win, gc_headerbar_inv, xleft, sb_ypos+2, xsize,
+                   bx_statusbar_y-2);
+    XDrawString(bx_x_display, win, gc_headerbar, xleft, sb_ypos+bx_statusbar_y-2,
+                text, strlen(text));
+  } else if (element <= BX_MAX_STATUSITEMS) {
+    bx_statusitem_active[element] = active;
+    if (active) {
+      XSetForeground(bx_x_display, gc_headerbar, bx_status_led_green);
+      XFillRectangle(bx_x_display, win, gc_headerbar, xleft, sb_ypos+2, xsize-1, bx_statusbar_y-2);
+      XSetForeground(bx_x_display, gc_headerbar, black_pixel);
+    } else {
+      XFillRectangle(bx_x_display, win, gc_headerbar_inv, xleft, sb_ypos+2, xsize-1, bx_statusbar_y-2);
+      XSetForeground(bx_x_display, gc_headerbar, bx_status_graytext);
+    }
+    XDrawString(bx_x_display, win, gc_headerbar, xleft, sb_ypos+bx_statusbar_y-2,
+                text, strlen(text));
+    XSetForeground(bx_x_display, gc_headerbar, black_pixel);
+  }
+}
+
+  void 
+bx_x_gui_c::statusbar_setitem(int element, bx_bool active)
+{
+  if (element < 0) {
+    for (unsigned i = 0; i < statusitem_count; i++) {
+      set_status_text(i+1, statusitem_text[i], active);
+    }
+  } else if ((unsigned)element < statusitem_count) {
+    set_status_text(element+1, statusitem_text[element], active);
+  }
+}
 
 // This is called whenever the mouse_enabled parameter changes.  It
 // can change because of a gui event such as clicking on the mouse-enable
@@ -620,6 +687,7 @@ bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
   BX_DEBUG (("mouse_enabled=%d, x11 specific code", val?1:0));
   if (val) {
     BX_INFO(("[x] Mouse on"));
+    set_status_text(0, "CTRL + 3rd button disables mouse", 0);
     mouse_enable_x = current_x;
     mouse_enable_y = current_y;
     disable_cursor();
@@ -627,6 +695,7 @@ bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
     warp_cursor(warp_home_x-current_x, warp_home_y-current_y);
   } else {
     BX_INFO(("[x] Mouse off"));
+    set_status_text(0, "CTRL + 3rd button enables mouse", 0);
     enable_cursor();
     warp_cursor(mouse_enable_x-current_x, mouse_enable_y-current_y);
   }
@@ -674,6 +743,7 @@ bx_x_gui_c::handle_events(void)
 
   while (XPending(bx_x_display) > 0)  {
     XNextEvent(bx_x_display, &report);
+    current_z = 0;
     switch  (report.type) {
 
     case Expose:
@@ -729,23 +799,20 @@ bx_x_gui_c::handle_events(void)
 	  BX_DEBUG(("xxx:   x,y=(%d,%d)", current_x, current_y));
       switch (button_event->button) {
         case Button1:
-		  BX_DEBUG(("xxx:   button1"));
           mouse_button_state |= 0x01;
           send_keyboard_mouse_status();
           mouse_update = 0;
           break;
         case Button2:
-	      BX_DEBUG(("XXX:   button2"));
-
-	      // (mch) Hack for easier mouse handling (toggle mouse enable)
-	      toggle_mouse_enable();
-
-          //mouse_button_state |= ;
-          //send_keyboard_mouse_status();
-          //mouse_update = 0;
+	  if (CTRL_pressed) {
+            toggle_mouse_enable();
+          } else {
+            mouse_button_state |= 0x04;
+            send_keyboard_mouse_status();
+            mouse_update = 0;
+          }
           break;
         case Button3:
-		  BX_DEBUG(("xxx:   button3"));
           mouse_button_state |= 0x02;
           send_keyboard_mouse_status();
           mouse_update = 0;
@@ -755,11 +822,8 @@ bx_x_gui_c::handle_events(void)
 
     case ButtonRelease:
       button_event = (XButtonEvent *) &report;
-//BX_INFO(("xxx: buttonrelease"));
       if (button_event->y < BX_HEADER_BAR_Y) {
-//BX_INFO(("xxx:   in headerbar"));
         if (mouse_update) {
-//BX_INFO(("xxx:   mouse_update=1"));
           send_keyboard_mouse_status();
           mouse_update = 0;
           }
@@ -771,23 +835,29 @@ bx_x_gui_c::handle_events(void)
       current_x = button_event->x;
       current_y = button_event->y;
       mouse_update = 1;
-//BX_INFO(("xxx:   x,y=(%d,%d)", current_x, current_y));
       switch (button_event->button) {
         case Button1:
-//BX_INFO(("xxx:   button1"));
           mouse_button_state &= ~0x01;
           send_keyboard_mouse_status();
           mouse_update = 0;
           break;
         case Button2:
-//BX_INFO(("xxx:   button2"));
-          //mouse_button_state &= ~;
-          //send_keyboard_mouse_status();
-          //mouse_update = 0;
+          mouse_button_state &= ~0x04;
+          send_keyboard_mouse_status();
+          mouse_update = 0;
           break;
         case Button3:
-//BX_INFO(("xxx:   button3"));
           mouse_button_state &= ~0x02;
+          send_keyboard_mouse_status();
+          mouse_update = 0;
+          break;
+        case Button4:
+          current_z = 1;
+          send_keyboard_mouse_status();
+          mouse_update = 0;
+          break;
+        case Button5:
+          current_z = -1;
           send_keyboard_mouse_status();
           mouse_update = 0;
           break;
@@ -811,34 +881,30 @@ bx_x_gui_c::handle_events(void)
       current_x = pointer_event->x;
       current_y = pointer_event->y;
       mouse_update = 1;
-//BX_INFO(("xxx: motionNotify x,y=(%d,%d)", current_x, current_y));
       break;
 
     case EnterNotify:
       enter_event = (XEnterWindowEvent *) &report;
       prev_x = current_x = enter_event->x;
       prev_y = current_y = enter_event->y;
-//BX_INFO(("xxx: enterNotify x,y=(%d,%d)", current_x, current_y));
       break;
 
     case LeaveNotify:
       leave_event = (XLeaveWindowEvent *) &report;
       prev_x = current_x = -1;
       prev_y = current_y = -1;
-//BX_INFO(("xxx: LeaveNotify x,y set to -1"));
       break;
 
     case MapNotify:
       /* screen needs redraw, since X would have tossed previous
        * requests before window mapped
        */
-//BX_INFO(("xxx: mapnotify: found"));
       //retval = 1;
       break;
 
     default:
-	  // (mch) Ignore...
-	  BX_DEBUG(("XXX: default Xevent type"));
+      // (mch) Ignore...
+      BX_DEBUG(("XXX: default Xevent type"));
       /* all events selected by StructureNotifyMask are thrown away here,
        * since nothing is done with them */
       break;
@@ -846,7 +912,7 @@ bx_x_gui_c::handle_events(void)
   } /* end while */
 
   if (mouse_update) {
-    BX_DEBUG(("XXX: bottom, send status"));
+    BX_DEBUG(("handle_events(): send mouse status"));
     send_keyboard_mouse_status();
     }
 }
@@ -858,16 +924,17 @@ send_keyboard_mouse_status(void)
 	BX_DEBUG(("XXX: prev=(%d,%d) curr=(%d,%d)",
 			prev_x, prev_y, current_x, current_y));
 
-  if ( (prev_x!=-1) && (current_x!=-1) && (prev_y!=-1) && (current_y!=-1)) {
-    int dx, dy;
+  if (((prev_x!=-1) && (current_x!=-1) && (prev_y!=-1) && (current_y!=-1)) ||
+     (current_z != 0)) {
+    int dx, dy, dz;
 
     // (mch) consider warping here
     dx = current_x - prev_x - warp_dx;
     dy = -(current_y - prev_y - warp_dy);
+    dz = current_z;
     warp_cursor(warp_home_x-current_x, warp_home_y-current_y);
 
-//BX_INFO(("xxx: MOUSE_MOTION: dx=%d, dy=%d", (int) dx, (int) dy));
-    DEV_mouse_motion (dx, dy, mouse_button_state);
+    DEV_mouse_motion_ext (dx, dy, dz, mouse_button_state);
     //if (warped) {
     //  prev_x = current_x = -1;
     //  prev_y = current_y = -1;
@@ -901,6 +968,11 @@ bx_x_gui_c::flush(void)
 xkeypress(KeySym keysym, int press_release)
 {
   Bit32u key_event;
+
+
+  if ((keysym == XK_Control_L) || (keysym == XK_Control_R)) {
+    CTRL_pressed = !press_release;
+  }
 
   /* Old (no mapping) behavior */
   if(!bx_options.keyboard.OuseMapping->get()){
@@ -1069,7 +1141,7 @@ xkeypress(KeySym keysym, int press_release)
   void
 bx_x_gui_c::clear_screen(void)
 {
-  XClearArea(bx_x_display, win, 0, bx_headerbar_y, dimension_x, dimension_y-bx_headerbar_y, 0);
+  XClearArea(bx_x_display, win, 0, bx_headerbar_y, dimension_x, dimension_y, 0);
 }
 
 
@@ -1080,12 +1152,13 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
                       bx_vga_tminfo_t tm_info, unsigned nrows)
 {
-  unsigned char *old_line, *new_line;
-  unsigned char cChar;
-  unsigned int curs, hchars, i, j, offset, rows, x, y, xc, yc, yc2;
+  Bit8u *old_line, *new_line, *text_base;
+  Bit8u cChar;
+  unsigned int curs, hchars, i, j, offset, rows, x, y, xc, yc, yc2, cs_y;
   unsigned new_foreground, new_background;
   Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
-  bx_bool force_update=0;
+  Bit8u split_textrow, split_fontrows;
+  bx_bool forceUpdate = 0, split_screen;
   unsigned char cell[64];
 
   UNUSED(nrows);
@@ -1113,21 +1186,24 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
         }
 
         vgafont[c]=XCreateBitmapFromData(bx_x_display, win, 
-                        (const char*)cell,
-                        font_width, font_height);
+                        (const char*)cell, 9, font_height);
             if(vgafont[c] == None)
               BX_PANIC(("Can't create vga font [%d]", c));
         char_changed[c] = 0;
       }
     }
-    force_update = 1;
+    forceUpdate = 1;
     charmap_updated = 0;
   }
 
   if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
-    force_update = 1;
+    forceUpdate = 1;
     h_panning = tm_info.h_panning;
     v_panning = tm_info.v_panning;
+  }
+  if(tm_info.line_compare != line_compare) {
+    forceUpdate = 1;
+    line_compare = tm_info.line_compare;
   }
 
   // first invalidate character at previous and new cursor location
@@ -1146,10 +1222,24 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   rows = text_rows;
   if (v_panning) rows++;
   y = 0;
+  cs_y = 0;
+  text_base = new_text - tm_info.start_address;
+  split_textrow = (line_compare + v_panning) / font_height;
+  split_fontrows = ((line_compare + v_panning) % font_height) + 1;
+  split_screen = 0;
   do {
     hchars = text_cols;
     if (h_panning) hchars++;
-    if (v_panning) {
+    if (split_screen) {
+      yc = bx_headerbar_y + line_compare + cs_y * font_height + 1;
+      font_row = 0;
+      if (rows == 1) {
+        cfheight = (dimension_y - line_compare - 1) % font_height;
+        if (cfheight == 0) cfheight = font_height;
+      } else {
+        cfheight = font_height;
+      }
+    } else if (v_panning) {
       if (y == 0) {
         yc = bx_headerbar_y;
         font_row = v_panning;
@@ -1168,10 +1258,13 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       font_row = 0;
       cfheight = font_height;
     }
+    if (!split_screen && (y == split_textrow)) {
+      if (split_fontrows < cfheight) cfheight = split_fontrows;
+    }
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = y * tm_info.line_offset;
+    offset = cs_y * tm_info.line_offset;
     do {
       if (h_panning) {
         if (hchars > text_cols) {
@@ -1192,7 +1285,7 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
         font_col = 0;
         cfwidth = font_width;
       }
-      if ( force_update || (old_text[0] != new_text[0])
+      if ( forceUpdate || (old_text[0] != new_text[0])
           || (old_text[1] != new_text[1]) ) {
 
         cChar = new_text[0];
@@ -1211,6 +1304,9 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
             yc2 = yc + tm_info.cs_start;
             font_row2 = tm_info.cs_start;
             cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            if ((yc2 + cfheight2) > (dimension_y + bx_headerbar_y)) {
+              cfheight2 = dimension_y + bx_headerbar_y - yc2;
+            }
           } else {
             if (v_panning > tm_info.cs_start) {
               yc2 = yc;
@@ -1222,8 +1318,10 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
               cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
             }
           }
-          XCopyPlane(bx_x_display, vgafont[cChar], win, gc, font_col, font_row2, cfwidth,
-                     cfheight2, xc, yc2, 1);
+          if (yc2 < (dimension_y + bx_headerbar_y)) {
+            XCopyPlane(bx_x_display, vgafont[cChar], win, gc, font_col, font_row2, cfwidth,
+                       cfheight2, xc, yc2, 1);
+          }
         }
       }
       x++;
@@ -1231,11 +1329,22 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       old_text+=2;
       offset+=2;
     } while (--hchars);
-    y++;
-    new_text = new_line + tm_info.line_offset;
-    old_text = old_line + tm_info.line_offset;
+    if (!split_screen && (y == split_textrow)) {
+      new_text = text_base;
+      forceUpdate = 1;
+      cs_y = 0;
+      if (tm_info.split_hpanning) h_panning = 0;
+      rows = ((dimension_y - line_compare + font_height - 2) / font_height) + 1;
+      split_screen = 1;
+    } else {
+      y++;
+      cs_y++;
+      new_text = new_line + tm_info.line_offset;
+      old_text = old_line + tm_info.line_offset;
+    }
   } while (--rows);
 
+  h_panning = tm_info.h_panning;
   prev_cursor_x = cursor_x;
   prev_cursor_y = cursor_y;
 
@@ -1272,175 +1381,18 @@ bx_x_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   void
 bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
-  unsigned x, y;
+  unsigned x, y, y_size;
   unsigned color, offset;
   Bit8u b0, b1, b2, b3;
 
-  Bit16u *tile16 = (Bit16u *)tile;
+  if ((y0 + y_tilesize) > dimension_y) {
+    y_size = dimension_y - y0;
+  } else {
+    y_size = y_tilesize;
+  }
   switch (vga_bpp) {
-    case 32:  // 32 bits per pixel
-      if (ximage->byte_order == LSBFirst) {
-        memcpy(&ximage->data[0], tile, x_tilesize*y_tilesize*4);
-        }
-      else { // MSBFirst
-        for (y=0; y<y_tilesize; y++) {
-          for (x=0; x<x_tilesize; x++) {
-            offset = imWide*y + 4*x;
-            ximage->data[offset + 0] = tile[(y*x_tilesize + x)*4 + 3];
-            ximage->data[offset + 1] = tile[(y*x_tilesize + x)*4 + 2];
-            ximage->data[offset + 2] = tile[(y*x_tilesize + x)*4 + 1];
-            ximage->data[offset + 3] = tile[(y*x_tilesize + x)*4];
-            }
-          }
-        }
-      break;
-    case 24:  // 24 bits per pixel
-      for (y=0; y<y_tilesize; y++) {
-        for (x=0; x<x_tilesize; x++) {
-          switch (imBPP) {
-            case 24:  // 24 bits per pixel
-              offset = imWide*y + 3*x;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*3];
-                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 1];
-                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3 + 2];
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*3 + 2];
-                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 1];
-                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3];
-                }
-              break;
-            case 32:  // 32 bits per pixel
-              offset = imWide*y + 4*x;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*3];
-                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 1];
-                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3 + 2];
-                ximage->data[offset + 3] = 0;
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = 0;
-                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 2];
-                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3 + 1];
-                ximage->data[offset + 3] = tile[(y*x_tilesize + x)*3];
-                }
-              break;
-            }
-          }
-        }
-      break;
-    case 16:  // 16 bits per pixel
-      for (y=0; y<y_tilesize; y++) {
-        for (x=0; x<x_tilesize; x++) {
-          switch (imBPP) {
-            case 16:  // 16 bits per pixel
-              offset = imWide*y + 2*x;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*2];
-                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*2 + 1];
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*2 + 1];
-                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*2];
-                }
-              break;
-            case 24:  // 24 bits per pixel
-              offset = imWide*y + 3*x;
-              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
-              b1 = (tile16[y*x_tilesize + x] & 0x07e0) >> 3;
-              b2 = (tile16[y*x_tilesize + x] & 0xF800) >> 8;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = b0;
-                ximage->data[offset + 1] = b1;
-                ximage->data[offset + 2] = b2;
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = b2;
-                ximage->data[offset + 1] = b1;
-                ximage->data[offset + 2] = b0;
-                }
-              break;
-            case 32:  // 32 bits per pixel
-              offset = imWide*y + 4*x;
-              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
-              b1 = (tile16[y*x_tilesize + x] & 0x07e0) >> 3;
-              b2 = (tile16[y*x_tilesize + x] & 0xF800) >> 8;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = b0;
-                ximage->data[offset + 1] = b1;
-                ximage->data[offset + 2] = b2;
-                ximage->data[offset + 3] = 0;
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = 0;
-                ximage->data[offset + 1] = b2;
-                ximage->data[offset + 2] = b1;
-                ximage->data[offset + 3] = b0;
-                }
-              break;
-            }
-          }
-        }
-      break;
-    case 15:  // 15 bits per pixel
-      for (y=0; y<y_tilesize; y++) {
-        for (x=0; x<x_tilesize; x++) {
-          switch (imBPP) {
-            case 16:  // 16 bits per pixel
-              offset = imWide*y + 2*x;
-              b0 = (tile16[y*x_tilesize + x] & 0x001f);
-              b0 |= (tile16[y*x_tilesize + x] & 0x0060) << 1;
-              b1 = (tile16[y*x_tilesize + x] & 0x7f80) >> 7;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = b0;
-                ximage->data[offset + 1] = b1;
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = b1;
-                ximage->data[offset + 1] = b0;
-                }
-              break;
-            case 24:  // 24 bits per pixel
-              offset = imWide*y + 3*x;
-              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
-              b1 = (tile16[y*x_tilesize + x] & 0x03e0) >> 2;
-              b2 = (tile16[y*x_tilesize + x] & 0x7c00) >> 7;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = b0;
-                ximage->data[offset + 1] = b1;
-                ximage->data[offset + 2] = b2;
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = b2;
-                ximage->data[offset + 1] = b1;
-                ximage->data[offset + 2] = b0;
-                }
-              break;
-            case 32:  // 32 bits per pixel
-              offset = imWide*y + 4*x;
-              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
-              b1 = (tile16[y*x_tilesize + x] & 0x03e0) >> 2;
-              b2 = (tile16[y*x_tilesize + x] & 0x7c00) >> 7;
-              if (ximage->byte_order == LSBFirst) {
-                ximage->data[offset + 0] = b0;
-                ximage->data[offset + 1] = b1;
-                ximage->data[offset + 2] = b2;
-                ximage->data[offset + 3] = 0;
-                }
-              else { // MSBFirst
-                ximage->data[offset + 0] = 0;
-                ximage->data[offset + 1] = b2;
-                ximage->data[offset + 2] = b1;
-                ximage->data[offset + 3] = b0;
-                }
-              break;
-            }
-          }
-        }
-      break;
-    default:  // 8 bits per pixel
-      for (y=0; y<y_tilesize; y++) {
+    case 8:  // 8 bits per pixel
+      for (y=0; y<y_size; y++) {
         for (x=0; x<x_tilesize; x++) {
           color = col_vals[tile[y*x_tilesize + x]];
           switch (imBPP) {
@@ -1498,15 +1450,125 @@ bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
             default:
               BX_PANIC(("X_graphics_tile_update: bits_per_pixel %u not implemented",
                 (unsigned) imBPP));
-              break;
+              return;
             }
           }
         }
+      break;
+    default:
+      BX_PANIC(("X_graphics_tile_update: bits_per_pixel %u handled by new graphics API",
+                (unsigned) vga_bpp));
+      return;
     }
   XPutImage(bx_x_display, win, gc, ximage, 0, 0, x0, y0+bx_headerbar_y,
-            x_tilesize, y_tilesize);
+            x_tilesize, y_size);
 }
 
+  bx_svga_tileinfo_t *
+bx_x_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
+{
+  if (!info) {
+    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
+    if (!info) {
+      return NULL;
+    }
+  }
+
+  info->bpp = ximage->bits_per_pixel;
+  info->pitch = ximage->bytes_per_line;
+  info->red_shift = 0;
+  info->green_shift = 0;
+  info->blue_shift = 0;
+  info->red_mask = ximage->red_mask;
+  info->green_mask = ximage->green_mask;
+  info->blue_mask = ximage->blue_mask;
+
+  int i, rf, gf, bf;
+  unsigned long red, green, blue;
+
+  i = rf = gf = bf = 0;
+  red = ximage->red_mask;
+  green = ximage->green_mask;
+  blue = ximage->blue_mask;
+
+  while (red || rf || green || gf || blue || bf) {
+    if (rf) {
+      if (!(red & 1)) {
+        info->red_shift = i;
+        rf = 0;
+      }
+    }
+    else {
+      if (red & 1) {
+        rf = 1;
+      }
+    }
+
+    if (gf) {
+      if (!(green & 1)) {
+        info->green_shift = i;
+        gf = 0;
+      }
+    }
+    else {
+      if (green & 1) {
+        gf = 1;
+      }
+    }
+
+    if (bf) {
+      if (!(blue & 1)) {
+        info->blue_shift = i;
+        bf = 0;
+      }
+    }
+    else {
+      if (blue & 1) {
+        bf = 1;
+      }
+    }
+
+    i++;
+    red >>= 1;
+    green >>= 1;
+    blue >>= 1;
+  }
+
+  info->is_indexed = (default_visual->c_class != TrueColor) &&
+                     (default_visual->c_class != DirectColor);
+  info->is_little_endian = (ximage->byte_order == LSBFirst);
+
+  return info;
+}
+
+  Bit8u *
+bx_x_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
+                          unsigned *w, unsigned *h)
+{
+  if (x0+x_tilesize > dimension_x) {
+    *w = dimension_x - x0;
+  }
+  else {
+    *w = x_tilesize;
+  }
+
+  if (y0+y_tilesize > dimension_y) {
+    *h = dimension_y - y0;
+  }
+  else {
+    *h = y_tilesize;
+  }
+
+  return (Bit8u *)ximage->data + ximage->xoffset*ximage->bits_per_pixel/8;
+}
+
+  void
+bx_x_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
+                                      unsigned w, unsigned h)
+{
+  XPutImage(bx_x_display, win, gc, ximage, 0, 0,
+            x0, y0+bx_headerbar_y, w, h);
+}
 
   bx_bool
 bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
@@ -1537,7 +1599,7 @@ bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigne
   void
 bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
-  if ((bpp <= imBPP) && ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32))) {
+  if ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32)) {
     vga_bpp = bpp;
   } else {
     BX_PANIC(("%d bpp graphics mode not supported", bpp));
@@ -1548,20 +1610,20 @@ bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned 
     text_cols = x / font_width;
     text_rows = y / font_height;
   }
-  if ( (x != dimension_x) || (y != (dimension_y-bx_headerbar_y)) ) {
+  if ( (x != dimension_x) || (y != dimension_y) ) {
     XSizeHints hints;
     long supplied_return;
 
     if ( XGetWMNormalHints(bx_x_display, win, &hints, &supplied_return) &&
          supplied_return & PMaxSize ) {
       hints.max_width = hints.min_width = x;
-      hints.max_height = hints.min_height = y+bx_headerbar_y;
+      hints.max_height = hints.min_height = y+bx_headerbar_y+bx_statusbar_y;
       XSetWMNormalHints(bx_x_display, win, &hints);
       }
-    XResizeWindow(bx_x_display, win, x, y+bx_headerbar_y);
+    XResizeWindow(bx_x_display, win, x, y+bx_headerbar_y+bx_statusbar_y);
     dimension_x = x;
-    dimension_y = y + bx_headerbar_y;
-    }
+    dimension_y = y;
+  }
 }
 
 
@@ -1569,10 +1631,12 @@ bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned 
 bx_x_gui_c::show_headerbar(void)
 {
   unsigned xorigin;
-  int xleft, xright;
+  int xleft, xright, sb_ypos;
 
-  // clear header bar area to white
+  sb_ypos = dimension_y + bx_headerbar_y;
+  // clear header bar and status bar area to white
   XFillRectangle(bx_x_display, win, gc_headerbar_inv, 0,0, dimension_x, bx_headerbar_y);
+  XFillRectangle(bx_x_display, win, gc_headerbar_inv, 0,sb_ypos, dimension_x, bx_statusbar_y);
 
   xleft = 0;
   xright = dimension_x;
@@ -1590,6 +1654,18 @@ bx_x_gui_c::show_headerbar(void)
       0,0, bx_headerbar_entry[i].xdim, bx_headerbar_entry[i].ydim,
               xorigin, 0, 1);
     }
+  for (unsigned i=0; i<12; i++) {
+    xleft = bx_statusitem_pos[i];
+    if (i > 0) {
+      XDrawLine(bx_x_display, win, gc_inv, xleft, sb_ypos+1, xleft,
+                sb_ypos+bx_statusbar_y);
+      if (i <= statusitem_count) {
+        set_status_text(i, statusitem_text[i-1], bx_statusitem_active[i]);
+      }
+    } else {
+      set_status_text(0, bx_status_info_text, 0);
+    }
+  }
 }
 
 
@@ -1844,5 +1920,26 @@ void bx_x_gui_c::sim_is_idle () {
 }
 #endif
 #endif /* BX_USE_IDLE_HACK */  
+
+
+  void
+bx_x_gui_c::beep_on(float frequency)
+{
+  BX_INFO(( "X11 Beep ON (frequency=%.2f)",frequency));
+}
+
+  void
+bx_x_gui_c::beep_off()
+{
+  BX_INFO(( "X11 Beep OFF"));
+}
+
+  void
+bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
+{
+  *xres = 1024;
+  *yres = 768;
+  *bpp = 32;
+}
 
 #endif /* if BX_WITH_X11 */

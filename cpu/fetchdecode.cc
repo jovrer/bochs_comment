@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode.cc,v 1.61 2003/12/28 18:19:41 sshwarts Exp $
+// $Id: fetchdecode.cc,v 1.79 2005/04/29 21:28:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -38,30 +38,6 @@
 // immediate constant
 ///////////////////////////
 
-
-// sign extended to osize:
-//   6a push ib
-//   6b imul gvevib
-//   70..7f jo..jnle
-//   83 G1 0..7 ADD..CMP Evib
-
-// is 6b imul_gvevib sign extended?  don't think
-//   I'm sign extending it properly in old decode/execute
-
-// check all the groups.  Make sure to add duplicates rather
-// than error.
-
-// mark instructions as changing control transfer, then
-// don't always load from fetch_ptr, etc.
-
-// cant use immediate as another because of Group3 where
-// some have immediate and some don't, and those won't
-// be picked up by logic until indirection.
-
-// get attr and execute ptr at same time
-
-// maybe move 16bit only i's like  MOV_EwSw, MOV_SwEw
-// to 32 bit modules.
 
 // UD2 opcode (according to Intel manuals):
 // Use the 0F0B opcode (UD2 instruction) or the 0FB9H opcode when deliberately 
@@ -161,57 +137,6 @@ typedef struct BxOpcodeInfo_t {
 
 // common fetchdecode32/64 opcode tables
 #include "fetchdecode.h"
-
-
-static BxOpcodeInfo_t opcodesADD_EwIw[2] = {
-  { BxLockable, &BX_CPU_C::ADD_EEwIw },
-  { 0,          &BX_CPU_C::ADD_EGwIw }
-  };
-
-static BxOpcodeInfo_t opcodesADD_EdId[2] = {
-  { BxLockable, &BX_CPU_C::ADD_EEdId },
-  { 0,          &BX_CPU_C::ADD_EGdId }
-  };
-
-static BxOpcodeInfo_t opcodesADD_GwEw[2] = {
-  { 0, &BX_CPU_C::ADD_GwEEw },
-  { 0, &BX_CPU_C::ADD_GwEGw }
-  };
-
-static BxOpcodeInfo_t opcodesADD_GdEd[2] = {
-  { 0, &BX_CPU_C::ADD_GdEEd },
-  { 0, &BX_CPU_C::ADD_GdEGd }
-  };
-
-static BxOpcodeInfo_t opcodesMOV_GbEb[2] = {
-  { 0, &BX_CPU_C::MOV_GbEEb },
-  { 0, &BX_CPU_C::MOV_GbEGb }
-  };
-
-static BxOpcodeInfo_t opcodesMOV_GwEw[2] = {
-  { 0, &BX_CPU_C::MOV_GwEEw },
-  { 0, &BX_CPU_C::MOV_GwEGw }
-  };
-
-static BxOpcodeInfo_t opcodesMOV_GdEd[2] = {
-  { 0, &BX_CPU_C::MOV_GdEEd },
-  { 0, &BX_CPU_C::MOV_GdEGd }
-  };
-
-static BxOpcodeInfo_t opcodesMOV_EbGb[2] = {
-  { 0, &BX_CPU_C::MOV_EEbGb },
-  { 0, &BX_CPU_C::MOV_EGbGb }
-  };
-
-static BxOpcodeInfo_t opcodesMOV_EwGw[2] = {
-  { 0, &BX_CPU_C::MOV_EEwGw },
-  { 0, &BX_CPU_C::MOV_EGwGw }
-  };
-
-static BxOpcodeInfo_t opcodesMOV_EdGd[2] = {
-  { 0, &BX_CPU_C::MOV_EEdGd },
-  { 0, &BX_CPU_C::MOV_EGdGd }
-  };
 
 
 /* ************* */
@@ -564,7 +489,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 5F */  { 0, &BX_CPU_C::POP_RX },
   /* 60 */  { 0, &BX_CPU_C::PUSHAD16 },
   /* 61 */  { 0, &BX_CPU_C::POPAD16 },
-  /* 62 */  { BxAnother, &BX_CPU_C::BOUND_GvMa },
+  /* 62 */  { BxAnother, &BX_CPU_C::BOUND_GwMa },
   /* 63 */  { BxAnother, &BX_CPU_C::ARPL_EwGw },
   /* 64 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // FS:
   /* 65 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // GS:
@@ -631,17 +556,17 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* A2 */  { BxImmediate_O, &BX_CPU_C::MOV_ObAL },
   /* A3 */  { BxImmediate_O, &BX_CPU_C::MOV_OwAX },
   /* A4 */  { BxRepeatable, &BX_CPU_C::MOVSB_XbYb },
-  /* A5 */  { BxRepeatable, &BX_CPU_C::MOVSW_XvYv },
+  /* A5 */  { BxRepeatable, &BX_CPU_C::MOVSW_XwYw },
   /* A6 */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::CMPSB_XbYb },
-  /* A7 */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::CMPSW_XvYv },
+  /* A7 */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::CMPSW_XwYw },
   /* A8 */  { BxImmediate_Ib, &BX_CPU_C::TEST_ALIb },
   /* A9 */  { BxImmediate_Iv, &BX_CPU_C::TEST_AXIw },
   /* AA */  { BxRepeatable, &BX_CPU_C::STOSB_YbAL },
-  /* AB */  { BxRepeatable, &BX_CPU_C::STOSW_YveAX },
+  /* AB */  { BxRepeatable, &BX_CPU_C::STOSW_YwAX },
   /* AC */  { BxRepeatable, &BX_CPU_C::LODSB_ALXb },
-  /* AD */  { BxRepeatable, &BX_CPU_C::LODSW_eAXXv },
+  /* AD */  { BxRepeatable, &BX_CPU_C::LODSW_AXXw },
   /* AE */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASB_ALXb },
-  /* AF */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASW_eAXXv },
+  /* AF */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASW_AXXw },
   /* B0 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B1 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B2 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
@@ -682,6 +607,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* D5 */  { BxImmediate_Ib, &BX_CPU_C::AAD },
   /* D6 */  { 0, &BX_CPU_C::SALC },
   /* D7 */  { 0, &BX_CPU_C::XLAT },
+#if BX_SUPPORT_FPU
   // by default we have here pointer to the group .. as if mod <> 11b
   /* D8 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD8 },
   /* D9 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD9 },
@@ -691,6 +617,16 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* DD */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDD },
   /* DE */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDE },
   /* DF */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDF },
+#else
+  /* D8 */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* D9 */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DA */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DB */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DC */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DD */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DE */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DF */  { BxAnother, &BX_CPU_C::FPU_ESC },
+#endif
   /* E0 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPNE_Jb },
   /* E1 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPE_Jb },
   /* E2 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOP_Jb },
@@ -731,8 +667,10 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 04 */  { 0, &BX_CPU_C::BxError },
 #if BX_SUPPORT_X86_64
   /* 0F 05 */  { 0, &BX_CPU_C::SYSCALL },
-#else
+#elif BX_CPU_LEVEL == 2
   /* 0F 05 */  { 0, &BX_CPU_C::LOADALL },
+#else
+  /* 0F 05 */  { 0, &BX_CPU_C::BxError },
 #endif
   /* 0F 06 */  { 0, &BX_CPU_C::CLTS },
 #if BX_SUPPORT_X86_64
@@ -746,7 +684,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
 #if BX_SUPPORT_3DNOW
-  /* 0F 0D */  { 0, &BX_CPU_C::NOP   },           // 3DNow! PREFETCH
+  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP   },   // 3DNow! PREFETCH
   /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
   /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
 #else
@@ -790,13 +728,8 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 31 */  { 0, &BX_CPU_C::RDTSC },
   /* 0F 32 */  { 0, &BX_CPU_C::RDMSR },
   /* 0F 33 */  { 0, &BX_CPU_C::RDPMC },
-#if BX_SUPPORT_SEP
   /* 0F 34 */  { 0, &BX_CPU_C::SYSENTER },
   /* 0F 35 */  { 0, &BX_CPU_C::SYSEXIT },
-#else
-  /* 0F 34 */  { 0, &BX_CPU_C::BxError },
-  /* 0F 35 */  { 0, &BX_CPU_C::BxError },
-#endif
   /* 0F 36 */  { 0, &BX_CPU_C::BxError },
   /* 0F 37 */  { 0, &BX_CPU_C::BxError },
   /* 0F 38 */  { 0, &BX_CPU_C::BxError },
@@ -906,7 +839,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F A0 */  { 0, &BX_CPU_C::PUSH_FS },
   /* 0F A1 */  { 0, &BX_CPU_C::POP_FS },
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
-  /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EvGv },
+  /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EwGw },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EwGw },
   /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EwGw },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
@@ -914,7 +847,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F A8 */  { 0, &BX_CPU_C::PUSH_GS },
   /* 0F A9 */  { 0, &BX_CPU_C::POP_GS },
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
-  /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EvGv },
+  /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EwGw },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EwGw },
   /* 0F AD */  { BxAnother,                  &BX_CPU_C::SHRD_EwGw },
   /* 0F AE */  { BxAnother | BxGroup15, NULL, BxOpcodeInfoG15 },
@@ -922,7 +855,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F B0 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EbGb },
   /* 0F B1 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EwGw },
   /* 0F B2 */  { BxAnother, &BX_CPU_C::LSS_GvMp },
-  /* 0F B3 */  { BxAnother | BxLockable, &BX_CPU_C::BTR_EvGv },
+  /* 0F B3 */  { BxAnother | BxLockable, &BX_CPU_C::BTR_EwGw },
   /* 0F B4 */  { BxAnother, &BX_CPU_C::LFS_GvMp },
   /* 0F B5 */  { BxAnother, &BX_CPU_C::LGS_GvMp },
   /* 0F B6 */  { BxAnother, &BX_CPU_C::MOVZX_GwEb },
@@ -930,9 +863,9 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
   /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfoG8EvIb },
-  /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EvGv },
-  /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GvEv },
-  /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GvEv },
+  /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EwGw },
+  /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GwEw },
+  /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GwEw },
   /* 0F BE */  { BxAnother, &BX_CPU_C::MOVSX_GwEb },
   /* 0F BF */  { BxAnother, &BX_CPU_C::MOVSX_GwEw },
   /* 0F C0 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EbGb },
@@ -1000,7 +933,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F FE */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ffe }, 
   /* 0F FF */  { 0, &BX_CPU_C::BxError },
 
-  // 512 entries for 32bit mod
+  // 512 entries for 32bit mode
   /* 00 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EbGb },
   /* 01 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EdGd },
   /* 02 */  { BxAnother, &BX_CPU_C::ADD_GbEb },
@@ -1099,7 +1032,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 5F */  { 0, &BX_CPU_C::POP_ERX },
   /* 60 */  { 0, &BX_CPU_C::PUSHAD32 },
   /* 61 */  { 0, &BX_CPU_C::POPAD32 },
-  /* 62 */  { BxAnother, &BX_CPU_C::BOUND_GvMa },
+  /* 62 */  { BxAnother, &BX_CPU_C::BOUND_GdMa },
   /* 63 */  { BxAnother, &BX_CPU_C::ARPL_EwGw },
   /* 64 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // FS:
   /* 65 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // GS:
@@ -1166,17 +1099,17 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* A2 */  { BxImmediate_O, &BX_CPU_C::MOV_ObAL },
   /* A3 */  { BxImmediate_O, &BX_CPU_C::MOV_OdEAX },
   /* A4 */  { BxRepeatable, &BX_CPU_C::MOVSB_XbYb },
-  /* A5 */  { BxRepeatable, &BX_CPU_C::MOVSW_XvYv },
+  /* A5 */  { BxRepeatable, &BX_CPU_C::MOVSD_XdYd },
   /* A6 */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::CMPSB_XbYb },
-  /* A7 */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::CMPSW_XvYv },
+  /* A7 */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::CMPSD_XdYd },
   /* A8 */  { BxImmediate_Ib, &BX_CPU_C::TEST_ALIb },
   /* A9 */  { BxImmediate_Iv, &BX_CPU_C::TEST_EAXId },
   /* AA */  { BxRepeatable, &BX_CPU_C::STOSB_YbAL },
-  /* AB */  { BxRepeatable, &BX_CPU_C::STOSW_YveAX },
+  /* AB */  { BxRepeatable, &BX_CPU_C::STOSD_YdEAX },
   /* AC */  { BxRepeatable, &BX_CPU_C::LODSB_ALXb },
-  /* AD */  { BxRepeatable, &BX_CPU_C::LODSW_eAXXv },
-  /* AE */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASB_ALXb },
-  /* AF */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASW_eAXXv },
+  /* AD */  { BxRepeatable, &BX_CPU_C::LODSD_EAXXd },
+  /* AE */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASB_ALXb  },
+  /* AF */  { BxRepeatable | BxRepeatableZF, &BX_CPU_C::SCASD_EAXXd },
   /* B0 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B1 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B2 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
@@ -1217,6 +1150,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* D5 */  { BxImmediate_Ib, &BX_CPU_C::AAD },
   /* D6 */  { 0, &BX_CPU_C::SALC },
   /* D7 */  { 0, &BX_CPU_C::XLAT },
+#if BX_SUPPORT_FPU
   // by default we have here pointer to the group .. as if mod <> 11b
   /* D8 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD8 },
   /* D9 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD9 },
@@ -1226,6 +1160,16 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* DD */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDD },
   /* DE */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDE },
   /* DF */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDF },
+#else
+  /* D8 */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* D9 */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DA */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DB */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DC */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DD */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DE */  { BxAnother, &BX_CPU_C::FPU_ESC },
+  /* DF */  { BxAnother, &BX_CPU_C::FPU_ESC },
+#endif
   /* E0 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPNE_Jb },
   /* E1 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPE_Jb },
   /* E2 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOP_Jb },
@@ -1266,8 +1210,10 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 04 */  { 0, &BX_CPU_C::BxError },
 #if BX_SUPPORT_X86_64
   /* 0F 05 */  { 0, &BX_CPU_C::SYSCALL },
-#else
+#elif BX_CPU_LEVEL == 2
   /* 0F 05 */  { 0, &BX_CPU_C::LOADALL },
+#else
+  /* 0F 05 */  { 0, &BX_CPU_C::BxError },
 #endif
   /* 0F 06 */  { 0, &BX_CPU_C::CLTS },
 #if BX_SUPPORT_X86_64
@@ -1281,7 +1227,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
 #if BX_SUPPORT_3DNOW
-  /* 0F 0D */  { 0, &BX_CPU_C::NOP   },           // 3DNow! PREFETCH
+  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP   },   // 3DNow! PREFETCH
   /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
   /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
 #else
@@ -1325,13 +1271,8 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 31 */  { 0, &BX_CPU_C::RDTSC },
   /* 0F 32 */  { 0, &BX_CPU_C::RDMSR },
   /* 0F 33 */  { 0, &BX_CPU_C::RDPMC },
-#if BX_SUPPORT_SEP
   /* 0F 34 */  { 0, &BX_CPU_C::SYSENTER },
   /* 0F 35 */  { 0, &BX_CPU_C::SYSEXIT },
-#else
-  /* 0F 34 */  { 0, &BX_CPU_C::BxError },
-  /* 0F 35 */  { 0, &BX_CPU_C::BxError },
-#endif
   /* 0F 36 */  { 0, &BX_CPU_C::BxError },
   /* 0F 37 */  { 0, &BX_CPU_C::BxError },
   /* 0F 38 */  { 0, &BX_CPU_C::BxError },
@@ -1441,7 +1382,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F A0 */  { 0, &BX_CPU_C::PUSH_FS },
   /* 0F A1 */  { 0, &BX_CPU_C::POP_FS },
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
-  /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EvGv },
+  /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EdGd },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EdGd },
   /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EdGd },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
@@ -1449,7 +1390,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F A8 */  { 0, &BX_CPU_C::PUSH_GS },
   /* 0F A9 */  { 0, &BX_CPU_C::POP_GS },
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
-  /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EvGv },
+  /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EdGd },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EdGd },
   /* 0F AD */  { BxAnother,                  &BX_CPU_C::SHRD_EdGd },
   /* 0F AE */  { BxAnother | BxGroup15, NULL, BxOpcodeInfoG15 },
@@ -1457,7 +1398,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F B0 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EbGb },
   /* 0F B1 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EdGd },
   /* 0F B2 */  { BxAnother, &BX_CPU_C::LSS_GvMp },
-  /* 0F B3 */  { BxAnother | BxLockable, &BX_CPU_C::BTR_EvGv },
+  /* 0F B3 */  { BxAnother | BxLockable, &BX_CPU_C::BTR_EdGd },
   /* 0F B4 */  { BxAnother, &BX_CPU_C::LFS_GvMp },
   /* 0F B5 */  { BxAnother, &BX_CPU_C::LGS_GvMp },
   /* 0F B6 */  { BxAnother, &BX_CPU_C::MOVZX_GdEb },
@@ -1465,9 +1406,9 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
   /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfoG8EvIb },
-  /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EvGv },
-  /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GvEv },
-  /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GvEv },
+  /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EdGd },
+  /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GdEd },
+  /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GdEd },
   /* 0F BE */  { BxAnother, &BX_CPU_C::MOVSX_GdEb },
   /* 0F BF */  { BxAnother, &BX_CPU_C::MOVSX_GdEw },
   /* 0F C0 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EbGb },
@@ -1558,11 +1499,9 @@ BX_CPU_C::fetchDecode(Bit8u *iptr, bxInstruction_c *instruction,
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b;
 
   instruction->ResolveModrm = NULL;
-  instruction->initMetaInfo(
-                  BX_SEG_REG_NULL,
+  instruction->initMetaInfo(BX_SEG_REG_NULL,
                   /*os32*/   is_32,  /*as32*/ is_32,
-                  /*os64*/       0,  /*as64*/     0,
-                  /*extend8bit*/ 0,  /*repUsed*/  0);
+                  /*os64*/       0,  /*as64*/     0);
 
   sse_prefix = SSE_PREFIX_NONE;
   
@@ -1576,110 +1515,100 @@ another_byte:
 
   if (attr & BxAnother) {
     if (attr & BxPrefix) {
+      BX_INSTR_PREFIX(BX_CPU_ID, b1);
       switch (b1) {
         case 0x66: // OpSize
-          BX_INSTR_PREFIX_OS(BX_CPU_ID);
           os_32 = !is_32;
           sse_prefix |= SSE_PREFIX_66;
           instruction->setOs32B(os_32);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
 
         case 0x67: // AddrSize
-          BX_INSTR_PREFIX_AS(BX_CPU_ID);
           instruction->setAs32B(!is_32);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
 
         case 0xf2: // REPNE/REPNZ
-          BX_INSTR_PREFIX_REPNE(BX_CPU_ID);
           sse_prefix |= SSE_PREFIX_F2;
           instruction->setRepUsed(b1 & 3);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
 
         case 0xf3: // REP/REPE/REPZ
-          BX_INSTR_PREFIX_REP(BX_CPU_ID);
           sse_prefix |= SSE_PREFIX_F3;
           instruction->setRepUsed(b1 & 3);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
 
         case 0x2e: // CS:
-          BX_INSTR_PREFIX_CS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_CS);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
         case 0x26: // ES:
-          BX_INSTR_PREFIX_ES(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_ES);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
         case 0x36: // SS:
-          BX_INSTR_PREFIX_SS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_SS);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
         case 0x3e: // DS:
-          BX_INSTR_PREFIX_DS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_DS);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
         case 0x64: // FS:
-          BX_INSTR_PREFIX_FS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_FS);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
         case 0x65: // GS:
-          BX_INSTR_PREFIX_GS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_GS);
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
 
         case 0xf0: // LOCK:
-          BX_INSTR_PREFIX_LOCK(BX_CPU_ID);
           lock = 1;
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
-            }
+          }
           return(0);
 
         default:
           BX_PANIC(("fetch_decode: prefix default = 0x%02x", b1));
           return(0);
-        }
       }
+    }
 
     // opcode requires another byte
     if (ilen < remain) {
@@ -1689,8 +1618,8 @@ another_byte:
         // 2-byte prefix
         b1 = 0x100 | b2;
         goto another_byte;
-        }
       }
+    }
     else
       return(0);
 
@@ -1702,6 +1631,10 @@ another_byte:
     instruction->modRMForm.modRMData |= mod;
     instruction->modRMForm.modRMData |= (nnn<<8);
     instruction->modRMForm.modRMData |= rm;
+
+    // MOVs with CRx and DRx always use register ops and ignore the mod field.
+    if ( (b1 & ~3) == 0x120 )
+      mod = 0xc0;
 
     if (mod == 0xc0) { // mod == 11b
       instruction->metaInfo |= (1<<22); // (modC0)
@@ -1721,47 +1654,47 @@ another_byte:
               iptr += 4;
               ilen += 4;
               goto modrm_done;
-              }
-            else return(0);
             }
+            else return(0);
+          }
           // mod==00b, rm!=4, rm!=5
           goto modrm_done;
-          }
+        }
         if (mod == 0x40) { // mod == 01b
           instruction->ResolveModrm = BxResolve32Mod1or2[rm];
           if (BX_NULL_SEG_REG(instruction->seg()))
-            instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01_rm32[rm]);
+            instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01or10_rm32[rm]);
 get_8bit_displ:
           if (ilen < remain) {
             // 8 sign extended to 32
             instruction->modRMForm.displ32u = (Bit8s) *iptr++;
             ilen++;
             goto modrm_done;
-            }
-          else return(0);
           }
+          else return(0);
+        }
         // (mod == 0x80) mod == 10b
         instruction->ResolveModrm = BxResolve32Mod1or2[rm];
         if (BX_NULL_SEG_REG(instruction->seg()))
-          instruction->setSeg(BX_CPU_THIS_PTR sreg_mod10_rm32[rm]);
+          instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01or10_rm32[rm]);
 get_32bit_displ:
         if ((ilen+3) < remain) {
           instruction->modRMForm.displ32u = FetchDWORD(iptr);
           iptr += 4;
           ilen += 4;
           goto modrm_done;
-          }
-        else return(0);
         }
+        else return(0);
+      }
       else { // mod!=11b, rm==4, s-i-b byte follows
         unsigned sib, base, index, scale;
         if (ilen < remain) {
           sib = *iptr++;
           ilen++;
-          }
+        }
         else {
           return(0);
-          }
+        }
         base  = sib & 0x07; sib >>= 3;
         index = sib & 0x07; sib >>= 3;
         scale = sib;
@@ -1776,46 +1709,46 @@ get_32bit_displ:
             goto get_32bit_displ;
           // mod==00b, rm==4, base!=5
           goto modrm_done;
-          }
+        }
         if (mod == 0x40) { // mod==01b, rm==4
           instruction->ResolveModrm = BxResolve32Mod1or2Base[base];
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod1or2_base32[base]);
           goto get_8bit_displ;
-          }
+        }
         // (mod == 0x80),  mod==10b, rm==4
         instruction->ResolveModrm = BxResolve32Mod1or2Base[base];
         if (BX_NULL_SEG_REG(instruction->seg()))
           instruction->setSeg(BX_CPU_THIS_PTR sreg_mod1or2_base32[base]);
         goto get_32bit_displ;
-        }
       }
+    }
     else {
       // 16-bit addressing modes, mod==11b handled above
       if (mod == 0x40) { // mod == 01b
         instruction->ResolveModrm = BxResolve16Mod1or2[rm];
         if (BX_NULL_SEG_REG(instruction->seg()))
-          instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01_rm16[rm]);
+          instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01or10_rm16[rm]);
         if (ilen < remain) {
           // 8 sign extended to 16
           instruction->modRMForm.displ16u = (Bit8s) *iptr++;
           ilen++;
           goto modrm_done;
-          }
-        else return(0);
         }
+        else return(0);
+      }
       if (mod == 0x80) { // mod == 10b
         instruction->ResolveModrm = BxResolve16Mod1or2[rm];
         if (BX_NULL_SEG_REG(instruction->seg()))
-          instruction->setSeg(BX_CPU_THIS_PTR sreg_mod10_rm16[rm]);
+          instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01or10_rm16[rm]);
         if ((ilen+1) < remain) {
           instruction->modRMForm.displ16u = FetchWORD(iptr);
           iptr += 2;
           ilen += 2;
           goto modrm_done;
-          }
-        else return(0);
         }
+        else return(0);
+      }
       // mod must be 00b at this point
       instruction->ResolveModrm = BxResolve16Mod0[rm];
       if (BX_NULL_SEG_REG(instruction->seg()))
@@ -1826,11 +1759,11 @@ get_32bit_displ:
           iptr += 2;
           ilen += 2;
           goto modrm_done;
-          }
-        else return(0);
         }
-      // mod=00b rm!=6
+        else return(0);
       }
+      // mod=00b rm!=6
+    }
 
 modrm_done:
 
@@ -1865,15 +1798,16 @@ modrm_done:
               */
              OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[mod==0xc0]);
              break;
+#if BX_SUPPORT_FPU
          case BxFPGroup:
              if (mod != 0xc0)  // mod != 11b
                 OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[nnn]);
-             else
-             {
+             else {
                 int index = (b1-0xD8)*64 + (0x3f & b2);
                 OpcodeInfoPtr = &(BxOpcodeInfo_FloatingPoint[index]);
              }
              break;
+#endif
          default:
              BX_PANIC(("fetchdecode: Unknown opcode group"));
        }
@@ -1909,24 +1843,23 @@ modrm_done:
         if (ilen < remain) {
           instruction->modRMForm.Ib = *iptr;
           ilen++;
-          }
+        }
         else {
           return(0);
-          }
+        }
         break;
       case BxImmediate_Ib_SE: // Sign extend to OS size
         if (ilen < remain) {
-          Bit8s temp8s;
-          temp8s = *iptr;
+          Bit8s temp8s = *iptr;
           if (instruction->os32L())
             instruction->modRMForm.Id = (Bit32s) temp8s;
           else
             instruction->modRMForm.Iw = (Bit16s) temp8s;
           ilen++;
-          }
+        }
         else {
           return(0);
-          }
+        }
         break;
       case BxImmediate_Iv: // same as BxImmediate_BrOff32
       case BxImmediate_IvIw: // CALL_Ap
@@ -1935,27 +1868,27 @@ modrm_done:
             instruction->modRMForm.Id = FetchDWORD(iptr);
             iptr += 4;
             ilen += 4;
-            }
-          else return(0);
           }
+          else return(0);
+        }
         else {
           if ((ilen+1) < remain) {
             instruction->modRMForm.Iw = FetchWORD(iptr);
             iptr += 2;
             ilen += 2;
-            }
-          else return(0);
           }
+          else return(0);
+        }
         if (imm_mode != BxImmediate_IvIw)
           break;
         // Get Iw for BxImmediate_IvIw
         if ((ilen+1) < remain) {
           instruction->IxIxForm.Iw2 = FetchWORD(iptr);
           ilen += 2;
-          }
+        }
         else {
           return(0);
-          }
+        }
         break;
       case BxImmediate_O:
         if (instruction->as32L()) {
@@ -1963,17 +1896,17 @@ modrm_done:
           if ((ilen+3) < remain) {
             instruction->modRMForm.Id = FetchDWORD(iptr);
             ilen += 4;
-            }
-          else return(0);
           }
+          else return(0);
+        }
         else {
           // fetch 16bit address into Id
           if ((ilen+1) < remain) {
             instruction->modRMForm.Id = (Bit32u) FetchWORD(iptr);
             ilen += 2;
-            }
-          else return(0);
           }
+          else return(0);
+        }
         break;
       case BxImmediate_Iw:
       case BxImmediate_IwIb:
@@ -1981,38 +1914,37 @@ modrm_done:
           instruction->modRMForm.Iw = FetchWORD(iptr);
           iptr += 2;
           ilen += 2;
-          }
+        }
         else {
           return(0);
-          }
+        }
         if (imm_mode == BxImmediate_Iw) break;
         if (ilen < remain) {
           instruction->IxIxForm.Ib2 = *iptr;
           ilen++;
-          }
+        }
         else {
           return(0);
-          }
+        }
         break;
       case BxImmediate_BrOff8:
         if (ilen < remain) {
-          Bit8s temp8s;
-          temp8s = *iptr;
+          Bit8s temp8s = *iptr;
           instruction->modRMForm.Id = temp8s;
           ilen++;
-          }
+        }
         else {
           return(0);
-          }
+        }
         break;
       case BxImmediate_BrOff16:
         if ((ilen+1) < remain) {
           instruction->modRMForm.Id = (Bit16s) FetchWORD(iptr);
           ilen += 2;
-          }
+        }
         else {
           return(0);
-          }
+        }
         break;
       default:
         BX_INFO(("b1 was %x", b1));
@@ -2023,7 +1955,7 @@ modrm_done:
 #if BX_SUPPORT_3DNOW
   if(b1 == 0x10f) {		// 3DNow! instruction set
      instruction->execute = Bx3DNowOpcodeInfo[instruction->modRMForm.Ib].ExecutePtr;
-    }
+  }
 #endif
 
   instruction->setB1(b1);

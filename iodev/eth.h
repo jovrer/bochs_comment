@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth.h,v 1.12 2003/04/26 14:48:45 cbothamy Exp $
+// $Id: eth.h,v 1.15 2004/10/07 17:38:03 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -29,7 +29,14 @@
 
 //  eth.h  - see eth_null.cc for implementation details
 
+#ifndef BX_ETH_H
+#define BX_ETH_H
+
+#define BX_PACKET_BUFSIZE 2048 // Enough for an ether frame
+
 typedef void (*eth_rx_handler_t)(void *arg, const void *buf, unsigned len);
+
+static const Bit8u broadcast_macaddr[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
 
 int execute_script(char *name, char* arg1);
 
@@ -61,16 +68,19 @@ public:
   static eth_pktmover_c *create(const char *type, const char *netif,
 				const char *macaddr,
 				eth_rx_handler_t rxh, 
-				void *rxarg);
+				void *rxarg,
+				char *script);
 protected:
   eth_locator_c(const char *type);
   virtual eth_pktmover_c *allocate(const char *netif,
 				const char *macaddr,
 				eth_rx_handler_t rxh, 
-				void *rxarg) = 0;
+				void *rxarg,
+				char *script) = 0;
 private:
   static eth_locator_c *all;
   eth_locator_c *next;
   const char *type;
 };
 
+#endif

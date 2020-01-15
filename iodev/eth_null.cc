@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_null.cc,v 1.13 2002/11/20 19:06:23 bdenney Exp $
+// $Id: eth_null.cc,v 1.18 2004/10/07 17:38:03 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -36,8 +36,10 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
-#if BX_NE2K_SUPPORT
+#include "iodev.h"
+#if BX_NETWORKING
+
+#include "eth.h"
 
 #define LOG_THIS bx_devices.pluginNE2kDevice->
 
@@ -49,7 +51,7 @@ class bx_null_pktmover_c : public eth_pktmover_c {
 public:
   bx_null_pktmover_c(const char *netif, const char *macaddr,
 		     eth_rx_handler_t rxh,
-		     void *rxarg);
+		     void *rxarg, char *script);
   void sendpkt(void *buf, unsigned io_len);
 private:
   int rx_timer_index;
@@ -68,8 +70,8 @@ public:
 protected:
   eth_pktmover_c *allocate(const char *netif, const char *macaddr,
 			   eth_rx_handler_t rxh,
-			   void *rxarg) {
-    return (new bx_null_pktmover_c(netif, macaddr, rxh, rxarg));
+			   void *rxarg, char *script) {
+    return (new bx_null_pktmover_c(netif, macaddr, rxh, rxarg, script));
   }
 } bx_null_match;
 
@@ -82,7 +84,8 @@ protected:
 bx_null_pktmover_c::bx_null_pktmover_c(const char *netif, 
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
-				       void *rxarg)
+				       void *rxarg,
+				       char *script)
 {
 #if BX_ETH_NULL_LOGGING
   // Start the rx poll 
@@ -161,4 +164,4 @@ void bx_null_pktmover_c::rx_timer_handler (void *this_ptr)
 #endif
 }
 
-#endif /* if BX_NE2K_SUPPORT */
+#endif /* if BX_NETWORKING */

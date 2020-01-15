@@ -1,6 +1,6 @@
 %{
 /////////////////////////////////////////////////////////////////////////
-// $Id: lexer.l,v 1.1 2003/11/28 15:07:25 danielg4 Exp $
+// $Id: lexer.l,v 1.5 2005/04/16 21:43:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdlib.h>
@@ -125,6 +125,7 @@ addr-info       { bxlval.sval = strdup(bxtext); return(BX_TOKEN_INFO_ADDRESS); }
 ne2k            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_NE2000); }
 ne2000          { bxlval.sval = strdup(bxtext); return(BX_TOKEN_NE2000); }
 page            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PAGE); }
+vga             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_VGA); }
 al              { bxlval.reg=rAL; return (BX_TOKEN_REG_AL);}
 bl              { bxlval.reg=rBL; return (BX_TOKEN_REG_BL);}
 cl              { bxlval.reg=rCL; return (BX_TOKEN_REG_CL);}
@@ -177,13 +178,14 @@ calc            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CALC); }
 "!"             { return ('!'); }
 "("             { return ('('); }
 ")"             { return (')'); }
-\'[^\'\n]*\'    |
-\"[^\"\n]*\"    { bxlval.sval = strdup(bxtext); return(BX_TOKEN_STRING); }
+\'([^\\\'\n]|(\\.))*\'    |
+\"([^\\\"\n]|(\\.))*\"    { bxlval.sval = strdup(bxtext); return(BX_TOKEN_STRING); }
 0x[0-9a-fA-F]+  { bxlval.uval = strtoul(bxtext+2, NULL, 16); return(BX_TOKEN_NUMERIC); }
 0[0-7]+         { bxlval.uval = strtoul(bxtext+1, NULL, 8); return(BX_TOKEN_NUMERIC); }
 [0-9]+L         { bxlval.ulval = strtoull(bxtext, NULL, 10); return(BX_TOKEN_LONG_NUMERIC); }
 [0-9]+          { bxlval.uval = strtoul(bxtext, NULL, 10); return(BX_TOKEN_NUMERIC); }
 $[a-zA-Z_][a-zA-Z0-9_]* { bxlval.sval = strdup(bxtext); return(BX_TOKEN_SYMBOLNAME); }
+<*>";"          { return ('\n'); }
 <*>\n           { return('\n'); }
 [#][^\n]*    ; // eat up comments '//'
 .               { return(bxtext[0]); }
@@ -200,18 +202,16 @@ bx_yyinput(char *buf, int max_size)
   if (lex_input_size == 0) {
     fprintf(stderr, "lex: no characters in string input buffer.\n");
     exit(1);
-    }
+  }
 
-  len = strlen(lex_input_ptr);
+  len = strlen(lex_input_ptr) + 1;
   if (len > max_size)
-    max_size = len;
+    len = max_size;
 
-  memcpy(buf, lex_input_ptr, max_size);
-  lex_input_size -= max_size;
+  memcpy(buf, lex_input_ptr, len);
 
-  return(max_size);
+  return(len);
 }
-
 
   void
 bx_add_lex_input(char *buf)

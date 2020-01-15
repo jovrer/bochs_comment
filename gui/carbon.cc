@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: carbon.cc,v 1.24 2003/11/17 04:21:16 danielg4 Exp $
+// $Id: carbon.cc,v 1.27 2004/08/15 19:27:14 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -40,7 +40,12 @@
 
 
 // BOCHS INCLUDES
+#define Float32 KLUDGE_Float32
+#define Float64 KLUDGE_Float64
 #include "bochs.h"
+#include "iodev.h"
+#undef Float32
+#undef Float64
 
 #if BX_WITH_CARBON
 
@@ -1453,6 +1458,10 @@ void bx_carbon_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight,
   }
         
   windowUpdatesPending = true;
+
+  host_xres = x;
+  host_yres = y;
+  host_bpp = bpp;
 }
 
 

@@ -15,22 +15,23 @@
   base  =  sib & 0x07;        \
 }
 
-// to be used in future
-#define IF_8086       0x00000000         /* 8086 instruction */
-#define IF_186        0x00000000         /* 186+ instruction */
-#define IF_286        0x00000000         /* 286+ instruction */
-#define IF_386        0x00000000         /* 386+ instruction */
-#define IF_387        0x00000000         /* 387+ FPU instruction */
-#define IF_486        0x00000000         /* 486+ instruction */
-#define IF_PENTIUM    0x00000000         /* Pentium instruction */
-#define IF_P6         0x00000000         /* P6 instruction */
-#define IF_KATMAI     0x00000000         /* Katmai instruction */
-#define IF_WILLAMETTE 0x00000000         /* Willamette instruction */
-#define IF_PRESCOTT   0x00000000         /* Prescott instruction */
+// will be used in future
+#define IA_8086       0x00000000        /* 8086 instruction */
+#define IA_286        0x00000000        /* 286+ instruction */
+#define IA_386        0x00000000        /* 386+ instruction */
+#define IA_FPU        0x00000000
+#define IA_486        0x00000000        /* 486+ instruction */
+#define IA_PENTIUM    0x00000000        /* Pentium instruction */
+#define IA_P6         0x00000000        /* P6 instruction */
+#define IA_KATMAI     0x00000000        /* Katmai instruction */
+#define IA_WILLAMETTE 0x00000000        /* Willamette instruction */
+#define IA_PRESCOTT   0x00000000        /* Prescott instruction */
+#define IA_X86_64     0x00000000        /* x86-64 specific instruction */
 
 #define IF_ARITHMETIC 0x00000000        /* arithmetic instruction */
 #define IF_LOGIC      0x00000000        /* logic instruction */
 #define IF_SYSTEM     0x00000000        /* system instruction (require CPL=0) */
+#define IF_BRANCH     0x00000000        /* branch instruction */
 #define IF_FPU        0x00000000        /* FPU instruction */
 #define IF_MMX        0x00000000        /* MMX instruction */
 #define IF_3DNOW      0x00000000        /* 3DNow! instruction */
@@ -73,6 +74,19 @@ enum {
 	eDI_REG
 };
 
+#if BX_DISASM_SUPPORT_X86_64
+enum {
+	rAX_REG,
+	rCX_REG,
+	rDX_REG,
+	rBX_REG,
+	rSP_REG,
+	rBP_REG,
+	rSI_REG,
+	rDI_REG
+};
+#endif
+
 enum {
 	ES_REG,
 	CS_REG,
@@ -82,45 +96,89 @@ enum {
 	GS_REG
 };
 
-#define X_MODE  0x0
-#define B_MODE  0x1
-#define W_MODE  0x2
-#define D_MODE  0x3
-#define V_MODE  0x4
-#define Q_MODE  0x5
-#define O_MODE  0x6
-#define T_MODE  0x7
-#define P_MODE  0x8
-
 class disassembler;
 
 typedef void (disassembler::*BxDisasmPtr_t) (unsigned attr);
 typedef void (disassembler::*BxDisasmResolveModrmPtr_t) (unsigned attr);
 
+struct BxDisasmOpcodeInfo_t
+{
+    const char *Opcode;
+    unsigned Attr;
+    BxDisasmPtr_t Operand1;
+    unsigned Op1Attr;
+    BxDisasmPtr_t Operand2;
+    unsigned Op2Attr;
+    BxDisasmPtr_t Operand3;
+    unsigned Op3Attr;
+    struct BxDisasmOpcodeInfo_t *AnotherArray;
+};
+
+// datasize attributes
+#define X_SIZE      0x0000
+#define B_SIZE      0x0100
+#define W_SIZE      0x0200
+#define D_SIZE      0x0300
+#define V_SIZE      0x0400
+#define Q_SIZE      0x0500
+#define Z_SIZE      0x0600
+#define O_SIZE      0x0700
+#define T_SIZE      0x0800
+#define P_SIZE      0x0900
+#define S_SIZE      0x0A00
+
+// branch hint attribute 
+#define BRANCH_HINT 0x1000
+
 class disassembler {
 public:
-  disassembler() {}
-  unsigned disasm(bx_bool is_32, Bit32u base, Bit32u ip, Bit8u *instr, char *disbuf);
+  disassembler() { set_syntax_intel(); }
+  unsigned disasm(bx_bool is_32, bx_address base, bx_address ip, Bit8u *instr, char *disbuf);
+
+  void set_syntax_intel();
+  void set_syntax_att  ();
 
 private:
+  bx_bool intel_mode;
+
+  const char **general_16bit_regname;
+  const char **general_8bit_regname;
+  const char **general_32bit_regname;
+#if BX_DISASM_SUPPORT_X86_64
+  const char **general_8bit_regname_rex;
+  const char **general_64bit_regname;
+#endif
+
+  const char **segment_name;
+  const char **index16;
+
+  const char *sreg_mod01or10_rm32[8];
+  const char *sreg_mod00_base32[8];
+  const char *sreg_mod01or10_base32[8];
+  const char *sreg_mod00_rm16[8];
+  const char *sreg_mod01or10_rm16[8];
+
+private:
+
   bx_bool i32bit_opsize;
   bx_bool i32bit_addrsize;
+#if BX_DISASM_SUPPORT_X86_64
+  bx_bool i64bit_opsize;
+  bx_bool i64bit_addrsize;
+#endif
 
   Bit8u  modrm, mod, nnn, rm;
-  Bit8u  sib, scale, index, base;
+  Bit8u  sib, scale, sib_index, sib_base;
 
   union {
-     Bit8u  displ8;
      Bit16u displ16;
      Bit32u displ32;
   } displacement;
 
-  Bit32u db_eip;
-  Bit32u db_base;
+  bx_address db_eip, db_base;
 
   unsigned n_prefixes;
 
-  Bit8u *instruction_begin;  // keep track of where instruction starts
   Bit8u *instruction;        // for fetching of next byte of instruction
 
   const char *seg_override;
@@ -132,11 +190,11 @@ private:
   BX_CPP_INLINE Bit8u  fetch_byte() {
     db_eip++;
     return(*instruction++);
-    };
+  };
 
   BX_CPP_INLINE Bit8u  peek_byte() {
     return(*instruction);
-    };
+  };
 
   BX_CPP_INLINE Bit16u fetch_word() {
     Bit8u b0 = * (Bit8u *) instruction++;
@@ -144,7 +202,7 @@ private:
     Bit16u ret16 = (b1<<8) | b0;
     db_eip += 2;
     return(ret16);
-    };
+  };
 
   BX_CPP_INLINE Bit32u fetch_dword() {
     Bit8u b0 = * (Bit8u *) instruction++;
@@ -154,10 +212,41 @@ private:
     Bit32u ret32 = (b3<<24) | (b2<<16) | (b1<<8) | b0;
     db_eip += 4;
     return(ret32);
-    };
+  };
 
+#if BX_DISASM_SUPPORT_X86_64
+  BX_CPP_INLINE Bit64u fetch_qword() {
+    Bit64u d0 = fetch_dword();
+    Bit64u d1 = fetch_dword();
+    Bit64u ret64 = (d1<<32) | d0;
+    return(ret64);
+  };
+#endif
+
+  void dis_putc(char symbol);
   void dis_sprintf(char *fmt, ...);
   void decode_modrm();
+
+  void resolve16_mod0    (unsigned mode);
+  void resolve16_mod1or2 (unsigned mode);
+
+  void resolve32_mod0    (unsigned mode);
+  void resolve32_mod1or2 (unsigned mode);
+
+  void resolve32_mod0_rm4    (unsigned mode);
+  void resolve32_mod1or2_rm4 (unsigned mode);
+
+  void initialize_modrm_segregs();
+
+  void print_datasize (unsigned mode);
+
+  void print_memory_access16(int datasize,
+          const char *seg, const char *index, Bit16u disp);
+  void print_memory_access32(int datasize,
+          const char *seg, const char *base, const char *index, int scale, Bit32u disp);
+
+  void print_disassembly_intel(const BxDisasmOpcodeInfo_t *entry);
+  void print_disassembly_att  (const BxDisasmOpcodeInfo_t *entry);
 
 public:
 
@@ -174,7 +263,7 @@ public:
  *      If it is a memory address, the address is computed from a segment 
  *      register and any of the following values: a base register, an
  *      index register, a scaling factor, a displacement.
- * F  - EFLAGS Register.
+ * F  - Flags Register.
  * G  - The reg field of the ModR/M byte selects a general register.
  * I  - Immediate data. The operand value is encoded in subsequent bytes of 
  *      the instruction.
@@ -201,8 +290,8 @@ public:
  *      it is a memory address, the address is computed from a segment 
  *      register and any of the following values: a base register, an
  *      index register, a scaling factor, and a displacement.
- * X  - Memory addressed by the DS:SI register pair.
- * Y  - Memory addressed by the ES:DI register pair.
+ * X  - Memory addressed by the DS:rSI register pair.
+ * Y  - Memory addressed by the ES:rDI register pair.
  */   
 
 /* 
@@ -215,97 +304,87 @@ public:
  * d  - Doubleword, regardless of operand-size attribute.
  * dq - Double-quadword, regardless of operand-size attribute.
  * p  - 32-bit or 48-bit pointer, depending on operand-size attribute.
- * pi - Quadword MMX technology register (e.g. mm0)
+ * pd - 128-bit packed double-precision floating-point data.
+ * pi - Quadword MMX technology register (packed integer)
  * ps - 128-bit packed single-precision floating-point data.
  * q  - Quadword, regardless of operand-size attribute.
- * s  - 6-byte pseudo-descriptor.
+ * s  - 6-byte or 10-byte pseudo-descriptor.
+ * si - Doubleword integer register (scalar integer)
  * ss - Scalar element of a 128-bit packed single-precision floating data.
- * si - Doubleword integer register (e.g., eax)
- * v  - Word or doubleword, depending on operand-size attribute.
+ * sd - Scalar element of a 128-bit packed double-precision floating data.
+ * v  - Word, doubleword or quadword, depending on operand-size attribute.
  * w  - Word, regardless of operand-size attribute.
+ * z  - A word if the effective operand size is 16 bits, or a doubleword 
+ *      if the effective operand size is 32 or 64 bits.
  */
 
- void XX (unsigned) {}
-
  // fpu
- void ST0 (unsigned) { dis_sprintf("st(0)"); }
- void STj (unsigned);
+ void ST0 (unsigned attribute);
+ void STj (unsigned attribute);
 
  // general/segment register
- void Rd (unsigned);
- void Rw (unsigned);
- void Sw (unsigned);
+ void  Rw (unsigned attribute);
+ void  Rd (unsigned attribute);
+ void  Sw (unsigned attribute);
 
  // control/debug register
- void Cd (unsigned) { dis_sprintf("cr%d", nnn); }
- void Dd (unsigned) { dis_sprintf("db%d", nnn); }
- void Td (unsigned) { dis_sprintf("tr%d", nnn); }
+ void  Cd (unsigned attribute);
+ void  Dd (unsigned attribute);
+ void  Td (unsigned attribute);
 
- // segment register (implicit)
- void OP_SEG (unsigned);
-
- // general purpose register 
- void reg8  (unsigned);
- void reg16 (unsigned);
- void reg32 (unsigned);
+ // segment register
+ void OP_SEG (unsigned attribute);
 
  // memory only
- void OP_MEM (unsigned);
+ void OP_MEM (unsigned attribute);
 
- void OP_X (unsigned);
- void OP_Y (unsigned);
+ // general purpose register 
+ void REG16 (unsigned attribute);
+ void REG8  (unsigned attribute);
+ void REG32 (unsigned attribute);
+
+ // string instructions
+ void OP_X (unsigned attribute);
+ void OP_Y (unsigned attribute);
 
  // mmx/xmm
- void OP_P (unsigned);
- void OP_Q (unsigned);
- void OP_W (unsigned);
- void OP_V (unsigned);
+ void OP_P (unsigned attribute);
+ void OP_Q (unsigned attribute);
+ void OP_W (unsigned attribute);
+ void OP_V (unsigned attribute);
+
+ // mov
+ void OP_O (unsigned attribute);
 
  // immediate
- void  I1 (unsigned) { dis_sprintf("1"); }
- void  Ib (unsigned);
- void  Iw (unsigned); 
- void  Id (unsigned);
- void  Iv (unsigned);
- void sIb (unsigned);
+ void sIb (unsigned attribute);
+ void  I1 (unsigned attribute);
+ void  Ib (unsigned attribute);
+ void  Iw (unsigned attribute); 
+ void  Id (unsigned attribute);
+ void  Iv (unsigned attribute);
+#if BX_DISASM_SUPPORT_X86_64
+ void  Iz (unsigned attribute);
+ void  Iq (unsigned attribute);
+#endif
 
- void  Eb (unsigned);
- void  Ew (unsigned);
- void  Ed (unsigned);
- void  Ev (unsigned);
- void  Ea (unsigned);
- void  Ep (unsigned);
+ // general purpose register or memory
+ void  Eb (unsigned attribute);
+ void  Ew (unsigned attribute);
+ void  Ed (unsigned attribute);
+ void  Ev (unsigned attribute);
 
- void  Gb (unsigned);
- void  Gw (unsigned);
- void  Gv (unsigned);
- void  Gd (unsigned);
+ // general purpose register
+ void  Gb (unsigned attribute);
+ void  Gv (unsigned attribute);
+ void  Gd (unsigned attribute);
 
- void  Ap (unsigned);
+ // call/jump
+ void  Jb (unsigned attribute);
+ void  Jv (unsigned attribute);
 
- void  Ob (unsigned);
- void  Ov (unsigned);
-
- // jump
- void  Jb (unsigned);
- void  Jv (unsigned);
-
-private:
-
- void resolve16_mod0 (unsigned mode);
- void resolve16_mod1 (unsigned mode);
- void resolve16_mod2 (unsigned mode);
-
- void resolve32_mod0 (unsigned mode);
- void resolve32_mod1 (unsigned mode);
- void resolve32_mod2 (unsigned mode);
-
- void resolve32_mod0_rm4 (unsigned mode);
- void resolve32_mod1_rm4 (unsigned mode);
- void resolve32_mod2_rm4 (unsigned mode);
-
- void print_datasize (unsigned mode);
-
+ // call/jmp far
+ void  Ap (unsigned attribute);
 };
 
 #endif

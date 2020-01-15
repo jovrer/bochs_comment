@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom.cc,v 1.66 2003/12/08 23:49:48 danielg4 Exp $
+// $Id: cdrom.cc,v 1.77 2005/05/04 18:19:49 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -39,6 +39,8 @@
 
 #include "bochs.h"
 #if BX_SUPPORT_CDROM
+
+#include "cdrom.h"
 
 #define LOG_THIS /* no SMF tricks here, not needed */
 
@@ -85,7 +87,7 @@ extern "C" {
 #include "cdrom_beos.h"
 #define BX_CD_FRAMESIZE 2048
 
-#elif (defined (__NetBSD__) || defined(__OpenBSD__) || defined(__FreeBSD__))
+#elif (defined(__NetBSD__) || defined(__NetBSD_kernel__) || defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
 // OpenBSD pre version 2.7 may require extern "C" { } structure around
 // all the includes, because the i386 sys/disklabel.h contains code which 
 // c++ considers invalid.
@@ -112,12 +114,16 @@ extern "C" {
 #include <paths.h>
 #include <sys/param.h>
 
+#define Float32 KLUDGE_Float32
+#define Float64 KLUDGE_Float64
 #include <IOKit/IOKitLib.h>
 #include <IOKit/IOBSD.h>
 #include <IOKit/storage/IOCDMedia.h>
 #include <IOKit/storage/IOMedia.h>
 #include <IOKit/storage/IOCDTypes.h>
 #include <CoreFoundation/CoreFoundation.h>
+#undef Float32
+#undef Float64
 
 // These definitions were taken from mount_cd9660.c
 // There are some similar definitions in IOCDTypes.h
@@ -173,13 +179,56 @@ BOOL  (*TranslateASPI32Address)(PDWORD,PDWORD);
 DWORD (*GetASPI32DLLVersion)(void);
 
 
-static BOOL bUseASPI = FALSE;
+static OSVERSIONINFO osinfo;
+static BOOL isWindowsXP;
 static BOOL bHaveDev;
 static UINT cdromCount = 0;
 static HINSTANCE hASPI = NULL;
 
 #define BX_CD_FRAMESIZE 2048
 #define CD_FRAMESIZE	2048
+
+// READ_TOC_EX structure(s) and #defines
+
+#define CDROM_READ_TOC_EX_FORMAT_TOC      0x00
+#define CDROM_READ_TOC_EX_FORMAT_SESSION  0x01
+#define CDROM_READ_TOC_EX_FORMAT_FULL_TOC 0x02
+#define CDROM_READ_TOC_EX_FORMAT_PMA      0x03
+#define CDROM_READ_TOC_EX_FORMAT_ATIP     0x04
+#define CDROM_READ_TOC_EX_FORMAT_CDTEXT   0x05
+
+#define IOCTL_CDROM_BASE              FILE_DEVICE_CD_ROM
+#define IOCTL_CDROM_READ_TOC_EX       CTL_CODE(IOCTL_CDROM_BASE, 0x0015, METHOD_BUFFERED, FILE_READ_ACCESS)
+
+typedef struct _CDROM_READ_TOC_EX {
+    UCHAR Format    : 4;
+    UCHAR Reserved1 : 3; // future expansion
+    UCHAR Msf       : 1;
+    UCHAR SessionTrack;
+    UCHAR Reserved2;     // future expansion
+    UCHAR Reserved3;     // future expansion
+} CDROM_READ_TOC_EX, *PCDROM_READ_TOC_EX;
+
+typedef struct _TRACK_DATA {
+    UCHAR Reserved;
+    UCHAR Control : 4;
+    UCHAR Adr : 4;
+    UCHAR TrackNumber;
+    UCHAR Reserved1;
+    UCHAR Address[4];
+} TRACK_DATA, *PTRACK_DATA;
+
+typedef struct _CDROM_TOC_SESSION_DATA {
+    // Header
+    UCHAR Length[2];  // add two bytes for this field
+    UCHAR FirstCompleteSession;
+    UCHAR LastCompleteSession;
+    // One track, representing the first track
+    // of the last finished session
+    TRACK_DATA TrackData[1];
+} CDROM_TOC_SESSION_DATA, *PCDROM_TOC_SESSION_DATA;
+
+// End READ_TOC_EX structure(s) and #defines
 
 #else // all others (Irix, Tru64)
 #include <sys/types.h>
@@ -464,11 +513,17 @@ cdrom_interface::cdrom_interface(char *dev)
     path = strdup(dev);
   }
   using_file=0;
+#ifdef WIN32
+  bUseASPI = FALSE;
+  osinfo.dwOSVersionInfoSize = sizeof(osinfo);
+  GetVersionEx(&osinfo);
+  isWindowsXP = (osinfo.dwMajorVersion >= 5) && (osinfo.dwMinorVersion >= 1);
+#endif
 }
 
 void
 cdrom_interface::init(void) {
-  BX_DEBUG(("Init $Id: cdrom.cc,v 1.66 2003/12/08 23:49:48 danielg4 Exp $"));
+  BX_DEBUG(("Init $Id: cdrom.cc,v 1.77 2005/05/04 18:19:49 vruppert Exp $"));
   BX_INFO(("file = '%s'",path));
 }
 
@@ -494,97 +549,95 @@ cdrom_interface::insert_cdrom(char *dev)
   if (dev != NULL) path = strdup(dev);
   BX_INFO (("load cdrom with path=%s", path));
 #ifdef WIN32
-    char drive[256];
-	OSVERSIONINFO osi;
-    if ( (path[1] == ':') && (strlen(path) == 2) )
-    {
-	  osi.dwOSVersionInfoSize = sizeof(osi);
-	  GetVersionEx(&osi);
-	  if(osi.dwPlatformId == VER_PLATFORM_WIN32_NT) {
-	    // Use direct device access under windows NT/2k
+  char drive[256];
+  if ( (path[1] == ':') && (strlen(path) == 2) )
+  {
+    if(osinfo.dwPlatformId == VER_PLATFORM_WIN32_NT) {
+      // Use direct device access under windows NT/2k/XP
 
-        // With all the backslashes it's hard to see, but to open D: drive 
-        // the name would be: \\.\d:
-        sprintf(drive, "\\\\.\\%s", path);
-        using_file = 0;
-        BX_INFO (("Using direct access for cdrom."));
-        // This trick only works for Win2k and WinNT, so warn the user of that.
-	  } else {
-		  BX_INFO(("Using ASPI for cdrom. Drive letters are unused yet."));
-          bUseASPI = TRUE;
-	  }
+      // With all the backslashes it's hard to see, but to open D: drive 
+      // the name would be: \\.\d:
+      sprintf(drive, "\\\\.\\%s", path);
+      BX_INFO (("Using direct access for cdrom."));
+      // This trick only works for Win2k and WinNT, so warn the user of that.
+    } else {
+      BX_INFO(("Using ASPI for cdrom. Drive letters are unused yet."));
+      bUseASPI = TRUE;
     }
-    else
-    {
-      strcpy(drive,path);
-      using_file = 1;
-	  bUseASPI = FALSE;
-      BX_INFO (("Opening image file as a cd"));
+  }
+  else
+  {
+    strcpy(drive,path);
+    using_file = 1;
+    BX_INFO (("Opening image file as a cd"));
+  }
+  if(bUseASPI) {
+    DWORD d;
+    UINT cdr, cnt, max;
+    UINT i, j, k;
+    SRB_HAInquiry sh;
+    SRB_GDEVBlock sd;
+    if (!hASPI) {
+      hASPI = LoadLibrary("WNASPI32.DLL");
+      if (hASPI) {
+        SendASPI32Command    = (DWORD(*)(LPSRB))GetProcAddress( hASPI, "SendASPI32Command" );
+        GetASPI32DLLVersion  = (DWORD(*)(void))GetProcAddress( hASPI, "GetASPI32DLLVersion" );
+        GetASPI32SupportInfo = (DWORD(*)(void))GetProcAddress( hASPI, "GetASPI32SupportInfo" );
+        d = GetASPI32DLLVersion();
+        BX_INFO(("WNASPI32.DLL version %d.%02d initialized", d & 0xff, (d >> 8) & 0xff));
+      } else {
+        BX_PANIC(("Could not load ASPI drivers, so cdrom access will fail"));
+        return false;
+      }
     }
-	if(bUseASPI) {
-		DWORD d;
-		UINT cdr, cnt, max;
-		UINT i, j, k;
-		SRB_HAInquiry sh;
-		SRB_GDEVBlock sd;
-		if (!hASPI) {
-		  hASPI = LoadLibrary("WNASPI32.DLL");
-		}
-		if(hASPI) {
-            SendASPI32Command      = (DWORD(*)(LPSRB))GetProcAddress( hASPI, "SendASPI32Command" );
-			GetASPI32DLLVersion    = (DWORD(*)(void))GetProcAddress( hASPI, "GetASPI32DLLVersion" );
-			GetASPI32SupportInfo   = (DWORD(*)(void))GetProcAddress( hASPI, "GetASPI32SupportInfo" );
-//			BX_INFO(("Using first CDROM.  Please upgrade your ASPI drivers to version 4.01 or later if you wish to specify a cdrom driver."));
-			
-			cdr = 0;
-			bHaveDev = FALSE;
-			d = GetASPI32SupportInfo();
-			cnt = LOBYTE(LOWORD(d));
-			for(i = 0; i < cnt; i++) {
-				memset(&sh, 0, sizeof(sh));
-				sh.SRB_Cmd  = SC_HA_INQUIRY;
-				sh.SRB_HaId = i;
-				SendASPI32Command((LPSRB)&sh);
-				if(sh.SRB_Status != SS_COMP)
-					continue;
+    cdr = 0;
+    bHaveDev = FALSE;
+    d = GetASPI32SupportInfo();
+    cnt = LOBYTE(LOWORD(d));
+    for(i = 0; i < cnt; i++) {
+      memset(&sh, 0, sizeof(sh));
+      sh.SRB_Cmd  = SC_HA_INQUIRY;
+      sh.SRB_HaId = i;
+      SendASPI32Command((LPSRB)&sh);
+      if(sh.SRB_Status != SS_COMP)
+        continue;
 
-				max = (int)sh.HA_Unique[3];
-				for(j = 0; j < max; j++) {
-					for(k = 0; k < 8; k++) {
-						memset(&sd, 0, sizeof(sd));
-						sd.SRB_Cmd    = SC_GET_DEV_TYPE;
-						sd.SRB_HaId   = i;
-						sd.SRB_Target = j;
-						sd.SRB_Lun    = k;
-						SendASPI32Command((LPSRB)&sd);
-						if(sd.SRB_Status == SS_COMP) {
-							if(sd.SRB_DeviceType == DTYPE_CDROM) {
-								cdr++;
-								if(cdr > cdromCount) {
-									hid = i;
-									tid = j;
-									lun = k;
-									cdromCount++;
-									bHaveDev = TRUE;
-								}
-							}
-						}
-						if(bHaveDev) break;
-					}
-					if(bHaveDev) break;
-				}
-
-			}
-		} else {
-			BX_PANIC(("Could not load ASPI drivers, so cdrom access will fail"));
-		}
-		fd=1;
-	} else {
-	  BX_INFO(("Using direct access for CDROM"));
-      hFile=CreateFile((char *)&drive, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, NULL); 
-      if (hFile !=(void *)0xFFFFFFFF)
-        fd=1;
-	}
+      max = (int)sh.HA_Unique[3];
+      for(j = 0; j < max; j++) {
+        for(k = 0; k < 8; k++) {
+          memset(&sd, 0, sizeof(sd));
+          sd.SRB_Cmd    = SC_GET_DEV_TYPE;
+          sd.SRB_HaId   = i;
+          sd.SRB_Target = j;
+          sd.SRB_Lun    = k;
+          SendASPI32Command((LPSRB)&sd);
+          if(sd.SRB_Status == SS_COMP) {
+            if(sd.SRB_DeviceType == DTYPE_CDROM) {
+              cdr++;
+              if(cdr > cdromCount) {
+                hid = i;
+                tid = j;
+                lun = k;
+                cdromCount++;
+                bHaveDev = TRUE;
+              }
+            }
+          }
+          if(bHaveDev) break;
+        }
+        if(bHaveDev) break;
+      }
+    }
+    fd=1;
+  } else {
+    hFile=CreateFile((char *)&drive, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, NULL); 
+    if (hFile !=(void *)0xFFFFFFFF)
+      fd=1;
+    if (!using_file) {
+      DWORD lpBytesReturned;
+      DeviceIoControl(hFile, IOCTL_STORAGE_LOAD_MEDIA, NULL, 0, NULL, 0, &lpBytesReturned, NULL);
+    }
+  }
 #elif defined(__APPLE__)
       if(strcmp(path, "drive") == 0)
       {
@@ -670,7 +723,7 @@ cdrom_interface::start_cdrom()
   // Spin up the cdrom drive.
 
   if (fd >= 0) {
-#if defined(__NetBSD__)
+#if defined(__NetBSD__) || defined(__NetBSD_kernel__)
     if (ioctl (fd, CDIOCSTART) < 0)
        BX_DEBUG(( "start_cdrom: start returns error: %s", strerror (errno) ));
     return(true);
@@ -689,7 +742,7 @@ cdrom_interface::eject_cdrom()
   // some ioctl() calls to really eject the CD as well.
 
   if (fd >= 0) {
-#if (defined(__OpenBSD__) || defined(__FreeBSD__))
+#if (defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
     (void) ioctl (fd, CDIOCALLOW);
     if (ioctl (fd, CDIOCEJECT) < 0)
 	  BX_DEBUG(( "eject_cdrom: eject returns error." ));
@@ -719,70 +772,94 @@ if (using_file == 0)
 
 
   bx_bool
-cdrom_interface::read_toc(uint8* buf, int* length, bx_bool msf, int start_track)
+cdrom_interface::read_toc(uint8* buf, int* length, bx_bool msf, int start_track, int format)
 {
+  unsigned i;
   // Read CD TOC. Returns false if start track is out of bounds.
 
   if (fd < 0) {
     BX_PANIC(("cdrom: read_toc: file not open."));
-    }
+    return false;
+  }
 
 #if defined(WIN32)
-  if (1) { // This is a hack and works okay if there's one rom track only
+  if (!isWindowsXP || using_file) { // This is a hack and works okay if there's one rom track only
 #else
   if (using_file) {
 #endif
-    // From atapi specs : start track can be 0-63, AA
-    if ((start_track > 1) && (start_track != 0xaa)) 
-      return false;
-
-    buf[2] = 1;
-    buf[3] = 1;
-
+    Bit32u blocks;
     int len = 4;
-    if (start_track <= 1) {
-      buf[len++] = 0; // Reserved
-      buf[len++] = 0x14; // ADR, control
-      buf[len++] = 1; // Track number
-      buf[len++] = 0; // Reserved
 
-      // Start address
-      if (msf) {
-        buf[len++] = 0; // reserved
-        buf[len++] = 0; // minute
-        buf[len++] = 2; // second
-        buf[len++] = 0; // frame
-      } else {
-        buf[len++] = 0;
-        buf[len++] = 0;
-        buf[len++] = 0;
-        buf[len++] = 0; // logical sector 0
-      }
+    switch (format) {
+      case 0:
+        // From atapi specs : start track can be 0-63, AA
+        if ((start_track > 1) && (start_track != 0xaa))
+          return false;
+
+        buf[2] = 1;
+        buf[3] = 1;
+
+        if (start_track <= 1) {
+          buf[len++] = 0; // Reserved
+          buf[len++] = 0x14; // ADR, control
+          buf[len++] = 1; // Track number
+          buf[len++] = 0; // Reserved
+
+          // Start address
+          if (msf) {
+            buf[len++] = 0; // reserved
+            buf[len++] = 0; // minute
+            buf[len++] = 2; // second
+            buf[len++] = 0; // frame
+          } else {
+            buf[len++] = 0;
+            buf[len++] = 0;
+            buf[len++] = 0;
+            buf[len++] = 16; // logical sector 0
+          }
+        }
+
+        // Lead out track
+        buf[len++] = 0; // Reserved
+        buf[len++] = 0x16; // ADR, control
+        buf[len++] = 0xaa; // Track number
+        buf[len++] = 0; // Reserved
+
+        blocks = capacity();
+
+        // Start address
+        if (msf) {
+          buf[len++] = 0; // reserved
+          buf[len++] = (uint8)(((blocks + 150) / 75) / 60); // minute
+          buf[len++] = (uint8)(((blocks + 150) / 75) % 60); // second
+          buf[len++] = (uint8)((blocks + 150) % 75); // frame;
+        } else {
+          buf[len++] = (blocks >> 24) & 0xff;
+          buf[len++] = (blocks >> 16) & 0xff;
+          buf[len++] = (blocks >> 8) & 0xff;
+          buf[len++] = (blocks >> 0) & 0xff;
+        }
+
+        buf[0] = ((len-2) >> 8) & 0xff;
+        buf[1] = (len-2) & 0xff;
+
+        break;
+
+      case 1:
+        // multi session stuff - emulate a single session only
+        buf[0] = 0;
+        buf[1] = 0x0a;
+        buf[2] = 1;
+        buf[3] = 1;
+        for (i = 0; i < 8; i++)
+          buf[4+i] = 0;
+        len = 12;
+        break;
+
+      default:
+        BX_PANIC(("cdrom: read_toc: unknown format"));
+        return false;
     }
-
-    // Lead out track
-    buf[len++] = 0; // Reserved
-    buf[len++] = 0x16; // ADR, control
-    buf[len++] = 0xaa; // Track number
-    buf[len++] = 0; // Reserved
-
-    uint32 blocks = capacity();
-
-    // Start address
-    if (msf) {
-      buf[len++] = 0; // reserved
-      buf[len++] = (uint8)(((blocks + 150) / 75) / 60); // minute
-      buf[len++] = (uint8)(((blocks + 150) / 75) % 60); // second
-      buf[len++] = (uint8)((blocks + 150) % 75); // frame;
-    } else {
-      buf[len++] = (blocks >> 24) & 0xff;
-      buf[len++] = (blocks >> 16) & 0xff;
-      buf[len++] = (blocks >> 8) & 0xff;
-      buf[len++] = (blocks >> 0) & 0xff;
-    }
-
-    buf[0] = ((len-2) >> 8) & 0xff;
-    buf[1] = (len-2) & 0xff;
 
     *length = len;
 
@@ -791,13 +868,25 @@ cdrom_interface::read_toc(uint8* buf, int* length, bx_bool msf, int start_track)
   // all these implementations below are the platform-dependent code required
   // to read the TOC from a physical cdrom.
 #ifdef WIN32
+  if (isWindowsXP)
   {
-/*     #define IOCTL_CDROM_BASE                 FILE_DEVICE_CD_ROM
-     #define IOCTL_CDROM_READ_TOC         CTL_CODE(IOCTL_CDROM_BASE, 0x0000, METHOD_BUFFERED, FILE_READ_ACCESS)
-     unsigned long iBytesReturned;
-     DeviceIoControl(hFile, IOCTL_CDROM_READ_TOC, NULL, 0, NULL, 0, &iBytesReturned, NULL);       */
-    BX_ERROR (("WARNING: read_toc is not implemented, just returning length=1"));
-    *length = 1;
+
+    // This only works with WinXP
+    CDROM_READ_TOC_EX input;
+    memset(&input, 0, sizeof(input));
+    input.Format = format;
+    input.Msf = msf;
+    input.SessionTrack = start_track;
+
+    // We have to allocate a chunk of memory to make sure it is aligned on a sector base.
+    UCHAR *data = (UCHAR *) VirtualAlloc(NULL, 2048*2, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    unsigned long iBytesReturned;
+    DeviceIoControl(hFile, IOCTL_CDROM_READ_TOC_EX, &input, sizeof(input), data, 804, &iBytesReturned, NULL);
+    // now copy it to the users buffer and free our buffer
+    memcpy(buf, data, iBytesReturned);
+    VirtualFree(data, 0, MEM_RELEASE);
+    *length = iBytesReturned;
+
     return true;
   }
 #elif __linux__ || defined(__sun)
@@ -876,7 +965,7 @@ cdrom_interface::read_toc(uint8* buf, int* length, bx_bool msf, int start_track)
 
   return true;
   }
-#elif (defined(__NetBSD__) || defined(__OpenBSD__) || defined(__FreeBSD__))
+#elif (defined(__NetBSD__) || defined(__NetBSD_kernel__) || defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
   {
   struct ioc_toc_header h;
   struct ioc_read_toc_entry t;
@@ -1023,8 +1112,6 @@ cdrom_interface::read_toc(uint8* buf, int* length, bx_bool msf, int start_track)
   *length = len;
 
   return true;
-//  BX_INFO(( "Read TOC - Not Implemented" ));
-//  return false;
   }
 #else
   BX_INFO(( "Read TOC - Not Implemented" ));
@@ -1075,7 +1162,7 @@ cdrom_interface::capacity()
   
     return(buf.st_size);
   }
-#elif (defined(__NetBSD__) || defined(__OpenBSD__))
+#elif (defined(__NetBSD__) || defined(__NetBSD_kernel__) || defined(__OpenBSD__))
   {
   // We just read the disklabel, imagine that...
   struct disklabel lp;
@@ -1141,7 +1228,7 @@ cdrom_interface::capacity()
   return(num_sectors);
 
   }
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
   {
   // Read the TOC to get the size of the data track.
   // Keith Jones <freebsd.dev@blueyonder.co.uk>, 16 January 2000
@@ -1189,18 +1276,19 @@ cdrom_interface::capacity()
   }
 #elif defined WIN32
   {
-	  if(bUseASPI) {
-		  return (GetCDCapacity(hid, tid, lun) / 2352);
-	  } else if(using_file) {
-	    ULARGE_INTEGER FileSize;
-	    FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
-		return (FileSize.QuadPart / 2048);
-	  } else {  /* direct device access */
-	    DWORD SectorsPerCluster;
-	    DWORD TotalNumOfClusters;
-	    GetDiskFreeSpace( path, &SectorsPerCluster, NULL, NULL, &TotalNumOfClusters);
-		return (TotalNumOfClusters * SectorsPerCluster);
-	  }
+    if(bUseASPI) {
+      return (GetCDCapacity(hid, tid, lun) / 2352);
+    } else if(using_file) {
+      ULARGE_INTEGER FileSize;
+      FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
+      return (FileSize.QuadPart / 2048);
+    } else {  /* direct device access */
+      ULARGE_INTEGER FreeBytesForCaller;
+      ULARGE_INTEGER TotalNumOfBytes;
+      ULARGE_INTEGER TotalFreeBytes;
+      GetDiskFreeSpaceEx( path, &FreeBytesForCaller, &TotalNumOfBytes, &TotalFreeBytes);
+      return (TotalNumOfBytes.QuadPart / 2048);
+    }
   }
 #elif defined __APPLE__
 // Find the size of the first data track on the cd.  This has produced
@@ -1232,7 +1320,6 @@ cdrom_interface::capacity()
   // on how you look at it).  The difference in the sector numbers
   // is returned as the sized of the data track.
   for ( int i=toc_entries - 1; i>=0; i-- ) {
-
     BX_DEBUG(( "session %d ctl_adr %d tno %d point %d lba %d z %d p lba %d\n",
              (int)toc->trackdesc[i].session,
              (int)toc->trackdesc[i].ctrl_adr,
@@ -1243,22 +1330,16 @@ cdrom_interface::capacity()
              MSF_TO_LBA(toc->trackdesc[i].p )));
 
     if ( start_sector != -1 ) {
-
       start_sector = MSF_TO_LBA(toc->trackdesc[i].p) - start_sector;
       break;
-
     }
 
-    if (( toc->trackdesc[i].ctrl_adr >> 4) != 1 ) continue;
+    if ((toc->trackdesc[i].ctrl_adr >> 4) != 1) continue;
 
     if ( toc->trackdesc[i].ctrl_adr & 0x04 ) {
-
       data_track = toc->trackdesc[i].point;
-
       start_sector = MSF_TO_LBA(toc->trackdesc[i].p);
-
     }
-      
   }  
 
   free( toc );

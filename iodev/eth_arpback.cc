@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_arpback.cc,v 1.11 2002/11/20 19:06:22 bdenney Exp $
+// $Id: eth_arpback.cc,v 1.17 2004/10/07 17:38:03 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -36,10 +36,11 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
+#include "iodev.h"
 
-#if BX_NE2K_SUPPORT && defined(ETH_ARPBACK)
+#if BX_NETWORKING && defined(ETH_ARPBACK)
 
+#include "eth.h"
 #include "crc32.h"
 #include "eth_packetmaker.h"
 #define LOG_THIS bx_devices.pluginNE2kDevice->
@@ -48,10 +49,8 @@
 //static const Bit8u external_mac[]={0xB0, 0xC4, 0x20, 0x20, 0x00, 0x00, 0x00};
 //static const Bit8u internal_mac[]={0xB0, 0xC4, 0x20, 0x00, 0x00, 0x00, 0x00};
 //static const Bit8u external_ip[]={ 192, 168, 0, 2, 0x00 };
-//static const Bit8u broadcast_mac[]={0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00};
 //static const Bit8u ethtype_arp[]={0x08, 0x06, 0x00};
 
-#define MAX_FRAME_SIZE 2048
 
 //
 //  Define the class. This is private to this module
@@ -85,8 +84,8 @@ public:
 protected:
   eth_pktmover_c *allocate(const char *netif, const char *macaddr,
 			   eth_rx_handler_t rxh,
-			   void *rxarg) {
-    return (new bx_arpback_pktmover_c(netif, macaddr, rxh, rxarg));
+			   void *rxarg, char *script) {
+    return (new bx_arpback_pktmover_c(netif, macaddr, rxh, rxarg, script));
   }
 } bx_arpback_match;
 
@@ -99,7 +98,8 @@ protected:
 bx_arpback_pktmover_c::bx_arpback_pktmover_c(const char *netif, 
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
-				       void *rxarg)
+				       void *rxarg,
+				       char *script)
 {
   this->rx_timer_index = 
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
@@ -129,7 +129,7 @@ bx_arpback_pktmover_c::bx_arpback_pktmover_c(const char *netif,
 void
 bx_arpback_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
-  if(io_len<MAX_FRAME_SIZE) {
+  if(io_len<BX_PACKET_BUFSIZE) {
     eth_packet barney;
     memcpy(barney.buf,buf,io_len);
     barney.len=io_len;
@@ -137,7 +137,7 @@ bx_arpback_pktmover_c::sendpkt(void *buf, unsigned io_len)
       packetmaker.sendpacket(barney);
     }
     /*
-    if(( (!memcmp(buf, external_mac, 6)) || (!memcmp(buf, broadcast_mac, 6)) )
+    if(( (!memcmp(buf, external_mac, 6)) || (!memcmp(buf, broadcast_macaddr, 6)) )
        && (!memcmp(((Bit8u *)buf)+12, ethtype_arp, 2)) ) {
       Bit32u tempcrc;
       memcpy(arpbuf,buf,io_len); //move to temporary buffer
@@ -159,11 +159,11 @@ bx_arpback_pktmover_c::sendpkt(void *buf, unsigned io_len)
   // dump raw bytes to a file, eventually dump in pcap format so that
   // tcpdump -r FILE can interpret them for us.
   int n = fwrite (buf, io_len, 1, txlog);
-  if (n != 1) BX_ERROR (("fwrite to txlog failed", io_len));
+  if (n != 1) BX_ERROR (("fwrite to txlog failed, length %u", io_len));
   // dump packet in hex into an ascii log file
   fprintf (txlog_txt, "NE2K transmitting a packet, length %u\n", io_len);
   Bit8u *charbuf = (Bit8u *)buf;
-  for (n=0; n<io_len; n++) {
+  for (n=0; n<(int)io_len; n++) {
     if (((n % 16) == 0) && n>0)
       fprintf (txlog_txt, "\n");
     fprintf (txlog_txt, "%02x ", charbuf[n]);
@@ -187,8 +187,8 @@ void bx_arpback_pktmover_c::rx_timer_handler (void * this_ptr)
 
 void bx_arpback_pktmover_c::rx_timer (void)
 {
-  int nbytes = 0;
-  struct bpf_hdr *bhdr;
+//int nbytes = 0;
+//struct bpf_hdr *bhdr;
   eth_packet rubble;
   
   if(packetmaker.getpacket(rubble)) {
@@ -210,5 +210,4 @@ void bx_arpback_pktmover_c::rx_timer (void)
   }
 }
 
-#endif /* if BX_NE2K_SUPPORT && defined(ETH_ARPBACK) */
-
+#endif /* if BX_NETWORKING && defined(ETH_ARPBACK) */

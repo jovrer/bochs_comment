@@ -1,6 +1,6 @@
 /*
  * misc/bximage.c
- * $Id: bxcommit.c,v 1.5 2003/10/02 10:22:46 bdenney Exp $
+ * $Id: bxcommit.c,v 1.9 2005/01/19 18:21:39 sshwarts Exp $
  *
  * Commits a redolog file in a flat file for bochs images.
  *
@@ -11,6 +11,8 @@
 #include <fcntl.h>
 #ifndef _MSC_VER
 #include <unistd.h>
+#else
+#include <io.h>
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,23 +21,39 @@
 #include <assert.h>
 #ifdef WIN32
 #  include <conio.h>
-#ifndef __MINGW32__
-#  define snprintf _snprintf
-#endif
 #endif
 #include "config.h"
 
 #include <string.h>
 
+#if !BX_HAVE_SNPRINTF
+#include <stdarg.h>
+/* XXX use real snprintf */
+/* if they don't have snprintf, just use sprintf */
+int snprintf (char *s, size_t maxlen, const char *format, ...)
+{
+  va_list arg;
+  int done;
+
+  va_start (arg, format);
+  done = vsprintf (s, format, arg);
+  va_end (arg);
+
+  return done;
+}
+#endif  /* !BX_HAVE_SNPRINTF */
+
 #define uint8   Bit8u
 #define uint16  Bit16u
 #define uint32  Bit32u
+
+#include "../osdep.h"
 
 #define INCLUDE_ONLY_HD_HEADERS 1
 #include "../iodev/harddrv.h"
 
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bxcommit.c,v 1.5 2003/10/02 10:22:46 bdenney Exp $";
+char *rcsid = "$Id: bxcommit.c,v 1.9 2005/01/19 18:21:39 sshwarts Exp $";
 char *divider = "========================================================================";
 
 void myexit (int code)
@@ -246,13 +264,13 @@ int commit_redolog (char *flatname, char *redologname )
 
   printf ("\nChecking redolog header: [");
 
-  if (strcmp(header.standard.magic, STANDARD_HEADER_MAGIC) != 0)
+  if (strcmp((char *)header.standard.magic, STANDARD_HEADER_MAGIC) != 0)
      fatal ("\nERROR: bad magic in redolog header!");
 
-  if (strcmp(header.standard.type, REDOLOG_TYPE) != 0)
+  if (strcmp((char *)header.standard.type, REDOLOG_TYPE) != 0)
      fatal ("\nERROR: bad type in redolog header!");
 
-  if (strcmp(header.standard.subtype, REDOLOG_SUBTYPE_UNDOABLE) != 0)
+  if (strcmp((char *)header.standard.subtype, REDOLOG_SUBTYPE_UNDOABLE) != 0)
      fatal ("\nERROR: bad subtype in redolog header!");
 
   if (header.standard.version != htod32(STANDARD_HEADER_VERSION))
@@ -270,7 +288,7 @@ int commit_redolog (char *flatname, char *redologname )
   lseek(redologfd, dtoh32(header.standard.header), SEEK_SET);
 
   catalog_size = dtoh32(header.specific.catalog) * sizeof(Bit32u);
-  if (read(redologfd, catalog, catalog_size)!= catalog_size)
+  if ((Bit32u) read(redologfd, catalog, catalog_size) != catalog_size)
      fatal ("\nERROR: while reading redolog catalog!");
 
   printf ("] Done.");
@@ -297,7 +315,7 @@ int commit_redolog (char *flatname, char *redologname )
                   lseek(redologfd, bitmap_offset, SEEK_SET);
 
                   bitmap_size = dtoh32(header.specific.bitmap);
-                  if (read(redologfd, bitmap, bitmap_size) != bitmap_size)
+                  if ((Bit32u) read(redologfd, bitmap, bitmap_size) != bitmap_size)
                           fatal ("\nERROR: while reading bitmap from redolog !");
 
                   for(j=0; j<dtoh32(header.specific.bitmap); j++)
@@ -345,8 +363,6 @@ int main()
   char redologname[256];
   int  remove;
 
-  int (*commit_function)(FILE*, Bit64u)=NULL;
- 
   print_banner ();
   filename[0] = 0;
   redologname[0] = 0;

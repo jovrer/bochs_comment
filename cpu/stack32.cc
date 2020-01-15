@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack32.cc,v 1.17 2003/03/17 00:41:01 cbothamy Exp $
+// $Id: stack32.cc,v 1.27 2005/05/20 20:06:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,17 +25,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
-#if BX_USE_CPU_SMF
-#define this (BX_CPU(0))
-#endif
-
 
 #if BX_SUPPORT_X86_64==0
 // Make life easier for merging 64&32-bit code.
@@ -43,9 +35,7 @@
 #endif
 
 
-
-  void
-BX_CPU_C::POP_Ed(bxInstruction_c *i)
+void BX_CPU_C::POP_Ed(bxInstruction_c *i)
 {
   Bit32u val32;
 
@@ -53,7 +43,7 @@ BX_CPU_C::POP_Ed(bxInstruction_c *i)
 
   if (i->modC0()) {
     BX_WRITE_32BIT_REGZ(i->rm(), val32);
-    }
+  }
   else {
     // Note: there is one little weirdism here.  When 32bit addressing
     // is used, it is possible to use ESP in the modrm addressing.
@@ -62,150 +52,163 @@ BX_CPU_C::POP_Ed(bxInstruction_c *i)
     if (i->as32L() && (!i->modC0()) && (i->rm()==4) && (i->sibBase()==4)) {
       // call method on BX_CPU_C object
       BX_CPU_CALL_METHODR (i->ResolveModrm, (i));
-      }
-    write_virtual_dword(i->seg(), RMAddr(i), &val32);
     }
+    write_virtual_dword(i->seg(), RMAddr(i), &val32);
+  }
 }
 
-  void
-BX_CPU_C::PUSH_ERX(bxInstruction_c *i)
+void BX_CPU_C::PUSH_ERX(bxInstruction_c *i)
 {
   push_32(BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].dword.erx);
 }
 
-  void
-BX_CPU_C::POP_ERX(bxInstruction_c *i)
+void BX_CPU_C::POP_ERX(bxInstruction_c *i)
 {
   Bit32u erx;
-
   pop_32(&erx);
   BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].dword.erx = erx;
 }
 
-
-  void
-BX_CPU_C::PUSH_CS(bxInstruction_c *i)
+void BX_CPU_C::PUSH_CS(bxInstruction_c *i)
 {
-  if (i->os32L())
-    push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
+  if (i->os32L()) {
+    Bit32u eSP;
+    decrementESPForPush(4, &eSP);
+    write_virtual_word(BX_SEG_REG_SS, eSP,
+                       &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
+  }
   else
     push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
 }
-  void
-BX_CPU_C::PUSH_DS(bxInstruction_c *i)
+
+void BX_CPU_C::PUSH_DS(bxInstruction_c *i)
 {
-  if (i->os32L())
-    push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value);
+  if (i->os32L()) {
+    Bit32u eSP;
+    decrementESPForPush(4, &eSP);
+    write_virtual_word(BX_SEG_REG_SS, eSP,
+                       &BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value);
+  }
   else
     push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value);
 }
-  void
-BX_CPU_C::PUSH_ES(bxInstruction_c *i)
+
+void BX_CPU_C::PUSH_ES(bxInstruction_c *i)
 {
-  if (i->os32L())
-    push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value);
+  if (i->os32L()) {
+    Bit32u eSP;
+    decrementESPForPush(4, &eSP);
+    write_virtual_word(BX_SEG_REG_SS, eSP,
+                       &BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value);
+  }
   else
     push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value);
 }
-  void
-BX_CPU_C::PUSH_FS(bxInstruction_c *i)
+
+void BX_CPU_C::PUSH_FS(bxInstruction_c *i)
 {
-BailBigRSP("push_fs");
-  if (i->os32L())
-    push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value);
+  if (i->os32L()) {
+    Bit32u eSP;
+    decrementESPForPush(4, &eSP);
+    write_virtual_word(BX_SEG_REG_SS, eSP,
+                       &BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value);
+  }
   else
     push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value);
 }
-  void
-BX_CPU_C::PUSH_GS(bxInstruction_c *i)
+
+void BX_CPU_C::PUSH_GS(bxInstruction_c *i)
 {
-BailBigRSP("push_gs");
-  if (i->os32L())
-    push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value);
+  if (i->os32L()) {
+    Bit32u eSP;
+    decrementESPForPush(4, &eSP);
+    write_virtual_word(BX_SEG_REG_SS, eSP,
+                       &BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value);
+  }
   else
     push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value);
 }
-  void
-BX_CPU_C::PUSH_SS(bxInstruction_c *i)
+
+void BX_CPU_C::PUSH_SS(bxInstruction_c *i)
 {
-  if (i->os32L())
-    push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value);
+  if (i->os32L()) {
+    Bit32u eSP;
+    decrementESPForPush(4, &eSP);
+    write_virtual_word(BX_SEG_REG_SS, eSP,
+                       &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value);
+  }
   else
     push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value);
 }
 
-
-  void
-BX_CPU_C::POP_DS(bxInstruction_c *i)
+void BX_CPU_C::POP_DS(bxInstruction_c *i)
 {
   if (i->os32L()) {
     Bit32u ds;
     pop_32(&ds);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS], (Bit16u) ds);
-    }
+  }
   else {
     Bit16u ds;
     pop_16(&ds);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS], ds);
-    }
+  }
 }
-  void
-BX_CPU_C::POP_ES(bxInstruction_c *i)
+
+void BX_CPU_C::POP_ES(bxInstruction_c *i)
 {
   if (i->os32L()) {
     Bit32u es;
     pop_32(&es);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES], (Bit16u) es);
-    }
+  }
   else {
     Bit16u es;
     pop_16(&es);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES], es);
-    }
+  }
 }
-  void
-BX_CPU_C::POP_FS(bxInstruction_c *i)
+
+void BX_CPU_C::POP_FS(bxInstruction_c *i)
 {
-BailBigRSP("pop_fs");
   if (i->os32L()) {
     Bit32u fs;
     pop_32(&fs);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], (Bit16u) fs);
-    }
+  }
   else {
     Bit16u fs;
     pop_16(&fs);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], fs);
-    }
+  }
 }
-  void
-BX_CPU_C::POP_GS(bxInstruction_c *i)
+
+void BX_CPU_C::POP_GS(bxInstruction_c *i)
 {
-BailBigRSP("pop_gs");
   if (i->os32L()) {
     Bit32u gs;
     pop_32(&gs);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], (Bit16u) gs);
-    }
+  }
   else {
     Bit16u gs;
     pop_16(&gs);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], gs);
-    }
+  }
 }
-  void
-BX_CPU_C::POP_SS(bxInstruction_c *i)
+
+void BX_CPU_C::POP_SS(bxInstruction_c *i)
 {
   if (i->os32L()) {
     Bit32u ss;
     pop_32(&ss);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], (Bit16u) ss);
-    }
+  }
   else {
     Bit16u ss;
     pop_16(&ss);
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], ss);
-    }
+  }
 
   // POP SS inhibits interrupts, debug exceptions and single-step
   // trap exceptions until the execution boundary following the
@@ -216,12 +219,11 @@ BX_CPU_C::POP_SS(bxInstruction_c *i)
   BX_CPU_THIS_PTR async_event = 1;
 }
 
-
-  void
-BX_CPU_C::PUSHAD32(bxInstruction_c *i)
+void BX_CPU_C::PUSHAD32(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL < 2
-  BX_PANIC(("PUSHAD: not supported on an 8086"));
+  BX_INFO(("PUSHAD: not supported on an 8086"));
+  UndefinedOpcode(i);
 #else
   Bit32u temp_ESP;
   Bit32u esp;
@@ -231,163 +233,117 @@ BX_CPU_C::PUSHAD32(bxInstruction_c *i)
   else
     temp_ESP = SP;
 
-
-    if (protected_mode()) {
-      if ( !can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, temp_ESP, 32) ) {
-        BX_PANIC(("PUSHAD(): stack doesn't have enough room!"));
+  if (protected_mode()) {
+    if (! can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, temp_ESP, 32)) {
+        BX_ERROR(("PUSHAD(): stack doesn't have enough room!"));
         exception(BX_SS_EXCEPTION, 0, 0);
         return;
-        }
-      }
-    else {
-      if (temp_ESP < 32)
-        BX_PANIC(("pushad: eSP < 32"));
-      }
-
-    esp = ESP;
-
-    /* ??? optimize this by using virtual write, all checks passed */
-    push_32(EAX);
-    push_32(ECX);
-    push_32(EDX);
-    push_32(EBX);
-    push_32(esp);
-    push_32(EBP);
-    push_32(ESI);
-    push_32(EDI);
-#endif
-}
-
-  void
-BX_CPU_C::POPAD32(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL < 2
-  BX_PANIC(("POPAD not supported on an 8086"));
-#else /* 286+ */
-    Bit32u edi, esi, ebp, etmp, ebx, edx, ecx, eax;
-
-    if (protected_mode()) {
-      if ( !can_pop(32) ) {
-        BX_PANIC(("pop_ad: not enough bytes on stack"));
-        exception(BX_SS_EXCEPTION, 0, 0);
-        return;
-        }
-      }
-
-    /* ??? optimize this */
-    pop_32(&edi);
-    pop_32(&esi);
-    pop_32(&ebp);
-    pop_32(&etmp); /* value for ESP discarded */
-    pop_32(&ebx);
-    pop_32(&edx);
-    pop_32(&ecx);
-    pop_32(&eax);
-
-    EDI = edi;
-    ESI = esi;
-    EBP = ebp;
-    EBX = ebx;
-    EDX = edx;
-    ECX = ecx;
-    EAX = eax;
-#endif
-}
-
-  void
-BX_CPU_C::PUSH_Id(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL < 2
-  BX_PANIC(("PUSH_Iv: not supported on 8086!"));
-#else
-
-    Bit32u imm32;
-
-    imm32 = i->Id();
-
-    push_32(imm32);
-#endif
-}
-
-  void
-BX_CPU_C::PUSH_Ed(bxInstruction_c *i)
-{
-    Bit32u op1_32;
-
-    /* op1_32 is a register or memory reference */
-    if (i->modC0()) {
-      op1_32 = BX_READ_32BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
-      }
-
-    push_32(op1_32);
-}
-
-
-  void
-BX_CPU_C::ENTER_IwIb(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL < 2
-  BX_PANIC(("ENTER_IwIb: not supported by 8086!"));
-#else
-  Bit32u frame_ptr32;
-  Bit16u frame_ptr16;
-  Bit8u level;
-  static Bit8u first_time = 1;
-
-  level = i->Ib2();
-
-  invalidate_prefetch_q();
-
-  level %= 32;
-/* ??? */
-  if (first_time && level>0) {
-    BX_ERROR(("enter() with level > 0. The emulation of this instruction may not be complete.  This warning will be printed only once per bochs run."));
-    first_time = 0;
-  }
-//if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b && i->os32L()==0) {
-//  BX_INFO(("enter(): stacksize!=opsize: I'm unsure of the code for this"));
-//  BX_PANIC(("         The Intel manuals are a mess on this one!"));
-//  }
-
-  if ( protected_mode() ) {
-    Bit32u bytes_to_push, temp_ESP;
-
-    if (level == 0) {
-      if (i->os32L())
-        bytes_to_push = 4 + i->Iw();
-      else
-        bytes_to_push = 2 + i->Iw();
-      }
-    else { /* level > 0 */
-      if (i->os32L())
-        bytes_to_push = 4 + (level-1)*4 + 4 + i->Iw();
-      else
-        bytes_to_push = 2 + (level-1)*2 + 2 + i->Iw();
-      }
-    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-      temp_ESP = ESP;
-    else
-      temp_ESP = SP;
-    if ( !can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, temp_ESP, bytes_to_push) ) {
-      BX_PANIC(("ENTER: not enough room on stack!"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-      }
     }
+  }
+  else {
+    if (temp_ESP < 32)
+      BX_PANIC(("pushad: eSP < 32"));
+  }
+
+  esp = ESP;
+
+  /* ??? optimize this by using virtual write, all checks passed */
+  push_32(EAX);
+  push_32(ECX);
+  push_32(EDX);
+  push_32(EBX);
+  push_32(esp);
+  push_32(EBP);
+  push_32(ESI);
+  push_32(EDI);
+#endif
+}
+
+void BX_CPU_C::POPAD32(bxInstruction_c *i)
+{
+#if BX_CPU_LEVEL < 2
+  BX_INFO(("POPAD: not supported on an 8086"));
+  UndefinedOpcode(i);
+#else
+  Bit32u edi, esi, ebp, etmp, ebx, edx, ecx, eax;
+
+  if (protected_mode()) {
+    if ( !can_pop(32) ) {
+      BX_ERROR(("POPAD: not enough bytes on stack"));
+      exception(BX_SS_EXCEPTION, 0, 0);
+      return;
+    }
+  }
+
+  /* ??? optimize this */
+  pop_32(&edi);
+  pop_32(&esi);
+  pop_32(&ebp);
+  pop_32(&etmp); /* value for ESP discarded */
+  pop_32(&ebx);
+  pop_32(&edx);
+  pop_32(&ecx);
+  pop_32(&eax);
+
+  EDI = edi;
+  ESI = esi;
+  EBP = ebp;
+  EBX = ebx;
+  EDX = edx;
+  ECX = ecx;
+  EAX = eax;
+#endif
+}
+
+void BX_CPU_C::PUSH_Id(bxInstruction_c *i)
+{
+  push_32(i->Id());
+}
+
+void BX_CPU_C::PUSH_Ed(bxInstruction_c *i)
+{
+  Bit32u op1_32;
+
+  /* op1_32 is a register or memory reference */
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
+  }
+
+  push_32(op1_32);
+}
+
+void BX_CPU_C::ENTER_IwIb(bxInstruction_c *i)
+{
+#if BX_CPU_LEVEL < 2
+  BX_INFO(("ENTER_IwIb: not supported by 8086!"));
+  UndefinedOpcode(i);
+#else
+
+  unsigned ss32 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b;
+
+  Bit16u imm16 = i->Iw();
+  Bit8u level = i->Ib2();
+  level &= 0x1F;
+
+  Bit32u ebp; // Use temp copy in case of exception.
 
   if (i->os32L())
     push_32(EBP);
   else
     push_16(BP);
 
-  // can just do frame_ptr32 = ESP for either case ???
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-    frame_ptr32 = ESP;
-  else
-    frame_ptr32 = SP;
+  Bit32u frame_ptr32 = ESP;
+
+  if (ss32) {
+    ebp = EBP;
+  }
+  else {
+    ebp = BP;
+  }
 
   if (level > 0) {
     /* do level-1 times */
@@ -395,86 +351,60 @@ BX_CPU_C::ENTER_IwIb(bxInstruction_c *i)
       if (i->os32L()) {
         Bit32u temp32;
 
-        if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* 32bit stacksize */
-          EBP -= 4;
-          read_virtual_dword(BX_SEG_REG_SS, EBP, &temp32);
-          ESP -= 4;
-          write_virtual_dword(BX_SEG_REG_SS, ESP, &temp32);
-          }
-        else { /* 16bit stacksize */
-          BP -= 4;
-          read_virtual_dword(BX_SEG_REG_SS, BP, &temp32);
-          SP -= 4;
-          write_virtual_dword(BX_SEG_REG_SS, SP, &temp32);
-          }
+        if (ss32) {
+          ebp -= 4;
+          read_virtual_dword(BX_SEG_REG_SS, ebp, &temp32);
         }
+        else { /* 16bit stacksize */
+          ebp -= 4; ebp &= 0xffff;
+          read_virtual_dword(BX_SEG_REG_SS, ebp, &temp32);
+        }
+        push_32(temp32);
+      }
       else { /* 16bit opsize */
         Bit16u temp16;
 
-        if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* 32bit stacksize */
-          EBP -= 2;
-          read_virtual_word(BX_SEG_REG_SS, EBP, &temp16);
-          ESP -= 2;
-          write_virtual_word(BX_SEG_REG_SS, ESP, &temp16);
-          }
+        if (ss32) {
+          ebp -= 2;
+          read_virtual_word(BX_SEG_REG_SS, ebp, &temp16);
+        }
         else { /* 16bit stacksize */
-          BP -= 2;
-          read_virtual_word(BX_SEG_REG_SS, BP, &temp16);
-          SP -= 2;
-          write_virtual_word(BX_SEG_REG_SS, SP, &temp16);
-          }
+          ebp -= 2; ebp &= 0xffff;
+          read_virtual_word(BX_SEG_REG_SS, ebp, &temp16);
+        }
+        push_16(temp16);
         }
       } /* while (--level) */
 
     /* push(frame pointer) */
     if (i->os32L()) {
-      if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* 32bit stacksize */
-        ESP -= 4;
-        write_virtual_dword(BX_SEG_REG_SS, ESP, &frame_ptr32);
-        }
-      else {
-        SP -= 4;
-        write_virtual_dword(BX_SEG_REG_SS, SP, &frame_ptr32);
-        }
-      }
+      push_32(frame_ptr32);
+    }
     else { /* 16bit opsize */
-      if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* 32bit stacksize */
-        frame_ptr16 = frame_ptr32;
-        ESP -= 2;
-        write_virtual_word(BX_SEG_REG_SS, ESP, &frame_ptr16);
-        }
-      else {
-        frame_ptr16 = frame_ptr32;
-        SP -= 2;
-        write_virtual_word(BX_SEG_REG_SS, SP, &frame_ptr16);
-        }
-      }
-    } /* if (level > 0) ... */
+      push_16((Bit16u)frame_ptr32);
+    }
+  } /* if (level > 0) ... */
 
-  if (i->os32L())
+  if (ss32) {
     RBP = frame_ptr32;
-  else
-    BP = frame_ptr32;
-
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* 32bit stacksize */
-    ESP = ESP - i->Iw();
-    }
-  else { /* 16bit stack */
-    SP = SP - i->Iw();
-    }
+    ESP -= imm16;
+  }
+  else {
+    BP = (Bit16u) frame_ptr32;
+    SP -= imm16;
+  }
 #endif
 }
 
-  void
-BX_CPU_C::LEAVE(bxInstruction_c *i)
+void BX_CPU_C::LEAVE(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL < 2
-  BX_PANIC(("LEAVE: not supported by 8086!"));
+  BX_INFO(("LEAVE: not supported by 8086!"));
+  UndefinedOpcode(i);
 #else
   Bit32u temp_EBP;
 
-
-  invalidate_prefetch_q();
+//invalidate_prefetch_q();
 
 #if BX_CPU_LEVEL >= 3
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
@@ -488,18 +418,15 @@ BX_CPU_C::LEAVE(bxInstruction_c *i)
       if (temp_EBP <= BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled) {
         BX_PANIC(("LEAVE: BP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].limit"));
         exception(BX_SS_EXCEPTION, 0, 0);
-        return;
-        }
       }
+    }
     else { /* normal */
       if (temp_EBP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled) {
         BX_PANIC(("LEAVE: BP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].limit"));
         exception(BX_SS_EXCEPTION, 0, 0);
-        return;
-        }
       }
     }
-
+  }
 
   // delete frame
 #if BX_CPU_LEVEL >= 3
@@ -513,17 +440,15 @@ BX_CPU_C::LEAVE(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 3
   if (i->os32L()) {
     Bit32u temp32;
-
     pop_32(&temp32);
     RBP = temp32;
-    }
+  }
   else
 #endif
-    {
+  {
     Bit16u temp16;
-
     pop_16(&temp16);
     BP = temp16;
-    }
+  }
 #endif
 }

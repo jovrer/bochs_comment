@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.cc,v 1.29 2003/07/31 19:51:42 vruppert Exp $
+// $Id: pci.cc,v 1.37 2004/08/06 15:49:54 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -33,8 +33,8 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#include "bochs.h"
-#if BX_PCI_SUPPORT
+#include "iodev.h"
+#if BX_SUPPORT_PCI
 
 #define LOG_THIS thePciBridge->
 
@@ -84,6 +84,11 @@ bx_pci_c::init(void)
     BX_PCI_THIS pci_handler_id[i] = BX_MAX_PCI_DEVICES;  // not assigned
   }
 
+  for (i=0; i < BX_N_PCI_SLOTS; i++) {
+    BX_PCI_THIS slot_used[i] = 0;  // no device connected
+  }
+  BX_PCI_THIS slots_checked = 0;
+
   // confAddr accepts dword i/o only
   DEV_register_ioread_handler(this, read_handler, 0x0CF8, "i440FX", 4);
   DEV_register_iowrite_handler(this, write_handler, 0x0CF8, "i440FX", 4);
@@ -95,8 +100,9 @@ bx_pci_c::init(void)
     DEV_register_iowrite_handler(this, write_handler, i, "i440FX", 7);
   }
 
+  Bit8u devfunc = BX_PCI_DEVICE(0,0);
   DEV_register_pci_handlers(this, pci_read_handler, pci_write_handler,
-                            BX_PCI_DEVICE(0,0), "440FX Host bridge");
+                            &devfunc, BX_PLUGIN_PCI, "440FX Host bridge");
 
   for (i=0; i<256; i++)
     BX_PCI_THIS s.i440fx.pci_conf[i] = 0x0;
@@ -111,6 +117,17 @@ bx_pci_c::init(void)
   void
 bx_pci_c::reset(unsigned type)
 {
+  unsigned i;
+
+  if (!BX_PCI_THIS slots_checked) {
+    for (i=0; i<BX_N_PCI_SLOTS; i++) {
+      if (bx_options.pcislot[i].Oused->get() && !BX_PCI_THIS slot_used[i]) {
+        BX_PANIC(("Unknown plugin '%s' at PCI slot #%d", bx_options.pcislot[i].Odevname->getptr(), i+1));
+      }
+    }
+    BX_PCI_THIS slots_checked = 1;
+  }
+
   BX_PCI_THIS s.i440fx.confAddr = 0;
   BX_PCI_THIS s.i440fx.confData = 0;
 
@@ -129,7 +146,7 @@ bx_pci_c::reset(unsigned type)
   BX_PCI_THIS s.i440fx.pci_conf[0x56] = 0x00;
   BX_PCI_THIS s.i440fx.pci_conf[0x57] = 0x01;
   BX_PCI_THIS s.i440fx.pci_conf[0x58] = 0x10;
-  for (unsigned i=0x59; i<0x60; i++)
+  for (i=0x59; i<0x60; i++)
     BX_PCI_THIS s.i440fx.pci_conf[i] = 0x00;
 }
 
@@ -310,6 +327,8 @@ bx_pci_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
 
   Bit8u value8;
 
+  if ((address >= 0x10) && (address < 0x34))
+    return;
   if (io_len <= 4) {
     for (unsigned i=0; i<io_len; i++) {
       value8 = (value >> (i*8)) & 0xFF;
@@ -439,13 +458,28 @@ bx_pci_c::print_i440fx_state()
 
   bx_bool
 bx_pci_c::register_pci_handlers( void *this_ptr, bx_pci_read_handler_t f1,
-                                 bx_pci_write_handler_t f2, Bit8u devfunc,
-                                 const char *name)
+                                 bx_pci_write_handler_t f2, Bit8u *devfunc,
+                                 const char *name, const char *descr)
 {
-  unsigned handle;
+  unsigned i, handle;
 
-  /* first check if device/function is available */
-  if (BX_PCI_THIS pci_handler_id[devfunc] == BX_MAX_PCI_DEVICES) {
+  if (strcmp(name, "pci") && strcmp(name, "pci2isa") && strcmp(name, "pci_ide")
+      && (*devfunc == 0x00)) {
+    for (i = 0; i < BX_N_PCI_SLOTS; i++) {
+      if (bx_options.pcislot[i].Oused->get() &&
+          !strcmp(name, bx_options.pcislot[i].Odevname->getptr())) {
+        *devfunc = (i + 2) << 3;
+        BX_PCI_THIS slot_used[i] = 1;
+        BX_INFO(("PCI slot #%d used by plugin '%s'", i+1, name));
+        break;
+      }
+    }
+    if (*devfunc == 0x00) {
+      BX_ERROR(("Plugin '%s' not connected to a PCI slot", name));
+    }
+  }
+  /* check if device/function is available */
+  if (BX_PCI_THIS pci_handler_id[*devfunc] == BX_MAX_PCI_DEVICES) {
     if (BX_PCI_THIS num_pci_handles >= BX_MAX_PCI_DEVICES) {
       BX_INFO(("too many PCI devices installed."));
       BX_PANIC(("  try increasing BX_MAX_PCI_DEVICES"));
@@ -455,13 +489,83 @@ bx_pci_c::register_pci_handlers( void *this_ptr, bx_pci_read_handler_t f1,
     BX_PCI_THIS pci_handler[handle].read  = f1;
     BX_PCI_THIS pci_handler[handle].write = f2;
     BX_PCI_THIS pci_handler[handle].this_ptr = this_ptr;
-    BX_PCI_THIS pci_handler_id[devfunc] = handle;
-    BX_INFO(("%s present at device %d, function %d", name, devfunc >> 3,
-             devfunc & 0x07));
+    BX_PCI_THIS pci_handler_id[*devfunc] = handle;
+    BX_INFO(("%s present at device %d, function %d", descr, *devfunc >> 3,
+             *devfunc & 0x07));
     return true; // device/function mapped successfully
     }
   else {
     return false; // device/function not available, return false.
     }
 }
-#endif /* BX_PCI_SUPPORT */
+
+
+  bx_bool
+bx_pci_c::is_pci_device(const char *name)
+{
+  unsigned i;
+
+  for (i = 0; i < BX_N_PCI_SLOTS; i++) {
+    if (bx_options.pcislot[i].Oused->get() &&
+        !strcmp(name, bx_options.pcislot[i].Odevname->getptr())) {
+      return 1;
+    }
+  }
+  return 0;
+}
+
+  void
+bx_pci_c::pci_set_base_mem(void *this_ptr, memory_handler_t f1, memory_handler_t f2,
+                           Bit32u *addr, Bit8u *pci_conf, unsigned size)
+{
+  Bit32u baseaddr = *addr;
+  if (baseaddr > 0) {
+    DEV_unregister_memory_handlers(f1, f2, baseaddr, baseaddr + size - 1);
+  }
+  Bit32u mask = ~(size - 1);
+  pci_conf[0x00] &= (mask & 0xf0);
+  pci_conf[0x01] &= (mask >> 8) & 0xff;
+  pci_conf[0x02] &= (mask >> 16) & 0xff;
+  pci_conf[0x03] &= (mask >> 24) & 0xff;
+  ReadHostDWordFromLittleEndian(pci_conf, baseaddr);
+  if (baseaddr > 0) {
+    DEV_register_memory_handlers(f1, this_ptr, f2, this_ptr, baseaddr, baseaddr + size - 1);
+  }
+  *addr = baseaddr;
+}
+
+  void
+bx_pci_c::pci_set_base_io(void *this_ptr, bx_read_handler_t f1, bx_write_handler_t f2,
+                          Bit32u *addr, Bit8u *pci_conf, unsigned size,
+                          const Bit8u *iomask, const char *name)
+{
+  unsigned i;
+
+  Bit32u baseaddr = *addr;
+  if (baseaddr > 0) {
+    for (i=0; i<size; i++) {
+      if (iomask[i] > 0) {
+        DEV_unregister_ioread_handler(this_ptr, f1, baseaddr + i, iomask[i]);
+        DEV_unregister_iowrite_handler(this_ptr, f2, baseaddr + i, iomask[i]);
+      }
+    }
+  }
+  Bit16u mask = ~(size - 1);
+  pci_conf[0x00] &= (mask & 0xfe);
+  pci_conf[0x01] &= (mask >> 8);
+  pci_conf[0x02] = 0x00;
+  pci_conf[0x03] = 0x00;
+  ReadHostDWordFromLittleEndian(pci_conf, baseaddr);
+  pci_conf[0x00] |= 0x01;
+  if (baseaddr > 0) {
+    for (i=0; i<size; i++) {
+      if (iomask[i] > 0) {
+        DEV_register_ioread_handler(this_ptr, f1, baseaddr + i, name, iomask[i]);
+        DEV_register_iowrite_handler(this_ptr, f2, baseaddr + i, name, iomask[i]);
+      }
+    }
+  }
+  *addr = baseaddr;
+}
+
+#endif /* BX_SUPPORT_PCI */

@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: mmx.cc,v 1.45 2005/05/12 18:07:42 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -17,6 +19,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -80,13 +83,6 @@ Bit16u BX_CPP_AttrRegparmN(1) SaturateDwordSToWordU(Bit32s value)
   return value;
 }
 
-#if BX_SUPPORT_SSE >= 1
-static Bit16u SelectMmxWord(BxPackedMmxRegister mmx, unsigned index)
-{
-  return (MMXUQ(mmx) >> ((index & 0x3) * 16)) & 0xffff;
-}
-#endif
-
 void BX_CPU_C::print_state_MMX(void)
 {
   for(int i=0;i<8;i++) {
@@ -110,8 +106,7 @@ void BX_CPU_C::prepareMMX(void)
 void BX_CPU_C::prepareFPU2MMX(void)
 {
   /* check floating point status word for a pending FPU exceptions */
-  if(FPU_PARTIAL_STATUS & FPU_SW_SUMMARY)
-    exception(BX_MF_EXCEPTION, 0, 0);
+  FPU_check_pending_exceptions();
 
   FPU_TAG_WORD = 0;
   FPU_TOS = 0;        /* reset FPU Top-Of-Stack */
@@ -578,10 +573,10 @@ void BX_CPU_C::PSHUFW_PqQqIb(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  MMXUW0(result) = SelectMmxWord(op, order);
-  MMXUW1(result) = SelectMmxWord(op, order >> 2);
-  MMXUW2(result) = SelectMmxWord(op, order >> 4);
-  MMXUW3(result) = SelectMmxWord(op, order >> 6);
+  MMXUW0(result) = op.mmx16u((order)    & 0x3);
+  MMXUW1(result) = op.mmx16u((order>>2) & 0x3);
+  MMXUW2(result) = op.mmx16u((order>>4) & 0x3);
+  MMXUW3(result) = op.mmx16u((order>>6) & 0x3);
 
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
@@ -771,22 +766,7 @@ void BX_CPU_C::PINSRW_PqEdIb(bxInstruction_c *i)
     read_virtual_word(i->seg(), RMAddr(i), &op2);
   }
 
-  Bit8u count = i->Ib() & 0x3;
-
-  switch(count) {
-    case 0:
-      MMXUW0(op1) = op2;
-      break;
-    case 1:
-      MMXUW1(op1) = op2;
-      break;
-    case 2:
-      MMXUW2(op1) = op2;
-      break;
-    case 3:
-      MMXUW3(op1) = op2;
-      break;
-  }
+  op1.xmm16u(i->Ib() & 0x3) = op2;
 
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), op1);
@@ -803,8 +783,7 @@ void BX_CPU_C::PEXTRW_PqEdIb(bxInstruction_c *i)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op = BX_READ_MMX_REG(i->rm());
-  Bit8u count = i->Ib() & 0x3;
-  Bit32u result = (Bit32u) SelectMmxWord(op, count);
+  Bit32u result = (Bit32u) op.mmx16u(i->Ib() & 0x3);
 
   BX_WRITE_32BIT_REG(i->nnn(), result);
 #else

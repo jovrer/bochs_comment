@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer8.cc,v 1.14 2003/02/13 15:04:00 sshwarts Exp $
+// $Id: ctrl_xfer8.cc,v 1.19 2005/05/20 20:06:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,7 +31,6 @@
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
-
 #if BX_SUPPORT_X86_64==0
 // Make life a little easier for the 64/32-bit merge.
 #define RCX ECX
@@ -39,23 +38,24 @@
 #endif
 
 
-  void
-BX_CPU_C::JCXZ_Jb(bxInstruction_c *i)
+void BX_CPU_C::JCXZ_Jb(bxInstruction_c *i)
 {
-BailBigRSP("JCXZ_Jb");
+#if BX_SUPPORT_X86_64
   if (i->as64L()) {
     if ( RCX == 0 ) {
       RIP += (Bit32s) i->Id();
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
     }
-  else {
+#endif
+  }
+  else
+#endif
+  {
     Bit32u temp_ECX;
 
     if (i->as32L())
@@ -64,53 +64,38 @@ BailBigRSP("JCXZ_Jb");
       temp_ECX = CX;
 
     if ( temp_ECX == 0 ) {
-      Bit32u new_EIP;
-
-      new_EIP = EIP + (Bit32s) i->Id();
-      if (i->os32L()==0)
-        new_EIP &= 0x0000ffff;
-#if BX_CPU_LEVEL >= 2
-      if (protected_mode()) {
-        if ( new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled ) {
-          BX_PANIC(("jcxz_jb: offset outside of CS limits"));
-          exception(BX_GP_EXCEPTION, 0, 0);
-          }
-        }
-#endif
-      EIP = new_EIP;
+      Bit32u new_EIP = EIP + (Bit32s) i->Id();
+      if (i->os32L()==0) new_EIP &= 0x0000ffff;
+      branch_near32(new_EIP);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
-      revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
+    }
 #endif
   }
 }
 
-
-
-  void
-BX_CPU_C::LOOPNE_Jb(bxInstruction_c *i)
+void BX_CPU_C::LOOPNE_Jb(bxInstruction_c *i)
 {
-BailBigRSP("loopne_jb");
+#if BX_SUPPORT_X86_64
   if (i->as64L()) {
-
     if ( ((--RCX)!=0) && (get_ZF()==0) ) {
-
       RIP += (Bit32s) i->Id();
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
     }
-  else {
-    Bit32u count, new_EIP;
+#endif
+  }
+  else
+#endif
+  {
+    Bit32u count;
 
 #if BX_CPU_LEVEL >= 3
     if (i->as32L())
@@ -121,24 +106,15 @@ BailBigRSP("loopne_jb");
 
     count--;
     if ( (count!=0) && (get_ZF()==0) ) {
-
-      new_EIP = EIP + (Bit32s) i->Id();
-      if (i->os32L()==0)
-        new_EIP &= 0x0000ffff;
-      if (protected_mode()) {
-        if (new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-          BX_PANIC(("loopne_jb: offset outside of CS limits"));
-          exception(BX_GP_EXCEPTION, 0, 0);
-          }
-        }
-      EIP = new_EIP;
+      Bit32u new_EIP = EIP + (Bit32s) i->Id();
+      if (i->os32L()==0) new_EIP &= 0x0000ffff;
+      branch_near32(new_EIP);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
-      revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
+    }
 #endif
 
     if (i->as32L())
@@ -148,26 +124,25 @@ BailBigRSP("loopne_jb");
     }
 }
 
-  void
-BX_CPU_C::LOOPE_Jb(bxInstruction_c *i)
+void BX_CPU_C::LOOPE_Jb(bxInstruction_c *i)
 {
-BailBigRSP("loope_jb");
+#if BX_SUPPORT_X86_64
   if (i->as64L()) {
-
     if ( ((--RCX)!=0) && (get_ZF()) ) {
-
       RIP += (Bit32s) i->Id();
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
     }
-  else {
-    Bit32u count, new_EIP;
+#endif
+  }
+  else
+#endif
+ {
+    Bit32u count;
 
 #if BX_CPU_LEVEL >= 3
     if (i->as32L())
@@ -178,53 +153,43 @@ BailBigRSP("loope_jb");
 
     count--;
     if ( (count!=0) && get_ZF()) {
-
-      new_EIP = EIP + (Bit32s) i->Id();
-      if (i->os32L()==0)
-        new_EIP &= 0x0000ffff;
-      if (protected_mode()) {
-        if (new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-          BX_PANIC(("loope_jb: offset outside of CS limits"));
-          exception(BX_GP_EXCEPTION, 0, 0);
-          }
-        }
-      EIP = new_EIP;
+      Bit32u new_EIP = EIP + (Bit32s) i->Id();
+      if (i->os32L()==0) new_EIP &= 0x0000ffff;
+      branch_near32(new_EIP);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
-      revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
+    }
 #endif
 
     if (i->as32L())
       RCX = ECX - 1;   // zero extend
     else
       CX--;
-    }
+  }
 }
 
-  void
-BX_CPU_C::LOOP_Jb(bxInstruction_c *i)
+void BX_CPU_C::LOOP_Jb(bxInstruction_c *i)
 {
-BailBigRSP("loop_jb");
+#if BX_SUPPORT_X86_64
   if (i->as64L()) {
-
     if ( ((--RCX)!=0) ) {
-
       RIP += (Bit32s) i->Id();
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
     }
-  else {
-    Bit32u count, new_EIP;
+#endif
+  }
+  else
+#endif
+  {
+    Bit32u count;
 
 #if BX_CPU_LEVEL >= 3
     if (i->as32L())
@@ -235,29 +200,20 @@ BailBigRSP("loop_jb");
 
     count--;
     if (count != 0) {
-
-      new_EIP = EIP + (Bit32s) i->Id();
-      if (i->os32L()==0)
-        new_EIP &= 0x0000ffff;
-      if (protected_mode()) {
-        if (new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-          BX_PANIC(("loop_jb: offset outside of CS limits"));
-          exception(BX_GP_EXCEPTION, 0, 0);
-          }
-        }
-      EIP = new_EIP;
+      Bit32u new_EIP = EIP + (Bit32s) i->Id();
+      if (i->os32L()==0) new_EIP &= 0x0000ffff;
+      branch_near32(new_EIP);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
-      revalidate_prefetch_q();
-      }
+    }
 #if BX_INSTRUMENTATION
     else {
       BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
+    }
 #endif
 
     if (i->as32L())
       RCX = ECX - 1;         // zero extend
     else
       CX--;
-    }
+  }
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_win32.cc,v 1.17 2003/06/07 19:16:54 vruppert Exp $
+// $Id: eth_win32.cc,v 1.24 2004/10/07 17:38:03 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -41,8 +41,10 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#include "bochs.h"
-#if BX_NE2K_SUPPORT
+#include "iodev.h"
+#if BX_NETWORKING && defined(ETH_WIN32)
+
+#include "eth.h"
 
 // windows.h included by bochs.h
 #define LOG_THIS bx_devices.pluginNE2kDevice->
@@ -205,7 +207,7 @@ static const struct bpf_insn macfilter[] = {
 class bx_win32_pktmover_c : public eth_pktmover_c {
 public:
   bx_win32_pktmover_c(const char *netif, const char *macaddr, 
-	  eth_rx_handler_t rxh, void *rxarg);
+	  eth_rx_handler_t rxh, void *rxarg, char *script);
   void sendpkt(void *buf, unsigned io_len);
 private: 
   struct bpf_insn filter[8];
@@ -221,8 +223,10 @@ class bx_win32_locator_c : public eth_locator_c {
 public:
   bx_win32_locator_c(void) : eth_locator_c("win32") {}
 protected:
-  eth_pktmover_c *allocate(const char *netif, const char *macaddr, eth_rx_handler_t rxh, void *rxarg) {
-    return (new bx_win32_pktmover_c(netif, macaddr, rxh, rxarg));
+  eth_pktmover_c *allocate(const char *netif, const char *macaddr,
+                           eth_rx_handler_t rxh,
+                           void *rxarg, char *script) {
+    return (new bx_win32_pktmover_c(netif, macaddr, rxh, rxarg, script));
   }
 } bx_win32_match;
 
@@ -234,7 +238,8 @@ protected:
 bx_win32_pktmover_c::bx_win32_pktmover_c(const char *netif, 
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
-				       void *rxarg)
+				       void *rxarg,
+				       char *script)
 {
      // Open Packet Driver Here.
      DWORD dwVersion;
@@ -330,7 +335,6 @@ void bx_win32_pktmover_c::rx_timer_handler (void *this_ptr)
 	unsigned int   iOffset = 0;
 	struct bpf_hdr *hdr;
 	int pktlen;
-	static unsigned char bcast_addr[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
 	PacketInitPacket(pkRecv, (char *)buffer, 256000);
     //fprintf(stderr, "[ETH-WIN32] poll packet\n");
     if (WaitForSingleObject(lpAdapter->ReadEvent,0) == WAIT_OBJECT_0 || IsNT) {
@@ -343,7 +347,7 @@ void bx_win32_pktmover_c::rx_timer_handler (void *this_ptr)
 			pPacket = (unsigned char *)(pBuf + iOffset + hdr->bh_hdrlen);
 			if (memcmp(pPacket + 6, cMacAddr, 6) != 0) // src field != ours
 			{
-				if(memcmp(pPacket, cMacAddr, 6) == 0 || memcmp(pPacket, bcast_addr, 6) == 0)
+				if(memcmp(pPacket, cMacAddr, 6) == 0 || memcmp(pPacket, broadcast_macaddr, 6) == 0)
 				{
 					//fprintf(stderr, "[ETH-WIN32] RX packet: size=%i, dst=%2.2x:%2.2x:%2.2x:%2.2x:%2.2x:%2.2x, src=%2.2x:%2.2x:%2.2x:%2.2x:%2.2x:%2.2x\n", hdr->bh_caplen, pPacket[0], pPacket[1], pPacket[2], pPacket[3], pPacket[4], pPacket[5], pPacket[6], pPacket[7], pPacket[8], pPacket[9], pPacket[10], pPacket[11]);
 	                pktlen = hdr->bh_caplen;
@@ -356,4 +360,4 @@ void bx_win32_pktmover_c::rx_timer_handler (void *this_ptr)
     }
 }
 
-#endif /* if BX_NE2K_SUPPORT */
+#endif /* if BX_NETWORKING && defined ETH_WIN32 */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.103.2.2 2004/02/02 22:39:22 cbothamy Exp $
+// $Id: rombios.c,v 1.138 2005/05/07 15:55:26 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -104,12 +104,8 @@
 //     - f02/03/04 should set current cyl,etc in BDA  (?)
 //     - rewrite int13_relocated & clean up int13 entry code
 //
-//   int1a:
-//     - f03/f05 are not complete - just CLC for now (?)
-//
 //   NOTES:
 //   - NMI access (bit7 of addr written to 70h)
-//   - timer ISR should deal with floppy counter and turn floppy motor off
 //
 //   ATA driver
 //   - should handle the "don't detect" bit (cmos regs 0x3b & 0x3c)
@@ -124,10 +120,6 @@
 //   - Fix all "FIXME ElTorito Various"
 //   - should be able to boot any cdrom instead of the first one
 //
-//   Boot
-//   - the bios should try to boot from different devices. 
-//     Use cmos regs 0x3d & high nibble of 0x38 to store up to 3 boot devices from 16
-//
 //   BCC Bug: find a generic way to handle the bug of #asm after an "if"  (fixed in 0.16.7)
 
 #define DEBUG_ROMBIOS      0
@@ -141,13 +133,16 @@
 #define DEBUG_INT16        0
 #define DEBUG_INT1A        0
 #define DEBUG_INT74        0
+#define DEBUG_APM          0
 
 #define BX_CPU           3
 #define BX_USE_PS2_MOUSE 1
 #define BX_CALL_INT15_4F 1
 #define BX_USE_EBDA      1
 #define BX_SUPPORT_FLOPPY 1
+#define BX_FLOPPY_ON_CNT 37   /* 2 seconds */
 #define BX_PCIBIOS       1
+#define BX_APM           1
 
 #define BX_USE_ATADRV    1
 #define BX_ELTORITO_BOOT 1
@@ -155,11 +150,18 @@
 #define BX_MAX_ATA_INTERFACES   4
 #define BX_MAX_ATA_DEVICES      (BX_MAX_ATA_INTERFACES*2)
 
+#define BX_VIRTUAL_PORTS 1 /* normal output to Bochs ports */
+#define BX_DEBUG_SERIAL  0 /* output to COM1 */
+
    /* model byte 0xFC = AT */
 #define SYS_MODEL_ID     0xFC
 #define SYS_SUBMODEL_ID  0x00
 #define BIOS_REVISION    1
 #define BIOS_CONFIG_TABLE 0xe6f5
+
+#ifndef BIOS_BUILD_DATE
+#  define BIOS_BUILD_DATE "06/23/99"
+#endif
 
   // 1K of base memory used for Extended Bios Data Area (EBDA)
   // EBDA is used for PS/2 mouse support, and IDE BIOS, etc.
@@ -187,7 +189,14 @@
 #if BX_PCIBIOS && BX_CPU<3
 #    error PCI BIOS can only be used with 386+ cpu
 #endif
+#if BX_APM && BX_CPU<3
+#    error APM BIOS can only be used with 386+ cpu
+#endif
 
+#ifndef BX_SMP_PROCESSORS
+#define BX_SMP_PROCESSORS 1
+#    warning BX_SMP_PROCESSORS not defined, defaulting to 1
+#endif
   
 #define PANIC_PORT  0x400
 #define PANIC_PORT2 0x401
@@ -196,6 +205,7 @@
 
 // #20  is dec 20
 // #$20 is hex 20 = 32
+// #0x20 is hex 20 = 32
 // LDA  #$20
 // JSR  $E820
 // LDD  .i,S
@@ -228,20 +238,15 @@ MACRO HALT
   ;; to print a BX_PANIC message.  This will normally halt the simulation
   ;; with a message such as "BIOS panic at rombios.c, line 4091".
   ;; However, users can choose to make panics non-fatal and continue.
+#if BX_VIRTUAL_PORTS
   mov dx,#PANIC_PORT
   mov ax,#?1
   out dx,ax
-MEND
-
-MACRO HALT2
-  ;; the HALT macro is called with the line number of the HALT call.
-  ;; The line number is then sent to the PANIC_PORT, causing Bochs/Plex
-  ;; to print a BX_PANIC message.  This will normally halt the simulation
-  ;; with a message such as "BIOS panic at rombios.c, line 4091".
-  ;; However, users can choose to make panics non-fatal and continue.
-  mov dx,#PANIC_PORT2
+#else
+  mov dx,#0x80
   mov ax,#?1
-  out dx,ax
+  out dx,al
+#endif
 MEND
 
 MACRO JMP_AP
@@ -874,6 +879,7 @@ static Bit32u         int19_function();
 static void           int1a_function();
 static void           int70_function();
 static void           int74_function();
+static Bit16u         get_CS();
 //static Bit16u         get_DS();
 //static void           set_DS();
 static Bit16u         get_SS();
@@ -928,10 +934,10 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.103.2.2 $";
-static char bios_date_string[] = "$Date: 2004/02/02 22:39:22 $";
+static char bios_cvs_version_string[] = "$Revision: 1.138 $";
+static char bios_date_string[] = "$Date: 2005/05/07 15:55:26 $";
 
-static char CVSID[] = "$Id: rombios.c,v 1.103.2.2 2004/02/02 22:39:22 cbothamy Exp $";
+static char CVSID[] = "$Id: rombios.c,v 1.138 2005/05/07 15:55:26 vruppert Exp $";
 
 /* Offset to skip the CVS $Id: prefix */ 
 #define bios_version_string  (CVSID + 4)
@@ -957,47 +963,47 @@ static char CVSID[] = "$Id: rombios.c,v 1.103.2.2 2004/02/02 22:39:22 cbothamy E
 #define BX_PANIC(format, p...)  bios_printf(BIOS_PRINTF_DEBHALT, format, ##p)
 
 #if DEBUG_ATA
-#  define BX_DEBUG_ATA(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_ATA(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_ATA(a...)
 #endif
 #if DEBUG_INT13_HD
-#  define BX_DEBUG_INT13_HD(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT13_HD(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT13_HD(a...)
 #endif
 #if DEBUG_INT13_CD
-#  define BX_DEBUG_INT13_CD(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT13_CD(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT13_CD(a...)
 #endif
 #if DEBUG_INT13_ET
-#  define BX_DEBUG_INT13_ET(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT13_ET(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT13_ET(a...)
 #endif
 #if DEBUG_INT13_FL
-#  define BX_DEBUG_INT13_FL(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT13_FL(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT13_FL(a...)
 #endif
 #if DEBUG_INT15
-#  define BX_DEBUG_INT15(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT15(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT15(a...)
 #endif
 #if DEBUG_INT16
-#  define BX_DEBUG_INT16(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT16(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT16(a...)
 #endif
 #if DEBUG_INT1A
-#  define BX_DEBUG_INT1A(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT1A(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT1A(a...)
 #endif
 #if DEBUG_INT74
-#  define BX_DEBUG_INT74(a...) BX_DEBUG(##a)
+#  define BX_DEBUG_INT74(a...) BX_DEBUG(a)
 #else
 #  define BX_DEBUG_INT74(a...)
 #endif
@@ -1020,6 +1026,8 @@ static char CVSID[] = "$Id: rombios.c,v 1.103.2.2 2004/02/02 22:39:22 cbothamy E
 #define GET_CH() ( CX >> 8 )
 #define GET_DH() ( DX >> 8 )
 
+#define GET_ELDL() ( ELDX & 0x00ff )
+#define GET_ELDH() ( ELDX >> 8 )
 
 #define SET_CF()     FLAGS |= 0x0001
 #define CLEAR_CF()   FLAGS &= 0xfffe
@@ -1162,7 +1170,6 @@ ASM_START
 ASM_END
 }
 #endif
-
 
   void
 outb(port, val)
@@ -1372,6 +1379,14 @@ ASM_START
 ASM_END
 }
 
+  Bit16u
+get_CS()
+{
+ASM_START
+  mov  ax, cs
+ASM_END
+}
+
 //  Bit16u
 //get_DS()
 //{
@@ -1405,6 +1420,56 @@ ASM_START
 ASM_END
 }
 
+#if BX_DEBUG_SERIAL
+/* serial debug port*/
+#define BX_DEBUG_PORT 0x03f8
+
+/* data */
+#define UART_RBR 0x00
+#define UART_THR 0x00
+
+/* control */
+#define UART_IER 0x01
+#define UART_IIR 0x02
+#define UART_FCR 0x02
+#define UART_LCR 0x03
+#define UART_MCR 0x04
+#define UART_DLL 0x00
+#define UART_DLM 0x01
+
+/* status */
+#define UART_LSR 0x05
+#define UART_MSR 0x06
+#define UART_SCR 0x07
+
+int uart_can_tx_byte(base_port)
+    Bit16u base_port;
+{
+    return inb(base_port + UART_LSR) & 0x20;
+}
+
+void uart_wait_to_tx_byte(base_port)
+    Bit16u base_port;
+{
+    while (!uart_can_tx_byte(base_port));
+}
+
+void uart_wait_until_sent(base_port)
+    Bit16u base_port;
+{
+    while (!(inb(base_port + UART_LSR) & 0x40));
+}
+
+void uart_tx_byte(base_port, data)
+    Bit16u base_port;
+    Bit8u data;
+{
+    uart_wait_to_tx_byte(base_port);
+    outb(base_port + UART_THR, data);
+    uart_wait_until_sent(base_port);
+}
+#endif
+
   void
 wrch(c)
   Bit8u  c;
@@ -1414,10 +1479,10 @@ wrch(c)
   mov  bp, sp
 
   push bx
-  mov  ah, #$0e
+  mov  ah, #0x0e
   mov  al, 4[bp]
   xor  bx,bx
-  int  #$10
+  int  #0x10
   pop  bx
 
   pop  bp
@@ -1429,12 +1494,18 @@ send(action, c)
   Bit16u action;
   Bit8u  c;
 {
+#if BX_DEBUG_SERIAL
+  if (c == '\n') uart_tx_byte(BX_DEBUG_PORT, '\r');
+  uart_tx_byte(BX_DEBUG_PORT, c);
+#endif
+#if BX_VIRTUAL_PORTS
   if (action & BIOS_PRINTF_DEBUG) outb(DEBUG_PORT, c);
   if (action & BIOS_PRINTF_INFO) outb(INFO_PORT, c);
+#endif
   if (action & BIOS_PRINTF_SCREEN) {
     if (c == '\n') wrch('\r');
     wrch(c);
-    }
+  }
 }
 
   void
@@ -1497,10 +1568,13 @@ bios_printf(action, s)
   format_width = 0;
 
   if ((action & BIOS_PRINTF_DEBHALT) == BIOS_PRINTF_DEBHALT) {
-    bios_printf (BIOS_PRINTF_ALL, "FATAL: ");
+#if BX_VIRTUAL_PORTS
+    outb(PANIC_PORT2, 0x00);
+#endif
+    bios_printf (BIOS_PRINTF_SCREEN, "FATAL: ");
   }
 
-  while (c = read_byte(0xf000, s)) {
+  while (c = read_byte(get_CS(), s)) {
     if ( c == '%' ) {
       in_format = 1;
       format_width = 0;
@@ -1547,15 +1621,12 @@ bios_printf(action, s)
     }
 
   if (action & BIOS_PRINTF_HALT) {
-    // freeze in a busy loop.  If I do a HLT instruction, then in versions
-    // 1.3.pre1 and earlier, it will panic without ever updating the VGA
-    // display, so the panic message will not be visible.  By waiting
-    // forever, you are certain to see the panic message on screen.
-    // After a few more versions have passed, we can turn this back into
-    // a halt or something.
-    // do {} while (1);
+    // freeze in a busy loop.  
 ASM_START
-    HALT2(__LINE__)
+    cli
+ halt2_loop:
+    hlt
+    jmp halt2_loop
 ASM_END
     }
 }
@@ -1746,11 +1817,6 @@ shutdown_status_panic(status)
 void
 print_bios_banner()
 {
-  /* test formats
-  bios_printf(BIOS_PRINTF_SCREEN, "Test: x234=%3x, d-123=%d, c=%c, s=%s\n",
-      0x1234, -123, '!', "ok");
-  */
-
   printf(BX_APPNAME" BIOS, %d cpu%s, ", BX_SMP_PROCESSORS, BX_SMP_PROCESSORS>1?"s":"");
   printf("%s %s\n", bios_cvs_version_string, bios_date_string);
   printf("\n");
@@ -1785,14 +1851,15 @@ print_boot_device(cdboot, drive)
 //   displays the reason why boot failed
 //--------------------------------------------------------------------------
   void
-print_boot_failure(cdboot, drive, reason)
-  Bit8u cdboot; Bit8u drive;
+print_boot_failure(cdboot, drive, reason, lastdrive)
+  Bit8u cdboot; Bit8u drive; Bit8u lastdrive;
 {
   Bit16u drivenum = drive&0x7f;
 
   // cdboot: 1 if boot from cd, 0 otherwise
   // drive : drive number
   // reason: 0 signature check failed, 1 read error
+  // lastdrive: 1 boot drive is the last one in boot sequence
  
   if (cdboot)
     bios_printf(BIOS_PRINTF_INFO | BIOS_PRINTF_SCREEN, "Boot from %s failed\n",drivetypes[2]);
@@ -1801,10 +1868,12 @@ print_boot_failure(cdboot, drive, reason)
   else
     bios_printf(BIOS_PRINTF_INFO | BIOS_PRINTF_SCREEN, "Boot from %s %d failed\n", drivetypes[0],drivenum);
 
-  if (reason==0)
-    BX_PANIC("Not a bootable disk\n");
-  else
-    BX_PANIC("Could not read the boot disk\n");
+  if (lastdrive==1) {
+    if (reason==0)
+      BX_PANIC("Not a bootable disk\n");
+    else
+      BX_PANIC("Could not read the boot disk\n");
+  }
 }
 
 //--------------------------------------------------------------------------
@@ -1823,12 +1892,21 @@ print_cdromboot_failure( code )
 void
 nmi_handler_msg()
 {
-  BX_INFO("NMI Handler called\n");
+  BX_PANIC("NMI Handler called\n");
+}
+
+void
+int18_panic_msg()
+{
+  BX_PANIC("INT18: BOOT FAILURE\n");
 }
 
 void
 log_bios_start()
 {
+#if BX_DEBUG_SERIAL
+  outb(BX_DEBUG_PORT+UART_LCR, 0x03); /* setup for serial logging: 8N1 */
+#endif
   BX_INFO("%s\n", bios_version_string);
 }
 
@@ -2258,6 +2336,7 @@ void ata_detect( )
       type      = read_byte(get_SS(),buffer+1) & 0x1f;
       removable = (read_byte(get_SS(),buffer+0) & 0x80) ? 1 : 0;
       mode      = read_byte(get_SS(),buffer+96) ? ATA_MODE_PIO32 : ATA_MODE_PIO16;
+      blksize   = 2048;
 
       write_byte(ebda_seg,&EbdaData->ata.devices[device].device, type);
       write_byte(ebda_seg,&EbdaData->ata.devices[device].removable, removable);
@@ -2723,7 +2802,7 @@ Bit32u length;
 
   // Data out is not supported yet
   if (inout == ATA_DATA_OUT) {
-    BX_INFO("ata_cmd_packet: DATA_OUT not supported yet");
+    BX_INFO("ata_cmd_packet: DATA_OUT not supported yet\n");
     return 1;
     }
 
@@ -2897,8 +2976,11 @@ ata_packet_in_before_16:
         jmp  ata_packet_no_before
 
 ata_packet_in_before_32:
+        push eax
+ata_packet_in_before_32_loop:
         in   eax, dx
-        loop ata_packet_in_before_32
+        loop ata_packet_in_before_32_loop
+        pop  eax
 
 ata_packet_no_before:
         mov  cx, _ata_cmd_packet.lcount + 2[bp] 
@@ -2935,8 +3017,11 @@ ata_packet_in_after_16:
         jmp  ata_packet_done
 
 ata_packet_in_after_32:
+        push eax
+ata_packet_in_after_32_loop:
         in   eax, dx
-        loop ata_packet_in_after_32
+        loop ata_packet_in_after_32_loop
+        pop  eax
 
 ata_packet_done:
         pop  bp
@@ -3151,10 +3236,6 @@ cdrom_boot()
   else
     write_byte(ebda_seg,&EbdaData->cdemu.emulated_drive,0x80);
 
-  // FIXME ElTorito Harddisk. current code can only emulate a floppy
-  //if(read_byte(ebda_seg,&EbdaData->cdemu.emulated_drive)!=0x00)
-  //  BX_PANIC("El-Torito: Cannot boot as a harddisk yet\n");
-
   write_byte(ebda_seg,&EbdaData->cdemu.controller_index,device/2);
   write_byte(ebda_seg,&EbdaData->cdemu.device_spec,device%2);
 
@@ -3242,7 +3323,7 @@ int14_function(regs, ds, iret_addr)
   sti
   ASM_END
 
-  addr = read_word(0x0040, 2 * regs.u.r16.dx);
+  addr = read_word(0x0040, (regs.u.r16.dx << 1));
   timeout = read_byte(0x0040, 0x007C + regs.u.r16.dx);
   if ((regs.u.r16.dx < 4) && (addr > 0)) {
     switch (regs.u.r8.ah) {
@@ -3307,30 +3388,49 @@ int14_function(regs, ds, iret_addr)
 
   void
 int15_function(regs, ES, DS, FLAGS)
-  pushad_regs_t regs; // REGS pushed via pushad
+  pusha_regs_t regs; // REGS pushed via pusha
   Bit16u ES, DS, FLAGS;
 {
   Bit16u ebda_seg=read_word(0x0040,0x000E);
-  Bit8u  mouse_flags_1, mouse_flags_2;
-  Bit16u mouse_driver_seg;
-  Bit16u mouse_driver_offset;
-  Bit8u  response, prev_command_byte;
   bx_bool prev_a20_enable;
   Bit16u  base15_00;
   Bit8u   base23_16;
   Bit16u  ss;
-  Bit8u   ret, mouse_data1, mouse_data2, mouse_data3;
-  Bit8u   comm_byte, mf2_state;
-  Bit32u  extended_memory_size=0; // 64bits long
   Bit16u  CX,DX;
+
+  Bit16u bRegister;
+  Bit8u irqDisable;
 
 BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
 
   switch (regs.u.r8.ah) {
     case 0x24: /* A20 Control */
-      BX_INFO("int15: Func 24h, subfunc %02xh, A20 gate control not supported\n", (unsigned) regs.u.r8.al);
-      SET_CF();
-      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+      switch (regs.u.r8.al) {
+        case 0x00:
+          set_enable_a20(0);
+          CLEAR_CF();
+          regs.u.r8.ah = 0;
+          break;
+        case 0x01:
+          set_enable_a20(1);
+          CLEAR_CF();
+          regs.u.r8.ah = 0;
+          break;
+        case 0x02:
+          regs.u.r8.al = (inb(0x92) >> 1) & 0x01;
+          CLEAR_CF();
+          regs.u.r8.ah = 0;
+          break;
+        case 0x03:
+          CLEAR_CF();
+          regs.u.r8.ah = 0;
+          regs.u.r16.bx = 3;
+          break;
+        default:
+          BX_INFO("int15: Func 24h, subfunc %02xh, A20 gate control not supported\n", (unsigned) regs.u.r8.al);
+          SET_CF();
+          regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+      }
       break;
 
     case 0x41:
@@ -3353,46 +3453,42 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
       regs.u.r8.ah = 0;  // "ok ejection may proceed"
       break;
 
-    case 0x86:
-      // Wait for CX:DX microseconds. currently using the 
-      // refresh request port 0x61 bit4, toggling every 15usec 
-
-      CX = regs.u.r16.cx;
-      DX = regs.u.r16.dx;
-
-ASM_START
-      sti
-
-      ;; Get the count in eax
-      mov  bx, sp
-      SEG SS
-        mov  ax, _int15_function.CX [bx]
-      shl  eax, #16
-      SEG SS
-        mov  ax, _int15_function.DX [bx]
-
-      ;; convert to numbers of 15usec ticks
-      mov ebx, #15
-      xor edx, edx
-      div eax, ebx
-      mov ecx, eax
-
-      ;; wait for ecx number of refresh requests
-      in al, #0x61
-      and al,#0x10
-      mov ah, al
-
-int1586_tick:
-      in al, #0x61
-      and al,#0x10
-      cmp al, ah
-      je  int1586_tick
-      mov ah, al
-      dec ecx
-      jnz int1586_tick
-ASM_END
+    case 0x83: {
+      if( regs.u.r8.al == 0 ) {
+        // Set Interval requested.
+        if( ( read_byte( 0x40, 0xA0 ) & 1 ) == 0 ) {
+          // Interval not already set.
+          write_byte( 0x40, 0xA0, 1 );  // Set status byte.
+          write_word( 0x40, 0x98, ES ); // Byte location, segment
+          write_word( 0x40, 0x9A, regs.u.r16.bx ); // Byte location, offset
+          write_word( 0x40, 0x9C, regs.u.r16.dx ); // Low word, delay
+          write_word( 0x40, 0x9E, regs.u.r16.cx ); // High word, delay.
+          CLEAR_CF( );
+          irqDisable = inb( 0xA1 );
+          outb( 0xA1, irqDisable & 0xFE );
+          bRegister = inb_cmos( 0xB );  // Unmask IRQ8 so INT70 will get through.
+          outb_cmos( 0xB, bRegister | 0x40 ); // Turn on the Periodic Interrupt timer
+        } else {
+          // Interval already set.
+          BX_DEBUG_INT15("int15: Func 83h, failed, already waiting.\n" );
+          SET_CF();
+          regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+        }
+      } else if( regs.u.r8.al == 1 ) {
+        // Clear Interval requested
+        write_byte( 0x40, 0xA0, 0 );  // Clear status byte
+        CLEAR_CF( );
+        bRegister = inb_cmos( 0xB );
+        outb_cmos( 0xB, bRegister & ~0x40 );  // Turn off the Periodic Interrupt timer
+      } else {
+        BX_DEBUG_INT15("int15: Func 83h, failed.\n" );
+        SET_CF();
+        regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+        regs.u.r8.al--;
+      }
 
       break;
+    }
 
     case 0x87:
 #if BX_CPU < 3
@@ -3466,7 +3562,8 @@ ASM_START
 
       // since we need to set SS:SP, save them to the BDA
       // for future restore
-      xor ax, ax
+      push eax
+      xor eax, eax
       mov ds, ax
       mov 0x0469, ss
       mov 0x0467, sp
@@ -3478,8 +3575,8 @@ ASM_START
       ;;  perhaps do something with IDT here
 
       ;; set PE bit in CR0
-      xor  eax, eax
-      mov  al, #0x01
+      mov  eax, cr0
+      or   al, #0x01
       mov  cr0, eax
       ;; far jump to flush CPU queue after transition to protected mode
       JMP_AP(0x0020, protected_mode)
@@ -3503,9 +3600,10 @@ protected_mode:
       mov ds, ax
       mov es, ax
 
-      ;; clear CR3 and reset PG bit in CR0 ???
-      xor  eax, eax
-      mov cr0, eax
+      ;; reset PG bit in CR0 ???
+      mov  eax, cr0
+      and  al, #0xFE
+      mov  cr0, eax
 
       ;; far jump to flush CPU queue after transition to real mode
       JMP_AP(0xf000, real_mode)
@@ -3520,6 +3618,7 @@ real_mode:
       mov ds, ax
       mov ss, 0x0469
       mov sp, 0x0467
+      pop eax
 ASM_END
 
       set_enable_a20(prev_a20_enable);
@@ -3534,16 +3633,19 @@ ASM_END
       break;
 
 
-    case 0x88: /* extended memory size */
+    case 0x88:
+      // Get the amount of extended memory (above 1M)
 #if BX_CPU < 2
       regs.u.r8.ah = UNSUPPORTED_FUNCTION;
       SET_CF();
 #else
-      /* ??? change this back later... */
-      /* number of 1K blocks of extended memory, subtract off 1st 1Meg */
-      // AX = bx_mem.get_memory_in_k() - 1024;
       regs.u.r8.al = inb_cmos(0x30);
       regs.u.r8.ah = inb_cmos(0x31);
+
+      // limit to 15M
+      if(regs.u.r16.ax > 0x3c00)
+        regs.u.r16.ax = 0x3c00;
+
       CLEAR_CF();
 #endif
       break;
@@ -3575,15 +3677,41 @@ ASM_END
       break;
 
     case 0xc1:
-#if BX_USE_PS2_MOUSE
-      ES = read_word(0x0040, 0x000E);
+      ES = ebda_seg;
       CLEAR_CF();
-#else
-      SET_CF();
-      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
-#endif
       break;
 
+    case 0xd8:
+      bios_printf(BIOS_PRINTF_DEBUG, "EISA BIOS not present\n");
+      SET_CF();
+      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+      break;
+
+    default:
+      BX_INFO("*** int 15h function AX=%04x, BX=%04x not yet supported!\n",
+        (unsigned) regs.u.r16.ax, (unsigned) regs.u.r16.bx);
+      SET_CF();
+      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+      break;
+    }
+}
+
+#if BX_USE_PS2_MOUSE
+  void
+int15_function_mouse(regs, ES, DS, FLAGS)
+  pusha_regs_t regs; // REGS pushed via pusha
+  Bit16u ES, DS, FLAGS;
+{
+  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit8u  mouse_flags_1, mouse_flags_2;
+  Bit16u mouse_driver_seg;
+  Bit16u mouse_driver_offset;
+  Bit8u  comm_byte, prev_command_byte;
+  Bit8u  ret, mouse_data1, mouse_data2, mouse_data3;
+
+BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
+
+  switch (regs.u.r8.ah) {
     case 0xC2:
       // Return Codes status in AH
       // =========================
@@ -3596,10 +3724,6 @@ ASM_END
       // 05: cannot enable mouse, since no far call has been installed
       // 80/86: mouse service not implemented
 
-#if BX_USE_PS2_MOUSE < 1
-      SET_CF();
-      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
-#else
       switch (regs.u.r8.al) {
         case 0: // Disable/Enable Mouse
 BX_DEBUG_INT15("case 0:\n");
@@ -3659,19 +3783,27 @@ BX_DEBUG_INT15("case 1: enable mouse\n");
         case 5: // Initialize Mouse
 BX_DEBUG_INT15("case 1 or 5:\n");
           if (regs.u.r8.al == 5) {
-            if (regs.u.r8.bh != 3)
-              BX_PANIC("INT 15h C2 AL=5, BH=%02x\n", (unsigned) regs.u.r8.bh);
+            if (regs.u.r8.bh != 3) {
+              SET_CF();
+              regs.u.r8.ah = 0x02; // invalid input
+              return;
+            }
             mouse_flags_2 = read_byte(ebda_seg, 0x0027);
             mouse_flags_2 = (mouse_flags_2 & 0x00) | regs.u.r8.bh;
             mouse_flags_1 = 0x00;
             write_byte(ebda_seg, 0x0026, mouse_flags_1);
             write_byte(ebda_seg, 0x0027, mouse_flags_2);
-            }
+          }
 
           inhibit_mouse_int_and_events(); // disable IRQ12 and packets
-          ret = send_to_mouse_ctrl(0xFF); // disable mouse command
+          ret = send_to_mouse_ctrl(0xFF); // reset mouse command
           if (ret == 0) {
             ret = get_mouse_data(&mouse_data3);
+            // if no mouse attached, it will return RESEND
+            if (mouse_data3 == 0xfe) {
+              SET_CF();
+              return;
+            }
             if (mouse_data3 != 0xfa)
               BX_PANIC("Mouse reset returned %02x (should be ack)\n", (unsigned)mouse_data3);
             if ( ret == 0 ) {
@@ -3699,19 +3831,33 @@ BX_DEBUG_INT15("case 1 or 5:\n");
         case 2: // Set Sample Rate
 BX_DEBUG_INT15("case 2:\n");
           switch (regs.u.r8.bh) {
-            case 0: //  10 reports/sec
-            case 1: //  20 reports/sec
-            case 2: //  40 reports/sec
-            case 3: //  60 reports/sec
-            case 4: //  80 reports/sec
-            case 5: // 100 reports/sec (default)
-            case 6: // 200 reports/sec
+            case 0: mouse_data1 = 10; break; //  10 reports/sec
+            case 1: mouse_data1 = 20; break; //  20 reports/sec
+            case 2: mouse_data1 = 40; break; //  40 reports/sec
+            case 3: mouse_data1 = 60; break; //  60 reports/sec
+            case 4: mouse_data1 = 80; break; //  80 reports/sec
+            case 5: mouse_data1 = 100; break; // 100 reports/sec (default)
+            case 6: mouse_data1 = 200; break; // 200 reports/sec
+            default: mouse_data1 = 0;
+          }
+          if (mouse_data1 > 0) {
+            ret = send_to_mouse_ctrl(0xF3); // set sample rate command
+            if (ret == 0) {
+              ret = get_mouse_data(&mouse_data2);
+              ret = send_to_mouse_ctrl(mouse_data1);
+              ret = get_mouse_data(&mouse_data2);
               CLEAR_CF();
               regs.u.r8.ah = 0;
-              break;
-            default:
-              BX_PANIC("INT 15h C2 AL=2, BH=%02x\n", (unsigned) regs.u.r8.bh);
+            } else {
+              // error
+              SET_CF();
+              regs.u.r8.ah = UNSUPPORTED_FUNCTION;
             }
+          } else {
+            // error
+            SET_CF();
+            regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+          }
           break;
 
         case 3: // Set Resolution
@@ -3727,9 +3873,19 @@ BX_DEBUG_INT15("case 3:\n");
 
         case 4: // Get Device ID
 BX_DEBUG_INT15("case 4:\n");
-          CLEAR_CF();
-          regs.u.r8.ah = 0;
-          regs.u.r8.bh = 0;
+          inhibit_mouse_int_and_events(); // disable IRQ12 and packets
+          ret = send_to_mouse_ctrl(0xF2); // get mouse ID command
+          if (ret == 0) {
+            ret = get_mouse_data(&mouse_data1);
+            ret = get_mouse_data(&mouse_data2);
+            CLEAR_CF();
+            regs.u.r8.ah = 0;
+            regs.u.r8.bh = mouse_data2;
+          } else {
+            // error
+            SET_CF();
+            regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+          }
           break;
 
         case 6: // Return Status & Set Scaling Factor...
@@ -3769,8 +3925,26 @@ BX_DEBUG_INT15("case 6:\n");
               return;
 
             case 1: // Set Scaling Factor to 1:1
-              CLEAR_CF();
-              regs.u.r8.ah = 0;
+            case 2: // Set Scaling Factor to 2:1
+              comm_byte = inhibit_mouse_int_and_events(); // disable IRQ12 and packets
+              if (regs.u.r8.bh == 1) {
+                ret = send_to_mouse_ctrl(0xE6);
+              } else {
+                ret = send_to_mouse_ctrl(0xE7);
+              }
+              if (ret == 0) {
+                get_mouse_data(&mouse_data1);
+                ret = (mouse_data1 != 0xFA);
+              }
+              if (ret == 0) {
+                CLEAR_CF();
+                regs.u.r8.ah = 0;
+              } else {
+                // error
+                SET_CF();
+                regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+              }
+              set_kbd_command_byte(comm_byte); // restore IRQ12 and serial enable
               break;
 
             default:
@@ -3785,7 +3959,17 @@ BX_DEBUG_INT15("case 7:\n");
           write_word(ebda_seg, 0x0022, mouse_driver_offset);
           write_word(ebda_seg, 0x0024, mouse_driver_seg);
           mouse_flags_2 = read_byte(ebda_seg, 0x0027);
-          mouse_flags_2 |= 0x80;
+          if (mouse_driver_offset == 0 && mouse_driver_seg == 0) {
+            /* remove handler */
+            if ( (mouse_flags_2 & 0x80) != 0 ) {
+              mouse_flags_2 &= ~0x80;
+              inhibit_mouse_int_and_events(); // disable IRQ12 and packets
+              }
+            }
+          else {
+            /* install handler */
+            mouse_flags_2 |= 0x80;
+            }
           write_byte(ebda_seg, 0x0027, mouse_flags_2);
           CLEAR_CF();
           regs.u.r8.ah = 0;
@@ -3796,7 +3980,71 @@ BX_DEBUG_INT15("case default:\n");
           regs.u.r8.ah = 1; // invalid function
           SET_CF();
         }
+      break;
+
+    default:
+      BX_INFO("*** int 15h function AX=%04x, BX=%04x not yet supported!\n",
+        (unsigned) regs.u.r16.ax, (unsigned) regs.u.r16.bx);
+      SET_CF();
+      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
+      break;
+    }
+}
 #endif
+
+  void
+int15_function32(regs, ES, DS, FLAGS)
+  pushad_regs_t regs; // REGS pushed via pushad
+  Bit16u ES, DS, FLAGS;
+{
+  Bit32u  extended_memory_size=0; // 64bits long
+  Bit16u  CX,DX;
+
+BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
+
+  switch (regs.u.r8.ah) {
+    case 0x86:
+      // Wait for CX:DX microseconds. currently using the 
+      // refresh request port 0x61 bit4, toggling every 15usec 
+
+      CX = regs.u.r16.cx;
+      DX = regs.u.r16.dx;
+
+ASM_START
+      sti
+
+      ;; Get the count in eax
+      mov  bx, sp
+      SEG SS
+        mov  ax, _int15_function.CX [bx]
+      shl  eax, #16
+      SEG SS
+        mov  ax, _int15_function.DX [bx]
+
+      ;; convert to numbers of 15usec ticks
+      mov ebx, #15
+      xor edx, edx
+      div eax, ebx
+      mov ecx, eax
+
+      ;; wait for ecx number of refresh requests
+      in al, #0x61
+      and al,#0x10
+      mov ah, al
+
+      or ecx, ecx
+      je int1586_tick_end
+int1586_tick:
+      in al, #0x61
+      and al,#0x10
+      cmp al, ah
+      je  int1586_tick
+      mov ah, al
+      dec ecx
+      jnz int1586_tick
+int1586_tick_end:
+ASM_END
+
       break;
 
     case 0xe8:
@@ -3912,7 +4160,6 @@ BX_DEBUG_INT15("case default:\n");
 	  goto int15_unimplemented;
        }
        break;
-
     int15_unimplemented:
        // fall into the default
     default:
@@ -3923,7 +4170,6 @@ BX_DEBUG_INT15("case default:\n");
       break;
     }
 }
-
 
   void
 int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
@@ -3940,7 +4186,8 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
       if ( !dequeue_key(&scan_code, &ascii_code, 1) ) {
         BX_PANIC("KBD: int16h: out of keyboard input\n");
         }
-      if (ascii_code == 0xE0) ascii_code = 0;
+      if (scan_code !=0 && ascii_code == 0xF0) ascii_code = 0;
+      else if (ascii_code == 0xE0) ascii_code = 0;
       AX = (scan_code << 8) | ascii_code;
       break;
 
@@ -3949,7 +4196,8 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
         SET_ZF();
         return;
         }
-      if (ascii_code == 0xE0) ascii_code = 0;
+      if (scan_code !=0 && ascii_code == 0xF0) ascii_code = 0;
+      else if (ascii_code == 0xE0) ascii_code = 0;
       AX = (scan_code << 8) | ascii_code;
       CLEAR_ZF();
       break;
@@ -4009,6 +4257,7 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
       if ( !dequeue_key(&scan_code, &ascii_code, 1) ) {
         BX_PANIC("KBD: int16h: out of keyboard input\n");
         }
+      if (scan_code !=0 && ascii_code == 0xF0) ascii_code = 0;
       AX = (scan_code << 8) | ascii_code;
       break;
 
@@ -4017,6 +4266,7 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
         SET_ZF();
         return;
         }
+      if (scan_code !=0 && ascii_code == 0xF0) ascii_code = 0;
       AX = (scan_code << 8) | ascii_code;
       CLEAR_ZF();
       break;
@@ -4036,6 +4286,10 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
     case 0xA2: /* 122 keys capability check called by DOS 5.0+ keyb */
       // don't change AH : function int16 ah=0x20-0x22 NOT supported
       break;
+
+    case 0x6F:
+      if (GET_AL() == 0x08)
+	SET_AH(0x02); // unsupported, aka normal keyboard
 
     default:
       BX_INFO("KBD: unsupported int 16h function %02x\n", GET_AH());
@@ -4311,7 +4565,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
     default:
       if (scancode & 0x80) return; /* toss key releases ... */
       if (scancode > MAX_SCAN_CODE) {
-        BX_INFO("KBD: int09h_handler(): unknown scancode read!");
+        BX_INFO("KBD: int09h_handler(): unknown scancode read!\n");
         return;
         }
       if (shift_flags & 0x08) { /* ALT */
@@ -4347,7 +4601,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
           }
         }
       if (scancode==0 && asciicode==0) {
-        BX_INFO("KBD: int09h_handler(): scancode & asciicode are zero?");
+        BX_INFO("KBD: int09h_handler(): scancode & asciicode are zero?\n");
         }
       enqueue_key(scancode, asciicode);
       break;
@@ -4413,7 +4667,8 @@ BX_DEBUG_INT74("int74: read byte %02x\n", in_byte);
   mouse_flags_2 = read_byte(ebda_seg, 0x0027);
 
   if ( (mouse_flags_2 & 0x80) != 0x80 ) {
-    BX_PANIC("int74_function:\n");
+      //    BX_PANIC("int74_function:\n");
+      return;
     }
 
   package_count = mouse_flags_2 & 0x07;
@@ -4442,8 +4697,8 @@ BX_DEBUG_INT74("int74_function: make_farcall=1\n");
 #if BX_USE_ATADRV
 
   void
-int13_harddisk(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS;
+int13_harddisk(DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit32u lba;
   Bit16u ebda_seg=read_word(0x0040,0x000E);
@@ -4458,17 +4713,17 @@ int13_harddisk(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
   write_byte(0x0040, 0x008e, 0);  // clear completion flag
 
   // basic check : device has to be defined
-  if ( (GET_DL() < 0x80) || (GET_DL() >= 0x80 + BX_MAX_ATA_DEVICES) ) {
-    BX_INFO("int13_harddisk: function %02x, DL out of range %02x\n", GET_AH(), GET_DL());
+  if ( (GET_ELDL() < 0x80) || (GET_ELDL() >= 0x80 + BX_MAX_ATA_DEVICES) ) {
+    BX_INFO("int13_harddisk: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
 
   // Get the ata channel
-  device=read_byte(ebda_seg,&EbdaData->ata.hdidmap[GET_DL()-0x80]);
+  device=read_byte(ebda_seg,&EbdaData->ata.hdidmap[GET_ELDL()-0x80]);
 
   // basic check : device has to be valid 
   if (device >= BX_MAX_ATA_DEVICES) {
-    BX_INFO("int13_harddisk: function %02x, unmapped device for DL=%02x\n", GET_AH(), GET_DL());
+    BX_INFO("int13_harddisk: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
   
@@ -4837,8 +5092,8 @@ int13_success_noah:
 // ---------------------------------------------------------------------------
 
   void
-int13_cdrom(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS;
+int13_cdrom(EHBX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u EHBX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit16u ebda_seg=read_word(0x0040,0x000E);
   Bit8u  device, status, locks;
@@ -4852,17 +5107,17 @@ int13_cdrom(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
   SET_DISK_RET_STATUS(0x00);
 
   /* basic check : device should be 0xE0+ */
-  if( (GET_DL() < 0xE0) || (GET_DL() >= 0xE0+BX_MAX_ATA_DEVICES) ) {
-    BX_INFO("int13_cdrom: function %02x, DL out of range %02x\n", GET_AH(), GET_DL());
+  if( (GET_ELDL() < 0xE0) || (GET_ELDL() >= 0xE0+BX_MAX_ATA_DEVICES) ) {
+    BX_INFO("int13_cdrom: function %02x, ELDL out of range %02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
 
   // Get the ata channel
-  device=read_byte(ebda_seg,&EbdaData->ata.cdidmap[GET_DL()-0xE0]);
+  device=read_byte(ebda_seg,&EbdaData->ata.cdidmap[GET_ELDL()-0xE0]);
 
   /* basic check : device has to be valid  */
   if (device >= BX_MAX_ATA_DEVICES) {
-    BX_INFO("int13_cdrom: function %02x, unmapped device for DL=%02x\n", GET_AH(), GET_DL());
+    BX_INFO("int13_cdrom: function %02x, unmapped device for ELDL=%02x\n", GET_AH(), GET_ELDL());
     goto int13_fail;
     }
   
@@ -5192,8 +5447,8 @@ int13_success_noah:
 // ---------------------------------------------------------------------------
 
   void
-int13_eltorito(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS;
+int13_eltorito(DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit16u ebda_seg=read_word(0x0040,0x000E);
 
@@ -5262,8 +5517,8 @@ int13_success:
 // ---------------------------------------------------------------------------
 
   void
-int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS;
+int13_cdemu(DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit16u ebda_seg=read_word(0x0040,0x000E);
   Bit8u  device, status;
@@ -5403,8 +5658,14 @@ int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
         case 0x03: SET_BL( 0x06 ); break;
         }
 
-      DI = 0xefc7;
-      ES = 0xf000;
+ASM_START
+      push bp
+      mov  bp, sp
+      mov ax, #diskette_param_table2
+      mov _int13_cdemu.DI+2[bp], ax
+      mov _int13_cdemu.ES+2[bp], cs
+      pop  bp
+ASM_END
       goto int13_success;
       break;
 
@@ -5514,8 +5775,8 @@ ASM_END
 }
 
   void
-int13_harddisk(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS;
+int13_harddisk(DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit8u    drive, num_sectors, sector, head, status, mod;
   Bit8u    drive_map;
@@ -5548,7 +5809,7 @@ int13_harddisk(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
   n_drives = (drive_map==0) ? 0 :
     ((drive_map==3) ? 2 : 1);
 
-  if (!(drive_map & (1<<(GET_DL()&0x7f)))) { /* allow 0, 1, or 2 disks */
+  if (!(drive_map & (1<<(GET_ELDL()&0x7f)))) { /* allow 0, 1, or 2 disks */
     SET_AH(0x01);
     SET_DISK_RET_STATUS(0x01);
     SET_CF(); /* error occurred */
@@ -5582,7 +5843,7 @@ BX_DEBUG_INT13_HD("int13_f01\n");
 
     case 0x04: // verify disk sectors
     case 0x02: // read disk sectors
-      drive = GET_DL();
+      drive = GET_ELDL();
       get_hd_geometry(drive, &hd_cylinders, &hd_heads, &hd_sectors);
 
       num_sectors = GET_AL();
@@ -5728,7 +5989,7 @@ ASM_END
 
     case 0x03: /* write disk sectors */
 BX_DEBUG_INT13_HD("int13_f03\n");
-      drive = GET_DL ();
+      drive = GET_ELDL ();
       get_hd_geometry(drive, &hd_cylinders, &hd_heads, &hd_sectors);
 
       num_sectors = GET_AL();
@@ -5782,13 +6043,13 @@ BX_DEBUG_INT13_HD("int13_f03\n");
       /* activate LBA? (tomv) */
       if (hd_heads > 16) {
 BX_DEBUG_INT13_HD("CHS (write): %x %x %x\n", cylinder, head, sector);
-        outLBA(cylinder,hd_heads,head,hd_sectors,sector,GET_DL());
+        outLBA(cylinder,hd_heads,head,hd_sectors,sector,GET_ELDL());
         }
       else {
         outb(0x01f3, sector);
         outb(0x01f4, cylinder & 0x00ff);
         outb(0x01f5, cylinder >> 8);
-        outb(0x01f6, 0xa0 | ((GET_DL() & 0x01)<<4) | (head & 0x0f));
+        outb(0x01f6, 0xa0 | ((GET_ELDL() & 0x01)<<4) | (head & 0x0f));
         }
       outb(0x01f7, 0x30);
 
@@ -5878,7 +6139,7 @@ BX_DEBUG_INT13_HD("int13_f05\n");
     case 0x08: /* read disk drive parameters */
 BX_DEBUG_INT13_HD("int13_f08\n");
       
-      drive = GET_DL ();
+      drive = GET_ELDL ();
       get_hd_geometry(drive, &hd_cylinders, &hd_heads, &hd_sectors);
 
       // translate CHS
@@ -5992,7 +6253,7 @@ BX_DEBUG_INT13_HD("int13_f14\n");
       break;
 
     case 0x15: /* read disk drive size */
-      drive = GET_DL();
+      drive = GET_ELDL();
       get_hd_geometry(drive, &hd_cylinders, &hd_heads, &hd_sectors);
 ASM_START
       push bp
@@ -6037,8 +6298,8 @@ ASM_END
     }
 }
 
-static char panic_msg_reg12h[] = "HD%d cmos reg 12h not type F";
-static char panic_msg_reg19h[] = "HD%d cmos reg %02xh not user definable type 47";
+static char panic_msg_reg12h[] = "HD%d cmos reg 12h not type F\n";
+static char panic_msg_reg19h[] = "HD%d cmos reg %02xh not user definable type 47\n";
 
   void
 get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
@@ -6253,6 +6514,9 @@ floppy_drive_recal(drive)
   dor |= drive;
   outb(0x03f2, dor);
 
+  // reset the disk motor timeout value of INT 08
+  write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
+
   // check port 3f4 for drive readiness
   val8 = inb(0x3f4);
   if ( (val8 & 0xf0) != 0x80 )
@@ -6316,11 +6580,10 @@ floppy_drive_exists(drive)
     return(1);
 }
 
-
 #if BX_SUPPORT_FLOPPY
   void
-int13_diskette_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS;
+int13_diskette_function(DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit8u  drive, num_sectors, track, sector, head, status;
   Bit16u base_address, base_count, base_es;
@@ -6337,7 +6600,7 @@ int13_diskette_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
   switch ( ah ) {
     case 0x00: // diskette controller reset
 BX_DEBUG_INT13_FL("floppy f00\n");
-      drive = GET_DL();
+      drive = GET_ELDL();
       if (drive > 1) {
         SET_AH(1); // invalid param
         set_diskette_ret_status(1);
@@ -6378,7 +6641,7 @@ BX_DEBUG_INT13_FL("floppy f00\n");
       track       = GET_CH();
       sector      = GET_CL();
       head        = GET_DH();
-      drive       = GET_DL();
+      drive       = GET_ELDL();
 
       if ( (drive > 1) || (head > 1) ||
            (num_sectors == 0) || (num_sectors > 72) ) {
@@ -6485,6 +6748,9 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         dor |= 0x0c;
         dor |= drive;
         outb(0x03f2, dor);
+
+        // reset the disk motor timeout value of INT 08
+        write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
 
         // check port 3f4 for drive readiness
         val8 = inb(0x3f4);
@@ -6631,6 +6897,9 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         dor |= drive;
         outb(0x03f2, dor);
 
+        // reset the disk motor timeout value of INT 08
+        write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
+
         // check port 3f4 for drive readiness
         val8 = inb(0x3f4);
         if ( (val8 & 0xf0) != 0x80 )
@@ -6730,7 +6999,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
       num_sectors = GET_AL();
       track       = GET_CH();
       head        = GET_DH();
-      drive       = GET_DL();
+      drive       = GET_ELDL();
 
       if ((drive > 1) || (head > 1) || (track > 79) ||
           (num_sectors == 0) || (num_sectors > 18)) {
@@ -6805,6 +7074,10 @@ BX_DEBUG_INT13_FL("floppy f05\n");
       dor |= 0x0c;
       dor |= drive;
       outb(0x03f2, dor);
+
+      // reset the disk motor timeout value of INT 08
+      write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
+
       // check port 3f4 for drive readiness
       val8 = inb(0x3f4);
       if ( (val8 & 0xf0) != 0x80 )
@@ -6880,7 +7153,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
 
     case 0x08: // read diskette drive parameters
 BX_DEBUG_INT13_FL("floppy f08\n");
-      drive = GET_DL();
+      drive = GET_ELDL();
 
       if (drive > 1) {
         AX = 0;
@@ -6963,8 +7236,14 @@ BX_DEBUG_INT13_FL("floppy f08\n");
         }
 
       /* set es & di to point to 11 byte diskette param table in ROM */
-      DI = 0xefc7;
-      ES = 0xf000;
+ASM_START
+      push bp
+      mov  bp, sp
+      mov ax, #diskette_param_table2
+      mov _int13_diskette_function.DI+2[bp], ax
+      mov _int13_diskette_function.ES+2[bp], cs
+      pop  bp
+ASM_END
       CLEAR_CF(); // success
       /* disk status not changed upon success */
       return;
@@ -6972,7 +7251,7 @@ BX_DEBUG_INT13_FL("floppy f08\n");
 
     case 0x15: // read diskette drive type
 BX_DEBUG_INT13_FL("floppy f15\n");
-      drive = GET_DL();
+      drive = GET_ELDL();
       if (drive > 1) {
         SET_AH(0); // only 2 drives supported
         // set_diskette_ret_status here ???
@@ -6993,16 +7272,11 @@ BX_DEBUG_INT13_FL("floppy f15\n");
         SET_AH(1); // drive present, does not support change line
         }
 
-#if BX_ELTORITO_BOOT
-      // This is mandatory. Otherwise Win98 does not boot
-      if ((cdemu_isactive() != 00) && (cdemu_emulated_drive() == drive))
-        DX+=0x0001;
-#endif
       return;
 
     case 0x16: // get diskette change line status
 BX_DEBUG_INT13_FL("floppy f16\n");
-      drive = GET_DL();
+      drive = GET_ELDL();
       if (drive > 1) {
         SET_AH(0x01); // invalid drive
         set_diskette_ret_status(0x01);
@@ -7043,8 +7317,8 @@ BX_DEBUG_INT13_FL("floppy f18\n");
 }
 #else  // #if BX_SUPPORT_FLOPPY
   void
-int13_diskette_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS;
+int13_diskette_function(DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
+  Bit16u DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS;
 {
   Bit8u  val8;
 
@@ -7142,9 +7416,9 @@ int17_function(regs, ds, iret_addr)
   sti
   ASM_END
 
-  if ((regs.u.r8.ah < 3) && (regs.u.r16.dx == 0)) {
-    addr = read_word(0x0040, 0x0008);
-    timeout = read_byte(0x0040, 0x0078) << 8;
+  addr = read_word(0x0040, (regs.u.r16.dx << 1) + 8);
+  if ((regs.u.r8.ah < 3) && (regs.u.r16.dx < 3) && (addr > 0)) {
+    timeout = read_byte(0x0040, 0x0078 + regs.u.r16.dx) << 8;
     if (regs.u.r8.ah == 0) {
       outb(addr, regs.u.r8.al);
       val8 = inb(addr+2);
@@ -7155,8 +7429,8 @@ int17_function(regs, ds, iret_addr)
       outb(addr+2, val8 & ~0x01);
       while (((inb(addr+1) & 0x40) == 0x40) && (timeout)) {
         timeout--;
-        }
       }
+    }
     if (regs.u.r8.ah == 1) {
       val8 = inb(addr+2);
       outb(addr+2, val8 & ~0x04); // send init
@@ -7164,11 +7438,9 @@ int17_function(regs, ds, iret_addr)
       nop
       ASM_END
       outb(addr+2, val8 | 0x04);
-      }
-    regs.u.r8.ah = inb(addr+1);
-    val8 = (~regs.u.r8.ah & 0x48);
-    regs.u.r8.ah &= 0xB7;
-    regs.u.r8.ah |= val8;
+    }
+    val8 = inb(addr+1);
+    regs.u.r8.ah = (val8 ^ 0x48);
     if (!timeout) regs.u.r8.ah |= 0x01;
     ClearCF(iret_addr.flags);
   } else {
@@ -7178,15 +7450,17 @@ int17_function(regs, ds, iret_addr)
 
 // returns bootsegment in ax, drive in bl
   Bit32u 
-int19_function()
+int19_function(bseqnr)
+Bit8u bseqnr;
 {
   Bit16u ebda_seg=read_word(0x0040,0x000E);
-  Bit8u  bootseq;
+  Bit16u bootseq;
   Bit8u  bootdrv;
   Bit8u  bootcd;
   Bit8u  bootchk;
   Bit16u bootseg;
   Bit16u status;
+  Bit8u  lastdrive=0;
 
   // if BX_ELTORITO_BOOT is not defined, old behavior
   //   check bit 5 in CMOS reg 0x2d.  load either 0x00 or 0x80 into DL
@@ -7194,25 +7468,39 @@ int19_function()
   //     0: system boot sequence, first drive C: then A:
   //     1: system boot sequence, first drive A: then C:
   // else BX_ELTORITO_BOOT is defined
-  //   CMOS reg 0x3D contains the boot device :
-  //     0x01 : floppy 
-  //     0x02 : harddrive
-  //     0x03 : cdrom
-  //     else : floppy for now.
+  //   CMOS regs 0x3D and 0x38 contain the boot sequence:
+  //     CMOS reg 0x3D & 0x0f : 1st boot device
+  //     CMOS reg 0x3D & 0xf0 : 2nd boot device
+  //     CMOS reg 0x38 & 0xf0 : 3rd boot device
+  //   boot device codes:
+  //     0x00 : not defined
+  //     0x01 : first floppy 
+  //     0x02 : first harddrive
+  //     0x03 : first cdrom
+  //     else : boot failure
 
   // Get the boot sequence
 #if BX_ELTORITO_BOOT
   bootseq=inb_cmos(0x3d);
+  bootseq|=((inb_cmos(0x38) & 0xf0) << 4);
 
+  if (bseqnr==2) bootseq >>= 4;
+  if (bseqnr==3) bootseq >>= 8;
+  if (bootseq<0x10) lastdrive = 1;
   bootdrv=0x00; bootcd=0;
-  switch(bootseq) {
+  switch(bootseq & 0x0f) {
     case 0x01: bootdrv=0x00; bootcd=0; break;
     case 0x02: bootdrv=0x80; bootcd=0; break;
     case 0x03: bootdrv=0x00; bootcd=1; break;
+    default:   return 0x00000000;
     }
 #else
   bootseq=inb_cmos(0x2d);
 
+  if (bseqnr==2) {
+    bootseq ^= 0x20;
+    lastdrive = 1;
+  }
   bootdrv=0x00; bootcd=0;
   if((bootseq&0x20)==0) bootdrv=0x80;
 #endif // BX_ELTORITO_BOOT
@@ -7225,7 +7513,7 @@ int19_function()
     // If failure
     if ( (status & 0x00ff) !=0 ) {
       print_cdromboot_failure(status);
-      print_boot_failure(bootcd, bootdrv, 1);
+      print_boot_failure(bootcd, bootdrv, 1, lastdrive);
       return 0x00000000;
       }
 
@@ -7264,7 +7552,7 @@ int19_load_done:
 ASM_END
     
     if (status != 0) {
-      print_boot_failure(bootcd, bootdrv, 1);
+      print_boot_failure(bootcd, bootdrv, 1, lastdrive);
       return 0x00000000;
       }
     }
@@ -7273,7 +7561,7 @@ ASM_END
   // bootchk = 1 : signature check disabled
   // bootchk = 0 : signature check enabled
   if (bootdrv != 0) bootchk = 0;
-  else bootchk = inb_cmos(0x38);
+  else bootchk = inb_cmos(0x38) & 0x01;
 
 #if BX_ELTORITO_BOOT
   // if boot from cd, no signature check
@@ -7283,7 +7571,7 @@ ASM_END
 
   if (bootchk == 0) {
     if (read_word(bootseg,0x1fe) != 0xaa55) {
-      print_boot_failure(bootcd, bootdrv, 0);
+      print_boot_failure(bootcd, bootdrv, 0, lastdrive);
       return 0x00000000;
       }
     }
@@ -7307,7 +7595,7 @@ int1a_function(regs, ds, iret_addr)
 {
   Bit8u val8;
 
-  BX_DEBUG_INT1A("int1a: AX=%04x BX=%04x CX=%04x DX=%04x DS=%04x\n", regs.u.r16.ax, regs.u.r16.bx, regs.u.r16.cx, regs.u.r16.dx, DS);
+  BX_DEBUG_INT1A("int1a: AX=%04x BX=%04x CX=%04x DX=%04x DS=%04x\n", regs.u.r16.ax, regs.u.r16.bx, regs.u.r16.cx, regs.u.r16.dx, ds);
 
   ASM_START
   sti
@@ -7480,16 +7768,16 @@ int1a_function(regs, ds, iret_addr)
     case 0xb1:
       // real mode PCI BIOS functions now handled in assembler code
       // this C code handles the error code for information only
-      if (regs.u.r8.al == 0xff) {
-        BX_INFO("PCI BIOS not present\n");
-      } else if (regs.u.r8.al == 0x81) {
+      if (regs.u.r8.bl == 0xff) {
+        BX_INFO("PCI BIOS: PCI not present\n");
+      } else if (regs.u.r8.bl == 0x81) {
         BX_INFO("unsupported PCI BIOS function 0x%02x\n", regs.u.r8.al);
-      } else if (regs.u.r8.al == 0x83) {
+      } else if (regs.u.r8.bl == 0x83) {
         BX_INFO("bad PCI vendor ID %04x\n", regs.u.r16.dx);
-      } else if (regs.u.r8.al == 0x86) {
+      } else if (regs.u.r8.bl == 0x86) {
         BX_INFO("PCI device %04x:%04x not found\n", regs.u.r16.dx, regs.u.r16.cx);
       }
-      regs.u.r8.ah = regs.u.r8.al;
+      regs.u.r8.ah = regs.u.r8.bl;
       SetCF(iret_addr.flags);
       break;
 #endif
@@ -7506,25 +7794,47 @@ int70_function(regs, ds, iret_addr)
   iret_addr_t  iret_addr; // CS,IP,Flags pushed from original INT call
 {
   // INT 70h: IRQ 8 - CMOS RTC interrupt from periodic or alarm modes
-  Bit8u val8;
+  Bit8u registerB = 0, registerC = 0;
 
-  val8 = inb_cmos(0x0c); // Status Reg C
-  if (val8 == 0) BX_PANIC("int70: regC 0\n");
-  if (val8 & 0x40) BX_PANIC("int70: periodic request\n");
-  if (val8 & 0x20) {
-    // Alarm Flag indicates alarm time matches current time
-    // call user INT 4Ah alarm handler
+  // Check which modes are enabled and have occurred.
+  registerB = inb_cmos( 0xB );
+  registerC = inb_cmos( 0xC );
+
+  if( ( registerB & 0x60 ) != 0 ) {
+    if( ( registerC & 0x20 ) != 0 ) {
+      // Handle Alarm Interrupt.
 ASM_START
-    sti
-    //pushf
-    //;; call_ep [ds:loc]
-    //CALL_EP( 0x4a << 2 )
-    int #0x4a
-    cli
+      sti
+      int #0x4a
+      cli
 ASM_END
     }
+    if( ( registerC & 0x40 ) != 0 ) {
+      // Handle Periodic Interrupt.
 
-  ; //FIXME BCC BUG
+      if( read_byte( 0x40, 0xA0 ) != 0 ) {
+        // Wait Interval (Int 15, AH=83) active.
+        Bit32u time, toggle;
+
+        time = read_dword( 0x40, 0x9C );  // Time left in microseconds.
+        if( time < 0x3D1 ) {
+          // Done waiting.
+          Bit16u segment, offset;
+
+          offset = read_word( 0x40, 0x98 );
+          segment = read_word( 0x40, 0x9A );
+          write_byte( 0x40, 0xA0, 0 );  // Turn of status byte.
+          outb_cmos( 0xB, registerB & 0x37 ); // Clear the Periodic Interrupt.
+          write_byte( segment, offset, 0x80 );  // Write to specified flag byte.
+        } else {
+          // Continue waiting.
+          time -= 0x3D1;
+          write_dword( 0x40, 0x9C, time );
+        }
+      }
+    }
+  }
+
 ASM_START
   call eoi_both_pics
 ASM_END
@@ -7599,7 +7909,15 @@ int13_relocated:
   jb    int13_not_eltorito
   cmp   ah,#0x4d
   ja    int13_not_eltorito
-  jmp   int13_eltorito
+
+  pusha
+  push  es
+  push  ds
+  push  ss
+  pop   ds
+
+  push  #int13_out
+  jmp   _int13_eltorito      ;; ELDX not used
 
 int13_not_eltorito:
   push  ax
@@ -7617,130 +7935,119 @@ int13_not_eltorito:
   pop   dx
   push  dx
   cmp   al,dl                ;; int13 on emulated drive
-  je    int13_cdemu
+  jne   int13_nocdemu
 
-  ;; otherwise 
-  and   dl,#0xE0             ;; mask to get device class, including cdroms
-  cmp   al,dl                ;; al is 0x00 or 0x80
-  jne   int13_cdemu_inactive ;; inactive for device class
-  
-int13_cdemu_active:
   pop   dx
   pop   cx
   pop   bx
   pop   ax
+
+  pusha
+  push  es
+  push  ds
+  push  ss
+  pop   ds
+
+  push  #int13_out
+  jmp   _int13_cdemu         ;; ELDX not used
+
+int13_nocdemu:
+  and   dl,#0xE0             ;; mask to get device class, including cdroms
+  cmp   al,dl                ;; al is 0x00 or 0x80
+  jne   int13_cdemu_inactive ;; inactive for device class
+
+  pop   dx
+  pop   cx
+  pop   bx
+  pop   ax
+
+  push  ax
+  push  cx
+  push  dx
+  push  bx
+
   dec   dl                   ;; real drive is dl - 1
   jmp   int13_legacy
-  
+
 int13_cdemu_inactive:
   pop   dx
   pop   cx
   pop   bx
   pop   ax
 
-int13_legacy:
-
 #endif // BX_ELTORITO_BOOT
 
-  pushf
+int13_noeltorito:
+
+  push  ax
+  push  cx
+  push  dx
+  push  bx
+
+int13_legacy:
+
+  push  dx                   ;; push eltorito value of dx instead of sp
+
+  push  bp
+  push  si
+  push  di
+
+  push  es
+  push  ds
+  push  ss
+  pop   ds
+
+  ;; now the 16-bit registers can be restored with:
+  ;; pop ds; pop es; popa; iret
+  ;; arguments passed to functions should be
+  ;; DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS
+
   test  dl, #0x80
-  jz    int13_floppy
+  jnz   int13_notfloppy
+
+  push #int13_out
+  jmp _int13_diskette_function
+
+int13_notfloppy:
 
 #if BX_USE_ATADRV
 
-int13_disk_or_cdrom:
-    cmp   dl, #0xE0
-    jae   int13_cdrom
+  cmp   dl, #0xE0
+  jb    int13_notcdrom
+
+  // ebx is modified: BSD 5.2.1 boot loader problem
+  // someone should figure out which 32 bit register that actually are used
+
+  shr   ebx, #16
+  push  bx
+
+  call  _int13_cdrom
+
+  pop   bx
+  shl   ebx, #16
+
+  jmp int13_out
+
+int13_notcdrom:
 
 #endif
 
 int13_disk:
-  ;; pushf already done
-  push  es
-  push  ds
-  push  ss
-  pop   ds
-  pusha
   call  _int13_harddisk
+
+int13_out:
+  pop ds
+  pop es
   popa
-  pop   ds
-  pop   es
-  popf
-  //  JMPL(iret_modify_cf)
-  jmp iret_modify_cf
-
-int13_floppy:
-  popf
-  // JMPL(int13_diskette)
-  jmp int13_diskette
-
-
-#if BX_USE_ATADRV
-int13_cdrom:
-  ;; pushf already done
-  ;; popf
-  ;; pushf
-  push  es
-  push  ds
-  push  ss
-  pop   ds
-  pusha
-  call  _int13_cdrom
-  popa
-  pop   ds
-  pop   es
-  popf
- 
-  //  JMPL(iret_modify_cf)
-  jmp iret_modify_cf
-#endif
-
-#if BX_ELTORITO_BOOT
-int13_cdemu:
-  pop   dx
-  pop   cx
-  pop   bx
-  pop   ax
-
-  push  ds
-  push  ss
-  pop   ds
-
-  pushf
-  push  es
-  pusha
-  call  _int13_cdemu
-  popa
-  pop   es
-  popf
-
-  pop   ds
-  jmp iret_modify_cf
-
-int13_eltorito:
-
-  pushf
-  push  es
-  push  ds
-  push  ss
-  pop   ds
-  pusha
-  call  _int13_eltorito
-  popa
-  pop   ds
-  pop   es
-  popf
-
-  jmp iret_modify_cf
-#endif
+  iret 
 
 
 ;----------
 ;- INT18h -
 ;----------
 int18_handler: ;; Boot Failure routing
+  call _int18_panic_msg
   hlt
-  HALT(__LINE__)
   iret
 
 ;----------
@@ -7760,13 +8067,37 @@ int19_relocated: ;; Boot function, relocated
   xor  ax, ax
   mov  ds, ax
 
+  ;; 1st boot device
+  mov  ax, #0x0001
+  push ax
   call _int19_function
+  inc  sp
+  inc  sp
   ;; bl contains the boot drive
   ;; ax contains the boot segment or 0 if failure
 
+  test       ax, ax  ;; if ax is 0 try next boot device
+  jnz        boot_setup
+
+  ;; 2nd boot device
+  mov  ax, #0x0002
+  push ax
+  call _int19_function
+  inc  sp
+  inc  sp
+  test       ax, ax  ;; if ax is 0 try next boot device
+  jnz        boot_setup
+
+  ;; 3rd boot device
+  mov  ax, #0x0003
+  push ax
+  call _int19_function
+  inc  sp
+  inc  sp
   test       ax, ax  ;; if ax is 0 call int18
   jz         int18_handler
 
+boot_setup:
   mov dl,    bl      ;; set drive so guest os find it
   shl eax,   #0x04   ;; convert seg to ip
   mov 2[bp], ax      ;; set ip
@@ -7856,7 +8187,7 @@ f1_missing:
   mov  al, #0x02
   out  #0x0a, al   ;; clear DMA-1 channel 2 mask bit
 
-  SET_INT_VECTOR(0x1E, #0xF000, #diskette_param_table)
+  SET_INT_VECTOR(0x1E, #0xF000, #diskette_param_table2)
   SET_INT_VECTOR(0x40, #0xF000, #int13_diskette)
   SET_INT_VECTOR(0x0E, #0xF000, #int0e_handler) ;; IRQ 6
 
@@ -8320,6 +8651,23 @@ int76_handler:
   pop   ax
   iret
 
+
+;--------------------
+#if BX_APM
+
+use32 386
+#define APM_PROT32
+#include "apmbios.S"
+
+use16 386
+#define APM_PROT16
+#include "apmbios.S"
+
+#define APM_REAL
+#include "apmbios.S"
+
+#endif
+
 ;--------------------
 #if BX_PCIBIOS
 use32 386
@@ -8360,6 +8708,8 @@ bios32_end:
 pcibios_protected:
   pushf
   cli
+  push esi
+  push edi
   cmp al, #0x01 ;; installation check
   jne pci_pro_f02
   mov bx, #0x0210
@@ -8371,7 +8721,7 @@ pci_pro_f02: ;; find pci device
   cmp al, #0x02
   jne pci_pro_f08
   shl ecx, #16
-  or  ecx, edx
+  mov cx, dx
   mov bx, #0x0000
   mov di, #0x00
 pci_pro_devloop:
@@ -8393,73 +8743,90 @@ pci_pro_f08: ;; read configuration byte
   cmp al, #0x08
   jne pci_pro_f09
   call pci_pro_select_reg
+  push edx
   mov dx, di
   and dx, #0x03
   add dx, #0x0cfc
   in  al, dx
+  pop edx
   mov cl, al
   jmp pci_pro_ok
 pci_pro_f09: ;; read configuration word
   cmp al, #0x09
   jne pci_pro_f0a
   call pci_pro_select_reg
+  push edx
   mov dx, di
   and dx, #0x02
   add dx, #0x0cfc
   in  ax, dx
+  pop edx
   mov cx, ax
   jmp pci_pro_ok
 pci_pro_f0a: ;; read configuration dword
   cmp al, #0x0a
   jne pci_pro_f0b
   call pci_pro_select_reg
+  push edx
   mov dx, #0x0cfc
   in  eax, dx
+  pop edx
   mov ecx, eax
   jmp pci_pro_ok
 pci_pro_f0b: ;; write configuration byte
   cmp al, #0x0b
   jne pci_pro_f0c
   call pci_pro_select_reg
+  push edx
   mov dx, di
   and dx, #0x03
   add dx, #0x0cfc
   mov al, cl
   out dx, al
+  pop edx
   jmp pci_pro_ok
 pci_pro_f0c: ;; write configuration word
   cmp al, #0x0c
   jne pci_pro_f0d
   call pci_pro_select_reg
+  push edx
   mov dx, di
   and dx, #0x02
   add dx, #0x0cfc
   mov ax, cx
   out dx, ax
+  pop edx
   jmp pci_pro_ok
 pci_pro_f0d: ;; write configuration dword
   cmp al, #0x0d
   jne pci_pro_unknown
   call pci_pro_select_reg
+  push edx
   mov dx, #0x0cfc
   mov eax, ecx
   out dx, eax
+  pop edx
   jmp pci_pro_ok
 pci_pro_unknown:
   mov ah, #0x81
 pci_pro_fail:
+  pop edi
+  pop esi
   sti
   popf
   stc
   retf
 pci_pro_ok:
   xor ah, ah
+  pop edi
+  pop esi
   sti
   popf
   clc
   retf
 
 pci_pro_select_reg:
+  push edx
   mov eax, #0x800000
   mov ax,  bx
   shl eax, #8
@@ -8468,6 +8835,7 @@ pci_pro_select_reg:
   and al,  #0xfc
   mov dx, #0x0cf8
   out dx,  eax
+  pop edx
   ret
 
 use16 386
@@ -8496,15 +8864,17 @@ pci_present:
   mov bx, #0x0210
   mov cx, #0
   mov edx, #0x20494350
-  mov edi, #pcibios_protected
-  or  edi, #0xf0000
+  mov edi, #0xf0000
+  mov di, #pcibios_protected
   clc
   ret
 pci_real_f02: ;; find pci device
+  push esi
+  push edi
   cmp al, #0x02
   jne pci_real_f08
   shl ecx, #16
-  or  ecx, edx
+  mov cx, dx
   mov bx, #0x0000
   mov di, #0x00
 pci_real_devloop:
@@ -8528,80 +8898,329 @@ pci_real_f08: ;; read configuration byte
   cmp al, #0x08
   jne pci_real_f09
   call pci_real_select_reg
+  push dx
   mov dx, di
   and dx, #0x03
   add dx, #0x0cfc
   in  al, dx
+  pop dx
   mov cl, al
   jmp pci_real_ok
 pci_real_f09: ;; read configuration word
   cmp al, #0x09
   jne pci_real_f0a
   call pci_real_select_reg
+  push dx
   mov dx, di
   and dx, #0x02
   add dx, #0x0cfc
   in  ax, dx
+  pop dx
   mov cx, ax
   jmp pci_real_ok
 pci_real_f0a: ;; read configuration dword
   cmp al, #0x0a
   jne pci_real_f0b
   call pci_real_select_reg
+  push dx
   mov dx, #0x0cfc
   in  eax, dx
+  pop dx
   mov ecx, eax
   jmp pci_real_ok
 pci_real_f0b: ;; write configuration byte
   cmp al, #0x0b
   jne pci_real_f0c
   call pci_real_select_reg
+  push dx
   mov dx, di
   and dx, #0x03
   add dx, #0x0cfc
   mov al, cl
   out dx, al
+  pop dx
   jmp pci_real_ok
 pci_real_f0c: ;; write configuration word
   cmp al, #0x0c
   jne pci_real_f0d
   call pci_real_select_reg
+  push dx
   mov dx, di
   and dx, #0x02
   add dx, #0x0cfc
   mov ax, cx
   out dx, ax
+  pop dx
   jmp pci_real_ok
 pci_real_f0d: ;; write configuration dword
   cmp al, #0x0d
   jne pci_real_unknown
   call pci_real_select_reg
+  push dx
   mov dx, #0x0cfc
   mov eax, ecx
   out dx, eax
+  pop dx
   jmp pci_real_ok
 pci_real_unknown:
   mov ah, #0x81
 pci_real_fail:
+  pop edi
+  pop esi
   stc
   ret
 pci_real_ok:
   xor ah, ah
+  pop edi
+  pop esi
   clc
   ret
 
 pci_real_select_reg:
+  push dx
   mov eax, #0x800000
   mov ax,  bx
   shl eax, #8
   and di,  #0xff
   or  ax,  di
   and al,  #0xfc
-  mov dx, #0x0cf8
+  mov dx,  #0x0cf8
   out dx,  eax
+  pop dx
   ret
-#endif
+  
+.align 16
+pci_routing_table_structure:
+  db 0x24, 0x50, 0x49, 0x52  ;; "$PIR" signature
+  db 0, 1 ;; version
+  dw 32 + (6 * 16) ;; table size
+  db 0 ;; PCI interrupt router bus
+  db 0x08 ;; PCI interrupt router DevFunc
+  dw 0x0000 ;; PCI exclusive IRQs 
+  dw 0x8086 ;; compatible PCI interrupt router vendor ID
+  dw 0x7000 ;; compatible PCI interrupt router device ID
+  dw 0,0 ;; Miniport data
+  db 0,0,0,0,0,0,0,0,0,0,0 ;; reserved
+  db 0x07 ;; checksum
+  ;; first slot entry PCI-to-ISA (embedded)
+  db 0 ;; pci bus number
+  db 0x08 ;; pci device number (bit 7-3)
+  db 0x60 ;; link value INTA#: pointer into PCI2ISA config space
+  dw 0xdef8 ;; IRQ bitmap INTA# 
+  db 0x61 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB# 
+  db 0x62 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC# 
+  db 0x63 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 0 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; second slot entry: 1st PCI slot
+  db 0 ;; pci bus number
+  db 0x10 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA# 
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB# 
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC# 
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 1 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; third slot entry: 2nd PCI slot
+  db 0 ;; pci bus number
+  db 0x18 ;; pci device number (bit 7-3)
+  db 0x62 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA# 
+  db 0x63 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB# 
+  db 0x60 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC# 
+  db 0x61 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 2 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 4th slot entry: 3rd PCI slot
+  db 0 ;; pci bus number
+  db 0x20 ;; pci device number (bit 7-3)
+  db 0x63 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA# 
+  db 0x60 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB# 
+  db 0x61 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC# 
+  db 0x62 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 3 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 5th slot entry: 4rd PCI slot
+  db 0 ;; pci bus number
+  db 0x28 ;; pci device number (bit 7-3)
+  db 0x60 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA# 
+  db 0x61 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB# 
+  db 0x62 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC# 
+  db 0x63 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 4 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
+  ;; 6th slot entry: 5rd PCI slot
+  db 0 ;; pci bus number
+  db 0x30 ;; pci device number (bit 7-3)
+  db 0x61 ;; link value INTA#
+  dw 0xdef8 ;; IRQ bitmap INTA# 
+  db 0x62 ;; link value INTB#
+  dw 0xdef8 ;; IRQ bitmap INTB# 
+  db 0x63 ;; link value INTC#
+  dw 0xdef8 ;; IRQ bitmap INTC# 
+  db 0x60 ;; link value INTD#
+  dw 0xdef8 ;; IRQ bitmap INTD#
+  db 5 ;; physical slot (0 = embedded)
+  db 0 ;; reserved
 
+pci_irq_list:
+  db 11, 10, 9, 5;
+
+pcibios_init_sel_reg:
+  push eax
+  mov eax, #0x800000
+  mov ax,  bx
+  shl eax, #8
+  and dl,  #0xfc
+  or  al,  dl
+  mov dx,  #0x0cf8
+  out dx,  eax
+  pop eax
+  ret
+  
+pcibios_init_set_elcr:
+  push ax
+  push cx
+  mov  dx, #0x04d0
+  test al, #0x08
+  jz   is_master_pic
+  inc  dx
+  and  al, #0x07
+is_master_pic:
+  mov  cl, al
+  mov  bl, #0x01
+  shl  bl, cl
+  in   al, dx
+  or   al, bl
+  out  dx, al
+  pop  cx
+  pop  ax
+  ret
+
+pcibios_init:
+  push ds
+  push bp
+  mov  ax, #0xf000
+  mov  ds, ax
+  mov  dx, #0x04d0 ;; reset ELCR1 + ELCR2
+  mov  al, #0x00
+  out  dx, al
+  inc  dx
+  out  dx, al
+  mov  si, #pci_routing_table_structure
+  mov  bh, [si+8]
+  mov  bl, [si+9]
+  mov  dl, #0x00
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  in   eax, dx
+  cmp  eax, [si+12] ;; check irq router
+  jne  pci_init_end
+  mov  dl, [si+34]
+  call pcibios_init_sel_reg
+  push bx ;; save irq router bus + devfunc
+  mov  dx, #0x0cfc
+  mov  ax, #0x8080
+  out  dx, ax ;; reset PIRQ route control
+  inc  dx
+  inc  dx
+  out  dx, ax
+  mov  ax, [si+6]
+  sub  ax, #0x20
+  shr  ax, #4
+  mov  cx, ax
+  add  si, #0x20 ;; set pointer to 1st entry
+  mov  bp, sp
+  mov  ax, #pci_irq_list
+  push ax
+  xor  ax, ax
+  push ax
+pci_init_loop1:
+  mov  bh, [si]
+  mov  bl, [si+1]
+pci_init_loop2:
+  mov  dl, #0x00
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  in   ax, dx
+  cmp  ax, #0xffff
+  jnz  pci_test_int_pin
+  test bl, #0x07
+  jz   next_pir_entry
+  jmp  next_pci_func
+pci_test_int_pin:
+  mov  dl, #0x3c
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfd
+  in   al, dx
+  and  al, #0x07
+  jz   next_pci_func
+  dec  al ;; determine pirq reg
+  mov  dl, #0x03
+  mul  al, dl
+  add  al, #0x02
+  xor  ah, ah
+  mov  bx, ax
+  mov  al, [si+bx]
+  mov  dl, al
+  mov  bx, [bp]
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  and  al, #0x03
+  add  dl, al
+  in   al, dx
+  cmp  al, #0x80
+  jb   pirq_found
+  mov  bx, [bp-2] ;; pci irq list pointer
+  mov  al, [bx]
+  out  dx, al
+  inc  bx
+  mov  [bp-2], bx
+  call pcibios_init_set_elcr
+pirq_found:
+  mov  bh, [si]
+  mov  bl, [si+1]
+  add  bl, [bp-3] ;; pci function number
+  mov  dl, #0x3c
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  out  dx, al
+next_pci_func:
+  inc  byte ptr[bp-3]
+  inc  bl
+  test bl, #0x07
+  jnz  pci_init_loop2
+next_pir_entry:
+  add  si, #0x10
+  mov  byte ptr[bp-3], #0x00
+  loop pci_init_loop1
+  mov  sp, bp
+  pop  bx
+pci_init_end:
+  pop  bp
+  pop  ds
+  ret
+#endif // BX_PCIBIOS
+
+; parallel port detection: base address in DX, index in BX, timeout in CL
 detect_parport:
   push dx
   add  dx, #2
@@ -8623,6 +9242,7 @@ detect_parport:
 no_parport:
   ret
 
+; serial port detection: base address in DX, index in BX, timeout in CL
 detect_serial:
   push dx
   inc  dx
@@ -8648,6 +9268,81 @@ detect_serial:
   ret
 no_serial:
   pop  dx
+  ret
+
+rom_checksum:
+  push ax
+  push bx
+  push cx
+  xor  ax, ax
+  xor  bx, bx
+  xor  cx, cx
+  mov  ch, [2]
+  shl  cx, #1
+checksum_loop:
+  add  al, [bx]
+  inc  bx
+  loop checksum_loop
+  and  al, #0xff
+  pop  cx
+  pop  bx
+  pop  ax
+  ret
+
+rom_scan:
+  ;; Scan for existence of valid expansion ROMS.
+  ;;   Video ROM:   from 0xC0000..0xC7FFF in 2k increments
+  ;;   General ROM: from 0xC8000..0xDFFFF in 2k increments
+  ;;   System  ROM: only 0xE0000
+  ;;
+  ;; Header:
+  ;;   Offset    Value
+  ;;   0         0x55
+  ;;   1         0xAA
+  ;;   2         ROM length in 512-byte blocks
+  ;;   3         ROM initialization entry point (FAR CALL)
+
+  mov  cx, #0xc000
+rom_scan_loop:
+  mov  ds, cx
+  mov  ax, #0x0004 ;; start with increment of 4 (512-byte) blocks = 2k
+  cmp [0], #0xAA55 ;; look for signature
+  jne  rom_scan_increment
+  call rom_checksum
+  jnz  rom_scan_increment
+  mov  al, [2]  ;; change increment to ROM length in 512-byte blocks
+
+  ;; We want our increment in 512-byte quantities, rounded to
+  ;; the nearest 2k quantity, since we only scan at 2k intervals.
+  test al, #0x03
+  jz   block_count_rounded
+  and  al, #0xfc ;; needs rounding up
+  add  al, #0x04
+block_count_rounded:
+
+  xor  bx, bx   ;; Restore DS back to 0000:
+  mov  ds, bx
+  push ax       ;; Save AX
+  ;; Push addr of ROM entry point
+  push cx       ;; Push seg
+  push #0x0003  ;; Push offset
+  mov  bp, sp   ;; Call ROM init routine using seg:off on stack
+  db   0xff     ;; call_far ss:[bp+0]
+  db   0x5e
+  db   0
+  cli           ;; In case expansion ROM BIOS turns IF on
+  add  sp, #2   ;; Pop offset value
+  pop  cx       ;; Pop seg value (restore CX)
+  pop  ax       ;; Restore AX
+rom_scan_increment:
+  shl  ax, #5   ;; convert 512-bytes blocks to 16-byte increments
+                ;; because the segment selector is shifted left 4 bits.
+  add  cx, ax
+  cmp  cx, #0xe000
+  jbe  rom_scan_loop
+
+  xor  ax, ax   ;; Restore DS back to 0000:
+  mov  ds, ax
   ret
 
 ;; for 'C' strings and other data, insert them here with
@@ -8755,6 +9450,10 @@ post_default_ints:
   inc  bx
   inc  bx
   loop post_default_ints
+
+  ;; set vector 0x79 to zero
+  ;; this is used by 'gardian angel' protection system
+  SET_INT_VECTOR(0x79, #0, #0)
 
   ;; base memory in K 40:13 (word)
   mov  ax, #BASE_MEM_IN_K
@@ -8868,6 +9567,10 @@ post_default_ints:
   call detect_serial
   mov dx, #0x02f8 ; Serial I/O address, port 2
   call detect_serial
+  mov dx, #0x03e8 ; Serial I/O address, port 3
+  call detect_serial
+  mov dx, #0x02e8 ; Serial I/O address, port 4
+  call detect_serial
   shl bx, #0x09
   mov ax, 0x410   ; Equipment word bits 9..11 determing # serial ports
   and ax, #0xf1ff
@@ -8914,58 +9617,9 @@ post_default_ints:
 #endif
   out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
 
+  call pcibios_init
 
-  ;; Scan for existence of valid expansion ROMS.
-  ;;   Video ROM:   from 0xC0000..0xC7FFF in 2k increments
-  ;;   General ROM: from 0xC8000..0xDFFFF in 2k increments
-  ;;   System  ROM: only 0xE0000
-  ;;
-  ;; Header:
-  ;;   Offset    Value
-  ;;   0         0x55
-  ;;   1         0xAA
-  ;;   2         ROM length in 512-byte blocks
-  ;;   3         ROM initialization entry point (FAR CALL)
-
-  mov  cx, #0xc000
-rom_scan_loop:
-  mov  ds, cx
-  mov  ax, #0x0004 ;; start with increment of 4 (512-byte) blocks = 2k
-  cmp [0], #0xAA55 ;; look for signature
-  jne  rom_scan_increment
-  mov  al, [2]  ;; change increment to ROM length in 512-byte blocks
-
-  ;; We want our increment in 512-byte quantities, rounded to
-  ;; the nearest 2k quantity, since we only scan at 2k intervals.
-  test al, #0x03
-  jz   block_count_rounded
-  and  al, #0xfc ;; needs rounding up
-  add  al, #0x04
-block_count_rounded:
-
-  xor  bx, bx   ;; Restore DS back to 0000:
-  mov  ds, bx
-  push ax       ;; Save AX
-  ;; Push addr of ROM entry point
-  push cx       ;; Push seg
-  push #0x0003  ;; Push offset
-  mov  bp, sp   ;; Call ROM init routine using seg:off on stack
-  db   0xff     ;; call_far ss:[bp+0]
-  db   0x5e
-  db   0
-  cli           ;; In case expansion ROM BIOS turns IF on
-  add  sp, #2   ;; Pop offset value
-  pop  cx       ;; Pop seg value (restore CX)
-  pop  ax       ;; Restore AX
-rom_scan_increment:
-  shl  ax, #5   ;; convert 512-bytes blocks to 16-byte increments
-                ;; because the segment selector is shifted left 4 bits.
-  add  cx, ax
-  cmp  cx, #0xe000
-  jbe  rom_scan_loop
-
-  xor  ax, ax   ;; Restore DS back to 0000:
-  mov  ds, ax
+  call rom_scan
 
   call _print_bios_banner 
 
@@ -9013,7 +9667,6 @@ nmi:
   ;; FIXME the NMI handler should not panic
   ;; but iret when called from int75 (fpu exception)
   call _nmi_handler_msg
-  HALT(__LINE__)
   iret
 
 int75_handler:
@@ -9241,6 +9894,8 @@ int09_handler:
   sti
 
 int09_call_int15_4f:
+  push  ds
+  pusha
 #ifdef BX_CALL_INT15_4F
   mov  ah, #0x4f     ;; allow for keyboard intercept
   stc
@@ -9250,15 +9905,13 @@ int09_call_int15_4f:
 
 
 //int09_process_key:
-  push  ds
-  pusha
   mov   bx, #0xf000
   mov   ds, bx
   call  _int09_function
-  popa
-  pop   ds
 
 int09_done:
+  popa
+  pop   ds
   cli
   call eoi_master_pic
 
@@ -9276,46 +9929,7 @@ int09_finish:
 ;----------------------------------------
 .org 0xec59
 int13_diskette:
-  pushf
-  push  es
-  pusha
-  call  _int13_diskette_function
-  popa
-  pop   es
-  popf
-  //JMPL(iret_modify_cf)
-  jmp iret_modify_cf
-
-#if 0
-  pushf
-  cmp  ah, #0x01
-  je   i13d_f01
-
-  ;; pushf already done
-  push  es
-  pusha
-  call  _int13_diskette_function
-  popa
-  pop   es
-  popf
-  //JMPL(iret_modify_cf)
-  jmp iret_modify_cf
-i13d_f01:
-  popf
-  push  ds
-  push  bx
-  mov   bx, #0x0000
-  mov   ds, bx
-  mov   ah, 0x0441
-  pop   bx
-  pop   ds
-  clc
-  ;; ??? dont know if this service changes the return status
-  //JMPL(iret_modify_cf)
-  jmp iret_modify_cf
-#endif
-
-
+  jmp int13_noeltorito
 
 ;---------------------------------------------
 ;- INT 0Eh Diskette Hardware ISR Entry Point -
@@ -9392,6 +10006,26 @@ int17_handler:
   pop  ds
   iret
 
+diskette_param_table2:
+;;  New diskette parameter table adding 3 parameters from IBM
+;;  Since no provisions are made for multiple drive types, most
+;;  values in this table are ignored.  I set parameters for 1.44M
+;;  floppy here
+db  0xAF
+db  0x02 ;; head load time 0000001, DMA used
+db  0x25
+db  0x02
+db    18
+db  0x1B
+db  0xFF
+db  0x6C
+db  0xF6
+db  0x0F
+db  0x08
+db    79 ;; maximum track
+db     0 ;; data transfer rate
+db     4 ;; drive type in cmos
+
 .org 0xf045 ; INT 10 Functions 0-Fh Entry Point
   HALT(__LINE__)
   iret
@@ -9437,16 +10071,45 @@ int11_handler:
 .org 0xf859 ; INT 15h System Services Entry Point
 int15_handler:
   pushf
+#if BX_APM
+  cmp ah, #0x53
+  je apm_call
+#endif
   push  ds
   push  es
-  pushad
+  cmp  ah, #0x86
+  je int15_handler32
+  cmp  ah, #0xE8
+  je int15_handler32
+  pusha
+#if BX_USE_PS2_MOUSE
+  cmp  ah, #0xC2
+  je int15_handler_mouse
+#endif
   call _int15_function
-  popad
+int15_handler_mouse_ret:
+  popa
+int15_handler32_ret:
   pop   es
   pop   ds
   popf
-  //JMPL(iret_modify_cf)
   jmp iret_modify_cf
+#if BX_APM
+apm_call:
+  jmp _apmreal_entry
+#endif
+
+#if BX_USE_PS2_MOUSE
+int15_handler_mouse:
+  call _int15_function_mouse
+  jmp int15_handler_mouse_ret
+#endif
+
+int15_handler32:
+  pushad
+  call _int15_function32
+  popad
+  jmp int15_handler32_ret
 
 ;; Protected mode IDT descriptor
 ;;
@@ -9485,27 +10148,22 @@ int1a_handler:
   jne  int1a_normal
   call pcibios_real
   jc   pcibios_error
-  push ax
-  mov  ax, ss
-  push ds
-  mov  ds, ax
-  push bp
-  mov  bp, sp
-  lahf
-  mov  [bp+10], ah
-  pop bp
-  pop ds
-  pop ax
-  iret
+  retf 2
 pcibios_error:
-  mov  al, ah
+  mov  bl, ah
   mov  ah, #0xb1
+  push ds
+  pusha
+  mov ax, ss  ; set readable descriptor to ds, for calling pcibios
+  mov ds, ax  ;  on 16bit protected mode.
+  jmp int1a_callfunction
 int1a_normal:
 #endif
   push ds
   pusha
   xor  ax, ax
   mov  ds, ax
+int1a_callfunction:
   call _int1a_function
   popa
   pop  ds
@@ -9534,6 +10192,23 @@ int08_handler:
   push ds
   xor ax, ax
   mov ds, ax
+
+  ;; time to turn off drive(s)?
+  mov  al,0x0440
+  or   al,al
+  jz   int08_floppy_off
+  dec  al
+  mov  0x0440,al
+  jnz  int08_floppy_off
+  ;; turn motor(s) off
+  push dx
+  mov  dx,#0x03f2
+  in   al,dx
+  and  al,#0xcf
+  out  dx,al
+  pop  dx
+int08_floppy_off:
+
   mov eax, 0x046c ;; get ticks dword
   inc eax
 
@@ -9575,10 +10250,10 @@ dummy_iret_handler:
   iret
 
 .org 0xfff0 ; Power-up Entry Point
-  jmp 0xf000:post;
+  jmp 0xf000:post
 
 .org 0xfff5 ; ASCII Date ROM was built - 8 characters in MM/DD/YY
-.ascii "06/23/99"
+.ascii BIOS_BUILD_DATE
 
 .org 0xfffe ; System Model ID
 db SYS_MODEL_ID
@@ -9724,7 +10399,7 @@ static Bit8u vgafont8[128*8]=
 };
 
 ASM_START
-.org 0xd000
+.org 0xcc00
 // bcc-generated data will be placed here
 
 // For documentation of this config structure, look on developer.intel.com and
@@ -9760,7 +10435,7 @@ mp_config_proc0:
   db 0 ;; entry type=processor
   db 0 ;; local APIC id
   db 0x11 ;; local APIC version number
-  db 3 ;; cpu flags: enabled
+  db 3 ;; cpu flags: enabled, bootstrap processor
   db 0,6,0,0 ;; cpu signature
   dw 0x201,0 ;; feature flags
   dw 0,0 ;; reserved
@@ -9832,7 +10507,7 @@ mp_config_proc0:
   db 0 ;; entry type=processor
   db 0 ;; local APIC id
   db 0x11 ;; local APIC version number
-  db 1 ;; cpu flags: enabled
+  db 3 ;; cpu flags: enabled, bootstrap processor
   db 0,6,0,0 ;; cpu signature
   dw 0x201,0 ;; feature flags
   dw 0,0 ;; reserved
@@ -9850,7 +10525,7 @@ mp_config_proc2:
   db 0 ;; entry type=processor
   db 2 ;; local APIC id
   db 0x11 ;; local APIC version number
-  db 3 ;; cpu flags: enabled, bootstrap processor
+  db 1 ;; cpu flags: enabled
   db 0,6,0,0 ;; cpu signature
   dw 0x201,0 ;; feature flags
   dw 0,0 ;; reserved
@@ -9870,7 +10545,7 @@ mp_config_isa_bus:
   db 0x49, 0x53, 0x41, 0x20, 0x20, 0x20  ;; bus type="ISA   "
 mp_config_ioapic:
   db 2 ;; entry type=I/O APIC
-  db 4 ;; apic id=2. linux will set.
+  db 4 ;; apic id=4. linux will set.
   db 0x11 ;; I/O APIC version number
   db 1 ;; flags=1=enabled
   dw 0x0000, 0xfec0 ;; memory mapped address of I/O APIC
@@ -9922,7 +10597,7 @@ mp_config_proc0:
   db 0 ;; entry type=processor
   db 0 ;; local APIC id
   db 0x11 ;; local APIC version number
-  db 3 ;; cpu flags: bootstrap cpu
+  db 3 ;; cpu flags: enabled, bootstrap processor
   db 0,6,0,0 ;; cpu signature
   dw 0x201,0 ;; feature flags
   dw 0,0 ;; reserved

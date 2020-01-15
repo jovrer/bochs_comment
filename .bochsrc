@@ -40,21 +40,25 @@
 #   svga           use SVGALIB library for Linux, allows graphics without X11
 #   term           text only, uses curses/ncurses library, cross platform
 #   rfb            provides an interface to AT&T's VNC viewer, cross platform
-#   wx             use wxWindows library, cross platform
+#   wx             use wxWidgets library, cross platform
 #   nogui          no display at all
 #
 # NOTE: if you use the "wx" configuration interface, you must also use
 # the "wx" display library.
+#
+# Specific options:
+# Some display libraries now support specific option to control their
+# behaviour. See the examples below for currently supported options.
 #=======================================================================
 #display_library: amigaos
 #display_library: beos
 #display_library: carbon
 #display_library: macintosh
 #display_library: nogui
-#display_library: rfb
-#display_library: sdl
+#display_library: rfb, options="timeout=60" # time to wait for client
+#display_library: sdl, options="fullscreen" # startup in fullscreen mode
 #display_library: term
-#display_library: win32
+#display_library: win32, options="legacyF12" # use F12 to toggle mouse
 #display_library: wx
 #display_library: x
 
@@ -73,10 +77,9 @@ romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
 
 #=======================================================================
 # MEGS
-# set this to the default number of Megabytes of memory you want
-# to emulate.  You may also pass the '-megs xyz' option to bochs
-#
-# The default is 32MB, most OS's won't need more than that. 
+# Set the number of Megabytes of physical memory you want to emulate. 
+# The default is 32MB, most OS's won't need more than that.
+# The maximum amount of memory supported is 2048Mb.
 #=======================================================================
 #megs: 256
 #megs: 128
@@ -92,7 +95,7 @@ megs: 32
 # ROM images should not overwrite the rombios (located at
 # F0000-FFFFF) and the videobios (located at C0000-C7FFF).
 # Those ROM images will be initialized by the bios if they contain 
-# the right signature (0x55AA).
+# the right signature (0x55AA) and a valid checksum.
 # It can also be a convenient way to upload some arbitary code/data
 # in the simulation, that can be retrieved by the boot loader
 #=======================================================================
@@ -105,15 +108,24 @@ megs: 32
 # VGAROMIMAGE
 # You now need to load a VGA ROM BIOS into C0000.
 #=======================================================================
-#vgaromimage: bios/VGABIOS-lgpl-latest
-#vgaromimage: bios/VGABIOS-elpin-2.40
-vgaromimage: $BXSHARE/VGABIOS-elpin-2.40
+#vgaromimage: file=bios/VGABIOS-elpin-2.40
+vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest
+#vgaromimage: file=bios/VGABIOS-lgpl-latest-cirrus
+
+#=======================================================================
+# VGA:
+# Here you can specify the display extension to be used. With the value
+# 'none' you can use standard VGA with no extension. Other supported
+# values are 'vbe' for Bochs VBE and 'cirrus' for Cirrus SVGA support.
+#=======================================================================
+#vga: extension=cirrus
+vga: extension=vbe
 
 #=======================================================================
 # FLOPPYA:
 # Point this to pathname of floppy image file or device
-# This should be of a bootable floppy(image/device) if you're 
-# booting from 'a'.
+# This should be of a bootable floppy(image/device) if you're
+# booting from 'a' (or 'floppy').
 #
 # You can set the initial status of the media to 'ejected' or 'inserted'.
 #   floppya: 2_88=path, status=ejected             (2.88M 3.5" floppy)
@@ -124,14 +136,15 @@ vgaromimage: $BXSHARE/VGABIOS-elpin-2.40
 #   floppya: 320k=path, status=inserted            (320K  5.25" floppy)
 #   floppya: 180k=path, status=inserted            (180K  5.25" floppy)
 #   floppya: 160k=path, status=inserted            (160K  5.25" floppy)
+#   floppya: image=path, status=inserted           (guess type from image size)
 #
-# The path should be the name of a disk image file.  On unix, you can use
-# a raw device name such as /dev/fd0 on Linux.  On WinNT and Win2k, use
-# drive letters such as a: or b: as the path.  Raw floppy access is not
-# supported on Windows 95 and 98.
+# The path should be the name of a disk image file.  On Unix, you can use a raw
+# device name such as /dev/fd0 on Linux.  On win32 platforms, use drive letters
+# such as a: or b: as the path.  The parameter 'image' works with image files
+# only. In that case the size must match one of the supported types.
 #=======================================================================
 floppya: 1_44=/dev/fd0, status=inserted
-#floppya: file=../1.44, status=inserted
+#floppya: image=../1.44, status=inserted
 #floppya: 1_44=/dev/fd0H1440, status=inserted
 #floppya: 1_2=../1_2, status=inserted
 #floppya: 1_44=a:, status=inserted
@@ -222,7 +235,7 @@ ata0-master: type=disk, mode=flat, path="30M.sample", cylinders=615, heads=6, sp
 
 #=======================================================================
 # BOOT:
-# This defines your boot drive.  
+# This defines the boot sequence. Now you can specify up to 3 boot drives.
 # You can either boot from 'floppy', 'disk' or 'cdrom'
 # legacy 'a' and 'c' are also supported
 # Examples:
@@ -231,6 +244,7 @@ ata0-master: type=disk, mode=flat, path="30M.sample", cylinders=615, heads=6, sp
 #   boot: cdrom
 #   boot: c
 #   boot: a
+#   boot: cdrom, floppy, disk
 #=======================================================================
 #boot: floppy
 boot: disk
@@ -249,13 +263,14 @@ boot: disk
 # Examples:
 # Machine                                         Mips
 # ________________________________________________________________
+# 1.6Ghz Intel P4 with Win2000/g++ 3.3            5 to 7 Mips
 # 650Mhz Athlon K-7 with Linux 2.4.4/egcs-2.91.66 2 to 2.5 Mips
 # 400Mhz Pentium II with Linux 2.0.36/egcs-1.0.3  1 to 1.8 Mips
 # 166Mhz 64bit Sparc with Solaris 2.x             approx 0.75 Mips
 # 200Mhz Pentium with Linux 2.x                   approx 0.5 Mips
 #
 #=======================================================================
-ips: 1000000
+ips: 10000000
 
 #=======================================================================
 # CLOCK:
@@ -303,7 +318,9 @@ floppy_bootsig_check: disabled=0
 #=======================================================================
 # LOG:
 # Give the path of the log file you'd like Bochs debug and misc. verbage
-# to be written to.  If you really don't want it, make it /dev/null. :^(
+# to be written to. If you don't use this option or set the filename to
+# '-' the output is written to the console. If you really don't want it,
+# make it "/dev/null" (Unix) or "nul" (win32). :^(
 #
 # Examples:
 #   log: ./bochs.out
@@ -369,21 +386,31 @@ debug: action=ignore
 debugger_log: -
 
 #=======================================================================
-# COM1:
-# This defines a serial port (UART type 16550A). You can specify a device
-# to use as com1. This can be a real serial line, or a pty.  To use a pty
-# (under X/Unix), create two windows (xterms, usually).  One of them will
+# COM1, COM2, COM3, COM4:
+# This defines a serial port (UART type 16550A). In the 'term' you can specify
+# a device to use as com1. This can be a real serial line, or a pty.  To use
+# a pty (under X/Unix), create two windows (xterms, usually).  One of them will
 # run bochs, and the other will act as com1. Find out the tty the com1
 # window using the `tty' command, and use that as the `dev' parameter.
 # Then do `sleep 1000000' in the com1 window to keep the shell from
 # messing with things, and run bochs in the other window.  Serial I/O to
 # com1 (port 0x3f8) will all go to the other window.
+# Other serial modes are 'null' (no input/output), 'file' (output to a file
+# specified as the 'dev' parameter), 'raw' (use the real serial port - under
+# construction for win32) and 'mouse' (standard serial mouse - requires
+# mouse option setting 'type=serial' or 'type=serial_wheel')
+#
+# Examples:
+#   com1: enabled=1, mode=null
+#   com1: enabled=1, mode=mouse
+#   com2: enabled=1, mode=file, dev=serial.out
+#   com3: enabled=1, mode=raw, dev=com1
 #=======================================================================
-#com1: enabled=1, dev=/dev/ttyp9
+#com1: enabled=1, mode=term, dev=/dev/ttyp9
 
 
 #=======================================================================
-# PARPORT1:
+# PARPORT1, PARPORT2:
 # This defines a parallel (printer) port. When turned on and an output file is
 # defined the emulated printer port sends characters printed by the guest OS
 # into the output file. On some platforms a device filename can be used to
@@ -392,7 +419,7 @@ debugger_log: -
 #
 # Examples:
 #   parport1: enabled=1, file="parport.out"
-#   parport1: enabled=1, file="/dev/lp0"
+#   parport2: enabled=1, file="/dev/lp0"
 #   parport1: enabled=0
 #=======================================================================
 parport1: enabled=1, file="parport.out"
@@ -494,11 +521,18 @@ floppy_command_delay: 500
 # You can turn the mouse on by setting enabled to 1, or turn it off by
 # setting enabled to 0. Unless you have a particular reason for enabling
 # the mouse by default, it is recommended that you leave it off.
-# You can also toggle the mouse usage at runtime (middle mouse button on
-# X11 and SDL, F12 on Win32).
+# You can also toggle the mouse usage at runtime (control key + middle
+# mouse button on X11, SDL, wxWidgets and Win32).
+# With the mouse type option you can select the type of mouse to emulate.
+# The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
+# on PS/2), 'serial', 'serial_wheel' (one com port requires setting
+# 'mode=mouse') and 'usb' (3-button mouse - one of the USB ports must be
+# connected with the 'mouse' device - requires PCI and USB support).
 #
 # Examples:
 #   mouse: enabled=1
+#   mouse: enabled=1, type=imps2
+#   mouse: enabled=1, type=serial
 #   mouse: enabled=0
 #=======================================================================
 mouse: enabled=0
@@ -555,13 +589,25 @@ private_colormap: enabled=0
 # This is mainly useful for the tun/tap devices that only exist during
 # Bochs execution. The network interface name is supplied to the script
 # as first parameter
+#
+# If you don't want to make connections to any physical networks,
+# you can use the following 'ethmod's to simulate a virtual network.
+#   null: All packets are discarded, but logged to a few files.
+#   arpback: ARP is simulated. Disabled by default.
+#   vnet: ARP, ICMP-echo(ping), DHCP and read-only TFTP are simulated.
+#         The virtual host uses 192.168.10.1.
+#         DHCP assignes 192.168.10.2 to the guest.
+#         TFTP uses the ethdev value for the root directory.
+#
 #=======================================================================
 # ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=fbsd, ethdev=en0 #macosx
 # ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
 # ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
 # ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
 # ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
-# ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=tun0, script=./tunconfig
+# ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
+# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=null, ethdev=eth0
+# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
 
 #=======================================================================
 # KEYBOARD_MAPPING:
@@ -599,15 +645,51 @@ keyboard_mapping: enabled=0, map=
 #user_shortcut: keys=ctrlaltdel
 
 #=======================================================================
+# I440FXSUPPORT:
+# This option controls the presence of the i440FX PCI chipset. You can
+# also specify the devices connected to PCI slots. Up to 5 slots are
+# available now. These devices are currently supported: ne2k, pcivga,
+# pcidev and pcipnic. If Bochs is compiled with Cirrus SVGA support
+# you'll have the additional choice 'cirrus'.
+#
+# Example:
+#   i440fxsupport: enabled=1, slot1=pcivga, slot2=ne2k
+#=======================================================================
+#i440fxsupport: enabled=1
+
+#=======================================================================
+# USB1:
+# This option controls the presence of the USB root hub which is a part
+# of the i440FX PCI chipset. With the portX option you can connect devices
+# to the hub (currently supported: 'mouse' and 'keypad'). If you connect
+# the mouse to one of the ports and use the mouse option 'type=usb' you'll
+# have a 3-button USB mouse.
+#
+# Example:
+#   usb1: enabled=1, ioaddr=0xFF80, port1=mouse, port2=keypad
+#=======================================================================
+#usb1: enabled=1, ioaddr=0xFF80
+
+#=======================================================================
 # other stuff
 #=======================================================================
 #magic_break: enabled=1
 #cmosimage: cmos.img
 #load32bitOSImage: os=nullkernel, path=../kernel.img, iolog=../vga_io.log
 #load32bitOSImage: os=linux, path=../linux.img, iolog=../vga_io.log, initrd=../initrd.img
-#i440fxsupport: enabled=1
-usb1: enabled=1, ioaddr=0xFF80, irq=10
 #text_snapshot_check: enable
+
+#-------------------------
+# PCI host device mapping
+#-------------------------
+#pcidev: vendor=0x1234, device=0x5678
+
+#=======================================================================
+# GDBSTUB:
+# Enable GDB stub. See user documentation for details.
+# Default value is enabled=0.
+#=======================================================================
+#gdbstub: enabled=0, port=1234, text_base=0, data_base=0, bss_base=0
 
 #=======================================================================
 # for Macintosh, use the style of pathnames in the following
@@ -625,61 +707,6 @@ usb1: enabled=1, ioaddr=0xFF80, irq=10
 # Please convert them to the new syntax  or remove them
 #
 #=======================================================================
-
-#=======================================================================
-#
-# The DISKC option is deprecated. Use ATA* options instead.
-#
-# DISKC: file=, cyl=, heads=, spt=
-# Point this at a hard disk image file.  To create 
-# a hard disk image, try running bximage.  It will help you choose the
-# size and then suggest a diskc line that works with it.
-#
-# In UNIX it may be possible to use a raw device as a Bochs hard disk, 
-# but WE DON'T RECOMMEND IT.  In Windows there is no easy way.
-#
-# Examples:
-#   diskc: file=10M.sample, cyl=306, heads=4, spt=17
-#   diskc: file=20M.sample, cyl=615, heads=4, spt=17
-#   diskc: file=30M.sample, cyl=615, heads=6, spt=17
-#   diskc: file=46M.sample, cyl=940, heads=6, spt=17
-#   diskc: file=62M.sample, cyl=940, heads=8, spt=17
-#   diskc: file=112M.sample, cyl=900, heads=15, spt=17
-#   diskc: file=483M.sample, cyl=1024, heads=15, spt=63
-#=======================================================================
-#diskc: file="30M.sample", cyl=615, heads=6, spt=17
-
-#=======================================================================
-#
-# The DISKD option is deprecated. Use ATA* options instead.
-#
-# DISKD:
-# See DISKC above for syntax
-#
-# NOTE: diskd and cdromd must not be used together!
-#=======================================================================
-#diskd: file="diskd.img", cyl=615, heads=6, spt=17
-
-#=======================================================================
-#
-# The CDROMD option is deprecated. Use ATA* options instead.
-#
-# CDROMD:
-#
-# cdromd: dev=/dev/cdrom, status=inserted
-# cdromd: dev=/dev/cdrom, status=ejected
-# cdromd: dev=e:, status=ejected
-#
-# In windows, the drive letter + colon notation should be used for cdroms.
-# Depending on versions of windows and drivers, you may only be able to 
-# access the "first" cdrom in the system.  On MacOSX, use path="drive"
-# to access the physical drive.
-#
-# NOTE: diskd and cdromd must not be used together!
-#=======================================================================
-#cdromd: dev=D:, status=inserted
-#cdromd: dev=/dev/cdrom, status=inserted
-#cdromd: dev="drive", status=inserted
 
 #=======================================================================
 #
@@ -712,11 +739,4 @@ usb1: enabled=1, ioaddr=0xFF80, irq=10
 # simulation will not be repeatable; this can a problem if you are debugging.
 #=======================================================================
 #pit: realtime=1
-
-#=======================================================================
-# NEWHARDDRIVESUPPORT: enabled=[0|1]
-# The old harddrive code is not maintened any more.
-# Default value is enabled=1
-#=======================================================================
-#newharddrivesupport: enabled=1
 

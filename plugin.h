@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.20 2003/08/04 16:03:08 akrisak Exp $
+// $Id: plugin.h,v 1.40 2005/02/08 18:31:48 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file provides macros and types needed for plugins.  It is based on
@@ -29,17 +29,22 @@ extern "C" {
 #define BX_PLUGIN_PARALLEL  "parallel"
 #define BX_PLUGIN_SERIAL    "serial"
 #define BX_PLUGIN_KEYBOARD  "keyboard"
+#define BX_PLUGIN_BUSMOUSE  "busmouse"
 #define BX_PLUGIN_HARDDRV   "harddrv"
 #define BX_PLUGIN_DMA       "dma"
 #define BX_PLUGIN_PIC       "pic"
 #define BX_PLUGIN_PCI       "pci"
 #define BX_PLUGIN_PCI2ISA   "pci2isa"
+#define BX_PLUGIN_PCI_IDE   "pci_ide"
 #define BX_PLUGIN_SB16      "sb16"
 #define BX_PLUGIN_NE2K      "ne2k"
 #define BX_PLUGIN_EXTFPUIRQ "extfpuirq"
 #define BX_PLUGIN_PCIVGA    "pcivga"
+#define BX_PLUGIN_PCIDEV    "pcidev"
 #define BX_PLUGIN_PCIUSB    "pciusb"
+#define BX_PLUGIN_PCIPNIC   "pcipnic"
 #define BX_PLUGIN_GAMEPORT  "gameport"
+#define BX_PLUGIN_SPEAKER   "speaker"
 
 
 #define BX_REGISTER_DEVICE_DEVMODEL(a,b,c,d) pluginRegisterDeviceDevmodel(a,b,c,d)
@@ -52,6 +57,12 @@ extern "C" {
 
 #define DEV_register_ioread_handler(b,c,d,e,f)  pluginRegisterIOReadHandler(b,c,d,e,f)
 #define DEV_register_iowrite_handler(b,c,d,e,f) pluginRegisterIOWriteHandler(b,c,d,e,f)
+#define DEV_unregister_ioread_handler(b,c,d,e)  pluginUnregisterIOReadHandler(b,c,d,e)
+#define DEV_unregister_iowrite_handler(b,c,d,e) pluginUnregisterIOWriteHandler(b,c,d,e)
+#define DEV_register_ioread_handler_range(b,c,d,e,f,g)  pluginRegisterIOReadHandlerRange(b,c,d,e,f,g)
+#define DEV_register_iowrite_handler_range(b,c,d,e,f,g) pluginRegisterIOWriteHandlerRange(b,c,d,e,f,g)
+#define DEV_unregister_ioread_handler_range(b,c,d,e,f)  pluginUnregisterIOReadHandlerRange(b,c,d,e,f)
+#define DEV_unregister_iowrite_handler_range(b,c,d,e,f) pluginUnregisterIOWriteHandlerRange(b,c,d,e,f)
 #define DEV_register_default_ioread_handler(b,c,d,e) pluginRegisterDefaultIOReadHandler(b,c,d,e)
 #define DEV_register_default_iowrite_handler(b,c,d,e) pluginRegisterDefaultIOWriteHandler(b,c,d,e)
 
@@ -67,6 +78,12 @@ extern "C" {
 #define PLUG_load_plugin(name,type) {lib##name##_LTX_plugin_init(NULL,type,0,NULL);}
 #define DEV_register_ioread_handler(b,c,d,e,f) bx_devices.register_io_read_handler(b,c,d,e,f)
 #define DEV_register_iowrite_handler(b,c,d,e,f) bx_devices.register_io_write_handler(b,c,d,e,f)
+#define DEV_unregister_ioread_handler(b,c,d,e)  bx_devices.unregister_io_read_handler(b,c,d,e)
+#define DEV_unregister_iowrite_handler(b,c,d,e) bx_devices.unregister_io_write_handler(b,c,d,e)
+#define DEV_register_ioread_handler_range(b,c,d,e,f,g)  bx_devices.register_io_read_handler_range(b,c,d,e,f,g)
+#define DEV_register_iowrite_handler_range(b,c,d,e,f,g) bx_devices.register_io_write_handler_range(b,c,d,e,f,g)
+#define DEV_unregister_ioread_handler_range(b,c,d,e,f)  bx_devices.unregister_io_read_handler_range(b,c,d,e,f)
+#define DEV_unregister_iowrite_handler_range(b,c,d,e,f) bx_devices.unregister_io_write_handler_range(b,c,d,e,f)
 #define DEV_register_default_ioread_handler(b,c,d,e) bx_devices.register_default_io_read_handler(b,c,d,e)
 #define DEV_register_default_iowrite_handler(b,c,d,e) bx_devices.register_default_io_write_handler(b,c,d,e)
 #define DEV_register_irq(b,c) bx_devices.register_irq(b,c)
@@ -87,7 +104,9 @@ extern "C" {
 
 ///////// keyboard macros
 #define DEV_mouse_motion(dx, dy, state) \
-    (bx_devices.pluginKeyboard->mouse_motion(dx, dy, state))
+    (bx_devices.pluginKeyboard->mouse_motion(dx, dy, 0, state))
+#define DEV_mouse_motion_ext(dx, dy, dz, state) \
+    (bx_devices.pluginKeyboard->mouse_motion(dx, dy, dz, state))
 #define DEV_kbd_gen_scancode(key) \
     (bx_devices.pluginKeyboard->gen_scancode(key))
 #define DEV_kbd_paste_bytes(bytes, count) \
@@ -112,6 +131,9 @@ extern "C" {
     (bx_devices.pluginHardDrive->set_cd_media_status(handle, status))
 #define DEV_hd_close_harddrive()  bx_devices.pluginHardDrive->close_harddrive()
 #define DEV_hd_present() (bx_devices.pluginHardDrive != &bx_devices.stubHardDrive)
+#define DEV_hd_bmdma_read_sector(a,b) bx_devices.pluginHardDrive->bmdma_read_sector(a,b)
+#define DEV_hd_bmdma_write_sector(a,b) bx_devices.pluginHardDrive->bmdma_write_sector(a,b)
+#define DEV_hd_bmdma_complete(a) bx_devices.pluginHardDrive->bmdma_complete(a)
 
 #define DEV_bulk_io_quantum_requested() (bx_devices.bulkIOQuantumsRequested)
 #define DEV_bulk_io_quantum_transferred() (bx_devices.bulkIOQuantumsTransferred)
@@ -139,6 +161,7 @@ extern "C" {
 ///////// PIC macros
 #define DEV_pic_lower_irq(b)  (bx_devices.pluginPicDevice->lower_irq(b))
 #define DEV_pic_raise_irq(b)  (bx_devices.pluginPicDevice->raise_irq(b))
+#define DEV_pic_set_mode(a,b) (bx_devices.pluginPicDevice->set_mode(a,b))
 #define DEV_pic_iac()         (bx_devices.pluginPicDevice->IAC())
 #define DEV_pic_show_pic_state() (bx_devices.pluginPicDevice->show_pic_state())
 
@@ -154,17 +177,57 @@ extern "C" {
 #define DEV_vga_set_update_interval(val) \
   (bx_devices.pluginVgaDevice->set_update_interval(val))
 #define DEV_vga_get_actl_pal_idx(index) (bx_devices.pluginVgaDevice->get_actl_palette_idx(index))
+#define DEV_vga_dump_status() (bx_devices.pluginVgaDevice->dump_status())
 
 ///////// PCI macros
-#define DEV_register_pci_handlers(b,c,d,e,f) \
-  (bx_devices.pluginPciBridge->register_pci_handlers(b,c,d,e,f))
+#define DEV_register_pci_handlers(b,c,d,e,f,g) \
+  (bx_devices.pluginPciBridge->register_pci_handlers(b,c,d,e,f,g))
+#define DEV_is_pci_device(name) bx_devices.pluginPciBridge->is_pci_device(name)
+#define DEV_pci_set_irq(a,b,c) bx_devices.pluginPci2IsaBridge->pci_set_irq(a,b,c)
+#define DEV_pci_set_base_mem(a,b,c,d,e,f) \
+  (bx_devices.pluginPciBridge->pci_set_base_mem(a,b,c,d,e,f))
+#define DEV_pci_set_base_io(a,b,c,d,e,f,g,h) \
+  (bx_devices.pluginPciBridge->pci_set_base_io(a,b,c,d,e,f,g,h))
 #define DEV_pci_rd_memtype(addr) bx_devices.pluginPciBridge->rd_memType(addr)
 #define DEV_pci_wr_memtype(addr) bx_devices.pluginPciBridge->wr_memType(addr)
 #define DEV_pci_print_i440fx_state() bx_devices.pluginPciBridge->print_i440fx_state()
+#define DEV_ide_bmdma_present() bx_devices.pluginPciIdeController->bmdma_present()
 
 ///////// NE2000 macro
 #define DEV_ne2k_print_info(file,page,reg,brief) \
     bx_devices.pluginNE2kDevice->print_info(file,page,reg,brief)
+
+///////// Speaker macros
+#define DEV_speaker_beep_on(frequency) bx_devices.pluginSpeaker->beep_on(frequency)
+#define DEV_speaker_beep_off() bx_devices.pluginSpeaker->beep_off()
+
+///////// Serial macro
+#define DEV_serial_mouse_enq(dx, dy, dz, state) \
+    (bx_devices.pluginSerialDevice->serial_mouse_enq(dx, dy, dz, state))
+
+///////// BUS mouse macro
+#define DEV_bus_mouse_enq(dx, dy, dz, state) \
+    (bx_devices.pluginBusMouse->bus_mouse_enq(dx, dy, 0, state))
+
+///////// USB device macros
+#if BX_SUPPORT_PCIUSB
+#define DEV_usb_mouse_enq(dx, dy, dz, state) \
+    (bx_devices.pluginPciUSBAdapter->usb_mouse_enq(dx, dy, dz, state))
+#define DEV_usb_mouse_enable(enable) \
+    (bx_devices.pluginPciUSBAdapter->usb_mouse_enable(enable))
+#define DEV_usb_key_enq(scan_code) \
+    (bx_devices.pluginPciUSBAdapter->usb_key_enq(scan_code))
+#define DEV_usb_keyboard_connected() \
+    (bx_devices.pluginPciUSBAdapter->usb_keyboard_connected())
+#define DEV_usb_mouse_connected() \
+    (bx_devices.pluginPciUSBAdapter->usb_mouse_connected())
+#endif
+
+//////// Memory macros
+#define DEV_register_memory_handlers(rh,rp,wh,wp,b,e) \
+    bx_devices.mem->registerMemoryHandlers(rh,rp,wh,wp,b,e)
+#define DEV_unregister_memory_handlers(rh,wh,b,e) \
+    bx_devices.mem->unregisterMemoryHandlers(rh,wh,b,e)
 
 
 #if BX_HAVE_DLFCN_H
@@ -216,6 +279,18 @@ BOCHSAPI extern int (*pluginRegisterIOReadHandler)(void *thisPtr, ioReadHandler_
                                 unsigned base, const char *name, Bit8u mask);
 BOCHSAPI extern int (*pluginRegisterIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
                                  unsigned base, const char *name, Bit8u mask);
+BOCHSAPI extern int (*pluginUnregisterIOReadHandler)(void *thisPtr, ioReadHandler_t callback,
+                                unsigned base, Bit8u mask);
+BOCHSAPI extern int (*pluginUnregisterIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
+                                 unsigned base, Bit8u mask);
+BOCHSAPI extern int (*pluginRegisterIOReadHandlerRange)(void *thisPtr, ioReadHandler_t callback,
+                                unsigned base, unsigned end, const char *name, Bit8u mask);
+BOCHSAPI extern int (*pluginRegisterIOWriteHandlerRange)(void *thisPtr, ioWriteHandler_t callback,
+                                 unsigned base, unsigned end, const char *name, Bit8u mask);
+BOCHSAPI extern int (*pluginUnregisterIOReadHandlerRange)(void *thisPtr, ioReadHandler_t callback,
+                                unsigned begin, unsigned end, Bit8u mask);
+BOCHSAPI extern int (*pluginUnregisterIOWriteHandlerRange)(void *thisPtr, ioWriteHandler_t callback,
+                                 unsigned begin, unsigned end, Bit8u mask);
 BOCHSAPI extern int (*pluginRegisterDefaultIOReadHandler)(void *thisPtr, ioReadHandler_t callback,
                                 const char *name, Bit8u mask);
 BOCHSAPI extern int (*pluginRegisterDefaultIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
@@ -256,14 +331,11 @@ BOCHSAPI extern void     (*pluginDeactivateTimer)(unsigned id);
 BOCHSAPI extern void     (*pluginSetHRQ)(unsigned val);
 BOCHSAPI extern void     (*pluginSetHRQHackCallback)( void (*callback)(void) );
 
-/* === Reset stuff === */
-BOCHSAPI extern void     (*pluginResetSignal)(unsigned sig);
-
 /* === PCI stuff === */
 BOCHSAPI extern bx_bool  (*pluginRegisterPCIDevice)(void *this_ptr,
                              Bit32u (*bx_pci_read_handler)(void *, Bit8u, unsigned),
                              void(*bx_pci_write_handler)(void *, Bit8u, Bit32u, unsigned),
-                             Bit8u devfunc, const char *name);
+                             Bit8u *devfunc, const char *name, const char *descr);
 BOCHSAPI extern Bit8u    (*pluginRd_memType)(Bit32u addr);
 BOCHSAPI extern Bit8u    (*pluginWr_memType)(Bit32u addr);
 
@@ -285,6 +357,7 @@ int plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[]);
   
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(harddrv)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(keyboard)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(busmouse)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(serial)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(unmapped)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(biosdev)
@@ -296,12 +369,16 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(floppy)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(parallel)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci2isa)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci_ide)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcivga)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcidev)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pciusb)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcipnic)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(sb16)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(ne2k)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(extfpuirq)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(gameport)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(speaker)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(amigaos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(beos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(carbon)

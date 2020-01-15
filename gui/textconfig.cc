@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc,v 1.18 2003/10/24 15:39:57 vruppert Exp $
+// $Id: textconfig.cc,v 1.29 2004/11/22 13:14:54 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This is code for a text-mode configuration interface.  Note that this file
@@ -14,12 +14,21 @@
 
 #include "config.h"
 
+#if BX_USE_TEXTCONFIG
+
+#ifndef __QNXNTO__
 extern "C" {
+#endif
+
 #include <stdio.h>
 #include <ctype.h>
 #include <string.h>
 #include <assert.h>
+
+#ifndef __QNXNTO__
 }
+#endif
+
 #include "osdep.h"
 #include "textconfig.h"
 #include "siminterface.h"
@@ -265,12 +274,14 @@ static char *startup_options_prompt =
 "8. Disk options\n"
 "9. Serial or Parallel port options\n"
 "10. Sound Blaster 16 options\n"
-"11. NE2000 network card options\n"
+"11. Network card options\n"
 "12. Keyboard options\n"
-"13. Other options\n"
+"13. PCI options\n"
+"14. Other options\n"
 "\n"
 "Please choose one: [0] ";
 
+#ifndef WIN32
 static char *runtime_menu_prompt =
 "---------------------\n"
 "Bochs Runtime Options\n"
@@ -284,15 +295,13 @@ static char *runtime_menu_prompt =
 "7. (not implemented)\n"
 "8. Log options for all devices\n"
 "9. Log options for individual devices\n"
-"10. VGA Update Interval: %d\n"
-"11. Mouse: %s\n"
-"12. Keyboard paste delay: %d\n"
-"13. Userbutton shortcut: %s\n"
-"14. Instruction tracing: off (doesn't exist yet)\n"
-"15. Continue simulation\n"
-"16. Quit now\n"
+"10. Instruction tracing: off (doesn't exist yet)\n"
+"11. Misc runtime options\n"
+"12. Continue simulation\n"
+"13. Quit now\n"
 "\n"
-"Please choose one:  [15] ";
+"Please choose one:  [12] ";
+#endif
 
 #define NOT_IMPLEMENTED(choice) \
   fprintf (stderr, "ERROR: choice %d not implemented\n", choice);
@@ -301,6 +310,7 @@ static char *runtime_menu_prompt =
   do {fprintf (stderr, "ERROR: menu %d has no choice %d\n", menu, choice); \
       assert (0); } while (0)
 
+#ifndef WIN32
 void build_runtime_options_prompt (char *format, char *buf, int size)
 {
   bx_floppy_options floppyop;
@@ -330,14 +340,10 @@ void build_runtime_options_prompt (char *format, char *buf, int size)
         (cdromop.Ostatus->get () == BX_INSERTED)? "inserted" : "ejected");
     }
 
-  snprintf (buf, size, format, buffer[0], buffer[1], buffer[2], 
-      buffer[3], buffer[4], buffer[5],
-      /* ips->get (), */
-      SIM->get_param_num (BXP_VGA_UPDATE_INTERVAL)->get (), 
-      SIM->get_param_num (BXP_MOUSE_ENABLED)->get () ? "enabled" : "disabled",
-      SIM->get_param_num (BXP_KBD_PASTE_DELAY)->get (),
-      SIM->get_param_string (BXP_USER_SHORTCUT)->getptr ());
+  snprintf (buf, size, format, buffer[0], buffer[1], buffer[2],
+            buffer[3], buffer[4], buffer[5]);
 }
+#endif
 
 int do_menu (bx_id id) {
   bx_list_c *menu = (bx_list_c *)SIM->get_param (id);
@@ -352,7 +358,13 @@ int do_menu (bx_id id) {
       int index = choice->get () - 1;  // choosing 1 means list[0]
       bx_param_c *chosen = menu->get (index);
       assert (chosen != NULL);
-      chosen->text_ask (stdin, stderr);
+      if (chosen->get_enabled ()) {
+        if (chosen->get_type () == BXT_LIST) {
+          do_menu(chosen->get_id ());
+        } else {
+          chosen->text_ask (stdin, stderr);
+        }
+      }
     }
   }
 }
@@ -434,7 +446,7 @@ int bx_config_interface (int menu)
        double_percent(olddebuggerpath,CI_PATH_LENGTH);
 
        sprintf (prompt, startup_options_prompt, oldpath, oldprefix, olddebuggerpath);
-       if (ask_uint (prompt, 0, 13, 0, &choice, 10) < 0) return -1;
+       if (ask_uint (prompt, 0, 14, 0, &choice, 10) < 0) return -1;
        switch (choice) {
 	 case 0: return 0;
 	 case 1: askparam (BXP_LOG_FILENAME); break;
@@ -447,9 +459,10 @@ int bx_config_interface (int menu)
 	 case 8: do_menu (BXP_MENU_DISK); break;
 	 case 9: do_menu (BXP_MENU_SERIAL_PARALLEL); break;
 	 case 10: do_menu (BXP_SB16); break;
-	 case 11: do_menu (BXP_NE2K); break;
+	 case 11: do_menu (BXP_NETWORK); break;
 	 case 12: do_menu (BXP_MENU_KEYBOARD); break;
-	 case 13: do_menu (BXP_MENU_MISC); break;
+	 case 13: do_menu (BXP_PCI); break;
+	 case 14: do_menu (BXP_MENU_MISC); break;
 	 default: BAD_OPTION(menu, choice);
        }
      }
@@ -458,46 +471,49 @@ int bx_config_interface (int menu)
      char prompt[1024];
      bx_floppy_options floppyop;
      bx_atadevice_options cdromop;
+#ifdef WIN32
+     choice = RuntimeOptionsDialog();
+#else
      build_runtime_options_prompt (runtime_menu_prompt, prompt, 1024);
-     if (ask_uint (prompt, 1, 16, 15, &choice, 10) < 0) return -1;
+     if (ask_uint (prompt, 1, BX_CI_RT_QUIT, BX_CI_RT_CONT, &choice, 10) < 0) return -1;
+#endif
      switch (choice) {
-       case 1: 
+       case BX_CI_RT_FLOPPYA: 
          SIM->get_floppy_options (0, &floppyop);
-	 if (floppyop.Odevtype->get () != BX_FLOPPY_NONE) do_menu (BXP_FLOPPYA);
-	 break;
-       case 2:
+         if (floppyop.Odevtype->get () != BX_FLOPPY_NONE) do_menu (BXP_FLOPPYA);
+         break;
+       case BX_CI_RT_FLOPPYB:
          SIM->get_floppy_options (1, &floppyop);
-	 if (floppyop.Odevtype->get () != BX_FLOPPY_NONE) do_menu (BXP_FLOPPYB);
-	 break;
-       case 3:
-       case 4:
-       case 5:
-       case 6:
-	 int device;
+         if (floppyop.Odevtype->get () != BX_FLOPPY_NONE) do_menu (BXP_FLOPPYB);
+         break;
+       case BX_CI_RT_CDROM1:
+       case BX_CI_RT_CDROM2:
+       case BX_CI_RT_CDROM3:
+       case BX_CI_RT_CDROM4:
+         int device;
          if (SIM->get_cdrom_options (choice - 3, &cdromop, &device) && cdromop.Opresent->get ()) {
-	   // disable type selection
-	   SIM->get_param((bx_id)(BXP_ATA0_MASTER_TYPE + device))->set_enabled(0);
-	   SIM->get_param((bx_id)(BXP_ATA0_MASTER_MODEL + device))->set_enabled(0);
-	   SIM->get_param((bx_id)(BXP_ATA0_MASTER_BIOSDETECT + device))->set_enabled(0);
+           // disable type selection
+           SIM->get_param((bx_id)(BXP_ATA0_MASTER_TYPE + device))->set_enabled(0);
+           SIM->get_param((bx_id)(BXP_ATA0_MASTER_MODEL + device))->set_enabled(0);
+           SIM->get_param((bx_id)(BXP_ATA0_MASTER_BIOSDETECT + device))->set_enabled(0);
            do_menu ((bx_id)(BXP_ATA0_MASTER + device));
-           }
-	 break;
-       case 7: // not implemented yet because I would have to mess with
-	       // resetting timers and pits and everything on the fly.
-               // askparam (BXP_IPS);
-	       break;
-       case 8: bx_log_options (0); break;
-       case 9: bx_log_options (1); break;
-       case 10: askparam (BXP_VGA_UPDATE_INTERVAL); break;
-       case 11: askparam (BXP_MOUSE_ENABLED); break;
-       case 12: askparam (BXP_KBD_PASTE_DELAY); break;
-       case 13: askparam (BXP_USER_SHORTCUT); break;
-       case 14: NOT_IMPLEMENTED (choice); break;
-       case 15: fprintf (stderr, "Continuing simulation\n"); return 0;
-       case 16:
-	 fprintf (stderr, "You chose quit on the configuration interface.\n");
-	 SIM->quit_sim (1);
-	 return -1;
+         }
+         break;
+       case BX_CI_RT_IPS:
+         // not implemented yet because I would have to mess with
+         // resetting timers and pits and everything on the fly.
+         // askparam (BXP_IPS);
+         break;
+       case BX_CI_RT_LOGOPTS1: bx_log_options (0); break;
+       case BX_CI_RT_LOGOPTS2: bx_log_options (1); break;
+       case BX_CI_RT_INST_TR: NOT_IMPLEMENTED (choice); break;
+       case BX_CI_RT_MISC: do_menu (BXP_MENU_RUNTIME); break;
+       case BX_CI_RT_CONT: fprintf (stderr, "Continuing simulation\n"); return 0;
+       case BX_CI_RT_QUIT:
+         fprintf (stderr, "You chose quit on the configuration interface.\n");
+         bx_user_quit = 1;
+         SIM->quit_sim (1);
+         return -1;
        default: fprintf (stderr, "Menu choice %d not implemented.\n", choice);
      }
      break;
@@ -623,7 +639,7 @@ int bx_write_rc (char *rc)
 }
 
 char *log_action_ask_choices[] = { "cont", "alwayscont", "die", "abort", "debug" };
-int log_action_n_choices = 4 + (BX_DEBUGGER?1:0);
+int log_action_n_choices = 4 + (BX_DEBUGGER||BX_GDBSTUB?1:0);
 
 BxEvent *
 config_interface_notify_callback (void *unused, BxEvent *event)
@@ -647,7 +663,7 @@ config_interface_notify_callback (void *unused, BxEvent *event)
         opts = sparam->get_options()->get();
         if (opts & sparam->IS_FILENAME) {
           if (param->get_id() == BXP_NULL) {
-            event->retcode = AskFilename(GetBochsWindow(), (bx_param_filename_c *)sparam);
+            event->retcode = AskFilename(GetBochsWindow(), (bx_param_filename_c *)sparam, "txt");
           } else {
             event->retcode = FloppyDialog((bx_param_filename_c *)sparam);
           }
@@ -656,6 +672,9 @@ config_interface_notify_callback (void *unused, BxEvent *event)
           event->retcode = AskString(sparam);
           return event;
         }
+      } else if (param->get_type() == BXT_LIST) {
+        event->retcode = Cdrom1Dialog();
+        return event;
       }
 #endif
       event->u.param.param->text_ask (stdin, stderr);
@@ -680,6 +699,10 @@ config_interface_notify_callback (void *unused, BxEvent *event)
 #if BX_DEBUGGER
       fprintf (stderr, "  debug      - continue and return to bochs debugger\n");
 #endif
+#if BX_GDBSTUB
+      fprintf (stderr, "  debug      - hand control to gdb\n");
+#endif
+
       int choice;
 ask:
       if (ask_menu ("Choose one of the actions above: [%s] ", 
@@ -944,8 +967,14 @@ bx_list_c::text_ask (FILE *fpin, FILE *fpout)
       assert (list[i] != NULL);
       fprintf (fpout, "%d. ", i+1);
       if (list[i]->get_enabled ()) {
-        list[i]->text_print (fpout);
-	fprintf (fpout, "\n");
+        if (list[i]->get_type () == BXT_LIST) {
+          fprintf (fpout, "%s\n", list[i]->get_name ());
+        } else {
+          if ((options->get () & SHOW_GROUP_NAME) && (list[i]->get_group () != NULL))
+            fprintf (fpout, "%s ", list[i]->get_group ());
+          list[i]->text_print (fpout);
+          fprintf (fpout, "\n");
+        }
       } else
 	fprintf (fpout, "(disabled)\n");
     }
@@ -993,3 +1022,5 @@ int init_text_config_interface ()
   SIM->register_configuration_interface ("textconfig", ci_callback, NULL);
   return 0;  // success
 }
+
+#endif

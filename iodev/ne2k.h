@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.h,v 1.11 2003/03/02 23:59:11 cbothamy Exp $
+// $Id: ne2k.h,v 1.16 2004/09/05 10:30:19 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,14 +37,18 @@
 #if BX_USE_NE2K_SMF
 #  define BX_NE2K_SMF  static
 #  define BX_NE2K_THIS theNE2kDevice->
+#  define BX_NE2K_THIS_PTR theNE2kDevice
 #else
 #  define BX_NE2K_SMF
 #  define BX_NE2K_THIS this->
+#  define BX_NE2K_THIS_PTR this
 #endif
 
 #define  BX_NE2K_MEMSIZ    (32*1024)
 #define  BX_NE2K_MEMSTART  (16*1024)
 #define  BX_NE2K_MEMEND    (BX_NE2K_MEMSTART + BX_NE2K_MEMSIZ)
+
+class eth_pktmover_c;
 
 typedef struct {
     //
@@ -189,6 +193,12 @@ typedef struct {
     int    tx_timer_index;
     int    tx_timer_active;
 
+    // pci stuff
+    bx_bool pci_enabled;
+#if BX_SUPPORT_PCI
+    Bit8u devfunc;
+    Bit8u pci_conf[256];
+#endif
 } bx_ne2k_t;
 
 
@@ -208,6 +218,7 @@ private:
 
   BX_NE2K_SMF Bit32u read_cr(void);
   BX_NE2K_SMF void   write_cr(Bit32u value);
+  BX_NE2K_SMF void   set_irq_level(bx_bool level);
 
   BX_NE2K_SMF Bit32u chipmem_read(Bit32u address, unsigned io_len) BX_CPP_AttrRegparmN(2);
   BX_NE2K_SMF Bit32u asic_read(Bit32u offset, unsigned io_len) BX_CPP_AttrRegparmN(2);
@@ -232,8 +243,16 @@ private:
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
+#if BX_SUPPORT_PCI
+  static Bit32u pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len);
+  static void   pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len);
+#endif
 #if !BX_USE_NE2K_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
+#if BX_SUPPORT_PCI
+  Bit32u pci_read(Bit8u address, unsigned io_len);
+  void   pci_write(Bit8u address, Bit32u value, unsigned io_len);
+#endif
 #endif
 };

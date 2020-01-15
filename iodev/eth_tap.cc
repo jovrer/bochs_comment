@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tap.cc,v 1.16 2003/10/02 11:33:41 danielg4 Exp $
+// $Id: eth_tap.cc,v 1.25 2005/04/24 11:06:48 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -84,8 +84,10 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
-#if BX_NE2K_SUPPORT
+#include "iodev.h"
+#if BX_NETWORKING && defined(HAVE_ETHERTAP)
+
+#include "eth.h"
 
 #define LOG_THIS bx_devices.pluginNE2kDevice->
 
@@ -100,9 +102,9 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
-#if defined(__FreeBSD__) || defined(__APPLE__)  // Should be fixed for other *BSD
+#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__APPLE__)  // Should be fixed for other *BSD
 #include <net/if.h>
-#else
+#elif defined(__linux__)
 #include <asm/types.h>
 #include <linux/netlink.h>
 #include <linux/if.h>
@@ -111,9 +113,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#define TAP_VIRTUAL_HW_ADDR             0xDEADBEEF
-#define BX_ETH_TAP_LOGGING 1
-#define BX_PACKET_BUFSIZ 2048	// Enough for an ether frame
+#define BX_ETH_TAP_LOGGING 0
 
 //
 //  Define the class. This is private to this module
@@ -122,14 +122,17 @@ class bx_tap_pktmover_c : public eth_pktmover_c {
 public:
   bx_tap_pktmover_c(const char *netif, const char *macaddr,
 		     eth_rx_handler_t rxh,
-		     void *rxarg);
+		     void *rxarg, char *script);
   void sendpkt(void *buf, unsigned io_len);
 private:
   int fd;
   int rx_timer_index;
   static void rx_timer_handler(void *);
   void rx_timer ();
+  Bit8u guest_macaddr[6];
+#if BX_ETH_TAP_LOGGING
   FILE *txlog, *txlog_txt, *rxlog, *rxlog_txt;
+#endif
 };
 
 
@@ -143,8 +146,8 @@ public:
 protected:
   eth_pktmover_c *allocate(const char *netif, const char *macaddr,
 			   eth_rx_handler_t rxh,
-			   void *rxarg) {
-    return (new bx_tap_pktmover_c(netif, macaddr, rxh, rxarg));
+			   void *rxarg, char *script) {
+    return (new bx_tap_pktmover_c(netif, macaddr, rxh, rxarg, script));
   }
 } bx_tap_match;
 
@@ -157,7 +160,8 @@ protected:
 bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif, 
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
-				       void *rxarg)
+				       void *rxarg,
+				       char *script)
 {
   int flags;
   char filename[BX_PATHNAME_LEN];
@@ -219,12 +223,11 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
   /* Execute the configuration script */
   char intname[IFNAMSIZ];
   strcpy(intname,netif);
-  char *scriptname=bx_options.ne2k.Oscript->getptr();
-  if((scriptname != NULL)
-   &&(strcmp(scriptname, "") != 0)
-   &&(strcmp(scriptname, "none") != 0)) {
-    if (execute_script(scriptname, intname) < 0)
-      BX_ERROR (("execute script '%s' on %s failed", scriptname, intname));
+  if((script != NULL)
+   &&(strcmp(script, "") != 0)
+   &&(strcmp(script, "none") != 0)) {
+    if (execute_script(script, intname) < 0)
+      BX_ERROR (("execute script '%s' on %s failed", script, intname));
     }
 
   // Start the rx poll 
@@ -233,6 +236,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 				1, 1, "eth_tap"); // continuous, active
   this->rxh   = rxh;
   this->rxarg = rxarg;
+  memcpy(&guest_macaddr[0], macaddr, 6);
 #if BX_ETH_TAP_LOGGING
   // eventually Bryce wants txlog to dump in pcap format so that
   // tcpdump -r FILE can read it and interpret packets.
@@ -266,10 +270,10 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 void
 bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
-  Bit8u txbuf[BX_PACKET_BUFSIZ];
+  Bit8u txbuf[BX_PACKET_BUFSIZE];
   txbuf[0] = 0;
   txbuf[1] = 0;
-#if defined(__FreeBSD__) || defined(__APPLE__)  // Should be fixed for other *BSD
+#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__APPLE__)  // Should be fixed for other *BSD
   memcpy (txbuf, buf, io_len);
   unsigned int size = write (fd, txbuf, io_len);
   if (size != io_len) {
@@ -280,7 +284,7 @@ bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 #endif
     BX_PANIC (("write on tap device: %s", strerror (errno)));
   } else {
-    BX_INFO (("wrote %d bytes + 2 byte pad on tap", io_len));
+    BX_DEBUG (("wrote %d bytes + 2 byte pad on tap", io_len));
   }
 #if BX_ETH_TAP_LOGGING
   BX_DEBUG (("sendpkt length %u", io_len));
@@ -312,28 +316,30 @@ void bx_tap_pktmover_c::rx_timer_handler (void *this_ptr)
 void bx_tap_pktmover_c::rx_timer ()
 {
   int nbytes;
-  Bit8u buf[BX_PACKET_BUFSIZ];
+  Bit8u buf[BX_PACKET_BUFSIZE];
   Bit8u *rxbuf;
   if (fd<0) return;
   nbytes = read (fd, buf, sizeof(buf));
 
   // hack: discard first two bytes
-#if defined(__FreeBSD__) || defined(__APPLE__)  // Should be fixed for other *BSD
+#if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || defined(__APPLE__)  // Should be fixed for other *BSD
   rxbuf = buf;
 #else
   rxbuf = buf+2;
   nbytes-=2;
 #endif
   
+#if defined(__linux__)
   // hack: TAP device likes to create an ethernet header which has
   // the same source and destination address FE:FD:00:00:00:00.
   // Change the dest address to FE:FD:00:00:00:01.
-#if defined(__linux__)
-  rxbuf[5] = 1;
+  if (!memcmp(&rxbuf[0], &rxbuf[6], 6)) {
+    rxbuf[5] = guest_macaddr[5];
+  }
 #endif
 
   if (nbytes>0)
-    BX_INFO (("tap read returned %d bytes", nbytes));
+    BX_DEBUG (("tap read returned %d bytes", nbytes));
   if (nbytes<0) {
     if (errno != EAGAIN)
       BX_ERROR (("tap read error: %s", strerror(errno)));
@@ -367,4 +373,4 @@ void bx_tap_pktmover_c::rx_timer ()
   (*rxh)(rxarg, rxbuf, nbytes);
 }
 
-#endif /* if BX_NE2K_SUPPORT */
+#endif /* if BX_NETWORKING && defined HAVE_ETHERTAP */

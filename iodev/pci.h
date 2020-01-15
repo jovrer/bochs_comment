@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.h,v 1.14 2003/01/23 19:31:27 vruppert Exp $
+// $Id: pci.h,v 1.20 2004/07/11 20:38:48 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -41,6 +41,11 @@ typedef void   (*bx_pci_write_handler_t)(void *, Bit8u, Bit32u, unsigned);
 #endif
 
 
+#define BX_PCI_INTA 1
+#define BX_PCI_INTB 2
+#define BX_PCI_INTC 3
+#define BX_PCI_INTD 4
+
 typedef struct {
   Bit32u confAddr;
   Bit32u confData;
@@ -59,7 +64,16 @@ public:
   virtual bx_bool register_pci_handlers(void *this_ptr,
                                         bx_pci_read_handler_t f1,
                                         bx_pci_write_handler_t f2,
-                                        Bit8u devfunc, const char *name);
+                                        Bit8u *devfunc, const char *name,
+                                        const char *descr);
+  virtual bx_bool is_pci_device(const char *name);
+  virtual void pci_set_base_mem(void *this_ptr, memory_handler_t f1,
+                                memory_handler_t f2, Bit32u *addr,
+                                Bit8u *pci_conf, unsigned size);
+  virtual void pci_set_base_io(void *this_ptr, bx_read_handler_t f1,
+                               bx_write_handler_t f2, Bit32u *addr,
+                               Bit8u *pci_conf, unsigned size,
+                               const Bit8u *iomask, const char *name);
   virtual void   print_i440fx_state(void);
   virtual Bit8u rd_memType (Bit32u addr);
   virtual Bit8u wr_memType (Bit32u addr);
@@ -70,8 +84,11 @@ private:
     bx_pci_read_handler_t  read;
     bx_pci_write_handler_t write;
     void             *this_ptr;
-    } pci_handler[BX_MAX_PCI_DEVICES];
+  } pci_handler[BX_MAX_PCI_DEVICES];
   unsigned num_pci_handles;
+
+  bx_bool slot_used[BX_N_PCI_SLOTS];
+  bx_bool slots_checked;
 
   struct {
     bx_def440fx_t i440fx;

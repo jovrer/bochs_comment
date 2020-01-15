@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: sse.cc,v 1.32 2005/05/12 18:07:43 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//   Copyright (c) 2003 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit.cc,v 1.15 2003/07/31 12:04:48 vruppert Exp $
+// $Id: pit.cc,v 1.20 2004/12/13 19:10:38 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,9 +26,11 @@
 
 
 
-#include "bochs.h"
+#include "iodev.h"
 
 #if (BX_USE_NEW_PIT==0)
+
+#include "speaker.h"
 
 #define LOG_THIS bx_pit.
 
@@ -417,6 +419,10 @@ BX_INFO(("timer 0-2 mode control: comm:%02x mode:%02x bcd_mode:%u",
 
     case 0x61:
       BX_PIT_THIS s.speaker_data_on = (value >> 1) & 0x01;
+      if ( BX_PIT_THIS s.speaker_data_on )
+        DEV_speaker_beep_on(440.0);
+      else
+        DEV_speaker_beep_off();
 /*??? only on AT+ */
       set_GATE(2, value & 0x01);
 #if BX_CPU_LEVEL < 2
@@ -709,28 +715,6 @@ bx_pit_c::start(unsigned timerid)
       BX_PANIC(("start: timer%u has bad mode",
                (unsigned) BX_PIT_THIS s.timer[timerid].mode));
     }
-}
-
-
-
-
-  int
-bx_pit_c::SaveState( class state_file *fd )
-{
-  fd->write_check ("8254 start");
-  fd->write (&BX_PIT_THIS s, sizeof (BX_PIT_THIS s));
-  fd->write_check ("8254 end");
-  return(0);
-}
-
-
-  int
-bx_pit_c::LoadState( class state_file *fd )
-{
-  fd->read_check ("8254 start");
-  fd->read (&BX_PIT_THIS s, sizeof (BX_PIT_THIS s));
-  fd->read_check ("8254 end");
-  return(0);
 }
 
 

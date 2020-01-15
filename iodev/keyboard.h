@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.h,v 1.22 2003/07/13 19:51:21 vruppert Exp $
+// $Id: keyboard.h,v 1.29 2004/12/13 19:10:38 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -56,7 +56,7 @@ public:
   // override stubs from bx_keyb_stub_c
   virtual void     gen_scancode(Bit32u key);
   virtual void     paste_bytes(Bit8u *data, Bit32s length);
-  virtual void     mouse_motion(int delta_x, int delta_y, unsigned button_state);
+  virtual void     mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state);
 
   // update the paste delay based on bx_options.Okeyboard_paste_delay
   virtual void     paste_delay_changed ();
@@ -66,9 +66,6 @@ private:
   BX_KEY_SMF Bit8u    get_kbd_enable(void);
   BX_KEY_SMF void     service_paste_buf ();
   BX_KEY_SMF void     create_mouse_packet(bool force_enq);
-  BX_KEY_SMF void     mouse_button(unsigned mouse_state);
-  BX_KEY_SMF int      SaveState( class state_file *fd );
-  BX_KEY_SMF int      LoadState( class state_file *fd );
   BX_KEY_SMF unsigned periodic( Bit32u   usec_delta );
 
 
@@ -113,6 +110,7 @@ private:
       } kbd_controller;
 
     struct mouseStruct {
+      Bit8u   type;
       Bit8u   sample_rate;
       Bit8u   resolution_cpmm; // resolution in counts per mm
       Bit8u   scaling;
@@ -161,6 +159,9 @@ private:
       Bit8u button_status;
       Bit16s delayed_dx;
       Bit16s delayed_dy;
+      Bit16s delayed_dz;
+      Bit8u im_request;
+      bx_bool im_mode;
       } mouse;
 
     struct {
@@ -214,20 +215,21 @@ private:
   bx_bool stop_paste;  // stop the current paste operation on hardware reset
 
   BX_KEY_SMF void     resetinternals(bx_bool powerup);
-  BX_KEY_SMF void     set_kbd_clock_enable(Bit8u   value) BX_CPP_AttrRegparmN(1);
-  BX_KEY_SMF void     set_aux_clock_enable(Bit8u   value);
-  BX_KEY_SMF void     kbd_ctrl_to_kbd(Bit8u   value);
-  BX_KEY_SMF void     kbd_ctrl_to_mouse(Bit8u   value);
-  BX_KEY_SMF void     kbd_enQ(Bit8u   scancode);
-  BX_KEY_SMF void     kbd_enQ_imm(Bit8u   val);
+  BX_KEY_SMF void     set_kbd_clock_enable(Bit8u value) BX_CPP_AttrRegparmN(1);
+  BX_KEY_SMF void     set_aux_clock_enable(Bit8u value);
+  BX_KEY_SMF void     kbd_ctrl_to_kbd(Bit8u value);
+  BX_KEY_SMF void     kbd_ctrl_to_mouse(Bit8u value);
+  BX_KEY_SMF void     kbd_enQ(Bit8u scancode);
+  BX_KEY_SMF void     kbd_enQ_imm(Bit8u val);
   BX_KEY_SMF void     activate_timer(void);
-  BX_KEY_SMF void     controller_enQ(Bit8u   data, unsigned source);
-  BX_KEY_SMF bx_bool  mouse_enQ_packet(Bit8u   b1, Bit8u   b2, Bit8u   b3) BX_CPP_AttrRegparmN(3);
-  BX_KEY_SMF void     mouse_enQ(Bit8u   mouse_data);
+  BX_KEY_SMF void     controller_enQ(Bit8u data, unsigned source);
+  BX_KEY_SMF bx_bool  mouse_enQ_packet(Bit8u b1, Bit8u b2, Bit8u b3, Bit8u b4);
+  BX_KEY_SMF void     mouse_enQ(Bit8u mouse_data);
 
   static void   timer_handler(void *);
   void   timer(void);
   int    timer_handle;
+  int    statusbar_id[3];
   };
 
 

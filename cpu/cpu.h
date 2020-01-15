@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h,v 1.155 2003/12/30 22:12:45 cbothamy Exp $
+// $Id: cpu.h,v 1.220 2005/05/19 20:25:15 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #ifndef BX_CPU_H
@@ -31,7 +32,9 @@
 #include <setjmp.h>
 
 #include "cpu/lazy_flags.h"
+#include "cpu/hostasm.h"
 
+// <TAG-DEFINES-DECODE-START>
 // segment register encoding
 #define BX_SEG_REG_ES    0
 #define BX_SEG_REG_CS    1
@@ -42,6 +45,7 @@
 // NULL now has to fit in 3 bits.
 #define BX_SEG_REG_NULL  7
 #define BX_NULL_SEG_REG(seg) ((seg) == BX_SEG_REG_NULL)
+// <TAG-DEFINES-DECODE-END>
 
 
 #ifdef BX_LITTLE_ENDIAN
@@ -81,6 +85,14 @@
 #define BX_32BIT_REG_ESI 6
 #define BX_32BIT_REG_EDI 7
 
+#define BX_64BIT_REG_RAX 0
+#define BX_64BIT_REG_RCX 1
+#define BX_64BIT_REG_RDX 2
+#define BX_64BIT_REG_RBX 3
+#define BX_64BIT_REG_RSP 4
+#define BX_64BIT_REG_RBP 5
+#define BX_64BIT_REG_RSI 6
+#define BX_64BIT_REG_RDI 7
 
 #if defined(NEED_CPU_REG_SHORTCUTS)
 
@@ -114,7 +126,6 @@
 
 // access to 16 bit instruction pointer
 #define IP (* (Bit16u *) (((Bit8u *) &BX_CPU_THIS_PTR dword.eip) + BX_REG16_OFFSET))
-
 
 // accesss to 32 bit general registers
 #define EAX BX_CPU_THIS_PTR gen_reg[0].dword.erx
@@ -179,16 +190,20 @@
 #define BX_READ_16BIT_REG(index) (BX_CPU_THIS_PTR gen_reg[index].word.rx)
 #define BX_READ_32BIT_REG(index) (BX_CPU_THIS_PTR gen_reg[index].dword.erx)
 
-#define BX_WRITE_16BIT_REG(index, val) {\
-  BX_CPU_THIS_PTR gen_reg[index].word.rx = val; \
-  }
-
 #define BX_READ_16BIT_BASE_REG(var, index) {\
   var = *BX_CPU_THIS_PTR _16bit_base_reg[index];\
   }
 
 #define BX_READ_16BIT_INDEX_REG(var, index) {\
   var = *BX_CPU_THIS_PTR _16bit_index_reg[index];\
+  }
+
+#define BX_WRITE_16BIT_REG(index, val) {\
+  BX_CPU_THIS_PTR gen_reg[index].word.rx = val; \
+  }
+
+#define BX_WRITE_32BIT_REG(index, val) {\
+  BX_CPU_THIS_PTR gen_reg[index].dword.erx = val; \
   }
 
 #if BX_SUPPORT_X86_64
@@ -199,15 +214,16 @@
   else \
     BX_CPU_THIS_PTR gen_reg[(index)-4].word.byte.rh = val; \
   }
-#define BX_WRITE_32BIT_REG(index, val) {\
-  BX_CPU_THIS_PTR gen_reg[index].dword.erx = val; \
-  }
+
 #define BX_WRITE_32BIT_REGZ(index, val) {\
   BX_CPU_THIS_PTR gen_reg[index].rrx = (Bit32u) val; \
   }
 
 #define BX_WRITE_64BIT_REG(index, val) {\
   BX_CPU_THIS_PTR gen_reg[index].rrx = val; \
+  }
+#define BX_CLEAR_64BIT_HIGH(index) {\
+  BX_CPU_THIS_PTR gen_reg[index].dword.hrx = 0; \
   }
 
 #else
@@ -220,20 +236,17 @@
   }
 #define BX_WRITE_8BIT_REGx(index, ext, val) BX_WRITE_8BIT_REG(index, val)
 
-#define BX_WRITE_32BIT_REG(index, val) {\
-  BX_CPU_THIS_PTR gen_reg[index].dword.erx = val; \
-  }
 // For x86-32, I just pretend this one is like the macro above,
 // so common code can be used.
 #define BX_WRITE_32BIT_REGZ(index, val) {\
   BX_CPU_THIS_PTR gen_reg[index].dword.erx = (Bit32u) val; \
   }
 
+#define BX_CLEAR_64BIT_HIGH(index)
+
 #endif
 
-#ifndef CPL
 #define CPL  (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.rpl)
-#endif
 
 #if BX_SMP_PROCESSORS==1
 #define BX_CPU_ID 0
@@ -315,14 +328,30 @@
 #define BX_MSR_KERNELGSBASE     0xc0000102
 #endif
 
-#define BX_MODE_IA32            0x0
-#define BX_MODE_LONG_COMPAT     0x1
-#define BX_MODE_LONG_64         0x2
+#define BX_MODE_IA32_REAL       0x0   // CR0.PE=0
+#define BX_MODE_IA32_V8086      0x1   // CR0.PE=1, EFLAGS.VM=1
+#define BX_MODE_IA32_PROTECTED  0x2   // CR0.PE=1, EFLAGS.VM=0
+#define BX_MODE_LONG_COMPAT     0x3   // EFER.LMA = 0, EFER.LME = 1, CR0.PE=1
+#define BX_MODE_LONG_64         0x4   // EFER.LMA = 1, EFER.LME = 1, CR0.PE=1
+
+#define BX_CANONICAL_BITS   (48)
+
+#if BX_SUPPORT_X86_64
+#define IsLongMode() (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
+#else
+#define IsLongMode() (0)
+#endif
+
+#if BX_SUPPORT_X86_64
+#define IsCanonical(offset) ((Bit64u)((((Bit64s)(offset)) >> (BX_CANONICAL_BITS-1)) + 1) < 2)
+#else
+#define IsCanonical(offset) (0)
+#endif
 
 #if BX_SUPPORT_APIC
-#define BX_CPU_INTR             (BX_CPU_THIS_PTR INTR || BX_CPU_THIS_PTR local_apic.INTR)
+#define BX_CPU_INTR  (BX_CPU_THIS_PTR INTR || BX_CPU_THIS_PTR local_apic.INTR)
 #else
-#define BX_CPU_INTR             BX_CPU_THIS_PTR INTR
+#define BX_CPU_INTR  (BX_CPU_THIS_PTR INTR)
 #endif
 
 class BX_CPU_C;
@@ -377,15 +406,15 @@ typedef struct {
 
 #define DECLARE_EFLAGS_ACCESSORS()                                           \
   BX_CPP_INLINE void setEFlags(Bit32u val);
+
 #define IMPLEMENT_EFLAGS_ACCESSORS()                                         \
   BX_CPP_INLINE void BX_CPU_C::setEFlags(Bit32u val) {                       \
     BX_CPU_THIS_PTR eflags.val32 = val;                                      \
     BX_CPU_THIS_PTR eflags.VM_cached = val & (1<<17);                        \
-    if ( BX_CPU_THIS_PTR cr0.pe) {                                           \
-      BX_CPU_THIS_PTR v8086Mode = BX_CPU_THIS_PTR eflags.VM_cached;          \
-      BX_CPU_THIS_PTR protectedMode = ! BX_CPU_THIS_PTR v8086Mode;           \
-      }                                                                      \
-    }
+    if (BX_CPU_THIS_PTR cr0.pe && BX_CPU_THIS_PTR eflags.VM_cached) {        \
+      BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;                         \
+    }                                                                        \
+  }
 
   // accessors for all eflags in bx_flags_reg_t
   // The macro is used once for each flag bit.
@@ -425,34 +454,33 @@ typedef struct {
   BX_CPP_INLINE void BX_CPU_C::assert_VM() {                                 \
     BX_CPU_THIS_PTR eflags.val32 |= (1<<bitnum);                             \
     BX_CPU_THIS_PTR eflags.VM_cached = 1;                                    \
-    if ( BX_CPU_THIS_PTR cr0.pe) {                                           \
-      BX_CPU_THIS_PTR protectedMode = 0;                                     \
-      BX_CPU_THIS_PTR v8086Mode = 1;                                         \
-      }                                                                      \
+    if (BX_CPU_THIS_PTR cr0.pe) {                                            \
+      BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;                         \
     }                                                                        \
+  }                                                                          \
   BX_CPP_INLINE void BX_CPU_C::clear_VM() {                                  \
-    BX_CPU_THIS_PTR eflags.val32 &= ~(1<<bitnum);                            \
-    BX_CPU_THIS_PTR eflags.VM_cached = 0;                                    \
-    if ( BX_CPU_THIS_PTR cr0.pe) {                                           \
-      BX_CPU_THIS_PTR protectedMode = 1;                                     \
-      BX_CPU_THIS_PTR v8086Mode = 0;                                         \
+    if (BX_CPU_THIS_PTR eflags.VM_cached) {                                  \
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<bitnum);                          \
+      BX_CPU_THIS_PTR eflags.VM_cached = 0;                                  \
+      if (BX_CPU_THIS_PTR cr0.pe) {                                          \
+        BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_PROTECTED;                   \
       }                                                                      \
     }                                                                        \
+  }                                                                          \
   BX_CPP_INLINE Bit32u  BX_CPU_C::get_VM() {                                 \
     return BX_CPU_THIS_PTR eflags.VM_cached;                                 \
-    }                                                                        \
+  }                                                                          \
   BX_CPP_INLINE bx_bool BX_CPU_C::getB_VM() {                                \
     return (BX_CPU_THIS_PTR eflags.VM_cached>0);                             \
-    }                                                                        \
+  }                                                                          \
   BX_CPP_INLINE void BX_CPU_C::set_VM(Bit32u val) {                          \
     BX_CPU_THIS_PTR eflags.val32 =                                           \
       (BX_CPU_THIS_PTR eflags.val32&~(1<<bitnum)) | (val ? (1<<bitnum) : 0); \
     BX_CPU_THIS_PTR eflags.VM_cached = val;                                  \
-    if ( BX_CPU_THIS_PTR cr0.pe) {                                           \
-      BX_CPU_THIS_PTR v8086Mode = val;                                       \
-      BX_CPU_THIS_PTR protectedMode = ! BX_CPU_THIS_PTR v8086Mode;           \
-      }                                                                      \
-    }
+    if (BX_CPU_THIS_PTR cr0.pe && BX_CPU_THIS_PTR eflags.VM_cached) {        \
+      BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;                         \
+    }                                                                        \
+  }
 
 #define DECLARE_EFLAG_ACCESSOR_IOPL(bitnum)                                  \
   BX_CPP_INLINE void set_IOPL(Bit32u val);                                   \
@@ -462,10 +490,10 @@ typedef struct {
   BX_CPP_INLINE void BX_CPU_C::set_IOPL(Bit32u val) {                        \
     BX_CPU_THIS_PTR eflags.val32 &= ~(3<<12);                                \
     BX_CPU_THIS_PTR eflags.val32 |= ((3&val) << 12);                         \
-    }                                                                        \
-  BX_CPP_INLINE Bit32u  BX_CPU_C::get_IOPL() {                               \
+  }                                                                          \
+  BX_CPP_INLINE Bit32u BX_CPU_C::get_IOPL() {                                \
     return 3 & (BX_CPU_THIS_PTR eflags.val32 >> 12);                         \
-    }
+  }
 
 #define EFlagsCFMask     0x00000001
 #define EFlagsPFMask     0x00000004
@@ -607,6 +635,7 @@ typedef struct {
   bx_bool sce;		// system call extensions
   bx_bool lme;		// long mode enable
   bx_bool lma;		// long mode active
+  bx_bool nxe;		// no-execute enable
   bx_bool ffxsr;	// fast FXSAVE/FXRSTOR
 
   Bit64u star;
@@ -617,119 +646,14 @@ typedef struct {
 #endif
 
   /* TODO finish of the others */
-  } bx_regs_msr_t;
+} bx_regs_msr_t;
 #endif
 
-typedef struct { /* bx_selector_t */
-  Bit16u value;   /* the 16bit value of the selector */
-#if BX_CPU_LEVEL >= 2
-    /* the following fields are extracted from the value field in protected
-       mode only.  They're used for sake of efficiency */
-  Bit16u index;   /* 13bit index extracted from value in protected mode */
-  Bit8u  ti;      /* table indicator bit extracted from value */
-  Bit8u  rpl;     /* RPL extracted from value */
-#endif
-  } bx_selector_t;
-
-
-
-typedef struct {
-
-#define SegValidCache 0x1
-#define SegAccessROK  0x2
-#define SegAccessWOK  0x4
-  bx_bool valid;         // Holds above values, Or'd together.  Used to
-                         // hold only 0 or 1.
-
-  bx_bool p;             /* present */
-  Bit8u   dpl;           /* descriptor privilege level 0..3 */
-  bx_bool segment;       /* 0 = system/gate, 1 = data/code segment */
-  Bit8u   type;          /* For system & gate descriptors, only
-                          *  0 = invalid descriptor (reserved)
-                          *  1 = 286 available Task State Segment (TSS)
-                          *  2 = LDT descriptor
-                          *  3 = 286 busy Task State Segment (TSS)
-                          *  4 = 286 call gate
-                          *  5 = task gate
-                          *  6 = 286 interrupt gate
-                          *  7 = 286 trap gate
-                          *  8 = (reserved)
-                          *  9 = 386 available TSS
-                          * 10 = (reserved)
-                          * 11 = 386 busy TSS
-                          * 12 = 386 call gate
-                          * 13 = (reserved)
-                          * 14 = 386 interrupt gate
-                          * 15 = 386 trap gate */
-  union {
-  struct {
-    bx_bool executable;    /* 1=code, 0=data or stack segment */
-    bx_bool c_ed;          /* for code: 1=conforming,
-                              for data/stack: 1=expand down */
-    bx_bool r_w;           /* for code: readable?, for data/stack: writeable? */
-    bx_bool a;             /* accessed? */
-    bx_address  base;      /* base address: 286=24bits, 386=32bits, long=64 */
-    Bit32u  limit;         /* limit: 286=16bits, 386=20bits */
-    Bit32u  limit_scaled;  /* for efficiency, this contrived field is set to
-                            * limit for byte granular, and
-                            * (limit << 12) | 0xfff for page granular seg's
-                            */
-#if BX_CPU_LEVEL >= 3
-    bx_bool g;             /* granularity: 0=byte, 1=4K (page) */
-    bx_bool d_b;           /* default size: 0=16bit, 1=32bit */
-#if BX_SUPPORT_X86_64
-    bx_bool l;             /* long mode: 0=compat, 1=64 bit */
-#endif
-    bx_bool avl;           /* available for use by system */
-#endif
-    } segment;
-  struct {
-    Bit8u   word_count;    /* 5bits (0..31) #words to copy from caller's stack
-                            * to called procedure's stack.  (call gates only)*/
-    Bit16u  dest_selector;
-    Bit16u  dest_offset;
-    } gate286;
-  struct {                 // type 5: Task Gate Descriptor
-    Bit16u  tss_selector;  // TSS segment selector
-    } taskgate;
-#if BX_CPU_LEVEL >= 3
-  struct {
-    Bit8u   dword_count;   /* 5bits (0..31) #dwords to copy from caller's stack
-                            * to called procedure's stack.  (call gates only)*/
-    Bit16u  dest_selector;
-    Bit32u  dest_offset;
-    } gate386;
-#endif
-  struct {
-    Bit32u  base;          /* 24 bit 286 TSS base  */
-    Bit16u  limit;         /* 16 bit 286 TSS limit */
-    } tss286;
-#if BX_CPU_LEVEL >= 3
-  struct {
-    bx_address  base;      /* 32/64 bit 386 TSS base */
-    Bit32u  limit;         /* 20 bit 386 TSS limit */
-    Bit32u  limit_scaled;  // Same notes as for 'segment' field
-    bx_bool g;             /* granularity: 0=byte, 1=4K (page) */
-    bx_bool avl;           /* available for use by system */
-    } tss386;
-#endif
-  struct {
-    bx_address  base;  /* 286=24 386+ =32/64 bit LDT base */
-    Bit16u  limit; /* 286+ =16 bit LDT limit */
-    } ldt;
-    } u;
-
-  } bx_descriptor_t;
-
-typedef struct {
-  bx_selector_t          selector;
-  bx_descriptor_t  cache;
-  } bx_segment_reg_t;
+#include "descriptor.h"
 
 typedef void * (*BxVoidFPtr_t)(void);
-class BX_CPU_C;
 
-
+// <TAG-CLASS-INSTRUCTION-START>
 class bxInstruction_c {
 public:
   // Function pointers; a function to resolve the modRM address
@@ -737,7 +661,7 @@ public:
   // and a function to execute the instruction after resolving
   // the memory address (if any).
 #if BX_USE_CPU_SMF
-  void (*ResolveModrm)(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  void  ( BX_CPP_AttrRegparmN(1) *ResolveModrm )(bxInstruction_c *);
   void (*execute)(bxInstruction_c *);
 #else
   void (BX_CPU_C::*ResolveModrm)(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -777,13 +701,13 @@ public:
         Bit32u   Id;
         Bit16u   Iw;
         Bit8u    Ib;
-        };
+      };
 
       union {
         Bit16u displ16u; // for 16-bit modrm forms
         Bit32u displ32u; // for 32-bit modrm forms
-        };
-      } modRMForm;
+      };
+    } modRMForm;
 
     struct {
       Bit32u dummy;
@@ -791,13 +715,13 @@ public:
         Bit32u   Id;
         Bit16u   Iw;
         Bit8u    Ib;
-        };
+      };
       union {
         Bit32u   Id2; // Not used (for alignment)
         Bit16u   Iw2;
         Bit8u    Ib2;
-        };
-      } IxIxForm;
+      };
+    } IxIxForm;
 
     struct {
       // For opcodes which don't use modRM, but which encode the
@@ -808,47 +732,47 @@ public:
         Bit32u   Id;
         Bit16u   Iw;
         Bit8u    Ib;
-        };
+      };
       Bit32u dummy;
-      } IxForm;
+    } IxForm;
 
 #if BX_SUPPORT_X86_64
     // Form: [opcode/Iq].  These opcode never use a modrm sequence.
     struct {
       Bit32u opcodeReg;
       Bit64u   Iq;  // for MOV Rx,imm64
-      } IqForm;
+    } IqForm;
 #endif
-    };
+  };
 
   BX_CPP_INLINE unsigned opcodeReg() {
     // The opcodeReg form (low 3 bits of the opcode byte (extended
     // by REX.B on x86-64) can be accessed by IxForm or IqForm.  They
     // are aligned in the same place, so it doesn't matter.
     return IxForm.opcodeReg;
-    }
+  }
   BX_CPP_INLINE unsigned modrm() { return (modRMForm.modRMData>>20) & 0xff; }
   BX_CPP_INLINE unsigned mod() { return modRMForm.modRMData & 0xc0; }
   BX_CPP_INLINE unsigned modC0()
-    {
+  {
     // This is a cheaper way to test for modRM instructions where
     // the mod field is 0xc0.  FetchDecode flags this condition since
     // it is quite common to be tested for.
     return metaInfo & (1<<22);
-    }
+  }
   BX_CPP_INLINE unsigned nnn() {
-      return (modRMForm.modRMData >> 8) & 0xf;
-      }
+    return (modRMForm.modRMData >> 8) & 0xf;
+  }
   BX_CPP_INLINE unsigned rm()  { return modRMForm.modRMData & 0xf; }
   BX_CPP_INLINE unsigned sibScale()  {
-      return (modRMForm.modRMData >> 4) & 0x3;
-      }
+    return (modRMForm.modRMData >> 4) & 0x3;
+  }
   BX_CPP_INLINE unsigned sibIndex() {
-      return (modRMForm.modRMData >> 16) & 0xf;
-      }
+    return (modRMForm.modRMData >> 16) & 0xf;
+  }
   BX_CPP_INLINE unsigned sibBase()  {
-      return (modRMForm.modRMData >> 12) & 0xf;
-      }
+    return (modRMForm.modRMData >> 12) & 0xf;
+  }
   BX_CPP_INLINE Bit32u   displ32u() { return modRMForm.displ32u; }
   BX_CPP_INLINE Bit16u   displ16u() { return modRMForm.displ16u; }
   BX_CPP_INLINE Bit32u   Id()  { return modRMForm.Id; }
@@ -867,203 +791,132 @@ public:
   // code, when a strict 0 or 1 is not necessary.
   BX_CPP_INLINE void initMetaInfo(unsigned seg,
                                   unsigned os32, unsigned as32,
-                                  unsigned os64, unsigned as64,
-                                  unsigned extend8bit, unsigned repUsed) {
-      metaInfo = seg | (os32<<4) | (as32<<5) |
-                 (os64<<6) | (as64<<7) | (extend8bit<<8) | (repUsed<<9);
-      }
+                                  unsigned os64, unsigned as64)
+  {
+    metaInfo = seg | (os32<<4) | (as32<<5) | (os64<<6) | (as64<<7);
+  }
   BX_CPP_INLINE unsigned seg(void) {
-      return metaInfo & 7;
-      }
+    return metaInfo & 7;
+  }
   BX_CPP_INLINE void setSeg(unsigned val) {
-      metaInfo = (metaInfo & ~7) | val;
-      }
+    metaInfo = (metaInfo & ~7) | val;
+  }
 
   BX_CPP_INLINE unsigned os32L(void) {
-      return metaInfo & (1<<4);
-      }
+    return metaInfo & (1<<4);
+  }
   BX_CPP_INLINE unsigned os32B(void) {
-      return (metaInfo >> 4) & 1;
-      }
+    return (metaInfo >> 4) & 1;
+  }
   BX_CPP_INLINE void setOs32B(unsigned bit) {
-      metaInfo = (metaInfo & ~(1<<4)) | (bit<<4);
-      }
+    metaInfo = (metaInfo & ~(1<<4)) | (bit<<4);
+  }
   BX_CPP_INLINE void assertOs32(void) {
-      metaInfo |= (1<<4);
-      }
+    metaInfo |= (1<<4);
+  }
 
   BX_CPP_INLINE unsigned as32L(void) {
-      return metaInfo & (1<<5);
-      }
+    return metaInfo & (1<<5);
+  }
   BX_CPP_INLINE unsigned as32B(void) {
-      return (metaInfo >> 5) & 1;
-      }
+    return (metaInfo >> 5) & 1;
+  }
   BX_CPP_INLINE void setAs32B(unsigned bit) {
-      metaInfo = (metaInfo & ~(1<<5)) | (bit<<5);
-      }
+    metaInfo = (metaInfo & ~(1<<5)) | (bit<<5);
+  }
 
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE unsigned os64L(void) {
-      return metaInfo & (1<<6);
-      }
+    return metaInfo & (1<<6);
+  }
   BX_CPP_INLINE void setOs64B(unsigned bit) {
-      metaInfo = (metaInfo & ~(1<<6)) | (bit<<6);
-      }
+    metaInfo = (metaInfo & ~(1<<6)) | (bit<<6);
+  }
   BX_CPP_INLINE void assertOs64(void) {
-      metaInfo |= (1<<6);
-      }
+    metaInfo |= (1<<6);
+  }
 #else
   BX_CPP_INLINE unsigned os64L(void) { return 0; }
 #endif
 
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE unsigned as64L(void) {
-      return metaInfo & (1<<7);
-      }
+    return metaInfo & (1<<7);
+  }
   BX_CPP_INLINE void setAs64B(unsigned bit) {
-      metaInfo = (metaInfo & ~(1<<7)) | (bit<<7);
-      }
+    metaInfo = (metaInfo & ~(1<<7)) | (bit<<7);
+  }
 #else
   BX_CPP_INLINE unsigned as64L(void) { return 0; }
 #endif
 
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE unsigned extend8bitL(void) {
-      return metaInfo & (1<<8);
-      }
+    return metaInfo & (1<<8);
+  }
   BX_CPP_INLINE void assertExtend8bit(void) {
-      metaInfo |= (1<<8);
-      }
+    metaInfo |= (1<<8);
+  }
 #endif
 
   BX_CPP_INLINE unsigned repUsedL(void) {
-      return metaInfo & (3<<9);
-      }
+    return metaInfo & (3<<9);
+  }
   BX_CPP_INLINE unsigned repUsedValue(void) {
-      return (metaInfo >> 9) & 3;
-      }
+    return (metaInfo >> 9) & 3;
+  }
   BX_CPP_INLINE void setRepUsed(unsigned value) {
-      metaInfo = (metaInfo & ~(3<<9)) | (value<<9);
-      }
-
+    metaInfo = (metaInfo & ~(3<<9)) | (value<<9);
+  }
   BX_CPP_INLINE void setRepAttr(unsigned value) {
-      // value is expected to be masked, and only contain bits
-      // for BxRepeatable and BxRepeatableZF.  We don't need to
-      // keep masking out these bits before we add in new ones,
-      // since the fetch process won't start with repeatable attributes
-      // and then delete them.
-      metaInfo |= value;
-      }
+    // value is expected to be masked, and only contain bits
+    // for BxRepeatable and BxRepeatableZF.  We don't need to
+    // keep masking out these bits before we add in new ones,
+    // since the fetch process won't start with repeatable attributes
+    // and then delete them.
+    metaInfo |= value;
+  }
   BX_CPP_INLINE unsigned repeatableL(void) {
-      return metaInfo & (1<<11);
-      }
+    return metaInfo & (1<<11);
+  }
   BX_CPP_INLINE unsigned repeatableZFL(void) {
-      return metaInfo & (1<<12);
-      }
+    return metaInfo & (1<<12);
+  }
 
   BX_CPP_INLINE unsigned b1(void) {
-      return (metaInfo >> 13) & 0x1ff;
-      }
+    return (metaInfo >> 13) & 0x1ff;
+  }
   BX_CPP_INLINE void setB1(unsigned b1) {
-      metaInfo = (metaInfo & ~(0x1ff<<13)) | (b1<<13);
-      }
+    metaInfo = (metaInfo & ~(0x1ff<<13)) | (b1<<13);
+  }
 
   // Note this is the highest field, and thus needs no masking.
   // DON'T PUT ANY FIELDS HIGHER THAN THIS ONE WITHOUT ADDING A MASK.
   BX_CPP_INLINE unsigned ilen(void) {
-      return metaInfo >> 23;
-      }
+    return metaInfo >> 23;
+  }
   BX_CPP_INLINE void setILen(unsigned ilen) {
-      metaInfo |= (ilen<<23);
-      }
-  };
+    metaInfo |= (ilen<<23);
+  }
+};
+// <TAG-CLASS-INSTRUCTION-END>
 
 
+// <TAG-TYPE-EXECUTEPTR-START>
 #if BX_USE_CPU_SMF
 typedef void (*BxExecutePtr_t)(bxInstruction_c *);
-typedef void (*BxExecutePtr_tR)(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+typedef void (BX_CPP_AttrRegparmN(1) *BxExecutePtr_tR)(bxInstruction_c *);
 #else
 typedef void (BX_CPU_C::*BxExecutePtr_t)(bxInstruction_c *);
 typedef void (BX_CPU_C::*BxExecutePtr_tR)(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif
+// <TAG-TYPE-EXECUTEPTR-END>
 
 
 // ========== iCache =============================================
-
-#if BX_SupportICache
-
-#define BxICacheEntries (32 * 1024)  // Must be a power of 2.
-  // bit31: 1=CS is 32/64-bit, 0=CS is 16-bit.
-  // bit30: 1=Long Mode, 0=not Long Mode.
-  // bit29: 1=iCache page, 0=Data.
-#define ICacheWriteStampInvalid   0x1fffffff
-#define ICacheWriteStampMax       0x1fffffff // Decrements from here.
-#define ICacheWriteStampMask      0x1fffffff
-#define ICacheFetchModeMask       (~ICacheWriteStampMask)
-
-class bxICacheEntry_c {
-  public:
-
-  Bit32u pAddr;       // Physical address of the instruction.
-  Bit32u writeStamp;  // Generation ID.  Each write to a physical page
-                      // decrements this value.
-  bxInstruction_c i;  // The instruction decode information.
-  };
-
-class BOCHSAPI bxICache_c {
-  public:
-
-  bxICacheEntry_c entry[BxICacheEntries];
-
-  // A table (dynamically allocated) to store write-stamp
-  // generation IDs.  Each time a write occurs to a physical page,
-  // a generation ID is decremented.  Only iCache entries which have
-  // write stamps matching the physical page write stamp are valid.
-  Bit32u *pageWriteStampTable; // Allocated later.
-
-  Bit32u  fetchModeMask;
-
-  bxICache_c() {
-    // Initially clear the iCache;
-    memset(this, 0, sizeof(*this));
-    pageWriteStampTable = NULL;
-    for (unsigned i=0; i<BxICacheEntries; i++) {
-      entry[i].writeStamp = ICacheWriteStampInvalid;
-      }
-    }
-
-  BX_CPP_INLINE void alloc(unsigned memSizeInBytes) {
-    pageWriteStampTable =
-        (Bit32u*) malloc(sizeof(Bit32u) * (memSizeInBytes>>12));
-    for (unsigned i=0; i<(memSizeInBytes>>12); i++) {
-      pageWriteStampTable[i] = ICacheWriteStampInvalid;
-      }
-    }
-
-  BX_CPP_INLINE void decWriteStamp(BX_CPU_C *cpu, Bit32u a20Addr);
-
-  BX_CPP_INLINE void clear(void) {
-    memset(this, 0, sizeof(*this));
-    }
-  BX_CPP_INLINE unsigned hash(Bit32u pAddr) {
-    // A pretty dumb hash function for now.
-    return pAddr & (BxICacheEntries-1);
-    }
-  BX_CPP_INLINE Bit32u createFetchModeMask(BX_CPU_C *cpu);
-  };
+#if BX_SUPPORT_ICACHE
+#include "icache.h"
 #endif
-// ===============================================================
-
-
-#if BX_CPU_LEVEL < 2
-  /* no GDTR or IDTR register in an 8086 */
-#else
-typedef struct {
-  bx_address             base;      /* base address: 24bits=286,32bits=386,64bits=x86-64 */
-  Bit16u                 limit;     /* limit, 16bits */
-  } bx_global_segment_reg_t;
-#endif
-
 
 #if BX_USE_TLB
 typedef bx_ptr_equiv_t bx_hostpageaddr_t;
@@ -1173,11 +1026,16 @@ typedef struct {
 
 class BX_MEM_C;
 
-#if BX_SUPPORT_FPU || BX_SUPPORT_MMX
-#include "cpu/i387.h"
+#if BX_SUPPORT_X86_64
+# define BX_GENERAL_REGISTERS 16
+#else
+# define BX_GENERAL_REGISTERS 8
 #endif
 
+#if BX_SUPPORT_FPU
+#include "cpu/i387.h"
 #include "cpu/xmm.h"
+#endif
 
 class BOCHSAPI BX_CPU_C : public logfunctions {
 
@@ -1196,47 +1054,42 @@ public: // for now...
   // esi: source index
   // edi: destination index
   // esp: stack pointer
+  bx_gen_reg_t  gen_reg[BX_GENERAL_REGISTERS];
+
+  // instruction pointer
 #if BX_SUPPORT_X86_64
-  bx_gen_reg_t  gen_reg[16];
-
-union {
-#ifdef BX_BIG_ENDIAN
-  struct {
-    Bit32u rip_upper;
-    Bit32u eip;
-    } dword;
-#else
-  struct {
-    Bit32u eip;
-    Bit32u rip_upper;
-    } dword;
-#endif
-  Bit64u rip;
-  };
-
-#else
-
-  bx_gen_reg_t  gen_reg[8];
-
   union {
-    Bit32u eip;    // instruction pointer
+#ifdef BX_BIG_ENDIAN
+    struct {
+      Bit32u rip_upper;
+      Bit32u eip;
+    } dword;
+#else
+    struct {
+      Bit32u eip;
+      Bit32u rip_upper;
+    } dword;
+#endif
+    Bit64u rip;
+  };
+#else
+    union {
+      Bit32u eip;    // instruction pointer
     } dword;
 #endif
 
-#if BX_CPU_LEVEL > 0
   // so that we can back up when handling faults, exceptions, etc.
   // we need to store the value of the instruction pointer, before
   // each fetch/execute cycle.
   bx_address prev_eip;
-#endif
+  bx_address prev_esp;
+
   // status and control flags register set
   Bit32u lf_flags_status;
   bx_flags_reg_t eflags;
 
   bx_lf_flags_entry oszapc;
   bx_lf_flags_entry oszap;
-
-  bx_address prev_esp;
 
 #define BX_INHIBIT_INTERRUPTS 0x01
 #define BX_INHIBIT_DEBUG      0x02
@@ -1271,12 +1124,6 @@ union {
   /* Control registers */
 #if BX_CPU_LEVEL >= 2
   bx_cr0_t      cr0;
-
-  // Some cached values, so we don't have to do the checks in real time
-  // in code that needs them.
-  unsigned      protectedMode; // CR0.PE=1, EFLAGS.VM=0
-  unsigned      v8086Mode;     // CR0.PE=1, EFLAGS.VM=1
-  unsigned      realMode;      // CR0.PE=0
 
   Bit32u        cr1;
   bx_address    cr2;
@@ -1321,33 +1168,33 @@ union {
   Bit16u *_16bit_index_reg[8];
   Bit32u empty_register;
 
+// <TAG-CLASS-CPU-START>
   // for decoding instructions; accessing seg reg's by index
   unsigned sreg_mod00_rm16[8];
-  unsigned sreg_mod01_rm16[8];
-  unsigned sreg_mod10_rm16[8];
+  unsigned sreg_mod01or10_rm16[8];
 #if BX_SUPPORT_X86_64
-  unsigned sreg_mod01_rm32[16];
-  unsigned sreg_mod10_rm32[16];
+  unsigned sreg_mod01or10_rm32[16];
   unsigned sreg_mod0_base32[16];
   unsigned sreg_mod1or2_base32[16];
 #else
-  unsigned sreg_mod01_rm32[8];
-  unsigned sreg_mod10_rm32[8];
+  unsigned sreg_mod01or10_rm32[8];
   unsigned sreg_mod0_base32[8];
   unsigned sreg_mod1or2_base32[8];
 #endif
+// <TAG-CLASS-CPU-END>
 
   // for exceptions
   jmp_buf jmp_buf_env;
   Bit8u curr_exception[2];
 
-  static const bx_bool is_exception_OK[3][3];
-
   bx_segment_reg_t save_cs;
   bx_segment_reg_t save_ss;
   Bit32u           save_eip;
   Bit32u           save_esp;
-
+  // This help for OS/2
+  bx_bool          except_chk;
+  Bit16u           except_cs;
+  Bit16u           except_ss;
 
   // Boundaries of current page, based on EIP
   bx_address eipPageBias;
@@ -1355,19 +1202,12 @@ union {
   Bit8u     *eipFetchPtr;
   Bit32u     pAddrA20Page; // Guest physical address of current instruction
                            // page with A20() already applied.
-
-#if BX_SUPPORT_X86_64
-  // for x86-64  (MODE_IA32,MODE_LONG,MODE_64)
   unsigned cpu_mode;
-#else
-  // x86-32 is always in IA32 mode.
-  enum { cpu_mode = BX_MODE_IA32 };
-#endif
 
 #if BX_DEBUGGER
   Bit32u watchpoint;
   Bit8u break_point;
-#ifdef MAGIC_BREAKPOINT
+#if BX_MAGIC_BREAKPOINT
   Bit8u magic_break;
 #endif
   Bit8u stop_reason;
@@ -1378,6 +1218,10 @@ union {
   Bit8u show_eip;   /* BW record eip at special instr f.ex eip */
   Bit8u show_flag;  /* BW shows instr class executed */
   bx_guard_found_t guard_found;
+#endif
+
+#if BX_GDBSTUB
+  Bit8u ispanic;
 #endif
 
 #if BX_SUPPORT_X86_64
@@ -1402,14 +1246,14 @@ union {
 #else
 #  define BX_TLB_LPF_VALUE(lpf) (lpf)
 #endif
-    } TLB;
+  } TLB;
 #endif  // #if BX_USE_TLB
 
 
   // An instruction cache.  Each entry should be exactly 32 bytes, and
   // this structure should be aligned on a 32-byte boundary to be friendly
   // with the host cache lines.
-#if BX_SupportICache
+#if BX_SUPPORT_ICACHE
   bxICache_c iCache  BX_CPP_AlignN(32);
 #endif
 
@@ -1430,13 +1274,6 @@ union {
                         //   for a direct write access.
     } address_xlation;
 
-#if BX_SUPPORT_X86_64
-  // data upper 32 bits - not used any longer
-  //Bit32s daddr_upper;    // upper bits must be canonical  (-virtmax --> + virtmax)
-  // instruction upper 32 bits - not used any longer
-  //Bit32s iaddr_upper;    // upper bits must be canonical  (-virtmax --> + virtmax)
-#endif
-
 #if BX_EXTERNAL_DEBUGGER
   virtual void ask (int level, const char *prefix, const char *fmt, va_list ap);
 #endif
@@ -1444,15 +1281,13 @@ union {
 #define ArithmeticalFlag(flag, lfMaskShift, eflagsBitShift) \
   BX_SMF bx_bool get_##flag##Lazy(void); \
   BX_SMF bx_bool getB_##flag(void) { \
-    if ( (BX_CPU_THIS_PTR lf_flags_status & (0xf<<lfMaskShift)) == \
-         ((Bit32u) (BX_LF_INDEX_KNOWN<<lfMaskShift)) ) \
+    if ( (BX_CPU_THIS_PTR lf_flags_status & (0xf<<lfMaskShift)) == 0) \
       return (BX_CPU_THIS_PTR eflags.val32 >> eflagsBitShift) & 1; \
     else \
       return get_##flag##Lazy(); \
     } \
   BX_SMF bx_bool get_##flag(void) { \
-    if ( (BX_CPU_THIS_PTR lf_flags_status & (0xf<<lfMaskShift)) == \
-         ((Bit32u) (BX_LF_INDEX_KNOWN<<lfMaskShift)) ) \
+    if ( (BX_CPU_THIS_PTR lf_flags_status & (0xf<<lfMaskShift)) == 0) \
       return BX_CPU_THIS_PTR eflags.val32 & (1<<eflagsBitShift); \
     else \
       return get_##flag##Lazy(); \
@@ -1469,9 +1304,14 @@ union {
 
   // constructors & destructors...
   BX_CPU_C();
-  ~BX_CPU_C(void);
+#if BX_EXTERNAL_DEBUGGER
+  virtual ~BX_CPU_C();
+#else
+  ~BX_CPU_C();
+#endif
   void init (BX_MEM_C *addrspace);
 
+// <TAG-CLASS-CPU-START>
   // prototypes for CPU instructions...
   BX_SMF void ADD_EbGb(bxInstruction_c *);
   BX_SMF void ADD_EdGd(bxInstruction_c *);
@@ -1557,15 +1397,16 @@ union {
   BX_SMF void PUSHAD16(bxInstruction_c *);
   BX_SMF void POPAD32(bxInstruction_c *);
   BX_SMF void POPAD16(bxInstruction_c *);
-  BX_SMF void BOUND_GvMa(bxInstruction_c *);
   BX_SMF void ARPL_EwGw(bxInstruction_c *);
   BX_SMF void PUSH_Id(bxInstruction_c *);
   BX_SMF void PUSH_Iw(bxInstruction_c *);
-  BX_SMF void IMUL_GdEdId(bxInstruction_c *);
   BX_SMF void INSB_YbDX(bxInstruction_c *);
   BX_SMF void INSW_YvDX(bxInstruction_c *);
   BX_SMF void OUTSB_DXXb(bxInstruction_c *);
   BX_SMF void OUTSW_DXXv(bxInstruction_c *);
+
+  BX_SMF void BOUND_GwMa(bxInstruction_c *);
+  BX_SMF void BOUND_GdMa(bxInstruction_c *);
 
   BX_SMF void TEST_EbGb(bxInstruction_c *);
   BX_SMF void TEST_EdGd(bxInstruction_c *);
@@ -1576,19 +1417,14 @@ union {
 
   BX_SMF void MOV_EEbGb(bxInstruction_c *);
   BX_SMF void MOV_EGbGb(bxInstruction_c *);
-
   BX_SMF void MOV_EEdGd(bxInstruction_c *);
   BX_SMF void MOV_EGdGd(bxInstruction_c *);
-
   BX_SMF void MOV_EEwGw(bxInstruction_c *);
   BX_SMF void MOV_EGwGw(bxInstruction_c *);
-
   BX_SMF void MOV_GbEEb(bxInstruction_c *);
   BX_SMF void MOV_GbEGb(bxInstruction_c *);
-
   BX_SMF void MOV_GdEEd(bxInstruction_c *);
   BX_SMF void MOV_GdEGd(bxInstruction_c *);
-
   BX_SMF void MOV_GwEEw(bxInstruction_c *);
   BX_SMF void MOV_GwEGw(bxInstruction_c *);
 
@@ -1596,7 +1432,6 @@ union {
   BX_SMF void LEA_GdM(bxInstruction_c *);
   BX_SMF void LEA_GwM(bxInstruction_c *);
   BX_SMF void MOV_SwEw(bxInstruction_c *);
-  BX_SMF void POP_Ev(bxInstruction_c *);
 
   BX_SMF void CBW(bxInstruction_c *);
   BX_SMF void CWD(bxInstruction_c *);
@@ -1613,24 +1448,29 @@ union {
   BX_SMF void MOV_ObAL(bxInstruction_c *);
   BX_SMF void MOV_OdEAX(bxInstruction_c *);
   BX_SMF void MOV_OwAX(bxInstruction_c *);
-  BX_SMF void MOVSB_XbYb(bxInstruction_c *);
-  BX_SMF void MOVSW_XvYv(bxInstruction_c *);
-  BX_SMF void CMPSB_XbYb(bxInstruction_c *);
-  BX_SMF void CMPSW_XvYv(bxInstruction_c *);
   BX_SMF void TEST_ALIb(bxInstruction_c *);
   BX_SMF void TEST_EAXId(bxInstruction_c *);
   BX_SMF void TEST_AXIw(bxInstruction_c *);
+
+  // repeatable instructions
+  BX_SMF void MOVSB_XbYb(bxInstruction_c *);
+  BX_SMF void MOVSW_XwYw(bxInstruction_c *);
+  BX_SMF void MOVSD_XdYd(bxInstruction_c *);
+  BX_SMF void CMPSB_XbYb(bxInstruction_c *);
+  BX_SMF void CMPSW_XwYw(bxInstruction_c *);
+  BX_SMF void CMPSD_XdYd(bxInstruction_c *);
   BX_SMF void STOSB_YbAL(bxInstruction_c *);
-  BX_SMF void STOSW_YveAX(bxInstruction_c *);
   BX_SMF void LODSB_ALXb(bxInstruction_c *);
-  BX_SMF void LODSW_eAXXv(bxInstruction_c *);
   BX_SMF void SCASB_ALXb(bxInstruction_c *);
-  BX_SMF void SCASW_eAXXv(bxInstruction_c *);
+  BX_SMF void STOSW_YwAX(bxInstruction_c *);
+  BX_SMF void LODSW_AXXw(bxInstruction_c *);
+  BX_SMF void SCASW_AXXw(bxInstruction_c *);
+  BX_SMF void STOSD_YdEAX(bxInstruction_c *);
+  BX_SMF void LODSD_EAXXd(bxInstruction_c *);
+  BX_SMF void SCASD_EAXXd(bxInstruction_c *);
 
   BX_SMF void RETnear32(bxInstruction_c *);
   BX_SMF void RETnear16(bxInstruction_c *);
-  BX_SMF void LES_GvMp(bxInstruction_c *);
-  BX_SMF void LDS_GvMp(bxInstruction_c *);
   BX_SMF void MOV_EbIb(bxInstruction_c *);
   BX_SMF void MOV_EdId(bxInstruction_c *);
   BX_SMF void MOV_EwIw(bxInstruction_c *);
@@ -1678,7 +1518,6 @@ union {
   BX_SMF void CLD(bxInstruction_c *);
   BX_SMF void STD(bxInstruction_c *);
 
-
   BX_SMF void LAR_GvEw(bxInstruction_c *);
   BX_SMF void LSL_GvEw(bxInstruction_c *);
   BX_SMF void CLTS(bxInstruction_c *);
@@ -1717,29 +1556,36 @@ union {
   BX_SMF void SETNLE_Eb(bxInstruction_c *);
 
   BX_SMF void CPUID(bxInstruction_c *);
-  BX_SMF void BT_EvGv(bxInstruction_c *);
-  BX_SMF void SHLD_EdGd(bxInstruction_c *);
-  BX_SMF void SHLD_EwGw(bxInstruction_c *);
-
-
-  BX_SMF void BTS_EvGv(bxInstruction_c *);
 
   BX_SMF void SHRD_EwGw(bxInstruction_c *);
   BX_SMF void SHRD_EdGd(bxInstruction_c *);
+  BX_SMF void SHLD_EdGd(bxInstruction_c *);
+  BX_SMF void SHLD_EwGw(bxInstruction_c *);
 
-  BX_SMF void IMUL_GdEd(bxInstruction_c *);
+  BX_SMF void BSF_GwEw(bxInstruction_c *);
+  BX_SMF void BSF_GdEd(bxInstruction_c *);
+  BX_SMF void BSR_GwEw(bxInstruction_c *);
+  BX_SMF void BSR_GdEd(bxInstruction_c *);
 
+  BX_SMF void BT_EwGw(bxInstruction_c *);
+  BX_SMF void BT_EdGd(bxInstruction_c *);
+  BX_SMF void BTS_EwGw(bxInstruction_c *);
+  BX_SMF void BTS_EdGd(bxInstruction_c *);
+  BX_SMF void BTR_EwGw(bxInstruction_c *);
+  BX_SMF void BTR_EdGd(bxInstruction_c *);
+  BX_SMF void BTC_EwGw(bxInstruction_c *);
+  BX_SMF void BTC_EdGd(bxInstruction_c *);
+
+  BX_SMF void LES_GvMp(bxInstruction_c *);
+  BX_SMF void LDS_GvMp(bxInstruction_c *);
   BX_SMF void LSS_GvMp(bxInstruction_c *);
-  BX_SMF void BTR_EvGv(bxInstruction_c *);
   BX_SMF void LFS_GvMp(bxInstruction_c *);
   BX_SMF void LGS_GvMp(bxInstruction_c *);
+
   BX_SMF void MOVZX_GdEb(bxInstruction_c *);
   BX_SMF void MOVZX_GwEb(bxInstruction_c *);
   BX_SMF void MOVZX_GdEw(bxInstruction_c *);
   BX_SMF void MOVZX_GwEw(bxInstruction_c *);
-  BX_SMF void BTC_EvGv(bxInstruction_c *);
-  BX_SMF void BSF_GvEv(bxInstruction_c *);
-  BX_SMF void BSR_GvEv(bxInstruction_c *);
   BX_SMF void MOVSX_GdEb(bxInstruction_c *);
   BX_SMF void MOVSX_GwEb(bxInstruction_c *);
   BX_SMF void MOVSX_GdEw(bxInstruction_c *);
@@ -1805,7 +1651,9 @@ union {
   BX_SMF void NOT_Eb(bxInstruction_c *);
   BX_SMF void NEG_Eb(bxInstruction_c *);
   BX_SMF void MUL_ALEb(bxInstruction_c *);
+  BX_SMF void IMUL_GdEd(bxInstruction_c *);
   BX_SMF void IMUL_ALEb(bxInstruction_c *);
+  BX_SMF void IMUL_GdEdId(bxInstruction_c *);
   BX_SMF void DIV_ALEb(bxInstruction_c *);
   BX_SMF void IDIV_ALEb(bxInstruction_c *);
 
@@ -1854,8 +1702,14 @@ union {
   BX_SMF void BTR_EvIb(bxInstruction_c *);
   BX_SMF void BTC_EvIb(bxInstruction_c *);
 
+#if BX_SUPPORT_FPU == 0	// if FPU is disabled
+  BX_SMF void FPU_ESC(bxInstruction_c *);
+#endif
+
   BX_SMF void FWAIT(bxInstruction_c *);
 
+#if BX_SUPPORT_FPU
+  // load/store
   BX_SMF void FLD_STi(bxInstruction_c *);  
   BX_SMF void FLD_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FLD_DOUBLE_REAL(bxInstruction_c *);
@@ -1863,8 +1717,36 @@ union {
   BX_SMF void FILD_WORD_INTEGER(bxInstruction_c *);
   BX_SMF void FILD_DWORD_INTEGER(bxInstruction_c *);
   BX_SMF void FILD_QWORD_INTEGER(bxInstruction_c *);  
+  BX_SMF void FBLD_PACKED_BCD(bxInstruction_c *);
+
+  BX_SMF void FST_STi(bxInstruction_c *);
+  BX_SMF void FST_SINGLE_REAL(bxInstruction_c *);
+  BX_SMF void FST_DOUBLE_REAL(bxInstruction_c *);
+  BX_SMF void FSTP_EXTENDED_REAL(bxInstruction_c *);
+  BX_SMF void FIST_WORD_INTEGER(bxInstruction_c *);
+  BX_SMF void FIST_DWORD_INTEGER(bxInstruction_c *);
+  BX_SMF void FISTP_QWORD_INTEGER(bxInstruction_c *);
+  BX_SMF void FBSTP_PACKED_BCD(bxInstruction_c *);
+
+  BX_SMF void FISTTP16(bxInstruction_c *);
+  BX_SMF void FISTTP32(bxInstruction_c *);
+  BX_SMF void FISTTP64(bxInstruction_c *);
+
+  // control
+  BX_SMF void FNINIT(bxInstruction_c *);
+  BX_SMF void FNCLEX(bxInstruction_c *);
+
+  BX_SMF void FRSTOR(bxInstruction_c *);
+  BX_SMF void FNSAVE(bxInstruction_c *);
   BX_SMF void FLDENV(bxInstruction_c *);
+  BX_SMF void FNSTENV(bxInstruction_c *);
+
   BX_SMF void FLDCW(bxInstruction_c *);
+  BX_SMF void FNSTCW(bxInstruction_c *);
+  BX_SMF void FNSTSW(bxInstruction_c *);
+  BX_SMF void FNSTSW_AX(bxInstruction_c *);
+
+  // const
   BX_SMF void FLD1(bxInstruction_c *); 
   BX_SMF void FLDL2T(bxInstruction_c *);
   BX_SMF void FLDL2E(bxInstruction_c *);
@@ -1872,41 +1754,10 @@ union {
   BX_SMF void FLDLG2(bxInstruction_c *);
   BX_SMF void FLDLN2(bxInstruction_c *);
   BX_SMF void FLDZ(bxInstruction_c *);                        
-  BX_SMF void FBLD_PACKED_BCD(bxInstruction_c *);
-
-  // store
-  BX_SMF void FST_STi(bxInstruction_c *);
-  BX_SMF void FSTP_STi(bxInstruction_c *);
-  BX_SMF void FST_SINGLE_REAL(bxInstruction_c *);
-  BX_SMF void FSTP_SINGLE_REAL(bxInstruction_c *);
-  BX_SMF void FST_DOUBLE_REAL(bxInstruction_c *);
-  BX_SMF void FSTP_DOUBLE_REAL(bxInstruction_c *);
-  BX_SMF void FSTP_EXTENDED_REAL(bxInstruction_c *);
-
-  BX_SMF void FIST_WORD_INTEGER(bxInstruction_c *);
-  BX_SMF void FISTP_WORD_INTEGER(bxInstruction_c *);
-  BX_SMF void FIST_DWORD_INTEGER(bxInstruction_c *);
-  BX_SMF void FISTP_DWORD_INTEGER(bxInstruction_c *);
-  BX_SMF void FISTP_QWORD_INTEGER(bxInstruction_c *);
-  
-  BX_SMF void FNSTENV(bxInstruction_c *);
-  BX_SMF void FNSTCW(bxInstruction_c *);
-  BX_SMF void FNSTSW(bxInstruction_c *);
-  BX_SMF void FNSTSW_AX(bxInstruction_c *);
-  BX_SMF void FBSTP_PACKED_BCD(bxInstruction_c *);
-
-  BX_SMF void FISTTP16(bxInstruction_c *);
-  BX_SMF void FISTTP32(bxInstruction_c *);
-  BX_SMF void FISTTP64(bxInstruction_c *);
-
-  // save restore
-  BX_SMF void FRSTOR(bxInstruction_c *);
-  BX_SMF void FNSAVE(bxInstruction_c *);
 
   // add
   BX_SMF void FADD_ST0_STj(bxInstruction_c *);
   BX_SMF void FADD_STi_ST0(bxInstruction_c *);
-  BX_SMF void FADDP_STi_ST0(bxInstruction_c *);
   BX_SMF void FADD_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FADD_DOUBLE_REAL(bxInstruction_c *);
   BX_SMF void FIADD_WORD_INTEGER(bxInstruction_c *);
@@ -1915,7 +1766,6 @@ union {
   // mul
   BX_SMF void FMUL_ST0_STj(bxInstruction_c *);
   BX_SMF void FMUL_STi_ST0(bxInstruction_c *);
-  BX_SMF void FMULP_STi_ST0(bxInstruction_c *);
   BX_SMF void FMUL_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FMUL_DOUBLE_REAL(bxInstruction_c *);
   BX_SMF void FIMUL_WORD_INTEGER (bxInstruction_c *);
@@ -1926,13 +1776,11 @@ union {
   BX_SMF void FSUBR_ST0_STj(bxInstruction_c *);
   BX_SMF void FSUB_STi_ST0(bxInstruction_c *);
   BX_SMF void FSUBR_STi_ST0(bxInstruction_c *);
-  BX_SMF void FSUBP_STi_ST0(bxInstruction_c *);
-  BX_SMF void FSUBRP_STi_ST0(bxInstruction_c *);
-
   BX_SMF void FSUB_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FSUBR_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FSUB_DOUBLE_REAL(bxInstruction_c *);
   BX_SMF void FSUBR_DOUBLE_REAL(bxInstruction_c *);
+
   BX_SMF void FISUB_WORD_INTEGER(bxInstruction_c *);
   BX_SMF void FISUBR_WORD_INTEGER(bxInstruction_c *);
   BX_SMF void FISUB_DWORD_INTEGER(bxInstruction_c *);
@@ -1943,13 +1791,11 @@ union {
   BX_SMF void FDIVR_ST0_STj(bxInstruction_c *);
   BX_SMF void FDIV_STi_ST0(bxInstruction_c *);
   BX_SMF void FDIVR_STi_ST0(bxInstruction_c *);
-  BX_SMF void FDIVP_STi_ST0(bxInstruction_c *);
-  BX_SMF void FDIVRP_STi_ST0(bxInstruction_c *);
-
   BX_SMF void FDIV_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FDIVR_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FDIV_DOUBLE_REAL(bxInstruction_c *);
   BX_SMF void FDIVR_DOUBLE_REAL(bxInstruction_c *);
+
   BX_SMF void FIDIV_WORD_INTEGER(bxInstruction_c *);
   BX_SMF void FIDIVR_WORD_INTEGER(bxInstruction_c *);
   BX_SMF void FIDIV_DWORD_INTEGER(bxInstruction_c *);
@@ -1957,43 +1803,30 @@ union {
 
   // compare
   BX_SMF void FCOM_STi(bxInstruction_c *);
-  BX_SMF void FCOMP_STi(bxInstruction_c *);
-  BX_SMF void FCOMI_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCOMIP_ST0_STj(bxInstruction_c *);
-  BX_SMF void FUCOMI_ST0_STj(bxInstruction_c *);
-  BX_SMF void FUCOMIP_ST0_STj(bxInstruction_c *);
   BX_SMF void FUCOM_STi(bxInstruction_c *);
-  BX_SMF void FUCOMP_STi(bxInstruction_c *);
-
+  BX_SMF void FCOMI_ST0_STj(bxInstruction_c *);
+  BX_SMF void FUCOMI_ST0_STj(bxInstruction_c *);
   BX_SMF void FCOM_SINGLE_REAL(bxInstruction_c *);
-  BX_SMF void FCOMP_SINGLE_REAL(bxInstruction_c *);
   BX_SMF void FCOM_DOUBLE_REAL(bxInstruction_c *);
-  BX_SMF void FCOMP_DOUBLE_REAL(bxInstruction_c *);
   BX_SMF void FICOM_WORD_INTEGER(bxInstruction_c *);
-  BX_SMF void FICOMP_WORD_INTEGER(bxInstruction_c *);
   BX_SMF void FICOM_DWORD_INTEGER(bxInstruction_c *);
-  BX_SMF void FICOMP_DWORD_INTEGER(bxInstruction_c *);
+  BX_SMF void FCMOV_ST0_STj(bxInstruction_c *);
 
   BX_SMF void FCOMPP(bxInstruction_c *);  
   BX_SMF void FUCOMPP(bxInstruction_c *);
 
-  // mov
-  BX_SMF void FCMOVB_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVE_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVBE_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVU_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVNB_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVNE_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVNBE_ST0_STj(bxInstruction_c *);
-  BX_SMF void FCMOVNU_ST0_STj(bxInstruction_c *);
-
   // misc
   BX_SMF void FXCH_STi(bxInstruction_c *);
   BX_SMF void FNOP(bxInstruction_c *);
+  BX_SMF void FPLEGACY(bxInstruction_c *);
   BX_SMF void FCHS(bxInstruction_c *);
   BX_SMF void FABS(bxInstruction_c *);
   BX_SMF void FTST(bxInstruction_c *);
   BX_SMF void FXAM(bxInstruction_c *);
+  BX_SMF void FDECSTP(bxInstruction_c *);
+  BX_SMF void FINCSTP(bxInstruction_c *);
+  BX_SMF void FFREE_STi(bxInstruction_c *);
+  BX_SMF void FFREEP_STi(bxInstruction_c *);
 
   BX_SMF void F2XM1(bxInstruction_c *);
   BX_SMF void FYL2X(bxInstruction_c *);
@@ -2001,8 +1834,6 @@ union {
   BX_SMF void FPATAN(bxInstruction_c *);
   BX_SMF void FXTRACT(bxInstruction_c *);
   BX_SMF void FPREM1(bxInstruction_c *);
-  BX_SMF void FDECSTP(bxInstruction_c *);
-  BX_SMF void FINCSTP(bxInstruction_c *);
   BX_SMF void FPREM(bxInstruction_c *);
   BX_SMF void FYL2XP1(bxInstruction_c *);
   BX_SMF void FSQRT(bxInstruction_c *);
@@ -2012,9 +1843,7 @@ union {
   BX_SMF void FSCALE(bxInstruction_c *);
   BX_SMF void FSIN(bxInstruction_c *);
   BX_SMF void FCOS(bxInstruction_c *);
-  BX_SMF void FNCLEX(bxInstruction_c *);
-  BX_SMF void FNINIT(bxInstruction_c *);
-  BX_SMF void FFREE_STi(bxInstruction_c *);
+#endif
 
   /* MMX */
   BX_SMF void PUNPCKLBW_PqQd(bxInstruction_c *i);
@@ -2075,22 +1904,6 @@ union {
   BX_SMF void PSRLQ_PqIb(bxInstruction_c *i);
   BX_SMF void PSLLQ_PqIb(bxInstruction_c *i);
   /* MMX */
-
-#if BX_SUPPORT_FPU
-  BX_SMF void prepareFPU(void);
-  BX_SMF void print_state_FPU(void);
-#endif
-
-#if BX_SUPPORT_MMX || BX_SUPPORT_SSE
-  BX_SMF void prepareMMX(void);
-  BX_SMF void prepareFPU2MMX(void); /* cause transition from FPU to MMX technology state */
-  BX_SMF void print_state_MMX(void);
-#endif
-
-#if BX_SUPPORT_SSE
-  BX_SMF void prepareSSE(void);
-  BX_SMF void check_exceptionsSSE(int);
-#endif
 
 #if BX_SUPPORT_3DNOW
   BX_SMF void PFPNACC_PqQq(bxInstruction_c *i);
@@ -2309,6 +2122,71 @@ union {
   BX_SMF void PSLLDQ_WdqIb(bxInstruction_c *i);
   /* SSE2 */
 
+  /*** Duplicate SSE/SSE2 instructions ***/
+  // Although in implementation, these instructions are aliased to the
+  // another function, it's nice to have them call a seperate function when
+  // the decoder is being tested in stand-alone mode.
+#ifdef StandAloneDecoder
+  BX_SMF void MOVUPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void MOVUPD_WpdVpd(bxInstruction_c *);
+  BX_SMF void MOVAPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void MOVAPD_WpdVpd(bxInstruction_c *);
+  BX_SMF void MOVDQU_VdqWdq(bxInstruction_c *);
+  BX_SMF void MOVDQU_WdqVdq(bxInstruction_c *);
+  BX_SMF void MOVDQA_VdqWdq(bxInstruction_c *);
+  BX_SMF void MOVDQA_WdqVdq(bxInstruction_c *);
+  BX_SMF void UNPCKHPS_VpsWq(bxInstruction_c *);
+  BX_SMF void UNPCKLPS_VpsWq(bxInstruction_c *);
+  BX_SMF void ANDPS_VpsWps(bxInstruction_c *);
+  BX_SMF void ANDPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void ANDNPS_VpsWps(bxInstruction_c *);
+  BX_SMF void ANDNPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void ORPS_VpsWps(bxInstruction_c *);
+  BX_SMF void ORPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void XORPS_VpsWps(bxInstruction_c *);
+  BX_SMF void XORPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void UNPCKHPD_VpdWq(bxInstruction_c *);
+  BX_SMF void UNPCKLPD_VpdWq(bxInstruction_c *);
+  BX_SMF void MOVLPD_VsdMq(bxInstruction_c *);
+  BX_SMF void MOVLPD_MqVsd(bxInstruction_c *);
+  BX_SMF void MOVHPD_VsdMq(bxInstruction_c *);
+  BX_SMF void MOVHPD_MqVsd(bxInstruction_c *);
+  BX_SMF void MOVNTPD_MdqVpd(bxInstruction_c *);
+  BX_SMF void MOVNTDQ_MdqVdq(bxInstruction_c *);
+#else
+#define MOVUPD_VpdWpd  /* 66 0f 10 */ MOVUPS_VpsWps    /*    0f 10 */
+#define MOVUPD_WpdVpd  /* 66 0f 11 */ MOVUPS_WpsVps    /*    0f 11 */
+#define MOVAPD_VpdWpd  /* 66 0f 28 */ MOVAPS_VpsWps    /*    0f 28 */
+#define MOVAPD_WpdVpd  /* 66 0f 29 */ MOVAPS_WpsVps    /*    0f 29 */
+#define MOVDQU_VdqWdq  /* f3 0f 6f */ MOVUPS_VpsWps    /*    0f 10 */
+#define MOVDQU_WdqVdq  /* f3 0f 7f */ MOVUPS_WpsVps    /*    0f 11 */
+#define MOVDQA_VdqWdq  /* 66 0f 6f */ MOVAPS_VpsWps    /*    0f 28 */
+#define MOVDQA_WdqVdq  /* 66 0f 7f */ MOVAPS_WpsVps    /*    0f 29 */
+
+#define UNPCKHPS_VpsWq /*    0f 15 */ PUNPCKHDQ_VdqWq  /* 66 0f 6a */
+#define UNPCKLPS_VpsWq /*    0f 14 */ PUNPCKLDQ_VdqWq  /* 66 0f 62 */
+
+#define ANDPS_VpsWps   /*    0f 54 */ PAND_VdqWdq      /* 66 0f db */
+#define ANDPD_VpdWpd   /* 66 0f 54 */ PAND_VdqWdq      /* 66 0f db */
+#define ANDNPS_VpsWps  /*    0f 55 */ PANDN_VdqWdq     /* 66 0f df */
+#define ANDNPD_VpdWpd  /* 66 0f 55 */ PANDN_VdqWdq     /* 66 0f df */
+#define ORPS_VpsWps    /*    0f 56 */ POR_VdqWdq       /* 66 0f eb */
+#define ORPD_VpdWpd    /* 66 0f 56 */ POR_VdqWdq       /* 66 0f eb */
+#define XORPS_VpsWps   /*    0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
+#define XORPD_VpdWpd   /* 66 0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
+
+#define UNPCKHPD_VpdWq /* 66 0f 15 */ PUNPCKHQDQ_VdqWq /* 66 0f 6d */
+#define UNPCKLPD_VpdWq /* 66 0f 14 */ PUNPCKLQDQ_VdqWq /* 66 0f 6c */
+
+#define MOVLPD_VsdMq   /* 66 0f 12 */ MOVLPS_VpsMq     /*    0f 12 */
+#define MOVLPD_MqVsd   /* 66 0f 13 */ MOVLPS_MqVps     /*    0f 13 */
+#define MOVHPD_VsdMq   /* 66 0f 16 */ MOVHPS_VpsMq     /*    0f 16 */
+#define MOVHPD_MqVsd   /* 66 0f 17 */ MOVHPS_MqVps     /*    0f 17 */
+
+#define MOVNTPD_MdqVpd /* 66 0f 2b */ MOVNTPS_MdqVps   /*    0f 2b */
+#define MOVNTDQ_MdqVdq /* 66 0f e7 */ MOVNTPD_MdqVpd   /* 66 0f 2b */
+#endif  // #ifdef StandAloneDecoder
+
   /* PNI */
   BX_SMF void MOVDDUP_VpdWq(bxInstruction_c *i);
   BX_SMF void MOVSLDUP_VpsWps(bxInstruction_c *i);
@@ -2322,11 +2200,6 @@ union {
   BX_SMF void LDDQU_VdqMdq(bxInstruction_c *i);
   /* PNI */
 
-#if BX_SUPPORT_FPU
-  BX_SMF void fpu_execute(bxInstruction_c *i);
-  BX_SMF void fpu_init(void);
-#endif
-
   BX_SMF void CMPXCHG_XBTS(bxInstruction_c *);
   BX_SMF void CMPXCHG_IBTS(bxInstruction_c *);
   BX_SMF void CMPXCHG_EbGb(bxInstruction_c *);
@@ -2339,12 +2212,14 @@ union {
   BX_SMF void RETfar32_Iw(bxInstruction_c *);
   BX_SMF void RETfar16_Iw(bxInstruction_c *);
 
+#if BX_CPU_LEVEL == 2
   BX_SMF void LOADALL(bxInstruction_c *);
+#endif
+
   BX_SMF void CMOV_GdEd(bxInstruction_c *);
   BX_SMF void CMOV_GwEw(bxInstruction_c *);
 
   BX_SMF void ADD_EwGw(bxInstruction_c *);
-
   BX_SMF void ADD_GwEEw(bxInstruction_c *);
   BX_SMF void ADD_GwEGw(bxInstruction_c *);
 
@@ -2405,44 +2280,38 @@ union {
   BX_SMF void ADD_EqGq(bxInstruction_c *);
   BX_SMF void ADD_GqEq(bxInstruction_c *);
   BX_SMF void ADD_RAXId(bxInstruction_c *);
-  BX_SMF void OR_EqGq(bxInstruction_c *);
-  BX_SMF void OR_GqEq(bxInstruction_c *);
-  BX_SMF void OR_RAXId(bxInstruction_c *);
-
-
   BX_SMF void ADC_EqGq(bxInstruction_c *);
   BX_SMF void ADC_GqEq(bxInstruction_c *);
   BX_SMF void ADC_RAXId(bxInstruction_c *);
+  BX_SMF void SUB_EqGq(bxInstruction_c *);
+  BX_SMF void SUB_GqEq(bxInstruction_c *);
+  BX_SMF void SUB_RAXId(bxInstruction_c *);
   BX_SMF void SBB_EqGq(bxInstruction_c *);
   BX_SMF void SBB_GqEq(bxInstruction_c *);
   BX_SMF void SBB_RAXId(bxInstruction_c *);
 
+  BX_SMF void OR_EqGq(bxInstruction_c *);
+  BX_SMF void OR_GqEq(bxInstruction_c *);
+  BX_SMF void OR_RAXId(bxInstruction_c *);
+
   BX_SMF void AND_EqGq(bxInstruction_c *);
   BX_SMF void AND_GqEq(bxInstruction_c *);
   BX_SMF void AND_RAXId(bxInstruction_c *);
-  BX_SMF void SUB_EqGq(bxInstruction_c *);
-  BX_SMF void SUB_GqEq(bxInstruction_c *);
-  BX_SMF void SUB_RAXId(bxInstruction_c *);
 
   BX_SMF void XOR_EqGq(bxInstruction_c *);
   BX_SMF void XOR_GqEq(bxInstruction_c *);
   BX_SMF void XOR_RAXId(bxInstruction_c *);
+
   BX_SMF void CMP_EqGq(bxInstruction_c *);
   BX_SMF void CMP_GqEq(bxInstruction_c *);
   BX_SMF void CMP_RAXId(bxInstruction_c *);
 
-  BX_SMF void PUSHAD64(bxInstruction_c *);
-  BX_SMF void POPAD64(bxInstruction_c *);
   BX_SMF void PUSH64_Id(bxInstruction_c *);
-  BX_SMF void IMUL_GqEqId(bxInstruction_c *);
 
+  BX_SMF void TEST_RAXId(bxInstruction_c *);
   BX_SMF void TEST_EqGq(bxInstruction_c *);
   BX_SMF void XCHG_EqGq(bxInstruction_c *);
-  BX_SMF void MOV_EqGq(bxInstruction_c *);
-  BX_SMF void MOV_GqEq(bxInstruction_c *);
   BX_SMF void LEA_GqM(bxInstruction_c *);
-
-  BX_SMF void CALL64_Ap(bxInstruction_c *);
 
   BX_SMF void MOV_RAXOq(bxInstruction_c *);
   BX_SMF void MOV_OqRAX(bxInstruction_c *);
@@ -2452,11 +2321,18 @@ union {
   BX_SMF void MOV_OqAX(bxInstruction_c *);
   BX_SMF void MOV_ALOq(bxInstruction_c *);
   BX_SMF void MOV_OqAL(bxInstruction_c *);
+  BX_SMF void MOV_EqGq(bxInstruction_c *);
+  BX_SMF void MOV_GqEq(bxInstruction_c *);
+  BX_SMF void MOV_EqId(bxInstruction_c *);
 
-  BX_SMF void TEST_RAXId(bxInstruction_c *);
+  BX_SMF void MOVSQ_XqYq(bxInstruction_c *);
+  BX_SMF void CMPSQ_XqYq(bxInstruction_c *);
+
+  BX_SMF void STOSQ_YqRAX(bxInstruction_c *);
+  BX_SMF void LODSQ_RAXXq(bxInstruction_c *);
+  BX_SMF void SCASQ_RAXXq(bxInstruction_c *);
 
   BX_SMF void RETnear64(bxInstruction_c *);
-  BX_SMF void MOV_EqId(bxInstruction_c *);
   BX_SMF void ENTER64_IwIb(bxInstruction_c *);
   BX_SMF void LEAVE64(bxInstruction_c *);
   BX_SMF void RETfar64(bxInstruction_c *);
@@ -2470,22 +2346,27 @@ union {
   BX_SMF void MOV_DqRq(bxInstruction_c *);
   BX_SMF void MOV_RqCq(bxInstruction_c *);
   BX_SMF void MOV_RqDq(bxInstruction_c *);
-  BX_SMF void MOV_TqRq(bxInstruction_c *);
-  BX_SMF void MOV_RqTq(bxInstruction_c *);
 
   BX_SMF void JCC_Jq(bxInstruction_c *);
 
   BX_SMF void SHLD_EqGq(bxInstruction_c *);
-
   BX_SMF void SHRD_EqGq(bxInstruction_c *);
-
   BX_SMF void IMUL_GqEq(bxInstruction_c *);
+  BX_SMF void IMUL_GqEqId(bxInstruction_c *);
 
   BX_SMF void MOVZX_GqEb(bxInstruction_c *);
   BX_SMF void MOVZX_GqEw(bxInstruction_c *);
   BX_SMF void MOVSX_GqEb(bxInstruction_c *);
   BX_SMF void MOVSX_GqEw(bxInstruction_c *);
   BX_SMF void MOVSX_GqEd(bxInstruction_c *);
+
+  BX_SMF void BSF_GqEq(bxInstruction_c *);
+  BX_SMF void BSR_GqEq(bxInstruction_c *);
+
+  BX_SMF void BT_EqGq(bxInstruction_c *);
+  BX_SMF void BTS_EqGq(bxInstruction_c *);
+  BX_SMF void BTR_EqGq(bxInstruction_c *);
+  BX_SMF void BTC_EqGq(bxInstruction_c *);
 
   BX_SMF void BSWAP_RAX(bxInstruction_c *);
   BX_SMF void BSWAP_RCX(bxInstruction_c *);
@@ -2539,24 +2420,15 @@ union {
   BX_SMF void CMOV_GqEq(bxInstruction_c *);
 
   BX_SMF void MOV_RRXIq(bxInstruction_c *);
-  BX_SMF void INC_RRX(bxInstruction_c *);
-  BX_SMF void DEC_RRX(bxInstruction_c *);
   BX_SMF void PUSH_RRX(bxInstruction_c *);
   BX_SMF void POP_RRX(bxInstruction_c *);
   BX_SMF void POP_Eq(bxInstruction_c *);
   BX_SMF void XCHG_RRXRAX(bxInstruction_c *);
 
-  BX_SMF void PUSH64_CS(bxInstruction_c *);
-  BX_SMF void PUSH64_DS(bxInstruction_c *);
-  BX_SMF void POP64_DS(bxInstruction_c *);
-  BX_SMF void PUSH64_ES(bxInstruction_c *);
-  BX_SMF void POP64_ES(bxInstruction_c *);
   BX_SMF void PUSH64_FS(bxInstruction_c *);
   BX_SMF void POP64_FS(bxInstruction_c *);
   BX_SMF void PUSH64_GS(bxInstruction_c *);
   BX_SMF void POP64_GS(bxInstruction_c *);
-  BX_SMF void PUSH64_SS(bxInstruction_c *);
-  BX_SMF void POP64_SS(bxInstruction_c *);
 
   BX_SMF void SYSCALL(bxInstruction_c *i);
   BX_SMF void SYSRET(bxInstruction_c *i);
@@ -2567,11 +2439,12 @@ union {
   BX_SMF void LOOPE64_Jb(bxInstruction_c *);
   BX_SMF void LOOP64_Jb(bxInstruction_c *);
   BX_SMF void JCXZ64_Jb(bxInstruction_c *);
+
+  BX_SMF void CMPXCHG16B(bxInstruction_c *);
 #endif  // #if BX_SUPPORT_X86_64
 
   // mch added
   BX_SMF void INVLPG(bxInstruction_c *);
-  BX_SMF void wait_for_interrupt();
   BX_SMF void RSM(bxInstruction_c *);
 
   BX_SMF void WRMSR(bxInstruction_c *);
@@ -2580,19 +2453,13 @@ union {
   BX_SMF void RDMSR(bxInstruction_c *);
   BX_SMF void SYSENTER(bxInstruction_c *);
   BX_SMF void SYSEXIT(bxInstruction_c *);
-  BX_SMF void SetCR0(Bit32u val_32);
-#if BX_CPU_LEVEL >= 4
-  BX_SMF void SetCR4(Bit32u val_32);
-#endif
-  BX_SMF void dynamic_translate(void);
-  BX_SMF void dynamic_init(void);
+
   BX_SMF unsigned fetchDecode(Bit8u *, bxInstruction_c *, unsigned);
 #if BX_SUPPORT_X86_64
   BX_SMF unsigned fetchDecode64(Bit8u *, bxInstruction_c *, unsigned);
 #endif
   BX_SMF void UndefinedOpcode(bxInstruction_c *);
   BX_SMF void BxError(bxInstruction_c *i);
-  BX_SMF void BxResolveError(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
 
   BX_SMF void Resolve16Mod0Rm0(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve16Mod0Rm1(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -2648,7 +2515,6 @@ union {
 
 #if BX_SUPPORT_X86_64
   // 64 bit addressing
-
   BX_SMF void Resolve64Mod0Rm0(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm1(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm2(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -2715,10 +2581,9 @@ union {
   BX_SMF void Resolve64Mod1or2Base14(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod1or2Base15(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif  // #if BX_SUPPORT_X86_64
+  BX_SMF void BxResolveError(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+// <TAG-CLASS-CPU-END>
 
-
-  BX_SMF void REP(void (*)(void));
-  BX_SMF void REP_ZF(void (*)(void), unsigned rep_prefix);
 #if BX_DEBUGGER
   BX_SMF void     dbg_take_irq(void);
   BX_SMF void     dbg_force_interrupt(unsigned vector);
@@ -2738,24 +2603,22 @@ union {
                                           Bit32u laddr, Bit32u is_32);
 #endif
 #if BX_DEBUGGER || BX_DISASM || BX_INSTRUMENTATION || BX_GDBSTUB
-  BX_SMF void     dbg_xlate_linear2phy(Bit32u linear, Bit32u *phy, bx_bool *valid);
+  BX_SMF void     dbg_xlate_linear2phy(bx_address linear, Bit32u *phy, bx_bool *valid);
 #endif
   BX_SMF void     atexit(void);
   
   // now for some ancillary functions...
   BX_SMF void cpu_loop(Bit32s max_instr_count);
   BX_SMF unsigned handleAsyncEvent(void);
-  BX_SMF void boundaryFetch(bxInstruction_c *i);
-  BX_SMF void decode_exgx16(unsigned need_fetch);
-  BX_SMF void decode_exgx32(unsigned need_fetch);
-
+  BX_SMF void boundaryFetch(Bit8u *fetchPtr, unsigned remainingInPage, bxInstruction_c *i);
   BX_SMF void prefetch(void);
   // revalidate_prefetch_q is now a no-op, due to the newer EIP window
   // technique.
   BX_SMF BX_CPP_INLINE void revalidate_prefetch_q(void) { }
-  BX_SMF BX_CPP_INLINE void invalidate_prefetch_q(void) {
+  BX_SMF BX_CPP_INLINE void invalidate_prefetch_q(void) 
+  {
     BX_CPU_THIS_PTR eipPageWindowSize = 0;
-    }
+  }
 
   BX_SMF void write_virtual_checks(bx_segment_reg_t *seg, bx_address offset, unsigned length) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_virtual_checks(bx_segment_reg_t *seg, bx_address offset, unsigned length) BX_CPP_AttrRegparmN(3);
@@ -2765,12 +2628,18 @@ union {
   BX_SMF void write_virtual_qword(unsigned seg, bx_address offset, Bit64u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void write_virtual_dqword(unsigned s, bx_address off, Bit8u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void write_virtual_dqword_aligned(unsigned s, bx_address off, Bit8u *data) BX_CPP_AttrRegparmN(3);
+#if BX_SUPPORT_FPU
+  BX_SMF void write_virtual_tword(unsigned seg, bx_address offset, floatx80 *data) BX_CPP_AttrRegparmN(3);
+#endif
   BX_SMF void read_virtual_byte(unsigned seg, bx_address offset, Bit8u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_virtual_word(unsigned seg, bx_address offset, Bit16u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_virtual_dword(unsigned seg, bx_address offset, Bit32u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_virtual_qword(unsigned seg, bx_address offset, Bit64u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_virtual_dqword(unsigned s, bx_address off, Bit8u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_virtual_dqword_aligned(unsigned s, bx_address off, Bit8u *data) BX_CPP_AttrRegparmN(3);
+#if BX_SUPPORT_FPU
+  BX_SMF void read_virtual_tword(unsigned seg, bx_address offset, floatx80 *data) BX_CPP_AttrRegparmN(3);
+#endif
 
 #define readVirtualDQword(s, off, data) read_virtual_dqword(s, off, data)
 #define readVirtualDQwordAligned(s, off, data) read_virtual_dqword_aligned(s, off, data)
@@ -2791,8 +2660,15 @@ union {
 #define Write_RMW_virtual_dword(val32) write_RMW_virtual_dword(val32)
 #define Write_RMW_virtual_qword(val64) write_RMW_virtual_qword(val64)
 
+  BX_SMF void branch_near32(Bit32u new_eip) BX_CPP_AttrRegparmN(1);
+#if BX_SUPPORT_X86_64
+  BX_SMF void branch_near64(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+#endif
+
   BX_SMF void access_linear(bx_address address, unsigned length, unsigned pl,
                      unsigned rw, void *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF Bit32u  translate_linear(bx_address laddr, 
+     unsigned pl, unsigned rw, unsigned access_type) BX_CPP_AttrRegparmN(3);
   BX_SMF Bit32u itranslate_linear(bx_address laddr, unsigned pl) BX_CPP_AttrRegparmN(2);
   BX_SMF Bit32u dtranslate_linear(bx_address laddr, unsigned pl, unsigned rw) BX_CPP_AttrRegparmN(3);
   BX_SMF void TLB_flush(bx_bool invalidateGlobal);
@@ -2801,12 +2677,19 @@ union {
   BX_SMF char *strseg(bx_segment_reg_t *seg) BX_CPP_AttrRegparmN(1);
   BX_SMF void interrupt(Bit8u vector, bx_bool is_INT, bx_bool is_error_code,
                  Bit16u error_code);
+  BX_SMF void real_mode_int(Bit8u vector, bx_bool is_INT, bx_bool is_error_code,
+                 Bit16u error_code);
+  BX_SMF void protected_mode_int(Bit8u vector, bx_bool is_INT, bx_bool is_error_code,
+                 Bit16u error_code);
+#if BX_SUPPORT_X86_64
+  BX_SMF void long_mode_int(Bit8u vector, bx_bool is_INT, bx_bool is_error_code,
+                 Bit16u error_code);
+#endif
 #if BX_CPU_LEVEL >= 2
   BX_SMF void exception(unsigned vector, Bit16u error_code, bx_bool is_INT)
                   BX_CPP_AttrNoReturn();
 #endif
   BX_SMF int  int_number(bx_segment_reg_t *seg);
-  BX_SMF void shutdown_cpu(void);
   BX_SMF void CR3_change(bx_address value) BX_CPP_AttrRegparmN(1);
   BX_SMF void pagingCR0Changed(Bit32u oldCR0, Bit32u newCR0) BX_CPP_AttrRegparmN(2);
   BX_SMF void pagingCR4Changed(Bit32u oldCR4, Bit32u newCR4) BX_CPP_AttrRegparmN(2);
@@ -2818,13 +2701,13 @@ union {
   BX_SMF void call_protected(bxInstruction_c *, Bit16u cs, bx_address disp) BX_CPP_AttrRegparmN(3);
   BX_SMF void return_protected(bxInstruction_c *, Bit16u pop_bytes) BX_CPP_AttrRegparmN(2);
   BX_SMF void iret_protected(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-#if BX_CPU_LEVEL >= 5
-  BX_SMF bx_bool iret32_real(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-#endif
   BX_SMF void validate_seg_regs(void);
   BX_SMF void stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
                                      Bit32u flags32);
   BX_SMF void stack_return_from_v86(bxInstruction_c *);
+#if BX_SUPPORT_VME
+  BX_SMF void v86_redirect_interrupt(Bit32u vector);
+#endif
   BX_SMF void init_v8086_mode(void);
   BX_SMF void v8086_message(void);
   BX_SMF void task_switch(bx_selector_t *selector,
@@ -2839,9 +2722,11 @@ union {
   BX_SMF void write_eflags(Bit32u eflags, bx_bool change_IOPL, bx_bool change_IF,
                     bx_bool change_VM, bx_bool change_RF);
   BX_SMF void writeEFlags(Bit32u eflags, Bit32u changeMask) BX_CPP_AttrRegparmN(2); // Newer variant.
+#if BX_SUPPORT_FPU || BX_SUPPORT_SSE >= 1
+  BX_SMF void write_eflags_fpu_compare(int float_relation);
+#endif
   BX_SMF Bit16u read_flags(void);
   BX_SMF Bit32u read_eflags(void);
-  BX_SMF Bit32u get_segment_base(unsigned seg);
 
   BX_SMF Bit8u   inp8(Bit16u addr) BX_CPP_AttrRegparmN(1);
   BX_SMF void    outp8(Bit16u addr, Bit8u value) BX_CPP_AttrRegparmN(2);
@@ -2861,6 +2746,7 @@ union {
                                Bit32u *dword1, Bit32u *dword2, Bit8u exception) BX_CPP_AttrRegparmN(3);
   BX_SMF void    load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value) BX_CPP_AttrRegparmN(2);
 #if BX_SUPPORT_X86_64
+  BX_SMF void    load_ss64(Bit8u cpl) BX_CPP_AttrRegparmN(1);
   BX_SMF void    loadSRegLMNominal(unsigned seg, unsigned selector,
                                    bx_address base, unsigned dpl);
 #endif
@@ -2878,9 +2764,10 @@ union {
 #endif
   BX_SMF bx_bool can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes) BX_CPP_AttrRegparmN(3);
   BX_SMF bx_bool can_pop(Bit32u bytes);
+  BX_SMF void    decrementESPForPush(unsigned nBytes, Bit32u *eSP);
   BX_SMF void    sanity_checks(void);
 
-  BX_SMF void    debug(Bit32u offset);
+  BX_SMF void    debug(bx_address offset);
 
 #if BX_EXTERNAL_DEBUGGER
   BX_SMF void    trap_debugger(bx_bool callnow);
@@ -2892,14 +2779,18 @@ union {
                                  unsigned opa, unsigned opb);
 #endif
 
+  BX_SMF Bit32u get_cpu_version_information(void);
+  BX_SMF Bit32u get_extended_cpuid_features(void);
+  BX_SMF Bit32u get_std_cpuid_features(void);
+
   BX_CPP_INLINE unsigned which_cpu(void) { return bx_cpuid; }
   BX_CPP_INLINE const bx_gen_reg_t *get_gen_reg() { return gen_reg; }
 
   DECLARE_EFLAGS_ACCESSORS()
   DECLARE_EFLAG_ACCESSOR   (DF,  10)
   DECLARE_EFLAG_ACCESSOR   (ID,  21)
-  DECLARE_EFLAG_ACCESSOR   (VP,  20)
-  DECLARE_EFLAG_ACCESSOR   (VF,  19)
+  DECLARE_EFLAG_ACCESSOR   (VIP, 20)
+  DECLARE_EFLAG_ACCESSOR   (VIF, 19)
   DECLARE_EFLAG_ACCESSOR   (AC,  18)
   DECLARE_EFLAG_ACCESSOR_VM(     17)
   DECLARE_EFLAG_ACCESSOR   (RF,  16)
@@ -2946,54 +2837,60 @@ union {
   BX_CPP_INLINE Bit8u  get_CPL(void);
   BX_CPP_INLINE Bit32u get_EIP(void);
 
+  BX_SMF BX_CPP_INLINE bx_address get_segment_base(unsigned seg);
+
   BX_SMF BX_CPP_INLINE bx_bool real_mode(void);
   BX_SMF BX_CPP_INLINE bx_bool protected_mode(void);
   BX_SMF BX_CPP_INLINE bx_bool v8086_mode(void);
+
+#if BX_SUPPORT_FPU
+  BX_SMF void print_state_FPU(void);
+  BX_SMF void prepareFPU(bxInstruction_c *i, bx_bool = 1, bx_bool = 1);
+  BX_SMF void FPU_check_pending_exceptions(void);
+  BX_SMF void FPU_stack_underflow(int stnr, int pop_stack = 0);
+  BX_SMF void FPU_stack_overflow(void);
+  BX_SMF int  FPU_exception(int exception);
+#endif
+
+#if BX_SUPPORT_MMX || BX_SUPPORT_SSE
+  BX_SMF void prepareMMX(void);
+  BX_SMF void prepareFPU2MMX(void); /* cause transition from FPU to MMX technology state */
+  BX_SMF void print_state_MMX(void);
+#endif
+
+#if BX_SUPPORT_SSE
+  BX_SMF void prepareSSE(void);
+  BX_SMF void check_exceptionsSSE(int);
+#endif
+
+#if BX_SUPPORT_FPU
+  BX_SMF int  fpu_save_environment(bxInstruction_c *i);
+  BX_SMF int  fpu_load_environment(bxInstruction_c *i);
+#endif
+
+  BX_SMF void wait_for_interrupt();
+
+  BX_SMF void SetCR0(Bit32u val_32);
+#if BX_CPU_LEVEL >= 4
+  BX_SMF void SetCR4(Bit32u val_32);
+#endif
+
 #if BX_SUPPORT_APIC
   bx_local_apic_c local_apic;
 #endif
-  };
 
+};
 
-#if BX_SupportICache
+#if BX_SUPPORT_ICACHE
 
-BX_CPP_INLINE void bxICache_c::decWriteStamp(BX_CPU_C *cpu, Bit32u a20Addr) {
-  // Increment page write stamp, so iCache entries with older stamps
-  // are effectively invalidated.
-  Bit32u pageIndex = a20Addr >> 12;
-  Bit32u writeStamp = cpu->iCache.pageWriteStampTable[pageIndex];
-  if ( writeStamp & 0x20000000 ) {
-    // Page possibly contains iCache code.
-    if ( writeStamp & ICacheWriteStampMask ) {
-      // Short case: there is room to decrement the generation counter.
-      cpu->iCache.pageWriteStampTable[pageIndex]--;
-      }
-    else {
-      // Long case: there is no more room to decrement.  We have dump
-      // all iCache entries which can possibly hash to this page since
-      // we don't keep track of individual entries.
-
-      // Take the hash of the 0th page offset.
-      unsigned iCacheHash = cpu->iCache.hash(a20Addr & 0xfffff000);
-      for (unsigned o=0; o<4096; o++) {
-        cpu->iCache.entry[iCacheHash].writeStamp = ICacheWriteStampInvalid;
-        iCacheHash = (iCacheHash + 1) % BxICacheEntries;
-        }
-      // Reset write stamp to highest value to begin the decrementing process
-      // again.
-      cpu->iCache.pageWriteStampTable[pageIndex] = ICacheWriteStampInvalid;
-      }
-    }
-  }
-
-BX_CPP_INLINE Bit32u bxICache_c::createFetchModeMask(BX_CPU_C *cpu) {
+BX_CPP_INLINE Bit32u createFetchModeMask(BX_CPU_C *cpu)
+{
   return (cpu->sregs[BX_SEG_REG_CS].cache.u.segment.d_b << 31)
 #if BX_SUPPORT_X86_64
          | ((cpu->cpu_mode == BX_MODE_LONG_64)<<30)
 #endif
-         | (1<<29) // iCache code.
-         ;
-  }
+         | (1<<29); // iCache code.
+}
 
 #endif
 
@@ -3032,32 +2929,43 @@ IMPLEMENT_32BIT_REGISTER_ACCESSORS(EBP);
 IMPLEMENT_32BIT_REGISTER_ACCESSORS(ESI);
 IMPLEMENT_32BIT_REGISTER_ACCESSORS(EDI);
 
-BX_CPP_INLINE void BX_CPU_C::set_cpu_id(unsigned id) {
+BX_CPP_INLINE void BX_CPU_C::set_cpu_id(unsigned id)
+{
    BX_CPU_THIS_PTR bx_cpuid = id;
 }
 
-BX_SMF BX_CPP_INLINE Bit8u BX_CPU_C_PREFIX get_CPL(void) { 
+BX_SMF BX_CPP_INLINE Bit8u BX_CPU_C_PREFIX get_CPL(void)
+{ 
    return (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.rpl); 
 } 
 
-BX_CPP_INLINE Bit32u BX_CPU_C::get_EIP(void) {
+BX_CPP_INLINE Bit32u BX_CPU_C::get_EIP(void)
+{
    return (BX_CPU_THIS_PTR dword.eip); 
 } 
 
-BX_SMF BX_CPP_INLINE Bit32u BX_CPU_C_PREFIX get_segment_base(unsigned seg) {
+BX_CPP_INLINE bx_address BX_CPU_C::get_segment_base(unsigned seg)
+{
+#if BX_SUPPORT_X86_64
+   if (IsLongMode() && seg != BX_SEG_REG_FS && seg != BX_SEG_REG_GS)
+       return 0;
+#endif
    return (BX_CPU_THIS_PTR sregs[seg].cache.u.segment.base);
 }
 
-BX_CPP_INLINE bx_bool BX_CPU_C::real_mode(void) {
-  return (BX_CPU_THIS_PTR realMode);
+BX_CPP_INLINE bx_bool BX_CPU_C::real_mode(void)
+{
+  return (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_REAL);
 }
 
-BX_CPP_INLINE bx_bool BX_CPU_C::v8086_mode(void) {
-  return (BX_CPU_THIS_PTR v8086Mode);
+BX_CPP_INLINE bx_bool BX_CPU_C::v8086_mode(void)
+{
+  return (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_V8086);
 }
 
-BX_CPP_INLINE bx_bool BX_CPU_C::protected_mode(void) {
-  return (BX_CPU_THIS_PTR protectedMode);
+BX_CPP_INLINE bx_bool BX_CPU_C::protected_mode(void)
+{
+  return (BX_CPU_THIS_PTR cpu_mode >= BX_MODE_IA32_PROTECTED);
 }
 
     BX_CPP_INLINE void
@@ -3088,7 +2996,6 @@ BX_CPU_C::set_SF(bx_bool val) {
     BX_CPU_THIS_PTR eflags.val32 |= (!!val)<<7;
     }
 
-
     BX_CPP_INLINE void
 BX_CPU_C::set_OF(bx_bool val) {
     BX_CPU_THIS_PTR lf_flags_status &= 0x0fffff;
@@ -3113,132 +3020,164 @@ BX_CPU_C::set_PF_base(Bit8u val) {
     BX_CPU_THIS_PTR eflags.val32 |= val<<2;
     }
 
+// *******************
+// OSZAPC
+// *******************
 
-#define SET_FLAGS_OSZAPC_8(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszapc.op1_8 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_8 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_8 = result; \
+/* op1, op2, result */
+#define SET_FLAGS_OSZAPC_SIZE(size, lf_op1, lf_op2, lf_result, ins) { \
+    BX_CPU_THIS_PTR oszapc.op1##size = lf_op1; \
+    BX_CPU_THIS_PTR oszapc.op2##size = lf_op2; \
+    BX_CPU_THIS_PTR oszapc.result##size = lf_result; \
     BX_CPU_THIS_PTR oszapc.instr = ins; \
     BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
+}
 
-#define SET_FLAGS_OSZAPC_8_CF(op1, op2, result, ins, last_CF) { \
-    BX_CPU_THIS_PTR oszapc.op1_8 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_8 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_8 = result; \
-    BX_CPU_THIS_PTR oszapc.instr = ins; \
-    BX_CPU_THIS_PTR oszapc.prev_CF = last_CF; \
-    BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
+#define SET_FLAGS_OSZAPC_8(op1, op2, result, ins) \
+    SET_FLAGS_OSZAPC_SIZE(_8, op1, op2, result, ins)
+#define SET_FLAGS_OSZAPC_16(op1, op2, result, ins) \
+    SET_FLAGS_OSZAPC_SIZE(_16, op1, op2, result, ins)
+#define SET_FLAGS_OSZAPC_32(op1, op2, result, ins) \
+    SET_FLAGS_OSZAPC_SIZE(_32, op1, op2, result, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAPC_64(op1, op2, result, ins) \
+    SET_FLAGS_OSZAPC_SIZE(_64, op1, op2, result, ins)
+#endif
 
-#define SET_FLAGS_OSZAPC_16(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszapc.op1_16 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_16 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_16 = result; \
-    BX_CPU_THIS_PTR oszapc.instr = ins; \
-    BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
-
-#define SET_FLAGS_OSZAPC_16_CF(op1, op2, result, ins, last_CF) { \
-    BX_CPU_THIS_PTR oszapc.op1_16 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_16 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_16 = result; \
-    BX_CPU_THIS_PTR oszapc.instr = ins; \
-    BX_CPU_THIS_PTR oszapc.prev_CF = last_CF; \
-    BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
-
-#define SET_FLAGS_OSZAPC_32(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszapc.op1_32 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_32 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_32 = result; \
+/* op1 and result only */
+#define SET_FLAGS_OSZAPC_S1_SIZE(size, lf_op1, lf_result, ins) { \
+    BX_CPU_THIS_PTR oszapc.op1##size = lf_op1; \
+    BX_CPU_THIS_PTR oszapc.result##size = lf_result; \
     BX_CPU_THIS_PTR oszapc.instr = ins; \
     BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
+}
 
-#define SET_FLAGS_OSZAPC_32_CF(op1, op2, result, ins, last_CF) { \
-    BX_CPU_THIS_PTR oszapc.op1_32 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_32 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_32 = result; \
+#define SET_FLAGS_OSZAPC_S1_8(op1, result, ins) \
+    SET_FLAGS_OSZAPC_S1_SIZE(_8, op1, result, ins)
+#define SET_FLAGS_OSZAPC_S1_16(op1, result, ins) \
+    SET_FLAGS_OSZAPC_S1_SIZE(_16, op1, result, ins)
+#define SET_FLAGS_OSZAPC_S1_32(op1, result, ins) \
+    SET_FLAGS_OSZAPC_S1_SIZE(_32, op1, result, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAPC_S1_64(op1, result, ins) \
+    SET_FLAGS_OSZAPC_S1_SIZE(_64, op1, result, ins)
+#endif
+
+/* op2 and result only */
+#define SET_FLAGS_OSZAPC_S2_SIZE(size, lf_op2, lf_result, ins) { \
+    BX_CPU_THIS_PTR oszapc.op2##size = lf_op2; \
+    BX_CPU_THIS_PTR oszapc.result##size = lf_result; \
     BX_CPU_THIS_PTR oszapc.instr = ins; \
-    BX_CPU_THIS_PTR oszapc.prev_CF = last_CF; \
     BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
+}
 
-#define SET_FLAGS_OSZAPC_64(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszapc.op1_64 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_64 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_64 = result; \
+#define SET_FLAGS_OSZAPC_S2_8(op2, result, ins) \
+    SET_FLAGS_OSZAPC_S2_SIZE(_8, op2, result, ins)
+#define SET_FLAGS_OSZAPC_S2_16(op2, result, ins) \
+    SET_FLAGS_OSZAPC_S2_SIZE(_16, op2, result, ins)
+#define SET_FLAGS_OSZAPC_S2_32(op2, result, ins) \
+    SET_FLAGS_OSZAPC_S2_SIZE(_32, op2, result, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAPC_S2_64(op2, result, ins) \
+    SET_FLAGS_OSZAPC_S2_SIZE(_64, op2, result, ins)
+#endif
+
+/* op1 and op2 only */
+#define SET_FLAGS_OSZAPC_S1S2_SIZE(size, lf_op1, lf_op2, ins) { \
+    BX_CPU_THIS_PTR oszapc.op1##size = lf_op1; \
+    BX_CPU_THIS_PTR oszapc.op2##size = lf_op2; \
     BX_CPU_THIS_PTR oszapc.instr = ins; \
     BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
+}
 
-#define SET_FLAGS_OSZAPC_64_CF(op1, op2, result, ins, last_CF) { \
-    BX_CPU_THIS_PTR oszapc.op1_64 = op1; \
-    BX_CPU_THIS_PTR oszapc.op2_64 = op2; \
-    BX_CPU_THIS_PTR oszapc.result_64 = result; \
+#define SET_FLAGS_OSZAPC_S1S2_8(op1, op2, ins) \
+    SET_FLAGS_OSZAPC_S1S2_SIZE(_8, op1, op2, ins)
+#define SET_FLAGS_OSZAPC_S1S2_16(op1, op2, ins) \
+    SET_FLAGS_OSZAPC_S1S2_SIZE(_16, op1, op2, ins)
+#define SET_FLAGS_OSZAPC_S1S2_32(op1, op2, ins) \
+    SET_FLAGS_OSZAPC_S1S2_SIZE(_32, op1, op2, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAPC_S1S2_64(op1, op2, ins) \
+    SET_FLAGS_OSZAPC_S1S2_SIZE(_64, op1, op2, ins)
+#endif
+
+/* result only */
+#define SET_FLAGS_OSZAPC_RESULT_SIZE(size, lf_result, ins) { \
+    BX_CPU_THIS_PTR oszapc.result##size = lf_result; \
     BX_CPU_THIS_PTR oszapc.instr = ins; \
-    BX_CPU_THIS_PTR oszapc.prev_CF = last_CF; \
     BX_CPU_THIS_PTR lf_flags_status = BX_LF_MASK_OSZAPC; \
-    }
+}
 
+#define SET_FLAGS_OSZAPC_RESULT_8(result, ins) \
+    SET_FLAGS_OSZAPC_RESULT_SIZE(_8, result, ins)
+#define SET_FLAGS_OSZAPC_RESULT_16(result, ins) \
+    SET_FLAGS_OSZAPC_RESULT_SIZE(_16, result, ins)
+#define SET_FLAGS_OSZAPC_RESULT_32(result, ins) \
+    SET_FLAGS_OSZAPC_RESULT_SIZE(_32, result, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAPC_RESULT_64(result, ins) \
+    SET_FLAGS_OSZAPC_RESULT_SIZE(_64, result, ins)
+#endif
 
-#define SET_FLAGS_OSZAP_8(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszap.op1_8 = op1; \
-    BX_CPU_THIS_PTR oszap.op2_8 = op2; \
-    BX_CPU_THIS_PTR oszap.result_8 = result; \
+// *******************
+// OSZAP
+// *******************
+
+/* op1, op2, result */
+#define SET_FLAGS_OSZAP_SIZE(size, lf_op1, lf_op2, lf_result, ins) { \
+    BX_CPU_THIS_PTR oszap.op1##size = lf_op1; \
+    BX_CPU_THIS_PTR oszap.op2##size = lf_op2; \
+    BX_CPU_THIS_PTR oszap.result##size = lf_result; \
     BX_CPU_THIS_PTR oszap.instr = ins; \
     BX_CPU_THIS_PTR lf_flags_status = (BX_CPU_THIS_PTR lf_flags_status & 0x00000f) | BX_LF_MASK_OSZAP; \
-    }
+}
 
-#define SET_FLAGS_OSZAP_16(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszap.op1_16 = op1; \
-    BX_CPU_THIS_PTR oszap.op2_16 = op2; \
-    BX_CPU_THIS_PTR oszap.result_16 = result; \
+#define SET_FLAGS_OSZAP_8(op1, op2, result, ins) \
+    SET_FLAGS_OSZAP_SIZE(_8, op1, op2, result, ins)
+#define SET_FLAGS_OSZAP_16(op1, op2, result, ins) \
+    SET_FLAGS_OSZAP_SIZE(_16, op1, op2, result, ins)
+#define SET_FLAGS_OSZAP_32(op1, op2, result, ins) \
+    SET_FLAGS_OSZAP_SIZE(_32, op1, op2, result, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAP_64(op1, op2, result, ins) \
+    SET_FLAGS_OSZAP_SIZE(_64, op1, op2, result, ins)
+#endif
+
+/* result only */
+#define SET_FLAGS_OSZAP_RESULT_SIZE(size, lf_result, ins) { \
+    BX_CPU_THIS_PTR oszap.result##size = lf_result; \
     BX_CPU_THIS_PTR oszap.instr = ins; \
     BX_CPU_THIS_PTR lf_flags_status = (BX_CPU_THIS_PTR lf_flags_status & 0x00000f) | BX_LF_MASK_OSZAP; \
-    }
+}
 
-#define SET_FLAGS_OSZAP_32(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszap.op1_32 = op1; \
-    BX_CPU_THIS_PTR oszap.op2_32 = op2; \
-    BX_CPU_THIS_PTR oszap.result_32 = result; \
-    BX_CPU_THIS_PTR oszap.instr = ins; \
-    BX_CPU_THIS_PTR lf_flags_status = (BX_CPU_THIS_PTR lf_flags_status & 0x00000f) | BX_LF_MASK_OSZAP; \
-    }
-
-#define SET_FLAGS_OSZAP_64(op1, op2, result, ins) { \
-    BX_CPU_THIS_PTR oszap.op1_64 = op1; \
-    BX_CPU_THIS_PTR oszap.op2_64 = op2; \
-    BX_CPU_THIS_PTR oszap.result_64 = result; \
-    BX_CPU_THIS_PTR oszap.instr = ins; \
-    BX_CPU_THIS_PTR lf_flags_status = (BX_CPU_THIS_PTR lf_flags_status & 0x00000f) | BX_LF_MASK_OSZAP; \
-    }
-
-#define SET_FLAGS_OxxxxC(new_of, new_cf) { \
-    BX_CPU_THIS_PTR eflags.val32 &= ~((1<<11) | (1<<0)); \
-    BX_CPU_THIS_PTR eflags.val32 |= ((!!new_of)<<11) | ((!!new_cf)<<0); \
-    BX_CPU_THIS_PTR lf_flags_status &= 0x0ffff0; \
-    /* ??? could also mark other bits undefined here */ \
-    }
+#define SET_FLAGS_OSZAP_RESULT_8(result, ins) \
+    SET_FLAGS_OSZAP_RESULT_SIZE(_8, result, ins)
+#define SET_FLAGS_OSZAP_RESULT_16(result, ins) \
+    SET_FLAGS_OSZAP_RESULT_SIZE(_16, result, ins)
+#define SET_FLAGS_OSZAP_RESULT_32(result, ins) \
+    SET_FLAGS_OSZAP_RESULT_SIZE(_32, result, ins)
+#if BX_SUPPORT_X86_64
+#define SET_FLAGS_OSZAP_RESULT_64(result, ins) \
+    SET_FLAGS_OSZAP_RESULT_SIZE(_64, result, ins)
+#endif
 
 IMPLEMENT_EFLAGS_ACCESSORS()
-IMPLEMENT_EFLAG_ACCESSOR   (DF, 10)
-IMPLEMENT_EFLAG_ACCESSOR   (ID, 21)
-IMPLEMENT_EFLAG_ACCESSOR   (VP, 20)
-IMPLEMENT_EFLAG_ACCESSOR   (VF, 19)
-IMPLEMENT_EFLAG_ACCESSOR   (AC, 18)
-IMPLEMENT_EFLAG_ACCESSOR_VM(    17)
-IMPLEMENT_EFLAG_ACCESSOR   (RF, 16)
-IMPLEMENT_EFLAG_ACCESSOR   (NT, 14)
-IMPLEMENT_EFLAG_ACCESSOR_IOPL(  12)
-IMPLEMENT_EFLAG_ACCESSOR   (IF,  9)
-IMPLEMENT_EFLAG_ACCESSOR   (TF,  8)
+IMPLEMENT_EFLAG_ACCESSOR   (DF,  10)
+IMPLEMENT_EFLAG_ACCESSOR   (ID,  21)
+IMPLEMENT_EFLAG_ACCESSOR   (VIP, 20)
+IMPLEMENT_EFLAG_ACCESSOR   (VIF, 19)
+IMPLEMENT_EFLAG_ACCESSOR   (AC,  18)
+IMPLEMENT_EFLAG_ACCESSOR_VM(     17)
+IMPLEMENT_EFLAG_ACCESSOR   (RF,  16)
+IMPLEMENT_EFLAG_ACCESSOR   (NT,  14)
+IMPLEMENT_EFLAG_ACCESSOR_IOPL(   12)
+IMPLEMENT_EFLAG_ACCESSOR   (IF,   9)
+IMPLEMENT_EFLAG_ACCESSOR   (TF,   8)
 
-
-
-
-
+// <TAG-DEFINES-DECODE-START>
+//
+// For decoding...
+//
 
 #define BX_REPE_PREFIX  10
 #define BX_REPNE_PREFIX 11
@@ -3246,10 +3185,6 @@ IMPLEMENT_EFLAG_ACCESSOR   (TF,  8)
 #define BX_TASK_FROM_JUMP         10
 #define BX_TASK_FROM_CALL_OR_INT  11
 #define BX_TASK_FROM_IRET         12
-
-//
-// For decoding...
-//
 
 // If the Immediate bit is set, the lowest 3 bits of the attribute
 // specify which kinds of immediate data a required by instruction.
@@ -3299,6 +3234,7 @@ IMPLEMENT_EFLAG_ACCESSOR   (TF,  8)
 #define BxGroup14         BxGroupN
 #define BxGroup15         BxGroupN
 #define BxGroup16         BxGroupN
+// <TAG-DEFINES-DECODE-END>
 
 #if BX_DEBUGGER
 typedef enum _show_flags {
@@ -3312,7 +3248,6 @@ typedef enum _show_flags {
 
 // Can be used as LHS or RHS.
 #define RMAddr(i)  (BX_CPU_THIS_PTR address_xlation.rm_addr)
-
 
 #define setEFlagsOSZAPC(flags32) {                       \
   BX_CPU_THIS_PTR eflags.val32 =                         \
@@ -3328,326 +3263,10 @@ typedef enum _show_flags {
   BX_CPU_THIS_PTR lf_flags_status &= 0x00000f;           \
   }
 
-#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
-
-// This section defines some convience inline functions which do the
-// dirty work of asm() statements for arithmetic instructions on x86 hosts. 
-// Essentially these speed up eflags processing since the value of the
-// eflags register can be read directly on x86 hosts, after the
-// arithmetic operations.
-
-  static inline void
-asmAdd16(Bit16u &sum_16, Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "addw %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (sum_16)
-    : "1" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmAdd32(Bit32u &sum_32, Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "addl %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (sum_32)
-    : "1" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmSub16(Bit16u &diff_16, Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "subw %3, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32), "=r" (diff_16)
-    : "1" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmSub32(Bit32u &diff_32, Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "subl %3, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32), "=r" (diff_32)
-    : "1" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmCmp8(Bit8u op1_8, Bit8u op2_8, Bit32u &flags32)
-{
-  asm (
-    "cmpb %2, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32)
-    : "q" (op1_8), "mq" (op2_8)
-    : "cc"
-    );
-}
-
-  static inline void
-asmCmp16(Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "cmpw %2, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32)
-    : "r" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmCmp32(Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "cmpl %2, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32)
-    : "r" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmInc16(Bit16u &op1_16, Bit32u &flags32)
-{
-  asm (
-    "incw %1 \n\t"
-    "pushfl  \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=g" (op1_16)
-    : "1" (op1_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmInc32(Bit32u &op1_32, Bit32u &flags32)
-{
-  asm (
-    "incl %1 \n\t"
-    "pushfl  \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=g" (op1_32)
-    : "1" (op1_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmDec16(Bit16u &op1_16, Bit32u &flags32)
-{
-  asm (
-    "decw %1 \n\t"
-    "pushfl  \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=g" (op1_16)
-    : "1" (op1_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmDec32(Bit32u &op1_32, Bit32u &flags32)
-{
-  asm (
-    "decl %1 \n\t"
-    "pushfl  \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=g" (op1_32)
-    : "1" (op1_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmXor16(Bit16u &result_16, Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "xorw %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (result_16)
-    : "1" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmXor32(Bit32u &result_32, Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "xorl %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (result_32)
-    : "1" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmOr8(Bit8u &result_8, Bit8u op1_8, Bit8u op2_8, Bit32u &flags32)
-{
-  asm (
-    "orb %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=q" (result_8)
-    : "1" (op1_8), "mq" (op2_8)
-    : "cc"
-    );
-}
-
-  static inline void
-asmOr16(Bit16u &result_16, Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "orw %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (result_16)
-    : "1" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmOr32(Bit32u &result_32, Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "orl %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (result_32)
-    : "1" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmAnd8(Bit8u &result_8, Bit8u op1_8, Bit8u op2_8, Bit32u &flags32)
-{
-  asm (
-    "andb %3, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32), "=q" (result_8)
-    : "1" (op1_8), "mq" (op2_8)
-    : "cc"
-    );
-}
-
-  static inline void
-asmAnd16(Bit16u &result_16, Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "andw %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (result_16)
-    : "1" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmAnd32(Bit32u &result_32, Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "andl %3, %1 \n\t"
-    "pushfl      \n\t"
-    "popl   %0"
-    : "=g" (flags32), "=r" (result_32)
-    : "1" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmTest8(Bit8u op1_8, Bit8u op2_8, Bit32u &flags32)
-{
-  asm (
-    "testb %2, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32)
-    : "q" (op1_8), "mq" (op2_8)
-    : "cc"
-    );
-}
-
-  static inline void
-asmTest16(Bit16u op1_16, Bit16u op2_16, Bit32u &flags32)
-{
-  asm (
-    "testw %2, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32)
-    : "r" (op1_16), "g" (op2_16)
-    : "cc"
-    );
-}
-
-  static inline void
-asmTest32(Bit32u op1_32, Bit32u op2_32, Bit32u &flags32)
-{
-  asm (
-    "testl %2, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32)
-    : "r" (op1_32), "g" (op2_32)
-    : "cc"
-    );
-}
-
-  static inline void
-asmShr16(Bit16u &result_16, Bit16u op1_16, unsigned count, Bit32u &flags32)
-{
-  asm (
-    "shrw %%cl, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32), "=g" (result_16)
-    : "1" (op1_16), "c" (count)
-    : "cc"
-    );
-}
-
-  static inline void
-asmShr32(Bit32u &result_32, Bit32u op1_32, unsigned count, Bit32u &flags32)
-{
-  asm (
-    "shrl %%cl, %1\n\t"
-    "pushfl     \n\t"
-    "popl %0"
-    : "=g" (flags32), "=g" (result_32)
-    : "1" (op1_32), "c" (count)
-    : "cc"
-    );
-}
-
-#endif
+#define SET_FLAGS_OxxxxC(new_of, new_cf) { \
+    BX_CPU_THIS_PTR eflags.val32 &= ~((1<<11) | (1<<0)); \
+    BX_CPU_THIS_PTR eflags.val32 |= ((!!new_of)<<11) | ((!!new_cf)<<0); \
+    BX_CPU_THIS_PTR lf_flags_status &= 0x0ffff0; \
+    }
 
 #endif  // #ifndef BX_CPU_H

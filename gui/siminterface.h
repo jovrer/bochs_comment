@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.113.2.2 2004/02/06 22:14:35 danielg4 Exp $
+// $Id: siminterface.h,v 1.135 2005/02/01 19:16:19 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Before I can describe what this file is for, I have to make the
@@ -81,27 +81,26 @@
 
 
 //////////////////////////////////////////////////////
-// BX_UI_TEXT should be set to 1 when the text mode configuration interface
+// BX_USE_TEXTCONFIG should be set to 1 when the text mode configuration interface
 // is compiled in.  This gives each type of parameter a text_print and text_ask
-// method (defined in gui/control.cc) so that you can call text_ask() on any
+// method (defined in gui/textconfig.cc) so that you can call text_ask() on any
 // kind of parameter to ask the user to edit the value.
 //
 // I have been considering whether to use the same strategy for the
-// wxWindows interface, but I'm not sure if I like it.  One problem is
+// wxWidgets interface, but I'm not sure if I like it.  One problem is
 // that in order to declare member functions that are useful for
-// wxWindows, the wxWindows header files would have to be included
+// wxWidgets, the wxWidgets header files would have to be included
 // before the param object definitions.  That means that all the
-// wxwindows headers would have be included when compiling every
+// wxWidgets headers would have be included when compiling every
 // single bochs file.  One of the things I like about the separation
 // between the simulator and CI is that the two parts can be
 // compiled without any knowledge of the other.  Bochs doesn't include
-// <wx.h>, and the wxwindows CI (wxmain.cc) doesn't need to include <bochs.h>.
+// <wx.h>, and the wxWidgets CI (wxmain.cc) doesn't need to include <bochs.h>.
 // Aside from making compiles faster, this enforces the use of the siminterface
 // so it keeps the interface clean (important when we may have multiple UI
 // implementations for example).  This argues for keeping UI-specific
 // structures out of the simulator interface.  It certainly works ok for the
 // text interface, but that's because FILE* is standard and portable.
-#define BX_UI_TEXT 1
 
 //////////////////////////////////////////////////////
 
@@ -123,8 +122,10 @@ typedef enum {
   BXP_IPS,
   BXP_REALTIME_PIT,
   BXP_TEXT_SNAPSHOT_CHECK,
+  BXP_VGA_EXTENSION,
   BXP_VGA_UPDATE_INTERVAL,
   BXP_MOUSE_ENABLED,
+  BXP_MOUSE_TYPE,
   BXP_MEM_SIZE,
   BXP_ROM_PATH,
   BXP_ROM_ADDRESS,
@@ -137,6 +138,7 @@ typedef enum {
   BXP_OPTROM2_ADDRESS,
   BXP_OPTROM3_ADDRESS,
   BXP_OPTROM4_ADDRESS,
+  BXP_OPTROM_LIST,
   BXP_KBD_SERIAL_DELAY,
   BXP_KBD_PASTE_DELAY,
   BXP_KBD_TYPE,
@@ -315,23 +317,29 @@ typedef enum {
   BXP_ATA3_SLAVE_JOURNAL,
 #define BXP_ATAx_DEVICE_JOURNAL(i, s) (BXP_ATA0_MASTER_JOURNAL + (2*(i)) + (s))
 
-#define BXP_PARAMS_PER_SERIAL_PORT 2
+#define BXP_PARAMS_PER_SERIAL_PORT 3
   BXP_COM1_ENABLED,
+  BXP_COM1_MODE,
   BXP_COM1_PATH,
   BXP_COM2_ENABLED,
+  BXP_COM2_MODE,
   BXP_COM2_PATH,
   BXP_COM3_ENABLED,
+  BXP_COM3_MODE,
   BXP_COM3_PATH,
   BXP_COM4_ENABLED,
+  BXP_COM4_MODE,
   BXP_COM4_PATH,
-#define BXP_PARAMS_PER_USB_HUB 3
+#define BXP_PARAMS_PER_USB_HUB 4
   BXP_USB1_ENABLED,
   BXP_USB1_IOADDR,
-  BXP_USB1_IRQ,
+  BXP_USB1_PORT1,
+  BXP_USB1_PORT2,
   BXP_PRIVATE_COLORMAP,
   BXP_FULLSCREEN,
   BXP_SCREENMODE,
   BXP_I440FX_SUPPORT,
+  BXP_PCI,
   BXP_NEWHARDDRIVESUPPORT,
   BXP_LOG_FILENAME,
   BXP_LOG_PREFIX,
@@ -346,8 +354,11 @@ typedef enum {
   BXP_LOAD32BITOS_IOLOG,
   BXP_LOAD32BITOS_INITRD,
   BXP_LOAD32BITOS,
-  BXP_BOOTDRIVE,
+  BXP_BOOTDRIVE1,
+  BXP_BOOTDRIVE2,
+  BXP_BOOTDRIVE3,
   BXP_FLOPPYSIGCHECK,
+  BXP_BOOT,
   BXP_MENU_MAIN,
   BXP_MENU_MEMORY,
   BXP_MENU_INTERFACE,
@@ -359,7 +370,7 @@ typedef enum {
   BXP_MENU_MISC_2,
   BXP_MENU_RUNTIME,
   BXP_MAX_IPS,
-  BXP_NE2K_PRESENT,
+  BXP_NE2K_ENABLED,
   BXP_NE2K_IOADDR,
   BXP_NE2K_IRQ,
   BXP_NE2K_MACADDR,
@@ -367,7 +378,19 @@ typedef enum {
   BXP_NE2K_ETHDEV,
   BXP_NE2K_SCRIPT,
   BXP_NE2K,
-  BXP_SB16_PRESENT,
+  BXP_PNIC_ENABLED,
+  BXP_PNIC_IOADDR,
+  BXP_PNIC_IRQ,
+  BXP_PNIC_MACADDR,
+  BXP_PNIC_ETHMOD,
+  BXP_PNIC_ETHDEV,
+  BXP_PNIC_SCRIPT,
+  BXP_PNIC,
+  BXP_NETWORK,
+  BXP_PCIDEV_VENDOR,
+  BXP_PCIDEV_DEVICE,
+  BXP_PCIDEV,
+  BXP_SB16_ENABLED,
   BXP_SB16_MIDIFILE,
   BXP_SB16_WAVEFILE,
   BXP_SB16_LOGFILE,
@@ -381,6 +404,17 @@ typedef enum {
   BXP_PARPORT1_OUTFILE,
   BXP_PARPORT2_ENABLED,
   BXP_PARPORT2_OUTFILE,
+#define BXP_PARAMS_PER_PCI_SLOT 2
+  BXP_PCI_SLOT1_USED,
+  BXP_PCI_SLOT1_DEVNAME,
+  BXP_PCI_SLOT2_USED,
+  BXP_PCI_SLOT2_DEVNAME,
+  BXP_PCI_SLOT3_USED,
+  BXP_PCI_SLOT3_DEVNAME,
+  BXP_PCI_SLOT4_USED,
+  BXP_PCI_SLOT4_DEVNAME,
+  BXP_PCI_SLOT5_USED,
+  BXP_PCI_SLOT5_DEVNAME,
   BXP_KEYBOARD_USEMAPPING,
   BXP_KEYBOARD_MAP,
   BXP_KEYBOARD,
@@ -464,12 +498,15 @@ typedef enum {
 #endif
   BXP_SEL_CONFIG_INTERFACE,
   BXP_SEL_DISPLAY_LIBRARY,
+  BXP_DISPLAYLIB_OPTIONS,
   BXP_THIS_IS_THE_LAST    // used to determine length of list
 } bx_id;
 
 // use x=1,2,3,4
 #define BXP_COMx_ENABLED(x) \
    (bx_id)(BXP_COM1_ENABLED + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
+#define BXP_COMx_MODE(x) \
+   (bx_id)(BXP_COM1_MODE + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
 #define BXP_COMx_PATH(x) \
   (bx_id)(BXP_COM1_PATH + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
 
@@ -478,14 +515,22 @@ typedef enum {
    (bx_id)(BXP_USB1_ENABLED + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
 #define BXP_USBx_IOADDR(x) \
    (bx_id)(BXP_USB1_IOADDR + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-#define BXP_USBx_IRQ(x) \
-   (bx_id)(BXP_USB1_IRQ + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+#define BXP_USBx_PORT1(x) \
+   (bx_id)(BXP_USB1_PORT1 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+#define BXP_USBx_PORT2(x) \
+   (bx_id)(BXP_USB1_PORT2 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
 
 // use x=1,2
 #define BXP_PARPORTx_ENABLED(x) \
   (bx_id)(BXP_PARPORT1_ENABLED + (((x)-1)*BXP_PARAMS_PER_PARALLEL_PORT))
 #define BXP_PARPORTx_OUTFILE(x) \
   (bx_id)(BXP_PARPORT1_OUTFILE + (((x)-1)*BXP_PARAMS_PER_PARALLEL_PORT))
+
+// use x=1,2,3,4,5
+#define BXP_PCISLOTx_USED(x) \
+   (bx_id)(BXP_PCI_SLOT1_USED + (((x)-1)*BXP_PARAMS_PER_PCI_SLOT))
+#define BXP_PCISLOTx_DEVNAME(x) \
+   (bx_id)(BXP_PCI_SLOT1_DEVNAME + (((x)-1)*BXP_PARAMS_PER_PCI_SLOT))
 
 typedef enum {
   BX_TOOLBAR_UNDEFINED,
@@ -520,10 +565,11 @@ typedef enum {
 #define BX_EJECTED   10
 #define BX_INSERTED  11
 
-// boot devices
-#define BX_BOOT_FLOPPYA 0
-#define BX_BOOT_DISKC   1
-#define BX_BOOT_CDROM   2
+// boot devices (using the same values as the rombios)
+#define BX_BOOT_NONE    0
+#define BX_BOOT_FLOPPYA 1
+#define BX_BOOT_DISKC   2
+#define BX_BOOT_CDROM   3
 
 // loader hack
 #define Load32bitOSNone        0
@@ -560,13 +606,13 @@ typedef enum {
 //
 // Examples:
 //
-// async event: In the wxWindows implementation, both the CI and the
-// VGAW operate in the wxWindows GUI thread.  When the user presses a
-// key, wxWindows sends a wxKeyEvent to the VGAW event handler code in
+// async event: In the wxWidgets implementation, both the CI and the
+// VGAW operate in the wxWidgets GUI thread.  When the user presses a
+// key, wxWidgets sends a wxKeyEvent to the VGAW event handler code in
 // wx.cc.  The VGAW handler then builds a BxEvent with
 // type=BX_ASYNC_EVT_KEY, and fills in the bx_key and raw_scancode
 // fields.  The asynchronous event is placed on the event_queue for
-// the simulator, then the VGAW handler returns.  (With wxWindows and
+// the simulator, then the VGAW handler returns.  (With wxWidgets and
 // many other graphical libaries, the event handler must return
 // quickly because the window will not be updated until it's done.)
 // Some time later, the simulator reaches the point where it checks
@@ -647,7 +693,7 @@ typedef struct {
 //
 // A mouse event can be sent from the VGA window to the Bochs
 // simulator.  It is asynchronous.  Currently unused because mouse
-// events aren't implemented in our wxWindows code yet.
+// events aren't implemented in our wxWidgets code yet.
 typedef struct {
   // type is BX_EVT_MOUSE
   Bit16s dx, dy;           // mouse motion delta
@@ -842,6 +888,7 @@ protected:
   char *label; // label string for text menus and gui dialogs
   const char *text_format;  // printf format string. %d for ints, %s for strings, etc.
   char *ask_format;  // format string for asking for a new value
+  char *group_name;  // name of the group the param belongs to
   int runtime_param;
   int enabled;
 public:
@@ -854,6 +901,8 @@ public:
   char *get_label () {return label;}
   void set_runtime_param (int val) { runtime_param = val; }
   int get_runtime_param () { return runtime_param; }
+  void set_group (char *group) {group_name = group;}
+  char *get_group () {return group_name;}
   char *get_name () { return name; }
   char *get_description () { return description; }
   int get_enabled () { return enabled; }
@@ -863,7 +912,7 @@ public:
   static const char* set_default_format (const char *f);
   static const char *get_default_format () { return default_text_format; }
   virtual bx_list_c *get_dependent_list () { return NULL; }
-#if BX_UI_TEXT
+#if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *fp) {}
   virtual int text_ask (FILE *fpin, FILE *fpout) {return -1;}
 #endif
@@ -923,7 +972,7 @@ public:
   static Bit32u get_default_base () { return default_base; }
   void set_options (Bit32u options) { this->options = options; }
   Bit32u get_options () { return options; }
-#if BX_UI_TEXT
+#if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
 #endif
@@ -1000,7 +1049,7 @@ public:
       char *name,
       char *description,
       Bit64s initial_val);
-#if BX_UI_TEXT
+#if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
 #endif
@@ -1034,7 +1083,7 @@ public:
   char *get_choice (int n) { return choices[n]; }
   int find_by_name (const char *string);
   bool set_by_name (const char *string);
-#if BX_UI_TEXT
+#if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
 #endif
@@ -1075,7 +1124,7 @@ public:
   void set_separator (char sep) {separator = sep; }
   char get_separator () {return separator; }
   int get_maxsize () {return maxsize; }
-#if BX_UI_TEXT
+#if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
 #endif
@@ -1131,7 +1180,11 @@ public:
     // When a bx_list_c is displayed in a dialog, the list name is used as the
     // label of the group box if USE_BOX_TITLE is set. This is only necessary if
     // more than one list appears in a dialog box.
-    USE_BOX_TITLE = (1<<3)
+    USE_BOX_TITLE = (1<<3),
+    // When a bx_list_c is displayed as a menu, SHOW_GROUP_NAME controls whether
+    // or not the name of group the item belongs to is added to the name of the
+    // item (used in the runtime menu).
+    SHOW_GROUP_NAME = (1<<4)
   } bx_listopt_bits;
   bx_list_c (bx_id id, int maxsize);
   bx_list_c (bx_id id, char *name, char *description, bx_param_c **init_list);
@@ -1147,7 +1200,7 @@ public:
   bx_param_string_c *get_title () { return title; }
   void set_parent (bx_param_c *newparent) { parent = newparent; }
   bx_param_c *get_parent () { return parent; }
-#if BX_UI_TEXT
+#if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *);
   virtual int text_ask (FILE *fpin, FILE *fpout);
 #endif
@@ -1173,6 +1226,20 @@ enum {
   BX_RUN_START
 };
 
+enum {
+  BX_MOUSE_TYPE_NONE,
+  BX_MOUSE_TYPE_PS2,
+  BX_MOUSE_TYPE_IMPS2,
+#if BX_SUPPORT_BUSMOUSE
+  BX_MOUSE_TYPE_BUS,
+#endif
+#if BX_SUPPORT_PCIUSB
+  BX_MOUSE_TYPE_USB,
+#endif
+  BX_MOUSE_TYPE_SERIAL,
+  BX_MOUSE_TYPE_SERIAL_WHEEL
+};
+
 #define BX_FLOPPY_NONE   10 // floppy not present
 #define BX_FLOPPY_1_2    11 // 1.2M  5.25"
 #define BX_FLOPPY_1_44   12 // 1.44M 3.5"
@@ -1184,7 +1251,7 @@ enum {
 #define BX_FLOPPY_320K   18 // 320K  5.25"
 #define BX_FLOPPY_LAST   18 // last legal value of floppy type
 
-#define BX_FLOPPY_GUESS  20 // decide based on image size
+#define BX_FLOPPY_UNKNOWN  20 // image size doesn't match one of the types above
 
 #define BX_ATA_DEVICE_DISK      0
 #define BX_ATA_DEVICE_CDROM     1
@@ -1231,8 +1298,8 @@ BOCHSAPI extern int floppy_type_n_sectors[];
 BOCHSAPI extern int n_floppy_type_names;
 BOCHSAPI extern char *floppy_status_names[];
 BOCHSAPI extern int n_floppy_status_names;
-BOCHSAPI extern char *floppy_bootdisk_names[];
-BOCHSAPI extern int n_floppy_bootdisk_names;
+BOCHSAPI extern char *bochs_bootdisk_names[];
+BOCHSAPI extern int n_bochs_bootdisk_names;
 BOCHSAPI extern char *loader_os_names[];
 BOCHSAPI extern int n_loader_os_names;
 BOCHSAPI extern char *keyboard_type_names[];
@@ -1275,15 +1342,31 @@ typedef struct {
 
 typedef struct {
   bx_param_bool_c *Oenabled;
+  bx_param_enum_c *Omode;
   bx_param_string_c *Odev;
   } bx_serial_options;
 
 typedef struct {
   bx_param_bool_c *Oenabled;
   bx_param_num_c *Oioaddr;
-  bx_param_num_c *Oirq;
+  bx_param_string_c *Oport1;
+  bx_param_string_c *Oport2;
   } bx_usb_options;
 
+typedef struct {
+  bx_param_bool_c *Oenabled;
+  bx_param_num_c *Oioaddr;
+  bx_param_num_c *Oirq;
+  bx_param_string_c *Omacaddr;
+  bx_param_enum_c *Oethmod;
+  bx_param_string_c *Oethdev;
+  bx_param_string_c *Oscript;
+  } bx_pnic_options;
+
+typedef struct {
+  bx_param_bool_c *Oused;
+  bx_param_string_c *Odevname;
+  } bx_pcislot_options;
 
 ////////////////////////////////////////////////////////////////////
 // base class simulator interface, contains just virtual functions.
@@ -1447,7 +1530,7 @@ typedef struct BOCHSAPI {
   char initial_dir[MAX_PATH];
 #endif
 #ifdef __WXMSW__
-  // these are only used when compiling with wxWindows.  This gives us a
+  // these are only used when compiling with wxWidgets.  This gives us a
   // place to store the data that was passed to WinMain.
   HINSTANCE hInstance;
   HINSTANCE hPrevInstance;

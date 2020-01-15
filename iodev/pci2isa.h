@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.h,v 1.4 2002/11/09 20:51:40 vruppert Exp $
+// $Id: pci2isa.h,v 1.9 2004/09/25 22:15:02 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -34,21 +34,28 @@
 #endif
 
 
-class bx_pci2isa_c : public bx_devmodel_c {
+class bx_pci2isa_c : public bx_pci2isa_stub_c {
 
 public:
   bx_pci2isa_c(void);
   ~bx_pci2isa_c(void);
   virtual void   init(void);
   virtual void   reset(unsigned type);
+  virtual void   pci_set_irq(Bit8u devfunc, unsigned line, bx_bool level);
 
 private:
 
   struct {
     Bit8u pci_conf[256];
     Bit8u elcr1;
-    Bit8u elcr2; 
+    Bit8u elcr2;
+    Bit8u irq_registry[16];
+    Bit32u irq_level[16];
+    Bit8u pci_reset;
     } s;
+
+  static void pci_register_irq(unsigned pirq, unsigned irq);
+  static void pci_unregister_irq(unsigned pirq);
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);

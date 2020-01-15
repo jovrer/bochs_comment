@@ -1,7 +1,7 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.h,v 1.5 2002/10/25 11:44:40 bdenney Exp $
+// $Id: ioapic.h,v 1.8 2005/03/17 20:50:57 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
-//
+
 extern class bx_ioapic_c bx_ioapic;
 
 #define BX_IOAPIC_VERSION_ID 0x00170011  // same version as 82093 IOAPIC
@@ -45,10 +45,10 @@ public:
   virtual void reset (unsigned type);
   virtual void read_aligned(Bit32u address, Bit32u *data, unsigned len);
   virtual void write(Bit32u address, Bit32u *value, unsigned len);
-  void trigger_irq (unsigned num, unsigned from);
-  void untrigger_irq (unsigned num, unsigned from);
+  void raise_irq (unsigned num, unsigned from);
+  void lower_irq (unsigned num, unsigned from);
   void service_ioapic ();
-  virtual bx_bool match_logical_addr (Bit8u address) { return false; }
-  virtual bx_bool is_local_apic () { return false; }
+  virtual bx_bool match_logical_addr (Bit8u address) { return 0; }
+  virtual bx_bool is_local_apic () { return 0; }
   virtual bx_apic_type_t get_type () { return APIC_TYPE_IOAPIC; }
 };

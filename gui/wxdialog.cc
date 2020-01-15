@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxdialog.cc,v 1.71 2004/01/05 22:18:01 cbothamy Exp $
+// $Id: wxdialog.cc,v 1.76 2005/05/17 18:05:49 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -27,7 +27,7 @@
 #include "gui/siminterface.h"    // interface to the simulator
 #include "bxversion.h"           // get version string
 #include "wxdialog.h"            // custom dialog boxes
-#include "wxmain.h"              // wxwindows shared stuff
+#include "wxmain.h"              // wxwidgets shared stuff
 
 //////////////////////////////////////////////////////////////////////
 // constants, prototypes
@@ -803,7 +803,7 @@ BEGIN_EVENT_TABLE(DebugLogDialog, wxDialog)
   EVT_CHECKBOX(-1, DebugLogDialog::OnEvent)
   EVT_KEY_DOWN(DebugLogDialog::OnKeyEvent)
   EVT_KEY_UP(DebugLogDialog::OnKeyEvent)
-  EVT_CHAR(DebugLogDialog::OnEvent)
+  EVT_CHAR(DebugLogDialog::OnKeyEvent)
   EVT_TEXT(-1, DebugLogDialog::OnEvent)
   EVT_TEXT_ENTER(-1, DebugLogDialog::OnEnterEvent)
 END_EVENT_TABLE()
@@ -1185,7 +1185,9 @@ void ParamDialog::AddParam (
 	if (list->get_options()->get () & bx_list_c::USE_TAB_WINDOW) {
 	  // put each item in a separate tab of a tabbed window
 	  wxNotebook *notebook = new wxNotebook (context->parent, -1);
+#if wxMAJOR_VERSION == 2 && wxMINOR_VERSION < 6
 	  wxNotebookSizer *nbsizer = new wxNotebookSizer (notebook);
+#endif
 	  // put all items in the list into a separate page of the notebook.
 	  for (int i=0; i<list->get_size (); i++) {
 	    bx_param_c *child = list->get (i);
@@ -1205,13 +1207,17 @@ void ParamDialog::AddParam (
 	    bx_list_c *childl = (bx_list_c *)child;
 	    for (int j=0; j<childl->get_size(); j++)
 	      AddParam (childl->get(j), plain, &newcontext);
-	    const char *pagename = child->get_ask_format ();
+	    const char *pagename = child->get_label ();
 	    if (!pagename) pagename = child->get_name ();
 	    panel->SetAutoLayout (TRUE);
 	    panel->SetSizer (boxsz);
 	    notebook->AddPage (panel, wxString(pagename));
 	  }
+#if wxMAJOR_VERSION == 2 && wxMINOR_VERSION < 6
 	  context->vertSizer->Add (nbsizer, 0, wxALL|wxGROW, 10);
+#else
+	  context->vertSizer->Add (notebook, 0, wxALL|wxGROW, 10);
+#endif
 	  // clear gridSizer variable so that any future parameters force
 	  // creation of a new one.
 	  context->gridSizer = NULL;
@@ -1676,10 +1682,6 @@ ConfigMemoryDialog::ConfigMemoryDialog(
 {
   bx_id standardList[] = {BXP_MEM_SIZE, BXP_ROM_PATH, BXP_ROM_ADDRESS,
                           BXP_VGA_ROM_PATH, BXP_NULL};
-  bx_id optionalList[] = {BXP_OPTROM1_PATH, BXP_OPTROM1_ADDRESS,
-                          BXP_OPTROM2_PATH, BXP_OPTROM2_ADDRESS,
-                          BXP_OPTROM3_PATH, BXP_OPTROM3_ADDRESS,
-                          BXP_OPTROM4_PATH, BXP_OPTROM4_ADDRESS, BXP_NULL};
   int insideStaticBoxMargin = 15;
   SetTitle (CONFIG_MEMORY_TITLE);
 
@@ -1687,10 +1689,6 @@ ConfigMemoryDialog::ConfigMemoryDialog(
   wxStaticBox *box1 = new wxStaticBox (this, -1, CONFIG_MEMORY_BOX1_TITLE);
   wxStaticBoxSizer *box1sizer = new wxStaticBoxSizer (box1, wxVERTICAL);
   mainSizer->Add (box1sizer, 0, wxALL|wxGROW, 10);
-
-  wxStaticBox *box2 = new wxStaticBox (this, -1, CONFIG_MEMORY_BOX2_TITLE);
-  wxStaticBoxSizer *box2sizer = new wxStaticBoxSizer (box2, wxVERTICAL);
-  mainSizer->Add (box2sizer, 0, wxALL|wxGROW, 10);
 
   // box1 contents
   box1gridSizer = new wxFlexGridSizer (3);
@@ -1700,10 +1698,10 @@ ConfigMemoryDialog::ConfigMemoryDialog(
   box1gridSizer->Add (vgabiosaddr1, 0, wxALIGN_RIGHT|wxALL, 2);
   wxStaticText *vgabiosaddr2 = new wxStaticText (this, -1, "0xC0000");
   box1gridSizer->Add (vgabiosaddr2, 0, wxALL, 2);
-  // box2 contents
-  box2gridSizer = new wxFlexGridSizer (3);
-  box2sizer->Add (box2gridSizer, 0, wxALL, insideStaticBoxMargin);
-  AddParamList (optionalList, box2gridSizer);
+
+  // box2 contains a list
+  bx_list_c *list = (bx_list_c *) SIM->get_param (BXP_OPTROM_LIST);
+  AddParam (list);
 }
 
 /////////////////////////////////////////////////////////////////
@@ -1879,9 +1877,9 @@ CpuRegistersDialog::CopyParamToGui ()
 // however long it takes, and returns to the input loop when the command
 // is done.  A control-C can stop a command prematurely.
 //
-// To extend this into wxWindows multithreaded space, I will create a
+// To extend this into wxWidgets multithreaded space, I will create a
 // synchronous event called BX_SYNC_GET_DBG_COMMAND which is sent from
-// the simulation thread to wxWindows.  When the user chooses a debugger
+// the simulation thread to wxWidgets.  When the user chooses a debugger
 // action (step, continue, breakpoint, etc.) the simulation awakens and
 // interprets the event by calling a function in bx_debug/dbg_main.cc.
 //
@@ -1893,7 +1891,7 @@ CpuRegistersDialog::CopyParamToGui ()
 // input loop model is good.  Create a debugger input loop, possibly in
 // siminterface.
 // in the simulation thread.  This loop waits for a command from the 
-// wxWindows debugger
+// wxWidgets debugger
 //
 // For example, if you press the "Step" button 5
 // times, with each click it should call bx_dbg_stepN_command(1) in the
@@ -1909,7 +1907,7 @@ CpuRegistersDialog::OnEvent(wxCommandEvent& event)
       break;
 #if BX_DEBUGGER
   case ID_Debug_Stop:
-      wxLogDebug ("wxWindows triggered a break");
+      wxLogDebug ("wxWidgets triggered a break");
       theFrame->DebugBreak ();
       break;
     case ID_Debug_Continue:
@@ -2011,7 +2009,7 @@ int GetTextCtrlInt (wxTextCtrl *ctrl,
 
 bool BrowseTextCtrl (wxTextCtrl *text, wxString prompt, long style) {
   // try to configure the dialog to show hidden files
-  wxConfigBase::Get() -> Write(wxT("/wxWindows/wxFileDialog/ShowHidden"), true);
+  wxConfigBase::Get() -> Write(wxT("/wxWidgets/wxFileDialog/ShowHidden"), true);
   wxFileDialog *fdialog = new wxFileDialog (text->GetParent (), prompt, "", text->GetValue (), wxString(), style);
   if (fdialog->ShowModal () == wxID_OK)
     text->SetValue (fdialog->GetPath ());

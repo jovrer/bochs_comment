@@ -1,19 +1,24 @@
 /*
  * misc/bximage.c
- * $Id: bximage.c,v 1.19 2003/08/01 01:20:00 cbothamy Exp $
+ * $Id: bximage.c,v 1.25 2005/01/28 10:25:06 sshwarts Exp $
  *
  * Create empty hard disk or floppy disk images for bochs.
  *
  */
 
+#ifdef WIN32
+#  include <conio.h>
+#  include <windows.h>
+#  include <winioctl.h>
+#ifdef _MSC_VER
+#  include <io.h>
+#endif
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
-#ifdef WIN32
-#  include <conio.h>
-#endif
 #include "config.h"
 
 #include <string.h>
@@ -22,11 +27,25 @@
 #define uint16  Bit16u
 #define uint32  Bit32u
 
+#include "../osdep.h"
+
 #define INCLUDE_ONLY_HD_HEADERS 1
 #include "../iodev/harddrv.h"
 
+int bx_hdimage;
+int bx_fdsize_idx;
+int bx_hdsize;
+int bx_hdimagemode;
+int bx_interactive;
+char bx_filename[256];
+
+typedef int (*WRITE_IMAGE)(FILE*, Bit64u);
+#ifdef WIN32
+typedef int (*WRITE_IMAGE_WIN32)(HANDLE, Bit64u);
+#endif
+
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bximage.c,v 1.19 2003/08/01 01:20:00 cbothamy Exp $";
+char *rcsid = "$Id: bximage.c,v 1.25 2005/01/28 10:25:06 sshwarts Exp $";
 char *divider = "========================================================================";
 
 /* menu data for choosing floppy/hard disk */
@@ -35,9 +54,9 @@ char *fdhd_choices[] = { "fd", "hd" };
 int fdhd_n_choices = 2;
 
 /* menu data for choosing floppy size */
-char *fdsize_menu = "\nChoose the size of floppy disk image to create, in megabytes.\nPlease type 0.36, 0.72, 1.2, 1.44, or 2.88. ";
-char *fdsize_choices[] = { "0.36","0.72","1.2","1.44","2.88" };
-int fdsize_n_choices = 5;
+char *fdsize_menu = "\nChoose the size of floppy disk image to create, in megabytes.\nPlease type 0.36, 0.72, 1.2, 1.44, 1.68, 1.72, or 2.88. ";
+char *fdsize_choices[] = { "0.36","0.72","1.2","1.44","1.68","1.72","2.88" };
+int fdsize_n_choices = 7;
 
 /* menu data for choosing disk mode */
 char *hdmode_menu = "\nWhat kind of image should I create?\nPlease type flat, sparse or growing. ";
@@ -78,6 +97,20 @@ void fatal (char *c)
 {
   printf ("%s\n", c);
   myexit (1);
+}
+
+/* check if the argument string is present in the list -
+   returns index on success, -1 on failure. */
+int get_menu_index(char *arg, int n_choices, char *choice[])
+{
+  int i;
+  for (i=0; i<n_choices; i++) {
+    if (!strcmp (choice[i], arg)) {
+      // matched, return the choice number
+      return i;
+    }
+  }
+  return -1;
 }
 
 /* remove leading spaces, newline junk at end.  returns pointer to 
@@ -271,6 +304,34 @@ void make_redolog_header(redolog_header_t *header, const char* type, Bit64u size
 }
 
 /* produce a flat image file */
+#ifdef WIN32 
+int make_flat_image_win32(HANDLE hFile, Bit64u sec)
+{
+  LARGE_INTEGER pos;
+  DWORD dwCount;
+  USHORT mode;
+  char buffer[1024];
+
+  SetLastError(NO_ERROR);
+  mode = COMPRESSION_FORMAT_DEFAULT;
+  dwCount = 0;
+  memset(buffer, 0, 512);
+  WriteFile(hFile, buffer, 512, &dwCount, NULL); // set the first sector to 0, Win98 doesn't zero out the file
+                                                 // if there is a write at/over the end
+  DeviceIoControl(hFile, FSCTL_SET_COMPRESSION, &mode, sizeof(mode), NULL, 0, &dwCount, NULL);
+  pos.u.LowPart = (sec - 1) << 9;
+  pos.u.HighPart = (sec - 1) >> 23;
+  pos.u.LowPart = SetFilePointer(hFile, pos.u.LowPart, &pos.u.HighPart, FILE_BEGIN);
+  memset(buffer, 0, 512);
+  if ((pos.u.LowPart == 0xffffffff && GetLastError() != NO_ERROR) || !WriteFile(hFile, buffer, 512, &dwCount, NULL) || dwCount != 512)
+  {
+    CloseHandle(hFile);
+    fatal ("ERROR: The disk image is not complete!");
+  }
+  return 0;
+}
+#endif
+
 int make_flat_image(FILE *fp, Bit64u sec)
 {
    /*
@@ -366,9 +427,49 @@ int make_growing_image(FILE *fp, Bit64u sec)
 }
 
 /* produce the image file */
-int make_image (Bit64u sec, char *filename, int (*write_image)(FILE*, Bit64u) )
+#ifdef WIN32
+int make_image_win32 (Bit64u sec, char *filename, WRITE_IMAGE_WIN32 write_image)
 {
- FILE *fp;
+  HANDLE hFile;
+  char buffer[1024];
+
+  // check if it exists before trashing someone's disk image
+  hFile = CreateFile(filename, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL , NULL);
+  if (hFile != INVALID_HANDLE_VALUE) {
+    int confirm;
+    sprintf (buffer, "\nThe disk image '%s' already exists.  Are you sure you want to replace it?\nPlease type yes or no. ", filename);
+    if (ask_yn (buffer, 0, &confirm) < 0)
+      fatal (EOF_ERR);
+    if (!confirm)
+      fatal ("ERROR: Aborted");
+    CloseHandle(hFile);
+  }
+
+  // okay, now open it for writing
+  hFile = CreateFile(filename, GENERIC_WRITE|GENERIC_READ, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (hFile == INVALID_HANDLE_VALUE) {
+    // attempt to print an error
+#ifdef HAVE_PERROR
+    sprintf (buffer, "while opening '%s' for writing", filename);
+    perror (buffer);
+#endif
+    fatal ("ERROR: Could not write disk image");
+  }
+
+  printf ("\nWriting: [");
+
+  if( (*write_image)(hFile, sec) != 0)
+     fatal ("ERROR: while writing disk image!");
+
+  printf ("] Done.\n");
+  CloseHandle(hFile);
+  return 0;
+}
+#endif
+
+int make_image (Bit64u sec, char *filename, WRITE_IMAGE write_image)
+{
+  FILE *fp;
   char buffer[1024];
  
   // check if it exists before trashing someone's disk image
@@ -404,28 +505,143 @@ int make_image (Bit64u sec, char *filename, int (*write_image)(FILE*, Bit64u) )
   return 0;
 }
 
-int main()
+void print_usage ()
 {
-  int hd;
+  fprintf(stderr, 
+    "Usage: bximage [options] [filename]\n\n"
+    "Supported options:\n"
+    "  -fd              create floppy image\n"
+    "  -hd              create hard disk image\n"
+    "  -mode=...        image mode (hard disks only)\n"
+    "  -size=...        image size in megabytes\n"
+    "  -q               quiet mode (don't prompt for user input)\n"
+    "  --help           display this help and exit\n\n");
+}
+
+int parse_cmdline (int argc, char *argv[])
+{
+  int arg = 1;
+  int ret = 1;
+
+  bx_hdimage = -1;
+  bx_fdsize_idx = -1;
+  bx_hdsize = -1;
+  bx_hdimagemode = -1;
+  bx_interactive = 1;
+  bx_filename[0] = 0;
+  while ((arg < argc) && (ret == 1)) {
+    // parse next arg
+    if (!strcmp ("--help", argv[arg]) || !strncmp ("/?", argv[arg], 2)) {
+      print_usage();
+      ret = 0;
+    }
+    else if (!strcmp ("-fd", argv[arg])) {
+      bx_hdimage = 0;
+      bx_hdimagemode = 0;
+    }
+    else if (!strcmp ("-hd", argv[arg])) {
+      bx_hdimage = 1;
+      bx_fdsize_idx = 0;
+    }
+    else if (!strncmp ("-mode=", argv[arg], 6)) {
+      if (bx_hdimage == 1) {
+        bx_hdimagemode = get_menu_index(&argv[arg][6], hdmode_n_choices, hdmode_choices);
+        if (bx_hdimagemode < 0) {
+          printf ("Unknown image mode: %s\n\n", &argv[arg][6]);
+          ret = 0;
+        }
+      } else {
+        printf ("Image mode option only supported for hard disks\n\n");
+        ret = 0;
+      }
+    }
+    else if (!strncmp ("-size=", argv[arg], 6)) {
+      if (bx_hdimage == 0) {
+        bx_fdsize_idx = get_menu_index(&argv[arg][6], fdsize_n_choices, fdsize_choices);
+        if (bx_fdsize_idx < 0) {
+          printf ("Unknown floppy image size: %s\n\n", &argv[arg][6]);
+          ret = 0;
+        }
+      } else if (bx_hdimage == 1) {
+        if (sscanf (&argv[arg][6], "%d", &bx_hdsize) != 1) {
+          printf ("Error in hard disk image size argument: %s\n\n", &argv[arg][6]);
+          ret = 0;
+        } else if ((bx_hdsize < 1) || (bx_hdsize > 32255)) {
+          printf ("Hard disk image size out of range\n\n");
+          ret = 0;
+	}
+      } else {
+        printf ("Image type (fd/hd) not specified\n\n");
+      }
+    }
+    else if (!strcmp ("-q", argv[arg])) {
+      bx_interactive = 0;
+    }
+    else if (argv[arg][0] == '-') {
+      printf ("Unknown option: %s\n\n", argv[arg]);
+      ret = 0;
+    } else {
+      strcpy(bx_filename, argv[arg]);
+    }
+    arg++;
+  }
+  if (bx_hdimage == -1) {
+    bx_hdimage = 1;
+    bx_interactive = 1;
+  }
+  if (bx_hdimage == 1) {
+    if (bx_hdimagemode == -1) {
+      bx_hdimagemode = 0;
+      bx_interactive = 1;
+    }
+    if (bx_hdsize == -1) {
+      bx_hdsize = 10;
+      bx_interactive = 1;
+    }
+  } else {
+    if (bx_fdsize_idx == -1) {
+      bx_fdsize_idx = 3;
+      bx_interactive = 1;
+    }
+  }
+  if (!strlen(bx_filename)) {
+    bx_interactive = 1;
+  }
+  return ret;
+}
+
+int main (int argc, char *argv[])
+{
   Bit64s sectors = 0;
   char filename[256];
   char bochsrc_line[256];
 
-  int (*write_function)(FILE*, Bit64u)=NULL;
+  WRITE_IMAGE write_function=NULL;
+#ifdef WIN32
+  WRITE_IMAGE_WIN32 writefn_win32=NULL;
+#endif
  
+  if (!parse_cmdline (argc, argv))
+    myexit(1);
+
   print_banner ();
-  filename[0] = 0;
-  if (ask_menu (fdhd_menu, fdhd_n_choices, fdhd_choices, 1, &hd) < 0)
-    fatal (EOF_ERR);
-  if (hd) {
+  if (bx_interactive) {
+    if (ask_menu (fdhd_menu, fdhd_n_choices, fdhd_choices, bx_hdimage, &bx_hdimage) < 0)
+      fatal (EOF_ERR);
+  }
+  if (bx_hdimage) {
     int hdsize, cyl, heads=16, spt=63;
     int mode;
 
-    if (ask_menu (hdmode_menu, hdmode_n_choices, hdmode_choices, 0, &mode) < 0)
-      fatal (EOF_ERR);
-
-    if (ask_int ("\nEnter the hard disk size in megabytes, between 1 and 32255\n", 1, 32255, 10, &hdsize) < 0)
-      fatal (EOF_ERR);
+    if (bx_interactive) {
+      if (ask_menu (hdmode_menu, hdmode_n_choices, hdmode_choices, bx_hdimagemode, &mode) < 0)
+        fatal (EOF_ERR);
+      if (ask_int ("\nEnter the hard disk size in megabytes, between 1 and 32255\n", 1, 32255, bx_hdsize, &hdsize) < 0)
+        fatal (EOF_ERR);
+    } else {
+      mode = bx_hdimagemode;
+      hdsize = bx_hdsize;
+    }
     cyl = (int) (hdsize*1024.0*1024.0/16.0/63.0/512.0);
     assert (cyl < 65536);
     sectors = cyl*heads*spt;
@@ -433,10 +649,15 @@ int main()
     printf ("  cyl=%d\n", cyl);
     printf ("  heads=%d\n", heads);
     printf ("  sectors per track=%d\n", spt);
-    printf ("  total sectors=%lld\n", sectors);
-    printf ("  total size=%.2f megabytes\n", (float)sectors*512.0/1024.0/1024.0);
-    if (ask_string ("\nWhat should I name the image?\n", "c.img", filename) < 0)
-      fatal (EOF_ERR);
+    printf ("  total sectors=" FMT_LL "d\n", sectors);
+    printf ("  total size=%.2f megabytes\n", (float)(Bit64s)(sectors/2)/1024.0);
+    if (bx_interactive) {
+      if (!strlen(bx_filename)) strcpy(bx_filename, "c.img");
+      if (ask_string ("\nWhat should I name the image?\n", bx_filename, filename) < 0)
+        fatal (EOF_ERR);
+    } else {
+      strcpy(filename, bx_filename);
+    }
 
     sprintf (bochsrc_line, "ata0-master: type=disk, path=\"%s\", mode=%s, cylinders=%d, heads=%d, spt=%d", filename, hdmode_choices[mode], cyl, heads, spt);
 
@@ -448,19 +669,29 @@ int main()
         write_function=make_growing_image;
         break;
       default:
+#ifdef WIN32
+        writefn_win32=make_flat_image_win32;
+#else
         write_function=make_flat_image;
+#endif
       }
   } else {
     int fdsize, cyl=0, heads=0, spt=0;
     char *name = NULL;
-    if (ask_menu (fdsize_menu, fdsize_n_choices, fdsize_choices, 3, &fdsize) < 0)
-      fatal (EOF_ERR);
+    if (bx_interactive) {
+      if (ask_menu (fdsize_menu, fdsize_n_choices, fdsize_choices, bx_fdsize_idx, &fdsize) < 0)
+        fatal (EOF_ERR);
+    } else {
+      fdsize = bx_fdsize_idx;
+    }
     switch (fdsize) {
     case 0: name="360k"; cyl=40; heads=2; spt=9; break;   /* 0.36 meg */
     case 1: name="720k"; cyl=80; heads=2; spt=9; break;   /* 0.72 meg */
     case 2: name="1_2"; cyl=80; heads=2; spt=15; break;   /* 1.2 meg */
     case 3: name="1_44"; cyl=80; heads=2; spt=18; break;   /* 1.44 meg */
-    case 4: name="2_88"; cyl=80; heads=2; spt=36; break;   /* 2.88 meg */
+    case 4: name="1_44"; cyl=80; heads=2; spt=21; break;   /* 1.68 meg */
+    case 5: name="1_44"; cyl=82; heads=2; spt=21; break;   /* 1.72 meg */
+    case 6: name="2_88"; cyl=80; heads=2; spt=36; break;   /* 2.88 meg */
     default:
       fatal ("ERROR: fdsize out of range");
     }
@@ -469,10 +700,15 @@ int main()
     printf ("  cyl=%d\n", cyl);
     printf ("  heads=%d\n", heads);
     printf ("  sectors per track=%d\n", spt);
-    printf ("  total sectors=%lld\n", sectors);
-    printf ("  total bytes=%lld\n", sectors*512);
-    if (ask_string ("\nWhat should I name the image?\n", "a.img", filename) < 0)
-      fatal (EOF_ERR);
+    printf ("  total sectors=" FMT_LL "d\n", sectors);
+    printf ("  total bytes=" FMT_LL "d\n", sectors*512);
+    if (bx_interactive) {
+      if (!strlen(bx_filename)) strcpy(bx_filename, "a.img");
+      if (ask_string ("\nWhat should I name the image?\n", bx_filename, filename) < 0)
+        fatal (EOF_ERR);
+    } else {
+      strcpy(filename, bx_filename);
+    }
     sprintf (bochsrc_line, "floppya: %s=\"%s\", status=inserted", name, filename);
 
     write_function=make_flat_image;
@@ -481,10 +717,31 @@ int main()
     fatal ("ERROR: Illegal disk size!");
   if (strlen (filename) < 1)
     fatal ("ERROR: Illegal filename");
-  make_image (sectors, filename, write_function);
-  printf ("\nI wrote %lld bytes to %s.\n", sectors*512, filename);
+#ifdef WIN32
+  if (writefn_win32 != NULL) {
+    make_image_win32 (sectors, filename, writefn_win32);
+  }
+  else
+#endif
+  {
+    make_image (sectors, filename, write_function);
+  }
+  printf ("\nI wrote " FMT_LL "u bytes to ", sectors*512);
+  printf ("%s.\n", filename);
   printf ("\nThe following line should appear in your bochsrc:\n");
   printf ("  %s\n", bochsrc_line);
+#ifdef WIN32
+  if (OpenClipboard(NULL)) {
+    HGLOBAL hgClip;
+    EmptyClipboard();
+    hgClip = GlobalAlloc(GMEM_DDESHARE, (strlen(bochsrc_line) + 1));
+    strcpy((char *)GlobalLock(hgClip), bochsrc_line);
+    GlobalUnlock(hgClip);
+    SetClipboardData(CF_TEXT, hgClip);
+    CloseClipboard();
+    printf("(The line is stored in your windows clipboard, use CTRL-V to paste)\n");
+  }
+#endif
   myexit(0);
 
   // make picky compilers (c++, gcc) happy,

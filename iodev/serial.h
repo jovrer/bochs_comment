@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial.h,v 1.15 2003/11/16 08:21:10 vruppert Exp $
+// $Id: serial.h,v 1.25 2004/12/05 20:23:39 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
+//  Copyright (C) 2004  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -28,16 +28,19 @@
 // Peter Grehan (grehan@iprg.nokia.com) coded most of this
 // serial emulation.
 
-#if USE_RAW_SERIAL
-#include "serial_raw.h"
-#endif // USE_RAW_SERIAL
-
 #if BX_USE_SER_SMF
 #  define BX_SER_SMF  static
 #  define BX_SER_THIS theSerialDevice->
 #else
 #  define BX_SER_SMF
 #  define BX_SER_THIS this->
+#endif
+
+#if defined(__NetBSD__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__linux__) || defined(__GNU__) || defined(__GLIBC__) || defined(__APPLE__)
+#define SERIAL_ENABLE
+extern "C" {
+#include <termios.h>
+};
 #endif
 
 #define BX_SERIAL_MAXDEV   4
@@ -48,6 +51,23 @@
 #define  BX_SER_RXPOLL  1
 #define  BX_SER_RXWAIT  2
 
+#define BX_SER_THR  0
+#define BX_SER_RBR  0
+#define BX_SER_IER  1
+#define BX_SER_IIR  2
+#define BX_SER_FCR  2
+#define BX_SER_LCR  3
+#define BX_SER_MCR  4
+#define BX_SER_LSR  5
+#define BX_SER_MSR  6
+#define BX_SER_SCR  7
+
+#define BX_SER_MODE_NULL  0
+#define BX_SER_MODE_FILE  1
+#define BX_SER_MODE_TERM  2
+#define BX_SER_MODE_RAW   3
+#define BX_SER_MODE_MOUSE 4
+
 enum {
   BX_SER_INT_IER,
   BX_SER_INT_RXDATA,
@@ -56,6 +76,10 @@ enum {
   BX_SER_INT_MODSTAT,
   BX_SER_INT_FIFO
 };
+
+#if USE_RAW_SERIAL
+class serial_raw;
+#endif
 
 typedef struct {
   /*
@@ -82,6 +106,17 @@ typedef struct {
   int  rx_pollstate;
   int  rx_timer_index;
   int  fifo_timer_index;
+
+  int io_mode;
+  int tty_id;
+  FILE *output;
+
+#if USE_RAW_SERIAL
+  serial_raw* raw;
+#endif
+#if defined(SERIAL_ENABLE)
+  struct termios term_orig, term_new;
+#endif
 
   /*
    * Register definitions
@@ -156,18 +191,27 @@ typedef struct {
 
 
 
-class bx_serial_c : public bx_devmodel_c {
+class bx_serial_c : public bx_serial_stub_c {
 public:
   bx_serial_c(void);
   ~bx_serial_c(void);
   virtual void   init(void);
   virtual void   reset(unsigned type);
-#if USE_RAW_SERIAL
-  serial_raw* raw;
-#endif // USE_RAW_SERIAL
+  virtual void   serial_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state);
 
 private:
-    bx_serial_t s[BX_SERIAL_MAXDEV];
+  bx_serial_t s[BX_SERIAL_MAXDEV];
+
+  int   detect_mouse;
+  int   mouse_port;
+  int   mouse_delayed_dx;
+  int   mouse_delayed_dy;
+  int   mouse_delayed_dz;
+  struct {
+    int     num_elements;
+    Bit8u   buffer[BX_MOUSE_BUFF_SIZE];
+    int     head;
+  } mouse_internal_buffer;
 
   static void lower_interrupt(Bit8u port);
   static void raise_interrupt(Bit8u port, int type);

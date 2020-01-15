@@ -2,8 +2,11 @@
 #ifdef WIN32
 // windows.h included in bochs.h
 #else
-//#  error "extdb.cc only supported in win32 environment"
+#  error "extdb.cc only supported in win32 environment"
 #endif
+
+#include "iodev/iodev.h"
+#include "extdb.h"
 
 TRegs regs;
 
@@ -91,9 +94,8 @@ void bx_external_debugger(BX_CPU_C *cpu)
      regs.fsbase = cpu->sregs[BX_SEG_REG_FS].cache.u.segment.base;
      regs.gsbase = cpu->sregs[BX_SEG_REG_GS].cache.u.segment.base;
 #if BX_SUPPORT_X86_64
-    regs.efer = (BX_CPU_THIS_PTR msr.sce << 0)
-               | (BX_CPU_THIS_PTR msr.lme << 8)
-               | (BX_CPU_THIS_PTR msr.lma << 10);
+    regs.efer = (cpu->msr.sce << 0)
+               | (cpu->msr.lme << 8) | (cpu->msr.lma << 10);
 #else
     regs.efer = 0;
 #endif

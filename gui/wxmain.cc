@@ -1,29 +1,29 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.cc,v 1.101 2003/10/24 15:39:57 vruppert Exp $
+// $Id: wxmain.cc,v 1.109 2004/10/24 20:04:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
-// wxmain.cc implements the wxWindows frame, toolbar, menus, and dialogs.
+// wxmain.cc implements the wxWidgets frame, toolbar, menus, and dialogs.
 // When the application starts, the user is given a chance to choose/edit/save
 // a configuration.  When they decide to start the simulation, functions in
 // main.cc are called in a separate thread to initialize and run the Bochs
 // simulator.  
 //
 // Most ports to different platforms implement only the VGA window and
-// toolbar buttons.  The wxWindows port is the first to implement both
+// toolbar buttons.  The wxWidgets port is the first to implement both
 // the VGA display and the configuration interface, so the boundaries
 // between them are somewhat blurry.  See the extensive comments at
 // the top of siminterface for the rationale behind this separation.
 //
 // The separation between wxmain.cc and wx.cc is as follows:
 // - wxmain.cc implements a Bochs configuration interface (CI),
-//   which is the wxWindows equivalent of control.cc.  wxmain creates
+//   which is the wxWidgets equivalent of textconfig.cc. wxmain creates
 //   a frame with several menus and a toolbar, and allows the user to
 //   choose the machine configuration and start the simulation.  Note
 //   that wxmain.cc does NOT include bochs.h.  All interactions
 //   between the CI and the simulator are through the siminterface
 //   object.
-// - wx.cc implements a VGA display screen using wxWindows.  It is 
-//   is the wxWindows equivalent of x.cc, win32.cc, macos.cc, etc.
+// - wx.cc implements a VGA display screen using wxWidgets.  It is 
+//   is the wxWidgets equivalent of x.cc, win32.cc, macos.cc, etc.
 //   wx.cc includes bochs.h and has access to all Bochs devices.
 //   The VGA panel accepts only paint, key, and mouse events.  As it
 //   receives events, it builds BxEvents and places them into a 
@@ -60,7 +60,7 @@
 #include "gui/siminterface.h"    // interface to the simulator
 #include "bxversion.h"           // get version string
 #include "wxdialog.h"            // custom dialog boxes
-#include "wxmain.h"              // wxwindows shared stuff
+#include "wxmain.h"              // wxwidgets shared stuff
 #include "extplugin.h"
 
 // include XPM icons
@@ -84,7 +84,7 @@
 MyFrame *theFrame = NULL;
 MyPanel *thePanel = NULL;
 
-// The wxBochsClosing flag is used to keep track of when the wxWindows GUI is
+// The wxBochsClosing flag is used to keep track of when the wxWidgets GUI is
 // shutting down.  Shutting down can be somewhat complicated because the
 // simulation may be running for a while in another thread before it realizes
 // that it should shut down.  The wxBochsClosing flag is a global variable, as
@@ -157,7 +157,7 @@ public:
 
 
 //////////////////////////////////////////////////////////////////////
-// wxWindows startup
+// wxWidgets startup
 //////////////////////////////////////////////////////////////////////
 
 static int ci_callback (void *userdata, ci_command_t command)
@@ -194,9 +194,9 @@ extern "C" int libwx_LTX_plugin_init (plugin_t *plugin, plugintype_t type,
   int argc, char *argv[])
 {
   wxLogDebug ("plugin_init for wxmain.cc");
-  wxLogDebug ("installing wxWindows as the configuration interface");
+  wxLogDebug ("installing wxWidgets as the configuration interface");
   SIM->register_configuration_interface ("wx", ci_callback, NULL);
-  wxLogDebug ("installing %s as the Bochs GUI", "wxWindows");
+  wxLogDebug ("installing %s as the Bochs GUI", "wxWidgets");
   MyPanel::OnPluginInit ();
   return 0; // success
 }
@@ -208,20 +208,20 @@ extern "C" void libwx_LTX_plugin_fini ()
 
 
 //////////////////////////////////////////////////////////////////////
-// MyApp: the wxWindows application
+// MyApp: the wxWidgets application
 //////////////////////////////////////////////////////////////////////
 
 IMPLEMENT_APP_NO_MAIN(MyApp)
 
-// this is the entry point of the wxWindows code.  It is called as follows:
-// 1. main() loads the wxWindows plugin (if necessary) and calls 
+// this is the entry point of the wxWidgets code.  It is called as follows:
+// 1. main() loads the wxWidgets plugin (if necessary) and calls 
 // libwx_LTX_plugin_init, which installs a function pointer to the
 // ci_callback() function.
 // 2. main() calls SIM->configuration_interface.
 // 3. bx_real_sim_c::configuration_interface calls the function pointer that
 //    points to ci_callback() in this file, with command=CI_START.
-// 4. ci_callback() calls wxEntry() in the wxWindows library
-// 5. wxWindows library creates the app and calls OnInit().
+// 4. ci_callback() calls wxEntry() in the wxWidgets library
+// 5. wxWidgets library creates the app and calls OnInit().
 //
 // Before this code is called, the command line has already been parsed, and a
 // .bochsrc has been loaded if it could be found.  See main() for details.
@@ -318,6 +318,7 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   EVT_MENU(ID_Edit_ATA3, MyFrame::OnEditATA)
   EVT_MENU(ID_Edit_Boot, MyFrame::OnEditBoot)
   EVT_MENU(ID_Edit_Memory, MyFrame::OnEditMemory)
+  EVT_MENU(ID_Edit_PCI, MyFrame::OnEditPCI)
   EVT_MENU(ID_Edit_Sound, MyFrame::OnEditSound)
   EVT_MENU(ID_Edit_Timing, MyFrame::OnEditTiming)
   EVT_MENU(ID_Edit_Network, MyFrame::OnEditNet)
@@ -429,6 +430,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuEdit->Append( ID_Edit_ATA3, "ATA Channel 3..." );
   menuEdit->Append( ID_Edit_Boot, "&Boot..." );
   menuEdit->Append( ID_Edit_Memory, "&Memory..." );
+  menuEdit->Append( ID_Edit_PCI, "&PCI..." );
   menuEdit->Append( ID_Edit_Sound, "S&ound..." );
   menuEdit->Append( ID_Edit_Timing, "&Timing..." );
   menuEdit->Append( ID_Edit_Network, "&Network..." );
@@ -475,6 +477,10 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuLog->Enable (ID_Log_View, FALSE);  // not implemented
 
   CreateStatusBar();
+  wxStatusBar *sb = GetStatusBar();
+  sb->SetFieldsCount(12);
+  const int sbwidth[12] = {160, 38, 38, 38, 38, 38, 38, 38, 38, 38, 38, -1};
+  sb->SetStatusWidths(12, sbwidth);
 
   CreateToolBar(wxNO_BORDER|wxHORIZONTAL|wxTB_FLAT);
   wxToolBar *tb = GetToolBar();
@@ -493,10 +499,10 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   BX_ADD_TOOL(ID_Toolbar_Copy, copy_xpm, "Copy to clipboard");
   BX_ADD_TOOL(ID_Toolbar_Paste, paste_xpm, "Paste from clipboard");
   BX_ADD_TOOL(ID_Toolbar_Snapshot, snapshot_xpm, "Save screen snapshot");
-  // Omit config button because the whole wxWindows interface is like
+  // Omit config button because the whole wxWidgets interface is like
   // one really big config button.
   //BX_ADD_TOOL(ID_Toolbar_Config, configbutton_xpm, "Runtime Configuration");
-  BX_ADD_TOOL(ID_Toolbar_Mouse_en, mouse_xpm, "Enable/disable mouse capture\nThere are also two shortcuts for this: F12 and the middle mouse button.");
+  BX_ADD_TOOL(ID_Toolbar_Mouse_en, mouse_xpm, "Enable/disable mouse capture\nThere is also a shortcut for this: a CTRL key + the middle mouse button.");
   BX_ADD_TOOL(ID_Toolbar_User, userbutton_xpm, "Keyboard shortcut");
 
   tb->Realize();
@@ -561,21 +567,17 @@ void MyFrame::OnEditBoot(wxCommandEvent& WXUNUSED(event))
 {
 #define MAX_BOOT_DEVICES 3
   int bootDevices = 0;
-  wxString devices[MAX_BOOT_DEVICES];
   int dev_id[MAX_BOOT_DEVICES];
   bx_param_enum_c *floppy = SIM->get_param_enum (BXP_FLOPPYA_DEVTYPE);
   if (floppy->get () != BX_FLOPPY_NONE) {
-    devices[bootDevices] = wxT("First floppy drive");
     dev_id[bootDevices++] = BX_BOOT_FLOPPYA;
   }
   bx_param_c *firsthd = SIM->get_first_hd ();
   if (firsthd != NULL) {
-    devices[bootDevices] = wxT("First hard drive");
     dev_id[bootDevices++] = BX_BOOT_DISKC;
   }
   bx_param_c *firstcd = SIM->get_first_cdrom ();
   if (firstcd != NULL) {
-    devices[bootDevices] = wxT("CD-ROM drive");
     dev_id[bootDevices++] = BX_BOOT_CDROM;
   }
   if (bootDevices == 0) {
@@ -583,16 +585,25 @@ void MyFrame::OnEditBoot(wxCommandEvent& WXUNUSED(event))
                   "None enabled", wxOK | wxICON_ERROR, this );
     return;
   }
-  int which = wxGetSingleChoiceIndex ("Select the device to boot from", "Boot Device", bootDevices, devices, this);
-  if (which<0) return;  // cancelled
-  bx_param_enum_c *bootdevice = (bx_param_enum_c *) 
-    SIM->get_param(BXP_BOOTDRIVE);
-  bootdevice->set (which);
+  ParamDialog dlg (this, -1);
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_BOOT);
+  dlg.SetTitle (list->get_name ());
+  dlg.AddParam (list);
+  dlg.ShowModal ();
 }
 
 void MyFrame::OnEditMemory(wxCommandEvent& WXUNUSED(event))
 {
   ConfigMemoryDialog dlg (this, -1);
+  dlg.ShowModal ();
+}
+
+void MyFrame::OnEditPCI(wxCommandEvent& WXUNUSED(event))
+{
+  ParamDialog dlg (this, -1);
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_PCI);
+  dlg.SetTitle (list->get_name ());
+  dlg.AddParam (list);
   dlg.ShowModal ();
 }
 
@@ -602,13 +613,13 @@ void MyFrame::OnEditSound(wxCommandEvent& WXUNUSED(event))
   bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_SB16);
   dlg.SetTitle (list->get_name ());
   dlg.AddParam (list);
+  dlg.SetRuntimeFlag (sim_thread != NULL);
   dlg.ShowModal ();
 }
 
 void MyFrame::OnEditTiming(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg (this, -1);
-  dlg.AddParam (SIM->get_param (BXP_IPS));
   bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_CLOCK);
   dlg.SetTitle (list->get_name ());
   dlg.AddParam (list);
@@ -618,7 +629,7 @@ void MyFrame::OnEditTiming(wxCommandEvent& WXUNUSED(event))
 void MyFrame::OnEditNet(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg (this, -1);
-  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_NE2K);
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_NETWORK);
   dlg.SetTitle (list->get_name ());
   dlg.AddParam (list);
   dlg.ShowModal ();
@@ -860,7 +871,7 @@ void MyFrame::OnQuit(wxCommandEvent& event)
 void MyFrame::OnAbout(wxCommandEvent& WXUNUSED(event))
 {
   wxString str;
-  str.Printf ("Bochs x86 Emulator version %s (wxWindows port)", VER_STRING);
+  str.Printf ("Bochs x86 Emulator version %s (wxWidgets port)", VER_STRING);
   wxMessageBox( str, "About Bochs", wxOK | wxICON_INFORMATION, this );
 }
 
@@ -911,7 +922,7 @@ void MyFrame::simStatusChanged (StatusChange change, bx_bool popupNotify) {
   }
   menuEdit->Enable( ID_Edit_Boot, canConfigure);
   menuEdit->Enable( ID_Edit_Memory, canConfigure);
-  menuEdit->Enable( ID_Edit_Sound, canConfigure);
+  menuEdit->Enable( ID_Edit_PCI, canConfigure);
   menuEdit->Enable( ID_Edit_Timing, canConfigure);
   menuEdit->Enable( ID_Edit_Network, canConfigure);
   menuEdit->Enable( ID_Edit_Serial_Parallel, canConfigure);
@@ -924,12 +935,6 @@ void MyFrame::simStatusChanged (StatusChange change, bx_bool popupNotify) {
   menuEdit->Enable (ID_Edit_FD_0, canConfigure || param->get_enabled ());
   param = SIM->get_param(BXP_FLOPPYB);
   menuEdit->Enable (ID_Edit_FD_1, canConfigure || param->get_enabled ());
-  /*
-  // this menu item removed, since you can configure the cdrom from the
-  // ATA controller menu items instead.
-  param = SIM->get_first_cdrom ();
-  menuEdit->Enable (ID_Edit_Cdrom, canConfigure || (param&&param->get_enabled ()));
-  */
 }
 
 void MyFrame::OnStartSim(wxCommandEvent& event)
@@ -949,8 +954,8 @@ void MyFrame::OnStartSim(wxCommandEvent& event)
   char *gui_name = gui_param->get_choice (gui_param->get ());
   if (strcmp (gui_name, "wx") != 0) {
     wxMessageBox (
-    "The display library was not set to wxWindows.  When you use the\n"
-    "wxWindows configuration interface, you must also select the wxWindows\n"
+    "The display library was not set to wxWidgets.  When you use the\n"
+    "wxWidgets configuration interface, you must also select the wxWidgets\n"
     "display library.  I will change it to 'wx' now.",
     "display library error", wxOK | wxICON_WARNING, this);
     if (!gui_param->set_by_name ("wx")) {
@@ -1082,56 +1087,16 @@ MyFrame::HandleAskParam (BxEvent *event)
   default:
     {
           wxString msg;
-          msg.Printf ("ask param for parameter type %d is not implemented in wxWindows",
+          msg.Printf ("ask param for parameter type %d is not implemented in wxWidgets",
                       param->get_type ());
           wxMessageBox( msg, "not implemented", wxOK | wxICON_ERROR, this );
           return -1;
         }
   }
-#if 0
-  switch (param) {
-  case BXP_FLOPPYA_PATH:
-  case BXP_FLOPPYB_PATH:
-  case BXP_DISKC_PATH:
-  case BXP_DISKD_PATH:
-  case BXP_CDROM_PATH:
-        {
-          Raise();  // bring window to front so dialog shows
-          char *msg;
-          if (param==BXP_FLOPPYA_PATH || param==BXP_FLOPPYB_PATH)
-            msg = "Choose new floppy disk image file";
-      else if (param==BXP_DISKC_PATH || param==BXP_DISKD_PATH)
-            msg = "Choose new hard disk image file";
-      else if (param==BXP_CDROM_PATH)
-            msg = "Choose new CDROM image file";
-          else
-            msg = "Choose new image file";
-          wxFileDialog dialog(this, msg, "", "", "*.*", 0);
-          int ret = dialog.ShowModal();
-          if (ret == wxID_OK)
-          {
-            char *newpath = (char *)dialog.GetPath().c_str ();
-            if (newpath && strlen(newpath)>0) {
-              // change floppy path to this value.
-              bx_param_string_c *Opath = SIM->get_param_string (param);
-              assert (Opath != NULL);
-              wxLogDebug ("Setting floppy %c path to '%s'", 
-                    param == BXP_FLOPPYA_PATH ? 'A' : 'B',
-                    newpath);
-              Opath->set (newpath);
-              return 1;
-            }
-          }
-          return 0;
-        }
-  default:
-        wxLogError ("HandleAskParam: parameter %d, not implemented", event->u.param.id);
-  }
-#endif
   return -1;  // could not display
 }
 
-// This is called from the wxWindows GUI thread, when a Sim2CI event
+// This is called from the wxWidgets GUI thread, when a Sim2CI event
 // is found.  (It got there via wxPostEvent in SiminterfaceCallback2, which is
 // executed in the simulator Thread.)
 void 
@@ -1403,7 +1368,7 @@ SimThread::Entry (void)
   // it is possible that the whole interface has already been shut down.
   // If so, we must end immediately.
   // we're in the sim thread, so we must get a gui mutex before calling
-  // wxwindows methods.
+  // wxwidgets methods.
   wxLogDebug ("SimThread::Entry: get gui mutex");
   wxMutexGuiEnter();
   if (!wxBochsClosing) {
@@ -1478,7 +1443,7 @@ SimThread::SiminterfaceCallback2 (BxEvent *event)
     return NULL;
   }
 
-  //encapsulate the bxevent in a wxwindows event
+  //encapsulate the bxevent in a wxwidgets event
   wxCommandEvent wxevent (wxEVT_COMMAND_MENU_SELECTED, ID_Sim2CI_Event);
   wxevent.SetEventObject ((wxEvent *)event);
   if (isSimThread ()) {

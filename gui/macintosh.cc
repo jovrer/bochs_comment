@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: macintosh.cc,v 1.21.2.2 2004/02/08 18:08:31 danielg4 Exp $
+// $Id: macintosh.cc,v 1.25 2004/08/15 19:27:14 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,6 +37,7 @@
 // BOCHS INCLUDES
 #include <MacTypes.h>
 #include "bochs.h"
+#include "iodev.h"
 
 // decide whether to enable this file or not
 #if BX_WITH_MACOS
@@ -1136,6 +1137,10 @@ void bx_macintosh_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheig
                 width = x;
                 height = y;
         }
+
+  host_xres = x;
+  host_yres = y;
+  host_bpp = bpp;
 }
 
 

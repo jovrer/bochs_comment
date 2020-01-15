@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_linux.cc,v 1.14 2003/02/16 19:35:57 vruppert Exp $
+// $Id: eth_linux.cc,v 1.20 2004/10/07 17:38:03 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -45,8 +45,11 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
-#if BX_NE2K_SUPPORT && defined (ETH_LINUX)
+#include "iodev.h"
+#if BX_NETWORKING && defined (ETH_LINUX)
+
+#include "eth.h"
+
 #define LOG_THIS bx_devices.pluginNE2kDevice->
 
 extern "C" {
@@ -64,8 +67,6 @@ extern "C" {
 };
 
 #define BX_PACKET_POLL  1000    // Poll for a frame every 1000 usecs
-
-#define BX_PACKET_BUFSIZ 2048	// Enough for an ether frame
 
 // template filter for a unicast mac address and all
 // multicast/broadcast frames
@@ -96,7 +97,8 @@ public:
   bx_linux_pktmover_c(const char *netif, 
 		     const char *macaddr,
 		     eth_rx_handler_t rxh,
-		     void *rxarg);
+		     void *rxarg,
+		     char *script);
   void sendpkt(void *buf, unsigned io_len);
 
 private:
@@ -121,8 +123,8 @@ protected:
   eth_pktmover_c *allocate(const char *netif, 
 			   const char *macaddr,
 			   eth_rx_handler_t rxh,
-			   void *rxarg) {
-    return (new bx_linux_pktmover_c(netif, macaddr, rxh, rxarg));
+			   void *rxarg, char *script) {
+    return (new bx_linux_pktmover_c(netif, macaddr, rxh, rxarg, script));
   }
 } bx_linux_match;
 
@@ -136,7 +138,8 @@ protected:
 bx_linux_pktmover_c::bx_linux_pktmover_c(const char *netif, 
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
-				       void *rxarg)
+				       void *rxarg,
+				       char *script)
 {
   struct sockaddr_ll sll;
   struct packet_mreq mr;
@@ -256,10 +259,9 @@ void
 bx_linux_pktmover_c::rx_timer(void)
 {
   int nbytes = 0;
-  Bit8u rxbuf[BX_PACKET_BUFSIZ]; 
+  Bit8u rxbuf[BX_PACKET_BUFSIZE]; 
   struct sockaddr_ll sll;
   socklen_t fromlen;
-//static unsigned char bcast_addr[6] = {0xff,0xff,0xff,0xff,0xff,0xff};
 
   if (this->fd == -1)
     return;
@@ -278,9 +280,9 @@ bx_linux_pktmover_c::rx_timer(void)
   if (memcmp(sll.sll_addr, this->linux_macaddr, 6) == 0)
     return;
   // let through broadcast, multicast, and our mac address
-//  if ((memcmp(rxbuf, bcast_addr, 6) == 0) || (memcmp(rxbuf, this->linux_macaddr, 6) == 0) || rxbuf[0] & 0x01) {
+//  if ((memcmp(rxbuf, broadcast_macaddr, 6) == 0) || (memcmp(rxbuf, this->linux_macaddr, 6) == 0) || rxbuf[0] & 0x01) {
     BX_DEBUG(("eth_linux: got packet: %d bytes, dst=%x:%x:%x:%x:%x:%x, src=%x:%x:%x:%x:%x:%x\n", nbytes, rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3], rxbuf[4], rxbuf[5], rxbuf[6], rxbuf[7], rxbuf[8], rxbuf[9], rxbuf[10], rxbuf[11]));
     (*rxh)(rxarg, rxbuf, nbytes);
 //  }
 }
-#endif /* if BX_NE2K_SUPPORT && defined ETH_LINUX */
+#endif /* if BX_NETWORKING && defined ETH_LINUX */

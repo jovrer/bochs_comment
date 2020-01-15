@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: fetchdecode.h,v 1.17 2005/05/12 18:07:41 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//   Copyright (c) 2003 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -16,14 +18,17 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+//
+/////////////////////////////////////////////////////////////////////////
 
 
 #ifndef BX_COMMON_FETCHDECODE_TABLES_H
 #define BX_COMMON_FETCHDECODE_TABLES_H
 
 //
-// Common FetchDecode Opcode Tables
+// This file contains common IA-32/IA-64 opcode tables, like FPU opcode
+// table, 3DNow! opcode table or SSE opcode groups (choose the opcode
+// according to instruction prefixes)
 //
 
 BX_CPP_INLINE Bit16u FetchWORD(Bit8u *iptr)
@@ -40,18 +45,71 @@ BX_CPP_INLINE Bit32u FetchDWORD(Bit8u *iptr)
    return data;
 }
 
+#if BX_SUPPORT_X86_64
 BX_CPP_INLINE Bit64u FetchQWORD(Bit8u *iptr)
 {
    Bit64u data;
    ReadHostQWordFromLittleEndian(iptr, data);
    return data;
 }
+#endif
 
 //
-// This file contains common IA-32/IA-64 opcode tables, like FPU opcode
-// table, 3DNow! opcode table or SSE opcode groups (choose the opcode
-// according to instruction prefixes)
+// Common FetchDecode Opcode Tables
 //
+
+static BxOpcodeInfo_t opcodesADD_EwIw[2] = {
+  { BxLockable, &BX_CPU_C::ADD_EEwIw },
+  { 0,          &BX_CPU_C::ADD_EGwIw }
+  };
+
+static BxOpcodeInfo_t opcodesADD_EdId[2] = {
+  { BxLockable, &BX_CPU_C::ADD_EEdId },
+  { 0,          &BX_CPU_C::ADD_EGdId }
+  };
+
+static BxOpcodeInfo_t opcodesADD_GwEw[2] = {
+  { 0,          &BX_CPU_C::ADD_GwEEw },
+  { 0,          &BX_CPU_C::ADD_GwEGw }
+  };
+
+static BxOpcodeInfo_t opcodesADD_GdEd[2] = {
+  { 0,          &BX_CPU_C::ADD_GdEEd },
+  { 0,          &BX_CPU_C::ADD_GdEGd }
+  };
+
+static BxOpcodeInfo_t opcodesMOV_GbEb[2] = {
+  { 0,          &BX_CPU_C::MOV_GbEEb },
+  { 0,          &BX_CPU_C::MOV_GbEGb }
+  };
+
+static BxOpcodeInfo_t opcodesMOV_GwEw[2] = {
+  { 0,          &BX_CPU_C::MOV_GwEEw },
+  { 0,          &BX_CPU_C::MOV_GwEGw }
+  };
+
+static BxOpcodeInfo_t opcodesMOV_GdEd[2] = {
+  { 0,          &BX_CPU_C::MOV_GdEEd },
+  { 0,          &BX_CPU_C::MOV_GdEGd }
+  };
+
+static BxOpcodeInfo_t opcodesMOV_EbGb[2] = {
+  { 0,          &BX_CPU_C::MOV_EEbGb },
+  { 0,          &BX_CPU_C::MOV_EGbGb }
+  };
+
+static BxOpcodeInfo_t opcodesMOV_EwGw[2] = {
+  { 0,          &BX_CPU_C::MOV_EEwGw },
+  { 0,          &BX_CPU_C::MOV_EGwGw }
+  };
+
+static BxOpcodeInfo_t opcodesMOV_EdGd[2] = {
+  { 0,          &BX_CPU_C::MOV_EEdGd },
+  { 0,          &BX_CPU_C::MOV_EGdGd }
+  };
+
+
+#if BX_SUPPORT_FPU
 
 /* ************************************************************************ */
 /* FPU Opcodes */
@@ -65,7 +123,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupD8[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FADD_SINGLE_REAL  },
   /* 1 */  { 0,  &BX_CPU_C::FMUL_SINGLE_REAL  },
   /* 2 */  { 0,  &BX_CPU_C::FCOM_SINGLE_REAL  },
-  /* 3 */  { 0,  &BX_CPU_C::FCOMP_SINGLE_REAL },
+  /* 3 */  { 0,  &BX_CPU_C::FCOM_SINGLE_REAL  },	// FCOMP_SINGLE_REAL
   /* 4 */  { 0,  &BX_CPU_C::FSUB_SINGLE_REAL  },
   /* 5 */  { 0,  &BX_CPU_C::FSUBR_SINGLE_REAL },
   /* 6 */  { 0,  &BX_CPU_C::FDIV_SINGLE_REAL  },
@@ -74,14 +132,14 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupD8[8] = {
 
   // D9 (modrm is outside 00h - BFh) (mod != 11)
 static BxOpcodeInfo_t BxOpcodeInfo_FPGroupD9[8] = { 
-  /* 0 */  { 0,  &BX_CPU_C::FLD_SINGLE_REAL   },
-  /* 1 */  { 0,  &BX_CPU_C::BxError           },
-  /* 2 */  { 0,  &BX_CPU_C::FST_SINGLE_REAL   },
-  /* 3 */  { 0,  &BX_CPU_C::FSTP_SINGLE_REAL  },
-  /* 4 */  { 0,  &BX_CPU_C::FLDENV            },
-  /* 5 */  { 0,  &BX_CPU_C::FLDCW             },
-  /* 6 */  { 0,  &BX_CPU_C::FNSTENV           },
-  /* 7 */  { 0,  &BX_CPU_C::FNSTCW            }
+  /* 0 */  { 0,  &BX_CPU_C::FLD_SINGLE_REAL  },
+  /* 1 */  { 0,  &BX_CPU_C::BxError          },
+  /* 2 */  { 0,  &BX_CPU_C::FST_SINGLE_REAL  },
+  /* 3 */  { 0,  &BX_CPU_C::FST_SINGLE_REAL  },	 	// FSTP_SINGLE_REAL
+  /* 4 */  { 0,  &BX_CPU_C::FLDENV           },
+  /* 5 */  { 0,  &BX_CPU_C::FLDCW            },
+  /* 6 */  { 0,  &BX_CPU_C::FNSTENV          },
+  /* 7 */  { 0,  &BX_CPU_C::FNSTCW           }
   };
 
   // DA (modrm is outside 00h - BFh) (mod != 11)
@@ -89,7 +147,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDA[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FIADD_DWORD_INTEGER  },
   /* 1 */  { 0,  &BX_CPU_C::FIMUL_DWORD_INTEGER  },
   /* 2 */  { 0,  &BX_CPU_C::FICOM_DWORD_INTEGER  },
-  /* 3 */  { 0,  &BX_CPU_C::FICOMP_DWORD_INTEGER },
+  /* 3 */  { 0,  &BX_CPU_C::FICOM_DWORD_INTEGER  },	// FICOMP_DWORD_INTEGER
   /* 4 */  { 0,  &BX_CPU_C::FISUB_DWORD_INTEGER  },
   /* 5 */  { 0,  &BX_CPU_C::FISUBR_DWORD_INTEGER },
   /* 6 */  { 0,  &BX_CPU_C::FIDIV_DWORD_INTEGER  },
@@ -99,9 +157,9 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDA[8] = {
   // DB (modrm is outside 00h - BFh) (mod != 11)
 static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDB[8] = { 
   /* 0 */  { 0,  &BX_CPU_C::FILD_DWORD_INTEGER  },
-  /* 1 */  { 0,  &BX_CPU_C::FISTTP64            },
+  /* 1 */  { 0,  &BX_CPU_C::FISTTP32            },
   /* 2 */  { 0,  &BX_CPU_C::FIST_DWORD_INTEGER  },
-  /* 3 */  { 0,  &BX_CPU_C::FISTP_DWORD_INTEGER },
+  /* 3 */  { 0,  &BX_CPU_C::FIST_DWORD_INTEGER  },	// FISTP
   /* 4 */  { 0,  &BX_CPU_C::BxError             },
   /* 5 */  { 0,  &BX_CPU_C::FLD_EXTENDED_REAL   },
   /* 6 */  { 0,  &BX_CPU_C::BxError             },
@@ -113,7 +171,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDC[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FADD_DOUBLE_REAL  },
   /* 1 */  { 0,  &BX_CPU_C::FMUL_DOUBLE_REAL  },
   /* 2 */  { 0,  &BX_CPU_C::FCOM_DOUBLE_REAL  },
-  /* 3 */  { 0,  &BX_CPU_C::FCOMP_DOUBLE_REAL },
+  /* 3 */  { 0,  &BX_CPU_C::FCOM_DOUBLE_REAL  },	// FCOMP_DOUBLE_REAL
   /* 4 */  { 0,  &BX_CPU_C::FSUB_DOUBLE_REAL  },
   /* 5 */  { 0,  &BX_CPU_C::FSUBR_DOUBLE_REAL },
   /* 6 */  { 0,  &BX_CPU_C::FDIV_DOUBLE_REAL  },
@@ -122,14 +180,14 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDC[8] = {
 
   // DD (modrm is outside 00h - BFh) (mod != 11)
 static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDD[8] = { 
-  /* 0 */  { 0,  &BX_CPU_C::FLD_DOUBLE_REAL  },
-  /* 1 */  { 0,  &BX_CPU_C::FISTTP32         },
-  /* 2 */  { 0,  &BX_CPU_C::FST_DOUBLE_REAL  },
-  /* 3 */  { 0,  &BX_CPU_C::FSTP_DOUBLE_REAL },
-  /* 4 */  { 0,  &BX_CPU_C::FRSTOR           },
-  /* 5 */  { 0,  &BX_CPU_C::BxError          },
-  /* 6 */  { 0,  &BX_CPU_C::FNSAVE           },
-  /* 7 */  { 0,  &BX_CPU_C::FNSTSW           }
+  /* 0 */  { 0,  &BX_CPU_C::FLD_DOUBLE_REAL },
+  /* 1 */  { 0,  &BX_CPU_C::FISTTP64        },
+  /* 2 */  { 0,  &BX_CPU_C::FST_DOUBLE_REAL },
+  /* 3 */  { 0,  &BX_CPU_C::FST_DOUBLE_REAL },		// FSTP_DOUBLE_REAL
+  /* 4 */  { 0,  &BX_CPU_C::FRSTOR          },
+  /* 5 */  { 0,  &BX_CPU_C::BxError         },
+  /* 6 */  { 0,  &BX_CPU_C::FNSAVE          },
+  /* 7 */  { 0,  &BX_CPU_C::FNSTSW          }
   };
 
   // DE (modrm is outside 00h - BFh) (mod != 11)
@@ -137,7 +195,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDE[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FIADD_WORD_INTEGER  },
   /* 1 */  { 0,  &BX_CPU_C::FIMUL_WORD_INTEGER  },
   /* 2 */  { 0,  &BX_CPU_C::FICOM_WORD_INTEGER  },
-  /* 3 */  { 0,  &BX_CPU_C::FICOMP_WORD_INTEGER },
+  /* 3 */  { 0,  &BX_CPU_C::FICOM_WORD_INTEGER  },	// FISTP_WORD_INTEGER
   /* 4 */  { 0,  &BX_CPU_C::FISUB_WORD_INTEGER  },
   /* 5 */  { 0,  &BX_CPU_C::FISUBR_WORD_INTEGER },
   /* 6 */  { 0,  &BX_CPU_C::FIDIV_WORD_INTEGER  },
@@ -149,7 +207,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDF[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FILD_WORD_INTEGER   },
   /* 1 */  { 0,  &BX_CPU_C::FISTTP16            },
   /* 2 */  { 0,  &BX_CPU_C::FIST_WORD_INTEGER   },
-  /* 3 */  { 0,  &BX_CPU_C::FISTP_WORD_INTEGER  },
+  /* 3 */  { 0,  &BX_CPU_C::FIST_WORD_INTEGER  	},	// FISTP
   /* 4 */  { 0,  &BX_CPU_C::FBLD_PACKED_BCD     },
   /* 5 */  { 0,  &BX_CPU_C::FILD_QWORD_INTEGER  },
   /* 6 */  { 0,  &BX_CPU_C::FBSTP_PACKED_BCD    },
@@ -183,14 +241,14 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* D8 D5 */  { 0,  &BX_CPU_C::FCOM_STi      },
   /* D8 D6 */  { 0,  &BX_CPU_C::FCOM_STi      },
   /* D8 D7 */  { 0,  &BX_CPU_C::FCOM_STi      },
-  /* D8 D8 */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 D9 */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 DA */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 DB */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 DC */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 DD */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 DE */  { 0,  &BX_CPU_C::FCOMP_STi     },
-  /* D8 DF */  { 0,  &BX_CPU_C::FCOMP_STi     },
+  /* D8 D8 */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 D9 */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 DA */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 DB */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 DC */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 DD */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 DE */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
+  /* D8 DF */  { 0,  &BX_CPU_C::FCOM_STi      },	// FCOMP
   /* D8 E0 */  { 0,  &BX_CPU_C::FSUB_ST0_STj  },
   /* D8 E1 */  { 0,  &BX_CPU_C::FSUB_ST0_STj  },
   /* D8 E2 */  { 0,  &BX_CPU_C::FSUB_ST0_STj  },
@@ -291,38 +349,38 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* D9 FF */  { 0,  &BX_CPU_C::FCOS     },
   
   // DA (modrm is outside 00h - BFh) (mod == 11)
-  /* DA C0 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C1 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C2 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C3 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C4 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C5 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C6 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C7 */  { 0,  &BX_CPU_C::FCMOVB_ST0_STj  },
-  /* DA C8 */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA C9 */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA CA */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA CB */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA CC */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA CD */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA CE */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA CF */  { 0,  &BX_CPU_C::FCMOVE_ST0_STj  },
-  /* DA D0 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D1 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D2 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D3 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D4 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D5 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D6 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D7 */  { 0,  &BX_CPU_C::FCMOVBE_ST0_STj },
-  /* DA D8 */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA D9 */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA DA */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA DB */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA DC */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA DD */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA DE */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
-  /* DA DF */  { 0,  &BX_CPU_C::FCMOVU_ST0_STj  },
+  /* DA C0 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C1 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C2 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C3 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C4 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C5 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C6 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C7 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C8 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA C9 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA CA */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA CB */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA CC */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA CD */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA CE */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA CF */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D0 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D1 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D2 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D3 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D4 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D5 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D6 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D7 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D8 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA D9 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA DA */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA DB */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA DC */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA DD */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA DE */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
+  /* DA DF */  { 0,  &BX_CPU_C::FCMOV_ST0_STj },
   /* DA E0 */  { 0,  &BX_CPU_C::BxError },
   /* DA E1 */  { 0,  &BX_CPU_C::BxError },
   /* DA E2 */  { 0,  &BX_CPU_C::BxError },
@@ -357,62 +415,62 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* DA FF */  { 0,  &BX_CPU_C::BxError },
 
   // DB (modrm is outside 00h - BFh) (mod == 11)
-  /* DB C0 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C1 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C2 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C3 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C4 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C5 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C6 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C7 */  { 0,  &BX_CPU_C::FCMOVNB_ST0_STj  },
-  /* DB C8 */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB C9 */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB CA */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB CB */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB CC */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB CD */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB CE */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB CF */  { 0,  &BX_CPU_C::FCMOVNE_ST0_STj  },
-  /* DB D0 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D1 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D2 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D3 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D4 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D5 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D6 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D7 */  { 0,  &BX_CPU_C::FCMOVNBE_ST0_STj },
-  /* DB D8 */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB D9 */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB DA */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB DB */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB DC */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB DD */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB DE */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB DF */  { 0,  &BX_CPU_C::FCMOVNU_ST0_STj  },
-  /* DB E0 */  { 0,  &BX_CPU_C::FNOP             },     // feni  (287 only)
-  /* DB E1 */  { 0,  &BX_CPU_C::FNOP             },     // fdisi (287 only)
-  /* DB E2 */  { 0,  &BX_CPU_C::FNCLEX           },
-  /* DB E3 */  { 0,  &BX_CPU_C::FNINIT           },
-  /* DB E4 */  { 0,  &BX_CPU_C::FNOP             },     // fsetpm (287 only)
-  /* DB E5 */  { 0,  &BX_CPU_C::BxError          },
-  /* DB E6 */  { 0,  &BX_CPU_C::BxError          },
-  /* DB E7 */  { 0,  &BX_CPU_C::BxError          },
-  /* DB E8 */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB E9 */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB EA */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB EB */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB EC */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB ED */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB EE */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB EF */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj   },
-  /* DB F0 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F1 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F2 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F3 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F4 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F5 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F6 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
-  /* DB F7 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj    },
+  /* DB C0 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C1 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C2 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C3 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C4 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C5 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C6 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C7 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C8 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB C9 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB CA */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB CB */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB CC */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB CD */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB CE */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB CF */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D0 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D1 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D2 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D3 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D4 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D5 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D6 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D7 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D8 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB D9 */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB DA */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB DB */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB DC */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB DD */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB DE */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB DF */  { 0,  &BX_CPU_C::FCMOV_ST0_STj  },
+  /* DB E0 */  { 0,  &BX_CPU_C::FPLEGACY       },     // feni  (287 only)
+  /* DB E1 */  { 0,  &BX_CPU_C::FPLEGACY       },     // fdisi (287 only)
+  /* DB E2 */  { 0,  &BX_CPU_C::FNCLEX         },
+  /* DB E3 */  { 0,  &BX_CPU_C::FNINIT         },
+  /* DB E4 */  { 0,  &BX_CPU_C::FPLEGACY       },     // fsetpm (287 only)
+  /* DB E5 */  { 0,  &BX_CPU_C::BxError        },
+  /* DB E6 */  { 0,  &BX_CPU_C::BxError        },
+  /* DB E7 */  { 0,  &BX_CPU_C::BxError        },
+  /* DB E8 */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB E9 */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB EA */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB EB */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB EC */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB ED */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB EE */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB EF */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },
+  /* DB F0 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F1 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F2 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F3 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F4 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F5 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F6 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
+  /* DB F7 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },
   /* DB F8 */  { 0,  &BX_CPU_C::BxError },
   /* DB F9 */  { 0,  &BX_CPU_C::BxError },
   /* DB FA */  { 0,  &BX_CPU_C::BxError },
@@ -489,54 +547,54 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* DC FF */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
 
   // DD (modrm is outside 00h - BFh) (mod == 11)
-  /* DD C0 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C1 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C2 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C3 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C4 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C5 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C6 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C7 */  { 0,  &BX_CPU_C::FFREE_STi  },
-  /* DD C8 */  { 0,  &BX_CPU_C::BxError    },
-  /* DD C9 */  { 0,  &BX_CPU_C::BxError    },
-  /* DD CA */  { 0,  &BX_CPU_C::BxError    },
-  /* DD CB */  { 0,  &BX_CPU_C::BxError    },
-  /* DD CC */  { 0,  &BX_CPU_C::BxError    },
-  /* DD CD */  { 0,  &BX_CPU_C::BxError    },
-  /* DD CE */  { 0,  &BX_CPU_C::BxError    },
-  /* DD CF */  { 0,  &BX_CPU_C::BxError    },
-  /* DD D0 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D1 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D2 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D3 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D4 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D5 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D6 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D7 */  { 0,  &BX_CPU_C::FST_STi    },
-  /* DD D8 */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD D9 */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD DA */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD DB */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD DC */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD DD */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD DE */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD DF */  { 0,  &BX_CPU_C::FSTP_STi   },
-  /* DD E0 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E1 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E2 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E3 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E4 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E5 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E6 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E7 */  { 0,  &BX_CPU_C::FUCOM_STi  },
-  /* DD E8 */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD E9 */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD EA */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD EB */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD EC */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD ED */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD EE */  { 0,  &BX_CPU_C::FUCOMP_STi },
-  /* DD EF */  { 0,  &BX_CPU_C::FUCOMP_STi },
+  /* DD C0 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C1 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C2 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C3 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C4 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C5 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C6 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C7 */  { 0,  &BX_CPU_C::FFREE_STi },
+  /* DD C8 */  { 0,  &BX_CPU_C::BxError   },
+  /* DD C9 */  { 0,  &BX_CPU_C::BxError   },
+  /* DD CA */  { 0,  &BX_CPU_C::BxError   },
+  /* DD CB */  { 0,  &BX_CPU_C::BxError   },
+  /* DD CC */  { 0,  &BX_CPU_C::BxError   },
+  /* DD CD */  { 0,  &BX_CPU_C::BxError   },
+  /* DD CE */  { 0,  &BX_CPU_C::BxError   },
+  /* DD CF */  { 0,  &BX_CPU_C::BxError   },
+  /* DD D0 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D1 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D2 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D3 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D4 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D5 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D6 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D7 */  { 0,  &BX_CPU_C::FST_STi   },
+  /* DD D8 */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD D9 */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD DA */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD DB */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD DC */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD DD */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD DE */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD DF */  { 0,  &BX_CPU_C::FST_STi   },	// FSTP_STi
+  /* DD E0 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E1 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E2 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E3 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E4 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E5 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E6 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E7 */  { 0,  &BX_CPU_C::FUCOM_STi },
+  /* DD E8 */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD E9 */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD EA */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD EB */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD EC */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD ED */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD EE */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
+  /* DD EF */  { 0,  &BX_CPU_C::FUCOM_STi },	// FUCOMP
   /* DD F0 */  { 0,  &BX_CPU_C::BxError },
   /* DD F1 */  { 0,  &BX_CPU_C::BxError },
   /* DD F2 */  { 0,  &BX_CPU_C::BxError },
@@ -555,22 +613,23 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* DD FF */  { 0,  &BX_CPU_C::BxError },
 
   // DE (modrm is outside 00h - BFh) (mod == 11)
-  /* DE C0 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C1 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C2 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C3 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C4 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C5 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C6 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C7 */  { 0,  &BX_CPU_C::FADDP_STi_ST0  },
-  /* DE C8 */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE C9 */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE CA */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE CB */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE CC */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE CD */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE CE */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
-  /* DE CF */  { 0,  &BX_CPU_C::FMULP_STi_ST0  },
+  // all instructions pop FPU stack
+  /* DE C0 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C1 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C2 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C3 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C4 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C5 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C6 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C7 */  { 0,  &BX_CPU_C::FADD_STi_ST0  },
+  /* DE C8 */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE C9 */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE CA */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE CB */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE CC */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE CD */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE CE */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
+  /* DE CF */  { 0,  &BX_CPU_C::FMUL_STi_ST0  },
   /* DE D0 */  { 0,  &BX_CPU_C::BxError },
   /* DE D1 */  { 0,  &BX_CPU_C::BxError },
   /* DE D2 */  { 0,  &BX_CPU_C::BxError },
@@ -587,48 +646,48 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* DE DD */  { 0,  &BX_CPU_C::BxError },
   /* DE DE */  { 0,  &BX_CPU_C::BxError },
   /* DE DF */  { 0,  &BX_CPU_C::BxError },
-  /* DE E0 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E1 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E2 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E3 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E4 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E5 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E6 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E7 */  { 0,  &BX_CPU_C::FSUBRP_STi_ST0 },
-  /* DE E8 */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE E9 */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE EA */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE EB */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE EC */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE ED */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE EE */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE EF */  { 0,  &BX_CPU_C::FSUBP_STi_ST0  },
-  /* DE F0 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F1 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F2 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F3 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F4 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F5 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F6 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F7 */  { 0,  &BX_CPU_C::FDIVRP_STi_ST0 },
-  /* DE F8 */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE F9 */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE FA */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE FB */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE FC */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE FD */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE FE */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
-  /* DE FF */  { 0,  &BX_CPU_C::FDIVP_STi_ST0  },
+  /* DE E0 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E1 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E2 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E3 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E4 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E5 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E6 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E7 */  { 0,  &BX_CPU_C::FSUBR_STi_ST0 },
+  /* DE E8 */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE E9 */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE EA */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE EB */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE EC */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE ED */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE EE */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE EF */  { 0,  &BX_CPU_C::FSUB_STi_ST0  },
+  /* DE F0 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F1 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F2 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F3 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F4 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F5 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F6 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F7 */  { 0,  &BX_CPU_C::FDIVR_STi_ST0 },
+  /* DE F8 */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE F9 */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE FA */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE FB */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE FC */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE FD */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE FE */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
+  /* DE FF */  { 0,  &BX_CPU_C::FDIV_STi_ST0  },
 
   // DF (modrm is outside 00h - BFh) (mod == 11)
-  /* DF C0 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C1 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C2 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C3 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C4 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C5 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C6 */  { 0,  &BX_CPU_C::BxError },
-  /* DF C7 */  { 0,  &BX_CPU_C::BxError },
+  /* DF C0 */  { 0,  &BX_CPU_C::FFREEP_STi },   // 287+ compatibility opcode
+  /* DF C1 */  { 0,  &BX_CPU_C::FFREEP_STi },
+  /* DF C2 */  { 0,  &BX_CPU_C::FFREEP_STi },
+  /* DF C3 */  { 0,  &BX_CPU_C::FFREEP_STi },
+  /* DF C4 */  { 0,  &BX_CPU_C::FFREEP_STi },
+  /* DF C5 */  { 0,  &BX_CPU_C::FFREEP_STi },
+  /* DF C6 */  { 0,  &BX_CPU_C::FFREEP_STi },
+  /* DF C7 */  { 0,  &BX_CPU_C::FFREEP_STi },
   /* DF C8 */  { 0,  &BX_CPU_C::BxError },
   /* DF C9 */  { 0,  &BX_CPU_C::BxError },
   /* DF CA */  { 0,  &BX_CPU_C::BxError },
@@ -661,22 +720,22 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* DF E5 */  { 0,  &BX_CPU_C::BxError },
   /* DF E6 */  { 0,  &BX_CPU_C::BxError },
   /* DF E7 */  { 0,  &BX_CPU_C::BxError },
-  /* DF E8 */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF E9 */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF EA */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF EB */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF EC */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF ED */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF EE */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF EF */  { 0,  &BX_CPU_C::FUCOMIP_ST0_STj },
-  /* DF F0 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F1 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F2 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F3 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F4 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F5 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F6 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
-  /* DF F7 */  { 0,  &BX_CPU_C::FCOMIP_ST0_STj  },
+  /* DF E8 */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF E9 */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF EA */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF EB */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF EC */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF ED */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF EE */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF EF */  { 0,  &BX_CPU_C::FUCOMI_ST0_STj },	// FUCOMIP
+  /* DF F0 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F1 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F2 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F3 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F4 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F5 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F6 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
+  /* DF F7 */  { 0,  &BX_CPU_C::FCOMI_ST0_STj  },	// FCOMIP
   /* DF F8 */  { 0,  &BX_CPU_C::BxError },
   /* DF F9 */  { 0,  &BX_CPU_C::BxError },
   /* DF FA */  { 0,  &BX_CPU_C::BxError },
@@ -686,6 +745,8 @@ static BxOpcodeInfo_t BxOpcodeInfo_FloatingPoint[512] = {
   /* DF FE */  { 0,  &BX_CPU_C::BxError },
   /* DF FF */  { 0,  &BX_CPU_C::BxError },
   };
+
+#endif
 
 /* ************************************************************************ */
 /* 3DNow! Opcodes */
@@ -953,45 +1014,6 @@ static BxOpcodeInfo_t Bx3DNowOpcodeInfo[256] = {
 };
 
 #endif
-
-
-/* ************************************************************************ */
-/* SSE Opcode Groups */
-
-
-/*** Duplicate SSE/SSE2 instructions ***/
-
-#define MOVUPD_VpdWpd  /* 66 0f 10 */ MOVUPS_VpsWps    /*    0f 10 */
-#define MOVUPD_WpdVpd  /* 66 0f 11 */ MOVUPS_WpsVps    /*    0f 11 */
-#define MOVAPD_VpdWpd  /* 66 0f 28 */ MOVAPS_VpsWps    /*    0f 28 */
-#define MOVAPD_WpdVpd  /* 66 0f 29 */ MOVAPS_WpsVps    /*    0f 29 */
-#define MOVDQU_VdqWdq  /* f3 0f 6f */ MOVUPS_VpsWps    /*    0f 10 */
-#define MOVDQU_WdqVdq  /* f3 0f 7f */ MOVUPS_WpsVps    /*    0f 11 */
-#define MOVDQA_VdqWdq  /* 66 0f 6f */ MOVAPS_VpsWps    /*    0f 28 */
-#define MOVDQA_WdqVdq  /* 66 0f 7f */ MOVAPS_WpsVps    /*    0f 29 */
-
-#define UNPCKHPS_VpsWq /*    0f 15 */ PUNPCKHDQ_VdqWq  /* 66 0f 6a */
-#define UNPCKLPS_VpsWq /*    0f 14 */ PUNPCKLDQ_VdqWq  /* 66 0f 62 */
-
-#define ANDPS_VpsWps   /*    0f 54 */ PAND_VdqWdq      /* 66 0f db */
-#define ANDPD_VpdWpd   /* 66 0f 54 */ PAND_VdqWdq      /* 66 0f db */
-#define ANDNPS_VpsWps  /*    0f 55 */ PANDN_VdqWdq     /* 66 0f df */
-#define ANDNPD_VpdWpd  /* 66 0f 55 */ PANDN_VdqWdq     /* 66 0f df */
-#define ORPS_VpsWps    /*    0f 56 */ POR_VdqWdq       /* 66 0f eb */
-#define ORPD_VpdWpd    /* 66 0f 56 */ POR_VdqWdq       /* 66 0f eb */
-#define XORPS_VpsWps   /*    0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
-#define XORPD_VpdWpd   /* 66 0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
-
-#define UNPCKHPD_VpdWq /* 66 0f 15 */ PUNPCKHQDQ_VdqWq /* 66 0f 6d */
-#define UNPCKLPD_VpdWq /* 66 0f 14 */ PUNPCKLQDQ_VdqWq /* 66 0f 6c */
-
-#define MOVLPD_VsdMq   /* 66 0f 12 */ MOVLPS_VpsMq     /*    0f 12 */
-#define MOVLPD_MqVsd   /* 66 0f 13 */ MOVLPS_MqVps     /*    0f 13 */
-#define MOVHPD_VsdMq   /* 66 0f 16 */ MOVHPS_VpsMq     /*    0f 16 */
-#define MOVHPD_MqVsd   /* 66 0f 17 */ MOVHPS_MqVps     /*    0f 17 */
-
-#define MOVNTPD_MdqVpd /* 66 0f 2b */ MOVNTPS_MdqVps   /*    0f 2b */
-#define MOVNTDQ_MdqVdq /* 66 0f e7 */ MOVNTPD_MdqVpd   /* 66 0f 2b */
 
 
 /* ********** */

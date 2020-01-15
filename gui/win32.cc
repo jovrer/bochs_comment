@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.71 2003/12/14 09:51:58 vruppert Exp $
+// $Id: win32.cc,v 1.94 2005/05/11 18:00:02 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -34,8 +34,10 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "iodev/iodev.h"
 #if BX_WITH_WIN32
 
+#include "zmouse.h"
 #include "win32res.h"
 #include "font/vga.bitmap.h"
 // windows.h is included by bochs.h
@@ -46,6 +48,7 @@ class bx_win32_gui_c : public bx_gui_c {
 public:
   bx_win32_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS()
+  virtual void statusbar_setitem(int element, bx_bool active);
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -55,18 +58,15 @@ IMPLEMENT_GUI_PLUGIN_CODE(win32)
 
 #define LOG_THIS theGui->
 
-
-#ifdef __MINGW32__
-#if BX_SHOW_IPS
-#include <windows32/CommonFunctions.h>
-#endif
-#endif
-
 #define EXIT_GUI_SHUTDOWN        1
 #define EXIT_GMH_FAILURE         2
 #define EXIT_FONT_BITMAP_ERROR   3
 #define EXIT_NORMAL              4
 #define EXIT_HEADER_BITMAP_ERROR 5
+
+#ifndef TBSTYLE_FLAT
+#define TBSTYLE_FLAT 0x0800
+#endif
 
 /*  FIXME: Should we add a bochsrc option to control the font usage? */
 #define BX_USE_WINDOWS_FONTS 0
@@ -83,6 +83,7 @@ struct QueueEvent {
   Bit32u key_event;
   int mouse_x;
   int mouse_y;
+  int mouse_z;
   int mouse_button_state;
 };
 QueueEvent* deq_key_event(void);
@@ -90,12 +91,13 @@ QueueEvent* deq_key_event(void);
 static QueueEvent keyevents[SCANCODE_BUFSIZE];
 static unsigned head=0, tail=0;
 static int mouse_button_state = 0;
-static int ms_xdelta=0, ms_ydelta=0;
+static int ms_xdelta=0, ms_ydelta=0, ms_zdelta=0;
 static int ms_lastx=0, ms_lasty=0;
 static int ms_savedx=0, ms_savedy=0;
-static BOOL mouseCaptureMode;
+static BOOL mouseCaptureMode, mouseCaptureNew, mouseToggleReq;
 static unsigned long workerThread = 0;
 static DWORD workerThreadID = 0;
+static int mouse_buttons = 3;
 
 // Graphics screen stuff
 static unsigned x_tilesize = 0, y_tilesize = 0;
@@ -120,10 +122,15 @@ static struct {
   void (*f)(void);
 } bx_headerbar_entry[BX_MAX_HEADERBAR_ENTRIES];
 
-static unsigned bx_headerbar_y = 0;
-static unsigned bx_statusbar_y = 0;
 static int bx_headerbar_entries;
 static unsigned bx_hb_separator;
+
+// Status Bar stuff
+#define SIZE_OF_SB_ELEMENT        40
+#define SIZE_OF_SB_FIRST_ELEMENT 200 /* 160 */
+long SB_Edges[BX_MAX_STATUSITEMS+2];
+char SB_Text[BX_MAX_STATUSITEMS][10];
+bx_bool SB_Active[BX_MAX_STATUSITEMS];
 
 // Misc stuff
 static unsigned dimension_x, dimension_y, current_bpp;
@@ -132,16 +139,21 @@ static unsigned stretch_factor=1;
 static unsigned prev_cursor_x = 0;
 static unsigned prev_cursor_y = 0;
 static HBITMAP vgafont[256];
-static unsigned x_edge=0, y_edge=0, y_caption=0;
 static int xChar = 8, yChar = 16;
 static unsigned int text_rows=25, text_cols=80;
 static BOOL BxTextMode = TRUE;
+static BOOL legacyF12 = FALSE;
+static BOOL fix_size = FALSE;
 #if !BX_USE_WINDOWS_FONTS
 static Bit8u h_panning = 0, v_panning = 0;
+static Bit16u line_compare = 1023;
 #else
 static HFONT hFont[3];
 static int FontId = 2;
 #endif
+
+static char *szMouseEnable = "CTRL + 3rd button enables mouse ";
+static char *szMouseDisable = "CTRL + 3rd button disables mouse";
 
 static char szAppName[] = "Bochs for Windows";
 static char szWindowName[] = "Bochs for Windows - Display";
@@ -164,6 +176,7 @@ sharedThreadInfo stInfo;
 LRESULT CALLBACK mainWndProc (HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK simWndProc (HWND, UINT, WPARAM, LPARAM);
 VOID UIThread(PVOID);
+void SetStatusText(int Num, const char *Text, bx_bool active);
 void terminateEmul(int);
 void create_vga_font(void);
 static unsigned char reverse_bitorder(unsigned char);
@@ -448,12 +461,13 @@ Bit32u win32_to_bx_key[2][0x100] =
   void bx_signal_handler(int);
 #endif
 
-static void processMouseXY( int x, int y, int windows_state, int implied_state_change)
+static void processMouseXY( int x, int y, int z, int windows_state, int implied_state_change)
 {
   int bx_state;
   int old_bx_state;
   EnterCriticalSection( &stInfo.mouseCS);
-  bx_state=( ( windows_state & MK_LBUTTON) ? 1 : 0 ) + ( ( windows_state & MK_RBUTTON) ? 2 : 0);
+  bx_state=( ( windows_state & MK_LBUTTON) ? 1 : 0 ) + ( ( windows_state & MK_RBUTTON) ? 2 : 0) +
+           ( ( windows_state & MK_MBUTTON) ? 4 : 0);
   old_bx_state=bx_state ^ implied_state_change;
   if ( old_bx_state!=mouse_button_state)
   {
@@ -467,6 +481,7 @@ static void processMouseXY( int x, int y, int windows_state, int implied_state_c
   }
   ms_ydelta=ms_savedy-y;
   ms_xdelta=x-ms_savedx;
+  ms_zdelta=z;
   ms_lastx=x;
   ms_lasty=y;
   if ( bx_state!=mouse_button_state)
@@ -485,7 +500,7 @@ static void resetDelta()
   EnterCriticalSection( &stInfo.mouseCS);
   ms_savedx=ms_lastx;
   ms_savedy=ms_lasty;
-  ms_ydelta=ms_xdelta=0;
+  ms_ydelta=ms_xdelta=ms_zdelta=0;
   LeaveCriticalSection( &stInfo.mouseCS);
 }
 
@@ -562,8 +577,11 @@ void terminateEmul(int reason) {
 //     it's height is defined by this parameter.
 
 void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
-			     tilewidth, unsigned tileheight,
-			     unsigned headerbar_y) {
+                                   tilewidth, unsigned tileheight,
+                                   unsigned headerbar_y)
+{
+  int i;
+
   put("WGUI");
   static RGBQUAD black_quad={ 0, 0, 0, 0};
   stInfo.kill = 0;
@@ -579,7 +597,33 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   bx_headerbar_entries = 0;
   bx_hb_separator = 0;
   mouseCaptureMode = FALSE;
-
+  mouseCaptureNew = FALSE;
+  mouseToggleReq = FALSE;
+  
+  mouse_buttons = GetSystemMetrics(SM_CMOUSEBUTTONS);
+  BX_INFO(("Number of Mouse Buttons = %d", mouse_buttons));
+  if (mouse_buttons == 2) {
+    szMouseEnable = "CTRL + Lbutton + Rbutton enables mouse ";
+    szMouseDisable = "CTRL + Lbutton + Rbutton disables mouse";
+  }
+  
+  // parse win32 specific options
+  if (argc > 1) {
+    for (i = 1; i < argc; i++) {
+      BX_INFO(("option %d: %s", i, argv[i]));
+      if (!strcmp(argv[i], "legacyF12")) {
+        legacyF12 = TRUE;
+      } else {
+        BX_PANIC(("Unknown win32 option '%s'", argv[i]));
+      }
+    }
+  }
+  
+  if (legacyF12) {
+    szMouseEnable = "Press F12 to enable mouse ";
+    szMouseDisable = "Press F12 to disable mouse";
+  }
+  
   stInfo.hInstance = GetModuleHandle(NULL);
 
   UNUSED(headerbar_y);
@@ -594,7 +638,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   create_vga_font();
 
   bitmap_info=(BITMAPINFO*)new char[sizeof(BITMAPINFOHEADER)+
-    256*sizeof(RGBQUAD)];
+    259*sizeof(RGBQUAD)]; // 256 + 3 entries for 16 bpp mode
   bitmap_info->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
   bitmap_info->bmiHeader.biWidth=x_tilesize;
   // Height is negative for top-down bitmap
@@ -611,13 +655,9 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   cmap_index=bitmap_info->bmiColors;
   // start out with all color map indeces pointing to Black
   cmap_index[0] = black_quad;
-  for (unsigned i=1; i<256; i++) {
+  for (i=1; i<259; i++) {
     cmap_index[i] = cmap_index[0];
   }
-
-  x_edge = GetSystemMetrics(SM_CXFIXEDFRAME);
-  y_edge = GetSystemMetrics(SM_CYFIXEDFRAME);
-  y_caption = GetSystemMetrics(SM_CYCAPTION);
 
   if (stInfo.hInstance)
     workerThread = _beginthread (UIThread, 0, NULL);
@@ -639,27 +679,53 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   if(bx_options.keyboard.OuseMapping->get()) {
     bx_keymap.loadKeymap(NULL);  // I have no function to convert X windows symbols
     }
+
 }
 
+void resize_main_window()
+{
+  RECT R;
+  int toolbar_y = 0;
+  int statusbar_y = 0;
+
+  if (IsWindowVisible(hwndTB)) {
+    GetWindowRect(hwndTB, &R);
+    toolbar_y = R.bottom - R.top;
+  }
+
+  if (IsWindowVisible(hwndSB)) {
+    GetWindowRect(hwndSB, &R);
+    statusbar_y = R.bottom - R.top;
+  }
+
+  SetRect(&R, 0, 0, stretched_x, stretched_y);
+  DWORD style = GetWindowLong(stInfo.simWnd, GWL_STYLE);
+  DWORD exstyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
+  AdjustWindowRectEx(&R, style, FALSE, exstyle);
+  style = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
+  AdjustWindowRect(&R, style, FALSE);
+  SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, R.right - R.left,
+               R.bottom - R.top + toolbar_y + statusbar_y,
+               SWP_NOMOVE | SWP_NOZORDER);
+  fix_size = FALSE;
+}
 
 // This thread controls the GUI window.
 VOID UIThread(PVOID pvoid) {
   MSG msg;
   HDC hdc;
   WNDCLASS wndclass;
-  RECT wndRect, wndRect2;
-  long Edges[1];
+  RECT wndRect;
 
   workerThreadID = GetCurrentThreadId();
 
+  GetClassInfo(NULL, WC_DIALOG, &wndclass);
   wndclass.style = CS_HREDRAW | CS_VREDRAW;
   wndclass.lpfnWndProc = mainWndProc;
   wndclass.cbClsExtra = 0;
   wndclass.cbWndExtra = 0;
   wndclass.hInstance = stInfo.hInstance;
   wndclass.hIcon = LoadIcon (stInfo.hInstance, MAKEINTRESOURCE(ICON_BOCHS));
-  wndclass.hCursor = LoadCursor (NULL, IDC_ARROW);
-  wndclass.hbrBackground = (HBRUSH) GetStockObject (BLACK_BRUSH);
   wndclass.lpszMenuName = NULL;
   wndclass.lpszClassName = szAppName;
 
@@ -678,53 +744,53 @@ VOID UIThread(PVOID pvoid) {
 
   RegisterClass (&wndclass);
 
+  SetRect(&wndRect, 0, 0, stretched_x, stretched_y);
+  DWORD sim_style = WS_CHILD;
+  DWORD sim_exstyle = WS_EX_CLIENTEDGE;
+  AdjustWindowRectEx(&wndRect, sim_style, FALSE, sim_exstyle);
+  DWORD main_style = WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+  AdjustWindowRect(&wndRect, main_style, FALSE);
   stInfo.mainWnd = CreateWindow (szAppName,
                      szWindowName,
-                     WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
+                     main_style,
                      CW_USEDEFAULT,
                      CW_USEDEFAULT,
-                     dimension_x + x_edge * 2,
-                     dimension_y + y_edge * 2 + y_caption,
+                     wndRect.right - wndRect.left,
+                     wndRect.bottom - wndRect.top,
                      NULL,
                      NULL,
                      stInfo.hInstance,
                      NULL);
 
   if (stInfo.mainWnd) {
-    ShowWindow (stInfo.mainWnd, SW_SHOW);
 
     InitCommonControls();
     hwndTB = CreateWindowEx(0, TOOLBARCLASSNAME, (LPSTR) NULL,
-               WS_CHILD | CCS_ADJUSTABLE, 0, 0, 0, 0, stInfo.mainWnd,
+               WS_CHILD | TBSTYLE_FLAT, 0, 0, 0, 0, stInfo.mainWnd,
                (HMENU) 100, stInfo.hInstance, NULL);
     SendMessage(hwndTB, TB_BUTTONSTRUCTSIZE, (WPARAM) sizeof(TBBUTTON), 0);
     SendMessage(hwndTB, TB_SETBITMAPSIZE, 0, (LPARAM)MAKELONG(32, 32));
-    ShowWindow(hwndTB, SW_SHOW);
-    hwndSB = CreateStatusWindow(WS_CHILD | WS_VISIBLE, "F12 enables mouse",
+
+    hwndSB = CreateStatusWindow(WS_CHILD | WS_VISIBLE, "",
                                 stInfo.mainWnd, 0x7712);
     if (hwndSB) {
-      Edges[0] = -1;
-      SendMessage(hwndSB, SB_SETPARTS, 1, (long)&Edges);
+      int elements;
+      SB_Edges[0] = SIZE_OF_SB_FIRST_ELEMENT + SIZE_OF_SB_ELEMENT;   // Mouse info
+      for (elements = 1; elements < (BX_MAX_STATUSITEMS+1); elements++)
+        SB_Edges[elements] = SB_Edges[elements-1] + SIZE_OF_SB_ELEMENT;
+      SB_Edges[elements] = -1;
+      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+2, (long)&SB_Edges);
     }
-    GetClientRect(hwndTB, &wndRect2);
-    bx_headerbar_y = wndRect2.bottom;
-    GetClientRect(hwndSB, &wndRect2);
-    bx_statusbar_y = wndRect2.bottom;
-    SetWindowPos(stInfo.mainWnd, NULL, 0, 0, stretched_x + x_edge * 2,
-                  stretched_y + bx_headerbar_y + bx_statusbar_y + y_edge * 2
-                  + y_caption, SWP_NOMOVE | SWP_NOZORDER);
-    UpdateWindow (stInfo.mainWnd);
-    GetClientRect(stInfo.mainWnd, &wndRect);
-    MoveWindow(hwndSB, 0, wndRect.bottom - bx_statusbar_y, wndRect.right,
-               bx_statusbar_y, TRUE);
+    SetStatusText(0, szMouseEnable, TRUE);
 
-    stInfo.simWnd = CreateWindow("SIMWINDOW",
+    stInfo.simWnd = CreateWindowEx( sim_exstyle,
+                      "SIMWINDOW",
                       "",
-                      WS_CHILD,
+                      sim_style,
                       0,
-                      bx_headerbar_y,
-                      wndRect.right,
-                      wndRect.bottom - bx_headerbar_y - bx_statusbar_y,
+                      0,
+                      0,
+                      0,
                       stInfo.mainWnd,
                       NULL,
                       stInfo.hInstance,
@@ -745,12 +811,12 @@ VOID UIThread(PVOID pvoid) {
     }
 
     ShowWindow(stInfo.simWnd, SW_SHOW);
-    UpdateWindow (stInfo.simWnd);
     SetFocus(stInfo.simWnd);
 
     ShowCursor(!mouseCaptureMode);
-    GetWindowRect(stInfo.simWnd, &wndRect);
-    SetCursorPos(wndRect.left + stretched_x/2, wndRect.top + stretched_y/2);
+    POINT pt = { 0, 0 };
+    ClientToScreen(stInfo.simWnd, &pt);
+    SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
     cursorWarped();
 
     hdc = GetDC(stInfo.simWnd);
@@ -759,6 +825,8 @@ VOID UIThread(PVOID pvoid) {
     ReleaseDC(stInfo.simWnd, hdc);
 
     if (MemoryBitmap && MemoryDC) {
+      resize_main_window();
+      ShowWindow (stInfo.mainWnd, SW_SHOW);
       stInfo.UIinited = TRUE;
 
       bx_gui->clear_screen();
@@ -775,29 +843,46 @@ VOID UIThread(PVOID pvoid) {
   _endthread();
 }
 
-
-void SetStatusText(int Num, const char *Text)
+void SetStatusText(int Num, const char *Text, bx_bool active)
 {
   char StatText[MAX_PATH];
 
-  if (Num < 1) {
-    StatText[0] = ' ';  // Add space to text in first item
+  if ((Num < 1) || (Num > BX_MAX_STATUSITEMS)) {
+    StatText[0] = ' ';  // Add space to text in first and last item
   } else {
     StatText[0] = 9;  // Center the rest
   }
   lstrcpy(StatText+1, Text);
-  SendMessage(hwndSB, SB_SETTEXT, Num, (long)StatText);
+  if ((Num < 1) || (Num > BX_MAX_STATUSITEMS)) {
+    SendMessage(hwndSB, SB_SETTEXT, Num, (long)StatText);
+  } else {
+    lstrcpy(SB_Text[Num-1], StatText);
+    SB_Active[Num-1] = active;
+    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (long)SB_Text[Num-1]);
+  }
+  UpdateWindow(hwndSB);
 }
 
-LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
+void 
+bx_win32_gui_c::statusbar_setitem(int element, bx_bool active)
+{
+  if (element < 0) {
+    for (int i = 0; i < statusitem_count; i++) {
+      SetStatusText(i+1, statusitem_text[i], active);
+    }
+  } else if (element < statusitem_count) {
+    SetStatusText(element+1, statusitem_text[element], active);
+  }
+}
+
+LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
+{
+  DRAWITEMSTRUCT *lpdis;
+  char *sbtext;
 
   switch (iMsg) {
   case WM_CREATE:
-    bx_options.Omouse_enabled->set (mouseCaptureMode);
-    if (mouseCaptureMode)
-      SetStatusText(0, "Press F12 to release mouse");
-    else
-      SetStatusText(0, "F12 enables mouse");
+    SetStatusText(0, szMouseEnable, TRUE);
     return 0;
 
   case WM_COMMAND:
@@ -821,18 +906,67 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     return 0;
 
   case WM_SIZE:
-    SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
+    {
+      SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
+      SendMessage(hwndSB, WM_SIZE, 0, 0);
+      int rect_data[] = { 1, 0, IsWindowVisible(hwndTB), 100, IsWindowVisible(hwndSB), 0x7712, 0, 0 };
+      RECT R;
+      GetEffectiveClientRect( hwnd, &R, rect_data );
+      MoveWindow(stInfo.simWnd, R.left, R.top, R.right - R.left, R.bottom - R.top, TRUE);
+      GetClientRect(stInfo.simWnd, &R);
+      if (((R.right - R.left) != stretched_x) || ((R.bottom - R.top) != stretched_y)) {
+        BX_ERROR(("Sim window's client size(%d, %d) was different from the stretched size(%d, %d) !!", (R.right - R.left), (R.bottom - R.top), stretched_x, stretched_y));
+        fix_size = TRUE;
+      }
+    }
+    break;
+
+  case WM_DRAWITEM:
+    lpdis = (DRAWITEMSTRUCT *)lParam;
+    if (lpdis->hwndItem == hwndSB) {
+      sbtext = (char *)lpdis->itemData;
+      if (SB_Active[lpdis->itemID-1]) {
+        SetBkColor(lpdis->hDC, 0x0000FF00);
+      } else {
+        SetBkMode(lpdis->hDC, TRANSPARENT);
+        SetTextColor(lpdis->hDC, 0x00808080);
+      }
+      DrawText(lpdis->hDC, sbtext+1, lstrlen(sbtext)-1, &lpdis->rcItem, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
+      return TRUE;
+    }
     break;
 
   }
   return DefWindowProc (hwnd, iMsg, wParam, lParam);
 }
 
+void SetMouseCapture()
+{
+  POINT pt = {0, 0};
 
-LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
+  if (mouseToggleReq) {
+    mouseCaptureMode = mouseCaptureNew;
+    mouseToggleReq = FALSE;
+  } else {
+    bx_options.Omouse_enabled->set (mouseCaptureMode);
+  }
+  ShowCursor(!mouseCaptureMode);
+  ShowCursor(!mouseCaptureMode);   // somehow one didn't do the trick (win98)
+  ClientToScreen(stInfo.simWnd, &pt);
+  SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
+  cursorWarped();
+  if (mouseCaptureMode)
+    SetStatusText(0, szMouseDisable, TRUE);
+  else
+    SetStatusText(0, szMouseEnable, TRUE);
+}
+
+LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
+{
   HDC hdc, hdcMem;
   PAINTSTRUCT ps;
-  RECT wndRect;
+  POINT pt;
+  static BOOL mouseModeChange = FALSE;
 
   switch (iMsg) {
   case WM_CREATE:
@@ -843,15 +977,21 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
     return 0;
 
   case WM_TIMER:
+    if (mouseToggleReq && (GetActiveWindow() == stInfo.mainWnd)) {
+      SetMouseCapture();
+    }
     // If mouse escaped, bring it back
     if ( mouseCaptureMode)
     {
-      GetWindowRect(hwnd, &wndRect);
-      SetCursorPos(wndRect.left + stretched_x/2, wndRect.top + stretched_y/2);
+      pt.x = 0;
+      pt.y = 0;
+      ClientToScreen(hwnd, &pt);
+      SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
       cursorWarped();
     }
-    bx_options.Omouse_enabled->set (mouseCaptureMode);
-
+    if (fix_size) {
+      resize_main_window();
+    }
     return 0;
 
   case WM_PAINT:
@@ -880,19 +1020,72 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
     return 0;
 
   case WM_MOUSEMOVE:
-    processMouseXY( LOWORD(lParam), HIWORD(lParam), wParam, 0);
+    if (!mouseModeChange) {
+      processMouseXY( LOWORD(lParam), HIWORD(lParam), 0, wParam, 0);
+    }
+    return 0;
+
+  case WM_MOUSEWHEEL:
+    if (!mouseModeChange) {
+      // WM_MOUSEWHEEL returns x and y relative to the main screen.
+      // WM_MOUSEMOVE below returns x and y relative to the current view.
+      POINT pt;
+      pt.x = LOWORD(lParam);
+      pt.y = HIWORD(lParam);
+      ScreenToClient(stInfo.simWnd, &pt);
+      processMouseXY( pt.x, pt.y, (Bit16s) HIWORD(wParam) / 120, LOWORD(wParam), 0);
+    }
     return 0;
 
   case WM_LBUTTONDOWN:
   case WM_LBUTTONDBLCLK:
   case WM_LBUTTONUP:
-    processMouseXY( LOWORD(lParam), HIWORD(lParam), wParam, 1);
+    if (mouse_buttons == 2) {
+      if (wParam == (MK_CONTROL | MK_LBUTTON | MK_RBUTTON)) {
+        mouseCaptureMode = !mouseCaptureMode;
+        SetMouseCapture();
+        mouseModeChange = TRUE;
+      } else if (mouseModeChange && (iMsg == WM_LBUTTONUP)) {
+        mouseModeChange = FALSE;
+      } else {
+        processMouseXY( LOWORD(lParam), HIWORD(lParam), 0, wParam, 1);
+      }
+      return 0;
+    }
+    processMouseXY( LOWORD(lParam), HIWORD(lParam), 0, wParam, 1);
+    return 0;
+
+  case WM_MBUTTONDOWN:
+  case WM_MBUTTONDBLCLK:
+  case WM_MBUTTONUP:
+    if (wParam == (MK_CONTROL | MK_MBUTTON)) {
+      mouseCaptureMode = !mouseCaptureMode;
+      SetMouseCapture();
+      mouseModeChange = TRUE;
+    } else if (mouseModeChange && (iMsg == WM_MBUTTONUP)) {
+      mouseModeChange = FALSE;
+    } else {
+      processMouseXY( LOWORD(lParam), HIWORD(lParam), 0, wParam, 4);
+    }
     return 0;
 
   case WM_RBUTTONDOWN:
   case WM_RBUTTONDBLCLK:
   case WM_RBUTTONUP:
-    processMouseXY( LOWORD(lParam), HIWORD(lParam), wParam, 2);
+    if (mouse_buttons == 2) {
+      if (wParam == (MK_CONTROL | MK_LBUTTON | MK_RBUTTON)) {
+        mouseCaptureMode = !mouseCaptureMode;
+        SetMouseCapture();
+        mouseModeChange = TRUE;
+      } else if (mouseModeChange && (iMsg == WM_RBUTTONUP)) {
+        mouseModeChange = FALSE;
+      } else {
+        processMouseXY( LOWORD(lParam), HIWORD(lParam), 0, wParam, 2);
+      }
+      return 0;
+    }
+    processMouseXY( LOWORD(lParam), HIWORD(lParam), 0, wParam, 2);
+    return 0;
 
   case WM_CLOSE:
     return DefWindowProc (hwnd, iMsg, wParam, lParam);
@@ -907,23 +1100,14 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
 
   case WM_KEYDOWN:
   case WM_SYSKEYDOWN:
-    if (wParam == VK_F12) {
+    if (legacyF12 && (wParam == VK_F12)) {
       mouseCaptureMode = !mouseCaptureMode;
-      bx_options.Omouse_enabled->set (mouseCaptureMode);
-      ShowCursor(!mouseCaptureMode);
-      ShowCursor(!mouseCaptureMode);   // somehow one didn't do the trick (win98)
-      GetWindowRect(hwnd, &wndRect);
-      SetCursorPos(wndRect.left + stretched_x/2, wndRect.top + stretched_y/2);
-      cursorWarped();
-      if (mouseCaptureMode)
-        SetStatusText(0, "Press F12 to release mouse");
-      else
-        SetStatusText(0, "F12 enables mouse");
-    } else {
-      EnterCriticalSection(&stInfo.keyCS);
-      enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_PRESSED);
-      LeaveCriticalSection(&stInfo.keyCS);
+      SetMouseCapture();
+      return 0;
     }
+    EnterCriticalSection(&stInfo.keyCS);
+    enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_PRESSED);
+    LeaveCriticalSection(&stInfo.keyCS);
     return 0;
 
   case WM_KEYUP:
@@ -944,7 +1128,47 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
 }
 
 
-void enq_key_event(Bit32u key, Bit32u press_release) {
+void enq_key_event(Bit32u key, Bit32u press_release)
+{
+  static BOOL alt_pressed = FALSE;
+  static BOOL ctrl_pressed = FALSE;
+  static BOOL shift_pressed = FALSE;
+
+  if (press_release == BX_KEY_PRESSED) {
+    switch (key) {
+      case 0x1d:
+        if (ctrl_pressed)
+          return;
+        else
+          ctrl_pressed = TRUE;
+        break;
+      case 0x2a:
+        if (shift_pressed)
+          return;
+        else
+          shift_pressed = TRUE;
+        break;
+      case 0x38:
+        if (alt_pressed)
+          return;
+        else
+          alt_pressed = TRUE;
+        break;
+    }
+  }
+  if (press_release == BX_KEY_RELEASED) {
+    switch (key) {
+      case 0x1d:
+        ctrl_pressed = FALSE;
+        break;
+      case 0x2a:
+        shift_pressed = FALSE;
+        break;
+      case 0x38:
+        alt_pressed = FALSE;
+        break;
+    }
+  }
   if (((tail+1) % SCANCODE_BUFSIZE) == head) {
     BX_ERROR(( "enq_scancode: buffer full"));
     return;
@@ -956,7 +1180,7 @@ void enq_key_event(Bit32u key, Bit32u press_release) {
 void enq_mouse_event(void)
 {
   EnterCriticalSection( &stInfo.mouseCS);
-  if ( ms_xdelta || ms_ydelta)
+  if ( ms_xdelta || ms_ydelta || ms_zdelta)
   {
     if (((tail+1) % SCANCODE_BUFSIZE) == head) {
       BX_ERROR(( "enq_scancode: buffer full" ));
@@ -966,6 +1190,7 @@ void enq_mouse_event(void)
     current.key_event=MOUSE_MOTION;
     current.mouse_x=ms_xdelta;
     current.mouse_y=ms_ydelta;
+    current.mouse_z=ms_zdelta;
     current.mouse_button_state=mouse_button_state;
     resetDelta();
     tail = (tail + 1) % SCANCODE_BUFSIZE;
@@ -997,8 +1222,6 @@ void bx_win32_gui_c::handle_events(void) {
   Bit32u key;
   Bit32u key_event;
 
-  // printf("# Hey!!!\n");
-
   if (stInfo.kill) terminateEmul(stInfo.kill);
 
   // Handle mouse moves
@@ -1013,13 +1236,12 @@ void bx_win32_gui_c::handle_events(void) {
     key = queue_event->key_event;
     if ( key==MOUSE_MOTION)
     {
-      DEV_mouse_motion( queue_event->mouse_x,
-        queue_event->mouse_y, queue_event->mouse_button_state);
+      DEV_mouse_motion_ext( queue_event->mouse_x,
+        queue_event->mouse_y, queue_event->mouse_z, queue_event->mouse_button_state);
     }
     // Check for mouse buttons first
     else if ( key & MOUSE_PRESSED) {
-      // printf("# click!\n");
-      DEV_mouse_motion( 0, 0, LOWORD(key));
+      DEV_mouse_motion_ext( 0, 0, 0, LOWORD(key));
     }
     else if (key & HEADERBAR_CLICKED) {
       headerbar_click(LOWORD(key));
@@ -1109,11 +1331,12 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 {
   HDC hdc;
   unsigned char data[64];
-  unsigned char *old_line, *new_line;
-  unsigned char cAttr, cChar;
-  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2;
+  Bit8u *old_line, *new_line, *text_base;
+  Bit8u cAttr, cChar;
+  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2, cs_y;
   Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
-  BOOL forceUpdate = FALSE;
+  Bit8u split_textrow, split_fontrows;
+  BOOL forceUpdate = FALSE, split_screen;
 
   if (!stInfo.UIinited) return;
 
@@ -1125,7 +1348,7 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       if (char_changed[c]) {
         memset(data, 0, sizeof(data));
         BOOL gfxchar = tm_info.line_graphics && ((c & 0xE0) == 0xC0);
-        for (unsigned i=0; i<32; i++) {
+        for (unsigned i=0; i<yChar; i++) {
           data[i*2] = vga_charmap[c*32+i];
           if (gfxchar) {
             data[i*2+1] = (data[i*2] << 7);
@@ -1147,6 +1370,10 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     h_panning = tm_info.h_panning;
     v_panning = tm_info.v_panning;
   }
+  if(tm_info.line_compare != line_compare) {
+    forceUpdate = 1;
+    line_compare = tm_info.line_compare;
+  }
 #endif
 
   // first invalidate character at previous and new cursor location
@@ -1166,10 +1393,24 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   rows = text_rows;
   if (v_panning) rows++;
   y = 0;
+  cs_y = 0;
+  text_base = new_text - tm_info.start_address;
+  split_textrow = (line_compare + v_panning) / yChar;
+  split_fontrows = ((line_compare + v_panning) % yChar) + 1;
+  split_screen = 0;
   do {
     hchars = text_cols;
     if (h_panning) hchars++;
-    if (v_panning) {
+    if (split_screen) {
+      yc = line_compare + cs_y * yChar + 1;
+      font_row = 0;
+      if (rows == 1) {
+        cfheight = (dimension_y - line_compare - 1) % yChar;
+        if (cfheight == 0) cfheight = yChar;
+      } else {
+        cfheight = yChar;
+      }
+    } else if (v_panning) {
       if (y == 0) {
         yc = 0;
         font_row = v_panning;
@@ -1188,10 +1429,13 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       font_row = 0;
       cfheight = yChar;
     }
+    if (!split_screen && (y == split_textrow)) {
+      if (split_fontrows < cfheight) cfheight = split_fontrows;
+    }
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = y * tm_info.line_offset;
+    offset = cs_y * tm_info.line_offset;
     do {
       if (h_panning) {
         if (hchars > text_cols) {
@@ -1244,10 +1488,22 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       old_text+=2;
       offset+=2;
     } while (--hchars);
-    y++;
-    new_text = new_line + tm_info.line_offset;
-    old_text = old_line + tm_info.line_offset;
+    if (!split_screen && (y == split_textrow)) {
+      new_text = text_base;
+      forceUpdate = 1;
+      cs_y = 0;
+      if (tm_info.split_hpanning) h_panning = 0;
+      rows = ((dimension_y - line_compare + yChar - 2) / yChar) + 1;
+      split_screen = 1;
+    } else {
+      y++;
+      cs_y++;
+      new_text = new_line + tm_info.line_offset;
+      old_text = old_line + tm_info.line_offset;
+    }
   } while (--rows);
+
+  h_panning = tm_info.h_panning;
 #else
   rows = text_rows;
   y = 0;
@@ -1337,9 +1593,16 @@ bx_win32_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 
 bx_bool bx_win32_gui_c::palette_change(unsigned index, unsigned red,
                                  unsigned green, unsigned blue) {
-  cmap_index[index].rgbRed = red;
-  cmap_index[index].rgbBlue = blue;
-  cmap_index[index].rgbGreen = green;
+  if ((current_bpp == 16) && (index < 3)) {
+    cmap_index[256+index].rgbRed = red;
+    cmap_index[256+index].rgbBlue = blue;
+    cmap_index[256+index].rgbGreen = green;
+    return 0;
+  } else {
+    cmap_index[index].rgbRed = red;
+    cmap_index[index].rgbBlue = blue;
+    cmap_index[index].rgbGreen = green;
+  }
   return(1);
 }
 
@@ -1395,8 +1658,6 @@ void bx_win32_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 
 void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
-  RECT R;
-
   BxTextMode = (fheight > 0);
   if (BxTextMode) {
     text_cols = x / fwidth;
@@ -1431,7 +1692,6 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, 
     return;
   dimension_x = x;
   dimension_y = y;
-  current_bpp = bpp;
   stretched_x = dimension_x;
   stretched_y = dimension_y;
   stretch_factor = 1;
@@ -1447,28 +1707,36 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, 
     static RGBQUAD red_mask   = {0x00, 0xF8, 0x00, 0x00};
     static RGBQUAD green_mask = {0xE0, 0x07, 0x00, 0x00};
     static RGBQUAD blue_mask  = {0x1F, 0x00, 0x00, 0x00};
+    bitmap_info->bmiColors[256] = bitmap_info->bmiColors[0];
+    bitmap_info->bmiColors[257] = bitmap_info->bmiColors[1];
+    bitmap_info->bmiColors[258] = bitmap_info->bmiColors[2];
     bitmap_info->bmiColors[0] = red_mask;
     bitmap_info->bmiColors[1] = green_mask;
     bitmap_info->bmiColors[2] = blue_mask;
   }
   else
   {
+    if (current_bpp == 16)
+    {
+      bitmap_info->bmiColors[0] = bitmap_info->bmiColors[256];
+      bitmap_info->bmiColors[1] = bitmap_info->bmiColors[257];
+      bitmap_info->bmiColors[2] = bitmap_info->bmiColors[258];
+    }
     bitmap_info->bmiHeader.biCompression = BI_RGB;
     if (bpp == 15)
     {
       bitmap_info->bmiHeader.biBitCount = 16;
     }
   }
+  current_bpp = bpp;
 
-  SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, stretched_x + x_edge * 2,
-               stretched_y + bx_headerbar_y + bx_statusbar_y + y_edge * 2
-               + y_caption, SWP_NOMOVE | SWP_NOZORDER);
-  GetClientRect(stInfo.mainWnd, &R);
-  MoveWindow(hwndSB, 0, R.bottom-bx_statusbar_y, stretched_x,
-             bx_statusbar_y, TRUE);
-  MoveWindow(stInfo.simWnd, 0, bx_headerbar_y, stretched_x, stretched_y, TRUE);
+  resize_main_window();
 
   BX_INFO (("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
+
+  host_xres = x;
+  host_yres = y;
+  host_bpp = bpp;
 }
 
 
@@ -1572,19 +1840,10 @@ unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
 
 void bx_win32_gui_c::show_headerbar(void)
 {
-  RECT R;
-
-  SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
-  GetWindowRect(hwndTB, &R);
-  if (bx_headerbar_y != (R.bottom - R.top + 1)) {
-    bx_headerbar_y = R.bottom - R.top + 1;
-    SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, stretched_x + x_edge * 2,
-                 stretched_y + bx_headerbar_y + bx_statusbar_y + y_edge * 2
-                 + y_caption, SWP_NOMOVE | SWP_NOZORDER);
-    GetClientRect(stInfo.mainWnd, &R);
-    MoveWindow(hwndSB, 0, R.bottom - bx_statusbar_y, stretched_x,
-               bx_statusbar_y, TRUE);
-    MoveWindow(stInfo.simWnd, 0, bx_headerbar_y, stretched_x, stretched_y, TRUE);
+  if (!IsWindowVisible(hwndTB)) {
+    SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
+    ShowWindow(hwndTB, SW_SHOW);
+    resize_main_window();
   }
 }
 
@@ -1606,8 +1865,16 @@ void bx_win32_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
   if (bmap_id != bx_headerbar_entry[hbar_id].bmap_id) {
     bx_headerbar_entry[hbar_id].bmap_id = bmap_id;
+    bx_bool is_visible = IsWindowVisible(hwndTB);
+    if (is_visible) {
+      ShowWindow(hwndTB, SW_HIDE);
+    }
     SendMessage(hwndTB, TB_CHANGEBITMAP, (WPARAM)hbar_id+101, (LPARAM)
                 MAKELPARAM(bmap_id, 0));
+    SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
+    if (is_visible) {
+      ShowWindow(hwndTB, SW_SHOW);
+    }
   }
 }
 
@@ -1753,6 +2020,10 @@ void alarm (int time)
   void
 bx_win32_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
+  if ((val != mouseCaptureMode) && !mouseToggleReq) {
+    mouseToggleReq = TRUE;
+    mouseCaptureNew = val;
+  }
 }
 
 #if BX_USE_WINDOWS_FONTS

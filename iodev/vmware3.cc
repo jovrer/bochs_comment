@@ -27,12 +27,11 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#include "bochs.h"
+#include "iodev.h"
+#include "vmware3.h"
 
 const off_t vmware3_image_t::INVALID_OFFSET=(off_t)-1;
-/* Not very friendly... */
-extern bx_hard_drive_c *theHardDrive;
-#define LOG_THIS theHardDrive->
+#define LOG_THIS bx_devices.pluginHardDrive->
 
 #define DTOH32_HEADER(field) (header.field = (dtoh32(header.field)))
 #define HTOD32_HEADER(field) (header.field = (htod32(header.field)))

@@ -1,5 +1,5 @@
-////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.cc,v 1.52 2003/08/19 00:10:38 cbothamy Exp $
+///////////////////////////////////////////////////////////////////////
+// $Id: pit_wrap.cc,v 1.58 2004/12/13 19:10:38 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,12 +25,11 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-#include "bochs.h"
+#include "iodev.h"
 
 #if BX_USE_NEW_PIT
 
-#include "pit_wrap.h"
-
+#include "speaker.h"
 
 //Important constant #defines:
 #define USEC_PER_SECOND (1000000)
@@ -313,6 +312,11 @@ bx_pit_c::write( Bit32u   address, Bit32u   dvalue,
 
     case 0x61:
       BX_PIT_THIS s.speaker_data_on = (value >> 1) & 0x01;
+      if ( BX_PIT_THIS s.speaker_data_on ) {
+	  DEV_speaker_beep_on(1193180.0 / this->get_timer(2));
+      } else {
+	  DEV_speaker_beep_off();
+      }
 /*??? only on AT+ */
       BX_PIT_THIS s.timer.set_GATE(2, value & 0x01);
 #if BX_CPU_LEVEL < 2
@@ -352,28 +356,6 @@ bx_pit_c::write( Bit32u   address, Bit32u   dvalue,
   BX_DEBUG(("s.timer.get_next_event_time=%x",BX_PIT_THIS s.timer.get_next_event_time()));
   BX_DEBUG(("s.last_next_event_time=%d",BX_PIT_THIS s.last_next_event_time));
 
-}
-
-
-
-
-  int
-bx_pit_c::SaveState( class state_file *fd )
-{
-  fd->write_check ("8254 start");
-  fd->write (&BX_PIT_THIS s, sizeof (BX_PIT_THIS s));
-  fd->write_check ("8254 end");
-  return(0);
-}
-
-
-  int
-bx_pit_c::LoadState( class state_file *fd )
-{
-  fd->read_check ("8254 start");
-  fd->read (&BX_PIT_THIS s, sizeof (BX_PIT_THIS s));
-  fd->read_check ("8254 end");
-  return(0);
 }
 
 

@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: sse_pfp.cc,v 1.21 2005/05/12 18:07:44 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//   Copyright (c) 2003 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,9 +24,6 @@
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#include "softfloat.h"
-
-
 #if BX_SUPPORT_SSE
 
 void BX_CPU_C::check_exceptionsSSE(int exceptions_flags)
@@ -41,9 +40,8 @@ void BX_CPU_C::check_exceptionsSSE(int exceptions_flags)
   }
 }
 
-static void mxcsr_to_softfloat_status_word(softfloat_status_word_t &status, bx_mxcsr_t mxcsr)
+static void mxcsr_to_softfloat_status_word(float_status_t &status, bx_mxcsr_t mxcsr)
 {
-  status.float_detect_tininess = float_tininess_before_rounding;
   status.float_exception_flags = 0; // clear exceptions before execution
   status.float_nan_handling_mode = float_first_operand_nan;
   status.float_rounding_mode = mxcsr.get_rounding_mode();
@@ -108,7 +106,7 @@ void BX_CPU_C::CVTPI2PS_VpsQq(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   result.xmm32u(0) = int32_to_float32(MMXUD0(op), status_word);
@@ -165,7 +163,7 @@ void BX_CPU_C::CVTSI2SD_VsdEd(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   Float64 result;
 
@@ -222,7 +220,7 @@ void BX_CPU_C::CVTSI2SS_VssEd(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareSSE();
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   Float32 result;
 
@@ -291,7 +289,7 @@ void BX_CPU_C::CVTTPS2PI_PqWps(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   Float32 r0 = (Float32)(op & 0xFFFFFFFF);
@@ -332,7 +330,7 @@ void BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   MMXUD0(result) = float64_to_int32_round_to_zero(op.xmm64u(0), status_word);
@@ -368,7 +366,7 @@ void BX_CPU_C::CVTTSD2SI_GdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
 #if BX_SUPPORT_X86_64 
@@ -414,7 +412,7 @@ void BX_CPU_C::CVTTSS2SI_GdWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
 #if BX_SUPPORT_X86_64 
@@ -463,7 +461,7 @@ void BX_CPU_C::CVTPS2PI_PqWps(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   Float32 r0 = (Float32)(op & 0xFFFFFFFF);
@@ -505,7 +503,7 @@ void BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   MMXUD0(result) = float64_to_int32(op.xmm64u(0), status_word);
@@ -542,7 +540,7 @@ void BX_CPU_C::CVTSD2SI_GdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
 #if BX_SUPPORT_X86_64 
@@ -589,7 +587,7 @@ void BX_CPU_C::CVTSS2SI_GdWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
 #if BX_SUPPORT_X86_64 
@@ -635,7 +633,7 @@ void BX_CPU_C::CVTPS2PD_VpsWps(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   Float32 r0 = (Float32)(op & 0xFFFFFFFF);
@@ -683,7 +681,7 @@ void BX_CPU_C::CVTPD2PS_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -731,7 +729,7 @@ void BX_CPU_C::CVTSD2SS_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   if (MXCSR.get_DAZ()) op = handleDAZ(op);
   result = float64_to_float32(op, status_word);
@@ -766,7 +764,7 @@ void BX_CPU_C::CVTSS2SD_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   if (MXCSR.get_DAZ()) op = handleDAZ(op);
   result = float32_to_float64(op, status_word);
@@ -802,7 +800,7 @@ void BX_CPU_C::CVTDQ2PS_VpsWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   result.xmm32u(0) = 
@@ -845,7 +843,7 @@ void BX_CPU_C::CVTPS2DQ_VdqWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   result.xmm32u(0) = 
@@ -887,7 +885,7 @@ void BX_CPU_C::CVTTPS2DQ_VdqWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   result.xmm32u(0) = 
@@ -929,7 +927,7 @@ void BX_CPU_C::CVTTPD2DQ_VqWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   result.xmm32u(0) = 
@@ -969,7 +967,7 @@ void BX_CPU_C::CVTPD2DQ_VqWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   result.xmm32u(0) = 
@@ -1042,7 +1040,7 @@ void BX_CPU_C::UCOMISS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1053,25 +1051,7 @@ void BX_CPU_C::UCOMISS_VssWss(bxInstruction_c *i)
 
   int rc = float32_compare_quiet(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
-
-  switch(rc) {
-     case float_relation_unordered:
-         setEFlagsOSZAPC(EFlagsZFMask | EFlagsPFMask | EFlagsCFMask);
-         break;
-
-     case float_relation_greater:
-         setEFlagsOSZAPC(0);
-         break;
-
-     case float_relation_less:
-         setEFlagsOSZAPC(EFlagsCFMask);
-         break;
-
-     case float_relation_equal:
-         setEFlagsOSZAPC(EFlagsZFMask);
-         break;
-  }
-
+  BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("UCOMISS_VssWss: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
@@ -1099,7 +1079,7 @@ void BX_CPU_C::UCOMISD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1110,25 +1090,7 @@ void BX_CPU_C::UCOMISD_VsdWsd(bxInstruction_c *i)
 
   int rc = float64_compare_quiet(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
-
-  switch(rc) {
-     case float_relation_unordered:
-         setEFlagsOSZAPC(EFlagsZFMask | EFlagsPFMask | EFlagsCFMask);
-         break;
-
-     case float_relation_greater:
-         setEFlagsOSZAPC(0);
-         break;
-
-     case float_relation_less:
-         setEFlagsOSZAPC(EFlagsCFMask);
-         break;
-
-     case float_relation_equal:
-         setEFlagsOSZAPC(EFlagsZFMask);
-         break;
-  }
-
+  BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("UCOMISD_VsdWsd: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
@@ -1156,7 +1118,7 @@ void BX_CPU_C::COMISS_VpsWps(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1167,25 +1129,7 @@ void BX_CPU_C::COMISS_VpsWps(bxInstruction_c *i)
 
   int rc = float32_compare(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
-
-  switch(rc) {
-     case float_relation_unordered:
-         setEFlagsOSZAPC(EFlagsZFMask | EFlagsPFMask | EFlagsCFMask);
-         break;
-
-     case float_relation_greater:
-         setEFlagsOSZAPC(0);
-         break;
-
-     case float_relation_less:
-         setEFlagsOSZAPC(EFlagsCFMask);
-         break;
-
-     case float_relation_equal:
-         setEFlagsOSZAPC(EFlagsZFMask);
-         break;
-  }
-
+  BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("COMISS_VpsWps: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
@@ -1213,7 +1157,7 @@ void BX_CPU_C::COMISD_VpdWpd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1224,25 +1168,7 @@ void BX_CPU_C::COMISD_VpdWpd(bxInstruction_c *i)
 
   int rc = float64_compare(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
-
-  switch(rc) {
-     case float_relation_unordered:
-         setEFlagsOSZAPC(EFlagsZFMask | EFlagsPFMask | EFlagsCFMask);
-         break;
-
-     case float_relation_greater:
-         setEFlagsOSZAPC(0);
-         break;
-
-     case float_relation_less:
-         setEFlagsOSZAPC(EFlagsCFMask);
-         break;
-
-     case float_relation_equal:
-         setEFlagsOSZAPC(EFlagsZFMask);
-         break;
-  }
-
+  BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("COMISD_VpdWpd: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
@@ -1270,7 +1196,7 @@ void BX_CPU_C::SQRTPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1320,7 +1246,7 @@ void BX_CPU_C::SQRTPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1364,7 +1290,7 @@ void BX_CPU_C::SQRTSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   if (MXCSR.get_DAZ()) op = handleDAZ(op);
   result = float64_sqrt(op, status_word);
@@ -1398,7 +1324,7 @@ void BX_CPU_C::SQRTSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   if (MXCSR.get_DAZ()) op = handleDAZ(op);
   result = float32_sqrt(op, status_word);
@@ -1432,7 +1358,7 @@ void BX_CPU_C::ADDPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) {
@@ -1486,7 +1412,7 @@ void BX_CPU_C::ADDPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1533,7 +1459,7 @@ void BX_CPU_C::ADDSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1573,7 +1499,7 @@ void BX_CPU_C::ADDSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1613,7 +1539,7 @@ void BX_CPU_C::MULPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) {
@@ -1667,7 +1593,7 @@ void BX_CPU_C::MULPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1714,7 +1640,7 @@ void BX_CPU_C::MULSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1754,7 +1680,7 @@ void BX_CPU_C::MULSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1794,7 +1720,7 @@ void BX_CPU_C::SUBPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) {
@@ -1848,7 +1774,7 @@ void BX_CPU_C::SUBPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1895,7 +1821,7 @@ void BX_CPU_C::SUBSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1935,7 +1861,7 @@ void BX_CPU_C::SUBSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -1975,7 +1901,7 @@ void BX_CPU_C::MINPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   int rc;
 
@@ -2034,7 +1960,7 @@ void BX_CPU_C::MINPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   int rc;
 
@@ -2084,7 +2010,7 @@ void BX_CPU_C::MINSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2125,7 +2051,7 @@ void BX_CPU_C::MINSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2166,7 +2092,7 @@ void BX_CPU_C::DIVPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) {
@@ -2220,7 +2146,7 @@ void BX_CPU_C::DIVPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2267,7 +2193,7 @@ void BX_CPU_C::DIVSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2307,7 +2233,7 @@ void BX_CPU_C::DIVSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2347,7 +2273,7 @@ void BX_CPU_C::MAXPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   int rc;
 
@@ -2406,7 +2332,7 @@ void BX_CPU_C::MAXPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   int rc;
 
@@ -2456,7 +2382,7 @@ void BX_CPU_C::MAXSD_VsdWsd(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2497,7 +2423,7 @@ void BX_CPU_C::MAXSS_VssWss(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -2538,9 +2464,8 @@ void BX_CPU_C::HADDPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  int rc;
 
   if (MXCSR.get_DAZ()) 
   {
@@ -2554,7 +2479,7 @@ void BX_CPU_C::HADDPD_VpdWpd(bxInstruction_c *i)
   result.xmm64u(0) = 
      float64_add(op1.xmm64u(0), op1.xmm64u(1), status_word);
   result.xmm64u(1) = 
-     float64_add(op2.xmm64u(1), op2.xmm64u(1), status_word);
+     float64_add(op2.xmm64u(0), op2.xmm64u(1), status_word);
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), result);
@@ -2586,9 +2511,8 @@ void BX_CPU_C::HADDPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  int rc;
 
   if (MXCSR.get_DAZ()) {
 	op1.xmm32u(0) = handleDAZ(op1.xmm32u(0));
@@ -2641,9 +2565,8 @@ void BX_CPU_C::HSUBPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  int rc;
 
   if (MXCSR.get_DAZ()) 
   {
@@ -2657,7 +2580,7 @@ void BX_CPU_C::HSUBPD_VpdWpd(bxInstruction_c *i)
   result.xmm64u(0) = 
      float64_sub(op1.xmm64u(0), op1.xmm64u(1), status_word);
   result.xmm64u(1) = 
-     float64_sub(op2.xmm64u(1), op2.xmm64u(1), status_word);
+     float64_sub(op2.xmm64u(0), op2.xmm64u(1), status_word);
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), result);
@@ -2689,9 +2612,8 @@ void BX_CPU_C::HSUBPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  int rc;
 
   if (MXCSR.get_DAZ()) {
 	op1.xmm32u(0) = handleDAZ(op1.xmm32u(0));
@@ -2744,7 +2666,7 @@ void BX_CPU_C::CMPPS_VpsWpsIb(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status;
+  float_status_t status;
   mxcsr_to_softfloat_status_word(status, MXCSR);
   int ib = i->Ib();
 
@@ -2818,7 +2740,7 @@ void BX_CPU_C::CMPPD_VpdWpdIb(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status;
+  float_status_t status;
   mxcsr_to_softfloat_status_word(status, MXCSR);
   int ib = i->Ib();
 
@@ -2870,7 +2792,7 @@ void BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  Float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2, result;
+  Float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2, result = 0;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -2881,7 +2803,7 @@ void BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   int ib = i->Ib();
 
@@ -2926,7 +2848,7 @@ void BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareSSE();
 
-  Float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2, result;
+  Float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2, result = 0;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -2937,7 +2859,7 @@ void BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), (Bit32u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   int ib = i->Ib();
 
@@ -2993,7 +2915,7 @@ void BX_CPU_C::ADDSUBPD_VpdWpd(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) 
@@ -3040,7 +2962,7 @@ void BX_CPU_C::ADDSUBPS_VpsWps(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
   if (MXCSR.get_DAZ()) {

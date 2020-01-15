@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: lazy_flags.h,v 1.6 2002/10/25 11:44:35 bdenney Exp $
+// $Id: lazy_flags.h,v 1.19 2004/09/04 10:21:15 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,105 +25,91 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
 #if BX_PROVIDE_CPU_MEMORY==1
 
-#define BX_INSTR_ADD8   1
-#define BX_INSTR_ADD16  2
-#define BX_INSTR_ADD32  3
+#define BX_INSTR_ADD8           1
+#define BX_INSTR_ADD16          2
+#define BX_INSTR_ADD32          3
+#define BX_INSTR_ADD64          4
 
-#define BX_INSTR_SUB8   4
-#define BX_INSTR_SUB16  5
-#define BX_INSTR_SUB32  6
+#define BX_INSTR_SUB8           5
+#define BX_INSTR_SUB16          6
+#define BX_INSTR_SUB32          7
+#define BX_INSTR_SUB64          8
 
-#define BX_INSTR_ADC8   7
-#define BX_INSTR_ADC16  8
-#define BX_INSTR_ADC32  9
+// used only if CF = 1 when executing ADC instruction
+#define BX_INSTR_ADC8           9
+#define BX_INSTR_ADC16          10
+#define BX_INSTR_ADC32          11
+#define BX_INSTR_ADC64          12
 
-#define BX_INSTR_SBB8   10
-#define BX_INSTR_SBB16  11
-#define BX_INSTR_SBB32  12
+// used only if CF = 1 when executing SBB instruction
+#define BX_INSTR_SBB8           13
+#define BX_INSTR_SBB16          14
+#define BX_INSTR_SBB32          15
+#define BX_INSTR_SBB64          16
 
-#define BX_INSTR_CMP8   13
-#define BX_INSTR_CMP16  14
-#define BX_INSTR_CMP32  15
+#define BX_INSTR_INC8           17
+#define BX_INSTR_INC16          18
+#define BX_INSTR_INC32          19
+#define BX_INSTR_INC64          20
 
-#define BX_INSTR_INC8   16
-#define BX_INSTR_INC16  17
-#define BX_INSTR_INC32  18
+#define BX_INSTR_DEC8           21
+#define BX_INSTR_DEC16          22
+#define BX_INSTR_DEC32          23
+#define BX_INSTR_DEC64          24
 
-#define BX_INSTR_DEC8   19
-#define BX_INSTR_DEC16  20
-#define BX_INSTR_DEC32  21
+#define BX_INSTR_NEG8           25
+#define BX_INSTR_NEG16          26
+#define BX_INSTR_NEG32          27
+#define BX_INSTR_NEG64          28
 
-#define BX_INSTR_NEG8   22
-#define BX_INSTR_NEG16  23
-#define BX_INSTR_NEG32  24
+#define BX_INSTR_LOGIC8         29
+#define BX_INSTR_LOGIC16        30
+#define BX_INSTR_LOGIC32        31
+#define BX_INSTR_LOGIC64        32
 
-#define BX_INSTR_XADD8  25
-#define BX_INSTR_XADD16 26
-#define BX_INSTR_XADD32 27
+//      BX_INSTR_BITSCAN8       not exists, leave number for alignment
+#define BX_INSTR_BITSCAN16      34
+#define BX_INSTR_BITSCAN32      35
+#define BX_INSTR_BITSCAN64      36
 
-#define BX_INSTR_OR8    28
-#define BX_INSTR_OR16   29
-#define BX_INSTR_OR32   30
+#define BX_INSTR_SHL8           37
+#define BX_INSTR_SHL16          38
+#define BX_INSTR_SHL32          39
+#define BX_INSTR_SHL64          40
 
-#define BX_INSTR_AND8   31
-#define BX_INSTR_AND16  32
-#define BX_INSTR_AND32  33
+#define BX_INSTR_SHR8           41
+#define BX_INSTR_SHR16          42
+#define BX_INSTR_SHR32          43
+#define BX_INSTR_SHR64          44
 
-#define BX_INSTR_TEST8   34
-#define BX_INSTR_TEST16  35
-#define BX_INSTR_TEST32  36
+#define BX_INSTR_SAR8           45
+#define BX_INSTR_SAR16          46
+#define BX_INSTR_SAR32          47
+#define BX_INSTR_SAR64          48
 
-#define BX_INSTR_XOR8    37
-#define BX_INSTR_XOR16   38
-#define BX_INSTR_XOR32   39
+#define BX_INSTR_MUL8           49
+#define BX_INSTR_MUL16          50
+#define BX_INSTR_MUL32          51
+#define BX_INSTR_MUL64          52
 
-#define BX_INSTR_CMPS8   40
-#define BX_INSTR_CMPS16  41
-#define BX_INSTR_CMPS32  42
+#define BX_INSTR_IMUL8          53
+#define BX_INSTR_IMUL16         54
+#define BX_INSTR_IMUL32         55
+#define BX_INSTR_IMUL64         56
 
-#define BX_INSTR_SCAS8   43
-#define BX_INSTR_SCAS16  44
-#define BX_INSTR_SCAS32  45
-
-#define BX_INSTR_SHR8    46
-#define BX_INSTR_SHR16   47
-#define BX_INSTR_SHR32   48
-
-#define BX_INSTR_SHL8    49
-#define BX_INSTR_SHL16   50
-#define BX_INSTR_SHL32   51
-
-#if BX_SUPPORT_X86_64
-#define BX_INSTR_ADD64   52
-#define BX_INSTR_SUB64   53
-#define BX_INSTR_ADC64   54
-#define BX_INSTR_SBB64   55
-#define BX_INSTR_CMP64   56
-#define BX_INSTR_INC64   57
-#define BX_INSTR_DEC64   58
-#define BX_INSTR_NEG64   59
-#define BX_INSTR_XADD64  60
-#define BX_INSTR_OR64    61
-#define BX_INSTR_AND64   62
-#define BX_INSTR_TEST64  63
-#define BX_INSTR_XOR64   64
-#define BX_INSTR_CMPS64  65
-#define BX_INSTR_SCAS64  66
-#define BX_INSTR_SHR64   67
-#define BX_INSTR_SHL64   68
-#endif
+#define BX_INSTR_COMPARE8       BX_INSTR_SUB8
+#define BX_INSTR_COMPARE16      BX_INSTR_SUB16
+#define BX_INSTR_COMPARE32      BX_INSTR_SUB32
+#define BX_INSTR_COMPARE64      BX_INSTR_SUB64
 
 
-#define BX_LF_INDEX_KNOWN   0
 #define BX_LF_INDEX_OSZAPC  1
 #define BX_LF_INDEX_OSZAP   2
 
 #define BX_LF_MASK_OSZAPC 0x111111
 #define BX_LF_MASK_OSZAP  0x222220
-
 
 typedef struct {
   Bit8u op1_8;
@@ -144,9 +130,7 @@ typedef struct {
   Bit64u result_64;
 #endif
 
-  bx_bool prev_CF;
   unsigned instr;
-  } bx_lf_flags_entry;
-
+} bx_lf_flags_entry;
 
 #endif /* BX_PROVIDE_CPU_MEMORY==1 */

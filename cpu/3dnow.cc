@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: 3dnow.cc,v 1.16 2005/05/12 18:07:41 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -17,6 +19,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -24,12 +27,8 @@
 
 #if BX_SUPPORT_3DNOW
 
-#include "softfloat.h"
-
-static void prepare_softfloat_status_word
-	(softfloat_status_word_t &status, int rounding_mode)
+static void prepare_softfloat_status_word(float_status_t &status, int rounding_mode)
 {
-  status.float_detect_tininess = float_tininess_before_rounding;
   status.float_exception_flags = 0; // clear exceptions before execution
   status.float_nan_handling_mode = float_first_operand_nan;
   status.float_rounding_mode = rounding_mode;
@@ -55,7 +54,7 @@ void BX_CPU_C::PI2FW_PqQq(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   prepare_softfloat_status_word(status_word, float_round_to_zero);
 
   MMXUD0(result) = 
@@ -81,7 +80,7 @@ void BX_CPU_C::PI2FD_PqQq(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   prepare_softfloat_status_word(status_word, float_round_to_zero);
 
   MMXUD0(result) = 
@@ -112,7 +111,7 @@ void BX_CPU_C::PF2ID_PqQq(bxInstruction_c *i)
     read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op);
   }
 
-  softfloat_status_word_t status_word;
+  float_status_t status_word;
   prepare_softfloat_status_word(status_word, float_round_to_zero);
 
   MMXSD0(result) = 

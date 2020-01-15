@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcivga.cc,v 1.2 2003/01/23 19:31:28 vruppert Exp $
+// $Id: pcivga.cc,v 1.6 2004/08/06 15:49:55 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002,2003 Mike Nordell
@@ -33,8 +33,8 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#include "bochs.h"
-#if BX_PCI_SUPPORT && BX_PCI_VGA_SUPPORT
+#include "iodev.h"
+#if BX_SUPPORT_PCI && BX_SUPPORT_PCIVGA
 
 #define LOG_THIS thePciVgaAdapter->
 
@@ -73,10 +73,11 @@ bx_pcivga_c::init(void)
 {
   // called once when bochs initializes
 
+  Bit8u devfunc = 0x00;
   DEV_register_pci_handlers(this,
                             pci_read_handler,
                             pci_write_handler,
-                            BX_PCI_DEVICE(2,0),
+                            &devfunc, BX_PLUGIN_PCIVGA,
                             "Experimental PCI VGA");
 
   for (unsigned i=0; i<256; i++) {
@@ -109,7 +110,7 @@ bx_pcivga_c::reset(unsigned type)
     unsigned      addr;
     unsigned char val;
   } reset_vals[] = {
-      { 0x04, 0x01 }, { 0x05, 0x00 },	// command_io
+      { 0x04, 0x03 }, { 0x05, 0x00 },	// command_io + command_mem
       { 0x06, 0x00 }, { 0x07, 0x02 }	// status_devsel_medium
   };
   for (unsigned i = 0; i < sizeof(reset_vals) / sizeof(*reset_vals); ++i) {
@@ -245,4 +246,4 @@ bx_pcivga_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
   BX_DEBUG(("Experimental PCIVGA write register 0x%02x value 0x%s", address, szTmp));
 }
 
-#endif // BX_PCI_SUPPORT && BX_PCI_VGA_SUPPORT
+#endif // BX_SUPPORT_PCI && BX_SUPPORT_PCIVGA

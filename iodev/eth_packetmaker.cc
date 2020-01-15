@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_packetmaker.cc,v 1.8 2002/11/20 19:06:23 bdenney Exp $
+// $Id: eth_packetmaker.cc,v 1.13 2004/10/03 20:02:09 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -7,15 +7,16 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
+#include "iodev.h"
 
-#if BX_NE2K_SUPPORT && defined(ETH_ARPBACK)
+#if BX_NETWORKING && defined(ETH_ARPBACK)
 
 #include "eth_packetmaker.h"
 
 
 bx_bool sendable(const eth_packet& outpacket) {
   //FINISH ME!
+  return 0;
 }
 
 Bit32u eth_IPmaker::datalen(const eth_packet& outpacket) {
@@ -72,8 +73,7 @@ Bit32u eth_IPmaker::build_packet_header(Bit32u source, Bit32u dest, Bit8u protoc
 }
 
 Bit8u eth_IPmaker::protocol(const eth_packet& outpacket) {
-  Bit8u out;
-  out=0xFF & *(outpacket.buf+23);
+  return (*(outpacket.buf+23) & 0xff);
 }
 
 Bit32u eth_IPmaker::source(const eth_packet& outpacket) {
@@ -112,7 +112,7 @@ bx_bool
 eth_ETHmaker::ishandler(const eth_packet& outpacket) {
   if((outpacket.len>=60) &&
      ( (!memcmp(outpacket.buf, external_mac, 6))
-       || (!memcmp(outpacket.buf, broadcast_mac, 6)) ) &&
+       || (!memcmp(outpacket.buf, broadcast_macaddr, 6)) ) &&
      ( (!memcmp(outpacket.buf+12, ethtype_arp, 2)) ||
        (!memcmp(outpacket.buf+12, ethtype_ip, 2)) ) &&
      (outpacket.len<PACKET_BUF_SIZE)
@@ -152,7 +152,7 @@ eth_ARPmaker::ishandler(const eth_packet& outpacket) {
      (!memcmp(outpacket.buf+12, ethtype_arp, 2)) &&
      (outpacket.len<PACKET_BUF_SIZE) &&
      ( (!memcmp(outpacket.buf, external_mac, 6))
-       || (!memcmp(outpacket.buf, broadcast_mac, 6)) ) &&
+       || (!memcmp(outpacket.buf, broadcast_macaddr, 6)) ) &&
      (!memcmp(outpacket.buf+38, external_ip, 4))
      ) {
     return 1;
@@ -165,7 +165,7 @@ eth_ARPmaker::sendpacket(const eth_packet& outpacket) {
   if(is_pending || !ishandler(outpacket)) {
     return 0;
   } else {
-    Bit32u tempcrc;
+    //Bit32u tempcrc;
     memcpy(pending.buf,outpacket.buf,outpacket.len); //move to temporary buffer
     memcpy(pending.buf, pending.buf+6, 6); //set destination to sender
     memcpy(pending.buf+6, external_mac, 6); //set sender to us
@@ -181,4 +181,4 @@ eth_ARPmaker::sendpacket(const eth_packet& outpacket) {
   }
 }
 
-#endif /* if BX_NE2K_SUPPORT && defined(ETH_ARPBACK) */
+#endif /* if BX_NETWORKING && defined(ETH_ARPBACK) */

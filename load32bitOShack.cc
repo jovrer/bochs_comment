@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: load32bitOShack.cc,v 1.14 2003/08/08 00:05:53 cbothamy Exp $
+// $Id: load32bitOShack.cc,v 1.16 2005/01/19 18:20:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -28,6 +28,7 @@
 
 
 #include "bochs.h"
+#include "iodev/iodev.h"
 #define LOG_THIS genlog->
 
 
@@ -282,7 +283,7 @@ bx_load_kernel_image(char *path, Bit32u paddr)
     BX_EXIT(1);
     }
 
-  size = stat_buf.st_size;
+  size = (unsigned long)stat_buf.st_size;
   page_size = ((Bit32u)size + 0xfff) & ~0xfff;
 
   BX_MEM_C *mem = BX_MEM(0);

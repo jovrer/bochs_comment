@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: i387.h,v 1.29 2005/05/12 18:07:41 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//   Copyright (c) 2004 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -19,209 +21,227 @@
 //
 
 
-
-#ifndef BX_I387_RELATED_EXTENSIONS_H
-#define BX_I387_RELATED_EXTENSIONS_H
+#ifndef _BX_I387_RELATED_EXTENSIONS_H_
+#define _BX_I387_RELATED_EXTENSIONS_H_
 
 #if BX_SUPPORT_FPU
+
+#include "fpu/softfloat.h"
+
+#define BX_FPU_REG(index) \
+    (BX_CPU_THIS_PTR the_i387.st_space[index])
+
+#if defined(NEED_CPU_REG_SHORTCUTS)
+#define FPU_PARTIAL_STATUS     (BX_CPU_THIS_PTR the_i387.swd)
+#define FPU_CONTROL_WORD       (BX_CPU_THIS_PTR the_i387.cwd)
+#define FPU_TAG_WORD           (BX_CPU_THIS_PTR the_i387.twd)
+#define FPU_TOS                (BX_CPU_THIS_PTR the_i387.tos)
+#endif
+
+#include "fpu/tag_w.h"
+#include "fpu/status_w.h"
+#include "fpu/control_w.h"
+
+extern int FPU_tagof(const floatx80 &reg);
 
 //
 // Minimal i387 structure
 //
 struct i387_t 
 {
-    Bit32u cwd;		 // control word
-    Bit32u swd;		 // status word
-    Bit32u twd;		 // tag word
-    Bit32u fip;
-    Bit32u fcs;
-    Bit32u foo;
-    Bit32u fos;
+    i387_t() {}
+
+public:
+    void	init();		// used by FINIT/FNINIT instructions
+    void	reset();	// called on CPU reset
+
+    int 	is_IA_masked() const { return (cwd & FPU_CW_Invalid); }
+
+    Bit16u 	get_control_word() const { return cwd; }
+    Bit16u 	get_tag_word() const { return twd; }
+    Bit16u 	get_status_word() const { return (swd & ~FPU_SW_Top & 0xFFFF) | ((tos << 11) & FPU_SW_Top); }
+    Bit16u 	get_partial_status() const { return swd; }
+
+    void   	FPU_pop ();
+    void   	FPU_push();
+
+    void   	FPU_settagi(int tag, int stnr);
+    int    	FPU_gettagi(int stnr);
+
+    floatx80 	FPU_read_regi(int stnr) { return st_space[(tos+stnr) & 7]; }
+    void  	FPU_save_regi(floatx80 reg, int tag, int stnr);
+    void  	FPU_save_regi(floatx80 reg, int stnr) { FPU_save_regi(reg, FPU_tagof(reg), stnr); }
+
+public:
+    Bit16u cwd; 	// control word
+    Bit16u swd; 	// status word
+    Bit16u twd;		// tag word
+    Bit16u foo; 	// last instruction opcode
+
+    bx_address fip;
+    bx_address fdp;
+    Bit16u fcs;
+    Bit16u fds;
+
+    floatx80 st_space[8];
 
     unsigned char tos;
-    unsigned char no_update;
-    unsigned char rm;
-    unsigned align8;
-
-    Bit64u st_space[16]; // 8*16 bytes per FP-reg (aligned) = 128 bytes
+    unsigned char align1;
+    unsigned char align2;
+    unsigned char align3;
 };
 
-// Endian  Host byte order         Guest (x86) byte order
-// ======================================================
-// Little  FFFFFFFFEEAAAAAA        FFFFFFFFEEAAAAAA
-// Big     AAAAAAEEFFFFFFFF        FFFFFFFFEEAAAAAA
-//
-// Legend: F - fraction/mmx
-//         E - exponent
-//         A - alignment
+#define IS_TAG_EMPTY(i) 		                                \
+  ((BX_CPU_THIS_PTR the_i387.FPU_gettagi(i)) == FPU_Tag_Empty)
 
-#ifdef BX_BIG_ENDIAN
-#if defined(__MWERKS__) && defined(macintosh)
-#pragma options align=mac68k
-#endif
-struct bx_fpu_reg_t {
-  Bit16u alignment1, alignment2, alignment3;
-  Bit16s exp;   /* Signed quantity used in internal arithmetic. */
-  Bit32u sigh;
-  Bit32u sigl;
-} GCC_ATTRIBUTE((aligned(16), packed));
-#if defined(__MWERKS__) && defined(macintosh)
-#pragma options align=reset
-#endif
-#else
-struct bx_fpu_reg_t {
-  Bit32u sigl;
-  Bit32u sigh;
-  Bit16s exp;   /* Signed quantity used in internal arithmetic. */
-  Bit16u alignment1, alignment2, alignment3;
-} GCC_ATTRIBUTE((aligned(16), packed));
-#endif
+#define BX_READ_FPU_REG(i)		                                \
+  (BX_CPU_THIS_PTR the_i387.FPU_read_regi(i))
 
-typedef struct bx_fpu_reg_t FPU_REG;
+#define BX_WRITE_FPU_REGISTER_AND_TAG(value, tag, i)                    \
+    BX_CPU_THIS_PTR the_i387.FPU_save_regi((value), (tag), (i));
 
-#define BX_FPU_REG(index) \
-    (BX_CPU_THIS_PTR the_i387.st_space[index*2])
+#define BX_WRITE_FPU_REG(value, i)                                      \
+    BX_CPU_THIS_PTR the_i387.FPU_save_regi((value), (i));
 
-#define FPU_PARTIAL_STATUS     (BX_CPU_THIS_PTR the_i387.swd)
-#define FPU_TAG_WORD           (BX_CPU_THIS_PTR the_i387.twd)
-#define FPU_TOS                (BX_CPU_THIS_PTR the_i387.tos)
-
-#define FPU_SW_SUMMARY         (0x0080)		/* exception summary */
-
-#ifdef __cplusplus
-extern "C" 
+BX_CPP_INLINE int i387_t::FPU_gettagi(int stnr)
 {
-#endif
-  int FPU_tagof(FPU_REG *reg) BX_CPP_AttrRegparmN(1);
-#ifdef __cplusplus
+  return (twd >> (((stnr+tos) & 7)*2)) & 3;
 }
-#endif
+
+BX_CPP_INLINE void i387_t::FPU_settagi(int tag, int stnr)
+{
+  int regnr = (stnr + tos) & 7;
+  twd &= ~(3 << (regnr*2));
+  twd |= (tag & 3) << (regnr*2);
+}
+
+BX_CPP_INLINE void i387_t::FPU_push(void)
+{
+  tos--;
+}
+
+BX_CPP_INLINE void i387_t::FPU_pop(void)
+{
+  twd |= 3 << ((tos & 7)*2);
+  tos++;
+}
+
+BX_CPP_INLINE void i387_t::FPU_save_regi(floatx80 reg, int tag, int stnr)
+{
+  st_space[(stnr+tos) & 7] = reg;
+  FPU_settagi(tag, stnr);
+}
+
+#include <string.h>
+
+BX_CPP_INLINE void i387_t::init()
+{
+  cwd = 0x037F;
+  swd = 0;
+  tos = 0;
+  twd = 0xFFFF;
+  foo = 0;
+  fip = 0;
+  fcs = 0;
+  fds = 0;
+  fdp = 0;
+}
+
+BX_CPP_INLINE void i387_t::reset()
+{
+  cwd = 0x0040;
+  swd = 0;
+  tos = 0;
+  twd = 0x5555;
+  foo = 0;
+  fip = 0;
+  fcs = 0;
+  fds = 0;
+  fdp = 0;
+
+  memset(st_space, 0, sizeof(floatx80)*8);
+}
 
 #if BX_SUPPORT_MMX
 
-typedef union {
-  Bit8u u8;
-  Bit8s s8;
-} MMX_BYTE;
+typedef union bx_packed_mmx_reg_t {
+   Bit8s   _sbyte[8];
+   Bit16s  _s16[4];
+   Bit32s  _s32[2];
+   Bit64s  _s64;
+   Bit8u   _ubyte[8];
+   Bit16u  _u16[4];
+   Bit32u  _u32[2];
+   Bit64u  _u64;
+} BxPackedMmxRegister;
 
-typedef union {
-  Bit16u u16;
-  Bit16s s16;
-  struct {
 #ifdef BX_BIG_ENDIAN
-    MMX_BYTE hi;
-    MMX_BYTE lo;
+#define mmx64s(i)   _s64
+#define mmx32s(i)   _s32[1 - (i)]
+#define mmx16s(i)   _s16[3 - (i)]
+#define mmxsbyte(i) _sbyte[7 - (i)]
+#define mmxubyte(i) _ubyte[7 - (i)]
+#define mmx16u(i)   _u16[3 - (i)]
+#define mmx32u(i)   _u32[1 - (i)]
+#define mmx64u      _u64
 #else
-    MMX_BYTE lo;
-    MMX_BYTE hi;
+#define mmx64s(i)   _s64
+#define mmx32s(i)   _s32[(i)]
+#define mmx16s(i)   _s16[(i)]
+#define mmxsbyte(i) _sbyte[(i)]
+#define mmxubyte(i) _ubyte[(i)]
+#define mmx16u(i)   _u16[(i)]
+#define mmx32u(i)   _u32[(i)]
+#define mmx64u      _u64
 #endif
-  } bytes;
-} MMX_WORD;
 
-typedef union {
-  Bit32u u32;
-  Bit32s s32;
-  struct {
-#ifdef BX_BIG_ENDIAN
-    MMX_WORD hi;
-    MMX_WORD lo;
-#else
-    MMX_WORD lo;
-    MMX_WORD hi;
-#endif
-  } words;
-} MMX_DWORD;
+/* for compatability with already written code */
+#define MMXSB0(reg) (reg.mmxsbyte(0))
+#define MMXSB1(reg) (reg.mmxsbyte(1))
+#define MMXSB2(reg) (reg.mmxsbyte(2))
+#define MMXSB3(reg) (reg.mmxsbyte(3))
+#define MMXSB4(reg) (reg.mmxsbyte(4))
+#define MMXSB5(reg) (reg.mmxsbyte(5))
+#define MMXSB6(reg) (reg.mmxsbyte(6))
+#define MMXSB7(reg) (reg.mmxsbyte(7))
 
-typedef union {
-  Bit64u u64;
-  Bit64s s64;
-  struct {
-#ifdef BX_BIG_ENDIAN
-    MMX_DWORD hi;
-    MMX_DWORD lo;
-#else
-    MMX_DWORD lo;
-    MMX_DWORD hi;
-#endif
-  } dwords;
-} MMX_QWORD, BxPackedMmxRegister;
+#define MMXSW0(reg) (reg.mmx16s(0))
+#define MMXSW1(reg) (reg.mmx16s(1))
+#define MMXSW2(reg) (reg.mmx16s(2))
+#define MMXSW3(reg) (reg.mmx16s(3))
 
-#define MMXSB0(reg) (reg.dwords.lo.words.lo.bytes.lo.s8)
-#define MMXSB1(reg) (reg.dwords.lo.words.lo.bytes.hi.s8)
-#define MMXSB2(reg) (reg.dwords.lo.words.hi.bytes.lo.s8)
-#define MMXSB3(reg) (reg.dwords.lo.words.hi.bytes.hi.s8)
-#define MMXSB4(reg) (reg.dwords.hi.words.lo.bytes.lo.s8)
-#define MMXSB5(reg) (reg.dwords.hi.words.lo.bytes.hi.s8)
-#define MMXSB6(reg) (reg.dwords.hi.words.hi.bytes.lo.s8)
-#define MMXSB7(reg) (reg.dwords.hi.words.hi.bytes.hi.s8)
+#define MMXSD0(reg) (reg.mmx32s(0))
+#define MMXSD1(reg) (reg.mmx32s(1))
 
-#define MMXUB0(reg) (reg.dwords.lo.words.lo.bytes.lo.u8)
-#define MMXUB1(reg) (reg.dwords.lo.words.lo.bytes.hi.u8)
-#define MMXUB2(reg) (reg.dwords.lo.words.hi.bytes.lo.u8)
-#define MMXUB3(reg) (reg.dwords.lo.words.hi.bytes.hi.u8)
-#define MMXUB4(reg) (reg.dwords.hi.words.lo.bytes.lo.u8)
-#define MMXUB5(reg) (reg.dwords.hi.words.lo.bytes.hi.u8)
-#define MMXUB6(reg) (reg.dwords.hi.words.hi.bytes.lo.u8)
-#define MMXUB7(reg) (reg.dwords.hi.words.hi.bytes.hi.u8)
-
-#define MMXSW0(reg) (reg.dwords.lo.words.lo.s16)
-#define MMXSW1(reg) (reg.dwords.lo.words.hi.s16)
-#define MMXSW2(reg) (reg.dwords.hi.words.lo.s16)
-#define MMXSW3(reg) (reg.dwords.hi.words.hi.s16)
-
-#define MMXUW0(reg) (reg.dwords.lo.words.lo.u16)
-#define MMXUW1(reg) (reg.dwords.lo.words.hi.u16)
-#define MMXUW2(reg) (reg.dwords.hi.words.lo.u16)
-#define MMXUW3(reg) (reg.dwords.hi.words.hi.u16)
+#define MMXSQ(reg)  (reg.mmx64s)
+#define MMXUQ(reg)  (reg.mmx64u)
                                 
-#define MMXSD0(reg) (reg.dwords.lo.s32)
-#define MMXSD1(reg) (reg.dwords.hi.s32)
+#define MMXUD0(reg) (reg.mmx32u(0))
+#define MMXUD1(reg) (reg.mmx32u(1))
 
-#define MMXUD0(reg) (reg.dwords.lo.u32)
-#define MMXUD1(reg) (reg.dwords.hi.u32)
+#define MMXUW0(reg) (reg.mmx16u(0))
+#define MMXUW1(reg) (reg.mmx16u(1))
+#define MMXUW2(reg) (reg.mmx16u(2))
+#define MMXUW3(reg) (reg.mmx16u(3))
 
-#define MMXSQ(reg)  (reg.s64)
-#define MMXUQ(reg)  (reg.u64)
+#define MMXUB0(reg) (reg.mmxubyte(0))
+#define MMXUB1(reg) (reg.mmxubyte(1))
+#define MMXUB2(reg) (reg.mmxubyte(2))
+#define MMXUB3(reg) (reg.mmxubyte(3))
+#define MMXUB4(reg) (reg.mmxubyte(4))
+#define MMXUB5(reg) (reg.mmxubyte(5))
+#define MMXUB6(reg) (reg.mmxubyte(6))
+#define MMXUB7(reg) (reg.mmxubyte(7))
 
-// Endian  Host byte order         Guest (x86) byte order
-// ======================================================
-// Little  FFFFFFFFEEAAAAAA        FFFFFFFFEEAAAAAA
-// Big     AAAAAAEEFFFFFFFF        FFFFFFFFEEAAAAAA
-//
-// Legend: F - fraction/mmx
-//         E - exponent
-//         A - alignment
-
-#ifdef BX_BIG_ENDIAN
-#if defined(__MWERKS__) && defined(macintosh)
-#pragma options align=mac68k
-#endif
-struct bx_mmx_reg_t {
-   Bit16u alignment1, alignment2, alignment3; 
-   Bit16u exp; /* 2 byte FP-reg exponent */
-   BxPackedMmxRegister packed_mmx_register;
-} GCC_ATTRIBUTE((aligned(16), packed));
-#if defined(__MWERKS__) && defined(macintosh)
-#pragma options align=reset
-#endif
-#else
-struct bx_mmx_reg_t {
-   BxPackedMmxRegister packed_mmx_register;
-   Bit16u exp; /* 2 byte FP reg exponent */
-   Bit16u alignment1, alignment2, alignment3; 
-} GCC_ATTRIBUTE((aligned(16), packed));
-#endif
-
-#define BX_MMX_REG(index) 						\
-    (((bx_mmx_reg_t*)(BX_CPU_THIS_PTR the_i387.st_space))[index])
+#define BX_MMX_REG(index) (BX_FPU_REG(index).fraction)
 
 #define BX_READ_MMX_REG(index) 						\
-    ((BX_MMX_REG(index)).packed_mmx_register)
+    (*((const BxPackedMmxRegister*)(&(BX_MMX_REG(index)))))
 
 #define BX_WRITE_MMX_REG(index, value)            			\
 {                                 					\
-   (BX_MMX_REG(index)).packed_mmx_register = value;			\
-   (BX_MMX_REG(index)).exp = 0xffff;       				\
+   (BX_FPU_REG(index)).fraction = MMXUQ(value);				\
+   (BX_FPU_REG(index)).exp = 0xffff;       				\
 }                                                      
 
 #endif 		/* BX_SUPPORT_MMX */

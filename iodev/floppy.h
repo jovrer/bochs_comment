@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h,v 1.16 2002/11/30 09:39:29 vruppert Exp $
+// $Id: floppy.h,v 1.19 2005/03/11 21:12:54 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -45,6 +45,10 @@ typedef struct {
   unsigned heads;      /* number of heads */
   unsigned type;
   unsigned write_protected;
+  unsigned char raw_floppy_win95;
+#ifdef WIN32
+  unsigned char raw_floppy_win95_drv;
+#endif
   } floppy_t;
 
 class bx_floppy_ctrl_c : public bx_floppy_stub_c {
@@ -114,6 +118,8 @@ private:
     Bit8u    DIR[4]; // Digital Input Register:
                   // b7: 0=diskette is present and has not been changed
                   //     1=diskette missing or changed
+    bx_bool  non_dma;
+    int      statusbar_id[2]; // IDs of the status LEDs
     } s;  // state information
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
@@ -127,12 +133,56 @@ private:
   BX_FD_SMF void   floppy_command(void);
   BX_FD_SMF void   floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer, Bit32u bytes, Bit8u direction);
   BX_FD_SMF void   raise_interrupt(void);
+  BX_FD_SMF void   lower_interrupt(void);
   BX_FD_SMF void   enter_idle_phase(void);
   BX_FD_SMF void   enter_result_phase(void);
-  static void   timer_handler(void *);
+  static void      timer_handler(void *);
 
 public:
   BX_FD_SMF void   timer(void);
   BX_FD_SMF void   increment_sector(void);
   BX_FD_SMF bx_bool evaluate_media(unsigned type, char *path, floppy_t *floppy);
   };
+
+
+#ifdef WIN32
+
+// used for direct floppy access in Win95
+#define  VWIN32_DIOC_DOS_IOCTL  1
+#define  VWIN32_DIOC_DOS_INT25  2
+#define  VWIN32_DIOC_DOS_INT26  3
+
+typedef struct _DIOC_REGISTERS {
+    DWORD reg_EBX;
+    DWORD reg_EDX;
+    DWORD reg_ECX;
+    DWORD reg_EAX;
+    DWORD reg_EDI;
+    DWORD reg_ESI;
+    DWORD reg_Flags;
+} DIOC_REGISTERS, *PDIOC_REGISTERS;
+
+#pragma pack(push, 1)
+typedef struct _BLOCK_DEV_PARAMS {
+    BYTE  features;
+    BYTE  dev_type;
+    WORD  attribs;
+    WORD  cylinders;
+    BYTE  media_type;
+    // BPB
+    WORD  bytes_per_sector;
+    BYTE  sect_per_cluster;
+    WORD  reserved_sectors;
+    BYTE  fats;
+    WORD  root_entries;
+    WORD  tot_sectors;
+    BYTE  media_id;
+    WORD  sects_per_fat;
+    WORD  sects_per_track;
+    WORD  num_heads;
+    WORD  hidden_sectors;
+    BYTE  remainder[5];
+} BLOCK_DEV_PARAMS, *PBLOCK_DEV_PARAMS;
+#pragma pack(pop)
+
+#endif

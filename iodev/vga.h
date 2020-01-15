@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.h,v 1.36 2003/12/31 10:33:27 vruppert Exp $
+// $Id: vga.h,v 1.46 2005/03/18 14:52:29 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,6 +24,25 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+// Make colour
+#define MAKE_COLOUR(red, red_shiftfrom, red_shiftto, red_mask, \
+                    green, green_shiftfrom, green_shiftto, green_mask, \
+                    blue, blue_shiftfrom, blue_shiftto, blue_mask) \
+( \
+ ((((red_shiftto) > (red_shiftfrom)) ? \
+  (red) << ((red_shiftto) - (red_shiftfrom)) : \
+  (red) >> ((red_shiftfrom) - (red_shiftto))) & \
+  (red_mask)) | \
+ ((((green_shiftto) > (green_shiftfrom)) ? \
+  (green) << ((green_shiftto) - (green_shiftfrom)) : \
+  (green) >> ((green_shiftfrom) - (green_shiftto))) & \
+  (green_mask)) | \
+ ((((blue_shiftto) > (blue_shiftfrom)) ? \
+  (blue) << ((blue_shiftto) - (blue_shiftfrom)) : \
+  (blue) >> ((blue_shiftfrom) - (blue_shiftto))) & \
+  (blue_mask)) \
+)
+
 #if BX_SUPPORT_VBE
   #define VBE_DISPI_TOTAL_VIDEO_MEMORY_MB 4
 
@@ -32,6 +51,7 @@
 
   #define VBE_DISPI_MAX_XRES              1024
   #define VBE_DISPI_MAX_YRES              768
+  #define VBE_DISPI_MAX_BPP               32
 
   #define VBE_DISPI_IOPORT_INDEX          0x01CE
   #define VBE_DISPI_IOPORT_DATA           0x01CF
@@ -53,6 +73,7 @@
   #define VBE_DISPI_ID0                   0xB0C0
   #define VBE_DISPI_ID1                   0xB0C1
   #define VBE_DISPI_ID2                   0xB0C2
+  #define VBE_DISPI_ID3                   0xB0C3
 
   #define VBE_DISPI_BPP_4                 0x04
   #define VBE_DISPI_BPP_8                 0x08
@@ -63,8 +84,10 @@
 
   #define VBE_DISPI_DISABLED              0x00
   #define VBE_DISPI_ENABLED               0x01
-  #define VBE_DISPI_NOCLEARMEM            0x80
+  #define VBE_DISPI_GETCAPS               0x02
+  #define VBE_DISPI_8BIT_DAC              0x20
   #define VBE_DISPI_LFB_ENABLED           0x40
+  #define VBE_DISPI_NOCLEARMEM            0x80
 
   #define VBE_DISPI_LFB_PHYSICAL_ADDRESS  0xE0000000
 
@@ -74,6 +97,11 @@
 
 #define BX_MAX_XRES VBE_DISPI_MAX_XRES
 #define BX_MAX_YRES VBE_DISPI_MAX_YRES
+
+#elif BX_SUPPORT_CLGD54XX
+
+#define BX_MAX_XRES 1280
+#define BX_MAX_YRES 1024
 
 #else
 
@@ -107,11 +135,12 @@ public:
   ~bx_vga_c(void);
   virtual void   init(void);
   virtual void   reset(unsigned type);
+  BX_VGA_SMF bx_bool mem_read_handler(unsigned long addr, unsigned long len, void *data, void *param);
+  BX_VGA_SMF bx_bool mem_write_handler(unsigned long addr, unsigned long len, void *data, void *param);
   virtual Bit8u  mem_read(Bit32u addr);
-  // Note: either leave value of type Bit8u, or mask it when
-  //       used to 8 bits, in memory.cc
   virtual void   mem_write(Bit32u addr, Bit8u value);
   virtual void   trigger_timer(void *this_ptr);
+  virtual void   dump_status(void);
 
 #if BX_SUPPORT_VBE
   BX_VGA_SMF Bit8u  vbe_mem_read(Bit32u addr) BX_CPP_AttrRegparmN(1);
@@ -126,7 +155,9 @@ public:
                                    unsigned *txWidth);
   virtual Bit8u  get_actl_palette_idx(Bit8u index);
 
-private:
+protected:
+  void init_iohandlers(bx_read_handler_t f_read, bx_write_handler_t f_write);
+  void init_systemtimer(bx_timer_handler_t f_timer);
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -157,6 +188,7 @@ private:
     struct {
       Bit8u   address;
       Bit8u   reg[0x19];
+      bx_bool write_protect;
       } CRTC;
 
     struct {
@@ -239,7 +271,7 @@ private:
     unsigned vertical_display_end;
     bx_bool  vga_tile_updated[BX_NUM_X_TILES][BX_NUM_Y_TILES];
     Bit8u vga_memory[256 * 1024];
-    Bit8u text_snapshot[32 * 1024]; // current text snapshot
+    Bit8u text_snapshot[128 * 1024]; // current text snapshot
     Bit8u rgb[3 * 256];
     Bit8u tile[X_TILESIZE * Y_TILESIZE * 4]; /**< Currently allocates the tile as large as needed. */
     Bit16u charmap_address;
@@ -252,18 +284,22 @@ private:
     Bit16u  vbe_xres;
     Bit16u  vbe_yres;
     Bit16u  vbe_bpp;
+    Bit16u  vbe_max_xres;
+    Bit16u  vbe_max_yres;
+    Bit16u  vbe_max_bpp;
     Bit16u  vbe_bank;
     bx_bool vbe_enabled;
     Bit16u  vbe_curindex;
-    Bit32u  vbe_visable_screen_size; /**< in bytes */
+    Bit32u  vbe_visible_screen_size; /**< in bytes */
     Bit16u  vbe_offset_x;		 /**< Virtual screen x start (in pixels) */ 
     Bit16u  vbe_offset_y;		 /**< Virtual screen y start (in pixels) */
     Bit16u  vbe_virtual_xres;
     Bit16u  vbe_virtual_yres;
-    Bit16u  vbe_line_byte_width; /**< For dealing with bpp>8, this is they width of a line in bytes. */
     Bit32u  vbe_virtual_start;   /**< For dealing with bpp>8, this is where the virtual screen starts. */
     Bit8u   vbe_bpp_multiplier;  /**< We have to save this b/c sometimes we need to recalculate stuff with it. */
     bx_bool vbe_lfb_enabled;
+    bx_bool vbe_get_capabilities;
+    bx_bool vbe_8bit_dac;
 #endif    
     } s;  // state information
 
@@ -286,14 +322,21 @@ private:
 #endif
 
   int timer_id;
+  bx_bool extension_init;
+  bx_bool extension_checked;
 
   public:
-  static void   timer_handler(void *);
-  BX_VGA_SMF void   timer(void);
+  static void     timer_handler(void *);
+  BX_VGA_SMF void timer(void);
 
-  private:
-  BX_VGA_SMF void   update(void);
-  BX_VGA_SMF void   dump_status(void);
+  protected:
+  BX_VGA_SMF void update(void);
   BX_VGA_SMF void determine_screen_dimensions(unsigned *piHeight,
                                               unsigned *piWidth);
   };
+
+#if BX_SUPPORT_CLGD54XX
+  void
+libvga_set_smf_pointer(bx_vga_c *theVga_ptr);
+#include "iodev/svga_cirrus.h"
+#endif // BX_SUPPORT_CLGD54XX

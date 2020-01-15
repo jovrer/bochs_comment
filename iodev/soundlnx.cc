@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundlnx.cc,v 1.6 2002/12/24 10:12:26 vruppert Exp $
+// $Id: soundlnx.cc,v 1.9 2004/09/11 15:39:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,9 +27,11 @@
 // This file (SOUNDLNX.CC) written and donated by Josef Drexler
 
 
-#include "bochs.h"
-#if (defined(linux) || defined(__FreeBSD__)) && BX_SUPPORT_SB16
+#include "iodev.h"
+#if (defined(linux) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__)) && BX_SUPPORT_SB16
 #define LOG_THIS bx_sb16.
+
+#include "soundlnx.h"
 
 #include <errno.h>
 #include <sys/ioctl.h>

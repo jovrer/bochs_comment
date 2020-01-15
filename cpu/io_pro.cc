@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io_pro.cc,v 1.13.2.1 2004/02/06 01:11:49 cbothamy Exp $
+// $Id: io_pro.cc,v 1.16 2005/03/09 22:01:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,16 +25,10 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
-
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "iodev/iodev.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
-
 
 
   Bit16u BX_CPP_AttrRegparmN(1)
@@ -44,11 +38,10 @@ BX_CPU_C::inp16(Bit16u addr)
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM () || (CPL>BX_CPU_THIS_PTR get_IOPL ()))) {
     if ( !BX_CPU_THIS_PTR allow_io(addr, 2) ) {
-      // BX_INFO(("cpu_inp16: GP0()!"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return(0);
-      }
     }
+  }
 
   ret16 = BX_INP(addr, 2);
   return( ret16 );
@@ -63,11 +56,10 @@ BX_CPU_C::outp16(Bit16u addr, Bit16u value)
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
     if ( !BX_CPU_THIS_PTR allow_io(addr, 2) ) {
-      // BX_INFO(("cpu_outp16: GP0()!"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
-      }
     }
+  }
 
   BX_OUTP(addr, value, 2);
 }
@@ -79,11 +71,10 @@ BX_CPU_C::inp32(Bit16u addr)
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
     if ( !BX_CPU_THIS_PTR allow_io(addr, 4) ) {
-      // BX_INFO(("cpu_inp32: GP0()!"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return(0);
-      }
     }
+  }
 
   ret32 = BX_INP(addr, 4);
   return( ret32 );
@@ -98,11 +89,10 @@ BX_CPU_C::outp32(Bit16u addr, Bit32u value)
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
     if ( !BX_CPU_THIS_PTR allow_io(addr, 4) ) {
-      // BX_INFO(("cpu_outp32: GP0()!"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
-      }
     }
+  }
 
   BX_OUTP(addr, value, 4);
 }
@@ -114,11 +104,10 @@ BX_CPU_C::inp8(Bit16u addr)
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
     if ( !BX_CPU_THIS_PTR allow_io(addr, 1) ) {
-      // BX_INFO(("cpu_inp8: GP0()!"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return(0);
-      }
     }
+  }
 
   ret8 = BX_INP(addr, 1);
   return( ret8 );
@@ -134,11 +123,10 @@ BX_CPU_C::outp8(Bit16u addr, Bit8u value)
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
     if ( !BX_CPU_THIS_PTR allow_io(addr, 1) ) {
-      // BX_INFO(("cpu_outp8: GP0()!"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
-      }
     }
+  }
 
   BX_OUTP(addr, value, 1);
 }
@@ -153,30 +141,29 @@ BX_CPU_C::allow_io(Bit16u addr, unsigned len)
   if (BX_CPU_THIS_PTR tr.cache.valid==0 || BX_CPU_THIS_PTR tr.cache.type!=9) {
     BX_INFO(("allow_io(): TR doesn't point to a valid 32bit TSS"));
     return(0);
-    }
+  }
 
   if (BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled < 103) {
     BX_PANIC(("allow_io(): TR.limit < 103"));
-    }
+  }
 
-  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + 102, 2, 0, BX_READ,
-                         &io_base);
+  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + 102, 
+                   2, 0, BX_READ, &io_base);
+
   if (io_base <= 103) {
-BX_INFO(("PE is %u", BX_CPU_THIS_PTR cr0.pe));
-BX_INFO(("VM is %u", BX_CPU_THIS_PTR getB_VM ()));
-BX_INFO(("CPL is %u", CPL));
-BX_INFO(("IOPL is %u", BX_CPU_THIS_PTR get_IOPL ()));
-BX_INFO(("addr is %u", addr));
-BX_INFO(("len is %u", len));
-    BX_PANIC(("allow_io(): TR:io_base (%u) <= 103",io_base));
-    return(0);
-    }
+     BX_INFO(("PE is %u", BX_CPU_THIS_PTR cr0.pe));
+     BX_INFO(("VM is %u", BX_CPU_THIS_PTR getB_VM ()));
+     BX_INFO(("CPL is %u, IOPL is %u", CPL, BX_CPU_THIS_PTR get_IOPL ()));
+     BX_INFO(("addr is %u, len = %u", addr, len));
+     BX_PANIC(("allow_io(): TR:io_base (%u) <= 103",io_base));
+     return(0);
+  }
 
   if ( (Bit32s) (addr/8) >= (Bit32s) (BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled - io_base)) {
     BX_INFO(("allow_io(): IO addr %x (len %d) outside TSS IO permission map (base=%x, limit=%x) #GP(0)",
       addr, len, io_base, BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled));
     return(0);
-   }
+  }
 
   access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + io_base + addr/8,
                    2, 0, BX_READ, &permission16);
@@ -187,7 +174,7 @@ BX_INFO(("len is %u", len));
     if (permission16 & 0x01)
       return(0);
     permission16 >>= 1;
-    }
+  }
 
   return(1);
 }

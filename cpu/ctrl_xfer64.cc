@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc,v 1.23 2003/12/29 21:47:36 sshwarts Exp $
+// $Id: ctrl_xfer64.cc,v 1.34 2005/05/19 18:13:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -33,12 +33,8 @@
 
 #if BX_SUPPORT_X86_64
 
-
-  void
-BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
+void BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
 {
-  Bit16u imm16;
-  Bit64u temp_RSP;
   Bit64u return_RIP;
 
   //invalidate_prefetch_q();
@@ -47,34 +43,26 @@ BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  temp_RSP = RSP;
+  Bit64u temp_RSP = RSP;
+  Bit16u imm16 = i->Iw();
 
-  imm16 = i->Iw();
-
-  //if ( !can_pop(8) ) {
-  //  BX_PANIC(("retnear_iw: can't pop RIP"));
-  //  /* ??? #SS(0) -or #GP(0) */
-  //  }
-
-  access_linear(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base + temp_RSP + 0,
+  access_linear(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + temp_RSP,
     8, CPL==3, BX_READ, &return_RIP);
 
-  /* Pentium book says imm16 is number of words ??? */
-  //if ( !can_pop(8 + imm16) ) {
-  //  BX_PANIC(("retnear_iw: can't release bytes from stack"));
-  //  /* #GP(0) -or #SS(0) ??? */
-  //  }
+  if (! IsCanonical(return_RIP))
+  {
+    BX_INFO(("RETnear64_Iw: canonical RIP violation"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
   RIP = return_RIP;
-  RSP += 8 + imm16; /* ??? should it be 2*imm16 ? */
+  RSP += 8 + imm16;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::RETnear64(bxInstruction_c *i)
+void BX_CPU_C::RETnear64(bxInstruction_c *i)
 {
-  Bit64u temp_RSP;
   Bit64u return_RIP;
 
   //invalidate_prefetch_q();
@@ -83,15 +71,16 @@ BX_CPU_C::RETnear64(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  temp_RSP = RSP;
+  Bit64u temp_RSP = RSP;
 
-  //if ( !can_pop(8) ) {
-  //  BX_PANIC(("retnear: can't pop RIP"));
-  //  /* ??? #SS(0) -or #GP(0) */
-  //  }
-
-  access_linear(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base + temp_RSP + 0,
+  access_linear(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + temp_RSP,
       8, CPL==3, BX_READ, &return_RIP);
+
+  if (! IsCanonical(return_RIP))
+  {
+    BX_INFO(("RETnear64: canonical RIP violation"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
   RIP = return_RIP;
   RSP += 8;
@@ -99,38 +88,36 @@ BX_CPU_C::RETnear64(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::RETfar64_Iw(bxInstruction_c *i)
+void BX_CPU_C::RETfar64_Iw(bxInstruction_c *i)
 {
   Bit64u rip, rcs_raw;
-  Bit16s imm16;
 
   invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
-  /* ??? is imm16, number of bytes/words depending on operandsize ? */
 
-  imm16 = i->Iw();
+  Bit16u imm16 = i->Iw();
 
   if (protected_mode()) {
+    BX_PANIC(("Return protected is not implemented in x86-64 mode !"));
     BX_CPU_THIS_PTR return_protected(i, imm16);
     goto done;
-    }
+  }
 
-    pop_64(&rip);
-    pop_64(&rcs_raw);
-    RIP = rip;
-    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) rcs_raw);
-    RSP += imm16;
+  pop_64(&rip);
+  pop_64(&rcs_raw);
+  RIP = rip;
+  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) rcs_raw);
+  RSP += imm16;
+
 done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::RETfar64(bxInstruction_c *i)
+void BX_CPU_C::RETfar64(bxInstruction_c *i)
 {
   Bit64u rip, rcs_raw;
 
@@ -141,6 +128,7 @@ BX_CPU_C::RETfar64(bxInstruction_c *i)
 #endif
 
   if ( protected_mode() ) {
+    BX_PANIC(("Return protected is not implemented in x86-64 mode !"));
     BX_CPU_THIS_PTR return_protected(i, 0);
     goto done;
   }
@@ -155,11 +143,9 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::CALL_Aq(bxInstruction_c *i)
+void BX_CPU_C::CALL_Aq(bxInstruction_c *i)
 {
-  Bit64u new_RIP;
-  Bit32s disp32;
+  Bit64u new_RIP = RIP + (Bit32s) i->Id();;
 
   //invalidate_prefetch_q();
 
@@ -167,9 +153,11 @@ BX_CPU_C::CALL_Aq(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
 
-  disp32 = i->Id();
-
-  new_RIP = RIP + disp32;
+  if (! IsCanonical(new_RIP))
+  {
+    BX_INFO(("CALL_Aq: canonical RIP violation"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
   /* push 64 bit EA of next instruction */
   push_64(BX_CPU_THIS_PTR rip);
@@ -178,39 +166,8 @@ BX_CPU_C::CALL_Aq(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::CALL64_Ap(bxInstruction_c *i)
+void BX_CPU_C::CALL_Eq(bxInstruction_c *i)
 {
-  Bit16u cs_raw;
-  Bit32u disp32;
-
-  invalidate_prefetch_q();
-
-#if BX_DEBUGGER
-  BX_CPU_THIS_PTR show_flag |= Flag_call;
-#endif
-
-  disp32 = i->Id();
-  cs_raw = i->Iw2();
-
-  if (protected_mode()) {
-    BX_CPU_THIS_PTR call_protected(i, cs_raw, disp32);
-    goto done;
-    }
-  push_64(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
-  push_64(BX_CPU_THIS_PTR rip);
-  RIP = disp32;
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
-
-done:
-  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
-}
-
-  void
-BX_CPU_C::CALL_Eq(bxInstruction_c *i)
-{
-  Bit64u temp_RSP;
   Bit64u op1_64;
 
   //invalidate_prefetch_q();
@@ -219,14 +176,18 @@ BX_CPU_C::CALL_Eq(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
 
-  temp_RSP = RSP;
-
   if (i->modC0()) {
     op1_64 = BX_READ_64BIT_REG(i->rm());
-    }
+  }
   else {
     read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    }
+  }
+
+  if (! IsCanonical(op1_64))
+  {
+    BX_INFO(("CALL_Eq: canonical RIP violation"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
   push_64(BX_CPU_THIS_PTR rip);
   RIP = op1_64;
@@ -234,8 +195,7 @@ BX_CPU_C::CALL_Eq(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
+void BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
   Bit64u op1_64;
@@ -248,17 +208,19 @@ BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
 
   /* op1_64 is a register or memory reference */
   if (i->modC0()) {
-    BX_PANIC(("CALL_Ep: op1 is a register"));
-    }
+    BX_INFO(("CALL_Ep: op1 is a register"));
+    exception(BX_UD_EXCEPTION, 0, 0);
+  }
 
   /* pointer, segment address pair */
   read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
   read_virtual_word(i->seg(), RMAddr(i)+8, &cs_raw);
 
   if ( protected_mode() ) {
+    BX_PANIC(("Call protected is not implemented in x86-64 mode !"));
     BX_CPU_THIS_PTR call_protected(i, cs_raw, op1_64);
     goto done;
-    }
+  }
 
   push_64(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
   push_64(BX_CPU_THIS_PTR rip);
@@ -271,19 +233,13 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::JMP_Jq(bxInstruction_c *i)
+void BX_CPU_C::JMP_Jq(bxInstruction_c *i)
 {
-  //invalidate_prefetch_q();
-
-  RIP += (Bit32s) i->Id();
-  if (i->os32L()==0)
-    RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+  branch_near64(i);
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, RIP);
 }
 
-  void
-BX_CPU_C::JCC_Jq(bxInstruction_c *i)
+void BX_CPU_C::JCC_Jq(bxInstruction_c *i)
 {
   bx_bool condition;
 
@@ -310,25 +266,20 @@ BX_CPU_C::JCC_Jq(bxInstruction_c *i)
     default:
       condition = 0; // For compiler...all targets should set condition.
       break;
-    }
+  }
 
   if (condition) {
-
-    RIP += (Bit32s) i->Id();
-    if (i->os32L()==0)
-      RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+    branch_near64(i);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-    revalidate_prefetch_q();
-    }
+  }
 #if BX_INSTRUMENTATION
   else {
     BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-    }
+  }
 #endif
 }
 
-  void
-BX_CPU_C::JMP_Eq(bxInstruction_c *i)
+void BX_CPU_C::JMP_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64;
 
@@ -336,20 +287,23 @@ BX_CPU_C::JMP_Eq(bxInstruction_c *i)
 
   if (i->modC0()) {
     op1_64 = BX_READ_64BIT_REG(i->rm());
-    }
+  }
   else {
     read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    }
+  }
+
+  if (! IsCanonical(op1_64)) {
+    BX_INFO(("JMP_Eq: canonical RIP violation"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
   RIP = op1_64;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, RIP);
 }
 
-  /* Far indirect jump */
-
-  void
-BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
+/* Far indirect jump */
+void BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
   Bit32u op1_32;
@@ -357,8 +311,9 @@ BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
   invalidate_prefetch_q();
 
   if (i->modC0()) {
-    BX_PANIC(("JMP_Ep(): op1 is a register"));
-    }
+    BX_INFO(("JMP_Ep(): op1 is a register"));
+    exception(BX_UD_EXCEPTION, 0, 0);
+  }
 
   read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
   read_virtual_word(i->seg(), RMAddr(i)+4, &cs_raw);
@@ -366,7 +321,7 @@ BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
   if ( protected_mode() ) {
     BX_CPU_THIS_PTR jump_protected(i, cs_raw, op1_32);
     goto done;
-    }
+  }
 
   RIP = op1_32;
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
@@ -376,11 +331,8 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
 
-  void
-BX_CPU_C::IRET64(bxInstruction_c *i)
+void BX_CPU_C::IRET64(bxInstruction_c *i)
 {
-  Bit32u rip, ecs_raw, eflags;
-
   invalidate_prefetch_q();
 
 #if BX_DEBUGGER
@@ -398,139 +350,84 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
 }
 
-  void
-BX_CPU_C::JCXZ64_Jb(bxInstruction_c *i)
+void BX_CPU_C::JCXZ64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
     if ( RCX == 0 ) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
   else {
     if ( ECX == 0 ) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
+    }
   }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-  void
-BX_CPU_C::LOOPNE64_Jb(bxInstruction_c *i)
+void BX_CPU_C::LOOPNE64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-
-    if ( ((--RCX)!=0) && (get_ZF()==0) ) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+    if ( ((--RCX) != 0) && (get_ZF()==0) ) {
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
   else {
-    if ( ((--ECX)!=0) && (get_ZF()==0) ) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+    if ( ((--ECX) != 0) && (get_ZF()==0) ) {
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-  void
-BX_CPU_C::LOOPE64_Jb(bxInstruction_c *i)
+void BX_CPU_C::LOOPE64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-
     if ( ((--RCX)!=0) && (get_ZF()) ) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
   else {
-    if ( ((--ECX)!=0) && get_ZF()) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+    if (((--ECX)!=0) && get_ZF()) {
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-  void
-BX_CPU_C::LOOP64_Jb(bxInstruction_c *i)
+void BX_CPU_C::LOOP64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-
     if ((--RCX) != 0) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
   else {
     if ((--ECX) != 0) {
-      RIP += (Bit32s) i->Id();
-      if (i->os32L()==0)
-        RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+      branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      revalidate_prefetch_q();
-      }
-#if BX_INSTRUMENTATION
-    else {
-      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-      }
-#endif
+      return;
     }
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
 #endif /* if BX_SUPPORT_X86_64 */

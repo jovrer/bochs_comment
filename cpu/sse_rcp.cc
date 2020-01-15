@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
+// $Id: sse_rcp.cc,v 1.9 2005/05/12 18:07:45 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <gate@fidonet.org.il>
+//   Copyright (c) 2003 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,11 +24,9 @@
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#include "softfloat.h"
-#include "softfloat-specialize.h"
-
-
 #if BX_SUPPORT_SSE
+
+#include "fpu/softfloat-specialize.h"
 
 BX_CPP_INLINE Float32 convert_to_QNaN(Float32 op)
 {
@@ -301,8 +301,7 @@ static Float32 approximate_rcp(Float32 op)
 
   switch(op_class)
   {
-    case float_negative_zero:
-    case float_positive_zero:
+    case float_zero:
     case float_denormal:
         return packFloat32(sign, 0xFF, 0);
 
@@ -312,6 +311,9 @@ static Float32 approximate_rcp(Float32 op)
 
     case float_NaN:
         return convert_to_QNaN(op);
+
+    case float_normalized:
+        break;
   }
 
   Bit32u fraction = float32_fraction(op);
@@ -673,8 +675,7 @@ static Float32 approximate_rsqrt(Float32 op)
 
   switch(op_class)
   {
-    case float_positive_zero:
-    case float_negative_zero:
+    case float_zero:
     case float_denormal:
         return packFloat32(sign, 0xFF, 0);
 
@@ -688,7 +689,7 @@ static Float32 approximate_rsqrt(Float32 op)
         return convert_to_QNaN(op);
 
     case float_normalized:
-        ;
+        break;
   };
 
   if (sign == 1)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.43 2003/07/09 20:15:38 vruppert Exp $
+// $Id: sdl.cc,v 1.57 2005/04/29 19:06:24 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -32,12 +32,13 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "iodev.h"
 #if BX_WITH_SDL
 
 #include <stdlib.h>
-#include <SDL/SDL.h>
-#include <SDL/SDL_endian.h>
-#include <SDL/SDL_thread.h>
+#include <SDL.h>
+#include <SDL_endian.h>
+#include <SDL_thread.h>
 
 #include "icon_bochs.h"
 #include "sdl.h"
@@ -46,7 +47,9 @@ class bx_sdl_gui_c : public bx_gui_c {
 public:
   bx_sdl_gui_c (void);
   DECLARE_GUI_VIRTUAL_METHODS()
+  DECLARE_GUI_NEW_VIRTUAL_METHODS()
   virtual void set_display_mode (disp_mode_t newmode);
+  virtual void statusbar_setitem(int element, bx_bool active);
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -56,13 +59,12 @@ IMPLEMENT_GUI_PLUGIN_CODE(sdl)
 
 #define LOG_THIS theGui->
 
-#define _SDL_DEBUG_ME_
-
-#ifdef _SDL_DEBUG_ME_
-void we_are_here(void)
-{
-  return;
-}
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+const Uint32 status_led_green = 0x00ff0000;
+const Uint32 status_gray_text = 0x80808000;
+#else
+const Uint32 status_led_green = 0x0000ff00;
+const Uint32 status_gray_text = 0x00808080;
 #endif
 
 static unsigned prev_cursor_x=0;
@@ -96,6 +98,7 @@ static unsigned bx_bitmap_left_xorigin = 0;  // pixels from left
 static unsigned bx_bitmap_right_xorigin = 0; // pixels from right
 static unsigned int text_cols = 80, text_rows = 25;
 Bit8u h_panning = 0, v_panning = 0;
+Bit16u line_compare = 1023;
 int fontwidth = 8, fontheight = 16;
 static unsigned vga_bpp=8;
 unsigned tilewidth, tileheight;
@@ -108,6 +111,11 @@ int old_mousey=0, new_mousey=0;
 bx_bool just_warped = false;
 bitmaps *sdl_bitmaps[MAX_SDL_BITMAPS];
 int n_sdl_bitmaps = 0;
+int statusbar_height = 18;
+static unsigned statusitem_pos[12] = {
+  0, 170, 210, 250, 290, 330, 370, 410, 450, 490, 530, 570
+};
+static bx_bool statusitem_active[12];
 
 #if SDL_BYTEORDER == SDL_LIL_ENDIAN
 #define SWAP16(X)    (X)
@@ -151,10 +159,10 @@ void switch_to_windowed(void)
   SDL_FreeSurface(sdl_fullscreen);
   sdl_fullscreen = NULL;
 
-  sdl_screen = SDL_SetVideoMode(res_x,res_y+headerbar_height,32, SDL_SWSURFACE);
+  sdl_screen = SDL_SetVideoMode(res_x,res_y+headerbar_height+statusbar_height,32, SDL_SWSURFACE);
   dst.y = headerbar_height;
   SDL_BlitSurface(tmp,&src,sdl_screen,&dst);
-  SDL_UpdateRect(tmp,0,0,res_x,res_y+headerbar_height);
+  SDL_UpdateRect(tmp,0,0,res_x,res_y+headerbar_height+statusbar_height);
   SDL_FreeSurface(tmp);
 
   SDL_ShowCursor(1);
@@ -242,29 +250,102 @@ void bx_sdl_gui_c::specific_init(
   atexit(SDL_Quit);
 
   sdl_screen = NULL;
+  sdl_fullscreen_toggle = 0;
   dimension_update(640,480);
 
-  sdl_fullscreen_toggle = 0;
-
   SDL_EnableKeyRepeat(250,50);
-  SDL_WM_SetCaption(
-#if BX_CPU_LEVEL < 2
-      "Bochs 8086 emulator, http://bochs.sourceforge.net/",
-#elif BX_CPU_LEVEL == 2
-      "Bochs 80286 emulator, http://bochs.sourceforge.net/",
-#elif BX_CPU_LEVEL == 3
-      "Bochs 80386 emulator, http://bochs.sourceforge.net/",
-#elif BX_CPU_LEVEL == 4
-      "Bochs 80486 emulator, http://bochs.sourceforge.net/",
-#else
-      "Bochs Pentium emulator, http://bochs.sourceforge.net/",
-#endif
+  SDL_WM_SetCaption(BOCHS_WINDOW_NAME,
       "Bochs" );
   SDL_WarpMouse(half_res_x, half_res_y);
 
   // load keymap for sdl
   if(bx_options.keyboard.OuseMapping->get()) {
     bx_keymap.loadKeymap(convertStringToSDLKey);
+  }
+
+  // parse sdl specific options
+  if (argc > 1) {
+    for (i = 1; i < argc; i++) {
+      if (!strcmp(argv[i], "fullscreen")) {
+        sdl_fullscreen_toggle = 1;
+        switch_to_fullscreen();
+      } else {
+        BX_PANIC(("Unknown sdl option '%s'", argv[i]));
+      }
+    }
+  }
+
+  new_gfx_api = 1;
+}
+
+void sdl_set_status_text(int element, const char *text, bx_bool active)
+{
+  Uint32 *buf, *buf_row;
+  Uint32 disp, fgcolor, bgcolor;
+  unsigned char *pfont_row, font_row;
+  int rowsleft = statusbar_height - 2;
+  int colsleft, textlen;
+  int x, xleft, xsize;
+
+  statusitem_active[element] = active;
+  if( !sdl_screen ) return;
+  disp = sdl_screen->pitch/4;
+  xleft = statusitem_pos[element] + 2;
+  xsize = statusitem_pos[element+1] - xleft - 1;
+  buf = (Uint32 *)sdl_screen->pixels + (res_y + headerbar_height + 1) * disp + xleft;
+  rowsleft = statusbar_height - 2;
+  fgcolor = active?headerbar_fg:status_gray_text;
+  bgcolor = active?status_led_green:headerbar_bg;
+  do
+  {
+    colsleft = xsize;
+    buf_row = buf;
+    do
+    {
+      *buf++ = bgcolor;
+    } while( --colsleft );
+    buf = buf_row + disp;
+  } while( --rowsleft );
+  if (strlen(text) < 4) {
+    textlen = strlen(text);
+  } else {
+    textlen = 4;
+  }
+  buf = (Uint32 *)sdl_screen->pixels + (res_y + headerbar_height + 5) * disp + xleft;
+  x = 0;
+  do
+  {
+    pfont_row = &menufont[(unsigned)text[x]][0];
+    buf_row = buf;
+    rowsleft = 8;
+    do
+    {
+      font_row = *pfont_row++;
+      colsleft = 8;
+      do
+      {
+        if( (font_row & 0x80) != 0x00 )
+          *buf++ = fgcolor;
+        else
+          buf++;
+        font_row <<= 1;
+      } while( --colsleft );
+      buf += (disp - 8);
+    } while( --rowsleft );
+    buf = buf_row + 8;
+    x++;
+  } while (--textlen);
+  SDL_UpdateRect( sdl_screen, xleft,res_y+headerbar_height+1,xsize,statusbar_height-2);
+}
+
+void bx_sdl_gui_c::statusbar_setitem(int element, bx_bool active)
+{
+  if (element < 0) {
+    for (unsigned i = 0; i < statusitem_count; i++) {
+      sdl_set_status_text(i+1, statusitem_text[i], active);
+    }
+  } else if ((unsigned)element < statusitem_count) {
+    sdl_set_status_text(element+1, statusitem_text[element], active);
   }
 }
 
@@ -276,19 +357,18 @@ void bx_sdl_gui_c::text_update(
     bx_vga_tminfo_t tm_info,
     unsigned nrows)
 {
-  unsigned char *pfont_row, *old_line, *new_line;
-  unsigned long x,y;
+  Bit8u *pfont_row, *old_line, *new_line, *text_base;
+  unsigned int cs_y, x, y;
   unsigned int curs, hchars, offset;
-  int rows,fontrows,fontpixels;
-  int fgcolor_ndx;
-  int bgcolor_ndx;
+  Bit8u fontline, fontpixels, fontrows;
+  int rows, fgcolor_ndx, bgcolor_ndx;
   Uint32 fgcolor;
   Uint32 bgcolor;
   Uint32 *buf, *buf_row, *buf_char;
   Uint32 disp;
   Bit16u font_row, mask;
-  Bit8u cs_line, cfwidth, cfheight;
-  bx_bool cursor_visible, gfxcharw9, invert, forceUpdate;
+  Bit8u cfstart, cfwidth, cfheight, split_fontrows, split_textrow;
+  bx_bool cursor_visible, gfxcharw9, invert, forceUpdate, split_screen;
 
   UNUSED(nrows);
   forceUpdate = 0;
@@ -302,6 +382,11 @@ void bx_sdl_gui_c::text_update(
     forceUpdate = 1;
     h_panning = tm_info.h_panning;
     v_panning = tm_info.v_panning;
+  }
+  if(tm_info.line_compare != line_compare)
+  {
+    forceUpdate = 1;
+    line_compare = tm_info.line_compare;
   }
   if( sdl_screen )
   {
@@ -329,6 +414,11 @@ void bx_sdl_gui_c::text_update(
   rows = text_rows;
   if (v_panning) rows++;
   y = 0;
+  cs_y = 0;
+  text_base = new_text - tm_info.start_address;
+  split_textrow = (line_compare + v_panning) / fontheight;
+  split_fontrows = ((line_compare + v_panning) % fontheight) + 1;
+  split_screen = 0;
 
   do
   {
@@ -336,21 +426,38 @@ void bx_sdl_gui_c::text_update(
     hchars = text_cols;
     if (h_panning) hchars++;
     cfheight = fontheight;
-    if (v_panning)
+    cfstart = 0;
+    if (split_screen)
+    {
+      if (rows == 1)
+      {
+        cfheight = (res_y - line_compare - 1) % fontheight;
+        if (cfheight == 0) cfheight = fontheight;
+      }
+    }
+    else if (v_panning)
     {
       if (y == 0)
       {
         cfheight -= v_panning;
+        cfstart = v_panning;
       }
       else if (rows == 1)
       {
         cfheight = v_panning;
       }
     }
+    if (!split_screen && (y == split_textrow))
+    {
+      if ((split_fontrows - cfstart) < cfheight)
+      {
+        cfheight = split_fontrows - cfstart;
+      }
+    }
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = y * tm_info.line_offset;
+    offset = cs_y * tm_info.line_offset;
     do
     {
       cfwidth = fontwidth;
@@ -380,13 +487,14 @@ void bx_sdl_gui_c::text_update(
 
 	// Display this one char
 	fontrows = cfheight;
+	fontline = cfstart;
 	if (y > 0)
 	{
 	  pfont_row = &vga_charmap[(new_text[0] << 5)];
 	}
 	else
 	{
-	  pfont_row = &vga_charmap[(new_text[0] << 5) + v_panning];
+	  pfont_row = &vga_charmap[(new_text[0] << 5) + cfstart];
 	}
 	buf_char = buf;
 	do
@@ -405,8 +513,7 @@ void bx_sdl_gui_c::text_update(
 	    font_row <<= h_panning;
 	  }
 	  fontpixels = cfwidth;
-	  cs_line = (fontheight - fontrows);
-	  if( (invert) && (cs_line >= tm_info.cs_start) && (cs_line <= tm_info.cs_end) )
+	  if( (invert) && (fontline >= tm_info.cs_start) && (fontline <= tm_info.cs_end) )
 	    mask = 0x100;
 	  else
 	    mask = 0x00;
@@ -421,6 +528,7 @@ void bx_sdl_gui_c::text_update(
 	  } while( --fontpixels );
 	  buf -= cfwidth;
 	  buf += disp;
+	  fontline++;
 	} while( --fontrows );
 
 	// restore output buffer ptr to start of this char
@@ -440,10 +548,24 @@ void bx_sdl_gui_c::text_update(
 
     // go to next character row location
     buf_row += disp * cfheight;
-    new_text = new_line + tm_info.line_offset;
-    old_text = old_line + tm_info.line_offset;
-    y++;
+    if (!split_screen && (y == split_textrow))
+    {
+      new_text = text_base;
+      forceUpdate = 1;
+      cs_y = 0;
+      if (tm_info.split_hpanning) h_panning = 0;
+      rows = ((res_y - line_compare + fontheight - 2) / fontheight) + 1;
+      split_screen = 1;
+    }
+    else
+    {
+      new_text = new_line + tm_info.line_offset;
+      old_text = old_line + tm_info.line_offset;
+      cs_y++;
+      y++;
+    }
   } while( --rows );
+  h_panning = tm_info.h_panning;
   prev_cursor_x = cursor_x;
   prev_cursor_y = cursor_y;
 }
@@ -489,78 +611,7 @@ void bx_sdl_gui_c::graphics_tile_update(
 
   switch (vga_bpp)
   {
-    case 32:
-      {
-        Uint32 *snapshot32 = (Uint32 *)snapshot;
-        do
-        {
-          buf_row = buf;
-          j = tilewidth;
-          do
-          {
-            *buf++ = *snapshot32++;
-          } while( --j );
-          buf = buf_row + disp;
-        } while( --i);
-      }
-      break;
-    case 24:
-      {
-        do
-        {
-          buf_row = buf;
-          j = tilewidth;
-          do
-          {
-            buf[0] = snapshot[0];
-            buf[0] |= (snapshot[1] << 8);
-            buf[0] |= (snapshot[2] << 16);
-            buf++;
-            snapshot+=3;
-          } while( --j );
-          buf = buf_row + disp;
-        } while( --i);
-      }
-      break;
-    case 16:
-      {
-        Uint16 *snapshot16 = (Uint16 *)snapshot;
-        do
-        {
-          buf_row = buf;
-          j = tilewidth;
-          do
-          {
-            buf[0] = (snapshot16[0] & 0x001f) << 3;
-            buf[0] |= (snapshot16[0] & 0x07e0) << 5;
-            buf[0] |= (snapshot16[0] & 0xf800) << 8;
-            buf++;
-            snapshot16++;
-          } while( --j );
-          buf = buf_row + disp;
-        } while( --i);
-      }
-      break;
-    case 15:
-      {
-        Uint16 *snapshot16 = (Uint16 *)snapshot;
-        do
-        {
-          buf_row = buf;
-          j = tilewidth;
-          do
-          {
-            buf[0] = (snapshot16[0] & 0x001f) << 3;
-            buf[0] |= (snapshot16[0] & 0x03e0) << 6;
-            buf[0] |= (snapshot16[0] & 0x7c00) << 9;
-            buf++;
-            snapshot16++;
-          } while( --j );
-          buf = buf_row + disp;
-        } while( --i);
-      }
-      break;
-    default: /* 8 bpp */
+    case 8: /* 8 bpp */
       do
       {
         buf_row = buf;
@@ -571,7 +622,89 @@ void bx_sdl_gui_c::graphics_tile_update(
         } while( --j );
         buf = buf_row + disp;
       } while( --i);
+      break;
+    default:
+      BX_PANIC(("%u bpp modes handled by new graphics API", vga_bpp));
+      return;
   }
+}
+
+  bx_svga_tileinfo_t *
+bx_sdl_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
+{
+  if (!info) {
+    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
+    if (!info) {
+      return NULL;
+    }
+  }
+
+  if (sdl_screen) {
+    info->bpp = sdl_screen->format->BitsPerPixel;
+    info->pitch = sdl_screen->pitch;
+    info->red_shift = sdl_screen->format->Rshift + 8 - sdl_screen->format->Rloss;
+    info->green_shift = sdl_screen->format->Gshift + 8 - sdl_screen->format->Gloss;
+    info->blue_shift = sdl_screen->format->Bshift + 8 - sdl_screen->format->Bloss;
+    info->red_mask = sdl_screen->format->Rmask;
+    info->green_mask = sdl_screen->format->Gmask;
+    info->blue_mask = sdl_screen->format->Bmask;
+    info->is_indexed = (sdl_screen->format->palette != NULL);
+  }
+  else {
+    info->bpp = sdl_fullscreen->format->BitsPerPixel;
+    info->pitch = sdl_fullscreen->pitch;
+    info->red_shift = sdl_fullscreen->format->Rshift + 8 - sdl_screen->format->Rloss;
+    info->green_shift = sdl_fullscreen->format->Gshift + 8 - sdl_screen->format->Gloss;
+    info->blue_shift = sdl_fullscreen->format->Bshift + 8 - sdl_screen->format->Bloss;
+    info->red_mask = sdl_fullscreen->format->Rmask;
+    info->green_mask = sdl_fullscreen->format->Gmask;
+    info->blue_mask = sdl_fullscreen->format->Bmask;
+    info->is_indexed = (sdl_screen->format->palette != NULL);
+  }
+
+#ifdef BX_LITTLE_ENDIAN
+  info->is_little_endian = 1;
+#else
+  info->is_little_endian = 0;
+#endif
+
+  return info;
+}
+
+  Bit8u *
+bx_sdl_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
+                            unsigned *w, unsigned *h)
+{
+  if (x0+tilewidth > res_x) {
+    *w = res_x - x0;
+  }
+  else {
+    *w = tilewidth;
+  }
+
+  if (y0+tileheight > res_y) {
+    *h = res_y - y0;
+  }
+  else {
+    *h = tileheight;
+  }
+
+  if (sdl_screen) {
+    return (Bit8u *)sdl_screen->pixels +
+           sdl_screen->pitch*(headerbar_height+y0) +
+           sdl_screen->format->BytesPerPixel*x0;
+  }
+  else {
+    return (Bit8u *)sdl_fullscreen->pixels +
+           sdl_fullscreen->pitch*(headerbar_height+y0) +
+           sdl_fullscreen->format->BytesPerPixel*x0;
+  }
+}
+
+  void
+bx_sdl_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
+                                        unsigned w, unsigned h)
+{
 }
 
 static Bit32u sdl_sym_to_bx_key (SDLKey sym)
@@ -742,14 +875,16 @@ void bx_sdl_gui_c::handle_events(void)
 {
   Bit32u key_event;
   Bit8u mouse_state;
+  int wheel_status;
 
   while( SDL_PollEvent(&sdl_event) )
   {
+    wheel_status = 0;
     switch( sdl_event.type )
     {
       case SDL_VIDEOEXPOSE:
 	if( sdl_fullscreen_toggle == 0 )
-	  SDL_UpdateRect( sdl_screen, 0,0, res_x, res_y+headerbar_height );
+	  SDL_UpdateRect( sdl_screen, 0,0, res_x, res_y+headerbar_height+statusbar_height );
 	else
 	  SDL_UpdateRect( sdl_screen, 0,headerbar_height, res_x, res_y );
 	break;
@@ -770,11 +905,13 @@ void bx_sdl_gui_c::handle_events(void)
 	  break;
 	}
 	//fprintf (stderr, "processing relative mouse event\n");
-	new_mousebuttons = ((sdl_event.motion.state & 0x01)|((sdl_event.motion.state>>1)&0x02));
-	DEV_mouse_motion(
-	    sdl_event.motion.xrel,
-	    -sdl_event.motion.yrel,
-	    new_mousebuttons );
+        new_mousebuttons = ((sdl_event.motion.state & 0x01)|((sdl_event.motion.state>>1)&0x02)
+                            |((sdl_event.motion.state<<1)&0x04));
+        DEV_mouse_motion_ext(
+            sdl_event.motion.xrel,
+            -sdl_event.motion.yrel,
+            wheel_status,
+            new_mousebuttons);
 	old_mousebuttons = new_mousebuttons;
 	old_mousex = (int)(sdl_event.motion.x);
 	old_mousey = (int)(sdl_event.motion.y);
@@ -784,8 +921,9 @@ void bx_sdl_gui_c::handle_events(void)
 	break;
 
       case SDL_MOUSEBUTTONDOWN:
-	if( (sdl_event.button.button == SDL_BUTTON_MIDDLE)
-	    && (sdl_fullscreen_toggle == 0) )
+        if( (sdl_event.button.button == SDL_BUTTON_MIDDLE)
+            && ((SDL_GetModState() & KMOD_CTRL) > 0)
+            && (sdl_fullscreen_toggle == 0) )
 	{
 	  if( sdl_grab == 0 )
 	  {
@@ -804,6 +942,13 @@ void bx_sdl_gui_c::handle_events(void)
 	  headerbar_click(sdl_event.button.x);
 	  break;
 	}
+        // get the wheel status
+        if (sdl_event.button.button == SDL_BUTTON_WHEELUP) {
+          wheel_status = 1;
+        }
+        if (sdl_event.button.button == SDL_BUTTON_WHEELDOWN) {
+          wheel_status = -1;
+        }
       case SDL_MOUSEBUTTONUP:
 	// figure out mouse state
 	new_mousex = (int)(sdl_event.button.x);
@@ -816,12 +961,13 @@ void bx_sdl_gui_c::handle_events(void)
 	  ((mouse_state<<1)&0x04) ;
 	// filter out middle button if not fullscreen
 	if( sdl_fullscreen_toggle == 0 )
-	  new_mousebuttons &= 0x03;
-	// send motion information
-	DEV_mouse_motion(
-	    new_mousex - old_mousex,
-	    -(new_mousey - old_mousey),
-	    new_mousebuttons );
+	  new_mousebuttons &= 0x07;
+        // send motion information
+        DEV_mouse_motion_ext(
+            new_mousex - old_mousex,
+            -(new_mousey - old_mousey),
+            wheel_status,
+            new_mousebuttons);
 	// mark current state to diff with next packet
 	old_mousebuttons = new_mousebuttons;
 	old_mousex = new_mousex;
@@ -862,6 +1008,9 @@ void bx_sdl_gui_c::handle_events(void)
 	}
 	if( key_event == BX_KEY_UNHANDLED ) break;
 	DEV_kbd_gen_scancode( key_event );
+        if ((key_event == BX_KEY_NUM_LOCK) || (key_event == BX_KEY_CAPS_LOCK)) {
+	  DEV_kbd_gen_scancode( key_event | BX_KEY_RELEASED );
+        }
 	break;
 
       case SDL_KEYUP:
@@ -885,6 +1034,9 @@ void bx_sdl_gui_c::handle_events(void)
             key_event = entry->baseKey;
           }
 	  if( key_event == BX_KEY_UNHANDLED ) break;
+          if ((key_event == BX_KEY_NUM_LOCK) || (key_event == BX_KEY_CAPS_LOCK)) {
+            DEV_kbd_gen_scancode( key_event );
+          }
 	  DEV_kbd_gen_scancode( key_event | BX_KEY_RELEASED );
 	}
 	break;
@@ -1002,7 +1154,7 @@ void bx_sdl_gui_c::dimension_update(
 
   if( sdl_fullscreen_toggle == 0 )
   {
-    sdl_screen = SDL_SetVideoMode( x, y+headerbar_height, 32, SDL_SWSURFACE );
+    sdl_screen = SDL_SetVideoMode( x, y+headerbar_height+statusbar_height, 32, SDL_SWSURFACE );
     if( !sdl_screen )
     {
       LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
@@ -1181,9 +1333,9 @@ void bx_sdl_gui_c::show_headerbar(void)
   Uint32 *buf_row;
   Uint32 disp;
   int rowsleft = headerbar_height;
-  int colsleft;
+  int colsleft, sb_item;
   int bitmapscount = bx_headerbar_entries;
-  unsigned current_bmp;
+  unsigned current_bmp, pos_x;
   SDL_Rect hb_dst;
 
   if( !sdl_screen ) return;
@@ -1203,7 +1355,6 @@ void bx_sdl_gui_c::show_headerbar(void)
   } while( --rowsleft );
   SDL_UpdateRect( sdl_screen, 0,0,res_x,headerbar_height);
 
-  we_are_here();
   // go thru the bitmaps and display the active ones
   while( bitmapscount-- )
   {
@@ -1226,6 +1377,34 @@ void bx_sdl_gui_c::show_headerbar(void)
 	  sdl_bitmaps[current_bmp]->src.w,
 	  sdl_bitmaps[current_bmp]->src.h );
     }
+  }
+  // draw statusbar background
+  rowsleft = statusbar_height;
+  buf = (Uint32 *)sdl_screen->pixels + (res_y + headerbar_height) * disp;
+  do
+  {
+    colsleft = res_x;
+    buf_row = buf;
+    sb_item = 1;
+    pos_x = 0;
+    do
+    {
+      if (pos_x == statusitem_pos[sb_item])
+      {
+        *buf++ = headerbar_fg;
+        if (sb_item < 11) sb_item++;
+      }
+      else
+      {
+        *buf++ = headerbar_bg;
+      }
+      pos_x++;
+    } while( --colsleft );
+    buf = buf_row + disp;
+  } while( --rowsleft );
+  SDL_UpdateRect( sdl_screen, 0,res_y+headerbar_height,res_x,statusbar_height);
+  for (unsigned i=0; i<statusitem_count; i++) {
+    sdl_set_status_text(i+1, statusitem_text[i], statusitem_active[i]);
   }
 }
 

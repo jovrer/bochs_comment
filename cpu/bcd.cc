@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bcd.cc,v 1.7 2002/09/17 22:50:51 kevinlawton Exp $
+// $Id: bcd.cc,v 1.15 2005/05/20 20:06:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,170 +25,204 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
-
-
-  void
-BX_CPU_C::DAS(bxInstruction_c *)
+void BX_CPU_C::AAA(bxInstruction_c *)
 {
-  Bit8u tmpCF, tmpAL;
+  /* 
+   *  Note: This instruction incorrectly documented in Intel's materials.
+   *        The right description is:
+   *
+   *    IF (((AL and 0FH) > 9) or (AF==1)
+   *    THEN
+   *        IF CPU<286 THEN {  AL <- AL+6 }
+   *                   ELSE {  AX <- AX+6 }
+   *        AH <- AH+1
+   *        CF <- 1
+   *        AF <- 1
+   *    ELSE
+   *        CF <- 0
+   *        AF <- 0
+   *    ENDIF
+   *	AL <- AL and 0Fh
+   */	
 
-  /* ??? */
-  /* the algorithm for DAS is fashioned after the pseudo code in the
-   * Pentium Processor Family Developer's Manual, volume 3.  It seems
-   * to have changed from earlier processor's manuals.  I'm not sure
-   * if this is a correction in the algorithm printed, or Intel has
-   * changed the handling of instruction.  It might not even be
-   * correct yet...
-   */
+  /* Validated against Intel Pentium family hardware. */
 
-  tmpCF = 0;
-  tmpAL = AL;
+  /* AAA affects the following flags: A,C */
 
-  /* DAS effect the following flags: A,C,S,Z,P */
-
-  if (((tmpAL & 0x0F) > 0x09) || get_AF()) {
+  if ( ((AL & 0x0f) > 9) || get_AF() )
+  {
+    AX = AX + 0x106;
     set_AF(1);
-    tmpCF = (AL < 0x06) || get_CF();
-    AL = AL - 0x06;
-    /*tmpCF = (AL < 0) || CF;*/
-    }
-  if ( (tmpAL > 0x99) || get_CF() ) {
-    AL = AL - 0x60;
-    tmpCF = 1;
-    }
+    set_CF(1);
+  }
+  else {
+    set_AF(0);
+    set_CF(0);
+  }
 
-  set_CF(tmpCF);
-  set_SF(AL >> 7);
-  set_ZF(AL==0);
+  AL = AL & 0x0f;
+
+  /* AAA affects also the following flags: Z,S,O,P */
+  /* modification of the flags is undocumented */
+
+  /* The following behaviour seems to match the P6 and 
+     its derived processors. */
+  set_OF(0);
+  set_SF(0); /* sign is always 0 because bits 4-7 of AL are zeroed */
+  set_ZF(AL == 0);
   set_PF_base(AL);
 }
 
-  void
-BX_CPU_C::AAA(bxInstruction_c *)
+void BX_CPU_C::AAS(bxInstruction_c *)
 {
-  Bit8u ALcarry;
-
-  ALcarry = AL > 0xf9;
-
-  /* AAA effects the following flags: A,C */
-  if ( ((AL & 0x0f) > 9) || get_AF() ) {
-    AL = (AL + 6) & 0x0f;
-    AH = AH + 1 + ALcarry;
-    set_AF(1);
-    set_CF(1);
-    }
-  else {
-    set_AF(0);
-    set_CF(0);
-    AL = AL & 0x0f;
-    }
-}
-
-  void
-BX_CPU_C::AAS(bxInstruction_c *)
-{
-  Bit8u ALborrow;
-
   /* AAS affects the following flags: A,C */
 
-  ALborrow = AL < 6;
-
-  if ( ((AL & 0x0F) > 0x09) || get_AF() ) {
-    AL = (AL - 6) & 0x0f;
-    AH = AH - 1 - ALborrow;
+  if ( ((AL & 0x0F) > 0x09) || get_AF() )
+  {
+    AX = AX - 0x106;
     set_AF(1);
     set_CF(1);
-    }
+  }
   else {
     set_CF(0);
     set_AF(0);
-    AL = AL & 0x0f;
-    }
+  }
+
+  AL = AL & 0x0f;
+
+  /* AAS affects also the following flags: Z,S,O,P */
+  /* modification of the flags is undocumented */
+
+  /* The following behaviour seems to match the P6 and 
+     its derived processors. */
+  set_OF(0);
+  set_SF(0); /* sign is always 0 because bits 4-7 of AL are zeroed */
+  set_ZF(AL == 0);
+  set_PF_base(AL);
 }
 
-  void
-BX_CPU_C::AAM(bxInstruction_c *i)
+void BX_CPU_C::AAM(bxInstruction_c *i)
 {
-  Bit8u al, imm8;
+  Bit8u al, imm8 = i->Ib();
 
-  imm8 = i->Ib();
-
-  if (imm8 == 0) {
+  if (imm8 == 0)
     exception(BX_DE_EXCEPTION, 0, 0);
-    }
 
   al = AL;
   AH = al / imm8;
   AL = al % imm8;
 
-  /* AAM always clears the flags A and C */
+  /* AAM effects the following flags: A,C,O,S,Z,P */
+  /* modification of flags A,C,O is undocumented */
+
+  /* The following behaviour seems to match the P6 and 
+     its derived processors. */
+  set_OF(0);	/* undocumented flag modification */
   set_AF(0);
   set_CF(0);
+
   /* AAM affects the following flags: S,Z,P */
-  set_SF((AL & 0x80) > 0);
-  set_ZF(AL == 0);
-  set_PF_base(AL);
-}
-
-  void
-BX_CPU_C::AAD(bxInstruction_c *i)
-{
-  Bit8u al, imm8;
-  Bit16u ax1, ax2;
-
-  imm8 = i->Ib();
-
-  ax1 = AH * imm8;
-  ax2 = ax1 + AL;
-  al = AL;
-  AL = (Bit8u)ax2;
-  AH = 0;
-
-  /* AAD effects the following flags: A,C,O,S,Z,P */
-  /* modification of flags A,C,O is undocumented */
-  set_AF((ax1 & 0x08) != (ax2 & 0x08));
-  set_CF(ax2 > 0xff);
-  set_OF((AL & 0x80) != (al & 0x80));
   set_SF(AL >= 0x80);
   set_ZF(AL == 0);
   set_PF_base(AL);
 }
 
-  void
-BX_CPU_C::DAA(bxInstruction_c *)
+void BX_CPU_C::AAD(bxInstruction_c *i)
 {
-  Bit8u al;
+  Bit8u imm8 = i->Ib();
 
-  al = AL;
+  Bit16u tmp = AH;
+  tmp *= imm8;
+  tmp += AL;
+
+  AL = tmp & 0xff;
+  AH = 0;
+
+  /* AAD effects the following flags: A,C,O,S,Z,P */
+  /* modification of flags A,C,O is undocumented */
+
+  /* The following behaviour seems to match the P6 and 
+     its derived processors. */
+  set_OF(0);	/* undocumented flag modification */
+  set_AF(0);
+  set_CF(0);
+
+  set_SF(AL >= 0x80);
+  set_ZF(AL == 0);
+  set_PF_base(AL);
+}
+
+void BX_CPU_C::DAA(bxInstruction_c *)
+{
+  Bit8u tmpAL = AL;
+  int   tmpCF = 0;
+
+  /* Validated against Intel Pentium family hardware. */
 
   // DAA affects the following flags: S,Z,A,P,C
-  // ???
 
-  if (((al & 0x0F) > 0x09) || get_AF()) {
-    al = al + 0x06;
+  if (((tmpAL & 0x0F) > 0x09) || get_AF())
+  {
+    tmpCF = ((AL > 0xF9) || get_CF());
+    AL = AL + 0x06;
     set_AF(1);
-    }
+  }
   else
     set_AF(0);
 
-  if ((al > 0x9F) || get_CF()) {
-    al = al + 0x60;
-    set_CF(1);
-    }
+  if ((tmpAL > 0x99) || get_CF())
+  {
+    AL = AL + 0x60;
+    tmpCF = 1;
+  }
   else
-    set_CF(0);
+    tmpCF = 0;
 
-  AL = al;
+  set_OF(0);	/* undocumented flag modification */
+  set_SF(AL >= 0x80);
+  set_ZF(AL==0);
+  set_PF_base(AL);
+  set_CF(tmpCF);
+}
 
-  set_SF(al >> 7);
-  set_ZF(al==0);
-  set_PF_base(al);
+void BX_CPU_C::DAS(bxInstruction_c *)
+{
+  /* The algorithm for DAS is fashioned after the pseudo code in the
+   * Pentium Processor Family Developer's Manual, volume 3.  It seems
+   * to have changed from earlier processor's manuals.  I'm not sure
+   * if this is a correction in the algorithm printed, or Intel has
+   * changed the handling of instruction. Validated against Intel 
+   * Pentium family hardware.
+   */
+
+  Bit8u tmpAL = AL;
+  int tmpCF = 0;
+
+  /* DAS effect the following flags: A,C,S,Z,P */
+
+  if (((tmpAL & 0x0F) > 0x09) || get_AF())
+  {
+    tmpCF = (AL < 0x06) || get_CF();
+    AL = AL - 0x06;
+    set_AF(1);
+  }
+  else
+    set_AF(0);
+
+  if ((tmpAL > 0x99) || get_CF())
+  {
+    AL = AL - 0x60;
+    tmpCF = 1;
+  }
+
+  set_OF(0);	/* undocumented flag modification */
+  set_SF(AL >= 0x80);
+  set_ZF(AL==0);
+  set_PF_base(AL);
+  set_CF(tmpCF);
 }

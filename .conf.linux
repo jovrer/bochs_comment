@@ -8,7 +8,7 @@ which_config=plugins
 
 CC="gcc"
 CXX="c++"
-CFLAGS="-Wall -O2 -fomit-frame-pointer -pipe"    # for speed
+CFLAGS="-Wall -O3 -fomit-frame-pointer -pipe"    # for speed
 #CFLAGS="-Wall -g -pipe"                         # for development
 CXXFLAGS="$CFLAGS"
 
@@ -27,29 +27,34 @@ case $which_config in
     # Include a few standard options, speed optimizations, X11 only.
     #######################################################################
     ./configure --enable-cdrom \
-                --enable-sb16=linux \
+                --enable-sb16 \
                 --enable-ne2000 \
                 --enable-vbe \
                 --enable-all-optimizations \
+                --enable-cpu-level=6 \
+                --enable-sse=1 \
+                --enable-pci \
+                --enable-clgd54xx \
                 ${CONFIGURE_ARGS}
     ;;
 
   plugins)
     #######################################################################
     # configuration 2 for release binary RPMs
-    # Include lots of extra stuff
-    # plugins, every possible gui.
+    # Include plugins, every possible gui.
     #######################################################################
     ./configure --enable-cdrom \
-                --enable-sb16=linux \
+                --enable-sb16 \
                 --enable-ne2000 \
                 --enable-vbe \
                 --enable-all-optimizations \
-                ${CONFIGURE_ARGS} \
-                --enable-plugins \
+                --enable-cpu-level=6 \
+                --enable-sse=1 \
                 --enable-pci \
-                --enable-mmx \
-                --with-all-libs
+                --enable-clgd54xx \
+                --enable-plugins \
+                --with-all-libs \
+                ${CONFIGURE_ARGS}
     ;;
 
 esac

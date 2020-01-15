@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.42 2003/08/24 10:30:07 cbothamy Exp $
+// $Id: logio.cc,v 1.49 2004/12/13 19:10:31 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,12 +26,15 @@
 
 
 
-#include "bochs.h"
+#include "iodev/iodev.h"
 #include <assert.h>
-#include "state_file.h"
 
 #if BX_WITH_CARBON
+#define Float32 KLUDGE_Float32
+#define Float64 KLUDGE_Float64
 #include <Carbon/Carbon.h>
+#undef Float32
+#undef Float64
 #endif
 
 // Just for the iofunctions
@@ -152,9 +155,6 @@ iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list ap)
 	assert (this != NULL);
 	assert (logfd != NULL);
 
-	//if( showtick )
-	//	fprintf(logfd, "%011lld", bx_pc_system.time_ticks());
-
 	switch(l) {
 		case LOGLEV_INFO: c='i'; break;
 		case LOGLEV_PANIC: c='p'; break;
@@ -179,7 +179,7 @@ iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list ap)
                   fprintf(logfd, "%s", prefix==NULL?"":prefix);
 		  break;
 		case 't':
-                  fprintf(logfd, "%011lld", bx_pc_system.time_ticks());
+                  fprintf(logfd, FMT_TICK, bx_pc_system.time_ticks());
 		  break;
 		case 'i':
                   fprintf(logfd, "%08x", BX_CPU(0)==NULL?0:BX_CPU(0)->dword.eip);
@@ -466,7 +466,7 @@ logfunctions::ask (int level, const char *prefix, const char *fmt, va_list ap)
     return;
   }
   in_ask_already = 1;
-  vsprintf (buf1, fmt, ap);
+  vsnprintf (buf1, sizeof(buf1), fmt, ap);
   // FIXME: facility set to 0 because it's unknown.
 
   // update vga screen.  This is useful because sometimes useful messages
@@ -514,6 +514,28 @@ logfunctions::ask (int level, const char *prefix, const char *fmt, va_list ap)
       // instruction, it should notice the user interrupt and return to
       // the debugger.
       bx_guard.interrupt_requested = 1;
+/*
+      // Russ Cox's CPU panic debug patch from Oct 2003 -> 
+      //       caused compilation errors when BX_DEBUGGER enabled
+
+      // actually, if this is a panic, it's very likely the caller will
+      // not be able to cope gracefully if we return and try to keep
+      // executing.  so longjmp back to the cpu loop immediately.
+      if (level == LOGLEV_PANIC) {
+      BX_CPU_THIS_PTR stop_reason = STOP_CPU_PANIC;
+        bx_guard.special_unwind_stack = 1;
+        in_ask_already = 0;
+        longjmp(BX_CPU_THIS_PTR jmp_buf_env, 1); // go back to main decode loop
+      }
+      break;
+#endif
+#if BX_GDBSTUB
+    case BX_LOG_ASK_CHOICE_ENTER_DEBUG:
+      // user chose debugger (we're using gdb)
+      in_ask_already = 0;
+      BX_CPU_THIS_PTR ispanic = 1;
+      longjmp(BX_CPU_THIS_PTR jmp_buf_env, 1); // go back to main decode loop
+*/
       break;
 #endif
     default:
@@ -576,8 +598,8 @@ logfunctions::fatal (const char *prefix, const char *fmt, va_list ap, int exit_s
   {
     char buf1[1024];
     char buf2[1024];
-    vsprintf (buf1, fmt, ap);
-    sprintf (buf2, "Bochs startup error\n%s", buf1);
+    vsnprintf (buf1, sizeof(buf1), fmt, ap);
+    snprintf (buf2, sizeof(buf2), "Bochs startup error\n%s", buf1);
     carbonFatalDialog(buf2,
       "For more information, try running Bochs within Terminal by clicking on \"bochs.scpt\".");
   }

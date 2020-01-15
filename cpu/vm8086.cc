@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vm8086.cc,v 1.15 2002/09/18 05:36:48 kevinlawton Exp $
+// $Id: vm8086.cc,v 1.19 2005/03/13 20:18:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -46,12 +46,9 @@
 
 #if BX_SUPPORT_V8086_MODE
 
-
 #if BX_CPU_LEVEL >= 3
 
-
-  void
-BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
+void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
                               Bit32u flags32)
 {
   Bit32u temp_ESP, new_esp, esp_laddr;
@@ -79,17 +76,17 @@ BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
   else
     temp_ESP = SP;
 
-  // top 36 bytes of stack must be within stack limits, else #GP(0)
+  // top 36 bytes of stack must be within stack limits, else #SS(0)
   if ( !can_pop(36) ) {
-    BX_PANIC(("iret: VM: top 36 bytes not within limits"));
+    BX_INFO(("iret: VM: top 36 bytes not within limits"));
     exception(BX_SS_EXCEPTION, 0, 0);
     return;
-    }
+  }
 
   if ( new_eip & 0xffff0000 ) {
     BX_INFO(("IRET to V86-mode: ignoring upper 16-bits"));
     new_eip = new_eip & 0xffff;
-    }
+  }
 
   esp_laddr = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base +
               temp_ESP;
@@ -125,16 +122,14 @@ BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
   init_v8086_mode();
 }
 
-
-  void
-BX_CPU_C::stack_return_from_v86(bxInstruction_c *i)
+void BX_CPU_C::stack_return_from_v86(bxInstruction_c *i)
 {
   if (BX_CPU_THIS_PTR get_IOPL() != 3) {
     // trap to virtual 8086 monitor
     BX_DEBUG(("IRET in vm86 with IOPL != 3"));
     exception(BX_GP_EXCEPTION, 0, 0);
     return;
-    }
+  }
 
   if (i->os32L()) {
     Bit32u eip, ecs_raw, eflags_tmp;
@@ -152,7 +147,7 @@ BX_CPU_C::stack_return_from_v86(bxInstruction_c *i)
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) ecs_raw);
     EIP = eip;
     write_eflags(eflags_tmp, /*IOPL*/ 0, /*IF*/ 1, /*VM*/ 0, /*RF*/ 1);
-    }
+  }
   else {
     Bit16u ip, cs_raw, flags;
 
@@ -169,12 +164,10 @@ BX_CPU_C::stack_return_from_v86(bxInstruction_c *i)
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
     EIP = (Bit32u) ip;
     write_flags(flags, /*IOPL*/ 0, /*IF*/ 1);
-    }
+  }
 }
 
-
-  void
-BX_CPU_C::init_v8086_mode(void)
+void BX_CPU_C::init_v8086_mode(void)
 {
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid                  = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p                      = 1;
@@ -279,33 +272,32 @@ BX_CPU_C::init_v8086_mode(void)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.rpl                 = 3;
 }
 
+#if BX_SUPPORT_VME
+void BX_CPU_C::v86_redirect_interrupt(Bit32u vector)
+{
+  BX_PANIC(("Redirection of interrupts through virtual-mode idt still not implemented"));
+}
+#endif
 
 #endif /* BX_CPU_LEVEL >= 3 */
-
-
-
-
 
 #else  // BX_SUPPORT_V8086_MODE
 
 // non-support of v8086 mode
 
-  void
-BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector, Bit32u flags32)
+void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector, Bit32u flags32)
 {
   BX_INFO(("stack_return_to_v86: VM bit set in EFLAGS stack image"));
   v8086_message();
 }
 
-  void
-BX_CPU_C::stack_return_from_v86(void)
+void BX_CPU_C::stack_return_from_v86(void)
 {
   BX_INFO(("stack_return_from_v86:"));
   v8086_message();
 }
 
-  void
-BX_CPU_C::v8086_message(void)
+void BX_CPU_C::v8086_message(void)
 {
   BX_INFO(("Program compiled with BX_SUPPORT_V8086_MODE = 0"));
   BX_INFO(("You need to rerun the configure script and recompile"));

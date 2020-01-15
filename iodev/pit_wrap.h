@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.h,v 1.17 2003/08/19 00:10:38 cbothamy Exp $
+// $Id: pit_wrap.h,v 1.20 2004/12/13 19:10:38 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -53,9 +53,9 @@ public:
   BX_PIT_SMF void reset( unsigned type);
   BX_PIT_SMF bx_bool periodic( Bit32u   usec_delta );
 
-  BX_PIT_SMF int SaveState( class state_file *fd );
-  BX_PIT_SMF int LoadState( class state_file *fd );
-
+  Bit16u get_timer(int Timer) {
+      return s.timer.get_inlatch(Timer);
+  }
 private:
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);

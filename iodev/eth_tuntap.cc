@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tuntap.cc,v 1.9 2003/04/26 14:48:45 cbothamy Exp $
+// $Id: eth_tuntap.cc,v 1.21 2005/05/21 07:38:29 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,69 +25,16 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 // eth_tuntap.cc  - TUN/TAP interface by Renzo Davoli <renzo@cs.unibo.it>
-//
-// WARNING: These instructions were written for ethertap, not TUN/TAP.
-//
-// Here's how to get this working.  On the host machine:
-//    $ su root
-//    # /sbin/insmod ethertap
-//    Using /lib/modules/2.2.14-5.0/net/ethertap.o
-//    # mknod /dev/tap0 c 36 16          # if not already there
-//    # /sbin/ifconfig tap0 10.0.0.1
-//    # /sbin/route add -host 10.0.0.2 gw 10.0.0.1
-//
-// Now you have a tap0 device which you can on the ifconfig output.  The
-// tap0 interface has the IP address of 10.0.0.1.  The bochs machine will have
-// the IP address 10.0.0.2.
-//
-// Compile a bochs version from March 8, 2002 or later with --enable-ne2000.
-// Add this ne2k line to your .bochsrc to activate the tap device.
-//   ne2k: ioaddr=0x280, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
-// Don't change the mac or ethmod!
-//
-// Boot up DLX Linux in Bochs.  Log in as root and then type the following
-// commands to set up networking:
-//   # ifconfig eth0 10.0.0.2
-//   # route add -net 10.0.0.0
-//   # route add default gw 10.0.0.1
-// Now you should be able to ping from guest OS to your host machine, if
-// you give its IP number.  I'm still having trouble with pings from the
-// host machine to the guest, so something is still not right.  Symptoms: I
-// ping from the host to the guest's IP address 10.0.0.2.  With tcpdump I can
-// see the ping going to Bochs, and then the ping reply coming from Bochs.
-// But the ping program itself does not see the responses....well every
-// once in a while it does, like 1 in 60 pings.
-//
-// host$ ping 10.0.0.2
-// PING 10.0.0.2 (10.0.0.2) from 10.0.0.1 : 56(84) bytes of data.
-// 
-// Netstat output:
-// 20:29:59.018776 fe:fd:0:0:0:0 fe:fd:0:0:0:1 0800 98: 10.0.0.1 > 10.0.0.2: icmp: echo request
-//      4500 0054 2800 0000 4001 3ea7 0a00 0001
-//      0a00 0002 0800 09d3 a53e 0400 9765 893c
-//      3949 0000 0809 0a0b 0c0d 0e0f 1011 1213
-//      1415 1617 1819
-// 20:29:59.023017 fe:fd:0:0:0:1 fe:fd:0:0:0:0 0800 98: 10.0.0.2 > 10.0.0.1: icmp: echo reply
-//      4500 0054 004a 0000 4001 665d 0a00 0002
-//      0a00 0001 0000 11d3 a53e 0400 9765 893c
-//      3949 0000 0809 0a0b 0c0d 0e0f 1011 1213
-//      1415 1617 1819
-//
-// I suspect it may be related to the fact that ping 10.0.0.1 from the 
-// host also doesn't work.  Why wouldn't the host respond to its own IP 
-// address on the tap0 device?
-//
-// Theoretically, if you set up packet forwarding (with masquerading) on the
-// host, you should be able to get Bochs talking to anyone on the internet.
-// 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE 
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
-#if BX_NE2K_SUPPORT
+#include "iodev.h"
+#if BX_NETWORKING && defined(HAVE_TUNTAP)
+
+#include "eth.h"
 
 #define LOG_THIS bx_devices.pluginNE2kDevice->
 
@@ -97,20 +44,29 @@
 #include <sys/poll.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#ifdef __linux__
 #include <asm/types.h>
+#else
+#include <sys/types.h>
+#endif
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
+#ifdef __linux__
 #include <linux/netlink.h>
 #include <linux/if.h>
 #include <linux/if_tun.h>
+#else
+#include <net/if.h>
+#ifndef __APPLE__
+#include <net/if_tap.h>
+#endif
+#endif
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
 
-#define TUNTAP_VIRTUAL_HW_ADDR             0xDEADBEEF
 #define BX_ETH_TUNTAP_LOGGING 0
-#define BX_PACKET_BUFSIZ 2048	// Enough for an ether frame
 
 int tun_alloc(char *dev);
 
@@ -121,14 +77,17 @@ class bx_tuntap_pktmover_c : public eth_pktmover_c {
 public:
   bx_tuntap_pktmover_c(const char *netif, const char *macaddr,
 		     eth_rx_handler_t rxh,
-		     void *rxarg);
+		     void *rxarg, char *script);
   void sendpkt(void *buf, unsigned io_len);
 private:
   int fd;
   int rx_timer_index;
   static void rx_timer_handler(void *);
   void rx_timer ();
+  Bit8u guest_macaddr[6];
+#if BX_ETH_TUNTAP_LOGGING
   FILE *txlog, *txlog_txt, *rxlog, *rxlog_txt;
+#endif
 };
 
 
@@ -142,8 +101,8 @@ public:
 protected:
   eth_pktmover_c *allocate(const char *netif, const char *macaddr,
 			   eth_rx_handler_t rxh,
-			   void *rxarg) {
-    return (new bx_tuntap_pktmover_c(netif, macaddr, rxh, rxarg));
+			   void *rxarg, char *script) {
+    return (new bx_tuntap_pktmover_c(netif, macaddr, rxh, rxarg, script));
   }
 } bx_tuntap_match;
 
@@ -156,13 +115,15 @@ protected:
 bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif, 
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
-				       void *rxarg)
+				       void *rxarg,
+				       char *script)
 {
   int flags;
+
+#ifdef NEVERDEF
   if (strncmp (netif, "tun", 3) != 0) {
     BX_PANIC (("eth_tuntap: interface name (%s) must be tun", netif));
   }
-#ifdef NEVERDEF
   char filename[BX_PATHNAME_LEN];
   sprintf (filename, "/dev/net/%s", netif);
 
@@ -219,12 +180,11 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
   BX_INFO (("eth_tuntap: opened %s device", netif));
 
   /* Execute the configuration script */
-  char *scriptname=bx_options.ne2k.Oscript->getptr();
-  if((scriptname != NULL)
-   &&(strcmp(scriptname, "") != 0)
-   &&(strcmp(scriptname, "none") != 0)) {
-    if (execute_script(scriptname, intname) < 0)
-      BX_ERROR (("execute script '%s' on %s failed", scriptname, intname));
+  if((script != NULL)
+   &&(strcmp(script, "") != 0)
+   &&(strcmp(script, "none") != 0)) {
+    if (execute_script(script, intname) < 0)
+      BX_ERROR (("execute script '%s' on %s failed", script, intname));
     }
 
   // Start the rx poll 
@@ -233,6 +193,7 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
 				1, 1, "eth_tuntap"); // continuous, active
   this->rxh   = rxh;
   this->rxarg = rxarg;
+  memcpy(&guest_macaddr[0], macaddr, 6);
 #if BX_ETH_TUNTAP_LOGGING
   // eventually Bryce wants txlog to dump in pcap format so that
   // tcpdump -r FILE can read it and interpret packets.
@@ -266,8 +227,15 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
 void
 bx_tuntap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
-#ifdef NEVERDEF
-  Bit8u txbuf[BX_PACKET_BUFSIZ];
+#ifdef __APPLE__	//FIXME
+  unsigned int size = write (fd, buf+14, io_len-14);
+  if (size != io_len-14) {
+    BX_PANIC (("write on tuntap device: %s", strerror (errno)));
+  } else {
+    BX_DEBUG (("wrote %d bytes on tuntap - 14 bytes Ethernet header", io_len));
+  }
+#elif NEVERDEF
+  Bit8u txbuf[BX_PACKET_BUFSIZE];
   txbuf[0] = 0;
   txbuf[1] = 0;
   memcpy (txbuf+2, buf, io_len);
@@ -275,15 +243,16 @@ bx_tuntap_pktmover_c::sendpkt(void *buf, unsigned io_len)
   if (size != io_len+2) {
     BX_PANIC (("write on tuntap device: %s", strerror (errno)));
   } else {
-    BX_INFO (("wrote %d bytes + 2 byte pad on tuntap", io_len));
+    BX_DEBUG (("wrote %d bytes + 2 byte pad on tuntap", io_len));
   }
-#endif
+#else
   unsigned int size = write (fd, buf, io_len);
   if (size != io_len) {
     BX_PANIC (("write on tuntap device: %s", strerror (errno)));
   } else {
-    BX_INFO (("wrote %d bytes on tuntap", io_len));
+    BX_DEBUG (("wrote %d bytes on tuntap", io_len));
   }
+#endif
 #if BX_ETH_TUNTAP_LOGGING
   BX_DEBUG (("sendpkt length %u", io_len));
   // dump raw bytes to a file, eventually dump in pcap format so that
@@ -314,27 +283,46 @@ void bx_tuntap_pktmover_c::rx_timer_handler (void *this_ptr)
 void bx_tuntap_pktmover_c::rx_timer ()
 {
   int nbytes;
-  Bit8u buf[BX_PACKET_BUFSIZ];
+  Bit8u buf[BX_PACKET_BUFSIZE];
   Bit8u *rxbuf;
   if (fd<0) return;
-  nbytes = read (fd, buf, sizeof(buf));
 
-#ifdef NEVERDEF
+#ifdef __APPLE__	//FIXME:hack
+  nbytes = 14;
+  bzero(buf, nbytes);
+  buf[0] = buf[6] = 0xFE;
+  buf[1] = buf[7] = 0xFD;
+  buf[12] = 8;
+  nbytes += read (fd, buf+nbytes, sizeof(buf)-nbytes);
+  rxbuf=buf;
+#elif NEVERDEF
+  nbytes = read (fd, buf, sizeof(buf));
   // hack: discard first two bytes
   rxbuf = buf+2;
   nbytes-=2;
 #else
+  nbytes = read (fd, buf, sizeof(buf));
   rxbuf=buf;
 #endif
 
   // hack: TUN/TAP device likes to create an ethernet header which has
   // the same source and destination address FE:FD:00:00:00:00.
   // Change the dest address to FE:FD:00:00:00:01.
-  rxbuf[5] = 1;
+  if (!memcmp(&rxbuf[0], &rxbuf[6], 6)) {
+    rxbuf[5] = guest_macaddr[5];
+  }
 
+#ifdef __APPLE__	//FIXME:hack
+  if (nbytes>14)
+#else
   if (nbytes>0)
-    BX_INFO (("tuntap read returned %d bytes", nbytes));
+#endif
+    BX_DEBUG (("tuntap read returned %d bytes", nbytes));
+#ifdef __APPLE__	//FIXME:hack
+  if (nbytes<14) {
+#else
   if (nbytes<0) {
+#endif
     if (errno != EAGAIN)
       BX_ERROR (("tuntap read error: %s", strerror(errno)));
     return;
@@ -359,7 +347,7 @@ void bx_tuntap_pktmover_c::rx_timer ()
     fflush (rxlog_txt);
   }
 #endif
-  BX_DEBUG(("eth_tuntap: got packet: %d bytes, dst=%x:%x:%x:%x:%x:%x, src=%x:%x:%x:%x:%x:%x\n", nbytes, rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3], rxbuf[4], rxbuf[5], rxbuf[6], rxbuf[7], rxbuf[8], rxbuf[9], rxbuf[10], rxbuf[11]));
+  BX_DEBUG(("eth_tuntap: got packet: %d bytes, dst=%02x:%02x:%02x:%02x:%02x:%02x, src=%02x:%02x:%02x:%02x:%02x:%02x", nbytes, rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3], rxbuf[4], rxbuf[5], rxbuf[6], rxbuf[7], rxbuf[8], rxbuf[9], rxbuf[10], rxbuf[11]));
   if (nbytes < 60) {
     BX_INFO (("packet too short (%d), padding to 60", nbytes));
     nbytes = 60;
@@ -368,34 +356,34 @@ void bx_tuntap_pktmover_c::rx_timer ()
 }
 
 
-  int tun_alloc(char *dev)
-  {
-      struct ifreq ifr;
-      int fd, err;
+int tun_alloc(char *dev)
+{
+  struct ifreq ifr;
+  int fd, err;
 
-      if( (fd = open("/dev/net/tun", O_RDWR)) < 0 )
-         return -1;
+  if ((fd = open(dev, O_RDWR)) < 0)
+    return -1;
+#ifdef __linux__
+  memset(&ifr, 0, sizeof(ifr));
 
-      memset(&ifr, 0, sizeof(ifr));
+  /* Flags: IFF_TUN   - TUN device (no Ethernet headers) 
+   *        IFF_TAP   - TAP device  
+   *
+   *        IFF_NO_PI - Do not provide packet information  
+   */ 
+  ifr.ifr_flags = IFF_TAP | IFF_NO_PI; 
+  ifr.ifr_name[0]=0;
+  if ((err = ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0) {
+    close(fd);
+    return err;
+  }
+  strncpy(dev, ifr.ifr_name, IFNAMSIZ);
+  dev[IFNAMSIZ-1]=0;
 
-      /* Flags: IFF_TUN   - TUN device (no Ethernet headers) 
-       *        IFF_TAP   - TAP device  
-       *
-       *        IFF_NO_PI - Do not provide packet information  
-       */ 
-      ifr.ifr_flags = IFF_TAP | IFF_NO_PI; 
-      if( *dev )
-         strncpy(ifr.ifr_name, dev, IFNAMSIZ);
+  ioctl( fd, TUNSETNOCSUM, 1 );
+#endif
 
-      if( (err = ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0 ){
-         close(fd);
-         return err;
-      }
+  return fd;
+}              
 
-      //strcpy(dev, ifr.ifr_name);
-      ioctl( fd, TUNSETNOCSUM, 1 );
-
-      return fd;
-  }              
-
-#endif /* if BX_NE2K_SUPPORT */
+#endif /* if BX_NETWORKING && defined HAVE_TUNTAP */

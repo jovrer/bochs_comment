@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack_pro.cc,v 1.15 2003/08/03 16:44:53 sshwarts Exp $
+// $Id: stack_pro.cc,v 1.21 2005/03/19 20:44:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,73 +25,59 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
-
-
   void BX_CPP_AttrRegparmN(1)
 BX_CPU_C::push_16(Bit16u value16)
 {
-BailBigRSP("push_16");
-  Bit32u temp_ESP;
-
-
-#if BX_CPU_LEVEL >= 2
-  if (protected_mode()) {
+  /* must use StackAddrSize, and either ESP or SP accordingly */
 #if BX_CPU_LEVEL >= 3
-    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-      temp_ESP = ESP;
-    else
-#endif
-      temp_ESP = SP;
-    if (!can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, temp_ESP, 2)) {
-      BX_DEBUG(("push_16(): push outside stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-      return;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* StackAddrSize = 32 */
+    /* 32bit stack size: pushes use SS:ESP  */
+    if (protected_mode()) {
+      if (!can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, ESP, 2)) {
+        BX_INFO(("push_16(): push outside stack limits"));
+        exception(BX_SS_EXCEPTION, 0, 0);
       }
-
-    /* access within limits */
-    write_virtual_word(BX_SEG_REG_SS, temp_ESP - 2, &value16);
-    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-      ESP -= 2;
-    else
-      SP -= 2;
-    return;
     }
-  else
-#endif
+    else 
     { /* real mode */
-    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
       if (ESP == 1)
         BX_PANIC(("CPU shutting down due to lack of stack space, ESP==1"));
-      ESP -= 2;
-      temp_ESP = ESP;
+    }
+
+    write_virtual_word(BX_SEG_REG_SS, ESP-2, &value16);
+    ESP -= 2;
+  }
+  else
+#endif
+  {
+    /* 16bit stack size: pushes use SS:SP  */
+#if BX_CPU_LEVEL >= 2
+    if (protected_mode()) {
+      if (!can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, SP, 2)) {
+        BX_INFO(("push_16(): push outside stack limits"));
+        exception(BX_SS_EXCEPTION, 0, 0);
       }
-    else {
+    }
+    else 
+#endif
+    { /* real mode */
       if (SP == 1)
         BX_PANIC(("CPU shutting down due to lack of stack space, SP==1"));
-      SP -= 2;
-      temp_ESP = SP;
-      }
-
-    write_virtual_word(BX_SEG_REG_SS, temp_ESP, &value16);
-    return;
     }
+
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (SP-2), &value16);
+    SP -= 2;
+  }
 }
 
 #if BX_CPU_LEVEL >= 3
-  /* push 32 bit operand size */
-  void
-BX_CPU_C::push_32(Bit32u value32)
+/* push 32 bit operand size */
+void BX_CPU_C::push_32(Bit32u value32)
 {
-BailBigRSP("push_32");
   /* must use StackAddrSize, and either ESP or SP accordingly */
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* StackAddrSize = 32 */
     /* 32bit stack size: pushes use SS:ESP  */
@@ -109,9 +95,7 @@ BailBigRSP("push_32");
 
     write_virtual_dword(BX_SEG_REG_SS, ESP-4, &value32);
     ESP -= 4;
-    /* will return after error anyway */
-    return;
-    }
+  }
   else { /* 16bit stack size: pushes use SS:SP  */
     if (protected_mode()) {
       if (!can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, SP, 4)) {
@@ -127,14 +111,11 @@ BailBigRSP("push_32");
 
     write_virtual_dword(BX_SEG_REG_SS, (Bit16u) (SP-4), &value32);
     SP -= 4;
-    /* will return after error anyway */
-    return;
-    }
+  }
 }
 
 #if BX_SUPPORT_X86_64
-  void
-BX_CPU_C::push_64(Bit64u value64)
+void BX_CPU_C::push_64(Bit64u value64)
 {
   /* 64bit stack size: pushes use SS:RSP, assume protected mode  */
 #if BX_IGNORE_THIS
@@ -146,8 +127,6 @@ BX_CPU_C::push_64(Bit64u value64)
 
   write_virtual_qword(BX_SEG_REG_SS, RSP-8, &value64);
   RSP -= 8;
-  /* will return after error anyway */
-  return;
 }
 #endif  // #if BX_SUPPORT_X86_64
 
@@ -156,7 +135,6 @@ BX_CPU_C::push_64(Bit64u value64)
   void
 BX_CPU_C::pop_16(Bit16u *value16_ptr)
 {
-BailBigRSP("pop_16");
   Bit32u temp_ESP;
 
 #if BX_CPU_LEVEL >= 3
@@ -169,13 +147,12 @@ BailBigRSP("pop_16");
 #if BX_CPU_LEVEL >= 2
   if (protected_mode()) {
     if ( !can_pop(2) ) {
-      BX_INFO(("pop_16(): can't pop from stack"));
+      BX_ERROR(("pop_16(): can't pop from stack"));
       exception(BX_SS_EXCEPTION, 0, 0);
       return;
       }
     }
 #endif
-
 
   /* access within limits */
   read_virtual_word(BX_SEG_REG_SS, temp_ESP, value16_ptr);
@@ -190,7 +167,6 @@ BailBigRSP("pop_16");
   void
 BX_CPU_C::pop_32(Bit32u *value32_ptr)
 {
-BailBigRSP("pop_32");
   Bit32u temp_ESP;
 
   /* 32 bit stack mode: use SS:ESP */
@@ -202,7 +178,7 @@ BailBigRSP("pop_32");
   /* 16 bit stack mode: use SS:SP */
   if (protected_mode()) {
     if ( !can_pop(4) ) {
-      BX_PANIC(("pop_32(): can't pop from stack"));
+      BX_ERROR(("pop_32(): can't pop from stack"));
       exception(BX_SS_EXCEPTION, 0, 0);
       return;
       }
@@ -218,11 +194,10 @@ BailBigRSP("pop_32");
 }
 
 #if BX_SUPPORT_X86_64
-  void
-BX_CPU_C::pop_64(Bit64u *value64_ptr)
+void BX_CPU_C::pop_64(Bit64u *value64_ptr)
 {
   if ( !can_pop(8) ) {
-    BX_PANIC(("pop_64(): can't pop from stack"));
+    BX_ERROR(("pop_64(): can't pop from stack"));
     exception(BX_SS_EXCEPTION, 0, 0);
     return;
     }
@@ -238,7 +213,6 @@ BX_CPU_C::pop_64(Bit64u *value64_ptr)
 #endif
 
 
-
 #if BX_CPU_LEVEL >= 2
   bx_bool BX_CPP_AttrRegparmN(3)
 BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
@@ -248,11 +222,6 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
     return(1);
     }
 #endif
-
-  if ( real_mode() ) { /* code not needed ??? */
-    BX_PANIC(("can_push(): called in real mode"));
-    return(0); /* never gets here */
-    }
 
   // small stack compares against 16-bit SP
   if (!descriptor->u.segment.d_b)
@@ -265,7 +234,7 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
     }
 
   if (descriptor->p==0) {
-    BX_PANIC(("can_push(): not present"));
+    BX_PANIC(("can_push(): descriptor not present"));
     return(0);
     }
 
@@ -310,11 +279,15 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
         return(1);
       if ((descriptor->u.segment.d_b==0) && (descriptor->u.segment.limit_scaled>=0xffff))
         return(1);
-      BX_PANIC(("can_push(): esp=0, normal, wraparound? limit=%08x",
+      BX_INFO(("can_push(): esp=0, normal, wraparound? limit=%08x",
         descriptor->u.segment.limit_scaled));
       return(0);
       }
 
+    if ( !descriptor->u.segment.d_b ) {
+      // Weird case for 16-bit SP.
+      esp = ((esp-bytes) & 0xffff) + bytes;
+      }
     if (esp < bytes) {
       BX_INFO(("can_push(): expand-up: esp < N"));
       return(0);
@@ -341,9 +314,6 @@ BX_CPU_C::can_pop(Bit32u bytes)
     return(1);
     }
 #endif
-
-  /* ??? */
-  if (real_mode()) BX_PANIC(("can_pop(): called in real mode?"));
 
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* Big bit set: use ESP */
     temp_ESP = ESP;
@@ -392,3 +362,37 @@ BX_CPU_C::can_pop(Bit32u bytes)
     }
 }
 #endif
+
+  void
+BX_CPU_C::decrementESPForPush(unsigned nBytes, Bit32u *eSP_ptr)
+{
+  Bit32u eSP;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
+    eSP = ESP;
+  else
+    eSP = SP;
+
+  if (protected_mode()) {
+    if (!can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, eSP, nBytes)) {
+      BX_INFO(("decrementESPForPush: push outside stack limits"));
+      exception(BX_SS_EXCEPTION, 0, 0);
+      }
+    }
+  else { // Real Mode.
+    if ( (eSP>=1) && (eSP<nBytes) ) {
+      BX_PANIC(("decrementESPForPush: eSP=%08x", (unsigned) eSP));
+      }
+    }
+
+  // And finally, decrement eSP and return the new eSP value.
+  eSP -= nBytes;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    ESP = eSP;
+    *eSP_ptr = eSP;
+    }
+  else {
+    SP = (Bit16u) eSP;
+    *eSP_ptr = SP;
+    }
+}

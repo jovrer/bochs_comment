@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.h,v 1.16 2003/12/20 17:04:08 vruppert Exp $
+// $Id: sb16.h,v 1.20 2005/02/04 19:50:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -255,9 +255,14 @@ private:
     int outputinit;	// have the output functions been initialized
   } dsp;
 
+  // the ASP/CSP registers
+  Bit8u csp_reg[256];
+
   enum bx_sb16_fm_mode {single, adlib, dual, opl3, fminit};
 
   // the variables common to all FM emulations
+  struct bx_sb16_opl_struct;
+  friend struct bx_sb16_opl_struct;
   struct bx_sb16_opl_struct {
     bx_sb16_fm_mode mode;
     // modes: single: one OPL2 (OPL3 disabled), 
@@ -409,6 +414,3 @@ public:
 #define BOTHLOG(x)      (x)
 #define MIDILOG(x)      ((bx_options.sb16.Omidimode->get ()>0?x:0x7f))
 #define WAVELOG(x)      ((bx_options.sb16.Owavemode->get ()>0?x:0x7f))
-
-#include "soundlnx.h"
-#include "soundwin.h"

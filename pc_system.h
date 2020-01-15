@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h,v 1.25 2003/03/02 23:59:08 cbothamy Exp $
+// $Id: pc_system.h,v 1.32 2005/04/29 21:28:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
+//  Copyright (C) 2004  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -64,9 +64,10 @@ private:
                                //   has to be stored as well.
 #define BxMaxTimerIDLen 32
     char id[BxMaxTimerIDLen]; // String ID of timer.
-    } timer[BX_MAX_TIMERS];
+  } timer[BX_MAX_TIMERS];
 
   unsigned   numTimers;  // Number of currently allocated timers.
+  unsigned   triggeredTimer;  // ID of the actually triggered timer.
   Bit32u     currCountdown; // Current countdown ticks value (decrements to 0).
   Bit32u     currCountdownPeriod; // Length of current countdown period.
   Bit64u     ticksTotal; // Num ticks total since start of emulator execution.
@@ -105,34 +106,31 @@ public:
   void   activate_timer( unsigned timer_index, Bit32u useconds,
                          bx_bool continuous );
   void   deactivate_timer( unsigned timer_index );
+  unsigned triggeredTimerID(void) {
+    return triggeredTimer;
+  }
   static BX_CPP_INLINE void tick1(void) {
 #if BX_SHOW_IPS
-  {
-  extern unsigned long ips_count;
-  ips_count++;
-  }
+    ips_count++;
 #endif
     if (--bx_pc_system.currCountdown == 0) {
       bx_pc_system.countdownEvent();
-      }
     }
+  }
   static BX_CPP_INLINE void tickn(Bit64u n) {
 #if BX_SHOW_IPS
-  {
-  extern unsigned long ips_count;
-  ips_count += n;
-  }
+    ips_count += n;
 #endif
     while (n >= Bit64u(bx_pc_system.currCountdown)) {
       n -= Bit64u(bx_pc_system.currCountdown);
       bx_pc_system.currCountdown = 0;
       bx_pc_system.countdownEvent();
       // bx_pc_system.currCountdown is adjusted to new value by countdownevent().
-      };
+    }
     // 'n' is not (or no longer) >= the countdown size.  We can just decrement
     // the remaining requested ticks and continue.
     bx_pc_system.currCountdown -= Bit32u(n);
-    }
+  }
 
   int register_timer_ticks(void* this_ptr, bx_timer_handler_t, Bit64u ticks,
                            bx_bool continuous, bx_bool active, const char *id);
@@ -143,14 +141,11 @@ public:
   static BX_CPP_INLINE Bit64u time_ticks() {
     return bx_pc_system.ticksTotal +
       Bit64u(bx_pc_system.currCountdownPeriod - bx_pc_system.currCountdown);
-    }
-  static BX_CPP_INLINE Bit64u getTicksTotal(void) {
-    return bx_pc_system.ticksTotal;
-    }
+  }
 
   static BX_CPP_INLINE Bit32u  getNumCpuTicksLeftNextEvent(void) {
     return bx_pc_system.currCountdown;
-    }
+  }
 #if BX_DEBUGGER
   static void timebp_handler(void* this_ptr);
 #endif
@@ -185,7 +180,8 @@ public:
 
   int IntEnabled( void );
   int InterruptSignal( PCS_OP operation );
-  int ResetSignal( PCS_OP operation );
+  // Cpu and System Reset
+  int Reset( unsigned type );
   Bit8u  IAC(void);
 
   bx_pc_system_c(void);
@@ -195,5 +191,4 @@ public:
   void    set_enable_a20(Bit8u value) BX_CPP_AttrRegparmN(1);
   bx_bool get_enable_a20(void);
   void    exit(void);
-
-  };
+};

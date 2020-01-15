@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth.cc,v 1.16 2003/04/28 13:01:09 cbothamy Exp $
+// $Id: eth.cc,v 1.23 2004/10/07 17:38:03 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -34,8 +34,10 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
-#include "bochs.h"
-#if BX_NE2K_SUPPORT
+#include "iodev.h"
+#if BX_NETWORKING
+
+#include "eth.h"
 
 #define LOG_THIS /* not needed */
 
@@ -70,12 +72,13 @@ extern class bx_tap_locator_c bx_tap_match;
 #if HAVE_TUNTAP
 extern class bx_tuntap_locator_c bx_tuntap_match;
 #endif
-#ifdef ETH_TEST
-extern bx_test_match;
+#if HAVE_VDE
+extern class bx_vde_locator_c bx_vde_match;
 #endif
 #ifdef ETH_ARPBACK
 extern class bx_arpback_locator_c bx_arpback_match;
 #endif
+extern class bx_vnet_locator_c bx_vnet_match;
 
 //
 // Called by ethernet chip emulations to locate and create a pktmover
@@ -84,12 +87,12 @@ extern class bx_arpback_locator_c bx_arpback_match;
 eth_pktmover_c *
 eth_locator_c::create(const char *type, const char *netif,
 		      const char *macaddr,
-		      eth_rx_handler_t rxh, void *rxarg)
+		      eth_rx_handler_t rxh, void *rxarg, char *script)
 {
 #ifdef eth_static_constructors
   for (eth_locator_c *p = all; p != NULL; p = p->next) {
     if (strcmp(type, p->type) == 0)
-      return (p->allocate(netif, macaddr, rxh, rxarg));
+      return (p->allocate(netif, macaddr, rxh, rxarg, script));
   }
 #else
   eth_locator_c *ptr = 0;
@@ -124,6 +127,12 @@ eth_locator_c::create(const char *type, const char *netif,
       ptr = (eth_locator_c *) &bx_tuntap_match;
   }
 #endif
+#if HAVE_VDE
+  {
+    if (!strcmp(type, "vde"))    
+      ptr = (eth_locator_c *) &bx_vde_match;
+  }
+#endif
 #if HAVE_ETHERTAP
   {
     if (!strcmp(type, "tap"))    
@@ -136,20 +145,18 @@ eth_locator_c::create(const char *type, const char *netif,
       ptr = (eth_locator_c *) &bx_win32_match;
   }
 #endif
-#ifdef ETH_TEST
   {
-    if (!strcmp(type, "test"))    
-      ptr = (eth_locator_c *) &bx_test_match;
+    if (!strcmp(type, "vnet"))    
+      ptr = (eth_locator_c *) &bx_vnet_match;
   }
-#endif
   if (ptr)
-    return (ptr->allocate(netif, macaddr, rxh, rxarg));
+    return (ptr->allocate(netif, macaddr, rxh, rxarg, script));
 #endif
 
   return (NULL);
 }
 
-#if (HAVE_ETHERTAP==1) || (HAVE_TUNTAP==1)
+#if (HAVE_ETHERTAP==1) || (HAVE_TUNTAP==1) || (HAVE_VDE==1)
 
 extern "C" {
 #include <sys/wait.h>
@@ -191,4 +198,4 @@ int execute_script( char* scriptname, char* arg1 )
 
 #endif // (HAVE_ETHERTAP==1) || (HAVE_TUNTAP==1)
 
-#endif /* if BX_NE2K_SUPPORT */
+#endif /* if BX_NETWORKING */

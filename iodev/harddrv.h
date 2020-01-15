@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h,v 1.22.2.1 2004/02/06 22:14:36 danielg4 Exp $
+// $Id: harddrv.h,v 1.29 2005/05/04 18:19:49 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -639,11 +639,6 @@ uint16 read_16bit(const uint8* buf) BX_CPP_AttrRegparmN(1);
 uint32 read_32bit(const uint8* buf) BX_CPP_AttrRegparmN(1);
 
 
-#ifdef LOWLEVEL_CDROM
-#  include "cdrom.h"
-#endif
-
-
 struct cdrom_t
 {
   bx_bool ready;
@@ -690,6 +685,11 @@ public:
   virtual Bit32u   get_first_cd_handle(void);
   virtual unsigned get_cd_media_status(Bit32u handle);
   virtual unsigned set_cd_media_status(Bit32u handle, unsigned status);
+#if BX_SUPPORT_PCI
+  virtual bx_bool  bmdma_read_sector(Bit8u channel, Bit8u *buffer);
+  virtual bx_bool  bmdma_write_sector(Bit8u channel, Bit8u *buffer);
+  virtual void     bmdma_complete(Bit8u channel);
+#endif
 
   virtual Bit32u virt_read_handler(Bit32u address, unsigned io_len) {
     return read_handler (this, address, io_len);
@@ -707,6 +707,9 @@ public:
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
 
+  static void iolight_timer_handler(void *);
+  BX_HD_SMF void iolight_timer(void);
+
 private:
 
   BX_HD_SMF bx_bool calculate_logical_address(Bit8u channel, off_t *sector) BX_CPP_AttrRegparmN(2);
@@ -718,9 +721,10 @@ private:
   BX_HD_SMF void init_send_atapi_command(Bit8u channel, Bit8u command, int req_length, int alloc_length, bool lazy = false) BX_CPP_AttrRegparmN(3);
   BX_HD_SMF void ready_to_send_atapi(Bit8u channel) BX_CPP_AttrRegparmN(1);
   BX_HD_SMF void raise_interrupt(Bit8u channel) BX_CPP_AttrRegparmN(1);
-  BX_HD_SMF void atapi_cmd_error(Bit8u channel, sense_t sense_key, asc_t asc);
+  BX_HD_SMF void atapi_cmd_error(Bit8u channel, sense_t sense_key, asc_t asc, bx_bool show);
   BX_HD_SMF void init_mode_sense_single(Bit8u channel, const void* src, int size);
   BX_HD_SMF void atapi_cmd_nop(Bit8u channel) BX_CPP_AttrRegparmN(1);
+  BX_HD_SMF bx_bool bmdma_present(void);
 
   // FIXME:
   // For each ATA channel we should have one controller struct
@@ -741,6 +745,8 @@ private:
       atapi_t atapi;
 
       Bit8u model_no[41];
+      int statusbar_id;
+      int iolight_counter;
       } drives[2];
     unsigned drive_select;
 
@@ -750,15 +756,7 @@ private:
 
     } channels[BX_MAX_ATA_CHANNEL];
 
-#if BX_PDC20230C_VLBIDE_SUPPORT
-// pdc20630c is only available for 1st ata channel
-  struct pdc20630c_t {
-    bx_bool prog_mode;
-    Bit8u   prog_count;
-    Bit32u  p1f3_value;
-    Bit32u  p1f4_value;
-    } pdc20230c;
-#endif
+  int iolight_timer_index;
 
   };
 #endif // INCLUDE_ONLY_SPARSE_HEADER

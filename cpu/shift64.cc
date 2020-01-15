@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: shift64.cc,v 1.10 2003/12/29 21:47:36 sshwarts Exp $
+// $Id: shift64.cc,v 1.16 2004/12/24 22:44:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,65 +25,55 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+
 #if BX_SUPPORT_X86_64
 
-  void
-BX_CPU_C::SHLD_EqGq(bxInstruction_c *i)
+void BX_CPU_C::SHLD_EqGq(bxInstruction_c *i)
 {
   Bit64u op1_64, op2_64, result_64;
   unsigned count;
 
-  /* op1:op2 << count.  result stored in op1 */
+  /* op1:op2 << count. result stored in op1 */
 
   if (i->b1() == 0x1a4)
     count = i->Ib() & 0x3f;
   else // 0x1a5
     count = CL & 0x3f;
 
-    if (!count) return; /* NOP */
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
-    op2_64 = BX_READ_64BIT_REG(i->nnn());
+  if (!count) return;
 
-    result_64 = (op1_64 << count) | (op2_64 >> (64 - count));
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
 
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
+  result_64 = (op1_64 << count) | (op2_64 >> (64 - count));
 
-    /* set eflags:
-     * SHLD count affects the following flags: S,Z,P,C,O
-     */
-    set_CF((op1_64 >> (64 - count)) & 0x01);
-    if (count == 1)
-      set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
-    set_ZF(result_64 == 0);
-    set_PF_base(result_64);
-    set_SF(result_64 >> 63);
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
+
+  /* set eflags:
+   * SHLD count affects the following flags: O,S,Z,A,P,C
+   */
+  SET_FLAGS_OSZAPC_64(op1_64, count, result_64, BX_INSTR_SHL64);
 }
 
-
-  void
-BX_CPU_C::SHRD_EqGq(bxInstruction_c *i)
+void BX_CPU_C::SHRD_EqGq(bxInstruction_c *i)
 {
   Bit64u op1_64, op2_64, result_64;
   unsigned count;
@@ -93,44 +83,44 @@ BX_CPU_C::SHRD_EqGq(bxInstruction_c *i)
   else // 0x1ad
     count = CL & 0x3f;
 
-  if (!count) return; /* NOP */
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
+  if (!count) return;
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
-    op2_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
 
-    result_64 = (op2_64 << (64 - count)) | (op1_64 >> count);
+  result_64 = (op2_64 << (64 - count)) | (op1_64 >> count);
 
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-    /* set eflags:
-     * SHRD count affects the following flags: S,Z,P,C,O
-     */
+  /* set eflags:
+   * SHRD count affects the following flags: S,Z,P,C,O
+   */
 
-    set_CF((op1_64 >> (count - 1)) & 0x01);
-    set_ZF(result_64 == 0);
-    set_SF(result_64 >> 63);
-    /* for shift of 1, OF set if sign change occurred. */
-    if (count == 1)
-      set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
-    set_PF_base(result_64);
+  set_CF((op1_64 >> (count - 1)) & 0x01);
+  set_ZF(result_64 == 0);
+  set_SF(result_64 >> 63);
+  set_AF(0);
+  /* for shift of 1, OF set if sign change occurred. */
+  if (count == 1)
+    set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
+  set_PF_base(result_64);
 }
 
-  void
-BX_CPU_C::ROL_Eq(bxInstruction_c *i)
+void BX_CPU_C::ROL_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64, result_64;
   unsigned count;
@@ -142,40 +132,39 @@ BX_CPU_C::ROL_Eq(bxInstruction_c *i)
   else // (i->b1() == 0xd3)
     count = CL & 0x3f;
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
-    if (count) {
-      result_64 = (op1_64 << count) | (op1_64 >> (64 - count));
+  if (! count) return;
 
-      /* now write result back to destination */
-      if (i->modC0()) {
-        BX_WRITE_64BIT_REG(i->rm(), result_64);
-        }
-      else {
-        Write_RMW_virtual_qword(result_64);
-        }
+  result_64 = (op1_64 << count) | (op1_64 >> (64 - count));
 
-      /* set eflags:
-       * ROL count affects the following flags: C
-       */
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-      set_CF(result_64 & 0x01);
-      if (count == 1)
-        set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
-      }
+  /* set eflags:
+   * ROL count affects the following flags: C, O
+   */
+  bx_bool temp_CF = (result_64 & 0x01);
+
+  set_CF(temp_CF);
+  set_OF(temp_CF ^ (result_64 >> 63));
 }
 
-  void
-BX_CPU_C::ROR_Eq(bxInstruction_c *i)
+void BX_CPU_C::ROR_Eq(bxInstruction_c *i)
 {
-    Bit64u op1_64, result_64, result_b63;
+    Bit64u op1_64, result_64;
   unsigned count;
 
   if (i->b1() == 0xc1)
@@ -185,39 +174,38 @@ BX_CPU_C::ROR_Eq(bxInstruction_c *i)
   else // (i->b1() == 0xd3)
     count = CL & 0x3f;
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
-    if (count) {
-      result_64 = (op1_64 >> count) | (op1_64 << (64 - count));
+  if (! count) return;
 
-      /* now write result back to destination */
-      if (i->modC0()) {
-        BX_WRITE_64BIT_REG(i->rm(), result_64);
-        }
-      else {
-        Write_RMW_virtual_qword(result_64);
-        }
+  result_64 = (op1_64 >> count) | (op1_64 << (64 - count));
 
-      /* set eflags:
-       * ROR count affects the following flags: C
-       */
-      result_b63 = result_64 & BX_CONST64(0x8000000000000000);
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-      set_CF(result_b63 != 0);
-      if (count == 1)
-        set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
-      }
+  /* set eflags:
+   * ROR count affects the following flags: C, O
+   */
+  bx_bool result_b63 = (result_64 & BX_CONST64(0x8000000000000000)) != 0;
+
+  set_CF(result_b63);
+  if (count == 1)
+    set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
 }
 
-  void
-BX_CPU_C::RCL_Eq(bxInstruction_c *i)
+void BX_CPU_C::RCL_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64, result_64;
   unsigned count;
@@ -229,45 +217,43 @@ BX_CPU_C::RCL_Eq(bxInstruction_c *i)
   else // (i->b1() == 0xd3)
     count = CL & 0x3f;
 
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
+  if (!count) return;
 
-    if (!count) return;
-
-    if (count==1) {
-      result_64 = (op1_64 << 1) | getB_CF();
-      }
-    else {
-      result_64 = (op1_64 << count) |
-                (getB_CF() << (count - 1)) |
+  if (count==1) {
+    result_64 = (op1_64 << 1) | getB_CF();
+  }
+  else {
+    result_64 = (op1_64 << count) | (getB_CF() << (count - 1)) |
                 (op1_64 >> (65 - count));
-      }
+  }
 
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-    /* set eflags:
-     * RCL count affects the following flags: C
-     */
-    if (count == 1)
-      set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
-    set_CF((op1_64 >> (64 - count)) & 0x01);
+  /* set eflags:
+   * RCL count affects the following flags: C, O
+   */
+  bx_bool temp_CF = (op1_64 >> (64 - count)) & 0x01;
+
+  set_CF(temp_CF);
+  set_OF(temp_CF ^ (result_64 >> 63));
 }
 
-  void
-BX_CPU_C::RCR_Eq(bxInstruction_c *i)
+void BX_CPU_C::RCR_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64, result_64;
   unsigned count;
@@ -279,45 +265,43 @@ BX_CPU_C::RCR_Eq(bxInstruction_c *i)
   else // (i->b1() == 0xd3)
     count = CL & 0x3f;
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
-    if (!count) return;
+  if (!count) return;
 
-    if (count==1) {
-      result_64 = (op1_64 >> 1) | (((Bit64u) getB_CF()) << 63);
-      }
-    else {
-      result_64 = (op1_64 >> count) |
-                (getB_CF() << (64 - count)) |
+  if (count==1) {
+    result_64 = (op1_64 >> 1) | (((Bit64u) getB_CF()) << 63);
+  }
+  else {
+    result_64 = (op1_64 >> count) | (getB_CF() << (64 - count)) |
                 (op1_64 << (65 - count));
-      }
+  }
 
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-    /* set eflags:
-     * RCR count affects the following flags: C
-     */
+  /* set eflags:
+   * RCR count affects the following flags: C, O
+   */
 
-    set_CF((op1_64 >> (count - 1)) & 0x01);
-    if (count == 1)
-      set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
+  set_CF((op1_64 >> (count - 1)) & 0x01);
+  if (count == 1)
+    set_OF(((op1_64 ^ result_64) & BX_CONST64(0x8000000000000000)) > 0);
 }
 
-  void
-BX_CPU_C::SHL_Eq(bxInstruction_c *i)
+void BX_CPU_C::SHL_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64, result_64;
   unsigned count;
@@ -329,32 +313,31 @@ BX_CPU_C::SHL_Eq(bxInstruction_c *i)
   else // (i->b1() == 0xd3)
     count = CL & 0x3f;
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
 
-    if (!count) return;
+  if (!count) return;
 
-    result_64 = (op1_64 << count);
+  result_64 = (op1_64 << count);
 
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-    SET_FLAGS_OSZAPC_64(op1_64, count, result_64, BX_INSTR_SHL64);
+  SET_FLAGS_OSZAPC_64(op1_64, count, result_64, BX_INSTR_SHL64);
 }
 
-  void
-BX_CPU_C::SHR_Eq(bxInstruction_c *i)
+void BX_CPU_C::SHR_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64, result_64;
   unsigned count;
@@ -366,80 +349,70 @@ BX_CPU_C::SHR_Eq(bxInstruction_c *i)
   else // (i->b1() == 0xd3)
     count = CL & 0x3f;
 
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
+    op1_64 = BX_READ_64BIT_REG(i->rm());
+  }
+  else {
+    /* pointer, segment address pair */
+    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  }
+
+  if (!count) return;
+
+  result_64 = (op1_64 >> count);
+
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
+
+  SET_FLAGS_OSZAPC_64(op1_64, count, result_64, BX_INSTR_SHR64);
+}
+
+void BX_CPU_C::SAR_Eq(bxInstruction_c *i)
+{
+  Bit64u op1_64, result_64;
+  unsigned count;
+
+  if (i->b1() == 0xc1)
+    count = i->Ib() & 0x3f;
+  else if (i->b1() == 0xd1)
+    count = 1;
+  else // (i->b1() == 0xd3)
+    count = CL & 0x3f;
+
+  /* op1 is a register or memory reference */
+  if (i->modC0()) {
       op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
+  }
+  else {
       /* pointer, segment address pair */
       read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
+  }
 
-    if (!count) return;
+  if (!count) return;
 
+  /* count < 64, since only lower 5 bits used */
+  if (op1_64 & BX_CONST64(0x8000000000000000)) {
+    result_64 = (op1_64 >> count) | (BX_CONST64(0xffffffffffffffff) << (64 - count));
+  }               
+  else {
     result_64 = (op1_64 >> count);
+  }
 
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
+  /* now write result back to destination */
+  if (i->modC0()) {
+    BX_WRITE_64BIT_REG(i->rm(), result_64);
+  }
+  else {
+    Write_RMW_virtual_qword(result_64);
+  }
 
-    SET_FLAGS_OSZAPC_64(op1_64, count, result_64, BX_INSTR_SHR64);
-}
-
-  void
-BX_CPU_C::SAR_Eq(bxInstruction_c *i)
-{
-  Bit64u op1_64, result_64;
-  unsigned count;
-
-  if (i->b1() == 0xc1)
-    count = i->Ib() & 0x3f;
-  else if (i->b1() == 0xd1)
-    count = 1;
-  else // (i->b1() == 0xd3)
-    count = CL & 0x3f;
-
-    /* op1 is a register or memory reference */
-    if (i->modC0()) {
-      op1_64 = BX_READ_64BIT_REG(i->rm());
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-      }
-
-    if (!count) return;
-
-    /* count < 64, since only lower 5 bits used */
-    if (op1_64 & BX_CONST64(0x8000000000000000)) {
-      result_64 = (op1_64 >> count) | (BX_CONST64(0xffffffffffffffff) << (64 - count));
-      }               
-    else {
-      result_64 = (op1_64 >> count);
-      }
-
-    /* now write result back to destination */
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), result_64);
-      }
-    else {
-      Write_RMW_virtual_qword(result_64);
-      }
-
-    /* set eflags:
-     * SAR count affects the following flags: S,Z,P,C
-     */
-
-    set_CF((op1_64 >> (count - 1)) & 0x01);
-    set_ZF(result_64 == 0);
-    set_SF(result_64 >> 63);
-    if (count == 1)
-      set_OF(0);
-    set_PF_base(result_64);
+  SET_FLAGS_OSZAPC_64(op1_64, count, result_64, BX_INSTR_SAR64);
 }
 
 #endif /* if BX_SUPPORT_X86_64 */
