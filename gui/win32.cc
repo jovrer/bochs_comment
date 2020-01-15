@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.47 2002/11/19 05:47:44 bdenney Exp $
+// $Id: win32.cc,v 1.47.2.2 2003/01/03 00:36:01 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -1020,6 +1020,7 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
   SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, stretched_x + x_edge * 2,
               stretched_y + bx_headerbar_y + y_edge * 2 + y_caption,
                SWP_NOMOVE | SWP_NOZORDER);
+  MoveWindow(hwndTB, 0, 0, stretched_x, bx_headerbar_y, TRUE);
   MoveWindow(stInfo.simWnd, 0, bx_headerbar_y, stretched_x, stretched_y, TRUE);
 }
 
@@ -1242,8 +1243,8 @@ void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart,
 //Note: it is also possible to program the VGA controller to have the
 //high bit for the foreground color enable blinking characters.
 
-	COLORREF crFore = SetTextColor(MemoryDC, GetColorRef((cColor>>4)&0xf));
-	COLORREF crBack = SetBkColor(MemoryDC, GetColorRef(cColor&0xf));
+	COLORREF crFore = SetTextColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx((cColor>>4)&0xf)));
+	COLORREF crBack = SetBkColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx(cColor&0xf)));
 	BitBlt (MemoryDC, xStart, yStart, ptSize.x, ptSize.y, hdcMem, ptOrg.x,
 		  ptOrg.y, dwRop);
 	SetBkColor(MemoryDC, crBack);
@@ -1335,8 +1336,8 @@ void DrawChar (HDC hdc, unsigned char c, int xStart, int yStart,
 //Note: it is also possible to program the VGA controller to have the
 //high bit for the foreground color enable blinking characters.
 
-  COLORREF crFore = SetTextColor(MemoryDC, GetColorRef(cColor&0xf));
-  COLORREF crBack = SetBkColor(MemoryDC, GetColorRef((cColor>>4)&0xf));
+  COLORREF crFore = SetTextColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx(cColor&0xf)));
+  COLORREF crBack = SetBkColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx((cColor>>4)&0xf)));
   str[0]=c;
   str[1]=0;
 

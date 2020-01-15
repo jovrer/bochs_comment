@@ -1,14 +1,14 @@
 D/sb16////
-/.cvsignore/1.2/Fri Sep  6 22:24:32 2002//TREL_2_0_FINAL
-/Makefile.in/1.3/Tue Oct  1 23:37:50 2002//TREL_2_0_FINAL
-/bximage.c/1.17/Tue Nov 26 11:21:31 2002//TREL_2_0_FINAL
-/fstab/1.1/Tue Apr 10 01:04:58 2001//TREL_2_0_FINAL
-/hello.cc/1.2/Wed Oct  3 13:10:38 2001//TREL_2_0_FINAL
-/install_redhat50/1.1/Tue Apr 10 01:04:58 2001//TREL_2_0_FINAL
-/lilo.conf/1.1/Tue Apr 10 01:04:59 2001//TREL_2_0_FINAL
-/make_cmos_image.cc/1.3/Wed Oct  3 13:10:38 2001//TREL_2_0_FINAL
-/network/1.1/Tue Apr 10 01:04:59 2001//TREL_2_0_FINAL
-/niclist.c/1.8/Thu Oct 24 21:07:56 2002//TREL_2_0_FINAL
-/spoolpipe.c/1.1/Mon Sep 23 19:25:06 2002//TREL_2_0_FINAL
-/test-access-check.cc/1.3/Wed Oct  3 13:10:38 2001//TREL_2_0_FINAL
-/xmods/1.1/Tue Apr 10 01:04:59 2001//TREL_2_0_FINAL
+/.cvsignore/1.2/Fri Sep  6 22:24:32 2002//TREL_2_0_1_FINAL
+/Makefile.in/1.3/Tue Oct  1 23:37:50 2002//TREL_2_0_1_FINAL
+/bximage.c/1.17/Tue Nov 26 11:21:31 2002//TREL_2_0_1_FINAL
+/fstab/1.1/Tue Apr 10 01:04:58 2001//TREL_2_0_1_FINAL
+/hello.cc/1.2/Wed Oct  3 13:10:38 2001//TREL_2_0_1_FINAL
+/install_redhat50/1.1/Tue Apr 10 01:04:58 2001//TREL_2_0_1_FINAL
+/lilo.conf/1.1/Tue Apr 10 01:04:59 2001//TREL_2_0_1_FINAL
+/make_cmos_image.cc/1.3/Wed Oct  3 13:10:38 2001//TREL_2_0_1_FINAL
+/network/1.1/Tue Apr 10 01:04:59 2001//TREL_2_0_1_FINAL
+/niclist.c/1.8/Thu Oct 24 21:07:56 2002//TREL_2_0_1_FINAL
+/spoolpipe.c/1.1/Mon Sep 23 19:25:06 2002//TREL_2_0_1_FINAL
+/test-access-check.cc/1.3/Wed Oct  3 13:10:38 2001//TREL_2_0_1_FINAL
+/xmods/1.1/Tue Apr 10 01:04:59 2001//TREL_2_0_1_FINAL
