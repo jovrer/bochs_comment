@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.113 2004/01/05 22:18:01 cbothamy Exp $
+// $Id: siminterface.h,v 1.113.2.2 2004/02/06 22:14:35 danielg4 Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Before I can describe what this file is for, I have to make the
@@ -898,7 +898,7 @@ public:
   enum {
     // When a bx_param_num_c is displayed in dialog, USE_SPIN_CONTROL controls
     // whether a spin control should be used instead of a simple text control.
-    USE_SPIN_CONTROL = (1<<0),
+    USE_SPIN_CONTROL = (1<<0)
   } bx_numopt_bits;
   bx_param_num_c (bx_id id,
       char *name,
@@ -1432,7 +1432,7 @@ BOCHSAPI extern bx_simulator_interface_c *SIM;
 BOCHSAPI extern void bx_init_siminterface ();
 BOCHSAPI extern int bx_init_main (int argc, char *argv[]);
 
-#ifdef __WXMSW__
+#if defined(__WXMSW__) || defined(WIN32)
 // Just to provide HINSTANCE, etc. in files that have not included bochs.h.
 // I don't like this at all, but I don't see a way around it.
 #include <windows.h>
@@ -1443,6 +1443,9 @@ typedef struct BOCHSAPI {
   // standard argc,argv
   int argc;
   char **argv;
+#ifdef WIN32
+  char initial_dir[MAX_PATH];
+#endif
 #ifdef __WXMSW__
   // these are only used when compiling with wxWindows.  This gives us a
   // place to store the data that was passed to WinMain.

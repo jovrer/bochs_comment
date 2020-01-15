@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc,v 1.10 2003/10/24 15:39:57 vruppert Exp $
+// $Id: win32dialog.cc,v 1.10.2.3 2004/02/06 12:21:12 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #ifdef WIN32
@@ -153,11 +153,14 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
       }
       return FALSE;
     case WM_CLOSE:
+      param->set(origpath);
       EndDialog(hDlg, -1);
       break;
     case WM_COMMAND:
       switch (LOWORD(wParam)) {
         case IDBROWSE:
+          GetDlgItemText(hDlg, IDPATH, path, MAX_PATH);
+          param->set(path);
           if (AskFilename(hDlg, param) > 0) {
             SetWindowText(GetDlgItem(hDlg, IDPATH), param->getptr());
             SendMessage(GetDlgItem(hDlg, IDSTATUS), BM_SETCHECK, BST_CHECKED, 0);
@@ -165,7 +168,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           break;
         case IDOK:
           if (SendMessage(GetDlgItem(hDlg, IDSTATUS), BM_GETCHECK, 0, 0) == BST_CHECKED) {
-            GetWindowText(GetDlgItem(hDlg, IDPATH), path, MAX_PATH);
+            GetDlgItemText(hDlg, IDPATH, path, MAX_PATH);
             if (lstrlen(path)) {
               status->set(BX_INSERTED);
             } else {
@@ -184,14 +187,14 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           EndDialog(hDlg, -1);
           break;
         case IDCREATE:
-          GetWindowText(GetDlgItem(hDlg, IDPATH), path, MAX_PATH);
+          GetDlgItemText(hDlg, IDPATH, path, MAX_PATH);
           cap = disktype->get() - disktype->get_min();
           if (CreateImage(hDlg, floppy_type_n_sectors[cap], path)) {
             wsprintf(mesg, "Created a %s disk image called %s", floppy_type_names[cap], path);
             MessageBox(hDlg, mesg, "Image created", MB_OK);
           }
           break;
-    }
+      }
   }
   return FALSE;
 }
@@ -206,33 +209,25 @@ int AskFilename(HWND hwnd, bx_param_filename_c *param)
 {
   OPENFILENAME ofn;
   int ret;
+  DWORD errcode;
   char filename[MAX_PATH];
   char *title;
+  char errtext[80];
 
   param->get(filename, MAX_PATH);
   title = param->get_label();
   if (!title) title = param->get_name();
+  memset(&ofn, 0, sizeof(OPENFILENAME));
   ofn.lStructSize = sizeof(OPENFILENAME);
   ofn.hwndOwner = hwnd;
-  ofn.hInstance   = NULL;
-  ofn.lpstrCustomFilter = NULL;
-  ofn.nMaxCustFilter = 0;
-  ofn.nFilterIndex = 0;
   ofn.lpstrFile   = filename;
   ofn.nMaxFile    = MAX_PATH;
-  ofn.lpstrFileTitle = NULL;
-  ofn.nMaxFileTitle = 0;
-  ofn.lpstrInitialDir = NULL;
+  ofn.lpstrInitialDir = bx_startup_flags.initial_dir;
   ofn.lpstrTitle = title;
-  ofn.nFileOffset = 0;
-  ofn.nFileExtension = 0;
-  ofn.lCustData = 0;
-  ofn.lpfnHook = NULL;
-  ofn.lpTemplateName = NULL;
   ofn.Flags = OFN_EXPLORER | OFN_HIDEREADONLY;
   if (param->get_options()->get() & bx_param_filename_c::SAVE_FILE_DIALOG) {
     ofn.lpstrFilter = "Text files (*.txt)\0*.txt\0All files (*.*)\0*.*\0";
-    ofn.lpstrDefExt = "prg";
+    ofn.lpstrDefExt = "txt";
     ofn.Flags |= OFN_OVERWRITEPROMPT;
     ret = GetSaveFileName(&ofn);
   } else {
@@ -242,7 +237,19 @@ int AskFilename(HWND hwnd, bx_param_filename_c *param)
     ret = GetOpenFileName(&ofn);
   }
   param->set(filename);
-  if (ret == 0) ret = -1;
+  if (ret == 0) {
+    errcode = CommDlgExtendedError();
+    if (errcode == 0) {
+      ret = -1;
+    } else {
+      if (errcode == 0x3002) {
+        wsprintf(errtext, "CommDlgExtendedError: invalid filename");
+      } else {
+        wsprintf(errtext, "CommDlgExtendedError returns 0x%04x", errcode);
+      }
+      MessageBox(hwnd, errtext, "Error", MB_ICONERROR);
+    }
+  }
   return ret;
 }
 
