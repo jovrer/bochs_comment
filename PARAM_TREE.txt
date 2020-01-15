@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt 11276 2012-07-12 14:51:54Z sshwarts $
+$Id: PARAM_TREE.txt 11633 2013-02-16 12:22:13Z vruppert $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -38,6 +38,7 @@ cpuid
   sep
   sse
   sse4a
+  misaligned_sse
   aes
   movbe
   adx
@@ -58,6 +59,7 @@ cpuid
   pcid
   fsgsbase
   smep
+  smap
   mwait
 
 memory
@@ -170,7 +172,6 @@ ata
       ioaddr2
       irq
     master
-      present
       type
       path
       mode
@@ -289,9 +290,6 @@ menu
 
 bochs
   (subtree containing Bochs state)
-
-wxdebug
-  (special subtree for wxBochs debugger)
 
 user
   (subtree for user-defined options)

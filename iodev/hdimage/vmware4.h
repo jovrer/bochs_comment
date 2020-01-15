@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware4.h 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: vmware4.h 11494 2012-10-07 18:36:22Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -35,12 +35,17 @@ class vmware4_image_t : public device_image_t
         vmware4_image_t();
         virtual ~vmware4_image_t();
 
-        int open(const char* pathname);
+        int open(const char* pathname, int flags);
         void close();
         Bit64s lseek(Bit64s offset, int whence);
         ssize_t read(void* buf, size_t count);
         ssize_t write(const void* buf, size_t count);
+
         Bit32u get_capabilities();
+        static int check_format(int fd, Bit64u imgsize);
+
+        bx_bool save_state(const char *backup_fname);
+        void restore_state(const char *backup_fname);
 
     private:
         static const off_t INVALID_OFFSET;
@@ -76,10 +81,9 @@ class vmware4_image_t : public device_image_t
 #pragma options align=reset
 #endif
 
-        bool is_open() const;
-        bool is_valid_header() const;
+        bx_bool is_open() const;
 
-        bool read_header();
+        bx_bool read_header();
         off_t perform_seek();
         void flush();
         Bit32u read_block_index(Bit64u sector, Bit32u index);
@@ -90,7 +94,8 @@ class vmware4_image_t : public device_image_t
         Bit8u* tlb;
         off_t tlb_offset;
         off_t current_offset;
-        bool is_dirty;
+        bx_bool is_dirty;
+        const char *pathname;
 };
 
 #endif

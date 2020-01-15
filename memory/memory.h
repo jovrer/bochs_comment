@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h 10994 2012-01-19 18:32:11Z vruppert $
+// $Id: memory.h 11556 2012-12-02 19:59:23Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -70,6 +70,7 @@ struct memory_handler_struct {
   void *param;
   bx_phy_address begin;
   bx_phy_address end;
+  Bit16u bitmap;
   memory_handler_t read_handler;
   memory_handler_t write_handler;
   memory_direct_access_handler_t da_handler;
@@ -82,6 +83,7 @@ class BOCHSAPI BX_MEM_C : public logfunctions {
 private:
   struct memory_handler_struct **memory_handlers;
   bx_bool pci_enabled;
+  bx_bool bios_write_enabled;
   bx_bool smram_available;
   bx_bool smram_enable;
   bx_bool smram_restricted;
@@ -116,6 +118,7 @@ public:
   BX_MEM_SMF void    disable_smram(void);
   BX_MEM_SMF bx_bool is_smram_accessible(void);
 
+  BX_MEM_SMF void    set_bios_write(bx_bool enabled);
   BX_MEM_SMF void    set_memory_type(memory_area_t area, bx_bool rw, bx_bool dram);
 
   BX_MEM_SMF Bit8u*  getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw);

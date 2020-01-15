@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: avx_pfp.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: avx_pfp.cc 11557 2012-12-09 16:42:48Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2012 Stanislav Shwartsman
@@ -1396,7 +1396,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VCVTPS2PH_WpsVpsIb(bxInstruction_c
     bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
     if (len == BX_VL256)
-      write_virtual_dqword(i->seg(), eaddr, &result);
+      write_virtual_xmmword(i->seg(), eaddr, &result);
     else
       write_virtual_qword(i->seg(), eaddr, result.xmm64u(0));
   }

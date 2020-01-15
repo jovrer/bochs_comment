@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.cc 11305 2012-08-01 14:56:51Z sshwarts $
+// $Id: smm.cc 11647 2013-03-05 21:12:43Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2012 Stanislav Shwartsman
@@ -36,10 +36,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
   }
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_RSM)) Svm_Vmexit(SVM_VMEXIT_RSM);
+  }
+#endif
+
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx) {
     if (BX_CPU_THIS_PTR in_vmx_guest) {
-      BX_ERROR(("VMEXIT: RSM in VMX non-root operation"));
       VMexit(VMX_VMEXIT_RSM, 0);
     }
     else {
@@ -51,7 +56,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
 
   BX_INFO(("RSM: Resuming from System Management Mode"));
 
-  BX_CPU_THIS_PTR disable_NMI = 0;
+  unmask_event(BX_EVENT_SMI | BX_EVENT_NMI | BX_EVENT_VMX_VIRTUAL_NMI);
 
   Bit32u saved_state[SMM_SAVE_STATE_MAP_SIZE], n;
   // reset reserved bits
@@ -114,7 +119,8 @@ void BX_CPU_C::enter_system_management_mode(void)
 #endif
 
   BX_CPU_THIS_PTR in_smm = 1;
-  BX_CPU_THIS_PTR disable_NMI = 1;
+
+  mask_event(BX_EVENT_SMI | BX_EVENT_NMI | BX_EVENT_VMX_VIRTUAL_NMI);
 
   Bit32u saved_state[SMM_SAVE_STATE_MAP_SIZE], n;
   // reset reserved bits
@@ -662,6 +668,15 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
   }
 #endif
 
+#if BX_CPU_LEVEL >= 5
+  if (smm_state->efer.get32() & ~((Bit64u) BX_CPU_THIS_PTR efer_suppmask)) {
+    BX_PANIC(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", smm_state->efer.get32()));
+    return 0;
+  }
+
+  BX_CPU_THIS_PTR efer.set32(smm_state->efer.val32);
+#endif
+
   // check CR0 conditions for entering to shutdown state
   if (!check_CR0(smm_state->cr0.get32())) {
     BX_PANIC(("SMM restore: CR0 consistency check failed !"));
@@ -673,19 +688,13 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     BX_PANIC(("SMM restore: CR4 consistency check failed !"));
     return 0;
   }
+#endif
 
-  // shutdown if write to reserved CR4 bits
-  if (!SetCR4(smm_state->cr4.get32())) {
-    BX_PANIC(("SMM restore: incorrect CR4 state !"));
-    return 0;
-  }
-
-  if (smm_state->efer.get32() & ~((Bit64u) BX_CPU_THIS_PTR efer_suppmask)) {
-    BX_PANIC(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", smm_state->efer.get32()));
-    return 0;
-  }
-
-  BX_CPU_THIS_PTR efer.set32(smm_state->efer.val32);
+  BX_CPU_THIS_PTR cr0.set32(smm_state->cr0.get32());
+#if BX_CPU_LEVEL >= 5
+  BX_CPU_THIS_PTR cr4.set32(smm_state->cr4.get32());
+#endif
+  BX_CPU_THIS_PTR cr3 = smm_state->cr3;
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR efer.get_LMA()) {
@@ -694,7 +703,7 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
       return 0;
     }
 
-    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !smm_state->cr0.get_PG() || !smm_state->cr0.get_PE() || !BX_CPU_THIS_PTR efer.get_LME()) {
+    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !BX_CPU_THIS_PTR cr0.get_PG() || !BX_CPU_THIS_PTR cr0.get_PE() || !BX_CPU_THIS_PTR efer.get_LME()) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
       return 0;
     }
@@ -706,29 +715,13 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     }
   }
 
-  if (BX_CPU_THIS_PTR cr4.get_PAE() && smm_state->cr0.get_PG() && smm_state->cr0.get_PE() && BX_CPU_THIS_PTR efer.get_LME()) {
+  if (BX_CPU_THIS_PTR cr4.get_PAE() && BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr0.get_PE() && BX_CPU_THIS_PTR efer.get_LME()) {
     if (! BX_CPU_THIS_PTR efer.get_LMA()) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
       return 0;
     }
   }
 #endif
-
-#endif
-
-  // hack CR0 to be able to back to long mode correctly
-  BX_CPU_THIS_PTR cr0.set_PE(0); // real mode (bit 0)
-  BX_CPU_THIS_PTR cr0.set_PG(0); // paging disabled (bit 31)
-  if (! SetCR0(smm_state->cr0.get32())) {
-    BX_PANIC(("SMM restore: failed to restore CR0 !"));
-    return 0;
-  }
-  setEFlags(smm_state->eflags);
-
-  if (!SetCR3(smm_state->cr3)) {
-    BX_PANIC(("SMM restore: failed to restore CR3 !"));
-    return 0;
-  }
 
 #if BX_CPU_LEVEL >= 6
   if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
@@ -738,6 +731,8 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     }
   }
 #endif
+
+  setEFlags(smm_state->eflags);
 
 #if BX_SUPPORT_X86_64
   for (int n=0; n<BX_GENERAL_REGISTERS; n++)

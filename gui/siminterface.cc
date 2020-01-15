@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc 11367 2012-08-25 13:20:55Z vruppert $
+// $Id: siminterface.cc 11634 2013-02-17 08:27:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -102,9 +102,6 @@ public:
   virtual void set_default_log_action(int level, int action) {
     logfunctions::set_default_action(level, action);
   }
-  virtual void apply_log_actions_by_device() {
-    bx_set_log_actions_by_device(0);
-  }
   virtual const char *get_log_level_name(int level);
   virtual int get_max_log_level() { return N_LOGLEV; }
   virtual void quit_sim(int code);
@@ -135,8 +132,9 @@ public:
   virtual int create_disk_image(const char *filename, int sectors, bx_bool overwrite);
   virtual void refresh_ci();
   virtual void refresh_vga() {
-    // maybe need to check if something has been initialized yet?
-    DEV_vga_refresh();
+    if (init_done) {
+      DEV_vga_refresh(0);
+    }
   }
   virtual void handle_events() {
     // maybe need to check if something has been initialized yet?
@@ -150,6 +148,7 @@ public:
   bx_param_c *get_first_hd() {
     return get_first_atadevice(BX_ATA_DEVICE_DISK);
   }
+  virtual bx_bool is_pci_device(const char *name);
 #if BX_DEBUGGER
   virtual void debug_break();
   virtual void debug_interpret_cmd (char *cmd);
@@ -198,22 +197,16 @@ public:
   virtual bx_bool opt_plugin_ctrl(const char *plugname, bx_bool load);
   virtual void init_std_nic_options(const char *name, bx_list_c *menu);
   virtual void init_usb_options(const char *usb_name, const char *pname, int maxports);
+  virtual int  parse_param_from_list(const char *context, const char *param, bx_list_c *base);
   virtual int  parse_nic_params(const char *context, const char *param, bx_list_c *base);
   virtual int  parse_usb_port_params(const char *context, bx_bool devopt,
                                      const char *param, int maxports, bx_list_c *base);
-  virtual int  write_pci_nic_options(FILE *fp, bx_list_c *base);
+  virtual int  write_param_list(FILE *fp, bx_list_c *base, const char *optname, bx_bool multiline);
   virtual int  write_usb_options(FILE *fp, int maxports, bx_list_c *base);
 
 private:
   bx_bool save_sr_param(FILE *fp, bx_param_c *node, const char *sr_path, int level);
 };
-
-#if BX_DEBUGGER && BX_DEBUGGER_GUI
-// FIXME: these probably belong inside the bx_simulator_interface_c structure
-char *debug_cmd = NULL;
-bx_bool debug_cmd_ready = 0;
-bx_bool vgaw_refresh = 0;
-#endif
 
 // recursive function to find parameters from the path
 static bx_param_c *find_param(const char *full_pname, const char *rest_of_pname, bx_param_c *base)
@@ -517,6 +510,7 @@ int bx_real_sim_c::get_cdrom_options(int level, bx_list_c **out, int *where)
 const char *floppy_devtype_names[] = { "none", "5.25\" 360K", "5.25\" 1.2M", "3.5\" 720K", "3.5\" 1.44M", "3.5\" 2.88M", NULL };
 const char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", "auto", NULL };
 int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8, -1 };
+const char *media_status_names[] = { "ejected", "inserted", NULL };
 const char *bochs_bootdisk_names[] = { "none", "floppy", "disk","cdrom", "network", NULL };
 
 const char *hdimage_mode_names[] = { 
@@ -739,17 +733,35 @@ bx_param_c *bx_real_sim_c::get_first_atadevice(Bit32u search_type)
     if (!SIM->get_param_bool(pname)->get())
       continue;
     for (int slave=0; slave<2; slave++) {
-      sprintf(pname, "ata.%d.%s.present", channel, (slave==0)?"master":"slave");
-      Bit32u present = SIM->get_param_bool(pname)->get();
       sprintf(pname, "ata.%d.%s.type", channel, (slave==0)?"master":"slave");
       Bit32u type = SIM->get_param_enum(pname)->get();
-      if (present && (type == search_type)) {
+      if (type == search_type) {
         sprintf(pname, "ata.%d.%s", channel, (slave==0)?"master":"slave");
-	return SIM->get_param(pname);
+        return SIM->get_param(pname);
       }
     }
   }
   return NULL;
+}
+
+bx_bool bx_real_sim_c::is_pci_device(const char *name)
+{
+#if BX_SUPPORT_PCI
+  unsigned i;
+  char devname[80];
+  char *device;
+
+  if (SIM->get_param_bool(BXPN_PCI_ENABLED)->get()) {
+    for (i = 0; i < BX_N_PCI_SLOTS; i++) {
+      sprintf(devname, "pci.slot.%d", i+1);
+      device = SIM->get_param_string(devname)->getptr();
+      if ((strlen(device) > 0) && (!strcmp(name, device))) {
+        return 1;
+      }
+    }
+  }
+#endif
+  return 0;
 }
 
 #if BX_DEBUGGER
@@ -1008,6 +1020,7 @@ bx_bool bx_real_sim_c::save_state(const char *checkpoint_path)
   int i, dev, ndev = SIM->get_n_log_modules();
   int type, ntype = SIM->get_max_log_level();
 
+  get_param_string(BXPN_RESTORE_PATH)->set(checkpoint_path);
   sprintf(sr_file, "%s/config", checkpoint_path);
   if (write_rc(sr_file, 1) < 0)
     return 0;
@@ -1045,6 +1058,7 @@ bx_bool bx_real_sim_c::save_state(const char *checkpoint_path)
       return 0;
     }
   }
+  get_param_string(BXPN_RESTORE_PATH)->set("none");
   return 1;
 }
 
@@ -1271,7 +1285,7 @@ bx_bool bx_real_sim_c::save_sr_param(FILE *fp, bx_param_c *node, const char *sr_
 {
   int i;
   Bit64s value;
-  char tmpstr[BX_PATHNAME_LEN], tmpbyte[4];
+  char pname[BX_PATHNAME_LEN], tmpstr[BX_PATHNAME_LEN];
   FILE *fp2;
 
   for (i=0; i<level; i++)
@@ -1314,28 +1328,19 @@ bx_bool bx_real_sim_c::save_sr_param(FILE *fp, bx_param_c *node, const char *sr_
       fprintf(fp, "%s\n", ((bx_param_enum_c*)node)->get_selected());
       break;
     case BXT_PARAM_STRING:
-      if (((bx_param_string_c*)node)->get_options() & bx_param_string_c::RAW_BYTES) {
-        tmpstr[0] = 0;
-        for (i = 0; i < ((bx_param_string_c*)node)->get_maxsize(); i++) {
-          if (i > 0) {
-            tmpbyte[0] = ((bx_param_string_c*)node)->get_separator();
-            tmpbyte[1] = 0;
-            strcat(tmpstr, tmpbyte);
-          }
-          sprintf(tmpbyte, "%02x", (Bit8u)((bx_param_string_c*)node)->getptr()[i]);
-          strcat(tmpstr, tmpbyte);
-        }
-        fprintf(fp, "%s\n", tmpstr);
-      } else {
-        fprintf(fp, "%s\n", ((bx_param_string_c*)node)->getptr());
-      }
+      ((bx_param_string_c*)node)->sprint(tmpstr, BX_PATHNAME_LEN, 0);
+      fprintf(fp, "%s\n", tmpstr);
       break;
     case BXT_PARAM_DATA:
-      fprintf(fp, "%s.%s\n", node->get_parent()->get_name(), node->get_name());
+      node->get_param_path(pname, BX_PATHNAME_LEN);
+      if (!strncmp(pname, "bochs.", 6)) {
+        strcpy(pname, pname+6);
+      }
+      fprintf(fp, "%s\n", pname);
       if (sr_path)
-        sprintf(tmpstr, "%s/%s.%s", sr_path, node->get_parent()->get_name(), node->get_name());
+        sprintf(tmpstr, "%s/%s", sr_path, pname);
       else
-        sprintf(tmpstr, "%s.%s", node->get_parent()->get_name(), node->get_name());
+        strcpy(tmpstr, pname);
       fp2 = fopen(tmpstr, "wb");
       if (fp2 != NULL) {
         fwrite(((bx_shadow_data_c*)node)->getptr(), 1, ((bx_shadow_data_c*)node)->get_size(), fp2);
@@ -1417,6 +1422,8 @@ bx_bool bx_real_sim_c::opt_plugin_ctrl(const char *plugname, bx_bool load)
       plugin_ctrl->remove(plugname);
       return 1;
     }
+  } else if (!load && !PLUG_device_present(plugname)) {
+    plugin_ctrl->remove(plugname);
   }
   return 0;
 }
@@ -1431,6 +1438,11 @@ void bx_real_sim_c::init_usb_options(const char *usb_name, const char *pname, in
   bx_init_usb_options(usb_name, pname, maxports);
 }
 
+int bx_real_sim_c::parse_param_from_list(const char *context, const char *param, bx_list_c *base)
+{
+  return bx_parse_param_from_list(context, param, base);
+}
+
 int bx_real_sim_c::parse_nic_params(const char *context, const char *param, bx_list_c *base)
 {
   return bx_parse_nic_params(context, param, base);
@@ -1442,9 +1454,9 @@ int bx_real_sim_c::parse_usb_port_params(const char *context, bx_bool devopt,
   return bx_parse_usb_port_params(context, devopt, param, maxports, base);
 }
 
-int bx_real_sim_c::write_pci_nic_options(FILE *fp, bx_list_c *base)
+int bx_real_sim_c::write_param_list(FILE *fp, bx_list_c *base, const char *optname, bx_bool multiline)
 {
-  return bx_write_pci_nic_options(fp, base);
+  return bx_write_param_list(fp, base, optname, multiline);
 }
 
 int bx_real_sim_c::write_usb_options(FILE *fp, int maxports, bx_list_c *base)

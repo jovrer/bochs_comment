@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pci_ide.cc 11549 2012-11-12 18:56:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -18,9 +18,9 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
-//
-// i440FX Support - PCI IDE controller (PIIX3)
-//
+// PCI IDE controller
+// i430FX - PIIX
+// i440FX - PIIX3
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
@@ -93,13 +93,19 @@ void bx_pci_ide_c::init(void)
   BX_PIDE_THIS s.bmdma[0].buffer = new Bit8u[0x20000];
   BX_PIDE_THIS s.bmdma[1].buffer = new Bit8u[0x20000];
 
+  BX_PIDE_THIS s.chipset = SIM->get_param_enum(BXPN_PCI_CHIPSET)->get();
   for (i=0; i<256; i++)
     BX_PIDE_THIS pci_conf[i] = 0x0;
   // readonly registers
   BX_PIDE_THIS pci_conf[0x00] = 0x86;
   BX_PIDE_THIS pci_conf[0x01] = 0x80;
-  BX_PIDE_THIS pci_conf[0x02] = 0x10;
-  BX_PIDE_THIS pci_conf[0x03] = 0x70;
+  if (BX_PIDE_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+    BX_PIDE_THIS pci_conf[0x02] = 0x10;
+    BX_PIDE_THIS pci_conf[0x03] = 0x70;
+  } else {
+    BX_PIDE_THIS pci_conf[0x02] = 0x30;
+    BX_PIDE_THIS pci_conf[0x03] = 0x12;
+  }
   BX_PIDE_THIS pci_conf[0x09] = 0x80;
   BX_PIDE_THIS pci_conf[0x0a] = 0x01;
   BX_PIDE_THIS pci_conf[0x0b] = 0x01;

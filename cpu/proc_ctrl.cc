@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: proc_ctrl.cc 11598 2013-01-27 19:27:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -50,7 +50,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT0_PAUSE)) Svm_Vmexit(SVM_VMEXIT_PAUSE);
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_PAUSE)) SvmInterceptPAUSE();
   }
 #endif
 
@@ -72,7 +72,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
-    BX_DEBUG(("VMEXIT: CPUID in VMX non-root operation"));
     VMexit(VMX_VMEXIT_CPUID, 0);
   }
 #endif
@@ -150,7 +149,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_HLT_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: HLT"));
       VMexit(VMX_VMEXIT_HLT, 0);
     }
   }
@@ -199,7 +197,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
-    BX_ERROR(("VMEXIT: INVD in VMX non-root operation"));
     VMexit(VMX_VMEXIT_INVD, 0);
   }
 #endif
@@ -232,7 +229,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_WBINVD_VMEXIT)) {
-      BX_ERROR(("VMEXIT: WBINVD in VMX non-root operation"));
       VMexit(VMX_VMEXIT_WBINVD, 0);
     }
   }
@@ -244,12 +240,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
   }
 #endif
 
-  invalidate_prefetch_q();
+//invalidate_prefetch_q();
 
-  BX_DEBUG(("WBINVD: Flush internal caches !"));
+  BX_DEBUG(("WBINVD: WB-Invalidate internal caches !"));
   BX_INSTR_CACHE_CNTRL(BX_CPU_ID, BX_INSTR_WBINVD);
 
-  flushICaches();
+//flushICaches();
 
   BX_NEXT_TRACE(i);
 }
@@ -287,7 +283,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
 #if BX_INSTRUMENTATION
   bx_phy_address paddr =
 #endif
-    translate_linear(laddr, USER_PL, BX_READ);
+    translate_linear(BX_TLB_ENTRY_OF(laddr), laddr, USER_PL, BX_READ);
 
   BX_INSTR_CLFLUSH(BX_CPU_ID, laddr, paddr);
 
@@ -451,10 +447,15 @@ void BX_CPU_C::handleCpuContextChange(void)
 
   invalidate_prefetch_q();
   invalidate_stack_cache();
+
+  handleInterruptMaskChange();
+
 #if BX_CPU_LEVEL >= 4
   handleAlignmentCheck();
 #endif
+
   handleCpuModeChange();
+
 #if BX_CPU_LEVEL >= 6
   handleSseModeChange();
 #if BX_SUPPORT_AVX
@@ -474,7 +475,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)  {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_RDPMC_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: RDPMC"));
       VMexit(VMX_VMEXIT_RDPMC, 0);
     }
   }
@@ -549,7 +549,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_RDTSC_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: RDTSC"));
       VMexit(VMX_VMEXIT_RDTSC, 0);
     }
   }
@@ -594,7 +593,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_RDTSC_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: RDTSCP"));
       VMexit(VMX_VMEXIT_RDTSCP, 0);
     }
   }
@@ -658,7 +656,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_MONITOR_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: MONITOR"));
       VMexit(VMX_VMEXIT_MONITOR, 0);
     }
   }
@@ -699,7 +696,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
     }
   }
 
-  bx_phy_address paddr = translate_linear(laddr, USER_PL, BX_READ);
+  bx_phy_address paddr = translate_linear(BX_TLB_ENTRY_OF(laddr), laddr, USER_PL, BX_READ);
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
@@ -734,7 +731,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_MWAIT_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: MWAIT"));
       VMexit(VMX_VMEXIT_MWAIT, BX_CPU_THIS_PTR monitor.armed);
     }
   }
@@ -777,10 +773,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
   if (ECX & 1) {
 #if BX_SUPPORT_VMX
     // When "interrupt window exiting" VMX control is set MWAIT instruction
-    // won't cause the processor to enter BX_ACTIVITY_STATE_MWAIT_IF sleep
-    // state with EFLAGS.IF = 0
-    if (BX_CPU_THIS_PTR vmx_interrupt_window && ! BX_CPU_THIS_PTR get_IF()) {
-      BX_NEXT_TRACE(i);
+    // won't cause the processor to enter sleep state with EFLAGS.IF = 0
+    if (BX_CPU_THIS_PTR in_vmx_guest) {
+      if (VMEXIT(VMX_VM_EXEC_CTRL2_INTERRUPT_WINDOW_VMEXIT) && ! BX_CPU_THIS_PTR get_IF()) {
+        BX_NEXT_TRACE(i);
+      }
     }
 #endif
     BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_MWAIT_IF;
@@ -1065,8 +1062,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.l            = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.avl          = 0; /* available for use by system */
 
-    writeEFlags(read_eflags() & (~MSR_FMASK), EFlagsValidMask);
-    BX_CPU_THIS_PTR clear_RF();
+    writeEFlags(read_eflags() & ~MSR_FMASK & ~(EFlagsRFMask), EFlagsValidMask);
     RIP = temp_RIP;
   }
   else
@@ -1264,6 +1260,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
+
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SWAPGS(bxInstruction_c *i)
 {
   if(CPL != 0)
@@ -1351,4 +1348,5 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE(bxInstruction_c *i)
 
   BX_NEXT_INSTR(i);
 }
+
 #endif

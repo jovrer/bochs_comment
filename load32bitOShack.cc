@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: load32bitOShack.cc 10409 2011-06-19 05:37:30Z vruppert $
+// $Id: load32bitOShack.cc 11529 2012-11-02 07:46:50Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -209,13 +209,7 @@ void bx_load_linux_hack(void)
 
   // Enter protected mode
   // Fixed by george (kyriazis at nvidia.com)
-  // BX_CPU(0)->cr0.pe = 1;
-  // BX_CPU(0)->cr0.val32 |= 0x01;
-
-  if (! BX_CPU(0)->SetCR0(BX_CPU(0)->cr0.val32 | 0x01)) {
-    BX_INFO(("bx_load_linux_hack: can't enable protected mode in CR0"));
-    BX_EXIT(1);
-  }
+  BX_CPU(0)->cr0.set_PE(1); // protected mode
 
   // load esi with real_mode
   BX_CPU(0)->gen_reg[BX_32BIT_REG_ESI].dword.erx = 0x90000;

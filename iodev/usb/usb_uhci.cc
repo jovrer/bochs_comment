@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_uhci.cc 11390 2012-09-02 09:37:47Z vruppert $
+// $Id: usb_uhci.cc 11634 2013-02-17 08:27:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009       Benjamin D Lunt (fys at frontiernet net)
@@ -21,6 +21,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 // Experimental USB UHCI adapter
+// PIIX3/PIIX4 function 2
 
 /* Notes by Ben Lunt:
    - My purpose of coding this emulation was/is to learn about the USB.
@@ -136,6 +137,8 @@ bx_usb_uhci_c::~bx_usb_uhci_c()
   }
 
   SIM->get_bochs_root()->remove("usb_uhci");
+  bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
+  usb_rt->remove("uhci");
   BX_DEBUG(("Exit"));
 }
 
@@ -163,10 +166,10 @@ void bx_usb_uhci_c::init(void)
   BX_UHCI_THIS hub.timer_index =
                    bx_pc_system.register_timer(this, usb_timer_handler, 1000, 1,1, "usb.timer");
 
-  if (DEV_is_pci_device(BX_PLUGIN_USB_UHCI)) {
-    BX_UHCI_THIS hub.devfunc = 0x00;
-  } else {
+  if (SIM->get_param_enum(BXPN_PCI_CHIPSET)->get() == BX_PCI_CHIPSET_I440FX) {
     BX_UHCI_THIS hub.devfunc = BX_PCI_DEVICE(1,2);
+  } else {
+    BX_UHCI_THIS hub.devfunc = 0x00;
   }
   DEV_register_pci_handlers(this, &BX_UHCI_THIS hub.devfunc, BX_PLUGIN_USB_UHCI,
                             "Experimental USB UHCI");

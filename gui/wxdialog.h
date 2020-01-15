@@ -1,7 +1,9 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h 11339 2012-08-15 12:47:08Z vruppert $
+// $Id: wxdialog.h 11633 2013-02-16 12:22:13Z vruppert $
 ////////////////////////////////////////////////////////////////////
-
+//
+//  Copyright (C) 2002-2013  The Bochs Project
+//
 // wxWidgets dialogs for Bochs
 
 #include <wx/spinctrl.h>
@@ -165,58 +167,6 @@ public:
 DECLARE_EVENT_TABLE()
 };
 
-
-#if BX_DEBUGGER
-////////////////////////////////////////////////////////////////////////////
-// DebugLogDialog
-////////////////////////////////////////////////////////////////////////////
-// DebugLogDialog allows the user to decide how Bochs will
-// behave for each type of log event.
-//
-// +---- Debugger log ---------------------------------------+
-// |                                                         |
-// |  +--------------------------------------------------+   |
-// |  |(0) f000:fff0: ea5be000f0: jmp f000:e05b          |   |
-// |  |(0) 0010:00001868: 83fb10: cmp EBX, #10           |   |
-// |  |                                                  |   |
-// |  |                                                  |   |
-// |  |                                                  |   |
-// |  |                                                  |   |
-// |  +--------------------------------------------------+   |
-// |  Type a debugger command:                               |
-// |  +----------------------------------------+ +-------+   |
-// |  | step 1000                              | |Execute|   |
-// |  +----------------------------------------+ +-------+   |
-// |                                                         |
-// |                                              [ Close ]  |
-// +---------------------------------------------------------+
-class DebugLogDialog: public wxDialog
-{
-private:
-#define DEBUG_LOG_TITLE wxT("Debugger log")
-#define DEBUG_CMD_PROMPT wxT("Type a debugger command:")
-  wxBoxSizer *mainSizer, *commandSizer, *buttonSizer;
-  wxTextCtrl *log, *command;
-  Bit32u lengthMax;
-  Bit32u lengthTolerance;
-#define DEBUG_LOG_DEFAULT_LENGTH_MAX (400*80)
-#define DEBUG_LOG_DEFAULT_TOLERANCE (200*80)
-public:
-  DebugLogDialog(wxWindow* parent, wxWindowID id);
-  void Init();  // called automatically by ShowModal()
-  void OnEvent(wxCommandEvent& event);
-  void OnEnterEvent(wxCommandEvent& event) { Execute(true); }
-  void OnKeyEvent(wxKeyEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void Execute(bool clearCommand);
-  void CheckLogLength();
-  void AppendCommand(const char *);
-  void AppendText(wxString text);
-  void CopyParamToGui() { /* empty for now */ }
-DECLARE_EVENT_TABLE()
-};
-#endif
-
 ////////////////////////////////////////////////////////////////////////////
 // PluginControlDialog
 ////////////////////////////////////////////////////////////////////////////
@@ -370,21 +320,12 @@ class LogOptionsDialog : public ParamDialog
 private:
 #define LOG_OPTS_TITLE wxT("Configure Log Events")
 #define LOG_OPTS_PROMPT wxT("How should Bochs respond to each type of event?")
-#define LOG_OPTS_TYPE_NAMES { wxT("Debug events: "), wxT("Info events: "), wxT("Error events: "), wxT("Panic events: "), wxT("Pass events: ") }
-#define LOG_OPTS_N_TYPES 5
+#define LOG_OPTS_TYPE_NAMES { wxT("Debug events: "), wxT("Info events: "), wxT("Error events: "), wxT("Panic events: ") }
+#define LOG_OPTS_N_TYPES 4
 #define LOG_OPTS_CHOICES { wxT("ignore"), wxT("log"), wxT("ask user"), wxT("end simulation"), wxT("no change") }
 #define LOG_OPTS_N_CHOICES_NORMAL 4
 #define LOG_OPTS_N_CHOICES 5   // number of choices, including "no change"
 #define LOG_OPTS_NO_CHANGE 4   // index of "no change"
-// normally all choices are available for all event types. The exclude
-// expression allows some choices to be eliminated if they don't make any
-// sense.  For example, it would be stupid to ignore a panic.
-#define LOG_OPTS_EXCLUDE(type,choice)  ( \
-   /* can't die or ask, on debug or info events */   \
-   (type <= 1 && (choice==2 || choice==3)) \
-   /* can't ignore panics or errors */ \
-   || (type >= 2 && choice==0) \
-   )
 #define LOG_OPTS_ADV wxT("For additional control over how each device responds to events, use the menu option \"Log ... By Device\".")
   wxFlexGridSizer *gridSizer;
   wxChoice *action[LOG_OPTS_N_TYPES];
@@ -392,101 +333,6 @@ public:
   LogOptionsDialog(wxWindow* parent, wxWindowID id);
   int GetAction(int evtype);
   void SetAction(int evtype, int action);
-  DECLARE_EVENT_TABLE()
-};
-
-////////////////////////////////////////////////////////////////////////////
-// CpuRegistersDialog
-////////////////////////////////////////////////////////////////////////////
-//
-// this would display the current values of all CPU registers, possibly you can
-// enable different groups like debug, FPU, MMX registers.  Certainly if you
-// interrupt the simulation, these would be updated.  we could update
-// periodically during simulation if it was useful.  If we get the debugger
-// integrated with wxwidgets, you could single step and update the cpu
-// registers, with regs that change marked in a different color.  Modeless
-// dialog.
-//
-// +--- CPU Registers ---------------------------------------+
-// |                                                         |
-// |  EAX 0x00000000   EIP    0xffff   LDTR 0x00000000       |
-// |  EBX 0x00000000   CS     0x0018   TR   0x00000000       |
-// |  ECX 0x00000000   SS     0x0018   GDTR 0x00000000       |
-// |  EDX 0x00000000   DS     0x0018    lim 0x00000000       |
-// |  EBP 0x00000000   ES     0x0018   IDTR 0x00000000       |
-// |  ESI 0x00000000   FS     0x0018    lim 0x00000000       |
-// |  EDI 0x00000000   GS     0x0018                         |
-// |  ESP 0x00000000   EFLAGS 0x0012                         |
-// |                                                         |
-// | ID AC VM RF NT IOPL CF PF AF ZF SF TF IF DF OF          |
-// | [] [] [] [] [] [0]  [] [] [] [] [] [] [] [] []          |
-// |                                                         |
-// | DR0 0x00000000   TR3 0x00000000  CR0 0x00000000         |
-// | DR1 0x00000000   TR4 0x00000000  CR1 0x00000000         |
-// | DR2 0x00000000   TR5 0x00000000  CR2 0x00000000         |
-// | DR3 0x00000000   TR6 0x00000000  CR3 0x00000000         |
-// | DR6 0x00000000   TR7 0x00000000  CR4 0x00000000         |
-// | DR7 0x00000000                                          |
-// |                                                         |
-// |      [Go]  [Stop]  [Step]  [Step N]  N=[____]           |
-// +---------------------------------------------------------+
-//
-// +--- CPU Extended Registers ------------------------------+
-// |                                                         |
-// |                                                         |
-// |      [Go]  [Stop]  [Step]  [Step N]  N=[____]           |
-// +---------------------------------------------------------+
-//
-class CpuRegistersDialog : public ParamDialog
-{
-
-#define CPU_REGS_MAIN_REGS1     \
-  { "EAX", "EBX", "ECX", "EDX", \
-    "EBP", "ESI", "EDI", "ESP", \
-    NULL }
-#define CPU_REGS_MAIN_REGS2     \
-  { "EIP", "CS", "SS", "DS",    \
-    "ES", "FS", "GS", "EFLAGS", \
-    NULL }
-#define CPU_REGS_MAIN_REGS3     \
-  { "LDTR", "TR",               \
-    "GDTR_base", "IDTR_limit",  \
-    "IDTR_base", "GDTR_limit",  \
-    NULL }
-#define CPU_REGS_FLAGS          \
-  { "ID", "VIP", "VIF",         \
-    "AC", "VM", "RF",           \
-    "NT", "IOPL", "OF",         \
-    "DF", "IF", "TF",           \
-    "SF", "ZF", "AF",           \
-    "PF", "CF", \
-    NULL }
-#define CPU_REGS_DEBUG_REGS     \
-  { "DR0", "DR1", "DR2",        \
-    "DR3", "DR6", "DR7",        \
-    NULL }
-#define CPU_REGS_TEST_REGS             \
-  { "TR3", "TR4", "TR5", "TR6", "TR7", \
-    NULL }
-#define CPU_REGS_CONTROL_REGS          \
-  { "CR0", "CR2", "CR3", "CR4", \
-    NULL  }
-
-  void Init();  // called automatically by ShowModal()
-  wxFlexGridSizer *mainRegsSizer, *flagsSizer, *extRegsSizer;
-#define CPU_REGS_MAX_FLAGS 17
-  bx_param_c *flagptr[CPU_REGS_MAX_FLAGS];
-  int nflags;
-#if BX_DEBUGGER
-  wxButton *contButton, *stopButton, *stepButton, *commitButton;
-#endif
-  void stateChanged(bool simRunning);
-public:
-  CpuRegistersDialog(wxWindow* parent, wxWindowID id);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void AddFlag(bx_param_c *param);
-  void OnEvent(wxCommandEvent& event);
-  virtual void CopyParamToGui();
   DECLARE_EVENT_TABLE()
 };
 

@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk 11388 2012-09-01 10:50:03Z vruppert $
+$Id: user.dbk 11663 2013-04-07 07:54:52Z vruppert $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -861,7 +861,7 @@ to mention, running DOOM, though at then-pathetic speeds.
 
 <para>
 The change log is stored in the Bochs source code in a file called
-CHANGES.  Click <ulink url="http://bochs.svn.sourceforge.net/viewvc/bochs/trunk/bochs/CHANGES">here</ulink>
+CHANGES.  Click <ulink url="http://svn.code.sf.net/p/bochs/code/trunk/bochs/CHANGES">here</ulink>
 to see the latest version of the CHANGES file.
 </para>
 <para>
@@ -967,7 +967,7 @@ available at <ulink url="http://www.cygwin.com">www.cygwin.com</ulink>.
 
 <figure><title>Checking out Bochs in SVN</title>
 <screen>
-  user$ <command>svn co https://bochs.svn.sourceforge.net/svnroot/bochs/trunk/bochs bochs</command>
+  user$ <command>svn co http://svn.code.sf.net/p/bochs/code/trunk/bochs bochs</command>
   A    bochs/ltdl.c
   A    bochs/Makefile.in
   A    bochs/bochs.h
@@ -1114,7 +1114,7 @@ below.
 You can also use the SVN checkout command to get the Bochs source code for
 any release since March 2000.  The command is
 <screen>
-  user$ <command>svn co https://bochs.svn.sourceforge.net/svnroot/bochs/tags/<replaceable>tagname</replaceable> bochs</command>
+  user$ <command>svn co http://svn.code.sf.net/p/bochs/code/tags/<replaceable>tagname</replaceable>/bochs bochs</command>
 </screen>
 The <replaceable>tagname</replaceable> tells which release you want, and it can be one of the following:
 
@@ -2161,6 +2161,13 @@ to explicitly turn it off.
       </entry>
     </row>
     <row>
+      <entry>--enable-voodoo</entry>
+      <entry>no</entry>
+      <entry>Enable experimental 3dfx Voodoo Graphics emulation. Currently only
+      the Voodoo1 model can be emulated.
+      </entry>
+    </row>
+    <row>
       <entry>--enable-plugins</entry>
       <entry>no</entry>
       <entry>
@@ -2258,7 +2265,7 @@ to explicitly turn it off.
     </row>
     <row>
       <entry>--enable-pci</entry>
-      <entry>no</entry>
+      <entry>yes</entry>
       <entry>Enable limited i440FX PCI support. This is still incomplete, but usable.
       </entry>
     </row>
@@ -2971,25 +2978,50 @@ These plugins are also supported, but they are usually loaded directly with
 their bochsrc option: 'e1000', 'es1370', 'ne2k', 'pcidev', 'pcipnic', 'sb16',
 'usb_ohci', 'usb_uhci' and 'usb_xhci'.
 </para>
+<para>
+This plugin currently must be loaded with plugin_ctrl: 'voodoo'.
+</para>
 </section>
 
-<section id="bochsopt-megs"><title>megs</title>
+<section id="bochsopt-memory"><title>memory</title>
+<para>
+Examples:
+<screen>
+  memory: guest=512, host=256
+</screen>
+Set the amount of physical memory you want to emulate.
+</para>
+<para><command>guest</command></para>
+<para>
+Set amount of guest physical memory to emulate. The default is 32MB,
+the maximum amount limited only by physical address space limitations.
+</para>
+<para><command>host</command></para>
+<para>
+Set amount of host memory you want to allocate for guest RAM emulation.
+It is possible to allocate less memory than you want to emulate in guest
+system. This will fake guest to see the non-existing memory. Once guest
+system touches new memory block it will be dynamically taken from the
+memory pool. You will be warned (by FATAL PANIC) in case guest already
+used all allocated host memory and wants more.
+</para>
+<note><para>
+Due to limitations in the host OS, Bochs fails to allocate more than 1024MB on most 32-bit systems.
+In order to overcome this problem configure and build Bochs with <option>--enable-large-ramfile</option>
+option.
+</para></note>
+</section>
+
+<section><title>megs</title>
 <para>
 Examples:
 <screen>
   megs: 32
   megs: 128
 </screen>
-Set the number of megabytes of physical memory you want to emulate. The default
-is 32MB; most OS's won't need more than that. The maximum amount of memory
-supported is 2048MB.
+This option sets the 'guest' and 'host' memory parameters to the same
+value. In all other cases the 'memory' option should be used instead.
 </para>
-
-<note><para>
-Due to limitations in the host OS, Bochs fails to allocate more than 1024MB on most 32-bit systems.
-In order to overcome this problem configure and build Bochs with <option>--enable-large-ramfile</option>
-option.
-</para></note>
 </section>
 
 <section id="bochsopt-cpu"><title>cpu</title>
@@ -3114,6 +3146,11 @@ This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 Select AMD SSE4A instructions support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 </para>
+<para><command>misaligned_sse</command></para>
+<para>
+Select AMD Misaligned SSE mode support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
 <para><command>aes</command></para>
 <para>
 Select AES instruction set support.
@@ -3192,6 +3229,11 @@ This option exists only if Bochs compiled with x86-64 support.
 <para><command>smep</command></para>
 <para>
 Enable Supervisor Mode Execution Protection (SMEP) support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>smap</command></para>
+<para>
+Enable Supervisor Mode Access Protection (SMAP) support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 </para>
 <para><command>mwait</command></para>
@@ -3513,13 +3555,13 @@ vmware3 : vmware version 3 disk support
 vmware4 : vmware version 4 disk support (aka VMDK)
 </para></listitem>
 <listitem><para>
-undoable : flat file with commitable redolog
+undoable : read-only base file with commitable redolog
 </para></listitem>
 <listitem><para>
 growing : growing file
 </para></listitem>
 <listitem><para>
-volatile : flat file with volatile redolog
+volatile : read-only base file with volatile redolog
 </para></listitem>
 <listitem><para>
 vpc: fixed / dynamic size VirtualPC image
@@ -3841,10 +3883,8 @@ Examples:
   In server mode it opens socket/named pipe and waits until a client application
   connects to it before starting simulation. This mode is useful for remote
   debugging (e.g. with gdb's "target remote host:port" command or windbg's command
-  line option -k com:pipe,port=\\.\pipe\pipename).
-
-  Note: 'socket' is a shorthand for 'socket-client', 'pipe' for 'pipe-client'.
-  Socket modes use simple TCP communication, pipe modes use duplex byte mode pipes.
+  line option -k com:pipe,port=\\.\pipe\pipename). Socket modes use simple TCP
+  communication, pipe modes use duplex byte mode pipes.
 </para>
 <para>
   Other serial modes are 'null' (no input/output), 'file' (output to a file
@@ -3971,12 +4011,13 @@ parameter of the SB16 soundcard. The emulation supports recording and playback
 </para>
 </section>
 
-<section><title>keyboard</title>
+<section id="bochsopt-keyboard"><title>keyboard</title>
 <para>
 Examples:
 <screen>
   keyboard: type=mf, serial_delay=200, paste_delay=100000
   keyboard: keymap=gui/keymaps/x11-pc-de.map
+  keyboard: user_shortcut=ctrl-alt-del
 </screen>
 This defines parameters related to the emulated keyboard.
 </para>
@@ -4014,6 +4055,20 @@ virtualized us keyboard, as the PC architecture expects.
 Keyboard mapping is available for the display libraries x, sdl (Linux port) and
 wx (GTK port). For SDL you have to use keymaps designed for SDL, the wxWidgets GUI
 uses the keymaps for X11.
+</para>
+<para><command>user_shortcut</command></para>
+<para>
+This defines the keyboard shortcut to be sent when you press the "user" button
+in the <link linkend="headerbar">headerbar</link>. The shortcut string is a
+combination of maximum 3 key names (listed below) separated with a '-' character.
+</para>
+<para>
+Valid key names:
+</para>
+<para>
+"alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
+"f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
+"right", "shift", "space", "tab", "up", "win", "print" and "power".
 </para>
 </section>
 
@@ -4430,27 +4485,6 @@ To support the Intel(R) 82540EM Gigabit Ethernet adapter, Bochs must be compiled
 with the <option>--enable-e1000</option> configure option. It accepts the same syntax
 (for mac, ethmod, ethdev, script, bootrom) and supports the same networking modules
 as the NE2000 adapter.
-</para>
-</section>
-
-<section id="bochsopt-user-shortcut"><title>user_shortcut</title>
-<para>
-Examples:
-<screen>
-  user_shortcut: keys=ctrl-alt-del
-  user_shortcut: keys=ctrl-alt-esc
-</screen>
-This defines the keyboard shortcut to be sent when you press the "user" button
-in the <link linkend="headerbar">headerbar</link>. The shortcut string is a
-combination of maximum 3 key names (listed below) separated with a '-' character.
-</para>
-<para>
-Valid key names:
-</para>
-<para>
-"alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
-"f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
-"right", "shift", "space", "tab", "up", "win", "print" and "power".
 </para>
 </section>
 
@@ -5173,8 +5207,8 @@ behavoiur of Bochs at runtime if you click on one of these buttons:
 <para>user button</para>
 <para>
   Press this button if you want to send the keyboard shortcut defined with the
-  <link linkend="bochsopt-user-shortcut">user_shortcut option</link> to the guest.
-  Depending on the used <link linkend="bochsopt-displaylibrary">display_library option</link>,
+  <command>user_shortcut</command> parameter of the <link linkend="bochsopt-keyboard">keyboard</link>
+  option to the guest. Depending on the used <link linkend="bochsopt-displaylibrary">display_library option</link>,
   it may even be possible to edit the shortcut before sending it.
 </para>
 </listitem>
@@ -5258,16 +5292,21 @@ file yet.
 </section>
 <section id="using-save-restore"><title>Save and restore simulation</title>
 <para>
-Starting with version 2.3, Bochs has limited save/restore support. The state of
-cpu(s), memory and all devices can be saved now. When running Bochs with there
-will be a button in the header bar called "Suspend". Depending on config interface
-and gui there will be a prompt where you can enter a path to an existing directory
-or a gui folder selection dialog box. It is possible to save the state at any time,
-but we recommend to do it when the simulation is idle. After pressing OK/Enter,
-Bochs will save a set of files into the selected folder. The state of hard disk
-images is not handled yet, so Bochs will ask you if you want to continue after
-saving state. We don't recommend to continue unless you are running a read-only
-guest system (e.g. Live-CD).
+Bochs has now full save/restore support. The state of cpu(s), memory, devices and
+hard drive images
+<footnote><para>
+The disk image mode "vvfat" does not support save/restore. All other disk image modes
+copy the whole image or the file containing changes (journal). This may take some time,
+so be patient when using this feature.
+</para></footnote>
+can be saved. When running Bochs there will be a button in the
+header bar called "Suspend". Depending on config interface and gui there will be a
+prompt where you can enter a path to an existing directory or a gui folder selection
+dialog box. It is possible to save the state at any time, but we recommend to do it
+when the simulation is idle. After pressing OK/Enter, Bochs will save a set of files
+into the selected folder. It is possible to continue after saving the state, but when
+using the restore function in a new Bochs session, all changes after this checkpoint
+will be lost.
 </para>
 <para>
 To restore the saved simulation state you can select the restore function in the
@@ -6937,9 +6976,9 @@ From here, you may use the following commands:
 <para>
 <screen>
   set reg = expr    Change a CPU register to value of expression.
-                    Currently only general purpose registers are supported,
-                    you may not change:
-                      eflags, eip, cs, ss, ds, es, fs, gs.
+                    Currently only general purpose registers and instruction pointer
+                    are supported. You may not change eflags, segment registers,
+                    floating point or SIMD registers.
 
     Examples: set eax = 2+2/2
               set esi = 2*eax+ebx
@@ -7609,9 +7648,10 @@ the cursor back in the Bochs window and press <keycap>delete</keycap>.
 This should work for any key combination.
 </para>
 <para>
-If you need one key combination frequently, set it up as <link linkend="bochsopt-user-shortcut">user key combination</link>
-in your configuration file.  This key combination is sent to the guest OS
-when you press the user button in the <link linkend="headerbar">headerbar</link>.
+If you need one key combination frequently, set it up as user key combination
+with the <link linkend="bochsopt-keyboard">keyboard</link> option in your
+configuration file. This key combination is sent to the guest OS when you press
+the user button in the <link linkend="headerbar">headerbar</link>.
 Depending on the used <link linkend="bochsopt-displaylibrary">display_library option</link>,
 it may even be possible to edit the shortcut before sending it.
 </para>
@@ -7791,7 +7831,7 @@ If unspecified, the default "mode" is flat.
        vmware version 4 (VMDK) compatibility
        </entry>
  </row>
- <row> <entry> undoable </entry> <entry> flat file with a commitable redolog </entry>
+ <row> <entry> undoable </entry> <entry> read-only base file with a commitable redolog </entry>
        <entry>
        commitable, rollbackable
        </entry>
@@ -7800,7 +7840,7 @@ If unspecified, the default "mode" is flat.
        <entry> growing
        </entry>
  </row>
- <row> <entry> volatile </entry> <entry> flat file with a volatile redolog </entry>
+ <row> <entry> volatile </entry> <entry> read-only base file with a volatile redolog </entry>
        <entry>
        always rollbacked
        </entry>
@@ -8120,10 +8160,11 @@ Only vmware versions 3 and 4 disk image files are supported.
 <section><title>description</title>
 <para>
     Undoable disks are commitable/rollbackable disk images.
-    An undoable disk is based on a read-only flat image
-    (see <xref linkend="harddisk-mode-flat">), associated with
-    a growing redolog, that contains all changes (writes)
-    made to the flat image content.
+    An undoable disk is based on a read-only image, associated
+    with a growing redolog, that contains all changes (writes)
+    made to the base image content. Currently, base images of
+    types 'flat', 'sparse', 'growing', 'vmware3', 'vmware4' and
+    'vpc' are supported.
 </para>
 <para>
     This redolog is dynamically created at runtime, if it does not
@@ -8131,13 +8172,13 @@ Only vmware versions 3 and 4 disk image files are supported.
 </para>
 <para>
     All writes go to the redolog, reads are done from the
-    redolog if previously written, or from the flat file
+    redolog if previously written, or from the base file
     otherwise.
 </para>
 <para>
     If unspecified with the "journal" option of the ataX-xxx directive,
     the redolog file name is created by adding a ".redolog"
-    suffix to the flat image name.
+    suffix to the base image name.
 </para>
 <para>
     File size of the redolog can grow up to the total disk
@@ -8151,7 +8192,7 @@ Only vmware versions 3 and 4 disk image files are supported.
 </para>
 <para>
     After a run, the redolog can be committed (merged)
-    to the flat image with the bxcommit utility.
+    to the base image with the bxcommit utility (flat type only).
 </para>
 <para>
     After a run, the redolog can be rollbacked (discarded)
@@ -8159,25 +8200,24 @@ Only vmware versions 3 and 4 disk image files are supported.
 </para>
 <note>
 <para>
-    In this mode, the flat file is always open in read-only mode,
+    In this mode, the base file is always open in read-only mode,
     so it can safely be stored on a read-only medium (for example on a cdrom).
 </para>
 </note>
 </section>
 <section><title>image creation</title>
 <para>
-The flat disk images must be created with the bximage utility
+The flat / sparse / growing disk images must be created with the bximage utility
 (see <xref linkend="using-bximage"> for more information).
-    The growing redolog is created automatically if needed.
+The growing redolog is created automatically if needed.
 </para>
 </section>
 <section><title>path</title>
 <para>
     The "path" option of the ataX-xxx directive in the configuration file
-    must be the flat image name. The redolog name can be set with the "journal"
-    option of the same directive.
-    If not set, the redolog name is created by adding the
-    ".redolog" suffix to the flat image name.
+    must be the base image name. The redolog name can be set with the "journal"
+    option of the same directive. If not set, the redolog name is created by
+    adding the ".redolog" suffix to the base image name.
 </para>
 </section>
 <section><title>external tools</title>
@@ -8282,12 +8322,11 @@ before writing new data. If no disk space is available, a panic will occur.
 <section><title>description</title>
 <para>
     Volatile disks are always-rollbacked disk images.
-    An volatile disk is based on a read-only flat image
-    (see <xref linkend="harddisk-mode-flat">), associated with
-    a growing temporary redolog, that contains all changes (writes)
-    made to the flat image content. All data written to
-    the  disk image are lost at the end of the Bochs
-    session.
+    An volatile disk is based on a read-only image, associated with
+    a growing redolog, that contains all changes (writes)
+    made to the base image content. Currently, base images of
+    types 'flat', 'sparse', 'growing', 'vmware3', 'vmware4' and
+    'vpc' are supported.
 </para>
 <para>
     The redolog is dynamically created at runtime, when
@@ -8296,13 +8335,13 @@ before writing new data. If no disk space is available, a panic will occur.
 </para>
 <para>
     All writes go to the redolog, reads are done from the
-    redolog if previously written, or from the flat file
+    redolog if previously written, or from the base file
     otherwise.
 </para>
 <para>
     If unspecified with the "journal" option of the ataX-xxx directive,
     the redolog file name is created by adding a ".redolog"
-    suffix to the flat image name.
+    suffix to the base image name.
 </para>
 <para>
     File size of the redolog can grow up to the total disk
@@ -8316,25 +8355,25 @@ before writing new data. If no disk space is available, a panic will occur.
 </para>
 <note>
 <para>
-    In this mode, the flat file is always open in read-only mode,
+    In this mode, the base file is always open in read-only mode,
     so it can safely be stored on a read-only medium (for example on a cdrom).
 </para>
 </note>
 </section>
 <section><title>image creation</title>
 <para>
-The flat disk images must be created with the bximage utility
+The flat / sparse / growing disk images must be created with the bximage utility
 (see <xref linkend="using-bximage"> for more information).
-    The growing redolog is created automatically.
+The growing redolog is created automatically.
 </para>
 </section>
 <section><title>path</title>
 <para>
     The "path" option of the ataX-xxx directive in the configuration file
-    must be the flat image name. The redolog name can be set with the "journal"
+    must be the base image name. The redolog name can be set with the "journal"
     option of the same directive.
     If not set, the redolog name is created by adding the
-    ".redolog" suffix to the flat image name.
+    ".redolog" suffix to the base image name.
     A random suffix is also appended to the redolog name.
 </para>
 </section>
@@ -8481,6 +8520,11 @@ The flat disk images must be created with the bximage utility
     must be of type FAT16 or FAT32. FAT12 can be used for the floppy only.
     An extended partition or other file system types are not supported.
 </para>
+<para>
+    The "vvfat" implementation does not support save/restore, since there is no
+    check if the host directory tree and all files are unmodified after saving
+    the Bochs state.
+</para>
 </section>
 </section>
 
@@ -8558,20 +8602,23 @@ For an example of the usage, refer to <xref linkend="diskimagehowto">.
 This tool can commit redologs into flat images.
 </para>
 <para>
-For now, only "undoable" and "growing" redologs to flat image commits are
-supported. Sparse disk image commits may be added in the future.
+For now, only "undoable" redologs to flat image commits and "growing" to flat
+image conversion (and vice versa) are supported. Commiting / converting other
+disk image types may be added in the future.
 </para>
 <para>
 This tool is completely interactive if no command line arguments are used.
 Then bxcommit asks for the operation mode, the flat image name, the redolog name,
-and whether to remove to redolog file after the commit is done. It can be switched
-to a non-interactive mode if all required parameters are given in the command line.
+and whether to remove the source file after the commit or conversion is done.
+It can be switched to a non-interactive mode if all required parameters are
+given in the command line.
 <screen>
 bxcommit [options] [flat filename] [redolog filename]
 
 Supported options:
-  -mode=undoable   commit undoable redolog to flat file
-  -mode=growing    create flat disk image from growing disk image
+  -mode=commit-undoable  commit undoable redolog to flat file
+  -mode=growing-to-flat  create flat disk image from growing disk image
+  -mode=flat-to-growing  create growing disk image from flat disk image
   -d               delete redolog file after commit
   -q               quiet mode (don't prompt for user input)
   --help           display this help and exit
@@ -8586,8 +8633,16 @@ Session example :
 $ ./bxcommit
 ========================================================================
                                bxcommit
-              Undoable Disk Image Commit Tool for Bochs
+           Growing / Undoable Disk Image Commit Tool for Bochs
 ========================================================================
+
+1. Commit 'undoable' redolog to 'flat' file
+2. Create 'flat' disk image from 'growing' disk image
+3. Create 'growing' disk image from 'flat' disk image
+
+0. Quit
+
+Please choose one [0] 1
 
 What is the flat image name?
 [c.img] myfile.img
@@ -8595,7 +8650,7 @@ What is the flat image name?
 What is the redolog name?
 [myfile.img.redolog] toapply.redolog
 
-Shall I remove the redolog afterwards?
+Should the redolog been removed afterwards?
 [yes]
 </screen>
 </para>
@@ -8669,7 +8724,7 @@ Known problems
       the location of the downloaded ISO image in your <filename>bochsrc</filename>, and make Bochs boot
       from it. Because Knoppix contains a graphical user interface, and has no other storage space but
       the emulated RAM, it needs at least 128MB of it, see
-      <link linkend="bochsopt-megs">megs option</link>. Furthermore, you need to enable VBE support in
+      <link linkend="bochsopt-memory">megs option</link>. Furthermore, you need to enable VBE support in
       Bochs (see <xref linkend="vesa-notes">).
     </para>
   </section>
@@ -8926,7 +8981,7 @@ will trap this key combination. You can either use the trick described in
 (callable through the user short-cut gui button)
 in you configuration file, for example:
 <programlisting>
-user_shortcut: keys=ctrl-alt-del
+keyboard: user_shortcut=ctrl-alt-del
 </programlisting>
 </para>
 </listitem>
@@ -9094,8 +9149,7 @@ panic: action=ask
 error: action=report
 info: action=report
 debug: action=ignore
-keyboard: type=mf, keymap=
-user_shortcut: keys=none
+keyboard: type=mf, keymap=, user_shortcut=none
 config_interface: textconfig
 display_library: x
 </programlisting>

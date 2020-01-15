@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pci2isa.cc 11556 2012-12-02 19:59:23Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -18,9 +18,9 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
-//
-// i440FX Support - PCI-to-ISA bridge (PIIX3)
-//
+// PCI-to-ISA bridge
+// i430FX - PIIX
+// i440FX - PIIX3
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
@@ -74,6 +74,7 @@ void bx_piix3_c::init(void)
   Bit8u devfunc = BX_PCI_DEVICE(1,0);
   DEV_register_pci_handlers(this, &devfunc, BX_PLUGIN_PCI2ISA,
       "PIIX3 PCI-to-ISA bridge");
+  BX_P2I_THIS s.chipset = SIM->get_param_enum(BXPN_PCI_CHIPSET)->get();
 
   DEV_register_iowrite_handler(this, write_handler, 0x00B2, "PIIX3 PCI-to-ISA bridge", 1);
   DEV_register_iowrite_handler(this, write_handler, 0x00B3, "PIIX3 PCI-to-ISA bridge", 1);
@@ -96,8 +97,14 @@ void bx_piix3_c::init(void)
   // readonly registers
   BX_P2I_THIS pci_conf[0x00] = 0x86;
   BX_P2I_THIS pci_conf[0x01] = 0x80;
-  BX_P2I_THIS pci_conf[0x02] = 0x00;
-  BX_P2I_THIS pci_conf[0x03] = 0x70;
+  if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+    BX_P2I_THIS pci_conf[0x02] = 0x00;
+    BX_P2I_THIS pci_conf[0x03] = 0x70;
+  } else {
+    BX_P2I_THIS pci_conf[0x02] = 0x2e;
+    BX_P2I_THIS pci_conf[0x03] = 0x12;
+    BX_P2I_THIS pci_conf[0x08] = 0x01;
+  }
   BX_P2I_THIS pci_conf[0x04] = 0x07;
   BX_P2I_THIS pci_conf[0x0a] = 0x01;
   BX_P2I_THIS pci_conf[0x0b] = 0x06;
@@ -144,7 +151,7 @@ void bx_piix3_c::reset(unsigned type)
 
   for (unsigned i = 0; i < 4; i++) {
     pci_set_irq(0x08, i+1, 0);
-    pci_unregister_irq(i);
+    pci_unregister_irq(i, 0x80);
   }
 
   BX_P2I_THIS s.elcr1 = 0x00;
@@ -190,11 +197,11 @@ void bx_piix3_c::after_restore_state(void)
   }
 }
 
-void bx_piix3_c::pci_register_irq(unsigned pirq, unsigned irq)
+void bx_piix3_c::pci_register_irq(unsigned pirq, Bit8u irq)
 {
   if ((irq < 16) && (((1 << irq) & 0xdef8) > 0)) {
     if (BX_P2I_THIS pci_conf[0x60 + pirq] < 16) {
-      pci_unregister_irq(pirq);
+      pci_unregister_irq(pirq, irq);
     }
     BX_P2I_THIS pci_conf[0x60 + pirq] = irq;
     if (!BX_P2I_THIS s.irq_registry[irq]) {
@@ -204,16 +211,16 @@ void bx_piix3_c::pci_register_irq(unsigned pirq, unsigned irq)
   }
 }
 
-void bx_piix3_c::pci_unregister_irq(unsigned pirq)
+void bx_piix3_c::pci_unregister_irq(unsigned pirq, Bit8u irq)
 {
-  Bit8u irq =  BX_P2I_THIS pci_conf[0x60 + pirq];
-  if (irq < 16) {
-    BX_P2I_THIS s.irq_registry[irq] &= ~(1 << pirq);
-    if (!BX_P2I_THIS s.irq_registry[irq]) {
+  Bit8u oldirq =  BX_P2I_THIS pci_conf[0x60 + pirq];
+  if (oldirq < 16) {
+    BX_P2I_THIS s.irq_registry[oldirq] &= ~(1 << pirq);
+    if (!BX_P2I_THIS s.irq_registry[oldirq]) {
       BX_P2I_THIS pci_set_irq(0x08, pirq+1, 0);
-      DEV_unregister_irq(irq, "PIIX3 IRQ routing");
+      DEV_unregister_irq(oldirq, "PIIX3 IRQ routing");
     }
-    BX_P2I_THIS pci_conf[0x60 + pirq] = 0x80;
+    BX_P2I_THIS pci_conf[0x60 + pirq] = irq;
   }
 }
 
@@ -353,26 +360,77 @@ Bit32u bx_piix3_c::pci_read_handler(Bit8u address, unsigned io_len)
 // pci configuration space write callback handler
 void bx_piix3_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
+  Bit8u value8, oldval;
+
   if ((address >= 0x10) && (address < 0x34))
     return;
   for (unsigned i=0; i<io_len; i++) {
-    Bit8u value8 = (value >> (i*8)) & 0xFF;
+    value8 = (value >> (i*8)) & 0xFF;
+    oldval = BX_P2I_THIS pci_conf[address+i];
     switch (address+i) {
       case 0x04:
+        BX_P2I_THIS pci_conf[address+i] = (value8 & 0x08) | 0x07;
+        break;
+      case 0x05:
+        if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0x01);
+        }
+        break;
       case 0x06:
+        break;
+      case 0x07:
+        if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+          value8 &= 0x78;
+        } else {
+          value8 &= 0x38;
+        }
+        BX_P2I_THIS pci_conf[address+i] = (oldval & ~value8) | 0x02;
+        break;
+      case 0x4e:
+        if ((value & 0x04) != (oldval & 0x04)) {
+          DEV_mem_set_bios_write((value8 & 0x04) != 0);
+        }
+        BX_P2I_THIS pci_conf[address+i] = value8;
+        break;
+      case 0x4f:
+        if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0x01);
+#if BX_SUPPORT_APIC
+          if (DEV_ioapic_present()) {
+            DEV_ioapic_set_enabled(value8 & 0x01, (BX_P2I_THIS pci_conf[0x80] & 0x3f) << 10);
+          }
+#endif
+        }
         break;
       case 0x60:
       case 0x61:
       case 0x62:
       case 0x63:
-        if (value8 != BX_P2I_THIS pci_conf[address+i]) {
+        value8 &= 0x8f;
+        if (value8 != oldval) {
           if (value8 >= 0x80) {
-            pci_unregister_irq((address+i) & 0x03);
+            pci_unregister_irq((address+i) & 0x03, value8);
           } else {
             pci_register_irq((address+i) & 0x03, value8);
           }
           BX_INFO(("PCI IRQ routing: PIRQ%c# set to 0x%02x", address+i-31,
                    value8));
+        }
+        break;
+      case 0x6a:
+        if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+          // TODO: bit #4: enable / disable USB function at boot time
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0xd7);
+        }
+        break;
+      case 0x80:
+        if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440FX) {
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0x7f);
+#if BX_SUPPORT_APIC
+          if (DEV_ioapic_present()) {
+            DEV_ioapic_set_enabled(BX_P2I_THIS pci_conf[0x4f] & 0x01, (value8 & 0x3f) << 10);
+          }
+#endif
         }
         break;
       default:

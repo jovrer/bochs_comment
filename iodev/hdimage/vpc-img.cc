@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vpc-img.cc 11384 2012-08-31 12:08:19Z vruppert $
+// $Id: vpc-img.cc 11528 2012-11-01 15:43:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Block driver for Connectix / Microsoft Virtual PC images (ported from QEMU)
@@ -52,72 +52,64 @@
 #define cpu_to_be32(val) (val)
 #endif
 
-int vpc_image_t::open(const char* pathname)
+int vpc_image_t::check_format(int fd, Bit64u imgsize)
+{
+  Bit8u temp_footer_buf[HEADER_SIZE];
+  vhd_footer_t *footer;
+  int vpc_disk_type = VHD_DYNAMIC;
+
+  if (bx_read_image(fd, 0, (char*)temp_footer_buf, HEADER_SIZE) != HEADER_SIZE) {
+    return HDIMAGE_READ_ERROR;
+  }
+
+  footer = (vhd_footer_t*)temp_footer_buf;
+  if (strncmp((char*)footer->creator, "conectix", 8)) {
+    if (imgsize < HEADER_SIZE) {
+      return HDIMAGE_NO_SIGNATURE;
+    }
+    // If a fixed disk, the footer is found only at the end of the file
+    if (bx_read_image(fd, imgsize-HEADER_SIZE, (char*)temp_footer_buf, HEADER_SIZE) != HEADER_SIZE) {
+      return HDIMAGE_READ_ERROR;
+    }
+    if (strncmp((char*)footer->creator, "conectix", 8)) {
+      return HDIMAGE_NO_SIGNATURE;
+    }
+    vpc_disk_type = VHD_FIXED;
+  }
+  return vpc_disk_type;
+}
+
+int vpc_image_t::open(const char* _pathname, int flags)
 {
   int i;
   vhd_footer_t *footer;
   vhd_dyndisk_header_t *dyndisk_header;
   Bit8u buf[HEADER_SIZE];
   Bit32u checksum;
-  Bit64u imgsize;
-  int disk_type = VHD_DYNAMIC;
+  Bit64u imgsize = 0;
+  int disk_type;
 
-#ifdef WIN32
-  HANDLE hFile = CreateFile(pathname, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, NULL);
-  if (hFile != INVALID_HANDLE_VALUE) {
-    ULARGE_INTEGER FileSize;
-    FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
-    CloseHandle(hFile);
-    if ((FileSize.LowPart != INVALID_FILE_SIZE) || (GetLastError() == NO_ERROR)) {
-      imgsize = FileSize.QuadPart;
-    } else {
-      return -1;
-    }
-  } else {
+  pathname = _pathname;
+  if ((fd = hdimage_open_file(pathname, flags, &imgsize, &mtime)) < 0) {
+    BX_ERROR(("VPC: cannot open hdimage file '%s'", pathname));
     return -1;
   }
-#endif
 
-  fd = ::open(pathname, O_RDWR
-#ifdef O_BINARY
-              | O_BINARY
-#endif
-              );
-
-  if (fd < 0) {
-    return fd;
+  disk_type = check_format(fd, imgsize);
+  if (disk_type < 0) {
+    switch (disk_type) {
+      case HDIMAGE_READ_ERROR:
+        BX_ERROR(("VPC: cannot read image file header of '%s'", _pathname));
+        return -1;
+      case HDIMAGE_NO_SIGNATURE:
+        BX_ERROR(("VPC: signature missed in file '%s'", _pathname));
+        return -1;
+    }
   }
-
-#ifndef WIN32
-  struct stat stat_buf;
-  if (fstat(fd, &stat_buf)) {
-    BX_PANIC(("fstat() returns error!"));
-  }
-  imgsize = (Bit64u)stat_buf.st_size;
-#endif
-
   if (bx_read_image(fd, 0, (char*)footer_buf, HEADER_SIZE) != HEADER_SIZE) {
-    ::close(fd);
     return -1;
   }
-
   footer = (vhd_footer_t*)footer_buf;
-  if (strncmp((char*)footer->creator, "conectix", 8)) {
-    if (imgsize < HEADER_SIZE) {
-      ::close(fd);
-      return -1;
-    }
-    // If a fixed disk, the footer is found only at the end of the file
-    if (bx_read_image(fd, imgsize-HEADER_SIZE, (char*)footer_buf, HEADER_SIZE) != HEADER_SIZE) {
-      ::close(fd);
-      return -1;
-    }
-    if (strncmp((char*)footer->creator, "conectix", 8)) {
-      ::close(fd);
-      return -1;
-    }
-    disk_type = VHD_FIXED;
-  }
 
   checksum = be32_to_cpu(footer->checksum);
   footer->checksum = 0;
@@ -235,12 +227,12 @@ ssize_t vpc_image_t::read(void* buf, size_t count)
     if (offset == -1) {
       memset(buf, 0, 512);
     } else {
-      ret = bx_read_image(fd, offset, cbuf, sectors * 512);
+      ret = bx_read_image(fd, offset, cbuf, (int)sectors * 512);
       if (ret != 512) {
         return -1;
       }
     }
-    scount -= sectors;
+    scount -= (Bit32u)sectors;
     cur_sector += sectors;
     cbuf += sectors * 512;
   }
@@ -274,12 +266,12 @@ ssize_t vpc_image_t::write(const void* buf, size_t count)
         return -1;
     }
 
-    ret = bx_write_image(fd, offset, cbuf, sectors * 512);
+    ret = bx_write_image(fd, offset, cbuf, (int)sectors * 512);
     if (ret != sectors * 512) {
       return -1;
     }
 
-    scount -= sectors;
+    scount -= (Bit32u)sectors;
     cur_sector += sectors;
     cbuf += sectors * 512;
   }
@@ -289,6 +281,35 @@ ssize_t vpc_image_t::write(const void* buf, size_t count)
 Bit32u vpc_image_t::get_capabilities(void)
 {
   return HDIMAGE_HAS_GEOMETRY;
+}
+
+bx_bool vpc_image_t::save_state(const char *backup_fname)
+{
+  return hdimage_backup_file(fd, backup_fname);
+}
+
+void vpc_image_t::restore_state(const char *backup_fname)
+{
+  int temp_fd;
+  Bit64u imgsize;
+
+  if ((temp_fd = hdimage_open_file(backup_fname, O_RDONLY, &imgsize, NULL)) < 0) {
+    BX_PANIC(("cannot open vpc image backup '%s'", backup_fname));
+    return;
+  }
+
+  if (check_format(temp_fd, imgsize) < HDIMAGE_FORMAT_OK) {
+    ::close(temp_fd);
+    BX_PANIC(("Could not detect vpc image header"));
+    return;
+  }
+  ::close(temp_fd);
+  close();
+  if (!hdimage_copy_file(backup_fname, pathname)) {
+    BX_PANIC(("Failed to restore vpc image '%s'", pathname));
+    return;
+  }
+  device_image_t::open(pathname);
 }
 
 Bit32u vpc_image_t::vpc_checksum(Bit8u *buf, size_t size)
@@ -315,7 +336,7 @@ Bit64s vpc_image_t::get_sector_offset(Bit64s sector_num, int write)
   Bit64u bitmap_offset, block_offset;
   Bit32u pagetable_index, pageentry_index;
 
-  pagetable_index = offset / block_size;
+  pagetable_index = (Bit32u)(offset / block_size);
   pageentry_index = (offset % block_size) / 512;
 
   if ((pagetable_index >= (Bit32u)max_table_entries) ||
@@ -379,11 +400,11 @@ Bit64s vpc_image_t::alloc_block(Bit64s sector_num)
     return -1;
 
   // Write entry into in-memory BAT
-  index = (sector_num * 512) / block_size;
+  index = (Bit32u)((sector_num * 512) / block_size);
   if (pagetable[index] != 0xFFFFFFFF)
     return -1;
 
-  pagetable[index] = free_data_block_offset / 512;
+  pagetable[index] = (Bit32u)(free_data_block_offset / 512);
 
   // Initialize the block's bitmap
   Bit8u *bitmap = new Bit8u[bitmap_size];

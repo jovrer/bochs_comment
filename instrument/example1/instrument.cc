@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc 11295 2012-07-24 15:32:55Z sshwarts $
+// $Id: instrument.cc 11575 2013-01-18 08:12:36Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2012 Stanislav Shwartsman
@@ -171,7 +171,7 @@ void bxInstrumentation::bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_addr
   }
 }
 
-void bxInstrumentation::bx_instr_lin_access(bx_address lin, bx_phy_adress phy, unsigned len, unsigned rw)
+void bxInstrumentation::bx_instr_lin_access(bx_address lin, bx_phy_address phy, unsigned len, unsigned rw)
 {
   if(!active || !ready) return;
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: pc_system.h 11478 2012-10-03 15:49:45Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -157,7 +157,9 @@ public:
   volatile bx_bool kill_bochs_request;
 
   void set_HRQ(bx_bool val);  // set the Hold ReQuest line
-  void set_INTR(bx_bool value); // set the INTR line to value
+
+  void raise_INTR(void);
+  void clear_INTR(void);
 
   // Cpu and System Reset
   int Reset(unsigned type);

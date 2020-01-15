@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h 11377 2012-08-28 16:05:39Z sshwarts $
+// $Id: cpu.h 11648 2013-03-06 21:11:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -163,8 +163,6 @@
 
 #define TMP64 (BX_CPU_THIS_PTR gen_reg[BX_TMP_REGISTER].rrx)
 
-#define PREV_RIP (BX_CPU_THIS_PTR prev_rip)
-
 // access to 64 bit MSR registers
 #define MSR_FSBASE  (BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].cache.u.segment.base)
 #define MSR_GSBASE  (BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].cache.u.segment.base)
@@ -187,6 +185,8 @@
 #define RIP EIP
 
 #endif // BX_SUPPORT_X86_64 == 0
+
+#define PREV_RIP (BX_CPU_THIS_PTR prev_rip)
 
 #if BX_SUPPORT_X86_64
 #define BX_READ_8BIT_REGx(index,extended)  ((((index) & 4) == 0 || (extended)) ? \
@@ -324,11 +324,14 @@ enum {
   BX_EPT_PDTE_ACCESS,
   BX_EPT_PML4E_ACCESS,
   BX_VMCS_ACCESS,
+  BX_SHADOW_VMCS_ACCESS,
   BX_MSR_BITMAP_ACCESS,
   BX_IO_BITMAP_ACCESS,
+  BX_VMREAD_BITMAP_ACCESS,
+  BX_VMWRITE_BITMAP_ACCESS,
   BX_VMX_LOAD_MSR_ACCESS,
   BX_VMX_STORE_MSR_ACCESS,
-  BX_VMX_VTPR_ACCESS,
+  BX_VMX_VAPIC_ACCESS,
   BX_SMRAM_ACCESS
 };
 
@@ -355,6 +358,7 @@ struct BxExceptionInfo {
 #define BX_AC_EXCEPTION  17
 #define BX_MC_EXCEPTION  18
 #define BX_XM_EXCEPTION  19
+#define BX_VE_EXCEPTION  20
 
 #define BX_CPU_HANDLED_EXCEPTIONS  32
 
@@ -470,13 +474,9 @@ extern const char* cpu_mode_string(unsigned cpu_mode);
 #define IsCanonical(offset) ((Bit64u)((((Bit64s)(offset)) >> (BX_LIN_ADDRESS_WIDTH-1)) + 1) < 2)
 #endif
 
-#define IsValidPhyAddr(addr) ((addr & BX_PHY_ADDRESS_RESERVED_BITS) == 0)
+#define IsValidPhyAddr(addr) (((addr) & BX_PHY_ADDRESS_RESERVED_BITS) == 0)
 
-#if BX_SUPPORT_APIC
-  #define BX_CPU_INTR  (BX_CPU_THIS_PTR INTR || BX_CPU_THIS_PTR lapic.INTR)
-#else
-  #define BX_CPU_INTR  (BX_CPU_THIS_PTR INTR)
-#endif
+#define IsValidPageAlignedPhyAddr(addr) (((addr) & (BX_PHY_ADDRESS_RESERVED_BITS | 0xfff)) == 0)
 
 #define CACHE_LINE_SIZE 64
 
@@ -564,7 +564,7 @@ BOCHSAPI extern BX_CPU_C   bx_cpu;
 #if BX_CPU_LEVEL >= 4
 
 #define IMPLEMENT_EFLAG_SET_ACCESSOR_AC(bitnum)                 \
-  BX_CPP_INLINE void BX_CPU_C::assert_AC () {                   \
+  BX_CPP_INLINE void BX_CPU_C::assert_AC() {                    \
     BX_CPU_THIS_PTR eflags |= (1<<bitnum);                      \
     handleAlignmentCheck();                                     \
   }                                                             \
@@ -595,31 +595,46 @@ BOCHSAPI extern BX_CPU_C   bx_cpu;
     }                                                           \
   }
 
-// assert async_event when IF or TF is set
-#define IMPLEMENT_EFLAG_SET_ACCESSOR_IF_TF(name,bitnum)         \
-  BX_CPP_INLINE void BX_CPU_C::assert_##name() {                \
+// need special handling when IF is set
+#define IMPLEMENT_EFLAG_SET_ACCESSOR_IF(bitnum)                 \
+  BX_CPP_INLINE void BX_CPU_C::assert_IF() {                    \
+    BX_CPU_THIS_PTR eflags |= (1<<bitnum);                      \
+    handleInterruptMaskChange();                                \
+  }                                                             \
+  BX_CPP_INLINE void BX_CPU_C::clear_IF() {                     \
+    BX_CPU_THIS_PTR eflags &= ~(1<<bitnum);                     \
+    handleInterruptMaskChange();                                \
+  }                                                             \
+  BX_CPP_INLINE void BX_CPU_C::set_IF(bx_bool val) {            \
+    if (val) assert_IF();                                       \
+    else clear_IF();                                            \
+  }
+
+// assert async_event when TF is set
+#define IMPLEMENT_EFLAG_SET_ACCESSOR_TF(bitnum)                 \
+  BX_CPP_INLINE void BX_CPU_C::assert_TF() {                    \
     BX_CPU_THIS_PTR async_event = 1;                            \
     BX_CPU_THIS_PTR eflags |= (1<<bitnum);                      \
   }                                                             \
-  BX_CPP_INLINE void BX_CPU_C::clear_##name() {                 \
+  BX_CPP_INLINE void BX_CPU_C::clear_TF() {                     \
     BX_CPU_THIS_PTR eflags &= ~(1<<bitnum);                     \
   }                                                             \
-  BX_CPP_INLINE void BX_CPU_C::set_##name(bx_bool val) {        \
+  BX_CPP_INLINE void BX_CPU_C::set_TF(bx_bool val) {            \
     if (val) BX_CPU_THIS_PTR async_event = 1;                   \
     BX_CPU_THIS_PTR eflags =                                    \
       (BX_CPU_THIS_PTR eflags&~(1<<bitnum))|((val)<<bitnum);    \
   }
 
 // invalidate prefetch queue and call prefetch() when RF is set
-#define IMPLEMENT_EFLAG_SET_ACCESSOR_RF(name,bitnum)            \
-  BX_CPP_INLINE void BX_CPU_C::assert_##name() {                \
+#define IMPLEMENT_EFLAG_SET_ACCESSOR_RF(bitnum)                 \
+  BX_CPP_INLINE void BX_CPU_C::assert_RF() {                    \
     invalidate_prefetch_q();                                    \
     BX_CPU_THIS_PTR eflags |= (1<<bitnum);                      \
   }                                                             \
-  BX_CPP_INLINE void BX_CPU_C::clear_##name() {                 \
+  BX_CPP_INLINE void BX_CPU_C::clear_RF() {                     \
     BX_CPU_THIS_PTR eflags &= ~(1<<bitnum);                     \
   }                                                             \
-  BX_CPP_INLINE void BX_CPU_C::set_##name(bx_bool val) {        \
+  BX_CPP_INLINE void BX_CPU_C::set_RF(bx_bool val) {            \
     if (val) invalidate_prefetch_q();                           \
     BX_CPU_THIS_PTR eflags =                                    \
       (BX_CPU_THIS_PTR eflags&~(1<<bitnum))|((val)<<bitnum);    \
@@ -884,7 +899,7 @@ struct monitor_addr_t {
 };
 #endif
 
-class BX_SMM_State;
+struct BX_SMM_State;
 
 class BOCHSAPI BX_CPU_C : public logfunctions {
 
@@ -1011,17 +1026,6 @@ public: // for now...
   Bit32u xcr0_suppmask;
 #endif
 
-  /* SMM base register */
-  Bit32u smbase;
-
-#if BX_CPU_LEVEL >= 5
-  bx_regs_msr_t msr;
-#endif
-
-#if BX_CONFIGURE_MSRS
-  MSR *msrs[BX_MSR_MAX_INDEX];
-#endif
-
 #if BX_SUPPORT_FPU
   i387_t the_i387;
 #endif
@@ -1044,15 +1048,22 @@ public: // for now...
   bx_local_apic_c lapic;
 #endif
 
+  /* SMM base register */
+  Bit32u smbase;
+
+#if BX_CPU_LEVEL >= 5
+  bx_regs_msr_t msr;
+#endif
+
+#if BX_CONFIGURE_MSRS
+  MSR *msrs[BX_MSR_MAX_INDEX];
+#endif
+
 #if BX_SUPPORT_VMX
   bx_bool in_vmx;
   bx_bool in_vmx_guest;
   bx_bool in_smm_vmx; // save in_vmx and in_vmx_guest flags when in SMM mode
   bx_bool in_smm_vmx_guest;
-  bx_bool vmx_interrupt_window;
-#if BX_SUPPORT_VMX >= 2
-  bx_bool pending_vmx_timer_expired;
-#endif
   Bit64u  vmcsptr;
   bx_hostpageaddr_t vmcshostptr;
   Bit64u  vmxonptr;
@@ -1081,10 +1092,13 @@ public: // for now...
   bx_bool in_event;
 #endif
 
+#if BX_SUPPORT_VMX
+  bx_bool nmi_unblocking_iret;
+#endif
+
   bx_bool EXT; /* 1 if processing external interrupt or exception
                 * or if not related to current instruction,
                 * 0 if current CS:IP caused exception */
-  unsigned errorno;   /* signal exception during instruction emulation */
 
 #define BX_ACTIVITY_STATE_ACTIVE        (0)
 #define BX_ACTIVITY_STATE_HLT           (1)
@@ -1094,24 +1108,65 @@ public: // for now...
 #define BX_ACTIVITY_STATE_MWAIT_IF      (5)
   unsigned activity_state;
 
+#define BX_EVENT_NMI                          (1 <<  0)
+#define BX_EVENT_SMI                          (1 <<  1)
+#define BX_EVENT_INIT                         (1 <<  2)
+#define BX_EVENT_CODE_BREAKPOINT_ASSIST       (1 <<  3)
+#define BX_EVENT_VMX_MONITOR_TRAP_FLAG        (1 <<  4)
+#define BX_EVENT_VMX_PREEMPTION_TIMER_EXPIRED (1 <<  5)
+#define BX_EVENT_VMX_INTERRUPT_WINDOW_EXITING (1 <<  6)
+#define BX_EVENT_VMX_VIRTUAL_NMI              (1 <<  7)
+#define BX_EVENT_SVM_VIRQ_PENDING             (1 <<  8)
+#define BX_EVENT_PENDING_VMX_VIRTUAL_INTR     (1 <<  9)
+#define BX_EVENT_PENDING_INTR                 (1 << 10)
+#define BX_EVENT_PENDING_LAPIC_INTR           (1 << 11)
+#define BX_EVENT_VMX_VTPR_UPDATE              (1 << 12)
+#define BX_EVENT_VMX_VEOI_UPDATE              (1 << 13)
+#define BX_EVENT_VMX_VIRTUAL_APIC_WRITE       (1 << 14)
+  Bit32u  pending_event;
+  Bit32u  event_mask;
   Bit32u  async_event;
 
-#define BX_ASYNC_EVENT_STOP_TRACE (0x80000000)
+  BX_SMF BX_CPP_INLINE void signal_event(Bit32u event) {
+    BX_CPU_THIS_PTR pending_event |= event;
+    if (! is_masked_event(event)) BX_CPU_THIS_PTR async_event = 1;
+  }
+
+  BX_SMF BX_CPP_INLINE void clear_event(Bit32u event) {
+    BX_CPU_THIS_PTR pending_event &= ~event;
+  }
+
+  BX_SMF BX_CPP_INLINE void mask_event(Bit32u event) {
+    BX_CPU_THIS_PTR event_mask |= event;
+  }
+  BX_SMF BX_CPP_INLINE void unmask_event(Bit32u event) {
+    BX_CPU_THIS_PTR event_mask &= ~event;
+    if (is_pending(event)) BX_CPU_THIS_PTR async_event = 1;
+  }
+
+  BX_SMF BX_CPP_INLINE bx_bool is_masked_event(Bit32u event) {
+    return (BX_CPU_THIS_PTR event_mask & event) != 0;
+  }
+
+  BX_SMF BX_CPP_INLINE bx_bool is_pending(Bit32u event) {
+    return (BX_CPU_THIS_PTR pending_event & event) != 0;
+  }
+  BX_SMF BX_CPP_INLINE bx_bool is_unmasked_event_pending(Bit32u event) {
+    return (BX_CPU_THIS_PTR pending_event & ~BX_CPU_THIS_PTR event_mask & event) != 0;
+  }
+
+  BX_SMF BX_CPP_INLINE Bit32u unmasked_events_pending(void) {
+    return (BX_CPU_THIS_PTR pending_event & ~BX_CPU_THIS_PTR event_mask);
+  }
+
+#define BX_ASYNC_EVENT_STOP_TRACE (1<<31)
 
 #if BX_X86_DEBUGGER
   bx_bool  in_repeat;
-  bx_bool  codebp;
 #endif
   bx_bool  in_smm;
   unsigned cpu_mode;
   bx_bool  user_pl;
-  bx_bool  INTR;
-  bx_bool  pending_SMI;
-  bx_bool  pending_NMI;
-  bx_bool  pending_INIT;
-  bx_bool  disable_SMI;
-  bx_bool  disable_NMI;
-  bx_bool  disable_INIT;
 #if BX_CPU_LEVEL >= 5
   bx_bool  ignore_bad_msrs;
 #endif
@@ -1124,7 +1179,7 @@ public: // for now...
 
   // for exceptions
   jmp_buf jmp_buf_env;
-  Bit8u curr_exception;
+  unsigned last_exception_type;
 
   // Boundaries of current code page, based on EIP
   bx_address eipPageBias;
@@ -1165,6 +1220,8 @@ public: // for now...
     bx_bool split_large;
 #endif
   } TLB;
+
+#define BX_TLB_ENTRY_OF(lpf) (&BX_CPU_THIS_PTR TLB.entry[BX_TLB_INDEX_OF((lpf), 0)])
 
 #if BX_CPU_LEVEL >= 6
   struct {
@@ -1370,9 +1427,6 @@ public: // for now...
   void initialize(void);
   void after_restore_state(void);
   void register_state(void);
-#if BX_WITH_WX
-  void register_wx_state(void);
-#endif
   static Bit64s param_save_handler(void *devptr, bx_param_c *param);
   static void param_restore_handler(void *devptr, bx_param_c *param, Bit64s val);
 #if !BX_USE_CPU_SMF
@@ -2024,7 +2078,6 @@ public: // for now...
   BX_SMF BX_INSF_TYPE LOAD_Wb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #if BX_SUPPORT_AVX
   BX_SMF BX_INSF_TYPE LOAD_Vector(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE LOAD_VectorQ(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif
 
 #if BX_SUPPORT_FPU == 0	// if FPU is disabled
@@ -2622,6 +2675,10 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VMPTRST(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VMREAD_EdGd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VMWRITE_GdEd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+#if BX_SUPPORT_X86_64
+  BX_SMF BX_INSF_TYPE VMREAD_EqGq(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VMWRITE_GqEq(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+#endif
   BX_SMF BX_INSF_TYPE VMFUNC(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   /* VMX instructions */
 
@@ -2792,6 +2849,7 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPSIGNB_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSIGNW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSIGND_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VPADDB_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPADDW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPADDD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3170,6 +3228,24 @@ public: // for now...
   BX_SMF BX_INSF_TYPE ADOX_GqEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif
 
+  // SMAP
+  BX_SMF BX_INSF_TYPE CLAC(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE STAC(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  // SMAP
+
+  // RDRAND/RDSEED
+  BX_SMF BX_INSF_TYPE RDRAND_Ew(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE RDRAND_Ed(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+#if BX_SUPPORT_X86_64
+  BX_SMF BX_INSF_TYPE RDRAND_Eq(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+#endif
+
+  BX_SMF BX_INSF_TYPE RDSEED_Ew(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE RDSEED_Ed(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+#if BX_SUPPORT_X86_64
+  BX_SMF BX_INSF_TYPE RDSEED_Eq(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+#endif
+
 #if BX_SUPPORT_X86_64
   // 64 bit extensions
   BX_SMF BX_INSF_TYPE ADD_GqEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3524,10 +3600,9 @@ public: // for now...
 // <TAG-CLASS-CPU-END>
 
 #if BX_DEBUGGER
-  BX_SMF void       dbg_take_irq(void);
-  BX_SMF void       dbg_force_interrupt(unsigned vector);
   BX_SMF void       dbg_take_dma(void);
-  BX_SMF bx_bool    dbg_set_reg(unsigned reg, Bit32u val);
+  BX_SMF bx_bool    dbg_set_eflags(Bit32u val);
+  BX_SMF void       dbg_set_eip(bx_address val);
   BX_SMF bx_bool    dbg_get_sreg(bx_dbg_sreg_t *sreg, unsigned sreg_no);
   BX_SMF bx_bool    dbg_set_sreg(unsigned sreg_no, bx_segment_reg_t *sreg);
   BX_SMF void       dbg_get_tr(bx_dbg_sreg_t *sreg);
@@ -3557,7 +3632,6 @@ public: // for now...
 #endif
   BX_SMF bx_bool handleAsyncEvent(void);
   BX_SMF bx_bool handleWaitForEvent(void);
-  BX_SMF bx_bool interrupts_enabled(void);
   BX_SMF void InterruptAcknowledge(void);
 
   BX_SMF int fetchDecode32(const Bit8u *fetchPtr, bxInstruction_c *i, unsigned remainingInPage) BX_CPP_AttrRegparmN(3);
@@ -3592,11 +3666,11 @@ public: // for now...
   BX_SMF Bit32u read_virtual_dword_32(unsigned seg, Bit32u offset) BX_CPP_AttrRegparmN(2);
   BX_SMF Bit64u read_virtual_qword_32(unsigned seg, Bit32u offset) BX_CPP_AttrRegparmN(2);
 #if BX_CPU_LEVEL >= 6
-  BX_SMF void read_virtual_dqword_32(unsigned seg, Bit32u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void read_virtual_dqword_aligned_32(unsigned seg, Bit32u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void read_virtual_xmmword_32(unsigned seg, Bit32u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void read_virtual_xmmword_aligned_32(unsigned seg, Bit32u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
 #if BX_SUPPORT_AVX
-  BX_SMF void read_virtual_dword_vector_32(unsigned seg, Bit32u off, unsigned elements, BxPackedAvxRegister *data);
-  BX_SMF void read_virtual_dword_vector_aligned_32(unsigned seg, Bit32u off, unsigned elements, BxPackedAvxRegister *data);
+  BX_SMF void read_virtual_ymmword_32(unsigned seg, Bit32u off, BxPackedAvxRegister *data);
+  BX_SMF void read_virtual_ymmword_aligned_32(unsigned seg, Bit32u off, BxPackedAvxRegister *data);
 #endif
 #endif
 
@@ -3605,11 +3679,11 @@ public: // for now...
   BX_SMF void write_virtual_dword_32(unsigned seg, Bit32u offset, Bit32u data) BX_CPP_AttrRegparmN(3);
   BX_SMF void write_virtual_qword_32(unsigned seg, Bit32u offset, Bit64u data) BX_CPP_AttrRegparmN(3);
 #if BX_CPU_LEVEL >= 6
-  BX_SMF void write_virtual_dqword_32(unsigned seg, Bit32u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_dqword_aligned_32(unsigned seg, Bit32u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_virtual_xmmword_32(unsigned seg, Bit32u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_virtual_xmmword_aligned_32(unsigned seg, Bit32u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
 #if BX_SUPPORT_AVX
-  BX_SMF void write_virtual_dword_vector_32(unsigned seg, Bit32u off, unsigned elements, const BxPackedAvxRegister *data);
-  BX_SMF void write_virtual_dword_vector_aligned_32(unsigned seg, Bit32u off, unsigned elements, const BxPackedAvxRegister *data);
+  BX_SMF void write_virtual_ymmword_32(unsigned seg, Bit32u off, const BxPackedAvxRegister *data);
+  BX_SMF void write_virtual_ymmword_aligned_32(unsigned seg, Bit32u off, const BxPackedAvxRegister *data);
 #endif
 #endif
 
@@ -3628,22 +3702,22 @@ public: // for now...
   BX_SMF void write_virtual_word_64(unsigned seg, Bit64u offset, Bit16u data) BX_CPP_AttrRegparmN(3);
   BX_SMF void write_virtual_dword_64(unsigned seg, Bit64u offset, Bit32u data) BX_CPP_AttrRegparmN(3);
   BX_SMF void write_virtual_qword_64(unsigned seg, Bit64u offset, Bit64u data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_dqword_64(unsigned seg, Bit64u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_dqword_aligned_64(unsigned seg, Bit64u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_virtual_xmmword_64(unsigned seg, Bit64u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_virtual_xmmword_aligned_64(unsigned seg, Bit64u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
 #if BX_SUPPORT_AVX
-  BX_SMF void write_virtual_dword_vector_64(unsigned seg, Bit64u offset, unsigned elements, const BxPackedAvxRegister *data);
-  BX_SMF void write_virtual_dword_vector_aligned_64(unsigned seg, Bit64u offset, unsigned elements, const BxPackedAvxRegister *data);
+  BX_SMF void write_virtual_ymmword_64(unsigned seg, Bit64u offset, const BxPackedAvxRegister *data);
+  BX_SMF void write_virtual_ymmword_aligned_64(unsigned seg, Bit64u offset, const BxPackedAvxRegister *data);
 #endif
 
   BX_SMF Bit8u read_virtual_byte_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
   BX_SMF Bit16u read_virtual_word_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
   BX_SMF Bit32u read_virtual_dword_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
   BX_SMF Bit64u read_virtual_qword_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF void read_virtual_dqword_64(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void read_virtual_dqword_aligned_64(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void read_virtual_xmmword_64(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void read_virtual_xmmword_aligned_64(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
 #if BX_SUPPORT_AVX
-  BX_SMF void read_virtual_dword_vector_64(unsigned seg, Bit64u offset, unsigned elements, BxPackedAvxRegister *data);
-  BX_SMF void read_virtual_dword_vector_aligned_64(unsigned seg, Bit64u offset, unsigned elements, BxPackedAvxRegister *data);
+  BX_SMF void read_virtual_ymmword_64(unsigned seg, Bit64u offset, BxPackedAvxRegister *data);
+  BX_SMF void read_virtual_ymmword_aligned_64(unsigned seg, Bit64u offset, BxPackedAvxRegister *data);
 #endif
 
   BX_SMF Bit8u read_RMW_virtual_byte_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
@@ -3685,27 +3759,27 @@ public: // for now...
       write_virtual_qword_64(seg, (Bit64u) offset, data) : \
       write_virtual_qword_32(seg, (Bit32u) offset, data)
 
-#define write_virtual_dqword(seg, offset, data)   \
+#define write_virtual_xmmword(seg, offset, data)   \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_dqword_64(seg, (Bit64u) offset, (const BxPackedXmmRegister*)(data)) : \
-      write_virtual_dqword_32(seg, (Bit32u) offset, (const BxPackedXmmRegister*)(data))
+      write_virtual_xmmword_64(seg, (Bit64u) offset, (const BxPackedXmmRegister*)(data)) : \
+      write_virtual_xmmword_32(seg, (Bit32u) offset, (const BxPackedXmmRegister*)(data))
 
-#define write_virtual_dqword_aligned(seg, offset, data) \
+#define write_virtual_xmmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_dqword_aligned_64(seg, (Bit64u) offset, (const BxPackedXmmRegister*)(data)) : \
-      write_virtual_dqword_aligned_32(seg, (Bit32u) offset, (const BxPackedXmmRegister*)(data))
+      write_virtual_xmmword_aligned_64(seg, (Bit64u) offset, (const BxPackedXmmRegister*)(data)) : \
+      write_virtual_xmmword_aligned_32(seg, (Bit32u) offset, (const BxPackedXmmRegister*)(data))
 
 #if BX_SUPPORT_AVX
 
-#define write_virtual_dword_vector(seg, offset, elements, data)   \
+#define write_virtual_ymmword(seg, offset, data)   \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_dword_vector_64(seg, (Bit64u) offset, elements, (const BxPackedAvxRegister*)(data)) : \
-      write_virtual_dword_vector_32(seg, (Bit32u) offset, elements, (const BxPackedAvxRegister*)(data))
+      write_virtual_ymmword_64(seg, (Bit64u) offset, (const BxPackedAvxRegister*)(data)) : \
+      write_virtual_ymmword_32(seg, (Bit32u) offset, (const BxPackedAvxRegister*)(data))
 
-#define write_virtual_dword_vector_aligned(seg, offset, elements, data) \
+#define write_virtual_ymmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_dword_vector_aligned_64(seg, (Bit64u) offset, elements, (const BxPackedAvxRegister*)(data)) : \
-      write_virtual_dword_vector_aligned_32(seg, (Bit32u) offset, elements, (const BxPackedAvxRegister*)(data))
+      write_virtual_ymmword_aligned_64(seg, (Bit64u) offset, (const BxPackedAvxRegister*)(data)) : \
+      write_virtual_ymmword_aligned_32(seg, (Bit32u) offset, (const BxPackedAvxRegister*)(data))
 
 #endif
 
@@ -3730,27 +3804,27 @@ public: // for now...
       read_virtual_qword_64(seg, (Bit64u) offset) : \
       read_virtual_qword_32(seg, (Bit32u) offset)
 
-#define read_virtual_dqword(seg, offset, data)    \
+#define read_virtual_xmmword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_dqword_64(seg, (Bit64u) offset, (BxPackedXmmRegister*)(data)) : \
-      read_virtual_dqword_32(seg, (Bit32u) offset, (BxPackedXmmRegister*)(data))
+      read_virtual_xmmword_64(seg, (Bit64u) offset, (BxPackedXmmRegister*)(data)) : \
+      read_virtual_xmmword_32(seg, (Bit32u) offset, (BxPackedXmmRegister*)(data))
 
-#define read_virtual_dqword_aligned(seg, offset, data) \
+#define read_virtual_xmmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_dqword_aligned_64(seg, (Bit64u) offset, (BxPackedXmmRegister*)(data)) : \
-      read_virtual_dqword_aligned_32(seg, (Bit32u) offset, (BxPackedXmmRegister*)(data))
+      read_virtual_xmmword_aligned_64(seg, (Bit64u) offset, (BxPackedXmmRegister*)(data)) : \
+      read_virtual_xmmword_aligned_32(seg, (Bit32u) offset, (BxPackedXmmRegister*)(data))
 
 #if BX_SUPPORT_AVX
 
-#define read_virtual_dword_vector(seg, offset, elements, data)    \
+#define read_virtual_ymmword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_dword_vector_64(seg, (Bit64u) offset, elements, (BxPackedAvxRegister*)(data)) : \
-      read_virtual_dword_vector_32(seg, (Bit32u) offset, elements, (BxPackedAvxRegister*)(data))
+      read_virtual_ymmword_64(seg, (Bit64u) offset, (BxPackedAvxRegister*)(data)) : \
+      read_virtual_ymmword_32(seg, (Bit32u) offset, (BxPackedAvxRegister*)(data))
 
-#define read_virtual_dword_vector_aligned(seg, offset, elements, data) \
+#define read_virtual_ymmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_dword_vector_aligned_64(seg, (Bit64u) offset, elements, (BxPackedAvxRegister*)(data)) : \
-      read_virtual_dword_vector_aligned_32(seg, (Bit32u) offset, elements, (BxPackedAvxRegister*)(data))
+      read_virtual_ymmword_aligned_64(seg, (Bit64u) offset, (BxPackedAvxRegister*)(data)) : \
+      read_virtual_ymmword_aligned_32(seg, (Bit32u) offset, (BxPackedAvxRegister*)(data))
 
 #endif
 
@@ -3786,17 +3860,17 @@ public: // for now...
   write_virtual_dword_32(seg, offset, data)
 #define write_virtual_qword(seg, offset, data) \
   write_virtual_qword_32(seg, offset, data)
-#define write_virtual_dqword(seg, offset, data) \
-  write_virtual_dqword_32(seg, offset, (const BxPackedXmmRegister*)(data))
-#define write_virtual_dqword_aligned(seg, offset, data) \
-  write_virtual_dqword_aligned_32(seg, offset, (const BxPackedXmmRegister*)(data))
+#define write_virtual_xmmword(seg, offset, data) \
+  write_virtual_xmmword_32(seg, offset, (const BxPackedXmmRegister*)(data))
+#define write_virtual_xmmword_aligned(seg, offset, data) \
+  write_virtual_xmmword_aligned_32(seg, offset, (const BxPackedXmmRegister*)(data))
 
 #if BX_SUPPORT_AVX
 
-#define write_virtual_dword_vector(seg, offset, elements, data) \
-  write_virtual_dword_vector_32(seg, offset, elements, (const BxPackedAvxRegister*)(data))
-#define write_virtual_dword_vector_aligned(seg, offset, elements, data) \
-  write_virtual_dword_vector_aligned_32(seg, offset, elements, (const BxPackedAvxRegister*)(data))
+#define write_virtual_ymmword(seg, offset, data) \
+  write_virtual_ymmword_32(seg, offset, (const BxPackedAvxRegister*)(data))
+#define write_virtual_ymmword_aligned(seg, offset, data) \
+  write_virtual_ymmword_aligned_32(seg, offset, (const BxPackedAvxRegister*)(data))
 
 #endif
 
@@ -3809,17 +3883,17 @@ public: // for now...
   read_virtual_dword_32(seg, offset)
 #define read_virtual_qword(seg, offset) \
   read_virtual_qword_32(seg, offset)
-#define read_virtual_dqword(seg, offset, data) \
-  read_virtual_dqword_32(seg, offset, (BxPackedXmmRegister*)(data))
-#define read_virtual_dqword_aligned(seg, offset, data) \
-  read_virtual_dqword_aligned_32(seg, offset, (BxPackedXmmRegister*)(data))
+#define read_virtual_xmmword(seg, offset, data) \
+  read_virtual_xmmword_32(seg, offset, (BxPackedXmmRegister*)(data))
+#define read_virtual_xmmword_aligned(seg, offset, data) \
+  read_virtual_xmmword_aligned_32(seg, offset, (BxPackedXmmRegister*)(data))
 
 #if BX_SUPPORT_AVX
 
-#define read_virtual_dword_vector(seg, offset, elements, data) \
-  read_virtual_dword_vector_32(seg, offset, elements, (BxPackedAvxRegister*)(data))
-#define read_virtual_dword_vector_aligned(seg, offset, elements, data) \
-  read_virtual_dword_vector_aligned_32(seg, offset, elements, (BxPackedAvxRegister*)(data))
+#define read_virtual_ymmword(seg, offset, data) \
+  read_virtual_ymmword_32(seg, offset, (BxPackedAvxRegister*)(data))
+#define read_virtual_ymmword_aligned(seg, offset, data) \
+  read_virtual_ymmword_aligned_32(seg, offset, (BxPackedAvxRegister*)(data))
 
 #endif
 
@@ -3906,7 +3980,7 @@ public: // for now...
   BX_SMF bx_hostpageaddr_t getHostMemAddr(bx_phy_address addr, unsigned rw);
 
   // linear address for translate_linear expected to be canonical !
-  BX_SMF bx_phy_address translate_linear(bx_address laddr, unsigned user, unsigned rw);
+  BX_SMF bx_phy_address translate_linear(bx_TLB_entry *entry, bx_address laddr, unsigned user, unsigned rw);
   BX_SMF bx_phy_address translate_linear_legacy(bx_address laddr, Bit32u &lpf_mask, Bit32u &combined_access, unsigned user, unsigned rw);
   BX_SMF void update_access_dirty(bx_phy_address *entry_addr, Bit32u *entry, unsigned leaf, unsigned write);
 #if BX_CPU_LEVEL >= 6
@@ -3936,7 +4010,6 @@ public: // for now...
 #endif
   BX_SMF void TLB_flush(void);
   BX_SMF void TLB_invlpg(bx_address laddr);
-  BX_SMF void set_INTR(bx_bool value);
   BX_SMF void inhibit_interrupts(unsigned mask);
   BX_SMF bx_bool interrupts_inhibited(unsigned mask);
   BX_SMF const char *strseg(bx_segment_reg_t *seg);
@@ -3953,11 +4026,12 @@ public: // for now...
                   BX_CPP_AttrNoReturn();
   BX_SMF void init_SMRAM(void);
   BX_SMF int  int_number(unsigned s);
-  BX_SMF bx_bool SetCR0(bx_address val) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF bx_bool SetCR0(bxInstruction_c *i, bx_address val);
   BX_SMF bx_bool check_CR0(bx_address val) BX_CPP_AttrRegparmN(1);
   BX_SMF bx_bool SetCR3(bx_address val) BX_CPP_AttrRegparmN(1);
 #if BX_CPU_LEVEL >= 5
-  BX_SMF bx_bool SetCR4(bx_address val) BX_CPP_AttrRegparmN(1);
+  BX_SMF bx_bool SetCR4(bxInstruction_c *i, bx_address val);
   BX_SMF bx_bool check_CR4(bx_address val) BX_CPP_AttrRegparmN(1);
   BX_SMF Bit32u get_cr4_allow_mask(void);
 #endif
@@ -3971,10 +4045,20 @@ public: // for now...
   BX_SMF bx_bool SetEFER(bx_address val) BX_CPP_AttrRegparmN(1);
 #endif
 
+  BX_SMF bx_address read_CR0(void);
+#if BX_CPU_LEVEL >= 5
+  BX_SMF bx_address read_CR4(void);
+#endif
+#if BX_CPU_LEVEL >= 6
+  BX_SMF Bit32u ReadCR8(bxInstruction_c *i);
+  BX_SMF void WriteCR8(bxInstruction_c *i, bx_address val);
+#endif
+
   BX_SMF void reset(unsigned source);
   BX_SMF void shutdown(void);
   BX_SMF void handleCpuModeChange(void);
   BX_SMF void handleCpuContextChange(void);
+  BX_SMF void handleInterruptMaskChange(void);
 #if BX_CPU_LEVEL >= 4
   BX_SMF void handleAlignmentCheck(void);
 #endif
@@ -4069,6 +4153,9 @@ public: // for now...
   BX_SMF void    smram_save_state(Bit32u *smm_saved_state);
   BX_SMF bx_bool smram_restore_state(const Bit32u *smm_saved_state);
 
+  BX_SMF void    raise_INTR(void);
+  BX_SMF void    clear_INTR(void);
+
   BX_SMF void    deliver_INIT(void);
   BX_SMF void    deliver_NMI(void);
   BX_SMF void    deliver_SMI(void);
@@ -4118,6 +4205,7 @@ public: // for now...
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_rdtscp(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_tsc_deadline(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_xapic_extensions(void);
+  BX_SMF BX_CPP_INLINE int bx_cpuid_support_smap(void);
 
   BX_SMF BX_CPP_INLINE unsigned which_cpu(void) { return BX_CPU_THIS_PTR bx_cpuid; }
   BX_SMF BX_CPP_INLINE const bx_gen_reg_t *get_gen_regfile() { return BX_CPU_THIS_PTR gen_reg; }
@@ -4228,14 +4316,6 @@ public: // for now...
   BX_SMF void    check_monitor(bx_phy_address addr, unsigned len);
 #endif
 
-  BX_SMF bx_address read_CR0(void);
-#if BX_CPU_LEVEL >= 5
-  BX_SMF bx_address read_CR4(void);
-#endif
-#if BX_CPU_LEVEL >= 6
-  BX_SMF Bit32u ReadCR8(bxInstruction_c *i);
-  BX_SMF void WriteCR8(bxInstruction_c *i, bx_address val);
-#endif
 #if BX_SUPPORT_VMX
   BX_SMF Bit16u VMread16(unsigned encoding) BX_CPP_AttrRegparmN(1);
   BX_SMF Bit32u VMread32(unsigned encoding) BX_CPP_AttrRegparmN(1);
@@ -4245,13 +4325,22 @@ public: // for now...
   BX_SMF void VMwrite32(unsigned encoding, Bit32u val_32) BX_CPP_AttrRegparmN(2);
   BX_SMF void VMwrite64(unsigned encoding, Bit64u val_64) BX_CPP_AttrRegparmN(2);
   BX_SMF void VMwrite_natural(unsigned encoding, bx_address val) BX_CPP_AttrRegparmN(2);
-  BX_SMF void VMsucceed(void);
-  BX_SMF void VMfailInvalid(void);
+
+  BX_SMF Bit64u vmread(unsigned encoding) BX_CPP_AttrRegparmN(1);
+  BX_SMF void vmwrite(unsigned encoding, Bit64u val_64) BX_CPP_AttrRegparmN(2);
+#if BX_SUPPORT_VMX >= 2
+  BX_SMF Bit64u vmread_shadow(unsigned encoding) BX_CPP_AttrRegparmN(1);
+  BX_SMF void vmwrite_shadow(unsigned encoding, Bit64u val_64) BX_CPP_AttrRegparmN(2);
+#endif
+
+  BX_SMF BX_CPP_INLINE void VMsucceed(void) { setEFlagsOSZAPC(0); }
+  BX_SMF BX_CPP_INLINE void VMfailInvalid(void) { setEFlagsOSZAPC(EFlagsCFMask); }
   BX_SMF void VMfail(Bit32u error_code);
   BX_SMF void VMabort(VMX_vmabort_code error_code);
+
   BX_SMF Bit32u LoadMSRs(Bit32u msr_cnt, bx_phy_address pAddr);
   BX_SMF Bit32u StoreMSRs(Bit32u msr_cnt, bx_phy_address pAddr);
-  BX_SMF unsigned VMXReadRevisionID(bx_phy_address pAddr);
+  BX_SMF Bit32u VMXReadRevisionID(bx_phy_address pAddr);
   BX_SMF VMX_error_code VMenterLoadCheckVmControls(void);
   BX_SMF VMX_error_code VMenterLoadCheckHostState(void);
   BX_SMF Bit32u VMenterLoadCheckGuestState(Bit64u *qualification);
@@ -4270,10 +4359,34 @@ public: // for now...
 #endif
 #if BX_SUPPORT_X86_64
   BX_SMF bx_bool is_virtual_apic_page(bx_phy_address paddr) BX_CPP_AttrRegparmN(1);
-  BX_SMF void VMX_Virtual_Apic_Read(bx_phy_address paddr, unsigned len, void *data);
+  BX_SMF bx_bool virtual_apic_access_vmexit(unsigned offset, unsigned len) BX_CPP_AttrRegparmN(2);
+  BX_SMF bx_phy_address VMX_Virtual_Apic_Read(bx_phy_address paddr, unsigned len, void *data);
   BX_SMF void VMX_Virtual_Apic_Write(bx_phy_address paddr, unsigned len, void *data);
-  BX_SMF Bit32u VMX_Read_VTPR(void);
-  BX_SMF void VMX_Write_VTPR(Bit8u vtpr);
+  BX_SMF Bit32u VMX_Read_Virtual_APIC(unsigned offset);
+  BX_SMF void VMX_Write_Virtual_APIC(unsigned offset, Bit32u val32);
+  BX_SMF void VMX_TPR_Virtualization(void);
+  BX_SMF bx_bool Virtualize_X2APIC_Write(unsigned msr, Bit64u val_64);
+  BX_SMF void VMX_Virtual_Apic_Access_Trap(void);
+#if BX_SUPPORT_VMX >= 2
+  BX_SMF void vapic_set_vector(unsigned apic_arrbase, Bit8u vector);
+  BX_SMF Bit8u vapic_clear_and_find_highest_priority_int(unsigned apic_arrbase, Bit8u vector);
+  BX_SMF void VMX_Write_VICR(void);
+  BX_SMF void VMX_PPR_Virtualization(void);
+  BX_SMF void VMX_EOI_Virtualization(void);
+  BX_SMF void VMX_Self_IPI_Virtualization(Bit8u vector);
+  BX_SMF void VMX_Evaluate_Pending_Virtual_Interrupts(void);
+  BX_SMF void VMX_Deliver_Virtual_Interrupt(void);
+#endif
+#if BX_SUPPORT_VMX >= 2
+  BX_SMF Bit16u VMread16_Shadow(unsigned encoding) BX_CPP_AttrRegparmN(1);
+  BX_SMF Bit32u VMread32_Shadow(unsigned encoding) BX_CPP_AttrRegparmN(1);
+  BX_SMF Bit64u VMread64_Shadow(unsigned encoding) BX_CPP_AttrRegparmN(1);
+  BX_SMF void VMwrite16_Shadow(unsigned encoding, Bit16u val_16) BX_CPP_AttrRegparmN(2);
+  BX_SMF void VMwrite32_Shadow(unsigned encoding, Bit32u val_32) BX_CPP_AttrRegparmN(2);
+  BX_SMF void VMwrite64_Shadow(unsigned encoding, Bit64u val_64) BX_CPP_AttrRegparmN(2);
+  BX_SMF bx_bool Vmexit_Vmread(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF bx_bool Vmexit_Vmwrite(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+#endif
 #endif
   // vmexit reasons
   BX_SMF void VMexit_Instruction(bxInstruction_c *i, Bit32u reason, bx_bool rw = BX_READ) BX_CPP_AttrRegparmN(3);
@@ -4283,9 +4396,6 @@ public: // for now...
   BX_SMF void VMexit_ExtInterrupt(void);
   BX_SMF void VMexit_TaskSwitch(Bit16u tss_selector, unsigned source) BX_CPP_AttrRegparmN(2);
   BX_SMF void VMexit_PAUSE(void);
-#if BX_SUPPORT_VMX >= 2
-  BX_SMF void VMexit_PreemptionTimerExpired(void);  
-#endif
   BX_SMF bx_bool VMexit_CLTS(void);
   BX_SMF void VMexit_MSR(unsigned op, Bit32u msr) BX_CPP_AttrRegparmN(2);
   BX_SMF void VMexit_IO(bxInstruction_c *i, unsigned port, unsigned len) BX_CPP_AttrRegparmN(3);
@@ -4298,6 +4408,7 @@ public: // for now...
   BX_SMF void VMexit_CR8_Write(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
   BX_SMF void VMexit_DR_Access(unsigned read, unsigned dr, unsigned reg);
 #if BX_SUPPORT_VMX >= 2
+  BX_SMF void Virtualization_Exception(Bit64u qualification, Bit64u guest_physical, Bit64u guest_linear);
   BX_SMF void vmfunc_eptp_switching(void);
 #endif
 #endif
@@ -4325,6 +4436,7 @@ public: // for now...
   BX_SMF void SvmInterceptIO(bxInstruction_c *i, unsigned port, unsigned len);
   BX_SMF void SvmInterceptMSR(unsigned op, Bit32u msr);
   BX_SMF void SvmInterceptTaskSwitch(Bit16u tss_selector, unsigned source, bx_bool push_error, Bit32u error_code);
+  BX_SMF void SvmInterceptPAUSE(void);
   BX_SMF void VirtualInterruptAcknowledge(void);
   BX_SMF void register_svm_state(bx_param_c *parent);
 #endif
@@ -4630,6 +4742,11 @@ BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_fsgsbase(void)
 #endif
 }
 
+BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_smap(void)
+{
+  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SMAP) != 0;
+}
+
 BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_smep(void)
 {
   return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_SMEP) != 0;
@@ -4734,20 +4851,20 @@ IMPLEMENT_EFLAG_ACCESSOR   (DF,  10)
 IMPLEMENT_EFLAG_ACCESSOR   (IF,   9)
 IMPLEMENT_EFLAG_ACCESSOR   (TF,   8)
 
-IMPLEMENT_EFLAG_SET_ACCESSOR      (ID,  21)
-IMPLEMENT_EFLAG_SET_ACCESSOR      (VIP, 20)
-IMPLEMENT_EFLAG_SET_ACCESSOR      (VIF, 19)
+IMPLEMENT_EFLAG_SET_ACCESSOR   (ID,  21)
+IMPLEMENT_EFLAG_SET_ACCESSOR   (VIP, 20)
+IMPLEMENT_EFLAG_SET_ACCESSOR   (VIF, 19)
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
-IMPLEMENT_EFLAG_SET_ACCESSOR_AC   (     18)
+IMPLEMENT_EFLAG_SET_ACCESSOR_AC(     18)
 #else
-IMPLEMENT_EFLAG_SET_ACCESSOR      (AC,  18)
+IMPLEMENT_EFLAG_SET_ACCESSOR   (AC,  18)
 #endif
-IMPLEMENT_EFLAG_SET_ACCESSOR_VM   (     17)
-IMPLEMENT_EFLAG_SET_ACCESSOR_RF   (RF,  16)
-IMPLEMENT_EFLAG_SET_ACCESSOR      (NT,  14)
-IMPLEMENT_EFLAG_SET_ACCESSOR      (DF,  10)
-IMPLEMENT_EFLAG_SET_ACCESSOR_IF_TF(IF,   9)
-IMPLEMENT_EFLAG_SET_ACCESSOR_IF_TF(TF,   8)
+IMPLEMENT_EFLAG_SET_ACCESSOR_VM(     17)
+IMPLEMENT_EFLAG_SET_ACCESSOR_RF(     16)
+IMPLEMENT_EFLAG_SET_ACCESSOR   (NT,  14)
+IMPLEMENT_EFLAG_SET_ACCESSOR   (DF,  10)
+IMPLEMENT_EFLAG_SET_ACCESSOR_IF(      9)
+IMPLEMENT_EFLAG_SET_ACCESSOR_TF(      8)
                                
 #define BX_TASK_FROM_CALL       0
 #define BX_TASK_FROM_IRET       1
@@ -4803,19 +4920,20 @@ enum {
 // Lookup for opcode and attributes in another opcode tables
 // Totally 15 opcode groups supported
 #define BxGroupX            0x00f0 // bits 7..4: opcode groups definition
-#define BxPrefixSSE66       0x0010 // Group encoding: 0001, SSE_PREFIX_66
-#define BxPrefixSSEF3       0x0020 // Group encoding: 0010, SSE_PREFIX_F3
-#define BxPrefixSSEF2       0x0030 // Group encoding: 0011, SSE_PREFIX_F2
+#define BxPrefixSSE66       0x0010 // Group encoding: 0001, SSE_PREFIX_66 only
+#define BxPrefixSSEF3       0x0020 // Group encoding: 0010, SSE_PREFIX_F3 only
+#define BxPrefixSSEF2       0x0030 // Group encoding: 0011, SSE_PREFIX_F2 only
 #define BxPrefixSSE         0x0040 // Group encoding: 0100
-#define BxGroupN            0x0050 // Group encoding: 0101
-#define BxSplitGroupN       0x0060 // Group encoding: 0110
-#define BxFPEscape          0x0070 // Group encoding: 0111
-#define Bx3ByteOp           0x0080 // Group encoding: 1000
-#define BxOSizeGrp          0x0090 // Group encoding: 1001
-#define BxPrefixVEX         0x00A0 // Group encoding: 1010
-#define BxSplitVexW         0x00B0 // Group encoding: 1011
-#define BxSplitVexW64       0x00C0 // Group encoding: 1100 - VexW ignored in 32-bit mode
-#define BxSplitMod11B       0x00D0 // Group encoding: 1101
+#define BxPrefixSSEF2F3     0x0050 // Group encoding: 0101, ignore SSE_PREFIX_66
+#define BxGroupN            0x0060 // Group encoding: 0110
+#define BxSplitGroupN       0x0070 // Group encoding: 0111
+#define BxFPEscape          0x0080 // Group encoding: 1000
+#define Bx3ByteOp           0x0090 // Group encoding: 1001
+#define BxOSizeGrp          0x00A0 // Group encoding: 1010
+#define BxPrefixVEX         0x00B0 // Group encoding: 1011
+#define BxSplitVexW         0x00C0 // Group encoding: 1100
+#define BxSplitVexW64       0x00D0 // Group encoding: 1101 - VexW ignored in 32-bit mode
+#define BxSplitMod11B       0x00E0 // Group encoding: 1110
 
 // The BxImmediate2 mask specifies kind of second immediate data
 // required by instruction.
@@ -4847,7 +4965,7 @@ enum {
 #define BxGroup6          BxGroupN
 #define BxGroup7          BxFPEscape
 #define BxGroup8          BxGroupN
-#define BxGroup9          BxGroupN
+#define BxGroup9          BxSplitGroupN
 
 #define BxGroup11         BxGroupN
 #define BxGroup12         BxGroupN

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gtk_enh_dbg_osdep.cc 11131 2012-04-10 12:44:06Z sshwarts $
+// $Id: gtk_enh_dbg_osdep.cc 11640 2013-02-24 12:12:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,7 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2013  The Bochs Project
 
 #include "config.h"
 
@@ -565,8 +566,8 @@ int GetNextSelectedLI(int listnum, int StartPt)
 int GetASMTopIdx()
 {
     GtkAdjustment *va;
-    GtkListStore *Database;
-    Database = (GtkListStore *) gtk_tree_view_get_model( GTK_TREE_VIEW(LV[ASM_WND]) );
+//    GtkListStore *Database;
+//    Database = (GtkListStore *) gtk_tree_view_get_model( GTK_TREE_VIEW(LV[ASM_WND]) );
 
     AsmPgSize = 0;
     va = gtk_tree_view_get_vadjustment ( GTK_TREE_VIEW(LV[ASM_WND]) );
@@ -663,10 +664,13 @@ void VSizeChange()
     else
         gtk_widget_show(CmdBHbox);
 
-    if (SingleCPU == FALSE)         // set the visibility of the CPU Buttons
-        gtk_widget_show(CpuBHbox);
-    else
-        gtk_widget_hide(CpuBHbox);
+    if (BX_SMP_PROCESSORS > 1) {
+        if (SingleCPU == FALSE) {       // set the visibility of the CPU Buttons
+            gtk_widget_show(CpuBHbox);
+        } else {
+            gtk_widget_hide(CpuBHbox);
+        }
+    }
 
     if (ShowIOWindows == FALSE)
     {
@@ -745,10 +749,10 @@ void SetMenuCheckmark (int set, int ChkIdx)
 // pass in FALSE or 0 to gray out a menu item
 void GrayMenuItem (int flag, int CmdIndex)
 {
-    GtkWidget *lbl;
+//    GtkWidget *lbl;
     GtkWidget *MI = Cmd2MI[CmdIndex - CMD_IDX_LO + 1];
     // convert the Command Index to a Menu Item widget, and get its label
-    lbl = GTK_BIN(GTK_MENU_ITEM( MI ))->child;
+//    lbl = GTK_BIN(GTK_MENU_ITEM( MI ))->child;
     gtk_widget_set_sensitive ( MI, flag );
 }
 
@@ -778,7 +782,7 @@ void SpecialInit()
     if (! CpuSupportSSE)
       GrayMenuItem (0, CMD_XMMR);
 
-    doOneTimeInit = FALSE;      // make sure this function is never called again
+    doSimuInit = FALSE; // make sure this function is called once per simulation
 }
 
 // this routine is stubbed in the GTK version
@@ -1349,9 +1353,10 @@ void Close_cb(GtkWidget *widget, gpointer data)
     gdk_cursor_unref (SizeCurs);
     gdk_cursor_unref (DockCurs);
 
-    gtk_main_quit();
-    debug_cmd_ready = TRUE;     // kill the "get command sleep loop"
-    bx_dbg_quit_command();      // it's OK to call this from the "wrong" thread
+    if (!SIM->is_wx_selected()) {
+      gtk_main_quit();
+    }
+    window = NULL;
 }
 
 // there is only one widget that receives keystrokes, the Input Entry widget
@@ -1673,17 +1678,17 @@ void AttachSignals()
     int i;
     g_signal_connect (G_OBJECT(window), "destroy",
         GTK_SIGNAL_FUNC(Close_cb), (gpointer) NULL);
-    g_signal_connect (G_OBJECT(CmdBtn[0]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) BtnLkup[0]);
-    g_signal_connect (G_OBJECT(CmdBtn[1]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) BtnLkup[1]);
-    g_signal_connect (G_OBJECT(CmdBtn[2]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) BtnLkup[2]);
-    g_signal_connect (G_OBJECT(CmdBtn[3]), "clicked", GTK_SIGNAL_FUNC(Cmd_cb), (gpointer) BtnLkup[3]);
-    g_signal_connect (G_OBJECT(CmdBtn[4]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) BtnLkup[4]);
+    g_signal_connect (G_OBJECT(CmdBtn[0]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) (glong) BtnLkup[0]);
+    g_signal_connect (G_OBJECT(CmdBtn[1]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) (glong) BtnLkup[1]);
+    g_signal_connect (G_OBJECT(CmdBtn[2]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) (glong) BtnLkup[2]);
+    g_signal_connect (G_OBJECT(CmdBtn[3]), "clicked", GTK_SIGNAL_FUNC(Cmd_cb), (gpointer) (glong) BtnLkup[3]);
+    g_signal_connect (G_OBJECT(CmdBtn[4]), "clicked", GTK_SIGNAL_FUNC(nbCmd_cb), (gpointer) (glong) BtnLkup[4]);
 
     i = BX_SMP_PROCESSORS;
     if (i > 1)
     {
         while (--i >= 0)
-            g_signal_connect (G_OBJECT(CpuBtn[i]), "clicked", GTK_SIGNAL_FUNC(CPUb_cb), (gpointer) i);
+            g_signal_connect (G_OBJECT(CpuBtn[i]), "clicked", GTK_SIGNAL_FUNC(CPUb_cb), (gpointer) (glong) i);
     }
 
 // activate the menu items
@@ -2044,7 +2049,7 @@ void MakeList(int listnum, const char *ColNameArray[])
         column = gtk_tree_view_column_new_with_attributes(cp,
             renderer, "text", i, NULL);
         gtk_tree_view_append_column(GTK_TREE_VIEW(LV[listnum]), column);
-        gtk_tree_view_column_set_cell_data_func(column, renderer, ListClr_PaintCb, (gpointer) ((listnum*3) + i), NULL);
+        gtk_tree_view_column_set_cell_data_func(column, renderer, ListClr_PaintCb, (gpointer) (glong) ((listnum*3) + i), NULL);
 
     // Note: column and renderer are not technically "GTK Objects", so don't unref them
         cp = txt;
@@ -2126,9 +2131,14 @@ bx_bool OSInit()
     argvp = argv;
     argc = 1;
 
-    // you MUST call gtk_init, even with faked arguments, because it inits GDK and Glib
-    if (gtk_init_check(&argc, &argvp) == FALSE)
-        printf ("gtk init failed, can not access display?\n");
+    CurXSize = 0;
+    if (!SIM->is_wx_selected()) {
+      // you MUST call gtk_init, even with faked arguments, because it inits GDK and Glib
+      if (gtk_init_check(&argc, &argvp) == FALSE) {
+        fprintf(stderr, "gtk init failed, can not access display?\n");
+        return FALSE;
+      }
+    }
     window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(window), "Bochs Enhanced Debugger");
     gtk_window_set_default_size(GTK_WINDOW(window), 500, 500);
@@ -2328,8 +2338,17 @@ bx_bool OSInit()
     AllCols[4]->fixed_width = AllCols[4]->width;
     AllCols[4]->column_type = GTK_TREE_VIEW_COLUMN_FIXED;
 
-    MakeGTKthreads();
+    if (!SIM->is_wx_selected()) {
+      MakeGTKthreads();
+    }
     return TRUE;
+}
+
+void CloseDialog()
+{
+  if (window != NULL) {
+    gtk_widget_destroy(window);
+  }
 }
 
 // recurse displaying each leaf/branch of param_tree -- with values for each leaf
@@ -2338,7 +2357,8 @@ void MakeBL(TreeParent *h_P, bx_param_c *p)
     TreeParent h_new;
     bx_list_c *as_list = NULL;
     int n = 0;
-    strcpy (tmpcb, p->get_name());
+    char tmpstr[BX_PATHNAME_LEN];
+    strcpy(tmpcb, p->get_name());
     int j = strlen (tmpcb);
     switch (p->get_type())
     {
@@ -2359,24 +2379,8 @@ void MakeBL(TreeParent *h_P, bx_param_c *p)
             sprintf (tmpcb + j,": %s",((bx_param_enum_c*)p)->get_selected());
             break;
         case BXT_PARAM_STRING:
-            if (((bx_param_string_c*)p)->get_options() & bx_param_string_c::RAW_BYTES)
-            {
-                char *cp = tmpcb + j;
-                unsigned char *rp = (unsigned char *)((bx_param_string_c*)p)->getptr();
-                char sc = ((bx_param_string_c*)p)->get_separator();
-                int k = ((bx_param_string_c*)p)->get_maxsize();
-                *(cp++) = ':';
-                *(cp++) = ' ';
-                while (k-- > 0)
-                {
-                    *(cp++) = AsciiHex[2* *rp];
-                    *(cp++) = AsciiHex[2* *rp + 1];
-                    *(cp++) = sc;
-                }
-                *--cp = 0;  // overwrite the last separator char
-            }
-            else
-                sprintf (tmpcb + j,": %s",((bx_param_string_c*)p)->getptr());
+            ((bx_param_string_c*)p)->sprint(tmpstr, BX_PATHNAME_LEN, 0);
+            sprintf(tmpcb + j,": %s", tmpstr);
             break;
         case BXT_PARAM_DATA:
             sprintf (tmpcb + j,": binary data, size=%d",((bx_shadow_data_c*)p)->get_size());

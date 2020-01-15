@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: protect_ctrl.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: protect_ctrl.cc 11643 2013-02-25 19:36:41Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -292,6 +292,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SLDT_Ew(bxInstruction_c *i)
       VMexit_Instruction(i, VMX_VMEXIT_LDTR_TR_ACCESS, BX_WRITE);
 #endif
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_LDTR_READ)) Svm_Vmexit(SVM_VMEXIT_LDTR_READ);
+  }
+#endif
+
   Bit16u val16 = BX_CPU_THIS_PTR ldtr.selector.value;
   if (i->modC0()) {
     if (i->os32L()) {
@@ -321,6 +327,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::STR_Ew(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR in_vmx_guest)
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_DESCRIPTOR_TABLE_VMEXIT))
       VMexit_Instruction(i, VMX_VMEXIT_LDTR_TR_ACCESS, BX_WRITE);
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_TR_READ)) Svm_Vmexit(SVM_VMEXIT_TR_READ);
+  }
 #endif
 
   Bit16u val16 = BX_CPU_THIS_PTR tr.selector.value;
@@ -366,6 +378,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LLDT_Ew(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR in_vmx_guest)
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_DESCRIPTOR_TABLE_VMEXIT))
       VMexit_Instruction(i, VMX_VMEXIT_LDTR_TR_ACCESS, BX_READ);
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_LDTR_WRITE)) Svm_Vmexit(SVM_VMEXIT_LDTR_WRITE);
+  }
 #endif
 
   if (i->modC0()) {
@@ -463,6 +481,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LTR_Ew(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR in_vmx_guest)
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_DESCRIPTOR_TABLE_VMEXIT))
       VMexit_Instruction(i, VMX_VMEXIT_LDTR_TR_ACCESS, BX_READ);
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_TR_WRITE)) Svm_Vmexit(SVM_VMEXIT_TR_WRITE);
+  }
 #endif
 
   if (i->modC0()) {

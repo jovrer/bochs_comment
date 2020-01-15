@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: phenomx3_8650_toliman.cc 11049 2012-02-19 20:15:23Z sshwarts $
+// $Id: phenomx3_8650_toliman.cc 11568 2013-01-07 19:33:04Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -23,6 +23,7 @@
 
 #include "bochs.h"
 #include "cpu.h"
+#include "param_names.h"
 #include "phenomx3_8650_toliman.h"
 
 #define LOG_THIS cpu->
@@ -36,9 +37,6 @@ phenom_8650_toliman_t::phenom_8650_toliman_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
   BX_INFO(("WARNING: 3DNow! is not implemented yet !"));
 
-  if (! BX_SUPPORT_MISALIGNED_SSE)
-    BX_INFO(("WARNING: Misaligned SSE support is not compiled in !"));
-
   if (! BX_SUPPORT_SVM)
     BX_INFO(("WARNING: SVM support is not compiled in !"));
 
@@ -48,6 +46,10 @@ phenom_8650_toliman_t::phenom_8650_toliman_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
 void phenom_8650_toliman_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
 {
+  static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
+  if (cpuid_limit_winnt)
+    if (function > 1 && function < 0x80000000) function = 1;
+
   switch(function) {
   case 0x80000000:
     get_ext_cpuid_leaf_0(leaf);
@@ -143,9 +145,7 @@ Bit32u phenom_8650_toliman_t::get_cpu_extensions_bitmask(void) const
          BX_CPU_NX |
          BX_CPU_FFXSR |
          BX_CPU_1G_PAGES |
-#if BX_SUPPORT_MISALIGNED_SSE
          BX_CPU_MISALIGNED_SSE |
-#endif
          BX_CPU_ALT_MOV_CR8 |
          BX_CPU_XAPIC_EXT;
 }
@@ -168,11 +168,17 @@ void phenom_8650_toliman_t::get_std_cpuid_leaf_0(cpuid_function_t *leaf) const
   // EBX: vendor ID string
   // EDX: vendor ID string
   // ECX: vendor ID string
+  static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
+  if (cpuid_limit_winnt) {
+    leaf->eax = 0x1;
+  }
+  else {
 #if BX_SUPPORT_MONITOR_MWAIT
-  leaf->eax = 0x5;
+    leaf->eax = 0x5;
 #else
-  leaf->eax = 0x1;
+    leaf->eax = 0x1;
 #endif
+  }
 
   // CPUID vendor string (e.g. GenuineIntel, AuthenticAMD, CentaurHauls, ...)
   memcpy(&(leaf->ebx), vendor_string,     4);
@@ -406,9 +412,7 @@ void phenom_8650_toliman_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const
               BX_CPUID_EXT2_ALT_MOV_CR8 |
               BX_CPUID_EXT2_LZCNT |
               BX_CPUID_EXT2_SSE4A |
-#if BX_SUPPORT_MISALIGNED_SSE
               BX_CPUID_EXT2_MISALIGNED_SSE |
-#endif
               BX_CPUID_EXT2_PREFETCHW |
               BX_CPUID_EXT2_OSVW |
               BX_CPUID_EXT2_IBS;
@@ -585,9 +589,7 @@ void phenom_8650_toliman_t::get_ext_cpuid_leaf_A(cpuid_function_t *leaf) const
   //   [12:12] Pause filter threshold support
   //   [31:13] Reserved
 
-  leaf->edx = BX_CPUID_SVM_NESTED_PAGING |
-              BX_CPUID_SVM_LBR_VIRTUALIZATION |
-              BX_CPUID_SVM_SVM_LOCK;
+  leaf->edx = get_svm_extensions_bitmask();
 }
 
 #endif

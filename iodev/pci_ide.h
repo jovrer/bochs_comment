@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.h 10424 2011-06-25 12:43:27Z vruppert $
+// $Id: pci_ide.h 11549 2012-11-12 18:56:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -57,6 +57,7 @@ public:
 private:
 
   struct {
+    unsigned chipset;
     struct {
       bx_bool cmd_ssbm;
       bx_bool cmd_rwcon;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_xhci.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: usb_xhci.cc 11634 2013-02-17 08:27:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010-2011  Benjamin D Lunt (fys [at] fysnet [dot] net)
@@ -147,6 +147,8 @@ bx_usb_xhci_c::~bx_usb_xhci_c()
   }
 
   SIM->get_bochs_root()->remove("usb_xhci");
+  bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
+  usb_rt->remove("xhci");
   BX_DEBUG(("Exit"));
 }
 

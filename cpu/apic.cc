@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.cc 11203 2012-06-04 14:27:34Z sshwarts $
+// $Id: apic.cc 11480 2012-10-03 20:24:29Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2002-2012 Zwane Mwaikambo, Stanislav Shwartsman
@@ -251,8 +251,6 @@ void bx_local_apic_c::reset(unsigned type)
 
   mode = BX_APIC_XAPIC_MODE;
 
-  INTR = 0;
-
   if (xapic)
     apic_version_id = 0x00050014; // P4 has 6 LVT entries
   else 
@@ -331,68 +329,6 @@ void bx_local_apic_c::write(bx_phy_address addr, void *data, unsigned len)
 
   write_aligned(addr, *((Bit32u*) data));
 }
-
-#define BX_LAPIC_ID                   0x020
-#define BX_LAPIC_VERSION              0x030
-#define BX_LAPIC_TPR                  0x080
-#define BX_LAPIC_ARBITRATION_PRIORITY 0x090
-#define BX_LAPIC_PPR                  0x0A0
-#define BX_LAPIC_EOI                  0x0B0
-#define BX_LAPIC_RRD                  0x0C0
-#define BX_LAPIC_LDR                  0x0D0
-#define BX_LAPIC_DESTINATION_FORMAT   0x0E0
-#define BX_LAPIC_SPURIOUS_VECTOR      0x0F0
-#define BX_LAPIC_ISR1                 0x100
-#define BX_LAPIC_ISR2                 0x110
-#define BX_LAPIC_ISR3                 0x120
-#define BX_LAPIC_ISR4                 0x130
-#define BX_LAPIC_ISR5                 0x140
-#define BX_LAPIC_ISR6                 0x150
-#define BX_LAPIC_ISR7                 0x160
-#define BX_LAPIC_ISR8                 0x170
-#define BX_LAPIC_TMR1                 0x180
-#define BX_LAPIC_TMR2                 0x190
-#define BX_LAPIC_TMR3                 0x1A0
-#define BX_LAPIC_TMR4                 0x1B0
-#define BX_LAPIC_TMR5                 0x1C0
-#define BX_LAPIC_TMR6                 0x1D0
-#define BX_LAPIC_TMR7                 0x1E0
-#define BX_LAPIC_TMR8                 0x1F0
-#define BX_LAPIC_IRR1                 0x200
-#define BX_LAPIC_IRR2                 0x210
-#define BX_LAPIC_IRR3                 0x220
-#define BX_LAPIC_IRR4                 0x230
-#define BX_LAPIC_IRR5                 0x240
-#define BX_LAPIC_IRR6                 0x250
-#define BX_LAPIC_IRR7                 0x260
-#define BX_LAPIC_IRR8                 0x270
-#define BX_LAPIC_ESR                  0x280
-#define BX_LAPIC_LVT_CMCI             0x2F0
-#define BX_LAPIC_ICR_LO               0x300
-#define BX_LAPIC_ICR_HI               0x310
-#define BX_LAPIC_LVT_TIMER            0x320
-#define BX_LAPIC_LVT_THERMAL          0x330
-#define BX_LAPIC_LVT_PERFMON          0x340
-#define BX_LAPIC_LVT_LINT0            0x350
-#define BX_LAPIC_LVT_LINT1            0x360
-#define BX_LAPIC_LVT_ERROR            0x370
-#define BX_LAPIC_TIMER_INITIAL_COUNT  0x380
-#define BX_LAPIC_TIMER_CURRENT_COUNT  0x390
-#define BX_LAPIC_TIMER_DIVIDE_CFG     0x3E0
-#define BX_LAPIC_SELF_IPI             0x3F0
-
-// extended AMD 
-#define BX_LAPIC_EXT_APIC_FEATURE     0x400
-#define BX_LAPIC_EXT_APIC_CONTROL     0x410
-#define BX_LAPIC_SPECIFIC_EOI         0x420
-#define BX_LAPIC_IER1                 0x480
-#define BX_LAPIC_IER2                 0x490
-#define BX_LAPIC_IER3                 0x4A0
-#define BX_LAPIC_IER4                 0x4B0
-#define BX_LAPIC_IER5                 0x4C0
-#define BX_LAPIC_IER6                 0x4D0
-#define BX_LAPIC_IER7                 0x4E0
-#define BX_LAPIC_IER8                 0x4F0
 
 // APIC read: 4 byte read from 16-byte aligned APIC address
 Bit32u bx_local_apic_c::read_aligned(bx_phy_address addr)
@@ -843,7 +779,9 @@ void bx_local_apic_c::service_local_apic(void)
     BX_INFO(("service_local_apic()"));
     print_status();
   }
-  if(INTR) return;  // INTR already up; do nothing
+
+  if(cpu->is_pending(BX_EVENT_PENDING_LAPIC_INTR)) return;  // INTR already up; do nothing
+
   // find first interrupt in irr.
   int first_irr = highest_priority_int(irr);
   if (first_irr < 0) return;   // no interrupts, leave INTR=0
@@ -860,8 +798,7 @@ void bx_local_apic_c::service_local_apic(void)
   // acknowledges, we will run highest_priority_int again and
   // return it.
   BX_DEBUG(("service_local_apic(): setting INTR=1 for vector 0x%02x", first_irr));
-  INTR = 1;
-  cpu->async_event = 1;
+  cpu->signal_event(BX_EVENT_PENDING_LAPIC_INTR);
 }
 
 bx_bool bx_local_apic_c::deliver(Bit8u vector, Bit8u delivery_mode, Bit8u trig_mode)
@@ -939,10 +876,9 @@ void bx_local_apic_c::untrigger_irq(Bit8u vector, unsigned trigger_mode)
 Bit8u bx_local_apic_c::acknowledge_int(void)
 {
   // CPU calls this when it is ready to service one interrupt
-  if(!INTR)
+  if(! cpu->is_pending(BX_EVENT_PENDING_LAPIC_INTR))
     BX_PANIC(("APIC %d acknowledged an interrupt, but INTR=0", apic_id));
 
-  BX_ASSERT(INTR);
   int vector = highest_priority_int(irr);
   if (vector < 0) goto spurious;
   if((vector & 0xf0) <= get_ppr()) goto spurious;
@@ -954,14 +890,13 @@ Bit8u bx_local_apic_c::acknowledge_int(void)
     BX_INFO(("Status after setting isr:"));
     print_status();
   }
-  INTR = 0;
-  cpu->async_event = 1;
+
+  cpu->clear_event(BX_EVENT_PENDING_LAPIC_INTR);
   service_local_apic();  // will set INTR again if another is ready
   return vector;
 
 spurious:
-  INTR = 0;
-  cpu->async_event = 1;
+  cpu->clear_event(BX_EVENT_PENDING_LAPIC_INTR);
   return spurious_vector;
 }
 
@@ -1118,9 +1053,9 @@ void bx_local_apic_c::set_divide_configuration(Bit32u value)
 
 void bx_local_apic_c::set_initial_timer_count(Bit32u value)
 {
+#if BX_CPU_LEVEL >= 6
   Bit32u timervec = lvt[APIC_LVT_TIMER];
 
-#if BX_CPU_LEVEL >= 6
   // in TSC-deadline mode writes to initial time count are ignored
   if (timervec & 0x40000) return;
 #endif
@@ -1235,8 +1170,7 @@ void bx_local_apic_c::deactivate_vmx_preemption_timer(void)
 void bx_local_apic_c::vmx_preemption_timer_expired(void *this_ptr)
 {
   bx_local_apic_c *class_ptr = (bx_local_apic_c *) this_ptr;
-  class_ptr->cpu->pending_vmx_timer_expired = 1;
-  class_ptr->cpu->async_event = 1;
+  class_ptr->cpu->signal_event(BX_EVENT_VMX_PREEMPTION_TIMER_EXPIRED);
   class_ptr->deactivate_vmx_preemption_timer();
 }
 #endif
@@ -1459,7 +1393,6 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_DEC_PARAM_SIMPLE(lapic, timer_handle);
   BXRS_PARAM_BOOL(lapic, timer_active, timer_active);
   BXRS_HEX_PARAM_SIMPLE(lapic, ticksInitial);
-  BXRS_PARAM_BOOL(lapic, INTR, INTR);
 
 #if BX_SUPPORT_VMX >= 2
   BXRS_DEC_PARAM_SIMPLE(lapic, vmx_timer_handle);

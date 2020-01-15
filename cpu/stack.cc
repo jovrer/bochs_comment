@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack.cc 11117 2012-03-28 21:11:19Z sshwarts $
+// $Id: stack.cc 11580 2013-01-19 20:45:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2012 Stanislav Shwartsman
+//   Copyright (c) 2012-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -57,7 +57,7 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::stackPrefetch(bx_address offset, unsigned 
       return;
 
     Bit32u limit = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled;
-    Bit32u pageStart = offset - pageOffset;
+    Bit32u pageStart = (Bit32u) offset - pageOffset;
 
     if (! BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid) {
       BX_ERROR(("stackPrefetch: SS not valid"));
@@ -109,7 +109,7 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::stackPrefetch(bx_address offset, unsigned 
   if (tlbEntry->lpf == lpf) {
     // See if the TLB entry privilege level allows us write access from this CPL
     // Assuming that we always can read if write access is OK
-    if (! (tlbEntry->accessBits & (0x2 | USER_PL))) {
+    if (tlbEntry->accessBits & (0x04 << USER_PL)) {
       BX_CPU_THIS_PTR espPageBias = (bx_address) pageOffset - offset;
       BX_CPU_THIS_PTR pAddrStackPage = tlbEntry->ppf;
       BX_CPU_THIS_PTR espHostPtr = (Bit8u*) tlbEntry->hostPageAddr;

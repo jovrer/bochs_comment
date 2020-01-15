@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc 11127 2012-04-06 13:15:27Z vruppert $
+// $Id: textconfig.cc 11612 2013-02-04 18:51:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -365,7 +365,7 @@ void build_runtime_options_prompt(const char *format, char *buf, int size)
     else {
       sprintf(buffer[i], "%s, size=%s, %s", SIM->get_param_string("path", floppyop)->getptr(),
         SIM->get_param_enum("type", floppyop)->get_selected(),
-        SIM->get_param_bool("status", floppyop)->get() ? "inserted":"ejected");
+        SIM->get_param_enum("status", floppyop)->get_selected());
       if (!SIM->get_param_string("path", floppyop)->getptr()[0]) strcpy(buffer[i], "none");
     }
   }
@@ -373,12 +373,12 @@ void build_runtime_options_prompt(const char *format, char *buf, int size)
   // 4 cdroms supported at run time
   int device;
   for (Bit8u cdrom=0; cdrom<4; cdrom++) {
-    if (!SIM->get_cdrom_options(cdrom, &cdromop, &device) || !SIM->get_param_bool("present", cdromop)->get())
+    if (!SIM->get_cdrom_options(cdrom, &cdromop, &device))
       sprintf(buffer[2+cdrom], "(not present)");
     else
       sprintf(buffer[2+cdrom], "(%s on ata%d) %s, %s",
         device&1?"slave":"master", device/2, SIM->get_param_string("path", cdromop)->getptr(),
-        (SIM->get_param_bool("status", cdromop)->get()) ? "inserted" : "ejected");
+        (SIM->get_param_enum("status", cdromop)->get_selected()));
     }
 
   snprintf(buf, size, format, buffer[0], buffer[1], buffer[2],
@@ -524,7 +524,7 @@ int bx_config_interface(int menu)
             case BX_CI_RT_CDROM3:
             case BX_CI_RT_CDROM4:
               int device;
-              if (SIM->get_cdrom_options(choice - BX_CI_RT_CDROM1, &cdromop, &device) && SIM->get_param_bool("present", cdromop)->get()) {
+              if (SIM->get_cdrom_options(choice - BX_CI_RT_CDROM1, &cdromop, &device)) {
                 cdromop->get_param_path(pname, 80);
                 do_menu(pname);
               }
@@ -589,7 +589,6 @@ static int log_level_n_choices_normal = 4;
 
 void bx_log_options(int individual)
 {
-  SIM->apply_log_actions_by_device(); // settings from bochsrc
   if (individual) {
     int done = 0;
     while (!done) {
@@ -607,7 +606,14 @@ void bx_log_options(int individual)
         // don't show the no change choice (choices=3)
         if (ask_menu(prompt, "", log_level_n_choices_normal, log_level_choices, default_action, &action)<0)
           return;
-        SIM->set_log_action(id, level, action);
+        // the exclude expression allows some choices not being available if they
+        // don't make any sense.  For example, it would be stupid to ignore a panic.
+        if (!BX_LOG_OPTS_EXCLUDE(level, action)) {
+          SIM->set_log_action(id, level, action);
+        } else {
+          fprintf(stderr, "Event type '%s' does not support log action '%s'.\n",
+                  SIM->get_log_level_name(level), log_level_choices[action]);
+        }
       }
     }
   } else {
@@ -615,14 +621,19 @@ void bx_log_options(int individual)
     bx_print_log_action_table();
     for (int level=0; level<SIM->get_max_log_level(); level++) {
       char prompt[1024];
-      int action, default_action = 3;  // default to no change
+      int action, default_action = 4;  // default to no change
       sprintf(prompt, "Enter action for %s event on all devices: [no change] ", SIM->get_log_level_name(level));
       // do show the no change choice (choices=4)
       if (ask_menu(prompt, "", log_level_n_choices_normal+1, log_level_choices, default_action, &action)<0)
         return;
-      if (action < 3) {
-        SIM->set_default_log_action(level, action);
-        SIM->set_log_action(-1, level, action);
+      if (action < log_level_n_choices_normal) {
+        if  (!BX_LOG_OPTS_EXCLUDE(level, action)) {
+          SIM->set_default_log_action(level, action);
+          SIM->set_log_action(-1, level, action);
+        } else {
+          fprintf(stderr, "Event type '%s' does not support log action '%s'.\n",
+                  SIM->get_log_level_name(level), log_level_choices[action]);
+        }
       }
     }
   }
@@ -839,24 +850,9 @@ void bx_param_enum_c::text_print(FILE *fp)
 
 void bx_param_string_c::text_print(FILE *fp)
 {
-  char *value = getptr();
-  int opts = options;
-  if (opts & RAW_BYTES) {
-    char buffer[1024];
-    buffer[0] = 0;
-    char sep_string[2];
-    sep_string[0] = separator;
-    sep_string[1] = 0;
-    for (int i=0; i<maxsize; i++) {
-      char eachbyte[16];
-      sprintf(eachbyte, "%s%02x", (i>0)?sep_string : "", (unsigned int)0xff&val[i]);
-      strncat(buffer, eachbyte, sizeof(eachbyte));
-    }
-    if (strlen(buffer) > sizeof(buffer)-4) {
-      assert(0); // raw byte print buffer is probably overflowing. increase the max or make it dynamic
-    }
-    value = buffer;
-  }
+  char value[1024];
+
+  this->sprint(value, 1024, 0);
   if (get_format()) {
     fprintf(fp, get_format(), value);
   } else {
@@ -999,7 +995,8 @@ int bx_param_string_c::text_ask(FILE *fpin, FILE *fpout)
     int opts = options;
     char buffer2[1024];
     strcpy(buffer2, buffer);
-    if (status == 1 && opts & RAW_BYTES) {
+    if (opts & RAW_BYTES) {
+      if (status == 0) return 0;
       // copy raw hex into buffer
       status = parse_raw_bytes(buffer, buffer2, maxsize, separator);
       if (status < 0) {

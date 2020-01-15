@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: msr.cc 11299 2012-07-26 16:03:26Z sshwarts $
+// $Id: msr.cc 11564 2012-12-26 21:59:16Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008-2012 Stanislav Shwartsman
@@ -369,11 +369,16 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDMSR(bxInstruction_c *i)
 #endif
 
 #if BX_SUPPORT_VMX >= 2
-  if (BX_CPU_THIS_PTR in_vmx_guest && index == 0x808) {
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_X2APIC_MODE)) {
-      RAX = VMX_Read_VTPR() & 0xff;
-      RDX = 0;
-      BX_NEXT_INSTR(i);
+      if (index >= 0x800 && index <= 0x8FF) {
+        if (index == 0x808 || SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_APIC_REGISTERS)) {
+          unsigned vapic_offset = (index & 0xff) << 4;
+          RAX = VMX_Read_Virtual_APIC(vapic_offset);
+          RDX = VMX_Read_Virtual_APIC(vapic_offset + 4);
+          BX_NEXT_INSTR(i);
+        }
+      }
     }
   }
 #endif
@@ -659,7 +664,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
         BX_ERROR(("WRMSR SVM_HSAVE_PA_MSR: SVM support not enabled !"));
         return handle_unknown_wrmsr(index, val_64);
       }
-      if ((val_64 & 0xfff) != 0 || ! IsValidPhyAddr(val_64)) {
+      if (! IsValidPageAlignedPhyAddr(val_64)) {
         BX_ERROR(("WRMSR SVM_HSAVE_PA_MSR: invalid or not page aligned physical address !"));
       }
       BX_CPU_THIS_PTR msr.svm_hsave_pa = val_64;
@@ -823,13 +828,16 @@ bx_bool BX_CPU_C::relocate_apic(Bit64u val_64)
     if (bx_cpuid_support_x2apic()) {
       unsigned apic_state = (BX_CPU_THIS_PTR msr.apicbase >> 10) & 3;
       unsigned new_state = (val32_lo >> 10) & 3;
-      if (new_state == BX_APIC_STATE_INVALID) {
-        BX_ERROR(("relocate_apic: attempt to set invalid apic state"));
-        return 0;
-      }
-      if (apic_state == BX_APIC_X2APIC_MODE && new_state != BX_APIC_GLOBALLY_DISABLED) {
-        BX_ERROR(("relocate_apic: attempt to switch from x2apic -> xapic"));
-        return 0;
+
+      if (new_state != apic_state) {
+        if (new_state == BX_APIC_STATE_INVALID) {
+          BX_ERROR(("relocate_apic: attempt to set invalid apic state"));
+          return 0;
+        }
+        if (apic_state == BX_APIC_X2APIC_MODE && new_state != BX_APIC_GLOBALLY_DISABLED) {
+          BX_ERROR(("relocate_apic: attempt to switch from x2apic -> xapic"));
+          return 0;
+        }
       }
     }
 #endif
@@ -856,6 +864,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0);
   }
 
+  invalidate_prefetch_q();
+
   Bit64u val_64 = ((Bit64u) EDX << 32) | EAX;
   Bit32u index = ECX;
 
@@ -871,10 +881,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
 #endif
 
 #if BX_SUPPORT_VMX >= 2
-  if (BX_CPU_THIS_PTR in_vmx_guest && index == 0x808) {
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_X2APIC_MODE)) {
-      VMX_Write_VTPR(AL);
-      BX_NEXT_INSTR(i);
+      if (Virtualize_X2APIC_Write(index, val_64))
+        BX_NEXT_INSTR(i);
     }
   }
 #endif
@@ -883,7 +893,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0);
 #endif
 
-  BX_NEXT_INSTR(i);
+  BX_NEXT_TRACE(i);
 }
 
 #if BX_CONFIGURE_MSRS

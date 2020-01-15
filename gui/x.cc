@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc 11287 2012-07-15 15:17:10Z vruppert $
+// $Id: x.cc 11629 2013-02-14 21:06:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -104,7 +104,6 @@ static unsigned prev_cursor_y=0;
 static Window win;
 static GC gc, gc_inv, gc_headerbar, gc_headerbar_inv;
 static unsigned dimension_x=0, dimension_y=0;
-static unsigned vga_bpp=8;
 
 static XImage *ximage = NULL;
 static unsigned imDepth, imWide, imBPP;
@@ -781,16 +780,14 @@ void bx_x_gui_c::handle_events(void)
   XEvent report;
   XKeyEvent *key_event;
   KeySym keysym;
-  XComposeStatus compose;
   char buffer[MAX_MAPPED_STRING_LENGTH];
   int bufsize = MAX_MAPPED_STRING_LENGTH;
-  int charcount;
   bx_bool mouse_update;
   int y, height;
 
   XPointerMovedEvent *pointer_event;
   XEnterWindowEvent *enter_event;
-  XLeaveWindowEvent *leave_event;
+//  XLeaveWindowEvent *leave_event;
   XButtonEvent *button_event;
   XExposeEvent *expose_event;
 
@@ -929,13 +926,13 @@ void bx_x_gui_c::handle_events(void)
 
     case KeyPress:
       key_event = (XKeyEvent *) &report;
-      charcount = XLookupString(key_event, buffer, bufsize, &keysym, &compose);
+      XLookupString(key_event, buffer, bufsize, &keysym, NULL);
       xkeypress(keysym, 0);
       break;
 
     case KeyRelease:
       key_event = (XKeyEvent *) &report;
-      charcount = XLookupString(key_event, buffer, bufsize, &keysym, &compose);
+      XLookupString(key_event, buffer, bufsize, &keysym, NULL);
       xkeypress(keysym, 1);
       break;
 
@@ -953,7 +950,7 @@ void bx_x_gui_c::handle_events(void)
       break;
 
     case LeaveNotify:
-      leave_event = (XLeaveWindowEvent *) &report;
+//      leave_event = (XLeaveWindowEvent *) &report;
       prev_x = current_x = -1;
       prev_y = current_y = -1;
       break;
@@ -999,7 +996,7 @@ void send_keyboard_mouse_status(void)
             prev_x, prev_y, current_x, current_y));
 
   if (x11_mouse_mode_absxy) {
-    if ((current_y >= bx_headerbar_y) && (current_y < (dimension_y + bx_headerbar_y))) {
+    if ((current_y >= (int)bx_headerbar_y) && (current_y < (dimension_y + bx_headerbar_y))) {
       dx = current_x * 0x7fff / dimension_x;
       dy = (current_y - bx_headerbar_y) * 0x7fff / dimension_y;
       dz = current_z;
@@ -1490,7 +1487,7 @@ void bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
   } else {
     y_size = y_tilesize;
   }
-  switch (vga_bpp) {
+  switch (guest_bpp) {
     case 8:  // 8 bits per pixel
       for (y=0; y<y_size; y++) {
         for (x=0; x<x_tilesize; x++) {
@@ -1557,7 +1554,7 @@ void bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
       break;
     default:
       BX_PANIC(("X_graphics_tile_update: bits_per_pixel %u handled by new graphics API",
-                (unsigned) vga_bpp));
+                (unsigned) guest_bpp));
       return;
   }
   XPutImage(bx_x_display, win, gc, ximage, 0, 0, x0, y0+bx_headerbar_y,
@@ -1566,13 +1563,6 @@ void bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 
 bx_svga_tileinfo_t *bx_x_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
-  if (!info) {
-    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
-    if (!info) {
-      return NULL;
-    }
-  }
-
   info->bpp = ximage->bits_per_pixel;
   info->pitch = ximage->bytes_per_line;
   info->red_shift = 0;
@@ -1667,7 +1657,7 @@ void bx_x_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
             x0, y0+bx_headerbar_y, w, h);
 }
 
-bx_bool bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+bx_bool bx_x_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
 {
   // returns: 0=no screen update needed (color map change has direct effect)
   //          1=screen updated needed (redraw using current colormap)
@@ -1694,11 +1684,14 @@ bx_bool bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green,
 void bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   if ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32)) {
-    vga_bpp = bpp;
+    guest_bpp = bpp;
   } else {
     BX_PANIC(("%d bpp graphics mode not supported", bpp));
   }
-  if (fheight > 0) {
+  guest_textmode = (fheight > 0);
+  guest_xres = x;
+  guest_yres = y;
+  if (guest_textmode) {
     font_height = fheight;
     font_width = fwidth;
     text_cols = x / font_width;
@@ -2218,7 +2211,6 @@ public:
 
   x11_control_c* add_control(int type, int x, int y, unsigned int width,
                              unsigned int height, const char *text);
-  void draw_controls(Display *display);
   void add_static_text(int x, int y, const char *text, int length);
   void draw_text(Display *display, int x, int y, const char *text, int length);
   int run(int start_ctrl, int ok, int cancel);
@@ -2300,13 +2292,6 @@ x11_control_c* x11_dialog_c::add_control(int type, int x, int y, unsigned int wi
     controls[cur_ctrl++] = xctrl;
   }
   return xctrl;
-}
-
-void x11_dialog_c::draw_controls(Display *display)
-{
-  for (int i = 0; i < ctrl_cnt; i++) {
-    controls[i]->draw(display, dlgwin, gc);
-  }
 }
 
 void x11_dialog_c::add_static_text(int x, int y, const char *text, int length)
@@ -2457,9 +2442,7 @@ int x11_dialog_c::run(int start_ctrl, int ok, int cancel)
 
 int x11_ask_dialog(BxEvent *event)
 {
-  x11_control_c *xbtn_cont, *xbtn_acont, *xbtn_quit;
 #if BX_DEBUGGER || BX_GDBSTUB
-  x11_control_c *xbtn_debug;
   const int button_x[4] = { 36, 121, 206, 291 };
   const int ask_code[4] = { BX_LOG_ASK_CHOICE_CONTINUE,
                             BX_LOG_ASK_CHOICE_CONTINUE_ALWAYS,
@@ -2492,21 +2475,21 @@ int x11_ask_dialog(BxEvent *event)
   } else {
     xdlg->add_static_text(20, 45, message, strlen(message));
   }
-  xbtn_cont = xdlg->add_control(XDC_BUTTON, button_x[0] + 2, 80, 65, 20, "Continue");
-  xbtn_acont = xdlg->add_control(XDC_BUTTON, button_x[1] + 2, 80, 65, 20, "Alwayscont");
+  xdlg->add_control(XDC_BUTTON, button_x[0] + 2, 80, 65, 20, "Continue");
+  xdlg->add_control(XDC_BUTTON, button_x[1] + 2, 80, 65, 20, "Alwayscont");
 #if BX_DEBUGGER || BX_GDBSTUB
-  xbtn_debug = xdlg->add_control(XDC_BUTTON, button_x[2] + 2, 80, 65, 20, "Debugger");
+  xdlg->add_control(XDC_BUTTON, button_x[2] + 2, 80, 65, 20, "Debugger");
 #endif
-  xbtn_quit = xdlg->add_control(XDC_BUTTON, button_x[num_ctrls-1] + 2, 80, 65, 20, "Quit");
+  xdlg->add_control(XDC_BUTTON, button_x[num_ctrls-1] + 2, 80, 65, 20, "Quit");
   control = xdlg->run(num_ctrls-1, 0, num_ctrls-1);
   retcode = ask_code[control];
   delete xdlg;
   return retcode;
 }
 
-int x11_string_dialog(bx_param_string_c *param, bx_param_bool_c *param2)
+int x11_string_dialog(bx_param_string_c *param, bx_param_enum_c *param2)
 {
-  x11_control_c *xctl_edit, *xbtn_ok, *xbtn_cancel, *xbtn_status = NULL;
+  x11_control_c *xctl_edit, *xbtn_status = NULL;
   int control = 0, h, num_ctrls, ok_button;
   bx_bool status = 0;
   char name[80], text[10];
@@ -2514,7 +2497,7 @@ int x11_string_dialog(bx_param_string_c *param, bx_param_bool_c *param2)
 
   if (param2 != NULL) {
     strcpy(name, "First CD-ROM image/device");
-    status = param2->get();
+    status = (param2->get() == BX_INSERTED);
     h = 110;
     ok_button = 2;
     num_ctrls = 4;
@@ -2536,8 +2519,8 @@ int x11_string_dialog(bx_param_string_c *param, bx_param_bool_c *param2)
     xbtn_status = xdlg->add_control(XDC_CHECKBOX, 45, 50, 15, 16, text);
     xdlg->add_static_text(70, 62, "Inserted", 8);
   }
-  xbtn_ok = xdlg->add_control(XDC_BUTTON, 55, h - 30, 65, 20, "OK");
-  xbtn_cancel = xdlg->add_control(XDC_BUTTON, 130, h - 30, 65, 20, "Cancel");
+  xdlg->add_control(XDC_BUTTON, 55, h - 30, 65, 20, "OK");
+  xdlg->add_control(XDC_BUTTON, 130, h - 30, 65, 20, "Cancel");
   control = xdlg->run(0, ok_button, num_ctrls-1);
   if (control == ok_button) {
     value = xctl_edit->get_value();
@@ -2567,7 +2550,6 @@ int x11_string_dialog(bx_param_string_c *param, bx_param_bool_c *param2)
 
 int x11_yesno_dialog(bx_param_bool_c *param)
 {
-  x11_control_c *xbtn_yes, *xbtn_no;
   int button_x[2], size_x, size_y;
   int control, ypos;
   unsigned int cpos1, cpos2, len, maxlen, lines;
@@ -2618,8 +2600,8 @@ int x11_yesno_dialog(bx_param_bool_c *param)
     cpos1 = cpos2;
     ypos += 15;
   }
-  xbtn_yes = xdlg->add_control(XDC_BUTTON, button_x[0], size_y - 30, 65, 20, "Yes");
-  xbtn_no = xdlg->add_control(XDC_BUTTON, button_x[1], size_y - 30, 65, 20, "No");
+  xdlg->add_control(XDC_BUTTON, button_x[0], size_y - 30, 65, 20, "Yes");
+  xdlg->add_control(XDC_BUTTON, button_x[1], size_y - 30, 65, 20, "No");
   control = xdlg->run(control, 0, 1);
   param->set(1 - control);
   delete xdlg;
@@ -2631,7 +2613,7 @@ BxEvent *x11_notify_callback (void *unused, BxEvent *event)
   int opts;
   bx_param_c *param;
   bx_param_string_c *sparam;
-  bx_param_bool_c *bparam;
+  bx_param_enum_c *eparam;
   bx_list_c *list;
 
   switch (event->type)
@@ -2655,39 +2637,13 @@ BxEvent *x11_notify_callback (void *unused, BxEvent *event)
       } else if (param->get_type() == BXT_LIST) {
         list = (bx_list_c *)param;
         sparam = (bx_param_string_c *)list->get_by_name("path");
-        bparam = (bx_param_bool_c *)list->get_by_name("status");
-        event->retcode = x11_string_dialog(sparam, bparam);
+        eparam = (bx_param_enum_c *)list->get_by_name("status");
+        event->retcode = x11_string_dialog(sparam, eparam);
         return event;
       } else if (param->get_type() == BXT_PARAM_BOOL) {
         event->retcode = x11_yesno_dialog((bx_param_bool_c *)param);
         return event;
       }
-#if BX_DEBUGGER && BX_DEBUGGER_GUI
-    case BX_SYNC_EVT_GET_DBG_COMMAND:
-      {
-        debug_cmd = new char[512];
-        debug_cmd_ready = 0;
-        HitBreak();
-        while (debug_cmd_ready == 0 && bx_user_quit == 0)
-        {
-          if (vgaw_refresh != 0)  // is the GUI frontend requesting a VGAW refresh?
-            DEV_vga_refresh();
-          vgaw_refresh = 0;
-          sleep(1);
-        }
-        if (bx_user_quit != 0)
-          BX_EXIT(0);
-
-        event->u.debugcmd.command = debug_cmd;
-        event->retcode = 1;
-        return event;
-      }
-    case BX_ASYNC_EVT_DBG_MSG:
-      {
-        ParseIDText (event->u.logmsg.msg);
-        return event;
-      }
-#endif
     case BX_SYNC_EVT_TICK: // called periodically by siminterface.
     case BX_ASYNC_EVT_REFRESH: // called when some bx_param_c parameters have changed.
       // fall into default case

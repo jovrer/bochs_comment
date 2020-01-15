@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmcs.cc 11158 2012-05-02 18:11:39Z sshwarts $
+// $Id: vmcs.cc 11641 2013-02-24 20:22:22Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2011 Stanislav Shwartsman
+//   Copyright (c) 2009-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -96,6 +96,9 @@ bx_bool BX_CPU_C::vmcs_field_supported(Bit32u encoding)
     /* binary 0000_00xx_xxxx_xxx0 */
     case VMCS_16BIT_CONTROL_VPID:
       return BX_SUPPORT_VMX_EXTENSION(BX_VMX_VPID);
+
+    case VMCS_16BIT_CONTROL_EPTP_INDEX:
+      return BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT_EXCEPTION);
 #endif
 
     /* VMCS 16-bit guest-state fields */
@@ -109,6 +112,11 @@ bx_bool BX_CPU_C::vmcs_field_supported(Bit32u encoding)
     case VMCS_16BIT_GUEST_LDTR_SELECTOR:
     case VMCS_16BIT_GUEST_TR_SELECTOR:
       return 1;
+
+#if BX_SUPPORT_VMX >= 2
+    case VMCS_16BIT_GUEST_INTERRUPT_STATUS:
+      return BX_SUPPORT_VMX_EXTENSION(BX_VMX_VINTR_DELIVERY);
+#endif
 
     /* VMCS 16-bit host-state fields */
     /* binary 0000_11xx_xxxx_xxx0 */
@@ -238,17 +246,37 @@ bx_bool BX_CPU_C::vmcs_field_supported(Bit32u encoding)
 #endif
 
 #if BX_SUPPORT_VMX >= 2
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP0:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP0_HI:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP1:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP1_HI:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP2:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP2_HI:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP3:
+    case VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP3_HI:
+      return BX_SUPPORT_VMX_EXTENSION(BX_VMX_VINTR_DELIVERY);
+
     case VMCS_64BIT_CONTROL_EPTPTR:
     case VMCS_64BIT_CONTROL_EPTPTR_HI:
       return BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT);
 
     case VMCS_64BIT_CONTROL_VMFUNC_CTRLS:
     case VMCS_64BIT_CONTROL_VMFUNC_CTRLS_HI:
-      return BX_CPU_THIS_PTR vmx_cap.vmx_vmfunc_supported_bits;
+      return BX_CPU_THIS_PTR vmx_cap.vmx_vmfunc_supported_bits != 0;
 
     case VMCS_64BIT_CONTROL_EPTP_LIST_ADDRESS:
     case VMCS_64BIT_CONTROL_EPTP_LIST_ADDRESS_HI:
       return BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPTP_SWITCHING);
+
+    case VMCS_64BIT_CONTROL_VMREAD_BITMAP_ADDR:
+    case VMCS_64BIT_CONTROL_VMREAD_BITMAP_ADDR_HI:
+    case VMCS_64BIT_CONTROL_VMWRITE_BITMAP_ADDR:
+    case VMCS_64BIT_CONTROL_VMWRITE_BITMAP_ADDR_HI:
+      return BX_SUPPORT_VMX_EXTENSION(BX_VMX_VMCS_SHADOWING);
+
+    case VMCS_64BIT_CONTROL_VE_EXCEPTION_INFO_ADDR:
+    case VMCS_64BIT_CONTROL_VE_EXCEPTION_INFO_ADDR_HI:
+      return BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT_EXCEPTION);
 #endif
 
 #if BX_SUPPORT_VMX >= 2
@@ -394,7 +422,7 @@ void BX_CPU_C::init_vmx_capabilities(void)
 
   cap->vmx_pin_vmexec_ctrl_supported_bits =
        VMX_VM_EXEC_CTRL1_EXTERNAL_INTERRUPT_VMEXIT |
-       VMX_VM_EXEC_CTRL1_NMI_VMEXIT;
+       VMX_VM_EXEC_CTRL1_NMI_EXITING;
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VIRTUAL_NMI))
     cap->vmx_pin_vmexec_ctrl_supported_bits |= VMX_VM_EXEC_CTRL1_VIRTUAL_NMI;
 #if BX_SUPPORT_VMX >= 2
@@ -461,7 +489,7 @@ void BX_CPU_C::init_vmx_capabilities(void)
   }
 #endif
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VIRTUAL_NMI))
-    cap->vmx_proc_vmexec_ctrl_supported_bits |= VMX_VM_EXEC_CTRL2_NMI_WINDOW_VMEXIT;
+    cap->vmx_proc_vmexec_ctrl_supported_bits |= VMX_VM_EXEC_CTRL2_NMI_WINDOW_EXITING;
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_MONITOR_TRAP_FLAG))
     cap->vmx_proc_vmexec_ctrl_supported_bits |= VMX_VM_EXEC_CTRL2_MONITOR_TRAP_FLAG;
 #if BX_SUPPORT_VMX >= 2
@@ -481,12 +509,17 @@ void BX_CPU_C::init_vmx_capabilities(void)
   //   [05] VPID Enable
   //   [06] WBINVD Exiting
   //   [07] Unrestricted Guest (require EPT)
-  //   [08] Reserved
-  //   [09] Reserved
+  //   [08] Virtualize Apic Registers
+  //   [09] Virtualize Interrupt Delivery
   //   [10] PAUSE Loop Exiting
   //   [11] RDRAND Exiting (require RDRAND instruction support)
   //   [12] Enable INVPCID instruction (require INVPCID instruction support)
   //   [13] Enable VM Functions
+  //   [14] Enable VMCS Shadowing
+  //   [15] Reserved (must be '0)
+  //   [16] RDSEED Exiting (require RDSEED instruction support)
+  //   [17] Reserved (must be '0)
+  //   [18] Support for EPT Violation (#VE) exception
 
   cap->vmx_vmexec_ctrl2_supported_bits = 0;
 
@@ -513,10 +546,27 @@ void BX_CPU_C::init_vmx_capabilities(void)
 #if BX_SUPPORT_VMX >= 2
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_UNRESTRICTED_GUEST))
     cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_UNRESTRICTED_GUEST;
+  if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VINTR_DELIVERY))
+    cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_VIRTUALIZE_APIC_REGISTERS | VMX_VM_EXEC_CTRL3_VIRTUAL_INT_DELIVERY;
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_PAUSE_LOOP_EXITING))
     cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_PAUSE_LOOP_VMEXIT;
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_INVPCID))
     cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_INVPCID;
+#endif
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_RDRAND))
+    cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_RDRAND_VMEXIT;
+#if BX_SUPPORT_VMX >= 2
+  if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VMCS_SHADOWING))
+    cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_VMCS_SHADOWING;
+#endif
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_RDSEED))
+    cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_RDSEED_VMEXIT;
+#if BX_SUPPORT_VMX >= 2
+  if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT_EXCEPTION)) {
+    if (! BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPTP_SWITCHING))
+      BX_PANIC(("#VE exception feature requires EPTP switching support !"));
+    cap->vmx_vmexec_ctrl2_supported_bits |= VMX_VM_EXEC_CTRL3_EPT_VIOLATION_EXCEPTION;
+  }
 #endif
 
   // enable secondary vm exec controls if needed

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl.cc 10969 2012-01-11 20:21:29Z sshwarts $
+// $Id: flag_ctrl.cc 11480 2012-10-03 20:24:29Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2012  The Bochs Project
@@ -142,7 +142,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::STI(bxInstruction_c *i)
   if (! BX_CPU_THIS_PTR get_IF()) {
     BX_CPU_THIS_PTR assert_IF();
     inhibit_interrupts(BX_INHIBIT_INTERRUPTS);
-    BX_CPU_THIS_PTR async_event = 1;
   }
 
   BX_NEXT_INSTR(i);
@@ -390,6 +389,30 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SALC(bxInstruction_c *i)
   else {
     AL = 0x00;
   }
+
+  BX_NEXT_INSTR(i);
+}
+
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::STAC(bxInstruction_c *i)
+{
+  if (CPL != 0) {
+    BX_ERROR(("STAC is not recognized when CPL != 0"));
+    exception(BX_UD_EXCEPTION, 0);
+  }
+
+  assert_AC();
+
+  BX_NEXT_INSTR(i);
+}
+
+BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLAC(bxInstruction_c *i)
+{
+  if (CPL != 0) {
+    BX_ERROR(("CLAC is not recognized when CPL != 0"));
+    exception(BX_UD_EXCEPTION, 0);
+  }
+
+  clear_AC();
 
   BX_NEXT_INSTR(i);
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h 11295 2012-07-24 15:32:55Z sshwarts $
+// $Id: instrument.h 11575 2013-01-18 08:12:36Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006-2012 Stanislav Shwartsman
@@ -87,7 +87,7 @@ public:
   void bx_instr_exception(unsigned vector, unsigned error_code);
   void bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_address eip);
 
-  void bx_instr_lin_access(bx_address lin, bx_phy_adress phy, unsigned len, unsigned rw);
+  void bx_instr_lin_access(bx_address lin, bx_phy_address phy, unsigned len, unsigned rw);
 
 private:
   void branch_taken(bx_address new_eip);

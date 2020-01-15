@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode.cc 11356 2012-08-21 19:58:41Z sshwarts $
+// $Id: fetchdecode.cc 11565 2012-12-27 19:31:21Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -454,7 +454,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo32[512*2] = {
   /* 0F 06 /w */ { BxTraceEnd, BX_IA_CLTS },
   /* 0F 07 /w */ { BxTraceEnd, BX_IA_SYSRET_LEGACY },
   /* 0F 08 /w */ { BxTraceEnd, BX_IA_INVD },
-  /* 0F 09 /w */ { BxTraceEnd, BX_IA_WBINVD },
+  /* 0F 09 /w */ { 0, BX_IA_WBINVD },
   /* 0F 0A /w */ { 0, BX_IA_ERROR },
   /* 0F 0B /w */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /w */ { 0, BX_IA_ERROR },
@@ -504,7 +504,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo32[512*2] = {
   /* 0F 2D /w */ { BxPrefixSSE, BX_IA_CVTPS2PI_PqWps, BxOpcodeGroupSSE_0f2d },
   /* 0F 2E /w */ { BxPrefixSSE, BX_IA_UCOMISS_VssWss, BxOpcodeGroupSSE_0f2e },
   /* 0F 2F /w */ { BxPrefixSSE, BX_IA_COMISS_VpsWps, BxOpcodeGroupSSE_0f2f },
-  /* 0F 30 /w */ { 0, BX_IA_WRMSR },
+  /* 0F 30 /w */ { BxTraceEnd, BX_IA_WRMSR },
   /* 0F 31 /w */ { BxTraceEnd, BX_IA_RDTSC }, // end trace to avoid multiple TSC samples in one cycle
   /* 0F 32 /w */ { BxTraceEnd, BX_IA_RDMSR }, // end trace to avoid multiple TSC samples in one cycle
   /* 0F 33 /w */ { 0, BX_IA_RDPMC },
@@ -663,7 +663,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo32[512*2] = {
   /* 0F C4 /w */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PINSRW_PqEwIb, BxOpcodeGroupSSE_0fc4 },
   /* 0F C5 /w */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PEXTRW_GdPqIb, BxOpcodeGroupSSE_0fc5R },
   /* 0F C6 /w */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_SHUFPS_VpsWpsIb, BxOpcodeGroupSSE_0fc6 },
-  /* 0F C7 /w */ { BxGroup9, BX_IA_ERROR, BxOpcodeInfoG9M },
+  /* 0F C7 /w */ { BxGroup9, BX_IA_ERROR, BxOpcodeInfoG9w },
   /* 0F C8 /w */ { 0, BX_IA_BSWAP_RX },
   /* 0F C9 /w */ { 0, BX_IA_BSWAP_RX },
   /* 0F CA /w */ { 0, BX_IA_BSWAP_RX },
@@ -999,7 +999,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo32[512*2] = {
   /* 0F 06 /d */ { BxTraceEnd, BX_IA_CLTS },
   /* 0F 07 /d */ { BxTraceEnd, BX_IA_SYSRET_LEGACY },
   /* 0F 08 /d */ { BxTraceEnd, BX_IA_INVD },
-  /* 0F 09 /d */ { BxTraceEnd, BX_IA_WBINVD },
+  /* 0F 09 /d */ { 0, BX_IA_WBINVD },
   /* 0F 0A /d */ { 0, BX_IA_ERROR },
   /* 0F 0B /d */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /d */ { 0, BX_IA_ERROR },
@@ -1049,7 +1049,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo32[512*2] = {
   /* 0F 2D /d */ { BxPrefixSSE, BX_IA_CVTPS2PI_PqWps, BxOpcodeGroupSSE_0f2d },
   /* 0F 2E /d */ { BxPrefixSSE, BX_IA_UCOMISS_VssWss, BxOpcodeGroupSSE_0f2e },
   /* 0F 2F /d */ { BxPrefixSSE, BX_IA_COMISS_VpsWps, BxOpcodeGroupSSE_0f2f },
-  /* 0F 30 /d */ { 0, BX_IA_WRMSR },
+  /* 0F 30 /d */ { BxTraceEnd, BX_IA_WRMSR },
   /* 0F 31 /d */ { BxTraceEnd, BX_IA_RDTSC }, // end trace to avoid multiple TSC samples in one cycle
   /* 0F 32 /d */ { BxTraceEnd, BX_IA_RDMSR }, // end trace to avoid multiple TSC samples in one cycle
   /* 0F 33 /d */ { 0, BX_IA_RDPMC },
@@ -1208,7 +1208,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo32[512*2] = {
   /* 0F C4 /d */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PINSRW_PqEwIb, BxOpcodeGroupSSE_0fc4 },
   /* 0F C5 /d */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PEXTRW_GdPqIb, BxOpcodeGroupSSE_0fc5R },
   /* 0F C6 /d */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_SHUFPS_VpsWpsIb, BxOpcodeGroupSSE_0fc6 },
-  /* 0F C7 /d */ { BxGroup9, BX_IA_ERROR, BxOpcodeInfoG9M },
+  /* 0F C7 /d */ { BxGroup9, BX_IA_ERROR, BxOpcodeInfoG9d },
   /* 0F C8 /d */ { 0, BX_IA_BSWAP_ERX },
   /* 0F C9 /d */ { 0, BX_IA_BSWAP_ERX },
   /* 0F CA /d */ { 0, BX_IA_BSWAP_ERX },
@@ -1284,9 +1284,8 @@ BX_CPU_C::fetchDecode32(const Bit8u *iptr, bxInstruction_c *i, unsigned remainin
 #define SSE_PREFIX_F2   3
   unsigned sse_prefix = SSE_PREFIX_NONE;
 
-  int vvv = -1;
 #if BX_SUPPORT_AVX
-  int had_vex = 0, had_xop = 0, use_vvv = 0;
+  int had_vex = 0, had_xop = 0, use_vvv = 0, vvv = -1;
   bx_bool vex_w = 0, vex_l = 0;
 #endif
 
@@ -1655,6 +1654,12 @@ modrm_done:
       Bit32u group = attr & BxGroupX;
       attr &= ~BxGroupX;
 
+      // ignore 0x66 SSE prefix is required
+      if (group == BxPrefixSSEF2F3) {
+        if (sse_prefix == SSE_PREFIX_66) sse_prefix = SSE_PREFIX_NONE;
+        group = BxPrefixSSE;
+      }
+
       if (group < BxPrefixSSE) {
         /* For opcodes with only one allowed SSE prefix */
         if (sse_prefix != (group >> 4)) {
@@ -1692,8 +1697,6 @@ modrm_done:
 #endif
         case BxOSizeGrp:
           OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[os_32]);
-          if (sse_prefix == SSE_PREFIX_66)
-              sse_prefix = 0;
           break;
         case BxPrefixSSE:
           /* For SSE opcodes look into another table
@@ -1954,37 +1957,37 @@ modrm_done:
 #endif
 
   if (mod_mem) {
-    i->execute = BxOpcodesTable[ia_opcode].execute1;
+    i->execute1 = BxOpcodesTable[ia_opcode].execute1;
     i->handlers.execute2 = BxOpcodesTable[ia_opcode].execute2;
 
     if (ia_opcode == BX_IA_MOV32_GdEd) {
       if (seg == BX_SEG_REG_SS)
-        i->execute = &BX_CPU_C::MOV32S_GdEdM;
+        i->execute1 = &BX_CPU_C::MOV32S_GdEdM;
     }
     if (ia_opcode == BX_IA_MOV32_EdGd) {
       if (seg == BX_SEG_REG_SS)
-        i->execute = &BX_CPU_C::MOV32S_EdGdM;
+        i->execute1 = &BX_CPU_C::MOV32S_EdGdM;
     }
   }
   else {
-    i->execute = BxOpcodesTable[ia_opcode].execute2;
+    i->execute1 = BxOpcodesTable[ia_opcode].execute2;
     i->handlers.execute2 = NULL;
   }
 
-  BX_ASSERT(i->execute);
+  BX_ASSERT(i->execute1);
 
 #if BX_CPU_LEVEL >= 6
   Bit32u op_flags = BxOpcodesTable[ia_opcode].src[3];
   if (! BX_CPU_THIS_PTR sse_ok) {
      if (op_flags & BX_PREPARE_SSE) {
-        if (i->execute != &BX_CPU_C::BxError) i->execute = &BX_CPU_C::BxNoSSE;
+        if (i->execute1 != &BX_CPU_C::BxError) i->execute1 = &BX_CPU_C::BxNoSSE;
         return(1);
      }
   }
 #if BX_SUPPORT_AVX
   if (! BX_CPU_THIS_PTR avx_ok) {
     if (op_flags & BX_PREPARE_AVX) {
-       if (i->execute != &BX_CPU_C::BxError) i->execute = &BX_CPU_C::BxNoAVX;
+       if (i->execute1 != &BX_CPU_C::BxError) i->execute1 = &BX_CPU_C::BxNoAVX;
        return(1);
     }
   }

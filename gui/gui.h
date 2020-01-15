@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h 11229 2012-06-24 09:14:43Z vruppert $
+// $Id: gui.h 11622 2013-02-12 21:08:35Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2012  The Bochs Project
@@ -48,11 +48,6 @@
 #define BX_GUI_MT_F12           (BX_MT_KEY_F12)
 #define BX_GUI_MT_CTRL_ALT      (BX_MT_KEY_CTRL | BX_MT_KEY_ALT)
 
-// snapshot feature
-#define BX_GUI_SNAPSHOT_UNSUP   0
-#define BX_GUI_SNAPSHOT_TXT     1
-#define BX_GUI_SNAPSHOT_GFX     2
-
 typedef struct {
   Bit16u  start_address;
   Bit8u   cs_start;
@@ -72,6 +67,7 @@ typedef struct {
   Bit8u red_shift, green_shift, blue_shift;
   Bit8u is_indexed, is_little_endian;
   unsigned long red_mask, green_mask, blue_mask;
+  bx_bool snapshot_mode;
 } bx_svga_tileinfo_t;
 
 
@@ -95,14 +91,14 @@ public:
   virtual void text_update(Bit8u *old_text, Bit8u *new_text,
                           unsigned long cursor_x, unsigned long cursor_y,
                           bx_vga_tminfo_t *tm_info) = 0;
-  virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y) = 0;
+  virtual void graphics_tile_update(Bit8u *tile, unsigned x, unsigned y) = 0;
   virtual bx_svga_tileinfo_t *graphics_tile_info(bx_svga_tileinfo_t *info);
   virtual Bit8u *graphics_tile_get(unsigned x, unsigned y, unsigned *w, unsigned *h);
   virtual void graphics_tile_update_in_place(unsigned x, unsigned y, unsigned w, unsigned h);
   virtual void handle_events(void) = 0;
   virtual void flush(void) = 0;
   virtual void clear_screen(void) = 0;
-  virtual bx_bool palette_change(unsigned index, unsigned red, unsigned green, unsigned blue) = 0;
+  virtual bx_bool palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue) = 0;
   virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0, unsigned fwidth=0, unsigned bpp=8) = 0;
   virtual unsigned create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim) = 0;
   virtual unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void)) = 0;
@@ -148,6 +144,10 @@ public:
   void init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
             unsigned x_tilesize, unsigned y_tilesize);
   void cleanup(void);
+  void graphics_tile_update_common(Bit8u *tile, unsigned x, unsigned y);
+  bx_svga_tileinfo_t *graphics_tile_info_common(bx_svga_tileinfo_t *info);
+  Bit8u* get_snapshot_buffer(void) {return snapshot_buffer;}
+  bx_bool palette_change_common(Bit8u index, Bit8u red, Bit8u green, Bit8u blue);
   void update_drive_status_buttons(void);
   static void     mouse_enabled_changed(bx_bool val);
   int register_statusitem(const char *text, bx_bool auto_off=0);
@@ -158,11 +158,12 @@ public:
   const char* get_toggle_info(void);
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
   void init_debug_dialog(void);
+  void close_debug_dialog(void);
 #endif
 
 protected:
   // And these are defined and used privately in gui.cc
-  static void make_text_snapshot (char **snapshot, Bit32u *length);
+  // header bar button handers
   static void floppyA_handler(void);
   static void floppyB_handler(void);
   static void cdrom1_handler(void);
@@ -174,10 +175,14 @@ protected:
   static void config_handler(void);
   static void userbutton_handler(void);
   static void save_restore_handler(void);
-
+  // snapshot helper functions
+  static void make_text_snapshot(char **snapshot, Bit32u *length);
+  static Bit32u set_snapshot_mode(bx_bool mode);
+  // status bar LED timer
   static void led_timer_handler(void *);
   void led_timer(void);
 
+  // header bar buttons
   bx_bool floppyA_status;
   bx_bool floppyB_status;
   bx_bool cdrom1_status;
@@ -193,11 +198,11 @@ protected:
   unsigned mouse_bmap_id, nomouse_bmap_id, mouse_hbar_id;
   unsigned user_bmap_id, user_hbar_id;
   unsigned save_restore_bmap_id, save_restore_hbar_id;
-
+  // text charmap
   unsigned char vga_charmap[0x2000];
   bx_bool charmap_updated;
   bx_bool char_changed[256];
-
+  // status bar items
   unsigned statusitem_count;
   int led_timer_index;
   struct {
@@ -207,22 +212,40 @@ protected:
     bx_bool auto_off;
     Bit8u counter;
   } statusitem[BX_MAX_STATUSITEMS];
-
+  // display mode
   disp_mode_t disp_mode;
+  // new graphics API (with compatibility mode)
   bx_bool new_gfx_api;
   Bit16u host_xres;
   Bit16u host_yres;
   Bit16u host_pitch;
   Bit8u host_bpp;
+  Bit8u *framebuffer;
+  // maximum guest display size and tile size
   unsigned max_xres;
   unsigned max_yres;
   unsigned x_tilesize;
   unsigned y_tilesize;
-  Bit8u *framebuffer;
-  Bit32u dialog_caps;
+  // current guest display settings
+  bx_bool guest_textmode;
+  unsigned guest_xres;
+  unsigned guest_yres;
+  unsigned guest_bpp;
+  // graphics snapshot
+  bx_bool snapshot_mode;
+  Bit8u *snapshot_buffer;
+  struct {
+    Bit8u blue;
+    Bit8u green;
+    Bit8u red;
+    Bit8u reserved;
+  } palette[256];
+  // mouse toggle setup
   Bit8u toggle_method;
   Bit32u toggle_keystate;
   char mouse_toggle_text[20];
+  // gui dialog capabilities
+  Bit32u dialog_caps;
 };
 
 
@@ -241,12 +264,12 @@ virtual void specific_init(int argc, char **argv,                           \
 virtual void text_update(Bit8u *old_text, Bit8u *new_text,                  \
                   unsigned long cursor_x, unsigned long cursor_y,           \
                   bx_vga_tminfo_t *tm_info);                                \
-virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y); \
+virtual void graphics_tile_update(Bit8u *tile, unsigned x, unsigned y);     \
 virtual void handle_events(void);                                           \
 virtual void flush(void);                                                   \
 virtual void clear_screen(void);                                            \
-virtual bx_bool palette_change(unsigned index,                              \
-unsigned red, unsigned green, unsigned blue);                               \
+virtual bx_bool palette_change(Bit8u index, Bit8u red, Bit8u green,         \
+                               Bit8u blue);                                 \
 virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0,   \
                           unsigned fwidth=0, unsigned bpp=8);               \
 virtual unsigned create_bitmap(const unsigned char *bmap,                   \

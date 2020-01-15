@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.h 11385 2012-08-31 15:38:28Z sshwarts $
+// $Id: vmx.h 11641 2013-02-24 20:22:22Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2012 Stanislav Shwartsman
+//   Copyright (c) 2009-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -132,8 +132,14 @@ enum VMX_vmexit_reason {
    VMX_VMEXIT_INVPCID = 58,
    VMX_VMEXIT_VMFUNC = 59,
    VMX_VMEXIT_RESERVED60 = 60,
-   VMX_VMEXIT_RDSEED = 61
+   VMX_VMEXIT_RDSEED = 61,
+   VMX_VMEXIT_LAST_REASON
 };
+
+#define IS_TRAP_LIKE_VMEXIT(reason) \
+      (reason == VMX_VMEXIT_TPR_THRESHOLD || \
+       reason == VMX_VMEXIT_VIRTUALIZED_EOI || \
+       reason == VMX_VMEXIT_APIC_WRITE)
 
 // VMexit on CR register access
 enum {
@@ -181,6 +187,7 @@ enum VMFunctions {
 /* binary 0000_00xx_xxxx_xxx0 */
 #define VMCS_16BIT_CONTROL_VPID                            0x00000000 /* VPID */
 #define VMCS_16BIT_CONTROL_POSTED_INTERRUPT_VECTOR         0x00000002 /* Posted Interrupts */
+#define VMCS_16BIT_CONTROL_EPTP_INDEX                      0x00000004 /* #VE Exception */
 
 /* VMCS 16-bit guest-state fields */
 /* binary 0000_10xx_xxxx_xxx0 */
@@ -242,6 +249,12 @@ enum VMFunctions {
 #define VMCS_64BIT_CONTROL_EOI_EXIT_BITMAP3_HI             0x00002023
 #define VMCS_64BIT_CONTROL_EPTP_LIST_ADDRESS               0x00002024 /* VM Functions - EPTP switching */
 #define VMCS_64BIT_CONTROL_EPTP_LIST_ADDRESS_HI            0x00002025
+#define VMCS_64BIT_CONTROL_VMREAD_BITMAP_ADDR              0x00002026 /* VMCS Shadowing */
+#define VMCS_64BIT_CONTROL_VMREAD_BITMAP_ADDR_HI           0x00002027
+#define VMCS_64BIT_CONTROL_VMWRITE_BITMAP_ADDR             0x00002028 /* VMCS Shadowing */
+#define VMCS_64BIT_CONTROL_VMWRITE_BITMAP_ADDR_HI          0x00002029
+#define VMCS_64BIT_CONTROL_VE_EXCEPTION_INFO_ADDR          0x0000202A /* #VE Exception */
+#define VMCS_64BIT_CONTROL_VE_EXCEPTION_INFO_ADDR_HI       0x0000202B
 
 /* VMCS 64-bit read only data fields */
 /* binary 0010_01xx_xxxx_xxx0 */
@@ -485,8 +498,6 @@ typedef struct bx_VMCS_GUEST_STATE
    Bit32u interruptibility_state;
    Bit32u tmpDR6;
 
-   Bit64u link_pointer;
-
 #if BX_SUPPORT_VMX >= 2
 #if BX_SUPPORT_X86_64
    Bit64u efer_msr;
@@ -545,6 +556,18 @@ typedef struct bx_VMX_Cap
 #endif
 } VMX_CAP;
 
+#if BX_SUPPORT_VMX >= 2
+
+// used for pause loop exiting
+struct VMX_PLE {
+  Bit32u pause_loop_exiting_gap;
+  Bit32u pause_loop_exiting_window;
+  Bit64u last_pause_time;
+  Bit64u first_pause_time;
+};
+
+#endif
+
 typedef struct bx_VMCS
 {
   //
@@ -552,7 +575,7 @@ typedef struct bx_VMCS
   //
 
 #define VMX_VM_EXEC_CTRL1_EXTERNAL_INTERRUPT_VMEXIT   (1 << 0)
-#define VMX_VM_EXEC_CTRL1_NMI_VMEXIT                  (1 << 3)
+#define VMX_VM_EXEC_CTRL1_NMI_EXITING                 (1 << 3)
 #define VMX_VM_EXEC_CTRL1_VIRTUAL_NMI                 (1 << 5) /* Virtual NMI */
 #define VMX_VM_EXEC_CTRL1_VMX_PREEMPTION_TIMER_VMEXIT (1 << 6) /* VMX preemption timer */
 #define VMX_VM_EXEC_CTRL1_PROCESS_POSTED_INTERRUPTS   (1 << 7) /* Posted Interrupts */
@@ -574,7 +597,7 @@ typedef struct bx_VMCS
 #define VMX_VM_EXEC_CTRL2_CR8_WRITE_VMEXIT          (1 << 19) /* TPR shadow */
 #define VMX_VM_EXEC_CTRL2_CR8_READ_VMEXIT           (1 << 20) /* TPR shadow */
 #define VMX_VM_EXEC_CTRL2_TPR_SHADOW                (1 << 21) /* TPR shadow */
-#define VMX_VM_EXEC_CTRL2_NMI_WINDOW_VMEXIT         (1 << 22) /* Virtual NMI */
+#define VMX_VM_EXEC_CTRL2_NMI_WINDOW_EXITING        (1 << 22) /* Virtual NMI */
 #define VMX_VM_EXEC_CTRL2_DRx_ACCESS_VMEXIT         (1 << 23)
 #define VMX_VM_EXEC_CTRL2_IO_VMEXIT                 (1 << 24)
 #define VMX_VM_EXEC_CTRL2_IO_BITMAPS                (1 << 25)
@@ -603,12 +626,16 @@ typedef struct bx_VMCS
 #define VMX_VM_EXEC_CTRL3_RDRAND_VMEXIT             (1 << 11)
 #define VMX_VM_EXEC_CTRL3_INVPCID                   (1 << 12)
 #define VMX_VM_EXEC_CTRL3_VMFUNC_ENABLE             (1 << 13) /* VM Functions */
+#define VMX_VM_EXEC_CTRL3_VMCS_SHADOWING            (1 << 14) /* VMCS Shadowing */
 #define VMX_VM_EXEC_CTRL3_RDSEED_VMEXIT             (1 << 16)
+#define VMX_VM_EXEC_CTRL3_EPT_VIOLATION_EXCEPTION   (1 << 18) /* #VE Exception */
 
 #define VMX_VM_EXEC_CTRL3_SUPPORTED_BITS \
     (BX_CPU_THIS_PTR vmx_cap.vmx_vmexec_ctrl2_supported_bits)
 
    Bit32u vmexec_ctrls3;
+
+   Bit64u vmcs_linkptr;
 
    Bit32u vm_exceptions_bitmap;
    Bit32u vm_pf_mask;
@@ -631,6 +658,7 @@ typedef struct bx_VMCS
    bx_phy_address virtual_apic_page_addr;
    Bit32u vm_tpr_threshold;
    bx_phy_address apic_access_page;
+   unsigned apic_access;
 #endif
 
 #if BX_SUPPORT_VMX >= 2
@@ -638,13 +666,25 @@ typedef struct bx_VMCS
    Bit16u vpid;
 #endif
 
-   Bit64u executive_vmcsptr;
+#if BX_SUPPORT_VMX >= 2
+   VMX_PLE ple;
+#endif
 
 #if BX_SUPPORT_VMX >= 2
-   Bit32u pause_loop_exiting_gap;
-   Bit32u pause_loop_exiting_window;
-   Bit64u last_pause_time; // used for pause loop exiting
-   Bit32u first_pause_time;
+   Bit8u svi; /* Servicing Virtual Interrupt */
+   Bit8u rvi; /* Requesting Virtual Interrupt */
+   Bit8u vppr;
+
+   Bit32u eoi_exit_bitmap[8];
+#endif
+
+#if BX_SUPPORT_VMX >= 2
+   bx_phy_address vmread_bitmap_addr, vmwrite_bitmap_addr;
+#endif
+
+#if BX_SUPPORT_VMX >= 2
+   bx_phy_address ve_info_addr;
+   Bit16u eptp_index;
 #endif
 
    //
@@ -751,8 +791,12 @@ enum VMX_Activity_State {
 // IA32_VMX_BASIC MSR (0x480)
 // --------------
 
+#define BX_VMCS_SHADOW_BIT_MASK (0x80000000)
+
 //
-// 31:00 32-bit VMCS revision id
+// 30:00 VMCS revision id
+// 31:31 shadow VMCS indicator
+// -----------------------------
 // 32:47 VMCS region size, 0 <= size <= 4096
 // 48:48 use 32-bit physical address, set when x86_64 disabled
 // 49:49 support of dual-monitor treatment of SMI and SMM
@@ -903,10 +947,13 @@ enum VMX_Activity_State {
 //     [6] - support VMENTER to HLT state
 //     [7] - support VMENTER to SHUTDOWN state
 //     [8] - support VMENTER to WAIT_FOR_SIPI state
+//    [15] - RDMSR can be used in SMM to read the SMBASE MSR
 // [24:16] - number of CR3 target values supported
 // [27:25] - (N+1)*512 - recommended maximum MSRs in MSR store list
 //    [28] - MSR_IA32_SMM_MONITOR_CTL[2] enable
-// [31-29] - Reserved
+//    [29] - Allow VMWRITE to R/O VMCS fields (to be used with VMCS Shadowing)
+// [31-30] - Reserved
+// --------------------------------------------
 // [63:32] - MSEG revision ID used by processor
 
 #if BX_SUPPORT_VMX >= 2
@@ -915,12 +962,15 @@ enum VMX_Activity_State {
   #define VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL (0)
 #endif
 
+#define VMX_MISC_SUPPORT_VMWRITE_READ_ONLY_FIELDS (1<<29)
+
 //Rate to increase VMX preemtion timer
 #define VMX_MISC_PREEMPTION_TIMER_RATE (0)
 
-#define VMX_MSR_MISC ((VMX_CR3_TARGET_MAX_CNT << 16) | \
-            VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL | \
-            VMX_MISC_PREEMPTION_TIMER_RATE)
+#define VMX_MSR_MISC (VMX_MISC_PREEMPTION_TIMER_RATE | \
+                      VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL | \
+                     (VMX_CR3_TARGET_MAX_CNT << 16) | \
+                     (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VMCS_SHADOWING) ? VMX_MISC_SUPPORT_VMWRITE_READ_ONLY_FIELDS : 0))
 
 //
 // IA32_VMX_CR0_FIXED0 MSR (0x486)   IA32_VMX_CR0_FIXED1 MSR (0x487)

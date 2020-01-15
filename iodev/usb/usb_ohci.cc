@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_ohci.cc 11390 2012-09-02 09:37:47Z vruppert $
+// $Id: usb_ohci.cc 11634 2013-02-17 08:27:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009       Benjamin D Lunt (fys at frontiernet net)
@@ -150,6 +150,8 @@ bx_usb_ohci_c::~bx_usb_ohci_c()
   }
 
   SIM->get_bochs_root()->remove("usb_ohci");
+  bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
+  usb_rt->remove("ohci");
   BX_DEBUG(("Exit"));
 }
 

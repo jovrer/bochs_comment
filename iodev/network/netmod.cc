@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: netmod.cc 11342 2012-08-16 11:59:44Z vruppert $
+// $Id: netmod.cc 11577 2013-01-19 12:25:53Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -63,7 +63,7 @@ void* bx_netmod_ctl_c::init_module(bx_list_c *base, void *rxh, void *rxstat, bx_
   const char *modname = SIM->get_param_enum("ethmod", base)->get_selected();
   ethmod = eth_locator_c::create(modname,
                                  SIM->get_param_string("ethdev", base)->getptr(),
-                                 (const char *) SIM->get_param_string("macaddr", base)->getptr(),
+                                 (const char *) SIM->get_param_string("mac", base)->getptr(),
                                  (eth_rx_handler_t)rxh, (eth_rx_status_t)rxstat, netdev,
                                  SIM->get_param_string("script", base)->getptr());
 
@@ -73,7 +73,7 @@ void* bx_netmod_ctl_c::init_module(bx_list_c *base, void *rxh, void *rxstat, bx_
     BX_INFO(("could not find eth module %s - using null instead", modname));
 
     ethmod = eth_locator_c::create("null", NULL,
-                                   (const char *) SIM->get_param_string("macaddr", base)->getptr(),
+                                   (const char *) SIM->get_param_string("mac", base)->getptr(),
                                    (eth_rx_handler_t)rxh, (eth_rx_status_t)rxstat, netdev, "");
     if (ethmod == NULL)
       BX_PANIC(("could not locate null module"));
@@ -234,19 +234,34 @@ int execute_script(bx_devmodel_c *netdev, const char* scriptname, char* arg1)
 void write_pktlog_txt(FILE *pktlog_txt, const Bit8u *buf, unsigned len, bx_bool host_to_guest)
 {
   Bit8u *charbuf = (Bit8u *)buf;
-  unsigned n;
+  Bit8u rawbuf[18];
+  unsigned c, n;
 
   if (!host_to_guest) {
     fprintf(pktlog_txt, "a packet from guest to host, length %u\n", len);
   } else {
     fprintf(pktlog_txt, "a packet from host to guest, length %u\n", len);
   }
-  for (n = 0; n < len; n++) {
-    if (((n % 16) == 0) && (n > 0))
-      fprintf(pktlog_txt, "\n");
+  n = 0;
+  c = 0;
+  while (n < len) {
     fprintf(pktlog_txt, "%02x ", (unsigned)charbuf[n]);
+    if ((charbuf[n] >= 0x20) && (charbuf[n] < 0x80)) {
+      rawbuf[c++] = charbuf[n];
+    } else {
+      rawbuf[c++] = '.';
+    }
+    n++;
+    if (((n % 16) == 0) || (n == len)) {
+      rawbuf[c] = 0;
+      if (n == len) {
+        while (c++ < 16) fprintf(pktlog_txt, "   ");
+      }
+      fprintf(pktlog_txt, " %s\n", rawbuf);
+      c = 0;
+    }
   }
-  fprintf(pktlog_txt, "\n--\n");
+  fprintf(pktlog_txt, "--\n");
   fflush(pktlog_txt);
 }
 

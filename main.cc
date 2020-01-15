@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc 11370 2012-08-26 12:32:10Z vruppert $
+// $Id: main.cc 11634 2013-02-17 08:27:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -193,7 +193,7 @@ static void carbonFatalDialog(const char *error, const char *exposition)
 void print_tree(bx_param_c *node, int level)
 {
   int i;
-  char tmpstr[BX_PATHNAME_LEN], tmpbyte[4];
+  char tmpstr[BX_PATHNAME_LEN];
 
   for (i=0; i<level; i++)
     dbg_printf("  ");
@@ -216,30 +216,21 @@ void print_tree(bx_param_c *node, int level)
       dbg_printf("%s = '%s' (enum)\n", node->get_name(), ((bx_param_enum_c*)node)->get_selected());
       break;
     case BXT_PARAM_STRING:
+      ((bx_param_string_c*)node)->sprint(tmpstr, BX_PATHNAME_LEN, 0);
       if (((bx_param_string_c*)node)->get_options() & bx_param_string_c::RAW_BYTES) {
-        tmpstr[0] = 0;
-        for (i = 0; i < ((bx_param_string_c*)node)->get_maxsize(); i++) {
-          if (i > 0) {
-            tmpbyte[0] = ((bx_param_string_c*)node)->get_separator();
-            tmpbyte[1] = 0;
-            strcat(tmpstr, tmpbyte);
-          }
-          sprintf(tmpbyte, "%02x", (Bit8u)((bx_param_string_c*)node)->getptr()[i]);
-          strcat(tmpstr, tmpbyte);
-        }
         dbg_printf("%s = '%s' (raw byte string)\n", node->get_name(), tmpstr);
       } else {
-        dbg_printf("%s = '%s' (string)\n", node->get_name(), ((bx_param_string_c*)node)->getptr());
+        dbg_printf("%s = '%s' (string)\n", node->get_name(), tmpstr);
       }
       break;
     case BXT_LIST:
       {
-	dbg_printf("%s = \n", node->get_name());
-	bx_list_c *list = (bx_list_c*)node;
-	for (i=0; i < list->get_size(); i++) {
-	   print_tree(list->get(i), level+1);
-	}
-	break;
+        dbg_printf("%s = \n", node->get_name());
+        bx_list_c *list = (bx_list_c*)node;
+        for (i=0; i < list->get_size(); i++) {
+          print_tree(list->get(i), level+1);
+        }
+        break;
       }
     case BXT_PARAM_DATA:
       dbg_printf("%s = 'size=%d' (binary data)\n", node->get_name(), ((bx_shadow_data_c*)node)->get_size());
@@ -256,7 +247,6 @@ int bxmain(void)
   // Initialize locale (for isprint() and other functions)
   setlocale (LC_ALL, "");
 #endif
-  bx_user_quit = 0;
   bx_init_siminterface();   // create the SIM object
   static jmp_buf context;
   if (setjmp (context) == 0) {
@@ -578,6 +568,9 @@ int bx_init_main(int argc, char *argv[])
           fprintf(stderr, "Supported features:\n\n");
 #if BX_SUPPORT_CLGD54XX
           fprintf(stderr, "cirrus\n");
+#endif
+#if BX_SUPPORT_VOODOO
+          fprintf(stderr, "voodoo\n");
 #endif
 #if BX_SUPPORT_PCI
           fprintf(stderr, "pci\n");
@@ -943,6 +936,7 @@ bx_bool load_and_init_display_lib(void)
 
 int bx_begin_simulation (int argc, char *argv[])
 {
+  bx_user_quit = 0;
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     if (!SIM->restore_config()) {
       BX_PANIC(("cannot restore configuration"));
@@ -993,9 +987,10 @@ int bx_begin_simulation (int argc, char *argv[])
   bx_gui->update_drive_status_buttons();
 
   // iniialize statusbar and set all items inactive
-  if (!SIM->get_param_bool(BXPN_RESTORE_FLAG)->get())
-  {
+  if (!SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     bx_gui->statusbar_setitem(-1, 0);
+  } else {
+    SIM->get_param_string(BXPN_RESTORE_PATH)->set("none");
   }
 
   // The set handler for mouse_enabled does not actually update the gui
@@ -1119,13 +1114,6 @@ void bx_init_hardware()
 {
   // all configuration has been read, now initialize everything.
 
-  if (SIM->get_param_enum(BXPN_BOCHS_START)->get()==BX_QUICK_START) {
-    for (int level=0; level<N_LOGLEV; level++) {
-      int action = SIM->get_default_log_action(level);
-      io->set_log_action(level, action);
-    }
-  }
-
   bx_pc_system.initialize(SIM->get_param_num(BXPN_IPS)->get());
 
   if (SIM->get_param_string(BXPN_LOG_FILENAME)->getptr()[0]!='-') {
@@ -1152,7 +1140,7 @@ void bx_init_hardware()
   BX_INFO(("  A20 line support: %s", BX_SUPPORT_A20?"yes":"no"));
 #if BX_CONFIGURE_MSRS
   const char *msrs_file = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->getptr();
-  if(strlen(msrs_file) > 0)
+  if ((strlen(msrs_file) > 0) && strcmp(msrs_file, "none"))
     BX_INFO(("  load configurable MSRs from file \"%s\"", msrs_file));
 #endif
   BX_INFO(("IPS is set to %d", (Bit32u) SIM->get_param_num(BXPN_IPS)->get()));
@@ -1242,13 +1230,14 @@ void bx_init_hardware()
   BX_INFO(("Devices configuration"));
   BX_INFO(("  NE2000 support: %s", BX_SUPPORT_NE2K?"yes":"no"));
   BX_INFO(("  PCI support: %s, enabled=%s", BX_SUPPORT_PCI?"yes":"no",
-    SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get() ? "yes" : "no"));
+    SIM->get_param_bool(BXPN_PCI_ENABLED)->get() ? "yes" : "no"));
   BX_INFO(("  SB16 support: %s", BX_SUPPORT_SB16?"yes":"no"));
   BX_INFO(("  USB support: %s", BX_SUPPORT_PCIUSB?"yes":"no"));
-  BX_INFO(("  VGA extension support: vbe %s", BX_SUPPORT_CLGD54XX?"cirrus":""));
+  BX_INFO(("  VGA extension support: vbe%s%s", BX_SUPPORT_CLGD54XX?" cirrus":"",
+    BX_SUPPORT_VOODOO?" voodoo":""));
 
   // Check if there is a romimage
-  if (strcmp(SIM->get_param_string(BXPN_ROM_PATH)->getptr(),"") == 0) {
+  if (SIM->get_param_string(BXPN_ROM_PATH)->isempty()) {
     BX_ERROR(("No romimage to load. Is your bochsrc file loaded/valid ?"));
   }
 
@@ -1279,23 +1268,23 @@ void bx_init_hardware()
                       SIM->get_param_num(BXPN_ROM_ADDRESS)->get(), 0);
 
   // Then load the optional ROM images
-  if (strcmp(SIM->get_param_string(BXPN_OPTROM1_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTROM1_PATH)->isempty())
     BX_MEM(0)->load_ROM(SIM->get_param_string(BXPN_OPTROM1_PATH)->getptr(), SIM->get_param_num(BXPN_OPTROM1_ADDRESS)->get(), 2);
-  if (strcmp(SIM->get_param_string(BXPN_OPTROM2_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTROM2_PATH)->isempty())
     BX_MEM(0)->load_ROM(SIM->get_param_string(BXPN_OPTROM2_PATH)->getptr(), SIM->get_param_num(BXPN_OPTROM2_ADDRESS)->get(), 2);
-  if (strcmp(SIM->get_param_string(BXPN_OPTROM3_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTROM3_PATH)->isempty())
     BX_MEM(0)->load_ROM(SIM->get_param_string(BXPN_OPTROM3_PATH)->getptr(), SIM->get_param_num(BXPN_OPTROM3_ADDRESS)->get(), 2);
-  if (strcmp(SIM->get_param_string(BXPN_OPTROM4_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTROM4_PATH)->isempty())
     BX_MEM(0)->load_ROM(SIM->get_param_string(BXPN_OPTROM4_PATH)->getptr(), SIM->get_param_num(BXPN_OPTROM4_ADDRESS)->get(), 2);
 
   // Then load the optional RAM images
-  if (strcmp(SIM->get_param_string(BXPN_OPTRAM1_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTRAM1_PATH)->isempty())
     BX_MEM(0)->load_RAM(SIM->get_param_string(BXPN_OPTRAM1_PATH)->getptr(), SIM->get_param_num(BXPN_OPTRAM1_ADDRESS)->get(), 2);
-  if (strcmp(SIM->get_param_string(BXPN_OPTRAM2_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTRAM2_PATH)->isempty())
     BX_MEM(0)->load_RAM(SIM->get_param_string(BXPN_OPTRAM2_PATH)->getptr(), SIM->get_param_num(BXPN_OPTRAM2_ADDRESS)->get(), 2);
-  if (strcmp(SIM->get_param_string(BXPN_OPTRAM3_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTRAM3_PATH)->isempty())
     BX_MEM(0)->load_RAM(SIM->get_param_string(BXPN_OPTRAM3_PATH)->getptr(), SIM->get_param_num(BXPN_OPTRAM3_ADDRESS)->get(), 2);
-  if (strcmp(SIM->get_param_string(BXPN_OPTRAM4_PATH)->getptr(), "") !=0)
+  if (!SIM->get_param_string(BXPN_OPTRAM4_PATH)->isempty())
     BX_MEM(0)->load_RAM(SIM->get_param_string(BXPN_OPTRAM4_PATH)->getptr(), SIM->get_param_num(BXPN_OPTRAM4_ADDRESS)->get(), 2);
 
 #if BX_SUPPORT_SMP == 0

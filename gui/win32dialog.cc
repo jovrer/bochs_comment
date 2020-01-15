@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc 11127 2012-04-06 13:15:27Z vruppert $
+// $Id: win32dialog.cc 11629 2013-02-14 21:06:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  The Bochs Project
+//  Copyright (C) 2003-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -28,11 +28,6 @@
 #include "win32paramdlg.h"
 
 const char log_choices[5][16] = {"ignore", "log", "ask user", "end simulation", "no change"};
-#if BX_DEBUGGER
-extern char *debug_cmd;
-extern bx_bool debug_cmd_ready;
-extern bx_bool vgaw_refresh;
-#endif
 
 char *backslashes(char *s)
 {
@@ -201,30 +196,23 @@ static BOOL CALLBACK StringParamProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
 static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   static bx_param_filename_c *param;
-  static bx_param_bool_c *status, *readonly;
-  static bx_param_enum_c *devtype;
+  static bx_param_bool_c *readonly;
+  static bx_param_enum_c *devtype, *status;
   static bx_param_enum_c *mediatype;
+  bx_list_c *list;
   char mesg[MAX_PATH];
   char path[MAX_PATH];
-  char pname[80];
   const char *title;
   int i, cap;
 
   switch (msg) {
     case WM_INITDIALOG:
       param = (bx_param_filename_c *)lParam;
-      param->get_param_path(pname, 80);
-      if (!strcmp(pname, BXPN_FLOPPYA_PATH)) {
-        status = SIM->get_param_bool(BXPN_FLOPPYA_STATUS);
-        readonly = SIM->get_param_bool(BXPN_FLOPPYA_READONLY);
-        devtype = SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE);
-        mediatype = SIM->get_param_enum(BXPN_FLOPPYA_TYPE);
-      } else {
-        status = SIM->get_param_bool(BXPN_FLOPPYB_STATUS);
-        readonly = SIM->get_param_bool(BXPN_FLOPPYB_READONLY);
-        devtype = SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE);
-        mediatype = SIM->get_param_enum(BXPN_FLOPPYB_TYPE);
-      }
+      list = (bx_list_c *)param->get_parent();
+      status = SIM->get_param_enum("status", list);
+      readonly = SIM->get_param_bool("readonly", list);
+      devtype = SIM->get_param_enum("devtype", list);
+      mediatype = SIM->get_param_enum("type", list);
       cap = devtype->get() - (int)devtype->get_min();
       SetWindowText(GetDlgItem(hDlg, IDDEVTYPE), floppy_devtype_names[cap]);
       i = 0;
@@ -235,7 +223,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
       }
       cap = mediatype->get() - (int)mediatype->get_min();
       SendMessage(GetDlgItem(hDlg, IDMEDIATYPE), CB_SETCURSEL, cap, 0);
-      if (status->get()) {
+      if (status->get() == BX_INSERTED) {
         SendMessage(GetDlgItem(hDlg, IDSTATUS), BM_SETCHECK, BST_CHECKED, 0);
       }
       if (readonly->get()) {
@@ -264,7 +252,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           }
           return TRUE;
         case IDOK:
-          status->set(0);
+          status->set(BX_EJECTED);
           if (SendMessage(GetDlgItem(hDlg, IDSTATUS), BM_GETCHECK, 0, 0) == BST_CHECKED) {
             GetDlgItemText(hDlg, IDPATH, path, MAX_PATH);
             if (lstrlen(path) == 0) {
@@ -279,7 +267,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           cap = SendMessage(GetDlgItem(hDlg, IDMEDIATYPE), CB_GETITEMDATA, i, 0);
           mediatype->set(cap);
           if (lstrcmp(path, "none")) {
-            status->set(1);
+            status->set(BX_INSERTED);
           }
           EndDialog(hDlg, 1);
           return TRUE;
@@ -332,7 +320,9 @@ void SetStandardLogOptions(HWND hDlg)
     idx = 0;
     SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_RESETCONTENT, 0, 0);
     for (int action=0; action<5; action++) {
-      if ((level > 1 && action > 0) || (level < 2 && (action < 2 || action > 3))) {
+      // the exclude expression allows some choices not being available if they
+      // don't make any sense.  For example, it would be stupid to ignore a panic.
+      if (!BX_LOG_OPTS_EXCLUDE(level, action)) {
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_ADDSTRING, 0, (LPARAM)log_choices[action]);
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_SETITEMDATA, idx, action);
         if (action == defchoice[level]) {
@@ -355,7 +345,8 @@ void SetAdvancedLogOptions(HWND hDlg)
     idx = 0;
     SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_RESETCONTENT, 0, 0);
     for (int action=0; action<4; action++) {
-      if ((level > 1 && action > 0) || (level < 2 && action < 2)) {
+      // exclude some action / level combinations (see above)
+      if (!BX_LOG_OPTS_EXCLUDE(level, action)) {
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_ADDSTRING, 0, (LPARAM)log_choices[action]);
         SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_SETITEMDATA, idx, action);
         if (action == SIM->get_log_action (mod, level)) {
@@ -425,7 +416,6 @@ static BOOL CALLBACK LogOptDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
   switch (msg) {
     case WM_INITDIALOG:
       advanced = (BOOL)lParam;
-      SIM->apply_log_actions_by_device(); // settings from bochsrc
       InitLogOptionsDialog(hDlg, advanced);
       changed = FALSE;
       EnableWindow(GetDlgItem(hDlg, IDAPPLY), FALSE);
@@ -770,30 +760,6 @@ BxEvent* win32_notify_callback(void *unused, BxEvent *event)
     case BX_SYNC_EVT_LOG_ASK:
       LogAskDialog(event);
       return event;
-#if BX_DEBUGGER && BX_DEBUGGER_GUI
-    case BX_SYNC_EVT_GET_DBG_COMMAND:
-      {
-        // sim is at a "break" -- internal debugger is ready for a command
-        debug_cmd = new char[512];
-        debug_cmd_ready = FALSE;
-        HitBreak();
-        while (debug_cmd_ready == FALSE && bx_user_quit == 0)
-        {
-          if (vgaw_refresh != FALSE)  // is the GUI frontend requesting a VGAW refresh?
-            SIM->refresh_vga();
-          vgaw_refresh = FALSE;
-          Sleep(10);
-        }
-        if (bx_user_quit != 0)
-          BX_EXIT(0);
-        event->u.debugcmd.command = debug_cmd;
-        event->retcode = 1;
-        return event;
-      }
-    case BX_ASYNC_EVT_DBG_MSG:
-      ParseIDText (event->u.logmsg.msg);
-      return event;
-#endif
     case BX_SYNC_EVT_ASK_PARAM:
       param = event->u.param.param;
       if (param->get_type() == BXT_PARAM_STRING) {

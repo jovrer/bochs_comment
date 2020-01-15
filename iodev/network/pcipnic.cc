@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcipnic.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pcipnic.cc 11606 2013-02-01 19:13:58Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  Fen Systems Ltd.
@@ -73,12 +73,11 @@ Bit32s pnic_options_parser(const char *context, int num_params, char *params[])
     if (!SIM->get_param_bool("enabled", base)->get()) {
       if (valid == 0x04) {
         SIM->get_param_bool("enabled", base)->set(1);
-      } else if (valid < 0x80) {
-        BX_PANIC(("%s: 'pcipnic' directive incomplete (mac is required)", context));
       }
-    } else {
-      if (valid & 0x80) {
-        SIM->get_param_bool("enabled", base)->set(0);
+    }
+    if (valid < 0x80) {
+      if ((valid & 0x04) == 0) {
+        BX_PANIC(("%s: 'pcipnic' directive incomplete (mac is required)", context));
       }
     }
   } else {
@@ -89,8 +88,7 @@ Bit32s pnic_options_parser(const char *context, int num_params, char *params[])
 
 Bit32s pnic_options_save(FILE *fp)
 {
-  SIM->write_pci_nic_options(fp, (bx_list_c*) SIM->get_param(BXPN_PNIC));
-  return 0;
+  return SIM->write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_PNIC), NULL, 0);
 }
 
 // device plugin entry points
@@ -147,7 +145,7 @@ void bx_pcipnic_c::init(void)
     return;
   }
 
-  memcpy(BX_PNIC_THIS s.macaddr, SIM->get_param_string("macaddr", base)->getptr(), 6);
+  memcpy(BX_PNIC_THIS s.macaddr, SIM->get_param_string("mac", base)->getptr(), 6);
 
   BX_PNIC_THIS s.devfunc = 0x00;
   DEV_register_pci_handlers(this, &BX_PNIC_THIS s.devfunc, BX_PLUGIN_PCIPNIC,
@@ -165,7 +163,7 @@ void bx_pcipnic_c::init(void)
   BX_PNIC_THIS pci_base_address[4] = 0;
   BX_PNIC_THIS pci_rom_address = 0;
   bootrom = SIM->get_param_string("bootrom", base)->getptr();
-  if (strlen(bootrom) > 0) {
+  if ((strlen(bootrom) > 0) && (strcmp(bootrom, "none"))) {
     BX_PNIC_THIS load_pci_rom(bootrom);
   }
 

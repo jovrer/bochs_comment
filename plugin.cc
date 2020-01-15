@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.cc 11141 2012-04-16 19:17:10Z vruppert $
+// $Id: plugin.cc 11419 2012-09-14 21:50:50Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -879,6 +879,9 @@ static builtin_plugin_t builtin_opt_plugins[] = {
 #endif
 #if BX_SUPPORT_USB_XHCI
   BUILTIN_PLUGIN_ENTRY(usb_xhci),
+#endif
+#if BX_SUPPORT_VOODOO
+  BUILTIN_PLUGIN_ENTRY(voodoo),
 #endif
   {"NULL", NULL, NULL, 0}
 };

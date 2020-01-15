@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.cc 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: hdimage.cc 11649 2013-03-08 18:25:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -86,7 +86,7 @@ device_image_t* bx_hdimage_ctl_c::init_image(Bit8u image_mode, Bit64u disk_size,
       break;
 #endif //EXTERNAL_DISK_SIMULATOR
 
-#if DLL_HD_SUPPORT
+#ifdef WIN32
     case BX_HDIMAGE_MODE_DLL_HD:
       hdimage = new dll_image_t();
       break;
@@ -155,45 +155,34 @@ int bx_write_image(int fd, Bit64s offset, void *buf, int count)
   return write(fd, buf, count);
 }
 
-/*** base class device_image_t ***/
-
-device_image_t::device_image_t()
-{
-  hd_size = 0;
-}
-
-Bit32u device_image_t::get_capabilities()
-{
-  return (cylinders == 0) ? HDIMAGE_AUTO_GEOMETRY : 0;
-}
-
-/*** default_image_t function definitions ***/
-
-int default_image_t::open(const char* pathname)
-{
-  return open(pathname, O_RDWR);
-}
-
-int default_image_t::open(const char* pathname, int flags)
+#ifndef WIN32
+int hdimage_open_file(const char *pathname, int flags, Bit64u *fsize, time_t *mtime)
+#else
+int hdimage_open_file(const char *pathname, int flags, Bit64u *fsize, FILETIME *mtime)
+#endif
 {
 #ifdef WIN32
-  HANDLE hFile = CreateFile(pathname, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, NULL);
-  if (hFile != INVALID_HANDLE_VALUE) {
-    ULARGE_INTEGER FileSize;
-    FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
-    GetFileTime(hFile, NULL, NULL, &mtime);
-    CloseHandle(hFile);
-    if ((FileSize.LowPart != INVALID_FILE_SIZE) || (GetLastError() == NO_ERROR)) {
-      hd_size = FileSize.QuadPart;
+  if (fsize != NULL) {
+    HANDLE hFile = CreateFile(pathname, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_RANDOM_ACCESS, NULL);
+    if (hFile != INVALID_HANDLE_VALUE) {
+      ULARGE_INTEGER FileSize;
+      FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
+      if (mtime != NULL) {
+        GetFileTime(hFile, NULL, NULL, mtime);
+      }
+      CloseHandle(hFile);
+      if ((FileSize.LowPart != INVALID_FILE_SIZE) || (GetLastError() == NO_ERROR)) {
+        *fsize = FileSize.QuadPart;
+      } else {
+        return -1;
+      }
     } else {
       return -1;
     }
-  } else {
-    return -1;
   }
 #endif
 
-  fd = ::open(pathname, flags
+  int fd = ::open(pathname, flags
 #ifdef O_BINARY
               | O_BINARY
 #endif
@@ -204,22 +193,216 @@ int default_image_t::open(const char* pathname, int flags)
   }
 
 #ifndef WIN32
-  /* look at size of image file to calculate disk geometry */
-  struct stat stat_buf;
-  if (fstat(fd, &stat_buf)) {
-    BX_PANIC(("fstat() returns error!"));
-  }
+  if (fsize != NULL) {
+    struct stat stat_buf;
+    if (fstat(fd, &stat_buf)) {
+      BX_PANIC(("fstat() returns error!"));
+      return -1;
+    }
 #ifdef linux
-  if (stat_buf.st_rdev) { // Is this a special device file (e.g. /dev/sde) ?
-    ioctl(fd, BLKGETSIZE64, &hd_size); // yes it's!
-  }
-  else
+    if (stat_buf.st_rdev) { // Is this a special device file (e.g. /dev/sde) ?
+      ioctl(fd, BLKGETSIZE64, fsize); // yes it's!
+    }
+    else
 #endif
-  {
-    hd_size = (Bit64u)stat_buf.st_size; // standard unix procedure to get size of regular files
+    {
+      *fsize = (Bit64u)stat_buf.st_size; // standard unix procedure to get size of regular files
+    }
+    if (mtime != NULL) {
+      *mtime = stat_buf.st_mtime;
+    }
   }
-  mtime = stat_buf.st_mtime;
 #endif
+  return fd;
+}
+
+int hdimage_detect_image_mode(const char *pathname)
+{
+  int result = BX_HDIMAGE_MODE_UNKNOWN;
+  Bit64u image_size = 0;
+
+  int fd = hdimage_open_file(pathname, O_RDONLY, &image_size, NULL);
+  if (fd < 0) {
+    return result;
+  }
+
+  if (sparse_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
+    result = BX_HDIMAGE_MODE_SPARSE;
+  } else if (vmware3_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
+    result = BX_HDIMAGE_MODE_VMWARE3;
+  } else if (vmware4_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
+    result = BX_HDIMAGE_MODE_VMWARE4;
+  } else if (growing_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
+    result = BX_HDIMAGE_MODE_GROWING;
+  } else if (vpc_image_t::check_format(fd, image_size) >= HDIMAGE_FORMAT_OK) {
+    result = BX_HDIMAGE_MODE_VPC;
+  } else if (default_image_t::check_format(fd, image_size) == HDIMAGE_FORMAT_OK) {
+    result = BX_HDIMAGE_MODE_FLAT;
+  }
+  ::close(fd);
+
+  return result;
+}
+
+// generic save/restore functions
+Bit64s hdimage_save_handler(void *class_ptr, bx_param_c *param)
+{
+  char imgname[BX_PATHNAME_LEN];
+  char path[BX_PATHNAME_LEN];
+
+  param->get_param_path(imgname, BX_PATHNAME_LEN);
+  if (!strncmp(imgname, "bochs.", 6)) {
+    strcpy(imgname, imgname+6);
+  }
+  if (SIM->get_param_string(BXPN_RESTORE_PATH)->isempty()) {
+    return 0;
+  }
+  sprintf(path, "%s/%s", SIM->get_param_string(BXPN_RESTORE_PATH)->getptr(), imgname);
+  return ((device_image_t*)class_ptr)->save_state(path);
+}
+
+void hdimage_restore_handler(void *class_ptr, bx_param_c *param, Bit64s value)
+{
+  char imgname[BX_PATHNAME_LEN];
+  char path[BX_PATHNAME_LEN];
+
+  if (value != 0) {
+    param->get_param_path(imgname, BX_PATHNAME_LEN);
+    if (!strncmp(imgname, "bochs.", 6)) {
+      strcpy(imgname, imgname+6);
+    }
+    sprintf(path, "%s/%s", SIM->get_param_string(BXPN_RESTORE_PATH)->getptr(), imgname);
+    ((device_image_t*)class_ptr)->restore_state(path);
+  }
+}
+
+bx_bool hdimage_backup_file(int fd, const char *backup_fname)
+{
+  char *buf;
+  off_t offset;
+  int nread, size;
+  bx_bool ret = 1;
+
+  int backup_fd = ::open(backup_fname, O_RDWR | O_CREAT | O_TRUNC
+#ifdef O_BINARY
+    | O_BINARY
+#endif
+    , S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP);
+  if (backup_fd >= 0) {
+    offset = 0;
+    size = 0x20000;
+    buf = (char*)malloc(size);
+    if (buf == NULL) {
+      ::close(backup_fd);
+      return 0;
+    }
+    while ((nread = bx_read_image(fd, offset, buf, size)) > 0) {
+      if (bx_write_image(backup_fd, offset, buf, nread) < 0) {
+        ret = 0;
+        break;
+      }
+      if (nread < size) {
+        break;
+      }
+      offset += size;
+    };
+    if (nread < 0) {
+      ret = 0;
+    }
+    free(buf);
+    ::close(backup_fd);
+    return ret;
+  }
+  return 0;
+}
+
+bx_bool hdimage_copy_file(const char *src, const char *dst)
+{
+#ifdef WIN32
+  return (bx_bool)CopyFile(src, dst, FALSE);
+#else
+  int fd1, fd2;
+  char *buf;
+  off_t offset;
+  int nread, size;
+  bx_bool ret = 1;
+
+  fd1 = ::open(src, O_RDONLY
+#ifdef O_BINARY
+    | O_BINARY
+#endif
+    );
+  if (fd1 < 0) return 0;
+  fd2 = ::open(dst, O_RDWR | O_CREAT | O_TRUNC
+#ifdef O_BINARY
+    | O_BINARY
+#endif
+    , S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP);
+  if (fd2 < 0) return 0;
+  offset = 0;
+  size = 0x20000;
+  buf = (char*)malloc(size);
+  if (buf == NULL) {
+    ::close(fd1);
+    ::close(fd2);
+    return 0;
+  }
+  while ((nread = bx_read_image(fd1, offset, buf, size)) > 0) {
+    if (bx_write_image(fd2, offset, buf, nread) < 0) {
+      ret = 0;
+      break;
+    }
+    if (nread < size) {
+      break;
+    }
+    offset += size;
+  };
+  if (nread < 0) {
+    ret = 0;
+  }
+  free(buf);
+  ::close(fd1);
+  ::close(fd2);
+  return ret;
+#endif
+}
+
+/*** base class device_image_t ***/
+
+device_image_t::device_image_t()
+{
+  hd_size = 0;
+}
+
+int device_image_t::open(const char* _pathname)
+{
+  return open(_pathname, O_RDWR);
+}
+
+Bit32u device_image_t::get_capabilities()
+{
+  return (cylinders == 0) ? HDIMAGE_AUTO_GEOMETRY : 0;
+}
+
+Bit32u device_image_t::get_timestamp()
+{
+  return (fat_datetime(mtime, 1) | (fat_datetime(mtime, 0) << 16));
+}
+
+void device_image_t::register_state(bx_list_c *parent)
+{
+  bx_param_bool_c *image = new bx_param_bool_c(parent, "image", NULL, NULL, 0);
+  image->set_sr_handlers(this, hdimage_save_handler, hdimage_restore_handler);
+}
+
+/*** default_image_t function definitions ***/
+
+int default_image_t::open(const char* _pathname, int flags)
+{
+  pathname = _pathname;
+  if ((fd = hdimage_open_file(pathname, flags, &hd_size, &mtime)) < 0) {
+    return -1;
+  }
   BX_INFO(("hd_size: "FMT_LL"u", hd_size));
   if (hd_size <= 0) BX_PANIC(("size of disk image not detected / invalid"));
   if ((hd_size % 512) != 0) BX_PANIC(("size of disk image must be multiple of 512 bytes"));
@@ -248,10 +431,37 @@ ssize_t default_image_t::write(const void* buf, size_t count)
   return ::write(fd, (char*) buf, count);
 }
 
-Bit32u default_image_t::get_timestamp()
+int default_image_t::check_format(int fd, Bit64u imgsize)
 {
-  return (fat_datetime(mtime, 1) | (fat_datetime(mtime, 0) << 16));
+  char buffer[512];
+
+  if ((imgsize <= 0) || ((imgsize % 512) != 0)) {
+    return HDIMAGE_SIZE_ERROR;
+  } else if (bx_read_image(fd, 0, buffer, 512) < 0) {
+    return HDIMAGE_READ_ERROR;
+  } else {
+    return HDIMAGE_FORMAT_OK;
+  }
 }
+
+bx_bool default_image_t::save_state(const char *backup_fname)
+{
+  return hdimage_backup_file(fd, backup_fname);
+}
+
+void default_image_t::restore_state(const char *backup_fname)
+{
+  close();
+  if (!hdimage_copy_file(backup_fname, pathname)) {
+    BX_PANIC(("Failed to restore image '%s'", pathname));
+    return;
+  }
+  if (device_image_t::open(pathname) < 0) {
+    BX_PANIC(("Failed to open restored image '%s'", pathname));
+  }
+}
+
+// helper function for concat and sparse mode images
 
 char increment_string(char *str, int diff)
 {
@@ -277,17 +487,19 @@ void concat_image_t::increment_string(char *str)
  ::increment_string(str, +1);
 }
 
-int concat_image_t::open(const char* pathname0)
+int concat_image_t::open(const char* _pathname0, int flags)
 {
+  UNUSED(flags);
+  pathname0 = _pathname0;
   char *pathname = strdup(pathname0);
   BX_DEBUG(("concat_image_t.open"));
   Bit64s start_offset = 0;
   for (int i=0; i<BX_CONCAT_MAX_IMAGES; i++) {
     fd_table[i] = ::open(pathname, O_RDWR
 #ifdef O_BINARY
-		| O_BINARY
+                  | O_BINARY
 #endif
-	  );
+                  );
     if (fd_table[i] < 0) {
       // open failed.
       // if no FD was opened successfully, return -1 (fail).
@@ -317,6 +529,7 @@ int concat_image_t::open(const char* pathname0)
     start_offset += stat_buf.st_size;
     increment_string(pathname);
   }
+  free(pathname);
   // start up with first image selected
   index = 0;
   fd = fd_table[0];
@@ -330,8 +543,10 @@ int concat_image_t::open(const char* pathname0)
 void concat_image_t::close()
 {
   BX_DEBUG(("concat_image_t.close"));
-  if (fd > -1) {
-    ::close(fd);
+  for (int index = 0; index < maxfd; index++) {
+    if (fd_table[index] > -1) {
+      ::close(fd_table[index]);
+    }
   }
 }
 
@@ -345,24 +560,24 @@ Bit64s concat_image_t::lseek(Bit64s offset, int whence)
     // no, look at previous images
     for (int i=index-1; i>=0; i--) {
       if (offset >= start_offset_table[i]) {
-	index = i;
-	fd = fd_table[i];
-	thismin = start_offset_table[i];
-	thismax = thismin + length_table[i] - 1;
-	BX_DEBUG(("concat_image_t.lseek to earlier image, index=%d", index));
-	break;
+        index = i;
+        fd = fd_table[i];
+        thismin = start_offset_table[i];
+        thismax = thismin + length_table[i] - 1;
+        BX_DEBUG(("concat_image_t.lseek to earlier image, index=%d", index));
+        break;
       }
     }
   } else if (offset > thismax) {
     // no, look at later images
     for (int i=index+1; i<maxfd; i++) {
       if (offset < start_offset_table[i] + length_table[i]) {
-	index = i;
-	fd = fd_table[i];
-	thismin = start_offset_table[i];
-	thismax = thismin + length_table[i] - 1;
-	BX_DEBUG(("concat_image_t.lseek to earlier image, index=%d", index));
-	break;
+        index = i;
+        fd = fd_table[i];
+        thismin = start_offset_table[i];
+        thismax = thismin + length_table[i] - 1;
+        BX_DEBUG(("concat_image_t.lseek to earlier image, index=%d", index));
+        break;
       }
     }
   }
@@ -399,6 +614,38 @@ ssize_t concat_image_t::write(const void* buf, size_t count)
   return ::write(fd, (char*) buf, count);
 }
 
+bx_bool concat_image_t::save_state(const char *backup_fname)
+{
+  bx_bool ret = 1;
+  char tempfn[BX_PATHNAME_LEN];
+
+  for (int index = 0; index < maxfd; index++) {
+    sprintf(tempfn, "%s%d", backup_fname, index);
+    ret &= hdimage_backup_file(fd_table[index], tempfn);
+    if (ret == 0) break;
+  }
+  return ret;
+}
+
+void concat_image_t::restore_state(const char *backup_fname)
+{
+  char tempfn[BX_PATHNAME_LEN];
+
+  close();
+  char *image_name = strdup(pathname0);
+  for (int index = 0; index < maxfd; index++) {
+    sprintf(tempfn, "%s%d", backup_fname, index);
+    if (!hdimage_copy_file(tempfn, image_name)) {
+      BX_PANIC(("Failed to restore concat image '%s'", image_name));
+      free(image_name);
+      return;
+    }
+    increment_string(image_name);
+  }
+  free(image_name);
+  device_image_t::open(pathname0);
+}
+
 /*** sparse_image_t function definitions ***/
 
 sparse_image_t::sparse_image_t()
@@ -427,118 +674,101 @@ void showpagetable(Bit32u * pagetable, size_t numpages)
 }
 */
 
-void sparse_image_t::read_header()
+int sparse_image_t::read_header()
 {
- BX_ASSERT(sizeof(header) == SPARSE_HEADER_SIZE);
+  BX_ASSERT(sizeof(header) == SPARSE_HEADER_SIZE);
 
- int ret = ::read(fd, &header, sizeof(header));
+  int ret = check_format(fd, underlying_filesize);
+  if (ret != HDIMAGE_FORMAT_OK) {
+    switch (ret) {
+      case HDIMAGE_READ_ERROR:
+        BX_PANIC(("sparse: could not read entire header"));
+        break;
+      case HDIMAGE_NO_SIGNATURE:
+        BX_PANIC(("sparse: failed header magic check"));
+        break;
+      case HDIMAGE_VERSION_ERROR:
+        BX_PANIC(("sparse: unknown version in header"));
+        break;
+    }
+    return -1;
+  }
 
- if (-1 == ret)
- {
-     panic(strerror(errno));
- }
+  ret = bx_read_image(fd, 0, &header, sizeof(header));
+  if (ret < 0) {
+    return -1;
+  }
 
- if (sizeof(header) != ret)
- {
-   panic("could not read entire header");
- }
+  pagesize = dtoh32(header.pagesize);
+  Bit32u numpages = dtoh32(header.numpages);
 
- if (dtoh32(header.magic) != SPARSE_HEADER_MAGIC)
- {
-   panic("failed header magic check");
- }
+  total_size = pagesize;
+  total_size *= numpages;
 
- if ((dtoh32(header.version) != SPARSE_HEADER_VERSION) &&
-     (dtoh32(header.version) != SPARSE_HEADER_V1))
- {
-   panic("unknown version in header");
- }
+  pagesize_shift = 0;
+  while ((pagesize >> pagesize_shift) > 1) pagesize_shift++;
 
- pagesize = dtoh32(header.pagesize);
- Bit32u numpages = dtoh32(header.numpages);
+  if ((Bit32u)(1 << pagesize_shift) != pagesize) {
+    panic("failed block size header check");
+  }
 
- total_size = pagesize;
- total_size *= numpages;
+  pagesize_mask = pagesize - 1;
 
- pagesize_shift = 0;
- while ((pagesize >> pagesize_shift) > 1) pagesize_shift++;
+  size_t  preamble_size = (sizeof(Bit32u) * numpages) + sizeof(header);
+  data_start = 0;
+  while ((size_t)data_start < preamble_size) data_start += pagesize;
 
- if ((Bit32u)(1 << pagesize_shift) != pagesize)
- {
-   panic("failed block size header check");
- }
-
- pagesize_mask = pagesize - 1;
-
- size_t  preamble_size = (sizeof(Bit32u) * numpages) + sizeof(header);
- data_start = 0;
- while ((size_t)data_start < preamble_size) data_start += pagesize;
-
- bx_bool did_mmap = 0;
+  bx_bool did_mmap = 0;
 
 #ifdef _POSIX_MAPPED_FILES
-// Try to memory map from the beginning of the file (0 is trivially a page multiple)
- void *mmap_header = mmap(NULL, preamble_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
- if (mmap_header == MAP_FAILED)
- {
-   BX_INFO(("failed to mmap sparse disk file - using conventional file access"));
-   mmap_header = NULL;
- }
- else
- {
-   mmap_length = preamble_size;
-   did_mmap = 1;
-   pagetable = ((Bit32u *) (((Bit8u *) mmap_header) + sizeof(header)));
-   system_pagesize_mask = getpagesize() - 1;
- }
+  // Try to memory map from the beginning of the file (0 is trivially a page multiple)
+  void *mmap_header = mmap(NULL, preamble_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mmap_header == MAP_FAILED) {
+    BX_INFO(("failed to mmap sparse disk file - using conventional file access"));
+    mmap_header = NULL;
+  }
+  else
+  {
+    mmap_length = preamble_size;
+    did_mmap = 1;
+    pagetable = ((Bit32u *) (((Bit8u *) mmap_header) + sizeof(header)));
+    system_pagesize_mask = getpagesize() - 1;
+  }
 #endif
 
- if (!did_mmap)
- {
-   pagetable = new Bit32u[numpages];
+  if (!did_mmap) {
+    pagetable = new Bit32u[numpages];
 
-   if (pagetable == NULL)
-   {
-     panic("could not allocate memory for sparse disk block table");
-   }
+    if (pagetable == NULL) {
+      panic("could not allocate memory for sparse disk block table");
+    }
 
-   ret = ::read(fd, pagetable, sizeof(Bit32u) * numpages);
+    ret = ::read(fd, pagetable, sizeof(Bit32u) * numpages);
 
-   if (-1 == ret)
-   {
-       panic(strerror(errno));
-   }
+    if (ret < 0) {
+      panic(strerror(errno));
+    }
 
-   if ((int)(sizeof(Bit32u) * numpages) != ret)
-   {
-     panic("could not read entire block table");
-   }
- }
+    if ((int)(sizeof(Bit32u) * numpages) != ret) {
+      panic("could not read entire block table");
+    }
+  }
+  return 0;
 }
 
-int sparse_image_t::open(const char* pathname0)
+int sparse_image_t::open(const char* pathname0, int flags)
 {
   pathname = strdup(pathname0);
   BX_DEBUG(("sparse_image_t.open"));
 
-  fd = ::open(pathname, O_RDWR
-#ifdef O_BINARY
-   | O_BINARY
-#endif
-   );
-
-  if (fd < 0)
-  {
-    return -1; // open failed
+  if ((fd = hdimage_open_file(pathname, flags, &underlying_filesize, &mtime)) < 0) {
+    return -1;
   }
   BX_DEBUG(("sparse_image: open image %s", pathname));
 
-  read_header();
-
-  struct stat stat_buf;
-  if (fstat(fd, &stat_buf) != 0) panic(("fstat() returns error!"));
-
-  underlying_filesize = stat_buf.st_size;
+  if (read_header() < 0) {
+    return -1;
+  }
 
   if ((underlying_filesize % pagesize) != 0)
     panic("size of sparse disk image is not multiple of page size");
@@ -560,7 +790,7 @@ int sparse_image_t::open(const char* pathname0)
     if (0 == stat(parentpathname, &stat_buf))
     {
       parent_image = new sparse_image_t();
-      int ret = parent_image->open(parentpathname);
+      int ret = parent_image->open(parentpathname, flags);
       if (ret != 0) return ret;
       if (    (parent_image->pagesize != pagesize)
           ||  (parent_image->total_size != total_size))
@@ -924,75 +1154,151 @@ ssize_t sparse_image_t::write(const void* buf, size_t count)
   return total_written;
 }
 
-#if DLL_HD_SUPPORT
+int sparse_image_t::check_format(int fd, Bit64u imgsize)
+{
+  sparse_header_t temp_header;
+
+  int ret = ::read(fd, &temp_header, sizeof(temp_header));
+  if (ret < 0) {
+    return HDIMAGE_READ_ERROR;
+  }
+  if (ret != sizeof(temp_header)) {
+    return HDIMAGE_READ_ERROR;
+  }
+
+  if (dtoh32(temp_header.magic) != SPARSE_HEADER_MAGIC) {
+    return HDIMAGE_NO_SIGNATURE;
+  }
+
+  if ((dtoh32(temp_header.version) != SPARSE_HEADER_VERSION) &&
+      (dtoh32(temp_header.version) != SPARSE_HEADER_V1)) {
+    return HDIMAGE_VERSION_ERROR;
+  }
+
+  return HDIMAGE_FORMAT_OK;
+}
+
+bx_bool sparse_image_t::save_state(const char *backup_fname)
+{
+  return hdimage_backup_file(fd, backup_fname);
+}
+
+void sparse_image_t::restore_state(const char *backup_fname)
+{
+  int backup_fd;
+  Bit64u imgsize = 0;
+  char *temp_pathname;
+
+  if ((backup_fd = hdimage_open_file(backup_fname, O_RDONLY, &imgsize, NULL)) < 0) {
+    BX_PANIC(("Could not open sparse image backup"));
+    return;
+  }
+  if (check_format(backup_fd, imgsize) != HDIMAGE_FORMAT_OK) {
+    ::close(backup_fd);
+    BX_PANIC(("Could not detect sparse image header"));
+    return;
+  }
+  ::close(backup_fd);
+  temp_pathname = strdup(pathname);
+  close();
+  if (!hdimage_copy_file(backup_fname, temp_pathname)) {
+    BX_PANIC(("Failed to restore sparse image '%s'", temp_pathname));
+    free(temp_pathname);
+    return;
+  }
+  if (device_image_t::open(temp_pathname) < 0) {
+    BX_PANIC(("Failed to open restored image '%s'", temp_pathname));
+  }
+  free(temp_pathname);
+}
+
+#ifdef WIN32
 
 /*** dll_image_t function definitions ***/
 
-/*
-function vdisk_open(path:PChar;numclusters,clustersize:integer):integer;
-procedure vdisk_read(vunit:integer;blk:integer;var buf:TBlock);
-procedure vdisk_write(vunit:integer;blk:integer;var buf:TBlock);
-procedure vdisk_close(vunit:integer);
-*/
+HINSTANCE hlib_vdisk = NULL;
 
-HINSTANCE hlib_vdisk = 0;
-
-int (*vdisk_open)  (const char *path,int numclusters,int clustersize);
-void (*vdisk_read)   (int vunit,int blk,void *buf);
-void (*vdisk_write)  (int vunit,int blk,const void *buf);
+int  (*vdisk_open)  (const char *path, int flags);
+BOOL (*vdisk_read)  (int vunit, LONGLONG blk, void *buf);
+BOOL (*vdisk_write) (int vunit, LONGLONG blk, const void *buf);
 void (*vdisk_close) (int vunit);
+LONGLONG (*vdisk_get_size) (int vunit);
 
-int dll_image_t::open (const char* pathname)
+dll_image_t::dll_image_t()
 {
-  if (hlib_vdisk == 0) {
+  if (hlib_vdisk == NULL) {
     hlib_vdisk = LoadLibrary("vdisk.dll");
-    if (hlib_vdisk != 0) {
-      vdisk_read = (void (*)(int,int,void*))        GetProcAddress(hlib_vdisk,"vdisk_read");
-      vdisk_write = (void (*)(int,int,const void*)) GetProcAddress(hlib_vdisk,"vdisk_write");
-      vdisk_open = (int (*)(const char *,int,int))  GetProcAddress(hlib_vdisk,"vdisk_open");
-      vdisk_close = (void (*)(int))                 GetProcAddress(hlib_vdisk,"vdisk_close");
+    if (hlib_vdisk != NULL) {
+      vdisk_open =  (int (*)(const char *,int))          GetProcAddress(hlib_vdisk,"vdisk_open");
+      vdisk_read =  (BOOL (*)(int,LONGLONG,void*))       GetProcAddress(hlib_vdisk,"vdisk_read");
+      vdisk_write = (BOOL (*)(int,LONGLONG,const void*)) GetProcAddress(hlib_vdisk,"vdisk_write");
+      vdisk_close = (void (*)(int))                      GetProcAddress(hlib_vdisk,"vdisk_close");
+      vdisk_get_size = (LONGLONG (*)(int))               GetProcAddress(hlib_vdisk,"vdisk_get_size");
+      if ((vdisk_open == NULL) || (vdisk_read == NULL) || (vdisk_write == NULL) ||
+          (vdisk_close == NULL) || (vdisk_get_size == NULL)) {
+        FreeLibrary(hlib_vdisk);
+        hlib_vdisk = NULL;
+      }
     }
   }
-  if (hlib_vdisk != 0) {
-    vunit = vdisk_open(pathname,0x10000,64);
-    vblk = 0;
+}
+
+int dll_image_t::open(const char* pathname, int flags)
+{
+  if (hlib_vdisk != NULL) {
+    vunit = vdisk_open(pathname, flags);
+    if (vunit >= 0) {
+      hd_size = (Bit64u)vdisk_get_size(vunit) << 9;
+      vblk = 0;
+    }
   } else {
     vunit = -2;
   }
   return vunit;
 }
 
-void dll_image_t::close ()
+void dll_image_t::close()
 {
-  if (vunit >= 0 && hlib_vdisk != 0) {
+  if ((vunit >= 0) && (hlib_vdisk != NULL)) {
     vdisk_close(vunit);
   }
 }
 
 Bit64s dll_image_t::lseek(Bit64s offset, int whence)
 {
-  vblk = (int)(offset >> 9);
+  if (whence == SEEK_SET) {
+    vblk = offset >> 9;
+  } else if (whence == SEEK_CUR) {
+    vblk += offset >> 9;
+  } else {
+    BX_ERROR(("lseek: mode not supported yet"));
+    return -1;
+  }
+  if (vblk >= (Bit64s)(hd_size >> 9))
+    return -1;
   return 0;
 }
 
-ssize_t dll_image_t::read (void* buf, size_t count)
+ssize_t dll_image_t::read(void* buf, size_t count)
 {
-  if (vunit >= 0 && hlib_vdisk != 0) {
-    vdisk_read(vunit,vblk,buf);
-    return count;
-  } else {
-    return -1;
+  if ((vunit >= 0) && (hlib_vdisk != NULL)) {
+    if (vdisk_read(vunit, vblk, buf)) {
+      vblk++;
+      return count;
+    }
   }
+  return -1;
 }
 
-ssize_t dll_image_t::write (const void* buf, size_t count)
+ssize_t dll_image_t::write(const void* buf, size_t count)
 {
-  if (vunit >= 0 && hlib_vdisk != 0) {
-    vdisk_write(vunit,vblk,buf);
-    return count;
-  } else {
-    return -1;
+  if ((vunit >= 0) && (hlib_vdisk != 0)) {
+    if (vdisk_write(vunit, vblk, buf)) {
+      vblk++;
+      return count;
+    }
   }
+  return -1;
 }
 #endif // DLL_HD_SUPPORT
 
@@ -1125,57 +1431,58 @@ int redolog_t::create(int filedes, const char* type, Bit64u size)
 
 int redolog_t::open(const char* filename, const char *type)
 {
-  fd = ::open(filename, O_RDWR
-#ifdef O_BINARY
-              | O_BINARY
+  return open(filename, type, O_RDWR);
+}
+
+int redolog_t::open(const char* filename, const char *type, int flags)
+{
+  Bit64u imgsize = 0;
+#ifndef WIN32
+  time_t mtime;
+#else
+  FILETIME mtime;
 #endif
-              );
-  if (fd < 0)
-  {
+
+  fd = hdimage_open_file(filename, flags, &imgsize, &mtime);
+  if (fd < 0) {
     BX_INFO(("redolog : could not open image %s", filename));
     // open failed.
     return -1;
   }
   BX_INFO(("redolog : open image %s", filename));
 
-  int res = bx_read_image(fd, 0, &header, sizeof(header));
-  if (res != STANDARD_HEADER_SIZE)
-  {
-    BX_PANIC(("redolog : could not read header"));
+  int res = check_format(fd, type);
+  if (res != HDIMAGE_FORMAT_OK) {
+    switch (res) {
+      case HDIMAGE_READ_ERROR:
+        BX_PANIC(("redolog : could not read header"));
+        break;
+      case HDIMAGE_NO_SIGNATURE:
+        BX_PANIC(("redolog : Bad header magic"));
+        break;
+      case HDIMAGE_TYPE_ERROR:
+        BX_PANIC(("redolog : Bad header type or subtype"));
+        break;
+      case HDIMAGE_VERSION_ERROR:
+        BX_PANIC(("redolog : Bad header version"));
+        break;
+    }
     return -1;
   }
 
+  if (bx_read_image(fd, 0, &header, sizeof(header)) < 0) {
+    return -1;
+  }
   print_header();
-
-  if (strcmp((char*)header.standard.magic, STANDARD_HEADER_MAGIC) != 0)
-  {
-    BX_PANIC(("redolog : Bad header magic"));
-    return -1;
-  }
-
-  if (strcmp((char*)header.standard.type, REDOLOG_TYPE) != 0)
-  {
-    BX_PANIC(("redolog : Bad header type"));
-    return -1;
-  }
-  if (strcmp((char*)header.standard.subtype, type) != 0)
-  {
-    BX_PANIC(("redolog : Bad header subtype"));
-    return -1;
-  }
-
-  if ((dtoh32(header.standard.version) != STANDARD_HEADER_VERSION) &&
-      (dtoh32(header.standard.version) != STANDARD_HEADER_V1))
-  {
-    BX_PANIC(("redolog : Bad header version"));
-    return -1;
-  }
 
   if (dtoh32(header.standard.version) == STANDARD_HEADER_V1) {
     redolog_header_v1_t header_v1;
 
     memcpy(&header_v1, &header, STANDARD_HEADER_SIZE);
     header.specific.disk = header_v1.specific.disk;
+  }
+  if (!strcmp(type, REDOLOG_SUBTYPE_GROWING)) {
+    set_timestamp(fat_datetime(mtime, 1) | (fat_datetime(mtime, 0) << 16));
   }
 
   catalog = (Bit32u*)malloc(dtoh32(header.specific.catalog) * sizeof(Bit32u));
@@ -1409,6 +1716,38 @@ ssize_t redolog_t::write(const void* buf, size_t count)
   return written;
 }
 
+int redolog_t::check_format(int fd, const char *subtype)
+{
+  redolog_header_t temp_header;
+
+  int res = bx_read_image(fd, 0, &temp_header, sizeof(redolog_header_t));
+  if (res != STANDARD_HEADER_SIZE) {
+    return HDIMAGE_READ_ERROR;
+  }
+
+  if (strcmp((char*)temp_header.standard.magic, STANDARD_HEADER_MAGIC) != 0) {
+    return HDIMAGE_NO_SIGNATURE;
+  }
+
+  if (strcmp((char*)temp_header.standard.type, REDOLOG_TYPE) != 0) {
+    return HDIMAGE_TYPE_ERROR;
+  }
+  if (strcmp((char*)temp_header.standard.subtype, subtype) != 0) {
+    return HDIMAGE_TYPE_ERROR;
+  }
+
+  if ((dtoh32(temp_header.standard.version) != STANDARD_HEADER_VERSION) &&
+      (dtoh32(temp_header.standard.version) != STANDARD_HEADER_V1)) {
+    return HDIMAGE_VERSION_ERROR;
+  }
+  return HDIMAGE_FORMAT_OK;
+}
+
+bx_bool redolog_t::save_state(const char *backup_fname)
+{
+  return hdimage_backup_file(fd, backup_fname);
+}
+
 /*** growing_image_t function definitions ***/
 
 growing_image_t::growing_image_t()
@@ -1421,9 +1760,10 @@ growing_image_t::~growing_image_t()
   delete redolog;
 }
 
-int growing_image_t::open(const char* pathname)
+int growing_image_t::open(const char* _pathname, int flags)
 {
-  int filedes = redolog->open(pathname, REDOLOG_SUBTYPE_GROWING);
+  pathname = _pathname;
+  int filedes = redolog->open(pathname, REDOLOG_SUBTYPE_GROWING, flags);
   hd_size = redolog->get_size();
   BX_INFO(("'growing' disk opened, growing file is '%s'", pathname));
   return filedes;
@@ -1466,15 +1806,73 @@ ssize_t growing_image_t::write(const void* buf, size_t count)
   return (ret < 0) ? ret : count;
 }
 
+int growing_image_t::check_format(int fd, Bit64u imgsize)
+{
+  return redolog_t::check_format(fd, REDOLOG_SUBTYPE_GROWING);
+}
+
+bx_bool growing_image_t::save_state(const char *backup_fname)
+{
+  return redolog->save_state(backup_fname);
+}
+
+void growing_image_t::restore_state(const char *backup_fname)
+{
+  redolog_t *temp_redolog = new redolog_t();
+  if (temp_redolog->open(backup_fname, REDOLOG_SUBTYPE_GROWING, O_RDONLY) < 0) {
+    delete temp_redolog;
+    BX_PANIC(("Can't open growing image backup '%s'", backup_fname));
+    return;
+  } else {
+    bx_bool okay = (temp_redolog->get_size() == redolog->get_size());
+    temp_redolog->close();
+    delete temp_redolog;
+    if (!okay) {
+      BX_PANIC(("size reported by backup doesn't match growing disk size"));
+      return;
+    }
+  }
+  redolog->close();
+  if (!hdimage_copy_file(backup_fname, pathname)) {
+    BX_PANIC(("Failed to restore growing image '%s'", pathname));
+    return;
+  }
+  if (device_image_t::open(pathname) < 0) {
+    BX_PANIC(("Failed to open restored growing image '%s'", pathname));
+  }
+}
+
+// compare hd_size and modification time of r/o disk and journal
+
+bx_bool coherency_check(device_image_t *ro_disk, redolog_t *redolog)
+{
+  Bit32u timestamp1, timestamp2;
+
+  if (ro_disk->hd_size != redolog->get_size()) {
+    BX_PANIC(("size reported by redolog doesn't match r/o disk size"));
+    return 0;
+  }
+  timestamp1 = ro_disk->get_timestamp();
+  timestamp2 = redolog->get_timestamp();
+  if (timestamp2 != 0) {
+    if (timestamp1 != timestamp2) {
+      BX_PANIC(("unexpected modification time of the r/o disk"));
+      return 0;
+    }
+  } else if (timestamp1 != 0) {
+    redolog->set_timestamp(timestamp1);
+  }
+  return 1;
+}
+
 /*** undoable_image_t function definitions ***/
 
 undoable_image_t::undoable_image_t(const char* _redolog_name)
 {
   redolog = new redolog_t();
-  ro_disk = new default_image_t();
   redolog_name = NULL;
   if (_redolog_name != NULL) {
-    if (strcmp(_redolog_name,"") != 0) {
+    if ((strlen(_redolog_name) > 0) && (strcmp(_redolog_name,"none") != 0)) {
       redolog_name = strdup(_redolog_name);
     }
   }
@@ -1486,54 +1884,40 @@ undoable_image_t::~undoable_image_t()
   delete ro_disk;
 }
 
-int undoable_image_t::open(const char* pathname)
+int undoable_image_t::open(const char* pathname, int flags)
 {
-  char *logname=NULL;
-  Bit32u timestamp1, timestamp2;
-
-  if (ro_disk->open(pathname, O_RDONLY)<0)
+  UNUSED(flags);
+  int mode = hdimage_detect_image_mode(pathname);
+  if (mode == BX_HDIMAGE_MODE_UNKNOWN) {
+    BX_PANIC(("r/o disk image mode not detected"));
+    return -1;
+  }
+  ro_disk = theHDImageCtl->init_image(mode, 0, NULL);
+  if (ro_disk == NULL) {
+    return -1;
+  }
+  if (ro_disk->open(pathname, O_RDONLY) < 0)
     return -1;
 
   hd_size = ro_disk->hd_size;
-  // if redolog name was set
-  if (redolog_name != NULL) {
-    if (strcmp(redolog_name, "") != 0) {
-      logname = (char*)malloc(strlen(redolog_name) + 1);
-      strcpy(logname, redolog_name);
-    }
+
+  // If not set, we make up the redolog filename from the pathname
+  if (redolog_name == NULL) {
+    redolog_name = (char*)malloc(strlen(pathname) + UNDOABLE_REDOLOG_EXTENSION_LENGTH + 1);
+    sprintf(redolog_name, "%s%s", pathname, UNDOABLE_REDOLOG_EXTENSION);
   }
 
-  // Otherwise we make up the redolog filename from the pathname
-  if (logname == NULL) {
-    logname = (char*)malloc(strlen(pathname) + UNDOABLE_REDOLOG_EXTENSION_LENGTH + 1);
-    sprintf(logname, "%s%s", pathname, UNDOABLE_REDOLOG_EXTENSION);
-  }
-
-  if (redolog->open(logname,REDOLOG_SUBTYPE_UNDOABLE) < 0) {
-    if (redolog->create(logname, REDOLOG_SUBTYPE_UNDOABLE, hd_size) < 0) {
-      BX_PANIC(("Can't open or create redolog '%s'",logname));
+  if (redolog->open(redolog_name, REDOLOG_SUBTYPE_UNDOABLE) < 0) {
+    if (redolog->create(redolog_name, REDOLOG_SUBTYPE_UNDOABLE, hd_size) < 0) {
+      BX_PANIC(("Can't open or create redolog '%s'",redolog_name));
       return -1;
     }
   }
-  if (hd_size != redolog->get_size()) {
-    BX_PANIC(("size reported by redolog doesn't match r/o disk size"));
-    free(logname);
+  if (!coherency_check(ro_disk, redolog)) {
     return -1;
   }
-  timestamp1 = ro_disk->get_timestamp();
-  timestamp2 = redolog->get_timestamp();
-  if (timestamp2 != 0) {
-    if (timestamp1 != timestamp2) {
-      BX_PANIC(("unexpected modification time of the r/o disk"));
-      free(logname);
-      return -1;
-    }
-  } else if (timestamp1 != 0) {
-    redolog->set_timestamp(timestamp1);
-  }
 
-  BX_INFO(("'undoable' disk opened: ro-file is '%s', redolog is '%s'", pathname, logname));
-  free(logname);
+  BX_INFO(("'undoable' disk opened: ro-file is '%s', redolog is '%s'", pathname, redolog_name));
 
   return 0;
 }
@@ -1543,7 +1927,7 @@ void undoable_image_t::close()
   redolog->close();
   ro_disk->close();
 
-  if (redolog_name!=NULL)
+  if (redolog_name != NULL)
     free(redolog_name);
 }
 
@@ -1581,16 +1965,44 @@ ssize_t undoable_image_t::write(const void* buf, size_t count)
   return (ret < 0) ? ret : count;
 }
 
+bx_bool undoable_image_t::save_state(const char *backup_fname)
+{
+  return redolog->save_state(backup_fname);
+}
+
+void undoable_image_t::restore_state(const char *backup_fname)
+{
+  redolog_t *temp_redolog = new redolog_t();
+  if (temp_redolog->open(backup_fname, REDOLOG_SUBTYPE_UNDOABLE, O_RDONLY) < 0) {
+    delete temp_redolog;
+    BX_PANIC(("Can't open undoable redolog backup '%s'", backup_fname));
+    return;
+  } else {
+    bx_bool okay = coherency_check(ro_disk, temp_redolog);
+    temp_redolog->close();
+    delete temp_redolog;
+    if (!okay) return;
+  }
+  redolog->close();
+  if (!hdimage_copy_file(backup_fname, redolog_name)) {
+    BX_PANIC(("Failed to restore undoable redolog '%s'", redolog_name));
+    return;
+  } else {
+    if (redolog->open(redolog_name, REDOLOG_SUBTYPE_UNDOABLE) < 0) {
+      BX_PANIC(("Can't open restored undoable redolog '%s'", redolog_name));
+    }
+  }
+}
+
 /*** volatile_image_t function definitions ***/
 
 volatile_image_t::volatile_image_t(const char* _redolog_name)
 {
   redolog = new redolog_t();
-  ro_disk = new default_image_t();
   redolog_temp = NULL;
   redolog_name = NULL;
   if (_redolog_name != NULL) {
-    if (strcmp(_redolog_name,"") != 0) {
+    if ((strlen(_redolog_name) > 0) && (strcmp(_redolog_name,"none") != 0)) {
       redolog_name = strdup(_redolog_name);
     }
   }
@@ -1602,39 +2014,41 @@ volatile_image_t::~volatile_image_t()
   delete ro_disk;
 }
 
-int volatile_image_t::open(const char* pathname)
+int volatile_image_t::open(const char* pathname, int flags)
 {
   int filedes;
-  const char *logname=NULL;
+  Bit32u timestamp;
 
+  UNUSED(flags);
+  int mode = hdimage_detect_image_mode(pathname);
+  if (mode == BX_HDIMAGE_MODE_UNKNOWN) {
+    BX_PANIC(("r/o disk image mode not detected"));
+    return -1;
+  }
+  ro_disk = theHDImageCtl->init_image(mode, 0, NULL);
+  if (ro_disk == NULL) {
+    return -1;
+  }
   if (ro_disk->open(pathname, O_RDONLY)<0)
     return -1;
 
   hd_size = ro_disk->hd_size;
-  // if redolog name was set
-  if (redolog_name != NULL) {
-    if (strcmp(redolog_name, "") != 0) {
-      logname = redolog_name;
-    }
+
+  // If not set, use pathname as template
+  if (redolog_name == NULL) {
+    redolog_name = strdup(pathname);
   }
 
-  // otherwise use pathname as template
-  if (logname == NULL) {
-    logname = pathname;
-  }
+  redolog_temp = (char*)malloc(strlen(redolog_name) + VOLATILE_REDOLOG_EXTENSION_LENGTH + 1);
+  sprintf(redolog_temp, "%s%s", redolog_name, VOLATILE_REDOLOG_EXTENSION);
 
-  redolog_temp = (char*)malloc(strlen(logname) + VOLATILE_REDOLOG_EXTENSION_LENGTH + 1);
-  sprintf (redolog_temp, "%s%s", logname, VOLATILE_REDOLOG_EXTENSION);
+  filedes = mkstemp(redolog_temp);
 
-  filedes = mkstemp (redolog_temp);
-
-  if (filedes < 0)
-  {
+  if (filedes < 0) {
     BX_PANIC(("Can't create volatile redolog '%s'", redolog_temp));
     return -1;
   }
-  if (redolog->create(filedes, REDOLOG_SUBTYPE_VOLATILE, hd_size) < 0)
-  {
+  if (redolog->create(filedes, REDOLOG_SUBTYPE_VOLATILE, hd_size) < 0) {
     BX_PANIC(("Can't create volatile redolog '%s'", redolog_temp));
     return -1;
   }
@@ -1643,6 +2057,10 @@ int volatile_image_t::open(const char* pathname)
   // on unix it is legal to delete an open file
   unlink(redolog_temp);
 #endif
+
+  // timestamp required for save/restore support
+  timestamp = ro_disk->get_timestamp();
+  redolog->set_timestamp(timestamp);
 
   BX_INFO(("'volatile' disk opened: ro-file is '%s', redolog is '%s'", pathname, redolog_temp));
 
@@ -1697,4 +2115,38 @@ ssize_t volatile_image_t::write(const void* buf, size_t count)
     n += 512;
   }
   return (ret < 0) ? ret : count;
+}
+
+bx_bool volatile_image_t::save_state(const char *backup_fname)
+{
+  return redolog->save_state(backup_fname);
+}
+
+void volatile_image_t::restore_state(const char *backup_fname)
+{
+  redolog_t *temp_redolog = new redolog_t();
+  if (temp_redolog->open(backup_fname, REDOLOG_SUBTYPE_VOLATILE, O_RDONLY) < 0) {
+    delete temp_redolog;
+    BX_PANIC(("Can't open volatile redolog backup '%s'", backup_fname));
+    return;
+  } else {
+    bx_bool okay = coherency_check(ro_disk, temp_redolog);
+    temp_redolog->close();
+    delete temp_redolog;
+    if (!okay) return;
+  }
+  redolog->close();
+  if (!hdimage_copy_file(backup_fname, redolog_temp)) {
+    BX_PANIC(("Failed to restore volatile redolog '%s'", redolog_temp));
+    return;
+  } else {
+    if (redolog->open(redolog_temp, REDOLOG_SUBTYPE_VOLATILE) < 0) {
+      BX_PANIC(("Can't open restored volatile redolog '%s'", redolog_temp));
+      return;
+    }
+  }
+#if (!defined(WIN32)) && !BX_WITH_MACOS
+  // on unix it is legal to delete an open file
+  unlink(redolog_temp);
+#endif
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vpc-img.h 11384 2012-08-31 12:08:19Z vruppert $
+// $Id: vpc-img.h 11494 2012-10-07 18:36:22Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Block driver for Connectix / Microsoft Virtual PC images (ported from QEMU)
@@ -138,12 +138,17 @@ vhd_dyndisk_header_t;
 class vpc_image_t : public device_image_t
 {
   public:
-    int open(const char* pathname);
+    int open(const char* pathname, int flags);
     void close();
     Bit64s lseek(Bit64s offset, int whence);
     ssize_t read(void* buf, size_t count);
     ssize_t write(const void* buf, size_t count);
+
     Bit32u get_capabilities();
+    static int check_format(int fd, Bit64u imgsize);
+
+    bx_bool save_state(const char *backup_fname);
+    void restore_state(const char *backup_fname);
 
   private:
     Bit32u vpc_checksum(Bit8u *buf, size_t size);
@@ -163,6 +168,8 @@ class vpc_image_t : public device_image_t
 
     Bit32u block_size;
     Bit32u bitmap_size;
+
+    const char *pathname;
 };
 
 #endif

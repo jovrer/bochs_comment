@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svm.h 11033 2012-02-13 23:29:01Z sshwarts $
+// $Id: svm.h 11580 2013-01-19 20:45:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -42,6 +42,7 @@ enum SVM_intercept_codes {
    SVM_VMEXIT_DR0_READ  = 32,
    SVM_VMEXIT_DR0_WRITE = 48,
    SVM_VMEXIT_EXCEPTION = 64,
+   SVM_VMEXIT_PF_EXCEPTION = (64+BX_PF_EXCEPTION),
    SVM_VMEXIT_INTR = 96,
    SVM_VMEXIT_NMI = 97,
    SVM_VMEXIT_SMI = 98,
@@ -131,6 +132,9 @@ enum SVM_intercept_codes {
 #define SVM_CONTROL_LBR_VIRTUALIZATION_ENABLE   (0x0b8)
 #define SVM_CONTROL32_VMCB_CLEAN_BITS           (0x0c0)
 #define SVM_CONTROL64_NRIP                      (0x0c8)
+
+#define SVM_CONTROL64_GUEST_INSTR_BYTES         (0x0d0)
+#define SVM_CONTROL64_GUEST_INSTR_BYTES_HI      (0x0d8)
 
 // ======================
 //  VMCB save state area
@@ -289,7 +293,6 @@ typedef struct bx_SVM_CONTROLS
   bx_phy_address msrpm_base;
 
   Bit8u v_tpr;
-  bx_bool v_irq;
   Bit8u v_intr_prio;
   bx_bool v_ignore_tpr;
   bx_bool v_intr_masking;
@@ -298,12 +301,14 @@ typedef struct bx_SVM_CONTROLS
   bx_bool nested_paging;
   Bit64u ncr3;
 
+  Bit16u pause_filter_count;
+//Bit16u pause_filter_threshold;
+
 } SVM_CONTROLS;
 
 #if defined(NEED_CPU_REG_SHORTCUTS)
 
 #define SVM_V_TPR          (BX_CPU_THIS_PTR vmcb.ctrls.v_tpr)
-#define SVM_V_IRQ          (BX_CPU_THIS_PTR vmcb.ctrls.v_irq)
 #define SVM_V_INTR_PRIO    (BX_CPU_THIS_PTR vmcb.ctrls.v_intr_prio)
 #define SVM_V_IGNORE_TPR   (BX_CPU_THIS_PTR vmcb.ctrls.v_ignore_tpr)
 #define SVM_V_INTR_MASKING (BX_CPU_THIS_PTR vmcb.ctrls.v_intr_masking)

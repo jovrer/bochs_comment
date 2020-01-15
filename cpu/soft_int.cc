@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: soft_int.cc 11529 2012-11-02 07:46:50Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -81,8 +81,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT1(bxInstruction_c *i)
   // interrupt is not RSP safe
   interrupt(1, BX_PRIVILEGED_SOFTWARE_INTERRUPT, 0, 0);
 
-  BX_CPU_THIS_PTR EXT = 0;
-
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
@@ -127,7 +125,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT0_SOFTINT)) Svm_Vmexit(SVM_VMEXIT_SOFTWARE_INTERRUPT);
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_SOFTINT))
+      Svm_Vmexit(SVM_VMEXIT_SOFTWARE_INTERRUPT, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? vector : 0);
   }
 #endif
 

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc 11027 2012-02-12 18:43:20Z vruppert $
+// $Id: misc_mem.cc 11635 2013-02-18 20:52:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  I/O memory handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -38,8 +38,6 @@ Bit8u* const BX_MEM_C::swapped_out = ((Bit8u*)NULL - sizeof(Bit8u));
 
 BX_MEM_C::BX_MEM_C()
 {
-  int i;
-
   put("memory", "MEM0");
 
   vector = NULL;
@@ -47,12 +45,6 @@ BX_MEM_C::BX_MEM_C()
   blocks = NULL;
   len    = 0;
   used_blocks = 0;
-  for (i = 0; i < 65; i++)
-    rom_present[i] = 0;
-  for (i = 0; i <= BX_MEM_AREA_F0000; i++) {
-    memory_type[i][0] = 0;
-    memory_type[i][1] = 0;
-  }
 
   memory_handlers = NULL;
 
@@ -93,9 +85,9 @@ BX_MEM_C::~BX_MEM_C()
 
 void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
 {
-  unsigned idx;
+  unsigned i, idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc 11027 2012-02-12 18:43:20Z vruppert $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc 11635 2013-02-18 20:52:19Z vruppert $"));
 
   // accept only memory size which is multiply of 1M
   BX_ASSERT((host & 0xfffff) == 0);
@@ -144,10 +136,18 @@ void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
   for (idx = 0; idx < BX_MEM_HANDLERS; idx++)
     BX_MEM_THIS memory_handlers[idx] = NULL;
 
-  BX_MEM_THIS pci_enabled = SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get();
+  BX_MEM_THIS pci_enabled = SIM->get_param_bool(BXPN_PCI_ENABLED)->get();
+  BX_MEM_THIS bios_write_enabled = 0;
   BX_MEM_THIS smram_available = 0;
   BX_MEM_THIS smram_enable = 0;
   BX_MEM_THIS smram_restricted = 0;
+
+  for (i = 0; i < 65; i++)
+    BX_MEM_THIS rom_present[i] = 0;
+  for (i = 0; i <= BX_MEM_AREA_F0000; i++) {
+    BX_MEM_THIS memory_type[i][0] = 0;
+    BX_MEM_THIS memory_type[i][1] = 0;
+  }
 
   BX_MEM_THIS register_state();
 }
@@ -208,9 +208,9 @@ void BX_MEM_C::allocate_block(Bit32u block)
     }
     // Write swapped out block
     if (fseeko64(BX_MEM_THIS overflow_file, address, SEEK_SET))
-      BX_PANIC(("FATAL ERROR: Could not seek to 0x%llx in overflow file!", address)); 
+      BX_PANIC(("FATAL ERROR: Could not seek to 0x" FMT_PHY_ADDRX " in overflow file!", address)); 
     if (1 != fwrite (BX_MEM_THIS blocks[BX_MEM_THIS next_swapout_idx], BX_MEM_BLOCK_LEN, 1, BX_MEM_THIS overflow_file))
-      BX_PANIC(("FATAL ERROR: Could not write at 0x%llx in overflow file!", address));
+      BX_PANIC(("FATAL ERROR: Could not write at 0x" FMT_PHY_ADDRX " in overflow file!", address));
     // Mark swapped out block
     BX_MEM_THIS blocks[BX_MEM_THIS next_swapout_idx] = BX_MEM_C::swapped_out;
     BX_MEM_THIS blocks[block] = buffer;
@@ -245,9 +245,9 @@ void ramfile_save_handler(void *devptr, FILE *fp)
     {
       bx_phy_address address = ((bx_phy_address)idx)*BX_MEM_BLOCK_LEN;
       if (fseeko64(fp, address, SEEK_SET))
-        BX_PANIC(("FATAL ERROR: Could not seek to 0x%llx in overflow file!", address)); 
+        BX_PANIC(("FATAL ERROR: Could not seek to 0x" FMT_PHY_ADDRX " in overflow file!", address)); 
       if (1 != fwrite (BX_MEM(0)->blocks[idx], BX_MEM_BLOCK_LEN, 1, fp))
-        BX_PANIC(("FATAL ERROR: Could not write at 0x%llx in overflow file!", address));
+        BX_PANIC(("FATAL ERROR: Could not write at 0x" FMT_PHY_ADDRX " in overflow file!", address));
     }
   }
 }
@@ -814,7 +814,6 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw)
 
 /*
  * One needs to provide both a read_handler and a write_handler.
- * XXX: maybe we should check for overlapping memory handlers
  */
   bx_bool
 BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
@@ -826,7 +825,22 @@ BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
   if (!read_handler || !write_handler) // allow NULL fetch handler
     return 0;
   BX_INFO(("Register memory access handlers: 0x" FMT_PHY_ADDRX " - 0x" FMT_PHY_ADDRX, begin_addr, end_addr));
-  for (unsigned page_idx = (Bit32u)(begin_addr >> 20); page_idx <= (Bit32u)(end_addr >> 20); page_idx++) {
+  for (Bit32u page_idx = (Bit32u)(begin_addr >> 20); page_idx <= (Bit32u)(end_addr >> 20); page_idx++) {
+    Bit16u bitmap = 0xffff;
+    if (begin_addr > (page_idx << 20)) {
+      bitmap &= (0xffff << ((begin_addr >> 16) & 0xf));
+    }
+    if (end_addr < ((page_idx + 1) << 20)) {
+      bitmap &= (0xffff >> (0x0f - ((end_addr >> 16) & 0xf)));
+    }
+    if (BX_MEM_THIS memory_handlers[page_idx] != NULL) {
+      if ((bitmap & BX_MEM_THIS memory_handlers[page_idx]->bitmap) != 0) {
+        BX_ERROR(("Register failed: overlapping memory handlers!"));
+        return 0;
+      } else {
+        bitmap |= BX_MEM_THIS memory_handlers[page_idx]->bitmap;
+      }
+    }
     struct memory_handler_struct *memory_handler = new struct memory_handler_struct;
     memory_handler->next = BX_MEM_THIS memory_handlers[page_idx];
     BX_MEM_THIS memory_handlers[page_idx] = memory_handler;
@@ -836,6 +850,7 @@ BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
     memory_handler->param = param;
     memory_handler->begin = begin_addr;
     memory_handler->end = end_addr;
+    memory_handler->bitmap = bitmap;
   }
   return 1;
 }
@@ -845,7 +860,7 @@ BX_MEM_C::unregisterMemoryHandlers(void *param, bx_phy_address begin_addr, bx_ph
 {
   bx_bool ret = 1;
   BX_INFO(("Memory access handlers unregistered: 0x" FMT_PHY_ADDRX " - 0x" FMT_PHY_ADDRX, begin_addr, end_addr));
-  for (unsigned page_idx = (Bit32u)(begin_addr >> 20); page_idx <= (Bit32u)(end_addr >> 20); page_idx++) {
+  for (Bit32u page_idx = (Bit32u)(begin_addr >> 20); page_idx <= (Bit32u)(end_addr >> 20); page_idx++) {
     struct memory_handler_struct *memory_handler = BX_MEM_THIS memory_handlers[page_idx];
     struct memory_handler_struct *prev = NULL;
     while (memory_handler &&
@@ -895,6 +910,11 @@ void BX_MEM_C::set_memory_type(memory_area_t area, bx_bool rw, bx_bool dram)
   if (area <= BX_MEM_AREA_F0000) {
     BX_MEM_THIS memory_type[area][rw] = dram;
   }
+}
+
+void BX_MEM_C::set_bios_write(bx_bool enabled)
+{
+  BX_MEM_THIS bios_write_enabled = enabled;
 }
 
 #if BX_SUPPORT_MONITOR_MWAIT

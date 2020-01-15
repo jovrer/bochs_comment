@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.h 11250 2012-07-01 14:37:13Z vruppert $
+// $Id: enh_dbg.h 11635 2013-02-18 20:52:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,8 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2013  The Bochs Project
+
 
 #ifndef BX_ENH_DBG_DEF_H
 #define BX_ENH_DBG_DEF_H
@@ -64,12 +66,11 @@ int GetNextSelectedLI(int listnum, int StartPt);
 
 bx_bool OSInit();
 void SpecialInit();
+void CloseDialog();
 
 void HitBreak();
 void ParseIDText(const char *x);
 
-extern char *debug_cmd;
-extern bx_bool debug_cmd_ready;
 extern bx_bool vgaw_refresh;
 
 #ifdef WIN32
@@ -177,8 +178,12 @@ extern short DockOrder;        // set the default List "docking" (Reg, ASM, Dump
 
 // END of User Customizable settings
 
-#ifndef WIN32
+#if !defined(_MSC_VER)
+#if SIZEOF_UNSIGNED_LONG == 8
+#define FMT_LLCAPX  "%016lX"
+#else
 #define FMT_LLCAPX  "%016llX"
+#endif
 #else
 #define FMT_LLCAPX  "%016I64X"
 #endif
@@ -222,7 +227,8 @@ extern unsigned short BarClix[2];
 extern bx_bool AtBreak;        // Status indicators
 extern bx_bool StatusChange;
 
-extern bx_bool doOneTimeInit;  // Internal flags
+extern bx_bool doOneTimeInit;  // Internal flag #1
+extern bx_bool doSimuInit;     // Internal flag #2
 extern bx_bool ResizeColmns;   // address/value column autosize flag
 extern bx_bool FWflag;         // friendly warning has been shown to user once already
 

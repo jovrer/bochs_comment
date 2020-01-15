@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h 11277 2012-07-12 21:20:46Z vruppert $
+// $Id: floppy.h 11477 2012-10-03 09:09:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2012  The Bochs Project
@@ -54,6 +54,7 @@ public:
   virtual void reset(unsigned type);
   virtual unsigned set_media_status(unsigned drive, bx_bool status);
   virtual void register_state(void);
+  virtual void after_restore_state(void);
 #if BX_DEBUGGER
   virtual void debug_dump(int argc, char **argv);
 #endif

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: param_names.h 11337 2012-08-14 19:33:24Z vruppert $
+// $Id: param_names.h 11633 2013-02-16 12:22:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009-2011  The Bochs Project
+//  Copyright (C) 2009-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -52,6 +52,7 @@
 #define BXPN_CPUID_MMX                   "cpuid.mmx"
 #define BXPN_CPUID_SSE                   "cpuid.sse"
 #define BXPN_CPUID_SSE4A                 "cpuid.sse4a"
+#define BXPN_CPUID_MISALIGNED_SSE        "cpuid.misaligned_sse"
 #define BXPN_CPUID_AES                   "cpuid.aes"
 #define BXPN_CPUID_MOVBE                 "cpuid.movbe"
 #define BXPN_CPUID_ADX                   "cpuid.adx"
@@ -74,6 +75,7 @@
 #define BXPN_CPUID_PCID                  "cpuid.pcid"
 #define BXPN_CPUID_FSGSBASE              "cpuid.fsgsbase"
 #define BXPN_CPUID_SMEP                  "cpuid.smep"
+#define BXPN_CPUID_SMAP                  "cpuid.smap"
 #define BXPN_MEM_SIZE                    "memory.standard.ram.size"
 #define BXPN_HOST_MEM_SIZE               "memory.standard.ram.host_size"
 #define BXPN_ROM_PATH                    "memory.standard.rom.path"
@@ -101,7 +103,8 @@
 #define BXPN_CMOSIMAGE_ENABLED           "clock_cmos.cmosimage.enabled"
 #define BXPN_CMOSIMAGE_PATH              "clock_cmos.cmosimage.path"
 #define BXPN_CMOSIMAGE_RTC_INIT          "clock_cmos.cmosimage.rtc_init"
-#define BXPN_I440FX_SUPPORT              "pci.i440fx_support"
+#define BXPN_PCI_ENABLED                 "pci.enabled"
+#define BXPN_PCI_CHIPSET                 "pci.chipset"
 #define BXPN_PCIDEV_VENDOR               "pci.pcidev.vendor"
 #define BXPN_PCIDEV_DEVICE               "pci.pcidev.device"
 #define BXPN_SEL_DISPLAY_LIBRARY         "display.display_library"
@@ -111,12 +114,14 @@
 #define BXPN_SCREENMODE                  "display.screenmode"
 #define BXPN_VGA_EXTENSION               "display.vga_extension"
 #define BXPN_VGA_UPDATE_FREQUENCY        "display.vga_update_frequency"
+#define BXPN_KEYBOARD                    "keyboard_mouse.keyboard"
 #define BXPN_KBD_TYPE                    "keyboard_mouse.keyboard.type"
 #define BXPN_KBD_SERIAL_DELAY            "keyboard_mouse.keyboard.serial_delay"
 #define BXPN_KBD_PASTE_DELAY             "keyboard_mouse.keyboard.paste_delay"
 #define BXPN_KBD_USEMAPPING              "keyboard_mouse.keyboard.use_mapping"
 #define BXPN_KBD_KEYMAP                  "keyboard_mouse.keyboard.keymap"
 #define BXPN_USER_SHORTCUT               "keyboard_mouse.keyboard.user_shortcut"
+#define BXPN_MOUSE                       "keyboard_mouse.mouse"
 #define BXPN_MOUSE_TYPE                  "keyboard_mouse.mouse.type"
 #define BXPN_MOUSE_ENABLED               "keyboard_mouse.mouse.enabled"
 #define BXPN_MOUSE_TOGGLE                "keyboard_mouse.mouse.toggle"
@@ -167,13 +172,9 @@
 #define BXPN_E1000                       "network.e1000"
 #define BXPN_E1000_ENABLED               "network.e1000.enabled"
 #define BXPN_SOUND_SB16                  "sound.sb16"
-#define BXPN_SB16_ENABLED                "sound.sb16.enabled"
-#define BXPN_SB16_MIDIFILE               "sound.sb16.midifile"
-#define BXPN_SB16_WAVEFILE               "sound.sb16.wavefile"
 #define BXPN_SB16_DMATIMER               "sound.sb16.dmatimer"
 #define BXPN_SB16_LOGLEVEL               "sound.sb16.loglevel"
 #define BXPN_SOUND_ES1370                "sound.es1370"
-#define BXPN_ES1370_ENABLED              "sound.es1370.enabled"
 #define BXPN_ES1370_WAVEDEV              "sound.es1370.wavedev"
 #define BXPN_PORT_E9_HACK                "misc.port_e9_hack"
 #define BXPN_GDBSTUB                     "misc.gdbstub"
@@ -185,8 +186,5 @@
 #define BXPN_MENU_RUNTIME_CDROM          "menu.runtime.cdrom"
 #define BXPN_MENU_RUNTIME_USB            "menu.runtime.usb"
 #define BXPN_MENU_RUNTIME_MISC           "menu.runtime.misc"
-#define BXPN_WX_CPU_STATE                "wxdebug.cpu"
-#define BXPN_WX_CPU0_STATE               "wxdebug.cpu.0"
-#define BXPN_WX_CPU0_EFLAGS_IOPL         "wxdebug.cpu.0.IOPL"
 
 #endif

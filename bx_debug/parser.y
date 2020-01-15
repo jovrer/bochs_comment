@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y 11152 2012-04-24 17:48:38Z vruppert $
+// $Id: parser.y 11571 2013-01-14 17:02:07Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -80,6 +80,7 @@
 %token <sval> BX_TOKEN_TAKE
 %token <sval> BX_TOKEN_DMA
 %token <sval> BX_TOKEN_IRQ
+%token <sval> BX_TOKEN_TLB
 %token <sval> BX_TOKEN_HEX
 %token <sval> BX_TOKEN_DISASM
 %token <sval> BX_TOKEN_INSTRUMENT
@@ -179,6 +180,7 @@ command:
     | print_stack_command
     | watch_point_command
     | page_command
+    | tlb_command
     | show_command
     | symbol_command
     | where_command
@@ -269,6 +271,14 @@ page_command:
       BX_TOKEN_PAGE expression '\n'
       {
           bx_dbg_xlate_address($2);
+          free($1);
+      }
+    ;
+
+tlb_command:
+      BX_TOKEN_TLB expression '\n'
+      {
+          bx_dbg_tlb_lookup($2);
           free($1);
       }
     ;
@@ -484,6 +494,14 @@ set_command:
     | BX_TOKEN_SET BX_TOKEN_64B_REG '=' expression '\n'
       { 
         bx_dbg_set_reg64_value($2, $4);
+      }
+    | BX_TOKEN_SET BX_TOKEN_REG_EIP '=' expression '\n'
+      { 
+        bx_dbg_set_rip_value($4);
+      }
+    | BX_TOKEN_SET BX_TOKEN_REG_RIP '=' expression '\n'
+      { 
+        bx_dbg_set_rip_value($4);
       }
     | BX_TOKEN_SET BX_TOKEN_SEGREG '=' expression '\n'
       { 
@@ -1109,7 +1127,8 @@ help_command:
      | BX_TOKEN_HELP BX_TOKEN_SET '\n'
        {
          dbg_printf("set <regname> = <expr> - set register value to expression\n");
-         dbg_printf("set $reg = val - set CPU register to value val\n");
+         dbg_printf("set eflags = <expr> - set eflags value to expression, not all flags can be modified\n");
+         dbg_printf("set $cpu = <N> - move debugger control to cpu <N> in SMP simulation\n");
          dbg_printf("set $auto_disassemble = 1 - cause debugger to disassemble current instruction\n");
          dbg_printf("       every time execution stops\n");
          dbg_printf("set u|disasm|disassemble on  - same as 'set $auto_disassemble = 1'\n");

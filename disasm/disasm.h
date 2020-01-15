@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: disasm.h 11276 2012-07-12 14:51:54Z sshwarts $
+// $Id: disasm.h 11496 2012-10-09 15:16:48Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2011 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -79,7 +79,10 @@
 #define IA_XOP              (BX_CONST64(1) << 37)  /* XOP instruction (AMD) */
 #define IA_TBM              (BX_CONST64(1) << 38)  /* TBM instruction (AMD) */
 #define IA_SVM              (BX_CONST64(1) << 39)  /* SVM instruction (AMD) */
-#define IA_ADX              (BX_CONST64(1) << 40)  /* ADCX/ADOX instruction */
+#define IA_RDRAND           (BX_CONST64(1) << 40)  /* RDRAND instruction */
+#define IA_ADX              (BX_CONST64(1) << 41)  /* ADCX/ADOX instruction */
+#define IA_SMAP             (BX_CONST64(1) << 42)  /* SMAP support */
+#define IA_RDSEED           (BX_CONST64(1) << 43)  /* RDSEED instruction */
 
 /* general purpose bit register */
 enum {

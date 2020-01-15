@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vvfat.h 11384 2012-08-31 12:08:19Z vruppert $
+// $Id: vvfat.h 11494 2012-10-07 18:36:22Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Virtual VFAT image support (shadows a local directory)
@@ -126,7 +126,7 @@ class vvfat_image_t : public device_image_t
     vvfat_image_t(Bit64u size, const char* redolog_name);
     virtual ~vvfat_image_t();
 
-    int open(const char* dirname);
+    int open(const char* pathname, int flags);
     void close();
     Bit64s lseek(Bit64s offset, int whence);
     ssize_t read(void* buf, size_t count);

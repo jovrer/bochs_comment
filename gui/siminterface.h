@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h 11367 2012-08-25 13:20:55Z vruppert $
+// $Id: siminterface.h 11612 2013-02-04 18:51:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -164,6 +164,29 @@ typedef enum {
   N_LOGLEV
 } bx_log_levels;
 
+// Log action defines
+typedef enum {
+  ACT_IGNORE = 0,
+  ACT_REPORT,
+  ACT_ASK,
+  ACT_FATAL,
+  N_ACT
+} bx_log_actions;
+
+// normally all action choices are available for all event types. The exclude
+// expression allows some choices to be eliminated if they don't make any
+// sense.  For example, it would be stupid to ignore a panic.
+#define BX_LOG_OPTS_EXCLUDE(type, choice)  (                           \
+   /* can't die or ask, on debug or info events */                     \
+   (type <= LOGLEV_INFO && (choice == ACT_ASK || choice == ACT_FATAL)) \
+   /* can't ignore panics */                                           \
+   || (type == LOGLEV_PANIC && choice == ACT_IGNORE)                   \
+   )
+
+// floppy / cdrom media status
+#define BX_EJECTED  0
+#define BX_INSERTED 1
+
 // boot devices (using the same values as the rombios)
 enum {
   BX_BOOT_NONE,
@@ -219,8 +242,8 @@ enum {
 // quickly because the window will not be updated until it's done.)
 // Some time later, the simulator reaches the point where it checks
 // for new events from the user (actually controlled by
-// bx_keyb_c::periodic() in iodev/keyboard.cc) and calls
-// bx_gui.handle_events().  Then all the events in the queue are
+// bx_devices_c::timer() in iodev/devices.cc) and calls
+// bx_gui->handle_events(). Then all the events in the queue are
 // processed by the simulator.  There is no "response" sent back to
 // the originating thread.
 //
@@ -492,9 +515,9 @@ enum {
 #define BX_FLOPPY_AUTO     19 // autodetect image size
 #define BX_FLOPPY_UNKNOWN  20 // image size doesn't match one of the types above
 
-#define BX_ATA_DEVICE_DISK       0
-#define BX_ATA_DEVICE_CDROM      1
-#define BX_ATA_DEVICE_LAST       1
+#define BX_ATA_DEVICE_NONE       0
+#define BX_ATA_DEVICE_DISK       1
+#define BX_ATA_DEVICE_CDROM      2
 
 #define BX_ATA_BIOSDETECT_NONE   0
 #define BX_ATA_BIOSDETECT_AUTO   1
@@ -524,6 +547,7 @@ enum {
   BX_HDIMAGE_MODE_VPC
 };
 #define BX_HDIMAGE_MODE_LAST     BX_HDIMAGE_MODE_VPC
+#define BX_HDIMAGE_MODE_UNKNOWN  -1
 
 enum {
   BX_CLOCK_SYNC_NONE,
@@ -532,6 +556,11 @@ enum {
   BX_CLOCK_SYNC_BOTH
 };
 #define BX_CLOCK_SYNC_LAST       BX_CLOCK_SYNC_BOTH
+
+enum {
+  BX_PCI_CHIPSET_I430FX,
+  BX_PCI_CHIPSET_I440FX
+};
 
 enum {
   BX_CPUID_SUPPORT_NOSSE,
@@ -558,6 +587,7 @@ enum {
 BOCHSAPI extern const char *floppy_devtype_names[];
 BOCHSAPI extern const char *floppy_type_names[];
 BOCHSAPI extern int floppy_type_n_sectors[];
+BOCHSAPI extern const char *media_status_names[];
 BOCHSAPI extern const char *bochs_bootdisk_names[];
 BOCHSAPI extern const char *hdimage_mode_names[];
 
@@ -612,7 +642,6 @@ public:
   virtual void set_log_action(int mod, int level, int action) {}
   virtual int get_default_log_action(int level) {return -1;}
   virtual void set_default_log_action(int level, int action) {}
-  virtual void apply_log_actions_by_device() {}
   virtual const char *get_action_name(int action) {return 0;}
   virtual const char *get_log_level_name(int level) {return 0;}
   virtual int get_max_log_level() {return -1;}
@@ -667,7 +696,7 @@ public:
   virtual int ask_filename(const char *filename, int maxlen, const char *prompt, const char *the_default, int flags) {return -1;}
   // yes/no dialog
   virtual int ask_yes_no(const char *title, const char *prompt, bx_bool the_default) {return -1;}
-  // called at a regular interval, currently by the keyboard handler.
+  // called at a regular interval, currently by the bx_devices_c::timer()
   virtual void periodic() {}
   virtual int create_disk_image(const char *filename, int sectors, bx_bool overwrite) {return -3;}
   // Tell the configuration interface (CI) that some parameter values have
@@ -676,7 +705,7 @@ public:
   virtual void refresh_ci() {}
   // forces a vga update.  This was added so that a debugger can force
   // a vga update when single stepping, without having to wait thousands
-  // of cycles for the normal vga refresh triggered by iodev/keyboard.cc.
+  // of cycles for the normal vga refresh triggered by the vga timer handler..
   virtual void refresh_vga() {}
   // forces a call to bx_gui.handle_events.  This was added so that a debugger
   // can force the gui events to be handled, so that interactive things such
@@ -686,6 +715,8 @@ public:
   virtual bx_param_c *get_first_cdrom() {return NULL;}
   // return first cdrom in ATA interface
   virtual bx_param_c *get_first_hd() {return NULL;}
+  // return 1 if device is connected to a PCI slot
+  virtual bx_bool is_pci_device(const char *name) {return 0;}
 #if BX_DEBUGGER
   // for debugger: same behavior as pressing control-C
   virtual void debug_break() {}
@@ -733,10 +764,11 @@ public:
   virtual bx_bool opt_plugin_ctrl(const char *plugname, bx_bool load) {return 0;}
   virtual void init_std_nic_options(const char *name, bx_list_c *menu) {}
   virtual void init_usb_options(const char *usb_name, const char *pname, int maxports) {}
+  virtual int  parse_param_from_list(const char *context, const char *param, bx_list_c *base) {return 0;}
   virtual int  parse_nic_params(const char *context, const char *param, bx_list_c *base) {return 0;}
   virtual int  parse_usb_port_params(const char *context, bx_bool devopt,
                                      const char *param, int maxports, bx_list_c *base) {return 0;}
-  virtual int  write_pci_nic_options(FILE *fp, bx_list_c *base) {return 0;}
+  virtual int  write_param_list(FILE *fp, bx_list_c *base, const char *optname, bx_bool multiline) {return 0;}
   virtual int  write_usb_options(FILE *fp, int maxports, bx_list_c *base) {return 0;}
 };
 

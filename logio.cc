@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc 11116 2012-03-27 21:30:34Z sshwarts $
+// $Id: logio.cc 11637 2013-02-20 18:51:39Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2010  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,7 +22,6 @@
 
 #include "bochs.h"
 #include "cpu/cpu.h"
-#include "iodev/iodev.h"
 #include <assert.h>
 
 #if BX_WITH_CARBON
@@ -452,7 +451,7 @@ void logfunctions::ask(int level, const char *prefix, const char *fmt, va_list a
   // are printed on the screen just before a panic.  It's also potentially
   // dangerous if this function calls ask again...  That's why I added
   // the reentry check above.
-  if (SIM->get_init_done()) DEV_vga_refresh();
+  SIM->refresh_vga();
 
   // ensure the text screen is showing
   SIM->set_display_mode(DISP_MODE_CONFIG);
@@ -583,11 +582,7 @@ void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int ex
 #if !BX_DEBUGGER
   BX_EXIT(exit_status);
 #else
-  static bx_bool dbg_exit_called = 0;
-  if (dbg_exit_called == 0) {
-    dbg_exit_called = 1;
-    bx_dbg_exit(exit_status);
-  }
+  bx_dbg_exit(exit_status);
 #endif
   // not safe to use BX_* log functions in here.
   fprintf(stderr, "fatal() should never return, but it just did\n");

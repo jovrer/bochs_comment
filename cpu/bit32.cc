@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit32.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: bit32.cc 11437 2012-09-21 14:56:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -352,8 +352,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 
   Bit32u op1_32 = 0;
   while (op2_32 != 0) {
-    if (op2_32 & 1) op1_32++;
-    op2_32 >>= 1;
+    op2_32 &= (op2_32-1);
+    op1_32++;
   }
 
   Bit32u flags = op1_32 ? 0 : EFlagsZFMask;

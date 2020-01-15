@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: harddrv.cc 11649 2013-03-08 18:25:32Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -121,10 +121,6 @@ void libharddrv_LTX_plugin_fini(void)
 
 bx_hard_drive_c::bx_hard_drive_c()
 {
-#if DLL_HD_SUPPORT
-#   error code must be fixed to use DLL_HD_SUPPORT and 4 ata channels
-#endif
-
   put("harddrv", "HD");
   for (Bit8u channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
     for (Bit8u device=0; device<2; device ++) {
@@ -158,7 +154,7 @@ bx_hard_drive_c::~bx_hard_drive_c()
       sprintf(ata_name, "ata.%d.%s", channel, (device==0)?"master":"slave");
       base = (bx_list_c*) SIM->get_param(ata_name);
       SIM->get_param_string("path", base)->set_handler(NULL);
-      SIM->get_param_bool("status", base)->set_handler(NULL);
+      SIM->get_param_enum("status", base)->set_handler(NULL);
     }
   }
   SIM->get_bochs_root()->remove("hard_drive");
@@ -173,7 +169,7 @@ void bx_hard_drive_c::init(void)
   char  ata_name[20];
   bx_list_c *base;
 
-  BX_DEBUG(("Init $Id: harddrv.cc 11346 2012-08-19 08:16:20Z vruppert $"));
+  BX_DEBUG(("Init $Id: harddrv.cc 11649 2013-03-08 18:25:32Z vruppert $"));
 
   for (channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
     sprintf(ata_name, "ata.%d.resources", channel);
@@ -275,7 +271,7 @@ void bx_hard_drive_c::init(void)
       BX_HD_THIS channels[channel].drives[device].device_type           = IDE_NONE;
       BX_HD_THIS channels[channel].drives[device].statusbar_id = -1;
       BX_HD_THIS channels[channel].drives[device].identify_set = 0;
-      if (!SIM->get_param_bool("present", base)->get()) continue;
+      if (SIM->get_param_enum("type", base)->get() == BX_ATA_DEVICE_NONE) continue;
 
       // Make model string
       strncpy((char*)BX_HD_THIS channels[channel].drives[device].model_no,
@@ -356,7 +352,7 @@ void bx_hard_drive_c::init(void)
         base->set_runtime_param(1);
         SIM->get_param_string("path", base)->set_handler(cdrom_path_handler);
         SIM->get_param("path", base)->set_runtime_param(1);
-        SIM->get_param_bool("status", base)->set_handler(cdrom_status_handler);
+        SIM->get_param_enum("status", base)->set_handler(cdrom_status_handler);
         SIM->get_param("status", base)->set_runtime_param(1);
         BX_DEBUG(("CDROM on target %d/%d",channel,device));
         BX_HD_THIS channels[channel].drives[device].device_type = IDE_CDROM;
@@ -397,7 +393,7 @@ void bx_hard_drive_c::init(void)
         BX_HD_THIS channels[channel].drives[device].cdrom.cd = DEV_hdimage_init_cdrom(SIM->get_param_string("path", base)->getptr());
         BX_INFO(("CD on ata%d-%d: '%s'",channel, device, SIM->get_param_string("path", base)->getptr()));
 
-        if (SIM->get_param_bool("status", base)->get()) {
+        if (SIM->get_param_enum("status", base)->get() == BX_INSERTED) {
           if (BX_HD_THIS channels[channel].drives[device].cdrom.cd->insert_cdrom()) {
             BX_INFO(("Media present in CD-ROM drive"));
             BX_HD_THIS channels[channel].drives[device].cdrom.ready = 1;
@@ -407,7 +403,7 @@ void bx_hard_drive_c::init(void)
           } else {
             BX_INFO(("Could not locate CD-ROM, continuing with media not present"));
             BX_HD_THIS channels[channel].drives[device].cdrom.ready = 0;
-            SIM->get_param_bool("status", base)->set(0);
+            SIM->get_param_enum("status", base)->set(BX_EJECTED);
           }
         }
         else
@@ -479,7 +475,7 @@ void bx_hard_drive_c::init(void)
       for (Bit8u device=0; device<2; device ++) {
         sprintf(ata_name, "ata.%d.%s", channel, (device==0)?"master":"slave");
         base = (bx_list_c*) SIM->get_param(ata_name);
-        if (SIM->get_param_bool("present", base)->get()) {
+        if (SIM->get_param_enum("type", base)->get() != BX_ATA_DEVICE_NONE) {
           if (BX_DRIVE_IS_HD(channel,device)) {
             Bit16u cylinders = BX_DRIVE(channel,device).hdimage->cylinders;
             Bit16u heads = BX_DRIVE(channel,device).hdimage->heads;
@@ -563,7 +559,7 @@ void bx_hard_drive_c::init(void)
     // TODO !!!
   }
 
-  BX_HD_THIS pci_enabled = SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get();
+  BX_HD_THIS pci_enabled = SIM->get_param_bool(BXPN_PCI_ENABLED)->get();
 
   // register handler for correct cdrom parameter handling after runtime config
   SIM->register_runtime_config_handler(BX_HD_THIS_PTR, runtime_config_handler);
@@ -591,6 +587,9 @@ void bx_hard_drive_c::register_state(void)
       if (BX_DRIVE_IS_PRESENT(i, j)) {
         sprintf(dname, "drive%d", j);
         drive = new bx_list_c(chan, dname);
+        if (channels[i].drives[j].hdimage != NULL) {
+          channels[i].drives[j].hdimage->register_state(drive);
+        }
         new bx_shadow_data_c(drive, "buffer", BX_CONTROLLER(i, j).buffer, MAX_MULTIPLE_SECTORS * 512);
         status = new bx_list_c(drive, "status");
         new bx_shadow_bool_c(status, "busy", &BX_CONTROLLER(i, j).status.busy);
@@ -666,10 +665,10 @@ void bx_hard_drive_c::runtime_config(void)
         handle = (channel << 1) | device;
         sprintf(pname, "ata.%d.%s", channel, device ? "slave":"master");
         bx_list_c *base = (bx_list_c*) SIM->get_param(pname);
-        status = SIM->get_param_bool("status", base)->get();
+        status = SIM->get_param_enum("status", base)->get();
         BX_HD_THIS set_cd_media_status(handle, 0);
-        if (status == 1) {
-          BX_HD_THIS set_cd_media_status(handle, status);
+        if (status == BX_INSERTED) {
+          BX_HD_THIS set_cd_media_status(handle, 1);
         }
         BX_HD_THIS channels[channel].drives[device].status_changed = 0;
       }
@@ -723,10 +722,10 @@ Bit32u bx_hard_drive_c::read(Bit32u address, unsigned io_len)
   }
 
   if (channel == BX_MAX_ATA_CHANNEL) {
+    channel = 0;
     if ((address < 0x03f6) || (address > 0x03f7)) {
       BX_PANIC(("read: unable to find ATA channel, ioport=0x%04x", address));
     } else {
-      channel = 0;
       port = address - 0x03e0;
     }
   }
@@ -1287,7 +1286,7 @@ void bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
                       BX_SELECTED_DRIVE(channel).cdrom.ready = 0;
                       sprintf(ata_name, "ata.%d.%s", channel, BX_SLAVE_SELECTED(channel)?"slave":"master");
                       bx_list_c *base = (bx_list_c*) SIM->get_param(ata_name);
-                      SIM->get_param_bool("status", base)->set(0);
+                      SIM->get_param_enum("status", base)->set(BX_EJECTED);
                       bx_gui->update_drive_status_buttons();
                     }
                     raise_interrupt(channel);
@@ -3182,7 +3181,7 @@ bx_bool bx_hard_drive_c::set_cd_media_status(Bit32u handle, bx_bool status)
       BX_HD_THIS channels[channel].drives[device].cdrom.cd->eject_cdrom();
 #endif
       BX_HD_THIS channels[channel].drives[device].cdrom.ready = 0;
-      SIM->get_param_bool("status", base)->set(0);
+      SIM->get_param_enum("status", base)->set(BX_EJECTED);
     }
   } else {
     // insert cdrom
@@ -3193,7 +3192,7 @@ bx_bool bx_hard_drive_c::set_cd_media_status(Bit32u handle, bx_bool status)
       Bit32u capacity = BX_HD_THIS channels[channel].drives[device].cdrom.cd->capacity();
       BX_HD_THIS channels[channel].drives[device].cdrom.capacity = capacity;
       BX_INFO(("Capacity is %d sectors (%.2f MB)", capacity, (float)capacity / 512.0));
-      SIM->get_param_bool("status", base)->set(1);
+      SIM->get_param_enum("status", base)->set(BX_INSERTED);
       BX_SELECTED_DRIVE(channel).sense.sense_key = SENSE_UNIT_ATTENTION;
       BX_SELECTED_DRIVE(channel).sense.asc = ASC_MEDIUM_MAY_HAVE_CHANGED;
       BX_SELECTED_DRIVE(channel).sense.ascq = 0;
@@ -3204,7 +3203,7 @@ bx_bool bx_hard_drive_c::set_cd_media_status(Bit32u handle, bx_bool status)
     {
       BX_INFO(("Could not locate CD-ROM, continuing with media not present"));
       BX_HD_THIS channels[channel].drives[device].cdrom.ready = 0;
-      SIM->get_param_bool("status", base)->set(0);
+      SIM->get_param_enum("status", base)->set(BX_EJECTED);
     }
   }
   return (BX_HD_THIS channels[channel].drives[device].cdrom.ready);

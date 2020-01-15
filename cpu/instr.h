@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instr.h 11377 2012-08-28 16:05:39Z sshwarts $
+// $Id: instr.h 11555 2012-11-27 15:40:45Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008-2012 Stanislav Shwartsman
@@ -32,7 +32,7 @@ typedef void BX_INSF_TYPE;
 
 #define BX_SYNC_TIME_IF_SINGLE_PROCESSOR(allowed_delta) {                     \
   if (BX_SMP_PROCESSORS == 1) {                                               \
-    Bit32u delta = BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync; \
+    Bit32u delta = (Bit32u)(BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync); \
     if (delta >= allowed_delta) {                                             \
       BX_CPU_THIS_PTR sync_icount();                                          \
       BX_TICKN(delta);                                                        \
@@ -49,7 +49,7 @@ typedef void BX_INSF_TYPE;
 #define BX_EXECUTE_INSTRUCTION(i) {                    \
   BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, (i));           \
   RIP += (i)->ilen();                                  \
-  return BX_CPU_CALL_METHOD(i->execute, (i));          \
+  return BX_CPU_CALL_METHOD(i->execute1, (i));         \
 }
 
 #define BX_NEXT_TRACE(i) {                             \
@@ -104,7 +104,7 @@ public:
   // given the current state of the CPU and the instruction data,
   // and a function to execute the instruction after resolving
   // the memory address (if any).
-  BxExecutePtr_tR execute;
+  BxExecutePtr_tR execute1;
 
   union {
     BxExecutePtr_tR execute2;

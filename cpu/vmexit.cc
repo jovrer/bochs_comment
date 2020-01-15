@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmexit.cc 11321 2012-08-06 20:41:16Z sshwarts $
+// $Id: vmexit.cc 11648 2013-03-06 21:11:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2012 Stanislav Shwartsman
+//   Copyright (c) 2009-2013 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -57,9 +57,9 @@ Bit32u gen_instruction_info(bxInstruction_c *i, Bit32u reason, bx_bool rw_form)
   //  instruction information field format
   // --------------------------------------
   //
-  // [.2:.0] | Memory operand scale field (encoded)
-  // [.6:.3] | Reg1, undefined when memory operand
-  // [.9:.7] | Memory operand address size
+  // [02:00] | Memory operand scale field (encoded)
+  // [06:03] | Reg1, undefined when memory operand
+  // [09:07] | Memory operand address size
   // [10:10] | Memory/Register format (0 - mem, 1 - reg)
   // [14:11] | Reserved
   // [17:15] | Memory operand segment register field
@@ -144,29 +144,28 @@ void BX_CPU_C::VMexit_PAUSE(void)
   BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
 
   if (VMEXIT(VMX_VM_EXEC_CTRL2_PAUSE_VMEXIT)) {
-    BX_DEBUG(("VMEXIT: PAUSE"));
     VMexit(VMX_VMEXIT_PAUSE, 0);
   }
 
 #if BX_SUPPORT_VMX >= 2
   if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_PAUSE_LOOP_VMEXIT) && CPL == 0) {
-    VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+    VMX_PLE *ple = &BX_CPU_THIS_PTR vmcs.ple;
     Bit64u currtime = bx_pc_system.time_ticks();
-    if ((currtime - vm->last_pause_time) > vm->pause_loop_exiting_gap) {
-      vm->first_pause_time = currtime;
+    if ((currtime - ple->last_pause_time) > ple->pause_loop_exiting_gap) {
+      ple->first_pause_time = currtime;
     }
     else {
-      if ((currtime - vm->first_pause_time) > vm->pause_loop_exiting_window)
+      if ((currtime - ple->first_pause_time) > ple->pause_loop_exiting_window)
         VMexit(VMX_VMEXIT_PAUSE, 0);
     }
-    vm->last_pause_time = currtime;
+    ple->last_pause_time = currtime;
   }
 #endif
 }
 
 void BX_CPU_C::VMexit_ExtInterrupt(void)
 {
-  if (! BX_CPU_THIS_PTR in_vmx_guest) return;
+  BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
 
   if (PIN_VMEXIT(VMX_VM_EXEC_CTRL1_EXTERNAL_INTERRUPT_VMEXIT)) {
     VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
@@ -177,18 +176,6 @@ void BX_CPU_C::VMexit_ExtInterrupt(void)
     }
   }
 }
-
-#if BX_SUPPORT_VMX >= 2  
-void BX_CPU_C::VMexit_PreemptionTimerExpired(void)
-{
-  BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
-
-  if (PIN_VMEXIT(VMX_VM_EXEC_CTRL1_VMX_PREEMPTION_TIMER_VMEXIT)) {
-    BX_DEBUG(("VMEXIT: VMX Preemption Timer Expired"));
-    VMexit(VMX_VMEXIT_VMX_PREEMPTION_TIMER_EXPIRED, 0);
-  }
-}
-#endif
 
 void BX_CPU_C::VMexit_Event(unsigned type, unsigned vector, Bit16u errcode, bx_bool errcode_valid, Bit64u qualification)
 {
@@ -206,7 +193,7 @@ void BX_CPU_C::VMexit_Event(unsigned type, unsigned vector, Bit16u errcode, bx_b
       break;
 
     case BX_NMI:
-      if (PIN_VMEXIT(VMX_VM_EXEC_CTRL1_NMI_VMEXIT))
+      if (PIN_VMEXIT(VMX_VM_EXEC_CTRL1_NMI_EXITING))
          vmexit = 1;
       break;
 
@@ -235,8 +222,8 @@ void BX_CPU_C::VMexit_Event(unsigned type, unsigned vector, Bit16u errcode, bx_b
   // ----------------------------------------------------
   //              VMExit interruption info
   // ----------------------------------------------------
-  // [.7:.0] | Interrupt/Exception vector
-  // [10:.8] | Interrupt/Exception type
+  // [07:00] | Interrupt/Exception vector
+  // [10:08] | Interrupt/Exception type
   // [11:11] | error code pushed to the stack
   // [12:12] | NMI unblocking due to IRET
   // [30:13] | reserved
@@ -249,6 +236,8 @@ void BX_CPU_C::VMexit_Event(unsigned type, unsigned vector, Bit16u errcode, bx_b
     vm->idt_vector_info = vector | (type << 8);
     if (errcode_valid)
       vm->idt_vector_info |= (1 << 11); // error code delivered
+
+    BX_CPU_THIS_PTR nmi_unblocking_iret = 0;
     return;
   }
 
@@ -273,6 +262,9 @@ void BX_CPU_C::VMexit_Event(unsigned type, unsigned vector, Bit16u errcode, bx_b
     interruption_info |= (1 << 11); // error code delivered
   interruption_info   |= (1 << 31); // valid
 
+  if (BX_CPU_THIS_PTR nmi_unblocking_iret)
+    interruption_info |= (1 << 12);
+
   VMwrite32(VMCS_32BIT_VMEXIT_INTERRUPTION_INFO, interruption_info);
   VMwrite32(VMCS_32BIT_VMEXIT_INTERRUPTION_ERR_CODE, errcode);
 
@@ -282,8 +274,6 @@ void BX_CPU_C::VMexit_Event(unsigned type, unsigned vector, Bit16u errcode, bx_b
 void BX_CPU_C::VMexit_TripleFault(void)
 {
   if (! BX_CPU_THIS_PTR in_vmx_guest) return;
-
-  BX_ERROR(("VMEXIT: triple fault"));
 
   // VMEXIT is not considered to occur during event delivery if it results
   // in a triple fault exception (that causes VMEXIT directly)
@@ -295,8 +285,6 @@ void BX_CPU_C::VMexit_TripleFault(void)
 void BX_CPP_AttrRegparmN(2) BX_CPU_C::VMexit_TaskSwitch(Bit16u tss_selector, unsigned source)
 {
   BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
-
-  BX_ERROR(("VMEXIT: task switch"));
 
   VMexit(VMX_VMEXIT_TASK_SWITCH, tss_selector | (source << 30));
 }
@@ -472,11 +460,11 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_IO(bxInstruction_c *i, unsigned por
 // ----------------------------------------------------------------
 //                 Exit qualification for CR access
 // ----------------------------------------------------------------
-// [.3:.0] | Number of CR register (CR0, CR3, CR4, CR8)
-// [.5:.4] | CR access type (0 - MOV to CR, 1 - MOV from CR, 2 - CLTS, 3 - LMSW)
-// [.6:.6] | LMSW operand reg/mem (cleared for CR access and CLTS)
-// [.7:.7] | reserved
-// [11:.8] | Source Operand Register for CR access (cleared for CLTS and LMSW)
+// [03:00] | Number of CR register (CR0, CR3, CR4, CR8)
+// [05:04] | CR access type (0 - MOV to CR, 1 - MOV from CR, 2 - CLTS, 3 - LMSW)
+// [06:06] | LMSW operand reg/mem (cleared for CR access and CLTS)
+// [07:07] | reserved
+// [11:08] | Source Operand Register for CR access (cleared for CLTS and LMSW)
 // [15:12] | reserved
 // [31:16] | LMSW source data (cleared for CR access and CLTS)
 // [63:32] | reserved
@@ -490,8 +478,6 @@ bx_bool BX_CPU_C::VMexit_CLTS(void)
 
   if (vm->vm_cr0_mask & vm->vm_cr0_read_shadow & 0x8)
   {
-    BX_DEBUG(("VMEXIT: CLTS"));
-
     // all rest of the fields cleared to zero
     Bit64u qualification = VMX_VMEXIT_CR_ACCESS_CLTS << 4;
 
@@ -558,9 +544,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMexit_CR3_Read(bxInstruction_c *i)
 
   if (VMEXIT(VMX_VM_EXEC_CTRL2_CR3_READ_VMEXIT)) {
     BX_DEBUG(("VMEXIT: CR3 read"));
-
     Bit64u qualification = 3 | (VMX_VMEXIT_CR_ACCESS_CR_READ << 4) | (i->dst() << 8);
-
     VMexit(VMX_VMEXIT_CR_ACCESS, qualification);
   }
 }
@@ -605,9 +589,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMexit_CR8_Read(bxInstruction_c *i)
 
   if (VMEXIT(VMX_VM_EXEC_CTRL2_CR8_READ_VMEXIT)) {
     BX_DEBUG(("VMEXIT: CR8 read"));
-
     Bit64u qualification = 8 | (VMX_VMEXIT_CR_ACCESS_CR_READ << 4) | (i->dst() << 8);
-
     VMexit(VMX_VMEXIT_CR_ACCESS, qualification);
   }
 }
@@ -627,10 +609,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMexit_CR8_Write(bxInstruction_c *i)
 // ----------------------------------------------------------------
 //                 Exit qualification for DR access
 // ----------------------------------------------------------------
-// [.3:.0] | Number of DR register
-// [.4:.4] | DR access type (0 - MOV to DR, 1 - MOV from DR)
-// [.7:.5] | reserved
-// [11:.8] | Source Operand Register
+// [03:00] | Number of DR register
+// [04:04] | DR access type (0 - MOV to DR, 1 - MOV from DR)
+// [07:05] | reserved
+// [11:08] | Source Operand Register
 // [63:12] | reserved
 //
 
@@ -650,92 +632,6 @@ void BX_CPU_C::VMexit_DR_Access(unsigned read, unsigned dr, unsigned reg)
   }
 }
 
-#if BX_SUPPORT_X86_64
-Bit32u BX_CPU_C::VMX_Read_VTPR(void)
-{
-  bx_phy_address pAddr = BX_CPU_THIS_PTR vmcs.virtual_apic_page_addr + 0x80;
-  Bit32u vtpr;
-  access_read_physical(pAddr, 4, (Bit8u*)(&vtpr));
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 4, BX_READ, BX_VMX_VTPR_ACCESS, (Bit8u*)(&vtpr));
-  return vtpr;
-}
-
-void BX_CPU_C::VMX_Write_VTPR(Bit8u vtpr)
-{
-  VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
-  bx_phy_address pAddr = vm->virtual_apic_page_addr + 0x80;
-  Bit32u field32 = vtpr;
-
-  access_write_physical(pAddr, 4, (Bit8u*)(&field32));
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 4, BX_WRITE, BX_VMX_VTPR_ACCESS, (Bit8u*)(&field32));
-
-  Bit8u tpr_shadow = vtpr >> 4;
-  if (tpr_shadow < vm->vm_tpr_threshold) {
-    // commit current instruction to produce trap-like VMexit
-    BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
-    VMexit(VMX_VMEXIT_TPR_THRESHOLD, 0);
-  }
-}
-
-// apic virtualization
-bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::is_virtual_apic_page(bx_phy_address paddr)
-{
-  if (BX_CPU_THIS_PTR in_vmx_guest) {
-    VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
-    if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_APIC_ACCESSES))
-      if (PPFOf(paddr) == PPFOf(vm->apic_access_page)) return 1;
-  }
-
-  return 0;
-}
-
-// apic virtualization
-void BX_CPU_C::VMX_Virtual_Apic_Read(bx_phy_address paddr, unsigned len, void *data)
-{
-  BX_ASSERT(SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_APIC_ACCESSES));
-
-  Bit32u offset = PAGE_OFFSET(paddr);
-
-  // access is not instruction fetch because cpu::prefetch will crash them
-  if (VMEXIT(VMX_VM_EXEC_CTRL2_TPR_SHADOW) && offset == 0x80 && len <= 4) {
-     // VTPR access
-     Bit32u vtpr = VMX_Read_VTPR();
-     if (len == 1)
-       *((Bit8u *) data) = vtpr & 0xff;
-     else if (len == 2)
-       *((Bit16u *) data) = vtpr & 0xffff;
-     else if (len == 4)
-       *((Bit32u *) data) = vtpr;
-     else
-       BX_PANIC(("PANIC: Unsupported Virtual APIC access len = 3 !"));
-     return;
-  }
-
-  Bit32u qualification = offset | 
-      (BX_CPU_THIS_PTR in_event) ? VMX_APIC_ACCESS_DURING_EVENT_DELIVERY : VMX_APIC_READ_INSTRUCTION_EXECUTION;
-  VMexit(VMX_VMEXIT_APIC_ACCESS, qualification);
-}
-
-// apic virtualization
-void BX_CPU_C::VMX_Virtual_Apic_Write(bx_phy_address paddr, unsigned len, void *data)
-{
-  BX_ASSERT(SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_APIC_ACCESSES));
-
-  Bit32u offset = PAGE_OFFSET(paddr);
-
-  if (VMEXIT(VMX_VM_EXEC_CTRL2_TPR_SHADOW) && offset == 0x80 && len <= 4) {
-    // VTPR access
-    VMX_Write_VTPR(*((Bit8u *) data));
-    return;
-  }
-
-  Bit32u qualification = offset | 
-      (BX_CPU_THIS_PTR in_event) ? VMX_APIC_ACCESS_DURING_EVENT_DELIVERY : VMX_APIC_WRITE_INSTRUCTION_EXECUTION;
-  VMexit(VMX_VMEXIT_APIC_ACCESS, qualification);
-}
-
-#endif
-
 #if BX_SUPPORT_VMX >= 2
 Bit16u BX_CPU_C::VMX_Get_Current_VPID(void)
 {
@@ -743,6 +639,110 @@ Bit16u BX_CPU_C::VMX_Get_Current_VPID(void)
     return 0;
 
   return BX_CPU_THIS_PTR vmcs.vpid;
+}
+#endif
+
+#if BX_SUPPORT_VMX >= 2
+bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::Vmexit_Vmread(bxInstruction_c *i)
+{
+  BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
+
+  if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMCS_SHADOWING)) return BX_TRUE;
+
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    if (BX_READ_64BIT_REG_HIGH(i->src())) return BX_TRUE;
+  }
+#endif
+  unsigned encoding = BX_READ_32BIT_REG(i->src());
+  if (encoding > 0x7fff) return BX_TRUE;
+
+  VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+
+  Bit8u bitmap;
+  bx_phy_address pAddr = vm->vmread_bitmap_addr | (encoding >> 3);
+  access_read_physical(pAddr, 1, &bitmap);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, BX_READ, BX_VMREAD_BITMAP_ACCESS, &bitmap);
+  
+  if (bitmap & (1 << (encoding & 7)))
+    return BX_TRUE;
+
+  return BX_FALSE;
+}
+
+bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::Vmexit_Vmwrite(bxInstruction_c *i)
+{
+  BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
+
+  if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMCS_SHADOWING)) return BX_TRUE;
+
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    if (BX_READ_64BIT_REG_HIGH(i->dst())) return BX_TRUE;
+  }
+#endif
+  unsigned encoding = BX_READ_32BIT_REG(i->dst());
+  if (encoding > 0x7fff) return BX_TRUE;
+
+  VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+
+  Bit8u bitmap;
+  bx_phy_address pAddr = vm->vmwrite_bitmap_addr | (encoding >> 3);
+  access_read_physical(pAddr, 1, &bitmap);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, BX_READ, BX_VMWRITE_BITMAP_ACCESS, &bitmap);
+  
+  if (bitmap & (1 << (encoding & 7)))
+    return BX_TRUE;
+
+  return BX_FALSE;
+}
+
+void BX_CPU_C::Virtualization_Exception(Bit64u qualification, Bit64u guest_physical, Bit64u guest_linear)
+{
+  BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
+
+  // A convertible EPT violation causes a virtualization exception if the following all hold:
+  //  - CR0.PE is set
+  //  - the logical processor is not in the process of delivering an event through the IDT
+  //  - the 32 bits at offset 4 in the virtualization-exception information area are all 0
+
+  if (! BX_CPU_THIS_PTR cr0.get_PE() || BX_CPU_THIS_PTR in_event) return;
+
+  VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+
+  Bit32u magic;
+  access_read_physical(vm->ve_info_addr + 4, 4, &magic);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr + 4, 4, BX_READ, 0, (Bit8u*)(&magic));
+  if (magic != 0) return;
+
+  struct ve_info {
+    Bit32u reason; // always VMX_VMEXIT_EPT_VIOLATION
+    Bit32u magic;
+    Bit64u qualification;
+    Bit64u guest_linear_addr;
+    Bit64u guest_physical_addr;
+    Bit16u eptp_index;
+  } ve_info = { VMX_VMEXIT_EPT_VIOLATION, 0xffffffff, qualification, guest_linear, guest_physical, vm->eptp_index };
+
+  access_write_physical(vm->ve_info_addr, 4, &ve_info.reason);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr, 4, BX_WRITE, 0, (Bit8u*)(&ve_info.reason));
+
+  access_write_physical(vm->ve_info_addr + 4, 4, &ve_info.magic);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr + 4, 4, BX_WRITE, 0, (Bit8u*)(&ve_info.magic));
+
+  access_write_physical(vm->ve_info_addr + 8, 8, &ve_info.qualification);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr + 8, 8, BX_WRITE, 0, (Bit8u*)(&ve_info.qualification));
+
+  access_write_physical(vm->ve_info_addr + 16, 8, &ve_info.guest_linear_addr);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr + 16, 8, BX_WRITE, 0, (Bit8u*)(&ve_info.guest_linear_addr));
+
+  access_write_physical(vm->ve_info_addr + 24, 8, &ve_info.guest_physical_addr);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr + 24, 8, BX_WRITE, 0, (Bit8u*)(&ve_info.guest_physical_addr));
+
+  access_write_physical(vm->ve_info_addr + 32, 8, &ve_info.eptp_index);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(vm->ve_info_addr + 32, 8, BX_WRITE, 0, (Bit8u*)(&ve_info.eptp_index));
+
+  exception(BX_VE_EXCEPTION, 0);
 }
 #endif
 

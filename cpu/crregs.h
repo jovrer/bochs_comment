@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h 11272 2012-07-11 15:07:54Z sshwarts $
+// $Id: crregs.h 11572 2013-01-14 17:02:51Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -105,6 +105,7 @@ struct bx_cr0_t {
 #define BX_CR4_PCIDE_MASK      (1 << 17)
 #define BX_CR4_OSXSAVE_MASK    (1 << 18)
 #define BX_CR4_SMEP_MASK       (1 << 20)
+#define BX_CR4_SMAP_MASK       (1 << 21)
 
 struct bx_cr4_t {
   Bit32u  val32; // 32bit value of register
@@ -130,13 +131,14 @@ struct bx_cr4_t {
   IMPLEMENT_CRREG_ACCESSORS(PCIDE, 17);
   IMPLEMENT_CRREG_ACCESSORS(OSXSAVE, 18);
   IMPLEMENT_CRREG_ACCESSORS(SMEP, 20);
+  IMPLEMENT_CRREG_ACCESSORS(SMAP, 21);
 
   BX_CPP_INLINE Bit32u get32() const { return val32; }
   BX_CPP_INLINE void set32(Bit32u val) { val32 = val; }
 };
 
 #define BX_CR4_FLUSH_TLB_MASK \
-   (BX_CR4_PSE_MASK | BX_CR4_PAE_MASK | BX_CR4_PGE_MASK | BX_CR4_PCIDE_MASK | BX_CR4_SMEP_MASK)
+   (BX_CR4_PSE_MASK | BX_CR4_PAE_MASK | BX_CR4_PGE_MASK | BX_CR4_PCIDE_MASK | BX_CR4_SMEP_MASK | BX_CR4_SMAP_MASK)
 
 #endif  // #if BX_CPU_LEVEL >= 5
 

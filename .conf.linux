@@ -33,6 +33,7 @@ case $which_config in
                 --enable-x86-64 \
                 --enable-pci \
                 --enable-clgd54xx \
+                --enable-voodoo \
                 --enable-usb \
                 --enable-usb-ohci \
                 --enable-es1370 \
@@ -53,8 +54,10 @@ case $which_config in
                 --enable-x86-64 \
                 --enable-pci \
                 --enable-clgd54xx \
+                --enable-voodoo \
                 --enable-usb \
                 --enable-usb-ohci \
+                --enable-usb-xhci \
                 --enable-es1370 \
                 --enable-e1000 \
                 --enable-plugins \

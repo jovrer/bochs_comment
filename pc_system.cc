@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc 11058 2012-02-23 17:16:35Z vruppert $
+// $Id: pc_system.cc 11478 2012-10-03 15:49:45Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -89,11 +89,20 @@ void bx_pc_system_c::set_HRQ(bx_bool val)
     BX_CPU(0)->async_event = 1;
 }
 
-void bx_pc_system_c::set_INTR(bx_bool value)
+void bx_pc_system_c::raise_INTR(void)
 {
   if (bx_dbg.interrupts)
-    BX_INFO(("pc_system: Setting INTR=%d on bootstrap processor %d", (int)value, BX_BOOTSTRAP_PROCESSOR));
-  BX_CPU(BX_BOOTSTRAP_PROCESSOR)->set_INTR(value);
+    BX_INFO(("pc_system: Setting INTR=1 on bootstrap processor %d", BX_BOOTSTRAP_PROCESSOR));
+
+  BX_CPU(BX_BOOTSTRAP_PROCESSOR)->raise_INTR();
+}
+
+void bx_pc_system_c::clear_INTR(void)
+{
+  if (bx_dbg.interrupts)
+    BX_INFO(("pc_system: Setting INTR=0 on bootstrap processor %d", BX_BOOTSTRAP_PROCESSOR));
+
+  BX_CPU(BX_BOOTSTRAP_PROCESSOR)->clear_INTR();
 }
 
 //

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: generic_cpuid.cc 11276 2012-07-12 14:51:54Z sshwarts $
+// $Id: generic_cpuid.cc 11562 2012-12-20 19:43:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2012 Stanislav Shwartsman
@@ -990,13 +990,17 @@ void bx_generic_cpuid_t::init_cpu_extensions_bitmask(void)
   features_bitmask |= BX_CPU_MTRR;
   features_bitmask |= BX_CPU_PAT;
 
-#if BX_SUPPORT_MISALIGNED_SSE
-  features_bitmask |= BX_CPU_MISALIGNED_SSE;
-#endif
+  static bx_bool misaligned_sse_enabled = SIM->get_param_bool(BXPN_CPUID_MISALIGNED_SSE)->get();
+  if (misaligned_sse_enabled)
+    features_bitmask |= BX_CPU_MISALIGNED_SSE;
 
   static bx_bool smep_enabled = SIM->get_param_bool(BXPN_CPUID_SMEP)->get();
   if (smep_enabled)
     features_bitmask |= BX_CPU_SMEP;
+
+  static bx_bool smap_enabled = SIM->get_param_bool(BXPN_CPUID_SMAP)->get();
+  if (smap_enabled)
+    features_bitmask |= BX_ISA_SMAP;
 
 #if BX_SUPPORT_X86_64
   static bx_bool x86_64_enabled = SIM->get_param_bool(BXPN_CPUID_X86_64)->get();
@@ -1427,9 +1431,8 @@ Bit32u bx_generic_cpuid_t::get_ext2_cpuid_features(void) const
     features |= BX_CPUID_EXT2_LAHF_SAHF | BX_CPUID_EXT2_PREFETCHW;
 #endif
 
-#if BX_SUPPORT_MISALIGNED_SSE
-  features |= BX_CPUID_EXT2_MISALIGNED_SSE;
-#endif
+  if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_MISALIGNED_SSE))
+    features |= BX_CPUID_EXT2_MISALIGNED_SSE;
 
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_LZCNT))
     features |= BX_CPUID_EXT2_LZCNT;
@@ -1456,14 +1459,19 @@ Bit32u bx_generic_cpuid_t::get_ext3_cpuid_features(void) const
   //   [0:0]    FS/GS BASE access instructions
   //   [2:1]    reserved
   //   [3:3]    BMI1: Advanced Bit Manipulation Extensions
-  //   [4:4]    reserved
+  //   [4:4]    HLE: Hardware Lock Elision
   //   [5:5]    AVX2
   //   [6:6]    reserved
   //   [7:7]    SMEP: Supervisor Mode Execution Protection
   //   [8:8]    BMI2: Advanced Bit Manipulation Extensions
   //   [9:9]    Support for Enhanced REP MOVSB/STOSB
   //   [10:10]  Support for INVPCID instruction
-  //   [31:10]  reserved
+  //   [11:11]  RTM: Restricted Transactional Memory
+  //   [17:12]  reserved
+  //   [18:18]  RDSEED instruction support
+  //   [19:19]  ADCX/ADOX instructions support
+  //   [20:20]  SMAP: Supervisor Mode Access Protection
+  //   [31:21]  reserved
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_FSGSBASE))
     features |= BX_CPUID_EXT3_FSGSBASE;
 
@@ -1481,6 +1489,12 @@ Bit32u bx_generic_cpuid_t::get_ext3_cpuid_features(void) const
 
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_INVPCID))
     features |= BX_CPUID_EXT3_INVPCID;
+
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_ADX))
+    features |= BX_CPUID_EXT3_ADX;
+
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_SMAP))
+    features |= BX_CPUID_EXT3_SMAP;
 
   return features;
 }

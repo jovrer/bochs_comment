@@ -1,7 +1,9 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h 11339 2012-08-15 12:47:08Z vruppert $
+// $Id: wxmain.h 11633 2013-02-16 12:22:13Z vruppert $
 /////////////////////////////////////////////////////////////////
-
+//
+//  Copyright (C) 2002-2013  The Bochs Project
+//
 // This file defines variables and classes that the wxWidgets .cc files
 // share.  It should be included only by wx.cc and wxmain.cc.
 
@@ -56,8 +58,6 @@ enum
   ID_Simulate_Start,
   ID_Simulate_PauseResume,
   ID_Simulate_Stop,
-  ID_Debug_ShowCpu,
-  ID_Debug_Console,
   ID_Log_View,
   ID_Log_Prefs,
   ID_Log_PrefsDevice,
@@ -187,13 +187,6 @@ public:
   void OnLogPrefs(wxCommandEvent& event);
   void OnLogPrefsDevice(wxCommandEvent& event);
   void OnEditATA(wxCommandEvent& event);
-  void OnShowCpu(wxCommandEvent& event);
-#if BX_DEBUGGER
-  void OnDebugLog(wxCommandEvent& event);
-  void DebugBreak();
-  void DebugCommand(wxString string);
-  void DebugCommand(const char *cmd);
-#endif
   void editFloppyConfig(int drive);
   void editFirstCdrom();
   void OnToolbarClick(wxCommandEvent& event);
@@ -215,15 +208,7 @@ private:
   wxMenu *menuLog;
   wxMenu *menuHelp;
   wxToolBar *bxToolBar;
-  ParamDialog *showCpu, *showKbd;
-#if BX_DEBUGGER
-  DebugLogDialog *showDebugLog;
-#endif
-  void RefreshDialogs();
-  char *debugCommand; // maybe need lock on this
-  BxEvent *debugCommandEvent;  // maybe need lock on this
 public:
-  bool WantRefresh();
 
 DECLARE_EVENT_TABLE()
 };

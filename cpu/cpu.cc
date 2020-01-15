@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc 11374 2012-08-26 15:49:30Z sshwarts $
+// $Id: cpu.cc 11598 2013-01-27 19:27:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -80,7 +80,6 @@ void BX_CPU_C::cpu_loop(void)
   // mirrors similar code below, after the interrupt() call.
   BX_CPU_THIS_PTR prev_rip = RIP; // commit new EIP
   BX_CPU_THIS_PTR speculative_rsp = 0;
-  BX_CPU_THIS_PTR EXT = 0;
 
   while (1) {
 
@@ -103,7 +102,7 @@ void BX_CPU_C::cpu_loop(void)
       BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
       RIP += i->ilen();
       // when handlers chaining is enabled this single call will execute entire trace
-      BX_CPU_CALL_METHOD(i->execute, (i)); // might iterate repeat instruction
+      BX_CPU_CALL_METHOD(i->execute1, (i)); // might iterate repeat instruction
 
       BX_SYNC_TIME_IF_SINGLE_PROCESSOR(0);
 
@@ -125,7 +124,7 @@ void BX_CPU_C::cpu_loop(void)
       // want to allow changing of the instruction inside instrumentation callback
       BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
       RIP += i->ilen();
-      BX_CPU_CALL_METHOD(i->execute, (i)); // might iterate repeat instruction
+      BX_CPU_CALL_METHOD(i->execute1, (i)); // might iterate repeat instruction
       BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
       BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
       BX_CPU_THIS_PTR icount++;
@@ -180,7 +179,7 @@ void BX_CPU_C::cpu_run_trace(void)
   BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
   RIP += i->ilen();
   // when handlers chaining is enabled this single call will execute entire trace
-  BX_CPU_CALL_METHOD(i->execute, (i)); // might iterate repeat instruction
+  BX_CPU_CALL_METHOD(i->execute1, (i)); // might iterate repeat instruction
 
   if (BX_CPU_THIS_PTR async_event) {
     // clear stop trace magic indication that probably was set by repeat or branch32/64
@@ -193,7 +192,7 @@ void BX_CPU_C::cpu_run_trace(void)
     // want to allow changing of the instruction inside instrumentation callback
     BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
     RIP += i->ilen();
-    BX_CPU_CALL_METHOD(i->execute, (i)); // might iterate repeat instruction
+    BX_CPU_CALL_METHOD(i->execute1, (i)); // might iterate repeat instruction
     BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
     BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
     BX_CPU_THIS_PTR icount++;
@@ -220,13 +219,13 @@ bxICacheEntry_c* BX_CPU_C::getICacheEntry(void)
     eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
   }
 
-  bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrFetchPage + eipBiased;
-  bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.get_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
-
   InstrICache_Increment(iCacheLookups);
   InstrICache_Stats();
 
-  if (entry->pAddr != pAddr)
+  bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrFetchPage + eipBiased;
+  bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.find_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
+
+  if (entry == NULL)
   {
     // iCache miss. No validated instruction with matching fetch parameters
     // is in the iCache.
@@ -249,7 +248,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
 
   if (BX_CPU_THIS_PTR async_event) return;
 
-  Bit32u delta = BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync;
+  Bit32u delta = (Bit32u) (BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync);
   if(delta >= bx_pc_system.getNumCpuTicksLeftNextEvent())
     return;
 
@@ -274,13 +273,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
     return;
   }
 
-  bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrFetchPage + eipBiased;
-  bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.get_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
-
   InstrICache_Increment(iCacheLookups);
   InstrICache_Stats();
 
-  if (entry->pAddr == pAddr) // link traces - handle only hit cases
+  bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrFetchPage + eipBiased;
+  bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.find_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
+
+  if (entry != NULL) // link traces - handle only hit cases
   {
     i->setNextTrace(entry->i);
     i = entry->i;
@@ -589,8 +588,7 @@ void BX_CPU_C::prefetch(void)
 
 #if BX_X86_DEBUGGER
   if (hwbreakpoint_check(laddr, BX_HWDebugInstruction, BX_HWDebugInstruction)) {
-    BX_CPU_THIS_PTR async_event = 1;
-    BX_CPU_THIS_PTR codebp = 1;
+    signal_event(BX_EVENT_CODE_BREAKPOINT_ASSIST);
     if (! interrupts_inhibited(BX_INHIBIT_DEBUG)) {
        // The next instruction could already hit a code breakpoint but
        // async_event won't take effect immediatelly.
@@ -609,7 +607,7 @@ void BX_CPU_C::prefetch(void)
     }
   }
   else {
-    BX_CPU_THIS_PTR codebp = 0;
+    clear_event(BX_EVENT_CODE_BREAKPOINT_ASSIST);
   }
 #endif
 
@@ -620,12 +618,12 @@ void BX_CPU_C::prefetch(void)
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[TLB_index];
   Bit8u *fetchPtr = 0;
 
-  if ((tlbEntry->lpf == lpf) && !(tlbEntry->accessBits & (0x4 | USER_PL))) {
+  if ((tlbEntry->lpf == lpf) && (tlbEntry->accessBits & (0x10 << USER_PL)) != 0) {
     BX_CPU_THIS_PTR pAddrFetchPage = tlbEntry->ppf;
     fetchPtr = (Bit8u*) tlbEntry->hostPageAddr;
   }  
   else {
-    bx_phy_address pAddr = translate_linear(laddr, USER_PL, BX_EXECUTE);
+    bx_phy_address pAddr = translate_linear(tlbEntry, laddr, USER_PL, BX_EXECUTE);
     BX_CPU_THIS_PTR pAddrFetchPage = PPFOf(pAddr);
   }
 

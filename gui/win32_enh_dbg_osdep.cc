@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32_enh_dbg_osdep.cc 11131 2012-04-10 12:44:06Z sshwarts $
+// $Id: win32_enh_dbg_osdep.cc 11639 2013-02-23 20:27:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,7 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2013  The Bochs Project
 
 #include "config.h"
 
@@ -592,7 +593,7 @@ bx_bool SpBtn()             // Superclasses a button control
 void SpecialInit()
 {
     int i = 8;
-    doOneTimeInit = FALSE;
+    doSimuInit = FALSE;
     EnableMenuItem (hOptMenu, CMD_EREG, MF_GRAYED);
     EnableMenuItem (hCmdMenu, CMD_WPTWR, MF_GRAYED);
     EnableMenuItem (hCmdMenu, CMD_WPTRD, MF_GRAYED);
@@ -1515,7 +1516,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 NMLVKEYDOWN* key = (NMLVKEYDOWN*)ll;        // pass any keystrokes from listview up to parent
                 SendMessage(hh,WM_KEYDOWN,key->wVKey,0);
             }
-            if (n->code == NM_CUSTOMDRAW && n->hwndFrom == hL[ASM_WND]) // custom drawing of ASM window
+            if (n->code == (UINT)NM_CUSTOMDRAW && n->hwndFrom == hL[ASM_WND]) // custom drawing of ASM window
             {
                 // highlight the breakpoints, and current opcode, if any
                 NMLVCUSTOMDRAW *d = (NMLVCUSTOMDRAW *) ll;
@@ -1567,7 +1568,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 }
                 break;
             }
-            if (n->code == NM_CUSTOMDRAW && n->hwndFrom == hL[DUMP_WND])    // custom drawing of data window
+            if (n->code == (UINT)NM_CUSTOMDRAW && n->hwndFrom == hL[DUMP_WND])    // custom drawing of data window
             {
                 NMLVCUSTOMDRAW *d = (NMLVCUSTOMDRAW *) ll;
                 if (d->nmcd.dwDrawStage == CDDS_PREPAINT)
@@ -1634,7 +1635,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 }
                 break;
             }
-            if (n->code == NM_CUSTOMDRAW && n->hwndFrom == hL[REG_WND]) // custom drawing of register window
+            if (n->code == (UINT)NM_CUSTOMDRAW && n->hwndFrom == hL[REG_WND]) // custom drawing of register window
             {
                 // highlight changed registers
                 NMLVCUSTOMDRAW *d = (NMLVCUSTOMDRAW *) ll;
@@ -1661,7 +1662,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 }
                 break;
             }
-            if (n->code == NM_DBLCLK)
+            if (n->code == (UINT)NM_DBLCLK)
             {
                 if (AtBreak == FALSE)
                     break;
@@ -1750,10 +1751,11 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
             KillTimer(hh,2);
             if (*CustomFont != DefFont)
                 DeleteObject (*CustomFont);
-            DeleteObject (CustomFont[1]);
-            DeleteObject (CustomFont[2]);
-            DeleteObject (CustomFont[3]);
+            DeleteObject(CustomFont[1]);
+            DeleteObject(CustomFont[2]);
+            DeleteObject(CustomFont[3]);
             DestroyWindow(hY);
+            hY = NULL;
             break;
         }
     }
@@ -1777,22 +1779,28 @@ void HitBreak()
 bx_bool OSInit()
 {
     TEXTMETRIC tm;
-    InitCommonControls();   // start the common control dll
-    SpListView();       // create superclass for listviews to use when they are created
-    SpBtn();            // same for buttons
-    WNDCLASSEX wC = {0};
-    wC.cbSize = sizeof(wC);
-    wC.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-    hCursArrow = LoadCursor(NULL,IDC_ARROW);
-    wC.hCursor = hCursArrow;
-    wC.hInstance = GetModuleHandle(0);
-    wC.style = CS_HREDRAW | CS_VREDRAW | CS_GLOBALCLASS | CS_DBLCLKS;
-    wC.lpfnWndProc = B_WP;
-    wC.cbWndExtra = sizeof(void*);
-    wC.lpszClassName = "bochs_dbg_x";
-    wC.hIcon = LoadIcon(GetModuleHandle(0),"ICON_D");
-    wC.hIconSm = LoadIcon(GetModuleHandle(0),"ICON_D");
-    RegisterClassEx(&wC);
+
+    if (doOneTimeInit) {
+        InitCommonControls();   // start the common control dll
+        SpListView();       // create superclass for listviews to use when they are created
+        SpBtn();            // same for buttons
+        WNDCLASSEX wC = {0};
+        wC.cbSize = sizeof(wC);
+        wC.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
+        hCursArrow = LoadCursor(NULL,IDC_ARROW);
+        wC.hCursor = hCursArrow;
+        wC.hInstance = GetModuleHandle(0);
+        wC.style = CS_HREDRAW | CS_VREDRAW | CS_GLOBALCLASS | CS_DBLCLKS;
+        wC.lpfnWndProc = B_WP;
+        wC.cbWndExtra = sizeof(void*);
+        wC.lpszClassName = "bochs_dbg_x";
+        wC.hIcon = LoadIcon(GetModuleHandle(0),"ICON_D");
+        wC.hIconSm = LoadIcon(GetModuleHandle(0),"ICON_D");
+        RegisterClassEx(&wC);
+        doOneTimeInit = FALSE;
+    }
+    CurXSize = 0;
+    CurYSize = 0;
     HMENU hTopMenu = LoadMenu(GetModuleHandle(0),"MENU_1");     // build the menus from the resource
     hOptMenu = GetSubMenu (hTopMenu, 2);                // need the main menu handles
     hViewMenu = GetSubMenu (hTopMenu, 1);
@@ -1804,6 +1812,7 @@ bx_bool OSInit()
         return FALSE;
     HDC hdc = GetDC (hY);
     *CustomFont = DefFont;  // create the deffont with modded attributes (bold, italic)
+    memset(&mylf, 0, sizeof(LOGFONT));
     GetTextFace(hdc, LF_FULLFACESIZE, mylf.lfFaceName); // (constant is max length of a fontname)
     GetTextMetrics (hdc, &tm);
     ReleaseDC (hY, hdc);
@@ -1820,13 +1829,19 @@ bx_bool OSInit()
     return TRUE;
 }
 
+void CloseDialog()
+{
+  SendMessage(hY, WM_CLOSE, 0, 0);
+}
+
 // recurse displaying each leaf/branch of param_tree -- with values for each leaf
 void MakeBL(HTREEITEM *h_P, bx_param_c *p)
 {
     HTREEITEM h_new;
     bx_list_c *as_list = NULL;
     int i = 0;
-    strcpy (tmpcb, p->get_name());
+    char tmpstr[BX_PATHNAME_LEN];
+    strcpy(tmpcb, p->get_name());
     int j = strlen (tmpcb);
     switch (p->get_type())
     {
@@ -1847,24 +1862,8 @@ void MakeBL(HTREEITEM *h_P, bx_param_c *p)
             sprintf (tmpcb + j,": %s",((bx_param_enum_c*)p)->get_selected());
             break;
         case BXT_PARAM_STRING:
-            if (((bx_param_string_c*)p)->get_options() & bx_param_string_c::RAW_BYTES)
-            {
-                char *cp = tmpcb + j;
-                unsigned char *rp = (unsigned char *)((bx_param_string_c*)p)->getptr();
-                char sc = ((bx_param_string_c*)p)->get_separator();
-                int k = ((bx_param_string_c*)p)->get_maxsize();
-                *(cp++) = ':';
-                *(cp++) = ' ';
-                while (k-- > 0)
-                {
-                    *(cp++) = AsciiHex[2* *rp];
-                    *(cp++) = AsciiHex[2* *rp + 1];
-                    *(cp++) = sc;
-                }
-                *--cp = 0;  // overwrite the last separator char
-            }
-            else
-                sprintf (tmpcb + j,": %s",((bx_param_string_c*)p)->getptr());
+            ((bx_param_string_c*)p)->sprint(tmpstr, BX_PATHNAME_LEN, 0);
+            sprintf(tmpcb + j,": %s", tmpstr);
             break;
         case BXT_PARAM_DATA:
             sprintf (tmpcb + j,": binary data, size=%d",((bx_shadow_data_c*)p)->get_size());

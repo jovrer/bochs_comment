@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: lazy_flags.h 11276 2012-07-12 14:51:54Z sshwarts $
+// $Id: lazy_flags.h 11405 2012-09-06 19:49:14Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -53,7 +53,7 @@ typedef struct {
   (((op1) & (op2)) | (((op1) | (op2)) & (~(result))))
 
 #define SUB_COUT_VEC(op1, op2, result) \
-  (((~(op1)) & (op2)) | ((~((op1) ^ (op2))) & (result)))
+  (((~(op1)) & (op2)) | (((~(op1)) ^ (op2)) & (result)))
 
 #define GET_ADD_OVERFLOW(op1, op2, result, mask) \
   ((((op1) ^ (result)) & ((op2) ^ (result))) & (mask))

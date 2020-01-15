@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc 11380 2012-08-28 19:37:40Z sshwarts $
+// $Id: rfb.cc 11504 2012-10-25 15:53:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -857,7 +857,7 @@ int bx_rfb_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 // returns: 0=no screen update needed (color map change has direct effect)
 //          1=screen updated needed (redraw using current colormap)
 
-bx_bool bx_rfb_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+bx_bool bx_rfb_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
 {
     rfbPalette[index] = (((red * 7 + 127) / 255) << 0) | (((green * 7 + 127) / 255) << 3) | (((blue * 3 + 127) / 255) << 6);
     return(1);
@@ -892,13 +892,6 @@ void bx_rfb_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 
 bx_svga_tileinfo_t *bx_rfb_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
-  if (!info) {
-    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
-    if (!info) {
-      return NULL;
-    }
-  }
-
   info->bpp = 8;
   info->pitch = rfbWindowX;
   info->red_shift = 3;
@@ -968,7 +961,11 @@ void bx_rfb_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, un
   if (bpp > 8) {
     BX_ERROR(("%d bpp graphics mode not supported yet", bpp));
   }
-  if (fheight > 0) {
+  guest_textmode = (fheight > 0);
+  guest_xres = x;
+  guest_yres = y;
+  guest_bpp = bpp;
+  if (guest_textmode) {
     font_height = fheight;
     font_width = fwidth;
     text_cols = x / fwidth;

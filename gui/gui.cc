@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc 11302 2012-07-28 08:17:08Z sshwarts $
+// $Id: gui.cc 11622 2013-02-12 21:08:35Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -99,6 +99,13 @@ bx_gui_c::bx_gui_c(void): disp_mode(DISP_MODE_SIM)
   statusitem_count = 0;
   led_timer_index = BX_NULL_TIMER_HANDLE;
   framebuffer = NULL;
+  guest_textmode = 1;
+  guest_xres = 640;
+  guest_yres = 480;
+  guest_bpp = 8;
+  snapshot_mode = 0;
+  snapshot_buffer = NULL;
+  memset(palette, 0, sizeof(palette));
 }
 
 bx_gui_c::~bx_gui_c()
@@ -172,7 +179,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
   // when that bitmap is clicked on
 
   // Floppy A:
-  BX_GUI_THIS floppyA_status = SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get();
+  BX_GUI_THIS floppyA_status = (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED);
   if (BX_GUI_THIS floppyA_status)
     BX_GUI_THIS floppyA_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyA_bmap_id,
                           BX_GRAVITY_LEFT, floppyA_handler);
@@ -182,7 +189,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
   BX_GUI_THIS set_tooltip(BX_GUI_THIS floppyA_hbar_id, "Change floppy A: media");
 
   // Floppy B:
-  BX_GUI_THIS floppyB_status = SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get();
+  BX_GUI_THIS floppyB_status = (SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->get() == BX_INSERTED);
   if (BX_GUI_THIS floppyB_status)
     BX_GUI_THIS floppyB_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyB_bmap_id,
                           BX_GRAVITY_LEFT, floppyB_handler);
@@ -264,8 +271,8 @@ void bx_gui_c::cleanup(void)
 
 void bx_gui_c::update_drive_status_buttons(void)
 {
-  BX_GUI_THIS floppyA_status = SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get();
-  BX_GUI_THIS floppyB_status = SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get();
+  BX_GUI_THIS floppyA_status = (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED);
+  BX_GUI_THIS floppyB_status = (SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->get() == BX_INSERTED);
   Bit32u handle = DEV_hd_get_first_cd_handle();
   BX_GUI_THIS cdrom1_status = DEV_hd_get_cd_media_status(handle);
   if (BX_GUI_THIS floppyA_status)
@@ -403,6 +410,30 @@ void bx_gui_c::make_text_snapshot(char **snapshot, Bit32u *length)
   *length = txt_addr;
 }
 
+Bit32u bx_gui_c::set_snapshot_mode(bx_bool mode)
+{
+  unsigned pixel_bytes, bufsize;
+
+  BX_GUI_THIS snapshot_mode = mode;
+  if (mode) {
+    pixel_bytes = ((BX_GUI_THIS guest_bpp + 1) >> 3);
+    bufsize = BX_GUI_THIS guest_xres * BX_GUI_THIS guest_yres * pixel_bytes;
+    BX_GUI_THIS snapshot_buffer = (Bit8u*)malloc(bufsize);
+    if (BX_GUI_THIS snapshot_buffer != NULL) {
+      memset(BX_GUI_THIS snapshot_buffer, 0, bufsize);
+      DEV_vga_refresh(1);
+      return bufsize;
+    }
+  } else {
+    if (BX_GUI_THIS snapshot_buffer != NULL) {
+      free(BX_GUI_THIS snapshot_buffer);
+      BX_GUI_THIS snapshot_buffer = NULL;
+      DEV_vga_redraw_area(0, 0, BX_GUI_THIS guest_xres, BX_GUI_THIS guest_yres);
+    }
+  }
+  return 0;
+}
+
 // create a text snapshot and copy to the system clipboard.  On guis that
 // we haven't figured out how to support yet, dump to a file instead.
 void bx_gui_c::copy_handler(void)
@@ -410,8 +441,8 @@ void bx_gui_c::copy_handler(void)
   Bit32u len;
   char *text_snapshot;
 
-  if (DEV_vga_get_snapshot_mode() == BX_GUI_SNAPSHOT_TXT) {
-    make_text_snapshot (&text_snapshot, &len);
+  if (BX_GUI_THIS guest_textmode) {
+    make_text_snapshot(&text_snapshot, &len);
     if (!BX_GUI_THIS set_clipboard_text(text_snapshot, len)) {
       // platform specific code failed, use portable code instead
       FILE *fp = fopen("copy.txt", "w");
@@ -420,24 +451,22 @@ void bx_gui_c::copy_handler(void)
     }
     free(text_snapshot);
   } else {
-    BX_ERROR(("copy button failed, mode not implemented"));
+    BX_ERROR(("copy button failed, graphics mode not implemented"));
   }
 }
 
 // create a text snapshot and dump it to a file
 void bx_gui_c::snapshot_handler(void)
 {
-  int fd, i, j, mode, pitch;
-  Bit8u *snapshot_ptr = NULL, *palette_ptr = NULL;
+  int fd, i, j, pitch;
+  Bit8u *snapshot_ptr = NULL;
   Bit8u *row_buffer, *pixel_ptr, *row_ptr;
   Bit8u bmp_header[54], iBits, b1, b2;
   Bit32u ilen, len, rlen;
   char filename[BX_PATHNAME_LEN];
-  unsigned iHeight, iWidth, iDepth;
 
-  mode = DEV_vga_get_snapshot_mode();
-  if (mode == BX_GUI_SNAPSHOT_TXT) {
-    make_text_snapshot ((char**)&snapshot_ptr, &len);
+  if (BX_GUI_THIS guest_textmode) {
+    make_text_snapshot((char**)&snapshot_ptr, &len);
     if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_SNAPSHOT) {
       int ret = SIM->ask_filename (filename, sizeof(filename),
                                    "Save snapshot as...", "snapshot.txt",
@@ -458,21 +487,12 @@ void bx_gui_c::snapshot_handler(void)
     fwrite(snapshot_ptr, 1, len, fp);
     fclose(fp);
     free(snapshot_ptr);
-  } else if (mode == BX_GUI_SNAPSHOT_GFX) {
-    ilen = DEV_vga_get_gfx_snapshot(&snapshot_ptr, &palette_ptr, &iHeight, &iWidth, &iDepth);
-    if (ilen > 0) {
-      BX_INFO(("GFX snapshot: %u x %u x %u bpp (%u bytes)", iWidth, iHeight, iDepth, ilen));
-    } else {
-      BX_ERROR(("snapshot button failed: cannot allocate memory"));
-      return;
-    }
+  } else {
     if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_SNAPSHOT) {
       int ret = SIM->ask_filename (filename, sizeof(filename),
                                    "Save snapshot as...", "snapshot.bmp",
                                    bx_param_string_c::SAVE_FILE_DIALOG);
       if (ret < 0) { // cancelled
-        if (palette_ptr != NULL) free(palette_ptr);
-        free(snapshot_ptr);
         return;
       }
     } else {
@@ -486,14 +506,20 @@ void bx_gui_c::snapshot_handler(void)
               );
     if (fd < 0) {
       BX_ERROR(("snapshot button failed: cannot create BMP file"));
-      if (palette_ptr != NULL) free(palette_ptr);
-      free(snapshot_ptr);
       return;
     }
-    iBits = (iDepth == 8) ? 8 : 24;
-    rlen = (iWidth * (iBits >> 3) + 3) & ~3;
-    len = rlen * iHeight + 54;
-    if ((iDepth == 8) && (palette_ptr != NULL)) {
+    ilen =  BX_GUI_THIS set_snapshot_mode(1);
+    if (ilen > 0) {
+      BX_INFO(("GFX snapshot: %u x %u x %u bpp (%u bytes)", BX_GUI_THIS guest_xres,
+               BX_GUI_THIS guest_yres, BX_GUI_THIS guest_bpp, ilen));
+    } else {
+      BX_ERROR(("snapshot button failed: cannot allocate memory"));
+      return;
+    }
+    iBits = (BX_GUI_THIS guest_bpp == 8) ? 8 : 24;
+    rlen = (BX_GUI_THIS guest_xres * (iBits >> 3) + 3) & ~3;
+    len = rlen * BX_GUI_THIS guest_yres + 54;
+    if (BX_GUI_THIS guest_bpp == 8) {
       len += (256 * 4);
     }
     memset(bmp_header, 0, 54);
@@ -504,34 +530,34 @@ void bx_gui_c::snapshot_handler(void)
     bmp_header[4] = (len >> 16) & 0xff;
     bmp_header[5] = (len >> 24) & 0xff;
     bmp_header[10] = 54;
-    if ((iDepth == 8) && (palette_ptr != NULL)) {
+    if (BX_GUI_THIS guest_bpp == 8) {
       bmp_header[11] = 4;
     }
     bmp_header[14] = 40;
-    bmp_header[18] = iWidth & 0xff;
-    bmp_header[19] = (iWidth >> 8) & 0xff;
-    bmp_header[22] = iHeight & 0xff;
-    bmp_header[23] = (iHeight >> 8) & 0xff;
+    bmp_header[18] = BX_GUI_THIS guest_xres & 0xff;
+    bmp_header[19] = (BX_GUI_THIS guest_xres >> 8) & 0xff;
+    bmp_header[22] = BX_GUI_THIS guest_yres & 0xff;
+    bmp_header[23] = (BX_GUI_THIS guest_yres >> 8) & 0xff;
     bmp_header[26] = 1;
     bmp_header[28] = iBits;
     write(fd, bmp_header, 54);
-    if ((iDepth == 8) && (palette_ptr != NULL)) {
-      write(fd, palette_ptr, 256 * 4);
+    if (BX_GUI_THIS guest_bpp == 8) {
+      write(fd, BX_GUI_THIS palette, 256 * 4);
     }
-    pitch = iWidth * ((iDepth + 1) >> 3);
+    pitch = BX_GUI_THIS guest_xres * ((BX_GUI_THIS guest_bpp + 1) >> 3);
     row_buffer = (Bit8u*)malloc(rlen);
-    row_ptr = snapshot_ptr + ((iHeight - 1) * pitch);
-    for (i = iHeight; i > 0; i--) {
+    row_ptr = BX_GUI_THIS snapshot_buffer + ((BX_GUI_THIS guest_yres - 1) * pitch);
+    for (i = BX_GUI_THIS guest_yres; i > 0; i--) {
       memset(row_buffer, 0, rlen);
-      if ((iDepth == 8) || (iDepth == 24)) {
+      if ((BX_GUI_THIS guest_bpp == 8) || (BX_GUI_THIS guest_bpp == 24)) {
         memcpy(row_buffer, row_ptr, pitch);
-      } else if ((iDepth == 15) || (iDepth == 16)) {
+      } else if ((BX_GUI_THIS guest_bpp == 15) || (BX_GUI_THIS guest_bpp == 16)) {
         pixel_ptr = row_ptr;
-        for (j = 0; j < (int)(iWidth * 3); j+=3) {
+        for (j = 0; j < (int)(BX_GUI_THIS guest_xres * 3); j+=3) {
           b1 = *(pixel_ptr++);
           b2 = *(pixel_ptr++);
           *(row_buffer+j)   = (b1 << 3);
-          if (iDepth == 15) {
+          if (BX_GUI_THIS guest_bpp == 15) {
             *(row_buffer+j+1) = ((b1 & 0xe0) >> 2) | (b2 << 6);
             *(row_buffer+j+2) = (b2 & 0x7c) << 1;
           } else {
@@ -539,9 +565,9 @@ void bx_gui_c::snapshot_handler(void)
             *(row_buffer+j+2) = (b2 & 0xf8);
           }
         }
-      } else if (iDepth == 32) {
+      } else if (BX_GUI_THIS guest_bpp == 32) {
         pixel_ptr = row_ptr;
-        for (j = 0; j < (int)(iWidth * 3); j+=3) {
+        for (j = 0; j < (int)(BX_GUI_THIS guest_xres * 3); j+=3) {
           *(row_buffer+j)   = *(pixel_ptr++);
           *(row_buffer+j+1) = *(pixel_ptr++);
           *(row_buffer+j+2) = *(pixel_ptr++);
@@ -553,10 +579,7 @@ void bx_gui_c::snapshot_handler(void)
     }
     free(row_buffer);
     close(fd);
-    if (palette_ptr != NULL) free(palette_ptr);
-    free(snapshot_ptr);
-  } else {
-    BX_ERROR(("snapshot button failed: unsupported VGA mode"));
+    BX_GUI_THIS set_snapshot_mode(0);
   }
 }
 
@@ -695,9 +718,9 @@ void bx_gui_c::save_restore_handler(void)
     if ((ret >= 0) && (strcmp(sr_path, "none"))) {
       if (SIM->save_state(sr_path)) {
         if (!SIM->ask_yes_no("WARNING",
-              "The save function currently doesn't handle the state of hard drive images,\n"
-              "so we don't recommend to continue, unless you are running a read-only\n"
-              "guest system (e.g. Live-CD).\n\n"
+              "The state of cpu, memory, devices and hard drive images is saved now.\n"
+              "It is possible to continue, but when using the restore function in a\n"
+              "new Bochs session, all changes after this checkpoint will be lost.\n\n"
               "Do you want to continue?", 0)) {
           power_handler();
         }
@@ -823,13 +846,6 @@ void bx_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
 
 bx_svga_tileinfo_t *bx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
-  if (!info) {
-    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
-    if (!info) {
-      return NULL;
-    }
-  }
-
   BX_GUI_THIS host_pitch = BX_GUI_THIS host_xres * ((BX_GUI_THIS host_bpp + 1) >> 3);
 
   info->bpp = BX_GUI_THIS host_bpp;
@@ -926,6 +942,61 @@ void bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
   delete [] tile;
 }
 
+void bx_gui_c::graphics_tile_update_common(Bit8u *tile, unsigned x, unsigned y)
+{
+  unsigned i, pitch, pixel_bytes, nbytes, tilebytes;
+  Bit8u *src, *dst;
+
+  if (BX_GUI_THIS snapshot_mode) {
+    if (BX_GUI_THIS snapshot_buffer != NULL) {
+      pixel_bytes = ((BX_GUI_THIS guest_bpp + 1) >> 3);
+      tilebytes = BX_GUI_THIS x_tilesize * pixel_bytes;
+      if ((x + BX_GUI_THIS x_tilesize) <= BX_GUI_THIS guest_xres) {
+        nbytes = tilebytes;
+      } else {
+        nbytes = (BX_GUI_THIS guest_xres - x) * pixel_bytes;
+      }
+      pitch = BX_GUI_THIS guest_xres * pixel_bytes;
+      src = tile;
+      dst = BX_GUI_THIS snapshot_buffer + (y * pitch) + x;
+      for (i = 0; i < y_tilesize; i++) {
+        memcpy(dst, src, nbytes);
+        src += tilebytes;
+        dst += pitch;
+        if (++y >= BX_GUI_THIS guest_yres) break;
+      }
+    }
+  } else {
+    graphics_tile_update(tile, x, y);
+  }
+}
+
+bx_svga_tileinfo_t * bx_gui_c::graphics_tile_info_common(bx_svga_tileinfo_t *info)
+{
+  if (!info) {
+    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
+    if (!info) {
+      return NULL;
+    }
+  }
+  info->snapshot_mode = BX_GUI_THIS snapshot_mode;
+  if (BX_GUI_THIS snapshot_mode) {
+    info->pitch = BX_GUI_THIS guest_xres * ((BX_GUI_THIS guest_bpp + 1) >> 3);
+  } else {
+    return graphics_tile_info(info);
+  }
+
+  return info;
+}
+
+bx_bool bx_gui_c::palette_change_common(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
+{
+  BX_GUI_THIS palette[index].red = red;
+  BX_GUI_THIS palette[index].green = green;
+  BX_GUI_THIS palette[index].blue = blue;
+  return palette_change(index, red, green, blue);
+}
+
 void bx_gui_c::show_ips(Bit32u ips_count)
 {
 #if BX_SHOW_IPS
@@ -943,5 +1014,11 @@ void bx_gui_c::init_debug_dialog()
 {
   extern void InitDebugDialog();
   InitDebugDialog();
+}
+
+void bx_gui_c::close_debug_dialog()
+{
+  extern void CloseDebugDialog();
+  CloseDebugDialog();
 }
 #endif

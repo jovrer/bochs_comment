@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc 11370 2012-08-26 12:32:10Z vruppert $
+// $Id: sdl.cc 11629 2013-02-14 21:06:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -108,9 +108,9 @@ static unsigned int text_rows = 25, text_cols = 80;
 Bit8u h_panning = 0, v_panning = 0;
 Bit16u line_compare = 1023;
 int fontwidth = 8, fontheight = 16;
-static unsigned vga_bpp=8;
+static unsigned disp_bpp=8;
 unsigned char menufont[256][8];
-Uint32 palette[256];
+Uint32 sdl_palette[256];
 Uint32 headerbar_fg, headerbar_bg;
 Bit8u old_mousebuttons=0, new_mousebuttons=0;
 int old_mousex=0, new_mousex=0;
@@ -139,12 +139,6 @@ static char sdl_ips_text[20];
 #endif
 
 static void headerbar_click(int x);
-
-#if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
-BxEvent *sdl_notify_callback (void *unused, BxEvent *event);
-static bxevent_handler old_callback = NULL;
-static void *old_callback_arg = NULL;
-#endif
 
 
 void switch_to_windowed(void)
@@ -355,10 +349,6 @@ void bx_sdl_gui_c::specific_init(int argc, char **argv, unsigned header_bar_y)
           BX_PANIC(("Config interface 'win32config' is required for gui debugger"));
         }
 #else
-        // redirect notify callback to sdl specific code
-        SIM->get_notify_callback (&old_callback, &old_callback_arg);
-        assert (old_callback != NULL);
-        SIM->set_notify_callback (sdl_notify_callback, NULL);
         init_debug_dialog();
 #endif 
 #endif
@@ -483,7 +473,7 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     charmap_updated = 0;
   }
   for (i=0; i<16; i++) {
-    text_palette[i] = palette[tm_info->actl_palette[i]];
+    text_palette[i] = sdl_palette[tm_info->actl_palette[i]];
   }
   if ((tm_info->h_panning != h_panning) || (tm_info->v_panning != v_panning)) {
     forceUpdate = 1;
@@ -581,11 +571,9 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       }
       // check if char needs to be updated
       if(forceUpdate || (old_text[0] != new_text[0])
-	  || (old_text[1] != new_text[1]))
-      {
-
-	// Get Foreground/Background pixel colors
-	fgcolor = text_palette[new_text[1] & 0x0F];
+         || (old_text[1] != new_text[1])) {
+        // Get Foreground/Background pixel colors
+        fgcolor = text_palette[new_text[1] & 0x0F];
         if (blink_mode) {
           bgcolor = text_palette[(new_text[1] >> 4) & 0x07];
           if (!blink_state && (new_text[1] & 0x80))
@@ -712,35 +700,27 @@ void bx_sdl_gui_c::graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y)
   if(i + y > res_y) i = res_y - y;
 
   // FIXME
-  if(i<=0) return;
+  if (i<=0) return;
 
-  switch (vga_bpp)
-  {
+  switch (disp_bpp) {
     case 8: /* 8 bpp */
-      do
-      {
+      do {
         buf_row = buf;
         j = x_tilesize;
-        do
-        {
-          *buf++ = palette[*snapshot++];
+        do {
+          *buf++ = sdl_palette[*snapshot++];
         } while(--j);
         buf = buf_row + disp;
       } while(--i);
       break;
     default:
-      BX_PANIC(("%u bpp modes handled by new graphics API", vga_bpp));
+      BX_PANIC(("%u bpp modes handled by new graphics API", disp_bpp));
       return;
   }
 }
 
 bx_svga_tileinfo_t *bx_sdl_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
-  if (!info) {
-    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
-    if (!info) return NULL;
-  }
-
   if (sdl_screen) {
     info->bpp = sdl_screen->format->BitsPerPixel;
     info->pitch = sdl_screen->pitch;
@@ -751,8 +731,7 @@ bx_svga_tileinfo_t *bx_sdl_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
     info->green_mask = sdl_screen->format->Gmask;
     info->blue_mask = sdl_screen->format->Bmask;
     info->is_indexed = (sdl_screen->format->palette != NULL);
-  }
-  else {
+  } else {
     info->bpp = sdl_fullscreen->format->BitsPerPixel;
     info->pitch = sdl_fullscreen->pitch;
     info->red_shift = sdl_fullscreen->format->Rshift + 8 - sdl_fullscreen->format->Rloss;
@@ -1233,18 +1212,12 @@ void bx_sdl_gui_c::clear_screen(void)
     SDL_UpdateRect(sdl_fullscreen,0,0,res_x,res_y);
 }
 
-bx_bool bx_sdl_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+bx_bool bx_sdl_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
 {
-  unsigned char palred = red & 0xFF;
-  unsigned char palgreen = green & 0xFF;
-  unsigned char palblue = blue & 0xFF;
-
-  if(index > 255) return 0;
-
-  if(sdl_screen)
-    palette[index] = SDL_MapRGB(sdl_screen->format, palred, palgreen, palblue);
-  else if(sdl_fullscreen)
-    palette[index] = SDL_MapRGB(sdl_fullscreen->format, palred, palgreen, palblue);
+  if (sdl_screen)
+    sdl_palette[index] = SDL_MapRGB(sdl_screen->format, red, green, blue);
+  else if (sdl_fullscreen)
+    sdl_palette[index] = SDL_MapRGB(sdl_fullscreen->format, red, green, blue);
 
   return 1;
 }
@@ -1253,14 +1226,14 @@ void bx_sdl_gui_c::dimension_update(unsigned x, unsigned y,
     unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   if (bpp == 8 || bpp == 15 || bpp == 16 || bpp == 24 || bpp == 32) {
-    vga_bpp = bpp;
-  }
-  else
-  {
+    disp_bpp = guest_bpp = bpp;
+  } else {
     BX_PANIC(("%d bpp graphics mode not supported", bpp));
   }
-  if(fheight > 0)
-  {
+  guest_textmode = (fheight > 0);
+  guest_xres = x;
+  guest_yres = y;
+  if (guest_textmode) {
     fontheight = fheight;
     fontwidth = fwidth;
     text_cols = x / fontwidth;
@@ -1644,47 +1617,5 @@ void bx_sdl_gui_c::show_ips(Bit32u ips_count)
   }
 }
 #endif
-
-#if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
-
-#include "enh_dbg.h"
-
-BxEvent *sdl_notify_callback(void *unused, BxEvent *event)
-{
-  switch (event->type)
-  {
-    case BX_SYNC_EVT_GET_DBG_COMMAND:
-      {
-        debug_cmd = new char[512];
-        debug_cmd_ready = 0;
-        HitBreak();
-        while (debug_cmd_ready == 0 && bx_user_quit == 0)
-        {
-          if (vgaw_refresh != 0)  // is the GUI frontend requesting a VGAW refresh?
-            DEV_vga_refresh();
-          vgaw_refresh = 0;
-#ifdef WIN32
-          Sleep(100);
-#else
-          sleep(1);
-#endif
-        }
-        if (bx_user_quit != 0)
-          BX_EXIT(0);
-
-        event->u.debugcmd.command = debug_cmd;
-        event->retcode = 1;
-        return event;
-      }
-    case BX_ASYNC_EVT_DBG_MSG:
-      {
-        ParseIDText(event->u.logmsg.msg);
-        return event;
-      }
-    default:
-      return (*old_callback)(old_callback_arg, event);
-  }
-}
-#endif /* if BX_DEBUGGER && BX_DEBUGGER_GUI */
 
 #endif /* if BX_WITH_SDL */

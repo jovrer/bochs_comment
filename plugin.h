@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h 11224 2012-06-21 17:33:37Z vruppert $
+// $Id: plugin.h 11556 2012-12-02 19:59:23Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2012  The Bochs Project
@@ -75,6 +75,7 @@ extern "C" {
 #define BX_PLUGIN_ACPI      "acpi"
 #define BX_PLUGIN_IODEBUG   "iodebug"
 #define BX_PLUGIN_IOAPIC    "ioapic"
+#define BX_PLUGIN_VOODOO    "voodoo"
 
 
 #define BX_REGISTER_DEVICE_DEVMODEL(a,b,c,d) pluginRegisterDeviceDevmodel(a,b,c,d)
@@ -147,6 +148,7 @@ extern "C" {
 
 ///////// I/O APIC macros
 #define DEV_ioapic_present() (bx_devices.pluginIOAPIC != &bx_devices.stubIOAPIC)
+#define DEV_ioapic_set_enabled(a,b) (bx_devices.pluginIOAPIC->set_enabled(a,b))
 #define DEV_ioapic_receive_eoi(a) (bx_devices.pluginIOAPIC->receive_eoi(a))
 #define DEV_ioapic_set_irq_level(a,b) (bx_devices.pluginIOAPIC->set_irq_level(a,b))
 
@@ -213,24 +215,21 @@ extern "C" {
 #define DEV_vga_mem_write(addr, val) (bx_devices.pluginVgaDevice->mem_write(addr, val))
 #define DEV_vga_redraw_area(left, top, right, bottom) \
   (bx_devices.pluginVgaDevice->redraw_area(left, top, right, bottom))
-#define DEV_vga_get_snapshot_mode() bx_devices.pluginVgaDevice->get_snapshot_mode()
 #define DEV_vga_get_text_snapshot(rawsnap, height, width) \
   (bx_devices.pluginVgaDevice->get_text_snapshot(rawsnap, height, width))
-#define DEV_vga_get_gfx_snapshot(rawsnap, palette, height, width, depth) \
-  (bx_devices.pluginVgaDevice->get_gfx_snapshot(rawsnap, palette, height, width, depth))
-#define DEV_vga_refresh() \
-  (bx_devices.pluginVgaDevice->trigger_timer(bx_devices.pluginVgaDevice))
-#define DEV_vga_set_override(a) (bx_devices.pluginVgaDevice->set_override(a))
+#define DEV_vga_refresh(a) \
+  (bx_devices.pluginVgaDevice->refresh_display(bx_devices.pluginVgaDevice,a))
+#define DEV_vga_set_override(a,b) (bx_devices.pluginVgaDevice->set_override(a,b))
 
 ///////// PCI macros
 #define DEV_register_pci_handlers(a,b,c,d) \
-  (bx_devices.pluginPciBridge->register_pci_handlers(a,b,c,d))
-#define DEV_is_pci_device(name) bx_devices.pluginPciBridge->is_pci_device(name)
+  (bx_devices.register_pci_handlers(a,b,c,d))
+#define DEV_pci_get_confAddr() bx_devices.pci_get_confAddr()
 #define DEV_pci_set_irq(a,b,c) bx_devices.pluginPci2IsaBridge->pci_set_irq(a,b,c)
 #define DEV_pci_set_base_mem(a,b,c,d,e,f) \
-  (bx_devices.pluginPciBridge->pci_set_base_mem(a,b,c,d,e,f))
+  (bx_devices.pci_set_base_mem(a,b,c,d,e,f))
 #define DEV_pci_set_base_io(a,b,c,d,e,f,g,h) \
-  (bx_devices.pluginPciBridge->pci_set_base_io(a,b,c,d,e,f,g,h))
+  (bx_devices.pci_set_base_io(a,b,c,d,e,f,g,h))
 #define DEV_ide_bmdma_present() bx_devices.pluginPciIdeController->bmdma_present()
 #define DEV_ide_bmdma_set_irq(a) bx_devices.pluginPciIdeController->bmdma_set_irq(a)
 #define DEV_acpi_generate_smi(a) bx_devices.pluginACPIController->generate_smi(a)
@@ -246,6 +245,7 @@ extern "C" {
     bx_devices.mem->unregisterMemoryHandlers(param,b,e)
 #define DEV_mem_set_memory_type(a,b,c) \
     bx_devices.mem->set_memory_type((memory_area_t)a,b,c)
+#define DEV_mem_set_bios_write(a) bx_devices.mem->set_bios_write(a)
 
 ///////// USB device macros
 #define DEV_usb_init_device(a,b,c,d) (usbdev_type)bx_devices.pluginUsbDevCtl->init_device(a,b,(void**)c,d)
@@ -325,27 +325,9 @@ BOCHSAPI extern int (*pluginRegisterDefaultIOReadHandler)(void *thisPtr, ioReadH
 BOCHSAPI extern int (*pluginRegisterDefaultIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
                                  const char *name, Bit8u mask);
 
-/* === A20 enable line stuff === */
-BOCHSAPI extern unsigned (*pluginGetA20E)(void);
-BOCHSAPI extern void     (*pluginSetA20E)(unsigned val);
-
 /* === IRQ stuff === */
 BOCHSAPI extern void  (*pluginRegisterIRQ)(unsigned irq, const char *name);
 BOCHSAPI extern void  (*pluginUnregisterIRQ)(unsigned irq, const char *name);
-
-/* === Floppy stuff ===*/
-BOCHSAPI extern unsigned (* pluginFloppyGetMediaStatus)(unsigned drive);
-BOCHSAPI extern unsigned (* pluginFloppySetMediaStatus)(unsigned drive, unsigned status);
-
-/* === VGA stuff === */
-BOCHSAPI extern void (* pluginVGARedrawArea)(unsigned x0, unsigned y0,
-                 unsigned width, unsigned height);
-BOCHSAPI extern Bit8u (* pluginVGAMemRead)(Bit32u addr);
-BOCHSAPI extern void  (* pluginVGAMemWrite)(Bit32u addr, Bit8u value);
-BOCHSAPI extern void  (* pluginVGAGetTextSnapshot)(Bit8u **text_snapshot,
-		          unsigned *txHeight, unsigned *txWidth);
-BOCHSAPI extern void  (* pluginVGARefresh)(void *);
-BOCHSAPI extern void  (* pluginVGASetUpdateInterval)(unsigned);
 
 /* === Timer stuff === */
 BOCHSAPI extern int     (*pluginRegisterTimer)(void *this_ptr, void (*funct)(void *),
@@ -353,19 +335,10 @@ BOCHSAPI extern int     (*pluginRegisterTimer)(void *this_ptr, void (*funct)(voi
                              bx_bool active, const char *name);
 
 BOCHSAPI extern void    (*pluginActivateTimer)(unsigned id, Bit32u usec, bx_bool continuous);
-BOCHSAPI extern void    (*pluginDeactivateTimer)(unsigned id);
 
 /* === HRQ stuff === */
 BOCHSAPI extern void    (*pluginSetHRQ)(unsigned val);
 BOCHSAPI extern void    (*pluginSetHRQHackCallback)(void (*callback)(void));
-
-/* === PCI stuff === */
-BOCHSAPI extern bx_bool (*pluginRegisterPCIDevice)(void *this_ptr,
-                             Bit32u (*bx_pci_read_handler)(void *, Bit8u, unsigned),
-                             void(*bx_pci_write_handler)(void *, Bit8u, Bit32u, unsigned),
-                             Bit8u *devfunc, const char *name, const char *descr);
-BOCHSAPI extern Bit8u   (*pluginRd_memType)(Bit32u addr);
-BOCHSAPI extern Bit8u   (*pluginWr_memType)(Bit32u addr);
 
 void plugin_abort(void);
 
@@ -435,6 +408,7 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(speaker)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(acpi)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(iodebug)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(ioapic)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(voodoo)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(amigaos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(carbon)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(macintosh)

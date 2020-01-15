@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dbg_main.cc 11250 2012-07-01 14:37:13Z vruppert $
+// $Id: dbg_main.cc 11637 2013-02-20 18:51:39Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -56,6 +56,7 @@ void bx_dbg_print_descriptor(Bit32u lo, Bit32u hi);
 void bx_dbg_print_descriptor64(Bit32u lo1, Bit32u hi1, Bit32u lo2, Bit32u hi2);
 
 static bx_param_bool_c *sim_running = NULL;
+static bx_bool bx_dbg_exit_called;
 
 static char tmp_buf[512];
 static char tmp_buf_prev[512];
@@ -222,6 +223,7 @@ int bx_dbg_main(void)
   setbuf(stdout, NULL);
   setbuf(stderr, NULL);
 
+  bx_dbg_exit_called = 0;
   bx_dbg_batch_dma.this_many = 1;
   bx_dbg_batch_dma.Qsize     = 0;
 
@@ -706,11 +708,14 @@ void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, un
     "EPT PDPTE",
     "EPT PML4E",
     "VMCS",
+    "SHADOW_VMCS",
     "MSR BITMAP",
     "I/O BITMAP",
+    "VMREAD BITMAP",
+    "VMWRITE BITMAP",
     "VMX LDMSR",
     "VMX STMSR",
-    "VMX VTPR",
+    "VAPIC",
     "SMRAM"
   };
 
@@ -767,6 +772,8 @@ void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, un
 
 void bx_dbg_exit(int code)
 {
+  if (bx_dbg_exit_called) return;
+  bx_dbg_exit_called = 1;
   BX_DEBUG(("dbg: before exit"));
   for (int cpu=0; cpu < BX_SMP_PROCESSORS; cpu++) {
     if (BX_CPU(cpu)) BX_CPU(cpu)->atexit();
@@ -982,7 +989,8 @@ void bx_dbg_info_control_regs_command(void)
   dbg_printf("    PWT=page-level write-through=%d\n", (cr3>>3) & 1);
 #if BX_CPU_LEVEL >= 5
   Bit32u cr4 = SIM->get_param_num("CR4", dbg_cpu_list)->get();
-  dbg_printf("CR4=0x%08x: %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", cr4,
+  dbg_printf("CR4=0x%08x: %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n", cr4,
+    (cr4 & (1<<21)) ? "SMAP" : "smap",
     (cr4 & (1<<20)) ? "SMEP" : "smep",
     (cr4 & (1<<18)) ? "OSXSAVE" : "osxsave",
     (cr4 & (1<<17)) ? "PCID" : "pcid",
@@ -1411,6 +1419,14 @@ void bx_dbg_xlate_address(bx_lin_address laddr)
   }
 }
 
+void bx_dbg_tlb_lookup(bx_lin_address laddr)
+{
+  Bit32u index = BX_TLB_INDEX_OF(laddr, 0);
+  char cpu_param_name[16];
+  sprintf(cpu_param_name, "TLB.entry%d", index);
+  bx_dbg_show_param_command(cpu_param_name);
+}
+
 unsigned dbg_show_mask = 0;
 
 #define BX_DBG_SHOW_CALLRET  (Flag_call|Flag_ret)
@@ -1485,7 +1501,7 @@ void bx_dbg_show_command(const char* arg)
       dbg_printf("Turned OFF all bx_dbg flags\n");
       return;
     } else if(!strcmp(arg,"vga")){
-      DEV_vga_refresh();
+      SIM->refresh_vga();
       return;
     } else {
       dbg_printf("Unrecognized arg: %s (only 'mode', 'int', 'softint', 'extint', 'iret', 'call', 'off', 'dbg-all' and 'dbg-none' are valid)\n", arg);
@@ -1821,7 +1837,9 @@ one_more:
   SIM->refresh_ci();
 
   // (mch) hack
-  DEV_vga_refresh();
+  if (!bx_user_quit) {
+    SIM->refresh_vga();
+  }
 
   BX_INSTR_DEBUG_PROMPT();
   bx_dbg_print_guard_results();
@@ -2363,12 +2381,6 @@ void bx_dbg_take_command(const char *what, unsigned n)
     if (bx_guard.report.dma)
       dbg_printf("done\n");
   }
-  else if (! strcmp(what, "irq")) {
-    BX_CPU(0)->dbg_take_irq();
-
-    if (bx_guard.report.irq)
-      dbg_printf("done\n");
-  }
   else {
     dbg_printf("Error: Take '%s' not understood.\n", what);
   }
@@ -2759,16 +2771,17 @@ void bx_dbg_setpmem_command(bx_phy_address paddr, unsigned len, Bit32u val)
   }
 }
 
-void bx_dbg_set_symbol_command(const char *symbol, Bit32u val)
+void bx_dbg_set_symbol_command(const char *symbol, bx_address val)
 {
   bx_bool is_OK = false;
   symbol++; // get past '$'
 
-  if (!strcmp(symbol, "eip")) {
-    is_OK = BX_CPU(dbg_cpu)->dbg_set_reg(BX_DBG_REG_EIP, val);
+  if (!strcmp(symbol, "eip") || !strcmp(symbol, "rip")) {
+    bx_dbg_set_rip_value(val);
+    return;
   }
   else if (!strcmp(symbol, "eflags")) {
-    is_OK = BX_CPU(dbg_cpu)->dbg_set_reg(BX_DBG_REG_EFLAGS, val);
+    is_OK = BX_CPU(dbg_cpu)->dbg_set_eflags(val);
   }
   else if (!strcmp(symbol, "cpu")) {
     if (val >= BX_SMP_PROCESSORS) {
@@ -2806,7 +2819,7 @@ void bx_dbg_set_symbol_command(const char *symbol, Bit32u val)
   }
 
   if (!is_OK) {
-    dbg_printf("Error: could not set register '%s'.\n", symbol);
+    dbg_printf("Error: could not set value for '%s'\n", symbol);
   }
 }
 
@@ -3593,7 +3606,7 @@ void bx_dbg_dump_table(void)
     return;
   }
 
-  printf("cr3: 0x"FMT_PHY_ADDRX"\n", BX_CPU(dbg_cpu)->cr3);
+  printf("cr3: 0x"FMT_PHY_ADDRX"\n", (bx_phy_address)BX_CPU(dbg_cpu)->cr3);
 
   lin = 0;
   phy = 0;
@@ -3738,6 +3751,17 @@ void bx_dbg_set_reg64_value(unsigned reg, Bit64u value)
   else
 #endif
     dbg_printf("Unknown 64B register [%d] !!!\n", reg);
+}
+
+void bx_dbg_set_rip_value(bx_address value)
+{
+#if BX_SUPPORT_X86_64
+  if ((value >> 32) != 0 && ! BX_CPU(dbg_cpu)->long64_mode()) {
+    dbg_printf("Cannot set EIP to 64-bit value when not in long64 mode !\n");
+  }
+  else
+#endif
+    BX_CPU(dbg_cpu)->dbg_set_eip(value);
 }
 
 Bit16u bx_dbg_get_selector_value(unsigned int seg_no)

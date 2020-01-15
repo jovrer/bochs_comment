@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h 11371 2012-08-26 14:43:14Z vruppert $
+// $Id: osdep.h 11624 2013-02-12 21:33:00Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -55,10 +55,12 @@ extern "C" {
 #define FMT_LL "%ll"
 #define FMT_TICK "%011llu"
 #define FMT_ADDRX64 "%016llx"
+#define FMT_PHY_ADDRX64 "%012llx"
 #else
 #define FMT_LL "%I64"
 #define FMT_TICK "%011I64u"
 #define FMT_ADDRX64 "%016I64x"
+#define FMT_PHY_ADDRX64 "%012I64x"
 #endif
 
 // always return regular file.
@@ -103,6 +105,7 @@ extern "C" {
 #define FMT_LL "%I64"
 #define FMT_TICK "%011I64u"
 #define FMT_ADDRX64 "%016I64x"
+#define FMT_PHY_ADDRX64 "%012I64x"
 
 #define off_t __int64
 // mingw gcc 4.6.1 already has lseek defined
@@ -116,10 +119,12 @@ extern "C" {
 #define FMT_LL "%l"
 #define FMT_TICK "%011lu"
 #define FMT_ADDRX64 "%016lx"
+#define FMT_PHY_ADDRX64 "%012lx"
 #else
 #define FMT_LL "%ll"
 #define FMT_TICK "%011llu"
 #define FMT_ADDRX64 "%016llx"
+#define FMT_PHY_ADDRX64 "%012llx"
 #endif
 #endif   /* not WIN32 definitions */
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.h 10842 2011-12-20 19:34:05Z vruppert $
+// $Id: rombios.h 11545 2012-11-11 08:11:17Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2006 Volker Ruppert
@@ -246,7 +246,10 @@
 #define  PCI_ROM_ADDRESS_ENABLE	0x01
 
 #define PCI_VENDOR_ID_INTEL             0x8086
+#define PCI_DEVICE_ID_INTEL_82437       0x0122
 #define PCI_DEVICE_ID_INTEL_82441       0x1237
+#define PCI_DEVICE_ID_INTEL_82371FB_0   0x122e
+#define PCI_DEVICE_ID_INTEL_82371FB_1   0x1230
 #define PCI_DEVICE_ID_INTEL_82371SB_0   0x7000
 #define PCI_DEVICE_ID_INTEL_82371SB_1   0x7010
 #define PCI_DEVICE_ID_INTEL_82371AB_0   0x7110

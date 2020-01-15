@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.cc 11250 2012-07-01 14:37:13Z vruppert $
+// $Id: enh_dbg.cc 11635 2013-02-18 20:52:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,7 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2013  The Bochs Project
 
 #include "config.h"
 
@@ -16,7 +17,6 @@
 #include <math.h>
 
 #include "bochs.h"
-#include "param_names.h"
 #include "cpu/cpu.h"
 #include "disasm/disasm.h"
 
@@ -114,7 +114,7 @@ bx_bool DumpHasFocus = FALSE;
 unsigned short BarClix[2];
 
 bx_bool AtBreak = FALSE;    // Status indicators
-bx_bool CpuModeChange = TRUE;
+bx_bool CpuModeChange;
 bx_bool StatusChange = TRUE;
 
 bx_bool In64Mode = FALSE;       // CPU modes
@@ -122,7 +122,8 @@ bx_bool In32Mode = FALSE;
 unsigned CpuMode = 0;
 Bit32u InPaging = 0;            // Storage for the top bit of CR0, unmodified
 
-bx_bool doOneTimeInit = TRUE;   // Internal flags
+bx_bool doOneTimeInit = TRUE;   // Internal flag #1
+bx_bool doSimuInit;             // Internal flag #2
 bx_bool ResizeColmns;           // address/value column autosize flag
 bx_bool FWflag = FALSE;         // friendly warning has been shown to user once already
 
@@ -233,6 +234,13 @@ unsigned short WWPSnapCount;
 unsigned short RWPSnapCount;
 bx_phy_address WWP_Snapshot[16];
 bx_phy_address RWP_Snapshot[16];
+
+char *debug_cmd;
+bx_bool debug_cmd_ready;
+bx_bool vgaw_refresh;
+
+static bxevent_handler old_callback = NULL;
+static void *old_callback_arg = NULL;
 
 short nDock[36] = {     // lookup table for alternate DockOrders
     0x231, 0x312, 0x231, 0x213, 0x132, 0x132,
@@ -1350,7 +1358,7 @@ void InitRegObjects()
 void doUpdate()
 {
     void FillStack();
-    if (doOneTimeInit != FALSE)
+    if (doSimuInit != FALSE)
         SpecialInit();
     // begin an autoupdate of Register and Asm windows
     LoadRegList();      // build and show ListView
@@ -1961,7 +1969,7 @@ void FillBrkp()
             for (i = 0; i < totqty; i++)
             {
                 WWP_Snapshot[i] = write_watchpoint[i].addr;
-                sprintf (cols[0],"%08X",write_watchpoint[i].addr);
+                sprintf (cols[0], FMT_PHY_ADDRX, (bx_phy_address) write_watchpoint[i].addr);
                 InsertListRow(cols, 18, DUMP_WND, LineCount++, 8);
             }
         }
@@ -1973,7 +1981,7 @@ void FillBrkp()
             for (i = 0; i < totqty; i++)
             {
                 RWP_Snapshot[i] = read_watchpoint[i].addr;
-                sprintf (cols[0],"%08X",read_watchpoint[i].addr);
+                sprintf (cols[0], FMT_PHY_ADDRX, (bx_phy_address) read_watchpoint[i].addr);
                 InsertListRow(cols, 18, DUMP_WND, LineCount++, 8);
             }
         }
@@ -2104,6 +2112,8 @@ void DoAllInit()
     char *p;
     int i;
 
+    doSimuInit = TRUE;
+    CpuModeChange = TRUE;
     CurrentCPU = 0;     // need to init CPU info once only
     if (SingleCPU == FALSE)
         TotCPUs = BX_SMP_PROCESSORS;
@@ -2551,10 +2561,8 @@ void doStepN()
     PrevStepNSize = i;
     AtBreak = FALSE;
     StatusChange = TRUE;
-    bx_dbg_stepN_command(CurrentCPU, i);
-    AtBreak = TRUE;
-    StatusChange = TRUE;
-    OnBreak();
+    sprintf(debug_cmd, "s %d %d", CurrentCPU, i);
+    debug_cmd_ready = TRUE;
 }
 
 // User wants a custom disassembly
@@ -3377,10 +3385,59 @@ void ActivateMenuItem (int cmd)
     }
 }
 
+BxEvent *enh_dbg_notify_callback(void *unused, BxEvent *event)
+{
+  switch (event->type)
+  {
+    case BX_SYNC_EVT_GET_DBG_COMMAND:
+      {
+        debug_cmd = new char[512];
+        debug_cmd_ready = 0;
+        HitBreak();
+        while (debug_cmd_ready == 0 && bx_user_quit == 0)
+        {
+          if (vgaw_refresh != 0)  // is the GUI frontend requesting a VGAW refresh?
+            SIM->refresh_vga();
+          vgaw_refresh = 0;
+#ifdef WIN32
+          Sleep(10);
+#elif BX_HAVE_USLEEP
+          usleep(10000);
+#else
+          sleep(1);
+#endif
+        }
+        if (bx_user_quit != 0) {
+          bx_dbg_exit(0);
+        }
+        event->u.debugcmd.command = debug_cmd;
+        event->retcode = 1;
+        return event;
+      }
+    case BX_ASYNC_EVT_DBG_MSG:
+      {
+        ParseIDText(event->u.logmsg.msg);
+        return event;
+      }
+    default:
+      return (*old_callback)(old_callback_arg, event);
+  }
+}
+
 void InitDebugDialog()
 {
-    DoAllInit();    // non-os-specific init stuff
-    OSInit();
+  // redirect notify callback to the debugger specific code
+  SIM->get_notify_callback(&old_callback, &old_callback_arg);
+  assert (old_callback != NULL);
+  SIM->set_notify_callback(enh_dbg_notify_callback, NULL);
+  DoAllInit();    // non-os-specific init stuff
+  OSInit();
+}
+
+void CloseDebugDialog()
+{
+  SIM->set_notify_callback(old_callback, old_callback_arg);
+  CloseDialog();
 }
 
 #endif

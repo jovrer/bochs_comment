@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: opcodes.inc 11276 2012-07-12 14:51:54Z sshwarts $
+// $Id: opcodes.inc 11496 2012-10-09 15:16:48Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2011 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -164,6 +164,7 @@ Ia_cbw = { "cbw", "cbtw", XX, XX, XX, XX, 0 },
 Ia_cdq = { "cdq", "cltd", XX, XX, XX, XX, 0 },
 Ia_cdqe = { "cdqe", "cltq", XX, XX, XX, XX, 0 },
 Ia_cflush = { "cflush", "cflush", Mb, XX, XX, XX, IA_CLFLUSH },
+Ia_clac = { "clac", "clac", XX, XX, XX, XX, IA_SMAP },
 Ia_clc = { "clc", "clc", XX, XX, XX, XX, 0 },
 Ia_cld = { "cld", "cld", XX, XX, XX, XX, 0 },
 Ia_clgi = { "clgi", "clgi", XX, XX, XX, XX, IA_SVM },
@@ -1133,6 +1134,12 @@ Ia_rdfsbase_Ry = { "rdfsbase", "rdfsbase", Ry, XX, XX, XX, IA_FSGSBASE },
 Ia_rdgsbase_Ry = { "rdgsbase", "rdgsbase", Ry, XX, XX, XX, IA_FSGSBASE },
 Ia_rdmsr = { "rdmsr", "rdmsr", XX, XX, XX, XX, IA_PENTIUM },
 Ia_rdpmc = { "rdpmc", "rdpmc", XX, XX, XX, XX, IA_P6 },
+Ia_rdrand_Ed = { "rdrand", "rdrandd", Ed, XX, XX, XX, IA_RDRAND },
+Ia_rdrand_Eq = { "rdrand", "rdrandq", Eq, XX, XX, XX, IA_RDRAND },
+Ia_rdrand_Ew = { "rdrand", "rdrandw", Ew, XX, XX, XX, IA_RDRAND },
+Ia_rdseed_Ed = { "rdseed", "rdseedd", Ed, XX, XX, XX, IA_RDSEED },
+Ia_rdseed_Eq = { "rdseed", "rdseedq", Eq, XX, XX, XX, IA_RDSEED },
+Ia_rdseed_Ew = { "rdseed", "rdseedw", Ew, XX, XX, XX, IA_RDSEED },
 Ia_rdtsc = { "rdtsc", "rdtsc", XX, XX, XX, XX, IA_PENTIUM },
 Ia_rdtscp = { "rdtscp", "rdtscp", XX, XX, XX, XX, IA_RDTSCP },
 Ia_ret = { "ret", "ret", XX, XX, XX, XX, 0 },
@@ -1273,6 +1280,7 @@ Ia_sqrtpd_Vpd_Wpd = { "sqrtpd", "sqrtpd", Vpd, Wpd, XX, XX, IA_SSE2 },
 Ia_sqrtps_Vps_Wps = { "sqrtps", "sqrtps", Vps, Wps, XX, XX, IA_SSE },
 Ia_sqrtsd_Vsd_Wsd = { "sqrtsd", "sqrtsd", Vsd, Wsd, XX, XX, IA_SSE2 },
 Ia_sqrtss_Vss_Wss = { "sqrtss", "sqrtss", Vss, Wss, XX, XX, IA_SSE },
+Ia_stac = { "stac", "stac", XX, XX, XX, XX, IA_SMAP },
 Ia_stc = { "stc", "stc", XX, XX, XX, XX, 0 },
 Ia_std = { "std", "std", XX, XX, XX, XX, 0 },
 Ia_stgi = { "stgi", "stgi", XX, XX, XX, XX, IA_SVM },
@@ -1842,7 +1850,7 @@ Ia_vunpcklpd_Vpd_Hpd_Wpd = { "vunpcklpd", "vunpcklpd", Vpd, Hpd, Wpd, XX, IA_AVX
 Ia_vunpcklps_Vps_Hps_Wps = { "vunpcklps", "vunpcklps", Vps, Hps, Wps, XX, IA_AVX },
 Ia_vxorpd_Vpd_Hpd_Wpd = { "vxorpd", "vxorpd", Vpd, Hpd, Wpd, XX, IA_AVX },
 Ia_vxorps_Vps_Hps_Wps = { "vxorps", "vxorps", Vps, Hps, Wps, XX, IA_AVX },
-Ia_vzerall = { "vzeroall", "vzeroall", XX, XX, XX, XX, IA_AVX },
+Ia_vzeroall = { "vzeroall", "vzeroall", XX, XX, XX, XX, IA_AVX },
 Ia_vzeroupper = { "vzeroupper", "vzeroupper", XX, XX, XX, XX, IA_AVX },
 Ia_wbinvd = { "wbinvd", "wbinvd", XX, XX, XX, XX, IA_486 },
 Ia_wrfsbase_Ry = { "wrfsbase", "wrfsbase", Ry, XX, XX, XX, IA_FSGSBASE },

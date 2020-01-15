@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: exception.cc 11330 2012-08-09 13:11:25Z sshwarts $
+// $Id: exception.cc 11580 2013-01-19 20:45:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -762,6 +762,8 @@ void BX_CPU_C::interrupt(Bit8u vector, unsigned type, bx_bool push_error, Bit16u
 #if BX_SUPPORT_VMX || BX_SUPPORT_SVM
   BX_CPU_THIS_PTR in_event = 0;
 #endif
+
+  BX_CPU_THIS_PTR EXT = 0;
 }
 
 /* Exception classes.  These are used as indexes into the 'is_exception_OK'
@@ -805,7 +807,7 @@ struct BxExceptionInfo exceptions_info[BX_CPU_HANDLED_EXCEPTIONS] = {
   /* AC */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 1 },
   /* MC */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_ABORT, 0 },
   /* XM */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
-  /* 20 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* VE */ { BX_ET_PAGE_FAULT,   BX_EXCEPTION_CLASS_FAULT, 0 },
   /* 21 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
   /* 22 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
   /* 23 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
@@ -821,7 +823,6 @@ struct BxExceptionInfo exceptions_info[BX_CPU_HANDLED_EXCEPTIONS] = {
 
 // vector:     0..255: vector in IDT
 // error_code: if exception generates and error, push this error code
-// trap:       override exception class to TRAP
 void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
 {
   BX_INSTR_EXCEPTION(BX_CPU_ID, vector, error_code);
@@ -858,13 +859,15 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
   SvmInterceptException(BX_HARDWARE_EXCEPTION, vector, error_code, push_error);
 #endif
 
-  if (BX_CPU_THIS_PTR errorno > 0) {
-    if (BX_CPU_THIS_PTR errorno > 2 || BX_CPU_THIS_PTR curr_exception == BX_ET_DOUBLE_FAULT) {
-      // restore RIP/RSP to value before error occurred
-      RIP = BX_CPU_THIS_PTR prev_rip;
-      if (BX_CPU_THIS_PTR speculative_rsp)
-        RSP = BX_CPU_THIS_PTR prev_rsp;
+  if (exception_class == BX_EXCEPTION_CLASS_FAULT)
+  {
+    // restore RIP/RSP to value before error occurred
+    RIP = BX_CPU_THIS_PTR prev_rip;
+    if (BX_CPU_THIS_PTR speculative_rsp)
+      RSP = BX_CPU_THIS_PTR prev_rsp;
 
+    if (BX_CPU_THIS_PTR last_exception_type == BX_ET_DOUBLE_FAULT)
+    {
       debug(BX_CPU_THIS_PTR prev_rip); // print debug information to the log
 #if BX_SUPPORT_VMX
       VMexit_TripleFault();
@@ -884,16 +887,6 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
       }
       longjmp(BX_CPU_THIS_PTR jmp_buf_env, 1); // go back to main decode loop
     }
-  }
-
-  // note: fault-class exceptions _except_ #DB set RF in
-  //       eflags image.
-  if (exception_class == BX_EXCEPTION_CLASS_FAULT)
-  {
-    // restore RIP/RSP to value before error occurred
-    RIP = BX_CPU_THIS_PTR prev_rip;
-    if (BX_CPU_THIS_PTR speculative_rsp)
-      RSP = BX_CPU_THIS_PTR prev_rsp;
 
     if (vector != BX_DB_EXCEPTION) BX_CPU_THIS_PTR assert_RF();
   }
@@ -911,16 +904,15 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
   BX_CPU_THIS_PTR EXT = 1;
 
   /* if we've already had 1st exception, see if 2nd causes a
-   * Double Fault instead.  Otherwise, just record 1st exception
+   * Double Fault instead. Otherwise, just record 1st exception.
    */
-  if (BX_CPU_THIS_PTR errorno > 0 && exception_type != BX_ET_DOUBLE_FAULT) {
-    if (! is_exception_OK[BX_CPU_THIS_PTR curr_exception][exception_type]) {
+  if (exception_type != BX_ET_DOUBLE_FAULT) {
+    if (! is_exception_OK[BX_CPU_THIS_PTR last_exception_type][exception_type]) {
       exception(BX_DF_EXCEPTION, 0);
     }
   }
 
-  BX_CPU_THIS_PTR curr_exception = exception_type;
-  BX_CPU_THIS_PTR errorno++;
+  BX_CPU_THIS_PTR last_exception_type = exception_type;
 
   if (real_mode()) {
     push_error = 0; // not INT, no error code pushed
@@ -928,6 +920,8 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
   }
 
   interrupt(vector, BX_HARDWARE_EXCEPTION, push_error, error_code);
-  BX_CPU_THIS_PTR errorno = 0; // error resolved
+
+  BX_CPU_THIS_PTR last_exception_type = 0; // error resolved
+
   longjmp(BX_CPU_THIS_PTR jmp_buf_env, 1); // go back to main decode loop
 }

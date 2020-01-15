@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paramtree.cc 11035 2012-02-14 18:13:54Z vruppert $
+// $Id: paramtree.cc 11634 2013-02-17 08:27:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2010  The Bochs Project
+//  Copyright (C) 2010-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -807,6 +807,40 @@ void bx_param_string_c::set_initial_val(const char *buf)
   set(initial_val);
 }
 
+bx_bool bx_param_string_c::isempty()
+{
+  return ((strlen(val) == 0) || !strcmp(val, "none"));
+}
+
+int bx_param_string_c::sprint(char *buf, int len, bx_bool dquotes)
+{
+  char tmpbyte[4];
+
+  if (get_options() & RAW_BYTES) {
+    buf[0] = 0;
+    for (int j = 0; j < maxsize; j++) {
+      if (j > 0) {
+        tmpbyte[0] = separator;
+        tmpbyte[1] = 0;
+        strcat(buf, tmpbyte);
+      }
+      sprintf(tmpbyte, "%02x", (Bit8u)val[j]);
+      strcat(buf, tmpbyte);
+    }
+  } else {
+    if (!isempty()) {
+      if (dquotes) {
+        snprintf(buf, len, "\"%s\"", val);
+      } else {
+        snprintf(buf, len, "%s", val);
+      }
+    } else {
+      strcpy(buf, "none");
+    }
+  }
+  return strlen(buf);
+}
+
 bx_shadow_data_c::bx_shadow_data_c(bx_param_c *parent,
     const char *name,
     Bit8u *ptr_to_data,
@@ -1053,17 +1087,15 @@ void bx_list_c::remove(const char *name)
     if (!stricmp(name, p->get_name())) {
       if (p->get_parent() == this) {
         delete p;
-        if (prev == NULL) {
-          list = item->next;
-        } else {
-          prev->next = item->next;
-        }
-        free(item);
-        size--;
-        break;
-      } else {
-        prev = item;
       }
+      if (prev == NULL) {
+        list = item->next;
+      } else {
+        prev->next = item->next;
+      }
+      free(item);
+      size--;
+      break;
     } else {
       prev = item;
     }

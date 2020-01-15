@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paging.cc 11299 2012-07-26 16:03:26Z sshwarts $
+// $Id: paging.cc 11648 2013-03-06 21:11:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -302,19 +302,26 @@ static const Bit8u priv_check[BX_PRIV_CHECK_SIZE] =
 //       The values in the following flags is based on the current CR0.WP
 //       value, necessitating a TLB flush when CR0.WP changes.
 //
-//       The test is:
-//         OK = (accessBits & ((E<<2) | (W<<1) | U)) == 0
+//       The test bit:
+//         OK = 1 << ((E<<2) | (W<<1) | U)
 //
 //       where E:1=Execute, 0=Data;
 //             W:1=Write, 0=Read;
 //             U:1=CPL3, 0=CPL0-2
-//
+//       
 //       Thus for reads, it is:
-//         OK =       (          U )
+//         OK = 0x01 << (          U )
 //       for writes:
-//         OK = 0x2 | (          U )
-//       and for code fetches:
-//         OK = 0x4 | (          U )
+//         OK = 0x04 << (          U )
+//       for code fetches:
+//         OK = 0x10 << (          U )
+//
+//     bit 5: Execute from User   privilege is OK
+//     bit 4: Execute from System privilege is OK
+//     bit 3: Write   from User   privilege is OK
+//     bit 2: Write   from System privilege is OK
+//     bit 1: Read    from User   privilege is OK
+//     bit 0: Read    from System privilege is OK
 //
 //       Note, that the TLB should have TLB_NoHostPtr bit set in the lpf when
 //       direct access through host pointer is NOT allowed for the page.
@@ -324,12 +331,14 @@ static const Bit8u priv_check[BX_PRIV_CHECK_SIZE] =
 //
 
 #define TLB_NoHostPtr   (0x800) /* set this bit when direct access is NOT allowed */
-
 #define TLB_GlobalPage  (0x80000000)
 
-#define TLB_SysOnly     (0x1)
-#define TLB_ReadOnly    (0x2)
-#define TLB_NoExecute   (0x4)
+#define TLB_SysReadOK     (0x01)
+#define TLB_UserReadOK    (0x02)
+#define TLB_SysWriteOK    (0x04)
+#define TLB_UserWriteOK   (0x08)
+#define TLB_SysExecuteOK  (0x10)
+#define TLB_UserExecuteOK (0x20)
 
 // === TLB Instrumentation section ==============================
 
@@ -490,16 +499,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVLPG(bxInstruction_c* i)
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
-    if (VMEXIT(VMX_VM_EXEC_CTRL2_INVLPG_VMEXIT)) {
-      BX_ERROR(("VMEXIT: INVLPG 0x" FMT_ADDRX, laddr));
-      VMexit(VMX_VMEXIT_INVLPG, laddr);
-    }
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_INVLPG_VMEXIT)) VMexit(VMX_VMEXIT_INVLPG, laddr);
   }
 #endif
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT0_INVLPG)) Svm_Vmexit(SVM_VMEXIT_INVLPG);
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_INVLPG))
+      Svm_Vmexit(SVM_VMEXIT_INVLPG, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? laddr : 0);
   }
 #endif
 
@@ -731,7 +738,7 @@ bx_phy_address BX_CPU_C::translate_linear_long_mode(bx_address laddr, Bit32u &lp
          page_fault(ERROR_RESERVED | ERROR_PROTECTION, laddr, user, rw);
       }
 
-      lpf_mask = offset_mask;
+      lpf_mask = (Bit32u) offset_mask;
       break;
     }
   }
@@ -746,6 +753,12 @@ bx_phy_address BX_CPU_C::translate_linear_long_mode(bx_address laddr, Bit32u &lp
     page_fault(ERROR_PROTECTION, laddr, user, rw);
 
   if (BX_CPU_THIS_PTR cr4.get_SMEP() && rw == BX_EXECUTE && !user) {
+    if (combined_access & 0x4) // User page
+      page_fault(ERROR_PROTECTION, laddr, user, rw);
+  }
+
+  // SMAP protections are disabled if EFLAGS.AC=1
+  if (BX_CPU_THIS_PTR cr4.get_SMAP() && ! BX_CPU_THIS_PTR get_AC() && rw != BX_EXECUTE && ! user) {
     if (combined_access & 0x4) // User page
       page_fault(ERROR_PROTECTION, laddr, user, rw);
   }
@@ -956,6 +969,12 @@ bx_phy_address BX_CPU_C::translate_linear_PAE(bx_address laddr, Bit32u &lpf_mask
       page_fault(ERROR_PROTECTION, laddr, user, rw);
   }
 
+  // SMAP protections are disabled if EFLAGS.AC=1
+  if (BX_CPU_THIS_PTR cr4.get_SMAP() && ! BX_CPU_THIS_PTR get_AC() && rw != BX_EXECUTE && ! user) {
+    if (combined_access & 0x4) // User page
+      page_fault(ERROR_PROTECTION, laddr, user, rw);
+  }
+
   if (BX_CPU_THIS_PTR cr4.get_PGE())
     combined_access |= (entry[leaf] & 0x100);     // G
 
@@ -1062,6 +1081,12 @@ bx_phy_address BX_CPU_C::translate_linear_legacy(bx_address laddr, Bit32u &lpf_m
       page_fault(ERROR_PROTECTION, laddr, user, rw);
   }
 
+  // SMAP protections are disabled if EFLAGS.AC=1
+  if (BX_CPU_THIS_PTR cr4.get_SMAP() && ! BX_CPU_THIS_PTR get_AC() && rw != BX_EXECUTE && ! user) {
+    if (combined_access & 0x4) // User page
+      page_fault(ERROR_PROTECTION, laddr, user, rw);
+  }
+
   if (BX_CPU_THIS_PTR cr4.get_PGE())
     combined_access |= (entry[leaf] & 0x100); // G
 #endif
@@ -1091,7 +1116,7 @@ void BX_CPU_C::update_access_dirty(bx_phy_address *entry_addr, Bit32u *entry, un
 }
 
 // Translate a linear address to a physical address
-bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned user, unsigned rw)
+bx_phy_address BX_CPU_C::translate_linear(bx_TLB_entry *tlbEntry, bx_address laddr, unsigned user, unsigned rw)
 {
   Bit32u combined_access = 0x06;
   Bit32u lpf_mask = 0xfff; // 4K pages
@@ -1108,15 +1133,13 @@ bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned user, unsig
   InstrTLB_Stats();
 
   bx_address lpf = LPFOf(laddr);
-  unsigned TLB_index = BX_TLB_INDEX_OF(lpf, 0);
-  bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[TLB_index];
 
   // already looked up TLB for code access
-  if (TLB_LPFOf(tlbEntry->lpf) == lpf)
+  if (! isExecute && TLB_LPFOf(tlbEntry->lpf) == lpf)
   {
     paddress = tlbEntry->ppf | poffset;
 
-    if (! (tlbEntry->accessBits & ((isExecute<<2) | (isWrite<<1) | user)))
+    if (tlbEntry->accessBits & (1 << (/*(isExecute<<2) |*/ (isWrite<<1) | user)))
       return paddress;
 
     // The current access does not have permission according to the info
@@ -1175,27 +1198,49 @@ bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned user, unsig
   tlbEntry->ppf = ppf;
   tlbEntry->accessBits = 0;
 
-  if ((combined_access & 4) == 0) { // System
-    tlbEntry->accessBits |= TLB_SysOnly;
-    if (! isWrite)
-      tlbEntry->accessBits |= TLB_ReadOnly;
+  tlbEntry->accessBits |= TLB_SysReadOK;
+  if (isWrite)
+    tlbEntry->accessBits |= TLB_SysWriteOK;
+  if (isExecute)
+    tlbEntry->accessBits |= TLB_SysExecuteOK;
+
+  if (! BX_CPU_THIS_PTR cr0.get_PG()
+#if BX_SUPPORT_VMX >= 2
+        && ! (BX_CPU_THIS_PTR in_vmx_guest && SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE))
+#endif
+#if BX_SUPPORT_SVM
+        && ! (BX_CPU_THIS_PTR in_svm_guest && SVM_NESTED_PAGING_ENABLED)
+#endif
+    ) {
+    tlbEntry->accessBits |= TLB_UserReadOK |
+                            TLB_UserWriteOK |
+                            TLB_UserExecuteOK;
   }
   else {
-    // Current operation is a read or a page is read only
-    // Not efficient handling of system write to user read only page:
-    // hopefully it is very rare case, optimize later
-    if (! isWrite || (combined_access & 2) == 0) {
-       tlbEntry->accessBits |= TLB_ReadOnly;
+    if ((combined_access & 4) != 0) { // User Page
+
+      if (user) {
+        tlbEntry->accessBits |= TLB_UserReadOK;
+        if (isWrite)
+          tlbEntry->accessBits |= TLB_UserWriteOK;
+        if (isExecute)
+          tlbEntry->accessBits |= TLB_UserExecuteOK;
+      }
+
+#if BX_CPU_LEVEL >= 6
+      if (BX_CPU_THIS_PTR cr4.get_SMEP())
+        tlbEntry->accessBits &= ~TLB_SysExecuteOK;
+
+      if (BX_CPU_THIS_PTR cr4.get_SMAP())
+        tlbEntry->accessBits &= ~(TLB_SysReadOK | TLB_SysWriteOK);
+#endif
+
     }
   }
 
 #if BX_CPU_LEVEL >= 6
   if (combined_access & 0x100) // Global bit
     tlbEntry->accessBits |= TLB_GlobalPage;
-
-  // EFER.NXE change won't flush TLB
-  if (BX_CPU_THIS_PTR cr4.get_PAE() && rw != BX_EXECUTE)
-    tlbEntry->accessBits |= TLB_NoExecute;
 #endif
 
   // Attempt to get a host pointer to this physical page. Put that
@@ -1431,7 +1476,7 @@ bx_phy_address BX_CPU_C::nested_walk(bx_phy_address guest_paddr, unsigned rw, bx
 {
   SVM_HOST_STATE *host_state = &BX_CPU_THIS_PTR vmcb.host_state;
 
-  BX_DEBUG(("Nested walk for guest paddr 0x" FMT_ADDRX, guest_paddr));
+  BX_DEBUG(("Nested walk for guest paddr 0x" FMT_PHY_ADDRX, guest_paddr));
 
   if (host_state->efer.get_LMA())
     return nested_walk_long_mode(guest_paddr, rw, is_page_walk);
@@ -1460,6 +1505,8 @@ bx_phy_address BX_CPU_C::nested_walk(bx_phy_address guest_paddr, unsigned rw, bx
 #define BX_EPT_ENTRY_WRITE_EXECUTE      0x06
 #define BX_EPT_ENTRY_READ_WRITE_EXECUTE 0x07
 
+#define BX_SUPPRESS_EPT_VIOLATION_EXCEPTION BX_CONST64(0x8000000000000000)
+
 //                   Format of a EPT Entry
 // -----------------------------------------------------------
 // 00    | Read access
@@ -1486,7 +1533,7 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
   Bit32u combined_access = 0x7, access_mask = 0;
   Bit64u offset_mask = BX_CONST64(0x0000ffffffffffff);
 
-  BX_DEBUG(("EPT walk for guest paddr 0x" FMT_ADDRX, guest_paddr));
+  BX_DEBUG(("EPT walk for guest paddr 0x" FMT_PHY_ADDRX, guest_paddr));
 
   // when EPT A/D enabled treat guest page table accesses as writes
   if (BX_VMX_EPT_ACCESS_DIRTY_ENABLED && is_page_walk && guest_laddr_valid)
@@ -1496,7 +1543,7 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
   if (rw & 1) access_mask |= BX_EPT_WRITE; // write or r-m-w
   if (rw == BX_READ) access_mask |= BX_EPT_READ;
 
-  Bit32u vmexit_reason = 0, vmexit_qualification = access_mask;
+  Bit32u vmexit_reason = 0;
 
   for (leaf = BX_LEVEL_PML4;; --leaf) {
     entry_addr[leaf] = ppf + ((guest_paddr >> (9 + 9*leaf)) & 0xff8);
@@ -1564,21 +1611,30 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
   }
 
   if (vmexit_reason) {
-    BX_ERROR(("VMEXIT: EPT %s for guest paddr 0x" FMT_ADDRX " laddr 0x" FMT_ADDRX,
+    BX_ERROR(("VMEXIT: EPT %s for guest paddr 0x" FMT_PHY_ADDRX " laddr 0x" FMT_ADDRX,
        (vmexit_reason == VMX_VMEXIT_EPT_VIOLATION) ? "violation" : "misconfig", guest_paddr, guest_laddr));
-    VMwrite64(VMCS_64BIT_GUEST_PHYSICAL_ADDR, guest_paddr);
 
-    if (vmexit_reason == VMX_VMEXIT_EPT_MISCONFIGURATION) {
-      VMexit(VMX_VMEXIT_EPT_MISCONFIGURATION, 0);
-    }
-    else {
+    Bit32u vmexit_qualification = 0;
+
+    if (vmexit_reason == VMX_VMEXIT_EPT_VIOLATION) {
+      // no VMExit qualification for EPT Misconfiguration VMExit
+      vmexit_qualification = access_mask | (combined_access << 3);
       if (guest_laddr_valid) {
-        VMwrite_natural(VMCS_GUEST_LINEAR_ADDR, guest_laddr);
-        vmexit_qualification |= 0x80;
-        if (! is_page_walk) vmexit_qualification |= 0x100;
+        vmexit_qualification |= (1<<7);
+        if (! is_page_walk) vmexit_qualification |= (1<<8);
       }
-      VMexit(VMX_VMEXIT_EPT_VIOLATION, vmexit_qualification | (combined_access << 3));
+      if (BX_CPU_THIS_PTR nmi_unblocking_iret)
+        vmexit_qualification |= (1 << 12);
+
+      if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_VIOLATION_EXCEPTION)) {
+        if ((entry[leaf] & BX_SUPPRESS_EPT_VIOLATION_EXCEPTION) == 0)
+          Virtualization_Exception(vmexit_qualification, guest_paddr, guest_laddr);
+      }
     }
+
+    VMwrite64(VMCS_64BIT_GUEST_PHYSICAL_ADDR, guest_paddr);
+    VMwrite_natural(VMCS_GUEST_LINEAR_ADDR, guest_laddr);
+    VMexit(vmexit_reason, vmexit_qualification);
   }
 
   if (BX_VMX_EPT_ACCESS_DIRTY_ENABLED) {
@@ -1849,10 +1905,12 @@ void BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr
 {
   Bit32u pageOffset = PAGE_OFFSET(laddr);
 
+  bx_TLB_entry *tlbEntry = BX_TLB_ENTRY_OF(laddr);
+
   /* check for reference across multiple pages */
   if ((pageOffset + len) <= 4096) {
     // Access within single page.
-    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(laddr, (curr_pl==3), BX_WRITE);
+    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(tlbEntry, laddr, (curr_pl==3), BX_WRITE);
     BX_CPU_THIS_PTR address_xlation.pages     = 1;
 
     BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, BX_CPU_THIS_PTR address_xlation.paddress1,
@@ -1866,7 +1924,7 @@ void BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr
   }
   else {
     // access across 2 pages
-    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(laddr, (curr_pl == 3), BX_WRITE);
+    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(tlbEntry, laddr, (curr_pl == 3), BX_WRITE);
     BX_CPU_THIS_PTR address_xlation.len1 = 4096 - pageOffset;
     BX_CPU_THIS_PTR address_xlation.len2 = len - BX_CPU_THIS_PTR address_xlation.len1;
     BX_CPU_THIS_PTR address_xlation.pages = 2;
@@ -1874,7 +1932,7 @@ void BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr
 #if BX_SUPPORT_X86_64
     if (! long64_mode()) laddr2 &= 0xffffffff; /* handle linear address wrap in legacy mode */
 #endif
-    BX_CPU_THIS_PTR address_xlation.paddress2 = translate_linear(laddr2, (curr_pl == 3), BX_WRITE);
+    BX_CPU_THIS_PTR address_xlation.paddress2 = translate_linear(BX_TLB_ENTRY_OF(laddr2), laddr2, (curr_pl == 3), BX_WRITE);
 
 #ifdef BX_LITTLE_ENDIAN
     BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, BX_CPU_THIS_PTR address_xlation.paddress1,
@@ -1915,10 +1973,12 @@ void BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_
 
   Bit32u pageOffset = PAGE_OFFSET(laddr);
 
+  bx_TLB_entry *tlbEntry = BX_TLB_ENTRY_OF(laddr);
+
   /* check for reference across multiple pages */
   if ((pageOffset + len) <= 4096) {
     // Access within single page.
-    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(laddr, (curr_pl == 3), xlate_rw);
+    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(tlbEntry, laddr, (curr_pl == 3), xlate_rw);
     BX_CPU_THIS_PTR address_xlation.pages     = 1;
     access_read_physical(BX_CPU_THIS_PTR address_xlation.paddress1, len, data);
     BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, BX_CPU_THIS_PTR address_xlation.paddress1, len, curr_pl, BX_READ, (Bit8u*) data);
@@ -1929,7 +1989,7 @@ void BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_
   }
   else {
     // access across 2 pages
-    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(laddr, (curr_pl == 3), xlate_rw);
+    BX_CPU_THIS_PTR address_xlation.paddress1 = translate_linear(tlbEntry, laddr, (curr_pl == 3), xlate_rw);
     BX_CPU_THIS_PTR address_xlation.len1 = 4096 - pageOffset;
     BX_CPU_THIS_PTR address_xlation.len2 = len - BX_CPU_THIS_PTR address_xlation.len1;
     BX_CPU_THIS_PTR address_xlation.pages = 2;
@@ -1937,7 +1997,7 @@ void BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_
 #if BX_SUPPORT_X86_64
     if (! long64_mode()) laddr2 &= 0xffffffff; /* handle linear address wrap in legacy mode */
 #endif
-    BX_CPU_THIS_PTR address_xlation.paddress2 = translate_linear(laddr2, (curr_pl == 3), xlate_rw);
+    BX_CPU_THIS_PTR address_xlation.paddress2 = translate_linear(BX_TLB_ENTRY_OF(laddr2), laddr2, (curr_pl == 3), xlate_rw);
 
 #ifdef BX_LITTLE_ENDIAN
     access_read_physical(BX_CPU_THIS_PTR address_xlation.paddress1,
@@ -1995,8 +2055,7 @@ void BX_CPU_C::access_read_physical(bx_phy_address paddr, unsigned len, void *da
 {
 #if BX_SUPPORT_VMX && BX_SUPPORT_X86_64
   if (is_virtual_apic_page(paddr)) {
-    VMX_Virtual_Apic_Read(paddr, len, data);
-    return;
+    paddr = VMX_Virtual_Apic_Read(paddr, len, data);
   }
 #endif
 

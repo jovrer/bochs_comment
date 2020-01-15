@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.cc 11390 2012-09-02 09:37:47Z vruppert $
+// $Id: usb_msd.cc 11591 2013-01-25 17:56:40Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  USB mass storage device support (ported from QEMU)
@@ -142,7 +142,7 @@ usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
   char tmpfname[BX_PATHNAME_LEN];
   char *ptr1, *ptr2;
   bx_param_string_c *path;
-  bx_param_bool_c *status;
+  bx_param_enum_c *status;
 
   d.type = type;
   d.maxspeed = USB_SPEED_FULL;
@@ -170,16 +170,23 @@ usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
     sprintf(pname, "cdrom%d", ++cdrom_count);
     sprintf(label, "USB CD-ROM #%d Configuration", cdrom_count);
     s.config = new bx_list_c(usb_rt, pname, label);
-    s.config->set_options(bx_list_c::SERIES_ASK);
+    s.config->set_options(bx_list_c::SERIES_ASK | bx_list_c::USE_BOX_TITLE);
     s.config->set_runtime_param(1);
     s.config->set_device_param(this);
     path = new bx_param_string_c(s.config, "path", "Path", "", "", BX_PATHNAME_LEN);
     path->set(s.fname);
     path->set_handler(cd_param_string_handler);
     path->set_runtime_param(1);
-    status = new bx_param_bool_c(s.config, "status", "Inserted", "", 1);
+    status = new bx_param_enum_c(s.config,
+      "status",
+      "Status",
+      "CD-ROM media status (inserted / ejected)",
+      media_status_names,
+      BX_INSERTED,
+      BX_EJECTED);
     status->set_handler(cd_param_handler);
     status->set_runtime_param(1);
+    status->set_ask_format("Is the device inserted or ejected? [%s] ");
 #if BX_WITH_WX
     bx_list_c *usb = (bx_list_c*)SIM->get_param("ports.usb");
     usb->add(s.config);
@@ -257,6 +264,9 @@ const char* usb_msd_device_c::get_info()
 void usb_msd_device_c::register_state_specific(bx_list_c *parent)
 {
   s.sr_list = new bx_list_c(parent, "s", "USB MSD Device State");
+  if ((d.type == USB_DEV_TYPE_DISK) && (s.hdimage != NULL)) {
+    s.hdimage->register_state(s.sr_list);
+  }
   new bx_shadow_num_c(s.sr_list, "mode", &s.mode);
   new bx_shadow_num_c(s.sr_list, "scsi_len", &s.scsi_len);
   new bx_shadow_num_c(s.sr_list, "usb_len", &s.usb_len);
@@ -713,7 +723,7 @@ Bit64s usb_msd_device_c::cd_param_handler(bx_param_c *param, int set, Bit64s val
       path = SIM->get_param_string("path", param->get_parent())->getptr();
       val &= ((strlen(path) > 0) && (strcmp(path, "none")));
       if (val != cdrom->get_inserted()) {
-        cdrom->set_inserted((bx_bool)val);
+        cdrom->set_inserted(val == BX_INSERTED);
       }
     } else {
       BX_PANIC(("cd_param_string_handler: cdrom not found"));

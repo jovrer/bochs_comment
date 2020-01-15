@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc 11356 2012-08-21 19:58:41Z sshwarts $
+// $Id: ctrl_xfer64.cc 11648 2013-03-06 21:11:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -426,10 +426,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::IRET64(bxInstruction_c *i)
 {
   invalidate_prefetch_q();
 
-#if BX_SUPPORT_VMX
-  if (!BX_CPU_THIS_PTR in_vmx_guest || !VMEXIT(VMX_VM_EXEC_CTRL1_NMI_VMEXIT))
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_IRET)) Svm_Vmexit(SVM_VMEXIT_IRET);
+  }
 #endif
-    BX_CPU_THIS_PTR disable_NMI = 0;
+
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest)
+    if (is_masked_event(PIN_VMEXIT(VMX_VM_EXEC_CTRL1_VIRTUAL_NMI) ? BX_EVENT_VMX_VIRTUAL_NMI : BX_EVENT_NMI))
+      BX_CPU_THIS_PTR nmi_unblocking_iret = 1;
+
+  if (BX_CPU_THIS_PTR in_vmx_guest && PIN_VMEXIT(VMX_VM_EXEC_CTRL1_NMI_EXITING)) {
+    if (PIN_VMEXIT(VMX_VM_EXEC_CTRL1_VIRTUAL_NMI)) unmask_event(BX_EVENT_VMX_VIRTUAL_NMI);
+  }
+  else
+#endif
+    unmask_event(BX_EVENT_NMI);
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_iret;
@@ -438,6 +451,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::IRET64(bxInstruction_c *i)
   BX_ASSERT(long_mode());
 
   long_iret(i);
+
+#if BX_SUPPORT_VMX
+  BX_CPU_THIS_PTR nmi_unblocking_iret = 0;
+#endif
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);

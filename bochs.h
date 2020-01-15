@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h 11370 2012-08-26 12:32:10Z vruppert $
+// $Id: bochs.h 11623 2013-02-12 21:26:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -122,10 +122,11 @@ void bx_set_log_actions_by_device(bx_bool panic_flag);
 // special config parameter and options functions for plugins
 void bx_init_std_nic_options(const char *name, bx_list_c *menu);
 void bx_init_usb_options(const char *usb_name, const char *pname, int maxports);
+int  bx_parse_param_from_list(const char *context, const char *input, bx_list_c *list);
 int  bx_parse_nic_params(const char *context, const char *param, bx_list_c *base);
 int  bx_parse_usb_port_params(const char *context, bx_bool devopt,
                               const char *param, int maxports, bx_list_c *base);
-int  bx_write_pci_nic_options(FILE *fp, bx_list_c *base);
+int  bx_write_param_list(FILE *fp, bx_list_c *base, const char *optname, bx_bool multiline);
 int  bx_write_usb_options(FILE *fp, int maxports, bx_list_c *base);
 Bit32u crc32(const Bit8u *buf, int len);
 // for param-tree testing only
@@ -182,7 +183,8 @@ void print_tree(bx_param_c *node, int level = 0);
 #define BX_TICK1()                  bx_pc_system.tick1()
 #define BX_TICKN(n)                 bx_pc_system.tickn(n)
 #define BX_INTR                     bx_pc_system.INTR
-#define BX_SET_INTR(b)              bx_pc_system.set_INTR(b)
+#define BX_RAISE_INTR()             bx_pc_system.raise_INTR()
+#define BX_CLEAR_INTR()             bx_pc_system.clear_INTR()
 #define BX_HRQ                      bx_pc_system.HRQ
 
 #if BX_SUPPORT_SMP
@@ -249,12 +251,6 @@ typedef class BOCHSAPI logfunctions
 {
   char *name;
   char *prefix;
-// values of onoff: 0=ignore, 1=report, 2=ask, 3=fatal
-#define ACT_IGNORE 0
-#define ACT_REPORT 1
-#define ACT_ASK    2
-#define ACT_FATAL  3
-#define N_ACT      4
   int onoff[N_LOGLEV];
   class iofunctions *logio;
   // default log actions for all devices, declared and initialized
@@ -384,7 +380,7 @@ BOCHSAPI extern logfunc_t *genlog;
 #endif
 
 #if BX_PHY_ADDRESS_LONG
-  #define FMT_PHY_ADDRX FMT_ADDRX64
+  #define FMT_PHY_ADDRX FMT_PHY_ADDRX64
 #else
   #define FMT_PHY_ADDRX FMT_ADDRX32
 #endif
@@ -456,10 +452,9 @@ BOCHSAPI extern Bit32u apic_id_mask;
 extern bx_bool bx_gui_sighandler;
 #endif
 
-// This value controls how often each I/O device's periodic() method
+// This value controls how often each I/O device's timer handler
 // gets called.  The timer is set up in iodev/devices.cc.
-#define BX_IODEV_HANDLER_PERIOD 100    // microseconds
-//#define BX_IODEV_HANDLER_PERIOD 10    // microseconds
+#define BX_IODEV_HANDLER_PERIOD 1000   // microseconds
 
 #define BX_PATHNAME_LEN 512
 

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32paramdlg.cc 11097 2012-03-15 19:34:13Z sshwarts $
+// $Id: win32paramdlg.cc 11661 2013-03-19 19:26:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  Volker Ruppert
+//  Copyright (C) 2009-2013  Volker Ruppert
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,7 @@
 
 #include "bochs.h"
 #include "win32res.h"
+#include "scrollwin.h"
 
 #define ID_LABEL 100
 #define ID_PARAM 1000
@@ -363,6 +364,14 @@ LRESULT CALLBACK EditHexWndProc(HWND Window, UINT msg, WPARAM wParam, LPARAM lPa
   return CallWindowProc(DefEditWndProc, Window, msg, wParam, lParam);
 }
 
+BOOL IsScrollWindow(HWND hwnd)
+{
+  char classname[80];
+
+  GetClassName(hwnd, classname, 80);
+  return (!lstrcmp(classname, "ScrollWin"));
+}
+
 HWND CreateLabel(HWND hDlg, UINT cid, UINT xpos, UINT ypos, UINT width, BOOL hide, const char *text)
 {
   HWND Label;
@@ -374,7 +383,11 @@ HWND CreateLabel(HWND hDlg, UINT cid, UINT xpos, UINT ypos, UINT width, BOOL hid
   r.top = ypos + 2;
   r.right = r.left + width;
   r.bottom = r.top + 16;
-  MapDialogRect(hDlg, &r);
+  if (IsScrollWindow(hDlg)) {
+    MapDialogRect(GetParent(hDlg), &r);
+  } else {
+    MapDialogRect(hDlg, &r);
+  }
   Label = CreateWindow("STATIC", text, WS_CHILD, r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   SendMessage(Label, WM_SETFONT, (WPARAM)DlgFont, TRUE);
   ShowWindow(Label, hide ? SW_HIDE : SW_SHOW);
@@ -446,7 +459,11 @@ HWND CreateBrowseButton(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide)
   r.top = ypos;
   r.right = r.left + 50;
   r.bottom = r.top + 14;
-  MapDialogRect(hDlg, &r);
+  if (IsScrollWindow(hDlg)) {
+    MapDialogRect(GetParent(hDlg), &r);
+  } else {
+    MapDialogRect(hDlg, &r);
+  }
   Button = CreateWindow("BUTTON", "Browse...", WS_CHILD, r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   SendMessage(Button, WM_SETFONT, (WPARAM)DlgFont, TRUE);
   ShowWindow(Button, hide ? SW_HIDE : SW_SHOW);
@@ -464,7 +481,11 @@ HWND CreateCheckbox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   r.top = ypos;
   r.right = r.left + 20;
   r.bottom = r.top + 14;
-  MapDialogRect(hDlg, &r);
+  if (IsScrollWindow(hDlg)) {
+    MapDialogRect(GetParent(hDlg), &r);
+  } else {
+    MapDialogRect(hDlg, &r);
+  }
   Checkbox = CreateWindow("BUTTON", "", BS_AUTOCHECKBOX | WS_CHILD | WS_TABSTOP,
                           r.left, r.top, r.right-r.left+1, r.bottom-r.top+1,
                           hDlg, (HMENU)code, NULL, NULL);
@@ -479,30 +500,18 @@ HWND CreateInput(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_param_
 {
   HWND Input, Updown;
   RECT r;
-  int code, i, style;
+  int code, style;
   bx_param_num_c *nparam = NULL;
   bx_param_string_c *sparam;
   char buffer[512];
-  char eachbyte[16];
-  char sep_string[2];
-  char *val;
   BOOL spinctrl = FALSE, hexedit = FALSE;
 
   code = ID_PARAM + cid;
   style = WS_CHILD | WS_TABSTOP;
   if (param->get_type() == BXT_PARAM_STRING) {
     sparam = (bx_param_string_c*)param;
-    val = sparam->getptr();
-    if (sparam->get_options() & sparam->RAW_BYTES) {
-      buffer[0] = 0;
-      sep_string[0] = sparam->get_separator();
-      sep_string[1] = 0;
-      for (i = 0; i < sparam->get_maxsize(); i++) {
-        wsprintf(eachbyte, "%s%02x", (i>0)?sep_string : "", (Bit8u)0xff&val[i]);
-        strncat(buffer, eachbyte, sizeof(buffer));
-      }
-    } else {
-      lstrcpyn(buffer, val, 512);
+    sparam->sprint(buffer, 512, 0);
+    if ((sparam->get_options() & sparam->RAW_BYTES) == 0) {
       style |= ES_AUTOHSCROLL;
     }
   } else {
@@ -522,7 +531,11 @@ HWND CreateInput(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_param_
   r.top = ypos;
   r.right = r.left + 100;
   r.bottom = r.top + 14;
-  MapDialogRect(hDlg, &r);
+  if (IsScrollWindow(hDlg)) {
+    MapDialogRect(GetParent(hDlg), &r);
+  } else {
+    MapDialogRect(hDlg, &r);
+  }
   Input = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_NOPARENTNOTIFY, "EDIT", buffer,
                          style, r.left, r.top, r.right-r.left+1,
                          r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
@@ -553,7 +566,11 @@ HWND CreateCombobox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   r.top = ypos;
   r.right = r.left + 100;
   r.bottom = r.top + 14 * ((int)(eparam->get_max() - eparam->get_min()) + 1);
-  MapDialogRect(hDlg, &r);
+  if (IsScrollWindow(hDlg)) {
+    MapDialogRect(GetParent(hDlg), &r);
+  } else {
+    MapDialogRect(hDlg, &r);
+  }
   Combo = CreateWindow("COMBOBOX", "", WS_CHILD | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
                        r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   j = 0;
@@ -569,6 +586,25 @@ HWND CreateCombobox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   return Combo;
 }
 
+
+HWND CreateScrollWindow(HWND hDlg, int xpos, int ypos, int width, int height)
+{
+  RECT r;
+  HWND scrollwin;
+
+  r.left = xpos;
+  r.top = ypos;
+  r.right = r.left + width;
+  r.bottom = r.top + height;
+  MapDialogRect(hDlg, &r);
+  scrollwin = CreateWindowEx(WS_EX_CLIENTEDGE | WS_EX_CONTROLPARENT, "ScrollWin",
+                             "scrollwin", WS_CHILD | WS_CLIPCHILDREN | WS_TABSTOP | WS_VSCROLL,
+                             r.left, r.top, r.right-r.left+1, r.bottom-r.top+1,
+                             hDlg, NULL, NULL, NULL);
+  ShowWindow(scrollwin, SW_SHOW);
+  return scrollwin;
+}
+
 void EnableParam(HWND hDlg, UINT cid, bx_param_c *param, BOOL val)
 {
   HWND Button, Updown;
@@ -577,6 +613,10 @@ void EnableParam(HWND hDlg, UINT cid, bx_param_c *param, BOOL val)
     cid = findDlgIDFromParam(param);
   }
   if (param->get_type() != BXT_LIST) {
+    bx_list_c *list = (bx_list_c*)param->get_parent();
+    if (list->get_options() & list->USE_SCROLL_WINDOW) {
+      hDlg = FindWindowEx(hDlg, NULL, "ScrollWin", NULL);
+    }
     EnableWindow(GetDlgItem(hDlg, ID_LABEL + cid), val);
     EnableWindow(GetDlgItem(hDlg, ID_PARAM + cid), val);
     Button = GetDlgItem(hDlg, ID_BROWSE + cid);
@@ -629,6 +669,8 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
   int options;
   UINT cid, i, items, lw, w1, x0, x1, x2, y;
   BOOL ihide;
+  HWND scrollwin = NULL, hParent;
+  RECT vrect;
 
   items = list->get_size();
   options = list->get_options();
@@ -638,6 +680,10 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
   if (options & list->USE_TAB_WINDOW) {
     y = ypos + 15;
     size.cy = 18;
+  } else if (options & list->USE_SCROLL_WINDOW) {
+    x0 = 5;
+    y = 5;
+    size.cy = 3;
   } else {
     y = ypos + 10;
     size.cy = 13;
@@ -661,6 +707,16 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
   if (size.cx < (int)(x2 + 5)) {
     size.cx = x2 + 5;
   }
+  if ((items > 16) && (options & list->USE_SCROLL_WINDOW)) {
+    size.cx += 20;
+    scrollwin = CreateScrollWindow(hDlg, xpos, ypos, size.cx, 325);
+    vrect.left = vrect.top = 0;
+    vrect.right = size.cx;
+    vrect.bottom = size.cy;
+    hParent = scrollwin;
+  } else {
+    hParent = hDlg;
+  }
   // create controls
   for (i = 0; i < items; i++) {
     param = list->get(i);
@@ -681,18 +737,18 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
         }
       } else {
         lw = GetLabelText(param, list, buffer);
-        /* HWND ltext = */ CreateLabel(hDlg, cid, x0, y, w1, hide, buffer);
+        CreateLabel(hParent, cid, x0, y, w1, hide, buffer);
         if (param->get_type() == BXT_PARAM_BOOL) {
-          /* HWND control = */ CreateCheckbox(hDlg, cid, x1, y, hide, (bx_param_bool_c*)param);
+          CreateCheckbox(hParent, cid, x1, y, hide, (bx_param_bool_c*)param);
         } else if (param->get_type() == BXT_PARAM_ENUM) {
-          /* HWND control = */ CreateCombobox(hDlg, cid, x1, y, hide, (bx_param_enum_c*)param);
+          CreateCombobox(hParent, cid, x1, y, hide, (bx_param_enum_c*)param);
         } else if (param->get_type() == BXT_PARAM_NUM) {
-          /* HWND control = */ CreateInput(hDlg, cid, x1, y, hide, param);
+          CreateInput(hParent, cid, x1, y, hide, param);
         } else if (param->get_type() == BXT_PARAM_STRING) {
-          /* HWND control = */ CreateInput(hDlg, cid, x1, y, hide, param);
+          CreateInput(hParent, cid, x1, y, hide, param);
           sparam = (bx_param_string_c*)param;
           if (sparam->get_options() & sparam->IS_FILENAME) {
-            /* HWND browse = */ CreateBrowseButton(hDlg, cid, x2, y, hide);
+            CreateBrowseButton(hParent, cid, x2, y, hide);
             if (size.cx < (int)(x2 + 60)) {
               size.cx = x2 + 60;
             }
@@ -702,13 +758,21 @@ SIZE CreateParamList(HWND hDlg, UINT lid, UINT xpos, UINT ypos, BOOL hide, bx_li
           EnableParam(hDlg, cid, param, FALSE);
         }
         y += 20;
-        size.cy += 20;
+        if ((scrollwin == NULL) || (i < 16)) {
+          size.cy += 20;
+        }
+        if (scrollwin != NULL) {
+          vrect.bottom += 20;
+        }
       }
     }
     cid++;
   }
   if (options & list->USE_TAB_WINDOW) {
     CreateTabControl(hDlg, lid, xpos, ypos, size, hide, list);
+  } else if (scrollwin != NULL) {
+    MapDialogRect(hDlg, &vrect);
+    SendMessage(scrollwin, WM_USER, 0x1234, vrect.bottom);
   } else {
     CreateGroupbox(hDlg, lid, xpos, ypos, size, hide, list);
   }
@@ -729,6 +793,9 @@ void SetParamList(HWND hDlg, bx_list_c *list)
 
   lid = findDlgListBaseID(list);
   items = list->get_size();
+  if (list->get_options() & list->USE_SCROLL_WINDOW) {
+    hDlg = FindWindowEx(hDlg, NULL, "ScrollWin", NULL);
+  }
   for (i = 0; i < items; i++) {
     cid = lid + i;
     param = list->get(i);
@@ -987,6 +1054,7 @@ int win32ParamDialog(HWND parent, const char *menu)
   INT_PTR ret;
 
   InitDlgFont();
+  RegisterScrollWindow(NULL);
   ret = DialogBoxParam(NULL, MAKEINTRESOURCE(PARAM_DLG), parent, (DLGPROC)ParamDlgProc, (LPARAM)menu);
   DeleteObject(DlgFont);
   return ret;
