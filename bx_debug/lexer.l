@@ -1,6 +1,6 @@
 %{
 /////////////////////////////////////////////////////////////////////////
-// $Id: lexer.l 12908 2016-04-29 21:01:28Z sshwarts $
+// $Id: lexer.l 13699 2019-12-20 07:42:07Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdlib.h>
@@ -65,6 +65,7 @@ crc             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CRC); }
 c               |
 cont            |
 continue        { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CONTINUE); }
+if              { bxlval.sval = strdup(bxtext); return(BX_TOKEN_IF); }
 step            |
 s               { bxlval.sval = strdup(bxtext); return(BX_TOKEN_STEPN); }
 next            |
@@ -117,6 +118,8 @@ pending         { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PENDING); }
 take            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_TAKE); }
 dma             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_DMA); }
 irq             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_IRQ); }
+smi             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_SMI); }
+nmi             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_NMI); }
 tlb             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_TLB); }
 u               |
 disasm          { BEGIN(DISASM); bxlval.sval = strdup(bxtext); return(BX_TOKEN_DISASM); }
@@ -135,6 +138,7 @@ sba             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_TIMEBP_ABSOLUTE)
 modebp          { bxlval.sval = strdup(bxtext); return(BX_TOKEN_MODEBP); }
 vmexitbp        { bxlval.sval = strdup(bxtext); return(BX_TOKEN_VMEXITBP); }
 print-stack     { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PRINT_STACK); }
+bt              { bxlval.sval = strdup(bxtext); return(BX_TOKEN_BT); }
 watch           { bxlval.sval = strdup(bxtext); return(BX_TOKEN_WATCH); }
 unwatch         { bxlval.sval = strdup(bxtext); return(BX_TOKEN_UNWATCH); }
 read            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_READ); }
@@ -220,6 +224,7 @@ r15             { LONG_MODE_64B_REG(BX_64BIT_REG_R15); }
 ip              { return(BX_TOKEN_REG_IP); }
 eip             { return(BX_TOKEN_REG_EIP);}
 rip             { return(BX_TOKEN_REG_RIP);}
+ssp             { return(BX_TOKEN_REG_SSP);}
 cs              { bxlval.uval = BX_SEG_REG_CS; return(BX_TOKEN_CS); }
 es              { bxlval.uval = BX_SEG_REG_ES; return(BX_TOKEN_ES); }
 ss              { bxlval.uval = BX_SEG_REG_SS; return(BX_TOKEN_SS); }
@@ -241,6 +246,12 @@ calc            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CALC); }
 "/"             { return ('/'); }
 ">>"            { return (BX_TOKEN_RSHIFT); }
 "<<"            { return (BX_TOKEN_LSHIFT); }
+"=="            { return (BX_TOKEN_EQ); }
+"!="            { return (BX_TOKEN_NE); }
+"<="            { return (BX_TOKEN_LE); }
+">="            { return (BX_TOKEN_GE); }
+">"             { return ('>'); }
+"<"             { return ('<'); }
 "&"             { return ('&'); }
 "|"             { return ('|'); }
 "^"             { return ('^'); }

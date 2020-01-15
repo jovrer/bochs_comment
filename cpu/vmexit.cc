@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmexit.cc 12770 2015-05-16 21:25:43Z sshwarts $
+// $Id: vmexit.cc 13726 2019-12-26 16:48:33Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009-2015 Stanislav Shwartsman
@@ -28,6 +28,8 @@
 
 #if BX_SUPPORT_VMX
 
+#include "decoder/ia_opcodes.h"
+
 // BX_READ(0) form means nnn(), rm(); BX_WRITE(1) form means rm(), nnn()
 Bit32u gen_instruction_info(bxInstruction_c *i, Bit32u reason, bx_bool rw_form)
 {
@@ -49,6 +51,15 @@ Bit32u gen_instruction_info(bxInstruction_c *i, Bit32u reason, bx_bool rw_form)
         instr_info |= i->src() << 28;
       break;
 
+    case VMX_VMEXIT_RDRAND:
+    case VMX_VMEXIT_RDSEED:
+      // bits 12:11 hold operand size
+      if (i->os64L())
+        instr_info |= 1 << 12;
+      else if (i->as32L())
+        instr_info |= 1 << 11;
+      break;
+
     default:
       break;
   }
@@ -57,7 +68,8 @@ Bit32u gen_instruction_info(bxInstruction_c *i, Bit32u reason, bx_bool rw_form)
   //  instruction information field format
   // --------------------------------------
   //
-  // [02:00] | Memory operand scale field (encoded)
+  // [01:00] | Memory operand scale field (encoded)
+  // [02:02] | Undefined
   // [06:03] | Reg1, undefined when memory operand
   // [09:07] | Memory operand address size
   // [10:10] | Memory/Register format (0 - mem, 1 - reg)
@@ -118,6 +130,9 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_Instruction(bxInstruction_c *i, Bit
     case VMX_VMEXIT_LDTR_TR_ACCESS:
     case VMX_VMEXIT_INVEPT:
     case VMX_VMEXIT_INVVPID:
+    case VMX_VMEXIT_INVPCID:
+    case VMX_VMEXIT_XSAVES:
+    case VMX_VMEXIT_XRSTORS:
 #endif
 #if BX_SUPPORT_X86_64
       if (long64_mode()) {
@@ -131,7 +146,10 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_Instruction(bxInstruction_c *i, Bit
         qualification = (Bit64u) ((Bit32u) i->displ32s());
         qualification &= i->asize_mask();
       }
+      // fall through
 
+    case VMX_VMEXIT_RDRAND:
+    case VMX_VMEXIT_RDSEED:
       instr_info = gen_instruction_info(i, reason, rw_form);
       VMwrite32(VMCS_32BIT_VMEXIT_INSTRUCTION_INFO, instr_info);
       break;
@@ -293,10 +311,10 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::VMexit_TaskSwitch(Bit16u tss_selector, uns
   VMexit(VMX_VMEXIT_TASK_SWITCH, tss_selector | (source << 30));
 }
 
-#define BX_VMX_LO_MSR_START  0x00000000
-#define BX_VMX_LO_MSR_END    0x00001FFF
-#define BX_VMX_HI_MSR_START  0xC0000000
-#define BX_VMX_HI_MSR_END    0xC0001FFF
+const Bit32u BX_VMX_LO_MSR_START = 0x00000000;
+const Bit32u BX_VMX_LO_MSR_END   = 0x00001FFF;
+const Bit32u BX_VMX_HI_MSR_START = 0xC0000000;
+const Bit32u BX_VMX_HI_MSR_END   = 0xC0001FFF;
 
 void BX_CPP_AttrRegparmN(2) BX_CPU_C::VMexit_MSR(unsigned op, Bit32u msr)
 {
@@ -651,15 +669,15 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::Vmexit_Vmread(bxInstruction_c *i)
 {
   BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
 
-  if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMCS_SHADOWING)) return BX_TRUE;
+  if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMCS_SHADOWING)) return true;
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-    if (BX_READ_64BIT_REG_HIGH(i->src())) return BX_TRUE;
+    if (BX_READ_64BIT_REG_HIGH(i->src())) return true;
   }
 #endif
   unsigned encoding = BX_READ_32BIT_REG(i->src());
-  if (encoding > 0x7fff) return BX_TRUE;
+  if (encoding > 0x7fff) return true;
 
   VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
 
@@ -669,24 +687,24 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::Vmexit_Vmread(bxInstruction_c *i)
   BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(resolve_memtype(pAddr)), BX_READ, BX_VMREAD_BITMAP_ACCESS, &bitmap);
   
   if (bitmap & (1 << (encoding & 7)))
-    return BX_TRUE;
+    return true;
 
-  return BX_FALSE;
+  return false;
 }
 
 bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::Vmexit_Vmwrite(bxInstruction_c *i)
 {
   BX_ASSERT(BX_CPU_THIS_PTR in_vmx_guest);
 
-  if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMCS_SHADOWING)) return BX_TRUE;
+  if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMCS_SHADOWING)) return true;
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-    if (BX_READ_64BIT_REG_HIGH(i->dst())) return BX_TRUE;
+    if (BX_READ_64BIT_REG_HIGH(i->dst())) return true;
   }
 #endif
   unsigned encoding = BX_READ_32BIT_REG(i->dst());
-  if (encoding > 0x7fff) return BX_TRUE;
+  if (encoding > 0x7fff) return true;
 
   VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
 
@@ -696,9 +714,9 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::Vmexit_Vmwrite(bxInstruction_c *i)
   BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(resolve_memtype(pAddr)), BX_READ, BX_VMWRITE_BITMAP_ACCESS, &bitmap);
   
   if (bitmap & (1 << (encoding & 7)))
-    return BX_TRUE;
+    return true;
 
-  return BX_FALSE;
+  return false;
 }
 
 void BX_CPU_C::Virtualization_Exception(Bit64u qualification, Bit64u guest_physical, Bit64u guest_linear)

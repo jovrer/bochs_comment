@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.h 12865 2015-10-22 18:13:59Z vruppert $
+// $Id: usb_msd.h 13769 2020-01-03 21:17:15Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  USB mass storage device support (ported from QEMU)
 //
 //  Copyright (c) 2006 CodeSourcery.
 //  Written by Paul Brook
-//  Copyright (C) 2009-2015  The Bochs Project
+//  Copyright (C) 2009-2020  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -64,11 +64,12 @@ private:
     cdrom_base_c *cdrom;
     scsi_device_t *scsi_dev;
     bx_list_c *sr_list;
-    const char *fname;
+    char fname[BX_PATHNAME_LEN];
     bx_list_c *config;
-    char info_txt[BX_PATHNAME_LEN];
+    char info_txt[BX_PATHNAME_LEN + 38];
     char journal[BX_PATHNAME_LEN]; // undoable / volatile disk only
     int size; // VVFAT disk only
+    unsigned sect_size; // sector size for disks only (default = 512 bytes)
     // members handled by runtime config
     bx_bool status_changed;
     // members handled by save/restore

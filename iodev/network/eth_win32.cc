@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_win32.cc 13160 2017-03-30 18:08:15Z vruppert $
+// $Id: eth_win32.cc 13648 2019-12-08 18:14:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2017  The Bochs Project
+//  Copyright (C) 2001-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -141,7 +141,7 @@ struct bpf_insn {
 	u_short	code;
 	u_char 	jt;
 	u_char 	jf;
-	bpf_int32 k;
+	bpf_u_int32 k;
 };
 
 struct bpf_program {
@@ -183,11 +183,10 @@ LPADAPTER lpAdapter = 0;
 LPPACKET  pkSend;
 LPPACKET  pkRecv;
 char      buffer[256000];
-DWORD     dwVersion, dwMajorVersion;
 char      AdapterList[10][1024];
 char      cMacAddr[6];
 char      NetDev[512];
-BOOL      IsNT = FALSE;
+BOOL      IsNT = TRUE;
 
 typedef LPADAPTER (CDECL *POpenAdapter)     (LPTSTR);
 typedef VOID      (CDECL *PCloseAdapter)    (LPADAPTER);
@@ -237,6 +236,7 @@ public:
                       eth_rx_handler_t rxh, eth_rx_status_t rxstat,
                       bx_devmodel_c *dev,
                       const char *script);
+  virtual ~bx_win32_pktmover_c();
   void sendpkt(void *buf, unsigned io_len);
 private:
   struct bpf_insn filter[8];
@@ -276,8 +276,6 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
   this->netdev = dev;
   BX_INFO(("win32 network driver"));
   // Open Packet Driver Here.
-  DWORD dwVersion;
-  DWORD dwWindowsMajorVersion;
 
   this->rxh    = rxh;
   this->rxstat = rxstat;
@@ -302,16 +300,8 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
   }
 
   memset(&NetDev, 0, sizeof(NetDev));
-  dwVersion=GetVersion();
-  dwWindowsMajorVersion =  (DWORD)(LOBYTE(LOWORD(dwVersion)));
-  if (!(dwVersion >= 0x80000000 && dwWindowsMajorVersion >= 4))
-  {  // Windows NT/2k
-    int nLen = MultiByteToWideChar(CP_ACP, 0, netif, -1, NULL, 0);
-    MultiByteToWideChar(CP_ACP, 0, netif, -1, (WCHAR *)NetDev, nLen);
-    IsNT = TRUE;
-  } else { // Win9x
-    strcpy(NetDev, netif);
-  }
+  // Expecting ANSI format for WinPCap 3.1 or newer
+  strcpy(NetDev, netif);
 
   lpAdapter = PacketOpenAdapter(NetDev);
   if (!lpAdapter || (lpAdapter->hFile == INVALID_HANDLE_VALUE)) {
@@ -362,6 +352,13 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
 #endif
 }
 
+bx_win32_pktmover_c::~bx_win32_pktmover_c()
+{
+#if BX_ETH_WIN32_LOGGING
+  fclose(pktlog_txt);
+#endif
+}
+
 void bx_win32_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
 #if BX_ETH_WIN32_LOGGING
@@ -372,7 +369,7 @@ void bx_win32_pktmover_c::sendpkt(void *buf, unsigned io_len)
   PacketInitPacket(pkSend, (char *)buf, io_len);
 
   if (!PacketSendPacket(lpAdapter, pkSend, TRUE)) {
-    fprintf(stderr, "[ETH-WIN32] Error sending packet: %lu\n", GetLastError());
+    BX_ERROR(("Error sending packet: %lu\n", GetLastError()));
   }
 }
 

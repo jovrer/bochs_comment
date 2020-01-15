@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc 13076 2017-02-18 16:28:04Z vruppert $
+// $Id: main.cc 13759 2020-01-02 16:19:02Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2017  The Bochs Project
+//  Copyright (C) 2001-2020  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -95,23 +95,39 @@ BOCHSAPI BX_MEM_C bx_mem;
 
 char *bochsrc_filename = NULL;
 
+size_t bx_get_timestamp(char *buffer)
+{
+#if VER_SVNFLAG == 1
+#ifdef __DATE__
+#ifdef __TIME__
+  sprintf(buffer, "Compiled on %s at %s", __DATE__, __TIME__);
+#else
+  sprintf(buffer, "Compiled on %s", __DATE__);
+#endif
+#else
+  buffer[0] = 0;
+#endif
+#else
+  // Releases use the timestamp from README file
+  sprintf(buffer, "Timestamp: %s", REL_TIMESTAMP);
+#endif
+  return strlen(buffer);
+}
+
 void bx_print_header()
 {
-  printf("%s\n", divider);
   char buffer[128];
-  sprintf (buffer, "Bochs x86 Emulator %s\n", VER_STRING);
+
+  printf("%s\n", divider);
+  sprintf (buffer, "Bochs x86 Emulator %s\n", VERSION);
   bx_center_print(stdout, buffer, 72);
   if (REL_STRING[0]) {
     sprintf(buffer, "%s\n", REL_STRING);
     bx_center_print(stdout, buffer, 72);
-#ifdef __DATE__
-#ifdef __TIME__
-    sprintf(buffer, "Compiled on %s at %s\n", __DATE__, __TIME__);
-#else
-    sprintf(buffer, "Compiled on %s\n", __DATE__);
-#endif
-    bx_center_print(stdout, buffer, 72);
-#endif
+    if (bx_get_timestamp(buffer) > 0) {
+      bx_center_print(stdout, buffer, 72);
+      printf("\n");
+    }
   }
   printf("%s\n", divider);
 }
@@ -202,43 +218,23 @@ void print_tree(bx_param_c *node, int level, bx_bool xml)
 
   switch (node->get_type()) {
     case BXT_PARAM_NUM:
-      if (((bx_param_num_c*)node)->get_base() == BASE_DEC) {
-        dbg_printf("" FMT_LL "d", ((bx_param_num_c*)node)->get64());
-        if (! xml) dbg_printf(" (number)");
-      } else {
-        dbg_printf("0x" FMT_LL "x", ((bx_param_num_c*)node)->get64());
-        if (! xml) dbg_printf(" (hex number)");
-      }
-      break;
     case BXT_PARAM_BOOL:
-      dbg_printf("%s", ((bx_param_bool_c*)node)->get()?"true":"false");
-      if (! xml) dbg_printf(" (boolean)");
-      break;
     case BXT_PARAM_ENUM:
-      dbg_printf("'%s'", ((bx_param_enum_c*)node)->get_selected());
-      if (! xml) dbg_printf(" (enum)");
-      break;
     case BXT_PARAM_STRING:
-      ((bx_param_string_c*)node)->sprint(tmpstr, BX_PATHNAME_LEN, 0);
-      if (((bx_param_string_c*)node)->get_options() & bx_param_string_c::RAW_BYTES) {
-        dbg_printf("'%s'", tmpstr);
-        if (! xml) dbg_printf(" (raw byte string)");
-      } else {
-        dbg_printf("'%s'", tmpstr);
-        if (! xml) dbg_printf(" (string)");
-      }
+      node->dump_param(tmpstr, BX_PATHNAME_LEN, 1);
+      dbg_printf("%s", tmpstr);
       break;
     case BXT_LIST:
       {
+        if (!xml) dbg_printf("{");
         dbg_printf("\n");
         bx_list_c *list = (bx_list_c*)node;
         for (i=0; i < list->get_size(); i++) {
           print_tree(list->get(i), level+1, xml);
         }
-        if (xml) {
-          for (i=0; i<level; i++)
-            dbg_printf("  ");
-        }
+        for (i=0; i<level; i++)
+          dbg_printf("  ");
+        if (!xml) dbg_printf("}");
         break;
       }
     case BXT_PARAM_DATA:
@@ -574,6 +570,7 @@ void print_usage(void)
 #endif
     "  -r path          restore the Bochs state from path\n"
     "  -log filename    specify Bochs log file name\n"
+    "  -unlock          unlock Bochs images leftover from previous session\n"
 #if BX_DEBUGGER
     "  -rc filename     execute debugger commands stored in file\n"
     "  -dbglog filename specify Bochs internal debugger log file name\n"
@@ -698,6 +695,9 @@ int bx_init_main(int argc, char *argv[])
     else if (!strcmp("-log", argv[arg])) {
       if (++arg >= argc) BX_PANIC(("-log must be followed by a filename"));
       else SIM->get_param_string(BXPN_LOG_FILENAME)->set(argv[arg]);
+    }
+    else if (!strcmp("-unlock", argv[arg])) {
+      SIM->get_param_bool(BXPN_UNLOCK_IMAGES)->set(1);
     }
 #if BX_DEBUGGER
     else if (!strcmp("-dbglog", argv[arg])) {
@@ -855,9 +855,15 @@ int bx_init_main(int argc, char *argv[])
   if (getenv("BXSHARE") != NULL) {
     BX_INFO(("BXSHARE is set to '%s'", getenv("BXSHARE")));
   } else {
+#ifdef WIN32
+    BX_INFO(("BXSHARE not set. using system default '%s'",
+        get_builtin_variable("BXSHARE")));
+    setenv("BXSHARE", get_builtin_variable("BXSHARE"), 1);
+#else
     BX_INFO(("BXSHARE not set. using compile time default '%s'",
         BX_SHARE_PATH));
     setenv("BXSHARE", BX_SHARE_PATH, 1);
+#endif
   }
 #else
   // we don't have getenv or setenv.  Do nothing.
@@ -866,11 +872,6 @@ int bx_init_main(int argc, char *argv[])
   // initialize plugin system. This must happen before we attempt to
   // load any modules.
   plugin_startup();
-#if BX_SUPPORT_PCIUSB
-  // USB HC devices depend on USB core symbols, so we have to load it here.
-  // The devices init() unloads it if not used.
-  PLUG_load_plugin(usb_common, PLUGTYPE_CORE);
-#endif
 
   int norcfile = 1;
 
@@ -1016,10 +1017,12 @@ int bx_begin_simulation(int argc, char *argv[])
 
   bx_init_hardware();
 
+#if BX_LOAD32BITOSHACK
   if (SIM->get_param_enum(BXPN_LOAD32BITOS_WHICH)->get()) {
     void bx_load32bitOSimagehack(void);
     bx_load32bitOSimagehack();
   }
+#endif
 
   SIM->set_init_done(1);
 
@@ -1073,14 +1076,22 @@ int bx_begin_simulation(int argc, char *argv[])
 
       static int quantum = SIM->get_param_num(BXPN_SMP_QUANTUM)->get();
       Bit32u executed = 0, processor = 0;
+      bool run = true;
 
+      if (setjmp(BX_CPU_C::jmp_buf_env)) {
+        // can get here only from exception function or VMEXIT
+        BX_CPU(processor)->icount++;
+        run = false;
+      }
       while (1) {
          // do some instructions in each processor
-         Bit64u icount = BX_CPU(processor)->icount_last_sync = BX_CPU(processor)->get_icount();
-         BX_CPU(processor)->cpu_run_trace();
+        if (run)
+          BX_CPU(processor)->cpu_run_trace();
+        else
+          run = true;
 
          // see how many instruction it was able to run
-         Bit32u n = (Bit32u)(BX_CPU(processor)->get_icount() - icount);
+         Bit32u n = (Bit32u)(BX_CPU(processor)->get_icount() - BX_CPU(processor)->icount_last_sync);
          if (n == 0) n = quantum; // the CPU was halted
          executed += n;
 
@@ -1089,6 +1100,8 @@ int bx_begin_simulation(int argc, char *argv[])
            BX_TICKN(executed / BX_SMP_PROCESSORS);
            executed %= BX_SMP_PROCESSORS;
          }
+
+         BX_CPU(processor)->icount_last_sync = BX_CPU(processor)->get_icount();
 
          if (bx_pc_system.kill_bochs_request)
            break;
@@ -1155,6 +1168,7 @@ void bx_init_hardware()
   int i;
   char pname[16];
   bx_list_c *base;
+  char buffer[128];
 
   // all configuration has been read, now initialize everything.
 
@@ -1169,15 +1183,11 @@ void bx_init_hardware()
 
   // Output to the log file the cpu and device settings
   // This will by handy for bug reports
-  BX_INFO(("Bochs x86 Emulator %s", VER_STRING));
+  BX_INFO(("Bochs x86 Emulator %s", VERSION));
   BX_INFO(("  %s", REL_STRING));
-#ifdef __DATE__
-#ifdef __TIME__
-  BX_INFO(("Compiled on %s at %s", __DATE__, __TIME__));
-#else
-  BX_INFO(("Compiled on %s", __DATE__));
-#endif
-#endif
+  if (bx_get_timestamp(buffer) > 0) {
+    BX_INFO(("  %s", buffer));
+  }
   BX_INFO(("System configuration"));
   BX_INFO(("  processors: %d (cores=%u, HT threads=%u)", BX_SMP_PROCESSORS,
     SIM->get_param_num(BXPN_CPU_NCORES)->get(), SIM->get_param_num(BXPN_CPU_NTHREADS)->get()));
@@ -1264,7 +1274,7 @@ void bx_init_hardware()
   BX_INFO(("  Fast function calls: %s", BX_FAST_FUNC_CALL?"yes":"no"));
   BX_INFO(("  Handlers Chaining speedups: %s", BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS?"yes":"no"));
   BX_INFO(("Devices configuration"));
-  BX_INFO(("  PCI support: %s", BX_SUPPORT_PCI?"i440FX i430FX":"no"));
+  BX_INFO(("  PCI support: %s", BX_SUPPORT_PCI?"i440FX i430FX i440BX":"no"));
 #if BX_SUPPORT_NE2K || BX_SUPPORT_E1000
   BX_INFO(("  Networking support:%s%s",
            BX_SUPPORT_NE2K?" NE2000":"", BX_SUPPORT_E1000?" E1000":""));

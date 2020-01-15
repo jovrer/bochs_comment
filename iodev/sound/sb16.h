@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.h 12810 2015-08-23 07:04:56Z vruppert $
+// $Id: sb16.h 13653 2019-12-09 16:29:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2015  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -68,7 +68,7 @@
    BX_SB16_IOADLIBLEN should be 2 or 4. If 0, Ports 0x388.. don't
    get used, but the OPL2 can still be accessed at 0x228..0x229.
    If 2, the usual Adlib emulation is enabled. If 4, an OPL3 is
-   emulated at adresses 0x388..0x38b, or two separate OPL2's.
+   emulated at addresses 0x388..0x38b, or two separate OPL2's.
 */
 
 #define BX_SB16_MIX_REG  0x100        // total number of mixer registers
@@ -179,10 +179,13 @@ private:
   // the DSP variables
   struct bx_sb16_dsp_struct {
     bx_sb16_buffer datain, dataout;
-    Bit8u resetport;                           // last value written to the reset port
-    Bit8u speaker,prostereo;                   // properties of the sound input/output
-    bx_bool irqpending;                        // Is an IRQ pending (not ack'd)
-    bx_bool midiuartmode;                      // Is the DSP in MIDI UART mode
+    Bit8u resetport;                    // last value written to the reset port
+    Bit8u speaker,prostereo;            // properties of the sound input/output
+    bx_bool irqpending;                 // Is an IRQ pending (not ack'd)
+    bx_bool midiuartmode;               // Is the DSP in MIDI UART mode
+    bx_bool nondma_mode;                // Set if DSP command 0x10 active
+    Bit32u nondma_count;                // Number of samples sent in non-DMA mode
+    Bit8u samplebyte;                   // Current data byte in non-DMA mode
     Bit8u testreg;
     struct bx_sb16_dsp_dma_struct {
       // Properties of the current DMA transfer:
@@ -223,7 +226,7 @@ private:
     Bit16u timer[4];              // two timers on each chip
     Bit16u timerinit[4];          // initial timer counts
     int tmask[2];                 // the timer masking byte for both chips
-    int tflag[2];                 // shows if the timer overflow has occured
+    int tflag[2];                 // shows if the timer overflow has occurred
   } opl;
 
   struct bx_sb16_mixer_struct {
@@ -266,6 +269,7 @@ private:
   BX_SB16_SMF void   dsp_dmadone();		     // stop a DMA transfer
   BX_SB16_SMF void   dsp_enabledma();		     // enable the transfer
   BX_SB16_SMF void   dsp_disabledma();		     // temporarily disable DMA
+  BX_SB16_SMF void   dsp_disable_nondma();	     // disable DSP direct mode
   static void   dsp_dmatimer(void *);
   static Bit32u sb16_adc_handler(void *, Bit32u len);
   Bit32u dsp_adc_handler(Bit32u len);

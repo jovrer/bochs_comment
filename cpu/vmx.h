@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.h 13126 2017-03-17 17:35:15Z sshwarts $
+// $Id: vmx.h 13764 2020-01-03 17:35:02Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2017 Stanislav Shwartsman
+//   Copyright (c) 2009-2019 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -30,11 +30,10 @@
 const Bit64u BX_INVALID_VMCSPTR = BX_CONST64(0xFFFFFFFFFFFFFFFF);
 
 // bits supported in IA32_FEATURE_CONTROL MSR
-#define BX_IA32_FEATURE_CONTROL_LOCK_BIT       0x1
-#define BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT 0x4
+const Bit32u BX_IA32_FEATURE_CONTROL_LOCK_BIT = 0x1;
+const Bit32u BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT = 0x4;
 
-#define BX_IA32_FEATURE_CONTROL_BITS \
-   (BX_IA32_FEATURE_CONTROL_LOCK_BIT | BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT)
+const Bit32u BX_IA32_FEATURE_CONTROL_BITS = (BX_IA32_FEATURE_CONTROL_LOCK_BIT | BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT);
 
 // VMX error codes
 enum VMX_error_code {
@@ -135,6 +134,15 @@ enum VMX_vmexit_reason {
    VMX_VMEXIT_PML_LOGFULL = 62,
    VMX_VMEXIT_XSAVES = 63,
    VMX_VMEXIT_XRSTORS = 64,
+   VMX_VMEXIT_RESERVED65 = 65,
+   VMX_VMEXIT_SPP = 66,
+   VMX_VMEXIT_UMWAIT = 67,
+   VMX_VMEXIT_TPAUSE = 68,
+   VMX_VMEXIT_RESERVED69 = 69,
+   VMX_VMEXIT_RESERVED70 = 70,
+   VMX_VMEXIT_RESERVED71 = 71,
+   VMX_VMEXIT_ENQCMD_PASID = 72,
+   VMX_VMEXIT_ENQCMDS_PASID = 73,
    VMX_VMEXIT_LAST_REASON
 };
 
@@ -169,17 +177,17 @@ enum VMX_vmabort_code {
 };
 
 // VMX APIC ACCESS VMEXIT qualification
-#define VMX_APIC_READ_INSTRUCTION_EXECUTION   0x0000
-#define VMX_APIC_WRITE_INSTRUCTION_EXECUTION  0x1000
-#define VMX_APIC_INSTRUCTION_FETCH            0x2000 /* won't happen because cpu::prefetch will crash */
-#define VMX_APIC_ACCESS_DURING_EVENT_DELIVERY 0x3000
+const Bit32u VMX_APIC_READ_INSTRUCTION_EXECUTION   = 0x0000;
+const Bit32u VMX_APIC_WRITE_INSTRUCTION_EXECUTION  = 0x1000;
+const Bit32u VMX_APIC_INSTRUCTION_FETCH            = 0x2000; /* won't happen because cpu::prefetch will crash */
+const Bit32u VMX_APIC_ACCESS_DURING_EVENT_DELIVERY = 0x3000;
 
 // VM Functions List
 enum VMFunctions {
    VMX_VMFUNC_EPTP_SWITCHING = 0
 };
 
-#define VMX_VMFUNC_EPTP_SWITCHING_MASK (BX_CONST64(1) << VMX_VMFUNC_EPTP_SWITCHING)
+const Bit64u VMX_VMFUNC_EPTP_SWITCHING_MASK = (BX_CONST64(1) << VMX_VMFUNC_EPTP_SWITCHING);
 
 // =============
 //  VMCS fields
@@ -264,6 +272,8 @@ enum VMFunctions {
 #define VMCS_64BIT_CONTROL_XSS_EXITING_BITMAP_HI           0x0000202D
 #define VMCS_64BIT_CONTROL_ENCLS_EXITING_BITMAP            0x0000202E /* ENCLS/SGX */
 #define VMCS_64BIT_CONTROL_ENCLS_EXITING_BITMAP_HI         0x0000202F
+#define VMCS_64BIT_CONTROL_SPPTP                           0x00002030 /* Sup-Page Write Protection */
+#define VMCS_64BIT_CONTROL_SPPTP_HI                        0x00002031
 #define VMCS_64BIT_CONTROL_TSC_MULTIPLIER                  0x00002032 /* TSC Scaling */
 #define VMCS_64BIT_CONTROL_TSC_MULTIPLIER_HI               0x00002033
 
@@ -408,6 +418,9 @@ enum VMFunctions {
 #define VMCS_GUEST_PENDING_DBG_EXCEPTIONS                  0x00006822
 #define VMCS_GUEST_IA32_SYSENTER_ESP_MSR                   0x00006824
 #define VMCS_GUEST_IA32_SYSENTER_EIP_MSR                   0x00006826
+#define VMCS_GUEST_IA32_S_CET                              0x00006828
+#define VMCS_GUEST_SSP                                     0x0000682A
+#define VMCS_GUEST_INTERRUPT_SSP_TABLE_ADDR                0x0000682C
 
 /* VMCS natural width host state fields */
 /* binary 0110_11xx_xxxx_xxx0 */
@@ -423,6 +436,9 @@ enum VMFunctions {
 #define VMCS_HOST_IA32_SYSENTER_EIP_MSR                    0x00006C12
 #define VMCS_HOST_RSP                                      0x00006C14
 #define VMCS_HOST_RIP                                      0x00006C16
+#define VMCS_HOST_IA32_S_CET                               0x00006C18
+#define VMCS_HOST_SSP                                      0x00006C1A
+#define VMCS_HOST_INTERRUPT_SSP_TABLE_ADDR                 0x00006C1C
 
 #define VMX_HIGHEST_VMCS_ENCODING   (0x34)
 
@@ -439,23 +455,27 @@ enum VMFunctions {
 // bits 11:10 of VMCS field encoding indicate field's type
 #define VMCS_FIELD_TYPE(encoding)   (((encoding) >> 10) & 3)
 
-#define VMCS_FIELD_TYPE_CONTROL        0x0
-#define VMCS_FIELD_TYPE_READ_ONLY      0x1
-#define VMCS_FIELD_TYPE_GUEST_STATE    0x2
-#define VMCS_FIELD_TYPE_HOST_STATE     0x3
+enum {
+  VMCS_FIELD_TYPE_CONTROL     = 0x0,
+  VMCS_FIELD_TYPE_READ_ONLY   = 0x1,
+  VMCS_FIELD_TYPE_GUEST_STATE = 0x2,
+  VMCS_FIELD_TYPE_HOST_STATE  = 0x3
+};
 
 // bits 14:13 of VMCS field encoding indicate field's width
 #define VMCS_FIELD_WIDTH(encoding)  (((encoding) >> 13) & 3)
 
-#define VMCS_FIELD_WIDTH_16BIT         0x0
-#define VMCS_FIELD_WIDTH_64BIT         0x1
-#define VMCS_FIELD_WIDTH_32BIT         0x2
-#define VMCS_FIELD_WIDTH_NATURAL_WIDTH 0x3
+enum {
+  VMCS_FIELD_WIDTH_16BIT = 0x0,
+  VMCS_FIELD_WIDTH_64BIT = 0x1,
+  VMCS_FIELD_WIDTH_32BIT = 0x2,
+  VMCS_FIELD_WIDTH_NATURAL_WIDTH = 0x3
+};
 
 #define VMCS_FIELD_INDEX(encoding) \
     ((VMCS_FIELD_WIDTH(encoding) << 2) + VMCS_FIELD_TYPE(encoding))
 
-#define VMCS_ENCODING_RESERVED_BITS (0xffff9000)
+const Bit32u VMCS_ENCODING_RESERVED_BITS = 0xffff9000;
 
 // =============
 //  VMCS layout
@@ -463,9 +483,24 @@ enum VMFunctions {
 
 #define BX_VMX_VMCS_REVISION_ID 0x2B /* better to be unique bochs VMCS revision id */
 
+enum VMCS_Access_Rights_Format {
+   VMCS_AR_ROTATE,
+   VMCS_AR_PACK		// Intel Skylake packs AR into 16 bit form
+};
+
+#define VMCS_LAUNCH_STATE_FIELD_ENCODING         (0xfffffffe)
+#define VMCS_VMX_ABORT_FIELD_ENCODING            (0xfffffffc)
+#define VMCS_REVISION_ID_FIELD_ENCODING          (0xfffffffa)
+
 class VMCS_Mapping {
 private:
    Bit32u revision_id;
+
+   unsigned vmcs_revision_id_field_offset;
+   unsigned vmx_abort_field_offset;
+   unsigned vmcs_launch_state_field_offset;
+
+   VMCS_Access_Rights_Format ar_format; // in which form segment selectors Access Rights are stored in the VMCS
 
    // assume 16 VMCS field types (encoded with 4 bits: 2 bits for VMCS_FIELD_TYPE and 2 bits for VMCS_FIELD_WIDTH)
    unsigned vmcs_map[16][VMX_HIGHEST_VMCS_ENCODING];
@@ -483,6 +518,13 @@ public:
 
    void set_vmcs_revision_id(Bit32u revision) { revision_id = revision; }
    Bit32u get_vmcs_revision_id() const { return revision_id; }
+
+   void set_access_rights_format(VMCS_Access_Rights_Format f) { ar_format = f; }
+   VMCS_Access_Rights_Format get_access_rights_format() const { return ar_format; }
+
+   void set_vmcs_recision_id_offset(unsigned offset) { vmcs_revision_id_field_offset = offset; }
+   void set_vmx_abort_field_offset(unsigned offset) { vmx_abort_field_offset = offset; }
+   void set_vmcs_launch_state_field_offset(unsigned offset) { vmcs_launch_state_field_offset = offset; }
    
    unsigned vmcs_field_offset(Bit32u encoding) const;
 
@@ -494,14 +536,6 @@ public:
      return ! is_reserved(encoding) && (vmcs_field_offset(encoding) != 0xffffffff);
    }
 };
-
-#define VMCS_LAUNCH_STATE_FIELD_ENCODING         (0xfffffffe)
-#define VMCS_VMX_ABORT_FIELD_ENCODING            (0xfffffffc)
-#define VMCS_REVISION_ID_FIELD_ENCODING          (0xfffffffa)
-
-#define VMCS_REVISION_ID_FIELD_ADDR              (0x0000)
-#define VMCS_VMX_ABORT_FIELD_ADDR                (0x0004)
-#define VMCS_LAUNCH_STATE_FIELD_ADDR             (0x0008)
 
 #define VMCS_DATA_OFFSET                         (0x0010)
 
@@ -557,6 +591,12 @@ typedef struct bx_VMCS_GUEST_STATE
    Bit64u pat_msr;
    Bit64u pdptr[4];
 #endif
+
+#if BX_SUPPORT_CET
+   Bit64u msr_ia32_s_cet;
+   bx_address ssp;
+   bx_address interrupt_ssp_table_address;
+#endif
 } VMCS_GUEST_STATE;
 
 typedef struct bx_VMCS_HOST_STATE
@@ -588,6 +628,12 @@ typedef struct bx_VMCS_HOST_STATE
    Bit64u efer_msr;
 #endif
    Bit64u pat_msr;
+#endif
+
+#if BX_SUPPORT_CET
+   Bit64u msr_ia32_s_cet;
+   bx_address ssp;
+   bx_address interrupt_ssp_table_address;
 #endif
 } VMCS_HOST_STATE;
 
@@ -685,6 +731,8 @@ typedef struct bx_VMCS
 #define VMX_VM_EXEC_CTRL3_EPT_VIOLATION_EXCEPTION   (1 << 18) /* #VE Exception */
 #define VMX_VM_EXEC_CTRL3_SUPPRESS_GUEST_VMX_TRACE  (1 << 19) /* Processor Trace */
 #define VMX_VM_EXEC_CTRL3_XSAVES_XRSTORS            (1 << 20) /* XSAVES */
+#define VMX_VM_EXEC_CTRL3_MBE_CTRL                  (1 << 22) /* Mode Based Execution Control (not implemented yet) */
+#define VMX_VM_EXEC_CTRL3_SUBPAGE_WR_PROTECT_CTRL   (1 << 23) /* Sub-Page Write Protection Control */
 #define VMX_VM_EXEC_CTRL3_TSC_SCALING               (1 << 25) /* TSC Scaling */
 
 #define VMX_VM_EXEC_CTRL3_SUPPORTED_BITS \
@@ -724,6 +772,7 @@ typedef struct bx_VMCS
    Bit16u vpid;
    Bit64u pml_address;
    Bit16u pml_index;
+   Bit64u spptp;
 #endif
 
 #if BX_SUPPORT_VMX >= 2
@@ -766,6 +815,7 @@ typedef struct bx_VMCS
 #define VMX_VMEXIT_CTRL1_STORE_VMX_PREEMPTION_TIMER (1 << 22) /* VMX preemption timer */
 #define VMX_VMEXIT_CTRL1_CLEAR_BNDCFGS              (1 << 23) /* MPX */
 #define VMX_VMEXIT_CTRL1_SUPPRESS_VMX_PACKETS       (1 << 24) /* Processor Trace */
+#define VMX_VMEXIT_CTRL1_LOAD_HOST_CET_STATE        (1 << 28) /* CET */
 
 #define VMX_VMEXIT_CTRL1_SUPPORTED_BITS \
     (BX_CPU_THIS_PTR vmx_cap.vmx_vmexit_ctrl_supported_bits)
@@ -790,6 +840,7 @@ typedef struct bx_VMCS
 #define VMX_VMENTRY_CTRL1_LOAD_EFER_MSR                     (1 << 15) /* EFER */
 #define VMX_VMENTRY_CTRL1_LOAD_BNDCFGS                      (1 << 16) /* MPX */
 #define VMX_VMENTRY_CTRL1_SUPPRESS_VMX_PACKETS              (1 << 17) /* Processor Trace */
+#define VMX_VMENTRY_CTRL1_LOAD_GUEST_CET_STATE              (1 << 20) /* CET */
 
 #define VMX_VMENTRY_CTRL1_SUPPORTED_BITS \
     (BX_CPU_THIS_PTR vmx_cap.vmx_vmentry_ctrl_supported_bits)
@@ -837,21 +888,19 @@ typedef struct bx_VMCS
 
 #define SECONDARY_VMEXEC_CONTROL(ctrl) (BX_CPU_THIS_PTR vmcs.vmexec_ctrls3 & (ctrl))
 
-#define BX_VMX_INTERRUPTS_BLOCKED_BY_STI      (1 << 0)
-#define BX_VMX_INTERRUPTS_BLOCKED_BY_MOV_SS   (1 << 1)
-#define BX_VMX_INTERRUPTS_BLOCKED_SMI_BLOCKED (1 << 2)
-#define BX_VMX_INTERRUPTS_BLOCKED_NMI_BLOCKED (1 << 3)
+const Bit32u BX_VMX_INTERRUPTS_BLOCKED_BY_STI      = (1 << 0);
+const Bit32u BX_VMX_INTERRUPTS_BLOCKED_BY_MOV_SS   = (1 << 1);
+const Bit32u BX_VMX_INTERRUPTS_BLOCKED_SMI_BLOCKED = (1 << 2);
+const Bit32u BX_VMX_INTERRUPTS_BLOCKED_NMI_BLOCKED = (1 << 3);
 
-#define BX_VMX_INTERRUPTIBILITY_STATE_MASK \
-    (BX_VMX_INTERRUPTS_BLOCKED_BY_STI | BX_VMX_INTERRUPTS_BLOCKED_BY_MOV_SS | \
-     BX_VMX_INTERRUPTS_BLOCKED_SMI_BLOCKED | \
-     BX_VMX_INTERRUPTS_BLOCKED_NMI_BLOCKED)
+const Bit32u BX_VMX_INTERRUPTIBILITY_STATE_MASK = \
+  (BX_VMX_INTERRUPTS_BLOCKED_BY_STI | BX_VMX_INTERRUPTS_BLOCKED_BY_MOV_SS | BX_VMX_INTERRUPTS_BLOCKED_SMI_BLOCKED | BX_VMX_INTERRUPTS_BLOCKED_NMI_BLOCKED);
 
 //
 // IA32_VMX_BASIC MSR (0x480)
 // --------------
 
-#define BX_VMCS_SHADOW_BIT_MASK (0x80000000)
+const Bit32u BX_VMCS_SHADOW_BIT_MASK = 0x80000000;
 
 //
 // 30:00 VMCS revision id
@@ -868,13 +917,16 @@ typedef struct bx_VMCS
 //       cleared to `0, also indicates that IA32_VMX_TRUE_PINBASED_CTLS,
 //       IA32_VMX_TRUE_PROCBASED_CTLS, IA32_VMX_TRUE_EXIT_CTLS and
 //       IA32_VMX_TRUE_ENTRY_CTLS MSRs are supported.
-// 56:63 reserved, must be zero
+// 56:56 if set software can use VM entry to deliver a hardware exception
+//       with or without an error code, regardless of vector
+// 57:63 reserved, must be zero
 //
 
 #define VMX_MSR_VMX_BASIC_LO (BX_CPU_THIS_PTR vmcs_map->get_vmcs_revision_id())
 #define VMX_MSR_VMX_BASIC_HI \
      (VMX_VMCS_AREA_SIZE | ((!is_cpu_extension_supported(BX_ISA_LONG_MODE)) << 16) | \
-     (BX_MEMTYPE_WB << 18) | (1<<22)) | ((BX_SUPPORT_VMX >= 2) ? (1<<23) : 0)
+     (BX_MEMTYPE_WB << 18) | (1<<22)) | ((BX_SUPPORT_VMX >= 2) ? (1<<23) : 0) | \
+     (is_cpu_extension_supported(BX_ISA_CET) ? (1<<24) : 0)
 
 #define VMX_MSR_VMX_BASIC \
    ((((Bit64u) VMX_MSR_VMX_BASIC_HI) << 32) | VMX_MSR_VMX_BASIC_LO)
@@ -1007,33 +1059,38 @@ typedef struct bx_VMCS
 //     [6] - support VMENTER to HLT state
 //     [7] - support VMENTER to SHUTDOWN state
 //     [8] - support VMENTER to WAIT_FOR_SIPI state
+//    [14] - Intel Processor Trace (Intel PT) can be used in VMX operation
 //    [15] - RDMSR can be used in SMM to read the SMBASE MSR
 // [24:16] - number of CR3 target values supported
 // [27:25] - (N+1)*512 - recommended maximum MSRs in MSR store list
 //    [28] - MSR_IA32_SMM_MONITOR_CTL[2] enable
 //    [29] - Allow VMWRITE to R/O VMCS fields (to be used with VMCS Shadowing)
-// [31-30] - Reserved
+//    [30] - Allow injection of a software interrupt, software exception, or privileged
+//           software exception with an instruction length of 0
+//    [31] - Reserved
 // --------------------------------------------
 // [63:32] - MSEG revision ID used by processor
 
 #if BX_SUPPORT_VMX >= 2
-  #define VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL (1<<5)
+const Bit32u VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL = (1<<5);
 #else
-  #define VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL (0)
+const Bit32u VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL = 0;
 #endif
 
-#define VMX_SUPPORT_VMENTER_TO_NON_ACTIVE_STATE ((1<<6) | (1<<7) | (1<<8))
+const Bit32u VMX_SUPPORT_VMENTER_TO_NON_ACTIVE_STATE = (1<<6) | (1<<7) | (1<<8);
 
-#define VMX_MISC_SUPPORT_VMWRITE_READ_ONLY_FIELDS (1<<29)
+const Bit32u VMX_MISC_SUPPORT_VMWRITE_READ_ONLY_FIELDS            = (1<<29);
+const Bit32u VMX_MISC_ALLOW_INJECTION_OF_SW_INTERRUPT_WITH_ILEN_0 = (1<<30);
 
 //Rate to increase VMX preemtion timer
-#define VMX_MISC_PREEMPTION_TIMER_RATE (0)
+const Bit32u VMX_MISC_PREEMPTION_TIMER_RATE = 0;
 
 #define VMX_MSR_MISC (VMX_MISC_PREEMPTION_TIMER_RATE | \
                       VMX_MISC_STORE_LMA_TO_X86_64_GUEST_VMENTRY_CONTROL | \
                       VMX_SUPPORT_VMENTER_TO_NON_ACTIVE_STATE | \
                      (VMX_CR3_TARGET_MAX_CNT << 16) | \
-                     (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VMCS_SHADOWING) ? VMX_MISC_SUPPORT_VMWRITE_READ_ONLY_FIELDS : 0))
+                     (BX_SUPPORT_VMX_EXTENSION(BX_VMX_VMCS_SHADOWING) ? VMX_MISC_SUPPORT_VMWRITE_READ_ONLY_FIELDS : 0) | \
+                     (BX_SUPPORT_VMX_EXTENSION(BX_VMX_SW_INTERRUPT_INJECTION_ILEN_0) ? VMX_MISC_ALLOW_INJECTION_OF_SW_INTERRUPT_WITH_ILEN_0 : 0))
 
 //
 // IA32_VMX_CR0_FIXED0 MSR (0x486)   IA32_VMX_CR0_FIXED1 MSR (0x487)
@@ -1041,18 +1098,18 @@ typedef struct bx_VMCS
 
 // allowed 0-setting in CR0 in VMX mode
 // bits PE(0), NE(5) and PG(31) required to be set in CR0 to enter VMX mode
-#define VMX_MSR_CR0_FIXED0_LO (0x80000021)
-#define VMX_MSR_CR0_FIXED0_HI (0x00000000)
+const Bit32u VMX_MSR_CR0_FIXED0_LO = 0x80000021;
+const Bit32u VMX_MSR_CR0_FIXED0_HI = 0x00000000;
 
-#define VMX_MSR_CR0_FIXED0 \
-   ((((Bit64u) VMX_MSR_CR0_FIXED0_HI) << 32) | VMX_MSR_CR0_FIXED0_LO)
+const Bit64u VMX_MSR_CR0_FIXED0 = 
+   ((((Bit64u) VMX_MSR_CR0_FIXED0_HI) << 32) | VMX_MSR_CR0_FIXED0_LO);
 
 // allowed 1-setting in CR0 in VMX mode
-#define VMX_MSR_CR0_FIXED1_LO (0xFFFFFFFF)
-#define VMX_MSR_CR0_FIXED1_HI (0x00000000)
+const Bit32u VMX_MSR_CR0_FIXED1_LO = 0xFFFFFFFF;
+const Bit32u VMX_MSR_CR0_FIXED1_HI = 0x00000000;
 
-#define VMX_MSR_CR0_FIXED1 \
-   ((((Bit64u) VMX_MSR_CR0_FIXED1_HI) << 32) | VMX_MSR_CR0_FIXED1_LO)
+const Bit64u VMX_MSR_CR0_FIXED1 = 
+   ((((Bit64u) VMX_MSR_CR0_FIXED1_HI) << 32) | VMX_MSR_CR0_FIXED1_LO);
 
 //
 // IA32_VMX_CR4_FIXED0 MSR (0x488)   IA32_VMX_CR4_FIXED1 MSR (0x489)
@@ -1060,11 +1117,11 @@ typedef struct bx_VMCS
 
 // allowed 0-setting in CR0 in VMX mode
 // bit VMXE(13) required to be set in CR4 to enter VMX mode
-#define VMX_MSR_CR4_FIXED0_LO (0x00002000)
-#define VMX_MSR_CR4_FIXED0_HI (0x00000000)
+const Bit32u VMX_MSR_CR4_FIXED0_LO = 0x00002000;
+const Bit32u VMX_MSR_CR4_FIXED0_HI = 0x00000000;
 
-#define VMX_MSR_CR4_FIXED0 \
-   ((((Bit64u) VMX_MSR_CR4_FIXED0_HI) << 32) | VMX_MSR_CR4_FIXED0_LO)
+const Bit64u VMX_MSR_CR4_FIXED0 = 
+   ((((Bit64u) VMX_MSR_CR4_FIXED0_HI) << 32) | VMX_MSR_CR4_FIXED0_LO);
 
 // allowed 1-setting in CR0 in VMX mode
 #define VMX_MSR_CR4_FIXED1_LO (BX_CPU_THIS_PTR cr4_suppmask)
