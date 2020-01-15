@@ -24,6 +24,7 @@
 
 
 #include "bochs.h"
+#define LOG_THIS genlog->
 
 
 
@@ -45,7 +46,7 @@ bx_load32bitOSimagehack(void)
   fp = fopen(bx_options.load32bitOSImage.iolog, "r");
 
   if (fp == NULL) {
-    bx_panic("could not open IO init file.\n");
+    BX_PANIC(("could not open IO init file.\n"));
     }
 
   while (1) {
@@ -54,7 +55,7 @@ bx_load32bitOSimagehack(void)
     ret = fscanf(fp, "%u %u %x %x\n",
       &len, &op, &port, &val);
     if (ret != 4) {
-      bx_panic("could not open IO init file.\n");
+      BX_PANIC(("could not open IO init file.\n"));
       }
     if (op == 0) {
       // read
@@ -65,7 +66,7 @@ bx_load32bitOSimagehack(void)
       bx_devices.outp(port, val, len);
       }
     else {
-      bx_panic("bad IO op in init filen");
+      BX_PANIC(("bad IO op in init filen"));
       }
     if (feof(fp)) break;
     }
@@ -79,7 +80,7 @@ bx_load32bitOSimagehack(void)
       bx_load_null_kernel_hack();
       break;
     default:
-      bx_panic("load32bitOSImage: OS not recognized\n");
+      BX_PANIC(("load32bitOSImage: OS not recognized\n"));
     }
 }
 
@@ -130,8 +131,9 @@ struct linux_setup_params
   static void
 bx_load_linux_setup_params( Bit32u initrd_start, Bit32u initrd_size )
 {
+  BX_MEM_C *mem = BX_MEM(0);
   struct linux_setup_params *params =
-         (struct linux_setup_params *) &BX_MEM_THIS vector[0x00090000];
+         (struct linux_setup_params *) &mem->vector[0x00090000];
 
   memset( params, '\0', sizeof(*params) );
 
@@ -147,7 +149,7 @@ bx_load_linux_setup_params( Bit32u initrd_start, Bit32u initrd_size )
   params->orig_video_ega_bx = 3;
 
   /* Memory size (total mem - 1MB, in KB) */
-  params->memory_size_ext = (BX_MEM_THIS megabytes - 1) * 1024;
+  params->memory_size_ext = (mem->megabytes - 1) * 1024;
 
   /* Boot parameters */
   params->loader_type = 1;
@@ -201,19 +203,19 @@ bx_load_linux_hack(void)
   BX_OUTP( 0xA1, 0xFB, 1 );
 
   // Disable interrupts and NMIs
-  BX_CPU_THIS_PTR eflags.if_ = 0;
+  BX_CPU(0)->eflags.if_ = 0;
   BX_OUTP( 0x70, 0x80, 1 );
 
   // Enter protected mode
-  BX_CPU_THIS_PTR cr0.pe = 1;
-  BX_CPU_THIS_PTR cr0.val32 |= 0x01;
+  BX_CPU(0)->cr0.pe = 1;
+  BX_CPU(0)->cr0.val32 |= 0x01;
 
   // Set up initial GDT
-  BX_CPU_THIS_PTR gdtr.limit = 0x400;
-  BX_CPU_THIS_PTR gdtr.base  = 0x00090400;
+  BX_CPU(0)->gdtr.limit = 0x400;
+  BX_CPU(0)->gdtr.base  = 0x00090400;
 
   // Jump to protected mode entry point
-  BX_CPU_THIS_PTR jump_protected( NULL, 0x10, 0x00100000 );
+  BX_CPU(0)->jump_protected( NULL, 0x10, 0x00100000 );
 }
 
   void
@@ -225,25 +227,25 @@ bx_load_null_kernel_hack(void)
   bx_load_kernel_image(bx_options.load32bitOSImage.path, 0x100000);
 
   // EIP deltas
-  BX_CPU_THIS_PTR prev_eip =
-  BX_CPU_THIS_PTR eip = 0x00100000;
+  BX_CPU(0)->prev_eip =
+  BX_CPU(0)->eip = 0x00100000;
 
   // CS deltas
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base = 0x00000000;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit = 0xFFFFF;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g   = 1; // page gran
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b = 1; // 32bit
+  BX_CPU(0)->sregs[BX_SEG_REG_CS].cache.u.segment.base = 0x00000000;
+  BX_CPU(0)->sregs[BX_SEG_REG_CS].cache.u.segment.limit = 0xFFFFF;
+  BX_CPU(0)->sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;
+  BX_CPU(0)->sregs[BX_SEG_REG_CS].cache.u.segment.g   = 1; // page gran
+  BX_CPU(0)->sregs[BX_SEG_REG_CS].cache.u.segment.d_b = 1; // 32bit
 
   // DS deltas
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.base = 0x00000000;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.limit = 0xFFFFF;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.limit_scaled = 0xFFFFFFFF;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.g   = 1; // page gran
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.d_b = 1; // 32bit
+  BX_CPU(0)->sregs[BX_SEG_REG_DS].cache.u.segment.base = 0x00000000;
+  BX_CPU(0)->sregs[BX_SEG_REG_DS].cache.u.segment.limit = 0xFFFFF;
+  BX_CPU(0)->sregs[BX_SEG_REG_DS].cache.u.segment.limit_scaled = 0xFFFFFFFF;
+  BX_CPU(0)->sregs[BX_SEG_REG_DS].cache.u.segment.g   = 1; // page gran
+  BX_CPU(0)->sregs[BX_SEG_REG_DS].cache.u.segment.d_b = 1; // 32bit
 
   // CR0 deltas
-  BX_CPU_THIS_PTR cr0.pe = 1; // protected mode
+  BX_CPU(0)->cr0.pe = 1; // protected mode
 }
 
   Bit32u
@@ -261,38 +263,39 @@ bx_load_kernel_image(char *path, Bit32u paddr)
 #endif
            );
   if (fd < 0) {
-    fprintf(stderr, "load_kernel_image: couldn't open image file '%s'.\n", path);
+    BX_INFO(( "load_kernel_image: couldn't open image file '%s'.\n", path ));
     exit(1);
     }
   ret = fstat(fd, &stat_buf);
   if (ret) {
-    fprintf(stderr, "load_kernel_image: couldn't stat image file '%s'.\n", path);
+    BX_INFO(( "load_kernel_image: couldn't stat image file '%s'.\n", path ));
     exit(1);
     }
 
   size = stat_buf.st_size;
   page_size = ((Bit32u)size + 0xfff) & ~0xfff;
 
-  if ( (paddr + size) > BX_MEM_THIS len ) {
-    fprintf(stderr, "load_kernel_image: address range > physical memsize!\n");
+  BX_MEM_C *mem = BX_MEM(0);
+  if ( (paddr + size) > mem->len ) {
+    BX_INFO(( "load_kernel_image: address range > physical memsize!\n" ));
     exit(1);
     }
 
   offset = 0;
   while (size > 0) {
-    ret = read(fd, (bx_ptr_t) &BX_MEM_THIS vector[paddr + offset], size);
+    ret = read(fd, (bx_ptr_t) &mem->vector[paddr + offset], size);
     if (ret <= 0) {
-      fprintf(stderr, "load_kernel_image: read failed on image\n");
+      BX_INFO(( "load_kernel_image: read failed on image\n" ));
       exit(1);
       }
     size -= ret;
     offset += ret;
     }
   close(fd);
-  fprintf(stderr, "#(%u) load_kernel_image: '%s', size=%u read into memory at %08x\n",
+  BX_INFO(( "#(%u) load_kernel_image: '%s', size=%u read into memory at %08x\n",
           BX_SIM_ID, path,
           (unsigned) stat_buf.st_size,
-          (unsigned) paddr);
+          (unsigned) paddr ));
 
   return page_size;
 }

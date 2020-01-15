@@ -6,8 +6,8 @@ Date:
 Detailed description:
 
 Apply patch to:
-  Bochs 1.1.2 (bugfix3)
+  NAMEGOESHERE
 Instructions:
   To patch, go to main bochs directory.
-  Type "patch -p0 < THIS_PATCH_FILE".
+  Type "patch -p1 < THIS_PATCH_FILE".
 ----------------------------------------------------------------------

@@ -41,7 +41,7 @@ extern class bx_pc_system_c bx_pc_system;
 extern double m_ips;
 #endif
 
-class bx_pc_system_c {
+class bx_pc_system_c : logfunctions {
 private:
 
   struct {
@@ -69,7 +69,7 @@ public:
   Boolean TC;      // Terminal Count
   Boolean HRQ;     // Hold Request
   Boolean HLDA;    // Hold Acknowlege
-  Boolean INTR;    // Interrupt
+  //Boolean INTR;    // Interrupt
 
 
     // Address line 20 control:

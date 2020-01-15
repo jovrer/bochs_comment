@@ -24,8 +24,13 @@
 
 
 
+#define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#define LOG_THIS BX_CPU_THIS_PTR
 
+#if BX_USE_CPU_SMF
+#define this (BX_CPU(0))
+#endif
 
 
 
@@ -39,18 +44,17 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, Bit32u offset,
 
   if ( protected_mode() ) {
     if ( seg->cache.valid==0 ) {
-      bx_printf("seg = %s\n", BX_CPU_THIS_PTR strseg(seg));
-      bx_printf("seg->selector.value = %04x\n", (unsigned) seg->selector.value);
-      bx_printf("write_virtual_checks: valid bit = 0\n");
-bx_printf("CS: %04x\n", (unsigned) BX_CPU_THIS_PTR sregs[1].selector.value);
-bx_printf("IP: %04x\n", (unsigned) BX_CPU_THIS_PTR prev_eip);
-debug(BX_CPU_THIS_PTR eip);
+      BX_INFO(("seg = %s\n", BX_CPU_THIS_PTR strseg(seg)));
+      BX_INFO(("seg->selector.value = %04x\n", (unsigned) seg->selector.value));
+      BX_INFO(("write_virtual_checks: valid bit = 0\n"));
+	  BX_INFO(("CS: %04x\n", (unsigned) BX_CPU_THIS_PTR sregs[1].selector.value));
+	  BX_INFO(("IP: %04x\n", (unsigned) BX_CPU_THIS_PTR prev_eip));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
       }
 
     if (seg->cache.p == 0) { /* not present */
-bx_printf("write_virtual_checks(): segment not present\n");
+	  BX_INFO(("write_virtual_checks(): segment not present\n"));
       exception(int_number(seg), 0, 0);
       return;
       }
@@ -62,13 +66,13 @@ bx_printf("write_virtual_checks(): segment not present\n");
       case 10: case 11: // execute/read
       case 12: case 13: // execute only, conforming
       case 14: case 15: // execute/read-only, conforming
-bx_printf("write_virtual_checks(): no write access to seg\n");
+		BX_INFO(("write_virtual_checks(): no write access to seg\n"));
         exception(int_number(seg), 0, 0);
         return;
 
       case 2: case 3: /* read/write */
         if ( (offset+length-1) > seg->cache.u.segment.limit_scaled ) {
-bx_printf("write_virtual_checks(): write beyond limit, r/w\n");
+		  BX_INFO(("write_virtual_checks(): write beyond limit, r/w\n"));
           exception(int_number(seg), 0, 0);
           return;
           }
@@ -82,7 +86,7 @@ bx_printf("write_virtual_checks(): write beyond limit, r/w\n");
         if ( (offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) ||
              ((upper_limit - offset) < (length - 1)) ) {
-bx_printf("write_virtual_checks(): write beyond limit, r/w ED\n");
+		  BX_INFO(("write_virtual_checks(): write beyond limit, r/w ED\n"));
           exception(int_number(seg), 0, 0);
           return;
           }
@@ -94,8 +98,8 @@ bx_printf("write_virtual_checks(): write beyond limit, r/w ED\n");
 
   else { /* real mode */
     if ( (offset + length - 1)  >  seg->cache.u.segment.limit_scaled) {
-      //bx_printf("write_virtual_checks() SEG EXCEPTION:  %x:%x + %x\n",
-      //  (unsigned) seg->selector.value, (unsigned) offset, (unsigned) length);
+      //BX_INFO(("write_virtual_checks() SEG EXCEPTION:  %x:%x + %x\n",
+      //  (unsigned) seg->selector.value, (unsigned) offset, (unsigned) length));
       if (seg == & BX_CPU_THIS_PTR sregs[2]) exception(BX_SS_EXCEPTION, 0, 0);
       else exception(BX_GP_EXCEPTION, 0, 0);
       }
@@ -111,19 +115,24 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, Bit32u offset,
 
   if ( protected_mode() ) {
     if ( seg->cache.valid==0 ) {
-      bx_printf("seg = %s\n", BX_CPU_THIS_PTR strseg(seg));
-      bx_printf("seg->selector.value = %04x\n", (unsigned) seg->selector.value);
-      //bx_printf("read_virtual_checks: valid bit = 0\n");
-      //bx_printf("CS: %04x\n", (unsigned)
-      //   BX_CPU_THIS_PTR sregs[1].selector.value);
-      //bx_printf("IP: %04x\n", (unsigned) BX_CPU_THIS_PTR prev_eip);
+      BX_CPU_THIS_PTR info("seg = %s\n", BX_CPU_THIS_PTR strseg(seg));
+      BX_CPU_THIS_PTR info("seg->selector.value = %04x\n", (unsigned) seg->selector.value);
+      //BX_CPU_THIS_PTR info("read_virtual_checks: valid bit = 0\n");
+      //BX_CPU_THIS_PTR info("CS: %04x\n", (unsigned)
+      //BX_CPU_THIS_PTR sregs[1].selector.value);
+      BX_INFO(("seg = %s\n", BX_CPU_THIS_PTR strseg(seg)));
+      BX_INFO(("seg->selector.value = %04x\n", (unsigned) seg->selector.value));
+      //BX_INFO(("read_virtual_checks: valid bit = 0\n"));
+      //BX_INFO(("CS: %04x\n", (unsigned)
+      //   BX_CPU_THIS_PTR sregs[1].selector.value));
+      //BX_INFO(("IP: %04x\n", (unsigned) BX_CPU_THIS_PTR prev_eip));
       //debug(BX_CPU_THIS_PTR eip);
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
       }
 
     if (seg->cache.p == 0) { /* not present */
-bx_printf("read_virtual_checks(): segment not present\n");
+	  BX_INFO(("read_virtual_checks(): segment not present\n"));
       exception(int_number(seg), 0, 0);
       return;
       }
@@ -133,7 +142,7 @@ bx_printf("read_virtual_checks(): segment not present\n");
       case 10: case 11: /* execute/read */
       case 14: case 15: /* execute/read-only, conforming */
         if ( (offset+length-1) > seg->cache.u.segment.limit_scaled ) {
-bx_printf("read_virtual_checks(): write beyond limit\n");
+		  BX_INFO(("read_virtual_checks(): write beyond limit\n"));
           exception(int_number(seg), 0, 0);
           return;
           }
@@ -141,7 +150,7 @@ bx_printf("read_virtual_checks(): write beyond limit\n");
 
       case 2: case 3: /* read/write */
         if ( (offset+length-1) > seg->cache.u.segment.limit_scaled ) {
-bx_printf("read_virtual_checks(): write beyond limit\n");
+		  BX_INFO(("read_virtual_checks(): write beyond limit\n"));
           exception(int_number(seg), 0, 0);
           return;
           }
@@ -155,7 +164,7 @@ bx_printf("read_virtual_checks(): write beyond limit\n");
         if ( (offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) ||
              ((upper_limit - offset) < (length - 1)) ) {
-bx_printf("read_virtual_checks(): write beyond limit\n");
+		  BX_INFO(("read_virtual_checks(): write beyond limit\n"));
           exception(int_number(seg), 0, 0);
           return;
           }
@@ -169,7 +178,7 @@ bx_printf("read_virtual_checks(): write beyond limit\n");
         if ( (offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) ||
              ((upper_limit - offset) < (length - 1)) ) {
-bx_printf("read_virtual_checks(): write beyond limit\n");
+		  BX_INFO(("read_virtual_checks(): write beyond limit\n"));
           exception(int_number(seg), 0, 0);
           return;
           }
@@ -178,7 +187,7 @@ bx_printf("read_virtual_checks(): write beyond limit\n");
       case 8: case 9: /* execute only */
       case 12: case 13: /* execute only, conforming */
         /* can't read or write an execute-only segment */
-bx_printf("read_virtual_checks(): execute only\n");
+		BX_INFO(("read_virtual_checks(): execute only\n"));
         exception(int_number(seg), 0, 0);
         return;
         break;
@@ -188,7 +197,7 @@ bx_printf("read_virtual_checks(): execute only\n");
 
   else { /* real mode */
     if ( (offset + length - 1)  >  seg->cache.u.segment.limit_scaled) {
-      //bx_printf("read_virtual_checks() SEG EXCEPTION:  %x:%x + %x\n",
+      //BX_CPU_THIS_PTR info("read_virtual_checks() SEG EXCEPTION:  %x:%x + %x\n",
       //  (unsigned) seg->selector.value, (unsigned) offset, (unsigned) length);
       if (seg == & BX_CPU_THIS_PTR sregs[2]) exception(BX_SS_EXCEPTION, 0, 0);
       else exception(BX_GP_EXCEPTION, 0, 0);
@@ -210,7 +219,7 @@ BX_CPU_C::strseg(bx_segment_reg_t *seg)
   else if (seg == &BX_CPU_THIS_PTR sregs[4]) return("FS");
   else if (seg == &BX_CPU_THIS_PTR sregs[5]) return("GS");
   else {
-    bx_printf("undefined segment passed to strseg()!\n");
+    BX_INFO(("undefined segment passed to strseg()!\n"));
     return("??");
     }
 }
@@ -343,7 +352,7 @@ BX_CPU_C::read_RMW_virtual_byte(unsigned s, Bit32u offset, Bit8u *data)
     BX_CPU_THIS_PTR address_xlation.paddress1 = laddr;
     BX_INSTR_LIN_READ(laddr, laddr, 1);
     BX_INSTR_LIN_WRITE(laddr, laddr, 1);
-    BX_MEM.read_physical(laddr, 1, data);
+    BX_CPU_THIS_PTR mem->read_physical(this, laddr, 1, (void *) data);
     }
 }
 
@@ -370,7 +379,7 @@ BX_CPU_C::read_RMW_virtual_word(unsigned s, Bit32u offset, Bit16u *data)
     BX_CPU_THIS_PTR address_xlation.paddress1 = laddr;
     BX_INSTR_LIN_READ(laddr, laddr, 2);
     BX_INSTR_LIN_WRITE(laddr, laddr, 2);
-    BX_MEM.read_physical(laddr, 2, data);
+    BX_CPU_THIS_PTR mem->read_physical(this, laddr, 2, data);
     }
 }
 
@@ -396,7 +405,7 @@ BX_CPU_C::read_RMW_virtual_dword(unsigned s, Bit32u offset, Bit32u *data)
     BX_CPU_THIS_PTR address_xlation.paddress1 = laddr;
     BX_INSTR_LIN_READ(laddr, laddr, 4);
     BX_INSTR_LIN_WRITE(laddr, laddr, 4);
-    BX_MEM.read_physical(laddr, 4, data);
+    BX_CPU_THIS_PTR mem->read_physical(this, laddr, 4, data);
     }
 }
 
@@ -408,12 +417,12 @@ BX_CPU_C::write_RMW_virtual_byte(Bit8u val8)
 #if BX_CPU_LEVEL >= 3
   if (BX_CPU_THIS_PTR cr0.pg) {
     // BX_CPU_THIS_PTR address_xlation.pages must be 1
-    BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 1, &val8);
+    BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 1, &val8);
     }
   else
 #endif
     {
-    BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 1, &val8);
+    BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 1, &val8);
     }
 }
 
@@ -425,18 +434,18 @@ BX_CPU_C::write_RMW_virtual_word(Bit16u val16)
 #if BX_CPU_LEVEL >= 3
   if (BX_CPU_THIS_PTR cr0.pg) {
     if (BX_CPU_THIS_PTR address_xlation.pages == 1) {
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 2, &val16);
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 2, &val16);
       }
     else {
 #ifdef BX_LITTLE_ENDIAN
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 1,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 1,
                             &val16);
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress2, 1,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress2, 1,
                             ((Bit8u *) &val16) + 1);
 #else
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 1,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 1,
                             ((Bit8u *) &val16) + 1);
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress2, 1,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress2, 1,
                             &val16);
 #endif
       }
@@ -444,7 +453,7 @@ BX_CPU_C::write_RMW_virtual_word(Bit16u val16)
   else
 #endif
     {
-    BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 2, &val16);
+    BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 2, &val16);
     }
 }
 
@@ -456,21 +465,21 @@ BX_CPU_C::write_RMW_virtual_dword(Bit32u val32)
 #if BX_CPU_LEVEL >= 3
   if (BX_CPU_THIS_PTR cr0.pg) {
     if (BX_CPU_THIS_PTR address_xlation.pages == 1) {
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 4, &val32);
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 4, &val32);
       }
     else {
 #ifdef BX_LITTLE_ENDIAN
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1,
                             BX_CPU_THIS_PTR address_xlation.len1,
                             &val32);
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress2,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress2,
                             BX_CPU_THIS_PTR address_xlation.len2,
                             ((Bit8u *) &val32) + BX_CPU_THIS_PTR address_xlation.len1);
 #else
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1,
                             BX_CPU_THIS_PTR address_xlation.len1,
                             ((Bit8u *) &val32) + (4 - BX_CPU_THIS_PTR address_xlation.len1));
-      BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress2,
+      BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress2,
                             BX_CPU_THIS_PTR address_xlation.len2,
                             &val32);
 #endif
@@ -479,6 +488,6 @@ BX_CPU_C::write_RMW_virtual_dword(Bit32u val32)
   else
 #endif
     {
-    BX_MEM.write_physical(BX_CPU_THIS_PTR address_xlation.paddress1, 4, &val32);
+    BX_CPU_THIS_PTR mem->write_physical(this, BX_CPU_THIS_PTR address_xlation.paddress1, 4, &val32);
     }
 }

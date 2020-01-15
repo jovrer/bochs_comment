@@ -21,7 +21,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
+#define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#define LOG_THIS BX_CPU_THIS_PTR
 
 
 /* the device id and stepping id are loaded into DH & DL upon processor
@@ -30,13 +32,26 @@
 #define BX_DEVICE_ID     3
 #define BX_STEPPING_ID   0
 
+BX_CPU_C::BX_CPU_C()
+#if BX_APIC_SUPPORT
+   : local_apic (this)
+#endif
+{
+  // in case of SMF, you cannot reference any member data
+  // in the constructor because the only access to it is via
+  // global variables which aren't initialized quite yet.
+}
 
-
-BX_CPU_C::BX_CPU_C(void)
+void BX_CPU_C::init(BX_MEM_C *addrspace)
 {
   // BX_CPU_C constructor
-
-  bx_printf("(%u)BX_CPU_C::BX_CPU_C(void) called\n", BX_SIM_ID);
+  BX_CPU_THIS_PTR set_INTR (0);
+#if BX_APIC_SUPPORT
+  local_apic.init ();
+#endif
+  setprefix("[CPU ]");
+  // in SMP mode, the prefix of the CPU will be changed to [CPUn] in 
+  // bx_local_apic_c::set_id as soon as the apic ID is assigned.
 
   /* hack for the following fields.  Its easier to decode mod-rm bytes if
      you can assume there's always a base & index register used.  For
@@ -153,8 +168,8 @@ BX_CPU_C::BX_CPU_C(void)
   DTRead16vShim = NULL;
   DTRead32vShim = NULL;
   DTReadRMW8vShim = (BxDTShim_t) DTASReadRMW8vShim;
-fprintf(stderr, "DTReadRMW8vShim is %x\n", (unsigned) DTReadRMW8vShim);
-fprintf(stderr, "&DTReadRMW8vShim is %x\n", (unsigned) &DTReadRMW8vShim);
+  BX_DEBUG(( "DTReadRMW8vShim is %x\n", (unsigned) DTReadRMW8vShim ));
+  BX_DEBUG(( "&DTReadRMW8vShim is %x\n", (unsigned) &DTReadRMW8vShim ));
   DTReadRMW16vShim = NULL;
   DTReadRMW32vShim = NULL;
   DTWriteRMW8vShim = (BxDTShim_t) DTASWriteRMW8vShim;
@@ -165,14 +180,18 @@ fprintf(stderr, "&DTReadRMW8vShim is %x\n", (unsigned) &DTReadRMW8vShim);
   DTDirBrHandler = (BxDTShim_t) DTASDirBrHandler;
 #endif
 
+  mem = addrspace;
+  sprintf (name, "CPU %p", this);
+
   BX_INSTR_INIT();
+  BX_DEBUG(( "Init.\n"));
 }
 
 
 BX_CPU_C::~BX_CPU_C(void)
 {
-  bx_printf("(%u)BX_CPU_C::~BX_CPU_C(void) called\n", BX_SIM_ID);
   BX_INSTR_SHUTDOWN();
+  BX_DEBUG(( "Exit.\n"));
 }
 
 
@@ -472,8 +491,11 @@ BX_CPU_C::reset(unsigned source)
 #elif BX_CPU_LEVEL == 5
   BX_CPU_THIS_PTR dr6 = 0xFFFF0FF0;
   BX_CPU_THIS_PTR dr7 = 0x00000400;
+#elif BX_CPU_LEVEL == 6
+  BX_CPU_THIS_PTR dr6 = 0xFFFF0FF0;
+  BX_CPU_THIS_PTR dr7 = 0x00000400;
 #else
-#  error "DR6,7: CPU > 5"
+#  error "DR6,7: CPU > 6"
 #endif
 
 #if 0
@@ -530,7 +552,7 @@ BX_CPU_C::reset(unsigned source)
 
 
   BX_CPU_THIS_PTR EXT = 0;
-  BX_INTR = 0;
+  //BX_INTR = 0;
 
   TLB_init();
 
@@ -553,6 +575,22 @@ BX_CPU_C::reset(unsigned source)
 
 #if BX_DYNAMIC_TRANSLATION
   dynamic_init();
+#endif
+
+#if (BX_SMP_PROCESSORS > 1)
+  // notice if I'm the bootstrap processor.  If not, do the equivalent of
+  // a HALT instruction.
+  int apic_id = local_apic.get_id ();
+  if (BX_BOOTSTRAP_PROCESSOR == apic_id)
+  {
+    // boot normally
+    BX_INFO(("CPU[%d] is the bootstrap processor\n", apic_id));
+  } else {
+    // it's an application processor, halt until IPI is heard.
+    BX_INFO(("CPU[%d] is an application processor. Halting until IPI.\n", apic_id));
+    debug_trap |= 0x80000000;
+    async_event = 1;
+  }
 #endif
 }
 
@@ -590,7 +628,7 @@ BX_CPU_C::sanity_checks(void)
        ch != ((ECX >> 8) & 0xFF) ||
        dh != ((EDX >> 8) & 0xFF) ||
        bh != ((EBX >> 8) & 0xFF) ) {
-    bx_panic("problems using BX_READ_8BIT_REG()!\n");
+    BX_PANIC(("problems using BX_READ_8BIT_REG()!\n"));
     }
 
   ax = AX;
@@ -610,7 +648,7 @@ BX_CPU_C::sanity_checks(void)
        bp != (EBP & 0xFFFF) ||
        si != (ESI & 0xFFFF) ||
        di != (EDI & 0xFFFF) ) {
-    bx_panic("problems using BX_READ_16BIT_REG()!\n");
+    BX_PANIC(("problems using BX_READ_16BIT_REG()!\n"));
     }
 
 
@@ -625,18 +663,19 @@ BX_CPU_C::sanity_checks(void)
 
 
   if (sizeof(Bit8u)  != 1  ||  sizeof(Bit8s)  != 1)
-    bx_panic("data type Bit8u or Bit8s is not of length 1 byte!\n");
+    BX_PANIC(("data type Bit8u or Bit8s is not of length 1 byte!\n"));
   if (sizeof(Bit16u) != 2  ||  sizeof(Bit16s) != 2)
-    bx_panic("data type Bit16u or Bit16s is not of length 2 bytes!\n");
+    BX_PANIC(("data type Bit16u or Bit16s is not of length 2 bytes!\n"));
   if (sizeof(Bit32u) != 4  ||  sizeof(Bit32s) != 4)
-    bx_panic("data type Bit32u or Bit32s is not of length 4 bytes!\n");
+    BX_PANIC(("data type Bit32u or Bit32s is not of length 4 bytes!\n"));
 
-  fprintf(stderr, "#(%u)all sanity checks passed!\n", BX_SIM_ID);
+  BX_DEBUG(( "#(%u)all sanity checks passed!\n", BX_SIM_ID ));
 }
 
 
   void
 BX_CPU_C::set_INTR(Boolean value)
 {
+  BX_CPU_THIS_PTR INTR = value;
   BX_CPU_THIS_PTR async_event = 1;
 }

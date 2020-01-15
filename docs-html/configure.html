@@ -55,6 +55,11 @@ more obscure options.
       mean target 386, 486 or Pentium emulation.
   </td>
 <tr>
+  <td>--enable-processors={1,2,3,...,15}</td>
+  <td>1
+  <td>By changing to more than 1 processor, you enable SMP simulation.  This allows you to boot Linux and maybe other OSes in SMP mode, and bochs will simulate all the different CPUs and communication between them.  Do not expect this option to speed up your simulation!  On the contrary, it has to spend extra time simulating the different CPUs (even if they're mostly idle) and the communication between them.  Use it to try out an SMP OS if you don't have an SMP machine, or to debug your SMP OS drivers.  Click <a href="smp-simulation.html">here</a> for more details on SMP in Bochs.
+  </td>
+<tr>
   <td>--enable-cdrom</td>
   <td>no
   <td>Enable use of a real CDROM.  The cdrom emulation is always
@@ -128,6 +133,10 @@ more obscure options.
   <td>yes
   <td>Use X11 GUI.  This is the default and you don't need
       this option if you are using X11.</td>
+<tr>
+  <td>--with-rfb</td>
+  <td>no
+  <td>Use RFB protocol to talk to AT&T's <a href="http://www.uk.research.att.com/vnc/">VNC Viewer</a>.  The RFB code was written by <a href="mailto:x-odus@iname.com">Don Becker</a>, who has a Bochs-RFB web page on his site, <a href="http://www.psyon.org/bochs-rfb/">http://www.psyon.org/bochs-rfb</a>.</td>
 <tr>
   <td>--with-beos</td>
   <td>no

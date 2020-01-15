@@ -26,6 +26,7 @@
 // NE2000/ether stuff.
 
 #include "bochs.h"
+#define LOG_THIS /* not needed */
 
 eth_locator_c *eth_locator_c::all;
 
@@ -59,14 +60,14 @@ eth_locator_c::create(const char *type, const char *netif,
 
 #ifdef ETH_NULL
   {
-    extern bx_null_match;
+    extern class bx_null_locator_c bx_null_match;
     if (!strcmp(type, "null"))
       ptr = (eth_locator_c *) &bx_null_match; 
   }
 #endif
 #ifdef ETH_FBSD
   {
-    extern bx_fbsd_match;
+    extern class bx_fbsd_locator_c bx_fbsd_match;
     if (!strcmp(type, "fbsd"))    
       ptr = (eth_locator_c *) &bx_fbsd_match;
   }
