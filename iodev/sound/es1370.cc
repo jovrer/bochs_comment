@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: es1370.cc 12113 2014-01-17 18:25:13Z vruppert $
+// $Id: es1370.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // ES1370 soundcard support (ported from QEMU)
@@ -159,7 +159,7 @@ Bit32s es1370_options_save(FILE *fp)
 
 // device plugin entry points
 
-int libes1370_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libes1370_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theES1370Device = new bx_es1370_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theES1370Device, BX_PLUGIN_ES1370);
@@ -170,7 +170,7 @@ int libes1370_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
   return 0; // Success
 }
 
-void libes1370_LTX_plugin_fini(void)
+void CDECL libes1370_LTX_plugin_fini(void)
 {
   SIM->unregister_addon_option("es1370");
   bx_list_c *menu = (bx_list_c*)SIM->get_param("sound");

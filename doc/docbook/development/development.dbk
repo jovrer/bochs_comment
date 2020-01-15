@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/development/development.dbk
-$Id: development.dbk 12345 2014-05-31 11:51:13Z vruppert $
+$Id: development.dbk 12373 2014-06-15 06:01:20Z vruppert $
 
 This is the top level file for the Bochs Developers Manual.
 ================================================================
@@ -831,11 +831,36 @@ class:
 </screen>
 </para>
 <para>
-This private method is called when the function handles the clock ticks finds
+This private method is called when the function handling the clock ticks finds
 that an event has occurred:
 <screen>
   void   countdownEvent(void);
 </screen>
+</para>
+</section>
+<section><title>Detailed functional description</title>
+<para>
+The Bochs timer implementation requires at least one timer to be active. That's why
+there is a so-called <function>nullTimer</function> to make it work. It is
+initialized in the constructor on the first timer slot with the highest possible
+timer interval and it's handler is an empty function.
+</para>
+<para>
+The most important variables of the timer subsystem are initialized on startup
+with the <function>nullTimer</function> values and updated after each timer
+modification (register / unregister / activate / deactivate / processing
+handler).
+<itemizedlist>
+<listitem><para><emphasis>ticksTotal</emphasis>: number of ticks total from emulator
+startup to the last update of timer subsystem</para></listitem>
+<listitem><para><emphasis>currCountdownPeriod</emphasis>: length of the period
+from <emphasis>ticksTotal</emphasis> to the next timer event</para></listitem>
+<listitem><para><emphasis>currCountdown</emphasis>: number of ticks remaining
+until the next timer event occurs</para></listitem>
+</itemizedlist>
+The number if ticks since emulator startup are calculated with the formula
+<emphasis>ticksTotal + currCountdownPeriod - currCountdown</emphasis> and
+returned with the <function>time_ticks()</function> method.
 </para>
 <para>
 &FIXME; To be continued
@@ -2809,9 +2834,39 @@ Now you can start building packages with the sources from the created release ta
 </para>
 </section>
 
+<section><title>Anonymous SVN checkout and platform-independent sources</title>
+<para>
+An anonymous SVN checkout from the release tag is the base for all official
+release packages. Do this checkout from the release tag and specify a not yet
+existing directory name with the version number as the destination. Then create
+the source package from this new directory. These steps can be done both on
+Linux and Windows (Cygwin).
+<screen>
+  svn co http://svn.code.sf.net/p/bochs/code/tags/REL_2_5_FINAL/bochs bochs-2.5
+  tar czvf bochs-2.5.tar.gz --exclude=.svn bochs-2.5
+</screen>
+The source TAR file bochs-2.5.tar.gz is ready for upload.
+</para>
+</section>
+
+<section><title>Building the release on Linux</title>
+<para>
+The RPM will be building using the configuration in .conf.linux with
+a few parameters from <command>build/redhat/make-rpm</command>. Make any last
+minute changes to .conf.linux. Any changes will go into the source RPM. The
+DLX Linux demo package will be downloaded from the Bochs website to the Bochs
+root directory if it is not already present there.
+<screen>
+  ./build/redhat/make-rpm | tee ../build.txt
+</screen>
+This produces two rpm files in the current directory. Test and upload.
+</para>
+</section>
+
 <section><title>Building the release on win32</title>
 <para>
-These instructions require cygwin and MSVC++.
+These instructions require cygwin and MSVC++. Use the Bochs sources from
+the SVN checkout or unpack the TAR file.
 </para>
 <para>
 In Cygwin:
@@ -2819,8 +2874,9 @@ In Cygwin:
   sh .conf.win32-vcpp         # runs configure
   make win32_snap             # unzip workspace, make a win32 source ZIP
 </screen>
-The source ZIP is now ready for upload. To build the binary package, copy it to
-a windows machine, if necessary.
+The source ZIP is present in the parent directory of the Bochs root and now
+ready for upload. To build the binary package, copy it to a Windows machine,
+if necessary.
 </para>
 <para>
 Open up Visual C++ and load the workspace file Bochs.sln.  Check
@@ -2838,66 +2894,33 @@ VC++ will rebuild Bochs with debugger and overwrite bochs.exe.  To avoid
 trashing the non-debug version, move it out of the way while the debugger
 version is being built.  Then rename the debugger version to bochsdbg.exe.
 <screen>
-cd obj-release
-mv bochs.exe bochs-normal.exe
-(build again with BX_DEBUGGER=1 this time)
-mv bochs.exe bochsdbg.exe
-mv bochs-normal.exe bochs.exe
+  cd obj-release
+  mv bochs.exe bochs-normal.exe
+  (build again with BX_DEBUGGER=1 this time)
+  mv bochs.exe bochsdbg.exe
+  mv bochs-normal.exe bochs.exe
 </screen>
 </para>
 <para>
-To get the docbook installed, you need to do something like this:
-<itemizedlist>
-<listitem> <para> make dl_docbook </para> </listitem>
-<listitem> <para> copy up to date doc files </para> </listitem>
-</itemizedlist>
-Then you can do
+Do make <emphasis>install_win32</emphasis> into the NSIS folder in the Bochs
+source tree:
 <screen>
-cd doc/docbook; touch */*.html
+  make install_win32 INSTDIR=./build/win32/nsis/bochs-2.5
 </screen>
-Do make install_win32 into /tmp or someplace:
-<screen>
-make install_win32 INSTDIR=/tmp/bochs-2.5
-</screen>
-This copies all the files into /tmp/bochs-2.5 and then creates a
-binary ZIP at /tmp/bochs-2.5.zip. Rename that bochs-2.5.win32-bin.zip.
+This downloads and unpacks both the DLX Linux demo and the HTML docs from the
+Bochs website, copies all the files into <emphasis>./build/win32/nsis/bochs-2.5</emphasis>
+and then creates a binary ZIP in the NSIS folder. Rename that bochs-2.5.win32-bin.zip.
 </para>
 <para>
 Now make the NSIS installer package (the current script is known to work with NSIS 2.44)
 <screen>
-cd build/win32/nsis
-</screen>
-Unzip the binary ZIP file into bochs-$VERSION (must match Makefile) and
-then run make.
-<screen>
-unzip ~/bochs-2.5.zip
-make
+  cd build/win32/nsis
+  make
 </screen>
 That gives an installer called <filename>Bochs-2.5.exe</filename>. Test and upload it.
 </para>
 </section>
-<section><title>Building the release on Linux</title>
-<para>
-Do a clean SVN checkout from the release tag and specify a not yet existing
-directory name with the version number as the destination. Then create the
-source package from this new directory.
-<screen>
-  svn co http://svn.code.sf.net/p/bochs/code/tags/REL_2_5_FINAL/bochs bochs-2.5
-  tar czvf bochs-2.5.tar.gz --exclude=.svn bochs-2.5
-</screen>
-The source TAR file bochs-2.5.tar.gz is ready for upload.
-</para>
-<para>
-The RPM will be building using the configuration in .conf.linux with
-a few parameters from <command>build/redhat/make-rpm</command>.  Make any last minute changes
-to .conf.linux.  Any changes will go into the source RPM. The DLX Linux demo package
-will be downloaded to the Bochs root directory if it is not already present there.
-<screen>
-./build/redhat/make-rpm | tee ../build.txt
-</screen>
-This produces two rpm files in the current directory.  Test and upload.
-</para>
-</section>
+
 <section><title>Creating a file release and uploading files on SF</title>
 <para>
 When you are ready with creating release packages you have to upload them using

@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////
-// $Id: pit.cc 12321 2014-05-10 06:50:06Z vruppert $
+// $Id: pit.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -33,7 +33,7 @@
 
 bx_pit_c *thePit = NULL;
 
-int libpit_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libpit_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     thePit = new bx_pit_c();
@@ -45,7 +45,7 @@ int libpit_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
   }
 }
 
-void libpit_LTX_plugin_fini(void)
+void CDECL libpit_LTX_plugin_fini(void)
 {
   delete thePit;
 }

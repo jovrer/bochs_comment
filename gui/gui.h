@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h 11622 2013-02-12 21:08:35Z vruppert $
+// $Id: gui.h 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -464,11 +464,11 @@ virtual void graphics_tile_update_in_place(unsigned x, unsigned y,          \
 //   static bx_sdl_gui_c *theGui;
 
 #define IMPLEMENT_GUI_PLUGIN_CODE(gui_name)                           \
-  int lib##gui_name##_LTX_plugin_init(plugin_t *plugin,               \
+  int CDECL lib##gui_name##_LTX_plugin_init(plugin_t *plugin,         \
           plugintype_t type, int argc, char *argv[]) {                \
     genlog->info("installing %s module as the Bochs GUI", #gui_name); \
     theGui = new bx_##gui_name##_gui_c ();                            \
     bx_gui = theGui;                                                  \
     return(0); /* Success */                                          \
   }                                                                   \
-  void lib##gui_name##_LTX_plugin_fini(void) { }
+  void CDECL lib##gui_name##_LTX_plugin_fini(void) { }

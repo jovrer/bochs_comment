@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcidev.cc 12089 2013-12-31 09:20:08Z vruppert $
+// $Id: pcidev.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -114,7 +114,7 @@ Bit32s pcidev_options_save(FILE *fp)
 
 // device plugin entry points
 
-int libpcidev_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libpcidev_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   thePciDevAdapter = new bx_pcidev_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePciDevAdapter, BX_PLUGIN_PCIDEV);
@@ -125,7 +125,7 @@ int libpcidev_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
   return 0; // Success
 }
 
-void libpcidev_LTX_plugin_fini(void)
+void CDECL libpcidev_LTX_plugin_fini(void)
 {
   SIM->unregister_addon_option("pcidev");
   bx_list_c *menu = (bx_list_c*)SIM->get_param("network");

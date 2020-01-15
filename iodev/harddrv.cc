@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.cc 12237 2014-03-11 18:29:32Z vruppert $
+// $Id: harddrv.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -106,7 +106,7 @@ BX_CPP_INLINE Bit32u read_32bit(const Bit8u* buf)
 
 bx_hard_drive_c *theHardDrive = NULL;
 
-int libharddrv_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libharddrv_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theHardDrive = new bx_hard_drive_c();
   bx_devices.pluginHardDrive = theHardDrive;
@@ -114,7 +114,7 @@ int libharddrv_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, ch
   return(0); // Success
 }
 
-void libharddrv_LTX_plugin_fini(void)
+void CDECL libharddrv_LTX_plugin_fini(void)
 {
   delete theHardDrive;
 }
@@ -166,7 +166,7 @@ void bx_hard_drive_c::init(void)
   char  pname[8];
   bx_list_c *base;
 
-  BX_DEBUG(("Init $Id: harddrv.cc 12237 2014-03-11 18:29:32Z vruppert $"));
+  BX_DEBUG(("Init $Id: harddrv.cc 12366 2014-06-08 08:40:08Z vruppert $"));
 
   for (channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
     sprintf(ata_name, "ata.%d.resources", channel);

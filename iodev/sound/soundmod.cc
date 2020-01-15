@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundmod.cc 12306 2014-05-02 06:38:49Z vruppert $
+// $Id: soundmod.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2011-2014  The Bochs Project
@@ -47,7 +47,7 @@
 
 bx_soundmod_ctl_c* theSoundModCtl = NULL;
 
-int libsoundmod_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libsoundmod_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theSoundModCtl = new bx_soundmod_ctl_c;
@@ -58,7 +58,7 @@ int libsoundmod_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
   }
 }
 
-void libsoundmod_LTX_plugin_fini(void)
+void CDECL libsoundmod_LTX_plugin_fini(void)
 {
   delete theSoundModCtl;
 }

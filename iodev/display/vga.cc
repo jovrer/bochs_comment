@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.cc 12087 2013-12-30 22:39:21Z vruppert $
+// $Id: vga.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //  PCI VGA dummy adapter Copyright (C) 2002,2003  Mike Nordell
 //
 //  This library is free software; you can redistribute it and/or
@@ -58,7 +58,7 @@
 
 bx_vga_c *theVga = NULL;
 
-int libvga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libvga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theVga = new bx_vga_c();
@@ -70,7 +70,7 @@ int libvga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
   }
 }
 
-void libvga_LTX_plugin_fini(void)
+void CDECL libvga_LTX_plugin_fini(void)
 {
   delete theVga;
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h 12117 2014-01-19 18:13:12Z vruppert $
+// $Id: plugin.h 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -376,8 +376,8 @@ int plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[]);
   extern "C" __declspec(dllexport) void __cdecl lib##mod##_LTX_plugin_fini(void);
 #else
 #define DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(mod) \
-  int lib##mod##_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[]); \
-  void lib##mod##_LTX_plugin_fini(void);
+  int CDECL lib##mod##_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[]); \
+  void CDECL lib##mod##_LTX_plugin_fini(void);
 #endif
 
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(harddrv)

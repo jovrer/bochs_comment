@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dnssearch.cc 12269 2014-04-02 17:38:09Z vruppert $
+// $Id: dnssearch.cc 12356 2014-06-04 19:46:21Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 /*
  * Domain search option for DHCP (RFC 3397)
@@ -63,7 +63,7 @@ domain_suffix_diffoff(const CompactDomain *a, const CompactDomain *b)
     return i;
 }
 
-static int domain_suffix_ord(const void *cva, const void *cvb)
+static int CDECL domain_suffix_ord(const void *cva, const void *cvb)
 {
     const CompactDomain *a = (const CompactDomain*)cva, *b = (const CompactDomain*)cvb;
     size_t la = a->len, lb = b->len;

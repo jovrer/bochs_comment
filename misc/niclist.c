@@ -2,7 +2,7 @@
 //
 // misc/niclist.c
 // by Don Becker <x-odus@iname.com>
-// $Id: niclist.c 11919 2013-11-01 18:19:52Z vruppert $
+// $Id: niclist.c 12365 2014-06-07 11:42:47Z vruppert $
 //
 // This program is for win32 only.  It lists the network interface cards
 // that you can use in the "ethdev" field of the ne2k line in your bochsrc.
@@ -14,6 +14,14 @@
 
 #ifndef WIN32
 #error Niclist will only work on WIN32 platforms.
+#endif
+
+#ifndef CDECL
+#if defined(_MSC_VER)
+  #define CDECL __cdecl
+#else
+  #define CDECL
+#endif
 #endif
 
 #include <windows.h>
@@ -47,8 +55,11 @@ typedef struct {
 NIC_INFO_NT niNT[MAX_ADAPTERS];
 NIC_INFO_9X ni9X[MAX_ADAPTERS];
 
-BOOLEAN (*PacketGetAdapterNames)(PTSTR, PULONG) = NULL;
-PCHAR   (*PacketGetVersion)() = NULL;
+typedef BOOLEAN (CDECL *PGetAdapterNames)(PTSTR, PULONG);
+typedef PCHAR   (CDECL *PGetVersion)();
+
+PGetAdapterNames PacketGetAdapterNames = NULL;
+PGetVersion      PacketGetVersion = NULL;
 
 void myexit (int code)
 {
@@ -78,8 +89,8 @@ int CDECL main(int argc, char **argv)
     if(hPacket)
     {
         // Now look up the address
-        PacketGetAdapterNames = (BOOLEAN (*)(PTSTR, PULONG))GetProcAddress(hPacket, "PacketGetAdapterNames");
-        PacketGetVersion = (PCHAR (*)())GetProcAddress(hPacket, "PacketGetVersion");
+        PacketGetAdapterNames = (PGetAdapterNames)GetProcAddress(hPacket, "PacketGetAdapterNames");
+        PacketGetVersion = (PGetVersion)GetProcAddress(hPacket, "PacketGetVersion");
     }
     else {
         printf("Could not load WinPCap driver!\n");

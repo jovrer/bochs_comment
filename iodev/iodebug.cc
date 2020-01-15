@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodebug.cc 11146 2012-04-19 18:03:13Z vruppert $
+// $Id: iodebug.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -35,7 +35,7 @@
 
 bx_iodebug_c *theIODebugDevice = NULL;
 
-int libiodebug_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libiodebug_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theIODebugDevice = new bx_iodebug_c();
   bx_devices.pluginIODebug = theIODebugDevice;
@@ -43,7 +43,7 @@ int libiodebug_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, ch
   return(0); // Success
 }
 
-void libiodebug_LTX_plugin_fini(void)
+void CDECL libiodebug_LTX_plugin_fini(void)
 {
   bx_devices.pluginIODebug = &bx_devices.stubIODebug;
   delete theIODebugDevice;

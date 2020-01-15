@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: cmos.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -100,7 +100,7 @@ Bit8u bin_to_bcd(Bit8u value, bx_bool is_binary)
     return ((value  / 10) << 4) | (value % 10);
 }
 
-int libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theCmosDevice = new bx_cmos_c();
@@ -112,7 +112,7 @@ int libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
   }
 }
 
-void libcmos_LTX_plugin_fini(void)
+void CDECL libcmos_LTX_plugin_fini(void)
 { 
   if (theCmosDevice != NULL) {
     delete theCmosDevice;
@@ -144,7 +144,7 @@ bx_cmos_c::~bx_cmos_c(void)
 
 void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc 11346 2012-08-19 08:16:20Z vruppert $"));
+  BX_DEBUG(("Init $Id: cmos.cc 12366 2014-06-08 08:40:08Z vruppert $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);

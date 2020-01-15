@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bximage.cc 12285 2014-04-20 12:50:05Z vruppert $
+// $Id: bximage.cc 12364 2014-06-07 07:32:06Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -116,7 +116,7 @@ char bx_filename_1[512];
 char bx_filename_2[512];
 
 const char *EOF_ERR = "ERROR: End of input";
-const char *svnid = "$Id: bximage.cc 12285 2014-04-20 12:50:05Z vruppert $";
+const char *svnid = "$Id: bximage.cc 12364 2014-06-07 07:32:06Z vruppert $";
 const char *divider = "========================================================================";
 const char *main_menu_prompt =
 "\n"
@@ -1090,7 +1090,7 @@ int get_image_mode_and_hdsize(const char *filename, int *hdsize_megs)
   return imgmode;
 }
 
-int main(int argc, char *argv[])
+int CDECL main(int argc, char *argv[])
 {
   char bochsrc_line[256], prompt[80], tmpfname[512];
   int imgmode = 0;

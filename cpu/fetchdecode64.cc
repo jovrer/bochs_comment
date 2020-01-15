@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode64.cc 12232 2014-03-08 20:27:10Z sshwarts $
+// $Id: fetchdecode64.cc 12352 2014-06-01 10:46:17Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -2293,7 +2293,7 @@ modrm_done:
 
 #if BX_SUPPORT_3DNOW
   if(b1 == 0x10f)
-     ia_opcode = Bx3DNowOpcode[i->modRMForm.Ib];
+    ia_opcode = Bx3DNowOpcode[i->modRMForm.Ib[0]];
 #endif
 
   // assign sources

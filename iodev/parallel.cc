@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parallel.cc 11978 2013-12-01 18:26:37Z vruppert $
+// $Id: parallel.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -102,7 +102,7 @@ Bit32s parport_options_save(FILE *fp)
 
 // device plugin entry points
 
-int libparallel_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libparallel_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theParallelDevice = new bx_parallel_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theParallelDevice, BX_PLUGIN_PARALLEL);
@@ -114,7 +114,7 @@ int libparallel_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
   return 0; // Success
 }
 
-void libparallel_LTX_plugin_fini(void)
+void CDECL libparallel_LTX_plugin_fini(void)
 {
   char port[10];
 
@@ -156,7 +156,7 @@ void bx_parallel_c::init(void)
   bx_list_c *base;
   int count = 0;
 
-  BX_DEBUG(("Init $Id: parallel.cc 11978 2013-12-01 18:26:37Z vruppert $"));
+  BX_DEBUG(("Init $Id: parallel.cc 12366 2014-06-08 08:40:08Z vruppert $"));
 
   for (unsigned i=0; i<BX_N_PARALLEL_PORTS; i++) {
     sprintf(pname, "ports.parallel.%d", i+1);

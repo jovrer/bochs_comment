@@ -1,5 +1,5 @@
 /*
- * $Id: bximage_old.c 11919 2013-11-01 18:19:52Z vruppert $
+ * $Id: bximage_old.c 12364 2014-06-07 07:32:06Z vruppert $
  *
  *  Copyright (C) 2001-2013  The Bochs Project
  *
@@ -19,6 +19,14 @@
  */
 
 /* Create empty hard disk or floppy disk images for bochs. */
+
+#ifndef CDECL
+#if defined(_MSC_VER)
+  #define CDECL __cdecl
+#else
+  #define CDECL
+#endif
+#endif
 
 #ifdef WIN32
 #ifndef __CYGWIN__
@@ -62,7 +70,7 @@ typedef int (*WRITE_IMAGE_WIN32)(HANDLE, Bit64u);
 #endif
 
 const char *EOF_ERR = "ERROR: End of input";
-const char *svnid = "$Id: bximage_old.c 11919 2013-11-01 18:19:52Z vruppert $";
+const char *svnid = "$Id: bximage_old.c 12364 2014-06-07 07:32:06Z vruppert $";
 const char *divider = "========================================================================";
 
 /* menu data for choosing floppy/hard disk */

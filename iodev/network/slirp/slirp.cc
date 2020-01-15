@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: slirp.cc 12269 2014-04-02 17:38:09Z vruppert $
+// $Id: slirp.cc 12356 2014-06-04 19:46:21Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 /*
  * libslirp glue
@@ -110,7 +110,7 @@ int get_dns_addr(struct in_addr *pdns_addr)
     return 0;
 }
 
-static void winsock_cleanup(void)
+static void CDECL winsock_cleanup(void)
 {
 #ifndef __CYGWIN__
     WSACleanup();

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpudb.h 12241 2014-03-15 19:24:42Z sshwarts $
+// $Id: cpudb.h 12360 2014-06-06 18:29:28Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -40,10 +40,10 @@ bx_define_cpudb(phenom_8650_toliman)
 bx_define_cpudb(core2_penryn_t9600)
 bx_define_cpudb(corei5_lynnfield_750)
 bx_define_cpudb(corei5_arrandale_m520)
+bx_define_cpudb(corei7_sandy_bridge_2600k)
 #if BX_SUPPORT_AVX
 bx_define_cpudb(zambezi)
 bx_define_cpudb(trinity_apu)
-bx_define_cpudb(corei7_sandy_bridge_2600k)
 bx_define_cpudb(corei7_ivy_bridge_3770k)
 bx_define_cpudb(corei7_haswell_4770)
 #endif

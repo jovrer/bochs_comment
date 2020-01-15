@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dma.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: dma.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -37,7 +37,7 @@
 
 bx_dma_c *theDmaDevice = NULL;
 
-int libdma_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libdma_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theDmaDevice = new bx_dma_c ();
@@ -49,7 +49,7 @@ int libdma_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
   }
 }
 
-void libdma_LTX_plugin_fini(void)
+void CDECL libdma_LTX_plugin_fini(void)
 {
   delete theDmaDevice;
 }
@@ -123,7 +123,7 @@ unsigned bx_dma_c::get_TC(void)
 void bx_dma_c::init(void)
 {
   unsigned c, i, j;
-  BX_DEBUG(("Init $Id: dma.cc 11346 2012-08-19 08:16:20Z vruppert $"));
+  BX_DEBUG(("Init $Id: dma.cc 12366 2014-06-08 08:40:08Z vruppert $"));
 
   /* 8237 DMA controller */
 

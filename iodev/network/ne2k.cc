@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.cc 12320 2014-05-09 13:49:42Z vruppert $
+// $Id: ne2k.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -132,7 +132,7 @@ Bit32s ne2k_options_save(FILE *fp)
 
 // device plugin entry points
 
-int libne2k_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libne2k_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theNE2kDevice = new bx_ne2k_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theNE2kDevice, BX_PLUGIN_NE2K);
@@ -143,7 +143,7 @@ int libne2k_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
   return(0); // Success
 }
 
-void libne2k_LTX_plugin_fini(void)
+void CDECL libne2k_LTX_plugin_fini(void)
 {
   SIM->unregister_addon_option("ne2k");
   ((bx_list_c*)SIM->get_param("network"))->remove("ne2k");
@@ -176,7 +176,7 @@ void bx_ne2k_c::init(void)
   Bit8u macaddr[6];
   bx_param_string_c *bootrom;
 
-  BX_DEBUG(("Init $Id: ne2k.cc 12320 2014-05-09 13:49:42Z vruppert $"));
+  BX_DEBUG(("Init $Id: ne2k.cc 12366 2014-06-08 08:40:08Z vruppert $"));
 
   // Read in values from config interface
   bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_NE2K);

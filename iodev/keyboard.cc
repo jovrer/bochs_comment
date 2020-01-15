@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc 12076 2013-12-28 12:00:19Z vruppert $
+// $Id: keyboard.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2013  The Bochs Project
+//  Copyright (C) 2002-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -56,7 +56,7 @@
 
 bx_keyb_c *theKeyboard = NULL;
 
-int libkeyboard_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libkeyboard_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   // Create one instance of the keyboard device object.
   theKeyboard = new bx_keyb_c();
@@ -68,7 +68,7 @@ int libkeyboard_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
   return 0; // Success
 }
 
-void libkeyboard_LTX_plugin_fini(void)
+void CDECL libkeyboard_LTX_plugin_fini(void)
 {
   delete theKeyboard;
 }
@@ -115,7 +115,7 @@ void bx_keyb_c::resetinternals(bx_bool powerup)
 
 void bx_keyb_c::init(void)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc 12076 2013-12-28 12:00:19Z vruppert $"));
+  BX_DEBUG(("Init $Id: keyboard.cc 12366 2014-06-08 08:40:08Z vruppert $"));
   Bit32u   i;
 
   DEV_register_irq(1, "8042 Keyboard controller");

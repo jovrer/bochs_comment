@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_common.cc 12128 2014-01-21 20:56:50Z vruppert $
+// $Id: usb_common.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Generic USB emulation code
@@ -46,7 +46,7 @@
 
 bx_usb_devctl_c* theUsbDevCtl = NULL;
 
-int libusb_common_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libusb_common_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theUsbDevCtl = new bx_usb_devctl_c;
@@ -57,7 +57,7 @@ int libusb_common_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc,
   }
 }
 
-void libusb_common_LTX_plugin_fini(void)
+void CDECL libusb_common_LTX_plugin_fini(void)
 {
   delete theUsbDevCtl;
 }

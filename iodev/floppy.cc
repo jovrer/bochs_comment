@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.cc 12143 2014-01-25 17:07:10Z vruppert $
+// $Id: floppy.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -108,7 +108,7 @@ static Bit16u drate_in_k[4] = {
 };
 
 
-int libfloppy_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libfloppy_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theFloppyController = new bx_floppy_ctrl_c();
@@ -120,7 +120,7 @@ int libfloppy_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
   }
 }
 
-void libfloppy_LTX_plugin_fini(void)
+void CDECL libfloppy_LTX_plugin_fini(void)
 {
   delete theFloppyController;
 }
@@ -154,7 +154,7 @@ void bx_floppy_ctrl_c::init(void)
   char pname[10];
   bx_list_c *floppy;
 
-  BX_DEBUG(("Init $Id: floppy.cc 12143 2014-01-25 17:07:10Z vruppert $"));
+  BX_DEBUG(("Init $Id: floppy.cc 12366 2014-06-08 08:40:08Z vruppert $"));
   DEV_dma_register_8bit_channel(2, dma_read, dma_write, "Floppy Drive");
   DEV_register_irq(6, "Floppy Drive");
   for (unsigned addr=0x03F2; addr<=0x03F7; addr++) {

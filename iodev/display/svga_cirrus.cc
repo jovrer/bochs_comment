@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svga_cirrus.cc 12097 2014-01-04 15:42:17Z vruppert $
+// $Id: svga_cirrus.cc 12366 2014-06-08 08:40:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2004 Makoto Suzuki (suzu)
@@ -224,7 +224,7 @@
 
 static bx_svga_cirrus_c *theSvga = NULL;
 
-int libsvga_cirrus_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libsvga_cirrus_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   if (type == PLUGTYPE_CORE) {
     theSvga = new bx_svga_cirrus_c();
@@ -236,7 +236,7 @@ int libsvga_cirrus_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc
   }
 }
 
-void libsvga_cirrus_LTX_plugin_fini(void)
+void CDECL libsvga_cirrus_LTX_plugin_fini(void)
 {
   delete theSvga;
 }

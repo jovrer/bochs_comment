@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc 12343 2014-05-30 10:12:13Z vruppert $
+// $Id: win32.cc 12359 2014-06-05 20:12:44Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -1043,7 +1043,7 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     return 0;
 
   case WM_SIZE:
-    {
+    if (!IsIconic(hwnd)) {
       int x, y;
       SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
       SendMessage(hwndSB, WM_SIZE, 0, 0);
@@ -1148,10 +1148,6 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       ClientToScreen(hwnd, &pt);
       SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
       cursorWarped();
-    }
-    if (fix_size) {
-      set_fullscreen_mode(TRUE);
-      fix_size = FALSE;
     }
     return 0;
 
@@ -1473,6 +1469,11 @@ void bx_win32_gui_c::handle_events(void)
   Bit32u key_event;
 
   if (stInfo.kill) terminateEmul(stInfo.kill);
+
+  if (fix_size) {
+    resize_main_window(FALSE);
+    fix_size = FALSE;
+  }
 
   // Handle mouse moves
   enq_mouse_event();
