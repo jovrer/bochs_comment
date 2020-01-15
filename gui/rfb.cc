@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc,v 1.45 2005/11/12 16:09:55 vruppert Exp $
+// $Id: rfb.cc,v 1.48 2006/01/23 18:34:47 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -52,6 +52,9 @@ public:
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
   void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
   void statusbar_setitem(int element, bx_bool active);
+#if BX_SHOW_IPS
+  void show_ips(Bit32u ips_count);
+#endif
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -298,10 +301,14 @@ void rfbSetStatusText(int element, const char *text, bx_bool active)
   for (i=0; i<(rfbStatusbarY - 2); i++) {
     newBits[((xsize / 8) + 1) * i] = 0;
   }
-  color = active?0xa0:0xf7;
+  if (element > 0) {
+    color = active?0xa0:0xf7;
+  } else {
+    color = 0xf0;
+  }
   DrawBitmap(xleft, rfbWindowY - rfbStatusbarY + 1, xsize, rfbStatusbarY - 2, newBits, color, false);
   free(newBits);
-  len = (strlen(text) > 4) ? 4 : strlen(text);
+  len = ((element > 0) && (strlen(text) > 4)) ? 4 : strlen(text);
   for (i = 0; i < len; i++) {
     DrawChar(xleft + i * 8 + 2, rfbWindowY - rfbStatusbarY + 5, 8, 8, 0,
       (char *)&sdl_font8x8[(unsigned)text[i]][0], color, 0);
@@ -1735,5 +1742,14 @@ bx_rfb_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
   *yres = BX_RFB_MAX_YDIM;
   *bpp = 8;
 }
+
+#if BX_SHOW_IPS
+void bx_rfb_gui_c::show_ips(Bit32u ips_count)
+{
+  char ips_text[40];
+  sprintf(ips_text, "IPS: %9u", ips_count);
+  rfbSetStatusText(0, ips_text, 1);
+}
+#endif
 
 #endif /* if BX_WITH_RFB */

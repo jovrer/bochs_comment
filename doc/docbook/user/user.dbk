@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.192 2005/12/29 19:51:00 vruppert Exp $
+$Id: user.dbk,v 1.202 2006/01/29 08:44:12 vruppert Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -344,24 +344,32 @@ currently work with.
   <row>
     <entry>386,486,Pentium Emulation</entry>
     <entry>Yes</entry>
-    <entry>Bochs can be configured to emulate one of several families of Intel hardware. Some Pentium features are unsupported, such as the Time Stamp Counter.</entry>
+    <entry>Bochs can be configured to emulate one of several families of Intel hardware. Some Pentium features are unsupported, such as MTRR or SMM (System Management Mode).</entry>
   </row>
   <row>
-    <entry>Pentium Pro Emulation</entry>
-    <entry>Incomplete</entry>
-    <entry>A few Pentium Pro features are incomplete, such as an on-chip APIC for SMP simulation.
+    <entry>P6 and later CPU Emulation</entry>
+    <entry>Yes</entry>
+    <entry>Bochs can be configured to emulate any P6 family processor including optional MMX and SSE instructions.
     </entry>
   </row>
   <row>
-    <entry>AMD x86-64 Emulation</entry>
+    <entry>Pentium 4 Emulation</entry>
     <entry>Incomplete</entry>
-    <entry>The AMD x86-64 support is about 90% complete and is still experimental.</entry>
+    <entry>A few Pentium 4 features are incomplete, such as an on-chip APIC extensions (XAPIC) for SMP simulation.
+    </entry>
+  </row>
+  <row>
+    <entry>x86-64 Extensions Emulation</entry>
+    <entry>Yes</entry>
+    <entry>Bochs can be configured to emulate x86-64 with all Intel (CMPXCHG16B instruction) or AMD (RDTSCP instruction) extensions.</entry>
   </row>
   <row>
     <entry>Command Line Debugger</entry>
     <entry>Yes</entry>
     <entry>Powerful command line debugger (optional) that lets you stop
-    execution and examine registers and memory, set breakpoints, etc.
+    execution and examine registers and memory, set breakpoints, etc. Unfortunatelly
+    the debugger still lacks x86-64 support and almost unusable for debugging 
+    x86-64 workloads.
     </entry>
   </row>
   <row>
@@ -380,7 +388,7 @@ currently work with.
   <row>
     <entry>VGA</entry>
     <entry>Yes</entry>
-    <entry>VGA color graphics emulation in a window
+    <entry>VGA color graphics emulation in a window.
     </entry>
   </row>
   <row>
@@ -522,7 +530,7 @@ currently work with.
   <row>
     <entry>v8086/paging</entry>
     <entry>Yes</entry>
-    <entry>Virtual-8086 mode and paging</entry>
+    <entry>Virtual-8086 mode including optional v8086 mode extensions (VME) and paging</entry>
   </row>
   <row>
     <entry>PIC</entry>
@@ -546,7 +554,7 @@ currently work with.
   <row>
     <entry>Simulate a Multiprocessor</entry>
     <entry>Yes</entry>
-    <entry>Bochs can be configured to simulate up to 15 processors.  This
+    <entry>Bochs can be configured to simulate up to 8 processors.  This
     feature is still experimental, but it can boot Linux 2.2 kernels with SMP
     support.  Please note that this does NOT mean that Bochs can run
     faster on a physical SMP machine.
@@ -1159,6 +1167,14 @@ The tag tells which release you want, and it can be one of the following:
     </thead>
     <tbody>
       <row>
+        <entry>2.2.6 (intermediate2)</entry>
+        <entry>REL_2_2_6_FINAL</entry>
+      </row>
+      <row>
+        <entry>2.2.5 (intermediate1)</entry>
+        <entry>REL_2_2_5_FINAL</entry>
+      </row>
+      <row>
         <entry>2.2.1 (bugfix1)</entry>
         <entry>REL_2_2_1_FINAL</entry>
       </row>
@@ -1286,22 +1302,15 @@ is different on different platforms.
 
 <section><title>Windows</title>
 <para>
-The Bochs binaries for Windows are distributed in two different package types:
-EXE and ZIP. Both package types contain all files you need to run Bochs. The EXE
-version can be started like any other Windows program and it brings up the
-installation wizard. Here you can select the destination folder and the
+The Bochs binaries for Windows are distributed in an EXE installer package.
+The Bochs installer can be started like any other Windows program and it brings
+up the installation wizard. Here you can select the destination folder and the
 installation options. The wizard installs the files and creates the registry
-keys, start menu and desktop links. We recommend to use the EXE package unless
-you are a Bochs expert.
+keys, start menu and desktop links.
 </para>
 <para>
-If you choose the ZIP package you need a tool like WinZip to unpack the archive.
-Note that you have to create a registry key for Bochs if you want to use the
-environment variable $BXSHARE in your config file. The name of the key is
-<varname>HKEY_LOCAL_MACHINE\Software\Bochs 2.2.1</varname> (the Bochs version may differ).
-Edit the default value of this key and enter the path to your Bochs installation.
-For more information on environment variables see the section <link
-linkend="bochsrc">bochsrc</link>.
+Previous releases of Bochs were distributed as ZIP packages, too. These packages
+contained the same set of files as the installer package from the same version.
 </para>
 <para>
 If you are new to Bochs you should try out the DLX Linux demo distributed with
@@ -1321,7 +1330,7 @@ DLX Linux screenshot.
 </thead>
 <tbody>
 
-<row><entry>BIOS-bochs-* </entry> <entry> ROM BIOS images for Bochs.  Normally you would only use BIOS-bochs-latest unless you are simulating multiple processors. </entry> </row>
+<row><entry>BIOS-bochs-latest </entry> <entry> ROM BIOS image for Bochs </entry> </row>
 <row><entry>bochs.exe </entry> <entry> the main Bochs executable </entry> </row>
 <row><entry>bochs.ico </entry> <entry> the Bochs icon (used for links in start menu and on the desktop) </entry> </row>
 <row><entry>bochsdbg.exe </entry> <entry> the main Bochs executable with debugger enabled </entry> </row>
@@ -1331,11 +1340,12 @@ DLX Linux screenshot.
 <row><entry>CHANGES.txt </entry> <entry> what has changed between versions </entry> </row>
 <row><entry>COPYING.txt </entry> <entry> copy of the LGPL license </entry> </row>
 <row><entry>README.txt </entry> <entry> the read-me file from the source distribution. </entry> </row>
+<row><entry>TODO.txt </entry> <entry> the TODO file from the source distribution. </entry> </row>
 <row><entry>niclist.exe </entry> <entry> tool to find out the network interface name </entry> </row>
 <row><entry>penguin.ico </entry> <entry> the Linux logo (used for the DLX link in start menu) </entry> </row>
 <row><entry>sb16ctrl.exe </entry> <entry> tool to control sb16 in Bochs </entry> </row>
 <row><entry>sb16ctrl.txt </entry> <entry> examples of sb16ctrl commands </entry> </row>
-<row><entry>VGABIOS-elpin-* </entry> <entry> VGA BIOS image for Bochs </entry> </row>
+<row><entry>VGABIOS-elpin-2.40 </entry> <entry> VGA BIOS image for Bochs </entry> </row>
 <row><entry>VGABIOS-elpin-LICENSE.txt </entry> <entry> license for VGA BIOS </entry> </row>
 <row><entry>VGABIOS-lgpl-latest </entry> <entry> LGPL'd VGA BIOS image for Bochs </entry> </row>
 <row><entry>VGABIOS-lgpl-latest-debug </entry> <entry> LGPL'd VGA BIOS image for Bochs with debug output to the logfile </entry> </row>
@@ -1505,9 +1515,10 @@ description of each one.
 </thead>
 <tbody>
 
-<row><entry>/usr/share/doc/bochs/README</entry> <entry> the read-me file from the source distribution. </entry> </row>
 <row><entry>/usr/share/doc/bochs/CHANGES</entry> <entry> what has changed between versions </entry> </row>
 <row><entry>/usr/share/doc/bochs/COPYING</entry> <entry> copy of the LGPL license </entry> </row>
+<row><entry>/usr/share/doc/bochs/README</entry> <entry> the read-me file from the source distribution. </entry> </row>
+<row><entry>/usr/share/doc/bochs/TODO</entry> <entry> the TODO file from the source distribution. </entry> </row>
 <row><entry>/usr/bin/bochs </entry> <entry> the main Bochs executable </entry> </row>
 <row><entry>/usr/bin/bximage </entry> <entry> tool for making new disk images </entry> </row>
 <row><entry>/usr/bin/bxcommit </entry> <entry> tool for committing redologs to flat disk images </entry> </row>
@@ -1516,8 +1527,8 @@ description of each one.
 <row><entry>/usr/share/man/man1/* </entry> <entry> man pages for bochs, bochs-dlx, bximage and bxcommit</entry> </row>
 <row><entry>/usr/share/man/man5/* </entry> <entry> man page for bochsrc </entry> </row>
 <row><entry>/usr/share/doc/bochs/index.html</entry> <entry> a local copy of all Bochs documentation ( <ulink url="http://bochs.sourceforge.net/doc/docbook/index.html">Online copy</ulink> )</entry> </row>
-<row><entry>/usr/share/bochs/BIOS-bochs-* </entry> <entry> ROM BIOS images for Bochs.  Normally you would only use BIOS-bochs-latest unless you are simulating multiple processors.  </entry> </row>
-<row><entry>/usr/share/bochs/VGABIOS-elpin-* </entry> <entry> VGA BIOS image for Bochs </entry> </row>
+<row><entry>/usr/share/bochs/BIOS-bochs-latest </entry> <entry> ROM BIOS image for Bochs </entry> </row>
+<row><entry>/usr/share/bochs/VGABIOS-elpin-2.40 </entry> <entry> VGA BIOS image for Bochs </entry> </row>
 <row><entry>/usr/share/bochs/VGABIOS-elpin-LICENSE </entry> <entry> license for VGA BIOS </entry> </row>
 <row><entry>/usr/share/bochs/VGABIOS-lgpl-latest </entry> <entry> LGPL'd VGA BIOS image for Bochs </entry> </row>
 <row><entry>/usr/share/bochs/VGABIOS-lgpl-latest-debug </entry> <entry> LGPL'd VGA BIOS image for Bochs with debug output to the logfile </entry> </row>
@@ -2339,17 +2350,17 @@ turn it off.
           this option, you don't.</entry>
     </row>
     <row>
-      <entry>--enable-processors={<option>1,2,3,...,15</option>}</entry>
-      <entry>1</entry>
+      <entry>--enable-smp</entry>
+      <entry>no</entry>
       <entry>
-      By changing to more than 1 processor, you enable SMP simulation.  This
-      allows you to boot Linux and maybe other OSes in SMP mode, and bochs will
-      simulate all the different CPUs and communication between them.  Do not
-      expect this option to speed up your simulation!  On the contrary, it has
-      to spend extra time simulating the different CPUs (even if they're mostly
-      idle) and the communication between them.  Use it to try out an SMP OS if
-      you don't have an SMP machine, or to debug SMP OS drivers. Refer to
-      <xref linkend="SMP"> for more details on SMP in Bochs.
+      Compile in support for SMP simulation.  This allows you to boot Linux and
+      maybe other OSes in SMP mode, and bochs will simulate all the different
+      CPUs and communication between them.  Do not expect this option to speed
+      up your simulation!  On the contrary, it has to spend extra time simulating
+      the different CPUs (even if they're mostly idle) and the communication
+      between them. Use it to try out an SMP OS if you don't have an SMP machine,
+      or to debug SMP OS drivers. Refer to <xref linkend="SMP"> for more details
+      on SMP in Bochs.
       </entry>
     </row>
     <row>
@@ -2411,7 +2422,8 @@ turn it off.
       <entry>--enable-show-ips</entry>
       <entry>no</entry>
       <entry>
-      Enables logging of measured IPS, see <link linkend="bochsopt-ips">ips option</link>.
+      Enables logging of measured IPS, see the <command>ips</command> parameter
+      of the <link linkend="bochsopt-cpu">cpu option</link>.
       </entry>
     </row>
     <row>
@@ -3037,9 +3049,64 @@ Due to limitations in the host OS, Bochs fails to allocated even 1024MB on most 
 </para></note>
 </section>
 
-<section><title>romimage</title>
+<section id="bochsopt-cpu"><title>cpu</title>
 <para>
 Example:
+<screen>
+  cpu: count=2, ips=10000000
+</screen>
+This defines the parameters of the cpu inside Bochs:
+</para>
+<para><command>count</command></para>
+<para>
+Set the number of processors when Bochs is compiled for SMP emulation.
+Bochs currently supports up to 8 processors. If Bochs is compiled
+without SMP support, it won't accept values different from 1.
+For more information on SMP see <xref linkend="SMP">.
+</para>
+<para><command>ips</command></para>
+<para>
+Emulated Instructions Per Second.  This is the number of IPS that Bochs is
+capable of running on your machine.  You can recompile Bochs with
+<option>--enable-show-ips</option> option enabled, to find your workstation's capability.
+Measured IPS value will then be logged into your <link linkend="bochsopt-log">log file</link>
+or in the status bar (if supported by the gui).
+</para>
+
+<para>
+IPS is used to calibrate many time-dependent events within the Bochs
+simulation.  For example, changing IPS affects the frequency of VGA updates,
+the duration of time before a key starts to autorepeat, and the measurement
+of BogoMips and other benchmarks.  The table below lists some typical
+IPS settings for different machines<footnote><para>IPS measurements depend on
+OS and compiler configuration in addition to processor clock
+speed.</para></footnote>.
+</para>
+
+<table><title>Example IPS Settings</title>
+  <tgroup cols="3" align="left" colsep="1" rowsep="1">
+<thead>
+  <row>
+    <entry>Speed</entry>
+    <entry>Machine</entry>
+    <entry>Typical IPS</entry>
+  </row>
+</thead>
+  <tbody>
+<row><entry>2.1Ghz</entry><entry>Athlon XP with Linux 2.6/g++ 3.4 </entry><entry> 12 to 15 million</entry></row>
+<row><entry>1.6Ghz</entry><entry>Intel P4 with Win2000/g++ 3.3 </entry><entry> 5 to  7 million</entry></row>
+<row><entry>650MHz</entry><entry>Athlon K-7 with Linux 2.4.x  </entry><entry> 2 to 2.5 million</entry></row>
+<row><entry>400MHz</entry><entry>Pentium II with Linux 2.0.x  </entry><entry> 1 to 1.8 million</entry></row>
+<row><entry>166MHz</entry><entry>64bit Sparc with Solaris 2.x  </entry><entry>    0.75 million</entry></row>
+<row><entry>200MHz</entry><entry>Pentium with Linux 2.x        </entry><entry>          0.5 million</entry></row>
+</tbody>
+</tgroup>
+</table>
+</section>
+
+<section><title>romimage</title>
+<para>
+Examples:
 <screen>
   romimage: file=bios/BIOS-bochs-latest, address=0xf0000
   romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
@@ -3476,7 +3543,7 @@ Examples:
   log: /dev/null              (Unix only)
   log: nul                    (win32 only)
 </screen>
-Give the path of the log file you'd like Bochs debug and misc. verbage to be
+Give the path of the log file you'd like Bochs debug and misc. verbiage to be
 to be written to. If you don't use this option or set the filename to '-'
 the output is written to the console. If you really don't want it,
 make it "/dev/null" (Unix) or "nul" (win32). :^(
@@ -3681,8 +3748,9 @@ are in the usual "property=value" format.
    <listitem><para>
    dmatimer: Microseconds per second for a DMA cycle. Make it smaller to fix
    non-continuous sound. 750000 is usually a good value. This needs a reasonably
-   correct setting for the <link linkend="bochsopt-ips">ips option</link>. It is
-   possible to adjust the dmatimer value at runtime.
+   correct setting for the <command>ips</command> paramter of the
+   <link linkend="bochsopt-cpu">cpu option</link>. It is possible to adjust the
+   dmatimer value at runtime.
    </para></listitem>
  </itemizedlist>
 </para>
@@ -3696,9 +3764,10 @@ Examples:
   vga_update_interval: 250000
 </screen>
 Video memory is scanned for updates and screen updated every so many virtual
-microseconds. Keep in mind that you must tweak the <link linkend="bochsopt-ips">ips option</link>
-to be as close to the number of emulated instructions-per-second your workstation
-can do, for this to be accurate.
+microseconds. Keep in mind that you must tweak the <command>ips</command>
+parameter of the <link linkend="bochsopt-cpu">cpu option</link> to be as close
+to the number of emulated instructions-per-second your workstation can do,
+for this to be accurate.
 </para>
 </section>
 
@@ -3728,47 +3797,16 @@ consistently in Windows.
 </para>
 </section>
 
-<section id="bochsopt-ips"><title>ips</title>
+<section><title>ips</title>
 <para>
 Examples:
 <screen>
   ips: 2000000 # default
   ips: 10000000
 </screen>
-Emulated Instructions Per Second.  This is the number of IPS that Bochs is
-capable of running on your machine.  You can recompile Bochs with
-<option>--enable-show-ips</option> option enabled, to find your workstation's capability.
-Measured IPS value will then be logged into your <link linkend="bochsopt-log">log file</link>.
+Emulated Instructions Per Second.  This option is deprecated. Use the <command>ips</command>
+parameter of the <link linkend="bochsopt-cpu">cpu option</link> instead.
 </para>
-
-<para>
-IPS is used to calibrate many time-dependent events within the Bochs
-simulation.  For example, changing IPS affects the frequency of VGA updates,
-the duration of time before a key starts to autorepeat, and the measurement
-of BogoMips and other benchmarks.  The table below lists some typical
-IPS settings for different machines<footnote><para>IPS measurements depend on
-OS and compiler configuration in addition to processor clock
-speed.</para></footnote>.
-</para>
-
-<table><title>Example IPS Settings</title>
-  <tgroup cols="3" align="left" colsep="1" rowsep="1">
-<thead>
-  <row>
-    <entry>Speed</entry>
-    <entry>Machine</entry>
-    <entry>Typical IPS</entry>
-  </row>
-</thead>
-  <tbody>
-<row><entry>650MHz</entry><entry>Athlon K-7 with Linux 2.4.x  </entry><entry> 2 to 2.5 million</entry></row>
-<row><entry>400MHz</entry><entry>Pentium II with Linux 2.0.x  </entry><entry> 1 to 1.8 million</entry></row>
-<row><entry>166MHz</entry><entry>64bit Sparc with Solaris 2.x  </entry><entry>    0.75 million</entry></row>
-<row><entry>200MHz</entry><entry>Pentium with Linux 2.x        </entry><entry>          0.5 million</entry></row>
-</tbody>
-</tgroup>
-</table>
-
 </section>
 
 <section id="bochsopt-clock"><title>clock</title>
@@ -4119,9 +4157,9 @@ supported in Bochs 2.2.1.
 Valid key names:
 </para>
 <para>
-"alt", "bksp", "ctrl", "del", "down", "end", "enter", "esc", "f1", ... "f12",
-"home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus", "right",
-"shift", "space", "tab", "up", and "win".
+"alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
+"f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
+"right", "shift", "space", "tab", "up", and "win".
 </para>
 </section>
 
@@ -5528,8 +5566,8 @@ shift or control) to restore the screen.
 
 <para>
 There are two strategies to fix this problem.  One is to increase the
-<link linkend="bochsopt-ips">ips setting</link> in your configuration file.
-This will cause the simulation time
+<command>ips</command> parameter of the <link linkend="bochsopt-cpu">cpu option</link>
+in your configuration file. This will cause the simulation time
 to pass more slowly.  The other strategy is to enable the experimental
 realtime PIT, which tries to keep Bochs in sync with real time. See the <filename>bochsrc</filename>
 option <link linkend="bochsopt-clock">clock</link>.
@@ -5642,18 +5680,22 @@ md7
 
 <section id="SMP"><title>Simulating a Symmetric Multiprocessor (SMP) Machine</title>
 <para>
-Bochs can now simulate an SMP machine when you use "--enable-processors=N" 
-in the configure command.  SMP support was added by Bryce Denney, who
+Bochs can now simulate an SMP machine when you use "--enable-smp" in the
+configure command.  SMP support was added by Bryce Denney, who
 was very interested in watching a multiprocessor operating system work 
 at a low level.  It should also be helpful to operating system developers
 who are writing SMP drivers, or just for users who want to test drive
 an SMP machine to see what it looks like.
 </para>
-
 <para>
-It is important to understand that configuring bochs for 4 processors will NOT make
-your single-threaded applications run faster in general!  On the contrary, it
-has to spend time simulating idle processors as well as the ones doing your
+Starting with Bochs 2.2.6 you can set up the number of processors in the
+<filename>bochsrc</filename>. See <xref linkend="bochsopt-cpu"> how to
+set up the number of processors.
+</para>
+<para>
+It is important to understand that configuring bochs for 4 processors will NOT
+make your single-threaded applications run faster in general!  On the contrary,
+it has to spend time simulating idle processors as well as the ones doing your
 task.  The point is to simulate an SMP system, not to speed up a uniprocessor
 application.
 </para>
@@ -5668,10 +5710,11 @@ has been tested so far.)
 </para></listitem>
 <listitem><para> implement RDTSC feature (read time stamp counter)
 </para></listitem>
-<listitem><para> modifications to rombios.c to add a data structure called the Intel
-Multiprocessor Configuration.  An SMP-aware operating system 
-probes BIOS memory to find the structure, which contains information about
-how many processors, their IDs, interrupt sources, etc.
+<listitem><para> a data structure called the Intel Multiprocessor Configuration
+must be present in BIOS memory space. An SMP-aware operating system probes BIOS
+memory to find the structure, which contains information about how many
+processors, their IDs, interrupt sources, etc. Starting with Bochs 2.2.5 these
+structures are dynamicly created by Bochs.
 </para></listitem>
 </itemizedlist>
 </para>
@@ -5681,18 +5724,12 @@ What needs to be done to improve SMP support?
 
 <itemizedlist>
 <listitem><para>
-still needs work on rombios.c to allow you to configure the number of
-processors in the .bochsrc.  Presently you have to choose the number
-of processors at compile time.
-</para></listitem>
-
-<listitem><para>
 debugger support is still limited.  For example, you can set breakpoints,
 but you can't specify which processor you want to set the breakpoint for.
 </para></listitem>
 
 <listitem><para>
- test on SMP systems other than linux 2.2.14
+test on SMP systems other than linux 2.2.14
 </para></listitem>
 
 <listitem><para>
@@ -5710,9 +5747,8 @@ in parallel.  This is a great idea, but it's not done at present.
 </para></listitem>
 </itemizedlist>
 </para>
-
-
 </section>
+
 <section id="dlxlinux-networking"><title>Setting Up Networking in DLX Linux</title>
 <para>
 All Bochs binaries come with a working version of DLX Linux.  This section
@@ -6050,15 +6086,19 @@ From here, you may use the following commands:
 <title>Execution Control</title>
 <para>
 <screen>
-  c                           Continue executing
-  stepi [count]               execute count instructions, default is 1
-  si    [count]               execute count instructions, default is 1
-  step  [count]               execute count instructions, default is 1
+  c                           continue executing
+  continue
+
   s     [count]               execute count instructions, default is 1
+  step  [count]
+  stepi [count]
+
   Ctrl-C                      stop execution, and return to command line prompt
   Ctrl-D                      if at empty line on command line, exit
-  quit                        quit debugger and execution
+
   q                           quit debugger and execution
+  quit
+  exit
 </screen>
 </para>
 </section>
@@ -6086,9 +6126,12 @@ From here, you may use the following commands:
   b      [*] addr
 
   info break                  Display state of all current breakpoints
+  bpe    n                    Enable a breakpoint
+  bpd    n                    Disable a breakpoint
   delete n                    Delete a breakpoint
   del    n
   d      n
+
 </screen>
 </para>
 </section>
@@ -6124,7 +6167,7 @@ From here, you may use the following commands:
   setpmem addr datasize val    Set physical memory location of size
                                datasize to value val.
 
-  crc  addr1  addr2            Show CRC for physical memory range addr1..addr2
+  crc  addr1  addr2            Show CRC32 for physical memory range addr1..addr2
   info dirty                   Show physical pages dirtied (written to) since last display
                                Values displayed are the top 20 bits only (page addresses)
 
@@ -6136,9 +6179,13 @@ From here, you may use the following commands:
 <title>Info commands</title>
 <para>
 <screen>
-  info program      Execution status of the program
-  info registers    List of CPU integer registers and their contents
-  info break        Information about current breakpoint status
+  info r|reg|regs|registers    List of CPU integer registers and their contents
+  info cpu                     List of all CPU registers and their contents
+  info fpu                     List of all FPU registers and their contents
+  info sse                     List of all SSE registers and their contents
+  info cr                      Show CR0-4 registers and their contents
+  info eflags                  Show decoded EFLAGS register
+  info break                   Information about current breakpoint status
 </screen>
 </para>
 </section>
@@ -6147,15 +6194,19 @@ From here, you may use the following commands:
 <title>Manipulating CPU Registers</title>
 <para>
 <screen>
-  set $reg = val    Change a CPU register to value val.  Registers may be one of:
-                      eax, ecx, edx, ebx, esp, ebp, esi, edi.
-                    Currently, you may not change:
-                      eflags, cs, ss, ds, es, fs, gs.
+  set reg = expr    Change a CPU register to value of expression.
+                    Currently only general purpose registers are supported,
+                    you may not change:
+                      eflags, eip, cs, ss, ds, es, fs, gs.
 
-    Examples: set $eax = 0x01234567
-              set $edx = 25
+    Examples: set eax = 2+2/2
+              set esi = 2*eax+ebx
 
-  info registers    See Info section
+  registers         List of CPU registers and their contents
+  regs
+  reg
+  r
+
   dump_cpu          Dump complete CPU state
   set_cpu           Set  complete CPU state
 
@@ -6227,7 +6278,11 @@ From here, you may use the following commands:
                               debugger desired segment size.  Use a value for
                               end of less than start (or zero) if you only
                               want the first instruction disassembled.
-  set $disassemble_size = n   Tell debugger what segment size to use when
+
+  disassemble switch-mode     Switch between Intel and AT&amp;T disassebly styles
+                              for debugger disassembler.
+
+  disassemble size = n        Tell debugger what segment size to use when
                               the "disassemble" command is used.  Use values
                               of 0, 16 or 32 for n.  Value of 0 means
 			      "use segment size specified by current CS
@@ -6236,8 +6291,11 @@ From here, you may use the following commands:
   set $auto_disassemble = n   Cause debugger to disassemble current instruction
                               every time execution stops if n=1.  Default is 0.
                               Segment size of current CPU context is used for
-                              disassembly, so variable "$disassemble_size" is
+                              disassembly, so the "disassemble size" variable is
                               ignored.
+
+  set disassemble on          The same as 'set $auto_disassemble = 1'
+  set disassemble off         The same as 'set $auto_disassemble = 0'
 </screen>
 </para>
 </section>
@@ -6297,8 +6355,7 @@ Disable tracing.
 
 <screen>ptime</screen>
 
-Print the current time (number of ticks since start of simulation
-(modulo 2^32)).
+Print the current time (number of ticks since start of simulation).
 
 <screen>sb <varname>delta</varname></screen>
 
@@ -6362,9 +6419,9 @@ Remove read watch point from physical address <varname>address</varname>.
 
 Remove write watch point from physical address <varname>address</varname>.
 
-<screen>modebp [<varname>string</varname>]</screen>
+<screen>modebp</screen>
 
-Toggles vm86 mode switch breakpoint.
+Toggles CPU mode switch breakpoint.
 
 <screen>load-symbols [global] <varname>filename</varname> [<varname>offset</varname>]</screen>
 
@@ -8280,7 +8337,7 @@ debug: action=ignore
 vga_update_interval: 300000
 keyboard_serial_delay: 250
 keyboard_paste_delay: 100000
-ips: 1000000
+cpu: ips=1000000
 mouse: enabled=0
 private_colormap: enabled=0
 fullscreen: enabled=0
@@ -9860,7 +9917,7 @@ add the following line to your <filename>.bochsrc</filename>:
 </para>
 
 <programlisting>
-ips: 1000000
+cpu: ips=1000000
 </programlisting>
 
 <para>
@@ -10035,9 +10092,9 @@ D:\WIN98>
 </programlisting>
 
 <para>
-It is now time to comment out the "ips: 1000000" line in your ~/win98/.bochsrc file.  Close Bochs
-by clicking the Bochs power button with your mouse.
-Open up ~/win98/.bochsrc with your favorite editor and put a hash (#) mark in front of the ips line.
+It is now time to comment out the "cpu: ips=1000000" line in your ~/win98/.bochsrc file.
+Close Bochs by clicking the Bochs power button with your mouse. Open up ~/win98/.bochsrc
+with your favorite editor and put a hash (#) mark in front of the cpu line.
 </para>
 
 <para>
@@ -10258,7 +10315,7 @@ Parts/Attachments:
    value in bochsrc.txt. I raised the IPS value until setup stop
    complaining. In my machine (P3 @ 450MHz), I achieved this with
 
-      ips: 500000000
+      cpu: ips=500000000
 
    This this IPS value, the keyboard and mouse are updated each
    100 seconds. This makes very difficult to type the CD-KEY numbers,
@@ -10502,7 +10559,7 @@ floppy_bootsig_check: disabled=0
 vga_update_interval: 300000
 keyboard_serial_delay: 250
 keyboard_paste_delay: 100000
-ips: 3000000
+cpu: ips=3000000
 clock: sync=realtime, time0=0
 text_snapshot_check: 0
 mouse: enabled=0

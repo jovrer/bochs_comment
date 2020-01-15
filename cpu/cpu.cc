@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.119 2005/12/28 19:18:50 sshwarts Exp $
+// $Id: cpu.cc,v 1.126 2006/01/25 22:19:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,14 +31,14 @@
 #include "iodev/iodev.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#if BX_SMP_PROCESSORS==1
-// single processor simulation, so there's one of everything
-BOCHSAPI BX_CPU_C    bx_cpu;
-BOCHSAPI BX_MEM_C    bx_mem;
+#if BX_PROVIDE_CPU_MEMORY==1
+
+#if BX_ADDRESS_SPACES==1
+BOCHSAPI BX_MEM_C bx_mem;
 #else
-// multiprocessor simulation, we need an array of cpus and memories
-BOCHSAPI BX_CPU_C    *bx_cpu_array[BX_SMP_PROCESSORS];
-BOCHSAPI BX_MEM_C    *bx_mem_array[BX_ADDRESS_SPACES];
+BOCHSAPI BX_MEM_C bx_mem_array[BX_ADDRESS_SPACES];
+#endif
+
 #endif
 
 #if BX_SUPPORT_ICACHE
@@ -47,11 +47,11 @@ bxPageWriteStampTable pageWriteStampTable;
 
 void purgeICaches(void)
 {
-#if BX_SMP_PROCESSORS == 1
-  BX_CPU(0)->iCache.purgeICacheEntries();
-#else
+#if BX_SUPPORT_SMP
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
     BX_CPU(i)->iCache.purgeICacheEntries();
+#else
+  BX_CPU(0)->iCache.purgeICacheEntries();
 #endif
 
   pageWriteStampTable.resetWriteStamps();
@@ -59,11 +59,11 @@ void purgeICaches(void)
 
 void flushICaches(void)
 {
-#if BX_SMP_PROCESSORS == 1
-  BX_CPU(0)->iCache.flushICacheEntries();
-#else
+#if BX_SUPPORT_SMP
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
     BX_CPU(i)->iCache.flushICacheEntries();
+#else
+  BX_CPU(0)->iCache.flushICacheEntries();
 #endif
 
   pageWriteStampTable.resetWriteStamps();
@@ -108,10 +108,10 @@ static unsigned iCacheMisses=0;
     count--; if (count == 0) return;  \
   }
 
-#if BX_SMP_PROCESSORS==1
-#  define BX_TICK1_IF_SINGLE_PROCESSOR() BX_TICK1()
-#else
+#if BX_SUPPORT_SMP
 #  define BX_TICK1_IF_SINGLE_PROCESSOR()
+#else
+#  define BX_TICK1_IF_SINGLE_PROCESSOR() BX_TICK1()
 #endif
 
 // Make code more tidy with a few macros.
@@ -179,12 +179,13 @@ void BX_CPU_C::cpu_loop(Bit32s max_instr_count)
 
 #if BX_DEBUGGER
   {
-  Bit32u debug_eip = BX_CPU_THIS_PTR prev_eip;
-  if ( dbg_is_begin_instr_bpoint(
+  bx_address debug_eip = BX_CPU_THIS_PTR prev_eip;
+  if (dbg_is_begin_instr_bpoint(
          BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
          debug_eip,
          BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + debug_eip,
-         BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b) )
+         BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
+         Is64BitMode()))
     {
       return;
     }
@@ -420,7 +421,7 @@ debugger_check:
   // inform instrumentation about new instruction
   BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
 
-#if (BX_SMP_PROCESSORS>1 && BX_DEBUGGER==0)
+#if (BX_SUPPORT_SMP && BX_DEBUGGER==0)
   // The CHECK_MAX_INSTRUCTIONS macro allows cpu_loop to execute a few
   // instructions and then return so that the other processors have a chance
   // to run.  This is used only when simulating multiple processors.  If only
@@ -471,12 +472,14 @@ debugger_check:
 
     {
       // check for icount or control-C.  If found, set guard reg and return.
-      Bit32u debug_eip = BX_CPU_THIS_PTR prev_eip;
-      if ( dbg_is_end_instr_bpoint(
+      bx_address debug_eip = BX_CPU_THIS_PTR prev_eip;
+      if (dbg_is_end_instr_bpoint(
            BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
            debug_eip,
            BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + debug_eip,
-           BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b) ) {
+           BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
+           Is64BitMode()))
+      {
         return;
       }
     }
@@ -502,7 +505,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
 
   if (BX_CPU_THIS_PTR debug_trap & 0x80000000) {
     // I made up the bitmask above to mean HALT state.
-#if BX_SMP_PROCESSORS==1
+#if BX_SUPPORT_SMP == 0
     BX_CPU_THIS_PTR debug_trap = 0; // clear traps for after resume
     BX_CPU_THIS_PTR inhibit_mask = 0; // clear inhibits for after resume
     // for one processor, pass the time as quickly as possible until
@@ -522,7 +525,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
       }
       BX_TICK1();
     }
-#else      /* BX_SMP_PROCESSORS != 1 */
+#else   /* BX_SUPPORT_SMP */
     // for multiprocessor simulation, even if this CPU is halted we still
     // must give the others a chance to simulate.  If an interrupt has 
     // arrived, then clear the HALT condition; otherwise just return from
@@ -875,33 +878,36 @@ void BX_CPU_C::trap_debugger (bx_bool callnow)
 #if BX_DEBUGGER
 extern unsigned int dbg_show_mask;
 
-bx_bool BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr, Bit32u is_32)
+bx_bool BX_CPU_C::dbg_is_begin_instr_bpoint(Bit16u cs, bx_address eip, bx_address laddr, bx_bool is_32, bx_bool is_64)
 { 
   Bit64u tt = bx_pc_system.time_ticks();
 
-  //fprintf (stderr, "begin_instr_bp: checking cs:eip %04x:%08x\n", cs, eip);
   BX_CPU_THIS_PTR guard_found.cs  = cs;
   BX_CPU_THIS_PTR guard_found.eip = eip;
   BX_CPU_THIS_PTR guard_found.laddr = laddr;
   BX_CPU_THIS_PTR guard_found.is_32bit_code = is_32;
+  BX_CPU_THIS_PTR guard_found.is_64bit_code = is_64;
 
-  // BW mode switch breakpoint
+  // mode switch breakpoint
   // instruction which generate exceptions never reach the end of the
   // loop due to a long jump. Thats why we check at start of instr.
   // Downside is that we show the instruction about to be executed
   // (not the one generating the mode switch).
   if (BX_CPU_THIS_PTR mode_break && 
-      (BX_CPU_THIS_PTR debug_vm != BX_CPU_THIS_PTR getB_VM ())) {
-    BX_INFO(("Caught vm mode switch breakpoint"));
-    BX_CPU_THIS_PTR debug_vm = BX_CPU_THIS_PTR getB_VM ();
+     (BX_CPU_THIS_PTR dbg_cpu_mode != BX_CPU_THIS_PTR get_cpu_mode()))
+  {
+    BX_INFO(("[" FMT_LL "d] Caught mode switch breakpoint, switching from '%s' to '%s'",
+        bx_pc_system.time_ticks(), cpu_mode_string(BX_CPU_THIS_PTR dbg_cpu_mode),
+        cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode())));
+    BX_CPU_THIS_PTR dbg_cpu_mode = BX_CPU_THIS_PTR get_cpu_mode();
     BX_CPU_THIS_PTR stop_reason = STOP_MODE_BREAK_POINT;
-    return 1;
+    return(1);
   }
 
   if( (BX_CPU_THIS_PTR show_flag) & (dbg_show_mask)) {
     int rv;
     if((rv = bx_dbg_symbolic_output()))
-      return rv;
+      return(rv);
   }
 
   // see if debugger is looking for iaddr breakpoint of any type
@@ -914,7 +920,8 @@ bx_bool BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
         for (unsigned i=0; i<bx_guard.iaddr.num_virtual; i++) {
           if ( bx_guard.iaddr.vir[i].enabled &&
                (bx_guard.iaddr.vir[i].cs  == cs) &&
-               (bx_guard.iaddr.vir[i].eip == eip) ) {
+               (bx_guard.iaddr.vir[i].eip == eip) )
+          {
             BX_CPU_THIS_PTR guard_found.guard_found = BX_DBG_GUARD_IADDR_VIR;
             BX_CPU_THIS_PTR guard_found.iaddr_index = i;
 	    BX_CPU_THIS_PTR guard_found.time_tick = tt;
@@ -931,7 +938,8 @@ bx_bool BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
       {
         for (unsigned i=0; i<bx_guard.iaddr.num_linear; i++) {
           if (bx_guard.iaddr.lin[i].enabled && 
-              (bx_guard.iaddr.lin[i].addr == BX_CPU_THIS_PTR guard_found.laddr) ) {
+              (bx_guard.iaddr.lin[i].addr == BX_CPU_THIS_PTR guard_found.laddr) )
+          {
             BX_CPU_THIS_PTR guard_found.guard_found = BX_DBG_GUARD_IADDR_LIN;
             BX_CPU_THIS_PTR guard_found.iaddr_index = i;
 	    BX_CPU_THIS_PTR guard_found.time_tick = tt;
@@ -971,9 +979,7 @@ bx_bool BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
   return(0); // not on a breakpoint
 }
 
-  bx_bool
-BX_CPU_C::dbg_is_end_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
-                                  Bit32u is_32)
+bx_bool BX_CPU_C::dbg_is_end_instr_bpoint(Bit16u cs, bx_address eip, bx_address laddr, bx_bool is_32, bx_bool is_64)
 {
   //fprintf (stderr, "end_instr_bp: checking for icount or ^C\n");
   BX_CPU_THIS_PTR guard_found.icount++;
@@ -998,17 +1004,6 @@ BX_CPU_C::dbg_is_end_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
     }
   }
 
-#if (BX_NUM_SIMULATORS >= 2)
-  // if async event pending, acknowlege them
-  if (bx_guard.async_changes_pending.which) {
-    if (bx_guard.async_changes_pending.which & BX_DBG_ASYNC_PENDING_A20)
-      bx_dbg_async_pin_ack(BX_DBG_ASYNC_PENDING_A20,
-                           bx_guard.async_changes_pending.a20);
-    if (bx_guard.async_changes_pending.which) {
-      BX_PANIC(("decode: async pending unrecognized."));
-    }
-  }
-#endif
   return(0); // no breakpoint
 }
 

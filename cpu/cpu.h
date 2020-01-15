@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h,v 1.250 2005/12/19 17:58:08 sshwarts Exp $
+// $Id: cpu.h,v 1.256 2006/01/27 19:50:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -57,15 +57,6 @@
 #define BX_REG16_OFFSET 2
 #endif // ifdef BX_LITTLE_ENDIAN
 
-#define BX_8BIT_REG_AL  0
-#define BX_8BIT_REG_CL  1
-#define BX_8BIT_REG_DL  2
-#define BX_8BIT_REG_BL  3
-#define BX_8BIT_REG_AH  4
-#define BX_8BIT_REG_CH  5
-#define BX_8BIT_REG_DH  6
-#define BX_8BIT_REG_BH  7
-
 #define BX_16BIT_REG_AX 0
 #define BX_16BIT_REG_CX 1
 #define BX_16BIT_REG_DX 2
@@ -111,7 +102,6 @@
 #define CH (BX_CPU_THIS_PTR gen_reg[1].word.byte.rh)
 #define DH (BX_CPU_THIS_PTR gen_reg[2].word.byte.rh)
 #define BH (BX_CPU_THIS_PTR gen_reg[3].word.byte.rh)
-
 
 // access to 16 bit general registers
 #define AX (BX_CPU_THIS_PTR gen_reg[0].word.rx)
@@ -248,10 +238,10 @@
 
 #define CPL  (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.rpl)
 
-#if BX_SMP_PROCESSORS==1
-#define BX_CPU_ID (0)
-#else
+#if BX_SUPPORT_SMP
 #define BX_CPU_ID (BX_CPU_THIS_PTR bx_cpuid)
+#else
+#define BX_CPU_ID (0)
 #endif
 
 #endif  // defined(NEED_CPU_REG_SHORTCUTS)
@@ -335,6 +325,8 @@
 #define BX_MODE_LONG_COMPAT     0x3   // EFER.LMA = 1, CR0.PE=1, CS.L=0
 #define BX_MODE_LONG_64         0x4   // EFER.LMA = 1, CR0.PE=1, CS.L=1
 
+const char* cpu_mode_string(unsigned cpu_mode);
+
 #define BX_CANONICAL_BITS   (48)
 
 #if BX_SUPPORT_X86_64
@@ -388,12 +380,12 @@ class BX_CPU_C;
             ((BxExecutePtr_tR) (func)) args
 #endif
 
-#if BX_SMP_PROCESSORS==1
-// single processor simulation, so there's one of everything
-BOCHSAPI extern BX_CPU_C       bx_cpu;
-#else
+#if BX_SUPPORT_SMP
 // multiprocessor simulation, we need an array of cpus and memories
-BOCHSAPI extern BX_CPU_C       *bx_cpu_array[BX_SMP_PROCESSORS];
+BOCHSAPI extern BX_CPU_C  **bx_cpu_array;
+#else
+// single processor simulation, so there's one of everything
+BOCHSAPI extern BX_CPU_C    bx_cpu;
 #endif
 
 typedef struct {
@@ -614,6 +606,13 @@ typedef struct {
 
   Bit32u tsc_aux;
 #endif
+
+  // TSC: Time Stamp Counter
+  // Instead of storing a counter and incrementing it every instruction, we
+  // remember the time in ticks that it was reset to zero.  With a little
+  // algebra, we can also support setting it to something other than zero.
+  // Don't read this directly; use get_TSC and set_TSC to access the TSC.
+  Bit64u tsc_last_reset;
 
   /* TODO finish of the others */
 } bx_regs_msr_t;
@@ -906,7 +905,7 @@ typedef struct {
   union {
     struct {
       Bit32u dword_filler;
-      Bit16u word_filler;
+      Bit16u  word_filler;
       union {
         Bit16u rx;
         struct {
@@ -918,7 +917,7 @@ typedef struct {
     Bit64u rrx;
     struct {
       Bit32u hrx;  // hi 32 bits
-      Bit32u erx;  // low 32 bits
+      Bit32u erx;  // lo 32 bits
     } dword;
   };
 } bx_gen_reg_t;
@@ -933,12 +932,12 @@ typedef struct {
           Bit8u rh;
         } byte;
       };
-      Bit16u word_filler;
+      Bit16u  word_filler;
       Bit32u dword_filler;
     } word;
     Bit64u rrx;
     struct {
-      Bit32u erx;  // low 32 bits
+      Bit32u erx;  // lo 32 bits
       Bit32u hrx;  // hi 32 bits
     } dword;
   };
@@ -1020,7 +1019,7 @@ public: // for now...
   // esi: source index
   // edi: destination index
   // esp: stack pointer
-  bx_gen_reg_t  gen_reg[BX_GENERAL_REGISTERS];
+  bx_gen_reg_t gen_reg[BX_GENERAL_REGISTERS];
 
   // instruction pointer
 #if BX_SUPPORT_X86_64
@@ -1074,7 +1073,6 @@ public: // for now...
   bx_segment_reg_t        ldtr; /* local descriptor table register */
   bx_segment_reg_t        tr;   /* task register */
 
-
   /* debug registers 0-7 (unimplemented) */
 #if BX_CPU_LEVEL >= 3
   Bit32u dr0;
@@ -1115,6 +1113,10 @@ public: // for now...
 
   // pointer to the address space that this processor uses.
   BX_MEM_C *mem;
+
+#if BX_SUPPORT_APIC
+  bx_local_apic_c local_apic;
+#endif
 
   bx_bool EXT; /* 1 if processing external interrupt or exception
                 * or if not related to current instruction,
@@ -1180,10 +1182,10 @@ public: // for now...
 #endif
   Bit8u stop_reason;
   Bit8u trace_reg;
-  Bit8u mode_break; /* BW */
-  bx_bool debug_vm; /* BW contains current mode*/
-  Bit8u show_eip;   /* BW record eip at special instr f.ex eip */
-  Bit8u show_flag;  /* BW shows instr class executed */
+  Bit8u mode_break;
+  bx_bool dbg_cpu_mode; /* contains current mode */
+  bx_address show_eip;   /* record eip at special instr f.ex eip */
+  Bit8u show_flag;  /* shows instr class executed */
   bx_guard_found_t guard_found;
 #endif
   Bit8u trace;
@@ -2607,10 +2609,8 @@ public: // for now...
   BX_SMF Bit32u   dbg_get_descriptor_l(bx_descriptor_t *);
   BX_SMF Bit32u   dbg_get_descriptor_h(bx_descriptor_t *);
   BX_SMF Bit32u   dbg_get_eflags(void);
-  BX_SMF bx_bool  dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
-                                            Bit32u is_32);
-  BX_SMF bx_bool  dbg_is_end_instr_bpoint(Bit32u cs, Bit32u eip,
-                                          Bit32u laddr, Bit32u is_32);
+  BX_SMF bx_bool  dbg_is_begin_instr_bpoint(Bit16u cs, bx_address eip, bx_address laddr, bx_bool is_32, bx_bool is_64);
+  BX_SMF bx_bool  dbg_is_end_instr_bpoint(Bit16u cs, bx_address eip, bx_address laddr, bx_bool is_32, bx_bool is_64);
 #endif
 #if BX_DEBUGGER || BX_DISASM || BX_INSTRUMENTATION || BX_GDBSTUB
   BX_SMF void     dbg_xlate_linear2phy(bx_address linear, Bit32u *phy, bx_bool *valid);
@@ -2754,6 +2754,7 @@ public: // for now...
 #if BX_SUPPORT_X86_64
   BX_SMF void long_iret(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif
+  BX_SMF void validate_seg_reg(unsigned seg);
   BX_SMF void validate_seg_regs(void);
   BX_SMF void stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector, Bit32u flags32);
   BX_SMF void iret16_stack_return_from_v86(bxInstruction_c *);
@@ -2883,6 +2884,11 @@ public: // for now...
   BX_SMF BX_CPP_INLINE bx_bool v8086_mode(void);
   BX_SMF BX_CPP_INLINE unsigned get_cpu_mode(void);
 
+#if BX_CPU_LEVEL >= 5
+  BX_SMF Bit64u get_TSC();
+  BX_SMF void   set_TSC(Bit32u tsc);
+#endif
+
 #if BX_SUPPORT_FPU
   BX_SMF void print_state_FPU(void);
   BX_SMF void prepareFPU(bxInstruction_c *i, bx_bool = 1, bx_bool = 1);
@@ -2901,6 +2907,7 @@ public: // for now...
 #if BX_SUPPORT_SSE
   BX_SMF void prepareSSE(void);
   BX_SMF void check_exceptionsSSE(int);
+  BX_SMF void print_state_SSE(void);
 #endif
 
 #if BX_SUPPORT_FPU
@@ -2911,10 +2918,6 @@ public: // for now...
   BX_SMF void SetCR0(Bit32u val_32);
 #if BX_CPU_LEVEL >= 4
   BX_SMF void SetCR4(Bit32u val_32);
-#endif
-
-#if BX_SUPPORT_APIC
-  bx_local_apic_c local_apic;
 #endif
 
 };

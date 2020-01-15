@@ -1,3 +1,29 @@
+Changes in 2.2.6 (January 29, 2006):
+
+- several APIC and I/O APIC fixes make SMP Bochs booting Windows NT4.0 in
+  SMP configuration (Volker, Stanislav)
+- critical APIC timer bug fixed (Volker Ruppert)
+- several fixes in the hard drive, keyboard, timer, usb and vga code (Volker)
+- fixes in Bochs debugger (Stanislav Shwartsman)
+- obsolete SMP BIOS images removed (MP tables created dynamicaly)
+- new userbutton shortcut "bksl" (backslash)
+- enabled #PCE bit in CR4 register, previosly setting of this bit 
+  generated #GP(0) fault (Stanislav Shwartsman)
+- enabled LAHF/SAHF instructions in x86-64 mode (Stanislav Shwartsman)
+- determine number of processors in SMP configuration through .bochsrc file
+  - new .bochsrc option to choose number of processors to emulate
+  - new configure option --enable-smp to configure Bochs for SMP support,
+    the old --enable-processors=N option is deprecated
+- fixed bug in PMULUDQ SSE2 instruction (Kevin Lawton)
+- enable VME (virtual 8086 mode extensions) by default if cpu-level >= 5
+- enable Bochs disassembler by default for all configurations (Stanislav)
+- win32 installer script improvements (Volker)
+- ips parameter moved to new cpu option
+- show IPS value in status bar if BX_SHOW_IPS is enabled (Volker, Stanislav)
+- updated Bochs instrumentation examples (Stanislav Shwartsman)
+- user and development documentation improved
+
+-------------------------------------------------------------------------
 Changes in 2.2.5 (December 30, 2005):
 
 Brief summary :

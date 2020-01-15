@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc,v 1.76 2005/11/12 16:09:55 vruppert Exp $
+// $Id: wx.cc,v 1.80 2006/01/23 18:34:47 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
@@ -67,7 +67,10 @@ public:
   bx_wx_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
-  virtual void statusbar_setitem(int element, bx_bool active);
+  void statusbar_setitem(int element, bx_bool active);
+#if BX_SHOW_IPS
+  void show_ips(Bit32u ips_count);
+#endif
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -101,7 +104,7 @@ static unsigned int text_rows=25, text_cols=80;
 static Bit8u h_panning = 0, v_panning = 0;
 static Bit16u line_compare = 1023;
 static unsigned vga_bpp=8;
-struct {
+static struct {
   unsigned char red;
   unsigned char green;
   unsigned char blue;
@@ -1625,6 +1628,15 @@ bx_wx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   wxMutexGuiLeave ();
   return ret;
 }
+
+#if BX_SHOW_IPS
+void bx_wx_gui_c::show_ips(Bit32u ips_count)
+{
+  char ips_text[40];
+  sprintf(ips_text, "IPS: %9u", ips_count);
+  theFrame->SetStatusText(ips_text, 0);
+}
+#endif
 
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXGTK__)
 /* we can use the X keysyms for GTK too */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.76 2005/12/12 19:54:48 sshwarts Exp $
+// $Id: init.cc,v 1.82 2006/01/25 22:20:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -43,7 +43,7 @@ BX_CPU_C::BX_CPU_C(unsigned id): bx_cpuid(id)
 
 #if BX_WITH_WX
 
-#if BX_SMP_PROCESSORS!=1
+#if BX_SUPPORT_SMP
 #ifdef __GNUC__
 #warning cpu_param_handler only supports parameters for one processor.
 #endif
@@ -162,9 +162,12 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
 {
   // BX_CPU_C constructor
   BX_CPU_THIS_PTR set_INTR (0);
+
 #if BX_SUPPORT_APIC
-  BX_CPU_THIS_PTR local_apic.init ();
+  BX_CPU_THIS_PTR local_apic.set_id(BX_CPU_ID);
+  BX_CPU_THIS_PTR local_apic.init();
 #endif
+
   // in SMP mode, the prefix of the CPU will be changed to [CPUn] in 
   // bx_local_apic_c::set_id as soon as the apic ID is assigned.
 
@@ -282,7 +285,7 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
 // <TAG-INIT-CPU-END>
 
   mem = addrspace;
-  sprintf (name, "CPU %d", which_cpu());
+  sprintf (name, "CPU %d", BX_CPU_ID);
 
 #if BX_WITH_WX
   static bx_bool first_time = 1;
@@ -299,7 +302,6 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
     bx_list_c *list = new bx_list_c (BXP_CPU_PARAMETERS, "CPU State", "", 60);
 #define DEFPARAM_NORMAL(name,field) \
     list->add (new bx_shadow_num_c (BXP_CPU_##name, #name, "", &(field)))
-
 
       DEFPARAM_NORMAL (EAX, EAX);
       DEFPARAM_NORMAL (EBX, EBX);
@@ -408,7 +410,6 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
     DEFPARAM_LAZY_EFLAG(AF);
     DEFPARAM_LAZY_EFLAG(PF);
     DEFPARAM_LAZY_EFLAG(CF);
-
 
     // restore defaults
     bx_param_num_c::set_default_base (oldbase);
@@ -522,6 +523,10 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l   = 0; /* 16bit default size */
 #endif
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl = 0;
+#endif
+
+#if BX_SUPPORT_ICACHE
+  BX_CPU_THIS_PTR iCache.fetchModeMask = createFetchModeMask(BX_CPU_THIS);
 #endif
 
   /* SS (Stack Segment) and descriptor cache */
@@ -796,6 +801,7 @@ void BX_CPU_C::reset(unsigned source)
 #if BX_SUPPORT_X86_64
   BX_CPU_THIS_PTR msr.lme = BX_CPU_THIS_PTR msr.lma = 0;
 #endif
+  BX_CPU_THIS_PTR set_TSC(0);
 #endif
 
   BX_CPU_THIS_PTR EXT = 0;
@@ -816,6 +822,7 @@ void BX_CPU_C::reset(unsigned source)
 #endif
   BX_CPU_THIS_PTR stop_reason = STOP_NO_REASON;
   BX_CPU_THIS_PTR trace_reg = 0;
+  BX_CPU_THIS_PTR dbg_cpu_mode = BX_CPU_THIS_PTR cpu_mode;
 #endif
 
   BX_CPU_THIS_PTR trace = 0;
@@ -836,7 +843,7 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
 #endif
 
-#if (BX_SMP_PROCESSORS > 1)
+#if BX_SUPPORT_SMP
   // notice if I'm the bootstrap processor.  If not, do the equivalent of
   // a HALT instruction.
   int apic_id = local_apic.get_id ();
@@ -857,8 +864,8 @@ void BX_CPU_C::reset(unsigned source)
 #else
   BX_CPU_THIS_PTR async_event=2;
 #endif
-  BX_CPU_THIS_PTR kill_bochs_request = 0;
 
+  BX_CPU_THIS_PTR kill_bochs_request = 0;
   BX_INSTR_RESET(BX_CPU_ID);
 }
 
@@ -935,7 +942,7 @@ void BX_CPU_C::sanity_checks(void)
   if (sizeof(Bit64u) != 8  ||  sizeof(Bit64s) != 8)
     BX_PANIC(("data type Bit64u or Bit64u is not of length 8 bytes!"));
 
-  BX_DEBUG(( "#(%u)all sanity checks passed!", BX_SIM_ID ));
+  BX_DEBUG(("#(%u)all sanity checks passed!", BX_CPU_ID));
 }
 
 

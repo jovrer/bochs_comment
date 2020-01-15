@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc,v 1.13 2005/11/14 18:25:41 sshwarts Exp $
+// $Id: instrument.cc,v 1.16 2006/01/17 18:17:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,8 +25,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-#include "bochs.h"
+#include <assert.h>
 
+#include "bochs.h"
 
 // maximum size of an instruction
 #define MAX_OPCODE_SIZE 16
@@ -50,18 +51,27 @@ static struct instruction_t {
   unsigned num_data_accesses;
   struct {
     bx_address laddr; // linear address
-    bx_address paddr; // physical address
+    Bit32u paddr;     // physical address
     unsigned op;      // BX_READ, BX_WRITE or BX_RW
     unsigned size;    // 1 .. 8
   } data_access[MAX_DATA_ACCESSES];
   bx_bool is_branch;
   bx_bool is_taken;
   bx_address target_linear;
-} instruction[BX_SMP_PROCESSORS];
+} *instruction;
 
 static logfunctions *instrument_log = new logfunctions ();
 #define LOG_THIS instrument_log->
 
+void bx_instr_init(unsigned cpu)
+{
+  assert(cpu < BX_SMP_PROCESSORS);
+
+  if (instruction == NULL)
+      instruction = new struct instruction_t[BX_SMP_PROCESSORS];
+
+  fprintf(stderr, "Initialize cpu %d\n", cpu);
+}
 
 void bx_instr_reset(unsigned cpu)
 {
@@ -73,10 +83,7 @@ void bx_instr_reset(unsigned cpu)
 
 void bx_instr_new_instruction(unsigned cpu)
 {
-  if (!active)
-  {
-    return;
-  }
+  if (!active) return;
 
   instruction_t *i = &instruction[cpu];
 
@@ -91,21 +98,21 @@ void bx_instr_new_instruction(unsigned cpu)
     {
       fprintf(stderr, "----------------------------------------------------------\n");
       fprintf(stderr, "CPU: %d: %s\n", cpu, disasm_tbuf);
-      fprintf(stderr, "LEN: %d\tPREFIX: %d\tBYTES: ", length, i->nprefixes);
+      fprintf(stderr, "LEN: %d\tPREFIXES: %d\tBYTES: ", length, i->nprefixes);
       for(n=0;n<length;n++) fprintf(stderr, "%02x", i->opcode[n]);
       if(i->is_branch) 
       {
         fprintf(stderr, "\tBRANCH ");
 
         if(i->is_taken) 
-          fprintf(stderr, "TARGET %08x (TAKEN)", i->target_linear);
+          fprintf(stderr, "TARGET " FMT_ADDRX " (TAKEN)", i->target_linear);
         else
           fprintf(stderr, "(NOT TAKEN)");
       }   
       fprintf(stderr, "\n");
       for(n=0;n<i->num_data_accesses;n++)
       {
-         fprintf(stderr, "MEM ACCESS: %08x (linear) %08x (physical) %s SIZE: %d\n",
+        fprintf(stderr, "MEM ACCESS[%u]: " FMT_ADDRX " (linear) 0x%08x (physical) %s SIZE: %d\n", n,
                       i->data_access[n].laddr, 
                       i->data_access[n].paddr,
                       i->data_access[n].op == BX_READ ? "RD":"WR",
@@ -123,19 +130,10 @@ void bx_instr_new_instruction(unsigned cpu)
 
 static void branch_taken(unsigned cpu, bx_address new_eip)
 {
-  Bit32u laddr;
-
-  if (!active)
-  {
-    return;
-  }
-  if (!instruction[cpu].valid)
-  {
-    return;
-  }
+  if (!active || !instruction[cpu].valid) return;
 
   // find linear address
-  laddr = BX_CPU(cpu)->get_segment_base(BX_SEG_REG_CS) + new_eip;
+  bx_address laddr = BX_CPU(cpu)->get_segment_base(BX_SEG_REG_CS) + new_eip;
 
   instruction[cpu].is_branch = 1;
   instruction[cpu].is_taken = 1;
@@ -149,35 +147,27 @@ void bx_instr_cnear_branch_taken(unsigned cpu, bx_address new_eip)
 
 void bx_instr_cnear_branch_not_taken(unsigned cpu)
 {
-  if (!active) 
-  {
-    return;
-  }
-  if (!instruction[cpu].valid)
-  {
-    return;
-  }
+  if (!active || !instruction[cpu].valid) return;
 
   instruction[cpu].is_branch = 1;
   instruction[cpu].is_taken = 0;
 }
 
-void bx_instr_ucnear_branch(unsigned cpu, unsigned what, bx_address new_eip) {
+void bx_instr_ucnear_branch(unsigned cpu, unsigned what, bx_address new_eip)
+{
   branch_taken(cpu, new_eip);
 }
 
-void bx_instr_far_branch(unsigned cpu, unsigned what, Bit16u new_cs, bx_address new_eip) {
+void bx_instr_far_branch(unsigned cpu, unsigned what, Bit16u new_cs, bx_address new_eip)
+{
   branch_taken(cpu, new_eip);
 }
 
 void bx_instr_opcode(unsigned cpu, Bit8u *opcode, unsigned len, bx_bool is32, bx_bool is64)
 {
-  if (!active) 
-  {
-    return;
-  }
+  if (!active) return;
 
-  for(int i=0;i<len;i++) 
+  for(unsigned i=0;i<len;i++) 
   {
     instruction[cpu].opcode[i] = opcode[i];
   }
@@ -189,10 +179,7 @@ void bx_instr_opcode(unsigned cpu, Bit8u *opcode, unsigned len, bx_bool is32, bx
 
 void bx_instr_fetch_decode_completed(unsigned cpu, const bxInstruction_c *i)
 {
-  if(active) 
-  {
-    instruction[cpu].valid = 1; 
-  }
+  if(active) instruction[cpu].valid = 1;
 }
 
 void bx_instr_prefix(unsigned cpu, Bit8u prefix)
@@ -227,17 +214,10 @@ void bx_instr_hwinterrupt(unsigned cpu, unsigned vector, Bit16u cs, bx_address e
 void bx_instr_mem_data(unsigned cpu, bx_address lin, unsigned size, unsigned rw)
 {
   unsigned index;
-  bx_address phy;
+  Bit32u phy;
   bx_bool page_valid;
 
-  if(!active)
-  {
-    return;
-  }
-  if (!instruction[cpu].valid)
-  {
-    return;
-  }
+  if(!active || !instruction[cpu].valid) return;
 
   if (instruction[cpu].num_data_accesses >= MAX_DATA_ACCESSES) 
   {

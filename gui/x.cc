@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.96 2005/11/12 16:09:55 vruppert Exp $
+// $Id: x.cc,v 1.100 2006/01/23 18:34:47 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -67,6 +67,9 @@ public:
   virtual void beep_off();
   virtual void statusbar_setitem(int element, bx_bool active);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
+#if BX_SHOW_IPS
+  virtual void show_ips(Bit32u ips_count);
+#endif
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -128,7 +131,7 @@ static bx_bool x_init_done = false;
 
 static Pixmap vgafont[256];
 
-struct {
+static struct {
   Pixmap bmap;
   unsigned xdim;
   unsigned ydim;
@@ -156,6 +159,11 @@ static unsigned bx_statusitem_pos[12] = {
 static bx_bool bx_statusitem_active[12];
 static long bx_status_led_green, bx_status_graytext;
 static char bx_status_info_text[34];
+#if BX_SHOW_IPS
+static bx_bool x11_ips_update = 0;
+static char x11_ips_text[20];
+static Bit8u x11_mouse_msg_counter = 0;
+#endif
 
 static void headerbar_click(int x, int y);
 static void send_keyboard_mouse_status(void);
@@ -709,6 +717,9 @@ bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
     enable_cursor();
     warp_cursor(mouse_enable_x-current_x, mouse_enable_y-current_y);
   }
+#if BX_SHOW_IPS
+  x11_mouse_msg_counter = 3;
+#endif
 }
 
   void
@@ -924,7 +935,13 @@ bx_x_gui_c::handle_events(void)
   if (mouse_update) {
     BX_DEBUG(("handle_events(): send mouse status"));
     send_keyboard_mouse_status();
-    }
+  }
+#if BX_SHOW_IPS
+  if (x11_ips_update) {
+    x11_ips_update = 0;
+    set_status_text(0, x11_ips_text, 1);
+  }
+#endif
 }
 
 
@@ -1932,27 +1949,38 @@ void bx_x_gui_c::sim_is_idle () {
 }
 #endif /* BX_USE_IDLE_HACK */  
 
-
-  void
-bx_x_gui_c::beep_on(float frequency)
+void bx_x_gui_c::beep_on(float frequency)
 {
   BX_INFO(( "X11 Beep ON (frequency=%.2f)",frequency));
 }
 
-  void
-bx_x_gui_c::beep_off()
+void bx_x_gui_c::beep_off()
 {
   BX_INFO(( "X11 Beep OFF"));
 }
 
-  void
-bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
+void bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
 {
   *xres = 1024;
   *yres = 768;
   *bpp = 32;
 }
 
+#if BX_SHOW_IPS
+void bx_x_gui_c::show_ips(Bit32u ips_count)
+{
+  if (x11_mouse_msg_counter == 0) {
+    if (!x11_ips_update) {
+      sprintf(x11_ips_text, "IPS: %9u", ips_count);
+      x11_ips_update = 1;
+    }
+  } else {
+    x11_mouse_msg_counter--;
+  }
+}
+#endif
+
+// X11 dialog box functions
 
 void x11_create_button(Display *display, Drawable dialog, GC gc, int x, int y,
                        unsigned int width, unsigned int height, char *text)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc,v 1.70 2005/12/27 16:59:27 vruppert Exp $
+// $Id: misc_mem.cc,v 1.76 2006/01/28 16:16:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -37,11 +37,10 @@ Bit32u BX_MEM_C::get_memory_in_k(void)
   return(BX_MEM_THIS megabytes * 1024);
 }
 
-  // BX_MEM_C constructor
 BX_MEM_C::BX_MEM_C(void)
 {
   char mem[6];
-  snprintf(mem, 6, "MEM%d", BX_SIM_ID);
+  snprintf(mem, 6, "MEM0");
   put(mem);
   settype(MEMLOG);
 
@@ -76,7 +75,6 @@ BX_MEM_C::alloc_vector_aligned (size_t bytes, size_t alignment)
 	actual_vector, vector));
 }
 
-// BX_MEM_C destructor
 BX_MEM_C::~BX_MEM_C(void)
 {
   if (this-> vector != NULL) {
@@ -87,7 +85,7 @@ BX_MEM_C::~BX_MEM_C(void)
     memory_handlers = NULL;
   }
   else {
-    BX_DEBUG(("(%u)   memory not freed as it wasn't allocated!", BX_SIM_ID));
+    BX_DEBUG(("Memory not freed as it wasn't allocated !"));
   }
 }
 
@@ -95,7 +93,7 @@ void BX_MEM_C::init_memory(int memsize)
 {
   int idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.70 2005/12/27 16:59:27 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.76 2006/01/28 16:16:03 sshwarts Exp $"));
   // you can pass 0 if memory has been allocated already through
   // the constructor, or the desired size of memory if it hasn't
   // BX_INFO(("%.2fMB", (float)(BX_MEM_THIS megabytes) ));
@@ -111,10 +109,10 @@ void BX_MEM_C::init_memory(int memsize)
     memset(BX_MEM_THIS rom, 0xff, BIOSROMSZ + EXROMSIZE);
     memset(BX_MEM_THIS bogus, 0xff, 4096);
     for (idx = 0; idx < 1024 * 1024; idx++)
-	    BX_MEM_THIS memory_handlers[idx] = NULL;
+      BX_MEM_THIS memory_handlers[idx] = NULL;
     for (idx = 0; idx < 65; idx++)
       BX_MEM_THIS rom_present[idx] = 0;
-    BX_INFO(("%.2fMB", (float)(BX_MEM_THIS megabytes) ));
+    BX_INFO(("%.2fMB", (float)(BX_MEM_THIS megabytes)));
   }
 
 #if BX_DEBUGGER
@@ -126,7 +124,7 @@ void BX_MEM_C::init_memory(int memsize)
 
 }
 
-#if BX_SMP_PROCESSORS > 1
+#if BX_SUPPORT_APIC
 void put_8bit(Bit8u **pp, Bit8u value)
 {
   Bit8u *p = *pp;
@@ -175,7 +173,6 @@ Bit8u mp_checksum(const Bit8u *p, int len)
 //   1 : VGA Bios
 //   2 : Optional ROM Bios
 //
-
 void BX_MEM_C::load_ROM(const char *path, Bit32u romaddress, Bit8u type)
 {
   struct stat stat_buf;
@@ -305,7 +302,7 @@ void BX_MEM_C::load_ROM(const char *path, Bit32u romaddress, Bit8u type)
       }
     }
   }
-#if BX_SMP_PROCESSORS > 1
+#if BX_SUPPORT_APIC
   if (is_bochs_bios) {
     Bit8u* pcmp_ptr = &BX_MEM_THIS rom[0xFB000 & BIOS_MASK];
     Bit8u* p = pcmp_ptr;
@@ -325,13 +322,13 @@ void BX_MEM_C::load_ROM(const char *path, Bit32u romaddress, Bit8u type)
     for (i = 0; i < BX_SMP_PROCESSORS; i++) {
       put_8bit(&p, 0); // entry type = processor
       put_8bit(&p, (Bit8u)i); // APIC id
-      put_8bit(&p, 0x11); // local APIC version number
+      put_8bit(&p, APIC_VERSION_ID & 0xff); // local APIC version number
       put_8bit(&p, (i==0)?3:1); // cpu flags: enabled, cpu0 = bootstrap cpu
       put_8bit(&p, 0); // cpu signature
       put_8bit(&p, 0);
       put_8bit(&p, 0);
       put_8bit(&p, 0);
-      put_16bit(&p, 0x201); // feature flags
+      put_16bit(&p, 0x301); // feature flags: FPU, CX8, APIC
       put_16bit(&p, 0);
       put_16bit(&p, 0); // reserved
       put_16bit(&p, 0);
@@ -344,7 +341,7 @@ void BX_MEM_C::load_ROM(const char *path, Bit32u romaddress, Bit8u type)
     Bit8u ioapic_id = BX_SMP_PROCESSORS;
     put_8bit(&p, 2); // entry type = I/O APIC
     put_8bit(&p, ioapic_id); // apic id
-    put_8bit(&p, 0x11); // I/O APIC version number
+    put_8bit(&p, BX_IOAPIC_VERSION_ID & 0xff); // I/O APIC version number
     put_8bit(&p, 1); // enabled
     put_32bit(&p, 0xfec00000); // I/O APIC addr
     for (i = 0; i < 16; i++) {
@@ -429,8 +426,7 @@ void BX_MEM_C::load_RAM(const char *path, Bit32u ramaddress, Bit8u type)
 
 
 #if ( BX_DEBUGGER || BX_DISASM || BX_GDBSTUB)
-  bx_bool
-BX_MEM_C::dbg_fetch_mem(Bit32u addr, unsigned len, Bit8u *buf)
+bx_bool BX_MEM_C::dbg_fetch_mem(Bit32u addr, unsigned len, Bit8u *buf)
 {
   bx_bool ret = 1;
 
@@ -491,8 +487,7 @@ BX_MEM_C::dbg_fetch_mem(Bit32u addr, unsigned len, Bit8u *buf)
 #endif
 
 #if BX_DEBUGGER || BX_GDBSTUB
-  bx_bool
-BX_MEM_C::dbg_set_mem(Bit32u addr, unsigned len, Bit8u *buf)
+bx_bool BX_MEM_C::dbg_set_mem(Bit32u addr, unsigned len, Bit8u *buf)
 {
   if ( (addr + len) > this->len ) {
     return(0); // error, beyond limits of memory
@@ -526,20 +521,17 @@ BX_MEM_C::dbg_set_mem(Bit32u addr, unsigned len, Bit8u *buf)
 }
 #endif
 
-  bx_bool
-BX_MEM_C::dbg_crc32(unsigned long (*f)(unsigned char *buf, int len),
-    Bit32u addr1, Bit32u addr2, Bit32u *crc)
+bx_bool BX_MEM_C::dbg_crc32(Bit32u addr1, Bit32u addr2, Bit32u *crc)
 {
   *crc = 0;
   if (addr1 > addr2)
     return(0);
 
-  if (addr2 >= this->len) {
+  if (addr2 >= this->len)
     return(0); // error, specified address past last phy mem addr
-  }
   
   unsigned len = 1 + addr2 - addr1;
-  *crc = f(vector + addr1, len);
+  *crc = crc32(vector + addr1, len);
 
   return(1);
 }
@@ -679,7 +671,7 @@ BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, Bit32u a20Addr, unsigned op)
   bx_bool 
 BX_MEM_C::registerMemoryHandlers(memory_handler_t read_handler, void *read_param,
 		memory_handler_t write_handler, void *write_param,
-		unsigned long begin_addr, unsigned long end_addr)
+		Bit32u begin_addr, Bit32u end_addr)
 {
   if (end_addr < begin_addr)
     return false;
@@ -703,7 +695,7 @@ BX_MEM_C::registerMemoryHandlers(memory_handler_t read_handler, void *read_param
 
   bx_bool 
 BX_MEM_C::unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler,
-		unsigned long begin_addr, unsigned long end_addr)
+		Bit32u begin_addr, Bit32u end_addr)
 {
    bx_bool ret = true;
    for (unsigned page_idx = begin_addr >> 20; page_idx <= end_addr >> 20; page_idx++) {

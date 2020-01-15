@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.99 2005/11/12 16:09:55 vruppert Exp $
+// $Id: win32.cc,v 1.105 2006/01/27 18:04:49 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -48,8 +48,12 @@
 class bx_win32_gui_c : public bx_gui_c {
 public:
   bx_win32_gui_c (void) {}
-  DECLARE_GUI_VIRTUAL_METHODS()
+  DECLARE_GUI_VIRTUAL_METHODS();
   virtual void statusbar_setitem(int element, bx_bool active);
+  virtual void set_tooltip(unsigned hbar_id, const char *tip);
+#if BX_SHOW_IPS
+  virtual void show_ips(Bit32u ips_count);
+#endif
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -121,15 +125,24 @@ struct {
 static struct {
   unsigned bmap_id;
   void (*f)(void);
+  const char *tooltip;
 } bx_headerbar_entry[BX_MAX_HEADERBAR_ENTRIES];
 
 static int bx_headerbar_entries;
 static unsigned bx_hb_separator;
 
 // Status Bar stuff
+#if BX_SHOW_IPS
+static BOOL ipsUpdate = FALSE;
+static char ipsText[20];
+#define BX_SB_TEXT_ELEMENTS 2
+#else
+#define BX_SB_TEXT_ELEMENTS 1
+#endif
 #define SIZE_OF_SB_ELEMENT        40
-#define SIZE_OF_SB_FIRST_ELEMENT 200 /* 160 */
-long SB_Edges[BX_MAX_STATUSITEMS+2];
+#define SIZE_OF_SB_MOUSE_MESSAGE 170
+#define SIZE_OF_SB_IPS_MESSAGE 90
+long SB_Edges[BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1];
 char SB_Text[BX_MAX_STATUSITEMS][10];
 bx_bool SB_Active[BX_MAX_STATUSITEMS];
 
@@ -155,6 +168,7 @@ static int FontId = 2;
 
 static char *szMouseEnable = "CTRL + 3rd button enables mouse ";
 static char *szMouseDisable = "CTRL + 3rd button disables mouse";
+static char *szMouseTooltip = "Enable mouse capture\nUse CTRL + 3rd button to release";
 
 static char szAppName[] = "Bochs for Windows";
 static char szWindowName[] = "Bochs for Windows - Display";
@@ -456,7 +470,7 @@ Bit32u win32_to_bx_key[2][0x100] =
 
 /* Macro to convert WM_ button state to BX button state */
 
-#ifdef __MINGW32__
+#if  defined(__MINGW32__) || defined(_MSC_VER)
   VOID CALLBACK MyTimer(HWND,UINT,UINT,DWORD);
   void alarm(int);
   void bx_signal_handler(int);
@@ -606,6 +620,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   if (mouse_buttons == 2) {
     szMouseEnable = "CTRL + Lbutton + Rbutton enables mouse ";
     szMouseDisable = "CTRL + Lbutton + Rbutton disables mouse";
+    szMouseTooltip = "Enable mouse capture\nUse CTRL + Lbutton + Rbutton to release";
   }
   
   // parse win32 specific options
@@ -623,6 +638,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   if (legacyF12) {
     szMouseEnable = "Press F12 to enable mouse ";
     szMouseDisable = "Press F12 to disable mouse";
+    szMouseTooltip = "Enable mouse capture\nUse F12 to release";
   }
   
   stInfo.hInstance = GetModuleHandle(NULL);
@@ -769,7 +785,7 @@ VOID UIThread(PVOID pvoid) {
 
     InitCommonControls();
     hwndTB = CreateWindowEx(0, TOOLBARCLASSNAME, (LPSTR) NULL,
-               WS_CHILD | TBSTYLE_FLAT, 0, 0, 0, 0, stInfo.mainWnd,
+               WS_CHILD | TBSTYLE_TOOLTIPS | TBSTYLE_FLAT, 0, 0, 0, 0, stInfo.mainWnd,
                (HMENU) 100, stInfo.hInstance, NULL);
     SendMessage(hwndTB, TB_BUTTONSTRUCTSIZE, (WPARAM) sizeof(TBBUTTON), 0);
     SendMessage(hwndTB, TB_SETBITMAPSIZE, 0, (LPARAM)MAKELONG(32, 32));
@@ -778,11 +794,14 @@ VOID UIThread(PVOID pvoid) {
                                 stInfo.mainWnd, 0x7712);
     if (hwndSB) {
       int elements;
-      SB_Edges[0] = SIZE_OF_SB_FIRST_ELEMENT + SIZE_OF_SB_ELEMENT;   // Mouse info
-      for (elements = 1; elements < (BX_MAX_STATUSITEMS+1); elements++)
+      SB_Edges[0] = SIZE_OF_SB_MOUSE_MESSAGE + SIZE_OF_SB_ELEMENT;
+#if BX_SHOW_IPS
+      SB_Edges[1] = SB_Edges[0] + SIZE_OF_SB_IPS_MESSAGE;
+#endif
+      for (elements = BX_SB_TEXT_ELEMENTS; elements < (BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS); elements++)
         SB_Edges[elements] = SB_Edges[elements-1] + SIZE_OF_SB_ELEMENT;
       SB_Edges[elements] = -1;
-      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+2, (long)&SB_Edges);
+      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1, (long)&SB_Edges);
     }
     SetStatusText(0, szMouseEnable, TRUE);
 
@@ -850,18 +869,16 @@ void SetStatusText(int Num, const char *Text, bx_bool active)
 {
   char StatText[MAX_PATH];
 
-  if ((Num < 1) || (Num > BX_MAX_STATUSITEMS)) {
-    StatText[0] = ' ';  // Add space to text in first and last item
-  } else {
-    StatText[0] = 9;  // Center the rest
-  }
-  lstrcpy(StatText+1, Text);
-  if ((Num < 1) || (Num > BX_MAX_STATUSITEMS)) {
+  if ((Num < BX_SB_TEXT_ELEMENTS) || (Num > (BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS))) {
+    StatText[0] = ' ';  // Add space to text in 1st and last items
+    lstrcpy(StatText+1, Text);
     SendMessage(hwndSB, SB_SETTEXT, Num, (long)StatText);
   } else {
-    lstrcpy(SB_Text[Num-1], StatText);
-    SB_Active[Num-1] = active;
-    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (long)SB_Text[Num-1]);
+    StatText[0] = 9;  // Center the rest
+    lstrcpy(StatText+1, Text);
+    lstrcpy(SB_Text[Num-BX_SB_TEXT_ELEMENTS], StatText);
+    SB_Active[Num-BX_SB_TEXT_ELEMENTS] = active;
+    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (long)SB_Text[Num-BX_SB_TEXT_ELEMENTS]);
   }
   UpdateWindow(hwndSB);
 }
@@ -871,10 +888,10 @@ bx_win32_gui_c::statusbar_setitem(int element, bx_bool active)
 {
   if (element < 0) {
     for (int i = 0; i < (int)statusitem_count; i++) {
-      SetStatusText(i+1, statusitem_text[i], active);
+      SetStatusText(i+BX_SB_TEXT_ELEMENTS, statusitem_text[i], active);
     }
   } else if (element < (int)statusitem_count) {
-    SetStatusText(element+1, statusitem_text[element], active);
+    SetStatusText(element+BX_SB_TEXT_ELEMENTS, statusitem_text[element], active);
   }
 }
 
@@ -882,6 +899,9 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 {
   DRAWITEMSTRUCT *lpdis;
   char *sbtext;
+  NMHDR *lpnmh;
+  TOOLTIPTEXT *lpttt;
+  int idTT, hbar_id;
 
   switch (iMsg) {
   case WM_CREATE:
@@ -928,7 +948,7 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     lpdis = (DRAWITEMSTRUCT *)lParam;
     if (lpdis->hwndItem == hwndSB) {
       sbtext = (char *)lpdis->itemData;
-      if (SB_Active[lpdis->itemID-1]) {
+      if (SB_Active[lpdis->itemID-BX_SB_TEXT_ELEMENTS]) {
         SetBkColor(lpdis->hDC, 0x0000FF00);
       } else {
         SetBkMode(lpdis->hDC, TRANSPARENT);
@@ -937,6 +957,20 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       DrawText(lpdis->hDC, sbtext+1, lstrlen(sbtext)-1, &lpdis->rcItem, DT_SINGLELINE | DT_CENTER | DT_VCENTER);
       return TRUE;
     }
+    break;
+
+  case WM_NOTIFY:
+    lpnmh = (LPNMHDR)lParam;
+    if ((int)lpnmh->code == TTN_NEEDTEXT) {
+      lpttt = (LPTOOLTIPTEXT)lParam;
+      idTT = (int)wParam;
+      hbar_id = idTT - 101;
+      if ((SendMessage(hwndTB, TB_GETSTATE, idTT, 0)) &&
+          (bx_headerbar_entry[hbar_id].tooltip != NULL)) {
+          lstrcpy(lpttt->szText, bx_headerbar_entry[hbar_id].tooltip);
+      }
+    }
+    return FALSE;
     break;
 
   }
@@ -1288,6 +1322,12 @@ void bx_win32_gui_c::handle_events(void) {
       DEV_kbd_gen_scancode(key_event);
     }
   }
+#if BX_SHOW_IPS
+  if (ipsUpdate) {
+    SetStatusText(1, ipsText, 1);
+    ipsUpdate = FALSE;
+  }
+#endif
   LeaveCriticalSection(&stInfo.keyCS);
 }
 
@@ -1855,6 +1895,7 @@ unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
 
   bx_headerbar_entry[hb_index].bmap_id = bmap_id;
   bx_headerbar_entry[hb_index].f = f;
+  bx_headerbar_entry[hb_index].tooltip = NULL;
 
   return(hb_index);
 }
@@ -1871,6 +1912,7 @@ void bx_win32_gui_c::show_headerbar(void)
     SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
     ShowWindow(hwndTB, SW_SHOW);
     resize_main_window();
+    bx_gui->set_tooltip(bx_gui->get_mouse_headerbar_id(), szMouseTooltip);
   }
 }
 
@@ -2029,29 +2071,43 @@ void headerbar_click(int x)
   }
 }
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_MSC_VER)
 #if BX_SHOW_IPS
 VOID CALLBACK MyTimer(HWND hwnd,UINT uMsg, UINT idEvent, DWORD dwTime)
 {
   bx_signal_handler(SIGALRM);
 }
 
-void alarm (int time)
+void alarm(int time)
 {
-  UINT idTimer;
+  UINT idTimer = 2;
   SetTimer(stInfo.simWnd,idTimer,time*1000,MyTimer);
 }
 #endif
 #endif
 
-  void
-bx_win32_gui_c::mouse_enabled_changed_specific (bx_bool val)
+void bx_win32_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
   if ((val != mouseCaptureMode) && !mouseToggleReq) {
     mouseToggleReq = TRUE;
     mouseCaptureNew = val;
   }
 }
+
+void bx_win32_gui_c::set_tooltip(unsigned hbar_id, const char *tip)
+{
+  bx_headerbar_entry[hbar_id].tooltip = tip;
+}
+
+#if BX_SHOW_IPS
+void bx_win32_gui_c::show_ips(Bit32u ips_count)
+{
+  if (!ipsUpdate) {
+    sprintf(ipsText, "IPS: %9u", ips_count);
+    ipsUpdate = TRUE;
+  }
+}
+#endif
 
 #if BX_USE_WINDOWS_FONTS
 
@@ -2121,7 +2177,6 @@ void DrawChar (HDC hdc, unsigned char c, int xStart, int yStart,
 void InitFont(void)
 {
   LOGFONT lf;
-  int i;
 
   lf.lfWidth = 8;
   lf.lfEscapement = 0;
@@ -2137,7 +2192,7 @@ void InitFont(void)
   lf.lfPitchAndFamily=FIXED_PITCH | FF_DONTCARE;
   wsprintf(lf.lfFaceName, "Lucida Console");
 
-  for (i=0; i < 3; i++)
+  for (int i=0; i < 3; i++)
   {
     lf.lfHeight = 12 + i * 2;
     hFont[i]=CreateFontIndirect(&lf);
@@ -2146,8 +2201,7 @@ void InitFont(void)
 
 void DestroyFont(void)
 {
-  int i;
-  for(i = 0; i < 3; i++)
+  for(int i = 0; i < 3; i++)
   {
     DeleteObject(hFont[i]);
   }

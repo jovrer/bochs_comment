@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc,v 1.9 2005/11/14 18:25:41 sshwarts Exp $
+// $Id: instrument.cc,v 1.12 2006/01/17 18:17:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -24,12 +24,25 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#include <assert.h>
 
 #include "bochs.h"
 
-bxInstrumentation icpu[BX_SMP_PROCESSORS];
+bxInstrumentation *icpu = NULL;
 
 static disassembler bx_disassembler;
+
+void bx_instr_init(unsigned cpu)
+{
+  assert(cpu < BX_SMP_PROCESSORS);
+
+  if (icpu == NULL)
+      icpu = new bxInstrumentation[BX_SMP_PROCESSORS];
+
+  icpu[cpu].set_cpu_id(cpu);
+
+  fprintf(stderr, "Initialize cpu %d\n", cpu);
+}
 
 void bxInstrumentation::bx_instr_reset()
 {
@@ -40,35 +53,32 @@ void bxInstrumentation::bx_instr_reset()
 
 void bxInstrumentation::bx_instr_new_instruction()
 {
-  if (!active)
-  {
-    return;
-  }
+  if (!active) return;
 
   if (valid)
   {
     char disasm_tbuf[512];	// buffer for instruction disassembly
     unsigned length = opcode_size, n;
-    bx_disassemble.disasm(is32, is64, 0, 0, opcode, disasm_tbuf);
+    bx_disassembler.disasm(is32, is64, 0, 0, opcode, disasm_tbuf);
     if(length != 0)	
     {
       fprintf(stderr, "----------------------------------------------------------\n");
       fprintf(stderr, "CPU: %d: %s\n", cpu_id, disasm_tbuf);
-      fprintf(stderr, "LEN: %d\tPREFIX: %d\tBYTES: ", length, nprefixes);
+      fprintf(stderr, "LEN: %d\tPREFIXES: %d\tBYTES: ", length, nprefixes);
       for(n=0;n<length;n++) fprintf(stderr, "%02x", opcode[n]);
       if(is_branch) 
       {
         fprintf(stderr, "\tBRANCH ");
 
         if(is_taken) 
-          fprintf(stderr, "TARGET %08x (TAKEN)", target_linear);
+          fprintf(stderr, "TARGET " FMT_ADDRX " (TAKEN)", target_linear);
         else
           fprintf(stderr, "(NOT TAKEN)");
       }   
       fprintf(stderr, "\n");
       for(n=0;n < num_data_accesses;n++)
       {
-         fprintf(stderr, "MEM ACCESS: %08x (linear) %08x (physical) %s SIZE: %d\n",
+        fprintf(stderr, "MEM ACCESS[%u]: " FMT_ADDRX " (linear) 0x%08x (physical) %s SIZE: %d\n", n,
                       data_access[n].laddr, 
                       data_access[n].paddr,
                       data_access[n].op == BX_READ ? "RD":"WR",
@@ -84,14 +94,10 @@ void bxInstrumentation::bx_instr_new_instruction()
 
 void bxInstrumentation::branch_taken(bx_address new_eip)
 {
-  Bit32u laddr;
-
-  if (!active || !valid) {
-    return; 
-  }
+  if (!active || !valid) return;
 
   // find linear address
-  laddr = BX_CPU(cpu_id)->get_segment_base(BX_SEG_REG_CS) + new_eip;
+  bx_address laddr = BX_CPU(cpu_id)->get_segment_base(BX_SEG_REG_CS) + new_eip;
 
   is_branch = 1;
   is_taken = 1;
@@ -105,32 +111,29 @@ void bxInstrumentation::bx_instr_cnear_branch_taken(bx_address new_eip)
 
 void bxInstrumentation::bx_instr_cnear_branch_not_taken()
 {
-  if (!active || !valid) {
-    return; 
-  }
+  if (!active || !valid) return;
 
   is_branch = 1;
   is_taken = 0;
 }
 
-void bxInstrumentation::bx_instr_ucnear_branch(unsigned what, bx_address new_eip) {
-  branch_taken(new_eip);
-}
-
-void bxInstrumentation::bx_instr_far_branch(unsigned what, Bit16u new_cs, bx_address new_eip) {
-  branch_taken(new_eip);
-}
-
-void bxInstrumentation::bx_instr_opcode(Bit8u *opcode, unsigned len, bx_bool is32, bx_bool is64)
+void bxInstrumentation::bx_instr_ucnear_branch(unsigned what, bx_address new_eip)
 {
-  if (!active) 
-  {
-    return;
-  }
+  branch_taken(new_eip);
+}
 
-  for(int i=0;i<len;i++) 
+void bxInstrumentation::bx_instr_far_branch(unsigned what, Bit16u new_cs, bx_address new_eip)
+{
+  branch_taken(new_eip);
+}
+
+void bxInstrumentation::bx_instr_opcode(Bit8u *opcode_bytes, unsigned len, bx_bool is32, bx_bool is64)
+{
+  if (!active) return;
+
+  for(unsigned i=0;i<len;i++) 
   {
-    opcode[i] = opcode[i];
+    opcode[i] = opcode_bytes[i];
   }
   
   is32 = is32;
@@ -140,10 +143,7 @@ void bxInstrumentation::bx_instr_opcode(Bit8u *opcode, unsigned len, bx_bool is3
 
 void bxInstrumentation::bx_instr_fetch_decode_completed(const bxInstruction_c *i)
 {
-  if(active) 
-  {
-    valid = 1; 
-  }
+  if(active) valid = 1; 
 }
 
 void bxInstrumentation::bx_instr_prefix(Bit8u prefix)
@@ -177,17 +177,10 @@ void bxInstrumentation::bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_addr
 
 void bxInstrumentation::bx_instr_mem_data(bx_address lin, unsigned size, unsigned rw)
 {
-  bx_address phy;
+  Bit32u phy;
   bx_bool page_valid;
 
-  if(!active)
-  {
-    return;
-  }
-  if (!valid)
-  {
-    return;
-  }
+  if(!active || !valid) return;
 
   if (num_data_accesses >= MAX_DATA_ACCESSES) 
   {

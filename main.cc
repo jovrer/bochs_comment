@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.298 2005/11/26 21:36:50 sshwarts Exp $
+// $Id: main.cc,v 1.307 2006/01/22 12:31:15 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -58,7 +58,7 @@ extern "C" {
 #include <signal.h>
 }
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) || defined(_MSC_VER)
 void alarm(int);
 #endif
 
@@ -75,8 +75,6 @@ void   bx_unmapped_io_write_handler(Bit32u address, Bit32u value,
 void   bx_close_harddrive(void);
 #endif
 
-
-
 void bx_init_bx_dbg (void);
 static char *divider = "========================================================================";
 static logfunctions thePluginLog;
@@ -84,6 +82,7 @@ logfunctions *pluginlog = &thePluginLog;
 
 bx_startup_flags_t bx_startup_flags;
 bx_bool bx_user_quit;
+Bit8u bx_cpu_count;
 
 /* typedefs */
 
@@ -94,6 +93,16 @@ bx_pc_system_c bx_pc_system;
 #endif
 
 bx_debug_t bx_dbg;
+
+typedef BX_CPU_C *BX_CPU_C_PTR;
+
+#if BX_SUPPORT_SMP
+// multiprocessor simulation, we need an array of cpus
+BOCHSAPI BX_CPU_C_PTR *bx_cpu_array = NULL;
+#else
+// single processor simulation, so there's one of everything
+BOCHSAPI BX_CPU_C bx_cpu;
+#endif
 
 char *bochsrc_filename = NULL;
 
@@ -191,7 +200,7 @@ int bxmain () {
     // read a param to decide which config interface to start.
     // If one exists, start it.  If not, just begin.
     bx_param_enum_c *ci_param = SIM->get_param_enum (BXP_SEL_CONFIG_INTERFACE);
-    char *ci_name = ci_param->get_choice (ci_param->get ());
+    char *ci_name = ci_param->get_choice (ci_param->get());
     if (!strcmp(ci_name, "textconfig")) {
 #if BX_USE_TEXTCONFIG
       init_text_config_interface ();   // in textconfig.h
@@ -632,9 +641,9 @@ bx_bool load_and_init_display_lib ()
   }
   BX_ASSERT (bx_gui == NULL);
   bx_param_enum_c *ci_param = SIM->get_param_enum (BXP_SEL_CONFIG_INTERFACE);
-  char *ci_name = ci_param->get_choice (ci_param->get ());
+  char *ci_name = ci_param->get_choice (ci_param->get());
   bx_param_enum_c *gui_param = SIM->get_param_enum(BXP_SEL_DISPLAY_LIBRARY);
-  char *gui_name = gui_param->get_choice (gui_param->get ());
+  char *gui_name = gui_param->get_choice (gui_param->get());
   if (!strcmp(ci_name, "wx")) {
     BX_ERROR(("change of the config interface to wx not implemented yet"));
   }
@@ -644,7 +653,7 @@ bx_bool load_and_init_display_lib ()
     BX_ERROR (("wxWidgets was not used as the configuration interface, so it cannot be used as the display library"));
     // choose another, hopefully different!
     gui_param->set (0);
-    gui_name = gui_param->get_choice (gui_param->get ());
+    gui_name = gui_param->get_choice (gui_param->get());
     if (!strcmp (gui_name, "wx")) {
       BX_PANIC (("no alternative display libraries are available"));
       return false;
@@ -717,6 +726,7 @@ bx_begin_simulation (int argc, char *argv[])
     BX_PANIC (("no gui module was loaded"));
     return 0;
   }
+  bx_cpu_count = bx_options.Ocpu_count->get();
 #if BX_DEBUGGER
   // If using the debugger, it will take control and call
   // bx_init_hardware() and cpu_loop()
@@ -725,14 +735,15 @@ bx_begin_simulation (int argc, char *argv[])
 #if BX_GDBSTUB
   // If using gdbstub, it will take control and call
   // bx_init_hardware() and cpu_loop()
-  if (bx_dbg.gdbstub_enabled)
+  if (bx_dbg.gdbstub_enabled) {
     bx_gdbstub_init (argc, argv);
+  }
   else
 #endif
   {
     bx_init_hardware();
 
-    if (bx_options.load32bitOSImage.OwhichOS->get ()) {
+    if (bx_options.load32bitOSImage.OwhichOS->get()) {
       void bx_load32bitOSimagehack(void);
       bx_load32bitOSimagehack();
     }
@@ -748,30 +759,30 @@ bx_begin_simulation (int argc, char *argv[])
     // until init_done is set.  This forces the set handler to be called,
     // which sets up the mouse enabled GUI-specific stuff correctly.
     // Not a great solution but it works. BBD
-    bx_options.Omouse_enabled->set (bx_options.Omouse_enabled->get ());
+    bx_options.Omouse_enabled->set (bx_options.Omouse_enabled->get());
 
-    if (BX_SMP_PROCESSORS == 1) {
-      // only one processor, run as fast as possible by not messing with
-      // quantums and loops.
-      BX_CPU(0)->cpu_loop(1);
-      // for one processor, the only reason for cpu_loop to return is
-      // that kill_bochs_request was set by the GUI interface.
-    } else {
-      // SMP simulation: do a few instructions on each processor, then switch
-      // to another.  Increasing quantum speeds up overall performance, but
-      // reduces granularity of synchronization between processors.
-      int processor = 0;
-      int quantum = 5;
-      while (1) {
-        // do some instructions in each processor
-        BX_CPU(processor)->cpu_loop(quantum);
-        processor = (processor+1) % BX_SMP_PROCESSORS;
-        if (BX_CPU(0)->kill_bochs_request) 
-          break;
-        if (processor == 0) 
-          BX_TICKN(quantum);
-      }
+#if BX_SUPPORT_SMP == 0
+    // only one processor, run as fast as possible by not messing with
+    // quantums and loops.
+    BX_CPU(0)->cpu_loop(1);
+    // for one processor, the only reason for cpu_loop to return is
+    // that kill_bochs_request was set by the GUI interface.
+#else
+    // SMP simulation: do a few instructions on each processor, then switch
+    // to another.  Increasing quantum speeds up overall performance, but
+    // reduces granularity of synchronization between processors.
+    int processor = 0;
+    int quantum = 5;
+    while (1) {
+      // do some instructions in each processor
+      BX_CPU(processor)->cpu_loop(quantum);
+      processor = (processor+1) % BX_SMP_PROCESSORS;
+      if (BX_CPU(0)->kill_bochs_request) 
+        break;
+      if (processor == 0) 
+        BX_TICKN(quantum);
     }
+#endif
   }
 #endif /* ! BX_DEBUGGER */
   BX_INFO (("cpu loop quit, shutting down simulator"));
@@ -783,18 +794,18 @@ int bx_init_hardware()
 {
   // all configuration has been read, now initialize everything.
 
-  if (SIM->get_param_enum(BXP_BOCHS_START)->get ()==BX_QUICK_START) {
+  if (SIM->get_param_enum(BXP_BOCHS_START)->get()==BX_QUICK_START) {
     for (int level=0; level<N_LOGLEV; level++) {
       int action = SIM->get_default_log_action (level);
       io->set_log_action (level, action);
     }
   }
 
-  bx_pc_system.init_ips(bx_options.Oips->get ());
+  bx_pc_system.init_ips(bx_options.Oips->get());
 
   if(bx_options.log.Ofilename->getptr()[0]!='-') {
-    BX_INFO (("using log file %s", bx_options.log.Ofilename->getptr ()));
-    io->init_log(bx_options.log.Ofilename->getptr ());
+    BX_INFO (("using log file %s", bx_options.log.Ofilename->getptr()));
+    io->init_log(bx_options.log.Ofilename->getptr());
   }
 
   io->set_log_prefix(bx_options.log.Oprefix->getptr());
@@ -835,91 +846,55 @@ int bx_init_hardware()
   BX_INFO(("  VGA extension support: %s %s",BX_SUPPORT_VBE?"vbe":"",
            BX_SUPPORT_CLGD54XX?"cirrus":""));
 
-  // set up memory and CPU objects
-#if BX_SUPPORT_APIC
-  bx_generic_apic_c::reset_all_ids ();
-#endif
-
   // Check if there is a romimage
-  if (strcmp(bx_options.rom.Opath->getptr (),"") == 0) {
+  if (strcmp(bx_options.rom.Opath->getptr(),"") == 0) {
     BX_ERROR(("No romimage to load. Is your bochsrc file loaded/valid ?"));
   }
 
-  Bit32u memSize = bx_options.memory.Osize->get ()*1024*1024;
+  // set up memory and CPU objects
+  Bit32u memSize = bx_options.memory.Osize->get()*1024*1024;
 
 #if BX_SUPPORT_ICACHE
   pageWriteStampTable.alloc(memSize);
 #endif
 
-#if BX_SMP_PROCESSORS==1
   BX_MEM(0)->init_memory(memSize);
 
   // First load the BIOS and VGABIOS
-  BX_MEM(0)->load_ROM(bx_options.rom.Opath->getptr (), bx_options.rom.Oaddress->get (), 0);
-  BX_MEM(0)->load_ROM(bx_options.vgarom.Opath->getptr (), 0xc0000, 1);
+  BX_MEM(0)->load_ROM(bx_options.rom.Opath->getptr(), bx_options.rom.Oaddress->get(), 0);
+  BX_MEM(0)->load_ROM(bx_options.vgarom.Opath->getptr(), 0xc0000, 1);
 
   // Then load the optional ROM images
-  if (strcmp(bx_options.optrom[0].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_ROM(bx_options.optrom[0].Opath->getptr (), bx_options.optrom[0].Oaddress->get (), 2);
-  if (strcmp(bx_options.optrom[1].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_ROM(bx_options.optrom[1].Opath->getptr (), bx_options.optrom[1].Oaddress->get (), 2);
-  if (strcmp(bx_options.optrom[2].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_ROM(bx_options.optrom[2].Opath->getptr (), bx_options.optrom[2].Oaddress->get (), 2);
-  if (strcmp(bx_options.optrom[3].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_ROM(bx_options.optrom[3].Opath->getptr (), bx_options.optrom[3].Oaddress->get (), 2);
+  if (strcmp(bx_options.optrom[0].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_ROM(bx_options.optrom[0].Opath->getptr(), bx_options.optrom[0].Oaddress->get(), 2);
+  if (strcmp(bx_options.optrom[1].Opath->getptr(), "") !=0 )
+    BX_MEM(0)->load_ROM(bx_options.optrom[1].Opath->getptr(), bx_options.optrom[1].Oaddress->get(), 2);
+  if (strcmp(bx_options.optrom[2].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_ROM(bx_options.optrom[2].Opath->getptr(), bx_options.optrom[2].Oaddress->get(), 2);
+  if (strcmp(bx_options.optrom[3].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_ROM(bx_options.optrom[3].Opath->getptr(), bx_options.optrom[3].Oaddress->get(), 2);
 
   // Then load the optional RAM images
-  if (strcmp(bx_options.optram[0].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[0].Opath->getptr (), bx_options.optram[0].Oaddress->get (), 2);
-  if (strcmp(bx_options.optram[1].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[1].Opath->getptr (), bx_options.optram[1].Oaddress->get (), 2);
-  if (strcmp(bx_options.optram[2].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[2].Opath->getptr (), bx_options.optram[2].Oaddress->get (), 2);
-  if (strcmp(bx_options.optram[3].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[3].Opath->getptr (), bx_options.optram[3].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[0].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_RAM(bx_options.optram[0].Opath->getptr(), bx_options.optram[0].Oaddress->get(), 2);
+  if (strcmp(bx_options.optram[1].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_RAM(bx_options.optram[1].Opath->getptr(), bx_options.optram[1].Oaddress->get(), 2);
+  if (strcmp(bx_options.optram[2].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_RAM(bx_options.optram[2].Opath->getptr(), bx_options.optram[2].Oaddress->get(), 2);
+  if (strcmp(bx_options.optram[3].Opath->getptr(), "") !=0)
+    BX_MEM(0)->load_RAM(bx_options.optram[3].Opath->getptr(), bx_options.optram[3].Oaddress->get(), 2);
 
+#if BX_SUPPORT_SMP == 0
   BX_CPU(0)->initialize(BX_MEM(0));
-#if BX_SUPPORT_APIC
-  BX_CPU(0)->local_apic.set_id (0);
-#endif
   BX_CPU(0)->sanity_checks();
   BX_INSTR_INIT(0);
   BX_CPU(0)->reset(BX_RESET_HARDWARE);
 #else
-  // SMP initialization
-  bx_mem_array[0] = new BX_MEM_C ();
-  bx_mem_array[0]->init_memory(memSize);
+  bx_cpu_array = new BX_CPU_C_PTR[BX_SMP_PROCESSORS];
 
-  // First load the BIOS and VGABIOS
-  bx_mem_array[0]->load_ROM(bx_options.rom.Opath->getptr (), bx_options.rom.Oaddress->get (), 0);
-  bx_mem_array[0]->load_ROM(bx_options.vgarom.Opath->getptr (), 0xc0000, 1);
-
-  // Then load the optional ROM images
-  if (strcmp(bx_options.optrom[0].Opath->getptr (),"") !=0 )
-    bx_mem_array[0]->load_ROM(bx_options.optrom[0].Opath->getptr (), bx_options.optrom[0].Oaddress->get (), 2);
-  if (strcmp(bx_options.optrom[1].Opath->getptr (),"") !=0 )
-    bx_mem_array[0]->load_ROM(bx_options.optrom[1].Opath->getptr (), bx_options.optrom[1].Oaddress->get (), 2);
-  if (strcmp(bx_options.optrom[2].Opath->getptr (),"") !=0 )
-    bx_mem_array[0]->load_ROM(bx_options.optrom[2].Opath->getptr (), bx_options.optrom[2].Oaddress->get (), 2);
-  if (strcmp(bx_options.optrom[3].Opath->getptr (),"") !=0 )
-    bx_mem_array[0]->load_ROM(bx_options.optrom[3].Opath->getptr (), bx_options.optrom[3].Oaddress->get (), 2);
-
-  // Then load the optional RAM images
-  if (strcmp(bx_options.optram[0].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[0].Opath->getptr (), bx_options.optram[0].Oaddress->get (), 2);
-  if (strcmp(bx_options.optram[1].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[1].Opath->getptr (), bx_options.optram[1].Oaddress->get (), 2);
-  if (strcmp(bx_options.optram[2].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[2].Opath->getptr (), bx_options.optram[2].Oaddress->get (), 2);
-  if (strcmp(bx_options.optram[3].Opath->getptr (),"") !=0 )
-    BX_MEM(0)->load_RAM(bx_options.optram[3].Opath->getptr (), bx_options.optram[3].Oaddress->get (), 2);
-
-  for (int i=0; i<BX_SMP_PROCESSORS; i++) {
+  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++) {
     BX_CPU(i) = new BX_CPU_C(i);
-    BX_CPU(i)->initialize(bx_mem_array[0]);
-    // assign apic ID from the index of this loop
-    // if !BX_SUPPORT_APIC, this will not compile.
-    BX_CPU(i)->local_apic.set_id(i);
+    BX_CPU(i)->initialize(BX_MEM(0));  // assign local apic id in 'initialize' method
     BX_CPU(i)->sanity_checks();
     BX_INSTR_INIT(i);
     BX_CPU(i)->reset(BX_RESET_HARDWARE);
@@ -939,7 +914,7 @@ int bx_init_hardware()
 #endif
 
 #if BX_SHOW_IPS
-#ifndef __MINGW32__
+#if !defined(__MINGW32__) && !defined(_MSC_VER)
   signal(SIGALRM, bx_signal_handler);
 #endif
   alarm( 1 );
@@ -1008,7 +983,7 @@ int bx_atexit(void)
 
 #if BX_SUPPORT_PCI
   if (SIM && SIM->get_init_done ()) {
-    if (bx_options.Oi440FXSupport->get ()) {
+    if (bx_options.Oi440FXSupport->get()) {
       bx_devices.pluginPciBridge->print_i440fx_state();
     }
   }
@@ -1062,7 +1037,7 @@ void bx_signal_handler(int signum)
       bx_gui->show_ips((Bit32u) ips_count);
       ticks_count = bx_pc_system.time_ticks();
     }
-#ifndef __MINGW32__
+#if !defined(__MINGW32__) && !defined(_MSC_VER)
     signal(SIGALRM, bx_signal_handler);
     alarm( 1 );
 #endif

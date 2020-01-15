@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.62 2005/11/12 16:09:55 vruppert Exp $
+// $Id: sdl.cc,v 1.66 2006/01/26 22:13:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -53,6 +53,9 @@ public:
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
   virtual void set_display_mode (disp_mode_t newmode);
   virtual void statusbar_setitem(int element, bx_bool active);
+#if BX_SHOW_IPS
+  virtual void show_ips(Bit32u ips_count);
+#endif
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -119,6 +122,10 @@ static unsigned statusitem_pos[12] = {
   0, 170, 210, 250, 290, 330, 370, 410, 450, 490, 530, 570
 };
 static bx_bool statusitem_active[12];
+#if BX_SHOW_IPS
+static bx_bool sdl_ips_update = 0;
+static char sdl_ips_text[20];
+#endif
 
 #if SDL_BYTEORDER == SDL_LIL_ENDIAN
 #define SWAP16(X)    (X)
@@ -129,6 +136,14 @@ static bx_bool statusitem_active[12];
 #endif
 
 static void headerbar_click(int x);
+
+#if BX_SHOW_IPS
+#if  defined(__MINGW32__) || defined(_MSC_VER)
+  Uint32 SDLCALL sdlTimer(Uint32 interval);
+  void alarm(int);
+  void bx_signal_handler(int);
+#endif
+#endif
 
 
 void switch_to_windowed(void)
@@ -215,6 +230,21 @@ void switch_to_fullscreen(void)
   sdl_grab = 1;
 }
 
+#if BX_SHOW_IPS
+#if defined(__MINGW32__) || defined(_MSC_VER)
+Uint32 SDLCALL sdlTimer(Uint32 interval)
+{
+  bx_signal_handler(SIGALRM);
+  return interval;
+}
+
+void alarm(int time)
+{
+  SDL_SetTimer(time*1000, sdlTimer);
+}
+#endif
+#endif
+
 bx_sdl_gui_c::bx_sdl_gui_c ()
 {
 }
@@ -235,6 +265,7 @@ void bx_sdl_gui_c::specific_init(
     unsigned header_bar_y)
 {
   int i,j;
+  Uint32 flags;
 
   put("SDL");
 
@@ -261,8 +292,13 @@ void bx_sdl_gui_c::specific_init(
   }
   #endif
   
-  if( SDL_Init(SDL_INIT_VIDEO) < 0 )
-  {
+  flags = SDL_INIT_VIDEO;
+#if BX_SHOW_IPS
+#if  defined(__MINGW32__) || defined(_MSC_VER)
+  flags |= SDL_INIT_TIMER;
+#endif
+#endif
+  if (SDL_Init(flags) < 0) {
     LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
     BX_PANIC (("Unable to initialize SDL libraries"));
     return;
@@ -323,9 +359,12 @@ void sdl_set_status_text(int element, const char *text, bx_bool active)
   buf = (Uint32 *)sdl_screen->pixels + (res_y + headerbar_height + 1) * disp + xleft;
   rowsleft = statusbar_height - 2;
   fgcolor = active?headerbar_fg:status_gray_text;
-  bgcolor = active?status_led_green:headerbar_bg;
-  do
-  {
+  if (element > 0) {
+    bgcolor = active?status_led_green:headerbar_bg;
+  } else {
+    bgcolor = headerbar_bg;
+  }
+  do {
     colsleft = xsize;
     buf_row = buf;
     do
@@ -334,10 +373,10 @@ void sdl_set_status_text(int element, const char *text, bx_bool active)
     } while( --colsleft );
     buf = buf_row + disp;
   } while( --rowsleft );
-  if (strlen(text) < 4) {
-    textlen = strlen(text);
-  } else {
+  if ((element > 0) && (strlen(text) > 4)) {
     textlen = 4;
+  } else {
+    textlen = strlen(text);
   }
   buf = (Uint32 *)sdl_screen->pixels + (res_y + headerbar_height + 5) * disp + xleft;
   x = 0;
@@ -1076,6 +1115,12 @@ void bx_sdl_gui_c::handle_events(void)
 	BX_PANIC (("User requested shutdown."));
     }
   }
+#if BX_SHOW_IPS
+  if (sdl_ips_update) {
+    sdl_ips_update = 0;
+    sdl_set_status_text(0, sdl_ips_text, 1);
+  }
+#endif
 }
 
 
@@ -1538,5 +1583,15 @@ bx_sdl_gui_c::set_display_mode (disp_mode_t newmode)
     }
   }
 }
+
+#if BX_SHOW_IPS
+void bx_sdl_gui_c::show_ips(Bit32u ips_count)
+{
+  if (!sdl_ips_update) {
+    sprintf(sdl_ips_text, "IPS: %9u", ips_count);
+    sdl_ips_update = 1;
+  }
+}
+#endif
 
 #endif /* if BX_WITH_SDL */

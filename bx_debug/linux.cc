@@ -1,9 +1,10 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: linux.cc,v 1.1 2003/11/28 15:07:25 danielg4 Exp $
+// $Id: linux.cc,v 1.3 2006/01/25 22:19:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 #include <stdio.h>
 #include "bochs.h"
+
 #if BX_DEBUGGER
 
 #define LOG_THIS genlog->
@@ -13,8 +14,7 @@
 #define KERNEL_CS 0x10
 #define USER_CS 0x18
 
-  void
-bx_dbg_info_linux_command (void)
+void bx_dbg_info_linux_command (void)
 {
   BX_INFO (("Info linux"));
   bx_dbg_cpu_t cpu;
@@ -123,8 +123,7 @@ public:
   char *get_name (int num);
 };
 
-void
-syscall_names_t::init ()
+void syscall_names_t::init ()
 {
   for (int i=0; i<MAX_SYSCALLS; i++) {
     syscall_names_linux[i] = "<unknown syscall>";
@@ -142,8 +141,7 @@ syscall_names_t::init ()
 #endif
 }
 
-char *
-syscall_names_t::get_name (int n) 
+char *syscall_names_t::get_name (int n) 
 {
   static char buf[64];
   if (n < 0 || n > N_SYSCALLS) {
@@ -155,10 +153,11 @@ syscall_names_t::get_name (int n)
 
 syscall_names_t syscall_names;
 
-void bx_dbg_linux_syscall () {
-  bx_dbg_cpu_t cpu;
-  bx_dbg_callback[0].get_cpu(&cpu);
-  char *name = syscall_names.get_name (cpu.eax);
-  fprintf (stderr, "linux system call %s (#%d)\n", name, cpu.eax);
+void bx_dbg_linux_syscall (unsigned which_cpu)
+{
+  Bit32u eax = BX_CPU(which_cpu)->get_reg32(BX_32BIT_REG_EAX);
+  char *name = syscall_names.get_name (eax);
+  fprintf (stderr, "linux system call %s (#%d)\n", name, eax);
 }
+
 #endif /* if BX_DEBUGGER */

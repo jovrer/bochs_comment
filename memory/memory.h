@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h,v 1.26 2005/10/28 00:12:27 kevinlawton Exp $
+// $Id: memory.h,v 1.29 2006/01/28 16:16:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -91,24 +91,22 @@ public:
   BX_MEM_SMF Bit32u  get_memory_in_k(void);
   BX_MEM_SMF bx_bool dbg_fetch_mem(Bit32u addr, unsigned len, Bit8u *buf);
   BX_MEM_SMF bx_bool dbg_set_mem(Bit32u addr, unsigned len, Bit8u *buf);
-  BX_MEM_SMF bx_bool dbg_crc32(
-    unsigned long (*f)(unsigned char *buf, int len),
-    Bit32u addr1, Bit32u addr2, Bit32u *crc);
+  BX_MEM_SMF bx_bool dbg_crc32(Bit32u addr1, Bit32u addr2, Bit32u *crc);
   BX_MEM_SMF Bit8u* getHostMemAddr(BX_CPU_C *cpu, Bit32u a20Addr, unsigned op) BX_CPP_AttrRegparmN(3);
   BX_MEM_SMF bx_bool registerMemoryHandlers(memory_handler_t read_handler, void *read_param, 
 		  memory_handler_t write_handler, void *write_param, 
-		  unsigned long begin_addr, unsigned long end_addr);
+		  Bit32u begin_addr, Bit32u end_addr);
   BX_MEM_SMF bx_bool unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler, 
-		  unsigned long begin_addr, unsigned long end_addr);
+		  Bit32u begin_addr, Bit32u end_addr);
   };
 
 #if BX_PROVIDE_CPU_MEMORY==1
 
-#if BX_SMP_PROCESSORS==1
-BOCHSAPI extern BX_MEM_C    bx_mem;
+#if BX_ADDRESS_SPACES==1
+BOCHSAPI extern BX_MEM_C bx_mem;
 #else
-BOCHSAPI extern BX_MEM_C    *bx_mem_array[BX_ADDRESS_SPACES];
-#endif  /* BX_SMP_PROCESSORS */
+BOCHSAPI extern BX_MEM_C bx_mem_array[BX_ADDRESS_SPACES];
+#endif  /* BX_ADDRESS_SPACES */
 
 #endif  /* BX_PROVIDE_CPU_MEMORY==1 */
 

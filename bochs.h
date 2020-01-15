@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.163 2005/11/20 20:33:31 sshwarts Exp $
+// $Id: bochs.h,v 1.169 2006/01/28 16:16:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -111,42 +111,13 @@ int bx_parse_cmdline (int arg, int argc, char *argv[]);
 int bx_read_configuration (char *rcfile);
 int bx_write_configuration (char *rcfile, int overwrite);
 void bx_reset_options (void);
+Bit32u crc32(const Bit8u *buf, int len);
 
 //
 // some macros to interface the CPU and memory to external environment
 // so that these functions can be redirected to the debugger when
 // needed.
 //
-
-#if ((BX_DEBUGGER == 1) && (BX_NUM_SIMULATORS >= 2))
-// =-=-=-=-=-=-=- Redirected to cosimulation debugger -=-=-=-=-=-=-=
-#define DEV_vga_mem_read(addr)       bx_dbg_ucmem_read(addr)
-#define DEV_vga_mem_write(addr, val) bx_dbg_ucmem_write(addr, val)
-
-#define BX_INP(addr, len)           bx_dbg_inp(addr, len)
-#define BX_OUTP(addr, val, len)     bx_dbg_outp(addr, val, len)
-#define BX_HRQ                      (bx_pc_system.HRQ)
-#define BX_RAISE_HLDA()             bx_dbg_raise_HLDA()
-#define BX_TICK1()
-#define BX_INTR                     bx_pc_system.INTR
-#define BX_SET_INTR(b)              bx_dbg_set_INTR(b)
-#if BX_SIM_ID == 0
-#  define BX_CPU_C                  bx_cpu0_c
-#  define BX_CPU                    bx_cpu0
-#  define BX_MEM_C                  bx_mem0_c
-#  define BX_MEM                    bx_mem0
-#else
-#  define BX_CPU_C                  bx_cpu1_c
-#  define BX_CPU                    bx_cpu1
-#  define BX_MEM_C                  bx_mem1_c
-#  define BX_MEM                    bx_mem1
-#endif
-#define BX_SET_ENABLE_A20(enabled)  bx_dbg_async_pin_request(BX_DBG_ASYNC_PENDING_A20, \
-                                      enabled)
-#define BX_GET_ENABLE_A20()         bx_pc_system.get_enable_a20()
-#error FIXME: cosim mode not fixed yet
-
-#else
 
 // =-=-=-=-=-=-=- Normal optimized use -=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // some pc_systems functions just redirect to the IO devices so optimize
@@ -168,34 +139,34 @@ void bx_reset_options (void);
 #define BX_MEM_WRITE_PHYSICAL(phy_addr, len, ptr) \
   BX_MEM(0)->writePhysicalPage(BX_CPU(0), phy_addr, len, ptr)
 
-#if BX_SMP_PROCESSORS==1
+#if BX_SUPPORT_SMP
+#define BX_CPU(x)                   (bx_cpu_array[x])
+#else
 #define BX_CPU(x)                   (&bx_cpu)
+#endif
+
+#if BX_ADDRESS_SPACES==1
 #define BX_MEM(x)                   (&bx_mem)
 #else
-#define BX_CPU(x)                   (bx_cpu_array[x])
-#define BX_MEM(x)                   (bx_mem_array[x])
+#define BX_MEM(x)                   (&bx_mem_array[x])
 #endif
 
 #define BX_SET_ENABLE_A20(enabled)  bx_pc_system.set_enable_a20(enabled)
 #define BX_GET_ENABLE_A20()         bx_pc_system.get_enable_a20()
 
-#endif
-
 #if BX_SUPPORT_A20
-#  define A20ADDR(x)               ( (x) & bx_pc_system.a20_mask )
+#  define A20ADDR(x)                ((x) & bx_pc_system.a20_mask)
 #else
 #  define A20ADDR(x)                (x)
 #endif
 
-
 // you can't use static member functions on the CPU, if there are going
 // to be 2 cpus.  Check this early on.
-#if (BX_SMP_PROCESSORS>1)
-#  if (BX_USE_CPU_SMF!=0)
+#if BX_SUPPORT_SMP
+#  if BX_USE_CPU_SMF
 #    error For SMP simulation, BX_USE_CPU_SMF must be 0.
 #  endif
 #endif
-
 
 //
 // Ways for the the external environment to report back information
@@ -205,21 +176,6 @@ void bx_reset_options (void);
 #if BX_DEBUGGER
 #  define BX_DBG_ASYNC_INTR bx_guard.async.irq
 #  define BX_DBG_ASYNC_DMA  bx_guard.async.dma
-#if (BX_NUM_SIMULATORS > 1)
-// for multiple simulators, we always need this info, since we're
-// going to replay it.
-#  define BX_DBG_DMA_REPORT(addr, len, what, val) \
-        bx_dbg_dma_report(addr, len, what, val)
-#  define BX_DBG_IAC_REPORT(vector, irq) \
-        bx_dbg_iac_report(vector, irq)
-#  define BX_DBG_A20_REPORT(val) \
-        bx_dbg_a20_report(val)
-#  define BX_DBG_IO_REPORT(addr, size, op, val) \
-        bx_dbg_io_report(addr, size, op, val)
-#  define BX_DBG_UCMEM_REPORT(addr, size, op, val)
-#else
-// for a single simulator debug environment, we can optimize a little
-// by conditionally calling, as per requested.
 
 #  define BX_DBG_DMA_REPORT(addr, len, what, val) \
         if (bx_guard.report.dma) bx_dbg_dma_report(addr, len, what, val)
@@ -231,8 +187,6 @@ void bx_reset_options (void);
         if (bx_guard.report.io) bx_dbg_io_report(addr, size, op, val)
 #  define BX_DBG_UCMEM_REPORT(addr, size, op, val) \
         if (bx_guard.report.ucmem) bx_dbg_ucmem_report(addr, size, op, val)
-#endif  // #if (BX_NUM_SIMULATORS > 1)
-
 #else  // #if BX_DEBUGGER
 // debugger not compiled in, use empty stubs
 #  define BX_DBG_ASYNC_INTR 1
@@ -400,9 +354,9 @@ BOCHSAPI extern logfunc_t *genlog;
 #endif
 
 #if BX_SUPPORT_X86_64
-#define FMT_ADDRX FMT_LL "x"
+#define FMT_ADDRX FMT_ADDRX64
 #else
-#define FMT_ADDRX "%08x"
+#define FMT_ADDRX FMT_ADDRX32
 #endif
 
 #if BX_DISASM
@@ -423,13 +377,12 @@ void bx_gdbstub_init(int argc, char* argv[]);
 int bx_gdbstub_check(unsigned int eip);
 #define GDBSTUB_STOP_NO_REASON   (0xac0)
 
-#if BX_SMP_PROCESSORS!=1
+#if BX_SUPPORT_SMP
 #error GDB stub was written for single processor support.  If multiprocessor support is added, then we can remove this check.
 // The big problem is knowing which CPU gdb is referring to.  In other words,
 // what should we put for "n" in BX_CPU(n)->dbg_xlate_linear2phy() and
 // BX_CPU(n)->dword.eip, etc.
 #endif
-
 #endif
 
 typedef struct {
@@ -489,19 +442,12 @@ BOCHSAPI extern bx_debug_t bx_dbg;
 #define DATA_ACCESS     0
 #define CODE_ACCESS     1
 
-
 #include "memory/memory.h"
-
-
-enum PCS_OP { PCS_CLEAR, PCS_SET, PCS_TOGGLE };
-
 #include "pc_system.h"
 #include "plugin.h"
 #include "gui/gui.h"
 #include "gui/textconfig.h"
 #include "gui/keymap.h"
-
-
 
 /* --- EXTERNS --- */
 
@@ -641,8 +587,8 @@ typedef struct BOCHSAPI {
   bx_param_num_c    *Okeyboard_serial_delay;
   bx_param_num_c    *Okeyboard_paste_delay;
   bx_param_enum_c   *Okeyboard_type;
+  bx_param_num_c    *Ocpu_count;
   bx_param_num_c    *Oips;
-  bx_param_bool_c   *Orealtime_pit;
   bx_param_bool_c   *Otext_snapshot_check;
   bx_param_bool_c   *Omouse_enabled;
   bx_param_enum_c   *Omouse_type;
@@ -668,17 +614,21 @@ typedef struct BOCHSAPI {
 
 BOCHSAPI extern bx_options_t bx_options;
 
+#if BX_SUPPORT_SMP
+  #define BX_SMP_PROCESSORS (bx_cpu_count)
+#else
+  #define BX_SMP_PROCESSORS 1
+#endif
+
 void bx_init_options();
 
 void bx_center_print (FILE *file, char *line, int maxwidth);
-
 
 #define BX_USE_PS2_MOUSE 1
 
 int bx_init_hardware ();
 
 #include "instrument.h"
-
 
 // These are some convenience macros which abstract out accesses between
 // a variable in native byte ordering to/from guest (x86) memory, which is

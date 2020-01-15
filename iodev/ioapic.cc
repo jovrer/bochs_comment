@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.cc,v 1.20 2005/12/13 20:27:23 sshwarts Exp $
+// $Id: ioapic.cc,v 1.25 2006/01/18 18:35:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 #include <stdio.h>
@@ -38,6 +38,8 @@ bx_ioapic_c::bx_ioapic_c ()
 
 bx_ioapic_c::~bx_ioapic_c () {}
 
+#define BX_IOAPIC_DEFAULT_ID (BX_SMP_PROCESSORS)
+
 void bx_ioapic_c::init () 
 {
   bx_generic_apic_c::init ();
@@ -50,12 +52,11 @@ void bx_ioapic_c::init ()
     ioredtbl[i].set_even_word (0x00010000);
     ioredtbl[i].set_odd_word  (0x00000000);
   }
+  intin = 0;
   irr = 0;
 }
 
-void bx_ioapic_c::reset (unsigned type) 
-{
-}
+void bx_ioapic_c::reset (unsigned type) { }
 
 void bx_ioapic_c::read_aligned(Bit32u address, Bit32u *data, unsigned len)
 {
@@ -133,23 +134,41 @@ void bx_ioapic_c::write(Bit32u address, Bit32u *value, unsigned len)
   }
 }
 
-void bx_ioapic_c::raise_irq (unsigned vector, unsigned from) 
+void bx_ioapic_c::set_irq_level(Bit8u int_in, bx_bool level)
 {
-  BX_DEBUG(("IOAPIC: received vector %d", vector));
-  if ((vector >= 0) && (vector <= BX_APIC_LAST_VECTOR)) {
-    Bit32u bit = 1<<vector;
-    if ((irr & bit) == 0) {
-      irr |= bit;
-      service_ioapic ();
+  BX_DEBUG(("set_irq_level(): INTIN%d: level=%d", int_in, level));
+  if (int_in < BX_IOAPIC_NUM_PINS) {
+    Bit32u bit = 1<<int_in;
+    if ((level<<int_in) != (intin & bit)) {
+      bx_io_redirect_entry_t *entry = ioredtbl + int_in;
+      entry->parse_value();
+      if (entry->trig_mode) {
+        // level triggered
+        if (level) {
+          intin |= bit;
+          irr |= bit;
+          service_ioapic ();
+        } else {
+          intin &= ~bit;
+          irr &= ~bit;
+        }
+      } else {
+        // edge triggered
+        if (level) {
+          intin |= bit;
+          irr |= bit;
+          service_ioapic ();
+        } else {
+          intin &= ~bit;
+        }
+      }
     }
-  } else {
-    BX_PANIC(("IOAPIC: vector %d out of range", vector));
   }
 }
 
-void bx_ioapic_c::lower_irq (unsigned num, unsigned from) 
+void bx_ioapic_c::receive_eoi(Bit8u vector)
 {
-  BX_DEBUG(("IOAPIC: interrupt %d went away", num));
+  BX_DEBUG(("IOAPIC: received EOI for vector %d", vector));
 }
 
 void bx_ioapic_c::service_ioapic ()
@@ -158,22 +177,27 @@ void bx_ioapic_c::service_ioapic ()
   // look in IRR and deliver any interrupts that are not masked.
   BX_DEBUG(("IOAPIC: servicing"));
   for (unsigned bit=0; bit < BX_IOAPIC_NUM_PINS; bit++) {
-    if (irr & (1<<bit)) {
+    Bit32u mask = 1<<bit;
+    if (irr & mask) {
       bx_io_redirect_entry_t *entry = ioredtbl + bit;
       entry->parse_value();
       if (! entry->masked) {
-	// clear irr bit and deliver
-	bx_bool done = deliver (entry->dest, entry->dest_mode, entry->delivery_mode, entry->vector, entry->polarity, entry->trig_mode);
-	if (done) {
-	  irr &= ~(1<<bit);
-	  entry->delivery_status = 0;
-	  stuck = 0;
-	} else {
-	  entry->delivery_status = 1;
-	  stuck++;
-	  if (stuck > 5)
-	    BX_INFO(("vector %#x stuck?\n", entry->vector));
-	}
+        // clear irr bit and deliver
+        if (entry->delivery_mode == 7) {
+          BX_PANIC(("ExtINT not implemented yet"));
+        }
+        bx_bool done = apic_bus_deliver_interrupt(entry->vector, entry->dest, entry->delivery_mode, entry->dest_mode, entry->polarity, entry->trig_mode);
+        if (done) {
+          if (! entry->trig_mode)
+            irr &= ~mask;
+          entry->delivery_status = 0;
+          stuck = 0;
+        } else {
+          entry->delivery_status = 1;
+          stuck++;
+          if (stuck > 5)
+            BX_INFO(("vector %#x stuck?\n", entry->vector));
+        }
       }
     }
   }

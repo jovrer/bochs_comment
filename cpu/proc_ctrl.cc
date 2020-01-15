@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc,v 1.127 2005/12/12 19:54:48 sshwarts Exp $
+// $Id: proc_ctrl.cc,v 1.131 2006/01/21 12:06:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -1164,6 +1164,10 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_PANIC(("loadall: CS invalid"));
   }
 
+#if BX_SUPPORT_ICACHE
+  BX_CPU_THIS_PTR iCache.fetchModeMask = createFetchModeMask(BX_CPU_THIS);
+#endif
+
   /* ES */
   BX_CPU_THIS_PTR mem->readPhysicalPage(BX_CPU_THIS, 0x824, 2, &es_raw);
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value = es_raw;
@@ -1309,7 +1313,7 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
 
 #if BX_CPU_LEVEL >= 4
   if (BX_CPU_THIS_PTR cr0.am) {
-    BX_ERROR(("WARNING: Aligment check enabled but not implemented !"));
+    BX_DEBUG(("WARNING: Alignment check enabled but not implemented !"));
   }
 #endif
 
@@ -1427,6 +1431,7 @@ void BX_CPU_C::SetCR4(Bit32u val_32)
 #endif
 
 #if BX_CPU_LEVEL >= 6
+  allowMask |= (1<<8);   /* PCE */
   allowMask |= (1<<9);   /* OSFXSR */
 #endif
 
@@ -1514,13 +1519,31 @@ void BX_CPU_C::RDPMC(bxInstruction_c *i)
 #endif
 }
 
+#if BX_CPU_LEVEL >= 5
+Bit64u BX_CPU_C::get_TSC ()
+{
+  return bx_pc_system.time_ticks() - BX_CPU_THIS_PTR msr.tsc_last_reset;
+}
+
+void BX_CPU_C::set_TSC (Bit32u newval)
+{
+  // compute the correct setting of tsc_last_reset so that a get_TSC()
+  // will return newval
+  BX_CPU_THIS_PTR msr.tsc_last_reset = 
+            bx_pc_system.time_ticks() - (Bit64u) newval;
+
+  // verify
+  BX_ASSERT (get_TSC() == (Bit64u) newval);
+}
+#endif
+
 void BX_CPU_C::RDTSC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   bx_bool tsd = BX_CPU_THIS_PTR cr4.get_TSD();
   if ((tsd==0) || (tsd==1 && CPL==0)) {
     // return ticks
-    Bit64u ticks = bx_pc_system.time_ticks ();
+    Bit64u ticks = BX_CPU_THIS_PTR get_TSC();
     RAX = (Bit32u) (ticks & 0xffffffff);
     RDX = (Bit32u) ((ticks >> 32) & 0xffffffff);
   } else {
@@ -1601,11 +1624,8 @@ void BX_CPU_C::RDMSR(bxInstruction_c *i)
       goto do_exception;
 #endif  /* BX_CPU_LEVEL == 5 */
 
-    case BX_MSR_TSC: {
-        Bit64u ticks = bx_pc_system.time_ticks ();
-        RAX = (Bit32u) (ticks & 0xffffffff);
-        RDX = (Bit32u) ((ticks >> 32) & 0xffffffff);
-      }
+    case BX_MSR_TSC:
+      RDTSC(i);
       return;
 
     /* MSR_APICBASE
@@ -1747,7 +1767,8 @@ void BX_CPU_C::WRMSR(bxInstruction_c *i)
 #endif  /* BX_CPU_LEVEL == 5 */
 
     case BX_MSR_TSC:
-      BX_INFO(("WRMSR: writing to BX_MSR_TSC still not implemented"));
+      BX_CPU_THIS_PTR set_TSC(EAX); /* ignore the high 32bits */
+      BX_INFO(("WRMSR: wrote 0x%08x to MSR_TSC", EAX));
       return;
 
     /* MSR_APICBASE
@@ -1871,6 +1892,10 @@ void BX_CPU_C::SYSENTER (bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 1;          // 32-bit mode
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0;          // available for use by system
 
+#if BX_SUPPORT_ICACHE
+  BX_CPU_THIS_PTR iCache.fetchModeMask = createFetchModeMask(BX_CPU_THIS);
+#endif
+
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value = (BX_CPU_THIS_PTR sysenter_cs_msr + 8) & BX_SELECTOR_RPL_MASK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.index = (BX_CPU_THIS_PTR sysenter_cs_msr + 8) >> 3;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.ti    = ((BX_CPU_THIS_PTR sysenter_cs_msr + 8) >> 2) & 1;
@@ -1885,8 +1910,6 @@ void BX_CPU_C::SYSENTER (bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.g            = 1;          // 4k granularity
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b          = 1;          // 32-bit mode
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.avl          = 0;          // available for use by system
-
-  // BX_INFO (("sysenter: old eip %X, esp %x, new eip %x, esp %X, edx %X", BX_CPU_THIS_PTR prev_eip, ESP, BX_CPU_THIS_PTR sysenter_eip_msr, BX_CPU_THIS_PTR sysenter_esp_msr, EDX));
 
   ESP = BX_CPU_THIS_PTR sysenter_esp_msr;
   EIP = BX_CPU_THIS_PTR sysenter_eip_msr;
@@ -1929,6 +1952,10 @@ void BX_CPU_C::SYSEXIT (bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 1;           // 32-bit mode
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0;           // available for use by system
 
+#if BX_SUPPORT_ICACHE
+  BX_CPU_THIS_PTR iCache.fetchModeMask = createFetchModeMask(BX_CPU_THIS);
+#endif
+
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value = (BX_CPU_THIS_PTR sysenter_cs_msr + 24) | 3;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.index = (BX_CPU_THIS_PTR sysenter_cs_msr + 24) >> 3;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.ti    = ((BX_CPU_THIS_PTR sysenter_cs_msr + 24) >> 2) & 1;
@@ -1943,8 +1970,6 @@ void BX_CPU_C::SYSEXIT (bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.g            = 1;           // 4k granularity
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b          = 1;           // 32-bit mode
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.avl          = 0;           // available for use by system
-
-  // BX_INFO (("sysexit: old eip %X, esp %x, new eip %x, esp %X, eax %X", BX_CPU_THIS_PTR prev_eip, ESP, EDX, ECX, EAX));
 
   ESP = ECX;
   EIP = EDX;
