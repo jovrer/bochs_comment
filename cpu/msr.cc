@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: msr.cc,v 1.29 2009/11/04 17:04:28 sshwarts Exp $
+// $Id: msr.cc,v 1.48 2010/04/08 15:50:39 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008-2009 Stanislav Shwartsman
+//   Copyright (c) 2008-2010 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -37,18 +37,48 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
 {
   Bit64u val64 = 0;
 
+  if ((index & 0x3FFFFFFF) >= BX_MSR_MAX_INDEX)
+    return 0;
+
+#if BX_SUPPORT_X2APIC
+  if (index >= 0x800 && index <= 0xBFF) {
+    if (BX_CPU_THIS_PTR msr.apicbase & 0x400)  // X2APIC mode
+      return BX_CPU_THIS_PTR lapic.read_x2apic(index, msr);
+    else
+      return 0;
+  }
+#endif
+
   switch(index) {
 
-#if BX_SUPPORT_SEP
+#if BX_CPU_LEVEL >= 6
     case BX_MSR_SYSENTER_CS:
+      if (! BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT)) {
+        // failed to find the MSR, could #GP or ignore it silently
+        BX_ERROR(("RDMSR MSR_SYSENTER_CS: SYSENTER/SYSEXIT feature not enabled !"));
+        if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+          return 0; // will result in #GP fault due to unknown MSR
+      }
       val64 = BX_CPU_THIS_PTR msr.sysenter_cs_msr;
       break;
 
     case BX_MSR_SYSENTER_ESP:
+      if (! BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT)) {
+        // failed to find the MSR, could #GP or ignore it silently
+        BX_ERROR(("RDMSR MSR_SYSENTER_ESP: SYSENTER/SYSEXIT feature not enabled !"));
+        if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+          return 0; // will result in #GP fault due to unknown MSR
+      }
       val64 = BX_CPU_THIS_PTR msr.sysenter_esp_msr;
       break;
 
     case BX_MSR_SYSENTER_EIP:
+      if (! BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT)) {
+        // failed to find the MSR, could #GP or ignore it silently
+        BX_ERROR(("RDMSR MSR_SYSENTER_EIP: SYSENTER/SYSEXIT feature not enabled !"));
+        if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+          return 0; // will result in #GP fault due to unknown MSR
+      }
       val64 = BX_CPU_THIS_PTR msr.sysenter_eip_msr;
       break;
 #endif
@@ -122,6 +152,9 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
       BX_PANIC(("Dual-monitor treatment of SMI and SMM is not implemented"));
       break;
 */
+    case BX_MSR_IA32_FEATURE_CONTROL:
+      val64 = BX_CPU_THIS_PTR msr.ia32_feature_ctrl;
+      break;
     case BX_MSR_VMX_BASIC:
       val64 = VMX_MSR_VMX_BASIC;
       break;
@@ -136,6 +169,29 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
       break;
     case BX_MSR_VMX_VMENTRY_CTRLS:
       val64 = VMX_MSR_VMX_VMENTRY_CTRLS;
+      break;
+#if BX_SUPPORT_VMX >= 2
+    case BX_MSR_VMX_PROCBASED_CTRLS2:
+      val64 = VMX_MSR_VMX_PROCBASED_CTRLS2;
+      break;
+    case BX_MSR_VMX_TRUE_PINBASED_CTRLS:
+      val64 = VMX_MSR_VMX_TRUE_PINBASED_CTRLS;
+      break;
+    case BX_MSR_VMX_TRUE_PROCBASED_CTRLS:
+      val64 = VMX_MSR_VMX_TRUE_PROCBASED_CTRLS;
+      break;
+    case BX_MSR_VMX_TRUE_VMEXIT_CTRLS:
+      val64 = VMX_MSR_VMX_TRUE_VMEXIT_CTRLS;
+      break;
+    case BX_MSR_VMX_TRUE_VMENTRY_CTRLS:
+      val64 = VMX_MSR_VMX_TRUE_VMENTRY_CTRLS;
+      break;
+    case BX_MSR_VMX_MSR_VMX_EPT_VPID_CAP:
+      val64 = VMX_MSR_VMX_EPT_VPID_CAP;
+      break;
+#endif
+    case BX_MSR_VMX_MISC:
+      val64 = VMX_MSR_MISC;
       break;
     case BX_MSR_VMX_CR0_FIXED0:
       val64 = VMX_MSR_CR0_FIXED0;
@@ -202,9 +258,8 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
       // failed to find the MSR, could #GP or ignore it silently
       BX_ERROR(("RDMSR: Unknown register %#x", index));
 
-#if BX_IGNORE_BAD_MSR == 0
-      return 0; // will result in #GP fault due to unknown MSR
-#endif
+      if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+        return 0; // will result in #GP fault due to unknown MSR
   }
 
   *msr = val64;
@@ -217,7 +272,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDMSR(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 5
   if (!real_mode() && CPL != 0) {
     BX_ERROR(("RDMSR: CPL != 0 not in real mode"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   Bit32u index = ECX;
@@ -227,19 +282,26 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDMSR(bxInstruction_c *i)
   VMexit_MSR(i, VMX_VMEXIT_RDMSR, index);
 #endif
 
+#if BX_SUPPORT_VMX >= 2
+  if (BX_CPU_THIS_PTR in_vmx_guest && index == 0x808) {
+    if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_X2APIC_MODE)) {
+      RAX = VMX_Read_VTPR() & 0xff;
+      RDX = 0;
+      return;
+    }
+  }
+#endif
+
   if (!rdmsr(index, &val64))
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
 
   RAX = GET32L(val64);
   RDX = GET32H(val64);
-#else
-  BX_INFO(("RDMSR: Pentium CPU required, use --enable-cpu-level=5"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 #if BX_CPU_LEVEL >= 6
-BX_CPP_INLINE bx_bool isMemTypeValidMTRR(unsigned memtype)
+bx_bool isMemTypeValidMTRR(unsigned memtype)
 {
   switch(memtype) {
   case BX_MEMTYPE_UC:
@@ -257,6 +319,34 @@ BX_CPP_INLINE bx_bool isMemTypeValidPAT(unsigned memtype)
 {
   return (memtype == 0x07) /* UC- */ || isMemTypeValidMTRR(memtype);
 }
+
+bx_bool isValidMSR_PAT(Bit64u pat_msr)
+{
+  if (! isMemTypeValidPAT(pat_msr & 0xFF) ||
+      ! isMemTypeValidPAT((pat_msr >>  8) & 0xFF) || 
+      ! isMemTypeValidPAT((pat_msr >> 16) & 0xFF) || 
+      ! isMemTypeValidPAT((pat_msr >> 24) & 0xFF) ||
+      ! isMemTypeValidPAT((pat_msr >> 32) & 0xFF) ||
+      ! isMemTypeValidPAT((pat_msr >> 40) & 0xFF) || 
+      ! isMemTypeValidPAT((pat_msr >> 48) & 0xFF) || 
+      ! isMemTypeValidPAT(pat_msr >> 56)) return 0;
+
+  return 1;
+}
+
+bx_bool isValidMSR_FixedMTRR(Bit64u fixed_mtrr_msr)
+{
+  if (! isMemTypeValidMTRR(fixed_mtrr_msr & 0xFF) ||
+      ! isMemTypeValidMTRR((fixed_mtrr_msr >>  8) & 0xFF) || 
+      ! isMemTypeValidMTRR((fixed_mtrr_msr >> 16) & 0xFF) || 
+      ! isMemTypeValidMTRR((fixed_mtrr_msr >> 24) & 0xFF) ||
+      ! isMemTypeValidMTRR((fixed_mtrr_msr >> 32) & 0xFF) ||
+      ! isMemTypeValidMTRR((fixed_mtrr_msr >> 40) & 0xFF) || 
+      ! isMemTypeValidMTRR((fixed_mtrr_msr >> 48) & 0xFF) || 
+      ! isMemTypeValidMTRR(fixed_mtrr_msr >> 56)) return 0;
+
+  return 1;
+}
 #endif
 
 #if BX_CPU_LEVEL >= 5
@@ -267,14 +357,38 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
 
   BX_INSTR_WRMSR(BX_CPU_ID, index, val_64);
 
+  if ((index & 0x3FFFFFFF) >= BX_MSR_MAX_INDEX)
+    return 0;
+
+#if BX_SUPPORT_X2APIC
+  if (index >= 0x800 && index <= 0xBFF) {
+    if (BX_CPU_THIS_PTR msr.apicbase & 0x400)  // X2APIC mode
+      return BX_CPU_THIS_PTR lapic.write_x2apic(index, val_64);
+    else
+      return 0;
+  }
+#endif
+
   switch(index) {
 
-#if BX_SUPPORT_SEP
+#if BX_CPU_LEVEL >= 6
     case BX_MSR_SYSENTER_CS:
+      if (! BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT)) {
+        // failed to find the MSR, could #GP or ignore it silently
+        BX_ERROR(("WRMSR MSR_SYSENTER_CS: SYSENTER/SYSEXIT feature not enabled !"));
+        if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+          return 0; // will result in #GP fault due to unknown MSR
+      }
       BX_CPU_THIS_PTR msr.sysenter_cs_msr = val32_lo;
       break;
 
     case BX_MSR_SYSENTER_ESP:
+      if (! BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT)) {
+        // failed to find the MSR, could #GP or ignore it silently
+        BX_ERROR(("WRMSR MSR_SYSENTER_ESP: SYSENTER/SYSEXIT feature not enabled !"));
+        if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+          return 0; // will result in #GP fault due to unknown MSR
+      }
 #if BX_SUPPORT_X86_64
       if (! IsCanonical(val_64)) {
         BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_SYSENTER_ESP !"));
@@ -285,6 +399,12 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
       break;
 
     case BX_MSR_SYSENTER_EIP:
+      if (! BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT)) {
+        // failed to find the MSR, could #GP or ignore it silently
+        BX_ERROR(("WRMSR MSR_SYSENTER_EIP: SYSENTER/SYSEXIT feature not enabled !"));
+        if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+          return 0; // will result in #GP fault due to unknown MSR
+      }
 #if BX_SUPPORT_X86_64
       if (! IsCanonical(val_64)) {
         BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_SYSENTER_EIP !"));
@@ -340,15 +460,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
       break;
 
     case BX_MSR_MTRRFIX64K_00000:
-      if (! isMemTypeValidMTRR(val32_lo & 0xFF) ||
-          ! isMemTypeValidMTRR((val32_lo >>  8) & 0xFF) || 
-          ! isMemTypeValidMTRR((val32_lo >> 16) & 0xFF) || 
-          ! isMemTypeValidMTRR(val32_lo >> 24) ||
-          ! isMemTypeValidMTRR(val32_hi & 0xFF) ||
-          ! isMemTypeValidMTRR((val32_hi >>  8) & 0xFF) || 
-          ! isMemTypeValidMTRR((val32_hi >> 16) & 0xFF) || 
-          ! isMemTypeValidMTRR(val32_hi >> 24))
-      {
+      if (! isValidMSR_FixedMTRR(val_64)) {
         BX_ERROR(("WRMSR: attempt to write invalid Memory Type to MSR_MTRRFIX64K_00000 !"));
         return 0;
       }
@@ -356,15 +468,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
       break;
     case BX_MSR_MTRRFIX16K_80000:
     case BX_MSR_MTRRFIX16K_A0000:
-      if (! isMemTypeValidMTRR(val32_lo & 0xFF) ||
-          ! isMemTypeValidMTRR((val32_lo >>  8) & 0xFF) || 
-          ! isMemTypeValidMTRR((val32_lo >> 16) & 0xFF) || 
-          ! isMemTypeValidMTRR(val32_lo >> 24) ||
-          ! isMemTypeValidMTRR(val32_hi & 0xFF) ||
-          ! isMemTypeValidMTRR((val32_hi >>  8) & 0xFF) || 
-          ! isMemTypeValidMTRR((val32_hi >> 16) & 0xFF) || 
-          ! isMemTypeValidMTRR(val32_hi >> 24))
-      {
+      if (! isValidMSR_FixedMTRR(val_64)) {
         BX_ERROR(("WRMSR: attempt to write invalid Memory Type to MSR_MTRRFIX16K regsiter !"));
         return 0;
       }
@@ -379,15 +483,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
     case BX_MSR_MTRRFIX4K_E8000:
     case BX_MSR_MTRRFIX4K_F0000:
     case BX_MSR_MTRRFIX4K_F8000:
-      if (! isMemTypeValidMTRR(val32_lo & 0xFF) ||
-          ! isMemTypeValidMTRR((val32_lo >>  8) & 0xFF) || 
-          ! isMemTypeValidMTRR((val32_lo >> 16) & 0xFF) || 
-          ! isMemTypeValidMTRR(val32_lo >> 24) ||
-          ! isMemTypeValidMTRR(val32_hi & 0xFF) ||
-          ! isMemTypeValidMTRR((val32_hi >>  8) & 0xFF) || 
-          ! isMemTypeValidMTRR((val32_hi >> 16) & 0xFF) || 
-          ! isMemTypeValidMTRR(val32_hi >> 24))
-      {
+      if (! isValidMSR_FixedMTRR(val_64)) {
         BX_ERROR(("WRMSR: attempt to write invalid Memory Type to fixed memory range MTRR !"));
         return 0;
       }
@@ -395,15 +491,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
       break;
 
     case BX_MSR_PAT:
-      if (! isMemTypeValidPAT(val32_lo & 0xFF) ||
-          ! isMemTypeValidPAT((val32_lo >>  8) & 0xFF) || 
-          ! isMemTypeValidPAT((val32_lo >> 16) & 0xFF) || 
-          ! isMemTypeValidPAT(val32_lo >> 24) ||
-          ! isMemTypeValidPAT(val32_hi & 0xFF) ||
-          ! isMemTypeValidPAT((val32_hi >>  8) & 0xFF) || 
-          ! isMemTypeValidPAT((val32_hi >> 16) & 0xFF) || 
-          ! isMemTypeValidPAT(val32_hi >> 24))
-      {
+      if (! isValidMSR_PAT(val_64)) {
         BX_ERROR(("WRMSR: attempt to write invalid Memory Type to MSR_PAT"));
         return 0;
       }
@@ -435,9 +523,25 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
 #endif
 
 #if BX_SUPPORT_VMX
+    // Support only two bits: lock bit (bit 0) and VMX enable (bit 2)
+    case BX_MSR_IA32_FEATURE_CONTROL:
+      if (BX_CPU_THIS_PTR msr.ia32_feature_ctrl & 0x1) {
+        BX_ERROR(("WRMSR: IA32_FEATURE_CONTROL_MSR VMX lock bit is set !"));
+        return 0;
+      }
+/*
+      if (val_64 & ~((Bit64u)(BX_IA32_FEATURE_CONTROL_BITS))) {
+        BX_ERROR(("WRMSR: attempt to set reserved bits of IA32_FEATURE_CONTROL_MSR !"));
+        return 0;
+      }
+*/
+      BX_CPU_THIS_PTR msr.ia32_feature_ctrl = val32_lo;
+      break;
+
     case BX_MSR_VMX_BASIC:
     case BX_MSR_VMX_PINBASED_CTRLS:
     case BX_MSR_VMX_PROCBASED_CTRLS:
+    case BX_MSR_VMX_PROCBASED_CTRLS2:
     case BX_MSR_VMX_VMEXIT_CTRLS:
     case BX_MSR_VMX_VMENTRY_CTRLS:
     case BX_MSR_VMX_MISC:
@@ -446,6 +550,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
     case BX_MSR_VMX_CR4_FIXED0:
     case BX_MSR_VMX_CR4_FIXED1:
     case BX_MSR_VMX_VMCS_ENUM:
+    case BX_MSR_VMX_MSR_VMX_EPT_VPID_CAP:
     case BX_MSR_VMX_TRUE_PINBASED_CTRLS:
     case BX_MSR_VMX_TRUE_PROCBASED_CTRLS:
     case BX_MSR_VMX_TRUE_VMEXIT_CTRLS:
@@ -538,9 +643,8 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
 #endif
       // failed to find the MSR, could #GP or ignore it silently
       BX_ERROR(("WRMSR: Unknown register %#x", index));
-#if BX_IGNORE_BAD_MSR == 0
-      return 0;
-#endif
+      if (! BX_CPU_THIS_PTR ignore_bad_msrs)
+        return 0; // will result in #GP fault due to unknown MSR
   }
 
   return 1;
@@ -551,16 +655,16 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
 bx_bool BX_CPU_C::relocate_apic(Bit64u val_64)
 {
   /* MSR_APICBASE
-   *  0:7    Reserved
-   *  8      This is set if CPU is BSP
-   *  9      Reserved
-   *  10     X2APIC mode bit (1=enabled 0=disabled)
-   *  11     APIC Global Enable bit (1=enabled 0=disabled)
-   *  12:35  APIC Base Address (physical)
-   *  36:63  Reserved
+   *  [0:7]  Reserved
+   *    [8]  This is set if CPU is BSP
+   *    [9]  Reserved
+   *   [10]  X2APIC mode bit (1=enabled 0=disabled)
+   *   [11]  APIC Global Enable bit (1=enabled 0=disabled)
+   * [12:M]  APIC Base Address (physical)
+   * [M:63]  Reserved
    */
 
-#define BX_MSR_APICBASE_RESERVED_BITS 0x6ff
+#define BX_MSR_APICBASE_RESERVED_BITS (0x2ff | (BX_SUPPORT_X2APIC ? 0 : 0x400))
 
   if (BX_CPU_THIS_PTR msr.apicbase & 0x800) {
     Bit32u val32_hi = GET32H(val_64), val32_lo = GET32L(val_64);
@@ -575,10 +679,30 @@ bx_bool BX_CPU_C::relocate_apic(Bit64u val_64)
       BX_ERROR(("relocate_apic: attempt to set reserved bits"));
       return 0;
     }
+
+#if BX_SUPPORT_X2APIC
+    unsigned apic_state = (BX_CPU_THIS_PTR msr.apicbase >> 10) & 3;
+    unsigned new_state = (val32_lo >> 10) & 3;
+    if (new_state == BX_APIC_STATE_INVALID) {
+      BX_ERROR(("relocate_apic: attempt to set invalid apic state"));
+      return 0;
+    }
+    if (apic_state == BX_APIC_X2APIC_MODE && new_state != BX_APIC_GLOBALLY_DISABLED) {
+      BX_ERROR(("relocate_apic: attempt to switch from x2apic -> xapic"));
+      return 0;
+    }
+#endif
+
     BX_CPU_THIS_PTR msr.apicbase = (bx_phy_address) val_64;
     BX_CPU_THIS_PTR lapic.set_base(BX_CPU_THIS_PTR msr.apicbase);
     // TLB flush is required for emulation correctness
     TLB_flush();  // don't care about performance of apic relocation
+
+    if ((val32_lo & 0x800) == 0) {
+      // APIC global enable bit cleared, clear APIC on chip CPUID feature flag
+      BX_CPU_THIS_PTR cpuid_std_function[0x1].edx &= ~(1<<9);
+      BX_CPU_THIS_PTR cpuid_ext_function[0x1].edx &= ~(1<<9);
+    }
   }
   else {
     BX_INFO(("WRMSR: MSR_APICBASE APIC global enable bit cleared !"));
@@ -593,7 +717,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 5
   if (!real_mode() && CPL != 0) {
     BX_ERROR(("WRMSR: CPL != 0 not in real mode"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   Bit64u val_64 = ((Bit64u) EDX << 32) | EAX;
@@ -603,11 +727,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
   VMexit_MSR(i, VMX_VMEXIT_WRMSR, index);
 #endif
 
+#if BX_SUPPORT_VMX >= 2
+  if (BX_CPU_THIS_PTR in_vmx_guest && index == 0x808) {
+    if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VIRTUALIZE_X2APIC_MODE)) {
+      VMX_Write_VTPR(AL);
+      return;
+    }
+  }
+#endif
+
   if (! wrmsr(index, val_64))
-    exception(BX_GP_EXCEPTION, 0, 0);
-#else
-  BX_INFO(("WRMSR: Pentium CPU required, use --enable-cpu-level=5"));
-  exception(BX_UD_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
 #endif
 }
 

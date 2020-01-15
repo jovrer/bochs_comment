@@ -1,6 +1,8 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc,v 1.101 2009/05/14 09:01:00 vruppert Exp $
+// $Id: wx.cc,v 1.103 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////
+//
+//  Copyright (C) 2009  The Bochs Project
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
 // wxPanel called a MyPanel, which has methods to display
@@ -33,6 +35,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "param_names.h"
 #include "keymap.h"
 #include "iodev.h"
 #if BX_WITH_WX

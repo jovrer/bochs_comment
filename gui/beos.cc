@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: beos.cc,v 1.34 2009/02/08 09:05:52 vruppert Exp $
+// $Id: beos.cc,v 1.37 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -35,6 +29,7 @@
 #include <ctype.h>
 #include <string.h>
 
+#include "param_names.h"
 #include "bochs.h"
 #include "iodev.h"
 #if BX_WITH_BEOS
@@ -174,12 +169,12 @@ unsigned col_vals[256], curr_foreground, curr_background;
 
 static unsigned x_tilesize, y_tilesize;
 
-struct {
+static struct {
   BBitmap *bmap;
   unsigned xdim;
   unsigned ydim;
 } bx_bitmaps[BX_MAX_PIXMAPS];
-unsigned bx_bitmap_entries = 0;
+static unsigned bx_bitmap_entries = 0;
 
 static struct {
   BBitmap   *bitmap;
@@ -189,7 +184,8 @@ static struct {
   unsigned yorigin;
   unsigned alignment;
   void (*f)(void);
-  } bx_headerbar_entry[BX_MAX_HEADERBAR_ENTRIES];
+} bx_headerbar_entry[BX_MAX_HEADERBAR_ENTRIES];
+
 static unsigned bx_headerbar_y = 0;
 static unsigned bx_headerbar_entries = 0;
 static unsigned bx_bitmap_left_xorigin = 0;  // pixels from left
@@ -200,8 +196,7 @@ static unsigned char reverse_bitorder(unsigned char b);
 static void create_vga_font(void);
 static BBitmap *vgafont[256];
 
-  void
-bx_beos_gui_c::specific_init(int argc, char **argv,
+void bx_beos_gui_c::specific_init(int argc, char **argv,
                         unsigned tilewidth, unsigned tileheight,
                         unsigned header_bar_y)
 {

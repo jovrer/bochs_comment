@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32_enh_dbg_osdep.cc,v 1.15 2009/04/12 05:52:38 sshwarts Exp $
+// $Id: win32_enh_dbg_osdep.cc,v 1.21 2010/03/02 20:09:17 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -85,7 +85,6 @@ void RefreshDataWin();
 void OnBreak();
 void ParseBkpt();
 void SetBreak(int i);
-void SetWatchpoint(unsigned * num_watchpoints, bx_phy_address * watchpoint);
 void ChangeReg();
 int HotKey (int ww, int Alt, int Shift, int Control);
 void ActivateMenuItem (int LW);
@@ -637,9 +636,8 @@ void SpecialInit()
     EnableMenuItem (hOptMenu, CMD_FPUR, MF_GRAYED);
 #endif
 
-#if BX_SUPPORT_SSE == 0
-    EnableMenuItem (hOptMenu, CMD_XMMR, MF_GRAYED);
-#endif
+    if (! CpuSupportSSE)
+      EnableMenuItem (hOptMenu, CMD_XMMR, MF_GRAYED);
 }
 
 // append a whole row of text into a ListView, all at once
@@ -1175,7 +1173,6 @@ void ShowMemData(bx_bool initting)
 void FillPTree()
 {
     HTREEITEM h_PTroot;
-    int i;
     extern bx_list_c *root_param;
     // Note: don't multithread this display -- the user expects it to complete
     doDumpRefresh = FALSE;
@@ -1193,7 +1190,7 @@ void FillPTree()
     tvis.item.stateMask = TVIS_EXPANDED;
     h_PTroot = TreeView_InsertItem(hT,&tvis);
     tvis.item.mask = TVIF_TEXT | TVIF_CHILDREN; // don't expand any other layers
-    i = root_param->get_size();
+    int i = root_param->get_size();
     while (--i >= 0)
         MakeBL(&h_PTroot, root_param->get(i));
     ShowWindow(hT,SW_SHOW);
@@ -1254,11 +1251,7 @@ bx_bool NewFont()
 // Main Window Proc for our Dialog
 LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
 {
-    unsigned int i;
-    extern unsigned num_write_watchpoints;
-    extern unsigned num_read_watchpoints;
-    extern bx_phy_address write_watchpoint[];
-    extern bx_phy_address read_watchpoint[];
+    unsigned i;
     extern bx_bool vgaw_refresh;
 
     switch(mm)
@@ -1613,7 +1606,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                         int i = num_read_watchpoints;
                         while (j > 0)
                         {
-                            if (write_watchpoint[--j] == h)
+                            if (write_watchpoint[--j].addr == h)
                             {
                                 d->clrTextBk = RGB(0,0,0);      // black background
                                 d->clrText = RGB(255,0,150);    // write watchpoint
@@ -1622,9 +1615,9 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                         }
                         while (--i >= 0)
                         {
-                            if (read_watchpoint[i] == h)
+                            if (read_watchpoint[i].addr == h)
                             {
-                                if (j < 0)          // BOTH read and write
+                                if (j < 0)      // BOTH read and write
                                     d->clrText = RGB(0,170,255);
                                 else
                                 {
@@ -1699,12 +1692,12 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                         i = SelectedBID & 0xf;
                         if (SelectedBID >= 0x80000)         // read watchpoint
                         {
-                            if (RWP_Snapshot[i] == read_watchpoint[i])
+                            if (RWP_Snapshot[i] == read_watchpoint[i].addr)
                                 DelWatchpoint(read_watchpoint, &num_read_watchpoints, i);
                         }
                         else if (SelectedBID >= 0x40000)    // write watchpoint
                         {
-                            if (WWP_Snapshot[i] == write_watchpoint[i])
+                            if (WWP_Snapshot[i] == write_watchpoint[i].addr)
                                 DelWatchpoint(write_watchpoint, &num_write_watchpoints, i);
                         }
                         else

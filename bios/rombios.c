@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.235 2009/09/28 16:36:02 vruppert Exp $
+// $Id: rombios.c,v 1.247 2010/04/04 19:33:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -124,79 +124,15 @@
 
 #include "rombios.h"
 
-#define DEBUG_ATA          0
-#define DEBUG_INT13_HD     0
-#define DEBUG_INT13_CD     0
-#define DEBUG_INT13_ET     0
-#define DEBUG_INT13_FL     0
-#define DEBUG_INT15        0
-#define DEBUG_INT16        0
-#define DEBUG_INT1A        0
-#define DEBUG_INT74        0
-#define DEBUG_APM          0
-
-#define BX_CPU           3
-#define BX_USE_PS2_MOUSE 1
-#define BX_CALL_INT15_4F 1
-#define BX_USE_EBDA      1
-#define BX_SUPPORT_FLOPPY 1
-#define BX_FLOPPY_ON_CNT 37   /* 2 seconds */
-#define BX_PCIBIOS       1
-#define BX_APM           1
-
-#define BX_USE_ATADRV    1
-#define BX_ELTORITO_BOOT 1
-
-#define BX_MAX_ATA_INTERFACES   4
-#define BX_MAX_ATA_DEVICES      (BX_MAX_ATA_INTERFACES*2)
-
-#define BX_VIRTUAL_PORTS 1 /* normal output to Bochs ports */
-#define BX_DEBUG_SERIAL  0 /* output to COM1 */
-
-   /* model byte 0xFC = AT */
-#define SYS_MODEL_ID     0xFC
-#define SYS_SUBMODEL_ID  0x00
-#define BIOS_REVISION    1
-#define BIOS_CONFIG_TABLE 0xe6f5
-
-#ifndef BIOS_BUILD_DATE
-#  define BIOS_BUILD_DATE "06/23/99"
-#endif
-
-  // 1K of base memory used for Extended Bios Data Area (EBDA)
-  // EBDA is used for PS/2 mouse support, and IDE BIOS, etc.
-#define EBDA_SEG           0x9FC0
-#define EBDA_SIZE          1              // In KiB
-#define BASE_MEM_IN_K   (640 - EBDA_SIZE)
-
-/* 256 bytes at 0x9ff00 -- 0x9ffff is used for the IPL boot table. */
-#define IPL_SEG              0x9ff0
-#define IPL_TABLE_OFFSET     0x0000
-#define IPL_TABLE_ENTRIES    8
-#define IPL_COUNT_OFFSET     0x0080  /* u16: number of valid table entries */
-#define IPL_SEQUENCE_OFFSET  0x0082  /* u16: next boot device */
-#define IPL_BOOTFIRST_OFFSET 0x0084  /* u16: user selected device */
-#define IPL_SIZE             0xff
-#define IPL_TYPE_FLOPPY      0x01
-#define IPL_TYPE_HARDDISK    0x02
-#define IPL_TYPE_CDROM       0x03
-#define IPL_TYPE_BEV         0x80
-
   // Sanity Checks
-#if BX_USE_ATADRV && BX_CPU<3
-#    error The ATA/ATAPI Driver can only to be used with a 386+ cpu
+#if BX_CPU<3
+#    error Only 386+ cpu supported
 #endif
 #if BX_USE_ATADRV && !BX_USE_EBDA
 #    error ATA/ATAPI Driver can only be used if EBDA is available
 #endif
 #if BX_ELTORITO_BOOT && !BX_USE_ATADRV
 #    error El-Torito Boot can only be use if ATA/ATAPI Driver is available
-#endif
-#if BX_PCIBIOS && BX_CPU<3
-#    error PCI BIOS can only be used with 386+ cpu
-#endif
-#if BX_APM && BX_CPU<3
-#    error APM BIOS can only be used with 386+ cpu
 #endif
 
 // define this if you want to make PCIBIOS working on a specific bridge only
@@ -227,11 +163,7 @@ ASM_START
 
 .org 0x0000
 
-#if BX_CPU >= 3
 use16 386
-#else
-use16 286
-#endif
 
 MACRO HALT
   ;; the HALT macro is called with the line number of the HALT call.
@@ -937,7 +869,7 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.235 $ $Date: 2009/09/28 16:36:02 $";
+static char bios_cvs_version_string[] = "$Revision: 1.247 $ $Date: 2010/04/04 19:33:50 $";
 
 #define BIOS_COPYRIGHT_STRING "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
@@ -1934,6 +1866,9 @@ print_bios_banner()
 #endif
 #if BX_PCIBIOS
   "pcibios "
+#endif
+#if BX_PNPBIOS
+  "pnpbios "
 #endif
 #if BX_ELTORITO_BOOT
   "eltorito "
@@ -3870,11 +3805,7 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
 
     case 0x4f:
       /* keyboard intercept */
-#if BX_CPU < 2
-      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
-#else
       // nop
-#endif
       SET_CF();
       break;
 
@@ -3921,9 +3852,6 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
     }
 
     case 0x87:
-#if BX_CPU < 3
-#  error "Int15 function 87h not supported on < 80386"
-#endif
       // +++ should probably have descriptor checks
       // +++ should have exception handlers
 
@@ -4065,10 +3993,6 @@ ASM_END
 
     case 0x88:
       // Get the amount of extended memory (above 1M)
-#if BX_CPU < 2
-      regs.u.r8.ah = UNSUPPORTED_FUNCTION;
-      SET_CF();
-#else
       regs.u.r8.al = inb_cmos(0x30);
       regs.u.r8.ah = inb_cmos(0x31);
 
@@ -4078,7 +4002,6 @@ ASM_END
         regs.u.r16.ax = 0xffc0;
 
       CLEAR_CF();
-#endif
       break;
 
   case 0x89:
@@ -4628,9 +4551,8 @@ ASM_END
                 extended_memory_size <<= 8;
                 extended_memory_size |= inb_cmos(0x34);
                 extended_memory_size *= 64;
-                // greater than EFF00000???
-                if(extended_memory_size > 0x3bc000) {
-                    extended_memory_size = 0x3bc000; // everything after this is reserved memory until we get to 0x100000000
+                if(extended_memory_size > 0x2fc000) {
+                    extended_memory_size = 0x2fc000; // everything after this is reserved memory until we get to 0x100000000
                 }
                 extended_memory_size *= 1024;
                 extended_memory_size += (16L * 1024 * 1024);
@@ -4654,52 +4576,68 @@ ASM_END
                 {
                     case 0:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x0000000L, 0x0009f000L, 0, 0, 1);
+                                       0x0000000L, 0x0009f000L, 0, 0, E820_RAM);
                         regs.u.r32.ebx = 1;
                         break;
                     case 1:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x0009f000L, 0x000a0000L, 0, 0, 2);
+                                       0x0009f000L, 0x000a0000L, 0, 0, E820_RESERVED);
                         regs.u.r32.ebx = 2;
                         break;
                     case 2:
                         set_e820_range(ES, regs.u.r16.di,
-                                       0x000e8000L, 0x00100000L, 0, 0, 2);
-                        regs.u.r32.ebx = 3;
+                                       0x000e8000L, 0x00100000L, 0, 0, E820_RESERVED);
+                        if (extended_memory_size <= 0x100000)
+                            regs.u.r32.ebx = 6;
+                        else
+                            regs.u.r32.ebx = 3;
                         break;
                     case 3:
 #if BX_ROMBIOS32
+#ifdef BX_USE_EBDA_TABLES
                         set_e820_range(ES, regs.u.r16.di,
                                        0x00100000L,
-                                       extended_memory_size - ACPI_DATA_SIZE, 0, 0, 1);
+                                       extended_memory_size - ACPI_DATA_SIZE - MPTABLE_MAX_SIZE, 0, 0, E820_RAM);
                         regs.u.r32.ebx = 4;
 #else
                         set_e820_range(ES, regs.u.r16.di,
                                        0x00100000L,
-                                       extended_memory_size, 0, 0, 1);
+                                       extended_memory_size - ACPI_DATA_SIZE, 0, 0, E820_RAM);
                         regs.u.r32.ebx = 5;
+#endif
+#else
+                        set_e820_range(ES, regs.u.r16.di,
+                                       0x00100000L,
+                                       extended_memory_size, 0, 0, E820_RAM);
+                        regs.u.r32.ebx = 6;
 #endif
                         break;
                     case 4:
                         set_e820_range(ES, regs.u.r16.di,
-                                       extended_memory_size - ACPI_DATA_SIZE,
-                                       extended_memory_size, 0, 0, 3); // ACPI RAM
+                                       extended_memory_size - ACPI_DATA_SIZE - MPTABLE_MAX_SIZE,
+                                       extended_memory_size - ACPI_DATA_SIZE, 0, 0, E820_RESERVED);
                         regs.u.r32.ebx = 5;
                         break;
                     case 5:
+                        set_e820_range(ES, regs.u.r16.di,
+                                       extended_memory_size - ACPI_DATA_SIZE,
+                                       extended_memory_size, 0, 0, E820_ACPI);
+                        regs.u.r32.ebx = 6;
+                        break;
+                    case 6:
                         /* 256KB BIOS area at the end of 4 GB */
                         set_e820_range(ES, regs.u.r16.di,
-                                       0xfffc0000L, 0x00000000L, 0, 0, 2);
+                                       0xfffc0000L, 0x00000000L, 0, 0, E820_RESERVED);
                         if (extra_highbits_memory_size || extra_lowbits_memory_size)
-                            regs.u.r32.ebx = 6;
+                            regs.u.r32.ebx = 7;
                         else
                             regs.u.r32.ebx = 0;
                         break;
-                    case 6:
+                    case 7:
                         /* Maping of memory above 4 GB */
                         set_e820_range(ES, regs.u.r16.di, 0x00000000L,
                             extra_lowbits_memory_size, 1, extra_highbits_memory_size
-                                       + 1, 1);
+                                       + 1, E820_RAM);
                         regs.u.r32.ebx = 0;
                         break;
                     default:  /* AX=E820, DX=534D4150, BX unrecognized */
@@ -4916,13 +4854,8 @@ dequeue_key(scan_code, ascii_code, incr)
   Bit16u ss;
   Bit8u  acode, scode;
 
-#if BX_CPU < 2
-  buffer_start = 0x001E;
-  buffer_end   = 0x003E;
-#else
   buffer_start = read_word(0x0040, 0x0080);
   buffer_end   = read_word(0x0040, 0x0082);
-#endif
 
   buffer_head = read_word(0x0040, 0x001a);
   buffer_tail = read_word(0x0040, 0x001c);
@@ -5224,13 +5157,8 @@ enqueue_key(scan_code, ascii_code)
 {
   Bit16u buffer_start, buffer_end, buffer_head, buffer_tail, temp_tail;
 
-#if BX_CPU < 2
-  buffer_start = 0x001E;
-  buffer_end   = 0x003E;
-#else
   buffer_start = read_word(0x0040, 0x0080);
   buffer_end   = read_word(0x0040, 0x0082);
-#endif
 
   buffer_head = read_word(0x0040, 0x001A);
   buffer_tail = read_word(0x0040, 0x001C);
@@ -5420,7 +5348,7 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
       nlspt = read_word(ebda_seg, &EbdaData->ata.devices[device].lchs.spt);
       count = read_byte(ebda_seg, &EbdaData->ata.hdcount);
 
-      nlc = nlc - 2; /* 0 based, last sector not used */
+      nlc = nlc - 1; /* 0 based */
       SET_AL(0);
       SET_CH(nlc & 0xff);
       SET_CL(((nlc >> 2) & 0xc0) | (nlspt & 0x3f));
@@ -6777,7 +6705,7 @@ BX_DEBUG_INT13_HD("int13_f08\n");
         hd_heads <<= 4;
       }
 
-      max_cylinder = hd_cylinders - 2; /* 0 based */
+      max_cylinder = hd_cylinders - 1; /* 0 based */
       SET_AL(0);
       SET_CH(max_cylinder & 0xff);
       SET_CL(((max_cylinder >> 2) & 0xc0) | (hd_sectors & 0x3f));
@@ -9173,6 +9101,28 @@ ebda_post:
 ;--------------------
 ; relocated here because the primary POST area isnt big enough.
 eoi_jmp_post:
+  mov al, #0x11 ; send initialisation commands
+  out 0x20, al
+  out 0xa0, al
+  mov al, #0x08
+  out 0x21, al
+  mov al, #0x70
+  out 0xa1, al
+  mov al, #0x04
+  out 0x21, al
+  mov al, #0x02
+  out 0xa1, al
+  mov al, #0x01
+  out 0x21, al
+  out 0xa1, al
+  mov  al, #0xb8
+  out  0x21, AL ;master pic: unmask IRQ 0, 1, 2, 6
+#if BX_USE_PS2_MOUSE
+  mov  al, #0x8f
+#else
+  mov  al, #0x9f
+#endif
+  out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
   mov   al, #0x20
   out   #0xA0, al ;; slave  PIC EOI
   mov   al, #0x20
@@ -10288,13 +10238,53 @@ checksum_out:
   ret
 
 
-;; We need a copy of this string, but we are not actually a PnP BIOS,
-;; so make sure it is *not* aligned, so OSes will not see it if they scan.
 .align 16
+#if !BX_PNPBIOS
+;; Make sure the pnpbios structure is *not* aligned, so OSes will not see it if
+;; they scan.
   db 0
-pnp_string:
+#endif
+pnpbios_structure:
   .ascii "$PnP"
+  db 0x10 ;; version
+  db 0x21 ;; length
+  dw 0x0 ;; control field
+  db 0xd1 ;; checksum
+  dd 0xf0000 ;; event notification flag address
+  dw pnpbios_real ;; real mode 16 bit offset
+  dw 0xf000 ;; real mode 16 bit segment
+  dw pnpbios_prot ;; 16 bit protected mode offset
+  dd 0xf0000 ;; 16 bit protected mode segment base
+  dd 0x0 ;; OEM device identifier
+  dw 0xf000 ;; real mode 16 bit data segment
+  dd 0xf0000 ;; 16 bit protected mode segment base
 
+pnpbios_prot:
+  push ebp
+  mov  ebp, esp
+  jmp  pnpbios_code
+pnpbios_real:
+  push ebp
+  movzx ebp, sp
+pnpbios_code:
+  mov  ax, 8[ebp]
+  cmp  ax, #0x60 ;; Get Version and Installation Check
+  jnz  pnpbios_fail
+  push ds
+  push di
+  mov  ds, 12[bp]
+  mov  di, 10[bp]
+  mov  ax, #0x0101
+  mov  [di], ax
+  pop  di
+  pop  ds
+  xor  ax, ax ;; SUCCESS
+  jmp  pnpbios_exit
+pnpbios_fail:
+  mov  ax, #0x82 ;; FUNCTION_NOT_SUPPORTED
+pnpbios_exit:
+  pop ebp
+  retf
 
 rom_scan:
   ;; Scan for existence of valid expansion ROMS.
@@ -10339,7 +10329,7 @@ block_count_rounded:
   ;; That should stop it grabbing INT 19h; we will use its BEV instead.
   mov  ax, #0xf000
   mov  es, ax
-  lea  di, pnp_string
+  lea  di, pnpbios_structure
 
   mov  bp, sp   ;; Call ROM init routine using seg:off on stack
   db   0xff     ;; call_far ss:[bp+0]
@@ -10372,7 +10362,7 @@ block_count_rounded:
   ;; Point ES:DI at "$PnP", which tells the ROM that we are a PnP BIOS.
   mov  bx, #0xf000
   mov  es, bx
-  lea  di, pnp_string
+  lea  di, pnpbios_structure
   /* jump to BCV function entry pointer */
   mov  bp, sp   ;; Call ROM BCV routine using seg:off on stack
   db   0xff     ;; call_far ss:[bp+0]
@@ -10446,6 +10436,55 @@ post_init_pic:
   mov  al, #0x9f
 #endif
   out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
+  ret
+
+post_init_ivt:
+  ;; set all interrupts to default handler
+  xor  bx, bx         ;; offset index
+  mov  cx, #0x0100    ;; counter (256 interrupts)
+  mov  ax, #dummy_iret_handler
+  mov  dx, #0xF000
+
+post_default_ints:
+  mov  [bx], ax
+  add  bx, #2
+  mov  [bx], dx
+  add  bx, #2
+  loop post_default_ints
+
+  ;; Printer Services vector
+  SET_INT_VECTOR(0x17, #0xF000, #int17_handler)
+
+  ;; Bootstrap failure vector
+  SET_INT_VECTOR(0x18, #0xF000, #int18_handler)
+
+  ;; Bootstrap Loader vector
+  SET_INT_VECTOR(0x19, #0xF000, #int19_handler)
+
+  ;; User Timer Tick vector
+  SET_INT_VECTOR(0x1c, #0xF000, #int1c_handler)
+
+  ;; Memory Size Check vector
+  SET_INT_VECTOR(0x12, #0xF000, #int12_handler)
+
+  ;; Equipment Configuration Check vector
+  SET_INT_VECTOR(0x11, #0xF000, #int11_handler)
+
+  ;; System Services
+  SET_INT_VECTOR(0x15, #0xF000, #int15_handler)
+
+  ;; set vectors 0x60 - 0x66h to zero (0:180..0:19b)
+  xor  ax, ax
+  mov  cx, #0x000E ;; 14 words
+  mov  di, #0x0180
+  cld
+  rep
+    stosw
+
+  ;; set vector 0x79 to zero
+  ;; this is used by 'gardian angel' protection system
+  SET_INT_VECTOR(0x79, #0, #0)
+
   ret
 
 ;; the following area can be used to write dynamically generated tables
@@ -10556,27 +10595,11 @@ normal_post:
 
   call _log_bios_start
 
-  ;; set all interrupts to default handler
-  xor  bx, bx         ;; offset index
-  mov  cx, #0x0100    ;; counter (256 interrupts)
-  mov  ax, #dummy_iret_handler
-  mov  dx, #0xF000
-
-post_default_ints:
-  mov  [bx], ax
-  add  bx, #2
-  mov  [bx], dx
-  add  bx, #2
-  loop post_default_ints
-
-  ;; set vector 0x79 to zero
-  ;; this is used by 'gardian angel' protection system
-  SET_INT_VECTOR(0x79, #0, #0)
+  call post_init_ivt
 
   ;; base memory in K 40:13 (word)
   mov  ax, #BASE_MEM_IN_K
   mov  0x0413, ax
-
 
   ;; Manufacturing Test 40:12
   ;;   zerod out above
@@ -10584,28 +10607,6 @@ post_default_ints:
   ;; Warm Boot Flag 0040:0072
   ;;   value of 1234h = skip memory checks
   ;;   zerod out above
-
-
-  ;; Printer Services vector
-  SET_INT_VECTOR(0x17, #0xF000, #int17_handler)
-
-  ;; Bootstrap failure vector
-  SET_INT_VECTOR(0x18, #0xF000, #int18_handler)
-
-  ;; Bootstrap Loader vector
-  SET_INT_VECTOR(0x19, #0xF000, #int19_handler)
-
-  ;; User Timer Tick vector
-  SET_INT_VECTOR(0x1c, #0xF000, #int1c_handler)
-
-  ;; Memory Size Check vector
-  SET_INT_VECTOR(0x12, #0xF000, #int12_handler)
-
-  ;; Equipment Configuration Check vector
-  SET_INT_VECTOR(0x11, #0xF000, #int11_handler)
-
-  ;; System Services
-  SET_INT_VECTOR(0x15, #0xF000, #int15_handler)
 
   ;; EBDA setup
   call ebda_post
@@ -11255,7 +11256,7 @@ int1a_handler:
   jne  int1a_normal
   call pcibios_real
   jc   pcibios_error
-  iret
+  retf 2
 pcibios_error:
   mov  bl, ah
   mov  ah, #0xb1

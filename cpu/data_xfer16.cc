@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer16.cc,v 1.65 2009/05/21 10:39:40 sshwarts Exp $
+// $Id: data_xfer16.cc,v 1.68 2010/03/14 15:51:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -67,7 +61,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EwSwR(bxInstruction_c *i)
   /* Illegal to use nonexisting segments */
   if (i->nnn() >= 6) {
     BX_INFO(("MOV_EwSw: using of nonexisting segment register %d", i->nnn()));
-    exception(BX_UD_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0);
   }
 
   Bit16u seg_reg = BX_CPU_THIS_PTR sregs[i->nnn()].selector.value;
@@ -85,7 +79,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EwSwM(bxInstruction_c *i)
   /* Illegal to use nonexisting segments */
   if (i->nnn() >= 6) {
     BX_INFO(("MOV_EwSw: using of nonexisting segment register %d", i->nnn()));
-    exception(BX_UD_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0);
   }
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -101,7 +95,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_SwEw(bxInstruction_c *i)
   /* Attempt to load CS or nonexisting segment register */
   if (i->nnn() >= 6 || i->nnn() == BX_SEG_REG_CS) {
     BX_INFO(("MOV_EwSw: can't use this segment register %d", i->nnn()));
-    exception(BX_UD_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0);
   }
 
   if (i->modC0()) {
@@ -226,176 +220,96 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XCHG_EwGwR(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVO_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_OF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVO_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNO_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (!get_OF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNO_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVB_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_CF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVB_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNB_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (!get_CF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNB_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVZ_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_ZF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVZ_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNZ_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (!get_ZF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNZ_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVBE_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_CF() || get_ZF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVBE_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNBE_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (! (get_CF() || get_ZF()))
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNBE_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVS_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_SF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVS_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNS_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (!get_SF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNS_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVP_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_PF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVP_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNP_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (!get_PF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNP_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVL_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (getB_SF() != getB_OF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVL_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNL_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (getB_SF() == getB_OF())
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNL_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVLE_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (get_ZF() || (getB_SF() != getB_OF()))
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVLE_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMOVNLE_GwEwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   if (! get_ZF() && (getB_SF() == getB_OF()))
     BX_WRITE_16BIT_REG(i->nnn(), BX_READ_16BIT_REG(i->rm()));
-#else
-  BX_INFO(("CMOVNLE_GwEw: --enable-cpu-level=6 required"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }

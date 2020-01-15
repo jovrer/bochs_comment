@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_misc.cc,v 1.21 2009/10/18 19:24:56 sshwarts Exp $
+// $Id: fpu_misc.cc,v 1.24 2010/02/25 22:04:31 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2009 Stanislav Shwartsman
@@ -33,7 +33,6 @@
 /* D9 C8 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXCH_STi(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -47,31 +46,29 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXCH_STi(bxInstruction_c *i)
 
   if (st0_tag == FPU_Tag_Empty || sti_tag == FPU_Tag_Empty)
   {
-      FPU_exception(FPU_EX_Stack_Underflow);
+     FPU_exception(FPU_EX_Stack_Underflow);
 
-      if(BX_CPU_THIS_PTR the_i387.is_IA_masked())
-      {
-          /* Masked response */
-          if (st0_tag == FPU_Tag_Empty)
-              st0_reg = floatx80_default_nan;
+     if(BX_CPU_THIS_PTR the_i387.is_IA_masked())
+     {
+         /* Masked response */
+         if (st0_tag == FPU_Tag_Empty)
+             st0_reg = floatx80_default_nan;
 
-          if (sti_tag == FPU_Tag_Empty)
-              sti_reg = floatx80_default_nan;
-      }
-      else return;
+         if (sti_tag == FPU_Tag_Empty)
+             sti_reg = floatx80_default_nan;
+     }
+     else {
+         return;
+     }
   }
 
   BX_WRITE_FPU_REG(st0_reg, i->rm());
   BX_WRITE_FPU_REG(sti_reg, 0);
-#else
-  BX_INFO(("FXCH_STi: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 E0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCHS(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -83,15 +80,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCHS(bxInstruction_c *i)
      floatx80 st0_reg = BX_READ_FPU_REG(0);
      BX_WRITE_FPU_REG(floatx80_chs(st0_reg), 0);
   }
-#else
-  BX_INFO(("FCHS: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 E1 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FABS(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -103,54 +96,39 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FABS(bxInstruction_c *i)
      floatx80 st0_reg = BX_READ_FPU_REG(0);
      BX_WRITE_FPU_REG(floatx80_abs(st0_reg), 0);
   }
-#else
-  BX_INFO(("FABS: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F6 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FDECSTP(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
   BX_CPU_THIS_PTR the_i387.tos = (BX_CPU_THIS_PTR the_i387.tos-1) & 7;
-#else
-  BX_INFO(("FDECSTP: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F7 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FINCSTP(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
   BX_CPU_THIS_PTR the_i387.tos = (BX_CPU_THIS_PTR the_i387.tos+1) & 7;
-#else
-  BX_INFO(("FINCSTP: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DD C0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FFREE_STi(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
   BX_CPU_THIS_PTR the_i387.FPU_settagi(FPU_Tag_Empty, i->rm());
-#else
-  BX_INFO(("FFREE_STi: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /*
@@ -161,7 +139,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FFREE_STi(bxInstruction_c *i)
 /* DF C0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FFREEP_STi(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -169,9 +146,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FFREEP_STi(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR the_i387.FPU_settagi(FPU_Tag_Empty, i->rm());
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FFREEP_STi: required FPU, configure --enable-fpu"));
-#endif
 }
 
 #endif

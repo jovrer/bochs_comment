@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: lazy_flags.cc,v 1.52 2009/03/22 21:12:35 sshwarts Exp $
+// $Id: lazy_flags.cc,v 1.54 2010/04/22 17:41:05 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -218,7 +212,7 @@ bx_bool BX_CPU_C::get_AFLazy(void)
 }
 
 #define GET_ADD_OVERFLOW(op1, op2, result, mask) \
-  (((~((op1) ^ (op2)) & ((op2) ^ (result))) & (mask)) != 0)
+  (((((op1) ^ (result)) & ((op2) ^ (result))) & (mask)) != 0)
 
 #define GET_SUB_OVERFLOW(op1, op2, result, mask) \
    (((((op1) ^ (op2)) & ((op1) ^ (result))) & (mask)) != 0)

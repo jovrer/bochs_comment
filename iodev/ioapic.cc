@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.cc,v 1.49 2009/02/22 17:37:09 sshwarts Exp $
+// $Id: ioapic.cc,v 1.51 2010/02/28 14:52:17 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -158,7 +152,7 @@ Bit32u bx_ioapic_c::read_aligned(bx_phy_address address)
   // only reached when reading data register
   switch (ioregsel) {
   case 0x00:  // APIC ID, note this is 4bits, the upper 4 are reserved
-    data = ((id & APIC_ID_MASK) << 24);
+    data = ((id & apic_id_mask) << 24);
     break;
   case 0x01:  // version
     data = BX_IOAPIC_VERSION_ID;
@@ -194,7 +188,7 @@ void bx_ioapic_c::write_aligned(bx_phy_address address, Bit32u value)
   switch (ioregsel) {
     case 0x00: // set APIC ID
       {
-	Bit8u newid = (value >> 24) & APIC_ID_MASK;
+	Bit8u newid = (value >> 24) & apic_id_mask;
 	BX_INFO(("IOAPIC: setting id to 0x%x", newid));
 	set_id (newid);
 	return;

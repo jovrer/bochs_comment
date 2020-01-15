@@ -1,6 +1,6 @@
 %{
 /////////////////////////////////////////////////////////////////////////
-// $Id: lexer.l,v 1.32 2009/10/29 15:49:50 sshwarts Exp $
+// $Id: lexer.l,v 1.36 2010/01/05 13:59:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdlib.h>
@@ -108,8 +108,8 @@ dma             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_DMA); }
 irq             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_IRQ); }
 pic             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PIC); }
 u               |
-disasm          |
-disassemble     { BEGIN(DISASM); bxlval.sval = strdup(bxtext); return(BX_TOKEN_DISASSEMBLE); }
+disasm          { BEGIN(DISASM); bxlval.sval = strdup(bxtext); return(BX_TOKEN_DISASM); }
+hex             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_HEX); }
 instrument      { bxlval.sval = strdup(bxtext); return(BX_TOKEN_INSTRUMENT); }
 stop            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_STOP); }
 doit            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_DOIT); }
@@ -235,6 +235,7 @@ calc            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CALC); }
 "|"             { return ('|'); }
 "^"             { return ('^'); }
 "!"             { return ('!'); }
+"@"             { return ('@'); }
 "("             { return ('('); }
 ")"             { return (')'); }
 \'([^\\\'\n]|(\\.))*\'    |       /* throw away leading and trailing \" */

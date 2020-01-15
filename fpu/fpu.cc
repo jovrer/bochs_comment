@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu.cc,v 1.58 2009/10/27 20:03:35 sshwarts Exp $
+// $Id: fpu.cc,v 1.62 2010/03/14 15:51:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2009 Stanislav Shwartsman
@@ -35,7 +35,7 @@
 void BX_CPU_C::prepareFPU(bxInstruction_c *i, bx_bool check_pending_exceptions)
 {
   if (BX_CPU_THIS_PTR cr0.get_EM() || BX_CPU_THIS_PTR cr0.get_TS())
-    exception(BX_NM_EXCEPTION, 0, 0);
+    exception(BX_NM_EXCEPTION, 0);
 
   if (check_pending_exceptions)
     BX_CPU_THIS_PTR FPU_check_pending_exceptions();
@@ -63,7 +63,7 @@ void BX_CPU_C::FPU_check_pending_exceptions(void)
      // handling, which generates an IRQ 13 via the PIC chip.
 #if BX_CPU_LEVEL >= 4
      if (BX_CPU_THIS_PTR cr0.get_NE() != 0) {
-         exception(BX_MF_EXCEPTION, 0, 0);
+         exception(BX_MF_EXCEPTION, 0);
      }
      else
 #endif
@@ -202,43 +202,43 @@ bx_address BX_CPU_C::fpu_load_environment(bxInstruction_c *i)
         {
             Bit32u tmp;
 
-            tmp = read_virtual_dword(i->seg(), eaddr);
-            BX_CPU_THIS_PTR the_i387.cwd = tmp & 0xffff;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x04);
-            BX_CPU_THIS_PTR the_i387.swd = tmp & 0xffff;
-            BX_CPU_THIS_PTR the_i387.tos = (tmp >> 11) & 0x07;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x08);
-            BX_CPU_THIS_PTR the_i387.twd = tmp & 0xffff;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x0c);
-            BX_CPU_THIS_PTR the_i387.fip = tmp;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x18);
+            BX_CPU_THIS_PTR the_i387.fds = tmp & 0xffff;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x14);
+            BX_CPU_THIS_PTR the_i387.fdp = tmp;
             tmp = read_virtual_dword(i->seg(), eaddr + 0x10);
             BX_CPU_THIS_PTR the_i387.fcs = tmp & 0xffff;
             BX_CPU_THIS_PTR the_i387.foo = (tmp >> 16) & 0x07ff;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x14);
-            BX_CPU_THIS_PTR the_i387.fdp = tmp;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x18);
-            BX_CPU_THIS_PTR the_i387.fds = tmp & 0xffff;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x0c);
+            BX_CPU_THIS_PTR the_i387.fip = tmp;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x08);
+            BX_CPU_THIS_PTR the_i387.twd = tmp & 0xffff;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x04);
+            BX_CPU_THIS_PTR the_i387.swd = tmp & 0xffff;
+            BX_CPU_THIS_PTR the_i387.tos = (tmp >> 11) & 0x07;
+            tmp = read_virtual_dword(i->seg(), eaddr);
+            BX_CPU_THIS_PTR the_i387.cwd = tmp & 0xffff;
             offset = 0x1c;
         }
         else /* Protected Mode - 16 bit */
         {
             Bit16u tmp;
 
-            tmp = read_virtual_word(i->seg(), eaddr);
-            BX_CPU_THIS_PTR the_i387.cwd = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x0c);
+            BX_CPU_THIS_PTR the_i387.fds = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x0a);
+            BX_CPU_THIS_PTR the_i387.fdp = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x08);
+            BX_CPU_THIS_PTR the_i387.fcs = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x06);
+            BX_CPU_THIS_PTR the_i387.fip = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x04);
+            BX_CPU_THIS_PTR the_i387.twd = tmp;
             tmp = read_virtual_word(i->seg(), eaddr + 0x2);
             BX_CPU_THIS_PTR the_i387.swd = tmp;
             BX_CPU_THIS_PTR the_i387.tos = (tmp >> 11) & 0x07;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x04);
-            BX_CPU_THIS_PTR the_i387.twd = tmp;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x06);
-            BX_CPU_THIS_PTR the_i387.fip = tmp & 0xffff;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x08);
-            BX_CPU_THIS_PTR the_i387.fcs = tmp;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x0a);
-            BX_CPU_THIS_PTR the_i387.fdp = tmp & 0xffff;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x0c);
-            BX_CPU_THIS_PTR the_i387.fds = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr);
+            BX_CPU_THIS_PTR the_i387.cwd = tmp;
             /* opcode is defined to be zero */
             BX_CPU_THIS_PTR the_i387.foo = 0;
             offset = 0x0e;
@@ -246,58 +246,56 @@ bx_address BX_CPU_C::fpu_load_environment(bxInstruction_c *i)
     }
     else   /* Real or V86 Mode */
     {
-        Bit32u fp_ip = 0, fp_dp = 0;
+        Bit32u fp_ip, fp_dp;
 
         if (i->os32L())
         {
             Bit32u tmp;
 
-            tmp = read_virtual_dword(i->seg(), eaddr);
-            BX_CPU_THIS_PTR the_i387.cwd = tmp & 0xffff;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x18);
+            fp_dp = (tmp & 0x0ffff000) << 4;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x14);
+            fp_dp |= tmp & 0xffff;
+            BX_CPU_THIS_PTR the_i387.fdp = fp_dp;
+            BX_CPU_THIS_PTR the_i387.fds = 0;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x10);
+            BX_CPU_THIS_PTR the_i387.foo = tmp & 0x07ff;
+            fp_ip = (tmp & 0x0ffff000) << 4;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x0c);
+            fp_ip |= tmp & 0xffff;
+            BX_CPU_THIS_PTR the_i387.fip = fp_ip;
+            BX_CPU_THIS_PTR the_i387.fcs = 0;
+            tmp = read_virtual_dword(i->seg(), eaddr + 0x08);
+            BX_CPU_THIS_PTR the_i387.twd = tmp & 0xffff;
             tmp = read_virtual_dword(i->seg(), eaddr + 0x04);
             BX_CPU_THIS_PTR the_i387.swd = tmp & 0xffff;
             BX_CPU_THIS_PTR the_i387.tos = (tmp >> 11) & 0x07;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x08);
-            BX_CPU_THIS_PTR the_i387.twd = tmp & 0xffff;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x0c);
-            fp_ip = tmp & 0xffff;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x10);
-            fp_ip = fp_ip | ((tmp & 0x0ffff000) << 4);
-            BX_CPU_THIS_PTR the_i387.fip = fp_ip;
-            BX_CPU_THIS_PTR the_i387.foo = tmp & 0x07ff;
-            BX_CPU_THIS_PTR the_i387.fcs = 0;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x14);
-            fp_dp = tmp & 0xffff;
-            tmp = read_virtual_dword(i->seg(), eaddr + 0x18);
-            fp_dp = fp_dp | ((tmp & 0x0ffff000) << 4);
-            BX_CPU_THIS_PTR the_i387.fdp = fp_dp;
-            BX_CPU_THIS_PTR the_i387.fds = 0;
+            tmp = read_virtual_dword(i->seg(), eaddr);
+            BX_CPU_THIS_PTR the_i387.cwd = tmp & 0xffff;
             offset = 0x1c;
         }
         else  /* Real or V86 Mode - 16 bit */
         {
             Bit16u tmp;
 
-            tmp = read_virtual_word(i->seg(), eaddr);
-            BX_CPU_THIS_PTR the_i387.cwd = tmp;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x0c);
+            fp_dp = (tmp & 0xf000) << 4;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x0a);
+            BX_CPU_THIS_PTR the_i387.fdp = fp_dp | tmp;
+            BX_CPU_THIS_PTR the_i387.fds = 0;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x08);
+            BX_CPU_THIS_PTR the_i387.foo = tmp & 0x07ff;
+            fp_ip = (tmp & 0xf000) << 4;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x06);
+            BX_CPU_THIS_PTR the_i387.fip = fp_ip | tmp;
+            BX_CPU_THIS_PTR the_i387.fcs = 0;
+            tmp = read_virtual_word(i->seg(), eaddr + 0x04);
+            BX_CPU_THIS_PTR the_i387.twd = tmp;
             tmp = read_virtual_word(i->seg(), eaddr + 0x2);
             BX_CPU_THIS_PTR the_i387.swd = tmp;
             BX_CPU_THIS_PTR the_i387.tos = (tmp >> 11) & 0x07;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x04);
-            BX_CPU_THIS_PTR the_i387.twd = tmp;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x06);
-            fp_ip = tmp & 0xffff;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x08);
-            fp_ip = fp_ip | ((tmp & 0xf000) << 4);
-            BX_CPU_THIS_PTR the_i387.fip = fp_ip;
-            BX_CPU_THIS_PTR the_i387.foo = tmp & 0x07ff;
-            BX_CPU_THIS_PTR the_i387.fcs = 0;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x0a);
-            fp_dp = tmp & 0xffff;
-            tmp = read_virtual_word(i->seg(), eaddr + 0x0c);
-            fp_dp = fp_dp | ((tmp & 0xf000) << 4);
-            BX_CPU_THIS_PTR the_i387.fdp = fp_dp;
-            BX_CPU_THIS_PTR the_i387.fds = 0;
+            tmp = read_virtual_word(i->seg(), eaddr);
+            BX_CPU_THIS_PTR the_i387.cwd = tmp;
             offset = 0x0e;
         }
     }
@@ -323,7 +321,6 @@ bx_address BX_CPU_C::fpu_load_environment(bxInstruction_c *i)
 /* D9 /5 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDCW(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -342,15 +339,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDCW(bxInstruction_c *i)
       /* clear the B and ES bits in the status-word */
       FPU_PARTIAL_STATUS &= ~(FPU_SW_Summary | FPU_SW_Backward);
   }
-#else
-  BX_INFO(("FLDCW: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 /7 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTCW(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   Bit16u cwd = BX_CPU_THIS_PTR the_i387.get_control_word();
@@ -358,15 +351,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTCW(bxInstruction_c *i)
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   write_virtual_word(i->seg(), eaddr, cwd);
-#else
-  BX_INFO(("FNSTCW: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DD /7 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   Bit16u swd = BX_CPU_THIS_PTR the_i387.get_status_word();
@@ -374,26 +363,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW(bxInstruction_c *i)
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   write_virtual_word(i->seg(), eaddr, swd);
-#else
-  BX_INFO(("FNSTSW: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DF E0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW_AX(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
   AX = BX_CPU_THIS_PTR the_i387.get_status_word();
-#else
-  BX_INFO(("FNSTSW_AX: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DD /4 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FRSTOR(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
 
   bx_address offset = fpu_load_environment(i);
@@ -409,15 +390,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FRSTOR(bxInstruction_c *i)
      BX_WRITE_FPU_REGISTER_AND_TAG(tmp,
               IS_TAG_EMPTY(n) ? FPU_Tag_Empty : FPU_tagof(tmp), n);
   }
-#else
-  BX_INFO(("FRSTOR: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DD /6 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSAVE(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   bx_address offset = fpu_save_environment(i);
@@ -431,15 +408,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSAVE(bxInstruction_c *i)
   }
 
   BX_CPU_THIS_PTR the_i387.init();
-#else
-  BX_INFO(("FNSAVE: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* 9B E2 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNCLEX(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   FPU_PARTIAL_STATUS &= ~(FPU_SW_Backward|FPU_SW_Summary|FPU_SW_Stack_Fault|FPU_SW_Precision|
@@ -447,26 +420,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNCLEX(bxInstruction_c *i)
                    FPU_SW_Invalid);
 
   // do not update last fpu instruction pointer
-#else
-  BX_INFO(("FNCLEX: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DB E3 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNINIT(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
   BX_CPU_THIS_PTR the_i387.init();
-#else
-  BX_INFO(("FNINIT: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 /4 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDENV(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
   fpu_load_environment(i);
 
@@ -478,51 +443,36 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDENV(bxInstruction_c *i)
          BX_CPU_THIS_PTR the_i387.FPU_settagi(tag, n);
      }
   }
-#else
-  BX_INFO(("FLDENV: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 /6 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTENV(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
   fpu_save_environment(i);
   /* mask all floating point exceptions */
   FPU_CONTROL_WORD |= FPU_CW_Exceptions_Mask;
   /* clear the B and ES bits in the status word */
   FPU_PARTIAL_STATUS &= ~(FPU_SW_Backward|FPU_SW_Summary);
-#else
-  BX_INFO(("FNSTENV: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 D0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNOP(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
   FPU_update_last_instruction(i);
 
   // Perform no FPU operation. This instruction takes up space in the
   // instruction stream but does not affect the FPU or machine
   // context, except the EIP register.
-#else
-  BX_INFO(("FNOP: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPLEGACY(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   // FPU performs no specific operation and no internal x87 states
   // are affected
-#else
-  BX_INFO(("legacy FPU opcodes: required FPU, configure --enable-fpu"));
-#endif
 }
 
 #endif

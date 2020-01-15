@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gdbstub.cc,v 1.38 2009/10/15 16:14:30 sshwarts Exp $
+// $Id: gdbstub.cc,v 1.43 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2006  The Bochs Project Team
@@ -17,6 +17,8 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +38,7 @@
 #define NEED_CPU_REG_SHORTCUTS 1
 
 #include "bochs.h"
+#include "param_names.h"
 #include "cpu/cpu.h"
 #include "iodev/iodev.h"
 
@@ -691,6 +694,7 @@ static void debug_loop(void)
       }
 
       case 'g':
+      {
 #if BX_SUPPORT_X86_64 == 0
         WriteHostDWordToLittleEndian(registers + 0, EAX);
         WriteHostDWordToLittleEndian(registers + 1, ECX);
@@ -762,6 +766,7 @@ static void debug_loop(void)
 #endif
         put_reply(obuf);
         break;
+      }
 
       case '?':
         sprintf(obuf, "S%02x", SIGTRAP);
@@ -805,7 +810,7 @@ static void debug_loop(void)
         }
         else
         {
-          put_reply("Eff");
+          put_reply(""); /* not supported */
         }
         break;
 
@@ -817,6 +822,11 @@ static void debug_loop(void)
         break;
       case 'k':
         BX_PANIC(("Debugger asked us to quit"));
+        break;
+      case 'D':
+        BX_INFO(("Debugger detached"));
+        put_reply("OK");
+        return;
         break;
 
       default:

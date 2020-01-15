@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith64.cc,v 1.58 2009/01/16 18:18:58 sshwarts Exp $
+// $Id: arith64.cc,v 1.60 2010/03/14 15:51:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -567,7 +561,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG16B(bxInstruction_c *i)
 
   if (laddr & 0xf) {
     BX_ERROR(("CMPXCHG16B: not aligned memory location (#GP)"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   // check write permission for following write

@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode64.cc,v 1.235 2009/11/06 18:19:01 sshwarts Exp $
+// $Id: fetchdecode64.cc,v 1.261 2010/04/16 19:52:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -112,25 +106,6 @@ static const Bit8u BxOpcodeHasModrm64[512] = {
 // In 64-bit mode the CS, DS, ES, and SS segment overrides are ignored.
 
 // decoding instructions; accessing seg reg's by index
-static unsigned sreg_mod01or10_rm32[16] = {
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_NULL, // escape to SIB-byte
-  BX_SEG_REG_SS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_NULL, // escape to SIB-byte
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-  BX_SEG_REG_DS,
-};
-
 static unsigned sreg_mod0_base32[16] = {
   BX_SEG_REG_DS,
   BX_SEG_REG_DS,
@@ -397,12 +372,12 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* D5 /wr */ { 0, BX_IA_ERROR },
   /* D6 /wr */ { 0, BX_IA_ERROR },
   /* D7 /wr */ { 0, BX_IA_XLAT },
-  /* D8 /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD8 },
+  /* D8 /wr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD8 },
   /* D9 /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD9 },
   /* DA /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDA },
   /* DB /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDB },
-  /* DC /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDC },
-  /* DD /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDD },
+  /* DC /wr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDC },
+  /* DD /wr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDD },
   /* DE /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDE },
   /* DF /wr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDF },
   /* E0 /wr */ { BxImmediate_BrOff8 | BxTraceEnd, BX_IA_LOOPNE64_Jb },
@@ -451,7 +426,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 0A /wr */ { 0, BX_IA_ERROR },
   /* 0F 0B /wr */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /wr */ { 0, BX_IA_ERROR },
-  /* 0F 0D /wr */ { 0, BX_IA_NOP },             // 3DNow! PREFETCH on AMD, NOP on Intel
+  /* 0F 0D /wr */ { 0, BX_IA_PREFETCHW },       // 3DNow! PREFETCH on AMD, NOP on Intel
   /* 0F 0E /wr */ { 0, BX_IA_FEMMS },           // 3DNow! FEMMS
 #if BX_SUPPORT_3DNOW
   /* 0F 0F /wr */ { BxImmediate_Ib, BX_IA_ERROR, Bx3DNowOpcodeInfo },
@@ -460,11 +435,11 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
 #endif
   /* 0F 10 /wr */ { BxPrefixSSE, BX_IA_MOVUPS_VpsWpsR, BxOpcodeGroupSSE_0f10R },
   /* 0F 11 /wr */ { BxPrefixSSE, BX_IA_MOVUPS_WpsVpsR, BxOpcodeGroupSSE_0f11R },
-  /* 0F 12 /wr */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12 },
+  /* 0F 12 /wr */ { BxPrefixSSE, BX_IA_MOVHLPS_VpsWpsR, BxOpcodeGroupSSE_0f12R },
   /* 0F 13 /wr */ { 0, BX_IA_ERROR },  // MOVLPS/PD SSE group
   /* 0F 14 /wr */ { BxPrefixSSE, BX_IA_UNPCKLPS_VpsWdq, BxOpcodeGroupSSE_0f14 },
   /* 0F 15 /wr */ { BxPrefixSSE, BX_IA_UNPCKHPS_VpsWdq, BxOpcodeGroupSSE_0f15 },
-  /* 0F 16 /wr */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16 },
+  /* 0F 16 /wr */ { BxPrefixSSE, BX_IA_MOVLHPS_VpsWpsR, BxOpcodeGroupSSE_0f16R },
   /* 0F 17 /wr */ { 0, BX_IA_ERROR },  // MOHLPS/PD SSE group
   /* 0F 18 /wr */ { 0, BX_IA_NOP },    // PREFETCH HINT
   /* 0F 19 /wr */ { 0, BX_IA_NOP },    // multi-byte NOP
@@ -498,17 +473,9 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 35 /wr */ { BxTraceEnd, BX_IA_SYSEXIT },
   /* 0F 36 /wr */ { 0, BX_IA_ERROR },
   /* 0F 37 /wr */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 38 /wr */ { Bx3ByteOp, BX_IA_ERROR, BxOpcode3ByteTable0f38 }, // 3-byte escape
-#else
-  /* 0F 38 /wr */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 39 /wr */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 3A /wr */ { Bx3ByteOp | BxImmediate_Ib, BX_IA_ERROR, BxOpcode3ByteTable0f3a }, // 3-byte escape
-#else
-  /* 0F 3A /wr */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 3B /wr */ { 0, BX_IA_ERROR },
   /* 0F 3C /wr */ { 0, BX_IA_ERROR },
   /* 0F 3D /wr */ { 0, BX_IA_ERROR },
@@ -558,10 +525,10 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 69 /wr */ { BxPrefixSSE, BX_IA_PUNPCKHWD_PqQq, BxOpcodeGroupSSE_0f69 },
   /* 0F 6A /wr */ { BxPrefixSSE, BX_IA_PUNPCKHDQ_PqQq, BxOpcodeGroupSSE_0f6a },
   /* 0F 6B /wr */ { BxPrefixSSE, BX_IA_PACKSSDW_PqQq, BxOpcodeGroupSSE_0f6b },
-  /* 0F 6C /wr */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6D /wr */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6E /wr */ { BxPrefixSSE, BX_IA_MOVD_PqEd, BxOpcodeGroupSSE_0f6e },
-  /* 0F 6F /wr */ { BxPrefixSSE, BX_IA_MOVQ_PqQq, BxOpcodeGroupSSE_0f6fR },
+  /* 0F 6C /wr */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq },
+  /* 0F 6D /wr */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq },
+  /* 0F 6E /wr */ { BxPrefixSSE, BX_IA_MOVD_PqEdR, BxOpcodeGroupSSE_0f6eR },
+  /* 0F 6F /wr */ { BxPrefixSSE, BX_IA_MOVQ_PqQqR, BxOpcodeGroupSSE_0f6fR },
   /* 0F 70 /wr */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PSHUFW_PqQqIb, BxOpcodeGroupSSE_0f70 },
   /* 0F 71 /wr */ { BxGroup12, BX_IA_ERROR, BxOpcodeInfoG12R },
   /* 0F 72 /wr */ { BxGroup13, BX_IA_ERROR, BxOpcodeInfoG13R },
@@ -576,8 +543,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 7B /wr */ { 0, BX_IA_ERROR },
   /* 0F 7C /wr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7c },
   /* 0F 7D /wr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7d },
-  /* 0F 7E /wr */ { BxPrefixSSE, BX_IA_MOVD_EdPd, BxOpcodeGroupSSE_0f7e },
-  /* 0F 7F /wr */ { BxPrefixSSE, BX_IA_MOVQ_QqPq, BxOpcodeGroupSSE_0f7fR },
+  /* 0F 7E /wr */ { BxPrefixSSE, BX_IA_MOVD_EdPdR, BxOpcodeGroupSSE_0f7eR },
+  /* 0F 7F /wr */ { BxPrefixSSE, BX_IA_MOVQ_QqPqR, BxOpcodeGroupSSE_0f7fR },
   /* 0F 80 /wr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JO_Jq },
   /* 0F 81 /wr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JNO_Jq },
   /* 0F 82 /wr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JB_Jq },
@@ -634,7 +601,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F B5 /wr */ { 0, BX_IA_ERROR }, // LGS
   /* 0F B6 /wr */ { 0, BX_IA_MOVZX_GwEbR },
   /* 0F B7 /wr */ { 0, BX_IA_MOV_GwEwR }, // MOVZX_GwEw
-  /* 0F B8 /wr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fb8wR },
+  /* 0F B8 /wr */ { BxPrefixSSEF3, BX_IA_POPCNT_GwEwR },
   /* 0F B9 /wr */ { BxTraceEnd, BX_IA_UD2B },
   /* 0F BA /wr */ { BxGroup8, BX_IA_ERROR, BxOpcodeInfoG8EwIbR },
   /* 0F BB /wr */ { 0, BX_IA_BTC_EwGwR },
@@ -650,21 +617,21 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F C5 /wr */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PEXTRW_GdPqIb, BxOpcodeGroupSSE_0fc5R },
   /* 0F C6 /wr */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_SHUFPS_VpsWpsIb, BxOpcodeGroupSSE_0fc6 },
   /* 0F C7 /wr */ { 0, BX_IA_ERROR }, // CMPXCHG8B G9 group
-  /* 0F C8 /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F C9 /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CA /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CB /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CC /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CD /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CE /wr */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CF /wr */ { 0, BX_IA_BSWAP_ERX },
+  /* 0F C8 /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F C9 /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CA /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CB /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CC /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CD /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CE /wr */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CF /wr */ { 0, BX_IA_BSWAP_RX },
   /* 0F D0 /wr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd0 },
   /* 0F D1 /wr */ { BxPrefixSSE, BX_IA_PSRLW_PqQq, BxOpcodeGroupSSE_0fd1 },
   /* 0F D2 /wr */ { BxPrefixSSE, BX_IA_PSRLD_PqQq, BxOpcodeGroupSSE_0fd2 },
   /* 0F D3 /wr */ { BxPrefixSSE, BX_IA_PSRLQ_PqQq, BxOpcodeGroupSSE_0fd3 },
   /* 0F D4 /wr */ { BxPrefixSSE, BX_IA_PADDQ_PqQq, BxOpcodeGroupSSE_0fd4 },
   /* 0F D5 /wr */ { BxPrefixSSE, BX_IA_PMULLW_PqQq, BxOpcodeGroupSSE_0fd5 },
-  /* 0F D6 /wr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6 },
+  /* 0F D6 /wr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6R },
   /* 0F D7 /wr */ { BxPrefixSSE, BX_IA_PMOVMSKB_GdPRq, BxOpcodeGroupSSE_0fd7 },
   /* 0F D8 /wr */ { BxPrefixSSE, BX_IA_PSUBUSB_PqQq, BxOpcodeGroupSSE_0fd8 },
   /* 0F D9 /wr */ { BxPrefixSSE, BX_IA_PSUBUSW_PqQq, BxOpcodeGroupSSE_0fd9 },
@@ -924,12 +891,12 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* D5 /dr */ { 0, BX_IA_ERROR },
   /* D6 /dr */ { 0, BX_IA_ERROR },
   /* D7 /dr */ { 0, BX_IA_XLAT },
-  /* D8 /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD8 },
+  /* D8 /dr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD8 },
   /* D9 /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD9 },
   /* DA /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDA },
   /* DB /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDB },
-  /* DC /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDC },
-  /* DD /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDD },
+  /* DC /dr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDC },
+  /* DD /dr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDD },
   /* DE /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDE },
   /* DF /dr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDF },
   /* E0 /dr */ { BxImmediate_BrOff8 | BxTraceEnd, BX_IA_LOOPNE64_Jb },
@@ -978,7 +945,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 0A /dr */ { 0, BX_IA_ERROR },
   /* 0F 0B /dr */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /dr */ { 0, BX_IA_ERROR },
-  /* 0F 0D /dr */ { 0, BX_IA_NOP },             // 3DNow! PREFETCH on AMD, NOP on Intel
+  /* 0F 0D /dr */ { 0, BX_IA_PREFETCHW },       // 3DNow! PREFETCH on AMD, NOP on Intel
   /* 0F 0E /dr */ { 0, BX_IA_FEMMS },           // 3DNow! FEMMS
 #if BX_SUPPORT_3DNOW
   /* 0F 0F /dr */ { BxImmediate_Ib, BX_IA_ERROR, Bx3DNowOpcodeInfo },
@@ -987,11 +954,11 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
 #endif
   /* 0F 10 /dr */ { BxPrefixSSE, BX_IA_MOVUPS_VpsWpsR, BxOpcodeGroupSSE_0f10R },
   /* 0F 11 /dr */ { BxPrefixSSE, BX_IA_MOVUPS_WpsVpsR, BxOpcodeGroupSSE_0f11R },
-  /* 0F 12 /dr */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12 },
+  /* 0F 12 /dr */ { BxPrefixSSE, BX_IA_MOVHLPS_VpsWpsR, BxOpcodeGroupSSE_0f12R },
   /* 0F 13 /dr */ { 0, BX_IA_ERROR },  // MOVLPS/PD SSE group
   /* 0F 14 /dr */ { BxPrefixSSE, BX_IA_UNPCKLPS_VpsWdq, BxOpcodeGroupSSE_0f14 },
   /* 0F 15 /dr */ { BxPrefixSSE, BX_IA_UNPCKHPS_VpsWdq, BxOpcodeGroupSSE_0f15 },
-  /* 0F 16 /dr */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16 },
+  /* 0F 16 /dr */ { BxPrefixSSE, BX_IA_MOVLHPS_VpsWpsR, BxOpcodeGroupSSE_0f16R },
   /* 0F 17 /dr */ { 0, BX_IA_ERROR },  // MOHLPS/PD SSE group
   /* 0F 18 /dr */ { 0, BX_IA_NOP },    // PREFETCH HINT
   /* 0F 19 /dr */ { 0, BX_IA_NOP },    // multi-byte NOP
@@ -1025,17 +992,9 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 35 /dr */ { BxTraceEnd, BX_IA_SYSEXIT },
   /* 0F 36 /dr */ { 0, BX_IA_ERROR },
   /* 0F 37 /dr */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 38 /dr */ { Bx3ByteOp, BX_IA_ERROR, BxOpcode3ByteTable0f38 }, // 3-byte escape
-#else
-  /* 0F 38 /dr */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 39 /dr */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 3A /dr */ { Bx3ByteOp | BxImmediate_Ib, BX_IA_ERROR, BxOpcode3ByteTable0f3a }, // 3-byte escape
-#else
-  /* 0F 3A /dr */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 3B /dr */ { 0, BX_IA_ERROR },
   /* 0F 3C /dr */ { 0, BX_IA_ERROR },
   /* 0F 3D /dr */ { 0, BX_IA_ERROR },
@@ -1085,10 +1044,10 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 69 /dr */ { BxPrefixSSE, BX_IA_PUNPCKHWD_PqQq, BxOpcodeGroupSSE_0f69 },
   /* 0F 6A /dr */ { BxPrefixSSE, BX_IA_PUNPCKHDQ_PqQq, BxOpcodeGroupSSE_0f6a },
   /* 0F 6B /dr */ { BxPrefixSSE, BX_IA_PACKSSDW_PqQq, BxOpcodeGroupSSE_0f6b },
-  /* 0F 6C /dr */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6D /dr */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6E /dr */ { BxPrefixSSE, BX_IA_MOVD_PqEd, BxOpcodeGroupSSE_0f6e },
-  /* 0F 6F /dr */ { BxPrefixSSE, BX_IA_MOVQ_PqQq, BxOpcodeGroupSSE_0f6fR },
+  /* 0F 6C /dr */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq },
+  /* 0F 6D /dr */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq },
+  /* 0F 6E /dr */ { BxPrefixSSE, BX_IA_MOVD_PqEdR, BxOpcodeGroupSSE_0f6eR },
+  /* 0F 6F /dr */ { BxPrefixSSE, BX_IA_MOVQ_PqQqR, BxOpcodeGroupSSE_0f6fR },
   /* 0F 70 /dr */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PSHUFW_PqQqIb, BxOpcodeGroupSSE_0f70 },
   /* 0F 71 /dr */ { BxGroup12, BX_IA_ERROR, BxOpcodeInfoG12R },
   /* 0F 72 /dr */ { BxGroup13, BX_IA_ERROR, BxOpcodeInfoG13R },
@@ -1103,8 +1062,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 7B /dr */ { 0, BX_IA_ERROR },
   /* 0F 7C /dr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7c },
   /* 0F 7D /dr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7d },
-  /* 0F 7E /dr */ { BxPrefixSSE, BX_IA_MOVD_EdPd, BxOpcodeGroupSSE_0f7e },
-  /* 0F 7F /dr */ { BxPrefixSSE, BX_IA_MOVQ_QqPq, BxOpcodeGroupSSE_0f7fR },
+  /* 0F 7E /dr */ { BxPrefixSSE, BX_IA_MOVD_EdPdR, BxOpcodeGroupSSE_0f7eR },
+  /* 0F 7F /dr */ { BxPrefixSSE, BX_IA_MOVQ_QqPqR, BxOpcodeGroupSSE_0f7fR },
   /* 0F 80 /dr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JO_Jq },
   /* 0F 81 /dr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JNO_Jq },
   /* 0F 82 /dr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JB_Jq },
@@ -1161,7 +1120,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F B5 /dr */ { 0, BX_IA_ERROR }, // LFS
   /* 0F B6 /dr */ { 0, BX_IA_MOVZX_GdEbR },
   /* 0F B7 /dr */ { 0, BX_IA_MOVZX_GdEwR },
-  /* 0F B8 /dr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fb8dR },
+  /* 0F B8 /dr */ { BxPrefixSSEF3, BX_IA_POPCNT_GdEdR },
   /* 0F B9 /dr */ { BxTraceEnd, BX_IA_UD2B },
   /* 0F BA /dr */ { BxGroup8, BX_IA_ERROR, BxOpcodeInfoG8EdIbR },
   /* 0F BB /dr */ { 0, BX_IA_BTC_EdGdR },
@@ -1191,7 +1150,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F D3 /dr */ { BxPrefixSSE, BX_IA_PSRLQ_PqQq, BxOpcodeGroupSSE_0fd3 },
   /* 0F D4 /dr */ { BxPrefixSSE, BX_IA_PADDQ_PqQq, BxOpcodeGroupSSE_0fd4 },
   /* 0F D5 /dr */ { BxPrefixSSE, BX_IA_PMULLW_PqQq, BxOpcodeGroupSSE_0fd5 },
-  /* 0F D6 /dr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6 },
+  /* 0F D6 /dr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6R },
   /* 0F D7 /dr */ { BxPrefixSSE, BX_IA_PMOVMSKB_GdPRq, BxOpcodeGroupSSE_0fd7 },
   /* 0F D8 /dr */ { BxPrefixSSE, BX_IA_PSUBUSB_PqQq, BxOpcodeGroupSSE_0fd8 },
   /* 0F D9 /dr */ { BxPrefixSSE, BX_IA_PSUBUSW_PqQq, BxOpcodeGroupSSE_0fd9 },
@@ -1451,12 +1410,12 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* D5 /qr */ { 0, BX_IA_ERROR },
   /* D6 /qr */ { 0, BX_IA_ERROR },
   /* D7 /qr */ { 0, BX_IA_XLAT },
-  /* D8 /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD8 },
+  /* D8 /qr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD8 },
   /* D9 /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointD9 },
   /* DA /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDA },
   /* DB /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDB },
-  /* DC /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDC },
-  /* DD /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDD },
+  /* DC /qr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDC },
+  /* DD /qr */ { BxGroupN, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDD },
   /* DE /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDE },
   /* DF /qr */ { BxFPEscape, BX_IA_ERROR, BxOpcodeInfo_FloatingPointDF },
   /* E0 /qr */ { BxImmediate_BrOff8 | BxTraceEnd, BX_IA_LOOPNE64_Jb },
@@ -1505,7 +1464,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 0A /qr */ { 0, BX_IA_ERROR },
   /* 0F 0B /qr */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /qr */ { 0, BX_IA_ERROR },
-  /* 0F 0D /qr */ { 0, BX_IA_NOP },             // 3DNow! PREFETCH on AMD, NOP on Intel
+  /* 0F 0D /qr */ { 0, BX_IA_PREFETCHW },       // 3DNow! PREFETCH on AMD, NOP on Intel
   /* 0F 0E /qr */ { 0, BX_IA_FEMMS },           // 3DNow! FEMMS
 #if BX_SUPPORT_3DNOW
   /* 0F 0F /qr */ { BxImmediate_Ib, BX_IA_ERROR, Bx3DNowOpcodeInfo },
@@ -1514,11 +1473,11 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
 #endif
   /* 0F 10 /qr */ { BxPrefixSSE, BX_IA_MOVUPS_VpsWpsR, BxOpcodeGroupSSE_0f10R },
   /* 0F 11 /qr */ { BxPrefixSSE, BX_IA_MOVUPS_WpsVpsR, BxOpcodeGroupSSE_0f11R },
-  /* 0F 12 /qr */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12 },
+  /* 0F 12 /qr */ { BxPrefixSSE, BX_IA_MOVHLPS_VpsWpsR, BxOpcodeGroupSSE_0f12R },
   /* 0F 13 /qr */ { 0, BX_IA_ERROR },  // MOVLPS/PD SSE group
   /* 0F 14 /qr */ { BxPrefixSSE, BX_IA_UNPCKLPS_VpsWdq, BxOpcodeGroupSSE_0f14 },
   /* 0F 15 /qr */ { BxPrefixSSE, BX_IA_UNPCKHPS_VpsWdq, BxOpcodeGroupSSE_0f15 },
-  /* 0F 16 /qr */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16 },
+  /* 0F 16 /qr */ { BxPrefixSSE, BX_IA_MOVLHPS_VpsWpsR, BxOpcodeGroupSSE_0f16R },
   /* 0F 17 /qr */ { 0, BX_IA_ERROR },  // MOHLPS/PD SSE group
   /* 0F 18 /qr */ { 0, BX_IA_NOP },    // PREFETCH HINT
   /* 0F 19 /qr */ { 0, BX_IA_NOP },    // multi-byte NOP
@@ -1552,17 +1511,9 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 35 /qr */ { BxTraceEnd, BX_IA_SYSEXIT },
   /* 0F 36 /qr */ { 0, BX_IA_ERROR },
   /* 0F 37 /qr */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 38 /qr */ { Bx3ByteOp, BX_IA_ERROR, BxOpcode3ByteTable0f38 }, // 3-byte escape
-#else
-  /* 0F 38 /qr */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 39 /qr */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 3A /qr */ { Bx3ByteOp | BxImmediate_Ib, BX_IA_ERROR, BxOpcode3ByteTable0f3a }, // 3-byte escape
-#else
-  /* 0F 3A /qr */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 3B /qr */ { 0, BX_IA_ERROR },
   /* 0F 3C /qr */ { 0, BX_IA_ERROR },
   /* 0F 3D /qr */ { 0, BX_IA_ERROR },
@@ -1612,10 +1563,10 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 69 /qr */ { BxPrefixSSE, BX_IA_PUNPCKHWD_PqQq, BxOpcodeGroupSSE_0f69 },
   /* 0F 6A /qr */ { BxPrefixSSE, BX_IA_PUNPCKHDQ_PqQq, BxOpcodeGroupSSE_0f6a },
   /* 0F 6B /qr */ { BxPrefixSSE, BX_IA_PACKSSDW_PqQq, BxOpcodeGroupSSE_0f6b },
-  /* 0F 6C /qr */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6D /qr */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6E /qr */ { BxPrefixSSE, BX_IA_MOVQ_PqEqR, BxOpcodeGroupSSE_0f6eQ },
-  /* 0F 6F /qr */ { BxPrefixSSE, BX_IA_MOVQ_PqQq, BxOpcodeGroupSSE_0f6fR },
+  /* 0F 6C /qr */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq },
+  /* 0F 6D /qr */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq },
+  /* 0F 6E /qr */ { BxPrefixSSE, BX_IA_MOVQ_PqEqR, BxOpcodeGroupSSE_0f6eQR },
+  /* 0F 6F /qr */ { BxPrefixSSE, BX_IA_MOVQ_PqQqR, BxOpcodeGroupSSE_0f6fR },
   /* 0F 70 /qr */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PSHUFW_PqQqIb, BxOpcodeGroupSSE_0f70 },
   /* 0F 71 /qr */ { BxGroup12, BX_IA_ERROR, BxOpcodeInfoG12R },
   /* 0F 72 /qr */ { BxGroup13, BX_IA_ERROR, BxOpcodeInfoG13R },
@@ -1630,8 +1581,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F 7B /qr */ { 0, BX_IA_ERROR },
   /* 0F 7C /qr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7c },
   /* 0F 7D /qr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7d },
-  /* 0F 7E /qr */ { BxPrefixSSE, BX_IA_MOVQ_EqPq, BxOpcodeGroupSSE_0f7eQ },
-  /* 0F 7F /qr */ { BxPrefixSSE, BX_IA_MOVQ_QqPq, BxOpcodeGroupSSE_0f7fR },
+  /* 0F 7E /qr */ { BxPrefixSSE, BX_IA_MOVQ_EqPqR, BxOpcodeGroupSSE_0f7eQR },
+  /* 0F 7F /qr */ { BxPrefixSSE, BX_IA_MOVQ_QqPqR, BxOpcodeGroupSSE_0f7fR },
   /* 0F 80 /qr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JO_Jq },
   /* 0F 81 /qr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JNO_Jq },
   /* 0F 82 /qr */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JB_Jq },
@@ -1688,7 +1639,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F B5 /qr */ { 0, BX_IA_ERROR }, // LGS
   /* 0F B6 /qr */ { 0, BX_IA_MOVZX_GqEbR },
   /* 0F B7 /qr */ { 0, BX_IA_MOVZX_GqEwR },
-  /* 0F B8 /qr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fb8qR },
+  /* 0F B8 /qr */ { BxPrefixSSEF3, BX_IA_POPCNT_GqEqR },
   /* 0F B9 /qr */ { BxTraceEnd, BX_IA_UD2B },
   /* 0F BA /qr */ { BxGroup8, BX_IA_ERROR, BxOpcodeInfo64G8EqIbR },
   /* 0F BB /qr */ { 0, BX_IA_BTC_EqGqR },
@@ -1718,7 +1669,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64R[512*3] = {
   /* 0F D3 /qr */ { BxPrefixSSE, BX_IA_PSRLQ_PqQq, BxOpcodeGroupSSE_0fd3 },
   /* 0F D4 /qr */ { BxPrefixSSE, BX_IA_PADDQ_PqQq, BxOpcodeGroupSSE_0fd4 },
   /* 0F D5 /qr */ { BxPrefixSSE, BX_IA_PMULLW_PqQq, BxOpcodeGroupSSE_0fd5 },
-  /* 0F D6 /qr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6 },
+  /* 0F D6 /qr */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6R },
   /* 0F D7 /qr */ { BxPrefixSSE, BX_IA_PMOVMSKB_GdPRq, BxOpcodeGroupSSE_0fd7 },
   /* 0F D8 /qr */ { BxPrefixSSE, BX_IA_PSUBUSB_PqQq, BxOpcodeGroupSSE_0fd8 },
   /* 0F D9 /qr */ { BxPrefixSSE, BX_IA_PSUBUSW_PqQq, BxOpcodeGroupSSE_0fd9 },
@@ -2038,7 +1989,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 0A /wm */ { 0, BX_IA_ERROR },
   /* 0F 0B /wm */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /wm */ { 0, BX_IA_ERROR },
-  /* 0F 0D /wm */ { 0, BX_IA_NOP },             // 3DNow! PREFETCH on AMD, NOP on Intel
+  /* 0F 0D /wm */ { 0, BX_IA_PREFETCHW },       // 3DNow! PREFETCH on AMD, NOP on Intel
   /* 0F 0E /wm */ { 0, BX_IA_FEMMS },           // 3DNow! FEMMS
 #if BX_SUPPORT_3DNOW
   /* 0F 0F /wm */ { BxImmediate_Ib, BX_IA_ERROR, Bx3DNowOpcodeInfo },
@@ -2047,11 +1998,11 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
 #endif
   /* 0F 10 /wm */ { BxPrefixSSE, BX_IA_MOVUPS_VpsWpsM, BxOpcodeGroupSSE_0f10M },
   /* 0F 11 /wm */ { BxPrefixSSE, BX_IA_MOVUPS_WpsVpsM, BxOpcodeGroupSSE_0f11M },
-  /* 0F 12 /wm */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12 },
+  /* 0F 12 /wm */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12M },
   /* 0F 13 /wm */ { BxPrefixSSE, BX_IA_MOVLPS_MqVps, BxOpcodeGroupSSE_0f13M },
   /* 0F 14 /wm */ { BxPrefixSSE, BX_IA_UNPCKLPS_VpsWdq, BxOpcodeGroupSSE_0f14 },
   /* 0F 15 /wm */ { BxPrefixSSE, BX_IA_UNPCKHPS_VpsWdq, BxOpcodeGroupSSE_0f15 },
-  /* 0F 16 /wm */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16 },
+  /* 0F 16 /wm */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16M },
   /* 0F 17 /wm */ { BxPrefixSSE, BX_IA_MOVHPS_MqVps, BxOpcodeGroupSSE_0f17M },
   /* 0F 18 /wm */ { 0, BX_IA_PREFETCH }, // opcode group G16, PREFETCH hints
   /* 0F 19 /wm */ { 0, BX_IA_NOP },      // multi-byte NOP
@@ -2085,17 +2036,9 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 35 /wm */ { BxTraceEnd, BX_IA_SYSEXIT },
   /* 0F 36 /wm */ { 0, BX_IA_ERROR },
   /* 0F 37 /wm */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 38 /wm */ { Bx3ByteOp, BX_IA_ERROR, BxOpcode3ByteTable0f38 }, // 3-byte escape
-#else
-  /* 0F 38 /wm */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 39 /wm */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 3A /wm */ { Bx3ByteOp | BxImmediate_Ib, BX_IA_ERROR, BxOpcode3ByteTable0f3a }, // 3-byte escape
-#else
-  /* 0F 3A /wm */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 3B /wm */ { 0, BX_IA_ERROR },
   /* 0F 3C /wm */ { 0, BX_IA_ERROR },
   /* 0F 3D /wm */ { 0, BX_IA_ERROR },
@@ -2117,7 +2060,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 4D /wm */ { 0, BX_IA_CMOVNL_GwEwM },
   /* 0F 4E /wm */ { 0, BX_IA_CMOVLE_GwEwM },
   /* 0F 4F /wm */ { 0, BX_IA_CMOVNLE_GwEwM },
-  /* 0F 50 /wm */ { BxPrefixSSE, BX_IA_MOVMSKPS_GdVRps, BxOpcodeGroupSSE_0f50 },
+  /* 0F 50 /wm */ { 0, BX_IA_ERROR }, // MOVMSKPS/PD
   /* 0F 51 /wm */ { BxPrefixSSE, BX_IA_SQRTPS_VpsWps, BxOpcodeGroupSSE_0f51 },
   /* 0F 52 /wm */ { BxPrefixSSE, BX_IA_RSQRTPS_VpsWps, BxOpcodeGroupSSE_0f52 },
   /* 0F 53 /wm */ { BxPrefixSSE, BX_IA_RCPPS_VpsWps, BxOpcodeGroupSSE_0f53 },
@@ -2145,10 +2088,10 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 69 /wm */ { BxPrefixSSE, BX_IA_PUNPCKHWD_PqQq, BxOpcodeGroupSSE_0f69 },
   /* 0F 6A /wm */ { BxPrefixSSE, BX_IA_PUNPCKHDQ_PqQq, BxOpcodeGroupSSE_0f6a },
   /* 0F 6B /wm */ { BxPrefixSSE, BX_IA_PACKSSDW_PqQq, BxOpcodeGroupSSE_0f6b },
-  /* 0F 6C /wm */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6D /wm */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6E /wm */ { BxPrefixSSE, BX_IA_MOVD_PqEd, BxOpcodeGroupSSE_0f6e },
-  /* 0F 6F /wm */ { BxPrefixSSE, BX_IA_MOVQ_PqQq, BxOpcodeGroupSSE_0f6fM },
+  /* 0F 6C /wm */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq },
+  /* 0F 6D /wm */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq },
+  /* 0F 6E /wm */ { BxPrefixSSE, BX_IA_MOVD_PqEdM, BxOpcodeGroupSSE_0f6eM },
+  /* 0F 6F /wm */ { BxPrefixSSE, BX_IA_MOVQ_PqQqM, BxOpcodeGroupSSE_0f6fM },
   /* 0F 70 /wm */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PSHUFW_PqQqIb, BxOpcodeGroupSSE_0f70 },
   /* 0F 71 /wm */ { 0, BX_IA_ERROR }, // SSE Group G12
   /* 0F 72 /wm */ { 0, BX_IA_ERROR }, // SSE Group G13
@@ -2163,8 +2106,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 7B /wm */ { 0, BX_IA_ERROR },
   /* 0F 7C /wm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7c },
   /* 0F 7D /wm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7d },
-  /* 0F 7E /wm */ { BxPrefixSSE, BX_IA_MOVD_EdPd, BxOpcodeGroupSSE_0f7e },
-  /* 0F 7F /wm */ { BxPrefixSSE, BX_IA_MOVQ_QqPq, BxOpcodeGroupSSE_0f7fM },
+  /* 0F 7E /wm */ { BxPrefixSSE, BX_IA_MOVD_EdPdM, BxOpcodeGroupSSE_0f7eM },
+  /* 0F 7F /wm */ { BxPrefixSSE, BX_IA_MOVQ_QqPqM, BxOpcodeGroupSSE_0f7fM },
   /* 0F 80 /wm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JO_Jq },
   /* 0F 81 /wm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JNO_Jq },
   /* 0F 82 /wm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JB_Jq },
@@ -2221,7 +2164,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F B5 /wm */ { 0, BX_IA_LGS_GwMp },
   /* 0F B6 /wm */ { 0, BX_IA_MOVZX_GwEbM },
   /* 0F B7 /wm */ { 0, BX_IA_MOV_GwEwM }, // MOVZX_GwEw
-  /* 0F B8 /wm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fb8wM },
+  /* 0F B8 /wm */ { BxPrefixSSEF3, BX_IA_POPCNT_GwEwM },
   /* 0F B9 /wm */ { BxTraceEnd, BX_IA_UD2B },
   /* 0F BA /wm */ { BxGroup8, BX_IA_ERROR, BxOpcodeInfoG8EwIbM },
   /* 0F BB /wm */ { BxLockable, BX_IA_BTC_EwGwM },
@@ -2237,22 +2180,22 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F C5 /wm */ { 0, BX_IA_ERROR }, // PEXTRW SSE group
   /* 0F C6 /wm */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_SHUFPS_VpsWpsIb, BxOpcodeGroupSSE_0fc6 },
   /* 0F C7 /wm */ { BxGroup9, BX_IA_ERROR, BxOpcodeInfoG9M },
-  /* 0F C8 /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F C9 /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CA /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CB /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CC /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CD /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CE /wm */ { 0, BX_IA_BSWAP_ERX },
-  /* 0F CF /wm */ { 0, BX_IA_BSWAP_ERX },
+  /* 0F C8 /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F C9 /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CA /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CB /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CC /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CD /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CE /wm */ { 0, BX_IA_BSWAP_RX },
+  /* 0F CF /wm */ { 0, BX_IA_BSWAP_RX },
   /* 0F D0 /wm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd0 },
   /* 0F D1 /wm */ { BxPrefixSSE, BX_IA_PSRLW_PqQq, BxOpcodeGroupSSE_0fd1 },
   /* 0F D2 /wm */ { BxPrefixSSE, BX_IA_PSRLD_PqQq, BxOpcodeGroupSSE_0fd2 },
   /* 0F D3 /wm */ { BxPrefixSSE, BX_IA_PSRLQ_PqQq, BxOpcodeGroupSSE_0fd3 },
   /* 0F D4 /wm */ { BxPrefixSSE, BX_IA_PADDQ_PqQq, BxOpcodeGroupSSE_0fd4 },
   /* 0F D5 /wm */ { BxPrefixSSE, BX_IA_PMULLW_PqQq, BxOpcodeGroupSSE_0fd5 },
-  /* 0F D6 /wm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6 },
-  /* 0F D7 /wm */ { BxPrefixSSE, BX_IA_PMOVMSKB_GdPRq, BxOpcodeGroupSSE_0fd7 },
+  /* 0F D6 /wm */ { BxPrefixSSE66, BX_IA_MOVQ_WqVqM },
+  /* 0F D7 /wm */ { 0, BX_IA_ERROR }, // PMOVMSKB is reg/reg form only
   /* 0F D8 /wm */ { BxPrefixSSE, BX_IA_PSUBUSB_PqQq, BxOpcodeGroupSSE_0fd8 },
   /* 0F D9 /wm */ { BxPrefixSSE, BX_IA_PSUBUSW_PqQq, BxOpcodeGroupSSE_0fd9 },
   /* 0F DA /wm */ { BxPrefixSSE, BX_IA_PMINUB_PqQq, BxOpcodeGroupSSE_0fda },
@@ -2277,7 +2220,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F ED /wm */ { BxPrefixSSE, BX_IA_PADDSW_PqQq, BxOpcodeGroupSSE_0fed },
   /* 0F EE /wm */ { BxPrefixSSE, BX_IA_PMAXSW_PqQq, BxOpcodeGroupSSE_0fee },
   /* 0F EF /wm */ { BxPrefixSSE, BX_IA_PXOR_PqQq, BxOpcodeGroupSSE_0fef },
-  /* 0F F0 /wm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0ff0M },
+  /* 0F F0 /wm */ { BxPrefixSSEF2, BX_IA_LDDQU_VdqMdq },
   /* 0F F1 /wm */ { BxPrefixSSE, BX_IA_PSLLW_PqQq, BxOpcodeGroupSSE_0ff1 },
   /* 0F F2 /wm */ { BxPrefixSSE, BX_IA_PSLLD_PqQq, BxOpcodeGroupSSE_0ff2 },
   /* 0F F3 /wm */ { BxPrefixSSE, BX_IA_PSLLQ_PqQq, BxOpcodeGroupSSE_0ff3 },
@@ -2565,7 +2508,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 0A /dm */ { 0, BX_IA_ERROR },
   /* 0F 0B /dm */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /dm */ { 0, BX_IA_ERROR },
-  /* 0F 0D /dm */ { 0, BX_IA_NOP },             // 3DNow! PREFETCH on AMD, NOP on Intel
+  /* 0F 0D /dm */ { 0, BX_IA_PREFETCHW },       // 3DNow! PREFETCH on AMD, NOP on Intel
   /* 0F 0E /dm */ { 0, BX_IA_FEMMS },           // 3DNow! FEMMS
 #if BX_SUPPORT_3DNOW
   /* 0F 0F /dm */ { BxImmediate_Ib, BX_IA_ERROR, Bx3DNowOpcodeInfo },
@@ -2574,11 +2517,11 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
 #endif
   /* 0F 10 /dm */ { BxPrefixSSE, BX_IA_MOVUPS_VpsWpsM, BxOpcodeGroupSSE_0f10M },
   /* 0F 11 /dm */ { BxPrefixSSE, BX_IA_MOVUPS_WpsVpsM, BxOpcodeGroupSSE_0f11M },
-  /* 0F 12 /dm */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12 },
+  /* 0F 12 /dm */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12M },
   /* 0F 13 /dm */ { BxPrefixSSE, BX_IA_MOVLPS_MqVps, BxOpcodeGroupSSE_0f13M },
   /* 0F 14 /dm */ { BxPrefixSSE, BX_IA_UNPCKLPS_VpsWdq, BxOpcodeGroupSSE_0f14 },
   /* 0F 15 /dm */ { BxPrefixSSE, BX_IA_UNPCKHPS_VpsWdq, BxOpcodeGroupSSE_0f15 },
-  /* 0F 16 /dm */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16 },
+  /* 0F 16 /dm */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16M },
   /* 0F 17 /dm */ { BxPrefixSSE, BX_IA_MOVHPS_MqVps, BxOpcodeGroupSSE_0f17M },
   /* 0F 18 /dm */ { 0, BX_IA_PREFETCH }, // opcode group G16, PREFETCH hints
   /* 0F 19 /dm */ { 0, BX_IA_NOP },      // multi-byte NOP
@@ -2612,17 +2555,9 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 35 /dm */ { BxTraceEnd, BX_IA_SYSEXIT },
   /* 0F 36 /dm */ { 0, BX_IA_ERROR },
   /* 0F 37 /dm */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 38 /dm */ { Bx3ByteOp, BX_IA_ERROR, BxOpcode3ByteTable0f38 }, // 3-byte escape
-#else
-  /* 0F 38 /dm */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 39 /dm */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 3A /dm */ { Bx3ByteOp | BxImmediate_Ib, BX_IA_ERROR, BxOpcode3ByteTable0f3a }, // 3-byte escape
-#else
-  /* 0F 3A /dm */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 3B /dm */ { 0, BX_IA_ERROR },
   /* 0F 3C /dm */ { 0, BX_IA_ERROR },
   /* 0F 3D /dm */ { 0, BX_IA_ERROR },
@@ -2644,7 +2579,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 4D /dm */ { 0, BX_IA_CMOVNL_GdEdM },
   /* 0F 4E /dm */ { 0, BX_IA_CMOVLE_GdEdM },
   /* 0F 4F /dm */ { 0, BX_IA_CMOVNLE_GdEdM },
-  /* 0F 50 /dm */ { BxPrefixSSE, BX_IA_MOVMSKPS_GdVRps, BxOpcodeGroupSSE_0f50 },
+  /* 0F 50 /dm */ { 0, BX_IA_ERROR }, // MOVMSKPS/PD
   /* 0F 51 /dm */ { BxPrefixSSE, BX_IA_SQRTPS_VpsWps, BxOpcodeGroupSSE_0f51 },
   /* 0F 52 /dm */ { BxPrefixSSE, BX_IA_RSQRTPS_VpsWps, BxOpcodeGroupSSE_0f52 },
   /* 0F 53 /dm */ { BxPrefixSSE, BX_IA_RCPPS_VpsWps, BxOpcodeGroupSSE_0f53 },
@@ -2672,10 +2607,10 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 69 /dm */ { BxPrefixSSE, BX_IA_PUNPCKHWD_PqQq, BxOpcodeGroupSSE_0f69 },
   /* 0F 6A /dm */ { BxPrefixSSE, BX_IA_PUNPCKHDQ_PqQq, BxOpcodeGroupSSE_0f6a },
   /* 0F 6B /dm */ { BxPrefixSSE, BX_IA_PACKSSDW_PqQq, BxOpcodeGroupSSE_0f6b },
-  /* 0F 6C /dm */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6D /dm */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6E /dm */ { BxPrefixSSE, BX_IA_MOVD_PqEd, BxOpcodeGroupSSE_0f6e },
-  /* 0F 6F /dm */ { BxPrefixSSE, BX_IA_MOVQ_PqQq, BxOpcodeGroupSSE_0f6fM },
+  /* 0F 6C /dm */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq },
+  /* 0F 6D /dm */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq },
+  /* 0F 6E /dm */ { BxPrefixSSE, BX_IA_MOVD_PqEdM, BxOpcodeGroupSSE_0f6eM },
+  /* 0F 6F /dm */ { BxPrefixSSE, BX_IA_MOVQ_PqQqM, BxOpcodeGroupSSE_0f6fM },
   /* 0F 70 /dm */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PSHUFW_PqQqIb, BxOpcodeGroupSSE_0f70 },
   /* 0F 71 /dm */ { 0, BX_IA_ERROR }, // SSE Group G12
   /* 0F 72 /dm */ { 0, BX_IA_ERROR }, // SSE Group G13
@@ -2690,8 +2625,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 7B /dm */ { 0, BX_IA_ERROR },
   /* 0F 7C /dm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7c },
   /* 0F 7D /dm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7d },
-  /* 0F 7E /dm */ { BxPrefixSSE, BX_IA_MOVD_EdPd, BxOpcodeGroupSSE_0f7e },
-  /* 0F 7F /dm */ { BxPrefixSSE, BX_IA_MOVQ_QqPq, BxOpcodeGroupSSE_0f7fM },
+  /* 0F 7E /dm */ { BxPrefixSSE, BX_IA_MOVD_EdPdM, BxOpcodeGroupSSE_0f7eM },
+  /* 0F 7F /dm */ { BxPrefixSSE, BX_IA_MOVQ_QqPqM, BxOpcodeGroupSSE_0f7fM },
   /* 0F 80 /dm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JO_Jq },
   /* 0F 81 /dm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JNO_Jq },
   /* 0F 82 /dm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JB_Jq },
@@ -2748,7 +2683,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F B5 /dm */ { 0, BX_IA_LGS_GdMp },
   /* 0F B6 /dm */ { 0, BX_IA_MOVZX_GdEbM },
   /* 0F B7 /dm */ { 0, BX_IA_MOVZX_GdEwM },
-  /* 0F B8 /dm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fb8dM },
+  /* 0F B8 /dm */ { BxPrefixSSEF3, BX_IA_POPCNT_GdEdM },
   /* 0F B9 /dm */ { BxTraceEnd, BX_IA_UD2B },
   /* 0F BA /dm */ { BxGroup8, BX_IA_ERROR, BxOpcodeInfoG8EdIbM },
   /* 0F BB /dm */ { BxLockable, BX_IA_BTC_EdGdM },
@@ -2778,8 +2713,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F D3 /dm */ { BxPrefixSSE, BX_IA_PSRLQ_PqQq, BxOpcodeGroupSSE_0fd3 },
   /* 0F D4 /dm */ { BxPrefixSSE, BX_IA_PADDQ_PqQq, BxOpcodeGroupSSE_0fd4 },
   /* 0F D5 /dm */ { BxPrefixSSE, BX_IA_PMULLW_PqQq, BxOpcodeGroupSSE_0fd5 },
-  /* 0F D6 /dm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6 },
-  /* 0F D7 /dm */ { BxPrefixSSE, BX_IA_PMOVMSKB_GdPRq, BxOpcodeGroupSSE_0fd7 },
+  /* 0F D6 /dm */ { BxPrefixSSE66, BX_IA_MOVQ_WqVqM },
+  /* 0F D7 /dm */ { 0, BX_IA_ERROR }, // PMOVMSKB is reg/reg form only
   /* 0F D8 /dm */ { BxPrefixSSE, BX_IA_PSUBUSB_PqQq, BxOpcodeGroupSSE_0fd8 },
   /* 0F D9 /dm */ { BxPrefixSSE, BX_IA_PSUBUSW_PqQq, BxOpcodeGroupSSE_0fd9 },
   /* 0F DA /dm */ { BxPrefixSSE, BX_IA_PMINUB_PqQq, BxOpcodeGroupSSE_0fda },
@@ -2804,7 +2739,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F ED /dm */ { BxPrefixSSE, BX_IA_PADDSW_PqQq, BxOpcodeGroupSSE_0fed },
   /* 0F EE /dm */ { BxPrefixSSE, BX_IA_PMAXSW_PqQq, BxOpcodeGroupSSE_0fee },
   /* 0F EF /dm */ { BxPrefixSSE, BX_IA_PXOR_PqQq, BxOpcodeGroupSSE_0fef },
-  /* 0F F0 /dm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0ff0M },
+  /* 0F F0 /wm */ { BxPrefixSSEF2, BX_IA_LDDQU_VdqMdq },
   /* 0F F1 /dm */ { BxPrefixSSE, BX_IA_PSLLW_PqQq, BxOpcodeGroupSSE_0ff1 },
   /* 0F F2 /dm */ { BxPrefixSSE, BX_IA_PSLLD_PqQq, BxOpcodeGroupSSE_0ff2 },
   /* 0F F3 /dm */ { BxPrefixSSE, BX_IA_PSLLQ_PqQq, BxOpcodeGroupSSE_0ff3 },
@@ -3092,7 +3027,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 0A /qm */ { 0, BX_IA_ERROR },
   /* 0F 0B /qm */ { BxTraceEnd, BX_IA_UD2A },
   /* 0F 0C /qm */ { 0, BX_IA_ERROR },
-  /* 0F 0D /qm */ { 0, BX_IA_NOP },             // 3DNow! PREFETCH on AMD, NOP on Intel
+  /* 0F 0D /qm */ { 0, BX_IA_PREFETCHW },       // 3DNow! PREFETCH on AMD, NOP on Intel
   /* 0F 0E /qm */ { 0, BX_IA_FEMMS },           // 3DNow! FEMMS
 #if BX_SUPPORT_3DNOW
   /* 0F 0F /qm */ { BxImmediate_Ib, BX_IA_ERROR, Bx3DNowOpcodeInfo },
@@ -3101,11 +3036,11 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
 #endif
   /* 0F 10 /qm */ { BxPrefixSSE, BX_IA_MOVUPS_VpsWpsM, BxOpcodeGroupSSE_0f10M },
   /* 0F 11 /qm */ { BxPrefixSSE, BX_IA_MOVUPS_WpsVpsM, BxOpcodeGroupSSE_0f11M },
-  /* 0F 12 /qm */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12 },
+  /* 0F 12 /qm */ { BxPrefixSSE, BX_IA_MOVLPS_VpsMq, BxOpcodeGroupSSE_0f12M },
   /* 0F 13 /qm */ { BxPrefixSSE, BX_IA_MOVLPS_MqVps, BxOpcodeGroupSSE_0f13M },
   /* 0F 14 /qm */ { BxPrefixSSE, BX_IA_UNPCKLPS_VpsWdq, BxOpcodeGroupSSE_0f14 },
   /* 0F 15 /qm */ { BxPrefixSSE, BX_IA_UNPCKHPS_VpsWdq, BxOpcodeGroupSSE_0f15 },
-  /* 0F 16 /qm */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16 },
+  /* 0F 16 /qm */ { BxPrefixSSE, BX_IA_MOVHPS_VpsMq, BxOpcodeGroupSSE_0f16M },
   /* 0F 17 /qm */ { BxPrefixSSE, BX_IA_MOVHPS_MqVps, BxOpcodeGroupSSE_0f17M },
   /* 0F 18 /qm */ { 0, BX_IA_PREFETCH }, // opcode group G16, PREFETCH hints
   /* 0F 19 /qm */ { 0, BX_IA_NOP },      // multi-byte NOP
@@ -3139,17 +3074,9 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 35 /qm */ { BxTraceEnd, BX_IA_SYSEXIT },
   /* 0F 36 /qm */ { 0, BX_IA_ERROR },
   /* 0F 37 /qm */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 38 /qm */ { Bx3ByteOp, BX_IA_ERROR, BxOpcode3ByteTable0f38 }, // 3-byte escape
-#else
-  /* 0F 38 /qm */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 39 /qm */ { 0, BX_IA_ERROR },
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   /* 0F 3A /qm */ { Bx3ByteOp | BxImmediate_Ib, BX_IA_ERROR, BxOpcode3ByteTable0f3a }, // 3-byte escape
-#else
-  /* 0F 3A /qm */ { 0, BX_IA_ERROR },
-#endif
   /* 0F 3B /qm */ { 0, BX_IA_ERROR },
   /* 0F 3C /qm */ { 0, BX_IA_ERROR },
   /* 0F 3D /qm */ { 0, BX_IA_ERROR },
@@ -3171,7 +3098,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 4D /qm */ { 0, BX_IA_CMOVNL_GqEqM },
   /* 0F 4E /qm */ { 0, BX_IA_CMOVLE_GqEqM },
   /* 0F 4F /qm */ { 0, BX_IA_CMOVNLE_GqEqM },
-  /* 0F 50 /qm */ { BxPrefixSSE, BX_IA_MOVMSKPS_GdVRps, BxOpcodeGroupSSE_0f50 },
+  /* 0F 50 /qm */ { 0, BX_IA_ERROR }, // MOVMSKPS/PD
   /* 0F 51 /qm */ { BxPrefixSSE, BX_IA_SQRTPS_VpsWps, BxOpcodeGroupSSE_0f51 },
   /* 0F 52 /qm */ { BxPrefixSSE, BX_IA_RSQRTPS_VpsWps, BxOpcodeGroupSSE_0f52 },
   /* 0F 53 /qm */ { BxPrefixSSE, BX_IA_RCPPS_VpsWps, BxOpcodeGroupSSE_0f53 },
@@ -3199,10 +3126,10 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 69 /qm */ { BxPrefixSSE, BX_IA_PUNPCKHWD_PqQq, BxOpcodeGroupSSE_0f69 },
   /* 0F 6A /qm */ { BxPrefixSSE, BX_IA_PUNPCKHDQ_PqQq, BxOpcodeGroupSSE_0f6a },
   /* 0F 6B /qm */ { BxPrefixSSE, BX_IA_PACKSSDW_PqQq, BxOpcodeGroupSSE_0f6b },
-  /* 0F 6C /qm */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6D /qm */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq, BxOpcodeGroupSSE_ERR },
-  /* 0F 6E /qm */ { BxPrefixSSE, BX_IA_MOVQ_PqEqM, BxOpcodeGroupSSE_0f6eQ },
-  /* 0F 6F /qm */ { BxPrefixSSE, BX_IA_MOVQ_PqQq, BxOpcodeGroupSSE_0f6fM },
+  /* 0F 6C /qm */ { BxPrefixSSE66, BX_IA_PUNPCKLQDQ_VdqWdq },
+  /* 0F 6D /qm */ { BxPrefixSSE66, BX_IA_PUNPCKHQDQ_VdqWdq },
+  /* 0F 6E /qm */ { BxPrefixSSE, BX_IA_MOVQ_PqEqM, BxOpcodeGroupSSE_0f6eQM },
+  /* 0F 6F /qm */ { BxPrefixSSE, BX_IA_MOVQ_PqQqM, BxOpcodeGroupSSE_0f6fM },
   /* 0F 70 /qm */ { BxPrefixSSE | BxImmediate_Ib, BX_IA_PSHUFW_PqQqIb, BxOpcodeGroupSSE_0f70 },
   /* 0F 71 /qm */ { 0, BX_IA_ERROR }, // SSE Group G12
   /* 0F 72 /qm */ { 0, BX_IA_ERROR }, // SSE Group G13
@@ -3217,8 +3144,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F 7B /qm */ { 0, BX_IA_ERROR },
   /* 0F 7C /qm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7c },
   /* 0F 7D /qm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f7d },
-  /* 0F 7E /qm */ { BxPrefixSSE, BX_IA_MOVQ_EqPq, BxOpcodeGroupSSE_0f7eQ },
-  /* 0F 7F /qm */ { BxPrefixSSE, BX_IA_MOVQ_QqPq, BxOpcodeGroupSSE_0f7fM },
+  /* 0F 7E /qm */ { BxPrefixSSE, BX_IA_MOVQ_EqPqM, BxOpcodeGroupSSE_0f7eQM },
+  /* 0F 7F /qm */ { BxPrefixSSE, BX_IA_MOVQ_QqPqM, BxOpcodeGroupSSE_0f7fM },
   /* 0F 80 /qm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JO_Jq },
   /* 0F 81 /qm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JNO_Jq },
   /* 0F 82 /qm */ { BxImmediate_BrOff32 | BxTraceJCC, BX_IA_JB_Jq },
@@ -3275,7 +3202,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F B5 /qm */ { 0, BX_IA_LGS_GqMp }, // TODO: LGS_GdMp for AMD CPU
   /* 0F B6 /qm */ { 0, BX_IA_MOVZX_GqEbM },
   /* 0F B7 /qm */ { 0, BX_IA_MOVZX_GqEwM },
-  /* 0F B8 /qm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fb8qM },
+  /* 0F B8 /qm */ { BxPrefixSSEF3, BX_IA_POPCNT_GqEqM },
   /* 0F B9 /qm */ { BxTraceEnd, BX_IA_UD2B },
   /* 0F BA /qm */ { BxGroup8, BX_IA_ERROR, BxOpcodeInfo64G8EqIbM },
   /* 0F BB /qm */ { BxLockable, BX_IA_BTC_EqGqM },
@@ -3305,8 +3232,8 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F D3 /qm */ { BxPrefixSSE, BX_IA_PSRLQ_PqQq, BxOpcodeGroupSSE_0fd3 },
   /* 0F D4 /qm */ { BxPrefixSSE, BX_IA_PADDQ_PqQq, BxOpcodeGroupSSE_0fd4 },
   /* 0F D5 /qm */ { BxPrefixSSE, BX_IA_PMULLW_PqQq, BxOpcodeGroupSSE_0fd5 },
-  /* 0F D6 /qm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0fd6 },
-  /* 0F D7 /qm */ { BxPrefixSSE, BX_IA_PMOVMSKB_GdPRq, BxOpcodeGroupSSE_0fd7 },
+  /* 0F D6 /qm */ { BxPrefixSSE66, BX_IA_MOVQ_WqVqM },
+  /* 0F D7 /qm */ { 0, BX_IA_ERROR }, // PMOVMSKB is reg/reg form only
   /* 0F D8 /qm */ { BxPrefixSSE, BX_IA_PSUBUSB_PqQq, BxOpcodeGroupSSE_0fd8 },
   /* 0F D9 /qm */ { BxPrefixSSE, BX_IA_PSUBUSW_PqQq, BxOpcodeGroupSSE_0fd9 },
   /* 0F DA /qm */ { BxPrefixSSE, BX_IA_PMINUB_PqQq, BxOpcodeGroupSSE_0fda },
@@ -3331,7 +3258,7 @@ static const BxOpcodeInfo_t BxOpcodeInfo64M[512*3] = {
   /* 0F ED /qm */ { BxPrefixSSE, BX_IA_PADDSW_PqQq, BxOpcodeGroupSSE_0fed },
   /* 0F EE /qm */ { BxPrefixSSE, BX_IA_PMAXSW_PqQq, BxOpcodeGroupSSE_0fee },
   /* 0F EF /qm */ { BxPrefixSSE, BX_IA_PXOR_PqQq, BxOpcodeGroupSSE_0fef },
-  /* 0F F0 /qm */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0ff0M },
+  /* 0F F0 /wm */ { BxPrefixSSEF2, BX_IA_LDDQU_VdqMdq },
   /* 0F F1 /qm */ { BxPrefixSSE, BX_IA_PSLLW_PqQq, BxOpcodeGroupSSE_0ff1 },
   /* 0F F2 /qm */ { BxPrefixSSE, BX_IA_PSLLD_PqQq, BxOpcodeGroupSSE_0ff2 },
   /* 0F F3 /qm */ { BxPrefixSSE, BX_IA_PSLLQ_PqQq, BxOpcodeGroupSSE_0ff3 },
@@ -3357,7 +3284,7 @@ enum {
   BX_RESOLVE_NONE
 };
 
-  unsigned BX_CPP_AttrRegparmN(3)
+  int BX_CPP_AttrRegparmN(3)
 BX_CPU_C::fetchDecode64(const Bit8u *iptr, bxInstruction_c *i, unsigned remainingInPage)
 {
   // remain must be at least 1
@@ -3406,14 +3333,14 @@ fetch_b1:
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     case 0x0f: // 2 byte escape
       if (ilen < remain) {
         ilen++;
         b1 = 0x100 | *iptr++;
         break;
       }
-      return(0);
+      return(-1);
     case 0xf2: // REPNE/REPNZ
     case 0xf3: // REP/REPE/REPZ
       rex_prefix = 0;
@@ -3422,7 +3349,7 @@ fetch_b1:
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     case 0x2e: // CS:
     case 0x26: // ES:
     case 0x36: // SS:
@@ -3432,7 +3359,7 @@ fetch_b1:
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     case 0x64: // FS:
     case 0x65: // GS:
       rex_prefix = 0;
@@ -3440,7 +3367,7 @@ fetch_b1:
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     case 0x66: // OpSize
       rex_prefix = 0;
       if(!sse_prefix) sse_prefix = SSE_PREFIX_66;
@@ -3449,21 +3376,21 @@ fetch_b1:
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     case 0x67: // AddrSize
       rex_prefix = 0;
       i->setAs64B(0);
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     case 0xf0: // LOCK:
       rex_prefix = 0;
       lock = 1;
       if (ilen < remain) {
         goto fetch_b1;
       }
-      return(0);
+      return(-1);
     default:
       break;
   }
@@ -3484,7 +3411,6 @@ fetch_b1:
 
   if (BxOpcodeHasModrm64[b1]) {
 
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
     unsigned b3 = 0;
     // handle 3-byte escape
     if ((attr & BxGroupX) == Bx3ByteOp) {
@@ -3493,9 +3419,8 @@ fetch_b1:
         b3 = *iptr++;
       }
       else
-        return(0);
+        return(-1);
     }
-#endif
 
     // opcode requires modrm byte
     if (ilen < remain) {
@@ -3503,7 +3428,7 @@ fetch_b1:
       b2 = *iptr++;
     }
     else
-      return(0);
+      return(-1);
 
     // Parse mod-nnn-rm and related bytes
     mod = b2 & 0xc0;
@@ -3537,31 +3462,13 @@ fetch_b1:
         if (mod == 0x00) { // mod == 00b
           if ((rm & 0x7) == 5) {
             i->setSibBase(BX_64BIT_REG_RIP);
-get_32bit_displ:
-            if ((ilen+3) < remain) {
-              i->modRMForm.displ32u = FetchDWORD(iptr);
-              iptr += 4;
-              ilen += 4;
-              goto modrm_done;
-            }
-            else return(0);
+            goto get_32bit_displ;
           }
           // mod==00b, rm!=4, rm!=5
           goto modrm_done;
         }
-        seg = sreg_mod01or10_rm32[rm];
-        if (mod == 0x40) { // mod == 01b
-get_8bit_displ:
-          if (ilen < remain) {
-            // 8 sign extended to 32
-            i->modRMForm.displ32u = (Bit8s) *iptr++;
-            ilen++;
-            goto modrm_done;
-          }
-          else return(0);
-        }
-        // (mod == 0x80) mod == 10b
-        goto get_32bit_displ;
+        // (mod == 0x40), mod==01b or (mod == 0x80), mod==10b
+        seg = sreg_mod1or2_base32[rm];
       }
       else { // mod!=11b, rm==4, s-i-b byte follows
         unsigned sib, base, index, scale;
@@ -3570,7 +3477,7 @@ get_8bit_displ:
           ilen++;
         }
         else {
-          return(0);
+          return(-1);
         }
         base  = (sib & 0x7) | rex_b; sib >>= 3;
         index = (sib & 0x7) | rex_x; sib >>= 3;
@@ -3591,11 +3498,8 @@ get_8bit_displ:
           // mod==00b, rm==4, base!=5
           goto modrm_done;
         }
+        // (mod == 0x40), mod==01b or (mod == 0x80), mod==10b
         seg = sreg_mod1or2_base32[base];
-        if (mod == 0x40) // mod==01b, rm==4
-          goto get_8bit_displ;
-        // (mod == 0x80),   mod==10b, rm==4
-        goto get_32bit_displ;
       }
     }
     else {
@@ -3611,11 +3515,8 @@ get_8bit_displ:
           // mod==00b, rm!=4, rm!=5
           goto modrm_done;
         }
-        seg = sreg_mod01or10_rm32[rm];
-        if (mod == 0x40) // mod == 01b
-          goto get_8bit_displ;
-        // (mod == 0x80)    mod == 10b
-        goto get_32bit_displ;
+        // (mod == 0x40), mod==01b or (mod == 0x80), mod==10b
+        seg = sreg_mod1or2_base32[rm];
       }
       else { // mod!=11b, rm==4, s-i-b byte follows
         unsigned sib, base, index, scale;
@@ -3624,7 +3525,7 @@ get_8bit_displ:
           ilen++;
         }
         else {
-          return(0);
+          return(-1);
         }
         base  = (sib & 0x7) | rex_b; sib >>= 3;
         index = (sib & 0x7) | rex_x; sib >>= 3;
@@ -3645,11 +3546,34 @@ get_8bit_displ:
           // mod==00b, rm==4, base!=5
           goto modrm_done;
         }
+        // (mod == 0x40), mod==01b or (mod == 0x80), mod==10b
         seg = sreg_mod1or2_base32[base];
-        if (mod == 0x40) // mod==01b, rm==4
-          goto get_8bit_displ;
-        // (mod == 0x80),   mod==10b, rm==4
-        goto get_32bit_displ;
+      }
+    }
+
+    // (mod == 0x40), mod==01b
+    if (mod == 0x40) {
+      if (ilen < remain) {
+        // 8 sign extended to 32
+        i->modRMForm.displ32u = (Bit8s) *iptr++;
+        ilen++;
+      }
+      else {
+        return(-1);
+      }
+    }
+    else {
+
+get_32bit_displ:
+
+      // (mod == 0x80), mod==10b
+      if ((ilen+3) < remain) {
+        i->modRMForm.displ32u = FetchDWORD(iptr);
+        iptr += 4;
+        ilen += 4;
+      }
+      else {
+        return(-1);
       }
     }
 
@@ -3674,14 +3598,9 @@ modrm_done:
         case BxGroupN:
           OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[nnn & 0x7]);
           break;
-        case BxRMGroup:
-          OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[rm  & 0x7]);
-          break;
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
         case Bx3ByteOp:
           OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[b3]);
           break;
-#endif
         case BxOSizeGrp:
           OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[offset >> 8]);
           break;
@@ -3696,7 +3615,19 @@ modrm_done:
         case BxPrefixSSE66:
           /* For SSE opcodes with prefix 66 only */
           if (sse_prefix != SSE_PREFIX_66) {
-            OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[0]); // BX_IA_ERROR
+            OpcodeInfoPtr = &BxOpcodeGroupSSE_ERR[0]; // BX_IA_ERROR
+          }
+          continue;
+        case BxPrefixSSEF2:
+          /* For SSE opcodes with prefix F2 only */
+          if (sse_prefix != SSE_PREFIX_F2) {
+            OpcodeInfoPtr = &BxOpcodeGroupSSE_ERR[0]; // BX_IA_ERROR
+          }
+          continue;
+        case BxPrefixSSEF3:
+          /* For SSE opcodes with prefix F3 only */
+          if (sse_prefix != SSE_PREFIX_F3) {
+            OpcodeInfoPtr = &BxOpcodeGroupSSE_ERR[0]; // BX_IA_ERROR
           }
           continue;
         case BxFPEscape:
@@ -3757,7 +3688,7 @@ modrm_done:
           ilen++;
         }
         else {
-          return(0);
+          return(-1);
         }
         break;
       case BxImmediate_Ib_SE: // Sign extend to OS size
@@ -3770,7 +3701,7 @@ modrm_done:
           ilen++;
         }
         else {
-          return(0);
+          return(-1);
         }
         break;
       case BxImmediate_Iw:
@@ -3779,7 +3710,7 @@ modrm_done:
           ilen += 2;
         }
         else {
-          return(0);
+          return(-1);
         }
         break;
       case BxImmediate_Id:
@@ -3788,7 +3719,7 @@ modrm_done:
           ilen += 4;
         }
         else {
-          return(0);
+          return(-1);
         }
         break;
       case BxImmediate_Iq: // MOV Rx,imm64
@@ -3797,7 +3728,7 @@ modrm_done:
           ilen += 8;
         }
         else {
-          return(0);
+          return(-1);
         }
         break;
       case BxImmediate_BrOff8:
@@ -3806,7 +3737,7 @@ modrm_done:
           ilen++;
         }
         else {
-          return(0);
+          return(-1);
         }
         break;
       case BxImmediate_IwIb:
@@ -3816,7 +3747,7 @@ modrm_done:
           i->IxIxForm.Ib2 = *iptr;
           ilen += 3;
         }
-        else return(0);
+        else return(-1);
         break;
       case BxImmediate_O:
         // For is which embed the address in the opcode.  Note
@@ -3826,14 +3757,14 @@ modrm_done:
             i->IqForm.Iq = FetchQWORD(iptr);
             ilen += 8;
           }
-          else return(0);
+          else return(-1);
         }
         else { // as32
           if ((ilen+3) < remain) {
             i->IqForm.Iq = (Bit64u) FetchDWORD(iptr);
             ilen += 4;
           }
-          else return(0);
+          else return(-1);
         }
         break;
       default:
@@ -3844,17 +3775,12 @@ modrm_done:
 
 #if BX_SUPPORT_3DNOW
   if(b1 == 0x10f)
-     ia_opcode = Bx3DNowOpcodeInfo[i->modRMForm.Ib].IA;
+     ia_opcode = Bx3DNowOpcode[i->modRMForm.Ib];
 #endif
 
   if (! BX_NULL_SEG_REG(seg_override))
      seg = seg_override;
   i->setSeg(seg);
-
-#if BX_SUPPORT_TRACE_CACHE
-  if ((attr & BxTraceEnd) || ia_opcode == BX_IA_ERROR)
-     i->setStopTraceAttr();
-#endif
 
   if (attr & BxArithDstRM) {
     i->setRm(nnn);
@@ -3866,12 +3792,14 @@ modrm_done:
 
   i->setB1(b1);
   i->setILen(ilen);
+  i->setIaOpcode(ia_opcode);
 
-#if BX_INSTRUMENT_IA_OPCODE
-  i->ia_opcode = ia_opcode;
+#if BX_SUPPORT_TRACE_CACHE
+  if ((attr & BxTraceEnd) || ia_opcode == BX_IA_ERROR)
+     return(1);
 #endif
 
-  return(1);
+  return(0);
 }
 
 #endif /* if BX_SUPPORT_X86_64 */

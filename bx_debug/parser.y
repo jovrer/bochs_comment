@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y,v 1.38 2009/10/31 17:46:12 sshwarts Exp $
+// $Id: parser.y,v 1.45 2010/01/05 13:59:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -79,7 +79,8 @@
 %token <sval> BX_TOKEN_TAKE
 %token <sval> BX_TOKEN_DMA
 %token <sval> BX_TOKEN_IRQ
-%token <sval> BX_TOKEN_DISASSEMBLE
+%token <sval> BX_TOKEN_HEX
+%token <sval> BX_TOKEN_DISASM
 %token <sval> BX_TOKEN_INSTRUMENT
 %token <sval> BX_TOKEN_STRING
 %token <sval> BX_TOKEN_STOP
@@ -129,7 +130,7 @@
 
 %left '+' '-' '|' '^'
 %left '*' '/' '&' BX_TOKEN_LSHIFT BX_TOKEN_RSHIFT
-%left NOT NEG
+%left NOT NEG INDIRECT
 
 %start commands
 
@@ -324,14 +325,12 @@ print_stack_command:
 watch_point_command:
       BX_TOKEN_WATCH BX_TOKEN_STOP '\n'
       {
-          watchpoint_continue = 0;
-          dbg_printf("Will stop on watch points\n");
+          bx_dbg_watchpoint_continue(0);
           free($1); free($2);
       }
     | BX_TOKEN_WATCH BX_TOKEN_CONTINUE '\n'
       {
-          watchpoint_continue = 1;
-          dbg_printf("Will not stop on watch points (they will still be logged)\n");
+          bx_dbg_watchpoint_continue(1);
           free($1); free($2);
       }
     | BX_TOKEN_WATCH '\n'
@@ -341,17 +340,32 @@ watch_point_command:
       }
     | BX_TOKEN_WATCH BX_TOKEN_R expression '\n'
       {
-          bx_dbg_watch(0, $3); /* BX_READ */
+          bx_dbg_watch(0, $3, 1); /* BX_READ */
           free($1); free($2);
       }
     | BX_TOKEN_WATCH BX_TOKEN_READ expression '\n'
       {
-          bx_dbg_watch(0, $3); /* BX_READ */
+          bx_dbg_watch(0, $3, 1); /* BX_READ */
           free($1); free($2);
       }
     | BX_TOKEN_WATCH BX_TOKEN_WRITE expression '\n'
       {
-          bx_dbg_watch(1, $3); /* BX_WRITE */
+          bx_dbg_watch(1, $3, 1); /* BX_WRITE */
+          free($1); free($2);
+      }
+    | BX_TOKEN_WATCH BX_TOKEN_R expression expression '\n'
+      {
+          bx_dbg_watch(0, $3, $4); /* BX_READ */
+          free($1); free($2);
+      }
+    | BX_TOKEN_WATCH BX_TOKEN_READ expression expression '\n'
+      {
+          bx_dbg_watch(0, $3, $4); /* BX_READ */
+          free($1); free($2);
+      }
+    | BX_TOKEN_WATCH BX_TOKEN_WRITE expression expression '\n'
+      {
+          bx_dbg_watch(1, $3, $4); /* BX_WRITE */
           free($1); free($2);
       }
     | BX_TOKEN_UNWATCH '\n'
@@ -426,7 +440,7 @@ stepN_command:
       }
     | BX_TOKEN_STEPN BX_TOKEN_ALL BX_TOKEN_NUMERIC '\n'
       {
-        bx_dbg_stepN_command(-1, $2);
+        bx_dbg_stepN_command(-1, $3);
         free($1); free($2);
       }
     | BX_TOKEN_STEPN BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC '\n'
@@ -445,7 +459,7 @@ step_over_command:
     ;
 
 set_command:
-      BX_TOKEN_SET BX_TOKEN_DISASSEMBLE BX_TOKEN_TOGGLE_ON_OFF '\n'
+      BX_TOKEN_SET BX_TOKEN_DISASM BX_TOKEN_TOGGLE_ON_OFF '\n'
       {
         bx_dbg_set_auto_disassemble($3);
         free($1); free($2);
@@ -474,6 +488,10 @@ set_command:
     | BX_TOKEN_SET BX_TOKEN_64B_REG '=' expression '\n'
       { 
         bx_dbg_set_reg64_value($2, $4);
+      }
+    | BX_TOKEN_SET BX_TOKEN_SEGREG '=' expression '\n'
+      { 
+        bx_dbg_load_segreg($2, $4);
       }
     ;
 
@@ -791,42 +809,47 @@ take_command:
     ;
 
 disassemble_command:
-      BX_TOKEN_DISASSEMBLE '\n'
+      BX_TOKEN_DISASM '\n'
       {
         bx_dbg_disassemble_current(NULL);
         free($1);
       }
-    | BX_TOKEN_DISASSEMBLE expression '\n'
+    | BX_TOKEN_DISASM expression '\n'
       {
         bx_dbg_disassemble_command(NULL, $2, $2);
         free($1);
       }
-    | BX_TOKEN_DISASSEMBLE expression expression '\n'
+    | BX_TOKEN_DISASM expression expression '\n'
       {
         bx_dbg_disassemble_command(NULL, $2, $3);
         free($1);
       }
-    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT '\n'
+    | BX_TOKEN_DISASM BX_TOKEN_DISFORMAT '\n'
       {
         bx_dbg_disassemble_current($2);
         free($1); free($2);
       }
-    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT expression '\n'
+    | BX_TOKEN_DISASM BX_TOKEN_DISFORMAT expression '\n'
       {
         bx_dbg_disassemble_command($2, $3, $3);
         free($1); free($2);
       }
-    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT expression expression '\n'
+    | BX_TOKEN_DISASM BX_TOKEN_DISFORMAT expression expression '\n'
       {
         bx_dbg_disassemble_command($2, $3, $4);
         free($1); free($2);
       }
-    | BX_TOKEN_DISASSEMBLE BX_TOKEN_SWITCH_MODE '\n'
+    | BX_TOKEN_DISASM BX_TOKEN_SWITCH_MODE '\n'
       {
         bx_dbg_disassemble_switch_mode();
         free($1); free($2);
       }
-    | BX_TOKEN_DISASSEMBLE BX_TOKEN_SIZE '=' BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_DISASM BX_TOKEN_HEX BX_TOKEN_TOGGLE_ON_OFF '\n'
+      {
+        bx_dbg_disassemble_hex_mode_switch($3);
+        free($1); free($2);
+      }
+    | BX_TOKEN_DISASM BX_TOKEN_SIZE '=' BX_TOKEN_NUMERIC '\n'
       {
         bx_dbg_set_disassemble_size($4);
         free($1); free($2);
@@ -1026,17 +1049,23 @@ help_command:
          dbg_printf("creg - show control registers\n");
          free($1);free($2);
        }
+     | BX_TOKEN_HELP BX_TOKEN_DEBUG_REGS '\n'
+       {
+         dbg_printf("dreg - show debug registers\n");
+         free($1);free($2);
+       }
      | BX_TOKEN_HELP BX_TOKEN_SETPMEM '\n'
        {
          dbg_printf("setpmem <addr> <datasize> <val> - set physical memory location of size 'datasize' to value 'val'\n");
          free($1);free($2);
        }
-     | BX_TOKEN_HELP BX_TOKEN_DISASSEMBLE '\n'
+     | BX_TOKEN_HELP BX_TOKEN_DISASM '\n'
        {
-         dbg_printf("u|disasm|disassemble [/count] <start> <end> - disassemble instructions for given linear address\n");
+         dbg_printf("u|disasm [/count] <start> <end> - disassemble instructions for given linear address\n");
          dbg_printf("    Optional 'count' is the number of disassembled instructions\n");
-         dbg_printf("u|disasm|disassemble switch-mode - switch between Intel and AT&T disassembler syntax\n");
-         dbg_printf("u|disasm|disassemble size = n - tell debugger what segment size [16|32|64] to use\n");
+         dbg_printf("u|disasm switch-mode - switch between Intel and AT&T disassembler syntax\n");
+         dbg_printf("u|disasm hex on/off - control disasm offsets and displacements format\n");
+         dbg_printf("u|disasm size = n - tell debugger what segment size [16|32|64] to use\n");
          dbg_printf("       when \"disassemble\" command is used.\n");
          free($1);free($2);
        }
@@ -1047,6 +1076,8 @@ help_command:
          dbg_printf("watch continue - do not stop the simulation when watch point is encountred\n");
          dbg_printf("watch r|read addr - insert a read watch point at physical address addr\n");
          dbg_printf("watch w|write addr - insert a write watch point at physical address addr\n");
+         dbg_printf("watch r|read addr <len> - insert a read watch point at physical address addr with range <len>\n");
+         dbg_printf("watch w|write addr <len> - insert a write watch point at physical address addr with range <len>\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_UNWATCH '\n'
@@ -1158,6 +1189,7 @@ BX_TOKEN_NONSEG_REG:
 /* Arithmetic expression for vbreak command */
 vexpression:
      BX_TOKEN_NUMERIC                { $$ = $1; }
+   | BX_TOKEN_STRING                 { $$ = bx_dbg_get_symbol_value($1); free($1);}
    | BX_TOKEN_8BL_REG                { $$ = bx_dbg_get_reg8l_value($1); }
    | BX_TOKEN_8BH_REG                { $$ = bx_dbg_get_reg8h_value($1); }
    | BX_TOKEN_16B_REG                { $$ = bx_dbg_get_reg16_value($1); }
@@ -1181,7 +1213,8 @@ vexpression:
    | '(' vexpression ')'             { $$ = $2; }
 ;
 
-/* Same as vexpression but includes the ':' operator - used in most commands */
+/* Same as vexpression but includes the ':' operator and unary '*' and '@'
++   operators - used in most commands */
 expression:
      BX_TOKEN_NUMERIC                { $$ = $1; }
    | BX_TOKEN_STRING                 { $$ = bx_dbg_get_symbol_value($1); free($1);}
@@ -1206,6 +1239,8 @@ expression:
    | expression '&' expression       { $$ = $1 & $3; }
    | '!' expression %prec NOT        { $$ = !$2; }
    | '-' expression %prec NEG        { $$ = -$2; }
+   | '*' expression %prec INDIRECT   { $$ = bx_dbg_lin_indirect($2); }
+   | '@' expression %prec INDIRECT   { $$ = bx_dbg_phy_indirect($2); }
    | '(' expression ')'              { $$ = $2; }
 ;
 

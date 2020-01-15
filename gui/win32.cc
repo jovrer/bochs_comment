@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.134 2009/11/03 20:38:03 sshwarts Exp $
+// $Id: win32.cc,v 1.137 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -35,6 +29,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "param_names.h"
 #include "keymap.h"
 #include "iodev/iodev.h"
 #if BX_WITH_WIN32
@@ -139,8 +134,8 @@ static int FontId = 2;
 
 // Headerbar stuff
 HWND hwndTB, hwndSB;
-unsigned bx_bitmap_entries;
-struct {
+static unsigned bx_bitmap_entries;
+static struct {
   HBITMAP bmap;
   unsigned xdim;
   unsigned ydim;

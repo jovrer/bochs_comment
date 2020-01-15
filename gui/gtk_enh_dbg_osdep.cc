@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gtk_enh_dbg_osdep.cc,v 1.8 2009/09/27 06:19:23 sshwarts Exp $
+// $Id: gtk_enh_dbg_osdep.cc,v 1.13 2010/03/02 07:07:57 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -58,7 +58,6 @@ void RefreshDataWin();
 void OnBreak();
 void ParseBkpt();
 void SetBreak(int i);
-void SetWatchpoint(unsigned * num_watchpoints, bx_phy_address * watchpoint);
 void ChangeReg();
 int HotKey (int ww, int Alt, int Shift, int Control);
 void ActivateMenuItem (int LW);
@@ -776,9 +775,8 @@ void SpecialInit()
     GrayMenuItem (0, CMD_FPUR);
 #endif
 
-#if BX_SUPPORT_SSE == 0
-    GrayMenuItem (0, CMD_XMMR);
-#endif
+    if (! CpuSupportSSE)
+      GrayMenuItem (0, CMD_XMMR);
 
     doOneTimeInit = FALSE;      // make sure this function is never called again
 }
@@ -987,7 +985,7 @@ void DispMessage(const char *msg, const char *title)
         GTK_DIALOG_DESTROY_WITH_PARENT,
         GTK_MESSAGE_WARNING,
         GTK_BUTTONS_OK,
-        msg);
+        "%s", msg);
     gtk_window_set_title(GTK_WINDOW(dialog), title);
     gtk_dialog_run(GTK_DIALOG(dialog));
     gtk_widget_destroy(dialog);
@@ -1476,10 +1474,6 @@ void Asm_DblClick (GtkTreeView *treeview, GtkTreePath *path, GtkTreeViewColumn *
 
 void Mem_DblClick (GtkTreeView *treeview, GtkTreePath *path, GtkTreeViewColumn *col, gpointer data)
 {
-    extern unsigned num_write_watchpoints;
-    extern unsigned num_read_watchpoints;
-    extern bx_phy_address write_watchpoint[];
-    extern bx_phy_address read_watchpoint[];
     sizing_cancel();
     if (AtBreak == FALSE || (DViewMode != VIEW_MEMDUMP && DViewMode != VIEW_BREAK))
         return;
@@ -1518,13 +1512,13 @@ void Mem_DblClick (GtkTreeView *treeview, GtkTreePath *path, GtkTreeViewColumn *
         {
             // if a watchpoint was clicked, get its index (0 to 15)
             int i = DumpSelRow - WWP_BaseEntry;
-            if (WWP_Snapshot[i] == write_watchpoint[i])
+            if (WWP_Snapshot[i] == write_watchpoint[i].addr)
                 DelWatchpoint(write_watchpoint, &num_write_watchpoints, i);
         }
         else if (DumpSelRow >= RWP_BaseEntry && DumpSelRow < RWP_BaseEntry + RWPSnapCount)
         {
             int i = DumpSelRow - RWP_BaseEntry;
-            if (RWP_Snapshot[i] == read_watchpoint[i])
+            if (RWP_Snapshot[i] == read_watchpoint[i].addr)
                 DelWatchpoint(read_watchpoint, &num_read_watchpoints, i);
         }
         RefreshDataWin();       // show the NEW set of break/watchpoints
@@ -1864,10 +1858,6 @@ void ListClr_PaintCb(GtkTreeViewColumn *col,
 {
     int colnum = GPOINTER_TO_INT ( acolnum );
     gint rownum = 0;
-    extern unsigned num_write_watchpoints;
-    extern unsigned num_read_watchpoints;
-    extern bx_phy_address write_watchpoint[];
-    extern bx_phy_address read_watchpoint[];
 
     if (AtBreak == FALSE)
         g_object_set(renderer, "cell-background-gdk", &mgray, "cell-background-set", TRUE, NULL);
@@ -1991,21 +1981,21 @@ void ListClr_PaintCb(GtkTreeViewColumn *col,
             int i = num_read_watchpoints;
             while (j > 0)
             {
-                if (write_watchpoint[--j] == h)
+                if (write_watchpoint[--j].addr == h)
                 {
-                    DmpClrNum = 1;      // write watchpoint
+                    DmpClrNum = 1;  // write watchpoint
                     j = -1;         // on a match j<0 -- else j == 0
                 }
             }
             while (--i >= 0)
             {
-                if (read_watchpoint[i] == h)
+                if (read_watchpoint[i].addr == h)
                 {
-                    if (j < 0)          // BOTH read and write
+                    if (j < 0)         // BOTH read and write
                         DmpClrNum = 2;
                     else
-                        DmpClrNum = 3;      // read watchpoint
-                    i = 0;          // end the loop on a match
+                        DmpClrNum = 3; // read watchpoint
+                    i = 0;             // end the loop on a match
                 }
             }
         }

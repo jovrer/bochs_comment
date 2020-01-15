@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith32.cc,v 1.83 2009/01/16 18:18:58 sshwarts Exp $
+// $Id: arith32.cc,v 1.86 2010/03/14 15:51:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -310,18 +304,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CDQ(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_XBTS(bxInstruction_c *i)
 {
   BX_INFO(("CMPXCHG_XBTS: Generate #UD exception"));
-  exception(BX_UD_EXCEPTION, 0, 0);
+  exception(BX_UD_EXCEPTION, 0);
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_IBTS(bxInstruction_c *i)
 {
   BX_INFO(("CMPXCHG_IBTS: Generate #UD exception"));
-  exception(BX_UD_EXCEPTION, 0, 0);
+  exception(BX_UD_EXCEPTION, 0);
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EdGdM(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, sum_32;
 
   /* XADD dst(r/m), src(r)
@@ -341,15 +334,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EdGdM(bxInstruction_c *i)
   BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
 
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
-#else
-  BX_INFO (("XADD_EdGd not supported for cpulevel <= 3"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EdGdR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, sum_32;
 
   /* XADD dst(r/m), src(r)
@@ -370,10 +358,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EdGdR(bxInstruction_c *i)
   BX_WRITE_32BIT_REGZ(i->rm(), sum_32);
 
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
-#else
-  BX_INFO (("XADD_EdGd not supported for cpulevel <= 3"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EdIdM(bxInstruction_c *i)
@@ -529,7 +513,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_EdM(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EdGdM(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, diff_32;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -547,15 +530,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EdGdM(bxInstruction_c *i)
     // accumulator <-- dest
     RAX = op1_32;
   }
-#else
-  BX_INFO(("CMPXCHG_EdGd: not supported for cpulevel <= 3"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EdGdR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, diff_32;
 
   op1_32 = BX_READ_32BIT_REG(i->rm());
@@ -571,15 +549,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EdGdR(bxInstruction_c *i)
     // accumulator <-- dest
     RAX = op1_32;
   }
-#else
-  BX_INFO(("CMPXCHG_EdGd: not supported for cpulevel <= 3"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG8B(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 5
   Bit64u op1_64, op2_64;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -600,9 +573,4 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG8B(bxInstruction_c *i)
     RDX = GET32H(op1_64);
     clear_ZF();
   }
-
-#else
-  BX_INFO(("CMPXCHG8B: not supported for cpulevel <= 4"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }

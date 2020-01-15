@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc,v 1.80 2009/04/05 18:16:29 sshwarts Exp $
+// $Id: ctrl_xfer64.cc,v 1.84 2010/03/14 15:51:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -38,7 +32,7 @@ BX_CPP_INLINE void BX_CPP_AttrRegparmN(1) BX_CPU_C::branch_near64(bxInstruction_
 
   if (! IsCanonical(new_RIP)) {
     BX_ERROR(("branch_near64: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = new_RIP;
@@ -59,7 +53,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
 
   if (! IsCanonical(return_RIP)) {
     BX_ERROR(("RETnear64_Iw: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = return_RIP;
@@ -78,7 +72,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear64(bxInstruction_c *i)
 
   if (! IsCanonical(return_RIP)) {
     BX_ERROR(("RETnear64: canonical RIP violation %08x%08x", GET32H(return_RIP), GET32L(return_RIP)));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = return_RIP;
@@ -97,12 +91,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETfar64_Iw(bxInstruction_c *i)
 
   BX_ASSERT(protected_mode());
 
-  RSP_SPECULATIVE;
-
-  // return_protected is not RSP safe
+  // return_protected is RSP safe
   return_protected(i, i->Iw());
-
-  RSP_COMMIT;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -121,7 +111,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL_Jq(bxInstruction_c *i)
 
   if (! IsCanonical(new_RIP)) {
     BX_ERROR(("CALL_Jq: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = new_RIP;
@@ -144,7 +134,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL_EqR(bxInstruction_c *i)
   if (! IsCanonical(new_RIP))
   {
     BX_ERROR(("CALL_Eq: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = new_RIP;
@@ -169,12 +159,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
 
   BX_ASSERT(protected_mode());
 
-  RSP_SPECULATIVE;
-
-  // call_protected is not RSP safe
+  // call_protected is RSP safe for 64-bit mode
   call_protected(i, cs_raw, op1_64);
-
-  RSP_COMMIT;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -186,7 +172,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP_Jq(bxInstruction_c *i)
 
   if (! IsCanonical(new_RIP)) {
     BX_ERROR(("JMP_Jq: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = new_RIP;
@@ -408,7 +394,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP_EqR(bxInstruction_c *i)
 
   if (! IsCanonical(op1_64)) {
     BX_ERROR(("JMP_Eq: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RIP = op1_64;
@@ -449,12 +435,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::IRET64(bxInstruction_c *i)
 
   BX_ASSERT(long_mode());
 
-  RSP_SPECULATIVE;
-
-  // long_iret is not RSP safe
   long_iret(i);
-
-  RSP_COMMIT;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);

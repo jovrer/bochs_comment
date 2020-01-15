@@ -1,14 +1,8 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.cc,v 1.42 2009/04/10 08:15:25 vruppert Exp $
+// $Id: virt_timer.cc,v 1.44 2010/02/26 14:18:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -64,6 +58,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
+#include "param_names.h"
 #include "virt_timer.h"
 
 #define BX_USE_VIRTUAL_TIMERS 1

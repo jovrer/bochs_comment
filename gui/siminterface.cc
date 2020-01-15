@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc,v 1.208 2009/11/08 20:47:03 sshwarts Exp $
+// $Id: siminterface.cc,v 1.213 2010/02/26 22:53:43 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -19,11 +19,12 @@
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
-//
+  
 // See siminterface.h for description of the siminterface concept.
 // Basically, the siminterface is visible from both the simulator and
 // the configuration user interface, and allows them to talk to each other.
 
+#include "param_names.h"
 #include "iodev.h"
 
 bx_simulator_interface_c *SIM = NULL;
@@ -64,6 +65,7 @@ class bx_real_sim_c : public bx_simulator_interface_c {
   jmp_buf *quit_context;
   int exit_code;
   unsigned param_id;
+  bx_bool wx_debug_gui;
 public:
   bx_real_sim_c();
   virtual ~bx_real_sim_c() {}
@@ -147,9 +149,8 @@ public:
   virtual int begin_simulation(int argc, char *argv[]);
   virtual void set_sim_thread_func(is_sim_thread_func_t func) {}
   virtual bx_bool is_sim_thread();
-  bx_bool debug_gui;
-  virtual void set_debug_gui(bx_bool val) { debug_gui = val; }
-  virtual bx_bool has_debug_gui() { return debug_gui; }
+  virtual void set_debug_gui(bx_bool val) { wx_debug_gui = val; }
+  virtual bx_bool has_debug_gui() const { return wx_debug_gui; }
   // provide interface to bx_gui->set_display_mode() method for config
   // interfaces to use.
   virtual void set_display_mode(disp_mode_t newmode) {
@@ -308,7 +309,7 @@ bx_real_sim_c::bx_real_sim_c()
   ci_callback = NULL;
   ci_callback_data = NULL;
   is_sim_thread_func = NULL;
-  debug_gui = 0;
+  wx_debug_gui = 0;
 
   enabled = 1;
   init_done = 0;
@@ -462,23 +463,27 @@ int bx_real_sim_c::get_cdrom_options(int level, bx_list_c **out, int *where)
   return 0;
 }
 
-const char *bochs_start_names[] = { "quick", "load", "edit", "run" };
-
 const char *floppy_devtype_names[] = { "none", "5.25\" 360K", "5.25\" 1.2M", "3.5\" 720K", "3.5\" 1.44M", "3.5\" 2.88M", NULL };
 const char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", "auto", NULL };
 int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8, -1 };
-
 const char *bochs_bootdisk_names[] = { "none", "floppy", "disk","cdrom", "network", NULL };
-const char *loader_os_names[] = { "none", "linux", "nullkernel", NULL };
 const char *keyboard_type_names[] = { "xt", "at", "mf", NULL };
 
-const char *atadevice_type_names[] = { "disk", "cdrom", NULL };
-//const char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "vmware4", "undoable", "growing", "volatile", "z-undoable", "z-volatile", NULL };
-const char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "vmware4", "undoable", "growing", "volatile", NULL };
-const char *atadevice_biosdetect_names[] = { "none", "auto", "cmos", NULL };
-const char *atadevice_translation_names[] = { "none", "lba", "large", "rechs", "auto", NULL };
-const char *clock_sync_names[] = { "none", "realtime", "slowdown", "both", NULL };
-
+const char *atadevice_mode_names[] = { 
+  "flat",
+  "concat",
+  "external",
+  "dll",
+  "sparse",
+  "vmware3",
+  "vmware4",
+  "undoable",
+  "growing",
+  "volatile",
+//"z-undoable",
+//"z-volatile",
+  NULL
+};
 
 void bx_real_sim_c::set_notify_callback(bxevent_handler func, void *arg)
 {
@@ -759,9 +764,9 @@ int bx_real_sim_c::configuration_interface(const char *ignore, ci_command_t comm
     return -1;
   }
   if (!strcmp(name, "wx"))
-    debug_gui = 1;
+    wx_debug_gui = 1;
   else
-    debug_gui = 0;
+    wx_debug_gui = 0;
   // enter configuration mode, just while running the configuration interface
   set_display_mode(DISP_MODE_CONFIG);
   int retval = (*ci_callback)(ci_callback_data, command);

@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.298 2009/11/05 16:06:57 sshwarts Exp $
+// $Id: cpu.cc,v 1.312 2010/04/20 06:14:55 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -113,7 +107,6 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
   BX_CPU_THIS_PTR prev_rip = RIP; // commit new EIP
   BX_CPU_THIS_PTR speculative_rsp = 0;
   BX_CPU_THIS_PTR EXT = 0;
-  BX_CPU_THIS_PTR errorno = 0;
 
   while (1) {
 
@@ -152,17 +145,15 @@ no_async_event:
       i = entry->i;
     }
 
-    BxExecutePtr_tR execute = i->execute;
-
 #if BX_SUPPORT_TRACE_CACHE
-    bxInstruction_c *last = i + (entry->ilen);
+    bxInstruction_c *last = i + (entry->tlen);
 
     for(;;) {
 #endif
 
 #if BX_INSTRUMENTATION
       BX_INSTR_OPCODE(BX_CPU_ID, BX_CPU_THIS_PTR eipFetchPtr + (RIP + BX_CPU_THIS_PTR eipPageBias),
-         i->ilen(), BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, Is64BitMode());
+         i->ilen(), BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, long64_mode());
 #endif
 
 #if BX_DISASM
@@ -172,20 +163,17 @@ no_async_event:
       }
 #endif
 
-      // decoding instruction compeleted -> continue with execution
+      // instruction decoding completed -> continue with execution
+      // want to allow changing of the instruction inside instrumentation callback
       BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
       RIP += i->ilen();
-      BX_CPU_CALL_METHOD(execute, (i)); // might iterate repeat instruction
+      BX_CPU_CALL_METHOD(i->execute, (i)); // might iterate repeat instruction
       BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
       BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
       BX_TICK1_IF_SINGLE_PROCESSOR();
 
       // inform instrumentation about new instruction
       BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
-
-#if BX_SUPPORT_TRACE_CACHE
-      execute = (++i)->execute;
-#endif
 
       // note instructions generating exceptions never reach this point
 #if BX_DEBUGGER || BX_GDBSTUB
@@ -201,7 +189,7 @@ no_async_event:
         break;
       }
 
-      if (i == last) goto no_async_event;
+      if (++i == last) goto no_async_event;
     }
 #endif
   }  // while (1)
@@ -445,15 +433,21 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
         // interrupt ends the HALT condition
 #if BX_SUPPORT_MONITOR_MWAIT
         if (BX_CPU_THIS_PTR activity_state >= BX_ACTIVITY_STATE_MWAIT)
-          BX_MEM(0)->clear_monitor(BX_CPU_THIS_PTR bx_cpuid);
+          BX_CPU_THIS_PTR monitor.reset_monitor();
 #endif
         BX_CPU_THIS_PTR activity_state = 0;
         BX_CPU_THIS_PTR inhibit_mask = 0; // clear inhibits for after resume
         break;
       }
+
       if (BX_CPU_THIS_PTR activity_state == BX_ACTIVITY_STATE_ACTIVE) {
         BX_INFO(("handleAsyncEvent: reset detected in HLT state"));
         break;
+      }
+
+      if (BX_HRQ && BX_DBG_ASYNC_DMA) {
+        // handle DMA also when CPU is halted
+        DEV_dma_raise_hlda();
       }
 
       // for multiprocessor simulation, even if this CPU is halted we still
@@ -494,7 +488,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   // Priority 2: Trap on Task Switch
   //   T flag in TSS is set
   if (BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_TASK_SWITCH_BIT)
-    exception(BX_DB_EXCEPTION, 0, 0); // no error, not interrupt
+    exception(BX_DB_EXCEPTION, 0); // no error, not interrupt
 
   // Priority 3: External Hardware Interventions
   //   FLUSH
@@ -528,7 +522,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
     // A trap may be inhibited on this boundary due to an instruction
     // which loaded SS.  If so we clear the inhibit_mask below
     // and don't execute this code until the next boundary.
-    exception(BX_DB_EXCEPTION, 0, 0); // no error, not interrupt
+    exception(BX_DB_EXCEPTION, 0); // no error, not interrupt
   }
 
   // Priority 5: External Interrupts
@@ -553,7 +547,6 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   else if (BX_CPU_THIS_PTR pending_NMI && ! BX_CPU_THIS_PTR disable_NMI) {
     BX_CPU_THIS_PTR pending_NMI = 0;
     BX_CPU_THIS_PTR disable_NMI = 1;
-    BX_CPU_THIS_PTR errorno = 0;
     BX_CPU_THIS_PTR EXT = 1; /* external event */
 #if BX_SUPPORT_VMX
     VMexit_Event(0, BX_NMI, 2, 0, 0);
@@ -582,7 +575,6 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
 #endif
       // if no local APIC, always acknowledge the PIC.
       vector = DEV_pic_iac(); // may set INTR with next interrupt
-    BX_CPU_THIS_PTR errorno = 0;
     BX_CPU_THIS_PTR EXT = 1; /* external event */
 #if BX_SUPPORT_VMX
     VMexit_Event(0, BX_EXTERNAL_INTERRUPT, vector, 0, 0);
@@ -596,9 +588,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
     // it was a sofware interrupt instruction, and need to effect the
     // commit here.  This code mirrors similar code above.
     BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
-    BX_CPU_THIS_PTR speculative_rsp = 0;
     BX_CPU_THIS_PTR EXT = 0;
-    BX_CPU_THIS_PTR errorno = 0;
   }
   else if (BX_HRQ && BX_DBG_ASYNC_DMA) {
     // NOTE: similar code in ::take_dma()
@@ -647,7 +637,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
           // Add to the list of debug events thus far.
           BX_CPU_THIS_PTR debug_trap |= dr6_bits;
           BX_ERROR(("#DB: x86 code breakpoint catched"));
-          exception(BX_DB_EXCEPTION, 0, 0); // no error, not interrupt
+          exception(BX_DB_EXCEPTION, 0); // no error, not interrupt
         }
       }
     }
@@ -698,10 +688,10 @@ void BX_CPU_C::prefetch(void)
   unsigned pageOffset;
 
 #if BX_SUPPORT_X86_64
-  if (Is64BitMode()) {
+  if (long64_mode()) {
     if (! IsCanonical(RIP)) {
       BX_ERROR(("prefetch: #GP(0): RIP crossed canonical boundary"));
-      exception(BX_GP_EXCEPTION, 0, 0);
+      exception(BX_GP_EXCEPTION, 0);
     }
 
     // linear address is equal to RIP in 64-bit long mode
@@ -725,7 +715,7 @@ void BX_CPU_C::prefetch(void)
     Bit32u limit = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled;
     if (EIP > limit) {
       BX_ERROR(("prefetch: EIP [%08x] > CS.limit [%08x]", EIP, limit));
-      exception(BX_GP_EXCEPTION, 0, 0);
+      exception(BX_GP_EXCEPTION, 0);
     }
 
     BX_CPU_THIS_PTR eipPageWindowSize = 4096;
@@ -739,20 +729,12 @@ void BX_CPU_C::prefetch(void)
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[TLB_index];
   Bit8u *fetchPtr = 0;
 
-  if ((tlbEntry->lpf == lpf) && !(tlbEntry->accessBits & USER_PL)) {
+  if ((tlbEntry->lpf == lpf) && !(tlbEntry->accessBits & (0x4 | USER_PL))) {
     BX_CPU_THIS_PTR pAddrPage = tlbEntry->ppf;
     fetchPtr = (Bit8u*) tlbEntry->hostPageAddr;
   }  
   else {
-    bx_phy_address pAddr;
-
-    if (BX_CPU_THIS_PTR cr0.get_PG()) {
-      pAddr = translate_linear(laddr, CPL, BX_EXECUTE);
-    } 
-    else {
-      pAddr = (bx_phy_address) laddr;
-    }
-
+    bx_phy_address pAddr = translate_linear(laddr, CPL, BX_EXECUTE);
     BX_CPU_THIS_PTR pAddrPage = LPFOf(pAddr);
   }
 
@@ -760,8 +742,7 @@ void BX_CPU_C::prefetch(void)
     BX_CPU_THIS_PTR eipFetchPtr = fetchPtr;
   }
   else {
-    BX_CPU_THIS_PTR eipFetchPtr = BX_MEM(0)->getHostMemAddr(BX_CPU_THIS,
-        BX_CPU_THIS_PTR pAddrPage, BX_EXECUTE);
+    BX_CPU_THIS_PTR eipFetchPtr = (const Bit8u*) getHostMemAddr(BX_CPU_THIS_PTR pAddrPage, BX_EXECUTE);
 
     // Sanity checks
     if (! BX_CPU_THIS_PTR eipFetchPtr) {
@@ -776,68 +757,6 @@ void BX_CPU_C::prefetch(void)
   }
 
   BX_CPU_THIS_PTR currPageWriteStampPtr = pageWriteStampTable.getPageWriteStampPtr(BX_CPU_THIS_PTR pAddrPage);
-}
-
-void BX_CPU_C::boundaryFetch(const Bit8u *fetchPtr, unsigned remainingInPage, bxInstruction_c *i)
-{
-  unsigned j, k;
-  Bit8u fetchBuffer[32];
-  unsigned ret;
-
-  if (remainingInPage >= 15) {
-    BX_ERROR(("boundaryFetch #GP(0): too many instruction prefixes"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  // Read all leftover bytes in current page up to boundary.
-  for (j=0; j<remainingInPage; j++) {
-    fetchBuffer[j] = *fetchPtr++;
-  }
-
-  // The 2nd chunk of the instruction is on the next page.
-  // Set RIP to the 0th byte of the 2nd page, and force a
-  // prefetch so direct access of that physical page is possible, and
-  // all the associated info is updated.
-  RIP += remainingInPage;
-  prefetch();
-
-  unsigned fetchBufferLimit = 15;
-  if (BX_CPU_THIS_PTR eipPageWindowSize < 15) {
-    BX_DEBUG(("boundaryFetch: small window size after prefetch=%d bytes, remainingInPage=%d bytes", BX_CPU_THIS_PTR eipPageWindowSize, remainingInPage));
-    fetchBufferLimit = BX_CPU_THIS_PTR eipPageWindowSize;
-  }
-
-  // We can fetch straight from the 0th byte, which is eipFetchPtr;
-  fetchPtr = BX_CPU_THIS_PTR eipFetchPtr;
-
-  // read leftover bytes in next page
-  for (k=0; k<fetchBufferLimit; k++, j++) {
-    fetchBuffer[j] = *fetchPtr++;
-  }
-
-#if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
-    ret = fetchDecode64(fetchBuffer, i, remainingInPage+fetchBufferLimit);
-  else
-#endif
-    ret = fetchDecode32(fetchBuffer, i, remainingInPage+fetchBufferLimit);
-
-  if (ret==0) {
-    BX_INFO(("boundaryFetch #GP(0): failed to complete instruction decoding"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  // Restore EIP since we fudged it to start at the 2nd page boundary.
-  RIP = BX_CPU_THIS_PTR prev_rip;
-
-  // Since we cross an instruction boundary, note that we need a prefetch()
-  // again on the next instruction.  Perhaps we can optimize this to
-  // eliminate the extra prefetch() since we do it above, but have to
-  // think about repeated instructions, etc.
-  // invalidate_prefetch_q();
-
-  BX_INSTR_OPCODE(BX_CPU_ID, fetchBuffer, i->ilen(),
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, Is64BitMode());
 }
 
 void BX_CPU_C::deliver_SIPI(unsigned vector)
@@ -1009,7 +928,6 @@ void BX_CPU_C::dbg_take_irq(void)
     if (setjmp(BX_CPU_THIS_PTR jmp_buf_env) == 0) {
       // normal return from setjmp setup
       unsigned vector = DEV_pic_iac(); // may set INTR with next interrupt
-      BX_CPU_THIS_PTR errorno = 0;
       BX_CPU_THIS_PTR EXT = 1; // external event
       BX_CPU_THIS_PTR async_event = 1; // set in case INTR is triggered
       interrupt(vector, BX_EXTERNAL_INTERRUPT, 0, 0);
@@ -1024,7 +942,6 @@ void BX_CPU_C::dbg_force_interrupt(unsigned vector)
 
   if (setjmp(BX_CPU_THIS_PTR jmp_buf_env) == 0) {
     // normal return from setjmp setup
-    BX_CPU_THIS_PTR errorno = 0;
     BX_CPU_THIS_PTR EXT = 1; // external event
     BX_CPU_THIS_PTR async_event = 1; // probably don't need this
     interrupt(vector, BX_EXTERNAL_INTERRUPT, 0, 0);

@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.87 2009/10/24 13:22:36 sshwarts Exp $
+// $Id: sdl.cc,v 1.89 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -33,6 +27,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "param_names.h"
 #include "keymap.h"
 #include "iodev.h"
 #if BX_WITH_SDL

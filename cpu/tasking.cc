@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: tasking.cc,v 1.76 2009/10/08 18:07:50 sshwarts Exp $
+// $Id: tasking.cc,v 1.93 2010/04/22 17:51:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2010  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -146,17 +140,6 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   //   2) TSS DPL must be >= TSS selector RPL
   //   3) TSS descriptor is not busy.
 
-  if (tss_descriptor->valid==0 || tss_selector->ti) {
-    BX_ERROR(("task_switch: bad TSS selector !"));
-    exception(BX_GP_EXCEPTION, tss_selector->value & 0xfffc, 0);
-  }
-
-  // TSS must be present, else #NP(TSS selector)
-  if (tss_descriptor->p==0) {
-    BX_ERROR(("task_switch: TSS descriptor is not present !"));
-    exception(BX_NP_EXCEPTION, tss_selector->value & 0xfffc, 0);
-  }
-
   // STEP 2: The processor performs limit-checking on the target TSS
   //         to verify that the TSS limit is greater than or equal
   //         to 67h (2Bh for 16-bit TSS).
@@ -169,12 +152,12 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
     new_TSS_max = 0x67;
   }
 
-  nbase32 = (Bit32u) tss_descriptor->u.segment.base;                 // new TSS.base
+  nbase32 = (Bit32u) tss_descriptor->u.segment.base;
   new_TSS_limit = tss_descriptor->u.segment.limit_scaled;
 
   if (new_TSS_limit < new_TSS_max) {
     BX_ERROR(("task_switch(): new TSS limit < %d", new_TSS_max));
-    exception(BX_TS_EXCEPTION, tss_selector->value & 0xfffc, 0);
+    exception(BX_TS_EXCEPTION, tss_selector->value & 0xfffc);
   }
 
 #if BX_SUPPORT_VMX
@@ -194,7 +177,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
 
   if (old_TSS_limit < old_TSS_max) {
     BX_ERROR(("task_switch(): old TSS limit < %d", old_TSS_max));
-    exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
+    exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc);
   }
 
   if (obase32 == nbase32) {
@@ -224,11 +207,22 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
 
   // Privilege and busy checks done in CALL, JUMP, INT, IRET
 
-  // STEP 3: Save the current task state in the TSS. Up to this point,
-  //         any exception that occurs aborts the task switch without
-  //         changing the processor state.
+  // Step 3: If JMP or IRET, clear busy bit in old task TSS descriptor,
+  //         otherwise leave set.
 
-  /* save current machine state in old task's TSS */
+  // effect on Busy bit of old task
+  if (source == BX_TASK_FROM_JUMP || source == BX_TASK_FROM_IRET) {
+    // Bit is cleared
+    Bit32u laddr = (Bit32u) BX_CPU_THIS_PTR gdtr.base + (BX_CPU_THIS_PTR tr.selector.index<<3) + 4;
+    access_read_linear(laddr, 4, 0, BX_RW, &temp32);
+    temp32 &= ~0x200;
+    access_write_linear(laddr, 4, 0, &temp32);
+  }
+
+  // STEP 4: If the task switch was initiated with an IRET instruction,
+  //         clears the NT flag in a temporarily saved EFLAGS image;
+  //         if initiated with a CALL or JMP instruction, an exception, or
+  //         an interrupt, the NT flag is left unchanged.
 
   Bit32u oldEFLAGS = read_eflags();
 
@@ -238,6 +232,12 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   {
     oldEFLAGS &= ~EFlagsNTMask;
   }
+
+  // STEP 5: Save the current task state in the TSS. Up to this point,
+  //         any exception that occurs aborts the task switch without
+  //         changing the processor state.
+
+  /* save current machine state in old task's TSS */
 
   if (BX_CPU_THIS_PTR tr.cache.type <= 3) {
     // check that we won't page fault while writing
@@ -305,7 +305,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
     system_write_word(nbase32, BX_CPU_THIS_PTR tr.selector.value);
   }
 
-  // STEP 4: The new-task state is loaded from the TSS
+  // STEP 6: The new-task state is loaded from the TSS
 
   if (tss_descriptor->type <= 3) {
     newEIP    = system_read_word(Bit32u(nbase32 + 14));
@@ -372,7 +372,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
     trap_word        = system_read_word(Bit32u(nbase32 + 0x64));
   }
 
-  // Step 5: If CALL, interrupt, or JMP, set busy flag in new task's
+  // Step 7: If CALL, interrupt, or JMP, set busy flag in new task's
   //         TSS descriptor.  If IRET, leave set.
 
   if (source != BX_TASK_FROM_IRET)
@@ -384,18 +384,6 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
     access_write_linear(laddr, 4, 0, &dword2);
   }
 
-  // Step 6: If JMP or IRET, clear busy bit in old task TSS descriptor,
-  //         otherwise leave set.
-
-  // effect on Busy bit of old task
-  if (source == BX_TASK_FROM_JUMP || source == BX_TASK_FROM_IRET) {
-    // Bit is cleared
-    Bit32u laddr = (Bit32u) BX_CPU_THIS_PTR gdtr.base + (BX_CPU_THIS_PTR tr.selector.index<<3) + 4;
-    access_read_linear(laddr, 4, 0, BX_RW, &temp32);
-    temp32 &= ~0x200;
-    access_write_linear(laddr, 4, 0, &temp32);
-  }
-
   //
   // Commit point.  At this point, we commit to the new
   // context.  If an unrecoverable error occurs in further
@@ -405,29 +393,29 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   // execution of the new task.
   //
 
-  // Step 7: Load the task register with the segment selector and
-  //        descriptor for the new task TSS.
+  // Step 8: Load the task register with the segment selector and
+  //         descriptor for the new task TSS.
 
   BX_CPU_THIS_PTR tr.selector = *tss_selector;
   BX_CPU_THIS_PTR tr.cache    = *tss_descriptor;
   BX_CPU_THIS_PTR tr.cache.type |= 2; // mark TSS in TR as busy
 
-  // Step 8: Set TS flag in the CR0 image stored in the new task TSS.
+  // Step 9: Set TS flag in the CR0 image stored in the new task TSS.
   BX_CPU_THIS_PTR cr0.set_TS(1);
 
   // Task switch clears LE/L3/L2/L1/L0 in DR7
   BX_CPU_THIS_PTR dr7 &= ~0x00000155;
 
-  // Step 9: If call or interrupt, set the NT flag in the eflags
-  //         image stored in new task's TSS.  If IRET or JMP,
-  //         NT is restored from new TSS eflags image. (no change)
+  // Step 10: If call or interrupt, set the NT flag in the eflags
+  //          image stored in new task's TSS.  If IRET or JMP,
+  //          NT is restored from new TSS eflags image. (no change)
 
   // effect on NT flag of new task
   if (source == BX_TASK_FROM_CALL || source == BX_TASK_FROM_INT) {
     newEFLAGS |= EFlagsNTMask; // NT flag is set
   }
 
-  // Step 10: Load the new task (dynamic) state from new TSS.
+  // Step 11: Load the new task (dynamic) state from new TSS.
   //          Any errors associated with loading and qualification of
   //          segment descriptors in this step occur in the new task's
   //          context.  State loaded here includes LDTR, CR3,
@@ -444,6 +432,8 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   EBP = newEBP;
   ESI = newESI;
   EDI = newEDI;
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   writeEFlags(newEFLAGS, EFlagsValidMask);
 
@@ -477,8 +467,17 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   if ((tss_descriptor->type >= 9) && BX_CPU_THIS_PTR cr0.get_PG()) {
     // change CR3 only if it actually modified
     if (newCR3 != BX_CPU_THIS_PTR cr3) {
-      SetCR3(newCR3); // Tell paging unit about new cr3 value
       BX_DEBUG(("task_switch changing CR3 to 0x" FMT_PHY_ADDRX, newCR3));
+#if BX_CPU_LEVEL >= 6
+      if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE()) {
+        if (! CheckPDPTR(newCR3)) {
+          BX_ERROR(("task_switch(exception after commit point): PDPTR check failed !"));
+          exception(BX_GP_EXCEPTION, 0);
+        }
+      }
+#endif
+      if (! SetCR3(newCR3)) // Tell paging unit about new cr3 value
+        exception(BX_GP_EXCEPTION, 0);
       BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_TASKSWITCH, newCR3);
     }
   }
@@ -492,14 +491,14 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   if (ldt_selector.ti) {
     // LDT selector must be in GDT
     BX_INFO(("task_switch(exception after commit point): bad LDT selector TI=1"));
-    exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc, 0);
+    exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc);
   }
 
   if ((raw_ldt_selector & 0xfffc) != 0) {
     bx_bool good = fetch_raw_descriptor2(&ldt_selector, &dword1, &dword2);
     if (!good) {
       BX_ERROR(("task_switch(exception after commit point): bad LDT fetch"));
-      exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc);
     }
 
     parse_descriptor(dword1, dword2, &ldt_descriptor);
@@ -510,13 +509,13 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
         ldt_descriptor.segment)
     {
       BX_ERROR(("task_switch(exception after commit point): bad LDT segment"));
-      exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc);
     }
 
     // LDT of new task is present in memory, else #TS(new tasks's LDT)
     if (! IS_PRESENT(ldt_descriptor)) {
       BX_ERROR(("task_switch(exception after commit point): LDT not present"));
-      exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc);
     }
 
     // All checks pass, fill in LDTR shadow cache
@@ -544,7 +543,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
       bx_bool good = fetch_raw_descriptor2(&ss_selector, &dword1, &dword2);
       if (!good) {
         BX_ERROR(("task_switch(exception after commit point): bad SS fetch"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       parse_descriptor(dword1, dword2, &ss_descriptor);
@@ -557,7 +556,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
           !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
       {
         BX_ERROR(("task_switch(exception after commit point): SS not valid or writeable segment"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       //
@@ -565,19 +564,19 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
       //
       if (! IS_PRESENT(ss_descriptor)) {
         BX_ERROR(("task_switch(exception after commit point): SS not present"));
-        exception(BX_SS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_SS_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       // Stack segment DPL matches CS.RPL, else #TS(new stack segment)
       if (ss_descriptor.dpl != cs_selector.rpl) {
         BX_ERROR(("task_switch(exception after commit point): SS.rpl != CS.RPL"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       // Stack segment DPL matches selector RPL, else #TS(new stack segment)
       if (ss_descriptor.dpl != ss_selector.rpl) {
         BX_ERROR(("task_switch(exception after commit point): SS.dpl != SS.rpl"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       touch_segment(&ss_selector, &ss_descriptor);
@@ -588,7 +587,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
     else {
       // SS selector is valid, else #TS(new stack segment)
       BX_ERROR(("task_switch(exception after commit point): SS NULL"));
-      exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc);
     }
 
     CPL = save_CPL;
@@ -616,7 +615,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
       bx_bool good = fetch_raw_descriptor2(&cs_selector, &dword1, &dword2);
       if (!good) {
         BX_ERROR(("task_switch(exception after commit point): bad CS fetch"));
-        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc);
       }
 
       parse_descriptor(dword1, dword2, &cs_descriptor);
@@ -626,7 +625,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
           IS_DATA_SEGMENT(cs_descriptor.type))
       {
         BX_ERROR(("task_switch(exception after commit point): CS not valid executable seg"));
-        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc);
       }
 
       // if non-conforming then DPL must equal selector RPL else #TS(CS)
@@ -634,7 +633,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
           cs_descriptor.dpl != cs_selector.rpl)
       {
         BX_ERROR(("task_switch(exception after commit point): non-conforming: CS.dpl!=CS.RPL"));
-        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc);
       }
 
       // if conforming then DPL must be <= selector RPL else #TS(CS)
@@ -642,16 +641,23 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
           cs_descriptor.dpl > cs_selector.rpl)
       {
         BX_ERROR(("task_switch(exception after commit point): conforming: CS.dpl>RPL"));
-        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc);
       }
 
       // Code segment is present in memory, else #NP(new code segment)
       if (! IS_PRESENT(cs_descriptor)) {
         BX_ERROR(("task_switch(exception after commit point): CS.p==0"));
-        exception(BX_NP_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+        exception(BX_NP_EXCEPTION, raw_cs_selector & 0xfffc);
       }
 
       touch_segment(&cs_selector, &cs_descriptor);
+
+#ifdef BX_SUPPORT_CS_LIMIT_DEMOTION
+      // Handle special case of CS.LIMIT demotion (new descriptor limit is
+      // smaller than current one)
+      if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled > cs_descriptor.u.segment.limit_scaled)
+        BX_CPU_THIS_PTR iCache.flushICacheEntries();
+#endif
 
       // All checks pass, fill in shadow cache
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache = cs_descriptor;
@@ -659,10 +665,10 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
     else {
       // If new cs selector is null #TS(CS)
       BX_ERROR(("task_switch(exception after commit point): CS NULL"));
-      exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_cs_selector & 0xfffc);
     }
 
-    updateFetchModeMask();
+    updateFetchModeMask(/* CS reloaded */);
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
     handleAlignmentCheck(); // task switch, CPL was modified
@@ -670,14 +676,14 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   }
 
 
-  if ((tss_descriptor->type>=9) && (trap_word & 0x1)) {
+  if (tss_descriptor->type >= 9 && (trap_word & 0x1)) {
     BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_TRAP_TASK_SWITCH_BIT; // BT flag
     BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
     BX_INFO(("task_switch: T bit set in new TSS"));
   }
 
   //
-  // Step 14: Begin execution of new task.
+  // Step 12: Begin execution of new task.
   //
   BX_DEBUG(("TASKING: LEAVE"));
 }
@@ -694,7 +700,7 @@ void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
     bx_bool good = fetch_raw_descriptor2(selector, &dword1, &dword2);
     if (!good) {
       BX_ERROR(("task_switch(%s): bad selector fetch !", strseg(seg)));
-      exception(BX_TS_EXCEPTION, raw_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_selector & 0xfffc);
     }
 
     parse_descriptor(dword1, dword2, &descriptor);
@@ -704,7 +710,7 @@ void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
         IS_CODE_SEGMENT_READABLE(descriptor.type) == 0))
     {
       BX_ERROR(("task_switch(%s): not data or readable code !", strseg(seg)));
-      exception(BX_TS_EXCEPTION, raw_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_selector & 0xfffc);
     }
 
     /* If data or non-conforming code, then both the RPL and the CPL
@@ -714,13 +720,13 @@ void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
     {
       if ((selector->rpl > descriptor.dpl) || (cs_rpl > descriptor.dpl)) {
         BX_ERROR(("load_seg_reg(%s): RPL & CPL must be <= DPL", strseg(seg)));
-        exception(BX_TS_EXCEPTION, raw_selector & 0xfffc, 0);
+        exception(BX_TS_EXCEPTION, raw_selector & 0xfffc);
       }
     }
 
     if (! IS_PRESENT(descriptor)) {
       BX_ERROR(("task_switch(%s): descriptor not present !", strseg(seg)));
-      exception(BX_NP_EXCEPTION, raw_selector & 0xfffc, 0);
+      exception(BX_NP_EXCEPTION, raw_selector & 0xfffc);
     }
 
     touch_segment(selector, &descriptor);
@@ -742,7 +748,7 @@ void BX_CPU_C::get_SS_ESP_from_TSS(unsigned pl, Bit16u *ss, Bit32u *esp)
     Bit32u TSSstackaddr = 8*pl + 4;
     if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled) {
       BX_DEBUG(("get_SS_ESP_from_TSS(386): TSSstackaddr > TSS.LIMIT"));
-      exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc);
     }
     *ss  = system_read_word (BX_CPU_THIS_PTR tr.cache.u.segment.base + TSSstackaddr + 4);
     *esp = system_read_dword(BX_CPU_THIS_PTR tr.cache.u.segment.base + TSSstackaddr);
@@ -754,14 +760,13 @@ void BX_CPU_C::get_SS_ESP_from_TSS(unsigned pl, Bit16u *ss, Bit32u *esp)
     Bit32u TSSstackaddr = 4*pl + 2;
     if ((TSSstackaddr+3) > BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled) {
       BX_DEBUG(("get_SS_ESP_from_TSS(286): TSSstackaddr > TSS.LIMIT"));
-      exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc);
     }
     *ss  =          system_read_word(BX_CPU_THIS_PTR tr.cache.u.segment.base + TSSstackaddr + 2);
     *esp = (Bit32u) system_read_word(BX_CPU_THIS_PTR tr.cache.u.segment.base + TSSstackaddr);
   }
   else {
-    BX_PANIC(("get_SS_ESP_from_TSS: TR is bogus type (%u)",
-             (unsigned) BX_CPU_THIS_PTR tr.cache.type));
+    BX_PANIC(("get_SS_ESP_from_TSS: TR is bogus type (%u)", (unsigned) BX_CPU_THIS_PTR tr.cache.type));
   }
 }
 
@@ -775,7 +780,7 @@ Bit64u BX_CPU_C::get_RSP_from_TSS(unsigned pl)
   Bit32u TSSstackaddr = 8*pl + 4;
   if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled) {
     BX_DEBUG(("get_RSP_from_TSS(): TSSstackaddr > TSS.LIMIT"));
-    exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
+    exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc);
   }
 
   Bit64u rsp = system_read_qword(BX_CPU_THIS_PTR tr.cache.u.segment.base + TSSstackaddr);

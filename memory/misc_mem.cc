@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc,v 1.140 2009/10/23 13:23:31 sshwarts Exp $
+// $Id: misc_mem.cc,v 1.144 2010/03/16 14:51:20 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  I/O memory handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -29,6 +23,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
+#include "param_names.h"
 #include "cpu/cpu.h"
 #include "iodev/iodev.h"
 #define LOG_THIS BX_MEM(0)->
@@ -78,7 +73,7 @@ void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
 {
   unsigned idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.140 2009/10/23 13:23:31 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.144 2010/03/16 14:51:20 sshwarts Exp $"));
 
   // accept only memory size which is multiply of 1M
   BX_ASSERT((host & 0xfffff) == 0);
@@ -133,14 +128,6 @@ void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
   BX_MEM_THIS smram_available = 0;
   BX_MEM_THIS smram_enable = 0;
   BX_MEM_THIS smram_restricted = 0;
-
-#if BX_SUPPORT_MONITOR_MWAIT
-  BX_MEM_THIS monitor_active = new bx_bool[BX_SMP_PROCESSORS];
-  for (int i=0; i<BX_SMP_PROCESSORS;i++) {
-    BX_MEM_THIS monitor_active[i] = 0;
-  }
-  BX_MEM_THIS n_monitors = 0;
-#endif
 
   BX_MEM_THIS register_state();
 }
@@ -205,16 +192,6 @@ void BX_MEM_C::register_state()
     param->set_base(BASE_DEC);
     param->set_sr_handlers(this, memory_param_save_handler, memory_param_restore_handler);
   }
-
-#if BX_SUPPORT_MONITOR_MWAIT
-  bx_list_c *monitors = new bx_list_c(list, "monitors", BX_SMP_PROCESSORS+1);
-  BXRS_PARAM_BOOL(monitors, n_monitors, BX_MEM_THIS n_monitors);
-  for (int i=0;i<BX_SMP_PROCESSORS;i++) {
-    char param_name[15];
-    sprintf(param_name, "cpu%d_monitor", i);
-    new bx_shadow_bool_c(monitors, param_name, &BX_MEM_THIS monitor_active[i]);
-  }
-#endif
 }
 
 void BX_MEM_C::cleanup_memory()
@@ -595,13 +572,6 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw)
   if (a20addr > BX_CONST64(0xffffffff)) is_bios = 0;
 #endif
 
-#if BX_SUPPORT_APIC
-  if (cpu != NULL) {
-    if (cpu->lapic.is_selected(a20addr))
-      return(NULL); // Vetoed!  APIC address space
-  }
-#endif
-
   bx_bool write = rw & 1;
 
   // allow direct access to SMRAM memory space for code and veto data
@@ -615,7 +585,7 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw)
   }
 
 #if BX_SUPPORT_MONITOR_MWAIT
-  if (write && BX_MEM_THIS is_monitor(a20addr & ~0xfff, 0x1000)) {
+  if (write && BX_MEM_THIS is_monitor(a20addr & ~((bx_phy_address)(0xfff)), 0xfff)) {
     // Vetoed! Write monitored page !
     return(NULL);
   }
@@ -793,36 +763,11 @@ bx_bool BX_MEM_C::is_smram_accessible(void)
 // MONITOR/MWAIT - x86arch way to optimize idle loops in CPU
 //
 
-void BX_MEM_C::set_monitor(unsigned cpu)
-{
-  BX_ASSERT(cpu < BX_SMP_PROCESSORS);
-  if (! BX_MEM_THIS monitor_active[cpu]) {
-    BX_MEM_THIS monitor_active[cpu] = 1;
-    BX_MEM_THIS n_monitors++;
-    BX_DEBUG(("activate monitor for cpu=%d", cpu));
-  }
-  else {
-    BX_DEBUG(("monitor for cpu=%d already active !", cpu));
-  }
-}
-
-void BX_MEM_C::clear_monitor(unsigned cpu)
-{
-  BX_ASSERT(cpu < BX_SMP_PROCESSORS);
-  BX_MEM_THIS monitor_active[cpu] = 0;
-  BX_MEM_THIS n_monitors--;
-  BX_DEBUG(("deactivate monitor for cpu=%d", cpu));
-}
-
 bx_bool BX_MEM_C::is_monitor(bx_phy_address begin_addr, unsigned len)
 {
-  if (BX_MEM_THIS n_monitors == 0) return 0;
-
   for (int i=0; i<BX_SMP_PROCESSORS;i++) {
-    if (BX_MEM_THIS monitor_active[i]) {
-      if (BX_CPU(i)->is_monitor(begin_addr, len))
-        return 1;
-    }
+    if (BX_CPU(i)->is_monitor(begin_addr, len))
+      return 1;
   }
 
   return 0; // // this is NOT monitored page
@@ -830,12 +775,8 @@ bx_bool BX_MEM_C::is_monitor(bx_phy_address begin_addr, unsigned len)
 
 void BX_MEM_C::check_monitor(bx_phy_address begin_addr, unsigned len)
 {
-  if (BX_MEM_THIS n_monitors == 0) return;
-
   for (int i=0; i<BX_SMP_PROCESSORS;i++) {
-    if (BX_MEM_THIS monitor_active[i]) {
-      BX_CPU(i)->check_monitor(begin_addr, len);
-    }
+    BX_CPU(i)->check_monitor(begin_addr, len);
   }
 }
 

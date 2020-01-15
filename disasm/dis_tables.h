@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_tables.h,v 1.37 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: dis_tables.h,v 1.45 2010/04/02 19:01:16 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//   Copyright (c) 2005-2010 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,9 +28,12 @@
 #define _GRPFP         3
 #define _GRP3DNOW      4
 #define _GRPSSE        5
-#define _GRPRM         6
-#define _GRP3BOP       7
-#define _GRP64B        8
+#define _GRPSSE66      6
+#define _GRPSSEF2      7
+#define _GRPSSEF3      8
+#define _GRPRM         9
+#define _GRP3BOP       10
+#define _GRP64B        11
 
 /* ************************************************************************ */
 #define GRPSSE(n)       _GRPSSE,   BxDisasmGroupSSE_##n
@@ -41,6 +44,12 @@
 #define GRP3DNOW        _GRP3DNOW, BxDisasm3DNowGroup
 #define GR3BTAB(n)      _GRP3BOP,  BxDisasm3ByteOpTable##n
 #define GR64BIT(n)      _GRP64B,   BxDisasmGrpOs64B_##n
+/* ************************************************************************ */
+
+/* ************************************************************************ */
+#define GRPSSE66(n)     _GRPSSE66, &n
+#define GRPSSEF2(n)     _GRPSSEF2, &n
+#define GRPSSEF3(n)     _GRPSSEF3, &n
 /* ************************************************************************ */
 
 #define Apw &disassembler::Apw
@@ -76,20 +85,19 @@
 #define  ERX &disassembler::ERX
 #define  RRX &disassembler::RRX
 
-#define Eb &disassembler::Eb
-#define Ew &disassembler::Ew
-#define Ed &disassembler::Ed
-#define Eq &disassembler::Eq
+#define Eb  &disassembler::Eb
+#define Ew  &disassembler::Ew
+#define Ed  &disassembler::Ed
+#define Eq  &disassembler::Eq
+#define Ey  &disassembler::Ey
+#define Ebd &disassembler::Ebd
+#define Ewd &disassembler::Ewd
 
 #define Gb &disassembler::Gb
 #define Gw &disassembler::Gw
 #define Gd &disassembler::Gd
 #define Gq &disassembler::Gq
-
-#define Hbd &disassembler::Hbd
-#define Hwd &disassembler::Hwd
-#define  Hd &disassembler::Hd
-#define  Hq &disassembler::Hq
+#define Gy &disassembler::Gy
 
 #define I1 &disassembler::I1
 #define Ib &disassembler::Ib
@@ -123,6 +131,9 @@
 #define Vsd &disassembler::Vsd
 #define Vps &disassembler::Vps
 #define Vpd &disassembler::Vpd
+
+#define Ups &disassembler::Ups
+#define Upd &disassembler::Upd
 #define Udq &disassembler::Udq
 
 #define  Ww &disassembler::Ww
@@ -175,6 +186,8 @@
 
 const struct BxDisasmOpcodeInfo_t
 #include "opcodes.inc"
+#include "dis_tables_x87.inc"
+#include "dis_tables_sse.inc"
 #include "dis_tables.inc"
 
 #undef XX

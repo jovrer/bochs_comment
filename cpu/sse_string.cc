@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_string.cc,v 1.13 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: sse_string.cc,v 1.16 2010/02/26 11:44:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2009 Stanislav Shwartsman
@@ -31,7 +31,7 @@
 #define RCX ECX
 #endif
 
-#if (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+#if BX_CPU_LEVEL >= 6
 
 // Compare all pairs of Ai, Bj according to imm8 control
 static void compare_strings(Bit8u BoolRes[16][16], BxPackedXmmRegister op1, BxPackedXmmRegister op2, Bit8u imm)
@@ -286,15 +286,12 @@ static Bit16u aggregate(Bit8u BoolRes[16][16], unsigned len1, unsigned len2, Bit
   return result;
 }
 
-#endif // (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
-
-// for 3-byte opcodes
-#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
+#endif // BX_CPU_LEVEL >= 6
 
 /* 66 0F 3A 60 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
 {
-#if (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
 
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
@@ -355,16 +352,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
   setEFlagsOSZAPC(flags);
 
   BX_WRITE_XMM_REG(0, result); /* store result XMM0 */
-#else
-  BX_INFO(("PCMPESTRM_VdqWdqIb: required SSE4.2, use --enable-sse and --enable-sse-extension options"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 /* 66 0F 3A 61 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRI_VdqWdqIb(bxInstruction_c *i)
 {
-#if (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
 
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
@@ -421,17 +415,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRI_VdqWdqIb(bxInstruction_c *i)
   if (result2 & 0x1)
     flags |= EFlagsOFMask;
   setEFlagsOSZAPC(flags);
-
-#else
-  BX_INFO(("PCMPESTRI_VdqWdqIb: required SSE4.2, use --enable-sse and --enable-sse-extension options"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 /* 66 0F 3A 62 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
 {
-#if (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
 
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
@@ -483,16 +473,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
   setEFlagsOSZAPC(flags);
 
   BX_WRITE_XMM_REG(0, result); /* store result XMM0 */
-#else
-  BX_INFO(("PCMPISTRM_VdqWdqIb: required SSE4.2, use --enable-sse and --enable-sse-extension options"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 /* 66 0F 3A 63 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRI_VdqWdqIb(bxInstruction_c *i)
 {
-#if (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
 
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
@@ -540,11 +527,5 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRI_VdqWdqIb(bxInstruction_c *i)
   if (result2 & 0x1)
     flags |= EFlagsOFMask;
   setEFlagsOSZAPC(flags);
-
-#else
-  BX_INFO(("PCMPISTRI_VdqWdqIb: required SSE4.2, use --enable-sse and --enable-sse-extension options"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
-
-#endif // (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)

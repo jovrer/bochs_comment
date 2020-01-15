@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.h,v 1.33 2009/02/22 10:44:50 vruppert Exp $
+// $Id: ioapic.h,v 1.38 2010/03/27 09:56:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -29,8 +23,12 @@
 #ifndef BX_DEVICES_IOAPIC_H
 #define BX_DEVICES_IOAPIC_H
 
-extern int apic_bus_deliver_lowest_priority(Bit8u vector, Bit8u dest, bx_bool trig_mode, bx_bool broadcast);
-extern int apic_bus_deliver_interrupt(Bit8u vector, Bit8u dest, Bit8u delivery_mode, bx_bool logical_dest, bx_bool level, bx_bool trig_mode);
+#if BX_SUPPORT_APIC
+
+typedef Bit32u apic_dest_t; /* same definition in apic.h */
+
+extern int apic_bus_deliver_lowest_priority(Bit8u vector, apic_dest_t dest, bx_bool trig_mode, bx_bool broadcast);
+extern int apic_bus_deliver_interrupt(Bit8u vector, apic_dest_t dest, Bit8u delivery_mode, bx_bool logical_dest, bx_bool level, bx_bool trig_mode);
 extern int apic_bus_broadcast_interrupt(Bit8u vector, Bit8u delivery_mode, bx_bool trig_mode, int exclude_cpu);
 
 #define BX_IOAPIC_NUM_PINS   (0x18)
@@ -38,13 +36,15 @@ extern int apic_bus_broadcast_interrupt(Bit8u vector, Bit8u delivery_mode, bx_bo
 // use the same version as 82093 IOAPIC (0x00170011)
 #define BX_IOAPIC_VERSION_ID (((BX_IOAPIC_NUM_PINS - 1) << 16) | 0x11)
 
+extern Bit32u apic_id_mask;
+
 class bx_io_redirect_entry_t {
   Bit32u hi, lo;
 
 public:
   bx_io_redirect_entry_t(): hi(0), lo(0x10000) {}
 
-  Bit8u destination() const { return (Bit8u)((hi >> 24) & APIC_ID_MASK); }
+  Bit8u destination() const { return (Bit8u)((hi >> 24) & apic_id_mask); }
   bx_bool is_masked() const { return (bx_bool)((lo >> 16) & 1); }
   Bit8u trigger_mode() const { return (Bit8u)((lo >> 15) & 1); }
   bx_bool remote_irr() const { return (bx_bool)((lo >> 14) & 1); }
@@ -73,8 +73,7 @@ public:
   void register_state(bx_param_c *parent);
 };
 
-class bx_ioapic_c : public bx_ioapic_stub_c
-{
+class bx_ioapic_c : public bx_ioapic_stub_c {
 public:
   bx_ioapic_c();
   virtual ~bx_ioapic_c() {}
@@ -109,5 +108,7 @@ private:
 
   bx_io_redirect_entry_t ioredtbl[BX_IOAPIC_NUM_PINS];  // table of redirections
 };
+
+#endif
 
 #endif

@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: iret.cc,v 1.46 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: iret.cc,v 1.50 2010/04/11 05:28:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2009 Stanislav Shwartsman
@@ -69,7 +69,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
 
     if (link_selector.ti) {
       BX_ERROR(("iret: link selector.ti=1"));
-      exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc);
     }
 
     // index must be within GDT limits, else #TS(new TSS selector)
@@ -80,17 +80,19 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     parse_descriptor(dword1, dword2, &tss_descriptor);
     if (tss_descriptor.valid==0 || tss_descriptor.segment) {
       BX_ERROR(("iret: TSS selector points to bad TSS"));
-      exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc);
     }
-    if ((tss_descriptor.type!=11) && (tss_descriptor.type!=3)) {
+    if (tss_descriptor.type != BX_SYS_SEGMENT_BUSY_286_TSS &&
+        tss_descriptor.type != BX_SYS_SEGMENT_BUSY_386_TSS)
+    {
       BX_ERROR(("iret: TSS selector points to bad TSS"));
-      exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc, 0);
+      exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc);
     }
 
     // TSS must be present, else #NP(new TSS selector)
     if (! IS_PRESENT(tss_descriptor)) {
       BX_ERROR(("iret: task descriptor.p == 0"));
-      exception(BX_NP_EXCEPTION, raw_link_selector & 0xfffc, 0);
+      exception(BX_NP_EXCEPTION, raw_link_selector & 0xfffc);
     }
 
     // switch tasks (without nesting) to TSS specified by back link selector
@@ -102,7 +104,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     // EIP must be within code seg limit, else #GP(0)
     if (EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
       BX_ERROR(("iret: EIP > CS.limit"));
-      exception(BX_GP_EXCEPTION, 0, 0);
+      exception(BX_GP_EXCEPTION, 0);
     }
 
     return;
@@ -160,7 +162,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
   // return CS selector must be non-null, else #GP(0)
   if ((raw_cs_selector & 0xfffc) == 0) {
     BX_ERROR(("iret: return CS selector null"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   // selector index must be within descriptor table limits,
@@ -171,7 +173,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
   // return CS selector RPL must be >= CPL, else #GP(return selector)
   if (cs_selector.rpl < CPL) {
     BX_ERROR(("iret: return selector RPL < CPL"));
-    exception(BX_GP_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+    exception(BX_GP_EXCEPTION, raw_cs_selector & 0xfffc);
   }
 
   // check code-segment descriptor
@@ -216,6 +218,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     return;
   }
   else { /* INTERRUPT RETURN TO OUTER PRIVILEGE LEVEL */
+
     /* 16bit opsize  |   32bit opsize
      * ==============================
      * SS     eSP+8  |   SS     eSP+16
@@ -227,7 +230,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
 
     /* examine return SS selector and associated descriptor */
     if (i->os32L()) {
-      raw_ss_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP + 16);
+      raw_ss_selector = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 16);
     }
     else {
       raw_ss_selector = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 8);
@@ -236,7 +239,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     /* selector must be non-null, else #GP(0) */
     if ((raw_ss_selector & 0xfffc) == 0) {
       BX_ERROR(("iret: SS selector null"));
-      exception(BX_GP_EXCEPTION, 0, 0);
+      exception(BX_GP_EXCEPTION, 0);
     }
 
     parse_selector(raw_ss_selector, &ss_selector);
@@ -245,7 +248,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
      * else #GP(SS selector) */
     if (ss_selector.rpl != cs_selector.rpl) {
       BX_ERROR(("iret: SS.rpl != CS.rpl"));
-      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
     }
 
     /* selector index must be within its descriptor table limits,
@@ -261,20 +264,20 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
         !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
     {
       BX_ERROR(("iret: SS AR byte not writable or code segment"));
-      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
     }
 
     /* stack segment DPL must equal the RPL of the return CS selector,
      * else #GP(SS selector) */
     if (ss_descriptor.dpl != cs_selector.rpl) {
       BX_ERROR(("iret: SS.dpl != CS selector RPL"));
-      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
     }
 
     /* SS must be present, else #NP(SS selector) */
     if (! IS_PRESENT(ss_descriptor)) {
       BX_ERROR(("iret: SS not present!"));
-      exception(BX_NP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      exception(BX_NP_EXCEPTION, raw_ss_selector & 0xfffc);
     }
 
     if (i->os32L()) {
@@ -339,7 +342,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
 
   if (BX_CPU_THIS_PTR get_NT()) {
     BX_ERROR(("iret64: return from nested task in x86-64 mode !"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   /* 64bit opsize
@@ -390,7 +393,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
   // return CS selector must be non-null, else #GP(0)
   if ((raw_cs_selector & 0xfffc) == 0) {
     BX_ERROR(("iret64: return CS selector null"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   // selector index must be within descriptor table limits,
@@ -401,7 +404,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
   // return CS selector RPL must be >= CPL, else #GP(return selector)
   if (cs_selector.rpl < CPL) {
     BX_ERROR(("iret64: return selector RPL < CPL"));
-    exception(BX_GP_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+    exception(BX_GP_EXCEPTION, raw_cs_selector & 0xfffc);
   }
 
   // check code-segment descriptor
@@ -471,7 +474,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
     if ((raw_ss_selector & 0xfffc) == 0) {
       if (! IS_LONG64_SEGMENT(cs_descriptor) || cs_selector.rpl == 3) {
         BX_ERROR(("iret64: SS selector null"));
-        exception(BX_GP_EXCEPTION, 0, 0);
+        exception(BX_GP_EXCEPTION, 0);
       }
     }
     else {
@@ -481,7 +484,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
        * else #GP(SS selector) */
       if (ss_selector.rpl != cs_selector.rpl) {
         BX_ERROR(("iret64: SS.rpl != CS.rpl"));
-        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       /* selector index must be within its descriptor table limits,
@@ -496,20 +499,20 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
          !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
       {
         BX_ERROR(("iret64: SS AR byte not writable or code segment"));
-        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       /* stack segment DPL must equal the RPL of the return CS selector,
        * else #GP(SS selector) */
       if (ss_descriptor.dpl != cs_selector.rpl) {
         BX_ERROR(("iret64: SS.dpl != CS selector RPL"));
-        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
       }
 
       /* SS must be present, else #NP(SS selector) */
       if (! IS_PRESENT(ss_descriptor)) {
         BX_ERROR(("iret64: SS not present!"));
-        exception(BX_NP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+        exception(BX_NP_EXCEPTION, raw_ss_selector & 0xfffc);
       }
     }
 
@@ -542,7 +545,6 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
     else {
       // we are in 64-bit mode !
       load_null_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], raw_ss_selector);
-      loadSRegLMNominal(BX_SEG_REG_SS, raw_ss_selector, cs_selector.rpl);
     }
 
     if (StackAddrSize64()) RSP = new_rsp;

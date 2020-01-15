@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith16.cc,v 1.72 2009/01/16 18:18:58 sshwarts Exp $
+// $Id: arith16.cc,v 1.74 2010/02/26 11:44:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -281,7 +275,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CWD(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EwGwM(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit16u op1_16, op2_16, sum_16;
 
   /* XADD dst(r/m), src(r)
@@ -301,15 +294,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EwGwM(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->nnn(), op1_16);
 
   SET_FLAGS_OSZAPC_ADD_16(op1_16, op2_16, sum_16);
-#else
-  BX_INFO(("XADD_EwGw: not supported on < 80486"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EwGwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit16u op1_16, op2_16, sum_16;
 
   /* XADD dst(r/m), src(r)
@@ -330,10 +318,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EwGwR(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->rm(), sum_16);
 
   SET_FLAGS_OSZAPC_ADD_16(op1_16, op2_16, sum_16);
-#else
-  BX_INFO(("XADD_EwGw: not supported on < 80486"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EwIwM(bxInstruction_c *i)
@@ -480,7 +464,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_EwM(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EwGwM(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit16u op1_16, op2_16, diff_16;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -498,15 +481,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EwGwM(bxInstruction_c *i)
     // accumulator <-- dest
     AX = op1_16;
   }
-#else
-  BX_INFO(("CMPXCHG_EwGw: not supported for cpu-level <= 3"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EwGwR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 4
   Bit16u op1_16, op2_16, diff_16;
 
   op1_16 = BX_READ_16BIT_REG(i->rm());
@@ -522,8 +500,4 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EwGwR(bxInstruction_c *i)
     // accumulator <-- dest
     AX = op1_16;
   }
-#else
-  BX_INFO(("CMPXCHG_EwGw: not supported for cpu-level <= 3"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }

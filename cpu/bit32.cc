@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit32.cc,v 1.15 2009/01/16 18:18:58 sshwarts Exp $
+// $Id: bit32.cc,v 1.18 2010/02/25 22:04:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -341,10 +335,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTR_EdIbR(bxInstruction_c *i)
   set_CF(temp_CF);
 }
 
-/* 0F B8 */
+/* F3 0F B8 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 {
-#if BX_SUPPORT_POPCNT || (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   Bit32u op2_32 = BX_READ_32BIT_REG(i->rm());
 
   Bit32u op1_32 = 0;
@@ -358,10 +351,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 
   /* now write result back to destination */
   BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
-#else
-  BX_INFO(("POPCNT_GdEd: required POPCNT support, use --enable-popcnt option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 #endif // (BX_CPU_LEVEL >= 3)

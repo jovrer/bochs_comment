@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.409 2009/10/17 18:17:28 sshwarts Exp $
+// $Id: main.cc,v 1.420 2010/04/24 09:36:04 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -25,6 +19,7 @@
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #include "bochs.h"
+#include "param_names.h"
 #include "gui/textconfig.h"
 #if BX_USE_TEXTCONFIG && defined(WIN32)
 #include "gui/win32dialog.h"
@@ -84,6 +79,8 @@ logfunctions *pluginlog = &thePluginLog;
 bx_startup_flags_t bx_startup_flags;
 bx_bool bx_user_quit;
 Bit8u bx_cpu_count;
+Bit32u apic_id_mask; // determinted by XAPIC option
+bx_bool simulate_xapic;
 
 /* typedefs */
 
@@ -869,8 +866,24 @@ int bx_begin_simulation (int argc, char *argv[])
                  SIM->get_param_num(BXPN_CPU_NCORES)->get() *
                  SIM->get_param_num(BXPN_CPU_NTHREADS)->get();
 
-  BX_ASSERT(bx_cpu_count <= BX_MAX_SMP_THREADS_SUPPORTED);
-  BX_ASSERT(bx_cpu_count >  0);
+#if BX_CPU_LEVEL >= 6
+  simulate_xapic = SIM->get_param_bool(BXPN_CPUID_XAPIC)->get();
+#else
+  simulate_xapic = 0;
+#endif
+
+  // For P6 and Pentium family processors the local APIC ID feild is 4 bits
+  // APIC_MAX_ID indicate broadcast so it can't be used as valid APIC ID
+  apic_id_mask = simulate_xapic ? 0xFF : 0xF;
+
+  // leave one APIC ID to I/O APIC
+  unsigned max_smp_threads = apic_id_mask - 1;
+  if (bx_cpu_count > max_smp_threads) {
+    BX_PANIC(("cpu: too many SMP threads defined, only %u threads supported by %sAPIC",
+      max_smp_threads, simulate_xapic ? "x" : "legacy "));
+  }
+
+  BX_ASSERT(bx_cpu_count > 0);
 
   bx_init_hardware();
 
@@ -984,6 +997,19 @@ void bx_init_hardware()
 
   io->set_log_prefix(SIM->get_param_string(BXPN_LOG_PREFIX)->getptr());
 
+#if BX_CPU_LEVEL >= 5
+  bx_bool mmx_enabled = SIM->get_param_bool(BXPN_CPUID_MMX)->get();
+#endif
+#if BX_CPU_LEVEL >= 6
+  bx_bool aes_enabled = SIM->get_param_bool(BXPN_CPUID_AES)->get();
+  bx_bool movbe_enabled = SIM->get_param_bool(BXPN_CPUID_MOVBE)->get();
+  bx_bool sep_enabled = SIM->get_param_bool(BXPN_CPUID_SEP)->get();
+  bx_bool xsave_enabled = SIM->get_param_bool(BXPN_CPUID_XSAVE)->get();
+#endif
+#if BX_SUPPORT_X86_64
+  bx_bool xlarge_pages_enabled = SIM->get_param_bool(BXPN_CPUID_1G_PAGES)->get();
+#endif
+
   // Output to the log file the cpu and device settings
   // This will by handy for bug reports
   BX_INFO(("Bochs x86 Emulator %s", VER_STRING));
@@ -1006,22 +1032,27 @@ void bx_init_hardware()
 #endif
   BX_INFO(("  APIC support: %s",BX_SUPPORT_APIC?"yes":"no"));
   BX_INFO(("  FPU support: %s",BX_SUPPORT_FPU?"yes":"no"));
-  BX_INFO(("  MMX support: %s",BX_SUPPORT_MMX?"yes":"no"));
-  if (BX_SUPPORT_SSE == 0)
-    BX_INFO(("  SSE support: no"));
-  else
-    BX_INFO(("  SSE support: %d%s",BX_SUPPORT_SSE,BX_SUPPORT_SSE_EXTENSION?"E":""));
-  BX_INFO(("  CLFLUSH support: %s",BX_SUPPORT_CLFLUSH?"yes":"no"));
+#if BX_CPU_LEVEL >= 5
+  BX_INFO(("  MMX support: %s",mmx_enabled?"yes":"no"));
   BX_INFO(("  3dnow! support: %s",BX_SUPPORT_3DNOW?"yes":"no"));
-#if BX_SUPPORT_X86_64
-  BX_INFO(("  1G paging support: %s",BX_SUPPORT_1G_PAGES?"yes":"no"));
 #endif
+#if BX_CPU_LEVEL >= 6
+  BX_INFO(("  SEP support: %s",sep_enabled?"yes":"no"));
+  BX_INFO(("  SSE support: %s", SIM->get_param_enum(BXPN_CPUID_SSE)->get_selected()));
+  BX_INFO(("  XSAVE support: %s",xsave_enabled?"yes":"no"));
+  BX_INFO(("  AES support: %s",aes_enabled?"yes":"no"));
+  BX_INFO(("  MOVBE support: %s",movbe_enabled?"yes":"no"));
   BX_INFO(("  x86-64 support: %s",BX_SUPPORT_X86_64?"yes":"no"));
-  BX_INFO(("  SEP support: %s",BX_SUPPORT_SEP?"yes":"no"));
+#if BX_SUPPORT_X86_64
+  BX_INFO(("  1G paging support: %s",xlarge_pages_enabled?"yes":"no"));
+#endif
   BX_INFO(("  MWAIT support: %s",BX_SUPPORT_MONITOR_MWAIT?"yes":"no"));
-  BX_INFO(("  XSAVE support: %s",BX_SUPPORT_XSAVE?"yes":"no"));
-  BX_INFO(("  AES support: %s",BX_SUPPORT_AES?"yes":"no"));
-  BX_INFO(("  VMX support: %s",BX_SUPPORT_VMX?"yes":"no"));
+#if BX_SUPPORT_VMX
+  BX_INFO(("  VMX support: %d",BX_SUPPORT_VMX));
+#else
+  BX_INFO(("  VMX support: no"));
+#endif
+#endif
   BX_INFO(("Optimization configuration"));
   BX_INFO(("  RepeatSpeedups support: %s",BX_SupportRepeatSpeedups?"yes":"no"));
   BX_INFO(("  Trace cache support: %s",BX_SUPPORT_TRACE_CACHE?"yes":"no"));

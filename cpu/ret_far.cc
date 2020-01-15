@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ret_far.cc,v 1.22 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: ret_far.cc,v 1.26 2010/03/14 15:51:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2009 Stanislav Shwartsman
@@ -82,7 +82,7 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
   // selector must be non-null else #GP(0)
   if ((raw_cs_selector & 0xfffc) == 0) {
     BX_ERROR(("return_protected: CS selector null"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   parse_selector(raw_cs_selector, &cs_selector);
@@ -97,7 +97,7 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
   // return selector RPL must be >= CPL, else #GP(return selector)
   if (cs_selector.rpl < CPL) {
     BX_ERROR(("return_protected: CS.rpl < CPL"));
-    exception(BX_GP_EXCEPTION, raw_cs_selector & 0xfffc, 0);
+    exception(BX_GP_EXCEPTION, raw_cs_selector & 0xfffc);
   }
 
   // check code-segment descriptor
@@ -122,7 +122,6 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
       else
          SP += stack_param_offset + pop_bytes;
     }
-    return;
   }
   /* RETURN TO OUTER PRIVILEGE LEVEL */
   else {
@@ -161,64 +160,71 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
       if (long_mode()) {
         if (! IS_LONG64_SEGMENT(cs_descriptor) || (cs_selector.rpl == 3)) {
           BX_ERROR(("return_protected: SS selector null"));
-          exception(BX_GP_EXCEPTION, 0, 0);
+          exception(BX_GP_EXCEPTION, 0);
         }
       }
       else // not in long or compatibility mode
       {
         BX_ERROR(("return_protected: SS selector null"));
-        exception(BX_GP_EXCEPTION, 0, 0);
+        exception(BX_GP_EXCEPTION, 0);
       }
     }
+    else {
+      fetch_raw_descriptor(&ss_selector, &dword1, &dword2, BX_GP_EXCEPTION);
+      parse_descriptor(dword1, dword2, &ss_descriptor);
 
-    fetch_raw_descriptor(&ss_selector, &dword1, &dword2, BX_GP_EXCEPTION);
-    parse_descriptor(dword1, dword2, &ss_descriptor);
+      /* selector RPL must = RPL of the return CS selector,
+       * else #GP(selector) */
+      if (ss_selector.rpl != cs_selector.rpl) {
+        BX_ERROR(("return_protected: ss.rpl != cs.rpl"));
+        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
+      }
 
-    /* selector RPL must = RPL of the return CS selector,
-     * else #GP(selector) */
-    if (ss_selector.rpl != cs_selector.rpl) {
-      BX_ERROR(("return_protected: ss.rpl != cs.rpl"));
-      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-    }
+      /* descriptor AR byte must indicate a writable data segment,
+       * else #GP(selector) */
+      if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
+           IS_CODE_SEGMENT(ss_descriptor.type) ||
+          !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
+      {
+        BX_ERROR(("return_protected: SS.AR byte not writable data"));
+        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
+      }
 
-    /* descriptor AR byte must indicate a writable data segment,
-     * else #GP(selector) */
-    if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
-         IS_CODE_SEGMENT(ss_descriptor.type) ||
-        !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
-    {
-      BX_ERROR(("return_protected: SS.AR byte not writable data"));
-      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-    }
+      /* descriptor dpl must = RPL of the return CS selector,
+       * else #GP(selector) */
+      if (ss_descriptor.dpl != cs_selector.rpl) {
+        BX_ERROR(("return_protected: SS.dpl != cs.rpl"));
+        exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc);
+      }
 
-    /* descriptor dpl must = RPL of the return CS selector,
-     * else #GP(selector) */
-    if (ss_descriptor.dpl != cs_selector.rpl) {
-      BX_ERROR(("return_protected: SS.dpl != cs.rpl"));
-      exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-    }
-
-    /* segment must be present else #SS(selector) */
-    if (! IS_PRESENT(ss_descriptor)) {
-      BX_ERROR(("return_protected: ss.present == 0"));
-      exception(BX_SS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      /* segment must be present else #SS(selector) */
+      if (! IS_PRESENT(ss_descriptor)) {
+        BX_ERROR(("return_protected: ss.present == 0"));
+        exception(BX_SS_EXCEPTION, raw_ss_selector & 0xfffc);
+      }
     }
 
     branch_far64(&cs_selector, &cs_descriptor, return_RIP, cs_selector.rpl);
 
-    /* load SS:SP from stack */
-    /* load SS-cache with return SS descriptor */
-    load_ss(&ss_selector, &ss_descriptor, cs_selector.rpl);
-
+    if ((raw_ss_selector & 0xfffc) != 0) {
+      // load SS:RSP from stack
+      // load the SS-cache with SS descriptor
+      load_ss(&ss_selector, &ss_descriptor, cs_selector.rpl);
+    }
 #if BX_SUPPORT_X86_64
+    else {
+      // we are in 64-bit mode !
+      load_null_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], raw_ss_selector);
+    }
+
     if (StackAddrSize64())
       RSP = return_RSP + pop_bytes;
     else
 #endif
     if (ss_descriptor.u.segment.d_b)
-      RSP = (Bit32u) return_RSP + pop_bytes;
+      RSP = (Bit32u)(return_RSP + pop_bytes);
     else
-      SP  = (Bit16u) return_RSP + pop_bytes;
+      SP  = (Bit16u)(return_RSP + pop_bytes);
 
     /* check ES, DS, FS, GS for validity */
     validate_seg_regs();

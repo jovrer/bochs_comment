@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc,v 1.107 2009/10/30 09:13:19 sshwarts Exp $
+// $Id: debugstuff.cc,v 1.112 2010/04/22 17:51:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -284,7 +278,6 @@ bx_bool BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
       invalidate_prefetch_q();
       return(1);
     case BX_DBG_REG_EFLAGS:
-      BX_INFO(("dbg_set_reg: can not handle eflags yet."));
       if (val & 0xffff0000) {
         BX_INFO(("dbg_set_reg: can not set upper 16 bits of eflags."));
         return(0);
@@ -305,8 +298,6 @@ bx_bool BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
       BX_CPU_THIS_PTR set_IF(val & 0x01); val >>= 1;
       BX_CPU_THIS_PTR set_DF(val & 0x01); val >>= 1;
       BX_CPU_THIS_PTR set_OF(val & 0x01);
-      if (BX_CPU_THIS_PTR get_IF())
-        BX_CPU_THIS_PTR async_event = 1;
       return(1);
   }
 
@@ -340,6 +331,23 @@ bx_bool BX_CPU_C::dbg_get_sreg(bx_dbg_sreg_t *sreg, unsigned sreg_no)
   sreg->dword3 = BX_CPU_THIS_PTR sregs[sreg_no].cache.u.segment.base >> 32;
 #endif
   return(1);
+}
+
+bx_bool BX_CPU_C::dbg_set_sreg(unsigned sreg_no, bx_segment_reg_t *sreg)
+{
+  if (sreg_no < 6) {
+    BX_CPU_THIS_PTR sregs[sreg_no] = *sreg;
+    if (sreg_no == BX_SEG_REG_CS) {
+      handleCpuModeChange();
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+      handleAlignmentCheck(/* CPL change */);
+#endif
+      invalidate_prefetch_q();
+      return 1;
+    }
+  }
+
+  return 0;
 }
 
 void BX_CPU_C::dbg_get_tr(bx_dbg_sreg_t *sreg)

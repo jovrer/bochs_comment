@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.219 2009/10/30 09:13:19 sshwarts Exp $
+// $Id: init.cc,v 1.242 2010/04/19 11:09:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -30,6 +24,8 @@
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
+
+#include "param_names.h"
 
 #if BX_SUPPORT_X86_64==0
 // Make life easier merging cpu64 & cpu code.
@@ -154,7 +150,10 @@ static Bit64s cpu_param_handler(bx_param_c *param, int set, Bit64s val)
 // BX_CPU_C constructor
 void BX_CPU_C::initialize(void)
 {
-  BX_CPU_THIS_PTR set_INTR (0);
+  BX_CPU_THIS_PTR set_INTR(0);
+
+  init_isa_features_bitmask();
+  init_FetchDecodeTables(); // must be called after init_isa_features_bitmask()
 
 #if BX_CONFIGURE_MSRS
   for (unsigned n=0; n < BX_MSR_MAX_INDEX; n++) {
@@ -308,11 +307,12 @@ void BX_CPU_C::register_state(void)
 
   sprintf(name, "cpu%d", BX_CPU_ID);
 
-  bx_list_c *cpu = new bx_list_c(SIM->get_bochs_root(), name, name, 50 + BX_GENERAL_REGISTERS);
+  bx_list_c *cpu = new bx_list_c(SIM->get_bochs_root(), name, name, 60 + BX_GENERAL_REGISTERS);
 
   BXRS_PARAM_SPECIAL32(cpu, cpu_version, param_save_handler, param_restore_handler);
   BXRS_PARAM_SPECIAL32(cpu, cpuid_std,   param_save_handler, param_restore_handler);
   BXRS_PARAM_SPECIAL32(cpu, cpuid_ext,   param_save_handler, param_restore_handler);
+  BXRS_HEX_PARAM_SIMPLE(cpu, isa_extensions_bitmask);
   BXRS_DEC_PARAM_SIMPLE(cpu, cpu_mode);
   BXRS_HEX_PARAM_SIMPLE(cpu, activity_state);
   BXRS_HEX_PARAM_SIMPLE(cpu, inhibit_mask);
@@ -362,8 +362,10 @@ void BX_CPU_C::register_state(void)
 #if BX_CPU_LEVEL >= 4
   BXRS_HEX_PARAM_FIELD(cpu, CR4, cr4.val32);
 #endif
-#if BX_SUPPORT_XSAVE
-  BXRS_HEX_PARAM_FIELD(cpu, XCR0, xcr0.val32);
+#if BX_CPU_LEVEL >= 6
+  if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_XSAVE)) {
+    BXRS_HEX_PARAM_FIELD(cpu, XCR0, xcr0.val32);
+  }
 #endif
 
   for(n=0; n<6; n++) {
@@ -411,6 +413,15 @@ void BX_CPU_C::register_state(void)
 
   BXRS_HEX_PARAM_SIMPLE(cpu, smbase);
 
+#if BX_CPU_LEVEL >= 6
+  bx_list_c *PDPTRS = new bx_list_c(cpu, "PDPTR_CACHE", 5);
+  BXRS_PARAM_BOOL(PDPTRS, valid, PDPTR_CACHE.valid);
+  BXRS_HEX_PARAM_FIELD(PDPTRS, entry0, PDPTR_CACHE.entry[0]);
+  BXRS_HEX_PARAM_FIELD(PDPTRS, entry1, PDPTR_CACHE.entry[1]);
+  BXRS_HEX_PARAM_FIELD(PDPTRS, entry2, PDPTR_CACHE.entry[2]);
+  BXRS_HEX_PARAM_FIELD(PDPTRS, entry3, PDPTR_CACHE.entry[3]);
+#endif
+
 #if BX_CPU_LEVEL >= 5
   bx_list_c *MSR = new bx_list_c(cpu, "MSR", 45);
 
@@ -427,12 +438,10 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(MSR, tsc_aux, msr.tsc_aux);
 #endif
   BXRS_HEX_PARAM_FIELD(MSR, tsc_last_reset, msr.tsc_last_reset);
-#if BX_SUPPORT_SEP
+#if BX_CPU_LEVEL >= 6
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_cs_msr,  msr.sysenter_cs_msr);
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_esp_msr, msr.sysenter_esp_msr);
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_eip_msr, msr.sysenter_eip_msr);
-#endif
-#if BX_CPU_LEVEL >= 6
   BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase0, msr.mtrrphys[0]);
   BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask0, msr.mtrrphys[1]);
   BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase1, msr.mtrrphys[2]);
@@ -467,7 +476,7 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(MSR, mtrr_deftype, msr.mtrr_deftype);
 #endif
 #if BX_CONFIGURE_MSRS
-  bx_list_c *MSRS = new bx_list_c(cpu, "MSRS", BX_MSR_MAX_INDEX);
+  bx_list_c *MSRS = new bx_list_c(cpu, "USER_MSR", BX_MSR_MAX_INDEX);
   for(n=0; n < BX_MSR_MAX_INDEX; n++) {
     if (! msrs[n]) continue;
     sprintf(name, "msr_0x%03x", n);
@@ -482,7 +491,7 @@ void BX_CPU_C::register_state(void)
 #endif
 #endif
 
-#if BX_SUPPORT_FPU || BX_SUPPORT_MMX
+#if BX_SUPPORT_FPU
   bx_list_c *fpu = new bx_list_c(cpu, "FPU", 17);
   BXRS_HEX_PARAM_FIELD(fpu, cwd, the_i387.cwd);
   BXRS_HEX_PARAM_FIELD(fpu, swd, the_i387.swd);
@@ -501,14 +510,16 @@ void BX_CPU_C::register_state(void)
   BXRS_DEC_PARAM_FIELD(fpu, tos, the_i387.tos);
 #endif
 
-#if BX_SUPPORT_SSE
-  bx_list_c *sse = new bx_list_c(cpu, "SSE", 2*BX_XMM_REGISTERS+1);
-  BXRS_HEX_PARAM_FIELD(sse, mxcsr, mxcsr.mxcsr);
-  for (n=0; n<BX_XMM_REGISTERS; n++) {
-    sprintf(name, "xmm%02d_hi", n);
-    new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(1), BASE_HEX);
-    sprintf(name, "xmm%02d_lo", n);
-    new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(0), BASE_HEX);
+#if BX_CPU_LEVEL >= 6
+  if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE)) {
+    bx_list_c *sse = new bx_list_c(cpu, "SSE", 2*BX_XMM_REGISTERS+1);
+    BXRS_HEX_PARAM_FIELD(sse, mxcsr, mxcsr.mxcsr);
+    for (n=0; n<BX_XMM_REGISTERS; n++) {
+      sprintf(name, "xmm%02d_hi", n);
+      new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(1), BASE_HEX);
+      sprintf(name, "xmm%02d_lo", n);
+      new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(0), BASE_HEX);
+    }
   }
 #endif
 
@@ -542,6 +553,10 @@ void BX_CPU_C::register_state(void)
   BXRS_PARAM_BOOL(cpu, disable_INIT, disable_INIT);
   BXRS_PARAM_BOOL(cpu, pending_INIT, pending_INIT);
   BXRS_PARAM_BOOL(cpu, trace, trace);
+
+#if BX_CPU_LEVEL >= 5
+  BXRS_PARAM_BOOL(cpu, ignore_bad_msrs, ignore_bad_msrs);
+#endif
 }
 
 Bit64s BX_CPU_C::param_save_handler(void *devptr, bx_param_c *param)
@@ -673,15 +688,22 @@ void BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
 
 void BX_CPU_C::after_restore_state(void)
 {
-  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_V8086) CPL = 3;
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_REAL) CPL = 0;
+  else {
+    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_V8086) CPL = 3;
+  }
 
-  if (!SetCR0(cr0.val32))
-    BX_PANIC(("Incorrect CR0 state !"));
-  SetCR3(cr3);
   TLB_flush();
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  handleAlignmentCheck();
+#endif
+  handleCpuModeChange();
+
 #if BX_SUPPORT_VMX
   set_VMCSPTR(BX_CPU_THIS_PTR vmcsptr);
 #endif
+
   assert_checks();
   invalidate_prefetch_q();
   debug(RIP);
@@ -738,7 +760,7 @@ void BX_CPU_C::reset(unsigned source)
   BX_WRITE_32BIT_REGZ(BX_NIL_REGISTER, 0);
 
   // status and control flags register set
-  BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
+  setEFlags(0x2); // Bit1 is always set
 
   BX_CPU_THIS_PTR inhibit_mask = 0;
   BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
@@ -901,14 +923,13 @@ void BX_CPU_C::reset(unsigned source)
 #if BX_CPU_LEVEL >= 3
   BX_CPU_THIS_PTR cr2 = 0;
   BX_CPU_THIS_PTR cr3 = 0;
-  BX_CPU_THIS_PTR cr3_masked = 0;
 #endif
 
 #if BX_CPU_LEVEL >= 4
   BX_CPU_THIS_PTR cr4.set32(0);
 #endif
 
-#if BX_SUPPORT_XSAVE
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR xcr0.set32(0x1);
 #endif
 
@@ -936,7 +957,7 @@ void BX_CPU_C::reset(unsigned source)
   }
 #endif
 
-#if BX_SUPPORT_SEP
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR msr.sysenter_cs_msr  = 0;
   BX_CPU_THIS_PTR msr.sysenter_esp_msr = 0;
   BX_CPU_THIS_PTR msr.sysenter_eip_msr = 0;
@@ -956,7 +977,7 @@ void BX_CPU_C::reset(unsigned source)
       BX_CPU_THIS_PTR msr.mtrrfix4k[n] = 0;
 
     BX_CPU_THIS_PTR msr.pat = BX_CONST64(0x0007040600070406);
-    BX_CPU_THIS_PTR msr.mtrr_deftype = 0;
+    BX_CPU_THIS_PTR msr.mtrr_deftype = BX_CONST64(0x806);
   }
 #endif
 
@@ -971,8 +992,12 @@ void BX_CPU_C::reset(unsigned source)
 #endif
 
   BX_CPU_THIS_PTR EXT = 0;
+  BX_CPU_THIS_PTR errorno = 0;
 
-  TLB_init();
+  TLB_flush();
+#if BX_CPU_LEVEL >= 6
+  BX_CPU_THIS_PTR PDPTR_CACHE.valid = 0;
+#endif
 
   // invalidate the prefetch queue
   BX_CPU_THIS_PTR eipPageBias = 0;
@@ -997,8 +1022,8 @@ void BX_CPU_C::reset(unsigned source)
   }
 #endif
 
-  // Reset XMM state
-#if BX_SUPPORT_SSE >= 1  // unchanged on #INIT
+#if BX_CPU_LEVEL >= 6
+  // Reset XMM state - unchanged on #INIT
   if (source == BX_RESET_HARDWARE) {
     for(n=0; n<BX_XMM_REGISTERS; n++)
     {
@@ -1007,15 +1032,23 @@ void BX_CPU_C::reset(unsigned source)
     }
 
     BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
+    BX_CPU_THIS_PTR mxcsr_mask = 0x0000FFBF;
+    if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE2))
+      BX_CPU_THIS_PTR mxcsr_mask |= MXCSR_DAZ;
+    if (BX_SUPPORT_MISALIGNED_SSE)
+      BX_CPU_THIS_PTR mxcsr_mask |= MXCSR_MISALIGNED_EXCEPTION_MASK;
   }
 #endif
 
 #if BX_SUPPORT_VMX
   BX_CPU_THIS_PTR in_vmx = BX_CPU_THIS_PTR in_vmx_guest = 0;
+  BX_CPU_THIS_PTR in_smm_vmx = BX_CPU_THIS_PTR in_smm_vmx_guest = 0;
   BX_CPU_THIS_PTR in_event = 0;
   BX_CPU_THIS_PTR vmx_interrupt_window = 0;
   BX_CPU_THIS_PTR vmcsptr = BX_CPU_THIS_PTR vmxonptr = BX_INVALID_VMCSPTR;
   BX_CPU_THIS_PTR vmcshostptr = 0;
+  BX_CPU_THIS_PTR msr.ia32_feature_ctrl = 0x4; /* enable VMX, should be done in BIOS instead */
+
 #endif
 
 #if BX_SUPPORT_SMP
@@ -1038,6 +1071,11 @@ void BX_CPU_C::reset(unsigned source)
 
   // initialize CPUID values - make sure apicbase already initialized
   set_cpuid_defaults();
+
+  // ignore bad MSRS if user asked for it
+#if BX_CPU_LEVEL >= 5
+  BX_CPU_THIS_PTR ignore_bad_msrs = SIM->get_param_bool(BXPN_IGNORE_BAD_MSRS)->get();
+#endif
 
   BX_INSTR_RESET(BX_CPU_ID, source);
 }
@@ -1157,13 +1195,14 @@ void BX_CPU_C::assert_checks(void)
   }
 
   // check CR0 consistency
-  if (BX_CPU_THIS_PTR cr0.get_PG() && ! BX_CPU_THIS_PTR cr0.get_PE())
-    BX_PANIC(("assert_checks: CR0.PG=1 with CR0.PE=0 !"));
-#if BX_CPU_LEVEL >= 4
-  if (BX_CPU_THIS_PTR cr0.get_NW() && ! BX_CPU_THIS_PTR cr0.get_CD())
-    BX_PANIC(("assert_checks: CR0.NW=1 with CR0.CD=0 !"));
-#endif
+  if (! check_CR0(BX_CPU_THIS_PTR cr0.val32))
+    BX_PANIC(("assert_checks: CR0 consistency checks failed !"));
 
+#if BX_CPU_LEVEL > 3
+  // check CR4 consistency
+  if (! check_CR4(BX_CPU_THIS_PTR cr4.val32))
+    BX_PANIC(("assert_checks: CR4 consistency checks failed !"));
+#endif
 
 #if BX_SUPPORT_X86_64
   // VM should be OFF in long mode

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios32.c,v 1.53 2009/10/25 10:24:46 vruppert Exp $
+// $Id: rombios32.c,v 1.70 2010/04/04 19:38:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  32 bit Bochs BIOS init code
@@ -32,11 +32,6 @@ typedef unsigned short uint16_t;
 typedef unsigned int   uint32_t;
 typedef unsigned long long uint64_t;
 
-/* if true, put the MP float table and ACPI RSDT in EBDA and the MP
-   table in RAM. Unfortunately, Linux has bugs with that, so we prefer
-   to modify the BIOS in shadow RAM */
-//#define BX_USE_EBDA_TABLES
-
 /* define it if the (emulated) hardware supports SMM mode */
 #define BX_USE_SMM
 
@@ -61,7 +56,6 @@ typedef unsigned long long uint64_t;
 
 #define AP_BOOT_ADDR 0x9f000
 
-#define MPTABLE_MAX_SIZE  0x00002000
 #define SMI_CMD_IO_ADDR   0xb2
 
 #define BIOS_TMP_STORAGE  0x00030000 /* 64 KB used to copy the BIOS to shadow RAM */
@@ -577,11 +571,11 @@ void setup_mtrr(void)
     wrmsr_smp(MSR_MTRRfix4K_E8000, 0);
     wrmsr_smp(MSR_MTRRfix4K_F0000, 0);
     wrmsr_smp(MSR_MTRRfix4K_F8000, 0);
-    /* Mark 3.5-4GB as UC, anything not specified defaults to WB */
-    wrmsr_smp(MTRRphysBase_MSR(0), 0xe0000000 | MTRR_MEMTYPE_UC);
+    /* Mark 3-4GB as UC, anything not specified defaults to WB */
+    wrmsr_smp(MTRRphysBase_MSR(0), 0xc0000000 | MTRR_MEMTYPE_UC);
     /* Make sure no reserved bit set to '1 in MTRRphysMask_MSR */
-    wrmsr_smp(MTRRphysMask_MSR(0), (uint32_t)(~(0x20000000 - 1)) | 0x800);
-    wrmsr_smp(MSR_MTRRdefType, 0xc00 | MTRR_MEMTYPE_UC);
+    wrmsr_smp(MTRRphysMask_MSR(0), (uint32_t)(~(0x40000000 - 1)) | 0x800);
+    wrmsr_smp(MSR_MTRRdefType, 0xc00 | MTRR_MEMTYPE_WB);
 }
 
 void ram_probe(void)
@@ -602,7 +596,7 @@ void ram_probe(void)
     ram_end = ram_size;
   BX_INFO("ram_end=%ldMB\n", ram_end >> 20);
 #ifdef BX_USE_EBDA_TABLES
-  ebda_cur_addr = ((*(uint16_t *)(0x40e)) << 4) + 0x380;
+  ebda_cur_addr = ((*(uint16_t *)(0x40e)) << 4) + 0x386;
   BX_INFO("ebda_cur_addr: 0x%08lx\n", ebda_cur_addr);
 #endif
 }
@@ -686,10 +680,9 @@ typedef struct PCIDevice {
 
 static uint32_t pci_bios_io_addr;
 static uint32_t pci_bios_mem_addr;
-static uint32_t pci_bios_bigmem_addr;
 /* host irqs corresponding to PCI irqs A-D */
 static uint8_t pci_irqs[4] = { 11, 9, 11, 9 };
-static PCIDevice i440_pcidev;
+static PCIDevice i440_pcidev = {-1, -1};
 
 static void pci_config_writel(PCIDevice *d, uint32_t addr, uint32_t val)
 {
@@ -967,8 +960,6 @@ static void pci_bios_init_device(PCIDevice *d)
                 size = (~(val & ~0xf)) + 1;
                 if (val & PCI_ADDRESS_SPACE_IO)
                     paddr = &pci_bios_io_addr;
-                else if (size >= 0x04000000)
-                    paddr = &pci_bios_bigmem_addr;
                 else
                     paddr = &pci_bios_mem_addr;
                 *paddr = (*paddr + size - 1) & ~(size - 1);
@@ -1022,9 +1013,6 @@ void pci_bios_init(void)
 {
     pci_bios_io_addr = 0xc000;
     pci_bios_mem_addr = 0xc0000000;
-    pci_bios_bigmem_addr = ram_size;
-    if (pci_bios_bigmem_addr < 0x90000000)
-        pci_bios_bigmem_addr = 0x90000000;
 
     pci_for_each_device(pci_bios_init_bridges);
 
@@ -1092,6 +1080,10 @@ static void mptable_init(void)
     int mp_config_table_size;
 
 #ifdef BX_USE_EBDA_TABLES
+    if (ram_size - ACPI_DATA_SIZE - MPTABLE_MAX_SIZE < 0x100000) {
+        BX_INFO("Not enough memory for MPC table\n");
+        return;
+    }
     mp_config_table = (uint8_t *)(ram_size - ACPI_DATA_SIZE - MPTABLE_MAX_SIZE);
 #else
     bios_table_cur_addr = align(bios_table_cur_addr, 16);
@@ -1521,10 +1513,12 @@ int acpi_build_processor_ssdt(uint8_t *ssdt)
     // build processor scope header
     *(ssdt_ptr++) = 0x10; // ScopeOp
     if (length <= 0x3e) {
+        /* Handle 1-4 CPUs with one byte encoding */
         *(ssdt_ptr++) = length + 1;
     } else {
-        *(ssdt_ptr++) = 0x7F;
-        *(ssdt_ptr++) = (length + 2) >> 6;
+        /* Handle 5-314 CPUs with two byte encoding */
+        *(ssdt_ptr++) = 0x40 | ((length + 2) & 0xf);
+        *(ssdt_ptr++) = (length + 2) >> 4;
     }
     *(ssdt_ptr++) = '_'; // Name
     *(ssdt_ptr++) = 'P';
@@ -1573,6 +1567,11 @@ void acpi_bios_init(void)
     uint32_t base_addr, rsdt_addr, fadt_addr, addr, facs_addr, dsdt_addr, ssdt_addr;
     uint32_t acpi_tables_size, madt_addr, madt_size;
     int i;
+
+    if (ram_size - ACPI_DATA_SIZE < 0x100000) {
+        BX_INFO("Not enough memory for ACPI tables\n");
+        return;
+    }
 
     /* reserve memory space for tables */
 #ifdef BX_USE_EBDA_TABLES
@@ -1953,14 +1952,38 @@ smbios_type_0_init(void *start)
     p->header.handle = 0;
 
     p->vendor_str = 1;
-    p->bios_version_str = 1;
-    p->bios_starting_address_segment = 0xe800;
-    p->bios_release_date_str = 2;
-    p->bios_rom_size = 0; /* FIXME */
+    p->bios_version_str = 2;
+    p->bios_starting_address_segment = 0xe000;
+    p->bios_release_date_str = 3;
+    p->bios_rom_size = 1; /* 128 kB */
 
     memset(p->bios_characteristics, 0, 8);
-    p->bios_characteristics[0] = 0x08; /* BIOS characteristics not supported */
-    p->bios_characteristics_extension_bytes[0] = 0;
+    p->bios_characteristics[0] |= 1 << 4; /* Bit 4 - ISA is supported */
+#if BX_PCIBIOS
+    p->bios_characteristics[0] |= 1 << 7; /* Bit 7 - PCI is supported */
+#endif
+#if BX_APM
+    p->bios_characteristics[1] |= 1 << 2; /* Bit 10 - APM is supported */
+#endif
+    p->bios_characteristics[1] |= 1 << 3; /* Bit 11 - BIOS is Upgradeable (Flash) */
+    p->bios_characteristics[1] |= 1 << 4; /* Bit 12 - BIOS shadowing is allowed */
+#if BX_ELTORITO_BOOT && BX_USE_ATADRV
+    p->bios_characteristics[1] |= 1 << 7; /* Bit 15 - Boot from CD is supported */
+    p->bios_characteristics[2] |= 1 << 0; /* Bit 16 - Selectable Boot is supported */
+#endif
+#if BX_USE_ATADRV
+    p->bios_characteristics[2] |= 1 << 3; /* Bit 19 - EDD (Enhanced Disk Drive) Specification is supported */
+#endif
+#if BX_SUPPORT_FLOPPY
+    p->bios_characteristics[2] |= 1 << 6; /* Bit 22 - Int 13h - 5.25" / 360 KB Floppy Services are supported */
+    p->bios_characteristics[2] |= 1 << 7; /* Bit 23 - Int 13h - 5.25" / 1.2 MB Floppy Services are supported */
+    p->bios_characteristics[3] |= 1 << 0; /* Bit 24 - Int 13h - 3.5" / 720 KB Floppy Services are supported */
+    p->bios_characteristics[3] |= 1 << 1; /* Bit 25 - Int 13h - 3.5" / 2.88 MB Floppy Services are supported */
+#endif
+    p->bios_characteristics[3] |= 1 << 3; /* Bit 27 - Int 9h, 8042 Keyboard services are supported */
+    p->bios_characteristics[3] |= 1 << 4; /* Bit 28 - Int 14h, Serial Services are supported */
+    p->bios_characteristics[3] |= 1 << 5; /* Bit 29 - Int 17h, Printer Services are supported */
+    p->bios_characteristics_extension_bytes[0] = 1; /* Bit 0 - ACPI supported */
     p->bios_characteristics_extension_bytes[1] = 0;
 
     p->system_bios_major_release = 1;
@@ -1969,6 +1992,8 @@ smbios_type_0_init(void *start)
     p->embedded_controller_minor_release = 0xff;
 
     start += sizeof(struct smbios_type_0);
+    memcpy((char *)start, BX_APPVENDOR, sizeof(BX_APPVENDOR));
+    start += sizeof(BX_APPVENDOR);
     memcpy((char *)start, BX_APPNAME, sizeof(BX_APPNAME));
     start += sizeof(BX_APPNAME);
     memcpy((char *)start, RELEASE_DATE_STR, sizeof(RELEASE_DATE_STR));
@@ -2084,7 +2109,7 @@ smbios_type_16_init(void *start, uint32_t memsize, int nr_mem_devs)
     p->header.length = sizeof(struct smbios_type_16);
     p->header.handle = 0x1000;
 
-    p->location = 0x01; /* other */
+    p->location = 0x03; /* system board or motherboard */
     p->use = 0x03; /* system memory */
     p->error_correction = 0x01; /* other */
     p->maximum_capacity = memsize * 1024;
@@ -2108,6 +2133,7 @@ smbios_type_17_init(void *start, uint32_t memory_size_mb, int instance)
     p->header.handle = 0x1100 + instance;
 
     p->physical_memory_array_handle = 0x1000;
+    p->memory_error_information_handle = 0xfffe; /* none provided */
     p->total_width = 64;
     p->data_width = 64;
 /* TODO: should assert in case something is wrong   ASSERT((memory_size_mb & ~0x7fff) == 0); */
@@ -2214,13 +2240,8 @@ void smbios_init(void)
                   (ram_end - (1ull << 32) + ram_size) / (1024 * 1024);
     int i, nr_mem_devs;
 
-#ifdef BX_USE_EBDA_TABLES
-    ebda_cur_addr = align(ebda_cur_addr, 16);
-    start = (void *)(ebda_cur_addr);
-#else
     bios_table_cur_addr = align(bios_table_cur_addr, 16);
     start = (void *)(bios_table_cur_addr);
-#endif
 
 	p = (char *)start + sizeof(struct smbios_entry_point);
 
@@ -2261,11 +2282,7 @@ void smbios_init(void)
         (uint32_t)(start + sizeof(struct smbios_entry_point)),
         nr_structs);
 
-#ifdef BX_USE_EBDA_TABLES
-    ebda_cur_addr += (p - (char *)start);
-#else
     bios_table_cur_addr += (p - (char *)start);
-#endif
 
     BX_INFO("SMBIOS table addr=0x%08lx\n", (unsigned long)start);
 }
@@ -2354,7 +2371,8 @@ void rombios32_init(uint32_t *s3_resume_vector, uint8_t *shutdown_flag)
 
     pci_bios_init();
 
-    if (bios_table_cur_addr != 0) {
+#ifndef BX_USE_EBDA_TABLES
+    if (bios_table_cur_addr != 0 && i440_pcidev.bus != -1) {
 
         mptable_init();
 
@@ -2367,13 +2385,25 @@ void rombios32_init(uint32_t *s3_resume_vector, uint8_t *shutdown_flag)
 
         bios_lock_shadow_ram();
 
-        BX_INFO("bios_table_cur_addr: 0x%08lx\n", bios_table_cur_addr);
-        if (bios_table_cur_addr > bios_table_end_addr)
-            BX_PANIC("bios_table_end_addr overflow!\n");
-#ifdef BX_USE_EBDA_TABLES
-        BX_INFO("ebda_cur_addr: 0x%08lx\n", ebda_cur_addr);
-        if (ebda_cur_addr > 0xA0000)
-            BX_PANIC("ebda_cur_addr overflow!\n");
-#endif
     }
+#else
+    mptable_init();
+
+    if (bios_table_cur_addr != 0 && i440_pcidev.bus != -1) {
+
+        uuid_probe();
+
+        smbios_init();
+    }
+
+    if (acpi_enabled)
+        acpi_bios_init();
+
+    BX_INFO("ebda_cur_addr: 0x%08lx\n", ebda_cur_addr);
+    if (ebda_cur_addr > 0xA0000)
+        BX_PANIC("ebda_cur_addr overflow!\n");
+#endif
+    BX_INFO("bios_table_cur_addr: 0x%08lx\n", bios_table_cur_addr);
+    if (bios_table_cur_addr > bios_table_end_addr)
+        BX_PANIC("bios_table_end_addr overflow!\n");
 }

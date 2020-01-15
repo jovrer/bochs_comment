@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.68 2009/02/08 09:05:52 vruppert Exp $
+// $Id: sb16.cc,v 1.70 2010/02/26 14:18:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +17,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
 /////////////////////////////////////////////////////////////////////////
 
 // This file (SB16.CC) written and donated by Josef Drexler
@@ -33,6 +28,8 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "param_names.h"
+
 #if BX_SUPPORT_SB16
 
 #include "sb16.h"

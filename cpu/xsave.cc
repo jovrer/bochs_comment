@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: xsave.cc,v 1.22 2009/10/27 20:03:35 sshwarts Exp $
+// $Id: xsave.cc,v 1.26 2010/03/14 15:51:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008-2009 Stanislav Shwartsman
@@ -35,7 +35,7 @@
 /* 0F AE /4 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 {
-#if BX_SUPPORT_XSAVE
+#if BX_CPU_LEVEL >= 6
   unsigned index;
   BxPackedXmmRegister xmm;
 
@@ -49,7 +49,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 
   if (laddr & 0x3f) {
     BX_ERROR(("XSAVE: access not aligned to 64-byte"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   //
@@ -139,7 +139,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
     for(index=0; index < BX_XMM_REGISTERS; index++)
     {
       // save XMM8-XMM15 only in 64-bit mode
-      if (index < 8 || Is64BitMode()) {
+      if (index < 8 || long64_mode()) {
         write_virtual_dqword(i->seg(),
            eaddr+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
       }
@@ -150,16 +150,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 
   // always update header to 'dirty' state
   write_virtual_qword(i->seg(), eaddr + 512, header1);
-#else
-  BX_INFO(("XSAVE: required XSAVE support, use --enable-xsave option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 /* 0F AE /5 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 {
-#if BX_SUPPORT_XSAVE
+#if BX_CPU_LEVEL >= 6
   unsigned index;
   BxPackedXmmRegister xmm;
 
@@ -172,7 +169,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 
   if (laddr & 0x3f) {
     BX_ERROR(("XRSTOR: access not aligned to 64-byte"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   Bit64u header1 = read_virtual_qword(i->seg(), eaddr + 512);
@@ -181,12 +178,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 
   if ((~BX_CPU_THIS_PTR xcr0.get32() & header1) != 0) {
     BX_ERROR(("XRSTOR: Broken header state"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   if (header2 != 0 || header3 != 0) {
     BX_ERROR(("XRSTOR: Reserved header state is not '0"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   //
@@ -276,7 +273,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
   {
     Bit32u new_mxcsr = read_virtual_dword(i->seg(), eaddr + 24);
     if(new_mxcsr & ~MXCSR_MASK)
-       exception(BX_GP_EXCEPTION, 0, 0);
+       exception(BX_GP_EXCEPTION, 0);
     BX_MXCSR_REGISTER = new_mxcsr;
 
     if (header1 & BX_XCR0_SSE_MASK) {
@@ -284,7 +281,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
       for(index=0; index < BX_XMM_REGISTERS; index++)
       {
          // restore XMM8-XMM15 only in 64-bit mode
-         if (index < 8 || Is64BitMode()) {
+         if (index < 8 || long64_mode()) {
            read_virtual_dqword(i->seg(),
                eaddr+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
          }
@@ -294,72 +291,63 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
        // initialize SSE with reset values
        for(index=0; index < BX_XMM_REGISTERS; index++) {
          // set XMM8-XMM15 only in 64-bit mode
-         if (index < 8 || Is64BitMode()) {
+         if (index < 8 || long64_mode()) {
            BX_CPU_THIS_PTR xmm[index].xmm64u(0) = 0;
            BX_CPU_THIS_PTR xmm[index].xmm64u(1) = 0;
          }
        }
     }
   }
-#else
-  BX_INFO(("XRSTOR: required XSAVE support, use --enable-xsave option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 /* 0F 01 D0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XGETBV(bxInstruction_c *i)
 {
-#if BX_SUPPORT_XSAVE
-  if(! (BX_CPU_THIS_PTR cr4.get_OSXSAVE())) {
+#if BX_CPU_LEVEL >= 6
+  if(! BX_CPU_THIS_PTR cr4.get_OSXSAVE()) {
     BX_ERROR(("XGETBV: OSXSAVE feature is not enabled in CR4!"));
-    exception(BX_UD_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0);
   }
 
   // For now hardcoded handle only XCR0 register, it should take a few
   // years until extension will be required
   if (ECX != 0) {
     BX_ERROR(("XGETBV: Invalid XCR register %d", ECX));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   RDX = 0;
   RAX = BX_CPU_THIS_PTR xcr0.get32();
-#else
-  BX_INFO(("XGETBV: required XSAVE support, use --enable-xsave option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 /* 0F 01 D1 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
 {
-#if BX_SUPPORT_XSAVE
-  if(! (BX_CPU_THIS_PTR cr4.get_OSXSAVE())) {
+#if BX_CPU_LEVEL >= 6
+  if(! BX_CPU_THIS_PTR cr4.get_OSXSAVE()) {
     BX_ERROR(("XSETBV: OSXSAVE feature is not enabled in CR4!"));
-    exception(BX_UD_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0);
   }
 
   if (v8086_mode() || CPL != 0) {
     BX_ERROR(("XSETBV: The current priveledge level is not 0"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   // For now hardcoded handle only XCR0 register, it should take a few
   // years until extension will be required
   if (ECX != 0) {
     BX_ERROR(("XSETBV: Invalid XCR register %d", ECX));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   if (EDX != 0 || (EAX & ~BX_XCR0_SUPPORTED_BITS) != 0 || (EAX & 1) == 0) {
     BX_ERROR(("XSETBV: Attempting to change reserved bits!"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_GP_EXCEPTION, 0);
   }
 
   BX_CPU_THIS_PTR xcr0.set32(EAX);
-#else
-  BX_INFO(("XSETBV: required XSAVE support, use --enable-xsave option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }

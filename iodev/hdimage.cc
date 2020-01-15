@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.cc,v 1.19 2009/04/25 08:06:32 vruppert Exp $
+// $Id: hdimage.cc,v 1.21 2010/03/02 07:07:57 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -611,7 +605,7 @@ void sparse_image_t::panic(const char * message)
   {
     snprintf(buffer, sizeof(buffer), "error with sparse disk image %s - %s", pathname, message);
   }
-  BX_PANIC((buffer));
+  BX_PANIC(("%s", buffer));
 }
 
 ssize_t sparse_image_t::write (const void* buf, size_t count)

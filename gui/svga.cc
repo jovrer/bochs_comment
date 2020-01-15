@@ -1,6 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svga.cc,v 1.19 2009/02/08 09:05:52 vruppert Exp $
+// $Id: svga.cc,v 1.21 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
+//
+//  Copyright (C) 2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +26,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "param_names.h"
 #include "iodev.h"
 #if BX_WITH_SVGA
 

@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.117 2009/08/10 08:08:25 sshwarts Exp $
+// $Id: iodev.h,v 1.119 2010/02/26 14:18:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -32,6 +26,7 @@
 #define IODEV_H
 
 #include "bochs.h"
+#include "param_names.h"
 
 /* number of IRQ lines supported.  In an ISA PC there are two
    PIC chips cascaded together.  each has 8 IRQ lines, so there

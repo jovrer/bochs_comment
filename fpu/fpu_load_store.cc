@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_load_store.cc,v 1.38 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: fpu_load_store.cc,v 1.40 2010/02/25 22:04:31 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2009 Stanislav Shwartsman
@@ -28,7 +28,7 @@
 
 #if BX_SUPPORT_FPU
 
-#define swap_values(a, b) ((a)^=(b)^=(a)^=(b))
+#define swap_values16u(a, b) { Bit16u tmp = a; a = b; b = tmp; }
 
 extern float_status_t FPU_pre_exception_handling(Bit16u control_word);
 
@@ -36,7 +36,6 @@ extern float_status_t FPU_pre_exception_handling(Bit16u control_word);
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_STi(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   FPU_update_last_instruction(i);
 
@@ -63,14 +62,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_STi(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(sti_reg, 0);
-#else
-  BX_INFO(("FLD_STi: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_SINGLE_REAL(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -96,14 +91,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_SINGLE_REAL(bxInstruction_c *i)
     BX_CPU_THIS_PTR the_i387.FPU_push();
     BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FLD_SINGLE_REAL: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_DOUBLE_REAL(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -129,14 +120,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_DOUBLE_REAL(bxInstruction_c *i)
     BX_CPU_THIS_PTR the_i387.FPU_push();
     BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FLD_DOUBLE_REAL: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_EXTENDED_REAL(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   floatx80 result;
@@ -156,15 +143,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_EXTENDED_REAL(bxInstruction_c *i)
     BX_CPU_THIS_PTR the_i387.FPU_push();
     BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FLD_EXTENDED_REAL: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DF /0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_WORD_INTEGER(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -182,15 +165,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_WORD_INTEGER(bxInstruction_c *i)
     BX_CPU_THIS_PTR the_i387.FPU_push();
     BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FILD_WORD_INTEGER: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DB /0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_DWORD_INTEGER(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -208,15 +187,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_DWORD_INTEGER(bxInstruction_c *i)
     BX_CPU_THIS_PTR the_i387.FPU_push();
     BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FILD_DWORD_INTEGER: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DF /5 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_QWORD_INTEGER(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -234,15 +209,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_QWORD_INTEGER(bxInstruction_c *i)
     BX_CPU_THIS_PTR the_i387.FPU_push();
     BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FILD_QWORD_INTEGER: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DF /4 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBLD_PACKED_BCD(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -279,14 +250,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBLD_PACKED_BCD(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(result, 0);
-#else
-  BX_INFO(("FBLD_PACKED_BCD: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_STi(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   FPU_update_last_instruction(i);
 
@@ -307,14 +274,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_STi(bxInstruction_c *i)
     if (pop_stack)
       BX_CPU_THIS_PTR the_i387.FPU_pop();
   }
-#else
-  BX_INFO(("FST(P)_STi: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -348,21 +311,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_dword(i->seg(), RMAddr(i), save_reg);
 
   FPU_PARTIAL_STATUS = x87_sw;
   if (pop_stack)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FST(P)_SINGLE_REAL: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -396,22 +355,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_qword(i->seg(), RMAddr(i), save_reg);
 
   FPU_PARTIAL_STATUS = x87_sw;
   if (pop_stack)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FST(P)_DOUBLE_REAL: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DB /7 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSTP_EXTENDED_REAL(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -438,14 +393,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSTP_EXTENDED_REAL(bxInstruction_c *i)
   write_virtual_word (i->seg(), RMAddr(i) + 8, save_reg.exp);
 
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FSTP_EXTENDED_REAL: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -479,21 +430,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_word(i->seg(), RMAddr(i), (Bit16u)(save_reg));
 
   FPU_PARTIAL_STATUS = x87_sw;
   if (pop_stack)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FIST(P)_WORD_INTEGER: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -527,21 +474,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_dword(i->seg(), RMAddr(i), (Bit32u)(save_reg));
 
   FPU_PARTIAL_STATUS = x87_sw;
   if (pop_stack)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FIST(P)_DWORD_INTEGER: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTP_QWORD_INTEGER(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -573,21 +516,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTP_QWORD_INTEGER(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_qword(i->seg(), RMAddr(i), (Bit64u)(save_reg));
 
   FPU_PARTIAL_STATUS = x87_sw;
 
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FISTP_QWORD_INTEGER: required FPU, configure --enable-fpu"));
-#endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -651,7 +590,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   // write packed bcd to memory
   write_virtual_qword(i->seg(), RMAddr(i),     save_reg_lo);
@@ -660,15 +599,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
   FPU_PARTIAL_STATUS = x87_sw;
 
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FBSTP_PACKED_BCD: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* DF /1 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP16(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -700,23 +635,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP16(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_word(i->seg(), RMAddr(i), (Bit16u)(save_reg));
 
   FPU_PARTIAL_STATUS = x87_sw;
 
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FISTTP16: required SSE3, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 /* DB /1 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP32(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -748,23 +678,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP32(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_dword(i->seg(), RMAddr(i), (Bit32u)(save_reg));
 
   FPU_PARTIAL_STATUS = x87_sw;
 
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FISTTP32: required SSE3, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 /* DD /1 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP64(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -796,17 +721,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP64(bxInstruction_c *i)
   }
 
   // store to the memory might generate an exception, in this case origial FPU_SW must be kept
-  swap_values(x87_sw, FPU_PARTIAL_STATUS);
+  swap_values16u(x87_sw, FPU_PARTIAL_STATUS);
 
   write_virtual_qword(i->seg(), RMAddr(i), (Bit64u)(save_reg));
 
   FPU_PARTIAL_STATUS = x87_sw;
 
   BX_CPU_THIS_PTR the_i387.FPU_pop();
-#else
-  BX_INFO(("FISTTP64: required SSE3, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
-#endif
 }
 
 #endif

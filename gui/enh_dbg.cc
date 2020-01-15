@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.cc,v 1.19 2009/10/31 16:01:29 sshwarts Exp $
+// $Id: enh_dbg.cc,v 1.27 2010/03/05 20:42:10 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -16,6 +16,7 @@
 #include <math.h>
 
 #include "bochs.h"
+#include "param_names.h"
 #include "cpu/cpu.h"
 #include "disasm/disasm.h"
 
@@ -83,6 +84,7 @@ Bit32u PrevStepNSize = 50;  // cpu_loop control variables
 Bit64u PrevPtime = 9;       // any number other than 0
 Bit64u NewPtime;            // used to test whether sim has "updated"
 unsigned TotCPUs;           // # of CPUs in a multi-CPU simulation
+unsigned CpuSupportSSE = 0; // cpu supports SSE
 unsigned CurrentCPU;        // cpu that is being displayed
 
 struct ASKTEXT ask_str;
@@ -450,13 +452,13 @@ void UpdateStatus()
         if (CpuModeChange != FALSE)     // Did CR0 bits or EFER bits change value?
         {
             CpuModeChange = FALSE;
-            *tmpcb = 0;
+            char mode[32];
             switch (CpuMode) {
                 case BX_MODE_IA32_REAL:
                     if (In32Mode == FALSE)
-                        strcpy (tmpcb, "CPU: Real Mode (16)");
+                        strcpy (mode, "CPU: Real Mode (16)");
                     else
-                        strcpy (tmpcb, "CPU: Real Mode (32)");
+                        strcpy (mode, "CPU: Real Mode (32)");
                     break;
                 case BX_MODE_IA32_V8086:
                     strcpy (tmpcb, "CPU: V8086 Mode");
@@ -464,25 +466,25 @@ void UpdateStatus()
                 case BX_MODE_IA32_PROTECTED:
                     if (In32Mode == FALSE) {
                         if (InPaging != 0)
-                            strcpy (tmpcb, "CPU: PMode (16) (PG)");
+                            strcpy (mode, "CPU: PMode (16) (PG)");
                         else
-                            strcpy (tmpcb, "CPU: PMode (16)");
+                            strcpy (mode, "CPU: PMode (16)");
                     }
                     else {
                         if (InPaging != 0)
-                            strcpy (tmpcb, "CPU: PMode (32) (PG)");
+                            strcpy (mode, "CPU: PMode (32) (PG)");
                         else
-                            strcpy (tmpcb, "CPU: PMode (32)");
+                            strcpy (mode, "CPU: PMode (32)");
                     }
                     break;
                 case BX_MODE_LONG_COMPAT:
-                    strcpy (tmpcb, "CPU: Compatibility Mode");
+                    strcpy (mode, "CPU: Compatibility Mode");
                     break;
                 case BX_MODE_LONG_64:
-                    strcpy (tmpcb, "CPU: Long Mode");
+                    strcpy (mode, "CPU: Long Mode");
                     break;
             }
-            SetStatusText(1, tmpcb);    // display CPU mode in status col#1
+            SetStatusText(1, mode);    // display CPU mode in status col#1
         }
     }
 
@@ -728,12 +730,15 @@ void ParseBkpt()
 // -- but it might not be "turned on", either
 int FillSSE(int LineCount)
 {
-#if BX_SUPPORT_SSE
-    int i;
+#if BX_CPU_LEVEL >= 6
+    if (! CpuSupportSSE)
+        return (LineCount);
+
     Bit64u val = 0;
     bx_param_num_c *p;
     char *cols[3];
     char ssetxt[80];
+    int i;
 
     if ((rV[CR0_Rnum] & 0xc) != 0)  // TS or EM flags in CR0 temporarily disable SSE
     {
@@ -1113,17 +1118,15 @@ void LoadRegList()
         itemnum = FillMMX(itemnum);
 #endif
 
-#if BX_SUPPORT_SSE
     // SSE registers
-    if (SeeReg[5] != FALSE)
+    if (CpuSupportSSE && SeeReg[5] != FALSE)
         itemnum = FillSSE(itemnum);
-#endif
 
     // Internal x86 Debug Registers
     if (SeeReg[6] != FALSE)
         itemnum = FillDebugRegs(itemnum);
 
-//  if (SeeReg[7] != FALSE)         // Test registers are not supported yet in bochs
+//  if (SeeReg[7] != FALSE)     // Test registers are not supported yet in bochs
 //      FillTRXRegs(itemnum);
 
     RedrawColumns(REG_WND);     // resize Hex Value column sometimes
@@ -1193,134 +1196,138 @@ void InitRegObjects()
 {
     bx_list_c *cpu_list;
     extern bx_list_c *root_param;
-    int j = BX_SMP_PROCESSORS;
+    int cpu = BX_SMP_PROCESSORS;
     // get the param tree interface objects for every single register on all CPUs
-    while (--j >= 0)
+    while (--cpu >= 0)
     {
-    // RegObject[j]s are all initialized to NULL when allocated in the BSS area
-    // but it doesn't hurt anything to do it again, once
+        // RegObject[j]s are all initialized to NULL when allocated in the BSS area
+        // but it doesn't hurt anything to do it again, once
         int i = TOT_REG_NUM + EXTRA_REGS;
         while (--i >= 0)
-            RegObject[j][i] = (bx_param_num_c *) NULL;
-        sprintf (tmpcb,"bochs.cpu%d",j);    // set the "cpu number" for cpu_list
-        cpu_list = (bx_list_c *) SIM->get_param(tmpcb,root_param);
+            RegObject[cpu][i] = (bx_param_num_c *) NULL;
+
+        char pname[16];
+        sprintf (pname,"bochs.cpu%d", cpu);    // set the "cpu number" for cpu_list
+        cpu_list = (bx_list_c *) SIM->get_param(pname, root_param);
+
         // TODO: in the next version, put all the names in an array, and loop
         // -- but that method is not compatible with bochs 2.3.7 or earlier
 #if BX_SUPPORT_X86_64 == 0
-        RegObject[j][EAX_Rnum] = SIM->get_param_num("EAX", cpu_list);
-        RegObject[j][EBX_Rnum] = SIM->get_param_num("EBX", cpu_list);
-        RegObject[j][ECX_Rnum] = SIM->get_param_num("ECX", cpu_list);
-        RegObject[j][EDX_Rnum] = SIM->get_param_num("EDX", cpu_list);
-        RegObject[j][ESI_Rnum] = SIM->get_param_num("ESI", cpu_list);
-        RegObject[j][EDI_Rnum] = SIM->get_param_num("EDI", cpu_list);
-        RegObject[j][EBP_Rnum] = SIM->get_param_num("EBP", cpu_list);
-        RegObject[j][ESP_Rnum] = SIM->get_param_num("ESP", cpu_list);
-        RegObject[j][EIP_Rnum] = SIM->get_param_num("EIP", cpu_list);
+        RegObject[cpu][EAX_Rnum] = SIM->get_param_num("EAX", cpu_list);
+        RegObject[cpu][EBX_Rnum] = SIM->get_param_num("EBX", cpu_list);
+        RegObject[cpu][ECX_Rnum] = SIM->get_param_num("ECX", cpu_list);
+        RegObject[cpu][EDX_Rnum] = SIM->get_param_num("EDX", cpu_list);
+        RegObject[cpu][ESI_Rnum] = SIM->get_param_num("ESI", cpu_list);
+        RegObject[cpu][EDI_Rnum] = SIM->get_param_num("EDI", cpu_list);
+        RegObject[cpu][EBP_Rnum] = SIM->get_param_num("EBP", cpu_list);
+        RegObject[cpu][ESP_Rnum] = SIM->get_param_num("ESP", cpu_list);
+        RegObject[cpu][EIP_Rnum] = SIM->get_param_num("EIP", cpu_list);
 #else
-        RegObject[j][RAX_Rnum] = SIM->get_param_num("RAX", cpu_list);
-        RegObject[j][RBX_Rnum] = SIM->get_param_num("RBX", cpu_list);
-        RegObject[j][RCX_Rnum] = SIM->get_param_num("RCX", cpu_list);
-        RegObject[j][RDX_Rnum] = SIM->get_param_num("RDX", cpu_list);
-        RegObject[j][RSI_Rnum] = SIM->get_param_num("RSI", cpu_list);
-        RegObject[j][RDI_Rnum] = SIM->get_param_num("RDI", cpu_list);
-        RegObject[j][RBP_Rnum] = SIM->get_param_num("RBP", cpu_list);
-        RegObject[j][RSP_Rnum] = SIM->get_param_num("RSP", cpu_list);
-        RegObject[j][RIP_Rnum] = SIM->get_param_num("RIP", cpu_list);
-        RegObject[j][R8_Rnum] = SIM->get_param_num("R8", cpu_list);
-        RegObject[j][R9_Rnum] = SIM->get_param_num("R9", cpu_list);
-        RegObject[j][R10_Rnum] = SIM->get_param_num("R10", cpu_list);
-        RegObject[j][R11_Rnum] = SIM->get_param_num("R11", cpu_list);
-        RegObject[j][R12_Rnum] = SIM->get_param_num("R12", cpu_list);
-        RegObject[j][R13_Rnum] = SIM->get_param_num("R13", cpu_list);
-        RegObject[j][R14_Rnum] = SIM->get_param_num("R14", cpu_list);
-        RegObject[j][R15_Rnum] = SIM->get_param_num("R15", cpu_list);
+        RegObject[cpu][RAX_Rnum] = SIM->get_param_num("RAX", cpu_list);
+        RegObject[cpu][RBX_Rnum] = SIM->get_param_num("RBX", cpu_list);
+        RegObject[cpu][RCX_Rnum] = SIM->get_param_num("RCX", cpu_list);
+        RegObject[cpu][RDX_Rnum] = SIM->get_param_num("RDX", cpu_list);
+        RegObject[cpu][RSI_Rnum] = SIM->get_param_num("RSI", cpu_list);
+        RegObject[cpu][RDI_Rnum] = SIM->get_param_num("RDI", cpu_list);
+        RegObject[cpu][RBP_Rnum] = SIM->get_param_num("RBP", cpu_list);
+        RegObject[cpu][RSP_Rnum] = SIM->get_param_num("RSP", cpu_list);
+        RegObject[cpu][RIP_Rnum] = SIM->get_param_num("RIP", cpu_list);
+        RegObject[cpu][R8_Rnum] = SIM->get_param_num("R8", cpu_list);
+        RegObject[cpu][R9_Rnum] = SIM->get_param_num("R9", cpu_list);
+        RegObject[cpu][R10_Rnum] = SIM->get_param_num("R10", cpu_list);
+        RegObject[cpu][R11_Rnum] = SIM->get_param_num("R11", cpu_list);
+        RegObject[cpu][R12_Rnum] = SIM->get_param_num("R12", cpu_list);
+        RegObject[cpu][R13_Rnum] = SIM->get_param_num("R13", cpu_list);
+        RegObject[cpu][R14_Rnum] = SIM->get_param_num("R14", cpu_list);
+        RegObject[cpu][R15_Rnum] = SIM->get_param_num("R15", cpu_list);
 #endif
-        RegObject[j][EFL_Rnum] = SIM->get_param_num("EFLAGS", cpu_list);
-        RegObject[j][CS_Rnum] = SIM->get_param_num("CS.selector", cpu_list);
-        RegObject[j][DS_Rnum] = SIM->get_param_num("DS.selector", cpu_list);
-        RegObject[j][ES_Rnum] = SIM->get_param_num("ES.selector", cpu_list);
-        RegObject[j][SS_Rnum] = SIM->get_param_num("SS.selector", cpu_list);
-        RegObject[j][FS_Rnum] = SIM->get_param_num("FS.selector", cpu_list);
-        RegObject[j][GS_Rnum] = SIM->get_param_num("GS.selector", cpu_list);
-        RegObject[j][GDTRnum] = SIM->get_param_num("GDTR.base", cpu_list);
-        RegObject[j][GDTR_Lim] = SIM->get_param_num("GDTR.limit", cpu_list);
-        RegObject[j][IDTRnum] = SIM->get_param_num("IDTR.base", cpu_list);
-        RegObject[j][IDTR_Lim] = SIM->get_param_num("IDTR.limit", cpu_list);
-        RegObject[j][LDTRnum] = SIM->get_param_num("LDTR.base", cpu_list);
-        RegObject[j][TRRnum] = SIM->get_param_num("TR.base", cpu_list);
-        RegObject[j][CR0_Rnum] = SIM->get_param_num("CR0", cpu_list);
-        RegObject[j][CR2_Rnum] = SIM->get_param_num("CR2", cpu_list);
-        RegObject[j][CR3_Rnum] = SIM->get_param_num("CR3", cpu_list);
+        RegObject[cpu][EFL_Rnum] = SIM->get_param_num("EFLAGS", cpu_list);
+        RegObject[cpu][CS_Rnum] = SIM->get_param_num("CS.selector", cpu_list);
+        RegObject[cpu][DS_Rnum] = SIM->get_param_num("DS.selector", cpu_list);
+        RegObject[cpu][ES_Rnum] = SIM->get_param_num("ES.selector", cpu_list);
+        RegObject[cpu][SS_Rnum] = SIM->get_param_num("SS.selector", cpu_list);
+        RegObject[cpu][FS_Rnum] = SIM->get_param_num("FS.selector", cpu_list);
+        RegObject[cpu][GS_Rnum] = SIM->get_param_num("GS.selector", cpu_list);
+        RegObject[cpu][GDTRnum] = SIM->get_param_num("GDTR.base", cpu_list);
+        RegObject[cpu][GDTR_Lim] = SIM->get_param_num("GDTR.limit", cpu_list);
+        RegObject[cpu][IDTRnum] = SIM->get_param_num("IDTR.base", cpu_list);
+        RegObject[cpu][IDTR_Lim] = SIM->get_param_num("IDTR.limit", cpu_list);
+        RegObject[cpu][LDTRnum] = SIM->get_param_num("LDTR.base", cpu_list);
+        RegObject[cpu][TRRnum] = SIM->get_param_num("TR.base", cpu_list);
+        RegObject[cpu][CR0_Rnum] = SIM->get_param_num("CR0", cpu_list);
+        RegObject[cpu][CR2_Rnum] = SIM->get_param_num("CR2", cpu_list);
+        RegObject[cpu][CR3_Rnum] = SIM->get_param_num("CR3", cpu_list);
 #if BX_CPU_LEVEL >= 4
-        RegObject[j][CR4_Rnum] = SIM->get_param_num("CR4", cpu_list);
+        RegObject[cpu][CR4_Rnum] = SIM->get_param_num("CR4", cpu_list);
 #endif
 #if BX_SUPPORT_X86_64
-        RegObject[j][EFER_Rnum] = SIM->get_param_num("MSR.EFER", cpu_list);
+        RegObject[cpu][EFER_Rnum] = SIM->get_param_num("MSR.EFER", cpu_list);
 #endif
 #if BX_SUPPORT_FPU
-        RegObject[j][ST0_Rnum] = SIM->get_param_num("FPU.st0.fraction", cpu_list);
-        RegObject[j][ST1_Rnum] = SIM->get_param_num("FPU.st1.fraction", cpu_list);
-        RegObject[j][ST2_Rnum] = SIM->get_param_num("FPU.st2.fraction", cpu_list);
-        RegObject[j][ST3_Rnum] = SIM->get_param_num("FPU.st3.fraction", cpu_list);
-        RegObject[j][ST4_Rnum] = SIM->get_param_num("FPU.st4.fraction", cpu_list);
-        RegObject[j][ST5_Rnum] = SIM->get_param_num("FPU.st5.fraction", cpu_list);
-        RegObject[j][ST6_Rnum] = SIM->get_param_num("FPU.st6.fraction", cpu_list);
-        RegObject[j][ST7_Rnum] = SIM->get_param_num("FPU.st7.fraction", cpu_list);
-        RegObject[j][ST0_exp] = SIM->get_param_num("FPU.st0.exp", cpu_list);
-        RegObject[j][ST1_exp] = SIM->get_param_num("FPU.st1.exp", cpu_list);
-        RegObject[j][ST2_exp] = SIM->get_param_num("FPU.st2.exp", cpu_list);
-        RegObject[j][ST3_exp] = SIM->get_param_num("FPU.st3.exp", cpu_list);
-        RegObject[j][ST4_exp] = SIM->get_param_num("FPU.st4.exp", cpu_list);
-        RegObject[j][ST5_exp] = SIM->get_param_num("FPU.st5.exp", cpu_list);
-        RegObject[j][ST6_exp] = SIM->get_param_num("FPU.st6.exp", cpu_list);
-        RegObject[j][ST7_exp] = SIM->get_param_num("FPU.st7.exp", cpu_list);
+        RegObject[cpu][ST0_Rnum] = SIM->get_param_num("FPU.st0.fraction", cpu_list);
+        RegObject[cpu][ST1_Rnum] = SIM->get_param_num("FPU.st1.fraction", cpu_list);
+        RegObject[cpu][ST2_Rnum] = SIM->get_param_num("FPU.st2.fraction", cpu_list);
+        RegObject[cpu][ST3_Rnum] = SIM->get_param_num("FPU.st3.fraction", cpu_list);
+        RegObject[cpu][ST4_Rnum] = SIM->get_param_num("FPU.st4.fraction", cpu_list);
+        RegObject[cpu][ST5_Rnum] = SIM->get_param_num("FPU.st5.fraction", cpu_list);
+        RegObject[cpu][ST6_Rnum] = SIM->get_param_num("FPU.st6.fraction", cpu_list);
+        RegObject[cpu][ST7_Rnum] = SIM->get_param_num("FPU.st7.fraction", cpu_list);
+        RegObject[cpu][ST0_exp] = SIM->get_param_num("FPU.st0.exp", cpu_list);
+        RegObject[cpu][ST1_exp] = SIM->get_param_num("FPU.st1.exp", cpu_list);
+        RegObject[cpu][ST2_exp] = SIM->get_param_num("FPU.st2.exp", cpu_list);
+        RegObject[cpu][ST3_exp] = SIM->get_param_num("FPU.st3.exp", cpu_list);
+        RegObject[cpu][ST4_exp] = SIM->get_param_num("FPU.st4.exp", cpu_list);
+        RegObject[cpu][ST5_exp] = SIM->get_param_num("FPU.st5.exp", cpu_list);
+        RegObject[cpu][ST6_exp] = SIM->get_param_num("FPU.st6.exp", cpu_list);
+        RegObject[cpu][ST7_exp] = SIM->get_param_num("FPU.st7.exp", cpu_list);
 #endif
-#if BX_SUPPORT_SSE
-        RegObject[j][XMM0_Rnum] = SIM->get_param_num("SSE.xmm00_lo", cpu_list);
-        RegObject[j][XMM1_Rnum] = SIM->get_param_num("SSE.xmm01_lo", cpu_list);
-        RegObject[j][XMM2_Rnum] = SIM->get_param_num("SSE.xmm02_lo", cpu_list);
-        RegObject[j][XMM3_Rnum] = SIM->get_param_num("SSE.xmm03_lo", cpu_list);
-        RegObject[j][XMM4_Rnum] = SIM->get_param_num("SSE.xmm04_lo", cpu_list);
-        RegObject[j][XMM5_Rnum] = SIM->get_param_num("SSE.xmm05_lo", cpu_list);
-        RegObject[j][XMM6_Rnum] = SIM->get_param_num("SSE.xmm06_lo", cpu_list);
-        RegObject[j][XMM7_Rnum] = SIM->get_param_num("SSE.xmm07_lo", cpu_list);
-        RegObject[j][XMM0_hi] = SIM->get_param_num("SSE.xmm00_hi", cpu_list);
-        RegObject[j][XMM1_hi] = SIM->get_param_num("SSE.xmm01_hi", cpu_list);
-        RegObject[j][XMM2_hi] = SIM->get_param_num("SSE.xmm02_hi", cpu_list);
-        RegObject[j][XMM3_hi] = SIM->get_param_num("SSE.xmm03_hi", cpu_list);
-        RegObject[j][XMM4_hi] = SIM->get_param_num("SSE.xmm04_hi", cpu_list);
-        RegObject[j][XMM5_hi] = SIM->get_param_num("SSE.xmm05_hi", cpu_list);
-        RegObject[j][XMM6_hi] = SIM->get_param_num("SSE.xmm06_hi", cpu_list);
-        RegObject[j][XMM7_hi] = SIM->get_param_num("SSE.xmm07_hi", cpu_list);
+
+#if BX_CPU_LEVEL >= 6
+        if (! CpuSupportSSE) {
+            RegObject[cpu][XMM0_Rnum] = SIM->get_param_num("SSE.xmm00_lo", cpu_list);
+            RegObject[cpu][XMM1_Rnum] = SIM->get_param_num("SSE.xmm01_lo", cpu_list);
+            RegObject[cpu][XMM2_Rnum] = SIM->get_param_num("SSE.xmm02_lo", cpu_list);
+            RegObject[cpu][XMM3_Rnum] = SIM->get_param_num("SSE.xmm03_lo", cpu_list);
+            RegObject[cpu][XMM4_Rnum] = SIM->get_param_num("SSE.xmm04_lo", cpu_list);
+            RegObject[cpu][XMM5_Rnum] = SIM->get_param_num("SSE.xmm05_lo", cpu_list);
+            RegObject[cpu][XMM6_Rnum] = SIM->get_param_num("SSE.xmm06_lo", cpu_list);
+            RegObject[cpu][XMM7_Rnum] = SIM->get_param_num("SSE.xmm07_lo", cpu_list);
+            RegObject[cpu][XMM0_hi] = SIM->get_param_num("SSE.xmm00_hi", cpu_list);
+            RegObject[cpu][XMM1_hi] = SIM->get_param_num("SSE.xmm01_hi", cpu_list);
+            RegObject[cpu][XMM2_hi] = SIM->get_param_num("SSE.xmm02_hi", cpu_list);
+            RegObject[cpu][XMM3_hi] = SIM->get_param_num("SSE.xmm03_hi", cpu_list);
+            RegObject[cpu][XMM4_hi] = SIM->get_param_num("SSE.xmm04_hi", cpu_list);
+            RegObject[cpu][XMM5_hi] = SIM->get_param_num("SSE.xmm05_hi", cpu_list);
+            RegObject[cpu][XMM6_hi] = SIM->get_param_num("SSE.xmm06_hi", cpu_list);
+            RegObject[cpu][XMM7_hi] = SIM->get_param_num("SSE.xmm07_hi", cpu_list);
 
 #if BX_SUPPORT_X86_64
-        RegObject[j][XMM8_Rnum] = SIM->get_param_num("SSE.xmm08_lo", cpu_list);
-        RegObject[j][XMM9_Rnum] = SIM->get_param_num("SSE.xmm09_lo", cpu_list);
-        RegObject[j][XMMA_Rnum] = SIM->get_param_num("SSE.xmm10_lo", cpu_list);
-        RegObject[j][XMMB_Rnum] = SIM->get_param_num("SSE.xmm11_lo", cpu_list);
-        RegObject[j][XMMC_Rnum] = SIM->get_param_num("SSE.xmm12_lo", cpu_list);
-        RegObject[j][XMMD_Rnum] = SIM->get_param_num("SSE.xmm13_lo", cpu_list);
-        RegObject[j][XMME_Rnum] = SIM->get_param_num("SSE.xmm14_lo", cpu_list);
-        RegObject[j][XMMF_Rnum] = SIM->get_param_num("SSE.xmm15_lo", cpu_list);
-        RegObject[j][XMM8_hi] = SIM->get_param_num("SSE.xmm08_hi", cpu_list);
-        RegObject[j][XMM9_hi] = SIM->get_param_num("SSE.xmm09_hi", cpu_list);
-        RegObject[j][XMMA_hi] = SIM->get_param_num("SSE.xmm00_hi", cpu_list);
-        RegObject[j][XMMB_hi] = SIM->get_param_num("SSE.xmm11_hi", cpu_list);
-        RegObject[j][XMMC_hi] = SIM->get_param_num("SSE.xmm12_hi", cpu_list);
-        RegObject[j][XMMD_hi] = SIM->get_param_num("SSE.xmm13_hi", cpu_list);
-        RegObject[j][XMME_hi] = SIM->get_param_num("SSE.xmm14_hi", cpu_list);
-        RegObject[j][XMMF_hi] = SIM->get_param_num("SSE.xmm15_hi", cpu_list);
-#endif      // 64bit
-#endif      // SSE
-        RegObject[j][DR0_Rnum] = SIM->get_param_num("DR0", cpu_list);
-        RegObject[j][DR1_Rnum] = SIM->get_param_num("DR1", cpu_list);
-        RegObject[j][DR2_Rnum] = SIM->get_param_num("DR2", cpu_list);
-        RegObject[j][DR3_Rnum] = SIM->get_param_num("DR3", cpu_list);
-        RegObject[j][DR6_Rnum] = SIM->get_param_num("DR6", cpu_list);
-        RegObject[j][DR7_Rnum] = SIM->get_param_num("DR7", cpu_list);
-// is there an #if for whether the test registers are supported?
-//  RegObject[j][71]= SIM->get_param_num("TR3", cpu_list);
-// {"TR3","TR4","TR5","TR6","TR7"};
+            RegObject[cpu][XMM8_Rnum] = SIM->get_param_num("SSE.xmm08_lo", cpu_list);
+            RegObject[cpu][XMM9_Rnum] = SIM->get_param_num("SSE.xmm09_lo", cpu_list);
+            RegObject[cpu][XMMA_Rnum] = SIM->get_param_num("SSE.xmm10_lo", cpu_list);
+            RegObject[cpu][XMMB_Rnum] = SIM->get_param_num("SSE.xmm11_lo", cpu_list);
+            RegObject[cpu][XMMC_Rnum] = SIM->get_param_num("SSE.xmm12_lo", cpu_list);
+            RegObject[cpu][XMMD_Rnum] = SIM->get_param_num("SSE.xmm13_lo", cpu_list);
+            RegObject[cpu][XMME_Rnum] = SIM->get_param_num("SSE.xmm14_lo", cpu_list);
+            RegObject[cpu][XMMF_Rnum] = SIM->get_param_num("SSE.xmm15_lo", cpu_list);
+            RegObject[cpu][XMM8_hi] = SIM->get_param_num("SSE.xmm08_hi", cpu_list);
+            RegObject[cpu][XMM9_hi] = SIM->get_param_num("SSE.xmm09_hi", cpu_list);
+            RegObject[cpu][XMMA_hi] = SIM->get_param_num("SSE.xmm00_hi", cpu_list);
+            RegObject[cpu][XMMB_hi] = SIM->get_param_num("SSE.xmm11_hi", cpu_list);
+            RegObject[cpu][XMMC_hi] = SIM->get_param_num("SSE.xmm12_hi", cpu_list);
+            RegObject[cpu][XMMD_hi] = SIM->get_param_num("SSE.xmm13_hi", cpu_list);
+            RegObject[cpu][XMME_hi] = SIM->get_param_num("SSE.xmm14_hi", cpu_list);
+            RegObject[cpu][XMMF_hi] = SIM->get_param_num("SSE.xmm15_hi", cpu_list);
+#endif
+        }
+#endif
+
+        RegObject[cpu][DR0_Rnum] = SIM->get_param_num("DR0", cpu_list);
+        RegObject[cpu][DR1_Rnum] = SIM->get_param_num("DR1", cpu_list);
+        RegObject[cpu][DR2_Rnum] = SIM->get_param_num("DR2", cpu_list);
+        RegObject[cpu][DR3_Rnum] = SIM->get_param_num("DR3", cpu_list);
+        RegObject[cpu][DR6_Rnum] = SIM->get_param_num("DR6", cpu_list);
+        RegObject[cpu][DR7_Rnum] = SIM->get_param_num("DR7", cpu_list);
     }
 }
 
@@ -1678,8 +1685,8 @@ void FillStack()
     doDumpRefresh = FALSE;
     StackLA = (Bit64u) BX_CPU(CurrentCPU)->get_laddr(BX_SEG_REG_SS, (bx_address) rV[RSP_Rnum]);
 
-    if (PStackLA == 1)              // illegal value requests a full refresh
-        PStackLA = StackLA ^ 0x4000;    // force a non-match below (kludge)
+    if (PStackLA == 1)               // illegal value requests a full refresh
+        PStackLA = StackLA ^ 0x4000; // force a non-match below (kludge)
 
     wordsize = 4;       // assume Pmode
     if (In32Mode == FALSE)
@@ -1691,8 +1698,8 @@ void FillStack()
     // TODO: enforce that cp is wordsize aligned
     // also -- enforce that StackLA is wordsize aligned
     cp = CurStack;
-    i = (unsigned int) StackLA & 0xfff; // where is stack bottom, in its 4K memory page?
-    if (i > 0x1000 - len)               // does len cross a 4K boundary?
+    i = (unsigned) StackLA & 0xfff; // where is stack bottom, in its 4K memory page?
+    if (i > 0x1000 - len)           // does len cross a 4K boundary?
     {
         unsigned int ReadSize = 0x1000 - i;
         // read up to the 4K boundary, then try to read the last chunk
@@ -1832,11 +1839,6 @@ void prtbrk (Bit32u seg, Bit64u addy, unsigned int id, bx_bool enabled, char *co
     sprintf (cols[0] + i,FMT_LLCAPX,addy);
 }
 
-extern unsigned num_write_watchpoints;
-extern unsigned num_read_watchpoints;
-extern bx_phy_address write_watchpoint[];   // currently 32bit only
-extern bx_phy_address read_watchpoint[];
-
 // Displays all Breakpoints and Watchpoints
 void FillBrkp()
 {
@@ -1943,8 +1945,8 @@ void FillBrkp()
             WWPSnapCount = num_write_watchpoints;
             for (i = 0; i < totqty; i++)
             {
-                WWP_Snapshot[i] = write_watchpoint[i];
-                sprintf (cols[0],"%08X",write_watchpoint[i]);
+                WWP_Snapshot[i] = write_watchpoint[i].addr;
+                sprintf (cols[0],"%08X",write_watchpoint[i].addr);
                 InsertListRow(cols, 18, DUMP_WND, LineCount++, 8);
             }
         }
@@ -1955,8 +1957,8 @@ void FillBrkp()
             RWPSnapCount = num_read_watchpoints;
             for (i = 0; i < totqty; i++)
             {
-                RWP_Snapshot[i] = read_watchpoint[i];
-                sprintf (cols[0],"%08X",read_watchpoint[i]);
+                RWP_Snapshot[i] = read_watchpoint[i].addr;
+                sprintf (cols[0],"%08X",read_watchpoint[i].addr);
                 InsertListRow(cols, 18, DUMP_WND, LineCount++, 8);
             }
         }
@@ -2092,6 +2094,11 @@ void DoAllInit()
         TotCPUs = BX_SMP_PROCESSORS;
     else
         TotCPUs = 1;
+
+    // for GUI debugger
+#if BX_CPU_LEVEL >= 6
+    CpuSupportSSE = SIM->get_param_enum(BXPN_CPUID_SSE)->get();
+#endif
 
     // divide up the pre-allocated char buffer into smaller pieces
     p = bigbuf + outbufSIZE;    // point at the end of preallocated mem
@@ -2633,14 +2640,14 @@ void SetBreak(int OneEntry)
     Invalidate(ASM_WND);    // redraw the ASM window -- colors may have changed
 }
 
-void DelWatchpoint(bx_phy_address *wp_array, unsigned *TotEntries, int i)
+void DelWatchpoint(bx_watchpoint *wp_array, unsigned *TotEntries, int i)
 {
     while (++i < (int) *TotEntries)
         wp_array[i-1] = wp_array[i];
     -- *TotEntries;
 }
 
-void SetWatchpoint(unsigned * num_watchpoints, bx_phy_address * watchpoint)
+void SetWatchpoint(unsigned *num_watchpoints, bx_watchpoint *watchpoint)
 {
     int iExist1 = -1;
     int i = (int) *num_watchpoints;
@@ -2649,7 +2656,7 @@ void SetWatchpoint(unsigned * num_watchpoints, bx_phy_address * watchpoint)
     // the list is unsorted -- test all of them
     while (--i >= 0)
     {
-        if (watchpoint[i] == SelectedDataAddress)
+        if (watchpoint[i].addr == SelectedDataAddress)
         {
             iExist1 = i;
             i = 0;
@@ -2658,17 +2665,19 @@ void SetWatchpoint(unsigned * num_watchpoints, bx_phy_address * watchpoint)
     if (iExist1 >= 0)
     {
         // existing watchpoint, remove by copying the list down
-        while (++iExist1 < (int) *num_watchpoints)
-            watchpoint[iExist1 - 1] = watchpoint[iExist1];
-        -- *num_watchpoints;
+        DelWatchpoint(watchpoint, num_watchpoints, iExist1);
     }
     else
     {
         // Set a watchpoint to last clicked address -- the list is not sorted
-        if (*num_watchpoints >= BX_DBG_MAX_WATCHPONTS)
+        if (*num_watchpoints >= BX_DBG_MAX_WATCHPONTS) {
             DispMessage("Too many of that type of watchpoint. Max: 16", "Table Overflow");
-        else
-            watchpoint[(*num_watchpoints)++] = (bx_phy_address) SelectedDataAddress;
+        }
+        else {
+            watchpoint[*num_watchpoints].len  = 1;
+            watchpoint[*num_watchpoints].addr = (bx_phy_address) SelectedDataAddress;
+            ++(*num_watchpoints);
+        }
     }
     Invalidate(DUMP_WND);   // redraw the MemDump window -- colors may have changed
 }
@@ -2898,9 +2907,10 @@ int HotKey (int ww, int Alt, int Shift, int Control)
                     RefreshDataWin();   // and whichever data window is up
                 }
             }
-#if BX_SUPPORT_SSE
-            else ToggleSeeReg(CMD_XMMR);    // SSE toggle
-#endif
+            else {
+                if (CpuSupportSSE)
+                    ToggleSeeReg(CMD_XMMR);    // SSE toggle
+            }
             break;
 
         case VK_F5:

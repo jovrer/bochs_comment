@@ -1,10 +1,4 @@
-# Copyright (C) 2001  MandrakeSoft S.A.
-#
-#   MandrakeSoft S.A.
-#   43, rue d'Aboukir
-#   75002 Paris - France
-#   http://www.linux-mandrake.com/
-#   http://www.mandrakesoft.com/
+# Copyright (C) 2001-2009 The Bochs Project
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -94,6 +88,7 @@ OBJS = \
 	exception.o \
 	cpuid.o \
 	proc_ctrl.o \
+	crregs.o \
 	msr.o \
 	smm.o \
 	lazy_flags.o \
@@ -286,7 +281,7 @@ cpuid.o: cpuid.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.
   ../gui/gui.h ../instrument/stubs/instrument.h cpu.h crregs.h \
   descriptor.h instr.h lazy_flags.h icache.h apic.h ../cpu/i387.h \
   ../fpu/softfloat.h ../config.h ../fpu/tag_w.h ../fpu/status_w.h \
-  ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h
+  ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h ../param_names.h
 crc32.o: crc32.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h \
   ../config.h ../osdep.h ../bxversion.h ../gui/siminterface.h \
   ../memory/memory.h ../pc_system.h ../plugin.h ../extplugin.h \
@@ -365,7 +360,7 @@ exception.o: exception.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   crregs.h descriptor.h instr.h lazy_flags.h icache.h apic.h \
   ../cpu/i387.h ../fpu/softfloat.h ../config.h ../fpu/tag_w.h \
   ../fpu/status_w.h ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h \
-  ../iodev/iodev.h ../bochs.h ../iodev/vga.h
+  ../iodev/iodev.h ../bochs.h ../param_names.h ../iodev/vga.h
 fetchdecode.o: fetchdecode.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   ../bx_debug/debug.h ../config.h ../osdep.h ../bxversion.h \
   ../gui/siminterface.h ../memory/memory.h ../pc_system.h ../plugin.h \
@@ -373,7 +368,7 @@ fetchdecode.o: fetchdecode.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   crregs.h descriptor.h instr.h lazy_flags.h icache.h apic.h \
   ../cpu/i387.h ../fpu/softfloat.h ../config.h ../fpu/tag_w.h \
   ../fpu/status_w.h ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h \
-  fetchdecode.h ia_opcodes.h
+  fetchdecode.h fetchdecode_x87.h fetchdecode_sse.h ia_opcodes.h
 fetchdecode64.o: fetchdecode64.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   ../bx_debug/debug.h ../config.h ../osdep.h ../bxversion.h \
   ../gui/siminterface.h ../memory/memory.h ../pc_system.h ../plugin.h \
@@ -381,7 +376,7 @@ fetchdecode64.o: fetchdecode64.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   crregs.h descriptor.h instr.h lazy_flags.h icache.h apic.h \
   ../cpu/i387.h ../fpu/softfloat.h ../config.h ../fpu/tag_w.h \
   ../fpu/status_w.h ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h \
-  fetchdecode.h ia_opcodes.h
+  fetchdecode.h fetchdecode_x87.h fetchdecode_sse.h ia_opcodes.h
 flag_ctrl.o: flag_ctrl.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   ../bx_debug/debug.h ../config.h ../osdep.h ../bxversion.h \
   ../gui/siminterface.h ../memory/memory.h ../pc_system.h ../plugin.h \
@@ -416,7 +411,7 @@ init.o: init.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h 
   ../gui/gui.h ../instrument/stubs/instrument.h cpu.h crregs.h \
   descriptor.h instr.h lazy_flags.h icache.h apic.h ../cpu/i387.h \
   ../fpu/softfloat.h ../config.h ../fpu/tag_w.h ../fpu/status_w.h \
-  ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h
+  ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h ../param_names.h
 io.o: io.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h \
   ../config.h ../osdep.h ../bxversion.h ../gui/siminterface.h \
   ../memory/memory.h ../pc_system.h ../plugin.h ../extplugin.h \
@@ -531,6 +526,13 @@ paging.o: paging.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debu
   ../fpu/softfloat.h ../config.h ../fpu/tag_w.h ../fpu/status_w.h \
   ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h
 proc_ctrl.o: proc_ctrl.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
+  ../bx_debug/debug.h ../config.h ../osdep.h ../bxversion.h \
+  ../gui/siminterface.h ../memory/memory.h ../pc_system.h ../plugin.h \
+  ../extplugin.h ../gui/gui.h ../instrument/stubs/instrument.h cpu.h \
+  crregs.h descriptor.h instr.h lazy_flags.h icache.h apic.h \
+  ../cpu/i387.h ../fpu/softfloat.h ../config.h ../fpu/tag_w.h \
+  ../fpu/status_w.h ../fpu/control_w.h ../cpu/xmm.h vmx.h stack.h ../param_names.h
+crregs.o: crregs.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h \
   ../bx_debug/debug.h ../config.h ../osdep.h ../bxversion.h \
   ../gui/siminterface.h ../memory/memory.h ../pc_system.h ../plugin.h \
   ../extplugin.h ../gui/gui.h ../instrument/stubs/instrument.h cpu.h \

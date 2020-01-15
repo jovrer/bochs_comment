@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_trans.cc,v 1.26 2009/11/01 17:37:14 sshwarts Exp $
+// $Id: fpu_trans.cc,v 1.29 2010/03/22 22:11:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2009 Stanislav Shwartsman
@@ -36,7 +36,6 @@ extern float_status_t FPU_pre_exception_handling(Bit16u control_word);
 /* D9 F0 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::F2XM1(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -54,15 +53,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::F2XM1(bxInstruction_c *i)
 
   if (! FPU_exception(status.float_exception_flags))
      BX_WRITE_FPU_REG(result, 0);
-#else
-  BX_INFO(("F2XM1: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F1 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2X(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -83,15 +78,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2X(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
      BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FYL2X: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F2 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPTAN(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -145,15 +136,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPTAN(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_push();
      BX_WRITE_FPU_REG(Const_1, 0);
   }
-#else
-  BX_INFO(("FPTAN: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F3 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPATAN(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -174,15 +161,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPATAN(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
      BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FPATAN: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F4 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXTRACT(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -217,15 +200,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXTRACT(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_push();
      BX_WRITE_FPU_REG(a, 0);     // fraction
   }
-#else
-  BX_INFO(("FXTRACT: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F5 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM1(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -245,29 +224,28 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM1(bxInstruction_c *i)
 
   floatx80 a = BX_READ_FPU_REG(0);
   floatx80 b = BX_READ_FPU_REG(1);
+  floatx80 result;
 
-  floatx80 result = floatx80_ieee754_remainder(a, b, quotient, status);
+  int flags = floatx80_ieee754_remainder(a, b, result, quotient, status);
 
   if (! FPU_exception(status.float_exception_flags)) {
-     int cc = 0;
-     if (quotient == (Bit64u) -1) cc = FPU_SW_C2;
-     else {
-        if (quotient & 1) cc |= FPU_SW_C1;
-        if (quotient & 2) cc |= FPU_SW_C3;
-        if (quotient & 4) cc |= FPU_SW_C0;
+     if (flags >= 0) {
+        int cc = 0;
+        if (flags) cc = FPU_SW_C2;
+        else {
+           if (quotient & 1) cc |= FPU_SW_C1;
+           if (quotient & 2) cc |= FPU_SW_C3;
+           if (quotient & 4) cc |= FPU_SW_C0;
+        }
+        setcc(cc);
      }
-     setcc(cc);
      BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FPREM1: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F8 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -287,30 +265,28 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM(bxInstruction_c *i)
 
   floatx80 a = BX_READ_FPU_REG(0);
   floatx80 b = BX_READ_FPU_REG(1);
+  floatx80 result;
 
-  floatx80 result = floatx80_remainder(a, b, quotient, status);
+  int flags = floatx80_remainder(a, b, result, quotient, status);
 
   if (! FPU_exception(status.float_exception_flags)) {
-     int cc = 0;
-     if (quotient == (Bit64u) -1) cc = FPU_SW_C2;
-     else {
-        if (quotient & 1) cc |= FPU_SW_C1;
-        if (quotient & 2) cc |= FPU_SW_C3;
-        if (quotient & 4) cc |= FPU_SW_C0;
+     if (flags >= 0) {
+        int cc = 0;
+        if (flags) cc = FPU_SW_C2;
+        else {
+           if (quotient & 1) cc |= FPU_SW_C1;
+           if (quotient & 2) cc |= FPU_SW_C3;
+           if (quotient & 4) cc |= FPU_SW_C0;
+        }
+        setcc(cc);
      }
-     setcc(cc);
-
      BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FPREM: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 F9 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2XP1(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -331,15 +307,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2XP1(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
      BX_WRITE_FPU_REG(result, 0);
   }
-#else
-  BX_INFO(("FYL2XP1: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 FB */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSINCOS(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -380,15 +352,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSINCOS(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_push();
      BX_WRITE_FPU_REG(cos_y, 0);
   }
-#else
-  BX_INFO(("FSINCOS: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 FD */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSCALE(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -407,15 +375,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSCALE(bxInstruction_c *i)
 
   if (! FPU_exception(status.float_exception_flags))
      BX_WRITE_FPU_REG(result, 0);
-#else
-  BX_INFO(("FSCALE: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 FE */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSIN(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -439,15 +403,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSIN(bxInstruction_c *i)
 
   if (! FPU_exception(status.float_exception_flags))
      BX_WRITE_FPU_REG(y, 0);
-#else
-  BX_INFO(("FSIN: required FPU, configure --enable-fpu"));
-#endif
 }
 
 /* D9 FF */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOS(bxInstruction_c *i)
 {
-#if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
@@ -471,9 +431,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOS(bxInstruction_c *i)
 
   if (! FPU_exception(status.float_exception_flags))
      BX_WRITE_FPU_REG(y, 0);
-#else
-  BX_INFO(("FCOS: required FPU, configure --enable-fpu"));
-#endif
 }
 
 #endif

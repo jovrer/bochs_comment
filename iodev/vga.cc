@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.cc,v 1.168 2009/09/27 18:37:02 vruppert Exp $
+// $Id: vga.cc,v 1.171 2010/02/26 14:18:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +17,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
 /////////////////////////////////////////////////////////////////////////
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -31,6 +26,7 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "param_names.h"
 #include "vga.h"
 
 #define LOG_THIS theVga->
@@ -2354,7 +2350,7 @@ bx_bool bx_vga_c::mem_write_handler(bx_phy_address addr, unsigned len, void *dat
 void bx_vga_c::mem_write(bx_phy_address addr, Bit8u value)
 {
   Bit32u offset;
-  Bit8u new_val[4];
+  Bit8u new_val[4] = {0,0,0,0};
   unsigned start_addr;
   Bit8u *plane0, *plane1, *plane2, *plane3;
 

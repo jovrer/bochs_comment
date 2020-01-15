@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keymap.cc,v 1.26 2009/02/23 11:06:53 vruppert Exp $
+// $Id: keymap.cc,v 1.28 2010/02/26 14:18:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002 MandrakeSoft S.A.
+//  Copyright (C) 2002-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,7 @@
 //  . Tables look-up should be optimised.
 //
 
+#include "param_names.h"
 #include "bochs.h"
 #include "keymap.h"
 

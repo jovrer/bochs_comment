@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_rcp.cc,v 1.22 2009/10/14 20:45:29 sshwarts Exp $
+// $Id: sse_rcp.cc,v 1.24 2010/02/26 11:44:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2009 Stanislav Shwartsman
@@ -26,7 +26,7 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#if BX_SUPPORT_SSE
+#if BX_CPU_LEVEL >= 6
 
 #include "fpu/softfloat-specialize.h"
 
@@ -346,7 +346,7 @@ static float32 approximate_rcp(float32 op)
  */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPPS_VpsWps(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 1
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
   BxPackedXmmRegister op;
 
@@ -366,10 +366,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPPS_VpsWps(bxInstruction_c *i)
   op.xmm32u(3) = approximate_rcp(op.xmm32u(3));
 
   BX_WRITE_XMM_REG(i->nnn(), op);
-
-#else
-  BX_INFO(("RCPPS_VpsWps: required SSE, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -380,7 +376,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPPS_VpsWps(bxInstruction_c *i)
  */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPSS_VssWss(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 1
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
   float32 op;
 
@@ -396,14 +392,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPSS_VssWss(bxInstruction_c *i)
 
   op = approximate_rcp(op);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
-
-#else
-  BX_INFO(("RCPSS_VssWss: required SSE, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
-#if BX_SUPPORT_SSE
+#if BX_CPU_LEVEL >= 6
 
 Bit16u rsqrt_table0[1024] =
 {
@@ -730,7 +722,7 @@ static float32 approximate_rsqrt(float32 op)
  */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTSS_VssWss(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 1
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
   float32 op;
 
@@ -746,10 +738,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTSS_VssWss(bxInstruction_c *i)
 
   op = approximate_rsqrt(op);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
-
-#else
-  BX_INFO(("RSQRTSS_VssWss: required SSE, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -761,7 +749,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTSS_VssWss(bxInstruction_c *i)
  */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTPS_VpsWps(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 1
+#if BX_CPU_LEVEL >= 6
   BX_CPU_THIS_PTR prepareSSE();
   BxPackedXmmRegister op;
 
@@ -781,8 +769,5 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTPS_VpsWps(bxInstruction_c *i)
   op.xmm32u(3) = approximate_rsqrt(op.xmm32u(3));
 
   BX_WRITE_XMM_REG(i->nnn(), op);
-#else
-  BX_INFO(("RSQRTPS_VpsWps: required SSE, use --enable-sse option"));
-  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }

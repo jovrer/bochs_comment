@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h,v 1.20 2009/11/02 15:00:47 sshwarts Exp $
+// $Id: crregs.h,v 1.26 2010/03/31 14:00:46 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2009 Stanislav Shwartsman
@@ -64,8 +64,8 @@ struct bx_cr0_t {
   IMPLEMENT_CRREG_ACCESSORS(NE, 5);
   IMPLEMENT_CRREG_ACCESSORS(WP, 16);
   IMPLEMENT_CRREG_ACCESSORS(AM, 18);
-  IMPLEMENT_CRREG_ACCESSORS(CD, 29);
-  IMPLEMENT_CRREG_ACCESSORS(NW, 30);
+  IMPLEMENT_CRREG_ACCESSORS(NW, 29);
+  IMPLEMENT_CRREG_ACCESSORS(CD, 30);
 #endif
   IMPLEMENT_CRREG_ACCESSORS(PG, 31);
 
@@ -94,16 +94,18 @@ struct bx_cr4_t {
 #if BX_SUPPORT_VMX
   IMPLEMENT_CRREG_ACCESSORS(VMXE, 13);
 #endif
-#if BX_SUPPORT_XSAVE
+#if BX_CPU_LEVEL >= 6
+  IMPLEMENT_CRREG_ACCESSORS(PCIDE, 17);
   IMPLEMENT_CRREG_ACCESSORS(OSXSAVE, 18);
 #endif
 
   BX_CPP_INLINE Bit32u get32() { return val32; }
   BX_CPP_INLINE void set32(Bit32u val) { val32 = val; }
 };
-#endif  // #if BX_CPU_LEVEL >= 4
 
-extern bx_address get_cr4_allow_mask(void);
+extern bx_address get_cr4_allow_mask(Bit32u);
+
+#endif  // #if BX_CPU_LEVEL >= 4
 
 #if BX_SUPPORT_X86_64
 
@@ -120,12 +122,13 @@ struct bx_efer_t {
   BX_CPP_INLINE void set32(Bit32u val) { val32 = val; }
 };
 
-#define BX_EFER_LMA_MASK       (1<<10)
+#define BX_EFER_LME_MASK       (1 <<  8)
+#define BX_EFER_LMA_MASK       (1 << 10)
 #define BX_EFER_SUPPORTED_BITS BX_CONST64(0x00004d01)
 
 #endif
 
-#if BX_SUPPORT_XSAVE
+#if BX_CPU_LEVEL >= 6
 struct xcr0_t {
   Bit32u  val32; // 32bit value of register
 
@@ -137,9 +140,7 @@ struct xcr0_t {
 #define BX_XCR0_SSE_MASK (1<<BX_XCR0_SSE_BIT)
 
   IMPLEMENT_CRREG_ACCESSORS(FPU, BX_XCR0_FPU_BIT);
-#if BX_SUPPORT_SSE
   IMPLEMENT_CRREG_ACCESSORS(SSE, BX_XCR0_SSE_BIT);
-#endif
 
   BX_CPP_INLINE Bit32u get32() { return val32; }
   BX_CPP_INLINE void set32(Bit32u val) { val32 = val; }

@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debug.h,v 1.59 2009/11/09 21:26:09 sshwarts Exp $
+// $Id: debug.h,v 1.65 2010/01/05 13:59:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2009  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -220,6 +214,7 @@ void bx_dbg_set_reg8h_value(unsigned reg, Bit8u value);
 void bx_dbg_set_reg16_value(unsigned reg, Bit16u value);
 void bx_dbg_set_reg32_value(unsigned reg, Bit32u value);
 void bx_dbg_set_reg64_value(unsigned reg, Bit64u value);
+void bx_dbg_load_segreg(unsigned reg, unsigned value);
 bx_address bx_dbg_get_laddr(Bit16u sel, bx_address ofs);
 void bx_dbg_step_over_command(void);
 void bx_dbg_trace_command(bx_bool enable);
@@ -239,15 +234,16 @@ void bx_dbg_print_string_command(bx_address addr);
 void bx_dbg_xlate_address(bx_lin_address address);
 void bx_dbg_show_command(const char*);
 void bx_dbg_print_stack_command(unsigned nwords);
-extern bx_bool watchpoint_continue;
 void bx_dbg_print_watchpoints(void);
-void bx_dbg_watch(int type, bx_phy_address address);
+void bx_dbg_watchpoint_continue(bx_bool watch_continue);
+void bx_dbg_watch(int type, bx_phy_address address, Bit32u len);
 void bx_dbg_unwatch_all(void);
 void bx_dbg_unwatch(bx_phy_address handle);
 void bx_dbg_continue_command(void);
 void bx_dbg_stepN_command(int cpu, Bit32u count);
 void bx_dbg_set_auto_disassemble(bx_bool enable);
 void bx_dbg_disassemble_switch_mode(void);
+void bx_dbg_disassemble_hex_mode_switch(int mode);
 void bx_dbg_set_disassemble_size(unsigned size);
 void bx_dbg_del_breakpoint_command(unsigned handle);
 void bx_dbg_en_dis_breakpoint_command(unsigned handle, bx_bool enable);
@@ -279,6 +275,8 @@ void bx_dbg_info_flags(void);
 void bx_dbg_info_linux_command(void);
 void bx_dbg_examine_command(char *command, char *format, bx_bool format_passed,
                     bx_address addr, bx_bool addr_passed);
+Bit32u bx_dbg_lin_indirect(bx_address addr);
+Bit32u bx_dbg_phy_indirect(bx_phy_address addr);
 void bx_dbg_setpmem_command(bx_phy_address addr, unsigned len, Bit32u val);
 void bx_dbg_query_command(const char *);
 void bx_dbg_take_command(const char *, unsigned n);
@@ -408,7 +406,7 @@ typedef struct {
 #if (BX_DBG_MAX_PHY_BPOINTS > 0)
     unsigned num_physical;
     struct {
-      bx_phy_address addr; // physical address is 32 bits only
+      bx_phy_address addr;
       unsigned bpoint_id;
       bx_bool enabled;
     } phy[BX_DBG_MAX_PHY_BPOINTS];
@@ -465,6 +463,15 @@ typedef struct bx_guard_found_t {
   Bit64u  time_tick; // time tick when guard reached
 } bx_guard_found_t;
 
+struct bx_watchpoint {
+  bx_phy_address addr;
+  Bit32u len;
+};
+
+extern unsigned num_write_watchpoints;
+extern unsigned num_read_watchpoints;
+extern bx_watchpoint write_watchpoint[BX_DBG_MAX_WATCHPONTS];
+extern bx_watchpoint read_watchpoint[BX_DBG_MAX_WATCHPONTS];
 extern bx_guard_t bx_guard;
 
 #define IS_CODE_32(code_32_64) ((code_32_64 & 1) != 0)
