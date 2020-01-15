@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: rombios.c,v 1.25 2001/12/05 20:38:32 vruppert Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -69,8 +73,6 @@
 //
 // int1a:
 //   f03/f05 are not complete - just CLC for now
-//
-// int16_function: default case ?
 
 // NOTES:
 // 990104:
@@ -82,6 +84,7 @@
 #define BX_CALL_INT15_4F 1
 #define BX_USE_EBDA      1
 #define BX_SUPPORT_FLOPPY 1
+#define BX_PCIBIOS       1
 
    /* model byte 0xFC = AT */
 #define SYS_MODEL_ID     0xFC
@@ -127,6 +130,17 @@ MACRO HALT
   ;; with a message such as "BIOS panic at rombios.c, line 4091".
   ;; However, users can choose to make panics non-fatal and continue.
   mov dx,#PANIC_PORT
+  mov ax,#?1
+  out dx,ax
+MEND
+
+MACRO HALT2
+  ;; the HALT macro is called with the line number of the HALT call.
+  ;; The line number is then sent to the PANIC_PORT, causing Bochs to
+  ;; print a BX_PANIC message.  This will normally halt the simulation
+  ;; with a message such as "BIOS panic at rombios.c, line 4091".
+  ;; However, users can choose to make panics non-fatal and continue.
+  mov dx,#0x401
   mov ax,#?1
   out dx,ax
 MEND
@@ -229,8 +243,10 @@ static void           set_kbd_command_byte();
 static void           int09_function();
 static void           int13_function();
 static void           int13_diskette_function();
+static void           int14_function();
 static void           int15_function();
 static void           int16_function();
+static void           int17_function();
 static void           int1a_function();
 static void           int70_function();
 static void           int74_function();
@@ -256,16 +272,28 @@ static void           keyboard_panic();
 static void           boot_failure_msg();
 static void           nmi_handler_msg();
 static void           print_bios_banner();
-static char bios_version_string[] = "BIOS Version is $Id: rombios.c,v 1.13 2001/06/07 18:03:29 bdenney Exp $";
+
+static char bios_cvs_version_string[] = "$Revision: 1.25 $";
+static char bios_date_string[] = "$Date: 2001/12/05 20:38:32 $";
+
+static char CVSID[] = "$Id: rombios.c,v 1.25 2001/12/05 20:38:32 vruppert Exp $";
+/* Offset to skip the CVS $Id: prefix */ 
+#define bios_version_string  (CVSID + 4)
+
+#define BIOS_PRINTF_HALT     1
+#define BIOS_PRINTF_SCREEN   2
+#define BIOS_PRINTF_DEBUG    4
+#define BIOS_PRINTF_ALL      (BIOS_PRINTF_SCREEN | BIOS_PRINTF_DEBUG)
+#define BIOS_PRINTF_DEBHALT  (BIOS_PRINTF_SCREEN | BIOS_PRINTF_DEBUG | BIOS_PRINTF_HALT)
 
 #define DEBUG_ROMBIOS 0
 
 #if DEBUG_ROMBIOS
-#  define printf(format, p...) bios_printf(0, format, ##p)
-#  define panic(format, p...)  bios_printf(1, format, ##p)
+#  define printf(format, p...) bios_printf(BIOS_PRINTF_DEBUG, format, ##p)
+#  define panic(format, p...)  bios_printf(BIOS_PRINTF_DEBHALT, format, ##p)
 #else
 #  define printf(format, p...)
-#  define panic(format, p...)  bios_printf(1, format, ##p)
+#  define panic(format, p...)  bios_printf(BIOS_PRINTF_DEBHALT, format, ##p)
 #endif
 
 
@@ -410,7 +438,7 @@ inb(port)
 #endasm
 }
 
-#if 0
+#if BX_PCIBIOS
   Bit16u
 inw(port)
   Bit16u port;
@@ -451,7 +479,7 @@ outb(port, val)
 #endasm
 }
 
-#if 0
+#if BX_PCIBIOS
   void
 outw(port, val)
   Bit16u port;
@@ -590,6 +618,7 @@ read_word(seg, offset)
 write_byte(seg, offset, data)
   Bit16u seg;
   Bit16u offset;
+  Bit8u data;
 {
 #asm
   push bp
@@ -636,6 +665,33 @@ write_word(seg, offset, data)
 #endasm
 }
 
+#if BX_PCIBIOS
+  void
+setPCIaddr(bus, devfunc, regnum)
+  Bit8u bus;
+  Bit8u devfunc;
+  Bit8u regnum;
+{
+#asm
+  push bp
+  mov  bp, sp
+  push dx
+  push eax
+
+    mov  eax, #0x800000
+    mov  ah, 4[bp] ;; bus
+    mov  al, 6[bp] ;; devfunc
+    shl  eax, 8
+    mov  al, 8[bp] ;; regnum
+    mov  dx, #0x0cf8
+    out dx, eax
+
+  pop  eax
+  pop  dx
+  pop  bp
+#endasm
+}
+#endif
 
   Bit16u
 UDIV(a, b)
@@ -712,18 +768,50 @@ get_SS()
 }
 
   void
-put_int(val, width, neg)
+wrch(c)
+  Bit8u  c;
+{
+  #asm
+  push bp
+  mov  bp, sp
+
+  push bx
+  mov  ah, #$0e
+  mov  al, 4[bp]
+  xor  bx,bx
+  int  #$10
+  pop  bx
+
+  pop  bp
+  #endasm
+}
+ 
+  void
+send(action, c)
+  Bit16u action;
+  Bit8u  c;
+{
+  if (action & BIOS_PRINTF_DEBUG) outb(0xfff0, c);
+  if (action & BIOS_PRINTF_SCREEN) {
+    if (c == '\n') wrch('\r');
+    wrch(c);
+    }
+}
+
+  void
+put_int(action, val, width, neg)
+  Bit16u action;
   short val, width;
   Boolean neg;
 {
   short nval = UDIV16(val, 10);
   if (nval)
-    put_int(nval, width - 1, neg);
+    put_int(action, nval, width - 1, neg);
   else {
-    while (--width > 0) outb(0xfff0, ' ');
-    if (neg) outb(0xfff0, '-');
+    while (--width > 0) send(action, ' ');
+    if (neg) send(action, '-');
   }
-  outb(0xfff0, val - (nval * 10) + '0');
+  send(action, val - (nval * 10) + '0');
 }
 
 //--------------------------------------------------------------------------
@@ -731,10 +819,13 @@ put_int(val, width, neg)
 //   A compact variable argument printf function which prints its output via
 //   an I/O port so that it can be logged by Bochs.  Currently, only %x is
 //   supported (or %02x, %04x, etc).
+//
+//   Supports %[format_width][format]
+//   where format can be d,x,c,s
 //--------------------------------------------------------------------------
   void
-bios_printf(bomb, s)
-  Boolean bomb;
+bios_printf(action, s)
+  Bit16u action;
   Bit8u *s;
 {
   Bit8u c, format_char;
@@ -749,6 +840,10 @@ bios_printf(bomb, s)
   in_format = 0;
   format_width = 0;
 
+  if ((action & BIOS_PRINTF_DEBHALT) == BIOS_PRINTF_DEBHALT) {
+    bios_printf (BIOS_PRINTF_ALL, "FATAL: ");
+  }
+
   while (c = read_byte(0xf000, s)) {
     if ( c == '%' ) {
       in_format = 1;
@@ -758,41 +853,50 @@ bios_printf(bomb, s)
       if ( (c>='0') && (c<='9') ) {
         format_width = (format_width * 10) + (c - '0');
         }
-      else if (c == 'x') {
+      else {
         arg_ptr++; // increment to next arg
         arg = read_word(arg_seg, arg_ptr);
-        if (format_width == 0)
-          format_width = 4;
-        for (i=format_width-1; i>=0; i--) {
-          nibble = (arg >> (4 * i)) & 0x000f;
-          if (nibble <= 9)
-            outb(0xfff0, nibble + '0');
+        if (c == 'x') {
+          if (format_width == 0)
+            format_width = 4;
+          for (i=format_width-1; i>=0; i--) {
+            nibble = (arg >> (4 * i)) & 0x000f;
+	    send (action, (nibble<=9)? (nibble+'0') : (nibble-10+'A'));
+            }
+	  }
+        else if (c == 'd') {
+          if (arg & 0x8000)
+            put_int(action, -arg, format_width - 1, 1);
           else
-            outb(0xfff0, (nibble - 10) + 'A');
+            put_int(action, arg, format_width, 0);
           }
-        in_format = 0;
-        }
-      else if (c == 'd') {
-        arg_ptr++; // increment to next arg
-        arg = read_word(arg_seg, arg_ptr);
-        if (arg & 0x8000)
-          put_int(-arg, format_width - 1, 1);
+        else if (c == 's') {
+          bios_printf(action & (~BIOS_PRINTF_HALT), arg);
+          }
+        else if (c == 'c') {
+          send(action, arg);
+	  }
         else
-          put_int(arg, format_width, 0);
-        in_format = 0;
+          panic("bios_printf: unknown format");
+          in_format = 0;
         }
-      else
-        panic("bios_printf: unknown format\n");
       }
     else {
-      outb(0xfff0, c);
+      send(action, c);
       }
     s ++;
     }
 
-  if (bomb) {
+  if (action & BIOS_PRINTF_HALT) {
+    // freeze in a busy loop.  If I do a HLT instruction, then in versions
+    // 1.3.pre1 and earlier, it will panic without ever updating the VGA
+    // display, so the panic message will not be visible.  By waiting
+    // forever, you are certain to see the panic message on screen.
+    // After a few more versions have passed, we can turn this back into
+    // a halt or something.
+    do {} while (1);
 #asm
-    HALT(__LINE__)
+    HALT2(__LINE__)
 #endasm
     }
 }
@@ -808,32 +912,54 @@ cli()
   void
 keyboard_panic()
 {
-  panic("Keyboard RESET error\n");
+  panic("Keyboard RESET error");
 }
 
+/*
+This is called when the boot fails to print an appropriate message.
+If bit 16 is 0, the disk was not readable.
+If bit 16 is 1, the disk was readable but didn't have the boot signature.
+If bit 15 is 0, it tried to boot a floppy disk.
+If bit 15 is 1, it tried to boot a hard disk.
+Bits 14-0 are the drive number, usually just a 0 or 1.
+*/
   void
 boot_failure_msg(drive)
   Bit16u drive;
 {
-  if (drive < 0x80) {
-    bios_printf(0, "Boot Failure!  I could not read floppy drive %d.\n", drive);
-  } else {
-    drive &= 0x7f;
-    bios_printf(0, "Boot Failure!  I could not read hard disk %d.\n", drive);
-  }
+  Bit16u drivenum = drive&0x7f;
+  //bios_printf(BIOS_PRINTF_SCREEN, "boot_failure_msg(%x)\n", drive);
+  if (drive & 0x80)
+    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from hard disk %d failed\n", drivenum);
+  else
+    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from floppy disk %d failed\n", drivenum);
+  if (drive & 0x100)
+    panic("Not a bootable disk\n");
+  else
+    panic("Could not read the boot disk\n");
 }
 
 void
 nmi_handler_msg()
 {
-  bios_printf(0, "NMI Handler called\n");
+  bios_printf(BIOS_PRINTF_DEBUG, "NMI Handler called\n");
+}
+
+void
+log_bios_start()
+{
+  bios_printf(BIOS_PRINTF_DEBUG, "%s\n", bios_version_string);
 }
 
 void
 print_bios_banner()
 {
-  bios_printf(0, bios_version_string);
-  bios_printf(0, "\n");
+  bios_printf(BIOS_PRINTF_SCREEN, "Bochs BIOS, %s %s\n\n", 
+    bios_cvs_version_string, bios_date_string);
+  /*
+  bios_printf(BIOS_PRINTF_SCREEN, "Test: x234=%3x, d-123=%d, c=%c, s=%s\n",
+	      0x1234, -123, '!', "ok");
+  */
 }
 
 
@@ -872,6 +998,82 @@ debugger_off()
 
 
   void
+int14_function(regs, ds, iret_addr)
+  pusha_regs_t regs; // regs pushed from PUSHA instruction
+  Bit16u ds; // previous DS:, DS set to 0x0000 by asm wrapper
+  iret_addr_t  iret_addr; // CS,IP,Flags pushed from original INT call
+{
+  Bit16u addr,timer,val16;
+  Bit8u timeout;
+
+  #asm
+  sti
+  #endasm
+
+  addr = read_word(0x0040, 2 * regs.u.r16.dx);
+  timeout = read_byte(0x0040, 0x007C + regs.u.r16.dx);
+  if ((regs.u.r16.dx < 4) && (addr > 0)) {
+    switch (regs.u.r8.ah) {
+      case 0:
+	outb(addr+3, inb(addr+3) | 0x80);
+	if (regs.u.r8.al & 0xE0 == 0) {
+	  outb(addr, 0x17);
+	  outb(addr+1, 0x04);
+	} else {
+	  val16 = 0x600 >> ((regs.u.r8.al & 0xE0) >> 5);
+	  outb(addr, val16 & 0xFF);
+	  outb(addr+1, val16 >> 8);
+	  }
+	outb(addr+3, regs.u.r8.al & 0x1F);
+	regs.u.r8.ah = inb(addr+5);
+	regs.u.r8.al = inb(addr+6);
+	ClearCF(iret_addr.flags);
+	break;
+      case 1:
+	timer = read_word(0x0040, 0x006C);
+	while (((inb(addr+5) & 0x60) != 0x60) && (timeout)) {
+	  val16 = read_word(0x0040, 0x006C);
+	  if (val16 != timer) {
+	    timer = val16;
+	    timeout--;
+	    }
+	  }
+	if (timeout) outb(addr, regs.u.r8.al);
+	regs.u.r8.ah = inb(addr+5);
+	if (!timeout) regs.u.r8.ah |= 0x80;
+	ClearCF(iret_addr.flags);
+	break;
+      case 2:
+	timer = read_word(0x0040, 0x006C);
+	while (((inb(addr+5) & 0x01) == 0) && (timeout)) {
+	  val16 = read_word(0x0040, 0x006C);
+	  if (val16 != timer) {
+	    timer = val16;
+	    timeout--;
+	    }
+	  }
+	if (timeout) {
+	  regs.u.r8.ah = 0;
+	  regs.u.r8.al = inb(addr);
+	} else {
+	  regs.u.r8.ah = inb(addr+5);
+	  }
+	ClearCF(iret_addr.flags);
+	break;
+      case 3:
+	regs.u.r8.ah = inb(addr+5);
+	regs.u.r8.al = inb(addr+6);
+	ClearCF(iret_addr.flags);
+	break;
+      default:
+	SetCF(iret_addr.flags); // Unsupported
+      }
+  } else {
+    SetCF(iret_addr.flags); // Unsupported
+    }
+}
+
+  void
 int15_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, DS, FLAGS)
   Bit16u DI, SI, BP, SP, BX, DX, CX, AX, ES, DS, FLAGS;
 {
@@ -886,7 +1088,7 @@ int15_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, DS, FLAGS)
   Bit8u   base23_16;
   Bit16u  ss;
   Bit8u   ret, mouse_data1, mouse_data2, mouse_data3;
-  Bit8u   comm_byte;
+  Bit8u   comm_byte, mf2_state;
 
   switch (GET_AH()) {
     case 0x24: /* A20 Control */
@@ -901,11 +1103,17 @@ int15_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, DS, FLAGS)
       break;
 
     case 0x4f:
-      /* keyboard intercept, ignore */
-      SET_CF();
+      /* keyboard intercept */
 #if BX_CPU < 2
       SET_AH(UNSUPPORTED_FUNCTION);
+#else
+      if (GET_AL() == 0xE0) {
+	mf2_state = read_byte(0x0040, 0x96);
+	write_byte(0x0040, 0x96, mf2_state | 0x01);
+	SET_AL(inb(0x60));
+	}
 #endif
+      SET_CF();
       break;
 
     case 0x87:
@@ -1162,7 +1370,7 @@ printf("case 1: enable mouse\n");
 printf("case 1 or 5:\n");
           if (GET_AL() == 5) {
             if (GET_BH() != 3)
-              panic("INT 15h C2 AL=5, BH=%02x\n", (unsigned) GET_BH());
+              panic("INT 15h C2 AL=5, BH=%02x", (unsigned) GET_BH());
             mouse_flags_2 = read_byte(ebda_seg, 0x0027);
             mouse_flags_2 = (mouse_flags_2 & 0x00) | GET_BH();
             mouse_flags_1 = 0x00;
@@ -1175,7 +1383,7 @@ printf("case 1 or 5:\n");
           if (ret == 0) {
             ret = get_mouse_data(&mouse_data3);
             if (mouse_data3 != 0xfa)
-              panic("Mouse reset returned %02x (should be ack)\n", (unsigned)mouse_data3);
+              panic("Mouse reset returned %02x (should be ack)", (unsigned)mouse_data3);
             if ( ret == 0 ) {
               ret = get_mouse_data(&mouse_data1);
               if ( ret == 0 ) {
@@ -1212,7 +1420,7 @@ printf("case 2:\n");
               SET_AH(0);
               break;
             default:
-              panic("INT 15h C2 AL=2, BH=%02x\n", (unsigned) GET_BH());
+              panic("INT 15h C2 AL=2, BH=%02x", (unsigned) GET_BH());
             }
           break;
 
@@ -1243,7 +1451,7 @@ printf("case 6:\n");
               if (ret == 0) {
                 ret = get_mouse_data(&mouse_data1);
                 if (mouse_data1 != 0xfa)
-                  panic("Mouse status returned %02x (should be ack)\n", (unsigned)mouse_data1);
+                  panic("Mouse status returned %02x (should be ack)", (unsigned)mouse_data1);
                 if (ret == 0) {
                   ret = get_mouse_data(&mouse_data1);
                   if ( ret == 0 ) {
@@ -1276,7 +1484,7 @@ printf("case 6:\n");
               break;
 
             default:
-              panic("INT 15h C2 AL=6, BH=%02x\n", (unsigned) GET_BH());
+              panic("INT 15h C2 AL=6, BH=%02x", (unsigned) GET_BH());
             }
           break;
 
@@ -1336,11 +1544,12 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
 {
   Bit8u scan_code, ascii_code, shift_flags;
 
+
   switch (GET_AH()) {
     case 0x00: /* read keyboard input */
 
       if ( !dequeue_key(&scan_code, &ascii_code, 1) ) {
-        panic("KBD: int16h: out of keyboard input\n");
+        panic("KBD: int16h: out of keyboard input");
         }
       AX = (scan_code << 8) | ascii_code;
       break;
@@ -1355,14 +1564,37 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
       break;
 
     case 0x02: /* get shift flag status */
-      /*AL = 0;*/
       shift_flags = read_byte(0x0040, 0x17);
       SET_AL(shift_flags);
       break;
 
+    case 0x10: /* read MF-II keyboard input */
+
+      if ( !dequeue_key(&scan_code, &ascii_code, 1) ) {
+        panic("KBD: int16h: out of keyboard input");
+        }
+      if (ascii_code == 0) ascii_code = 0xE0;
+      AX = (scan_code << 8) | ascii_code;
+      break;
+
+    case 0x11: /* check MF-II keyboard status */
+      if ( !dequeue_key(&scan_code, &ascii_code, 0) ) {
+        SET_ZF();
+        return;
+        }
+      if (ascii_code == 0) ascii_code = 0xE0;
+      AX = (scan_code << 8) | ascii_code;
+      CLEAR_ZF();
+      break;
+
+    case 0x12: /* get extended keyboard status */
+      shift_flags = read_byte(0x0040, 0x17);
+      SET_AL(shift_flags);
+      shift_flags = read_byte(0x0040, 0x18);
+      SET_AH(shift_flags);
+      break;
+
     default:
-      /*bx_cpu.set_ZF(1);*/
-      /* ??? */
       printf("KBD: unsupported int 16h function %02x\n", GET_AH());
     }
 }
@@ -1417,14 +1649,14 @@ inhibit_mouse_int_and_events()
 
   // Turn off IRQ generation and aux data line
   if ( inb(0x64) & 0x02 )
-    panic("inhibmouse: keyboard input buffer full\n");
+    panic("inhibmouse: keyboard input buffer full");
   outb(0x64, 0x20); // get command byte
   while ( (inb(0x64) & 0x01) != 0x01 );
   prev_command_byte = inb(0x60);
   command_byte = prev_command_byte;
   //while ( (inb(0x64) & 0x02) );
   if ( inb(0x64) & 0x02 )
-    panic("inhibmouse, keyboard input buffer full\n");
+    panic("inhibmouse, keyboard input buffer full");
   command_byte &= 0xfd; // turn off IRQ 12 generation
   command_byte |= 0x20; // disable mouse serial clock line
   outb(0x64, 0x60); // write command byte
@@ -1439,13 +1671,13 @@ enable_mouse_int_and_events()
 
   // Turn on IRQ generation and aux data line
   if ( inb(0x64) & 0x02 )
-    panic("enabmouse: keyboard input buffer full\n");
+    panic("enabmouse: keyboard input buffer full");
   outb(0x64, 0x20); // get command byte
   while ( (inb(0x64) & 0x01) != 0x01 );
   command_byte = inb(0x60);
   //while ( (inb(0x64) & 0x02) );
   if ( inb(0x64) & 0x02 )
-    panic("enabmouse, keyboard input buffer full\n");
+    panic("enabmouse, keyboard input buffer full");
   command_byte |= 0x02; // turn on IRQ 12 generation
   command_byte &= 0xdf; // enable mouse serial clock line
   outb(0x64, 0x60); // write command byte
@@ -1460,7 +1692,7 @@ send_to_mouse_ctrl(sendbyte)
 
   // wait for chance to write to ctrl
   if ( inb(0x64) & 0x02 )
-    panic("sendmouse, keyboard input buffer full\n");
+    panic("sendmouse, keyboard input buffer full");
   outb(0x64, 0xD4);
   outb(0x60, sendbyte);
   return(0);
@@ -1489,7 +1721,7 @@ set_kbd_command_byte(command_byte)
   Bit8u command_byte;
 {
   if ( inb(0x64) & 0x02 )
-    panic("setkbdcomm, input buffer full\n");
+    panic("setkbdcomm, input buffer full");
 
   outb(0x64, 0x60); // write command byte
   outb(0x60, command_byte);
@@ -1500,10 +1732,12 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
   Bit16u DI, SI, BP, SP, BX, DX, CX, AX;
 {
   Bit8u scancode, asciicode, shift_flags;
+  Bit8u mf2_flags, mf2_state, led_flags;
 
   //
   // DS has been set to F000 before call
   //
+
 
   scancode = GET_AL();
 
@@ -1514,20 +1748,31 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
 
 
   shift_flags = read_byte(0x0040, 0x17);
+  mf2_flags = read_byte(0x0040, 0x18);
+  mf2_state = read_byte(0x0040, 0x96);
+  led_flags = read_byte(0x0040, 0x97);
+  asciicode = 0;
 
   switch (scancode) {
     case 0x3a: /* Caps Lock press */
       shift_flags |= 0x40;
       write_byte(0x0040, 0x17, shift_flags);
+      mf2_flags |= 0x40;
+      write_byte(0x0040, 0x18, mf2_flags);
+      led_flags |= 0x04;
+      write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xba: /* Caps Lock release */
-      shift_flags &= ~0x40;
-      write_byte(0x0040, 0x17, shift_flags);
+      mf2_flags &= ~0x40;
+      write_byte(0x0040, 0x18, mf2_flags);
       break;
 
     case 0x2a: /* L Shift press */
+      shift_flags &= ~0x40;
       shift_flags |= 0x02;
       write_byte(0x0040, 0x17, shift_flags);
+      led_flags &= ~0x04;
+      write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xaa: /* L Shift release */
       shift_flags &= ~0x02;
@@ -1535,45 +1780,104 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     case 0x36: /* R Shift press */
+      shift_flags &= ~0x40;
       shift_flags |= 0x01;
       write_byte(0x0040, 0x17, shift_flags);
+      led_flags &= ~0x04;
+      write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xb6: /* R Shift release */
       shift_flags &= ~0x01;
       write_byte(0x0040, 0x17, shift_flags);
       break;
 
-    case 0x1d: /* L Cttrl press */
+    case 0x1d: /* Ctrl press */
       shift_flags |= 0x04;
       write_byte(0x0040, 0x17, shift_flags);
+      if (mf2_state & 0x01) {
+	mf2_flags |= 0x04;
+      } else {
+	mf2_flags |= 0x01;
+	}
+      write_byte(0x0040, 0x18, mf2_flags);
       break;
-    case 0x9d: /* L Cttrl release */
+    case 0x9d: /* Ctrl release */
       shift_flags &= ~0x04;
       write_byte(0x0040, 0x17, shift_flags);
+      if (mf2_state & 0x01) {
+	mf2_flags &= ~0x04;
+      } else {
+	mf2_flags &= ~0x01;
+	}
+      write_byte(0x0040, 0x18, mf2_flags);
       break;
 
-    case 0x38: /* L Alt press */
+    case 0x38: /* Alt press */
       shift_flags |= 0x08;
       write_byte(0x0040, 0x17, shift_flags);
+      if (mf2_state & 0x01) {
+	mf2_flags |= 0x08;
+      } else {
+	mf2_flags |= 0x02;
+	}
+      write_byte(0x0040, 0x18, mf2_flags);
       break;
-    case 0xb8: /* L Alt release */
+    case 0xb8: /* Alt release */
       shift_flags &= ~0x08;
       write_byte(0x0040, 0x17, shift_flags);
+      if (mf2_state & 0x01) {
+	mf2_flags &= ~0x08;
+      } else {
+	mf2_flags &= ~0x02;
+	}
+      write_byte(0x0040, 0x18, mf2_flags);
       break;
 
     case 0x45: /* Num Lock press */
-      shift_flags |= 0x20;
-      write_byte(0x0040, 0x17, shift_flags);
+      if ((mf2_state & 0x01) == 0) {
+	mf2_flags |= 0x20;
+	write_byte(0x0040, 0x18, mf2_flags);
+	if (shift_flags & 0x20) {
+	  shift_flags &= ~0x20;
+	  led_flags &= ~0x02;
+	} else {
+	  shift_flags |= 0x20;
+	  led_flags |= 0x02;
+	  }
+	write_byte(0x0040, 0x17, shift_flags);
+	write_byte(0x0040, 0x97, led_flags);
+	}
       break;
     case 0xc5: /* Num Lock release */
-      shift_flags &= ~0x20;
+      if ((mf2_state & 0x01) == 0) {
+	mf2_flags &= ~0x20;
+	write_byte(0x0040, 0x18, mf2_flags);
+	}
+      break;
+
+    case 0x46: /* Scroll Lock press */
+      mf2_flags |= 0x10;
+      write_byte(0x0040, 0x18, mf2_flags);
+      if (shift_flags & 0x10) {
+	shift_flags &= ~0x10;
+	led_flags &= ~0x01;
+      } else {
+	shift_flags |= 0x10;
+	led_flags |= 0x01;
+	}
       write_byte(0x0040, 0x17, shift_flags);
+      write_byte(0x0040, 0x97, led_flags);
+      break;
+
+    case 0xc6: /* Scroll Lock release */
+      mf2_flags &= ~0x10;
+      write_byte(0x0040, 0x18, mf2_flags);
       break;
 
     default:
       if (scancode & 0x80) return; /* toss key releases ... */
       if (scancode > MAX_SCAN_CODE) {
-        panic("KBD: int09h_handler(): unknown scancode read!\n");
+        panic("KBD: int09h_handler(): unknown scancode read!");
         return;
         }
       if (shift_flags & 0x08) { /* ALT */
@@ -1600,11 +1904,12 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
         scancode = scan_to_scanascii[scancode].normal >> 8;
         }
       if (scancode==0 && asciicode==0) {
-        panic("KBD: int09h_handler(): scancode & asciicode are zero?\n");
+        panic("KBD: int09h_handler(): scancode & asciicode are zero?");
         }
       enqueue_key(scancode, asciicode);
       break;
     }
+  mf2_state &= ~0x01;
 }
 
   void
@@ -1633,7 +1938,7 @@ enqueue_key(scan_code, ascii_code)
     buffer_tail = buffer_start;
 
   if (buffer_tail == buffer_head) {
-    panic("KBD: dropped key scan=%02x, ascii=%02x\n",
+    panic("KBD: dropped key scan=%02x, ascii=%02x",
       (int) scan_code, (int) ascii_code);
     return;
     }
@@ -1667,7 +1972,7 @@ printf("int74: read byte %02x\n", in_byte);
   mouse_flags_2 = read_byte(ebda_seg, 0x0027);
 
   if ( (mouse_flags_2 & 0x80) != 0x80 ) {
-    panic("int74_function:\n");
+    panic("int74_function:");
     }
 
   package_count = mouse_flags_2 & 0x07;
@@ -1693,6 +1998,56 @@ printf("int74_function: make_farcall=1\n");
 
 
 
+  void
+outLBA(cylinder,hd_heads,head,hd_sectors,sector,dl)
+  Bit16u cylinder;
+  Bit16u hd_heads;
+  Bit16u head;
+  Bit16u hd_sectors;
+  Bit16u sector;
+  Bit16u dl;
+{
+#asm
+  	push	bp
+  	mov 	bp, sp
+	push	eax
+	push	ebx
+	push	edx
+	xor	eax,eax
+	mov	ax,4[bp]
+	xor	ebx,ebx
+	mov	bl,6[bp]
+	imul	ebx
+	add	al,8[bp]
+	adc	ah,#0
+	mov	bl,10[bp]
+	imul	ebx
+	add	al,12[bp]
+	adc	ah,#0
+	dec	eax
+	mov	dx,#0x1f3
+	out	dx,al
+	mov	dx,#0x1f4
+	mov	al,ah
+	out	dx,al
+	shr	eax,#16
+	mov	dx,#0x1f5
+	out	dx,al
+	and	ah,#0xf
+	mov	bl,14[bp]
+	and	bl,#1
+	shl	bl,#4
+	or	ah,bl
+	or	ah,#0xe0
+	mov	al,ah
+	mov	dx,#0x01f6
+	out	dx,al
+	pop	edx
+	pop	ebx
+	pop	eax
+  	pop	bp
+#endasm
+}
 
 
   void
@@ -1709,6 +2064,7 @@ int13_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
   Bit8u    sector_count;
   unsigned int i;
   Bit16u   tempbx;
+  Bit16u   lba;
 
   write_byte(0x0040, 0x008e, 0);  // clear completion flag
 
@@ -1794,8 +2150,7 @@ printf("int13_f01\n");
         }
 
       if ( (num_sectors > 128) || (num_sectors == 0) )
-        panic("int13_function(): num_sectors out of range!\n");
-
+        panic("int13_function(): num_sectors out of range!");
 
       if (head > 15)
         panic("hard drive BIOS:(read/verify) head > 15\n");
@@ -1809,13 +2164,20 @@ printf("int13_f01\n");
 
       status = inb(0x1f7);
       if (status & 0x80) {
-        panic("hard drive BIOS:(read/verify) BUSY bit set\n");
+        panic("hard drive BIOS:(read/verify) BUSY bit set");
         }
       outb(0x01f2, num_sectors);
-      outb(0x01f3, sector);
-      outb(0x01f4, cylinder & 0x00ff);
-      outb(0x01f5, cylinder >> 8);
-      outb(0x01f6, 0xa0 | ((drive&1)<<4) | (head & 0x0f));
+      /* activate LBA? (tomv) */
+      if (hd_heads > 15) {
+printf("CHS: %x %x %x\n", cylinder, head, sector);
+	outLBA(cylinder,hd_heads,head,hd_sectors,sector,drive);
+        }
+      else {
+        outb(0x01f3, sector);
+        outb(0x01f4, cylinder & 0x00ff);
+        outb(0x01f5, cylinder >> 8);
+        outb(0x01f6, 0xa0 | ((drive & 0x01)<<4) | (head & 0x0f));
+        }
       outb(0x01f7, 0x20);
 
       while (1) {
@@ -1823,10 +2185,12 @@ printf("int13_f01\n");
         if ( !(status & 0x80) ) break;
         }
 
-      if ( !(status & 0x08) ) {
+      if (status & 0x01) {
+        panic("hard drive BIOS:(read/verify) read error");
+      } else if ( !(status & 0x08) ) {
         printf("status was %02x\n", (unsigned) status);
-        panic("hard drive BIOS:(read/verify) data-request bit not set\n");
-        }
+        panic("hard drive BIOS:(read/verify) expected DRQ=1");
+      }
 
       sector_count = 0;
       tempbx = BX;
@@ -1872,13 +2236,13 @@ i13_f02_done:
         if (num_sectors == 0) {
           status = inb(0x1f7);
           if ( (status & 0xc9) != 0x40 )
-            panic("no sectors left to read/verify, status is %02x\n", (unsigned) status);
+            panic("no sectors left to read/verify, status is %02x", (unsigned) status);
           break;
           }
         else {
           status = inb(0x1f7);
           if ( (status & 0xc9) != 0x48 )
-            panic("more sectors left to read/verify, status is %02x\n", (unsigned) status);
+            panic("more sectors left to read/verify, status is %02x", (unsigned) status);
           continue;
           }
         }
@@ -1932,21 +2296,29 @@ printf("int13_f03\n");
         }
 
       if ( (num_sectors > 128) || (num_sectors == 0) )
-        panic("int13_function(): num_sectors out of range!\n");
+        panic("int13_function(): num_sectors out of range!");
 
       if (head > 15)
         panic("hard drive BIOS:(read) head > 15\n");
 
       status = inb(0x1f7);
       if (status & 0x80) {
-        panic("hard drive BIOS:(read) BUSY bit set\n");
+        panic("hard drive BIOS:(read) BUSY bit set");
         }
 // should check for Drive Ready Bit also in status reg
       outb(0x01f2, num_sectors);
-      outb(0x01f3, sector);
-      outb(0x01f4, cylinder & 0x00ff);
-      outb(0x01f5, cylinder >> 8);
-      outb(0x01f6, 0xa0 | ((drive&1)<<4) | (head & 0x0f));
+
+      /* activate LBA? (tomv) */
+      if (hd_heads > 15) {
+printf("CHS (write): %x %x %x\n", cylinder, head, sector);
+	outLBA(cylinder,hd_heads,head,hd_sectors,sector,GET_DL());
+        }
+      else {
+        outb(0x01f3, sector);
+        outb(0x01f4, cylinder & 0x00ff);
+        outb(0x01f5, cylinder >> 8);
+        outb(0x01f6, 0xa0 | ((GET_DL() & 0x01)<<4) | (head & 0x0f));
+        }
       outb(0x01f7, 0x30);
 
       // wait for busy bit to turn off after seeking
@@ -1957,7 +2329,7 @@ printf("int13_f03\n");
 
       if ( !(status & 0x08) ) {
         printf("status was %02x\n", (unsigned) status);
-        panic("hard drive BIOS:(write) data-request bit not set\n");
+        panic("hard drive BIOS:(write) data-request bit not set");
         }
 
       sector_count = 0;
@@ -2004,13 +2376,13 @@ i13_f03_no_adjust:
         if (num_sectors == 0) {
           status = inb(0x1f7);
           if ( (status & 0xe9) != 0x40 )
-            panic("no sectors left to write, status is %02x\n", (unsigned) status);
+            panic("no sectors left to write, status is %02x", (unsigned) status);
           break;
           }
         else {
           status = inb(0x1f7);
           if ( (status & 0xc9) != 0x48 )
-            panic("more sectors left to write, status is %02x\n", (unsigned) status);
+            panic("more sectors left to write, status is %02x", (unsigned) status);
           continue;
           }
         }
@@ -2024,7 +2396,7 @@ i13_f03_no_adjust:
 
     case 0x05: /* format disk track */
 printf("int13_f05\n");
-      panic("format disk track called\n");
+      panic("format disk track called");
       /* nop */
       SET_AH(0);
       set_disk_ret_status(0);
@@ -2084,7 +2456,7 @@ printf("int13_f09\n");
 printf("int13_f0a\n");
     case 0x0b: /* write disk sectors with ECC */
 printf("int13_f0b\n");
-      panic("int13h Functions 0Ah & 0Bh not implemented!\n");
+      panic("int13h Functions 0Ah & 0Bh not implemented!");
       return;
       break;
 
@@ -2173,15 +2545,23 @@ printf("int13_f14\n");
 
     case 0x18: /* */
     case 0x41: // IBM/MS installation check
-printf("int13_f18,41\n");
-      SET_AH(1);  // unsupported
+    case 0x42: // IBM/MS extended read
+    case 0x43: // IBM/MS extended write
+    case 0x44: // IBM/MS verify sectors
+    case 0x45: // IBM/MS lock/unlock drive
+    case 0x46: // IBM/MS eject media
+    case 0x47: // IBM/MS extended seek
+    case 0x48: // IBM/MS get drive parameters
+    case 0x49: // IBM/MS extended media change
+printf("int13_f18,41-49\n");
+      SET_AH(1);  // code=invalid function in AH or invalid parameter
       set_disk_ret_status(1);
       SET_CF(); /* unsuccessful */
       return;
       break;
 
     default:
-      panic("case 0x%x found in int13_function()\n", (unsigned) GET_AH());
+      panic("case 0x%x found in int13_function()", (unsigned) GET_AH());
       break;
     }
 }
@@ -2302,7 +2682,7 @@ floppy_drive_recal(drive)
   // check port 3f4 for drive readiness
   val8 = inb(0x3f4);
   if ( (val8 & 0xf0) != 0x80 )
-    panic("floppy recal:f07: ctrl not ready\n");
+    panic("floppy recal:f07: ctrl not ready");
 
   // send Recalibrate command (2 bytes) to controller
   outb(0x03f5, 0x07);  // 07: Recalibrate
@@ -2534,7 +2914,7 @@ printf("floppy: drive>1 || head>1 ...\n");
         // check port 3f4 for drive readiness
         val8 = inb(0x3f4);
         if ( (val8 & 0xf0) != 0x80 )
-          panic("int13_diskette:f02: ctrl not ready\n");
+          panic("int13_diskette:f02: ctrl not ready");
 
         // send read-normal-data command (9 bytes) to controller
         outb(0x03f5, 0xe6); // e6: read normal data
@@ -2572,7 +2952,7 @@ printf("floppy: drive>1 || head>1 ...\n");
         // check port 3f4 for accessibility to status bytes
         val8 = inb(0x3f4);
         if ( (val8 & 0xc0) != 0xc0 )
-          panic("int13_diskette: ctrl not ready\n");
+          panic("int13_diskette: ctrl not ready");
 
         // read 7 return status bytes from controller
         // using loop index broken, have to unroll...
@@ -2679,7 +3059,7 @@ printf("floppy: drive>1 || head>1 ...\n");
         // check port 3f4 for drive readiness
         val8 = inb(0x3f4);
         if ( (val8 & 0xf0) != 0x80 )
-          panic("int13_diskette:f03: ctrl not ready\n");
+          panic("int13_diskette:f03: ctrl not ready");
 
         // send read-normal-data command (9 bytes) to controller
         outb(0x03f5, 0xc5); // c5: write normal data
@@ -2717,7 +3097,7 @@ printf("floppy: drive>1 || head>1 ...\n");
         // check port 3f4 for accessibility to status bytes
         val8 = inb(0x3f4);
         if ( (val8 & 0xc0) != 0xc0 )
-          panic("int13_diskette: ctrl not ready\n");
+          panic("int13_diskette: ctrl not ready");
 
         // read 7 return status bytes from controller
         // using loop index broken, have to unroll...
@@ -2738,8 +3118,17 @@ printf("floppy: drive>1 || head>1 ...\n");
         write_byte(0x0040, 0x0048, return_status[6]);
 
         if ( (return_status[0] & 0xc0) != 0 ) {
-          panic("int13_diskette_function: read error\n");
+	  if ( (return_status[1] & 0x02) != 0 ) {
+	    // diskette not writable.
+	    // AH=status code=0x03 (tried to write on write-protected disk)
+	    // AL=number of sectors written=0
+	    AX = 0x0300;
+	    SET_CF();
+	    return;
+	  } else {
+            panic("int13_diskette_function: read error");
           }
+	}
 
         // ??? should track be new val from return_status[3] ?
         set_diskette_current_cyl(drive, track);
@@ -2860,7 +3249,7 @@ printf("floppy f08\n");
           break;
 
         default: // ?
-          panic("floppy: int13: bad floppy type\n");
+          panic("floppy: int13: bad floppy type");
         }
 
       /* set es & di to point to 11 byte diskette param table */
@@ -2933,7 +3322,7 @@ printf("floppy f18\n");
         printf("floppy: int13: 0x%02x\n", ah);
         return;
         }
-      panic("int13_diskette: AH=%02x\n", ah);
+      panic("int13_diskette: AH=%02x", ah);
     }
 }
 #else  // #if BX_SUPPORT_FLOPPY
@@ -2982,7 +3371,7 @@ set_diskette_current_cyl(drive, cyl)
   Bit8u cyl;
 {
   if (drive > 1)
-    panic("set_diskette_current_cyl(): drive > 1\n");
+    panic("set_diskette_current_cyl(): drive > 1");
   write_byte(0x0040, 0x0094+drive, cyl);
 }
 
@@ -3017,7 +3406,7 @@ determine_floppy_media(drive)
   // check Main Status Register for readiness
   val8 = inb(0x03f4) & 0x80; // Main Status Register
   if (val8 != 0x80)
-    panic("d_f_m: MRQ bit not set\n");
+    panic("d_f_m: MRQ bit not set");
 
   // change line
 
@@ -3027,7 +3416,7 @@ determine_floppy_media(drive)
   outb(0x03f2, DOR); // Digital Output Register
   //
 #endif
-  panic("d_f_m: OK so far\n");
+  panic("d_f_m: OK so far");
 #endif
 }
 
@@ -3049,18 +3438,18 @@ get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
   if (drive == 0x80) {
     hd_type = inb_cmos(0x12) & 0xf0;
     if (hd_type != 0xf0)
-      panic("HD0 cmos reg 12h not type F\n");
+      panic("HD0 cmos reg 12h not type F");
     hd_type = inb_cmos(0x19); // HD0: extended type
     if (hd_type != 47)
-      panic("HD0 cmos reg 19h not user definable type 47\n");
+      panic("HD0 cmos reg 19h not user definable type 47");
     iobase = 0x1b;
   } else {
     hd_type = inb_cmos(0x12) & 0x0f;
     if (hd_type != 0x0f)
-      panic("HD1 cmos reg 12h not type F\n");
+      panic("HD1 cmos reg 12h not type F");
     hd_type = inb_cmos(0x1a); // HD0: extended type
     if (hd_type != 47)
-      panic("HD1 cmos reg 1ah not user definable type 47\n");
+      panic("HD1 cmos reg 1ah not user definable type 47");
     iobase = 0x24;
   }
 
@@ -3073,6 +3462,53 @@ get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
 
   // sectors per track
   write_byte(ss, hd_sectors, inb_cmos(iobase+8));
+}
+
+  void
+int17_function(regs, ds, iret_addr)
+  pusha_regs_t regs; // regs pushed from PUSHA instruction
+  Bit16u ds; // previous DS:, DS set to 0x0000 by asm wrapper
+  iret_addr_t  iret_addr; // CS,IP,Flags pushed from original INT call
+{
+  Bit16u addr,timeout;
+  Bit8u val8;
+
+  #asm
+  sti
+  #endasm
+
+  if ((regs.u.r8.ah < 3) && (regs.u.r16.dx == 0)) {
+    addr = read_word(0x0040, 0x0008);
+    timeout = read_byte(0x0040, 0x0078) << 8;
+    if (regs.u.r8.ah == 0) {
+      outb(addr, regs.u.r8.al);
+      val8 = inb(addr+2);
+      outb(addr+2, val8 | 0x01); // send strobe
+      #asm
+      nop
+      #endasm
+      outb(addr+2, val8 & ~0x01);
+      while (((inb(addr+1) & 0x40) == 0x40) && (timeout)) {
+	timeout--;
+	}
+      }
+    if (regs.u.r8.ah == 1) {
+      val8 = inb(addr+2);
+      outb(addr+2, val8 & ~0x04); // send init
+      #asm
+      nop
+      #endasm
+      outb(addr+2, val8 | 0x04);
+      }
+    regs.u.r8.ah = inb(addr+1);
+    val8 = (~regs.u.r8.ah & 0x48);
+    regs.u.r8.ah &= 0xB7;
+    regs.u.r8.ah |= val8;
+    if (!timeout) regs.u.r8.ah |= 0x01;
+    ClearCF(iret_addr.flags);
+  } else {
+    SetCF(iret_addr.flags); // Unsupported
+  }
 }
 
   void
@@ -3250,6 +3686,41 @@ int1a_function(regs, ds, iret_addr)
       regs.u.r8.al = val8; // val last written to Reg B
       ClearCF(iret_addr.flags); // OK
       break;
+#if BX_PCIBIOS
+    case 0xb1:
+      setPCIaddr(0, 0, 0);
+      if (inw(0x0cfc) != 0x8086) {
+	bios_printf(0, "PCI BIOS not present\n");
+        SetCF(iret_addr.flags);
+      } else {
+        switch (regs.u.r8.al) {
+	  case 0x01: // Installation check
+	    regs.u.r8.ah = 0;
+	    regs.u.r8.al = 1;
+	    regs.u.r8.bh = 1;
+	    regs.u.r8.cl = 0;
+	    ClearCF(iret_addr.flags);
+	    break;
+	  case 0x09: // Read configuration word
+	    setPCIaddr(regs.u.r8.bh, regs.u.r8.bl, (Bit8u)(regs.u.r16.di & 0xfc));
+	    regs.u.r16.cx = inw(0x0cfc + (regs.u.r16.di & 0x0002));
+	    regs.u.r8.ah = 0;
+	    ClearCF(iret_addr.flags);
+	    break;
+	  case 0x0c: // Write configuration word
+	    bios_printf(0, "reg: 0x%02x value: 0x%02x\n",(Bit8u)(regs.u.r16.di & 0xff),regs.u.r16.cx);
+	    setPCIaddr(regs.u.r8.bh, regs.u.r8.bl, (Bit8u)(regs.u.r16.di & 0xfc));
+	    outw(0x0cfc + (regs.u.r16.di & 0x0002), regs.u.r16.cx);
+	    regs.u.r8.ah = 0;
+	    ClearCF(iret_addr.flags);
+	    break;
+	  default:
+	    bios_printf(0, "unsupported PCI BIOS function 0x%02x\n", regs.u.r8.al);
+	    SetCF(iret_addr.flags);
+	}
+      }
+      break;
+#endif
 
     default:
       SetCF(iret_addr.flags); // Unsupported
@@ -3266,8 +3737,8 @@ int70_function(regs, ds, iret_addr)
   Bit8u val8;
 
   val8 = inb_cmos(0x0c); // Status Reg C
-  if (val8 == 0) panic("int70: regC 0\n");
-  if (val8 & 0x40) panic("int70: periodic request\n");
+  if (val8 == 0) panic("int70: regC 0");
+  if (val8 & 0x40) panic("int70: periodic request");
   if (val8 & 0x20) {
     // Alarm Flag indicates alarm time matches current time
     // call user INT 4Ah alarm handler
@@ -3401,14 +3872,19 @@ int19_loadsector:
   mov  cl, #0x01      ;; sector 1
   mov  dh, #0x00      ;; head 0
   int #0x13
-  jc  bootstrap_problem
-  JMP_AP(0x0000, 0x7c00)
-bootstrap_problem:
+  jc int19_load_failed
+  ;; read sector ok.  now check floppy signature.
+  mov dh, #0x01
+  cmp WORD [0x7DFE], #0xAA55
+  jne bootstrap_problem
+  JMP_AP(0x0000, 0x7c00)  ;; sig ok.  Now execute the code.
+int19_load_failed:
   xor dh,dh
+bootstrap_problem:
+  ;; if dh=0, load failed.  if dh=1, signature check failed.
   push dx
   call _boot_failure_msg
-  int #0x18 ;; Boot failure
-  iret
+  hlt
 
 ;----------
 ;- INT18h -
@@ -3964,6 +4440,8 @@ normal_post:
   mov  ds, ax
   mov  ss, ax
 
+  call _log_bios_start
+
   ;; zero out BIOS data area (40:00..40:ff)
   mov  es, ax
   mov  cx, #0x0080 ;; 128 words
@@ -4020,6 +4498,7 @@ post_default_ints:
 
   ;; System Services
   SET_INT_VECTOR(0x15, #0xF000, #int15_handler)
+
   mov ax, #0x0000       ; mov EBDA seg into 40E
   mov ds, ax
   mov 0x40E, #EBDA_SEG
@@ -4043,8 +4522,9 @@ post_default_ints:
   mov  0x0418, al /* keyboard shift flags, set 2 */
   mov  0x0419, al /* keyboard alt-numpad work area */
   mov  0x0471, al /* keyboard ctrl-break flag */
-  mov  0x0496, al /* keyboard status flags 3 */
   mov  0x0497, al /* keyboard status flags 4 */
+  mov  al, #0x10
+  mov  0x0496, al /* keyboard status flags 3 */
 
 
   /* keyboard head of buffer pointer */
@@ -4106,28 +4586,21 @@ post_default_ints:
   SET_INT_VECTOR(0x0F, #0xF000, #dummy_iret_handler)
   mov ax, #0x0000
   mov ds, ax
-  mov 0x408, AX ; Parallel I/O address, port 1
-  mov 0x40A, AX ; Parallel I/O address, port 2
-  mov 0x40C, AX ; Parallel I/O address, port 3
-  mov 0x478, AL ; Parallel printer 1 timeout
-  mov 0x479, AL ; Parallel printer 2 timerout
-  mov 0x47A, AL ; Parallel printer 3 timerout
-  mov 0x47B, AL ; Parallel printer 4 timerout
+  mov 0x408, #0x378 ; Parallel I/O address, port 1
+  mov 0x478, #0x14 ; Parallel printer 1 timeout
+  mov AX, 0x410   ; Equipment word bits 14..15 determing # parallel ports
+  and AX, #0x3fff
+  or  AX, #0x4000 ; one parallel port
+  mov 0x410, AX
 
   ;; Serial setup
   SET_INT_VECTOR(0x0C, #0xF000, #dummy_iret_handler)
   SET_INT_VECTOR(0x14, #0xF000, #int14_handler)
-  ;; assuming AX==0, DS==0 from above
-  mov 0x400, AX   ; Serial I/O address, port 1
-  mov 0x402, AX   ; Serial I/O address, port 2
-  mov 0x404, AX   ; Serial I/O address, port 3
-  mov 0x406, AX   ; Serial I/O address, port 4
-  mov 0x47C, AL   ; Serial 1 timeout
-  mov 0x47D, AL   ; Serial 2 timeout
-  mov 0x47E, AL   ; Serial 3 timeout
-  mov 0x47F, AL   ; Serial 4 timeout
+  mov 0x400, #0x03F8   ; Serial I/O address, port 1
+  mov 0x47C, #0x0a   ; Serial 1 timeout
   mov AX, 0x410   ; Equipment word bits 9..11 determing # serial ports
-  and AX, #0xf1ff ; clear bits 9..11 for now (zero ports)
+  and AX, #0xf1ff
+  or  AX, #0x0200 ; one serial port
   mov 0x410, AX
 
   ;; CMOS RTC
@@ -4173,6 +4646,8 @@ notrom:
   out  0x21, AL ;master pic: all IRQs unmasked
   out  0xA1, AL ;slave  pic: all IRQs unmasked
 
+  call _print_bios_banner
+
   ;;
   ;; Hard Drive setup
   ;;
@@ -4182,8 +4657,6 @@ notrom:
   ;; Floppy setup
   ;;
   call floppy_drive_post
-
-  call _print_bios_banner
 
   int  #0x19
   //JMP_EP(0x0064) ; INT 19h location
@@ -4279,7 +4752,13 @@ db 0x00
 ;----------
 .org 0xe739 ; INT 14h Serial Communications Service Entry Point
 int14_handler:
-  ;; ??? should post message here
+  push ds
+  pusha
+  mov  ax, #0x0000
+  mov  ds, ax
+  call _int14_function
+  popa
+  pop  ds
   iret
 
 
@@ -4294,6 +4773,8 @@ int16_handler:
   pusha
 
   cmp   ah, #0x00
+  je    int16_F00
+  cmp   ah, #0x10
   je    int16_F00
 
   mov  bx, #0xf000
@@ -4360,7 +4841,7 @@ int16_key_found:
 
 
 ;-------------------------------------------------
-;- INT09h : Keyboard Harware Service Entry Point -
+;- INT09h : Keyboard Hardware Service Entry Point -
 ;-------------------------------------------------
 .org 0xe987
 int09_handler:
@@ -4506,7 +4987,14 @@ db  0x01 ;; most systems default to 8
 ;----------------------------------------
 .org 0xefd2
 int17_handler:
-  iret ;; for now...
+  push ds
+  pusha
+  mov  ax, #0x0000
+  mov  ds, ax
+  call _int17_function
+  popa
+  pop  ds
+  iret
 
 .org 0xf045 ; INT 10 Functions 0-Fh Entry Point
   HALT(__LINE__)

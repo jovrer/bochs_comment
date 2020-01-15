@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: mult8.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -177,11 +181,11 @@ BX_CPU_C::IDIV_ALEb(BxInstruction_t *i)
   quotient_8l = quotient_16 & 0xFF;
 
   if (quotient_16 != quotient_8l) {
-BX_INFO(("quotient_16: %04x, remainder_8: %02x, quotient_8l: %02x\n",
+BX_INFO(("quotient_16: %04x, remainder_8: %02x, quotient_8l: %02x",
   (unsigned) quotient_16, (unsigned) remainder_8, (unsigned) quotient_8l));
 AL = quotient_8l;
 AH = remainder_8;
-BX_INFO(("AH: %02x, AL: %02x\n", (unsigned) AH, (unsigned) AL));
+BX_INFO(("AH: %02x, AL: %02x", (unsigned) AH, (unsigned) AL));
     exception(BX_DE_EXCEPTION, 0, 0);
     }
 

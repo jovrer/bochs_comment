@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: load32bitOShack.cc,v 1.7 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -43,10 +47,10 @@ bx_load32bitOSimagehack(void)
 
   FILE *fp;
 
-  fp = fopen(bx_options.load32bitOSImage.iolog, "r");
+  fp = fopen(bx_options.load32bitOSImage.Oiolog->getptr (), "r");
 
   if (fp == NULL) {
-    BX_PANIC(("could not open IO init file.\n"));
+    BX_PANIC(("could not open IO init file."));
     }
 
   while (1) {
@@ -55,7 +59,7 @@ bx_load32bitOSimagehack(void)
     ret = fscanf(fp, "%u %u %x %x\n",
       &len, &op, &port, &val);
     if (ret != 4) {
-      BX_PANIC(("could not open IO init file.\n"));
+      BX_PANIC(("could not open IO init file."));
       }
     if (op == 0) {
       // read
@@ -72,7 +76,7 @@ bx_load32bitOSimagehack(void)
     }
 
   // Invoke proper hack depending on which OS image we're loading
-  switch (bx_options.load32bitOSImage.whichOS) {
+  switch (bx_options.load32bitOSImage.OwhichOS->get ()) {
     case Load32bitOSLinux:
       bx_load_linux_hack();
       break;
@@ -80,7 +84,7 @@ bx_load32bitOSimagehack(void)
       bx_load_null_kernel_hack();
       break;
     default:
-      BX_PANIC(("load32bitOSImage: OS not recognized\n"));
+      BX_PANIC(("load32bitOSImage: OS not recognized"));
     }
 }
 
@@ -175,13 +179,13 @@ bx_load_linux_hack(void)
   // Set CPU and memory features which are assumed at this point.
 
   // Load Linux kernel image
-  bx_load_kernel_image( bx_options.load32bitOSImage.path, 0x100000 );
+  bx_load_kernel_image( bx_options.load32bitOSImage.Opath->getptr (), 0x100000 );
 
   // Load initial ramdisk image if requested
-  if ( bx_options.load32bitOSImage.initrd )
+  if ( bx_options.load32bitOSImage.Oinitrd->getptr () )
   {
     initrd_start = 0x00800000;  /* FIXME: load at top of memory */
-    initrd_size  = bx_load_kernel_image( bx_options.load32bitOSImage.initrd, initrd_start );
+    initrd_size  = bx_load_kernel_image( bx_options.load32bitOSImage.Oinitrd->getptr (), initrd_start );
   }
 
   // Setup Linux startup parameters buffer
@@ -224,7 +228,7 @@ bx_load_null_kernel_hack(void)
   // The RESET function will have been called first.
   // Set CPU and memory features which are assumed at this point.
 
-  bx_load_kernel_image(bx_options.load32bitOSImage.path, 0x100000);
+  bx_load_kernel_image(bx_options.load32bitOSImage.Opath->getptr (), 0x100000);
 
   // EIP deltas
   BX_CPU(0)->prev_eip =
@@ -263,12 +267,12 @@ bx_load_kernel_image(char *path, Bit32u paddr)
 #endif
            );
   if (fd < 0) {
-    BX_INFO(( "load_kernel_image: couldn't open image file '%s'.\n", path ));
+    BX_INFO(( "load_kernel_image: couldn't open image file '%s'.", path ));
     exit(1);
     }
   ret = fstat(fd, &stat_buf);
   if (ret) {
-    BX_INFO(( "load_kernel_image: couldn't stat image file '%s'.\n", path ));
+    BX_INFO(( "load_kernel_image: couldn't stat image file '%s'.", path ));
     exit(1);
     }
 
@@ -277,7 +281,7 @@ bx_load_kernel_image(char *path, Bit32u paddr)
 
   BX_MEM_C *mem = BX_MEM(0);
   if ( (paddr + size) > mem->len ) {
-    BX_INFO(( "load_kernel_image: address range > physical memsize!\n" ));
+    BX_INFO(( "load_kernel_image: address range > physical memsize!" ));
     exit(1);
     }
 
@@ -285,14 +289,14 @@ bx_load_kernel_image(char *path, Bit32u paddr)
   while (size > 0) {
     ret = read(fd, (bx_ptr_t) &mem->vector[paddr + offset], size);
     if (ret <= 0) {
-      BX_INFO(( "load_kernel_image: read failed on image\n" ));
+      BX_INFO(( "load_kernel_image: read failed on image" ));
       exit(1);
       }
     size -= ret;
     offset += ret;
     }
   close(fd);
-  BX_INFO(( "#(%u) load_kernel_image: '%s', size=%u read into memory at %08x\n",
+  BX_INFO(( "#(%u) load_kernel_image: '%s', size=%u read into memory at %08x",
           BX_SIM_ID, path,
           (unsigned) stat_buf.st_size,
           (unsigned) paddr ));

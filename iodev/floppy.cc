@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: floppy.cc,v 1.26 2001/10/07 03:28:45 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -19,12 +23,26 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+//
+// Floppy Disk Controller Docs:
+// Intel 82077A Data sheet
+//   ftp://void-core.2y.net/pub/docs/fdc/82077AA_FloppyControllerDatasheet.pdf
+// Intel 82078 Data sheet
+//   ftp://download.intel.com/design/periphrl/datashts/29047403.PDF
+// Other FDC references
+//   http://debs.future.easyspace.com/Programming/Hardware/FDC/floppy.html
+// And a port list:
+//   http://mudlist.eorbit.net/~adam/pickey/ports.html
+//
 
 extern "C" {
 #include <errno.h>
 }
-
 #include "bochs.h"
+#ifdef WIN32
+#include <windows.h>     // for wsprintf
+#endif
 #define LOG_THIS bx_floppy.
 
 
@@ -55,21 +73,21 @@ bx_floppy_ctrl_c bx_floppy;
 
 bx_floppy_ctrl_c::bx_floppy_ctrl_c(void)
 {
-	setprefix("[FDD ]");
+	put("FDD");
 	settype(FDLOG);
-	BX_DEBUG(("Init.\n"));
 }
 
 bx_floppy_ctrl_c::~bx_floppy_ctrl_c(void)
 {
 	// nothing for now
-	BX_DEBUG(("Exit.\n"));
+	BX_DEBUG(("Exit."));
 }
 
 
   void
 bx_floppy_ctrl_c::init(bx_devices_c *d, bx_cmos_c *cmos)
 {
+	BX_DEBUG(("Init $Id: floppy.cc,v 1.26 2001/10/07 03:28:45 bdenney Exp $"));
   BX_FD_THIS devices = d;
 
   BX_FD_THIS devices->register_irq(6, "Floppy Drive");
@@ -97,7 +115,7 @@ bx_floppy_ctrl_c::init(bx_devices_c *d, bx_cmos_c *cmos)
   BX_FD_THIS s.media_present[0] = 0;
 
 
-  switch (bx_options.floppya.type) {
+  switch (bx_options.floppya.Otype->get ()) {
     case BX_FLOPPY_NONE:
       cmos->s.reg[0x10] = (cmos->s.reg[0x10] & 0x0f) | 0x00;
       break;
@@ -114,15 +132,19 @@ bx_floppy_ctrl_c::init(bx_devices_c *d, bx_cmos_c *cmos)
       cmos->s.reg[0x10] = (cmos->s.reg[0x10] & 0x0f) | 0x50;
       break;
     default:
-      BX_PANIC(( "unknown floppya type\n" ));
+      BX_PANIC(( "unknown floppya type" ));
     }
 
-  if (bx_options.floppya.type != BX_FLOPPY_NONE) {
+  if (bx_options.floppya.Otype->get () != BX_FLOPPY_NONE) {
     BX_FD_THIS s.num_supported_floppies++;
-    if ( bx_options.floppya.initial_status == BX_INSERTED) {
-      if (evaluate_media(bx_options.floppya.type, bx_options.floppya.path,
+    if ( bx_options.floppya.Oinitial_status->get () == BX_INSERTED) {
+      if (evaluate_media(bx_options.floppya.Otype->get (), bx_options.floppya.Opath->getptr (),
                    & BX_FD_THIS s.media[0]))
         BX_FD_THIS s.media_present[0] = 1;
+#define MED (BX_FD_THIS s.media[0])
+    	BX_INFO(("fd0: '%s' ro=%d, h=%d,t=%d,spt=%d", bx_options.floppya.Opath->getptr(),
+			MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+#undef MED
       }
     }
 
@@ -138,7 +160,7 @@ bx_floppy_ctrl_c::init(bx_devices_c *d, bx_cmos_c *cmos)
   BX_FD_THIS s.media[1].fd = -1;
   BX_FD_THIS s.media_present[1] = 0;
 
-  switch (bx_options.floppyb.type) {
+  switch (bx_options.floppyb.Otype->get ()) {
     case BX_FLOPPY_NONE:
       cmos->s.reg[0x10] = (cmos->s.reg[0x10] & 0xf0) | 0x00;
       break;
@@ -155,15 +177,19 @@ bx_floppy_ctrl_c::init(bx_devices_c *d, bx_cmos_c *cmos)
       cmos->s.reg[0x10] = (cmos->s.reg[0x10] & 0xf0) | 0x05;
       break;
     default:
-      BX_PANIC(("unknown floppyb type\n"));
+      BX_PANIC(("unknown floppyb type"));
     }
 
-  if (bx_options.floppyb.type != BX_FLOPPY_NONE) {
+  if (bx_options.floppyb.Otype->get () != BX_FLOPPY_NONE) {
     BX_FD_THIS s.num_supported_floppies++;
-    if ( bx_options.floppyb.initial_status == BX_INSERTED) {
-      if (evaluate_media(bx_options.floppyb.type, bx_options.floppyb.path,
+    if ( bx_options.floppyb.Oinitial_status->get () == BX_INSERTED) {
+      if (evaluate_media(bx_options.floppyb.Otype->get (), bx_options.floppyb.Opath->getptr (),
                    & BX_FD_THIS s.media[1]))
         BX_FD_THIS s.media_present[1] = 1;
+#define MED (BX_FD_THIS s.media[1])
+    	BX_INFO(("fd1: '%s' ro=%d, h=%d,t=%d,spt=%d", bx_options.floppyb.Opath->getptr(),
+			MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+#undef MED
       }
     }
 
@@ -180,10 +206,10 @@ bx_floppy_ctrl_c::init(bx_devices_c *d, bx_cmos_c *cmos)
 
   BX_FD_THIS s.floppy_timer_index =
     bx_pc_system.register_timer( this, timer_handler,
-      bx_options.floppy_command_delay, 0,0);
+      bx_options.Ofloppy_command_delay->get (), 0,0);
 
-  BX_INFO(("bx_options.floppy_command_delay = %u\n",
-    (unsigned) bx_options.floppy_command_delay));
+  BX_DEBUG(("bx_options.Ofloppy_command_delay = %u",
+    (unsigned) bx_options.Ofloppy_command_delay->get ()));
 }
 
 
@@ -256,16 +282,16 @@ bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
   Bit8u status, value;
 
   if (io_len > 1)
-    BX_PANIC(("io read from address %08x, len=%u\n",
+    BX_PANIC(("io read from address %08x, len=%u",
              (unsigned) address, (unsigned) io_len));
 
 // ???
 //if (bx_cpu.cs.selector.value != 0xf000) {
-//  BX_INFO(("BIOS: floppy: read access to port %04x\n", (unsigned) address);
+//  BX_INFO(("BIOS: floppy: read access to port %04x", (unsigned) address);
 //  }
 
   if (bx_dbg.floppy)
-    BX_INFO(("read access to port %04x\n", (unsigned) address));
+    BX_INFO(("read access to port %04x", (unsigned) address));
 
   switch (address) {
 #if BX_DMA_FLOPPY_IO
@@ -281,7 +307,7 @@ bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
 
     case 0x3F5: /* diskette controller data */
       if (BX_FD_THIS s.result_size == 0) {
-        BX_PANIC(("diskette controller:port3f5: no results to read\n"));
+        BX_PANIC(("diskette controller:port3f5: no results to read"));
         }
 
       value = BX_FD_THIS s.result[BX_FD_THIS s.result_index++];
@@ -313,7 +339,7 @@ bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
     }
 
 #if BX_DMA_FLOPPY_IO
-  BX_PANIC(("io_read: bailing\n"));
+  BX_PANIC(("io_read: bailing"));
   return(0);
 #endif  // #if BX_DMA_FLOPPY_IO
 }
@@ -344,17 +370,17 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
   Bit8u motor_on_drive0, motor_on_drive1;
 
   if (io_len > 1)
-    BX_PANIC(("io write to address %08x, len=%u\n",
+    BX_PANIC(("io write to address %08x, len=%u",
              (unsigned) address, (unsigned) io_len));
 
 // ???
 //if (bx_cpu.cs.selector.value != 0xf000) {
-//  BX_INFO(("BIOS: floppy: write access to port %04x, value=%02x\n",
+//  BX_INFO(("BIOS: floppy: write access to port %04x, value=%02x",
 //      (unsigned) address, (unsigned) value));
 //  }
 
   if (bx_dbg.floppy)
-    BX_INFO(("write access to port %04x, value=%02x\n",
+    BX_INFO(("write access to port %04x, value=%02x",
       (unsigned) address, (unsigned) value));
 
   switch (address) {
@@ -364,7 +390,7 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
       motor_on_drive0 = value & 0x10;
       dma_and_interrupt_enable = value & 0x08;
       if (!dma_and_interrupt_enable)
-        BX_DEBUG(("DMA and interrupt capabilities disabled\n"));
+        BX_DEBUG(("DMA and interrupt capabilities disabled"));
       normal_operation = value & 0x04;
       drive_select = value & 0x03;
 
@@ -379,7 +405,7 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
         BX_FD_THIS s.pending_command = 0xfe; // RESET pending
 
         bx_pc_system.activate_timer( BX_FD_THIS s.floppy_timer_index,
-             bx_options.floppy_command_delay, 0 );
+             bx_options.Ofloppy_command_delay->get (), 0 );
 #endif
         }
       else if (prev_normal_operation && normal_operation==0) {
@@ -388,34 +414,31 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
         BX_FD_THIS s.pending_command = 0xfe; // RESET pending
 
         bx_pc_system.activate_timer( BX_FD_THIS s.floppy_timer_index,
-             bx_options.floppy_command_delay, 0 );
+             bx_options.Ofloppy_command_delay->get (), 0 );
         }
-      if (bx_dbg.floppy) {
-        BX_INFO(("io_write: digital output register\n"));
-        BX_INFO(("  motor on, drive1 = %d\n", motor_on_drive1 > 0));
-        BX_INFO(("  motor on, drive0 = %d\n", motor_on_drive0 > 0));
-        BX_INFO(("  dma_and_interrupt_enable=%02x\n",
+        BX_DEBUG(("io_write: digital output register"));
+        BX_DEBUG(("  motor on, drive1 = %d", motor_on_drive1 > 0));
+        BX_DEBUG(("  motor on, drive0 = %d", motor_on_drive0 > 0));
+        BX_DEBUG(("  dma_and_interrupt_enable=%02x",
           (unsigned) dma_and_interrupt_enable));
-        BX_INFO(("  normal_operation=%02x\n",
+        BX_DEBUG(("  normal_operation=%02x",
           (unsigned) normal_operation));
-        BX_INFO(("  drive_select=%02x\n",
+        BX_DEBUG(("  drive_select=%02x",
           (unsigned) drive_select));
-        }
       if (drive_select>1) {
-        BX_PANIC(("io_write: drive_select>1\n"));
+        BX_PANIC(("io_write: drive_select>1"));
         }
       break;
 
     case 0x3f4: /* diskette controller data rate select register */
-      BX_PANIC(("io_write: data rate select register\n"));
+      BX_PANIC(("io_write: data rate select register"));
       break;
 
     case 0x3F5: /* diskette controller data */
-      if (bx_dbg.floppy)
-        BX_INFO(("command = %02x\n", (unsigned) value));
+      BX_DEBUG(("command = %02x", (unsigned) value));
       if (BX_FD_THIS s.command_complete) {
         if (BX_FD_THIS s.pending_command!=0)
-          BX_PANIC(("io: 3f5: receiving new comm, old one (%02x) pending\n",
+          BX_PANIC(("io: 3f5: receiving new comm, old one (%02x) pending",
             (unsigned) BX_FD_THIS s.pending_command));
         BX_FD_THIS s.command[0] = value;
         BX_FD_THIS s.command_complete = 0;
@@ -469,7 +492,7 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
             break;
 
           default:
-            BX_PANIC(("io write:3f5: unsupported case 0x%02x\n",
+            BX_PANIC(("io write:3f5: unsupported case 0x%02x",
               (unsigned) value));
             break;
           }
@@ -484,36 +507,32 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
           BX_FD_THIS s.command_complete = 1;
           }
         }
-      if (bx_dbg.floppy)
-        BX_INFO(("io_write: diskette controller data\n"));
+      BX_DEBUG(("io_write: diskette controller data"));
       return;
       break;
 #endif  // #if BX_DMA_FLOPPY_IO
 
     case 0x3F6: /* diskette controller (reserved) */
-      if (bx_dbg.floppy)
-        BX_INFO(("io_write: reserved register unsupported\n"));
+      BX_DEBUG(("io_write: reserved register unsupported"));
       // this address shared with the hard drive controller
       BX_FD_THIS devices->hard_drive->write_handler(BX_FD_THIS devices->hard_drive, address, value, io_len);
       break;
 
 #if BX_DMA_FLOPPY_IO
     case 0x3F7: /* diskette controller configuration control register */
-      if (bx_dbg.floppy)
-        BX_INFO(("io_write: config control register\n"));
+      BX_DEBUG(("io_write: config control register"));
       BX_FD_THIS s.data_rate = value & 0x03;
-      if (bx_dbg.floppy)
-        switch (BX_FD_THIS s.data_rate) {
-          case 0: BX_INFO(("  500 Kbps\n")); break;
-          case 1: BX_INFO(("  300 Kbps\n")); break;
-          case 2: BX_INFO(("  250 Kbps\n")); break;
-          case 3: BX_INFO(("  1 Mbps\n")); break;
-          }
+      switch (BX_FD_THIS s.data_rate) {
+        case 0: BX_DEBUG(("  500 Kbps")); break;
+        case 1: BX_DEBUG(("  300 Kbps")); break;
+        case 2: BX_DEBUG(("  250 Kbps")); break;
+        case 3: BX_DEBUG(("  1 Mbps")); break;
+      }
       return;
       break;
 
    default:
-      BX_PANIC(("io_write: unknown port %04h\n", (unsigned) address));
+      BX_PANIC(("io_write: unknown port %04h", (unsigned) address));
       break;
 #endif  // #if BX_DMA_FLOPPY_IO
     }
@@ -526,7 +545,7 @@ bx_floppy_ctrl_c::floppy_command(void)
 {
 #if BX_PROVIDE_CPU_MEMORY==0
   BX_PANIC(("floppy_command(): uses DMA: not supported for"
-           " external environment\n"));
+           " external environment"));
 #else
   unsigned i;
   Bit8u step_rate_time;
@@ -538,12 +557,9 @@ bx_floppy_ctrl_c::floppy_command(void)
   Bit32u logical_sector;
 
 
-  if (bx_dbg.floppy) {
-    BX_INFO(("FLOPPY COMMAND: "));
-    for (i=0; i<BX_FD_THIS s.command_size; i++)
-      BX_INFO(("[%02x] ", (unsigned) BX_FD_THIS s.command[i]));
-    BX_INFO(("\n"));
-    }
+  BX_DEBUG(("FLOPPY COMMAND: "));
+  for (i=0; i<BX_FD_THIS s.command_size; i++)
+    BX_DEBUG(("[%02x] ", (unsigned) BX_FD_THIS s.command[i]));
 
 #if 0
   /* execute phase of command is in progress (non DMA mode) */
@@ -552,7 +568,7 @@ bx_floppy_ctrl_c::floppy_command(void)
 
   switch (BX_FD_THIS s.command[0]) {
     case 0x03: // specify
-//BX_INFO(("floppy_command specify\n"));
+//BX_INFO(("floppy_command specify"));
       // execution: specified parameters are loaded
       // result: no result bytes, no interrupt
       step_rate_time = BX_FD_THIS s.command[1] >> 4;
@@ -563,7 +579,9 @@ bx_floppy_ctrl_c::floppy_command(void)
       break;
 
     case 0x04: // get status
-      BX_FD_THIS s.result[0] = 0x00;
+      drive = (BX_FD_THIS s.command[1] & 0x03);
+      BX_FD_THIS s.result[0] = 
+	  BX_FD_THIS s.media[drive].write_protected ? 0x40 : 0x00;
       BX_FD_THIS s.result_size = 1;
       BX_FD_THIS s.result_index = 0;
       BX_FD_THIS s.main_status_reg = FD_MS_MRQ | FD_MS_DIO | FD_MS_BUSY;
@@ -571,20 +589,19 @@ bx_floppy_ctrl_c::floppy_command(void)
       break;
 
     case 0x07: // recalibrate
-//BX_INFO(("floppy_command recalibrate\n"));
+//BX_INFO(("floppy_command recalibrate"));
       drive = (BX_FD_THIS s.command[1] & 0x03);
       BX_FD_THIS s.DOR &= 0xfc;
       BX_FD_THIS s.DOR |= drive;
-      if (bx_dbg.floppy)
-        BX_INFO(("floppy_command(): recalibrate drive %u\n",
-          (unsigned) drive));
+      BX_DEBUG(("floppy_command(): recalibrate drive %u",
+        (unsigned) drive));
       if (drive > 1)
-        BX_PANIC(("floppy_command(): drive > 1\n"));
+        BX_PANIC(("floppy_command(): drive > 1"));
       //motor_on = BX_FD_THIS s.DOR & 0xf0;
       motor_on = ( (BX_FD_THIS s.DOR>>(drive+4))
                      & 0x01 );
       if (motor_on == 0) {
-        BX_INFO(("floppy_command(): recal drive with motor off\n"));
+        BX_INFO(("floppy_command(): recal drive with motor off"));
         }
       if (drive==0)
         BX_FD_THIS s.DOR |= 0x10; // turn on MOTA
@@ -592,7 +609,7 @@ bx_floppy_ctrl_c::floppy_command(void)
         BX_FD_THIS s.DOR |= 0x20; // turn on MOTB
       BX_FD_THIS s.cylinder[drive] = 0;
       bx_pc_system.activate_timer( BX_FD_THIS s.floppy_timer_index,
-        bx_options.floppy_command_delay, 0 );
+        bx_options.Ofloppy_command_delay->get (), 0 );
       /* command head to track 0
        * controller set to non-busy
        * error condition noted in Status reg 0's equipment check bit
@@ -605,7 +622,7 @@ bx_floppy_ctrl_c::floppy_command(void)
       break;
 
     case 0x08: /* sense interrupt status */
-//BX_INFO(("floppy_command sense interrupt status\n"));
+//BX_INFO(("floppy_command sense interrupt status"));
       /* execution:
        *   get status
        * result:
@@ -622,13 +639,12 @@ bx_floppy_ctrl_c::floppy_command(void)
 
       /* read ready */
       BX_FD_THIS s.main_status_reg = FD_MS_MRQ | FD_MS_DIO | FD_MS_BUSY;
-      if (bx_dbg.floppy)
-        BX_INFO(("sense interrupt status\n"));
+      BX_DEBUG(("sense interrupt status"));
       return;
       break;
 
     case 0x0f: /* seek */
-//BX_INFO(("floppy_command seek\n"));
+//BX_INFO(("floppy_command seek"));
       /* command:
        *   byte0 = 0F
        *   byte1 = drive & head select
@@ -645,10 +661,10 @@ bx_floppy_ctrl_c::floppy_command(void)
       BX_FD_THIS s.head[drive] = (BX_FD_THIS s.command[1] >> 2) & 0x01;
       BX_FD_THIS s.cylinder[drive] = BX_FD_THIS s.command[2];
       if (drive > 1)
-        BX_PANIC(("floppy_command(): seek: drive>1\n"));
+        BX_PANIC(("floppy_command(): seek: drive>1"));
       /* ??? should also check cylinder validity */
       bx_pc_system.activate_timer( BX_FD_THIS s.floppy_timer_index,
-        bx_options.floppy_command_delay, 0 );
+        bx_options.Ofloppy_command_delay->get (), 0 );
       /* data reg not ready, controller busy */
       BX_FD_THIS s.main_status_reg = FD_MS_DIO | FD_MS_BUSY;
       BX_FD_THIS s.pending_command = 0x0f; /* seek pending */
@@ -656,7 +672,7 @@ bx_floppy_ctrl_c::floppy_command(void)
       break;
 
     case 0x13: // Configure
-      BX_DEBUG(("io: configure (mode=%02xh, pretrack=%02xh)\n",
+      BX_DEBUG(("io: configure (mode=%02xh, pretrack=%02xh)",
 (unsigned)(BX_FD_THIS s.command[2]), (unsigned)(BX_FD_THIS s.command[3]) ));
       BX_FD_THIS s.result_size = 0;
       BX_FD_THIS s.result_index = 0;
@@ -666,16 +682,16 @@ bx_floppy_ctrl_c::floppy_command(void)
       break;
 
     case 0x4a: // read ID
-//BX_INFO(("floppy_command read ID\n")); // ???
+//BX_INFO(("floppy_command read ID")); // ???
       drive = BX_FD_THIS s.command[1] & 0x03;
       BX_FD_THIS s.DOR &= 0xfc;
       BX_FD_THIS s.DOR |= drive;
 
       motor_on = (BX_FD_THIS s.DOR>>(drive+4)) & 0x01;
       if (motor_on == 0)
-        BX_PANIC(("floppy_command(): 4a: motor not on\n"));
+        BX_PANIC(("floppy_command(): 4a: motor not on"));
       if (drive > 1)
-        BX_PANIC(("io: 4a: bad drive #\n"));
+        BX_PANIC(("io: 4a: bad drive #"));
       BX_FD_THIS s.result_size = 7;
       BX_FD_THIS s.result_index = 0;
       BX_FD_THIS s.result[0] = 0; /* ??? */
@@ -686,7 +702,7 @@ bx_floppy_ctrl_c::floppy_command(void)
       BX_FD_THIS s.result[5] = 0; /* sector at completion */
       BX_FD_THIS s.result[6] = 2;
       bx_pc_system.activate_timer( BX_FD_THIS s.floppy_timer_index,
-        bx_options.floppy_command_delay, 0 );
+        bx_options.Ofloppy_command_delay->get (), 0 );
       /* data reg not ready, controller busy */
       BX_FD_THIS s.main_status_reg = FD_MS_DIO | FD_MS_BUSY;
       BX_FD_THIS s.pending_command = 0x4a; /* read ID pending */
@@ -695,43 +711,63 @@ bx_floppy_ctrl_c::floppy_command(void)
 
 
     case 0xe6: // read normal data
-//BX_INFO(("floppy_command read normal data\n"));
+//BX_INFO(("floppy_command read normal data"));
     case 0xc5: // write normal data
-//BX_INFO(("floppy_command write normal data\n"));
+//BX_INFO(("floppy_command write normal data"));
       if ( (BX_FD_THIS s.DOR & 0x08) == 0 )
-        BX_PANIC(("read/write command with DMA and int disabled\n"));
+        BX_PANIC(("read/write command with DMA and int disabled"));
       drive = BX_FD_THIS s.command[1] & 0x03;
       BX_FD_THIS s.DOR &= 0xfc;
       BX_FD_THIS s.DOR |= drive;
 
       motor_on = (BX_FD_THIS s.DOR>>(drive+4)) & 0x01;
       if (motor_on == 0)
-        BX_PANIC(("floppy_command(): read/write: motor not on\n"));
+        BX_PANIC(("floppy_command(): read/write: motor not on"));
       head = BX_FD_THIS s.command[3] & 0x01;
       cylinder = BX_FD_THIS s.command[2]; /* 0..79 depending */
       sector = BX_FD_THIS s.command[4];   /* 1..36 depending */
       eot = BX_FD_THIS s.command[6];      /* 1..36 depending */
       sector_size = BX_FD_THIS s.command[5];
       data_length = BX_FD_THIS s.command[8];
-      if (bx_dbg.floppy) {
-        BX_INFO(("\n\nread/write normal data\n"));
-        BX_INFO(("BEFORE\n"));
-        BX_INFO(("  drive    = %u\n", (unsigned) drive));
-        BX_INFO(("  head     = %u\n", (unsigned) head));
-        BX_INFO(("  cylinder = %u\n", (unsigned) cylinder));
-        BX_INFO(("  sector   = %u\n", (unsigned) sector));
-        BX_INFO(("  eot      = %u\n", (unsigned) eot));
-        }
+      BX_DEBUG(("read/write normal data"));
+      BX_DEBUG(("BEFORE"));
+      BX_DEBUG(("  drive    = %u", (unsigned) drive));
+      BX_DEBUG(("  head     = %u", (unsigned) head));
+      BX_DEBUG(("  cylinder = %u", (unsigned) cylinder));
+      BX_DEBUG(("  sector   = %u", (unsigned) sector));
+      BX_DEBUG(("  eot      = %u", (unsigned) eot));
       if (drive > 1)
-        BX_PANIC(("io: bad drive #\n"));
+        BX_PANIC(("io: bad drive #"));
       if (head > 1)
-        BX_PANIC(("io: bad head #\n"));
+        BX_PANIC(("io: bad head #"));
+
+      // check that head number in command[1] bit two matches the head
+      // reported in the head number field.  Real floppy drives are
+      // picky about this, as reported in SF bug #439945, (Floppy drive 
+      // read input error checking).
+      if (head != (BX_FD_THIS s.command[1]>>2)&1) {
+        BX_ERROR(("head number in command[1] doesn't match head field"));
+        BX_FD_THIS s.result_size = 7;
+        BX_FD_THIS s.result_index = 0;
+        BX_FD_THIS s.result[0] = 0x40 | (BX_FD_THIS s.head[drive]<<2) | drive; // abnormal termination
+        BX_FD_THIS s.result[1] = 0x04; // 0000 0100
+        BX_FD_THIS s.result[2] = 0x00; // 0000 0000
+        BX_FD_THIS s.result[3] = BX_FD_THIS s.cylinder[drive];
+        BX_FD_THIS s.result[4] = BX_FD_THIS s.head[drive];
+        BX_FD_THIS s.result[5] = BX_FD_THIS s.sector[drive];
+        BX_FD_THIS s.result[6] = 2; // sector size = 512
+
+        BX_FD_THIS s.pending_command = 0;
+        BX_FD_THIS s.main_status_reg = FD_MS_MRQ | FD_MS_DIO | FD_MS_BUSY;
+        BX_FD_THIS devices->pic->trigger_irq(6);
+        return;
+      }
 
       if ( BX_FD_THIS s.media_present[drive] == 0 ) {
         // media not in drive, return error
 
         BX_INFO(("attempt to read/write sector %u,"
-                     " sectors/track=%u\n", (unsigned) sector,
+                     " sectors/track=%u", (unsigned) sector,
                      (unsigned) BX_FD_THIS s.media[drive].sectors_per_track));
         BX_FD_THIS s.result_size = 7;
         BX_FD_THIS s.result_index = 0;
@@ -750,22 +786,19 @@ bx_floppy_ctrl_c::floppy_command(void)
         }
 
       if (sector_size != 0x02) { // 512 bytes
-        BX_PANIC(("sector_size not 512\n"));
+        BX_PANIC(("sector_size not 512"));
         }
       if ( cylinder >= BX_FD_THIS s.media[drive].tracks ) {
-        BX_INFO(("\nio: normal read/write: params out of range\n"));
-        BX_INFO(("*** sector # %02xh\n", (unsigned) sector));
-        BX_INFO(("*** cylinder #%02xh\n", (unsigned) cylinder));
-        BX_INFO(("*** eot #%02xh\n", (unsigned) eot));
-        BX_INFO(("*** head #%02xh\n", (unsigned) head));
-        BX_PANIC(("bailing\n"));
+		BX_PANIC(("io: norm r/w parms out of range: sec#%02xh cyl#%02xh eot#%02h head#%02xh",
+				(unsigned) sector, (unsigned) cylinder, (unsigned) eot,
+				(unsigned) head));
         return;
-        }
+      }
 
       if (sector > BX_FD_THIS s.media[drive].sectors_per_track) {
         // requested sector > last sector on track
         BX_INFO(("attempt to read/write sector %u,"
-                     " sectors/track=%u\n", (unsigned) sector,
+                     " sectors/track=%u", (unsigned) sector,
                      (unsigned) BX_FD_THIS s.media[drive].sectors_per_track));
         // set controller to where drive would have left off
         // after it discovered the sector was past EOT
@@ -788,7 +821,7 @@ bx_floppy_ctrl_c::floppy_command(void)
         BX_FD_THIS s.result[6] = 2; // sector size = 512
 
         bx_pc_system.activate_timer( BX_FD_THIS s.floppy_timer_index,
-          bx_options.floppy_command_delay, 0 );
+          bx_options.Ofloppy_command_delay->get (), 0 );
         /* data reg not ready, controller busy */
         BX_FD_THIS s.main_status_reg = FD_MS_DIO | FD_MS_BUSY;
         BX_FD_THIS s.pending_command = BX_FD_THIS s.command[0];
@@ -797,18 +830,18 @@ bx_floppy_ctrl_c::floppy_command(void)
 
 #if 0
       if (eot != BX_FD_THIS s.media[drive].sectors_per_track)
-        BX_DEBUG(("io: bad eot #%02xh\n", (unsigned) eot));
+        BX_DEBUG(("io: bad eot #%02xh", (unsigned) eot));
 #endif
 
       if (cylinder != BX_FD_THIS s.cylinder[drive])
-        BX_DEBUG(("io: cylinder request != current cylinder\n"));
+        BX_DEBUG(("io: cylinder request != current cylinder"));
 
       logical_sector = (cylinder * 2 * BX_FD_THIS s.media[drive].sectors_per_track) +
                        (head * BX_FD_THIS s.media[drive].sectors_per_track) +
                        (sector - 1);
 
       if (logical_sector >= BX_FD_THIS s.media[drive].sectors) {
-        BX_PANIC(("io: logical sector out of bounds\n"));
+        BX_PANIC(("io: logical sector out of bounds"));
         }
 
       BX_FD_THIS s.cylinder[drive] = cylinder;
@@ -838,15 +871,15 @@ bx_floppy_ctrl_c::floppy_command(void)
         return;
         }
       else
-        BX_PANIC(("floppy_command(): unknown read/write command\n"));
+        BX_PANIC(("floppy_command(): unknown read/write command"));
 
       return;
       break;
 
     default:
-      BX_PANIC(("floppy_command(): unknown function\n"));
+      BX_PANIC(("floppy_command(): unknown function"));
     }
-  BX_PANIC(("\nfloppy_command()\n"));
+  BX_PANIC(("floppy_command()"));
 #endif
 }
 
@@ -857,28 +890,28 @@ bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
   int ret;
 
   if (drive > 1)
-    BX_PANIC(("floppy_xfer: drive > 1\n"));
+    BX_PANIC(("floppy_xfer: drive > 1"));
 
   if (bx_dbg.floppy) {
-    BX_INFO(("drive=%u\n", (unsigned) drive));
-    BX_INFO(("offset=%u\n", (unsigned) offset));
-    BX_INFO(("bytes=%u\n", (unsigned) bytes));
-    BX_INFO(("direction=%s\n", (direction==FROM_FLOPPY)? "from" : "to"));
+    BX_INFO(("drive=%u", (unsigned) drive));
+    BX_INFO(("offset=%u", (unsigned) offset));
+    BX_INFO(("bytes=%u", (unsigned) bytes));
+    BX_INFO(("direction=%s", (direction==FROM_FLOPPY)? "from" : "to"));
     }
 
-#ifdef macintosh
-  if (strcmp(bx_options.floppya.path, SuperDrive))
+#if BX_WITH_MACOS
+  if (strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
 #endif
     {
     ret = lseek(BX_FD_THIS s.media[drive].fd, offset, SEEK_SET);
     if (ret < 0) {
-      BX_PANIC(("could not perform lseek() on floppy image file\n"));
+      BX_PANIC(("could not perform lseek() on floppy image file"));
       }
     }
 
   if (direction == FROM_FLOPPY) {
-#ifdef macintosh
-    if (!strcmp(bx_options.floppya.path, SuperDrive))
+#if BX_WITH_MACOS
+    if (!strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
       ret = fd_read((char *) buffer, offset, bytes);
     else
 #endif
@@ -886,28 +919,29 @@ bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
     if (ret < int(bytes)) {
       /* ??? */
       if (ret > 0) {
-        BX_INFO(("partial read() on floppy image returns %u/%u\n",
+        BX_INFO(("partial read() on floppy image returns %u/%u",
           (unsigned) ret, (unsigned) bytes));
         memset(buffer + ret, 0, bytes - ret);
         }
       else {
-        BX_INFO(("read() on floppy image returns 0\n"));
+        BX_INFO(("read() on floppy image returns 0"));
         memset(buffer, 0, bytes);
         }
       }
     }
 
   else { // TO_FLOPPY
-#ifdef macintosh
-    if (!strcmp(bx_options.floppya.path, SuperDrive))
+    BX_ASSERT (!BX_FD_THIS s.media[drive].write_protected);
+#if BX_WITH_MACOS
+    if (!strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
       ret = fd_write((char *) buffer, offset, bytes);
     else
 #endif
       ret = ::write(BX_FD_THIS s.media[drive].fd, (bx_ptr_t) buffer, bytes);
     if (ret < int(bytes)) {
-      BX_PANIC(("could not perform write() on floppy image file\n"));
-      }
+      BX_PANIC(("could not perform write() on floppy image file"));
     }
+  }
 }
 
 
@@ -916,7 +950,7 @@ bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
 bx_floppy_ctrl_c::timer_handler(void *this_ptr)
 {
 #if defined(SIMX86)
-  printf("Floppy timer\n");
+  printf("Floppy timer");
 #endif
 
   bx_floppy_ctrl_c *class_ptr = (bx_floppy_ctrl_c *) this_ptr;
@@ -962,7 +996,7 @@ bx_floppy_ctrl_c::timer()
       break;
 
     default:
-      BX_PANIC(("floppy:timer(): unknown case %02x\n",
+      BX_PANIC(("floppy:timer(): unknown case %02x",
         (unsigned) BX_FD_THIS s.pending_command));
     }
   return;
@@ -1004,12 +1038,12 @@ bx_floppy_ctrl_c::dma_write(Bit8u *data_byte)
       BX_FD_THIS s.result[6] = 2;
 
       if (bx_dbg.floppy) {
-        BX_INFO(("<<READ DONE>>\n"));
-        BX_INFO(("AFTER\n"));
-        BX_INFO(("  drive    = %u\n", (unsigned) drive));
-        BX_INFO(("  head     = %u\n", (unsigned) BX_FD_THIS s.head[drive]));
-        BX_INFO(("  cylinder = %u\n", (unsigned) BX_FD_THIS s.cylinder[drive]));
-        BX_INFO(("  sector   = %u\n", (unsigned) BX_FD_THIS s.sector[drive]));
+        BX_INFO(("<<READ DONE>>"));
+        BX_INFO(("AFTER"));
+        BX_INFO(("  drive    = %u", (unsigned) drive));
+        BX_INFO(("  head     = %u", (unsigned) BX_FD_THIS s.head[drive]));
+        BX_INFO(("  cylinder = %u", (unsigned) BX_FD_THIS s.cylinder[drive]));
+        BX_INFO(("  sector   = %u", (unsigned) BX_FD_THIS s.sector[drive]));
         }
 
       BX_FD_THIS devices->pic->trigger_irq(6);
@@ -1045,6 +1079,27 @@ bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
     logical_sector = (BX_FD_THIS s.cylinder[drive] * 2 * BX_FD_THIS s.media[drive].sectors_per_track) +
                      (BX_FD_THIS s.head[drive] * BX_FD_THIS s.media[drive].sectors_per_track) +
                      (BX_FD_THIS s.sector[drive] - 1);
+  if ( BX_FD_THIS s.media[drive].write_protected ) {
+    // write protected error
+    BX_INFO(("tried to write disk %u, which is write-protected", drive));
+    BX_FD_THIS s.result_size = 7;
+    BX_FD_THIS s.result_index = 0;
+    // ST0: IC1,0=01  (abnormal termination: started execution but failed)
+    BX_FD_THIS s.result[0] = 0x40 | (BX_FD_THIS s.head[drive]<<2) | drive;
+    // ST1: DataError=1, NDAT=1, NotWritable=1, NID=1
+    BX_FD_THIS s.result[1] = 0x27; // 0010 0111
+    // ST2: CRCE=1, SERR=1, BCYL=1, NDAM=1.
+    BX_FD_THIS s.result[2] = 0x31; // 0011 0001
+    BX_FD_THIS s.result[3] = BX_FD_THIS s.cylinder[drive];
+    BX_FD_THIS s.result[4] = BX_FD_THIS s.head[drive];
+    BX_FD_THIS s.result[5] = BX_FD_THIS s.sector[drive];
+    BX_FD_THIS s.result[6] = 2; // sector size = 512
+
+    BX_FD_THIS s.pending_command = 0;
+    BX_FD_THIS s.main_status_reg = FD_MS_MRQ | FD_MS_DIO | FD_MS_BUSY;
+    BX_FD_THIS devices->pic->trigger_irq(6);
+    return;
+    }
     floppy_xfer(drive, logical_sector*512, BX_FD_THIS s.floppy_buffer,
                 512, TO_FLOPPY);
     increment_sector(); // increment to next sector after writing current one
@@ -1062,12 +1117,12 @@ bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
       BX_FD_THIS s.result[5] = BX_FD_THIS s.sector[drive];
       BX_FD_THIS s.result[6] = 2;
       if (bx_dbg.floppy) {
-        BX_INFO(("<<WRITE DONE>>\n"));
-        BX_INFO(("AFTER\n"));
-        BX_INFO(("  drive    = %u\n", (unsigned) drive));
-        BX_INFO(("  head     = %u\n", (unsigned) BX_FD_THIS s.head[drive]));
-        BX_INFO(("  cylinder = %u\n", (unsigned) BX_FD_THIS s.cylinder[drive]));
-        BX_INFO(("  sector   = %u\n", (unsigned) BX_FD_THIS s.sector[drive]));
+        BX_INFO(("<<WRITE DONE>>"));
+        BX_INFO(("AFTER"));
+        BX_INFO(("  drive    = %u", (unsigned) drive));
+        BX_INFO(("  head     = %u", (unsigned) BX_FD_THIS s.head[drive]));
+        BX_INFO(("  cylinder = %u", (unsigned) BX_FD_THIS s.cylinder[drive]));
+        BX_INFO(("  sector   = %u", (unsigned) BX_FD_THIS s.sector[drive]));
         }
 
       BX_FD_THIS devices->pic->trigger_irq(6);
@@ -1100,7 +1155,7 @@ bx_floppy_ctrl_c::increment_sector(void)
         // Set to 1 past last possible cylinder value.
         // I notice if I set it to tracks-1, prama linux won't boot.
         BX_FD_THIS s.cylinder[drive] = BX_FD_THIS s.media[drive].tracks;
-        BX_INFO(("increment_sector: clamping cylinder to max\n"));
+        BX_INFO(("increment_sector: clamping cylinder to max"));
         }
       }
     }
@@ -1129,12 +1184,12 @@ bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
   else {
     // insert floppy
     if (drive == 0) {
-      path = bx_options.floppya.path;
-      type = bx_options.floppya.type;
+      path = bx_options.floppya.Opath->getptr ();
+      type = bx_options.floppya.Otype->get ();
       }
     else {
-      path = bx_options.floppyb.path;
-      type = bx_options.floppyb.type;
+      path = bx_options.floppyb.Opath->getptr ();
+      type = bx_options.floppyb.Otype->get ();
       }
     if (evaluate_media(type, path, & BX_FD_THIS s.media[drive])) {
       BX_FD_THIS s.media_present[drive] = 1;
@@ -1154,6 +1209,14 @@ bx_floppy_ctrl_c::get_media_status(unsigned drive)
   return( BX_FD_THIS s.media_present[drive] );
 }
 
+#ifdef O_BINARY
+#define BX_RDONLY O_RDONLY | O_BINARY
+#define BX_RDWR O_RDWR | O_BINARY
+#else
+#define BX_RDONLY O_RDONLY
+#define BX_RDWR O_RDWR
+#endif
+
   Boolean
 bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
 {
@@ -1164,37 +1227,74 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
   if (type == BX_FLOPPY_NONE)
     return(0);
 
+  //If media file is already open, close it before reopening.
+  if(media->fd >=0) {
+    close(media->fd);
+    media->fd=-1;
+  }
+
   // open media file (image file or device)
+  media->write_protected = 0;
 #ifdef macintosh
   media->fd = 0;
-  if (strcmp(bx_options.floppya.path, SuperDrive))
+  if (strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
 #endif
-    media->fd = open(path, O_RDWR
-#ifdef O_BINARY
-                   | O_BINARY
+#if BX_WITH_WIN32
+    if ( (path[1] == ':') && (strlen(path) == 2) ) {
+	  wsprintf(sTemp, "\\\\.\\%s", path);
+	  media->fd = open(sTemp, BX_RDWR);
+	} else {
+		media->fd = open(path, BX_RDWR);
+	} 
+#else
+    media->fd = open(path, BX_RDWR);
 #endif
-                  );
 
   if (media->fd < 0) {
-    BX_INFO(( "floppy open of %s:\n",path,strerror(errno) ));
-    return(0);
+    BX_INFO(( "tried to open %s read/write: %s",path,strerror(errno) ));
+    // try opening the file read-only
+    media->write_protected = 1;
+#ifdef macintosh
+  media->fd = 0;
+  if (strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
+#endif
+#if BX_WITH_WIN32
+    if ( (path[1] == ':') && (strlen(path) == 2) ) {
+	  wsprintf(sTemp, "\\\\.\\%s", path);
+	  media->fd = open(sTemp, BX_RDONLY);
+	} else {
+		media->fd = open(path, BX_RDONLY);
+	}
+#else
+    media->fd = open(path, BX_RDONLY);
+#endif
+    if (media->fd < 0) {
+      // failed to open read-only too
+      BX_INFO(( "tried to open %s read only: %s",path,strerror(errno) ));
+      return(0);
     }
+  }
 
 #if BX_WITH_MACOS
-  if (!strcmp(bx_options.floppya.path, SuperDrive))
+  if (!strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
     ret = fd_stat(&stat_buf);
   else
     ret = fstat(media->fd, &stat_buf);
 #elif BX_WITH_WIN32
-  stat_buf.st_mode = S_IFCHR;
-  // maybe replace with code that sets ret to -1 if the disk is not available
-  ret = 0;
+//  if ( (path[1] == ':') && (strlen(path) == 2) ) {
+    stat_buf.st_mode = S_IFCHR;
+    // maybe replace with code that sets ret to -1 if the disk is not available
+    ret = 0;
+//  } else {
+	// put code here for disk images
+//	ret = fstat(media->fd, &stat_buf);
+//  }
 #else
   // unix
   ret = fstat(media->fd, &stat_buf);
 #endif
   if (ret) {
-    BX_PANIC(("fstat()'ing floppy 0 drive image file returns error!\n"));
+    BX_PANIC(("fstat floppy 0 drive image file returns error: %s", strerror(errno)));
     return(0);
     }
 
@@ -1231,7 +1331,7 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
           media->heads             = 2;
 	  }
         else {
-          BX_INFO(("evaluate_media: file '%s' of unknown size %lu\n",
+          BX_INFO(("evaluate_media: file '%s' of unknown size %lu",
             path, (unsigned long) stat_buf.st_size));
           return(0);
           }
@@ -1243,7 +1343,7 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
         media->heads             = 2;
         break;
       default:
-        BX_PANIC(("evaluate_media: unknown media type\n"));
+        BX_PANIC(("evaluate_media: unknown media type"));
       }
     media->sectors = media->heads * media->tracks * media->sectors_per_track;
     return(1); // success
@@ -1284,14 +1384,15 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
         media->heads             = 2;
         break;
       default:
-        BX_PANIC(("evaluate_media: unknown media type\n"));
+        BX_PANIC(("evaluate_media: unknown media type"));
       }
     media->sectors = media->heads * media->tracks * media->sectors_per_track;
     return(1); // success
     }
   else {
     // unknown file type
-    BX_INFO(("unknown mode type\n"));
+    BX_INFO(("unknown mode type"));
     return(0);
     }
 }
+

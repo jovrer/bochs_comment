@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: segment_ctrl.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -42,7 +46,7 @@ BX_CPU_C::LES_GvMp(BxInstruction_t *i)
 {
   if (i->mod == 0xc0) {
     // (BW) NT seems to use this when booting.
-    BX_INFO(("invalid use of LES, must use memory reference!\n"));
+    BX_INFO(("invalid use of LES, must use memory reference!"));
     UndefinedOpcode(i);
     }
 
@@ -76,7 +80,7 @@ BX_CPU_C::LES_GvMp(BxInstruction_t *i)
 BX_CPU_C::LDS_GvMp(BxInstruction_t *i)
 {
   if (i->mod == 0xc0) {
-    BX_PANIC(("invalid use of LDS, must use memory reference!\n"));
+    BX_PANIC(("invalid use of LDS, must use memory reference!"));
     UndefinedOpcode(i);
     }
 
@@ -110,11 +114,11 @@ BX_CPU_C::LDS_GvMp(BxInstruction_t *i)
 BX_CPU_C::LFS_GvMp(BxInstruction_t *i)
 {
 #if BX_CPU_LEVEL < 3
-  BX_PANIC(("lfs_gvmp: not supported on 8086\n"));
+  BX_PANIC(("lfs_gvmp: not supported on 8086"));
 #else /* 386+ */
 
   if (i->mod == 0xc0) {
-    BX_PANIC(("invalid use of LFS, must use memory reference!\n"));
+    BX_PANIC(("invalid use of LFS, must use memory reference!"));
     UndefinedOpcode(i);
     }
 
@@ -147,11 +151,11 @@ BX_CPU_C::LFS_GvMp(BxInstruction_t *i)
 BX_CPU_C::LGS_GvMp(BxInstruction_t *i)
 {
 #if BX_CPU_LEVEL < 3
-  BX_PANIC(("lgs_gvmp: not supported on 8086\n"));
+  BX_PANIC(("lgs_gvmp: not supported on 8086"));
 #else /* 386+ */
 
   if (i->mod == 0xc0) {
-    BX_PANIC(("invalid use of LGS, must use memory reference!\n"));
+    BX_PANIC(("invalid use of LGS, must use memory reference!"));
     UndefinedOpcode(i);
     }
 
@@ -184,11 +188,11 @@ BX_CPU_C::LGS_GvMp(BxInstruction_t *i)
 BX_CPU_C::LSS_GvMp(BxInstruction_t *i)
 {
 #if BX_CPU_LEVEL < 3
-  BX_PANIC(("lss_gvmp: not supported on 8086\n"));
+  BX_PANIC(("lss_gvmp: not supported on 8086"));
 #else /* 386+ */
 
   if (i->mod == 0xc0) {
-    BX_PANIC(("invalid use of LSS, must use memory reference!\n"));
+    BX_PANIC(("invalid use of LSS, must use memory reference!"));
     UndefinedOpcode(i);
     }
 

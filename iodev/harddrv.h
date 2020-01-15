@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: harddrv.h,v 1.7 2001/10/06 09:04:39 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -152,10 +156,17 @@ typedef struct {
   union {
     Bit8u    sector_count;
     struct {
+#ifdef BX_LITTLE_ENDIAN
       unsigned c_d : 1;
       unsigned i_o : 1;
       unsigned rel : 1;
       unsigned tag : 5;
+#else  /* BX_BIG_ENDIAN */
+      unsigned tag : 5;
+      unsigned rel : 1;
+      unsigned i_o : 1;
+      unsigned c_d : 1;
+#endif
     } interrupt_reason;
   };
   Bit8u    sector_no;
@@ -263,7 +274,7 @@ public:
 
 private:
 
-  BX_HD_SMF Bit32u calculate_logical_address();
+  BX_HD_SMF Boolean calculate_logical_address(Bit32u *sector);
   BX_HD_SMF void increment_address();
   BX_HD_SMF void identify_drive(unsigned drive);
   BX_HD_SMF void identify_ATAPI_drive(unsigned drive);

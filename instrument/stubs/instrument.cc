@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: instrument.cc,v 1.4 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -366,5 +370,19 @@ bx_instr_inp(Bit16u addr, unsigned len)
 }
   void
 bx_instr_outp(Bit16u addr, unsigned len)
+{
+}
+  void
+bx_instr_inp2(Bit16u addr, unsigned len, unsigned val)
+{
+}
+  void
+bx_instr_outp2(Bit16u addr, unsigned len, unsigned val)
+{
+}
+void bx_instr_lin_read(Bit32u lin, Bit32u phy, unsigned len)
+{
+}
+void bx_instr_lin_write(Bit32u lin, Bit32u phy, unsigned len)
 {
 }

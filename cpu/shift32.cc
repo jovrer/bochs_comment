@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: shift32.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -81,7 +85,7 @@ BX_CPU_C::SHLD_EdGd(BxInstruction_t *i)
 BX_CPU_C::SHRD_EdGd(BxInstruction_t *i)
 {
 #if BX_CPU_LEVEL < 3
-  BX_PANIC(("shrd_evgvib: not supported on < 386\n"));
+  BX_PANIC(("shrd_evgvib: not supported on < 386"));
 #else
   Bit32u op1_32, op2_32, result_32;
   unsigned count;

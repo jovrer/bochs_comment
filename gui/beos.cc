@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: beos.cc,v 1.12 2001/12/07 18:52:24 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -35,10 +39,13 @@
 #include <string.h>
 
 #include "bochs.h"
-// #include "icon_bochs.h"
+//#include "icon_bochs.h"
 #include "font/vga.bitmap.h"
 
+#define LOG_THIS bx_gui.
+
 #define PAD_NEAREST(n, quantum) (( ((n) + ((quantum) - 1)) / (n) ) * (n))
+
 
 
 class BochsApplication : public BApplication {
@@ -112,9 +119,13 @@ static unsigned dimension_x, dimension_y;
 //static unsigned imDepth, imWide, imBPP;
 
 // current cursor coordinates
+//IRA=> Start
+static BPoint current;
+static BPoint previous;
+static Bit8u mouse_button_state = 0;
+//IRA=> End
 //static int prev_x=-1, prev_y=-1;
 //static int current_x=-1, current_y=-1;
-//static Bit8u mouse_button_state = 0;
 
 static unsigned prev_block_cursor_x=0;
 static unsigned prev_block_cursor_y=0;
@@ -198,10 +209,10 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv,
 UNUSED(argc);
 UNUSED(argv);
 UNUSED(window_name);
-  th->setprefix("[BGUI]");
+  th->put("BGUI");
 
-if (bx_options.private_colormap) {
-  BX_INFO(( "BeOS: private_colormap option not handled yet.\n"));
+if (bx_options.Oprivate_colormap->get ()) {
+  BX_INFO(( "BeOS: private_colormap option not handled yet."));
   }
 
   x_tilesize = tilewidth;
@@ -219,8 +230,8 @@ if (bx_options.private_colormap) {
   // width = columns * font_width;
   // height = rows * font_height;
 
-BX_INFO(("font_width = %u\n", (unsigned) font_width));
-BX_INFO(("font_height = %u\n", (unsigned) font_height));
+BX_INFO(("font_width = %u", (unsigned) font_width));
+BX_INFO(("font_height = %u", (unsigned) font_height));
 
   // Create pixmap of depth 1 (bitmap) for icon
   // icon_pixmap = XCreateBitmapFromData(bx_x_display, win,
@@ -273,6 +284,31 @@ bx_gui_c::handle_events(void)
     key = deq_key_event();
     bx_devices.keyboard->gen_scancode(key);
     }
+//IRA=> Start
+  if (aView) {
+      unsigned long buttons;
+      aView->LockLooper();
+	  aView->GetMouse(&current, &buttons, false);    
+	  aView->UnlockLooper();
+
+	  Bit8u newstate = 0; //please note: 2nd and 3rd button are mapped the same
+	  if (buttons & B_PRIMARY_MOUSE_BUTTON)
+	     newstate |= 0x01;
+	  if (buttons & B_SECONDARY_MOUSE_BUTTON)
+	     newstate |= 0x02;
+	  if (buttons & B_TERTIARY_MOUSE_BUTTON)
+	     newstate |= 0x02;
+	  
+	  if (current != previous || 
+	  	  mouse_button_state != newstate) {
+	    int dx = (int)(current.x - previous.x) *2;
+	    int dy = -(int)((current.y - previous.y) *2);
+	    bx_devices.keyboard->mouse_motion( dx, dy, newstate);
+	    mouse_button_state = newstate;
+	    previous = current;
+      }
+   }
+//IRA=> End
 }
 
   void
@@ -423,11 +459,10 @@ BochsApplication::BochsApplication()
   aWindow->Show();
 }
 
-
 //void set_palette_entry(long i,rgb_color c);
 
 BochsWindow::BochsWindow(BRect frame)
-        : BWindow(frame, "Bochs", B_TITLED_WINDOW, B_NOT_RESIZABLE)
+        : BWindow(frame, "BeBochs V1.3.pre compiled Bernd Korz", B_TITLED_WINDOW, B_NOT_RESIZABLE)
 {
 }
 
@@ -502,14 +537,15 @@ void  BochsView::MouseDown(BPoint point)
     headerbar_click(int(point.x), int(point.y));
     return;
     }
-  fprintf(stderr, "# mousedown()\n");
+   BX_DEBUG(("mousedown()"));
 }
 
 void  BochsView::MouseUp(BPoint point)
 {
   UNUSED(point);
   // currently a place holder function
-  fprintf(stderr, "# mouseup()\n");
+  BX_DEBUG(( "mouseup()" ));
+  BView::MouseUp(point);
 }
 
 void  BochsView::MouseMoved(BPoint point,
@@ -518,7 +554,7 @@ void  BochsView::MouseMoved(BPoint point,
   UNUSED(point);
   UNUSED(transit);
   UNUSED(message);
-  fprintf(stderr, "# mousemoved()\n");
+  BX_DEBUG(( "mousemoved()" ));
 }
 
 void BochsView::KeyDown(const char *bytes, int32 numBytes)
@@ -531,7 +567,7 @@ void BochsView::KeyDown(const char *bytes, int32 numBytes)
 
   msg = Window()->CurrentMessage();
   if ( !msg ) {
-    fprintf(stderr, "# keydown() msg NULL\n");
+    BX_DEBUG(( "keydown() msg NULL" ));
     return;
     }
   modifiers = msg->FindInt32("modifiers");
@@ -989,7 +1025,7 @@ bx_gui_c::create_bitmap(const unsigned char *bmap,
   unsigned char *data;
 
   if (bx_bitmap_entries >= BX_MAX_PIXMAPS) {
-    BX_PANIC(("beos: too many pixmaps, increase BX_MAX_PIXMAPS\n"));
+    BX_PANIC(("beos: too many pixmaps, increase BX_MAX_PIXMAPS"));
     }
 
   bx_bitmaps[bx_bitmap_entries].bmap =
@@ -1005,7 +1041,7 @@ bx_gui_c::create_bitmap(const unsigned char *bmap,
   bx_bitmaps[bx_bitmap_entries].xdim = xdim;
   bx_bitmaps[bx_bitmap_entries].ydim = ydim;
   if (!bx_bitmaps[bx_bitmap_entries].bmap) {
-    BX_PANIC(("beos: could not create bitmap\n"));
+    BX_PANIC(("beos: could not create bitmap"));
     }
   bx_bitmap_entries++;
   return(bx_bitmap_entries-1); // return index as handle
@@ -1018,7 +1054,7 @@ bx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
   unsigned hb_index;
 
   if ( (bx_headerbar_entries+1) > BX_MAX_HEADERBAR_ENTRIES )
-    BX_PANIC(("beos: too many headerbar entries, increase BX_MAX_HEADERBAR_ENTRIES\n"));
+    BX_PANIC(("beos: too many headerbar entries, increase BX_MAX_HEADERBAR_ENTRIES"));
 
   bx_headerbar_entries++;
   hb_index = bx_headerbar_entries - 1;
@@ -1111,13 +1147,13 @@ create_vga_font(void)
   unsigned char *data;
   BRect brect(0,0, 7,15);
 
-  fprintf(stderr, "# BeOS: creating VGA font from bitmaps\n");
+  BX_INFO(( "BeOS: creating VGA font from bitmaps" ));
 
   // VGA font is 8wide x 16high
   for (unsigned c=0; c<256; c++) {
     vgafont[c] = new BBitmap(brect, B_MONOCHROME_1_BIT);
     if (!vgafont[c]) {
-      BX_PANIC(("beos: could not create bitmap\n"));
+      BX_PANIC(("beos: could not create bitmap"));
       }
 
     bitslength = vgafont[c]->BitsLength();
@@ -1136,3 +1172,28 @@ bx_gui_c::exit(void)
 {
   fprintf(stderr, "# WARNING: BEOS: bx_gui_c::exit() not implemented yet.\n");
 }
+
+//IRA=> Start
+// This is called whenever the mouse_enabled parameter changes.  It
+// can change because of a gui event such as clicking on the mouse-enable
+// bitmap or pressing the middle button, or from the control panel.
+// In all those cases, setting the parameter value will get you here.
+
+  void
+bx_gui_c::mouse_enabled_changed_specific (Boolean val)
+{
+  BX_DEBUG (("mouse_enabled=%d, BeOS specific code", val?1:0));
+  if (val) {
+    BX_INFO(("[x] Mouse on"));
+//    mouse_enable_x = current_x;
+//    mouse_enable_y = current_y;
+    be_app->HideCursor();
+    // Move the cursor to a 'safe' place
+//    warp_cursor(warp_home_x-current_x, warp_home_y-current_y);
+  } else {
+    BX_INFO(("[x] Mouse off"));
+    be_app->ShowCursor();
+//    warp_cursor(mouse_enable_x-current_x, mouse_enable_y-current_y);
+  }
+}
+//IRA=> End

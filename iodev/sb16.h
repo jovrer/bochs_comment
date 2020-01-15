@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: sb16.h,v 1.6 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -406,6 +410,11 @@ public:
 };
 
 extern bx_sb16_c bx_sb16;
+
+#define WRITELOG        sb16->writelog
+#define BOTHLOG(x)      (x)
+#define MIDILOG(x)      ((bx_options.sb16.Omidimode->get ()>0?x:0x7f))
+#define WAVELOG(x)      ((bx_options.sb16.Owavemode->get ()>0?x:0x7f))
 
 #include "soundlnx.h"
 #include "soundwin.h"

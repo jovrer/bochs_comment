@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: osdep.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -84,7 +88,7 @@ bx_strtoull (const char *nptr, char **endptr, int baseignore)
   /* Contains the last character read.  */
   char c;
 
-  long long n = 0;
+  Bit64s n = 0;
   char const *p;
 
   /* Prepare number representation.  */
@@ -168,10 +172,10 @@ bx_strtoull (const char *nptr, char **endptr, int baseignore)
     return 0;
 
   for (p=start_of_digits; p!=cp; p++) {
-    n = n * (long long)base;
+    n = n * (Bit64s)base;
     c = tolower (*p);
     c = (c >= 'a') ? (10+c-'a') : c-'0';
-    n = n + (long long)c;
+    n = n + (Bit64s)c;
     //printf ("after shifting in digit %c, n is %lld\n", *p, n);
   }
   return negative? -n : n;
@@ -184,7 +188,7 @@ int main (int argc, char **argv)
 {
   char buf[256], *endbuf;
   long l;
-  long long ll;
+  Bit64s ll;
   while (1) {
     printf ("Enter a long int: ");
     gets (buf);

@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: devices.cc,v 1.18 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -44,7 +48,7 @@ bx_devices_c bx_devices;
   // constructor for bx_devices_c
 bx_devices_c::bx_devices_c(void)
 {
-  setprefix("[DEV ]");
+  put("DEV");
   settype(DEVLOG);
   unsigned i;
 
@@ -65,6 +69,9 @@ bx_devices_c::bx_devices_c(void)
   sb16 = NULL;
   ne2k = NULL;
   g2h = NULL;
+#if BX_IODEBUG_SUPPORT
+  iodebug = NULL;
+#endif
 
   num_read_handles = 0;
   num_write_handles = 0;
@@ -85,20 +92,20 @@ bx_devices_c::bx_devices_c(void)
     }
 
   timer_handle = BX_NULL_TIMER_HANDLE;
-  BX_DEBUG(("Init.\n"));
 }
 
 
 bx_devices_c::~bx_devices_c(void)
 {
   // nothing needed for now
-  BX_DEBUG(("Exit.\n"));
+  BX_DEBUG(("Exit."));
 }
 
 
   void
 bx_devices_c::init(BX_MEM_C *newmem)
 {
+  BX_DEBUG(("Init $Id: devices.cc,v 1.18 2001/10/03 13:10:38 bdenney Exp $"));
   mem = newmem;
   // Start with all IO port address registered to unmapped handler
   // MUST be called first
@@ -157,12 +164,20 @@ bx_devices_c::init(BX_MEM_C *newmem)
   pit = & bx_pit;
   pit->init(this);
 
+#if BX_USE_SLOWDOWN_TIMER
+  bx_slowdown_timer.init();
+#endif
 
   dma = &bx_dma;
   dma->init(this);
 
   keyboard = &bx_keyboard;
   keyboard->init(this, cmos);
+
+#if BX_IODEBUG_SUPPORT
+  iodebug = &bx_iodebug;
+  iodebug->init(this);
+#endif
 
   /*--- PARALLEL PORT ---*/
   parallel = &bx_parallel;
@@ -176,7 +191,7 @@ bx_devices_c::init(BX_MEM_C *newmem)
   // NE2000 NIC
   ne2k = &bx_ne2k;
   ne2k->init(this);
-  BX_DEBUG(("ne2k\n"));
+  BX_DEBUG(("ne2k"));
 #endif  // #if BX_NE2K_SUPPORT
 
 #if 0
@@ -230,11 +245,11 @@ bx_devices_c::port92_read(Bit32u address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_DEV_SMF
   if (io_len > 1)
-    BX_PANIC(("devices.c: port 92h: io read from address %08x, len=%u\n",
+    BX_PANIC(("port 92h: io read from address %08x, len=%u",
              (unsigned) address, (unsigned) io_len));
 
-  BX_INFO(("devices: port92h read partially supported!!!\n"));
-  BX_INFO(("devices:   returning %02x\n", (unsigned) (BX_GET_ENABLE_A20() << 1)));
+  BX_DEBUG(("port92h read partially supported!!!"));
+  BX_DEBUG(("  returning %02x", (unsigned) (BX_GET_ENABLE_A20() << 1)));
   return(BX_GET_ENABLE_A20() << 1);
 }
 
@@ -257,17 +272,17 @@ bx_devices_c::port92_write(Bit32u address, Bit32u value, unsigned io_len)
   Boolean bx_cpu_reset;
 
   if (io_len > 1)
-    BX_PANIC(("devices.c: port 92h: io read from address %08x, len=%u\n",
+    BX_PANIC(("port 92h: io read from address %08x, len=%u",
              (unsigned) address, (unsigned) io_len));
 
-  BX_INFO(("devices: port92h write of %02x partially supported!!!\n",
+  BX_DEBUG(("port92h write of %02x partially supported!!!",
     (unsigned) value));
-BX_INFO(("devices: A20: set_enable_a20() called\n"));
+  BX_DEBUG(("A20: set_enable_a20() called"));
   BX_SET_ENABLE_A20( (value & 0x02) >> 1 );
-  BX_INFO(("A20: now %u\n", (unsigned) BX_GET_ENABLE_A20()));
+  BX_DEBUG(("A20: now %u", (unsigned) BX_GET_ENABLE_A20()));
   bx_cpu_reset  = (value & 0x01); /* high speed reset */
   if (bx_cpu_reset) {
-    BX_PANIC(("PORT 92h write: CPU reset requested!\n"));
+    BX_PANIC(("PORT 92h write: CPU reset requested!"));
     }
 }
 
@@ -284,14 +299,16 @@ bx_devices_c::timer()
 {
   unsigned retval;
 
+#if (BX_USE_NEW_PIT==0)
   if ( pit->periodic( TIMER_DELTA ) ) {
     pic->trigger_irq(0);
     }
+#endif
 
   retval = keyboard->periodic( TIMER_DELTA );
   if (retval & 0x01) {
     if (bx_dbg.keyboard)
-      BX_INFO(("keyboard: interrupt(1)\n"));
+      BX_INFO(("keyboard: interrupt(1)"));
     pic->trigger_irq(1);
     }
   if (retval & 0x02)
@@ -346,11 +363,11 @@ bx_devices_c::dma_write8(unsigned channel, Bit8u *data_byte)
 bx_devices_c::register_irq(unsigned irq, const char *name)
 {
   if (irq >= BX_MAX_IRQS) {
-    BX_PANIC(("IO device %s registered with IRQ=%d above %u\n",
+    BX_PANIC(("IO device %s registered with IRQ=%d above %u",
              name, irq, (unsigned) BX_MAX_IRQS-1));
     }
   if (irq_handler_name[irq]) {
-    BX_PANIC(("IRQ %u conflict, %s with %s\n", irq,
+    BX_PANIC(("IRQ %u conflict, %s with %s", irq,
       irq_handler_name[irq], name));
     }
   irq_handler_name[irq] = name;
@@ -360,18 +377,18 @@ bx_devices_c::register_irq(unsigned irq, const char *name)
 bx_devices_c::unregister_irq(unsigned irq, const char *name)
 {
   if (irq >= BX_MAX_IRQS) {
-    BX_PANIC(("IO device %s tried to unregister IRQ %d above %u\n",
+    BX_PANIC(("IO device %s tried to unregister IRQ %d above %u",
              name, irq, (unsigned) BX_MAX_IRQS-1));
     }
 
   if (!irq_handler_name[irq]) {
-    BX_INFO(("IO device %s tried to unregister IRQ %d, not registered\n",
+    BX_INFO(("IO device %s tried to unregister IRQ %d, not registered",
 	      name, irq));
     return;
   }
 
   if (strcmp(irq_handler_name[irq], name)) {
-    BX_INFO(("IRQ %u not registered to %s but to %s\n", irq,
+    BX_INFO(("IRQ %u not registered to %s but to %s", irq,
       name, irq_handler_name[irq]));
     return;
     }
@@ -394,8 +411,8 @@ bx_devices_c::register_io_read_handler( void *this_ptr, bx_read_handler_t f,
   if (handle >= num_read_handles) {
     /* no existing handle found, create new one */
     if (num_read_handles >= BX_MAX_IO_DEVICES) {
-      BX_INFO(("too many IO devices installed.\n"));
-      BX_PANIC(("  try increasing BX_MAX_IO_DEVICES\n"));
+      BX_INFO(("too many IO devices installed."));
+      BX_PANIC(("  try increasing BX_MAX_IO_DEVICES"));
       }
     num_read_handles++;
     io_read_handler[handle].funct          = f;
@@ -408,9 +425,9 @@ bx_devices_c::register_io_read_handler( void *this_ptr, bx_read_handler_t f,
     // another handler is already registered for that address
     // if it is not the Unmapped port handler, bail
     if ( strcmp( io_read_handler[read_handler_id[addr]].handler_name, "Unmapped" ) ) {
-      BX_INFO(("IO device address conflict(read) at IO address %Xh\n",
+      BX_INFO(("IO device address conflict(read) at IO address %Xh",
         (unsigned) addr));
-      BX_PANIC(("  conflicting devices: %s & %s\n",
+      BX_PANIC(("  conflicting devices: %s & %s",
         io_read_handler[handle].handler_name, io_read_handler[read_handler_id[addr]].handler_name));
       }
     }
@@ -435,8 +452,8 @@ bx_devices_c::register_io_write_handler( void *this_ptr, bx_write_handler_t f,
   if (handle >= num_write_handles) {
     /* no existing handle found, create new one */
     if (num_write_handles >= BX_MAX_IO_DEVICES) {
-      BX_INFO(("too many IO devices installed.\n"));
-      BX_PANIC(("  try increasing BX_MAX_IO_DEVICES\n"));
+      BX_INFO(("too many IO devices installed."));
+      BX_PANIC(("  try increasing BX_MAX_IO_DEVICES"));
       }
     num_write_handles++;
     io_write_handler[handle].funct          = f;
@@ -449,9 +466,9 @@ bx_devices_c::register_io_write_handler( void *this_ptr, bx_write_handler_t f,
     // another handler is already registered for that address
     // if it is not the Unmapped port handler, bail
     if ( strcmp( io_write_handler[write_handler_id[addr]].handler_name, "Unmapped" ) ) {
-      BX_INFO(("IO device address conflict(write) at IO address %Xh\n",
+      BX_INFO(("IO device address conflict(write) at IO address %Xh",
         (unsigned) addr));
-      BX_PANIC(("  conflicting devices: %s & %s\n",
+      BX_PANIC(("  conflicting devices: %s & %s",
         io_write_handler[handle].handler_name, io_write_handler[write_handler_id[addr]].handler_name));
       }
     }
@@ -475,6 +492,7 @@ bx_devices_c::inp(Bit16u addr, unsigned io_len)
   handle = read_handler_id[addr];
   ret = (* io_read_handler[handle].funct)(io_read_handler[handle].this_ptr,
                            (Bit32u) addr, io_len);
+  BX_INSTR_INP2(addr, io_len, ret);
   BX_DBG_IO_REPORT(addr, io_len, BX_READ, ret);
   return(ret);
 }
@@ -490,6 +508,7 @@ bx_devices_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
   Bit8u handle;
 
   BX_INSTR_OUTP(addr, io_len);
+  BX_INSTR_OUTP2(addr, io_len, value);
 
   BX_DBG_IO_REPORT(addr, io_len, BX_WRITE, value);
   handle = write_handler_id[addr];

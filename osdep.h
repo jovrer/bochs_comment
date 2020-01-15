@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: osdep.h,v 1.9 2001/10/05 13:52:25 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -38,6 +42,27 @@
 #ifdef __cplusplus
 extern "C" {
 #endif   /* __cplusplus */
+
+//////////////////////////////////////////////////////////////////////
+// Hacks for win32, but exclude MINGW32 because it doesn't need them.
+//////////////////////////////////////////////////////////////////////
+#ifdef WIN32
+
+#ifndef __MINGW32__
+// This is for win32 platforms EXCEPT FOR cygwin compiling with -mno-cygwin.
+
+// always return regular file.
+#  define S_ISREG(m)      (((m) & S_IFMT) == S_IFREG)
+#  define S_ISCHR(m)      (((m) & S_IFMT) == S_IFCHR)
+
+  // VCPP includes also are missing these
+#  define off_t long
+#  define ssize_t int
+
+// win32 has snprintf though with different name.
+#define snprintf _snprintf
+#endif  /* ifnndef __MINGW32__ */
+#endif   /* WIN32 */
 
 //////////////////////////////////////////////////////////////////////
 // Missing library functions.

@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: gui.h,v 1.15 2001/11/26 09:54:12 vruppert Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -49,8 +53,9 @@ public:
 
   static void init(int argc, char **argv,
                  unsigned x_tilesize, unsigned y_tilesize);
-  static Boolean  gui_get_mouse_enable(void);
-  static void     gui_set_mouse_enable(Boolean val);
+  void update_floppy_status_buttons (void);
+  static void     mouse_enabled_changed (Boolean val);
+  static void     mouse_enabled_changed_specific (Boolean val);
   static void     exit(void);
   static void init_signal_handlers ();
 #if BX_GUI_SIGHANDLER
@@ -58,6 +63,9 @@ public:
   static Bit32u get_sighandler_mask ();
   // called when registered signal arrives
   static void sighandler (int sig);
+#endif
+#if BX_USE_IDLE_HACK
+  static void sim_is_idle(void);
 #endif
 
 
@@ -68,7 +76,8 @@ private:
   static void reset_handler(void);
   static void power_handler(void);
   static void snapshot_handler(void);
-  static void mouse_handler(void);
+  static void config_handler(void);
+  static void toggle_mouse_enable(void);
 
   Boolean floppyA_status;
   Boolean floppyB_status;
@@ -77,13 +86,13 @@ private:
   unsigned power_bmap_id,    power_hbar_id;
   unsigned reset_bmap_id,    reset_hbar_id;
   unsigned snapshot_bmap_id, snapshot_hbar_id;
-  Boolean  mouse_status;
+  unsigned config_bmap_id, config_hbar_id;
   unsigned mouse_bmap_id, nomouse_bmap_id, mouse_hbar_id;
   };
 
 
-#define BX_MAX_PIXMAPS 9
-#define BX_MAX_HEADERBAR_ENTRIES 6
+#define BX_MAX_PIXMAPS 10
+#define BX_MAX_HEADERBAR_ENTRIES 7
 #define BX_HEADER_BAR_Y 32
 
 // align pixmaps towards left or right side of header bar
@@ -167,6 +176,7 @@ private:
 
 #define BX_KEY_LEFT_BRACKET  64
 #define BX_KEY_BACKSLASH     65
+#define BX_KEY_LEFT_BACKSLASH 72
 #define BX_KEY_RIGHT_BRACKET 66
 #define BX_KEY_MINUS         67
 #define BX_KEY_GRAVE         68
@@ -204,3 +214,7 @@ private:
 #define BX_KEY_KP_ENTER      99
 #define BX_KEY_KP_MULTIPLY  100
 #define BX_KEY_KP_DIVIDE    101
+
+#define BX_KEY_PRINT        73
+#define BX_KEY_SCRL_LOCK    74
+#define BX_KEY_PAUSE        75

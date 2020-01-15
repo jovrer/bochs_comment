@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: win32.cc,v 1.20 2001/11/26 07:24:16 vruppert Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -159,7 +163,7 @@ static void processMouseXY( int x, int y, int windows_state, int implied_state_c
   if ( old_bx_state!=mouse_button_state)
   {
     /* Make up for missing message */
-    BX_INFO(( "&&&missing mouse state change\r\n"));
+    BX_INFO(( "&&&missing mouse state change"));
     EnterCriticalSection( &stInfo.keyCS);
     enq_mouse_event();
     mouse_button_state=old_bx_state;
@@ -224,16 +228,16 @@ void terminateEmul(int reason) {
 
   switch (reason) {
   case EXIT_GUI_SHUTDOWN:
-    BX_PANIC(("Window closed, exiting!\n"));
+    BX_PANIC(("Window closed, exiting!"));
     break;
   case EXIT_GMH_FAILURE:
-    BX_PANIC(("GetModuleHandle failure!\n"));
+    BX_PANIC(("GetModuleHandle failure!"));
     break;
   case EXIT_FONT_BITMAP_ERROR:
-    BX_PANIC(("Font bitmap creation failure!\n"));
+    BX_PANIC(("Font bitmap creation failure!"));
     break;
   case EXIT_HEADER_BITMAP_ERROR:
-    BX_PANIC(("Header bitmap creation failure!\n"));
+    BX_PANIC(("Header bitmap creation failure!"));
     break;
   case EXIT_NORMAL:
     break;
@@ -262,7 +266,7 @@ void terminateEmul(int reason) {
 void bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned
 			     tilewidth, unsigned tileheight,
 			     unsigned headerbar_y) {
-  th->setprefix("[WGUI]");
+  th->put("WGUI");
   static RGBQUAD black_quad={ 0, 0, 0, 0};
   stInfo.kill = 0;
   stInfo.UIinited = FALSE;
@@ -324,8 +328,8 @@ void bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned
   //  the emulated CPU runs, and it hogs the real CPU
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 
-  if (bx_options.private_colormap)
-    BX_INFO(( "private_colormap option ignored.\n"));
+  if (bx_options.Oprivate_colormap->get ())
+    BX_INFO(( "private_colormap option ignored."));
 }
 
 
@@ -405,26 +409,23 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
   switch (iMsg) {
   case WM_CREATE:
     SetTimer (hwnd, 1, 330, NULL);
+    bx_options.Omouse_enabled->set (mouseCaptureMode);
     if (mouseCaptureMode)
-      SetWindowText(hwnd, "Bochs for Windows      [Press F12 to release mouse capture]");
+      SetWindowText(hwnd, "Bochs for Windows      [F12 to release mouse]");
     else
-      SetWindowText(hwnd, "Bochs for Windows      [F12 enables the mouse in Bochs]");
+      SetWindowText(hwnd, "Bochs for Windows      [F12 enables mouse]");
     return 0;
 
   case WM_TIMER:
     // If mouse escaped, bring it back
     if ( mouseCaptureMode)
     {
-      GetCursorPos( &ptCursorPos);
       GetWindowRect(hwnd, &wndRect);
-      if ( ptCursorPos.x<wndRect.left || ptCursorPos.x>wndRect.right
-        || ptCursorPos.y<( wndRect.top+BX_HEADER_BAR_Y*stretch_factor) || ptCursorPos.y>wndRect.bottom)
-      {
-        SetCursorPos(wndRect.left + stretched_x/2 + x_edge,
-                   wndRect.top + stretched_y/2 + y_edge + y_caption);
-        cursorWarped();
-      }
+      SetCursorPos(wndRect.left + stretched_x/2 + x_edge,
+                 wndRect.top + stretched_y/2 + y_edge + y_caption);
+      cursorWarped();
     }
+    bx_options.Omouse_enabled->set (mouseCaptureMode);
     
     return 0;
 
@@ -484,6 +485,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
   case WM_SYSKEYDOWN:
     if (wParam == VK_F12) {
       mouseCaptureMode = !mouseCaptureMode;
+      bx_options.Omouse_enabled->set (mouseCaptureMode);
       ShowCursor(!mouseCaptureMode);
       ShowCursor(!mouseCaptureMode);   // somehow one didn't do the trick (win98)
       GetWindowRect(hwnd, &wndRect);
@@ -496,7 +498,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
 	SetWindowText(hwnd, "Bochs for Windows      [F12 enables the mouse in Bochs]");
     } else {
       EnterCriticalSection(&stInfo.keyCS);
-      enq_key_event(HIWORD (lParam) & 0xFF, BX_KEY_PRESSED);
+      enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_PRESSED);
       LeaveCriticalSection(&stInfo.keyCS);
     }
     return 0;
@@ -504,7 +506,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
   case WM_KEYUP:
   case WM_SYSKEYUP:
     EnterCriticalSection(&stInfo.keyCS);
-    enq_key_event(HIWORD (lParam) & 0xFF, BX_KEY_RELEASED);
+    enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_RELEASED);
     LeaveCriticalSection(&stInfo.keyCS);
     return 0;
 
@@ -521,7 +523,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
 
 void enq_key_event(Bit32u key, Bit32u press_release) {	
   if (((tail+1) % SCANCODE_BUFSIZE) == head) {
-    BX_ERROR(( "enq_scancode: buffer full\n"));
+    BX_ERROR(( "enq_scancode: buffer full"));
     return;
   }
   keyevents[tail].key_event = key | press_release;
@@ -534,7 +536,7 @@ void enq_mouse_event(void)
   if ( ms_xdelta || ms_ydelta)
   {
     if (((tail+1) % SCANCODE_BUFSIZE) == head) {
-      BX_ERROR(( "enq_scancode: buffer full\n" ));
+      BX_ERROR(( "enq_scancode: buffer full" ));
       return;
     }
     QueueEvent& current=keyevents[tail];
@@ -552,7 +554,7 @@ QueueEvent* deq_key_event(void) {
   QueueEvent* key;
 
   if ( head == tail ) {
-    BX_ERROR(("deq_scancode: buffer empty\n"));
+    BX_ERROR(("deq_scancode: buffer empty"));
     return((QueueEvent*)0);
   }
   key = &keyevents[head];
@@ -603,6 +605,11 @@ void bx_gui_c::handle_events(void) {
       headerbar_click(LOWORD(key));
     }
     else {
+      if (((key & 0x0100) && ((key & 0x01ff) != 0x0145)) | ((key & 0x01ff) == 0x45)) {
+        // Its an extended key
+        scancode = 0xE0;
+        bx_devices.keyboard->put_scancode(&scancode, 1);
+      }
       // Its a key
       scancode = LOBYTE(LOWORD(key));
       // printf("# key = %d, scancode = %d\n",key,scancode);
@@ -1033,23 +1040,25 @@ void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart,
 //how to implement that so for now it's just implemented as color.
 //Note: it is also possible to program the VGA controller to have the
 //high bit for the foreground color enable blinking characters.
-	const COLORREF crPal[16] = { 
-									RGB(0 ,0 ,0 ),	//0 black 
-									RGB(0 ,0 ,0x80 ),	//1 dark blue 
-									RGB(0 ,0x80 ,0 ),	//2 dark green 
-									RGB(0 ,0x80 ,0x80 ),		//3 dark cyan 
-									RGB(0x80 ,0 ,0 ),	//4 dark red 
-									RGB(0x80 ,0 ,0x80 ),		//5 dark magenta 
-									RGB(0x80 ,0x80 ,0 ),		//6 brown
-									RGB(0xC0 ,0xC0 ,0xC0 ),	//7 light gray 
-									RGB(0x80 ,0x80 ,0x80 ),	//8 dark gray 
-									RGB(0 ,0 ,0xFF ),	//9 light blue 
-									RGB(0 ,0xFF ,0 ),	//10 green 
-									RGB(0 ,0xFF ,0xFF ),		//11 cyan 
-									RGB(0xFF ,0 ,0 ),	//12 light red 
-									RGB(0xFF ,0 ,0xFF ),		//13 magenta 
-									RGB(0xFF ,0xFF ,0 ),		//14 yellow 
-									RGB(0xFF ,0xFF ,0xFF )};	//15 white 
+
+	const COLORREF crPal[16] = {
+	RGB(0 ,0 ,0 ), //0 black 
+	RGB(0 ,0 ,0xA8 ), //1 dark blue 
+	RGB(0 ,0xA8 ,0 ), //2 dark green 
+	RGB(0 ,0xA8 ,0xA8 ), //3 dark cyan 
+	RGB(0xA8 ,0 ,0 ), //4 dark red 
+	RGB(0xA8 ,0 ,0xA8 ), //5 dark magenta 
+	RGB(0xA8 ,0x54 ,0 ), //6 brown 
+	RGB(0xA8 ,0xA8 ,0xA8 ), //7 light gray 
+	RGB(0x54 ,0x54 ,0x54 ), //8 dark gray 
+	RGB(0x54 ,0x54 ,0xFC ), //9 light blue 
+	RGB(0x54 ,0xFC ,0x54 ), //10 green 
+	RGB(0x54 ,0xFC ,0xFC ), //11 cyan 
+	RGB(0xFC ,0x54 ,0x54 ), //12 light red 
+	RGB(0xFC ,0x54 ,0xFC ), //13 magenta 
+	RGB(0xFC ,0xFC ,0x54 ), //14 yellow 
+	RGB(0xFC ,0xFC ,0xFC ) //15 white 
+	};
 
 	COLORREF crFore = SetTextColor(MemoryDC, crPal[(cColor>>4)&0xf]);
 	COLORREF crBack = SetBkColor(MemoryDC, crPal[cColor&0xf]);
@@ -1116,3 +1125,8 @@ void alarm (int time)
 }
 #endif
 #endif
+
+  void
+bx_gui_c::mouse_enabled_changed_specific (Boolean val)
+{
+}

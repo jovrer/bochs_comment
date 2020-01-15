@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: arith8.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -511,7 +515,7 @@ BX_CPU_C::XADD_EbGb(BxInstruction_t *i)
 
   SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_INSTR_XADD8);
 #else
-  BX_PANIC(("XADD_EbGb: not supported on < 80486\n"));
+  BX_PANIC(("XADD_EbGb: not supported on < 80486"));
 #endif
 }
 
@@ -758,6 +762,6 @@ BX_CPU_C::CMPXCHG_EbGb(BxInstruction_t *i)
     }
 
 #else
-  BX_PANIC(("CMPXCHG_EbGb:\n"));
+  BX_PANIC(("CMPXCHG_EbGb:"));
 #endif
 }

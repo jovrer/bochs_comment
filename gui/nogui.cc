@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: nogui.cc,v 1.12 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -59,7 +63,7 @@
 bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth, unsigned tileheight,
                      unsigned headerbar_y)
 {
-  th->setprefix("[NGUI]");
+  th->put("NGUI");
   UNUSED(th);
   UNUSED(argc);
   UNUSED(argv);
@@ -69,8 +73,8 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth,
 
   UNUSED(bochs_icon_bits);  // global variable
 
-  if (bx_options.private_colormap) {
-    BX_INFO(("private_colormap option ignored.\n"));
+  if (bx_options.Oprivate_colormap->get ()) {
+    BX_INFO(("private_colormap option ignored."));
     }
 }
 
@@ -287,5 +291,10 @@ bx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
   void
 bx_gui_c::exit(void)
 {
-  BX_INFO(("bx_gui_c::exit() not implemented yet.\n"));
+  BX_INFO(("bx_gui_c::exit() not implemented yet."));
+}
+
+  void
+bx_gui_c::mouse_enabled_changed_specific (Boolean val)
+{
 }

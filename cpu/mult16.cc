@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: mult16.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -206,7 +210,7 @@ BX_CPU_C::IDIV_AXEw(BxInstruction_t *i)
 BX_CPU_C::IMUL_GwEwIw(BxInstruction_t *i)
 {
 #if BX_CPU_LEVEL < 2
-  BX_PANIC(("IMUL_GvEvIv() unsupported on 8086!\n"));
+  BX_PANIC(("IMUL_GvEvIv() unsupported on 8086!"));
 #else
 
 
@@ -251,7 +255,7 @@ BX_CPU_C::IMUL_GwEwIw(BxInstruction_t *i)
 BX_CPU_C::IMUL_GwEw(BxInstruction_t *i)
 {
 #if BX_CPU_LEVEL < 3
-  BX_PANIC(("IMUL_GvEv() unsupported on 8086!\n"));
+  BX_PANIC(("IMUL_GvEv() unsupported on 8086!"));
 #else
 
     Bit16u product_16l;

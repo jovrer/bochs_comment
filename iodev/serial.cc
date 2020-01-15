@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: serial.cc,v 1.14 2001/11/17 18:10:54 vruppert Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -47,8 +51,11 @@
 #endif
 #endif
 
+#if defined(__FreeBSD__) || defined(__OpenBSD__)
+// #define SERIAL_ENABLE
+#endif
 
-#ifdef __FreeBSD__
+#ifdef SERIAL_ENABLE
 extern "C" {
 #include <termios.h>
 };
@@ -59,7 +66,7 @@ bx_serial_c bx_serial;
 #define this (&bx_serial)
 #endif
 
-#ifdef __FreeBSD__
+#ifdef SERIAL_ENABLE
 static struct termios term_orig, term_new;
 #endif
 
@@ -67,10 +74,12 @@ static int tty_id;
 
 bx_serial_c::bx_serial_c(void)
 {
-  setprefix("[SER ]");
+  put("SER");
   settype(SERLOG);
-#ifdef __FreeBSD__
-  tcgetattr(0, &term_orig);
+#ifdef SERIAL_ENABLE
+  tty_id = open("/dev/ttyqf",O_RDWR|O_NONBLOCK,600);
+  BX_DEBUG(("tty_id: %d",tty_id));
+  tcgetattr(tty_id, &term_orig);
   bcopy((caddr_t) &term_orig, (caddr_t) &term_new, sizeof(struct termios));
   cfmakeraw(&term_new);
   term_new.c_oflag |= OPOST | ONLCR;  // Enable NL to CR-NL translation
@@ -85,23 +94,20 @@ bx_serial_c::bx_serial_c(void)
   term_new.c_iflag &= ~BRKINT;
 #endif    /* !def TRUE_CTLC */
   //term_new.c_iflag |= IXOFF;
-  //tcsetattr(0, TCSAFLUSH, &term_new);
-#endif   /* def __FreeBSD__ */
+  //tcsetattr(tty_id, TCSAFLUSH, &term_new);
+#endif   /* def SERIAL_ENABLE */
   // nothing for now
 #if USE_RAW_SERIAL
-  raw = new serial_raw("/dev/cua0", SIGUSR1);
+  this->raw = new serial_raw("/dev/cua0", SIGUSR1);
 #endif // USE_RAW_SERIAL
 }
 
 bx_serial_c::~bx_serial_c(void)
 {
-#ifdef __FreeBSD__
-  tcsetattr(0, TCSAFLUSH, &term_orig);
+#ifdef SERIAL_ENABLE
+  tcsetattr(tty_id, TCSAFLUSH, &term_orig);
 #endif
   // nothing for now
-#if USE_RAW_SERIAL
-  delete raw;
-#endif // USE_RAW_SERIAL
 }
 
 
@@ -115,11 +121,11 @@ bx_serial_c::init(bx_devices_c *d)
 #if defined (USE_TTY_HACK)
   tty_id = tty_alloc("Bx Serial Console, Your Window to the 8250");
   if (tty_id > 0)
-    BX_INFO(("TTY Allocated fd = %d\n", tty_get_fd(tty_id)));
+    BX_INFO(("TTY allocated fd = %d", tty_get_fd(tty_id)));
   else
-    BX_INFO(("TTY allocation failed\n"));
+    BX_INFO(("TTY allocation failed"));
 #else
-  BX_INFO(("TTY not used, serial port is not connected\n"));
+  //BX_INFO(("TTY not used, serial port is not connected"));
 #endif
 
   /*
@@ -201,6 +207,7 @@ bx_serial_c::init(bx_devices_c *d)
   }
 
   for (unsigned addr=0x03F8; addr<=0x03FF; addr++) {
+	BX_DEBUG(("register read/write: 0x%x",addr));
     BX_SER_THIS devices->register_io_read_handler(this,
        read_handler,
        addr, "Serial Port 1");
@@ -208,6 +215,8 @@ bx_serial_c::init(bx_devices_c *d)
        write_handler,
        addr, "Serial Port 1");
     }
+
+  BX_INFO(( "com0 at 0x3f8/8 irq 4" ));
 
 }
 
@@ -232,19 +241,17 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
 #else
   UNUSED(this_ptr);
 #endif  // !BX_USE_SER_SMF
-  UNUSED(address);
+  //UNUSED(address);
   Bit8u val;
 
   /* SERIAL PORT 1 */
 
   if (io_len > 1)
-    BX_PANIC(("serial: io read from port %04x, bad len=%u\n",
+    BX_PANIC(("io read from port %04x, bad len=%u",
 	     (unsigned) address,
              (unsigned) io_len));
 
-  if (bx_dbg.serial)
-    BX_INFO(("serial register read from address 0x%x - ",
-	      (unsigned) address));
+  BX_DEBUG(("register read from address 0x%x - ", (unsigned) address));
 
   switch (address) {
     case 0x03F8: /* receive buffer, or divisor latch LSB if DLAB set */
@@ -341,22 +348,24 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
 	(BX_SER_THIS s[0].modem_status.dsr          << 5) |
 	(BX_SER_THIS s[0].modem_status.ri           << 6) |
 	(BX_SER_THIS s[0].modem_status.dcd          << 7);
+      BX_SER_THIS s[0].modem_status.delta_cts = 0;
+      BX_SER_THIS s[0].modem_status.delta_dsr = 0;
+      BX_SER_THIS s[0].modem_status.ri_trailedge = 0;
+      BX_SER_THIS s[0].modem_status.delta_dcd = 0;
       break;
 
     case 0x03FF: /* scratch register */
-      val = BX_SER_THIS s[0].scratch = 0;
+      val = BX_SER_THIS s[0].scratch;
       break;
 
     default:
       val = 0; // keep compiler happy
-      BX_PANIC(("unsupported serial io read from address=%0x%x!\n",
+      BX_PANIC(("unsupported io read from address=%0x%x!",
         (unsigned) address));
       break;
   }
 
-  if (bx_dbg.serial)
-    BX_INFO(("val =  0x%x\n",
-	      (unsigned) val));
+  BX_DEBUG(("val =  0x%x", (unsigned) val));
 
   return(val);
 }
@@ -365,7 +374,7 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
   // static IO port write callback handler
   // redirects to non-static class handler to avoid virtual functions
 
-  void
+void
 bx_serial_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
 #if !BX_USE_SER_SMF
@@ -374,21 +383,21 @@ bx_serial_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigne
   class_ptr->write(address, value, io_len);
 }
 
-  void
+void
 bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
 #endif  // !BX_USE_SER_SMF
+  BX_DEBUG(("write: 0x%x <- %d",address,value));
 
   /* SERIAL PORT 1 */
 
   if (io_len > 1)
-    BX_PANIC(("serial: io write to address %08x len=%u\n",
+    BX_PANIC(("io write to address %08x len=%u",
              (unsigned) address, (unsigned) io_len));
 
-  if (bx_dbg.serial)
-    BX_INFO(("serial: write to address: 0x%x = 0x%x\n",
+  BX_DEBUG(("write to address: 0x%x = 0x%x",
 	      (unsigned) address, (unsigned) value));
 
   switch (address) {
@@ -421,7 +430,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 		 (int) (1000000.0 / (BX_SER_THIS s[0].baudrate / 8)),
 				      0); /* not continuous */
 	} else {
-	  BX_INFO(("serial: write to tx hold register when not empty\n"));
+	  BX_ERROR(("write to tx hold register when not empty"));
 	}
       }
       break;
@@ -469,7 +478,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 	  BX_SER_THIS s[0].line_cntl.stick_parity != (value & 0x20) >> 5) {
 	    if (((value & 0x20) >> 5) &&
 		((value & 0x8) >> 3))
-		  BX_PANIC(("[serial] sticky parity set and parity enabled"));
+		  BX_PANIC(("sticky parity set and parity enabled"));
 	    BX_SER_THIS raw->set_parity_mode(((value & 0x8) >> 3),
 					     ((value & 0x10) >> 4) ? P_EVEN : P_ODD);
       }
@@ -497,9 +506,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 		      (int) (1000000.0 / (BX_SER_THIS s[0].baudrate / 4)),
 				      0); /* not continuous */
 	}
-	if (bx_dbg.serial) {
-	  BX_INFO(("serial: baud rate set - %d\n", BX_SER_THIS s[0].baudrate));
-	}
+	BX_DEBUG(("baud rate set - %d", BX_SER_THIS s[0].baudrate));
       }
       BX_SER_THIS s[0].line_cntl.dlab = (value & 0x80) >> 7;
       break;
@@ -532,13 +539,11 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
       break;
 
     case 0x03FD: /* Line status register */
-      /* XXX ignore ?  */
-      BX_PANIC(("serial: write to line status register\n"));
+      BX_ERROR(("write to line status register ignored"));
       break;
 
     case 0x03FE: /* MODEM status register */
-      /* XXX ignore ?  */
-      BX_PANIC(("serial: write to MODEM status register\n"));
+      BX_ERROR(("write to MODEM status register ignored"));
       break;
 
     case 0x03FF: /* scratch register */
@@ -546,7 +551,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
       break;
 
     default:
-      BX_PANIC(("unsupported serial io write to address=0x%x, value = 0x%x!\n",
+      BX_PANIC(("unsupported io write to address=0x%x, value = 0x%x!",
         (unsigned) address, (unsigned) value));
       break;
   }
@@ -587,10 +592,14 @@ bx_serial_c::tx_timer(void)
     tty(tty_id, 0, & BX_SER_THIS s[0].txbuffer);
 #elif USE_RAW_SERIAL
     if (!BX_SER_THIS raw->ready_transmit())
-	  BX_PANIC(("[serial] Not ready to transmit"));
+	  BX_PANIC(("Not ready to transmit"));
     BX_SER_THIS raw->transmit(BX_SER_THIS s[0].txbuffer);
-#elif 0
-    write(0, (bx_ptr_t) & BX_SER_THIS s[0].txbuffer, 1);
+#endif
+#if defined(SERIAL_ENABLE)
+    { char *s = (char *)(BX_SER_THIS s[0].txbuffer);
+	BX_DEBUG(("write: '%c'",(bx_ptr_t) & s));
+	}
+    write(tty_id, (bx_ptr_t) & BX_SER_THIS s[0].txbuffer, 1);
 #endif
   }
 
@@ -631,7 +640,7 @@ bx_serial_c::rx_timer(void)
 // declared in the CodeWarrior standard library headers. I'm just
 // leaving it commented out for the moment.
 
-  FD_SET(0, &fds);
+  FD_SET(tty_id, &fds);
 
   if (BX_SER_THIS s[0].line_status.rxdata_ready == 0) {
 #if defined (USE_TTY_HACK)
@@ -643,16 +652,17 @@ bx_serial_c::rx_timer(void)
     if ((rdy = BX_SER_THIS raw->ready_receive())) {
       data = BX_SER_THIS raw->receive();
       if (data == C_BREAK) {
-	    BX_INFO(("[serial] Got BREAK\n"));
+	    BX_DEBUG(("got BREAK"));
 	    BX_SER_THIS s[0].line_status.break_int = 1;
 	    rdy = 0;
       }
     }
     if (rdy) {
 	  chbuf = data;
-#elif 0
+#elif defined(SERIAL_ENABLE)
     if (select(1, &fds, NULL, NULL, &tval) == 1) {
-      (void) read(0, &chbuf, 1);
+      (void) read(tty_id, &chbuf, 1);
+	  BX_DEBUG(("read: '%c'",chbuf));
 #else
     if (0) {
 #endif

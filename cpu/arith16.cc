@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: arith16.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -555,7 +559,7 @@ BX_CPU_C::XADD_EwGw(BxInstruction_t *i)
 
     SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_XADD16);
 #else
-  BX_PANIC(("XADD_EvGv: not supported on < 80486\n"));
+  BX_PANIC(("XADD_EvGv: not supported on < 80486"));
 #endif
 }
 
@@ -806,6 +810,6 @@ BX_CPU_C::CMPXCHG_EwGw(BxInstruction_t *i)
       }
 
 #else
-  BX_PANIC(("CMPXCHG_EwGw:\n"));
+  BX_PANIC(("CMPXCHG_EwGw:"));
 #endif
 }

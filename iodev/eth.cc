@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: eth.cc,v 1.8 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -41,6 +45,25 @@ eth_locator_c::eth_locator_c(const char *type)
   this->type = type;
 }
 
+#ifdef ETH_NULL
+extern class bx_null_locator_c bx_null_match;
+#endif
+#ifdef ETH_FBSD
+extern class bx_fbsd_locator_c bx_fbsd_match;
+#endif
+#ifdef ETH_LINUX
+extern class bx_linux_locator_c bx_linux_match;
+#endif
+#ifdef ETH_WIN32
+extern class bx_win32_locator_c bx_win32_match;
+#endif
+#ifdef ETH_TEST
+extern bx_test_match;
+#endif
+#ifdef ETH_ARPBACK
+extern class bx_arpback_locator_c bx_arpback_match;
+#endif
+
 //
 // Called by ethernet chip emulations to locate and create a pktmover
 // object
@@ -58,23 +81,38 @@ eth_locator_c::create(const char *type, const char *netif,
 #else
   eth_locator_c *ptr = 0;
 
+#ifdef ETH_ARPBACK
+  {
+    if (!strcmp(type, "arpback"))
+      ptr = (eth_locator_c *) &bx_arpback_match;
+  }
+#endif
 #ifdef ETH_NULL
   {
-    extern class bx_null_locator_c bx_null_match;
     if (!strcmp(type, "null"))
       ptr = (eth_locator_c *) &bx_null_match; 
   }
 #endif
 #ifdef ETH_FBSD
   {
-    extern class bx_fbsd_locator_c bx_fbsd_match;
     if (!strcmp(type, "fbsd"))    
       ptr = (eth_locator_c *) &bx_fbsd_match;
   }
 #endif
+#ifdef ETH_LINUX
+  {
+    if (!strcmp(type, "linux"))    
+      ptr = (eth_locator_c *) &bx_linux_match;
+  }
+#endif
+#ifdef ETH_WIN32
+  {
+    if(!strcmp(type, "win32"))
+      ptr = (eth_locator_c *) &bx_win32_match;
+  }
+#endif
 #ifdef ETH_TEST
   {
-    extern bx_test_match;
     if (!strcmp(type, "test"))    
       ptr = (eth_locator_c *) &bx_test_match;
   }

@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: vga.h,v 1.6 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -31,7 +35,7 @@
 
 // Support varying number of rows of text.  This used to
 // be limited to only 25 lines.
-#define BX_MAX_TEXT_LINES 50
+#define BX_MAX_TEXT_LINES 260
 
 #if BX_USE_VGA_SMF
 #  define BX_VGA_SMF  static
@@ -175,10 +179,12 @@ private:
 #else
   void write(Bit32u address, Bit32u value, unsigned io_len, Boolean no_log);
 #endif
+  int timer_id;
 
   public:
   static void   timer_handler(void *);
   BX_VGA_SMF void   timer(void);
+  BX_VGA_SMF void set_update_interval (unsigned interval);
   private:
   BX_VGA_SMF void   update(void);
   BX_VGA_SMF void   dump_status(void);

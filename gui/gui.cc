@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: gui.cc,v 1.24 2001/11/09 22:17:33 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -29,7 +33,8 @@
 #include "gui/bitmaps/reset.h"
 #include "gui/bitmaps/power.h"
 #include "gui/bitmaps/snapshot.h"
-#ifdef macintosh
+#include "gui/bitmaps/configbutton.h"
+#if BX_WITH_MACOS
 #  include <Disks.h>
 #endif
 
@@ -43,7 +48,7 @@ bx_gui_c   bx_gui;
 
 bx_gui_c::bx_gui_c(void)
 {
-  setprefix("[GUI ]"); // Init in specific_init
+  put("GUI"); // Init in specific_init
   settype(GUILOG);
 }
 
@@ -70,6 +75,7 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   BX_GUI_THIS power_bmap_id = create_bitmap(bx_power_bmap, BX_POWER_BMAP_X, BX_POWER_BMAP_Y);
   BX_GUI_THIS reset_bmap_id = create_bitmap(bx_reset_bmap, BX_RESET_BMAP_X, BX_RESET_BMAP_Y);
   BX_GUI_THIS snapshot_bmap_id = create_bitmap(bx_snapshot_bmap, BX_SNAPSHOT_BMAP_X, BX_SNAPSHOT_BMAP_Y);
+  BX_GUI_THIS config_bmap_id = create_bitmap(bx_config_bmap, BX_SNAPSHOT_BMAP_X, BX_SNAPSHOT_BMAP_Y);
 
 
   // Add the initial bitmaps to the headerbar, and enable callback routine, for use
@@ -94,13 +100,12 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
                           BX_GRAVITY_LEFT, floppyB_handler);
 
   // Mouse button
-  BX_GUI_THIS mouse_status = gui_get_mouse_enable();
-  if (BX_GUI_THIS mouse_status)
+  if (bx_options.Omouse_enabled->get ())
     BX_GUI_THIS mouse_hbar_id = headerbar_bitmap(BX_GUI_THIS mouse_bmap_id,
-                          BX_GRAVITY_LEFT, mouse_handler);
+                          BX_GRAVITY_LEFT, toggle_mouse_enable);
   else
     BX_GUI_THIS mouse_hbar_id = headerbar_bitmap(BX_GUI_THIS nomouse_bmap_id,
-                          BX_GRAVITY_LEFT, mouse_handler);
+                          BX_GRAVITY_LEFT, toggle_mouse_enable);
 
   // Power button
   BX_GUI_THIS power_hbar_id = headerbar_bitmap(BX_GUI_THIS power_bmap_id,
@@ -111,93 +116,121 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   // Snapshot button
   BX_GUI_THIS snapshot_hbar_id = headerbar_bitmap(BX_GUI_THIS snapshot_bmap_id,
                           BX_GRAVITY_RIGHT, snapshot_handler);
+  // Configure button
+  BX_GUI_THIS config_hbar_id = headerbar_bitmap(BX_GUI_THIS config_bmap_id,
+                          BX_GRAVITY_RIGHT, config_handler);
 
   show_headerbar();
 }
 
-
-  void
-bx_gui_c::floppyA_handler(void)
-{
-  unsigned new_status;
-
-  new_status = bx_devices.floppy->set_media_status(0, !BX_GUI_THIS floppyA_status);
-  if (new_status == BX_GUI_THIS floppyA_status)
-    return;  // no change made
-
-  BX_GUI_THIS floppyA_status = new_status;
+void
+bx_gui_c::update_floppy_status_buttons (void) {
+  BX_GUI_THIS floppyA_status = 
+    bx_devices.floppy->get_media_status (0)
+    && bx_options.floppya.Oinitial_status->get ();
+  BX_GUI_THIS floppyB_status = 
+      bx_devices.floppy->get_media_status (1)
+      && bx_options.floppyb.Oinitial_status->get ();
   if (BX_GUI_THIS floppyA_status)
     replace_bitmap(BX_GUI_THIS floppyA_hbar_id, BX_GUI_THIS floppyA_bmap_id);
   else {
-#ifdef macintosh
+#if BX_WITH_MACOS
     // If we are using the Mac floppy driver, eject the disk
-    // from the floppy drive
-    if (!strcmp(bx_options.floppya.path, SuperDrive))
+    // from the floppy drive.  This doesn't work in MacOS X.
+    if (!strcmp(bx_options.floppya.Opath->get (), SuperDrive))
       DiskEject(1);
 #endif
     replace_bitmap(BX_GUI_THIS floppyA_hbar_id, BX_GUI_THIS floppyA_eject_bmap_id);
     }
+  if (BX_GUI_THIS floppyB_status)
+    replace_bitmap(BX_GUI_THIS floppyB_hbar_id, BX_GUI_THIS floppyB_bmap_id);
+  else {
+#if BX_WITH_MACOS
+    // If we are using the Mac floppy driver, eject the disk
+    // from the floppy drive.  This doesn't work in MacOS X.
+    if (!strcmp(bx_options.floppyb.Opath->get (), SuperDrive))
+      DiskEject(1);
+#endif
+    replace_bitmap(BX_GUI_THIS floppyB_hbar_id, BX_GUI_THIS floppyB_eject_bmap_id);
+    }
+}
+
+  void
+bx_gui_c::floppyA_handler(void)
+{
+  BX_GUI_THIS floppyA_status = !BX_GUI_THIS floppyA_status;
+  bx_devices.floppy->set_media_status(0, BX_GUI_THIS floppyA_status);
+  BX_GUI_THIS update_floppy_status_buttons ();
 }
 
   void
 bx_gui_c::floppyB_handler(void)
 {
-  unsigned new_status;
-
-  new_status = bx_devices.floppy->set_media_status(1, !BX_GUI_THIS floppyB_status);
-  if (new_status == BX_GUI_THIS floppyB_status)
-    return;  // no change made
-
-  BX_GUI_THIS floppyB_status = new_status;
-  if (BX_GUI_THIS floppyB_status)
-    replace_bitmap(BX_GUI_THIS floppyB_hbar_id, BX_GUI_THIS floppyB_bmap_id);
-  else
-    replace_bitmap(BX_GUI_THIS floppyB_hbar_id, BX_GUI_THIS floppyB_eject_bmap_id);
+  BX_GUI_THIS floppyB_status = !BX_GUI_THIS floppyB_status;
+  bx_devices.floppy->set_media_status(1, BX_GUI_THIS floppyB_status);
+  BX_GUI_THIS update_floppy_status_buttons ();
 }
 
   void
 bx_gui_c::reset_handler(void)
 {
-  BX_PANIC(( "RESET button was pressed.\n" ));
+  BX_INFO(( "system RESET callback." ));
+  bx_pc_system.ResetSignal( PCS_SET ); /* XXX is this right? */
+  for (int i=0; i<BX_SMP_PROCESSORS; i++)
+      BX_CPU(i)->reset(BX_RESET_HARDWARE);
 }
 
   void
 bx_gui_c::power_handler(void)
 {
-  BX_PANIC(("POWER button turned off.\n"));
-  // exit the simulator even if panic did not actually quit.
+  // the user pressed power button, so there's no doubt they want bochs
+  // to quit.  Change panics to fatal for the GUI and then do a panic.
+  LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
+  BX_PANIC (("POWER button turned off."));
+  // shouldn't reach this point, but if you do, QUIT!!!
+  fprintf (stderr, "Bochs is exiting because you pressed the power button.\n");
   ::exit (1);
 }
 
   void
 bx_gui_c::snapshot_handler(void)
 {
-  BX_INFO(( "# SNAPSHOT callback (unimplemented).\n" ));
+  BX_INFO(( "# SNAPSHOT callback (unimplemented)." ));
 }
 
   void
-bx_gui_c::mouse_handler(void)
+bx_gui_c::config_handler(void)
 {
-  BX_GUI_THIS mouse_status = ! BX_GUI_THIS mouse_status;
+#if BX_USE_CONTROL_PANEL
+  bx_control_panel (BX_CPANEL_RUNTIME);
+#else
+  BX_INFO(( "# CONFIG callback (unimplemented)." ));
+#endif
+}
 
-  if (BX_GUI_THIS mouse_status)
+  void
+bx_gui_c::toggle_mouse_enable(void)
+{
+  int old = bx_options.Omouse_enabled->get ();
+  BX_DEBUG (("toggle mouse_enabled, now %d", !old));
+  bx_options.Omouse_enabled->set (!old);
+}
+
+  void
+bx_gui_c::mouse_enabled_changed (Boolean val)
+{
+  // This is only called when SIM->get_init_done is 1.  Note that VAL
+  // is the new value of mouse_enabled, which may not match the old
+  // value which is still in bx_options.Omouse_enabled->get ().
+  BX_DEBUG (("replacing the mouse bitmaps"));
+  if (val)
     replace_bitmap(BX_GUI_THIS mouse_hbar_id, BX_GUI_THIS mouse_bmap_id);
   else
     replace_bitmap(BX_GUI_THIS mouse_hbar_id, BX_GUI_THIS nomouse_bmap_id);
-
-  gui_set_mouse_enable(BX_GUI_THIS mouse_status);
-}
-
-  Boolean
-bx_gui_c::gui_get_mouse_enable(void)
-{
-  return(bx_options.mouse_enabled);
-}
-
-  void
-bx_gui_c::gui_set_mouse_enable(Boolean val)
-{
-  bx_options.mouse_enabled = val;
+  // give the GUI a chance to respond to the event.  Most guis will hide
+  // the native mouse cursor and do something to trap the mouse inside the
+  // bochs VGA display window.
+  mouse_enabled_changed_specific (val);
 }
 
 void 

@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: cdrom.h,v 1.6 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -28,6 +32,7 @@ class cdrom_interface : public logfunctions {
 public:
   cdrom_interface(char *dev);
   ~cdrom_interface(void);
+  void init(void);
 
   // Load CD-ROM. Returns false if CD is not ready.
   bool insert_cdrom();
@@ -47,4 +52,7 @@ public:
 private:
   int fd;
   char *path;
+
+  int using_file;
   };
+

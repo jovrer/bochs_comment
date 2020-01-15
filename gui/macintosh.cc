@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: macintosh.cc,v 1.9 2001/10/03 13:10:37 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -214,7 +218,7 @@ void CreateTile(void)
 	CGrafPtr	savePort;
 	OSErr			err;
 	
-	if (bx_options.private_colormap)
+	if (bx_options.Oprivate_colormap->get ())
 	{
 		GetGWorld(&savePort, &saveDevice);
 	
@@ -324,7 +328,7 @@ void CreateWindows(void)
 void bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth, unsigned tileheight,
 										 unsigned headerbar_y)
 {	
-	th->setprefix("[MGUI]");
+	th->put("MGUI");
 	InitToolbox();
 	
 	//SouixWin = FrontWindow();
@@ -821,7 +825,7 @@ void bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 //			RGBForeColor(&fgColor);
 //			RGBBackColor(&bgColor);
 			
-			if (bx_options.private_colormap)
+			if (bx_options.Oprivate_colormap->get ())
 			{
 				PmForeColor(new_text[i+1] & 0x0F);
 				PmBackColor((new_text[i+1] & 0xF0) >> 4);
@@ -872,7 +876,7 @@ Boolean bx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, u
 	GDHandle	saveDevice;
 	CGrafPtr	savePort;
 	
-	if (bx_options.private_colormap)
+	if (bx_options.Oprivate_colormap->get ())
 	{
 		GetGWorld(&savePort, &saveDevice);
 
@@ -888,7 +892,7 @@ Boolean bx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, u
 	
 	CTabChanged(gCTable);
 	
-	if (bx_options.private_colormap)
+	if (bx_options.Oprivate_colormap->get ())
 	{
 		SetGWorld(savePort, saveDevice);
 	
@@ -1523,4 +1527,9 @@ unsigned char reverse_bitorder(unsigned char b)
 	}
 	
 	return(ret);
+}
+
+  void
+bx_gui_c::mouse_enabled_changed_specific (Boolean val)
+{
 }

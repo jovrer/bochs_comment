@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: ne2k.h,v 1.6 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -38,7 +42,7 @@
 #  define BX_NE2K_THIS this->
 #endif
 
-#define  BX_NE2K_MEMSIZ    (16*1024)
+#define  BX_NE2K_MEMSIZ    (32*1024)
 #define  BX_NE2K_MEMSTART  (16*1024)
 #define  BX_NE2K_MEMEND    (BX_NE2K_MEMSTART + BX_NE2K_MEMSIZ)
 
@@ -194,6 +198,7 @@ public:
   bx_ne2k_c(void);
   ~bx_ne2k_c(void);
   BX_NE2K_SMF void   init(bx_devices_c *);
+  void print_info (FILE *file, int page, int reg, int nodups);
 
 private:
   bx_ne2k_t s;

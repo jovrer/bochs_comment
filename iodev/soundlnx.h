@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: soundlnx.h,v 1.4 2001/10/03 13:10:38 bdenney Exp $
+/////////////////////////////////////////////////////////////////////////
+//
 //  Copyright (C) 2001  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
@@ -26,11 +30,6 @@
 #if defined(linux)
 
 #include "bochs.h"
-
-#define WRITELOG        sb16->writelog
-#define BOTHLOG(x)      (x)
-#define MIDILOG(x)      ((bx_options.sb16.midimode>0?x:0x7f))
-#define WAVELOG(x)      ((bx_options.sb16.wavemode>0?x:0x7f))
 
 #define BX_SOUND_LINUX_BUFSIZE   BX_SOUND_OUTPUT_WAVEPACKETSIZE
 
