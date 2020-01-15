@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc,v 1.107 2005/05/27 01:53:38 sshwarts Exp $
+// $Id: proc_ctrl.cc,v 1.107.2.2 2005/07/08 07:10:41 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -86,13 +86,14 @@ void BX_CPU_C::HLT(bxInstruction_c *i)
   // will remain in a halt state until one of the above conditions
   // is met.
 
+  BX_INSTR_HLT(BX_CPU_ID);
+
 #if BX_USE_IDLE_HACK  
   bx_gui->sim_is_idle ();
 #endif /* BX_USE_IDLE_HACK */  
 }
 
-  void
-BX_CPU_C::CLTS(bxInstruction_c *i)
+void BX_CPU_C::CLTS(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL < 2
   BX_PANIC(("CLTS: not implemented for < 286"));
@@ -149,11 +150,9 @@ void BX_CPU_C::WBINVD(bxInstruction_c *i)
 #endif
 }
 
+#if BX_CPU_LEVEL >= 3
 void BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL < 3
-  BX_PANIC(("MOV_DdRd: not supported on < 386"));
-#else
   Bit32u val_32;
 
   if (v8086_mode()) {
@@ -283,14 +282,10 @@ void BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
       BX_PANIC(("MOV_DdRd: control register index out of range"));
       break;
     }
-#endif
 }
 
 void BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL < 3
-  BX_PANIC(("MOV_RdDd: not supported on < 386"));
-#else
   Bit32u val_32;
 
   if (v8086_mode()) {
@@ -360,7 +355,6 @@ void BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
       val_32 = 0;
     }
   BX_WRITE_32BIT_REGZ(i->rm(), val_32);
-#endif
 }
 
 #if BX_SUPPORT_X86_64
@@ -553,7 +547,9 @@ void BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
   }
   BX_WRITE_64BIT_REG(i->rm(), val_64);
 }
-#endif  // #if BX_SUPPORT_X86_64
+#endif // #if BX_SUPPORT_X86_64
+
+#endif // #if BX_CPU_LEVEL >= 3
 
 void BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
 {
@@ -623,12 +619,10 @@ void BX_CPU_C::SMSW_Ew(bxInstruction_c *i)
 #endif
 }
 
+#if BX_CPU_LEVEL >= 3
 void BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
 {
   // mov general register data to control register
-#if BX_CPU_LEVEL < 3
-  BX_PANIC(("MOV_CdRd: not supported on < 386"));
-#else
   Bit32u val_32;
 
   if (v8086_mode()) {
@@ -698,15 +692,11 @@ void BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
       BX_PANIC(("MOV_CdRd: control register index out of range"));
       break;
   }
-#endif
 }
 
 void BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
 {
   // mov control register data to register
-#if BX_CPU_LEVEL < 3
-  BX_PANIC(("MOV_RdCd: not supported on < 386"));
-#else
   Bit32u val_32;
 
   if (v8086_mode()) {
@@ -771,7 +761,6 @@ void BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
       val_32 = 0;
   }
   BX_WRITE_32BIT_REGZ(i->rm(), val_32);
-#endif
 }
 
 #if BX_SUPPORT_X86_64
@@ -929,7 +918,9 @@ void BX_CPU_C::MOV_RqCq(bxInstruction_c *i)
 
   BX_WRITE_64BIT_REG(i->rm(), val_64);
 }
-#endif  // #if BX_SUPPORT_X86_64
+#endif // #if BX_SUPPORT_X86_64
+
+#endif // #if BX_CPU_LEVEL >= 3
 
 void BX_CPU_C::MOV_TdRd(bxInstruction_c *i)
 {
@@ -2276,7 +2267,6 @@ Bit32u BX_CPU_C::hwdebug_compare(Bit32u laddr_0, unsigned size,
   }
   return(0);
 }
-
 #endif
 
 /*
