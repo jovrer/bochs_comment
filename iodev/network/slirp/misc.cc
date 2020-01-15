@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc.cc 12269 2014-04-02 17:38:09Z vruppert $
+// $Id: misc.cc 12994 2016-12-13 20:22:28Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 /*
  * Copyright (c) 1995 Danny Gasparovski.
@@ -7,6 +7,10 @@
  * Please read the file COPYRIGHT for the
  * terms and conditions of the copyright.
  */
+
+#ifndef _WIN32
+#include <dirent.h>
+#endif
 
 #include "slirp.h"
 #include "libslirp.h"
@@ -173,8 +177,24 @@ fork_exec(struct socket *so, const char *ex, int do_pty)
 		dup2(s, 0);
 		dup2(s, 1);
 		dup2(s, 2);
+#ifdef ANDROID
+		{
+			/* No getdtablesize() on Android, we will use /proc/XXX/fd/ Linux virtual FS instead */
+			char proc_fd_path[256];
+			sprintf(proc_fd_path, "/proc/%u/fd", (unsigned)getpid());
+			DIR *proc_dir = opendir(proc_fd_path);
+			if (proc_dir) {
+				for (struct dirent *fd = readdir(proc_dir); fd != NULL; fd = readdir(proc_dir)) {
+					if (atoi(fd->d_name) >= 3 && fd->d_name[0] != '.') /* ".." and "." will return 0 anyway */
+						close(atoi(fd->d_name));
+				}
+				closedir(proc_dir);
+			}
+		}
+#else
 		for (s = getdtablesize() - 1; s >= 3; s--)
 		   close(s);
+#endif
 
 		i = 0;
 		bptr = strdup(ex); /* No need to free() this */

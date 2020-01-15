@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: compat.cc 12732 2015-05-01 19:41:08Z vruppert $
+// $Id: compat.cc 12935 2016-08-12 17:06:14Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 /*
  * QEMU compatibility functions
@@ -27,6 +27,13 @@
  */
 
 #include "slirp.h"
+
+#ifndef WEXITSTATUS
+# define WEXITSTATUS(stat_val) ((unsigned int) (stat_val) >> 8)
+#endif
+#ifndef WIFEXITED
+# define WIFEXITED(stat_val) (((stat_val) & 255) == 0)
+#endif
 
 #if BX_NETWORKING && BX_NETMOD_SLIRP
 

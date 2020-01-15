@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h 12655 2015-02-19 20:23:08Z sshwarts $
+// $Id: bochs.h 13017 2016-12-30 10:04:06Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2015  The Bochs Project
+//  Copyright (C) 2001-2016  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -276,8 +276,10 @@ public:
   void error(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
   void panic(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
   void ldebug(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
-  void fatal (const char *prefix, const char *fmt, va_list ap, int exit_status);
-  void ask (int level, const char *prefix, const char *fmt, va_list ap);
+  void fatal1(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
+  void fatal(int level, const char *prefix, const char *fmt, va_list ap, int exit_status);
+  void warn(int level, const char *prefix, const char *fmt, va_list ap);
+  void ask(int level, const char *prefix, const char *fmt, va_list ap);
   void put(const char *p);
   void put(const char *n, const char *p);
   void setio(class iofunctions *);
@@ -334,7 +336,8 @@ public:
   void set_log_action(int loglevel, int action);
   const char *getlevel(int i) const;
   const char *getaction(int i) const;
-  
+  int isaction(const char *val) const;
+
 protected:
   int n_logfn;
 #define MAX_LOGFNS 512
@@ -355,6 +358,7 @@ typedef class iofunctions iofunc_t;
 #define BX_DEBUG(x)
 #define BX_ERROR(x)
 #define BX_PANIC(x) (LOG_THIS panic) x
+#define BX_FATAL(x) (LOG_THIS fatal1) x
 
 #define BX_ASSERT(x)
 
@@ -364,6 +368,7 @@ typedef class iofunctions iofunc_t;
 #define BX_DEBUG(x) (LOG_THIS ldebug) x
 #define BX_ERROR(x) (LOG_THIS error) x
 #define BX_PANIC(x) (LOG_THIS panic) x
+#define BX_FATAL(x) (LOG_THIS fatal1) x
 
 #if BX_ASSERT_ENABLE
   #define BX_ASSERT(x) do {if (!(x)) BX_PANIC(("failed assertion \"%s\" at %s:%d\n", #x, __FILE__, __LINE__));} while (0)
@@ -453,7 +458,7 @@ BOCHSAPI extern Bit32u apic_id_mask;
 #define BX_RESET_SOFTWARE 10
 #define BX_RESET_HARDWARE 11
 
-#include "memory/memory.h"
+#include "memory/memory-bochs.h"
 #include "pc_system.h"
 #include "gui/gui.h"
 
@@ -477,10 +482,6 @@ extern bx_bool bx_gui_sighandler;
 #define BX_N_OPTRAM_IMAGES 4
 #define BX_N_SERIAL_PORTS 4
 #define BX_N_PARALLEL_PORTS 2
-#define BX_N_USB_UHCI_PORTS 2
-#define BX_N_USB_OHCI_PORTS 2
-#define BX_N_USB_XHCI_PORTS 4
-#define BX_N_USB_HUB_PORTS 8
 #define BX_N_PCI_SLOTS 5
 #define BX_N_USER_PLUGINS 8
 
@@ -525,21 +526,48 @@ BX_CPP_INLINE Bit64u bx_bswap64(Bit64u val64)
 
 #ifdef BX_LITTLE_ENDIAN
 
-#define WriteHostWordToLittleEndian(hostPtr,  nativeVar16) \
+#define WriteHostWordToLittleEndian(hostPtr, nativeVar16) \
     *((Bit16u*)(hostPtr)) = (nativeVar16)
 #define WriteHostDWordToLittleEndian(hostPtr, nativeVar32) \
     *((Bit32u*)(hostPtr)) = (nativeVar32)
+#ifdef ANDROID
+// Resolve problems with unaligned access
+#define WriteHostQWordToLittleEndian(hostPtr, nativeVar64) { \
+    ((Bit8u *)(hostPtr))[0] = (Bit8u) (nativeVar64); \
+    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar64)>>8); \
+    ((Bit8u *)(hostPtr))[2] = (Bit8u) ((nativeVar64)>>16); \
+    ((Bit8u *)(hostPtr))[3] = (Bit8u) ((nativeVar64)>>24); \
+    ((Bit8u *)(hostPtr))[4] = (Bit8u) ((nativeVar64)>>32); \
+    ((Bit8u *)(hostPtr))[5] = (Bit8u) ((nativeVar64)>>40); \
+    ((Bit8u *)(hostPtr))[6] = (Bit8u) ((nativeVar64)>>48); \
+    ((Bit8u *)(hostPtr))[7] = (Bit8u) ((nativeVar64)>>56); \
+}
+#else
 #define WriteHostQWordToLittleEndian(hostPtr, nativeVar64) \
     *((Bit64u*)(hostPtr)) = (nativeVar64)
-
-#define ReadHostWordFromLittleEndian(hostPtr,  nativeVar16) \
+#endif
+#define ReadHostWordFromLittleEndian(hostPtr, nativeVar16) \
     (nativeVar16) = *((Bit16u*)(hostPtr))
 #define ReadHostDWordFromLittleEndian(hostPtr, nativeVar32) \
     (nativeVar32) = *((Bit32u*)(hostPtr))
+#ifdef ANDROID
+// Resolve problems with unaligned access
+#define ReadHostQWordFromLittleEndian(hostPtr, nativeVar64) { \
+    (nativeVar64) = ((Bit64u) ((Bit8u *)(hostPtr))[0]) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[1])<<8) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[2])<<16) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[3])<<24) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[4])<<32) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[5])<<40) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[6])<<48) | \
+    (((Bit64u) ((Bit8u *)(hostPtr))[7])<<56); \
+}
+#else
 #define ReadHostQWordFromLittleEndian(hostPtr, nativeVar64) \
     (nativeVar64) = *((Bit64u*)(hostPtr))
+#endif
 
-#else
+#else 
 
 #ifdef __MORPHOS__
 
@@ -611,7 +639,7 @@ BX_CPP_INLINE Bit64u bx_bswap64(Bit64u val64)
 #define BX_MUTEX(mutex) CRITICAL_SECTION (mutex)
 #define BX_INIT_MUTEX(mutex)  InitializeCriticalSection(&(mutex))
 #define BX_FINI_MUTEX(mutex) DeleteCriticalSection(&(mutex))
-#define BX_MSLEEP(val) msleep(val)
+#define BX_MSLEEP(val) Sleep(val)
 #else
 #define BX_THREAD_ID(id) pthread_t (id)
 #define BX_THREAD_FUNC(name,arg) void name(void* arg)
