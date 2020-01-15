@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mult8.cc,v 1.25 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: mult8.cc,v 1.29 2008/05/24 10:26:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,14 +25,12 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
-void BX_CPU_C::MUL_ALEb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MUL_ALEb(bxInstruction_c *i)
 {
   Bit8u op2, op1;
 
@@ -43,6 +41,7 @@ void BX_CPU_C::MUL_ALEb(bxInstruction_c *i)
     op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2 = read_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -63,7 +62,7 @@ void BX_CPU_C::MUL_ALEb(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::IMUL_ALEb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_ALEb(bxInstruction_c *i)
 {
   Bit8s op2, op1;
 
@@ -74,6 +73,7 @@ void BX_CPU_C::IMUL_ALEb(bxInstruction_c *i)
     op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2 = (Bit8s) read_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -96,7 +96,7 @@ void BX_CPU_C::IMUL_ALEb(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::DIV_ALEb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIV_ALEb(bxInstruction_c *i)
 {
   Bit8u op2, quotient_8l, remainder_8;
   Bit16u quotient_16, op1;
@@ -108,6 +108,7 @@ void BX_CPU_C::DIV_ALEb(bxInstruction_c *i)
     op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2 = read_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -125,20 +126,12 @@ void BX_CPU_C::DIV_ALEb(bxInstruction_c *i)
     exception(BX_DE_EXCEPTION, 0, 0);
   }
 
-  /* set EFLAGS:
-   * DIV affects the following flags: O,S,Z,A,P,C are undefined
-   */
-
-#if INTEL_DIV_FLAG_BUG == 1
-  assert_CF();
-#endif
-
   /* now write quotient back to destination */
   AL = quotient_8l;
   AH = remainder_8;
 }
 
-void BX_CPU_C::IDIV_ALEb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IDIV_ALEb(bxInstruction_c *i)
 {
   Bit8s op2, quotient_8l, remainder_8;
   Bit16s quotient_16, op1;
@@ -150,6 +143,7 @@ void BX_CPU_C::IDIV_ALEb(bxInstruction_c *i)
     op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2 = (Bit8s) read_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -157,8 +151,8 @@ void BX_CPU_C::IDIV_ALEb(bxInstruction_c *i)
   if (op2 == 0)
     exception(BX_DE_EXCEPTION, 0, 0);
 
-  /* check MIN_INT divided by -1 case */
-  if ((op1 == ((Bit16s)0x8000)) && (op2 == -1))
+  /* check MIN_INT case */
+  if (op1 == ((Bit16s)0x8000))
     exception(BX_DE_EXCEPTION, 0, 0);
 
   quotient_16 = op1 / op2;
@@ -167,14 +161,6 @@ void BX_CPU_C::IDIV_ALEb(bxInstruction_c *i)
 
   if (quotient_16 != quotient_8l)
     exception(BX_DE_EXCEPTION, 0, 0);
-
-  /* set EFLAGS:
-   * DIV affects the following flags: O,S,Z,A,P,C are undefined
-   */
-
-#if INTEL_DIV_FLAG_BUG == 1
-  assert_CF();
-#endif
 
   /* now write quotient back to destination */
   AL = quotient_8l;

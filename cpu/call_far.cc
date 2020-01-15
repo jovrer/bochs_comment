@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: call_far.cc,v 1.24 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: call_far.cc,v 1.37 2008/05/25 15:53:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005 Stanislav Shwartsman
@@ -21,7 +21,6 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
@@ -31,7 +30,6 @@
 // Make life easier merging cpu64 & cpu code.
 #define RIP EIP
 #endif
-
 
   void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
@@ -110,22 +108,40 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
       exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
     }
 
-    // gate descriptor must be present else #NP(gate selector)
-    if (! IS_PRESENT(gate_descriptor)) {
-       BX_ERROR(("call_protected: gate.p == 0"));
-       exception(BX_NP_EXCEPTION, cs_raw & 0xfffc, 0);
-    }
-
 #if BX_SUPPORT_X86_64
     if (long_mode()) {
+      // call gate type is higher priority than non-present bit check
       if (gate_descriptor.type != BX_386_CALL_GATE) {
         BX_ERROR(("call_protected: gate type %u unsupported in long mode", (unsigned) gate_descriptor.type));
         exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
       }
-      else {
-        call_gate64(&gate_selector);
-        return;
+    }
+    else
+#endif
+    {
+      switch (gate_descriptor.type) {
+        case BX_SYS_SEGMENT_AVAIL_286_TSS:
+        case BX_SYS_SEGMENT_AVAIL_386_TSS:
+        case BX_TASK_GATE:
+        case BX_286_CALL_GATE:
+        case BX_386_CALL_GATE:
+          break;
+        default:
+          BX_ERROR(("call_protected(): gate.type(%u) unsupported", (unsigned) gate_descriptor.type));
+          exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
       }
+    }
+
+    // gate descriptor must be present else #NP(gate selector)
+    if (! IS_PRESENT(gate_descriptor)) {
+      BX_ERROR(("call_protected: gate not present"));
+      exception(BX_NP_EXCEPTION, cs_raw & 0xfffc, 0);
+    }
+
+#if BX_SUPPORT_X86_64
+    if (long_mode()) {
+      call_gate64(&gate_selector);
+      return;
     }
 #endif
 
@@ -171,7 +187,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
           BX_ERROR(("call_protected: TSS selector points to bad TSS"));
           exception(BX_GP_EXCEPTION, raw_tss_selector & 0xfffc, 0);
         }
-        if (tss_descriptor.type!=BX_SYS_SEGMENT_AVAIL_286_TSS && 
+        if (tss_descriptor.type!=BX_SYS_SEGMENT_AVAIL_286_TSS &&
             tss_descriptor.type!=BX_SYS_SEGMENT_AVAIL_386_TSS)
         {
           BX_ERROR(("call_protected: TSS selector points to bad TSS"));
@@ -209,7 +225,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
         new_EIP       = gate_descriptor.u.gate.dest_offset;
 
         // selector must not be null else #GP(0)
-        if ( (dest_selector & 0xfffc) == 0 ) {
+        if ((dest_selector & 0xfffc) == 0) {
           BX_ERROR(("call_protected: selector in gate null"));
           exception(BX_GP_EXCEPTION, 0, 0);
         }
@@ -246,12 +262,10 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
           Bit32u ESP_for_cpl_x;
           bx_selector_t   ss_selector;
           bx_descriptor_t ss_descriptor;
-          unsigned room_needed;
           Bit16u   return_SS, return_CS;
           Bit32u   return_ESP, return_EIP;
           Bit16u   parameter_word[32];
           Bit32u   parameter_dword[32];
-          Bit32u   temp_ESP;
 
           BX_DEBUG(("CALL GATE TO MORE PRIVILEGE LEVEL"));
 
@@ -260,7 +274,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 
           // check selector & descriptor for new SS:
           // selector must not be null, else #TS(0)
-          if ( (SS_for_cpl_x & 0xfffc) == 0 ) {
+          if ((SS_for_cpl_x & 0xfffc) == 0) {
             BX_ERROR(("call_protected: new SS null"));
             exception(BX_TS_EXCEPTION, 0, 0);
           }
@@ -301,33 +315,8 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
             exception(BX_SS_EXCEPTION, SS_for_cpl_x & 0xfffc, 0);
           }
 
-          if (cs_descriptor.u.segment.d_b)
-            // new stack must have room for parameters plus 16 bytes
-            room_needed = 16;
-          else
-            // new stack must have room for parameters plus 8 bytes
-            room_needed =  8;
-
           // get word count from call gate, mask to 5 bits
           unsigned param_count = gate_descriptor.u.gate.param_count & 0x1f;
-
-          if (gate_descriptor.type==BX_286_CALL_GATE)
-            room_needed += param_count*2;
-          else
-            room_needed += param_count*4;
-
-          // new stack must have room for parameters plus return info
-          //   else #SS(SS selector)
-          if (!can_push(&ss_descriptor, ESP_for_cpl_x, room_needed)) {
-            BX_ERROR(("call_protected: stack doesn't have room"));
-            exception(BX_SS_EXCEPTION, SS_for_cpl_x & 0xfffc, 0);
-          }
-
-          // new eIP must be in code segment limit else #GP(0)
-          if (new_EIP > cs_descriptor.u.segment.limit_scaled) {
-            BX_ERROR(("call_protected: EIP not within CS limits"));
-            exception(BX_GP_EXCEPTION, 0, 0);
-          }
 
           // save return SS:eSP to be pushed on new stack
           return_SS = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
@@ -363,48 +352,86 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
           new_stack.selector.value = (0xfffc & new_stack.selector.value) |
             new_stack.selector.rpl;
 
-          if (ss_descriptor.u.segment.d_b)
-            temp_ESP = ESP_for_cpl_x;
-          else
-            temp_ESP = (Bit16u) ESP_for_cpl_x;
+          /* load new SS:SP value from TSS */
+          if (ss_descriptor.u.segment.d_b) {
+            Bit32u temp_ESP = ESP_for_cpl_x;
 
-          // push pointer of old stack onto new stack
-          if (gate_descriptor.type==BX_386_CALL_GATE) {
-            write_new_stack_dword(&new_stack, temp_ESP-4, cs_descriptor.dpl, return_SS);
-            write_new_stack_dword(&new_stack, temp_ESP-8, cs_descriptor.dpl, return_ESP);
-            temp_ESP -= 8;
+            // push pointer of old stack onto new stack
+            if (gate_descriptor.type==BX_386_CALL_GATE) {
+              write_new_stack_dword_32(&new_stack, temp_ESP-4, cs_descriptor.dpl, return_SS);
+              write_new_stack_dword_32(&new_stack, temp_ESP-8, cs_descriptor.dpl, return_ESP);
+              temp_ESP -= 8;
 
-            for (unsigned i=param_count; i>0; i--) {
-              temp_ESP -= 4;
-              write_new_stack_dword(&new_stack, temp_ESP, cs_descriptor.dpl, parameter_dword[i-1]);
+              for (unsigned i=param_count; i>0; i--) {
+                temp_ESP -= 4;
+                write_new_stack_dword_32(&new_stack, temp_ESP, cs_descriptor.dpl, parameter_dword[i-1]);
+              }
+              // push return address onto new stack
+              write_new_stack_dword_32(&new_stack, temp_ESP-4, cs_descriptor.dpl, return_CS);
+              write_new_stack_dword_32(&new_stack, temp_ESP-8, cs_descriptor.dpl, return_EIP);
+              temp_ESP -= 8;
             }
-            // push return address onto new stack
-            write_new_stack_dword(&new_stack, temp_ESP-4, cs_descriptor.dpl, return_CS);
-            write_new_stack_dword(&new_stack, temp_ESP-8, cs_descriptor.dpl, return_EIP);
-            temp_ESP -= 8;
+            else {
+              write_new_stack_word_32(&new_stack, temp_ESP-2, cs_descriptor.dpl, return_SS);
+              write_new_stack_word_32(&new_stack, temp_ESP-4, cs_descriptor.dpl, (Bit16u) return_ESP);
+              temp_ESP -= 4;
+
+              for (unsigned i=param_count; i>0; i--) {
+                temp_ESP -= 2;
+                write_new_stack_word_32(&new_stack, temp_ESP, cs_descriptor.dpl, parameter_word[i-1]);
+              }
+              // push return address onto new stack
+              write_new_stack_word_32(&new_stack, temp_ESP-2, cs_descriptor.dpl, return_CS);
+              write_new_stack_word_32(&new_stack, temp_ESP-4, cs_descriptor.dpl, (Bit16u) return_EIP);
+              temp_ESP -= 4;
+            }
+
+            ESP = temp_ESP;
           }
           else {
-            write_new_stack_word(&new_stack, temp_ESP-2, cs_descriptor.dpl, return_SS);
-            write_new_stack_word(&new_stack, temp_ESP-4, cs_descriptor.dpl, (Bit16u) return_ESP);
-            temp_ESP -= 4;
+            Bit16u temp_SP = (Bit16u) ESP_for_cpl_x;
 
-            for (unsigned i=param_count; i>0; i--) {
-              temp_ESP -= 2;
-              write_new_stack_word(&new_stack, temp_ESP, cs_descriptor.dpl, parameter_word[i-1]);
+            // push pointer of old stack onto new stack
+            if (gate_descriptor.type==BX_386_CALL_GATE) {
+              write_new_stack_dword_32(&new_stack, (Bit16u)(temp_SP-4), cs_descriptor.dpl, return_SS);
+              write_new_stack_dword_32(&new_stack, (Bit16u)(temp_SP-8), cs_descriptor.dpl, return_ESP);
+              temp_SP -= 8;
+
+              for (unsigned i=param_count; i>0; i--) {
+                temp_SP -= 4;
+                write_new_stack_dword_32(&new_stack, temp_SP, cs_descriptor.dpl, parameter_dword[i-1]);
+              }
+              // push return address onto new stack
+              write_new_stack_dword_32(&new_stack, (Bit16u)(temp_SP-4), cs_descriptor.dpl, return_CS);
+              write_new_stack_dword_32(&new_stack, (Bit16u)(temp_SP-8), cs_descriptor.dpl, return_EIP);
+              temp_SP -= 8;
             }
-            // push return address onto new stack
-            write_new_stack_word(&new_stack, temp_ESP-2, cs_descriptor.dpl, return_CS);
-            write_new_stack_word(&new_stack, temp_ESP-4, cs_descriptor.dpl, (Bit16u) return_EIP);
-            temp_ESP -= 4;
+            else {
+              write_new_stack_word_32(&new_stack, (Bit16u)(temp_SP-2), cs_descriptor.dpl, return_SS);
+              write_new_stack_word_32(&new_stack, (Bit16u)(temp_SP-4), cs_descriptor.dpl, (Bit16u) return_ESP);
+              temp_SP -= 4;
+
+              for (unsigned i=param_count; i>0; i--) {
+                temp_SP -= 2;
+                write_new_stack_word_32(&new_stack, temp_SP, cs_descriptor.dpl, parameter_word[i-1]);
+              }
+              // push return address onto new stack
+              write_new_stack_word_32(&new_stack, (Bit16u)(temp_SP-2), cs_descriptor.dpl, return_CS);
+              write_new_stack_word_32(&new_stack, (Bit16u)(temp_SP-4), cs_descriptor.dpl, (Bit16u) return_EIP);
+              temp_SP -= 4;
+            }
+
+            SP = temp_SP;
           }
 
-          /* load new SS:SP value from TSS */
+          // new eIP must be in code segment limit else #GP(0)
+          if (new_EIP > cs_descriptor.u.segment.limit_scaled) {
+            BX_ERROR(("call_protected: EIP not within CS limits"));
+            exception(BX_GP_EXCEPTION, 0, 0);
+          }
+
           /* load SS descriptor */
           load_ss(&ss_selector, &ss_descriptor, cs_descriptor.dpl);
-          if (ss_descriptor.u.segment.d_b)
-            ESP = temp_ESP;
-          else
-             SP = (Bit16u) temp_ESP;
 
           /* load new CS:IP value from gate */
           /* load CS descriptor */
@@ -435,8 +462,8 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
         }
         return;
 
-      default:
-        BX_ERROR(("call_protected: gate type %u unsupported", (unsigned) cs_descriptor.type));
+      default: // can't get here
+        BX_PANIC(("call_protected: gate type %u unsupported", (unsigned) cs_descriptor.type));
         exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
     }
   }
@@ -454,12 +481,12 @@ BX_CPU_C::call_gate64(bx_selector_t *gate_selector)
   // examine code segment selector in call gate descriptor
   BX_DEBUG(("call_gate64: CALL 64bit call gate"));
 
-  fetch_raw_descriptor64(gate_selector, &dword1, &dword2, &dword3, BX_GP_EXCEPTION);
+  fetch_raw_descriptor_64(gate_selector, &dword1, &dword2, &dword3, BX_GP_EXCEPTION);
   parse_descriptor(dword1, dword2, &gate_descriptor);
 
   Bit16u dest_selector = gate_descriptor.u.gate.dest_selector;
   // selector must not be null else #GP(0)
-  if ( (dest_selector & 0xfffc) == 0 ) {
+  if ((dest_selector & 0xfffc) == 0) {
     BX_ERROR(("call_gate64: selector in gate null"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
@@ -514,21 +541,22 @@ BX_CPU_C::call_gate64(bx_selector_t *gate_selector)
     // get new RSP for new privilege level from TSS
     get_RSP_from_TSS(cs_descriptor.dpl, &RSP_for_cpl_x);
 
-    if (! IsCanonical(RSP_for_cpl_x)) {
-      BX_ERROR(("call_gate64: canonical address failure %08x%08x",
-         GET32H(RSP_for_cpl_x), GET32L(RSP_for_cpl_x)));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
-
     Bit64u old_SS  = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
     Bit64u old_RSP = RSP;
 
+    if (! IsCanonical(RSP_for_cpl_x)) {
+      // #SS(selector) when changing priviledge level
+      BX_ERROR(("call_gate64: canonical address failure %08x%08x",
+         GET32H(RSP_for_cpl_x), GET32L(RSP_for_cpl_x)));
+      exception(BX_SS_EXCEPTION, old_SS & 0xfffc, 0);
+    }
+
     // push old stack long pointer onto new stack
-    write_new_stack_qword(RSP_for_cpl_x -  8, cs_descriptor.dpl, old_SS);
-    write_new_stack_qword(RSP_for_cpl_x - 16, cs_descriptor.dpl, old_RSP);
+    write_new_stack_qword_64(RSP_for_cpl_x -  8, cs_descriptor.dpl, old_SS);
+    write_new_stack_qword_64(RSP_for_cpl_x - 16, cs_descriptor.dpl, old_RSP);
     // push long pointer to return address onto new stack
-    write_new_stack_qword(RSP_for_cpl_x - 24, cs_descriptor.dpl, old_CS);
-    write_new_stack_qword(RSP_for_cpl_x - 32, cs_descriptor.dpl, old_RIP);
+    write_new_stack_qword_64(RSP_for_cpl_x - 24, cs_descriptor.dpl, old_CS);
+    write_new_stack_qword_64(RSP_for_cpl_x - 32, cs_descriptor.dpl, old_RIP);
     RSP_for_cpl_x -= 32;
 
     // prepare new stack null SS selector
@@ -550,16 +578,10 @@ BX_CPU_C::call_gate64(bx_selector_t *gate_selector)
   {
     BX_DEBUG(("CALL GATE TO SAME PRIVILEGE"));
 
-    // make sure that push CS:RIP will not fail 
-    if (! IsCanonical(RSP)) {
-      BX_ERROR(("call_gate64: canonical address failure %08x%08x", 
-         GET32H(RSP), GET32L(RSP)));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
-
-    // push return address onto stack
-    push_64(old_CS);
-    push_64(old_RIP);
+    // push to 64-bit stack, switch to long64 guaranteed
+    write_new_stack_qword_64(RSP -  8, CPL, old_CS);
+    write_new_stack_qword_64(RSP - 16, CPL, old_RIP);
+    RSP -= 16;
 
     // load CS:RIP (guaranteed to be in 64 bit mode)
     branch_far64(&cs_selector, &cs_descriptor, new_RIP, CPL);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_tags.cc,v 1.5 2007/03/23 21:27:13 sshwarts Exp $
+// $Id: fpu_tags.cc,v 1.7 2008/04/04 21:10:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -20,6 +20,10 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
 /////////////////////////////////////////////////////////////////////////
+
+#include "config.h"
+
+#if BX_SUPPORT_FPU
 
 #include "softfloat.h"
 #include "softfloat-specialize.h"
@@ -58,3 +62,5 @@ int FPU_tagof(const floatx80 &reg)
 
    return FPU_Tag_Valid;
 }
+
+#endif

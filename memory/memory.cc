@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.cc,v 1.62 2007/11/01 18:03:48 sshwarts Exp $
+// $Id: memory.cc,v 1.69 2008/05/31 20:59:38 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,8 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+//
+/////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
 #include "cpu/cpu.h"
@@ -43,14 +44,20 @@
 // 0xf0000 - 0xfffff    Upper BIOS Area (64K)
 //
 
-  void BX_CPP_AttrRegparmN(3)
-BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data)
+void BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data)
 {
   Bit8u *data_ptr;
   bx_phy_address a20addr = A20ADDR(addr);
   struct memory_handler_struct *memory_handler = NULL;
 
   // Note: accesses should always be contained within a single page now
+  if ((addr>>12) != ((addr+len-1)>>12)) {
+    BX_PANIC(("writePhysicalPage: cross page access at address 0x" FMT_PHY_ADDRX ", len=%d", addr, len));
+  }
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  BX_MEM_THIS check_monitor(a20addr, len);
+#endif
 
   if (cpu != NULL) {
 #if BX_SUPPORT_IODEBUG
@@ -58,18 +65,6 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, vo
 #endif
 
     BX_INSTR_PHY_WRITE(cpu->which_cpu(), a20addr, len);
-
-#if BX_DEBUGGER
-    // (mch) Check for physical write break points, TODO
-    // (bbd) Each breakpoint should have an associated CPU#, TODO
-    for (unsigned i = 0; i < num_write_watchpoints; i++) {
-      if (write_watchpoint[i] == a20addr) {
-        cpu->watchpoint  = a20addr;
-        cpu->break_point = BREAK_POINT_WRITE;
-        break;
-      }
-    }
-#endif
 
 #if BX_SUPPORT_APIC
     bx_generic_apic_c *local_apic = &cpu->local_apic;
@@ -87,10 +82,6 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, vo
     }
   }
 
-#if BX_SUPPORT_MONITOR_MWAIT
-  BX_MEM_THIS check_monitor(a20addr, len);
-#endif
-
   memory_handler = BX_MEM_THIS memory_handlers[a20addr >> 20];
   while (memory_handler) {
     if (memory_handler->begin <= a20addr &&
@@ -104,7 +95,7 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, vo
 
 mem_write:
 
-  // all memory access feets in single 4K page 
+  // all memory access feets in single 4K page
   if (a20addr < BX_MEM_THIS len) {
 #if BX_SUPPORT_ICACHE
     pageWriteStampTable.decWriteStamp(a20addr);
@@ -113,22 +104,22 @@ mem_write:
     if ((a20addr & 0xfff80000) != 0x00080000 || (a20addr <= 0x0009ffff))
     {
       if (len == 8) {
-        WriteHostQWordToLittleEndian(&BX_MEM_THIS vector[a20addr], *(Bit64u*)data);
+        WriteHostQWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit64u*)data);
         BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       if (len == 4) {
-        WriteHostDWordToLittleEndian(&BX_MEM_THIS vector[a20addr], *(Bit32u*)data);
+        WriteHostDWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit32u*)data);
         BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       if (len == 2) {
-        WriteHostWordToLittleEndian(&BX_MEM_THIS vector[a20addr], *(Bit16u*)data);
+        WriteHostWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit16u*)data);
         BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       if (len == 1) {
-        * ((Bit8u *) (&BX_MEM_THIS vector[a20addr])) = * (Bit8u *) data;
+        * (BX_MEM_THIS get_vector(a20addr)) = * (Bit8u *) data;
         BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
@@ -141,96 +132,95 @@ mem_write:
     data_ptr = (Bit8u *) data + (len - 1);
 #endif
 
-write_one:
     if ((a20addr & 0xfff80000) != 0x00080000 || (a20addr <= 0x0009ffff))
     {
-      // addr *not* in range 000A0000 .. 000FFFFF
-      BX_MEM_THIS vector[a20addr] = *data_ptr;
-      BX_DBG_DIRTY_PAGE(a20addr >> 12);
+      while(1) {
+        // addr *not* in range 000A0000 .. 000FFFFF
+        *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
+        BX_DBG_DIRTY_PAGE(a20addr >> 12);
+        if (len == 1) return;
+        len--;
+        a20addr++;
+#ifdef BX_LITTLE_ENDIAN
+        data_ptr++;
+#else // BX_BIG_ENDIAN
+        data_ptr--;
+#endif
+      }
+    }
+
+    // addr must be in range 000A0000 .. 000FFFFF
+
+    for(unsigned i=0; i<len; i++) {
+
+      // SMMRAM
+      if (a20addr <= 0x000bffff) {
+        // devices are not allowed to access SMMRAM under VGA memory
+        if (cpu) {
+          *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
+          BX_DBG_DIRTY_PAGE(a20addr >> 12);
+        }
+        goto inc_one;
+      }
+
+      // adapter ROM     C0000 .. DFFFF
+      // ROM BIOS memory E0000 .. FFFFF
+#if BX_SUPPORT_PCI == 0
+      // ignore write to ROM
+#else
+      // Write Based on 440fx Programming
+      if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
+      {
+        switch (DEV_pci_wr_memtype(a20addr)) {
+          case 0x1:   // Writes to ShadowRAM
+            BX_DEBUG(("Writing to ShadowRAM: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
+            *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
+            BX_DBG_DIRTY_PAGE(a20addr >> 12);
+            break;
+
+          case 0x0:   // Writes to ROM, Inhibit
+            BX_DEBUG(("Write to ROM ignored: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
+            break;
+
+          default:
+            BX_PANIC(("writePhysicalPage: default case"));
+        }
+      }
+#endif
+
 inc_one:
-      if (len == 1) return;
-      len--;
       a20addr++;
 #ifdef BX_LITTLE_ENDIAN
       data_ptr++;
 #else // BX_BIG_ENDIAN
       data_ptr--;
 #endif
-      goto write_one;
+
     }
-
-    // addr must be in range 000A0000 .. 000FFFFF
-
-    // SMMRAM
-    if (a20addr <= 0x000bffff) {
-      // devices are not allowed to access SMMRAM under VGA memory
-      if (cpu) {
-        BX_MEM_THIS vector[a20addr] = *data_ptr;
-        BX_DBG_DIRTY_PAGE(a20addr >> 12);
-      }
-      goto inc_one;
-    }
-
-    // adapter ROM     C0000 .. DFFFF
-    // ROM BIOS memory E0000 .. FFFFF
-#if BX_SUPPORT_PCI == 0
-    // ignore write to ROM
-#else
-    // Write Based on 440fx Programming
-    if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
-    {
-      switch (DEV_pci_wr_memtype(a20addr)) {
-        case 0x1:   // Writes to ShadowRAM
-          BX_DEBUG(("Writing to ShadowRAM: address %08x, data %02x", (unsigned) a20addr, *data_ptr));
-          BX_MEM_THIS vector[a20addr] = *data_ptr;
-          BX_DBG_DIRTY_PAGE(a20addr >> 12);
-          goto inc_one;
-
-        case 0x0:   // Writes to ROM, Inhibit
-          BX_DEBUG(("Write to ROM ignored: address %08x, data %02x", (unsigned) a20addr, *data_ptr));
-          goto inc_one;
-
-        default:
-          BX_PANIC(("writePhysicalPage: default case"));
-          goto inc_one;
-      }
-    }
-#endif
-    goto inc_one;
   }
   else {
     // access outside limits of physical memory, ignore
-    BX_DEBUG(("Write outside the limits of physical memory (0x%08x) (ignore)", a20addr));
+    BX_DEBUG(("Write outside the limits of physical memory (0x"FMT_PHY_ADDRX") (ignore)", a20addr));
   }
 }
 
-  void BX_CPP_AttrRegparmN(3)
-BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data)
+void BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data)
 {
   Bit8u *data_ptr;
   bx_phy_address a20addr = A20ADDR(addr);
   struct memory_handler_struct *memory_handler = NULL;
 
   // Note: accesses should always be contained within a single page now
+  if ((addr>>12) != ((addr+len-1)>>12)) {
+    BX_PANIC(("readPhysicalPage: cross page access at address 0x" FMT_PHY_ADDRX ", len=%d", addr, len));
+  }
 
   if (cpu != NULL) {
 #if BX_SUPPORT_IODEBUG
     bx_iodebug_c::mem_read(cpu, a20addr, len, data);
 #endif
- 
-    BX_INSTR_PHY_READ(cpu->which_cpu(), a20addr, len);
 
-#if BX_DEBUGGER
-    // (mch) Check for physical read break points, TODO
-    // (bbd) Each breakpoint should have an associated CPU#, TODO
-    for (unsigned i = 0; i < num_read_watchpoints; i++) {
-      if (read_watchpoint[i] == a20addr) {
-         cpu->watchpoint  = a20addr;
-         cpu->break_point = BREAK_POINT_READ;
-         break;
-      }
-    }
-#endif
+    BX_INSTR_PHY_READ(cpu->which_cpu(), a20addr, len);
 
 #if BX_SUPPORT_APIC
     bx_generic_apic_c *local_apic = &cpu->local_apic;
@@ -266,19 +256,19 @@ mem_read:
     if ((a20addr & 0xfff80000) != 0x00080000 || (a20addr <= 0x0009ffff))
     {
       if (len == 8) {
-        ReadHostQWordFromLittleEndian(&BX_MEM_THIS vector[a20addr], * (Bit64u*) data);
+        ReadHostQWordFromLittleEndian(BX_MEM_THIS get_vector(a20addr), * (Bit64u*) data);
         return;
       }
       if (len == 4) {
-        ReadHostDWordFromLittleEndian(&BX_MEM_THIS vector[a20addr], * (Bit32u*) data);
+        ReadHostDWordFromLittleEndian(BX_MEM_THIS get_vector(a20addr), * (Bit32u*) data);
         return;
       }
       if (len == 2) {
-        ReadHostWordFromLittleEndian(&BX_MEM_THIS vector[a20addr], * (Bit16u*) data);
+        ReadHostWordFromLittleEndian(BX_MEM_THIS get_vector(a20addr), * (Bit16u*) data);
         return;
       }
       if (len == 1) {
-        * (Bit8u *) data = * ((Bit8u *) (&BX_MEM_THIS vector[a20addr]));
+        * (Bit8u *) data = * (BX_MEM_THIS get_vector(a20addr));
         return;
       }
       // len == other case can just fall thru to special cases handling
@@ -290,69 +280,74 @@ mem_read:
     data_ptr = (Bit8u *) data + (len - 1);
 #endif
 
-read_one:
     if ((a20addr & 0xfff80000) != 0x00080000 || (a20addr <= 0x0009ffff))
     {
-      // addr *not* in range 00080000 .. 000FFFFF
-      *data_ptr = BX_MEM_THIS vector[a20addr];
+      while(1) {
+        // addr *not* in range 00080000 .. 000FFFFF
+        *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
+        if (len == 1) return;
+        len--;
+        a20addr++;
+#ifdef BX_LITTLE_ENDIAN
+        data_ptr++;
+#else // BX_BIG_ENDIAN
+        data_ptr--;
+#endif
+      }
+    }
+
+    // addr must be in range 000A0000 .. 000FFFFF
+
+    for (unsigned i=0; i<len; i++) {
+
+      // SMMRAM
+      if (a20addr <= 0x000bffff) {
+        // devices are not allowed to access SMMRAM under VGA memory
+        if (cpu) *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
+        goto inc_one;
+      }
+
+#if BX_SUPPORT_PCI
+      if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
+      {
+        switch (DEV_pci_rd_memtype(a20addr)) {
+          case 0x0:  // Read from ROM
+            if ((a20addr & 0xfffe0000) == 0x000e0000) {
+              *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
+            }
+            else {
+              *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
+            }
+            break;
+          case 0x1:  // Read from ShadowRAM
+            *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
+            break;
+          default:
+            BX_PANIC(("readPhysicalPage: default case"));
+        }
+      }
+      else
+#endif  // #if BX_SUPPORT_PCI
+      {
+        if ((a20addr & 0xfffc0000) != 0x000c0000) {
+          *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
+        }
+        else if ((a20addr & 0xfffe0000) == 0x000e0000) {
+          *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
+        }
+        else {
+          *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
+        }
+      }
+
 inc_one:
-      if (len == 1) return;
-      len--;
       a20addr++;
 #ifdef BX_LITTLE_ENDIAN
       data_ptr++;
 #else // BX_BIG_ENDIAN
       data_ptr--;
 #endif
-      goto read_one;
-    }
 
-    // addr must be in range 000A0000 .. 000FFFFF
-
-    // SMMRAM
-    if (a20addr <= 0x000bffff) {
-      // devices are not allowed to access SMMRAM under VGA memory
-      if (cpu) *data_ptr = BX_MEM_THIS vector[a20addr];
-      goto inc_one;
-    }
-
-#if BX_SUPPORT_PCI
-    if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
-    {
-      switch (DEV_pci_rd_memtype(a20addr)) {
-        case 0x0:  // Read from ROM
-          if ((a20addr & 0xfffe0000) == 0x000e0000)
-          {
-            *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
-          }
-          else
-          {
-            *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
-          }
-          goto inc_one;
-        case 0x1:  // Read from ShadowRAM
-          *data_ptr = BX_MEM_THIS vector[a20addr];
-          goto inc_one;
-        default:
-          BX_PANIC(("readPhysicalPage: default case"));
-      }
-      goto inc_one;
-    }
-    else
-#endif  // #if BX_SUPPORT_PCI
-    {
-      if ((a20addr & 0xfffc0000) != 0x000c0000) {
-        *data_ptr = BX_MEM_THIS vector[a20addr];
-      }
-      else if ((a20addr & 0xfffe0000) == 0x000e0000)
-      {
-        *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
-      }
-      else
-      {
-        *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
-      }
-      goto inc_one;
     }
   }
   else

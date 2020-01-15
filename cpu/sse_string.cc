@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_string.cc,v 1.2 2007/11/17 23:28:33 sshwarts Exp $
+// $Id: sse_string.cc,v 1.7 2008/04/18 14:15:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -20,7 +20,6 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
 /////////////////////////////////////////////////////////////////////////
-
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -240,7 +239,7 @@ static Bit16u aggregate(bx_bool BoolRes[16][16], unsigned len1, unsigned len2, B
           break;
         }
       }
- 
+
       if (res)
         result |= (1<<j);
     }
@@ -293,7 +292,7 @@ static Bit16u aggregate(bx_bool BoolRes[16][16], unsigned len1, unsigned len2, B
 #if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
 
 /* 66 0F 3A 60 */
-void BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
 {
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareSSE();
@@ -306,6 +305,7 @@ void BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
@@ -328,7 +328,7 @@ void BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
   }
   Bit16u result2 = aggregate(BoolRes, len1, len2, imm8);
 
-  // As defined by imm8[6], result2 is then either stored to the least 
+  // As defined by imm8[6], result2 is then either stored to the least
   // significant bits of XMM0 (zero extended to 128 bits) or expanded
   // into a byte/word-mask and then stored to XMM0
   if (imm8 & 0x40) {
@@ -354,8 +354,7 @@ void BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
     flags |= EFlagsOFMask;
   setEFlagsOSZAPC(flags);
 
-  /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(0, result); /* store result XMM0 */
 #else
   BX_INFO(("PCMPESTRM_VdqWdqIb: required SSE4.2, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
@@ -363,7 +362,7 @@ void BX_CPU_C::PCMPESTRM_VdqWdqIb(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 61 */
-void BX_CPU_C::PCMPESTRI_VdqWdqIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRI_VdqWdqIb(bxInstruction_c *i)
 {
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareSSE();
@@ -376,6 +375,7 @@ void BX_CPU_C::PCMPESTRI_VdqWdqIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
@@ -429,7 +429,7 @@ void BX_CPU_C::PCMPESTRI_VdqWdqIb(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 62 */
-void BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
 {
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareSSE();
@@ -442,6 +442,7 @@ void BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
@@ -455,7 +456,7 @@ void BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
   unsigned len2 = find_eos(op2, imm8);
   Bit16u result2 = aggregate(BoolRes, len1, len2, imm8);
 
-  // As defined by imm8[6], result2 is then either stored to the least 
+  // As defined by imm8[6], result2 is then either stored to the least
   // significant bits of XMM0 (zero extended to 128 bits) or expanded
   // into a byte/word-mask and then stored to XMM0
   if (imm8 & 0x40) {
@@ -481,8 +482,7 @@ void BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
     flags |= EFlagsOFMask;
   setEFlagsOSZAPC(flags);
 
-  /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(0, result); /* store result XMM0 */
 #else
   BX_INFO(("PCMPISTRM_VdqWdqIb: required SSE4.2, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
@@ -490,7 +490,7 @@ void BX_CPU_C::PCMPISTRM_VdqWdqIb(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 63 */
-void BX_CPU_C::PCMPISTRI_VdqWdqIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRI_VdqWdqIb(bxInstruction_c *i)
 {
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareSSE();
@@ -503,6 +503,7 @@ void BX_CPU_C::PCMPISTRI_VdqWdqIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }

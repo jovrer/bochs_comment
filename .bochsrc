@@ -61,7 +61,7 @@
 #display_library: win32, options="legacyF12" # use F12 to toggle mouse
 #display_library: win32, options="windebug" # use experimental debugger gui
 #display_library: wx
-#display_library: x
+#display_library: x, options="hideIPS" # disable IPS output in status bar
 
 #=======================================================================
 # ROMIMAGE:
@@ -74,7 +74,7 @@
 # location of the BIOS.
 # The usage of external large BIOS images (up to 512k) at memory top is
 # now supported, but we still recommend to use the BIOS distributed with
-# Bochs. Now the start address can be calculated from image size.
+# Bochs. The start address optional, since it can be calculated from image size.
 #=======================================================================
 romimage: file=$BXSHARE/BIOS-bochs-latest 
 #romimage: file=mybios.bin, address=0xfff80000 # 512k at memory top
@@ -116,11 +116,11 @@ romimage: file=$BXSHARE/BIOS-bochs-latest
 #
 #  Bochs Machine/Compiler                                 Mips
 # ____________________________________________________________________
+#  2.3.7 3.2Ghz Intel Core 2 Q9770 with WinXP/g++ 3.4    50 to 55 Mips
+#  2.3.7 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      38 to 43 Mips
 #  2.2.6 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      21 to 25 Mips
 #  2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4         12 to 15 Mips
 #  2.0.1 1.6Ghz Intel P4 with Win2000/g++ 3.3             5 to  7 Mips
-#  1.4   650Mhz Athlon K-7 with Linux 2.4.4/egcs-2.91.66  2 to  2.5 Mips
-#  1.4   400Mhz Pentium II with Linux 2.0.36/egcs-1.0.3   1 to  1.8 Mips
 #=======================================================================
 cpu: count=1, ips=10000000, reset_on_triple_fault=1
 
@@ -427,18 +427,29 @@ debugger_log: -
 # Then do `sleep 1000000' in the com1 window to keep the shell from
 # messing with things, and run bochs in the other window.  Serial I/O to
 # com1 (port 0x3f8) will all go to the other window.
+# In socket* and pipe* (win32 only) modes Bochs becomes either socket/named pipe
+# client or server. In client mode it connects to an already running server (if
+# connection fails Bochs treats com port as not connected). In server mode it
+# opens socket/named pipe and waits until a client application connects to it
+# before starting simulation. This mode is useful for remote debugging (e.g.
+# with gdb's "target remote host:port" command or windbg's command line option
+# -k com:pipe,port=\\.\pipe\pipename). Note: 'socket' is a shorthand for
+# 'socket-client' and 'pipe' for 'pipe-client'. Socket modes use simple TCP
+# communication, pipe modes use duplex byte mode pipes.
 # Other serial modes are 'null' (no input/output), 'file' (output to a file
 # specified as the 'dev' parameter), 'raw' (use the real serial port - under
 # construction for win32), 'mouse' (standard serial mouse - requires
-# mouse option setting 'type=serial', 'type=serial_wheel' or 'type=serial_msys')
-# and 'socket' (connect a networking socket).
+# mouse option setting 'type=serial', 'type=serial_wheel' or 'type=serial_msys').
 #
 # Examples:
 #   com1: enabled=1, mode=null
 #   com1: enabled=1, mode=mouse
 #   com2: enabled=1, mode=file, dev=serial.out
 #   com3: enabled=1, mode=raw, dev=com1
-#   com3: enabled=1, mode=socket, dev=localhost:8888
+#   com3: enabled=1, mode=socket-client, dev=localhost:8888
+#   com3: enabled=1, mode=socket-server, dev=localhost:8888
+#   com4: enabled=1, mode=pipe-client, dev=\\.\pipe\mypipe
+#   com4: enabled=1, mode=pipe-server, dev=\\.\pipe\mypipe
 #=======================================================================
 #com1: enabled=1, mode=term, dev=/dev/ttyp9
 
@@ -662,13 +673,11 @@ keyboard_mapping: enabled=0, map=
 # USER_SHORTCUT:
 # This defines the keyboard shortcut to be sent when you press the "user"
 # button in the headerbar. The shortcut string is a combination of maximum
-# 3 key names (listed below) separated with a '-' character. The old-style
-# syntax (without the '-') still works for the key combinations supported
-# in Bochs 2.2.1.
+# 3 key names (listed below) separated with a '-' character.
 # Valid key names:
 # "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
 # "f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup",
-# "plus", "right", "shift", "space", "tab", "up", "win" and "print".
+# "plus", "right", "shift", "space", "tab", "up", "win", "print" and "power".
 #
 # Example:
 #   user_shortcut: keys=ctrl-alt-del
@@ -727,6 +736,18 @@ i440fxsupport: enabled=1
 #magic_break: enabled=1
 
 #=======================================================================
+# DEBUG_SYMBOLS:
+# This loads symbols from the specified file for use in Bochs' internal
+# debugger. Symbols are loaded into global context. This is equivalent to
+# issuing ldsym debugger command at start up.
+#
+# Example:
+#   debug_symbols: file="kernel.sym"
+#   debug_symbols: file="kernel.sym", offset=0x80000000
+#=======================================================================
+#debug_symbols: file="kernel.sym"
+
+#=======================================================================
 # other stuff
 #=======================================================================
 #load32bitOSImage: os=nullkernel, path=../kernel.img, iolog=../vga_io.log
@@ -745,13 +766,6 @@ i440fxsupport: enabled=1
 # Default value is enabled=0.
 #=======================================================================
 #gdbstub: enabled=0, port=1234, text_base=0, data_base=0, bss_base=0
-
-#=======================================================================
-# IPS:
-# The IPS directive is DEPRECATED. Use the parameter IPS of the CPU
-# directive instead.
-#=======================================================================
-#ips: 10000000
 
 #=======================================================================
 # for Macintosh, use the style of pathnames in the following

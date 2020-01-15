@@ -1,7 +1,7 @@
-/descriptor2.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_6_FINAL
-/eflags.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_6_FINAL
-/guest_context.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_6_FINAL
-/monitor.h/1.7/Fri Jan 10 04:27:51 2003//TREL_2_3_6_FINAL
-/paging.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_6_FINAL
-/tss.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_6_FINAL
+/descriptor2.h/1.2/Tue Feb  5 22:57:43 2008//TREL_2_3_7_FINAL
+/eflags.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_7_FINAL
+/guest_context.h/1.2/Tue Feb  5 22:57:43 2008//TREL_2_3_7_FINAL
+/monitor.h/1.8/Tue Feb  5 22:57:43 2008//TREL_2_3_7_FINAL
+/paging.h/1.1/Wed Jan  1 17:32:05 2003//TREL_2_3_7_FINAL
+/tss.h/1.2/Tue Feb  5 22:57:43 2008//TREL_2_3_7_FINAL
 D

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: nogui.cc,v 1.23 2006/02/21 21:35:08 vruppert Exp $
+// $Id: nogui.cc,v 1.26 2008/02/05 22:57:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,7 +27,7 @@
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -138,26 +138,24 @@ bx_nogui_gui_c::clear_screen(void)
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is 4000 bytes long.
-//     This represents 80 characters wide by 25 high, with
-//     each character being 2 bytes.  The first by is the
-//     character value, the second is the attribute byte.
-//     I currently don't handle the attribute byte.
+// format of old_text & new_text: each is tm_info.line_offset*text_rows
+//     bytes long. Each character consists of 2 bytes.  The first by is
+//     the character value, the second is the attribute byte.
 //
 // cursor_x: new x location of cursor
 // cursor_y: new y location of cursor
+// tm_info:  this structure contains information for additional
+//           features in text mode (cursor shape, line offset,...)
 
-  void
-bx_nogui_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
+void bx_nogui_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-                      bx_vga_tminfo_t tm_info, unsigned nrows)
+                      bx_vga_tminfo_t tm_info)
 {
   UNUSED(old_text);
   UNUSED(new_text);
   UNUSED(cursor_x);
   UNUSED(cursor_y);
   UNUSED(tm_info);
-  UNUSED(nrows);
 }
 
   int

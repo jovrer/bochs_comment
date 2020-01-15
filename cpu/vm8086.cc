@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vm8086.cc,v 1.36 2007/12/23 17:21:27 sshwarts Exp $
+// $Id: vm8086.cc,v 1.45 2008/05/26 21:46:39 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,7 +25,6 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
@@ -47,11 +46,9 @@
 
 #if BX_CPU_LEVEL >= 3
 
-void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
-                              Bit32u flags32)
+void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector, Bit32u flags32)
 {
   Bit32u temp_ESP, new_esp;
-  bx_address esp_laddr;
   Bit16u raw_es_selector, raw_ds_selector, raw_fs_selector,
          raw_gs_selector, raw_ss_selector;
 
@@ -75,23 +72,15 @@ void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
   else
     temp_ESP = SP;
 
-  // top 36 bytes of stack must be within stack limits, else #SS(0)
-  if ( !can_pop(36) ) {
-    BX_ERROR(("stack_return_to_v86: top 36 bytes not within limits"));
-    exception(BX_SS_EXCEPTION, 0, 0);
-  }
-
-  esp_laddr = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + temp_ESP;
-
   // load SS:ESP from stack
-  new_esp = read_virtual_dword(BX_SEG_REG_SS, temp_ESP+12);
-  raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+16);
+  new_esp         =          read_virtual_dword(BX_SEG_REG_SS, temp_ESP+12);
+  raw_ss_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP+16);
 
   // load ES,DS,FS,GS from stack
-  raw_es_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+20);
-  raw_ds_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+24);
-  raw_fs_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+28);
-  raw_gs_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+32);
+  raw_es_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP+20);
+  raw_ds_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP+24);
+  raw_fs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP+28);
+  raw_gs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP+32);
 
   writeEFlags(flags32, EFlagsValidMask);
 
@@ -119,12 +108,6 @@ void BX_CPU_C::iret16_stack_return_from_v86(bxInstruction_c *i)
 
   Bit16u ip, cs_raw, flags16;
 
-  if( !can_pop(6) )
-  {
-    BX_DEBUG(("iret16_stack_return_from_v86(): can't pop 6 bytes from the stack"));
-    exception(BX_SS_EXCEPTION, 0, 0);
-  }
-
   ip      = pop_16();
   cs_raw  = pop_16();
   flags16 = pop_16();
@@ -132,7 +115,7 @@ void BX_CPU_C::iret16_stack_return_from_v86(bxInstruction_c *i)
 #if BX_SUPPORT_VME
   if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3)
   {
-    if (((flags16 & EFlagsIFMask) && BX_CPU_THIS_PTR get_VIP()) || 
+    if (((flags16 & EFlagsIFMask) && BX_CPU_THIS_PTR get_VIP()) ||
          (flags16 & EFlagsTFMask))
     {
       BX_DEBUG(("iret16_stack_return_from_v86(): #GP(0) in VME mode"));
@@ -143,7 +126,7 @@ void BX_CPU_C::iret16_stack_return_from_v86(bxInstruction_c *i)
     EIP = (Bit32u) ip;
 
     // IF, IOPL unchanged, EFLAGS.VIF = TMP_FLAGS.IF
-    Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | 
+    Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask |
                             EFlagsDFMask | EFlagsNTMask | EFlagsVIFMask;
     Bit32u flags32 = (Bit32u) flags16;
     if (BX_CPU_THIS_PTR get_IF()) flags32 |= EFlagsVIFMask;
@@ -169,19 +152,13 @@ void BX_CPU_C::iret32_stack_return_from_v86(bxInstruction_c *i)
   Bit32u eip, cs_raw, flags32;
   // Build a mask of the following bits:
   // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
-  Bit32u change_mask = EFlagsOSZAPCMask | EFlagsTFMask | EFlagsIFMask 
+  Bit32u change_mask = EFlagsOSZAPCMask | EFlagsTFMask | EFlagsIFMask
                          | EFlagsDFMask | EFlagsNTMask | EFlagsRFMask;
 
 #if BX_CPU_LEVEL >= 4
   change_mask |= (EFlagsIDMask | EFlagsACMask);  // ID/AC
 #endif
 
-  if( !can_pop(12) )
-  {
-    BX_DEBUG(("iret32_stack_return_from_v86(): can't pop 12 bytes from the stack"));
-    exception(BX_SS_EXCEPTION, 0, 0);
-  }
-  
   eip     = pop_32();
   cs_raw  = pop_32();
   flags32 = pop_32();
@@ -195,10 +172,10 @@ void BX_CPU_C::iret32_stack_return_from_v86(bxInstruction_c *i)
 #if BX_SUPPORT_VME
 void BX_CPU_C::v86_redirect_interrupt(Bit32u vector)
 {
-  Bit16u temp_IP, temp_CS, temp_flags = read_flags();
+  Bit16u temp_IP, temp_CS, temp_flags = (Bit16u) read_eflags();
 
-  access_linear(vector*4,     2, 0, BX_READ, &temp_IP);
-  access_linear(vector*4 + 2, 2, 0, BX_READ, &temp_CS);
+  access_read_linear(vector*4 + 2, 2, 0, BX_READ, &temp_CS);
+  access_read_linear(vector*4,     2, 0, BX_READ, &temp_IP);
 
   if (BX_CPU_THIS_PTR get_IOPL() < 3) {
     temp_flags |= EFlagsIOPLMask;
@@ -234,7 +211,7 @@ void BX_CPU_C::init_v8086_mode(void)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
 
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base =
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value << 4;

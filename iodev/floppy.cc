@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.cc,v 1.108 2007/09/28 19:51:59 sshwarts Exp $
+// $Id: floppy.cc,v 1.110 2008/02/15 22:05:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,6 +24,8 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
+/////////////////////////////////////////////////////////////////////////
+
 //
 // Floppy Disk Controller Docs:
 // Intel 82077A Data sheet
@@ -37,7 +39,7 @@
 //
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -139,7 +141,7 @@ void bx_floppy_ctrl_c::init(void)
 {
   Bit8u i;
 
-  BX_DEBUG(("Init $Id: floppy.cc,v 1.108 2007/09/28 19:51:59 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: floppy.cc,v 1.110 2008/02/15 22:05:42 sshwarts Exp $"));
   DEV_dma_register_8bit_channel(2, dma_read, dma_write, "Floppy Drive");
   DEV_register_irq(6, "Floppy Drive");
   for (unsigned addr=0x03F2; addr<=0x03F7; addr++) {
@@ -324,7 +326,7 @@ void bx_floppy_ctrl_c::init(void)
 
   if (BX_FD_THIS s.floppy_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_FD_THIS s.floppy_timer_index =
-      bx_pc_system.register_timer( this, timer_handler, 250, 0, 0, "floppy");
+      bx_pc_system.register_timer(this, timer_handler, 250, 0, 0, "floppy");
   }
   /* phase out s.non_dma in favor of using FD_MS_NDMA, more like hardware */
   BX_FD_THIS s.main_status_reg &= ~FD_MS_NDMA;  // enable DMA from start
@@ -450,7 +452,7 @@ Bit32u bx_floppy_ctrl_c::read_handler(void *this_ptr, Bit32u address, unsigned i
 #if !BX_USE_FD_SMF
   bx_floppy_ctrl_c *class_ptr = (bx_floppy_ctrl_c *) this_ptr;
 
-  return( class_ptr->read(address, io_len) );
+  return class_ptr->read(address, io_len);
 }
 
 /* reads from the floppy io ports */
@@ -496,7 +498,7 @@ Bit32u bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
     case 0x3F3: // Tape Drive Register
       drive = BX_FD_THIS s.DOR & 0x03;
       if (BX_FD_THIS s.media_present[drive]) {
-        switch ( BX_FD_THIS s.media[drive].type) {
+        switch (BX_FD_THIS s.media[drive].type) {
           case BX_FLOPPY_160K:
           case BX_FLOPPY_180K:
           case BX_FLOPPY_320K:
@@ -521,7 +523,7 @@ Bit32u bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
         value = 0x20;
       }
       break;
-      
+
     case 0x3F6: // Reserved for future floppy controllers
                 // This address shared with the hard drive controller
       value = DEV_hd_read_handler(bx_devices.pluginHardDrive, address, io_len);
@@ -861,11 +863,11 @@ void bx_floppy_ctrl_c::floppy_command(void)
       return;
 
     case 0x13: // Configure
-      BX_DEBUG(("configure (eis     = 0x%02x)", BX_FD_THIS s.command[2] & 0x40 ));
-      BX_DEBUG(("configure (efifo   = 0x%02x)", BX_FD_THIS s.command[2] & 0x20 ));
-      BX_DEBUG(("configure (no poll = 0x%02x)", BX_FD_THIS s.command[2] & 0x10 ));
-      BX_DEBUG(("configure (fifothr = 0x%02x)", BX_FD_THIS s.command[2] & 0x0f ));
-      BX_DEBUG(("configure (pretrk  = 0x%02x)", BX_FD_THIS s.command[3] ));
+      BX_DEBUG(("configure (eis     = 0x%02x)", BX_FD_THIS s.command[2] & 0x40));
+      BX_DEBUG(("configure (efifo   = 0x%02x)", BX_FD_THIS s.command[2] & 0x20));
+      BX_DEBUG(("configure (no poll = 0x%02x)", BX_FD_THIS s.command[2] & 0x10));
+      BX_DEBUG(("configure (fifothr = 0x%02x)", BX_FD_THIS s.command[2] & 0x0f));
+      BX_DEBUG(("configure (pretrk  = 0x%02x)", BX_FD_THIS s.command[3]));
       BX_FD_THIS s.config = BX_FD_THIS s.command[2];
       BX_FD_THIS s.pretrk = BX_FD_THIS s.command[3];
       enter_idle_phase();
@@ -962,7 +964,7 @@ void bx_floppy_ctrl_c::floppy_command(void)
     case 0x45: // write normal data, MT=0
     case 0xc5: // write normal data, MT=1
       BX_FD_THIS s.multi_track = (BX_FD_THIS s.command[0] >> 7);
-      if ( (BX_FD_THIS s.DOR & 0x08) == 0 )
+      if ((BX_FD_THIS s.DOR & 0x08) == 0)
         BX_PANIC(("read/write command with DMA and int disabled"));
       drive = BX_FD_THIS s.command[1] & 0x03;
       BX_FD_THIS s.DOR &= 0xfc;
@@ -1000,7 +1002,7 @@ void bx_floppy_ctrl_c::floppy_command(void)
         return;
       }
 
-      if ( BX_FD_THIS s.media_present[drive] == 0 ) {
+      if (BX_FD_THIS s.media_present[drive] == 0) {
         BX_INFO(("attempt to read/write sector %u with media not present", (unsigned) sector));
         return; // Hang controller
       }
@@ -1009,7 +1011,7 @@ void bx_floppy_ctrl_c::floppy_command(void)
         BX_PANIC(("read/write command: sector size %d not supported", 128<<sector_size));
       }
 
-      if ( cylinder >= BX_FD_THIS s.media[drive].tracks ) {
+      if (cylinder >= BX_FD_THIS s.media[drive].tracks) {
         BX_PANIC(("io: norm r/w parms out of range: sec#%02xh cyl#%02xh eot#%02xh head#%02xh",
           (unsigned) sector, (unsigned) cylinder, (unsigned) eot,
           (unsigned) head));
@@ -1087,7 +1089,7 @@ void bx_floppy_ctrl_c::floppy_command(void)
       break;
 
     default: // invalid or unsupported command; these are captured in write() above
-      BX_PANIC(("You should never get here! cmd = 0x%02x", 
+      BX_PANIC(("You should never get here! cmd = 0x%02x",
                 BX_FD_THIS s.command[0]));
   }
 #endif
@@ -1140,7 +1142,7 @@ void bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
       reg.reg_EDX = offset >> 9;  //    / 512
       reg.reg_EBX = (DWORD) buffer;
       reg.reg_EAX = BX_FD_THIS s.media[drive].raw_floppy_win95_drv;
-      DeviceIoControl(hFile, VWIN32_DIOC_DOS_INT25, 
+      DeviceIoControl(hFile, VWIN32_DIOC_DOS_INT25,
                       &reg, sizeof(reg), &reg, sizeof(reg), &ret_cnt, NULL);
       CloseHandle(hFile);
       // I don't know why this returns 28 instead of 512, but it works
@@ -1185,7 +1187,7 @@ void bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
       reg.reg_EDX = offset >> 9;  //    / 512
       reg.reg_EBX = (DWORD) buffer;
       reg.reg_EAX = BX_FD_THIS s.media[drive].raw_floppy_win95_drv;
-      DeviceIoControl(hFile, VWIN32_DIOC_DOS_INT26, 
+      DeviceIoControl(hFile, VWIN32_DIOC_DOS_INT26,
                       &reg, sizeof(reg), &reg, sizeof(reg), (LPDWORD) &ret_cnt, NULL);
       CloseHandle(hFile);
       // I don't know why this returns 28 instead of 512, but it works
@@ -1293,7 +1295,7 @@ void bx_floppy_ctrl_c::timer()
       BX_FD_THIS raise_interrupt();
       BX_FD_THIS s.reset_sensei = 4;
       break;
-    
+
     case 0x00: // nothing pending?
       break;
 
@@ -1511,7 +1513,7 @@ unsigned bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
   if (status == 0) {
     // eject floppy
     if (BX_FD_THIS s.media[drive].fd >= 0) {
-      close( BX_FD_THIS s.media[drive].fd );
+      close(BX_FD_THIS s.media[drive].fd);
       BX_FD_THIS s.media[drive].fd = -1;
     }
     BX_FD_THIS s.media_present[drive] = 0;
@@ -1621,7 +1623,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
   if (strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
 #endif
 #ifdef WIN32
-    if ( (isalpha(path[0])) && (path[1] == ':') && (strlen(path) == 2) ) {
+    if ((isalpha(path[0])) && (path[1] == ':') && (strlen(path) == 2)) {
       raw_floppy = 1;
       wsprintf(sTemp, "\\\\.\\%s", path);
       hFile = CreateFile(sTemp, GENERIC_READ, FILE_SHARE_WRITE, NULL,
@@ -1645,8 +1647,8 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
         reg.reg_ECX = 0x0860;
         reg.reg_EDX = (DWORD) &params;
         reg.reg_EBX = media->raw_floppy_win95_drv+1;
-        //reg.reg_Flags = 0x0001;     // assume error (carry flag is set) 
-        if (DeviceIoControl(hFile, VWIN32_DIOC_DOS_IOCTL , 
+        //reg.reg_Flags = 0x0001;     // assume error (carry flag is set)
+        if (DeviceIoControl(hFile, VWIN32_DIOC_DOS_IOCTL ,
             &reg, sizeof(reg), &reg, sizeof(reg), &ret_cnt, NULL)) {
           tracks = params.cylinders;
           heads  = params.num_heads;
@@ -1672,7 +1674,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
         media->fd = open(sTemp, BX_RDWR);
     } else {
       media->fd = open(path, BX_RDWR);
-    } 
+    }
 #else
     media->fd = open(path, BX_RDWR);
 #endif
@@ -1680,7 +1682,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
   // Don't open the handle if using Win95 style direct access
   if (!media->raw_floppy_win95) {
     if (media->fd < 0) {
-      BX_INFO(( "tried to open '%s' read/write: %s",path,strerror(errno) ));
+      BX_INFO(("tried to open '%s' read/write: %s",path,strerror(errno)));
       // try opening the file read-only
       media->write_protected = 1;
 #ifdef macintosh
@@ -1698,7 +1700,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
 #endif
       if (media->fd < 0) {
         // failed to open read-only too
-        BX_INFO(( "tried to open '%s' read only: %s",path,strerror(errno) ));
+        BX_INFO(("tried to open '%s' read only: %s",path,strerror(errno)));
         media->type = type;
         return(0);
       }
@@ -1727,7 +1729,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
     return(0);
   }
 
-  if ( S_ISREG(stat_buf.st_mode) ) {
+  if (S_ISREG(stat_buf.st_mode)) {
     // regular file
     switch (type) {
       // use CMOS reserved types
@@ -1786,7 +1788,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
     return (media->sectors > 0); // success
   }
 
-  else if ( S_ISCHR(stat_buf.st_mode)
+  else if (S_ISCHR(stat_buf.st_mode)
 #if BX_WITH_MACOS == 0
 #ifdef S_ISBLK
             || S_ISBLK(stat_buf.st_mode)
@@ -1845,7 +1847,7 @@ void bx_floppy_ctrl_c::enter_result_phase(void)
     BX_FD_THIS s.result_size = 1;
     BX_FD_THIS s.result[0] = BX_FD_THIS s.status_reg0;
     return;
-  } 
+  }
 
   switch (BX_FD_THIS s.pending_command) {
     case 0x04: // get status
@@ -1888,7 +1890,7 @@ void bx_floppy_ctrl_c::enter_result_phase(void)
     case 0x45: // write normal data
     case 0xc5:
       BX_FD_THIS s.result_size = 7;
-      BX_FD_THIS s.result[0] = BX_FD_THIS s.status_reg0;    
+      BX_FD_THIS s.result[0] = BX_FD_THIS s.status_reg0;
       BX_FD_THIS s.result[1] = BX_FD_THIS s.status_reg1;
       BX_FD_THIS s.result[2] = BX_FD_THIS s.status_reg2;
       BX_FD_THIS s.result[3] = BX_FD_THIS s.cylinder[drive];

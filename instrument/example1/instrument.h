@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h,v 1.18 2007/12/13 21:53:55 sshwarts Exp $
+// $Id: instrument.h,v 1.25 2008/04/19 10:12:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -34,16 +34,22 @@
 #define BX_INSTR_INVD         20
 #define BX_INSTR_WBINVD       21
 
-#define BX_INSTR_IS_CALL  10
-#define BX_INSTR_IS_RET   11
-#define BX_INSTR_IS_IRET  12
-#define BX_INSTR_IS_JMP   13
-#define BX_INSTR_IS_INT   14
+// possible types passed to BX_INSTR_FAR_BRANCH()
+#define BX_INSTR_IS_CALL      10
+#define BX_INSTR_IS_RET       11
+#define BX_INSTR_IS_IRET      12
+#define BX_INSTR_IS_JMP       13
+#define BX_INSTR_IS_INT       14
+#define BX_INSTR_IS_SYSCALL   15
+#define BX_INSTR_IS_SYSRET    16
+#define BX_INSTR_IS_SYSENTER  17
+#define BX_INSTR_IS_SYSEXIT   18
 
-#define BX_INSTR_PREFETCH_NTA 00
-#define BX_INSTR_PREFETCH_T0  01
-#define BX_INSTR_PREFETCH_T1  02
-#define BX_INSTR_PREFETCH_T2  03
+// possible types passed to BX_INSTR_PREFETCH_HINT()
+#define BX_INSTR_PREFETCH_NTA 0
+#define BX_INSTR_PREFETCH_T0  1
+#define BX_INSTR_PREFETCH_T1  2
+#define BX_INSTR_PREFETCH_T2  3
 
 
 #if BX_INSTRUMENTATION
@@ -88,11 +94,11 @@ public:
   bxInstrumentation(): valid(0), active(0) {}
 
   void set_cpu_id(unsigned cpu) { cpu_id = cpu; }
- 
+
   void activate() { active = 1; }
   void deactivate() { active = 0; }
   void toggle_active() { active = !active; }
-  bx_bool is_active() const { return active; } 
+  bx_bool is_active() const { return active; }
 
   void bx_instr_reset();
   void bx_instr_new_instruction();
@@ -102,8 +108,8 @@ public:
   void bx_instr_ucnear_branch(unsigned what, bx_address new_eip);
   void bx_instr_far_branch(unsigned what, Bit16u new_cs, bx_address new_eip);
 
-  void bx_instr_opcode(Bit8u *opcode, unsigned len, bx_bool is32, bx_bool is64);
-  void bx_instr_fetch_decode_completed(const bxInstruction_c *i);
+  void bx_instr_opcode(const Bit8u *opcode, unsigned len, bx_bool is32, bx_bool is64);
+  void bx_instr_fetch_decode_completed(bxInstruction_c *i);
 
   void bx_instr_prefix(Bit8u prefix);
 
@@ -111,7 +117,7 @@ public:
   void bx_instr_exception(unsigned vector);
   void bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_address eip);
 
-  void bx_instr_mem_data(bx_address linear, unsigned size, unsigned rw);
+  void bx_instr_mem_data_access(unsigned seg, bx_address offset, unsigned len, unsigned rw);
 
 private:
   void branch_taken(bx_address new_eip);
@@ -123,7 +129,7 @@ extern bxInstrumentation *icpu;
 
 /* simulation init, shutdown, reset */
 #  define BX_INSTR_INIT(cpu_id)	           bx_instr_init(cpu_id);
-#  define BX_INSTR_SHUTDOWN(cpu_id)
+#  define BX_INSTR_EXIT(cpu_id)
 #  define BX_INSTR_RESET(cpu_id)           icpu[cpu_id].bx_instr_reset()
 #  define BX_INSTR_HLT(cpu_id)
 #  define BX_INSTR_MWAIT(cpu_id, addr, len, flags)
@@ -131,10 +137,10 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_NEW_INSTRUCTION(cpu_id) icpu[cpu_id].bx_instr_new_instruction()
 
 /* called from command line debugger */
-#  define BX_INSTR_DEBUG_PROMPT()        
-#  define BX_INSTR_START()               
-#  define BX_INSTR_STOP()                
-#  define BX_INSTR_PRINT()               
+#  define BX_INSTR_DEBUG_PROMPT()
+#  define BX_INSTR_START()
+#  define BX_INSTR_STOP()
+#  define BX_INSTR_PRINT()
 
 /* branch resoultion */
 #  define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, new_eip)       icpu[cpu_id].bx_instr_cnear_branch_taken(new_eip)
@@ -147,7 +153,7 @@ extern bxInstrumentation *icpu;
                        icpu[cpu_id].bx_instr_opcode(opcode, len, is32, is64)
 #  define BX_INSTR_FETCH_DECODE_COMPLETED(cpu_id, i) \
                        icpu[cpu_id].bx_instr_fetch_decode_completed(i)
-     
+
 /* prefix byte decoded */
 #  define BX_INSTR_PREFIX(cpu_id, prefix)  icpu[cpu_id].bx_instr_prefix(prefix)
 
@@ -157,6 +163,7 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_HWINTERRUPT(cpu_id, vector, cs, eip) icpu[cpu_id].bx_instr_hwinterrupt(vector, cs, eip)
 
 /* TLB/CACHE control instruction executed */
+#  define BX_INSTR_CLFLUSH(cpu_id, laddr, paddr)
 #  define BX_INSTR_CACHE_CNTRL(cpu_id, what)
 #  define BX_INSTR_TLB_CNTRL(cpu_id, what, new_cr3)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
@@ -169,8 +176,8 @@ extern bxInstrumentation *icpu;
 /* memory access */
 #  define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
 
-#  define BX_INSTR_MEM_CODE(cpu_id, linear, size)
-#  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)   icpu[cpu_id].bx_instr_mem_data(linear, size, rw)
+#  define BX_INSTR_MEM_DATA_ACCESS(cpu_id, seg, offset, len, rw) \
+                    icpu[cpu_id].bx_instr_mem_data_access(seg, offset, len, rw)
 
 /* called from memory object */
 #  define BX_INSTR_PHY_WRITE(cpu_id, addr, len)
@@ -185,11 +192,11 @@ extern bxInstrumentation *icpu;
 /* wrmsr callback */
 #  define BX_INSTR_WRMSR(cpu_id, addr, value)
 
-#else   
+#else
 
 /* simulation init, shutdown, reset */
 #  define BX_INSTR_INIT(cpu_id)
-#  define BX_INSTR_SHUTDOWN(cpu_id)
+#  define BX_INSTR_EXIT(cpu_id)
 #  define BX_INSTR_RESET(cpu_id)
 #  define BX_INSTR_HLT(cpu_id)
 #  define BX_INSTR_MWAIT(cpu_id, addr, len, flags)
@@ -208,9 +215,9 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_FAR_BRANCH(cpu_id, what, new_cs, new_eip)
 
 /* decoding completed */
-#  define BX_INSTR_OPCODE(cpu_id, opcode, len, is32, is64) 
+#  define BX_INSTR_OPCODE(cpu_id, opcode, len, is32, is64)
 #  define BX_INSTR_FETCH_DECODE_COMPLETED(cpu_id, i)
-     
+
 /* prefix byte decoded */
 #  define BX_INSTR_PREFIX(cpu_id, prefix)
 
@@ -220,6 +227,7 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_HWINTERRUPT(cpu_id, vector, cs, eip)
 
 /* TLB/CACHE control instruction executed */
+#  define BX_INSTR_CLFLUSH(cpu_id, laddr, paddr)
 #  define BX_INSTR_CACHE_CNTRL(cpu_id, what)
 #  define BX_INSTR_TLB_CNTRL(cpu_id, what, new_cr3)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
@@ -233,8 +241,7 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
 
 /* memory access */
-#  define BX_INSTR_MEM_CODE(cpu_id, linear, size)      
-#  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)
+#  define BX_INSTR_MEM_DATA_ACCESS(cpu_id, seg, offset, len, rw)
 
 /* called from memory object */
 #  define BX_INSTR_PHY_WRITE(cpu_id, addr, len)
@@ -249,4 +256,4 @@ extern bxInstrumentation *icpu;
 /* wrmsr callback */
 #  define BX_INSTR_WRMSR(cpu_id, addr, value)
 
-#endif  
+#endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mult32.cc,v 1.24 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: mult32.cc,v 1.29 2008/05/24 10:26:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,20 +25,17 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
 
 #if BX_SUPPORT_X86_64==0
 #define RAX EAX
 #define RDX EDX
 #endif
 
-
-void BX_CPU_C::MUL_EAXEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MUL_EAXEd(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, product_32h, product_32l;
   Bit64u product_64;
@@ -50,6 +47,7 @@ void BX_CPU_C::MUL_EAXEd(bxInstruction_c *i)
     op2_32 = BX_READ_32BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
   }
@@ -70,7 +68,7 @@ void BX_CPU_C::MUL_EAXEd(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
 {
   Bit32s op1_32, op2_32;
 
@@ -81,6 +79,7 @@ void BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
     op2_32 = BX_READ_32BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
@@ -104,7 +103,7 @@ void BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::DIV_EAXEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIV_EAXEd(bxInstruction_c *i)
 {
   Bit32u op2_32, remainder_32, quotient_32l;
   Bit64u op1_64, quotient_64;
@@ -116,6 +115,7 @@ void BX_CPU_C::DIV_EAXEd(bxInstruction_c *i)
     op2_32 = BX_READ_32BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
   }
@@ -142,7 +142,7 @@ void BX_CPU_C::DIV_EAXEd(bxInstruction_c *i)
   RDX = remainder_32;
 }
 
-void BX_CPU_C::IDIV_EAXEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IDIV_EAXEd(bxInstruction_c *i)
 {
   Bit32s op2_32, remainder_32, quotient_32l;
   Bit64s op1_64, quotient_64;
@@ -154,6 +154,7 @@ void BX_CPU_C::IDIV_EAXEd(bxInstruction_c *i)
     op2_32 = BX_READ_32BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
@@ -161,8 +162,8 @@ void BX_CPU_C::IDIV_EAXEd(bxInstruction_c *i)
   if (op2_32 == 0)
     exception(BX_DE_EXCEPTION, 0, 0);
 
-  /* check MIN_INT divided by -1 case */
-  if ((op1_64 == ((Bit64s)BX_CONST64(0x8000000000000000))) && (op2_32 == -1))
+  /* check MIN_INT case */
+  if (op1_64 == ((Bit64s)BX_CONST64(0x8000000000000000)))
     exception(BX_DE_EXCEPTION, 0, 0);
 
   quotient_64  = op1_64 / op2_32;
@@ -183,7 +184,7 @@ void BX_CPU_C::IDIV_EAXEd(bxInstruction_c *i)
   RDX = remainder_32;
 }
 
-void BX_CPU_C::IMUL_GdEdId(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_GdEdId(bxInstruction_c *i)
 {
   Bit32s op2_32, op3_32;
 
@@ -194,12 +195,13 @@ void BX_CPU_C::IMUL_GdEdId(bxInstruction_c *i)
     op2_32 = BX_READ_32BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
 
-  Bit64s product_64  = ((Bit64s) op2_32) * ((Bit64s) op3_32);
-  Bit32u product_32 = (product_64 & 0xFFFFFFFF);
+  Bit64s product_64 = ((Bit64s) op2_32) * ((Bit64s) op3_32);
+  Bit32u product_32 = (Bit32u)(product_64 & 0xFFFFFFFF);
 
   /* now write product back to destination */
   BX_WRITE_32BIT_REGZ(i->nnn(), product_32);
@@ -215,7 +217,7 @@ void BX_CPU_C::IMUL_GdEdId(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::IMUL_GdEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_GdEd(bxInstruction_c *i)
 {
   Bit32s op1_32, op2_32;
 
@@ -224,6 +226,7 @@ void BX_CPU_C::IMUL_GdEd(bxInstruction_c *i)
     op2_32 = BX_READ_32BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
@@ -231,7 +234,7 @@ void BX_CPU_C::IMUL_GdEd(bxInstruction_c *i)
   op1_32 = BX_READ_32BIT_REG(i->nnn());
 
   Bit64s product_64 = ((Bit64s) op1_32) * ((Bit64s) op2_32);
-  Bit32u product_32 = (product_64 & 0xFFFFFFFF);
+  Bit32u product_32 = (Bit32u)(product_64 & 0xFFFFFFFF);
 
   /* now write product back to destination */
   BX_WRITE_32BIT_REGZ(i->nnn(), product_32);

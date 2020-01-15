@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: acpi.cc,v 1.11 2007/11/25 20:22:10 sshwarts Exp $
+// $Id: acpi.cc,v 1.14 2008/03/26 16:25:05 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2006  Volker Ruppert
@@ -24,7 +24,7 @@
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -84,7 +84,7 @@ Bit64u muldiv64(Bit64u a, Bit32u b, Bit32u c)
       Bit32u high, low;
 #else
       Bit32u low, high;
-#endif            
+#endif
     } l;
   } u, res;
   Bit64u rl, rh;
@@ -139,6 +139,7 @@ void bx_acpi_ctrl_c::init(void)
   } init_vals[] = {
     { 0x00, 0x86 }, { 0x01, 0x80 },
     { 0x02, 0x13 }, { 0x03, 0x71 },
+    { 0x08, 0x03 },                 // revision number
     { 0x0a, 0x80 },                 // other bridge device
     { 0x0b, 0x06 },                 // bridge device
     { 0x0e, 0x00 },                 // header type
@@ -255,7 +256,7 @@ Bit16u bx_acpi_ctrl_c::get_pmsts(void)
 void bx_acpi_ctrl_c::pm_update_sci(void)
 {
   Bit16u pmsts = get_pmsts();
-  bx_bool sci_level = (((pmsts & BX_ACPI_THIS s.pmen) & 
+  bx_bool sci_level = (((pmsts & BX_ACPI_THIS s.pmen) &
                       (RTC_EN | PWRBTN_EN | GBL_EN | TMROF_EN)) != 0);
   BX_ACPI_THIS set_irq_level(sci_level);
   // schedule a timer interruption if needed
@@ -389,7 +390,7 @@ void bx_acpi_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
           if (pmsts & value & TMROF_EN) {
             // if TMRSTS is reset, then compute the new overflow time
             Bit64u d = muldiv64(bx_pc_system.time_usec(), PM_FREQ, 1000000);
-            BX_ACPI_THIS s.tmr_overflow_time = (d + 0x800000LL) & ~0x7fffffLL;
+            BX_ACPI_THIS s.tmr_overflow_time = (d + BX_CONST64(0x800000)) & ~BX_CONST64(0x7fffff);
           }
           BX_ACPI_THIS s.pmsts &= ~value;
           BX_ACPI_THIS pm_update_sci();
@@ -420,7 +421,7 @@ void bx_acpi_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
       default:
         BX_INFO(("ACPI write to PM register 0x%02x not implemented yet", reg));
     }
-  } else if ((address & 0xffe0) == BX_ACPI_THIS s.sm_base) {
+  } else if ((address & 0xfff0) == BX_ACPI_THIS s.sm_base) {
     if (((BX_ACPI_THIS s.pci_conf[0x04] & 0x01) == 0) &&
         ((BX_ACPI_THIS s.pci_conf[0xd2] & 0x01) == 0)) {
       return;
@@ -561,7 +562,7 @@ void bx_acpi_ctrl_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_
         goto set_value;
         break;
       case 0x40:
-        value8 = (value8 & 0xfc) | 0x01;
+        value8 = (value8 & 0xc0) | 0x01;
       case 0x41:
       case 0x42:
       case 0x43:
@@ -569,7 +570,7 @@ void bx_acpi_ctrl_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_
         goto set_value;
         break;
       case 0x90:
-        value8 = (value8 & 0xfc) | 0x01;
+        value8 = (value8 & 0xf0) | 0x01;
       case 0x91:
       case 0x92:
       case 0x93:

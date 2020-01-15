@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_vde.cc,v 1.13 2006/08/05 14:42:47 vruppert Exp $
+// $Id: eth_vde.cc,v 1.15 2008/02/15 22:05:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  Renzo Davoli
@@ -17,15 +17,17 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 // eth_vde.cc  - Virtual Distributed Ethernet interface by Renzo Davoli <renzo@cs.unibo.it>
 //
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
- 
+
 #define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
@@ -105,7 +107,7 @@ protected:
 //
 
 // the constructor
-bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif, 
+bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
 				       void *rxarg,
@@ -116,7 +118,7 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
    // BX_PANIC (("eth_vde: interface name (%s) must be vde", netif));
   //}
   char intname[IFNAMSIZ];
-  if (netif == NULL || strcmp(netif,"") == 0) 
+  if (netif == NULL || strcmp(netif,"") == 0)
 	  strcpy(intname,"/tmp/vde.ctl");
   else
   	strcpy(intname,netif);
@@ -127,26 +129,25 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
   }
 
   /* set O_ASYNC flag so that we can poll with read() */
-  if ((flags = fcntl( fd, F_GETFL)) < 0) {
+  if ((flags = fcntl(fd, F_GETFL)) < 0) {
     BX_PANIC (("getflags on vde device: %s", strerror (errno)));
   }
   flags |= O_NONBLOCK;
-  if (fcntl( fd, F_SETFL, flags ) < 0) {
+  if (fcntl(fd, F_SETFL, flags) < 0) {
     BX_PANIC (("set vde device flags: %s", strerror (errno)));
   }
 
-  BX_INFO (("eth_vde: opened %s device", netif));
+  BX_INFO(("eth_vde: opened %s device", netif));
 
   /* Execute the configuration script */
-  if((script != NULL)
-   &&(strcmp(script, "") != 0)
-   &&(strcmp(script, "none") != 0)) {
+  if((script != NULL) && (strcmp(script, "") != 0) && (strcmp(script, "none") != 0))
+  {
     if (execute_script(script, intname) < 0)
       BX_ERROR (("execute script '%s' on %s failed", script, intname));
-    }
+  }
 
-  // Start the rx poll 
-  this->rx_timer_index = 
+  // Start the rx poll
+  this->rx_timer_index =
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
 				1, 1, "eth_vde"); // continuous, active
   this->rxh   = rxh;
@@ -161,7 +162,7 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
   fprintf (txlog_txt, "vde packetmover readable log file\n");
   fprintf (txlog_txt, "net IF = %s\n", netif);
   fprintf (txlog_txt, "MAC address = ");
-  for (int i=0; i<6; i++) 
+  for (int i=0; i<6; i++)
     fprintf (txlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "");
   fprintf (txlog_txt, "\n--\n");
   fflush (txlog_txt);
@@ -173,7 +174,7 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
   fprintf (rxlog_txt, "vde packetmover readable log file\n");
   fprintf (rxlog_txt, "net IF = %s\n", netif);
   fprintf (rxlog_txt, "MAC address = ");
-  for (int i=0; i<6; i++) 
+  for (int i=0; i<6; i++)
     fprintf (rxlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "");
   fprintf (rxlog_txt, "\n--\n");
   fflush (rxlog_txt);
@@ -181,8 +182,7 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
 #endif
 }
 
-void
-bx_vde_pktmover_c::sendpkt(void *buf, unsigned io_len)
+void bx_vde_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
   unsigned int size;
   //size = write (fd, buf, io_len);
@@ -273,68 +273,69 @@ void bx_vde_pktmover_c::rx_timer ()
 #define REQ_NEW_CONTROL 0
 
 struct request_v3 {
-	Bit32u magic;
-	Bit32u version;
-	//enum request_type type;
-	int type;
-	struct sockaddr_un sock;
+  Bit32u magic;
+  Bit32u version;
+  //enum request_type type;
+  int type;
+  struct sockaddr_un sock;
 };
 
 static int send_fd(char *name, int fddata, struct sockaddr_un *datasock, int group)
 {
-	int pid = getpid();
-	struct request_v3 req;
-	int fdctl;
-	struct sockaddr_un sock;
-	if((fdctl = socket(AF_UNIX, SOCK_STREAM, 0)) < 0){
-		perror("socket");
-		return(-1);
-	}
-	sock.sun_family = AF_UNIX;
-	snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", name);
-	if(connect(fdctl, (struct sockaddr *) &sock, sizeof(sock))){
-		perror("connect");
-		return(-1);
-	}
-	req.magic=SWITCH_MAGIC;
-	req.version=3;
-	req.type=((int)REQ_NEW_CONTROL)+((group > 0)?((geteuid()<<8) + group) << 8:0);
-	req.sock.sun_family=AF_UNIX;
-	memset(req.sock.sun_path, 0, sizeof(req.sock.sun_path));
-	sprintf(&req.sock.sun_path[1], "%5d", pid);
-	if(bind(fddata, (struct sockaddr *) &req.sock, sizeof(req.sock)) < 0){
-		perror("bind");
-		return(-1);
-	}
-	if (send(fdctl,&req,sizeof(req),0) < 0) {
-		perror("send");
-		return(-1);
-	}
-	if (recv(fdctl,datasock,sizeof(struct sockaddr_un),0)<0) {
-		perror("recv");
-		return(-1);
-	}
-	return fdctl;
+  int pid = getpid();
+  struct request_v3 req;
+  int fdctl;
+  struct sockaddr_un sock;
+
+  if((fdctl = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
+    perror("socket");
+    return(-1);
+  }
+  sock.sun_family = AF_UNIX;
+  snprintf(sock.sun_path, sizeof(sock.sun_path), "%s", name);
+  if(connect(fdctl, (struct sockaddr *) &sock, sizeof(sock))) {
+    perror("connect");
+    return(-1);
+  }
+
+  req.magic=SWITCH_MAGIC;
+  req.version=3;
+  req.type=((int)REQ_NEW_CONTROL)+((group > 0)?((geteuid()<<8) + group) << 8:0);
+  req.sock.sun_family=AF_UNIX;
+  memset(req.sock.sun_path, 0, sizeof(req.sock.sun_path));
+  sprintf(&req.sock.sun_path[1], "%5d", pid);
+
+  if(bind(fddata, (struct sockaddr *) &req.sock, sizeof(req.sock)) < 0) {
+    perror("bind");
+    return(-1);
+  }
+  if (send(fdctl,&req,sizeof(req),0) < 0) {
+    perror("send");
+    return(-1);
+  }
+  if (recv(fdctl,datasock,sizeof(struct sockaddr_un),0) < 0) {
+    perror("recv");
+    return(-1);
+  }
+  return fdctl;
 }
 
 int vde_alloc(char *dev, int *fdp, struct sockaddr_un *pdataout)
 {
-      //struct ifreq ifr;
-      //int err;
-      int fd, fddata;
+  //struct ifreq ifr;
+  //int err;
+  int fd, fddata;
 
-      if((fddata = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0){ 
-	      return -1;
-      }
+  if ((fddata = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0)
+    return -1;
 
+  if ((fd = send_fd(dev, fddata, pdataout, 0)) < 0)
+    return -1;
 
-      if( (fd = send_fd(dev, fddata, pdataout, 0)) < 0 )
-         return -1;
+  //memset(&ifr, 0, sizeof(ifr));
+  *fdp=fddata;
 
-      //memset(&ifr, 0, sizeof(ifr));
-      *fdp=fddata;
-
-      return fd;
-}              
+  return fd;
+}
 
 #endif /* if BX_NETWORKING && defined HAVE_VDE */

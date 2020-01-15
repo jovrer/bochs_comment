@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc,v 1.86 2007/11/24 14:22:33 sshwarts Exp $
+// $Id: debugstuff.cc,v 1.97 2008/05/26 21:46:38 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,32 +23,33 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+//
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
 #if BX_DISASM
+
 void BX_CPU_C::debug_disasm_instruction(bx_address offset)
 {
+#if BX_DEBUGGER
+  bx_dbg_disassemble_current(BX_CPU_ID, 1); // only one cpu, print time stamp
+#else
   bx_phy_address phy_addr;
-  Bit8u   instr_buf[16];
-  char    char_buf[512];
-  unsigned i=0;
+  Bit8u  instr_buf[16];
+  char   char_buf[512];
+  size_t i=0;
 
   static char letters[] = "0123456789ABCDEF";
   static disassembler bx_disassemble;
-  unsigned remainsInPage = 0x1000 - (offset & 0xfff);
+  unsigned remainsInPage = 0x1000 - PAGE_OFFSET(offset);
 
-  bx_bool valid = dbg_xlate_linear2phy(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + offset, &phy_addr);
-  if (valid && BX_CPU_THIS_PTR mem!=NULL) {
-    BX_CPU_THIS_PTR mem->dbg_fetch_mem(BX_CPU_THIS, phy_addr, 16, instr_buf);
-    char_buf[i++] = '>';
-    char_buf[i++] = '>';
-    char_buf[i++] = ' ';
+  bx_bool valid = dbg_xlate_linear2phy(BX_CPU_THIS_PTR get_laddr(BX_SEG_REG_CS, offset), &phy_addr);
+  if (valid) {
+    BX_MEM(0)->dbg_fetch_mem(BX_CPU_THIS, phy_addr, 16, instr_buf);
     unsigned isize = bx_disassemble.disasm(
         BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
         BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64,
@@ -64,7 +65,7 @@ void BX_CPU_C::debug_disasm_instruction(bx_address offset)
         char_buf[i++] = letters[(instr_buf[j] >> 0) & 0xf];
       }
       char_buf[i] = 0;
-      BX_INFO(("%s", char_buf));
+      BX_INFO((">> %s", char_buf));
     }
     else {
       BX_INFO(("(instruction unavailable) page split instruction"));
@@ -73,7 +74,9 @@ void BX_CPU_C::debug_disasm_instruction(bx_address offset)
   else {
     BX_INFO(("(instruction unavailable) page not present"));
   }
+#endif  // #if BX_DEBUGGER
 }
+
 #endif  // #if BX_DISASM
 
 const char* cpu_mode_string(unsigned cpu_mode)
@@ -115,14 +118,14 @@ const char* cpu_state_string(Bit32u debug_trap)
 
 void BX_CPU_C::debug(bx_address offset)
 {
-  BX_INFO(("CPU is in %s (%s)", cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode()), 
+  BX_INFO(("CPU is in %s (%s)", cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode()),
     cpu_state_string(BX_CPU_THIS_PTR debug_trap)));
   BX_INFO(("CS.d_b = %u bit",
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b ? 32 : 16));
   BX_INFO(("SS.d_b = %u bit",
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b ? 32 : 16));
 #if BX_SUPPORT_X86_64
-  BX_INFO(("EFER   = 0x%08x", BX_CPU_THIS_PTR get_EFER()));
+  BX_INFO(("EFER   = 0x%08x", BX_CPU_THIS_PTR efer.getRegister()));
   BX_INFO(("| RAX=%08x%08x  RBX=%08x%08x",
           (unsigned) (RAX >> 32), (unsigned) EAX,
           (unsigned) (RBX >> 32), (unsigned) EBX));
@@ -236,12 +239,13 @@ void BX_CPU_C::debug(bx_address offset)
 #endif
 
 #if BX_SUPPORT_X86_64
-  BX_INFO(("| RIP=%08x%08x (%08x%08x)", 
-    (unsigned) BX_CPU_THIS_PTR eip_reg.dword.rip_upper, (unsigned) EIP,
-    (unsigned) (BX_CPU_THIS_PTR prev_rip >> 32), 
+  BX_INFO(("| RIP=%08x%08x (%08x%08x)",
+    (unsigned) (BX_CPU_THIS_PTR gen_reg[BX_64BIT_REG_RIP].dword.hrx),
+    (unsigned) (EIP),
+    (unsigned) (BX_CPU_THIS_PTR prev_rip >> 32),
     (unsigned) (BX_CPU_THIS_PTR prev_rip & 0xffffffff)));
   BX_INFO(("| CR0=0x%08x CR1=0x%x CR2=0x%08x%08x",
-    (unsigned) (BX_CPU_THIS_PTR cr0.val32), 0,
+    (unsigned) (BX_CPU_THIS_PTR cr0.getRegister()), 0,
     (unsigned) (BX_CPU_THIS_PTR cr2 >> 32),
     (unsigned) (BX_CPU_THIS_PTR cr2 & 0xffffffff)));
   BX_INFO(("| CR3=0x%08x CR4=0x%08x",
@@ -252,12 +256,12 @@ void BX_CPU_C::debug(bx_address offset)
 
 #if BX_CPU_LEVEL >= 2 && BX_CPU_LEVEL < 4
   BX_INFO(("| CR0=0x%08x CR1=%x CR2=0x%08x CR3=0x%08x",
-    BX_CPU_THIS_PTR cr0.val32, 0,
+    BX_CPU_THIS_PTR cr0.getRegister(), 0,
     BX_CPU_THIS_PTR cr2,
     BX_CPU_THIS_PTR cr3));
 #elif BX_CPU_LEVEL >= 4
   BX_INFO(("| CR0=0x%08x CR1=%x CR2=0x%08x",
-    BX_CPU_THIS_PTR cr0.val32, 0,
+    BX_CPU_THIS_PTR cr0.getRegister(), 0,
     BX_CPU_THIS_PTR cr2));
   BX_INFO(("| CR3=0x%08x CR4=0x%08x",
     BX_CPU_THIS_PTR cr3,
@@ -289,7 +293,7 @@ Bit32u BX_CPU_C::dbg_get_reg(unsigned reg)
     case BX_DBG_REG_FS: return(BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value);
     case BX_DBG_REG_GS: return(BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value);
     case BX_DBG_REG_CR0:
-      return BX_CPU_THIS_PTR cr0.val32;
+      return BX_CPU_THIS_PTR cr0.getRegister();
     case BX_DBG_REG_CR2:
       return BX_CPU_THIS_PTR cr2;
     case BX_DBG_REG_CR3:
@@ -366,10 +370,7 @@ bx_bool BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
     seg->cache.p = 1;
     seg->cache.dpl = 0;
     seg->cache.segment = 1; // regular segment
-    if (reg == BX_DBG_REG_CS)
-      seg->cache.type = BX_CODE_EXEC_READ_ACCESSED;
-    else
-      seg->cache.type = BX_DATA_READ_WRITE_ACCESSED;
+    seg->cache.type = BX_DATA_READ_WRITE_ACCESSED;
     seg->cache.u.segment.base = val << 4;
     seg->cache.u.segment.limit        = 0xffff;
     seg->cache.u.segment.limit_scaled = 0xffff;

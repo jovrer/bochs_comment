@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth.cc,v 1.24 2005/12/10 18:37:35 vruppert Exp $
+// $Id: eth.cc,v 1.26 2008/02/15 22:05:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -30,10 +30,10 @@
 // NE2000/ether stuff.
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
- 
+
 #define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
@@ -47,7 +47,7 @@ eth_locator_c *eth_locator_c::all;
 
 //
 // Each pktmover module has a static locator class that registers
-// here 
+// here
 //
 eth_locator_c::eth_locator_c(const char *type)
 {
@@ -108,36 +108,36 @@ eth_locator_c::create(const char *type, const char *netif,
 #ifdef ETH_NULL
   {
     if (!strcmp(type, "null"))
-      ptr = (eth_locator_c *) &bx_null_match; 
+      ptr = (eth_locator_c *) &bx_null_match;
   }
 #endif
 #ifdef ETH_FBSD
   {
-    if (!strcmp(type, "fbsd"))    
+    if (!strcmp(type, "fbsd"))
       ptr = (eth_locator_c *) &bx_fbsd_match;
   }
 #endif
 #ifdef ETH_LINUX
   {
-    if (!strcmp(type, "linux"))    
+    if (!strcmp(type, "linux"))
       ptr = (eth_locator_c *) &bx_linux_match;
   }
 #endif
 #if HAVE_TUNTAP
   {
-    if (!strcmp(type, "tuntap"))    
+    if (!strcmp(type, "tuntap"))
       ptr = (eth_locator_c *) &bx_tuntap_match;
   }
 #endif
 #if HAVE_VDE
   {
-    if (!strcmp(type, "vde"))    
+    if (!strcmp(type, "vde"))
       ptr = (eth_locator_c *) &bx_vde_match;
   }
 #endif
 #if HAVE_ETHERTAP
   {
-    if (!strcmp(type, "tap"))    
+    if (!strcmp(type, "tap"))
       ptr = (eth_locator_c *) &bx_tap_match;
   }
 #endif
@@ -148,7 +148,7 @@ eth_locator_c::create(const char *type, const char *netif,
   }
 #endif
   {
-    if (!strcmp(type, "vnet"))    
+    if (!strcmp(type, "vnet"))
       ptr = (eth_locator_c *) &bx_vnet_match;
   }
   if (ptr)
@@ -168,19 +168,19 @@ extern "C" {
 #define LOG_THIS bx_devices.pluginNE2kDevice->
 
 // This is a utility script used for tuntap or ethertap
-int execute_script( char* scriptname, char* arg1 )
+int execute_script(char* scriptname, char* arg1)
 {
   int pid,status;
 
   if (!(pid=fork())) {
     char filename[BX_PATHNAME_LEN];
-    if ( scriptname[0]=='/' ) {
-      strcpy (filename, scriptname);
+    if (scriptname[0]=='/') {
+      strcpy(filename, scriptname);
     }
     else {
-      getcwd (filename, BX_PATHNAME_LEN);
-      strcat (filename, "/");
-      strcat (filename, scriptname);
+      getcwd(filename, BX_PATHNAME_LEN);
+      strcat(filename, "/");
+      strcat(filename, scriptname);
     }
 
     // execute the script

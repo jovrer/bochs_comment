@@ -29,6 +29,9 @@
   --enable-vme \
   --enable-sep \
   --enable-3dnow \
+  --enable-monitor-mwait \
+  --enable-xsave \
+  --enable-aes \
   --enable-x86-debugger \
   --enable-cdrom \
   --enable-sb16 \

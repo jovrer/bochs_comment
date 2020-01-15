@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc,v 1.19 2007/12/13 21:53:52 sshwarts Exp $
+// $Id: instrument.cc,v 1.23 2008/04/19 10:12:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -94,27 +94,27 @@ void bx_instr_new_instruction(unsigned cpu)
     unsigned length = i->opcode_size, n;
 
     bx_disassembler.disasm(i->is32, i->is64, 0, 0, i->opcode, disasm_tbuf);
- 
-    if(length != 0)	
+
+    if(length != 0)
     {
       fprintf(stderr, "----------------------------------------------------------\n");
       fprintf(stderr, "CPU: %d: %s\n", cpu, disasm_tbuf);
       fprintf(stderr, "LEN: %d\tPREFIXES: %d\tBYTES: ", length, i->nprefixes);
       for(n=0;n<length;n++) fprintf(stderr, "%02x", i->opcode[n]);
-      if(i->is_branch) 
+      if(i->is_branch)
       {
         fprintf(stderr, "\tBRANCH ");
 
-        if(i->is_taken) 
+        if(i->is_taken)
           fprintf(stderr, "TARGET " FMT_ADDRX " (TAKEN)", i->target_linear);
         else
           fprintf(stderr, "(NOT TAKEN)");
-      }   
+      }
       fprintf(stderr, "\n");
       for(n=0;n<i->num_data_accesses;n++)
       {
         fprintf(stderr, "MEM ACCESS[%u]: " FMT_ADDRX " (linear) 0x%08x (physical) %s SIZE: %d\n", n,
-                      i->data_access[n].laddr, 
+                      i->data_access[n].laddr,
                       i->data_access[n].paddr,
                       i->data_access[n].op == BX_READ ? "RD":"WR",
                       i->data_access[n].size);
@@ -134,14 +134,14 @@ static void branch_taken(unsigned cpu, bx_address new_eip)
   if (!active || !instruction[cpu].valid) return;
 
   // find linear address
-  bx_address laddr = BX_CPU(cpu)->get_segment_base(BX_SEG_REG_CS) + new_eip;
+  bx_address laddr = BX_CPU(cpu)->get_laddr(BX_SEG_REG_CS, new_eip);
 
   instruction[cpu].is_branch = 1;
   instruction[cpu].is_taken = 1;
   instruction[cpu].target_linear = laddr;
 }
 
-void bx_instr_cnear_branch_taken(unsigned cpu, bx_address new_eip) 
+void bx_instr_cnear_branch_taken(unsigned cpu, bx_address new_eip)
 {
   branch_taken(cpu, new_eip);
 }
@@ -164,21 +164,21 @@ void bx_instr_far_branch(unsigned cpu, unsigned what, Bit16u new_cs, bx_address 
   branch_taken(cpu, new_eip);
 }
 
-void bx_instr_opcode(unsigned cpu, Bit8u *opcode, unsigned len, bx_bool is32, bx_bool is64)
+void bx_instr_opcode(unsigned cpu, const Bit8u *opcode, unsigned len, bx_bool is32, bx_bool is64)
 {
   if (!active) return;
 
-  for(unsigned i=0;i<len;i++) 
+  for(unsigned i=0;i<len;i++)
   {
     instruction[cpu].opcode[i] = opcode[i];
   }
-  
+
   instruction[cpu].is32 = is32;
   instruction[cpu].is64 = is64;
   instruction[cpu].opcode_size = len;
 }
 
-void bx_instr_fetch_decode_completed(unsigned cpu, const bxInstruction_c *i)
+void bx_instr_fetch_decode_completed(unsigned cpu, bxInstruction_c *i)
 {
   if(active) instruction[cpu].valid = 1;
 }
@@ -212,24 +212,25 @@ void bx_instr_hwinterrupt(unsigned cpu, unsigned vector, Bit16u cs, bx_address e
   }
 }
 
-void bx_instr_mem_data(unsigned cpu, bx_address lin, unsigned size, unsigned rw)
+void bx_instr_mem_data(unsigned cpu, unsigned seg, bx_address offset, unsigned len, unsigned rw)
 {
   unsigned index;
   bx_phy_address phy;
 
   if(!active || !instruction[cpu].valid) return;
 
-  if (instruction[cpu].num_data_accesses >= MAX_DATA_ACCESSES) 
+  if (instruction[cpu].num_data_accesses >= MAX_DATA_ACCESSES)
   {
     return;
   }
 
+  bx_address lin = BX_CPU(cpu)->get_laddr(seg, offset);
   bx_bool page_valid = BX_CPU(cpu)->dbg_xlate_linear2phy(lin, &phy);
   phy = A20ADDR(phy);
 
   // If linear translation doesn't exist, a paging exception will occur.
   // Invalidate physical address data for now.
-  if (!page_valid) 
+  if (!page_valid)
   {
     phy = 0;
   }

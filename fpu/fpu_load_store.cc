@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_load_store.cc,v 1.14 2007/12/20 20:58:38 sshwarts Exp $
+// $Id: fpu_load_store.cc,v 1.24 2008/05/10 13:34:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -26,11 +26,13 @@
 #include "cpu/cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+#if BX_SUPPORT_FPU
+
 extern float_status_t FPU_pre_exception_handling(Bit16u control_word);
 
 #include "softfloatx80.h"
 
-void BX_CPU_C::FLD_STi(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_STi(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -39,49 +41,47 @@ void BX_CPU_C::FLD_STi(bxInstruction_c *i)
 
   if (! IS_TAG_EMPTY(-1))
   {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
   }
 
   if (IS_TAG_EMPTY(i->rm()))
   {
-     BX_CPU_THIS_PTR FPU_stack_underflow(0);
-     return;
+    BX_CPU_THIS_PTR FPU_stack_underflow(0);
+    return;
   }
 
-  int sti_tag = BX_CPU_THIS_PTR the_i387.FPU_gettagi(i->rm());
   floatx80 sti_reg = BX_READ_FPU_REG(i->rm());
 
   BX_CPU_THIS_PTR the_i387.FPU_push();
-  BX_WRITE_FPU_REGISTER_AND_TAG(sti_reg, sti_tag, 0);
+  BX_WRITE_FPU_REG(sti_reg, 0);
 #else
   BX_INFO(("FLD_STi: required FPU, configure --enable-fpu"));
 #endif
 }
 
-void BX_CPU_C::FLD_SINGLE_REAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_SINGLE_REAL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  clear_C1();
-
-  if (! IS_TAG_EMPTY(-1))
-  {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
-  }
-
   float32 load_reg = read_virtual_dword(i->seg(), RMAddr(i));
 
-  float_status_t status = 
+  clear_C1();
+
+  if (! IS_TAG_EMPTY(-1)) {
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
+  }
+
+  float_status_t status =
      FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
   // convert to floatx80 format
   floatx80 result = float32_to_floatx80(load_reg, status);
 
   if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
+    return;
 
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(result, 0);
@@ -90,29 +90,28 @@ void BX_CPU_C::FLD_SINGLE_REAL(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FLD_DOUBLE_REAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_DOUBLE_REAL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  clear_C1();
-
-  if (! IS_TAG_EMPTY(-1))
-  {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
-  }
-
   float64 load_reg = read_virtual_qword(i->seg(), RMAddr(i));
 
-  float_status_t status = 
+  clear_C1();
+
+  if (! IS_TAG_EMPTY(-1)) {
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
+  }
+
+  float_status_t status =
      FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
   // convert to floatx80 format
   floatx80 result = float64_to_floatx80(load_reg, status);
 
   if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
+    return;
 
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(result, 0);
@@ -121,23 +120,23 @@ void BX_CPU_C::FLD_DOUBLE_REAL(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FLD_EXTENDED_REAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_EXTENDED_REAL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  clear_C1();
-
-  if (! IS_TAG_EMPTY(-1))
-  {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
-  }
-
   floatx80 result;
   read_virtual_tword(i->seg(), RMAddr(i), &result);
 
+  clear_C1();
+
+  if (! IS_TAG_EMPTY(-1)) {
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
+  }
+
   BX_CPU_THIS_PTR the_i387.FPU_push();
+
   BX_WRITE_FPU_REG(result, 0);
 #else
   BX_INFO(("FLD_EXTENDED_REAL: required FPU, configure --enable-fpu"));
@@ -145,22 +144,21 @@ void BX_CPU_C::FLD_EXTENDED_REAL(bxInstruction_c *i)
 }
 
 /* DF /0 */
-void BX_CPU_C::FILD_WORD_INTEGER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_WORD_INTEGER(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
+  Bit16s load_reg = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
+
   clear_C1();
 
-  if (! IS_TAG_EMPTY(-1))
-  {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
+  if (! IS_TAG_EMPTY(-1)) {
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
   }
 
-  Bit16s load_reg = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
   floatx80 result = int32_to_floatx80((Bit32s) load_reg);
-
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(result, 0);
 #else
@@ -169,22 +167,21 @@ void BX_CPU_C::FILD_WORD_INTEGER(bxInstruction_c *i)
 }
 
 /* DB /0 */
-void BX_CPU_C::FILD_DWORD_INTEGER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_DWORD_INTEGER(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
+  Bit32s load_reg = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
+
   clear_C1();
 
-  if (! IS_TAG_EMPTY(-1))
-  {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
+  if (! IS_TAG_EMPTY(-1)) {
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
   }
 
-  Bit32s load_reg = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   floatx80 result = int32_to_floatx80(load_reg);
-
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(result, 0);
 #else
@@ -193,22 +190,21 @@ void BX_CPU_C::FILD_DWORD_INTEGER(bxInstruction_c *i)
 }
 
 /* DF /5 */
-void BX_CPU_C::FILD_QWORD_INTEGER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FILD_QWORD_INTEGER(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
+  Bit64s load_reg = (Bit64s) read_virtual_qword(i->seg(), RMAddr(i));
+
   clear_C1();
 
-  if (! IS_TAG_EMPTY(-1))
-  {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
+  if (! IS_TAG_EMPTY(-1)) {
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
   }
 
-  Bit64s load_reg = (Bit64s) read_virtual_qword(i->seg(), RMAddr(i));
   floatx80 result = int64_to_floatx80(load_reg);
-
   BX_CPU_THIS_PTR the_i387.FPU_push();
   BX_WRITE_FPU_REG(result, 0);
 #else
@@ -217,35 +213,36 @@ void BX_CPU_C::FILD_QWORD_INTEGER(bxInstruction_c *i)
 }
 
 /* DF /4 */
-void BX_CPU_C::FBLD_PACKED_BCD(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBLD_PACKED_BCD(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+
+  // read packed bcd from memory
+  Bit16u hi2 = read_virtual_word (i->seg(), RMAddr(i) + 8);
+  Bit64u lo8 = read_virtual_qword(i->seg(), RMAddr(i));
 
   clear_C1();
 
   if (! IS_TAG_EMPTY(-1))
   {
-      BX_CPU_THIS_PTR FPU_stack_overflow();
-      return; 
+    BX_CPU_THIS_PTR FPU_stack_overflow();
+    return;
   }
 
-  // read packed bcd from memory
-  Bit16u lo8 = read_virtual_qword(i->seg(), RMAddr(i));
-  Bit16u hi2 = read_virtual_word (i->seg(), RMAddr(i) + 8);
-
-  Bit64s scale = 1; 
+  // convert packed BCD to 64-bit integer
+  Bit64s scale = 1;
   Bit64s val64 = 0;
 
   for (int n = 0; n < 16; n++)
   {
-    val64 += (lo8 & 0x0F) * scale;
+    val64 += (lo8 & 0x0f) * scale;
     lo8 >>= 4;
     scale *= 10;
   }
 
-  val64 += (hi2 & 0x0F) * scale;
-  val64 += ((hi2>>4) & 0x0F) * scale * 10;
+  val64 += (hi2 & 0x0f) * scale;
+  val64 += ((hi2>>4) & 0x0f) * scale * 10;
 
   floatx80 result = int64_to_floatx80(val64);
   if (hi2 & 0x8000)	// set negative
@@ -258,23 +255,26 @@ void BX_CPU_C::FBLD_PACKED_BCD(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FST_STi(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_STi(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
   int pop_stack = i->nnn() & 1;
+  // handle special case of FSTP opcode @ 0xDF 0xD0..D7
+  if (i->b1() == 0xdf)
+    pop_stack = 1;
 
-  int st0_tag = BX_CPU_THIS_PTR the_i387.FPU_gettagi(0);
-  if (st0_tag == FPU_Tag_Empty)
-  {
-     BX_CPU_THIS_PTR FPU_stack_underflow(i->rm(), pop_stack);
-     return;
+  clear_C1();
+
+  if (IS_TAG_EMPTY(0)) {
+    BX_CPU_THIS_PTR FPU_stack_underflow(i->rm(), pop_stack);
+    return;
   }
 
   floatx80 st0_reg = BX_READ_FPU_REG(0);
 
-  BX_WRITE_FPU_REGISTER_AND_TAG(st0_reg, st0_tag, i->rm());
+  BX_WRITE_FPU_REG(st0_reg, i->rm());
   if (pop_stack)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
 #else
@@ -282,10 +282,12 @@ void BX_CPU_C::FST_STi(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+
+  clear_C1();
 
   float32 save_reg = float32_default_nan; /* The masked response */
 
@@ -300,7 +302,7 @@ void BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
      save_reg = floatx80_to_float32(BX_READ_FPU_REG(0), status);
@@ -318,10 +320,12 @@ void BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+
+  clear_C1();
 
   float64 save_reg = float64_default_nan; /* The masked response */
 
@@ -336,7 +340,7 @@ void BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
      save_reg = floatx80_to_float64(BX_READ_FPU_REG(0), status);
@@ -355,10 +359,12 @@ void BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i)
 }
 
 /* DB /7 */
-void BX_CPU_C::FSTP_EXTENDED_REAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSTP_EXTENDED_REAL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+
+  clear_C1();
 
   floatx80 save_reg = floatx80_default_nan; /* The masked response */
 
@@ -382,7 +388,7 @@ void BX_CPU_C::FSTP_EXTENDED_REAL(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -402,12 +408,12 @@ void BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c *i)
   }
   else
   {
-      float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-      save_reg = floatx80_to_int16(BX_READ_FPU_REG(0), status);
+     save_reg = floatx80_to_int16(BX_READ_FPU_REG(0), status);
 
-      if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
+     if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
         return;
   }
 
@@ -420,7 +426,7 @@ void BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -440,7 +446,7 @@ void BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
      save_reg = floatx80_to_int32(BX_READ_FPU_REG(0), status);
@@ -458,7 +464,7 @@ void BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FISTP_QWORD_INTEGER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTP_QWORD_INTEGER(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -476,7 +482,7 @@ void BX_CPU_C::FISTP_QWORD_INTEGER(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
      save_reg = floatx80_to_int64(BX_READ_FPU_REG(0), status);
@@ -492,14 +498,14 @@ void BX_CPU_C::FISTP_QWORD_INTEGER(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  /* 
-   * The packed BCD integer indefinite encoding (FFFFC000000000000000H) 
-   * is stored in response to a masked floating-point invalid-operation 
+  /*
+   * The packed BCD integer indefinite encoding (FFFFC000000000000000H)
+   * is stored in response to a masked floating-point invalid-operation
    * exception.
    */
   Bit16u save_reg_hi = 0xFFFF;
@@ -516,20 +522,22 @@ void BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
         FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-     Bit64s save_val = floatx80_to_int64(BX_READ_FPU_REG(0), status);
+     floatx80 reg = BX_READ_FPU_REG(0);
 
-     int sign = (save_val < 0);
-     if (sign) 
+     Bit64s save_val = floatx80_to_int64(reg, status);
+
+     int sign = (reg.exp & 0x8000) != 0;
+     if (sign)
         save_val = -save_val;
- 
+
      if (save_val > BX_CONST64(999999999999999999))
      {
         float_raise(status, float_flag_invalid);
      }
-     
+
      if (! (status.float_exception_flags & float_flag_invalid))
      {
         save_reg_hi = (sign) ? 0x8000 : 0;
@@ -562,7 +570,7 @@ void BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
 }
 
 /* DF /1 */
-void BX_CPU_C::FISTTP16(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP16(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -580,12 +588,12 @@ void BX_CPU_C::FISTTP16(bxInstruction_c *i)
   }
   else
   {
-      float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-      save_reg = floatx80_to_int16_round_to_zero(BX_READ_FPU_REG(0), status);
+     save_reg = floatx80_to_int16_round_to_zero(BX_READ_FPU_REG(0), status);
 
-      if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
+     if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
         return;
   }
 
@@ -598,7 +606,7 @@ void BX_CPU_C::FISTTP16(bxInstruction_c *i)
 }
 
 /* DB /1 */
-void BX_CPU_C::FISTTP32(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP32(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -616,7 +624,7 @@ void BX_CPU_C::FISTTP32(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
      save_reg = floatx80_to_int32_round_to_zero(BX_READ_FPU_REG(0), status);
@@ -634,7 +642,7 @@ void BX_CPU_C::FISTTP32(bxInstruction_c *i)
 }
 
 /* DD /1 */
-void BX_CPU_C::FISTTP64(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FISTTP64(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -652,7 +660,7 @@ void BX_CPU_C::FISTTP64(bxInstruction_c *i)
   }
   else
   {
-     float_status_t status = 
+     float_status_t status =
          FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
      save_reg = floatx80_to_int64_round_to_zero(BX_READ_FPU_REG(0), status);
@@ -668,3 +676,5 @@ void BX_CPU_C::FISTTP64(bxInstruction_c *i)
   UndefinedOpcode(i);
 #endif
 }
+
+#endif

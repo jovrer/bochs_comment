@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith32.cc,v 1.70 2007/12/23 17:21:27 sshwarts Exp $
+// $Id: arith32.cc,v 1.78 2008/05/06 05:06:32 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,12 +25,10 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
 
 #if BX_SUPPORT_X86_64==0
 // Make life easier for merging cpu64 and cpu code.
@@ -38,24 +36,25 @@
 #define RDX EDX
 #endif
 
-
-void BX_CPU_C::INC_ERX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INC_ERX(bxInstruction_c *i)
 {
   Bit32u erx = ++BX_READ_32BIT_REG(i->opcodeReg());
   SET_FLAGS_OSZAPC_INC_32(erx);
   BX_CLEAR_64BIT_HIGH(i->opcodeReg());
 }
 
-void BX_CPU_C::DEC_ERX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_ERX(bxInstruction_c *i)
 {
   Bit32u erx = --BX_READ_32BIT_REG(i->opcodeReg());
   SET_FLAGS_OSZAPC_DEC_32(erx);
   BX_CLEAR_64BIT_HIGH(i->opcodeReg());
 }
 
-void BX_CPU_C::ADD_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EdGdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, sum_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = BX_READ_32BIT_REG(i->nnn());
@@ -65,7 +64,7 @@ void BX_CPU_C::ADD_EdGdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADD_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EdGdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, sum_32;
 
@@ -77,9 +76,11 @@ void BX_CPU_C::ADD_EdGdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADD_GdEdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_GdEdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, sum_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = BX_READ_32BIT_REG(i->nnn());
   op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
@@ -90,7 +91,7 @@ void BX_CPU_C::ADD_GdEdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADD_GdEdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_GdEdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, sum_32;
 
@@ -103,7 +104,7 @@ void BX_CPU_C::ADD_GdEdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADD_EAXId(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EAXId(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32 = i->Id(), sum_32;
 
@@ -114,21 +115,23 @@ void BX_CPU_C::ADD_EAXId(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADC_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EdGdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
   Bit32u op1_32, op2_32, sum_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = BX_READ_32BIT_REG(i->nnn());
   sum_32 = op1_32 + op2_32 + temp_CF;
   write_RMW_virtual_dword(sum_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::ADC_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EdGdR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -139,24 +142,26 @@ void BX_CPU_C::ADC_EdGdR(bxInstruction_c *i)
   sum_32 = op1_32 + op2_32 + temp_CF;
   BX_WRITE_32BIT_REGZ(i->rm(), sum_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::ADC_GdEdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_GdEdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
   Bit32u op1_32, op2_32, sum_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = BX_READ_32BIT_REG(i->nnn());
   op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
   sum_32 = op1_32 + op2_32 + temp_CF;
   BX_WRITE_32BIT_REGZ(i->nnn(), sum_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::ADC_GdEdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_GdEdR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -167,10 +172,10 @@ void BX_CPU_C::ADC_GdEdR(bxInstruction_c *i)
   sum_32 = op1_32 + op2_32 + temp_CF;
   BX_WRITE_32BIT_REGZ(i->nnn(), sum_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::ADC_EAXId(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EAXId(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -180,24 +185,26 @@ void BX_CPU_C::ADC_EAXId(bxInstruction_c *i)
   sum_32 = op1_32 + op2_32 + temp_CF;
   RAX = sum_32;
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::SBB_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EdGdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = BX_READ_32BIT_REG(i->nnn());
   diff_32 = op1_32 - (op2_32 + temp_CF);
   write_RMW_virtual_dword(diff_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SBB_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EdGdR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -208,24 +215,26 @@ void BX_CPU_C::SBB_EdGdR(bxInstruction_c *i)
   diff_32 = op1_32 - (op2_32 + temp_CF);
   BX_WRITE_32BIT_REGZ(i->rm(), diff_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SBB_GdEdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_GdEdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = BX_READ_32BIT_REG(i->nnn());
   op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
   diff_32 = op1_32 - (op2_32 + temp_CF);
   BX_WRITE_32BIT_REGZ(i->nnn(), diff_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SBB_GdEdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_GdEdR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -236,10 +245,10 @@ void BX_CPU_C::SBB_GdEdR(bxInstruction_c *i)
   diff_32 = op1_32 - (op2_32 + temp_CF);
   BX_WRITE_32BIT_REGZ(i->nnn(), diff_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SBB_EAXId(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EAXId(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -250,23 +259,25 @@ void BX_CPU_C::SBB_EAXId(bxInstruction_c *i)
   diff_32 = op1_32 - (op2_32 + temp_CF);
   RAX = diff_32;
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SBB_EdIdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EdIdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
   Bit32u op1_32, op2_32 = i->Id(), diff_32;
 
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   diff_32 = op1_32 - (op2_32 + temp_CF);
   write_RMW_virtual_dword(diff_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SBB_EdIdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EdIdR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -276,12 +287,14 @@ void BX_CPU_C::SBB_EdIdR(bxInstruction_c *i)
   diff_32 = op1_32 - (op2_32 + temp_CF);
   BX_WRITE_32BIT_REGZ(i->rm(), diff_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_INSTR_SUB_SBB32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, diff_32, BX_LF_INSTR_SUB_SBB32(temp_CF));
 }
 
-void BX_CPU_C::SUB_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EdGdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = BX_READ_32BIT_REG(i->nnn());
@@ -291,7 +304,7 @@ void BX_CPU_C::SUB_EdGdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::SUB_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EdGdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -303,9 +316,11 @@ void BX_CPU_C::SUB_EdGdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::SUB_GdEdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_GdEdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = BX_READ_32BIT_REG(i->nnn());
   op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
@@ -315,7 +330,7 @@ void BX_CPU_C::SUB_GdEdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::SUB_GdEdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_GdEdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -327,7 +342,7 @@ void BX_CPU_C::SUB_GdEdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::SUB_EAXId(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EAXId(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -339,9 +354,11 @@ void BX_CPU_C::SUB_EAXId(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EdGdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = BX_READ_32BIT_REG(i->nnn());
@@ -350,7 +367,7 @@ void BX_CPU_C::CMP_EdGdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EdGdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -361,9 +378,11 @@ void BX_CPU_C::CMP_EdGdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_GdEdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_GdEdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = BX_READ_32BIT_REG(i->nnn());
   op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
@@ -372,7 +391,7 @@ void BX_CPU_C::CMP_GdEdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_GdEdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_GdEdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -383,7 +402,7 @@ void BX_CPU_C::CMP_GdEdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_EAXId(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EAXId(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -394,14 +413,14 @@ void BX_CPU_C::CMP_EAXId(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CWDE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CWDE(bxInstruction_c *i)
 {
   /* CWDE: no flags are effected */
   Bit32u tmp = (Bit16s) AX;
   RAX = tmp;
 }
 
-void BX_CPU_C::CDQ(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CDQ(bxInstruction_c *i)
 {
   /* CDQ: no flags are affected */
   if (EAX & 0x80000000) {
@@ -425,19 +444,19 @@ void BX_CPU_C::CDQ(bxInstruction_c *i)
 //   {OF,B0} = CMPXCHG 8
 //   {OF,B1} = CMPXCHG 16|32
 
-void BX_CPU_C::CMPXCHG_XBTS(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_XBTS(bxInstruction_c *i)
 {
   BX_INFO(("CMPXCHG_XBTS: Generate #UD exception"));
   UndefinedOpcode(i);
 }
 
-void BX_CPU_C::CMPXCHG_IBTS(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_IBTS(bxInstruction_c *i)
 {
   BX_INFO(("CMPXCHG_IBTS: Generate #UD exception"));
   UndefinedOpcode(i);
 }
 
-void BX_CPU_C::XADD_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EdGdM(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, sum_32;
@@ -447,6 +466,8 @@ void BX_CPU_C::XADD_EdGdM(bxInstruction_c *i)
    * src  <-- dst               | op2 = op1
    * dst  <-- tmp               | op1 = sum
    */
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = BX_READ_32BIT_REG(i->nnn());
@@ -463,7 +484,7 @@ void BX_CPU_C::XADD_EdGdM(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::XADD_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EdGdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, sum_32;
@@ -492,9 +513,11 @@ void BX_CPU_C::XADD_EdGdR(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::ADD_EdIdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EdIdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, sum_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = i->Id();
@@ -504,7 +527,7 @@ void BX_CPU_C::ADD_EdIdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADD_EdIdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EdIdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, sum_32;
 
@@ -517,20 +540,22 @@ void BX_CPU_C::ADD_EdIdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_32(op1_32, op2_32, sum_32);
 }
 
-void BX_CPU_C::ADC_EdIdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EdIdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
   Bit32u op1_32, op2_32 = i->Id(), sum_32;
 
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   sum_32 = op1_32 + op2_32 + temp_CF;
   write_RMW_virtual_dword(sum_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::ADC_EdIdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EdIdR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
@@ -540,12 +565,14 @@ void BX_CPU_C::ADC_EdIdR(bxInstruction_c *i)
   sum_32 = op1_32 + op2_32 + temp_CF;
   BX_WRITE_32BIT_REGZ(i->rm(), sum_32);
 
-  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_ADD_ADC32(temp_CF));
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_LF_INSTR_ADD_ADC32(temp_CF));
 }
 
-void BX_CPU_C::SUB_EdIdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EdIdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32 = i->Id(), diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   diff_32 = op1_32 - op2_32;
@@ -554,7 +581,7 @@ void BX_CPU_C::SUB_EdIdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::SUB_EdIdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EdIdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32 = i->Id(), diff_32;
 
@@ -565,9 +592,11 @@ void BX_CPU_C::SUB_EdIdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_EdIdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EdIdM(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_virtual_dword(i->seg(), RMAddr(i));
   op2_32 = i->Id();
@@ -576,7 +605,7 @@ void BX_CPU_C::CMP_EdIdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::CMP_EdIdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EdIdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, diff_32;
 
@@ -587,29 +616,33 @@ void BX_CPU_C::CMP_EdIdR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_SUB_32(op1_32, op2_32, diff_32);
 }
 
-void BX_CPU_C::NEG_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::NEG_EdM(bxInstruction_c *i)
 {
   Bit32u op1_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
-  op1_32 = (Bit32u) -op1_32;
+  op1_32 = - (Bit32s)(op1_32);
   write_RMW_virtual_dword(op1_32);
 
-  SET_FLAGS_OSZAPC_RESULT_32(op1_32, BX_INSTR_NEG32);
+  SET_FLAGS_OSZAPC_RESULT_32(op1_32, BX_LF_INSTR_NEG32);
 }
 
-void BX_CPU_C::NEG_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::NEG_EdR(bxInstruction_c *i)
 {
   Bit32u op1_32 = BX_READ_32BIT_REG(i->rm());
-  op1_32 = (Bit32u) -op1_32;
+  op1_32 = - (Bit32s)(op1_32);
   BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
 
-  SET_FLAGS_OSZAPC_RESULT_32(op1_32, BX_INSTR_NEG32);
+  SET_FLAGS_OSZAPC_RESULT_32(op1_32, BX_LF_INSTR_NEG32);
 }
 
-void BX_CPU_C::INC_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INC_EdM(bxInstruction_c *i)
 {
   Bit32u op1_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op1_32++;
@@ -618,18 +651,11 @@ void BX_CPU_C::INC_EdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_INC_32(op1_32);
 }
 
-void BX_CPU_C::INC_EdR(bxInstruction_c *i)
-{
-  Bit32u op1_32 = BX_READ_32BIT_REG(i->rm());
-  op1_32++;
-  BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
-
-  SET_FLAGS_OSZAPC_INC_32(op1_32);
-}
-
-void BX_CPU_C::DEC_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_EdM(bxInstruction_c *i)
 {
   Bit32u op1_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   op1_32--;
@@ -638,19 +664,12 @@ void BX_CPU_C::DEC_EdM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_DEC_32(op1_32);
 }
 
-void BX_CPU_C::DEC_EdR(bxInstruction_c *i)
-{
-  Bit32u op1_32 = BX_READ_32BIT_REG(i->rm());
-  op1_32--;
-  BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
-
-  SET_FLAGS_OSZAPC_DEC_32(op1_32);
-}
-
-void BX_CPU_C::CMPXCHG_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EdGdM(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, diff_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
   diff_32 = EAX - op1_32;
@@ -671,7 +690,7 @@ void BX_CPU_C::CMPXCHG_EdGdM(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::CMPXCHG_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EdGdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
   Bit32u op1_32, op2_32, diff_32;
@@ -695,30 +714,28 @@ void BX_CPU_C::CMPXCHG_EdGdR(bxInstruction_c *i)
 #endif
 }
 
-void BX_CPU_C::CMPXCHG8B(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG8B(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
-  Bit32u op1_64_lo, op1_64_hi, diff;
+  Bit64u op1_64, op2_64;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   // check write permission for following write
-  op1_64_lo = read_RMW_virtual_dword(i->seg(), RMAddr(i));
-  op1_64_hi = read_RMW_virtual_dword(i->seg(), RMAddr(i) + 4);
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
+  op2_64 = ((Bit64u) EDX << 32) | EAX;
 
-  diff  = EAX - op1_64_lo;
-  diff |= EDX - op1_64_hi;
-
-  if (diff == 0) {  // if accumulator == dest
-    // dest <-- src
-    write_RMW_virtual_dword(ECX);
-    // write permissions already checked by read_RMW_virtual_dword
-    write_virtual_dword(i->seg(), RMAddr(i), EBX);
+  if (op1_64 == op2_64) {  // if accumulator == dest
+    // dest <-- src (ECX:EBX)
+    op2_64 = ((Bit64u) ECX << 32) | EBX;
+    write_RMW_virtual_qword(op2_64);
     assert_ZF();
   }
   else {
-    clear_ZF();
     // accumulator <-- dest
-    RAX = op1_64_lo;
-    RDX = op1_64_hi;
+    RAX = GET32L(op1_64);
+    RDX = GET32H(op1_64);
+    clear_ZF();
   }
 
 #else

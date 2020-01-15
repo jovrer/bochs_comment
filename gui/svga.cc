@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svga.cc,v 1.12 2006/10/14 15:53:47 vruppert Exp $
+// $Id: svga.cc,v 1.17 2008/03/06 21:15:40 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  This library is free software; you can redistribute it and/or
@@ -19,7 +19,7 @@
 #define _MULTI_THREAD
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -67,13 +67,13 @@ static unsigned prev_cursor_x=0;
 static unsigned prev_cursor_y=0;
 
 void keyboard_handler(int scancode, int press);
-void mouse_handler(int button, int dx, int dy, int dz, 
+void mouse_handler(int button, int dx, int dy, int dz,
 		    int drx, int dry, int drz);
 
 unsigned char reverse_byteorder(unsigned char b)
 {
     unsigned char ret = 0;
-    
+
     for (unsigned i=0;i<8;i++){
 	ret |= (b & 0x01) << (7 - i);
 	b >>= 1;
@@ -84,13 +84,13 @@ unsigned char reverse_byteorder(unsigned char b)
 void create_vga_font()
 {
     memcpy(vgafont, bx_vgafont, sizeof(bx_vgafont));
-    
+
     for (unsigned i=0;i< sizeof(bx_vgafont);i++) {
 	vgafont[i] = reverse_byteorder(vgafont[i]);
-    }    
+    }
 }
 
-bx_svga_gui_c::bx_svga_gui_c ()
+bx_svga_gui_c::bx_svga_gui_c()
 {
   put("SVGA");
 }
@@ -105,22 +105,22 @@ void bx_svga_gui_c::specific_init(
   tilewidth = x_tilesize;
   tileheight = y_tilesize;
 
-  if(vga_init() != 0 )
+  if(vga_init() != 0)
   {
     LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
     BX_PANIC (("Unable to initialize SVGAlib"));
     return;
   }
-  
+
   screen = gl_allocatecontext();
-  
+
   fontwidth = 8;
   fontheight = 16;
   dimension_update(640,400);
   create_vga_font();
   gl_setfont(fontwidth, fontheight, (void *)vgafont);
   gl_setwritemode(FONT_COMPRESSED);
-  
+
   keyboard_init();
   keyboard_seteventhandler((__keyboard_handler) keyboard_handler);
 
@@ -141,17 +141,22 @@ void bx_svga_gui_c::text_update(
     Bit8u *new_text,
     unsigned long cursor_x,
     unsigned long cursor_y,
-    bx_vga_tminfo_t tm_info,
-    unsigned nrows)
+    bx_vga_tminfo_t tm_info)
 {
   Bit8u *old_line, *new_line;
   unsigned int curs, hchars, i, j, offset, rows, x, y;
   char s[] = " ";
   int fg, bg;
-  bx_bool force_update = 0;
+  bx_bool force_update = 0, blink_state, blink_mode;
   int text_palette[16];
 
-  UNUSED(nrows);
+  // first check if the screen needs to be redrawn completely
+  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  if (blink_mode) {
+    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+      force_update = 1;
+  }
   if (charmap_updated) {
     BX_INFO(("charmap update. Font Height is %d", fontheight));
     for (unsigned c = 0; c<256; c++) {
@@ -171,7 +176,7 @@ void bx_svga_gui_c::text_update(
     text_palette[i] = DEV_vga_get_actl_pal_idx(i);
   }
 
-  // first invalidate character at previous and new cursor location
+  // invalidate character at previous and new cursor location
   if((prev_cursor_y < text_rows) && (prev_cursor_x < text_cols)) {
     curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
     old_text[curs] = ~new_text[curs];
@@ -197,7 +202,13 @@ void bx_svga_gui_c::text_update(
           || (old_text[1] != new_text[1])) {
         s[0] = new_text[0];
         fg = text_palette[new_text[1] & 0x0F];
-        bg = text_palette[(new_text[1] & 0xF0) >> 4];
+        if (blink_mode) {
+          bg = text_palette[(new_text[1] & 0x70) >> 4];
+          if (!blink_state && (new_text[1] & 0x80))
+            fg = bg;
+        } else {
+          bg = text_palette[(new_text[1] & 0xF0) >> 4];
+        }
         if (offset == curs) {
           gl_setfontcolors(fg, bg);
         } else {
@@ -219,23 +230,17 @@ void bx_svga_gui_c::text_update(
   prev_cursor_y = cursor_y;
 }
 
-  int
-bx_svga_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+int bx_svga_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
 {
   return 0;
 }
 
-  int
-bx_svga_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+int bx_svga_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 {
   return 0;
 }
 
-
-void bx_svga_gui_c::graphics_tile_update(
-    Bit8u *snapshot,
-    unsigned x,
-    unsigned y)
+void bx_svga_gui_c::graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y)
 {
   if ((y + tileheight) > res_y) {
     gl_putbox(x, y, tilewidth, (res_y - y), snapshot);
@@ -315,7 +320,7 @@ static Bit32u vga_to_bx_key(int key)
 
 	case SCANCODE_RIGHTSHIFT: return BX_KEY_SHIFT_R;
 	case SCANCODE_KEYPADMULTIPLY: return BX_KEY_KP_MULTIPLY;
-	
+
 	case SCANCODE_LEFTALT: return BX_KEY_ALT_L;
 	case SCANCODE_SPACE: return BX_KEY_SPACE;
 	case SCANCODE_CAPSLOCK: return BX_KEY_CAPS_LOCK;
@@ -333,7 +338,7 @@ static Bit32u vga_to_bx_key(int key)
 
 	case SCANCODE_NUMLOCK: return BX_KEY_NUM_LOCK;
 	case SCANCODE_SCROLLLOCK: return BX_KEY_SCRL_LOCK;
-	
+
 	case SCANCODE_KEYPAD7: return BX_KEY_KP_HOME;
 	case SCANCODE_KEYPAD8: return BX_KEY_KP_UP;
 	case SCANCODE_KEYPAD9: return BX_KEY_KP_PAGE_UP;
@@ -383,22 +388,22 @@ void keyboard_handler(int scancode, int press)
     if (scancode != SCANCODE_F12) {
 	int bx_key = vga_to_bx_key(scancode);
 	Bit32u key_state;
-		
+
 	if (press) {
 	    key_state = BX_KEY_PRESSED;
-	} else { 
+	} else {
 	    key_state = BX_KEY_RELEASED;
 	}
-	
+
 	DEV_kbd_gen_scancode(bx_key | key_state);
     } else {
 	BX_INFO(("F12 pressed"));
-	// show runtime options menu, which uses stdin/stdout	
+	// show runtime options menu, which uses stdin/stdout
 	SIM->configuration_interface (NULL, CI_RUNTIME_CONFIG);
     }
 }
 
-void mouse_handler(int button, int dx, int dy, int dz, 
+void mouse_handler(int button, int dx, int dy, int dz,
 		    int drx, int dry, int drz)
 {
   int buttons = 0;
@@ -443,17 +448,17 @@ bx_bool bx_svga_gui_c::palette_change(
     unsigned green,
     unsigned blue)
 {
-  if( index > 255 ) return 0;
+  if(index > 255) return 0;
 
-  // without VGA_CLUT8 extension we have only 6 bits for each r,g,b value   
+  // without VGA_CLUT8 extension we have only 6 bits for each r,g,b value
   if (!clut8 && (red > 63 || green > 63 || blue > 63)) {
 	red   = red >> 2;
 	green = green >> 2;
 	blue  = blue >> 2;
   }
-  
+
   vga_setpalette(index, red, green, blue);
-  
+
   return 1;
 }
 
@@ -470,7 +475,7 @@ void bx_svga_gui_c::dimension_update(
   if (bpp > 8) {
     BX_PANIC(("%d bpp graphics mode not supported yet", bpp));
   }
-  if( fheight > 0 )
+  if(fheight > 0)
   {
     text_cols = x / fwidth;
     text_rows = y / fheight;
@@ -481,9 +486,9 @@ void bx_svga_gui_c::dimension_update(
     fontwidth = 8;
   }
 
-  if( (x == res_x) && (y == res_y )) return;
+  if ((x == res_x) && (y == res_y)) return;
 
-  if (x == 640 && y == 480) { 
+  if (x == 640 && y == 480) {
     newmode = G640x480x256;
   } else if (x == 640 && y == 400) {
     newmode = G640x400x256;
@@ -492,18 +497,18 @@ void bx_svga_gui_c::dimension_update(
   } else if (x == 1024 && y == 768) {
     newmode = G1024x768x256;
   }
-  
+
   if (!vga_hasmode(newmode)) {
     newmode = G640x480x256; // trying "default" mode...
   }
-  
+
   vga_getpalvec(0, 256, save_vga_pal);
   if (vga_setmode(newmode) != 0)
   {
       LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
       BX_PANIC (("Unable to set requested videomode: %ix%i", x, y));
   }
-  
+
   gl_setcontextvga(newmode);
   gl_getcontext(screen);
   gl_setcontextvgavirtual(newmode);
@@ -532,13 +537,9 @@ unsigned bx_svga_gui_c::headerbar_bitmap(
   return 0;
 }
 
-
-void bx_svga_gui_c::replace_bitmap(
-    unsigned hbar_id,
-    unsigned bmap_id)
+void bx_svga_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
 }
-
 
 void bx_svga_gui_c::show_headerbar(void)
 {
@@ -556,13 +557,12 @@ void headerbar_click(int x)
 
 void bx_svga_gui_c::exit(void)
 {
-    vga_setmode(TEXT);
-    keyboard_close();
-    mouse_close();
+  vga_setmode(TEXT);
+  keyboard_close();
+  mouse_close();
 }
 
-void 
-bx_svga_gui_c::set_display_mode (disp_mode_t newmode)
+void bx_svga_gui_c::set_display_mode (disp_mode_t newmode)
 {
   // if no mode change, do nothing.
   if (disp_mode == newmode) return;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y,v 1.24 2007/10/23 21:51:43 sshwarts Exp $
+// $Id: parser.y,v 1.30 2008/05/03 21:32:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -55,7 +55,6 @@
 %token <sval> BX_TOKEN_FPU
 %token <sval> BX_TOKEN_SSE
 %token <sval> BX_TOKEN_MMX
-%token <sval> BX_TOKEN_ALL
 %token <sval> BX_TOKEN_IDT
 %token <sval> BX_TOKEN_IVT
 %token <sval> BX_TOKEN_GDT
@@ -85,6 +84,7 @@
 %token <sval> BX_TOKEN_CRC
 %token <sval> BX_TOKEN_TRACE
 %token <sval> BX_TOKEN_TRACEREG
+%token <sval> BX_TOKEN_TRACEMEM
 %token <sval> BX_TOKEN_SWITCH_MODE
 %token <sval> BX_TOKEN_SIZE
 %token <sval> BX_TOKEN_PTIME
@@ -144,6 +144,11 @@ command:
     | breakpoint_command
     | info_command
     | regs_command
+    | fpu_regs_command
+    | mmx_regs_command
+    | sse_regs_command
+    | segment_regs_command
+    | control_regs_command
     | blist_command
     | slist_command
     | delete_command
@@ -161,6 +166,7 @@ command:
     | crc_command
     | trace_command
     | trace_reg_command
+    | trace_mem_command
     | ptime_command
     | timebp_command
     | record_command
@@ -284,6 +290,14 @@ trace_reg_command:
       }
     ;
 
+trace_mem_command:
+      BX_TOKEN_TRACEMEM BX_TOKEN_TOGGLE_ON_OFF '\n'
+      {
+          bx_dbg_trace_mem_command($2);
+          free($1);
+      }
+    ;
+
 print_stack_command:
       BX_TOKEN_PRINT_STACK '\n'
       {
@@ -343,17 +357,22 @@ watch_point_command:
     ;
 
 symbol_command:
-      BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_STRING '\n' 
+      BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_STRING '\n'
       {
         bx_dbg_symbol_command($2, 0, 0);
         free($1); free($2);
       }
-    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_STRING BX_TOKEN_NUMERIC '\n' 
+    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_STRING BX_TOKEN_NUMERIC '\n'
       {
         bx_dbg_symbol_command($2, 0, $3);
         free($1); free($2);
       }
-    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_GLOBAL BX_TOKEN_STRING BX_TOKEN_NUMERIC '\n' 
+    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_GLOBAL BX_TOKEN_STRING '\n'
+      {
+        bx_dbg_symbol_command($3, 1, 0);
+        free($1); free($2); free($3);
+      }
+    | BX_TOKEN_LOAD_SYMBOLS BX_TOKEN_GLOBAL BX_TOKEN_STRING BX_TOKEN_NUMERIC '\n'
       {
         bx_dbg_symbol_command($3, 1, $4);
         free($1); free($2); free($3);
@@ -508,27 +527,6 @@ info_command:
         bx_dbg_info_bpoints_command();
         free($1); free($2);
       }
-    | BX_TOKEN_INFO BX_TOKEN_REGISTERS '\n'
-      {
-        bx_dbg_info_registers_command(BX_INFO_GENERAL_PURPOSE_REGS);
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_FPU '\n'
-      {
-        bx_dbg_info_registers_command(BX_INFO_FPU_REGS);
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_MMX '\n'
-      {
-        bx_dbg_info_registers_command(BX_INFO_MMX_REGS);
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_SSE '\n'
-      {
-        bx_dbg_info_registers_command(BX_INFO_SSE_REGS);
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_ALL '\n'
     | BX_TOKEN_INFO BX_TOKEN_CPU '\n'
       {
         bx_dbg_info_registers_command(BX_INFO_GENERAL_PURPOSE_REGS | BX_INFO_FPU_REGS | BX_INFO_SSE_REGS);
@@ -589,16 +587,6 @@ info_command:
         bx_dbg_info_symbols_command($3);
         free($1); free($2); free($3);
       }
-    | BX_TOKEN_INFO BX_TOKEN_CONTROL_REGS '\n'
-      {
-        bx_dbg_info_control_regs_command();
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_SEGMENT_REGS '\n'
-      {
-        bx_dbg_info_segment_regs_command();
-        free($1); free($2);
-      }
     | BX_TOKEN_INFO BX_TOKEN_NE2000 '\n'
       {
         bx_dbg_info_ne2k(-1, -1);
@@ -639,6 +627,46 @@ regs_command:
       BX_TOKEN_REGISTERS '\n'
       {
         bx_dbg_info_registers_command(BX_INFO_GENERAL_PURPOSE_REGS);
+        free($1);
+      }
+    ;
+
+fpu_regs_command:
+      BX_TOKEN_FPU '\n'
+      {
+        bx_dbg_info_registers_command(BX_INFO_FPU_REGS);
+        free($1);
+      }
+    ;
+
+mmx_regs_command:
+      BX_TOKEN_MMX '\n'
+      {
+        bx_dbg_info_registers_command(BX_INFO_MMX_REGS);
+        free($1);
+      }
+    ;
+
+sse_regs_command:
+      BX_TOKEN_SSE '\n'
+      {
+        bx_dbg_info_registers_command(BX_INFO_SSE_REGS);
+        free($1);
+      }
+    ;
+
+segment_regs_command:
+      BX_TOKEN_SEGMENT_REGS '\n'
+      {
+        bx_dbg_info_segment_regs_command();
+        free($1);
+      }
+    ;
+
+control_regs_command:
+      BX_TOKEN_CONTROL_REGS '\n'
+      {
+        bx_dbg_info_control_regs_command();
         free($1);
       }
     ;
@@ -889,6 +917,12 @@ help_command:
          dbg_printf("trace-reg off - disable registers state tracing\n");
          free($1);free($2);
        }
+     | BX_TOKEN_HELP BX_TOKEN_TRACEMEM '\n'
+       {
+         dbg_printf("trace-mem on  - print all memory accesses occured during instruction execution\n");
+         dbg_printf("trace-mem off - disable memory accesses tracing\n");
+         free($1);free($2);
+       }
      | BX_TOKEN_HELP BX_TOKEN_RESTORE '\n'
        {
          dbg_printf("restore <param_name> [path] - restore bochs root param from the file\n");
@@ -929,7 +963,7 @@ help_command:
        }
      | BX_TOKEN_HELP BX_TOKEN_LOAD_SYMBOLS '\n'
        {
-         dbg_printf("load-symbols [global] <filename> [offset] - load symbols from file\n");
+         dbg_printf("ldsym [global] <filename> [offset] - load symbols from file\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_LIST_SYMBOLS '\n'
@@ -940,6 +974,31 @@ help_command:
      | BX_TOKEN_HELP BX_TOKEN_REGISTERS '\n'
        {
          dbg_printf("r|reg|regs|registers - list of CPU registers and their contents (same as 'info registers')\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_FPU '\n'
+       {
+         dbg_printf("fp|fpu| - print FPU state\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_MMX '\n'
+       {
+         dbg_printf("mmx - print MMX state\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_SSE '\n'
+       {
+         dbg_printf("sse|xmm - print SSE state\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_SEGMENT_REGS '\n'
+       {
+         dbg_printf("sreg - show segment registers\n");
+         free($1);free($2);
+       }
+     | BX_TOKEN_HELP BX_TOKEN_CONTROL_REGS '\n'
+       {
+         dbg_printf("creg - show control registers\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_SETPMEM '\n'
@@ -1012,18 +1071,11 @@ help_command:
        {
          dbg_printf("info break - show information about current breakpoint status\n");
          dbg_printf("info dirty - show physical pages dirtied (written to) since last display\n");
-         dbg_printf("info r|reg|regs|registers - list of CPU integer registers and their contents\n");
-         dbg_printf("info cpu - list of CPU registers and their contents\n");
-         dbg_printf("info fpu - list of FPU registers and their contents\n");
-         dbg_printf("info mmx - list of MMX registers and their contents\n");
-         dbg_printf("info sse - list of SSE registers and their contents\n");
          dbg_printf("info idt - show interrupt descriptor table\n");
          dbg_printf("info ivt - show interrupt vector table\n");
          dbg_printf("info gdt - show global descriptor table\n");
          dbg_printf("info tss - show current task state segment\n");
          dbg_printf("info tab - show page tables\n");
-         dbg_printf("info creg - show CR0-CR4 registers\n");
-         dbg_printf("info sreg - show segment registers\n");
          dbg_printf("info eflags - show decoded EFLAGS register\n");
          dbg_printf("info symbols [string] - list symbols whose prefix is string\n");
          dbg_printf("info pic - show PICs registers\n");

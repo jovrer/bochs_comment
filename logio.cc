@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.62 2007/10/24 23:28:00 sshwarts Exp $
+// $Id: logio.cc,v 1.69 2008/05/23 18:06:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -103,7 +103,7 @@ void iofunctions::init_log(const char *fn)
     newfd = fopen(fn, "w");
     if(newfd != NULL) {
       newfn = strdup(fn);
-      log->ldebug("Opened log file '%s'.", fn );
+      log->ldebug("Opened log file '%s'.", fn);
     } else {
       // in constructor, genlog might not exist yet, so do it the safe way.
       log->error("Couldn't open log file: %s, using stderr instead", fn);
@@ -121,7 +121,7 @@ void iofunctions::init_log(FILE *fs)
 
   if(fs == stderr) {
     logfn = "/dev/stderr";
-  } else if(fs == stdout) { 
+  } else if(fs == stdout) {
     logfn = "/dev/stdout";
   } else {
     logfn = "(unknown)";
@@ -161,7 +161,7 @@ void iofunctions::set_log_prefix(const char* prefix)
   strcpy(logprefix, prefix);
 }
 
-//  iofunctions::out( class, level, prefix, fmt, ap)
+//  iofunctions::out(class, level, prefix, fmt, ap)
 //  DO NOT nest out() from ::info() and the like.
 //    fmt and ap retained for direct printinf from iofunctions only!
 
@@ -196,7 +196,7 @@ void iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list
             break;
           case 'i':
 #if BX_SUPPORT_SMP == 0
-            fprintf(logfd, "%08x", BX_CPU(0)->eip_reg.dword.eip);
+            fprintf(logfd, "%08x", BX_CPU(0)->get_eip());
 #endif
             break;
           case 'e':
@@ -330,11 +330,11 @@ void logfunctions::put(const char *p)
     prefix = NULL;
   }
 
-  int len=strlen(p);
-  for(int i=1;i<len+1;i++) {
+  size_t len=strlen(p);
+  for(size_t i=1;i<len+1;i++) {
     tmpbuf[i]=p[i-1];
   }
-                
+
   switch(len) {
   case  1: tmpbuf[2]=' ';
   case  2: tmpbuf[3]=' ';
@@ -342,7 +342,7 @@ void logfunctions::put(const char *p)
   case  4: tmpbuf[5]=' ';
   default: tmpbuf[6]=']'; tmpbuf[7]='\0'; break;
   }
-        
+
   prefix=tmpbuf;
 }
 
@@ -362,9 +362,9 @@ void logfunctions::info(const char *fmt, ...)
 
   va_start(ap, fmt);
   this->logio->out(this->type,LOGLEV_INFO,this->prefix, fmt, ap);
-  if (onoff[LOGLEV_INFO] == ACT_ASK) 
+  if (onoff[LOGLEV_INFO] == ACT_ASK)
     ask(LOGLEV_INFO, this->prefix, fmt, ap);
-  if (onoff[LOGLEV_INFO] == ACT_FATAL) 
+  if (onoff[LOGLEV_INFO] == ACT_FATAL)
     fatal(this->prefix, fmt, ap, 1);
   va_end(ap);
 }
@@ -380,9 +380,9 @@ void logfunctions::error(const char *fmt, ...)
 
   va_start(ap, fmt);
   this->logio->out(this->type,LOGLEV_ERROR,this->prefix, fmt, ap);
-  if (onoff[LOGLEV_ERROR] == ACT_ASK) 
+  if (onoff[LOGLEV_ERROR] == ACT_ASK)
     ask(LOGLEV_ERROR, this->prefix, fmt, ap);
-  if (onoff[LOGLEV_ERROR] == ACT_FATAL) 
+  if (onoff[LOGLEV_ERROR] == ACT_FATAL)
     fatal(this->prefix, fmt, ap, 1);
   va_end(ap);
 }
@@ -405,9 +405,9 @@ void logfunctions::panic(const char *fmt, ...)
   va_end(ap);
   va_start(ap, fmt);
 
-  if (onoff[LOGLEV_PANIC] == ACT_ASK) 
+  if (onoff[LOGLEV_PANIC] == ACT_ASK)
     ask(LOGLEV_PANIC, this->prefix, fmt, ap);
-  if (onoff[LOGLEV_PANIC] == ACT_FATAL) 
+  if (onoff[LOGLEV_PANIC] == ACT_FATAL)
     fatal(this->prefix, fmt, ap, 1);
   va_end(ap);
 }
@@ -430,9 +430,9 @@ void logfunctions::pass(const char *fmt, ...)
   va_end(ap);
   va_start(ap, fmt);
 
-  if (onoff[LOGLEV_PASS] == ACT_ASK) 
+  if (onoff[LOGLEV_PASS] == ACT_ASK)
     ask(LOGLEV_PASS, this->prefix, fmt, ap);
-  if (onoff[LOGLEV_PASS] == ACT_FATAL) 
+  if (onoff[LOGLEV_PASS] == ACT_FATAL)
     fatal(this->prefix, fmt, ap, 101);
   va_end(ap);
 }
@@ -448,9 +448,9 @@ void logfunctions::ldebug(const char *fmt, ...)
 
   va_start(ap, fmt);
   this->logio->out(this->type,LOGLEV_DEBUG,this->prefix, fmt, ap);
-  if (onoff[LOGLEV_DEBUG] == ACT_ASK) 
+  if (onoff[LOGLEV_DEBUG] == ACT_ASK)
     ask(LOGLEV_DEBUG, this->prefix, fmt, ap);
-  if (onoff[LOGLEV_DEBUG] == ACT_FATAL) 
+  if (onoff[LOGLEV_DEBUG] == ACT_FATAL)
     fatal(this->prefix, fmt, ap, 1);
   va_end(ap);
 }
@@ -546,7 +546,7 @@ static void carbonFatalDialog(const char *error, const char *exposition)
   CFStringRef                   cfExposition;
   DialogItemIndex               index;
   AlertStdCFStringAlertParamRec alertParam = {0};
-  
+
   // Init libraries
   InitCursor();
   // Assemble dialog
@@ -555,7 +555,7 @@ static void carbonFatalDialog(const char *error, const char *exposition)
   {
     cfExposition = CFStringCreateWithCString(NULL, exposition, kCFStringEncodingASCII);
   }
-  else { 
+  else {
     cfExposition = NULL;
   }
   alertParam.version       = kStdCFStringAlertVersionOne;
@@ -578,6 +578,14 @@ static void carbonFatalDialog(const char *error, const char *exposition)
 
 void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int exit_status)
 {
+#if !BX_WITH_WX
+  // store prefix and message in 'exit_msg' before unloading device plugins
+  char tmpbuf[1024];
+  char exit_msg[1024];
+
+  vsprintf(tmpbuf, fmt, ap);
+  sprintf(exit_msg, "%s %s", prefix, tmpbuf);
+#endif
 #if !BX_DEBUGGER
   bx_atexit();
 #endif
@@ -596,8 +604,7 @@ void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int ex
   static const char *divider = "========================================================================";
   fprintf(stderr, "%s\n", divider);
   fprintf(stderr, "Bochs is exiting with the following message:\n");
-  fprintf(stderr, "%s ", prefix);
-  vfprintf(stderr, fmt, ap);
+  fprintf(stderr, "%s", exit_msg);
   fprintf(stderr, "\n%s\n", divider);
 #endif
 #if !BX_DEBUGGER
@@ -616,12 +623,12 @@ void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int ex
 iofunc_t *io = NULL;
 logfunc_t *genlog = NULL;
 
-void bx_center_print(FILE *file, char *line, int maxwidth)
+void bx_center_print(FILE *file, const char *line, unsigned maxwidth)
 {
-  int len = strlen(line);
+  size_t len = strlen(line);
   if (len > maxwidth)
     BX_PANIC(("bx_center_print: line is too long: '%s'", line));
-  int imax = (maxwidth - len) >> 1;
-  for (int i=0; i<imax; i++) fputc(' ', file);
+  size_t imax = (maxwidth - len) >> 1;
+  for (size_t i=0; i<imax; i++) fputc(' ', file);
   fputs(line, file);
 }

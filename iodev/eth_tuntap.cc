@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tuntap.cc,v 1.26 2006/11/23 17:21:59 vruppert Exp $
+// $Id: eth_tuntap.cc,v 1.28 2008/02/15 22:05:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,14 +23,16 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 // eth_tuntap.cc  - TUN/TAP interface by Renzo Davoli <renzo@cs.unibo.it>
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
- 
+
 #define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
@@ -116,7 +118,7 @@ protected:
 //
 
 // the constructor
-bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif, 
+bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
 				       void *rxarg,
@@ -133,28 +135,28 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
 
   // check if the TUN/TAP devices is running, and turn on ARP.  This is based
   // on code from the Mac-On-Linux project. http://http://www.maconlinux.org/
-  int sock = socket( AF_INET, SOCK_DGRAM, 0 );
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock < 0) {
     BX_PANIC (("socket creation: %s", strerror(errno)));
     return;
   }
   struct ifreq ifr;
-  memset( &ifr, 0, sizeof(ifr) );
-  strncpy( ifr.ifr_name, netif, sizeof(ifr.ifr_name) );
-  if( ioctl( sock, SIOCGIFFLAGS, &ifr ) < 0 ){
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, netif, sizeof(ifr.ifr_name));
+  if (ioctl(sock, SIOCGIFFLAGS, &ifr) < 0) {
     BX_PANIC (("SIOCGIFFLAGS on %s: %s", netif, strerror (errno)));
     close(sock);
     return;
   }
-  if( !(ifr.ifr_flags & IFF_RUNNING ) ){
+  if (!(ifr.ifr_flags & IFF_RUNNING)) {
     BX_PANIC (("%s device is not running", netif));
     close(sock);
     return;
   }
-  if( (ifr.ifr_flags & IFF_NOARP ) ){
+  if ((ifr.ifr_flags & IFF_NOARP)) {
     BX_INFO (("turn on ARP for %s device", netif));
     ifr.ifr_flags &= ~IFF_NOARP;
-    if( ioctl( sock, SIOCSIFFLAGS, &ifr ) < 0 ) {
+    if (ioctl(sock, SIOCSIFFLAGS, &ifr) < 0) {
       BX_PANIC (("SIOCSIFFLAGS: %s", strerror(errno)));
       close(sock);
       return;
@@ -163,36 +165,35 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
   close(sock);
 
   fd = open (filename, O_RDWR);
-#endif 
+#endif
   char intname[IFNAMSIZ];
   strcpy(intname,netif);
   fd=tun_alloc(intname);
   if (fd < 0) {
-    BX_PANIC (("open failed on %s: %s", netif, strerror (errno)));
+    BX_PANIC(("open failed on %s: %s", netif, strerror (errno)));
     return;
   }
 
   /* set O_ASYNC flag so that we can poll with read() */
-  if ((flags = fcntl( fd, F_GETFL)) < 0) {
+  if ((flags = fcntl(fd, F_GETFL)) < 0) {
     BX_PANIC (("getflags on tun device: %s", strerror (errno)));
   }
   flags |= O_NONBLOCK;
-  if (fcntl( fd, F_SETFL, flags ) < 0) {
-    BX_PANIC (("set tun device flags: %s", strerror (errno)));
+  if (fcntl(fd, F_SETFL, flags) < 0) {
+    BX_PANIC(("set tun device flags: %s", strerror (errno)));
   }
 
-  BX_INFO (("eth_tuntap: opened %s device", netif));
+  BX_INFO(("eth_tuntap: opened %s device", netif));
 
   /* Execute the configuration script */
-  if((script != NULL)
-   &&(strcmp(script, "") != 0)
-   &&(strcmp(script, "none") != 0)) {
+  if((script != NULL) && (strcmp(script, "") != 0) && (strcmp(script, "none") != 0))
+  {
     if (execute_script(script, intname) < 0)
       BX_ERROR (("execute script '%s' on %s failed", script, intname));
-    }
+  }
 
-  // Start the rx poll 
-  this->rx_timer_index = 
+  // Start the rx poll
+  this->rx_timer_index =
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
 				1, 1, "eth_tuntap"); // continuous, active
   this->rxh   = rxh;
@@ -208,7 +209,7 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
   fprintf (txlog_txt, "tuntap packetmover readable log file\n");
   fprintf (txlog_txt, "net IF = %s\n", netif);
   fprintf (txlog_txt, "MAC address = ");
-  for (int i=0; i<6; i++) 
+  for (int i=0; i<6; i++)
     fprintf (txlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "");
   fprintf (txlog_txt, "\n--\n");
   fflush (txlog_txt);
@@ -220,7 +221,7 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
   fprintf (rxlog_txt, "tuntap packetmover readable log file\n");
   fprintf (rxlog_txt, "net IF = %s\n", netif);
   fprintf (rxlog_txt, "MAC address = ");
-  for (int i=0; i<6; i++) 
+  for (int i=0; i<6; i++)
     fprintf (rxlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "");
   fprintf (rxlog_txt, "\n--\n");
   fflush (rxlog_txt);
@@ -228,8 +229,7 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
 #endif
 }
 
-void
-bx_tuntap_pktmover_c::sendpkt(void *buf, unsigned io_len)
+void bx_tuntap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
 #ifdef __APPLE__	//FIXME
   unsigned int size = write (fd, (char*)buf+14, io_len-14);
@@ -359,7 +359,6 @@ void bx_tuntap_pktmover_c::rx_timer ()
   (*rxh)(rxarg, rxbuf, nbytes);
 }
 
-
 int tun_alloc(char *dev)
 {
   struct ifreq ifr;
@@ -369,22 +368,22 @@ int tun_alloc(char *dev)
   // split name into device:ifname if applicable, to allow for opening
   // persistent tuntap devices
   for (ifname = dev; *ifname; ifname++) {
-	  if (*ifname == ':') {
-		  *(ifname++) = '\0';
-		  break;
-	  }
+    if (*ifname == ':') {
+       *(ifname++) = '\0';
+        break;
+    }
   }
   if ((fd = open(dev, O_RDWR)) < 0)
     return -1;
 #ifdef __linux__
   memset(&ifr, 0, sizeof(ifr));
 
-  /* Flags: IFF_TUN   - TUN device (no Ethernet headers) 
-   *        IFF_TAP   - TAP device  
+  /* Flags: IFF_TUN   - TUN device (no Ethernet headers)
+   *        IFF_TAP   - TAP device
    *
-   *        IFF_NO_PI - Do not provide packet information  
-   */ 
-  ifr.ifr_flags = IFF_TAP | IFF_NO_PI; 
+   *        IFF_NO_PI - Do not provide packet information
+   */
+  ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
   strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
   if ((err = ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0) {
     close(fd);
@@ -393,10 +392,10 @@ int tun_alloc(char *dev)
   strncpy(dev, ifr.ifr_name, IFNAMSIZ);
   dev[IFNAMSIZ-1]=0;
 
-  ioctl( fd, TUNSETNOCSUM, 1 );
+  ioctl(fd, TUNSETNOCSUM, 1);
 #endif
 
   return fd;
-}              
+}
 
 #endif /* if BX_NETWORKING && defined HAVE_TUNTAP */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tap.cc,v 1.28 2006/11/23 17:21:58 vruppert Exp $
+// $Id: eth_tap.cc,v 1.30 2008/02/15 22:05:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -58,7 +58,7 @@
 //
 // host$ ping 10.0.0.2
 // PING 10.0.0.2 (10.0.0.2) from 10.0.0.1 : 56(84) bytes of data.
-// 
+//
 // Netstat output:
 // 20:29:59.018776 fe:fd:0:0:0:0 fe:fd:0:0:0:1 0800 98: 10.0.0.1 > 10.0.0.2: icmp: echo request
 //      4500 0054 2800 0000 4001 3ea7 0a00 0001
@@ -71,19 +71,19 @@
 //      3949 0000 0809 0a0b 0c0d 0e0f 1011 1213
 //      1415 1617 1819
 //
-// I suspect it may be related to the fact that ping 10.0.0.1 from the 
-// host also doesn't work.  Why wouldn't the host respond to its own IP 
+// I suspect it may be related to the fact that ping 10.0.0.1 from the
+// host also doesn't work.  Why wouldn't the host respond to its own IP
 // address on the tap0 device?
 //
 // Theoretically, if you set up packet forwarding (with masquerading) on the
 // host, you should be able to get Bochs talking to anyone on the internet.
-// 
+//
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
- 
+
 #define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
@@ -159,7 +159,7 @@ protected:
 //
 
 // the constructor
-bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif, 
+bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 				       const char *macaddr,
 				       eth_rx_handler_t rxh,
 				       void *rxarg,
@@ -175,28 +175,28 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 #if defined(__linux__)
   // check if the TAP devices is running, and turn on ARP.  This is based
   // on code from the Mac-On-Linux project. http://http://www.maconlinux.org/
-  int sock = socket( AF_INET, SOCK_DGRAM, 0 );
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
   if (sock < 0) {
     BX_PANIC (("socket creation: %s", strerror(errno)));
     return;
   }
   struct ifreq ifr;
-  memset( &ifr, 0, sizeof(ifr) );
-  strncpy( ifr.ifr_name, netif, sizeof(ifr.ifr_name) );
-  if( ioctl( sock, SIOCGIFFLAGS, &ifr ) < 0 ){
-    BX_PANIC (("SIOCGIFFLAGS on %s: %s", netif, strerror (errno)));
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, netif, sizeof(ifr.ifr_name));
+  if(ioctl(sock, SIOCGIFFLAGS, &ifr) < 0) {
+    BX_PANIC (("SIOCGIFFLAGS on %s: %s", netif, strerror(errno)));
     close(sock);
     return;
   }
-  if( !(ifr.ifr_flags & IFF_RUNNING ) ){
+  if (!(ifr.ifr_flags & IFF_RUNNING)) {
     BX_PANIC (("%s device is not running", netif));
     close(sock);
     return;
   }
-  if( (ifr.ifr_flags & IFF_NOARP ) ){
-    BX_INFO (("turn on ARP for %s device", netif));
+  if ((ifr.ifr_flags & IFF_NOARP)){
+    BX_INFO(("turn on ARP for %s device", netif));
     ifr.ifr_flags &= ~IFF_NOARP;
-    if( ioctl( sock, SIOCSIFFLAGS, &ifr ) < 0 ) {
+    if (ioctl(sock, SIOCSIFFLAGS, &ifr) < 0) {
       BX_PANIC (("SIOCSIFFLAGS: %s", strerror(errno)));
       close(sock);
       return;
@@ -207,33 +207,32 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 
   fd = open (filename, O_RDWR);
   if (fd < 0) {
-    BX_PANIC (("open failed on %s: %s", netif, strerror (errno)));
+    BX_PANIC(("open failed on %s: %s", netif, strerror(errno)));
     return;
   }
 
   /* set O_ASYNC flag so that we can poll with read() */
-  if ((flags = fcntl( fd, F_GETFL)) < 0) {
-    BX_PANIC (("getflags on tap device: %s", strerror (errno)));
+  if ((flags = fcntl(fd, F_GETFL)) < 0) {
+    BX_PANIC(("getflags on tap device: %s", strerror(errno)));
   }
   flags |= O_NONBLOCK;
-  if (fcntl( fd, F_SETFL, flags ) < 0) {
-    BX_PANIC (("set tap device flags: %s", strerror (errno)));
+  if (fcntl(fd, F_SETFL, flags) < 0) {
+    BX_PANIC(("set tap device flags: %s", strerror(errno)));
   }
 
-  BX_INFO (("eth_tap: opened %s device", netif));
+  BX_INFO(("eth_tap: opened %s device", netif));
 
   /* Execute the configuration script */
   char intname[IFNAMSIZ];
   strcpy(intname,netif);
-  if((script != NULL)
-   &&(strcmp(script, "") != 0)
-   &&(strcmp(script, "none") != 0)) {
+  if((script != NULL) && (strcmp(script, "") != 0) && (strcmp(script, "none") != 0))
+  {
     if (execute_script(script, intname) < 0)
-      BX_ERROR (("execute script '%s' on %s failed", script, intname));
-    }
+      BX_ERROR(("execute script '%s' on %s failed", script, intname));
+  }
 
-  // Start the rx poll 
-  this->rx_timer_index = 
+  // Start the rx poll
+  this->rx_timer_index =
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
 				1, 1, "eth_tap"); // continuous, active
   this->rxh   = rxh;
@@ -249,7 +248,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
   fprintf (txlog_txt, "tap packetmover readable log file\n");
   fprintf (txlog_txt, "net IF = %s\n", netif);
   fprintf (txlog_txt, "MAC address = ");
-  for (int i=0; i<6; i++) 
+  for (int i=0; i<6; i++)
     fprintf (txlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "");
   fprintf (txlog_txt, "\n--\n");
   fflush (txlog_txt);
@@ -261,7 +260,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
   fprintf (rxlog_txt, "tap packetmover readable log file\n");
   fprintf (rxlog_txt, "net IF = %s\n", netif);
   fprintf (rxlog_txt, "MAC address = ");
-  for (int i=0; i<6; i++) 
+  for (int i=0; i<6; i++)
     fprintf (rxlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "");
   fprintf (rxlog_txt, "\n--\n");
   fflush (rxlog_txt);
@@ -269,8 +268,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 #endif
 }
 
-void
-bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
+void bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
   Bit8u txbuf[BX_PACKET_BUFSIZE];
   txbuf[0] = 0;
@@ -310,13 +308,13 @@ bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 #endif
 }
 
-void bx_tap_pktmover_c::rx_timer_handler (void *this_ptr)
+void bx_tap_pktmover_c::rx_timer_handler(void *this_ptr)
 {
   bx_tap_pktmover_c *class_ptr = (bx_tap_pktmover_c *) this_ptr;
   class_ptr->rx_timer();
 }
 
-void bx_tap_pktmover_c::rx_timer ()
+void bx_tap_pktmover_c::rx_timer()
 {
   int nbytes;
   Bit8u buf[BX_PACKET_BUFSIZE];
@@ -331,7 +329,7 @@ void bx_tap_pktmover_c::rx_timer ()
   rxbuf = buf+2;
   nbytes-=2;
 #endif
-  
+
 #if defined(__linux__)
   // hack: TAP device likes to create an ethernet header which has
   // the same source and destination address FE:FD:00:00:00:00.

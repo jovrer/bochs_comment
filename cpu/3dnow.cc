@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: 3dnow.cc,v 1.19 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: 3dnow.cc,v 1.24 2008/04/14 16:50:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2002 Stanislav Shwartsman
@@ -28,7 +28,7 @@
 
 #if BX_SUPPORT_3DNOW
 
-static void prepare_softfloat_status_word(float_status_t &status, int rounding_mode)
+BX_CPP_INLINE void prepare_softfloat_status_word(float_status_t &status, int rounding_mode)
 {
   status.float_exception_flags = 0; // clear exceptions before execution
   status.float_nan_handling_mode = float_first_operand_nan;
@@ -36,21 +36,24 @@ static void prepare_softfloat_status_word(float_status_t &status, int rounding_m
   status.flush_underflow_to_zero = 0;
 }
 
-void BX_CPU_C::PFPNACC_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFPNACC_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFPNACC_PqQq: 3DNow! instruction still not implemented"));
 }
 
 /* 0F 0F /r 0C */
-void BX_CPU_C::PI2FW_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PI2FW_PqQq(bxInstruction_c *i)
 {
   BxPackedMmxRegister result, op;
+
+  BX_CPU_THIS_PTR prepareMMX();
 
   /* op is a register or memory reference */
   if (i->modC0()) {
     op = BX_READ_MMX_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     MMXUQ(op) = read_virtual_qword(i->seg(), RMAddr(i));
   }
@@ -58,9 +61,9 @@ void BX_CPU_C::PI2FW_PqQq(bxInstruction_c *i)
   float_status_t status_word;
   prepare_softfloat_status_word(status_word, float_round_to_zero);
 
-  MMXUD0(result) = 
+  MMXUD0(result) =
         int32_to_float32((Bit32s)(MMXSW0(op)), status_word);
-  MMXUD1(result) = 
+  MMXUD1(result) =
         int32_to_float32((Bit32s)(MMXSW2(op)), status_word);
 
   /* now write result back to destination */
@@ -68,15 +71,18 @@ void BX_CPU_C::PI2FW_PqQq(bxInstruction_c *i)
 }
 
 /* 0F 0F /r 0D */
-void BX_CPU_C::PI2FD_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PI2FD_PqQq(bxInstruction_c *i)
 {
   BxPackedMmxRegister result, op;
+
+  BX_CPU_THIS_PTR prepareMMX();
 
   /* op is a register or memory reference */
   if (i->modC0()) {
     op = BX_READ_MMX_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     MMXUQ(op) = read_virtual_qword(i->seg(), RMAddr(i));
   }
@@ -84,30 +90,33 @@ void BX_CPU_C::PI2FD_PqQq(bxInstruction_c *i)
   float_status_t status_word;
   prepare_softfloat_status_word(status_word, float_round_to_zero);
 
-  MMXUD0(result) = 
+  MMXUD0(result) =
         int32_to_float32(MMXSD0(op), status_word);
-  MMXUD1(result) = 
+  MMXUD1(result) =
         int32_to_float32(MMXSD1(op), status_word);
 
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 }
 
-void BX_CPU_C::PF2IW_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PF2IW_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PF2IW_PqQq: 3DNow! instruction still not implemented"));
 }
 
 /* 0F 0F /r 1D */
-void BX_CPU_C::PF2ID_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PF2ID_PqQq(bxInstruction_c *i)
 {
   BxPackedMmxRegister result, op;
+
+  BX_CPU_THIS_PTR prepareMMX();
 
   /* op is a register or memory reference */
   if (i->modC0()) {
     op = BX_READ_MMX_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     MMXUQ(op) = read_virtual_qword(i->seg(), RMAddr(i));
   }
@@ -115,97 +124,97 @@ void BX_CPU_C::PF2ID_PqQq(bxInstruction_c *i)
   float_status_t status_word;
   prepare_softfloat_status_word(status_word, float_round_to_zero);
 
-  MMXSD0(result) = 
+  MMXSD0(result) =
         float32_to_int32_round_to_zero(MMXUD0(op), status_word);
-  MMXSD1(result) = 
+  MMXSD1(result) =
         float32_to_int32_round_to_zero(MMXUD1(op), status_word);
 
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 }
 
-void BX_CPU_C::PFNACC_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFNACC_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFNACC_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFCMPGE_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFCMPGE_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFCMPGE_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFMIN_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFMIN_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFMIN_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFRCP_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFRCP_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFRCP_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFRSQRT_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFRSQRT_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFRSQRT_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFSUB_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFSUB_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFSUB_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFADD_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFADD_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFADD_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFCMPGT_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFCMPGT_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFCMPGT_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFMAX_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFMAX_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFMAX_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFRCPIT1_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFRCPIT1_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFRCPIT1_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFRSQIT1_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFRSQIT1_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFRSQIT1_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFSUBR_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFSUBR_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFSUBR_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFACC_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFACC_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFACC_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFCMPEQ_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFCMPEQ_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFCMPEQ_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFMUL_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFMUL_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFMUL_PqQq: 3DNow! instruction still not implemented"));
 }
 
-void BX_CPU_C::PFRCPIT2_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PFRCPIT2_PqQq(bxInstruction_c *i)
 {
   BX_PANIC(("PFRCPIT2_PqQq: 3DNow! instruction still not implemented"));
 }
 
 /* 0F 0F /r B7 */
-void BX_CPU_C::PMULHRW_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PMULHRW_PqQq(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR prepareMMX();
 
@@ -216,6 +225,7 @@ void BX_CPU_C::PMULHRW_PqQq(bxInstruction_c *i)
     op2 = BX_READ_MMX_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     MMXUQ(op2) = read_virtual_qword(i->seg(), RMAddr(i));
   }
@@ -235,7 +245,7 @@ void BX_CPU_C::PMULHRW_PqQq(bxInstruction_c *i)
 }
 
 /* 0F 0F /r BB */
-void BX_CPU_C::PSWAPD_PqQq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PSWAPD_PqQq(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR prepareMMX();
 
@@ -246,6 +256,7 @@ void BX_CPU_C::PSWAPD_PqQq(bxInstruction_c *i)
     op = BX_READ_MMX_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     MMXUQ(op) = read_virtual_qword(i->seg(), RMAddr(i));
   }

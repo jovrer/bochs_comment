@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: shift8.cc,v 1.32 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: shift8.cc,v 1.37 2008/03/22 21:29:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,31 +25,28 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
-void BX_CPU_C::ROL_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count;
   unsigned bit0, bit7;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   /* op1 is a register or memory reference */
   if (i->modC0()) {
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -85,24 +82,23 @@ void BX_CPU_C::ROL_Eb(bxInstruction_c *i)
   SET_FLAGS_OxxxxC(bit0 ^ bit7, bit0);
 }
 
-void BX_CPU_C::ROR_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count;
   unsigned bit6, bit7;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   /* op1 is a register or memory reference */
   if (i->modC0()) {
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -139,30 +135,29 @@ void BX_CPU_C::ROR_Eb(bxInstruction_c *i)
   SET_FLAGS_OxxxxC(bit6 ^ bit7, bit7);
 }
 
-void BX_CPU_C::RCL_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count;
   unsigned of, cf;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
-
-  count = (count & 0x1f) % 9;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   /* op1 is a register or memory reference */
   if (i->modC0()) {
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
- 
+
+  count = (count & 0x1f) % 9;
+
   if (! count) return;
 
   if (count==1) {
@@ -186,29 +181,28 @@ void BX_CPU_C::RCL_Eb(bxInstruction_c *i)
   SET_FLAGS_OxxxxC(of, cf);
 }
 
-void BX_CPU_C::RCR_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count;
   unsigned cf, of;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
-
-  count = (count & 0x1f) % 9;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   /* op1 is a register or memory reference */
   if (i->modC0()) {
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
+
+  count = (count & 0x1f) % 9;
 
   if (! count) return;
 
@@ -228,18 +222,16 @@ void BX_CPU_C::RCR_Eb(bxInstruction_c *i)
   SET_FLAGS_OxxxxC(of, cf);
 }
 
-void BX_CPU_C::SHL_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count;
   unsigned of = 0, cf = 0;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   count &= 0x1f;
 
@@ -248,6 +240,7 @@ void BX_CPU_C::SHL_Eb(bxInstruction_c *i)
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -275,18 +268,16 @@ void BX_CPU_C::SHL_Eb(bxInstruction_c *i)
   SET_FLAGS_OxxxxC(of, cf);
 }
 
-void BX_CPU_C::SHR_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count;
   unsigned cf, of;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   count &= 0x1f;
 
@@ -295,6 +286,7 @@ void BX_CPU_C::SHR_Eb(bxInstruction_c *i)
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -320,17 +312,15 @@ void BX_CPU_C::SHR_Eb(bxInstruction_c *i)
   SET_FLAGS_OxxxxC(of, cf);
 }
 
-void BX_CPU_C::SAR_Eb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_Eb(bxInstruction_c *i)
 {
   Bit8u op1_8, result_8;
   unsigned count, cf;
 
-  if (i->b1() == 0xc0)
-    count = i->Ib();
-  else if (i->b1() == 0xd0)
-    count = 1;
-  else // 0xd2
+  if (i->b1() == 0xd2)
     count = CL;
+  else // 0xc0 or 0xd0
+    count = i->Ib();
 
   count &= 0x1f;
 
@@ -339,6 +329,7 @@ void BX_CPU_C::SAR_Eb(bxInstruction_c *i)
     op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   }
@@ -368,7 +359,7 @@ void BX_CPU_C::SAR_Eb(bxInstruction_c *i)
 
   SET_FLAGS_OSZAPC_LOGIC_8(result_8); /* handle SF, ZF and AF flags */
   /* signed overflow cannot happen in SAR instruction */
-  SET_FLAGS_OxxxxC(0, cf); 
+  SET_FLAGS_OxxxxC(0, cf);
 
   /* now write result back to destination */
   if (i->modC0()) {

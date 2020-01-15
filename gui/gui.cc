@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.102 2007/10/24 23:07:30 sshwarts Exp $
+// $Id: gui.cc,v 1.105 2008/05/04 09:29:45 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -51,7 +51,7 @@ bx_gui_c *bx_gui = NULL;
 #define LOG_THIS BX_GUI_THIS
 
 #define BX_KEY_UNKNOWN 0x7fffffff
-#define N_USER_KEYS 36
+#define N_USER_KEYS 37
 
 typedef struct {
   const char *key;
@@ -95,7 +95,8 @@ static user_key_t user_keys[N_USER_KEYS] =
   { "tab",   BX_KEY_TAB },
   { "up",    BX_KEY_UP },
   { "win",   BX_KEY_WIN_L },
-  { "print", BX_KEY_PRINT }
+  { "print", BX_KEY_PRINT },
+  { "power", BX_KEY_POWER_POWER }
 };
 
 bx_gui_c::bx_gui_c(void)
@@ -174,7 +175,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
                           BX_GRAVITY_LEFT, floppyB_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS floppyB_hbar_id, "Change floppy B: media");
 
-  // CDROM, 
+  // CDROM,
   // the harddrive object is not initialised yet,
   // so we just set the bitmap to ejected for now
   BX_GUI_THIS cdromD_hbar_id = headerbar_bitmap(BX_GUI_THIS cdromD_eject_bmap_id,
@@ -320,7 +321,7 @@ void bx_gui_c::cdromD_handler(void)
 {
   Bit32u handle = DEV_hd_get_first_cd_handle();
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_CDROM) {
-    // instead of just toggling the status, call win32dialog to bring up 
+    // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
     // This code handles the first cdrom only. The cdrom drives #2, #3 and
     // #4 are handled in the win32 runtime dialog.
@@ -395,7 +396,7 @@ void bx_gui_c::copy_handler(void)
   Bit32u len;
   char *text_snapshot;
   if (make_text_snapshot (&text_snapshot, &len) < 0) {
-    BX_INFO(( "copy button failed, mode not implemented"));
+    BX_INFO(("copy button failed, mode not implemented"));
     return;
   }
   if (!BX_GUI_THIS set_clipboard_text(text_snapshot, len)) {
@@ -460,7 +461,7 @@ void bx_gui_c::snapshot_handler(void)
   char *text_snapshot;
   Bit32u len;
   if (make_text_snapshot (&text_snapshot, &len) < 0) {
-    BX_ERROR(( "snapshot button failed, mode not implemented"));
+    BX_ERROR(("snapshot button failed, mode not implemented"));
     return;
   }
   //FIXME
@@ -552,39 +553,8 @@ void bx_gui_c::userbutton_handler(void)
         ptr = strtok(NULL, "-");
       }
     } else {
-      while ((ptr[0]) && (len < 3)) {
-        if (!strncmp(ptr, "alt", 3)) {
-          shortcut[len++] = BX_KEY_ALT_L;
-          ptr += 3;
-        } else if (!strncmp(ptr, "ctrl", 4)) {
-          shortcut[len++] = BX_KEY_CTRL_L;
-          ptr += 4;
-        } else if (!strncmp(ptr, "del", 3)) {
-          shortcut[len++] = BX_KEY_DELETE;
-          ptr += 3;
-        } else if (!strncmp(ptr, "esc", 3)) {
-          shortcut[len++] = BX_KEY_ESC;
-          ptr += 3;
-        } else if (!strncmp(ptr, "f1", 2)) {
-          shortcut[len++] = BX_KEY_F1;
-          ptr += 2;
-        } else if (!strncmp(ptr, "f4", 2)) {
-          shortcut[len++] = BX_KEY_F4;
-          ptr += 2;
-        } else if (!strncmp(ptr, "tab", 3)) {
-          shortcut[len++] = BX_KEY_TAB;
-          ptr += 3;
-        } else if (!strncmp(ptr, "win", 3)) {
-          shortcut[len++] = BX_KEY_WIN_L;
-          ptr += 3;
-        } else if (!strncmp(ptr, "bksp", 4)) {
-          shortcut[len++] = BX_KEY_BACKSPACE;
-          ptr += 4;
-        } else {
-          BX_ERROR(("Unknown shortcut %s ignored", user_shortcut));
-          return;
-        }
-      }
+      BX_ERROR(("Unknown shortcut %s ignored", user_shortcut));
+      return;
     }
     i = 0;
     while (i < len) {
@@ -640,7 +610,7 @@ void bx_gui_c::mouse_enabled_changed(bx_bool val)
 void bx_gui_c::init_signal_handlers()
 {
 #if BX_GUI_SIGHANDLER
-  if (bx_gui_sighandler) 
+  if (bx_gui_sighandler)
   {
     Bit32u mask = bx_gui->get_sighandler_mask ();
     for (Bit32u sig=0; sig<32; sig++)
@@ -665,7 +635,7 @@ void bx_gui_c::set_text_charbyte(Bit16u address, Bit8u data)
   BX_GUI_THIS char_changed[address >> 5] = 1;
   BX_GUI_THIS charmap_updated = 1;
 }
-  
+
 void bx_gui_c::beep_on(float frequency)
 {
   BX_INFO(("GUI Beep ON (frequency=%.2f)", frequency));

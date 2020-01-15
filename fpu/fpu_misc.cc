@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_misc.cc,v 1.10 2007/03/23 21:27:13 sshwarts Exp $
+// $Id: fpu_misc.cc,v 1.14 2008/05/10 13:34:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -21,16 +21,17 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu/cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+#if BX_SUPPORT_FPU
+
 #include "softfloatx80.h"
 
 /* D9 C8 */
-void BX_CPU_C::FXCH_STi(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXCH_STi(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -51,35 +52,28 @@ void BX_CPU_C::FXCH_STi(bxInstruction_c *i)
       {
 	  /* Masked response */
           if (st0_tag == FPU_Tag_Empty)
-          {
               st0_reg = floatx80_default_nan;
-              st0_tag = FPU_Tag_Special;
-          }
+
           if (sti_tag == FPU_Tag_Empty)
-          {
               sti_reg = floatx80_default_nan;
-              sti_tag = FPU_Tag_Special;
-          }
       }
       else return;
   }
 
-  BX_WRITE_FPU_REGISTER_AND_TAG(st0_reg, st0_tag, i->rm());
-  BX_WRITE_FPU_REGISTER_AND_TAG(sti_reg, sti_tag, 0);
+  BX_WRITE_FPU_REG(st0_reg, i->rm());
+  BX_WRITE_FPU_REG(sti_reg, 0);
 #else
   BX_INFO(("FXCH_STi: required FPU, configure --enable-fpu"));
 #endif
 }
 
 /* D9 E0 */
-void BX_CPU_C::FCHS(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCHS(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  int st0_tag = BX_CPU_THIS_PTR the_i387.FPU_gettagi(0);
-  if (st0_tag == FPU_Tag_Empty)
-  {
+  if (IS_TAG_EMPTY(0)) {
       BX_CPU_THIS_PTR FPU_stack_underflow(0);
       return;
   }
@@ -87,21 +81,19 @@ void BX_CPU_C::FCHS(bxInstruction_c *i)
   clear_C1();
 
   floatx80 st0_reg = BX_READ_FPU_REG(0);
-  BX_WRITE_FPU_REGISTER_AND_TAG(floatx80_chs(st0_reg), st0_tag, 0);
+  BX_WRITE_FPU_REG(floatx80_chs(st0_reg), 0);
 #else
   BX_INFO(("FCHS: required FPU, configure --enable-fpu"));
 #endif
 }
 
 /* D9 E1 */
-void BX_CPU_C::FABS(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FABS(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  int st0_tag = BX_CPU_THIS_PTR the_i387.FPU_gettagi(0);
-  if (st0_tag == FPU_Tag_Empty)
-  {
+  if (IS_TAG_EMPTY(0)) {
       BX_CPU_THIS_PTR FPU_stack_underflow(0);
       return;
   }
@@ -109,14 +101,14 @@ void BX_CPU_C::FABS(bxInstruction_c *i)
   clear_C1();
 
   floatx80 st0_reg = BX_READ_FPU_REG(0);
-  BX_WRITE_FPU_REGISTER_AND_TAG(floatx80_abs(st0_reg), st0_tag, 0);
+  BX_WRITE_FPU_REG(floatx80_abs(st0_reg), 0);
 #else
   BX_INFO(("FABS: required FPU, configure --enable-fpu"));
 #endif
 }
 
 /* D9 F6 */
-void BX_CPU_C::FDECSTP(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FDECSTP(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -130,7 +122,7 @@ void BX_CPU_C::FDECSTP(bxInstruction_c *i)
 }
 
 /* D9 F7 */
-void BX_CPU_C::FINCSTP(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FINCSTP(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -144,7 +136,7 @@ void BX_CPU_C::FINCSTP(bxInstruction_c *i)
 }
 
 /* DD C0 */
-void BX_CPU_C::FFREE_STi(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FFREE_STi(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -154,13 +146,13 @@ void BX_CPU_C::FFREE_STi(bxInstruction_c *i)
 #endif
 }
 
-/* 
+/*
  * Free the st(0) register and pop it from the FPU stack.
  * "Undocumented" by Intel & AMD but mentioned in AMDs Athlon Docs.
  */
 
 /* DF C0 */
-void BX_CPU_C::FFREEP_STi(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::FFREEP_STi(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
@@ -170,3 +162,5 @@ void BX_CPU_C::FFREEP_STi(bxInstruction_c *i)
   BX_INFO(("FFREEP_STi: required FPU, configure --enable-fpu"));
 #endif
 }
+
+#endif

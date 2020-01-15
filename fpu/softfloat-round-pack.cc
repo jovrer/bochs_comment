@@ -32,7 +32,7 @@ these four paragraphs for those parts of this code that are retained.
 /*============================================================================
  * Adapted for Bochs (x86 achitecture simulator) by
  *            Stanislav Shwartsman [sshwarts at sourceforge net]
- * ==========================================================================*/ 
+ * ==========================================================================*/
 
 #include "softfloat.h"
 #include "softfloat-round-pack.h"
@@ -82,7 +82,7 @@ Bit32s roundAndPackInt32(int zSign, Bit64u absZ, float_status_t &status)
             }
         }
     }
-    int roundBits = absZ & 0x7F;
+    int roundBits = (int)(absZ & 0x7F);
     absZ = (absZ + roundIncrement)>>7;
     absZ &= ~(((roundBits ^ 0x40) == 0) & roundNearestEven);
     Bit32s z = (Bit32s) absZ;
@@ -295,7 +295,7 @@ float64 roundAndPackFloat64(int zSign, Bit16s zExp, Bit64u zSig, float_status_t 
             }
         }
     }
-    roundBits = zSig & 0x3FF;
+    roundBits = (Bit16s)(zSig & 0x3FF);
     if (0x7FD <= (Bit16u) zExp) {
         if ((0x7FD < zExp)
              || ((zExp == 0x7FD)
@@ -308,7 +308,7 @@ float64 roundAndPackFloat64(int zSign, Bit16s zExp, Bit64u zSig, float_status_t 
             int isTiny = (zExp < -1) || (zSig + roundIncrement < BX_CONST64(0x8000000000000000));
             shift64RightJamming(zSig, -zExp, &zSig);
             zExp = 0;
-            roundBits = zSig & 0x3FF;
+            roundBits = (Bit16s)(zSig & 0x3FF);
             if (isTiny && roundBits) {
                 float_raise(status, float_flag_underflow);
                 if(get_flush_underflow_to_zero(status)) {
@@ -380,7 +380,7 @@ void normalizeFloatx80Subnormal(Bit64u aSig, Bit32s *zExpPtr, Bit64u *zSigPtr)
 | Floating-Point Arithmetic.
 *----------------------------------------------------------------------------*/
 
-floatx80 roundAndPackFloatx80(int roundingPrecision, 
+floatx80 roundAndPackFloatx80(int roundingPrecision,
         int zSign, Bit32s zExp, Bit64u zSig0, Bit64u zSig1, float_status_t &status)
 {
     Bit64u roundIncrement, roundMask, roundBits;
@@ -415,7 +415,7 @@ floatx80 roundAndPackFloatx80(int roundingPrecision,
     roundBits = zSig0 & roundMask;
     if (0x7FFD <= (Bit32u) (zExp - 1)) {
         if ((0x7FFE < zExp)
-             || ((zExp == 0x7FFE) && (zSig0 + roundIncrement < zSig0))) 
+             || ((zExp == 0x7FFE) && (zSig0 + roundIncrement < zSig0)))
         {
             goto overflow;
         }
@@ -470,14 +470,14 @@ floatx80 roundAndPackFloatx80(int roundingPrecision,
         if ((0x7FFE < zExp)
              || ((zExp == 0x7FFE)
                   && (zSig0 == BX_CONST64(0xFFFFFFFFFFFFFFFF))
-                  && increment)) 
+                  && increment))
         {
             roundMask = 0;
  overflow:
             float_raise(status, float_flag_overflow | float_flag_inexact);
             if ((roundingMode == float_round_to_zero)
                  || (zSign && (roundingMode == float_round_up))
-                 || (! zSign && (roundingMode == float_round_down))) 
+                 || (! zSign && (roundingMode == float_round_down)))
             {
                 return packFloatx80(zSign, 0x7FFE, ~roundMask);
             }
@@ -536,7 +536,7 @@ floatx80 roundAndPackFloatx80(int roundingPrecision,
 | normalized.
 *----------------------------------------------------------------------------*/
 
-floatx80 normalizeRoundAndPackFloatx80(int roundingPrecision, 
+floatx80 normalizeRoundAndPackFloatx80(int roundingPrecision,
         int zSign, Bit32s zExp, Bit64u zSig0, Bit64u zSig1, float_status_t &status)
 {
     if (zSig0 == 0) {
@@ -619,7 +619,7 @@ float128 roundAndPackFloat128(
              || ((zExp == 0x7FFD)
                   && eq128(BX_CONST64(0x0001FFFFFFFFFFFF),
                          BX_CONST64(0xFFFFFFFFFFFFFFFF), zSig0, zSig1)
-                  && increment)) 
+                  && increment))
         {
             float_raise(status, float_flag_overflow | float_flag_inexact);
             return packFloat128(zSign, 0x7FFF, 0, 0);

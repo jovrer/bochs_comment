@@ -1,5 +1,5 @@
 .\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
-.TH bochsrc 5 "15 Sep 2007" "bochsrc" "The Bochs Project"
+.TH bochsrc 5 "12 May 2008" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -15,7 +15,7 @@ the current  directory  before running  Bochs or in your
 home directory.
 
 Starting with Bochs 1.3, you can use environment variables in
-the bochsrc file, for example: 
+the bochsrc file, for example:
 
   floppya: 1_44="$IMAGES/bootdisk.img", status=inserted
 
@@ -23,7 +23,7 @@ Starting with version 2.0, two environment variables have a built-in
 default value which is set at compile time.  $BXSHARE points to the
 "share" directory which is typically /usr/local/share/bochs on UNIX
 machines.  See the $(sharedir) variable in the Makefile for the exact
-value.  $BXSHARE is used by disk images to locate the directory where 
+value.  $BXSHARE is used by disk images to locate the directory where
 the BIOS images and keymaps can be found.  If $BXSHARE is not defined, Bochs
 will supply the default value.  Also, $LTDL_LIBRARY_PATH points to a list of
 directories (separated by colons if more than one) to search in for Bochs
@@ -48,8 +48,8 @@ allows you to change all the settings that control Bochs's behavior.
 There are two choices of configuration interface: a text mode version
 called "textconfig" and a graphical version called "wx".  The text
 mode version uses stdin/stdout and is always compiled in.  The graphical
-version is only available when you use "--with-wx" on the configure 
-command.  If you do not write a config_interface line, Bochs will 
+version is only available when you use "--with-wx" on the configure
+command.  If you do not write a config_interface line, Bochs will
 choose a default for you.
 
 .B NOTE:
@@ -61,14 +61,14 @@ Example:
 
 .TP
 .I "display_library:"
-The display library is the code that displays the Bochs VGA screen.  Bochs 
-has a selection of about 10 different display library implementations for 
-different platforms.  If you run configure with multiple --with-* options, 
+The display library is the code that displays the Bochs VGA screen.  Bochs
+has a selection of about 10 different display library implementations for
+different platforms.  If you run configure with multiple --with-* options,
 the display_library command lets you choose which one you want to run with.
 If you do not write a display_library line, Bochs will choose a default for
 you.
 
-The choices are: 
+The choices are:
   x           X windows interface, cross platform
   win32       native win32 libraries
   carbon      Carbon library (for MacOS X)
@@ -81,27 +81,36 @@ The choices are:
   wx          wxWidgets library, cross platform
   nogui       no display at all
 
+Some display libraries now support specific option to control their
+behaviour. See the examples below for currently supported options.
+
 .B NOTE:
 if you use the "wx" configuration interface, you must also use
 the "wx" display library.
 
-Example:
+Examples:
   display_library: x
+  display_library: rfb, options="timeout=60"  # time to wait for client
+  display_library: sdl, options="fullscreen"  # startup in fullscreen mode
+  display_library: x, options="hideIPS" # disable IPS output in status bar
+
 
 .TP
 .I "romimage:"
 The ROM BIOS controls what the PC does when it first powers on.  Normally, you
 can use a precompiled BIOS in the source or binary distribution called
 .B BIOS-bochs-latest.
-The ROM BIOS is usually loaded starting at address 0xf0000, and it is exactly 64k long.
+The default ROM BIOS is usually loaded starting at address 0xe0000, and it is
+exactly 128k long. The legacy version of the Bochs BIOS is usually loaded starting
+at address 0xf0000, and it is exactly 64k long.
 You can also use the environment variable $BXSHARE to specify the location of the BIOS.
 The usage of external large BIOS images (up to 512k) at memory top is
 now supported, but we still recommend to use the BIOS distributed with Bochs.
-Now the start address can be calculated from image size.
+The start address is optional, since it can be calculated from image size.
 
 Examples:
-  romimage: file=bios/BIOS-bochs-latest, address=0xf0000
-  romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
+  romimage: file=bios/BIOS-bochs-latest
+  romimage: file=$BXSHARE/BIOS-bochs-legacy
   romimage: file=mybios.bin, address=0xfff80000
   romimage: file=mybios.bin
 
@@ -119,13 +128,13 @@ values different from 1.
 quantum:
 
 Maximum amount of instructions allowed to execute by processor before
-returning control to another cpu. This option exists only in Bochs 
+returning control to another cpu. This option exists only in Bochs
 binary compiled with SMP support.
 
 reset_on_triple_fault:
 
 Reset the CPU when triple fault occur (highly recommended) rather than
-PANIC. Remember that if you trying to continue after triple fault the 
+PANIC. Remember that if you trying to continue after triple fault the
 simulation will be completely bogus !
 
 ips:
@@ -148,11 +157,11 @@ BogoMips and other benchmarks.
 Example Specifications[1]
  Bochs Machine/Compiler                                Mips
  -------------------------------------------------------------------
+ 2.3.7 3.2Ghz Intel Core 2 Q9770 with WinXP/g++ 3.4    50 to 55 Mips
+ 2.3.7 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      38 to 43 Mips
  2.2.6 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      21 to 25 Mips
  2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4         12 to 15 Mips
  2.0.1 1.6Ghz Intel P4 with Win2000/g++ 3.3             5 to  7 Mips
- 1.4   650Mhz Athlon K-7 with Linux 2.4.4/egcs-2.91.66  2 to  2.5 Mips
- 1.4   400Mhz Pentium II with Linux 2.0.36/egcs-1.0.3   1 to  1.8 Mips
 
  [1]  IPS measurements depend on OS and compiler
 configuration  in addition  to processor clock
@@ -163,7 +172,7 @@ Example:
 
 .TP
 .I "megs:"
-Set the number of Megabytes of physical memory you want to emulate. 
+Set the number of Megabytes of physical memory you want to emulate.
 The default is 32MB, most OS's won't need more than that.
 The maximum amount of memory supported is 2048Mb.
 
@@ -253,7 +262,7 @@ Examples:
 .I "ata\fR[\fB0-3\fR]\fI-master: \fPor \fIata\fR[\fB0-3\fR]\fI-slave:"
 
 This defines the type and characteristics of all attached ata devices:
-   type=       type of attached device [disk|cdrom] 
+   type=       type of attached device [disk|cdrom]
    path=       path of the image
    mode=       image mode [flat|concat|external|dll|sparse|vmware3|undoable|growing|volatile], only valid for disks
    cylinders=  only valid for disks
@@ -264,14 +273,14 @@ This defines the type and characteristics of all attached ata devices:
    translation=type of translation of the bios, only for disks [none|lba|large|rechs|auto]
    model=      string returned by identify device command
    journal=    optional filename of the redolog for undoable and volatile disks
-   
+
 Point this at a hard disk image file, cdrom iso file,
-or a physical cdrom device.  
-To create a hard disk image, try running bximage.  
-It will help you choose the size and then suggest a line that 
+or a physical cdrom device.
+To create a hard disk image, try running bximage.
+It will help you choose the size and then suggest a line that
 works with it.
 
-In UNIX it is possible to use a raw device as a Bochs hard disk, 
+In UNIX it is possible to use a raw device as a Bochs hard disk,
 but WE DON'T RECOMMEND IT.
 
 The path is always mandatory. Disk geometry autodetection works with images
@@ -284,7 +293,7 @@ The mode option defines how the disk image is handled. Disks can be defined as:
   - concat : multiple files layout
   - external : developer's specific, through a C++ class
   - dll : developer's specific, through a DLL
-  - sparse : stackable, commitable, rollbackable 
+  - sparse : stackable, commitable, rollbackable
   - vmware3 : vmware3 disk support
   - undoable : flat file with commitable redolog
   - growing : growing file
@@ -382,7 +391,7 @@ You may use those special tokens :
   %i : 8 hexadecimal digits of cpu0 current eip
   %e : 1 character event type ('i'nfo, 'd'ebug, 'p'anic, 'e'rror)
   %d : 5 characters string of the device, between brackets
- 
+
 Default : %t%e%d
 
 Examples:
@@ -454,7 +463,7 @@ ignore (do nothing). You should generally  set
 this  to  ignore,  unless  you are  trying  to
 diagnose a particular problem.
 
-.B NOTE: 
+.B NOTE:
 When  action=report,   Bochs   may  spit  out
 thousands of debug messages per second, which
 can impact performance and fill up your disk.
@@ -573,7 +582,7 @@ Approximate time in microseconds between attempts to paste
 characters to the keyboard controller. This leaves time for the
 guest os to deal with the flow of characters.  The ideal setting
 depends on how your operating system processes characters.  The
-default of 100000 usec (.1 seconds) was chosen because it works 
+default of 100000 usec (.1 seconds) was chosen because it works
 consistently in Windows.
 
 If your OS is losing characters during a paste, increase the paste
@@ -581,11 +590,6 @@ delay until it stops losing characters.
 
 Example:
   keyboard_paste_delay: 100000
-
-.TP
-.I "ips:"
-Emulated Instructions Per Second.  This option is deprecated.
-Use the CPU parameter IPS instead (cpu: ips=N).
 
 .TP
 .I "clock:"
@@ -597,9 +601,9 @@ TO BE COMPLETED (see Greg explanation in feature request #536329)
 
 time0
 
-Specifies the start (boot) time of the virtual machine. Use a time 
-value as returned by the time(2) system call. If no time0 value is 
-set or if time0 equal to 1 (special case) or if time0 equal 'local', 
+Specifies the start (boot) time of the virtual machine. Use a time
+value as returned by the time(2) system call. If no time0 value is
+set or if time0 equal to 1 (special case) or if time0 equal 'local',
 the simulation will be started at the current local host time.
 If time0 equal to 2 (special case) or if time0 equal 'utc',
 the simulation will be started at the current utc time.
@@ -671,10 +675,10 @@ device ID of the PCI device you want to map within Bochs.
 .I "ne2k:"
 Defines the characteristics of an attached ne2000 isa card :
    ioaddr=IOADDR,
-   irq=IRQ, 
-   mac=MACADDR, 
-   ethmod=MODULE, 
-   ethdev=DEVICE, 
+   irq=IRQ,
+   mac=MACADDR,
+   ethmod=MODULE,
+   ethdev=DEVICE,
    script=SCRIPT
 
 .B PROPERTIES FOR ne2k:
@@ -746,8 +750,8 @@ If enabled, the keymap file must be specified.
 .TP
 .I "keyboard_type:"
 Type of emulated keyboard sent back  to the OS
-to a "keyboard identify"  command.  It must be 
-one of "xt", "at" or "mf". 
+to a "keyboard identify"  command.  It must be
+one of "xt", "at" or "mf".
 
 Example:
   keyboard_type: mf
@@ -756,15 +760,13 @@ Example:
 .I "user_shortcut:"
 This defines the keyboard shortcut to be sent when you press the "user"
 button in the header bar. The shortcut string is a combination of maximum
-3 key names (listed below) separated with a '-' character. The old-style
-syntax (without the '-') still works for the key combinations supported
-in Bochs 2.2.1.
+3 key names (listed below) separated with a '-' character.
 
 Valid key names:
 
 "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
 "f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
-"right", "shift", "space", "tab", "up", "win" and "print".
+"right", "shift", "space", "tab", "up", "win", "print" and "power".
 
 Example:
   user_shortcut: keys=ctrl-alt-del

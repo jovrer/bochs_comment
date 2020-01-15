@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h,v 1.54 2007/09/28 19:51:44 sshwarts Exp $
+// $Id: gui.h,v 1.57 2008/02/05 22:57:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -34,6 +34,10 @@
 #define BX_GUI_DLG_SAVE_RESTORE 0x20
 #define BX_GUI_DLG_ALL          0x3F
 
+#define BX_TEXT_BLINK_MODE      0x01
+#define BX_TEXT_BLINK_TOGGLE    0x02
+#define BX_TEXT_BLINK_STATE     0x04
+
 typedef struct {
   Bit16u  start_address;
   Bit8u   cs_start;
@@ -44,6 +48,7 @@ typedef struct {
   Bit8u   v_panning;
   bx_bool line_graphics;
   bx_bool split_hpanning;
+  Bit8u   blink_flags;
 } bx_vga_tminfo_t;
 
 typedef struct {
@@ -74,7 +79,7 @@ public:
                  unsigned x_tilesize, unsigned y_tilesize, unsigned header_bar_y) = 0;
   virtual void text_update(Bit8u *old_text, Bit8u *new_text,
                           unsigned long cursor_x, unsigned long cursor_y,
-                          bx_vga_tminfo_t tm_info, unsigned rows) = 0;
+                          bx_vga_tminfo_t tm_info) = 0;
   virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y) = 0;
   virtual bx_svga_tileinfo_t *graphics_tile_info(bx_svga_tileinfo_t *info);
   virtual Bit8u *graphics_tile_get(unsigned x, unsigned y, unsigned *w, unsigned *h);
@@ -184,7 +189,7 @@ protected:
 
 // Add this macro in the class declaration of each GUI, to define all the
 // required virtual methods.  Example:
-//   
+//
 //    class bx_rfb_gui_c : public bx_gui_c {
 //    public:
 //      bx_rfb_gui_c (void) {}
@@ -193,11 +198,11 @@ protected:
 // Then, each method must be defined later in the file.
 #define DECLARE_GUI_VIRTUAL_METHODS()                                       \
 virtual void specific_init(int argc, char **argv,                           \
-         unsigned x_tilesize, unsigned y_tilesize,                      \
-         unsigned header_bar_y);                                        \
+         unsigned x_tilesize, unsigned y_tilesize,                          \
+         unsigned header_bar_y);                                            \
 virtual void text_update(Bit8u *old_text, Bit8u *new_text,                  \
-                  unsigned long cursor_x, unsigned long cursor_y,       \
-                  bx_vga_tminfo_t tm_info, unsigned rows);              \
+                  unsigned long cursor_x, unsigned long cursor_y,           \
+                  bx_vga_tminfo_t tm_info);                                 \
 virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y); \
 virtual void handle_events(void);                                           \
 virtual void flush(void);                                                   \
@@ -379,7 +384,7 @@ virtual void graphics_tile_update_in_place(unsigned x, unsigned y,          \
 #define BX_KEY_POWER_WAKE   118
 
 #define BX_KEY_NBKEYS       119
-// If you add BX_KEYs Please update 
+// If you add BX_KEYs Please update
 // - BX_KEY_NBKEYS
 // - the scancodes table in the file iodev/scancodes.cc
 // - the bx_key_symbol table in the file gui/keymap.cc

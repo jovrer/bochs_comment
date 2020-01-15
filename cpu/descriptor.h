@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: descriptor.h,v 1.21 2007/12/10 19:08:13 sshwarts Exp $
+// $Id: descriptor.h,v 1.24 2008/05/26 18:02:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -23,6 +23,21 @@
 #ifndef BX_DESCRIPTOR_H
 #define BX_DESCRIPTOR_H
 
+//
+// |---------------------------------------------|
+// |             Segment Descriptor              |
+// |---------------------------------------------|
+// |33222222|2|2|2|2| 11 11 |1|11|1|11  |        |
+// |10987654|3|2|1|0| 98 76 |5|43|2|1098|76543210|
+// |--------|-|-|-|-|-------|-|--|-|----|--------|
+// |Base    |G|D|L|A|Limit  |P|D |S|Type|Base    |
+// |[31-24] | |/| |V|[19-16]| |P | |    |[23-16] |
+// |        | |B| |L|       | |L | |    |        |
+// |------------------------|--------------------|
+// |       Base [15-0]      |    Limit [15-0]    |
+// |------------------------|--------------------|
+//
+
 typedef struct { /* bx_selector_t */
   Bit16u value;   /* the 16bit value of the selector */
 #if BX_CPU_LEVEL >= 2
@@ -40,13 +55,11 @@ typedef struct { /* bx_selector_t */
 typedef struct
 {
 
-#define SegValidCache   (0x1)
-#define SegAccessROK    (0x2)
-#define SegAccessWOK    (0x4)
-#define SegAccess4G     (0x8)
-
-#define SegAccessROK4G  (SegAccessROK|SegAccess4G)
-#define SegAccessWOK4G  (SegAccessWOK|SegAccess4G)
+#define SegValidCache  (0x01)
+#define SegAccessROK   (0x02)
+#define SegAccessWOK   (0x04)
+#define SegAccessROK4G (0x08)
+#define SegAccessWOK4G (0x10)
 
   unsigned valid;        // Holds above values, Or'd together.  Used to
                          // hold only 0 or 1.
@@ -160,9 +173,9 @@ union {
 #define IS_CODE_SEGMENT(type)             (((type) >> 3) & 0x1)
 #define IS_CODE_SEGMENT_CONFORMING(type)  (((type) >> 2) & 0x1)
 #define IS_DATA_SEGMENT_EXPAND_DOWN(type) (((type) >> 2) & 0x1)
+#define IS_CODE_SEGMENT_READABLE(type)    (((type) >> 1) & 0x1)
 
-// readable/writeable bit is ignored when in 64-bit mode
-#define IS_CODE_SEGMENT_READABLE(type)    (Is64BitMode() || (((type) >> 1) & 0x1))
+// data segment writeable bit is ignored when in 64-bit mode
 #define IS_DATA_SEGMENT_WRITEABLE(type)   (Is64BitMode() || (((type) >> 1) & 0x1))
 
 #define IS_SEGMENT_ACCESSED(type)         ((type) & 0x1)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.h,v 1.58 2007/09/28 19:52:07 sshwarts Exp $
+// $Id: vga.h,v 1.61 2008/04/29 22:14:23 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -96,7 +96,7 @@
 
   #define VBE_DISPI_LFB_PHYSICAL_ADDRESS  0xE0000000
 
-  
+
 #define VBE_DISPI_TOTAL_VIDEO_MEMORY_KB		(VBE_DISPI_TOTAL_VIDEO_MEMORY_MB * 1024)
 #define VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES 	(VBE_DISPI_TOTAL_VIDEO_MEMORY_KB * 1024)
 
@@ -138,18 +138,18 @@ public:
   virtual ~bx_vga_c();
   virtual void   init(void);
   virtual void   reset(unsigned type);
-  BX_VGA_SMF bx_bool mem_read_handler(unsigned long addr, unsigned long len, void *data, void *param);
-  BX_VGA_SMF bx_bool mem_write_handler(unsigned long addr, unsigned long len, void *data, void *param);
-  virtual Bit8u  mem_read(Bit32u addr);
-  virtual void   mem_write(Bit32u addr, Bit8u value);
+  BX_VGA_SMF bx_bool mem_read_handler(bx_phy_address addr, unsigned len, void *data, void *param);
+  BX_VGA_SMF bx_bool mem_write_handler(bx_phy_address addr, unsigned len, void *data, void *param);
+  virtual Bit8u  mem_read(bx_phy_address addr);
+  virtual void   mem_write(bx_phy_address addr, Bit8u value);
   virtual void   trigger_timer(void *this_ptr);
   virtual void   dump_status(void);
   virtual void   register_state(void);
   virtual void   after_restore_state(void);
 
 #if BX_SUPPORT_VBE
-  BX_VGA_SMF Bit8u  vbe_mem_read(Bit32u addr) BX_CPP_AttrRegparmN(1);
-  BX_VGA_SMF void   vbe_mem_write(Bit32u addr, Bit8u value) BX_CPP_AttrRegparmN(2);
+  BX_VGA_SMF Bit8u  vbe_mem_read(bx_phy_address addr) BX_CPP_AttrRegparmN(1);
+  BX_VGA_SMF void   vbe_mem_write(bx_phy_address addr, Bit8u value) BX_CPP_AttrRegparmN(2);
 #endif
 
   virtual void   redraw_area(unsigned x0, unsigned y0,
@@ -272,6 +272,7 @@ protected:
     unsigned line_offset;
     unsigned line_compare;
     unsigned vertical_display_end;
+    unsigned blink_counter;
     bx_bool  vga_tile_updated[BX_NUM_X_TILES][BX_NUM_Y_TILES];
     Bit8u *memory;
     Bit32u memsize;
@@ -282,7 +283,7 @@ protected:
     bx_bool y_doublescan;
     Bit8u last_bpp;
 
-#if BX_SUPPORT_VBE    
+#if BX_SUPPORT_VBE
     Bit16u  vbe_cur_dispi;
     Bit16u  vbe_xres;
     Bit16u  vbe_yres;
@@ -294,7 +295,7 @@ protected:
     bx_bool vbe_enabled;
     Bit16u  vbe_curindex;
     Bit32u  vbe_visible_screen_size; /**< in bytes */
-    Bit16u  vbe_offset_x;		 /**< Virtual screen x start (in pixels) */ 
+    Bit16u  vbe_offset_x;		 /**< Virtual screen x start (in pixels) */
     Bit16u  vbe_offset_y;		 /**< Virtual screen y start (in pixels) */
     Bit16u  vbe_virtual_xres;
     Bit16u  vbe_virtual_yres;
@@ -303,7 +304,7 @@ protected:
     bx_bool vbe_lfb_enabled;
     bx_bool vbe_get_capabilities;
     bx_bool vbe_8bit_dac;
-#endif    
+#endif
   } s;  // state information
 
 

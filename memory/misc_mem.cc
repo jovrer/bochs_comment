@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc,v 1.107 2007/12/23 17:21:28 sshwarts Exp $
+// $Id: misc_mem.cc,v 1.115 2008/05/10 21:36:55 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,23 +25,18 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
 #include "cpu/cpu.h"
 #include "iodev/iodev.h"
 #define LOG_THIS BX_MEM(0)->
 
+#define BX_MEM_VECTOR_ALIGN 4096
+#define BX_MEM_HANDLERS   ((BX_CONST64(1) << BX_PHY_ADDRESS_WIDTH) >> 20) /* one per megabyte */
+
 #if BX_PROVIDE_CPU_MEMORY
-
-Bit32u BX_MEM_C::get_memory_in_k(void)
-{
-  return(BX_MEM_THIS megabytes * 1024);
-}
-
-Bit32u BX_MEM_C::get_num_allocated_pages(void)
-{
-  return(BX_MEM_THIS len / 4096);
-}
 
 BX_MEM_C::BX_MEM_C()
 {
@@ -53,32 +48,23 @@ BX_MEM_C::BX_MEM_C()
   vector = NULL;
   actual_vector = NULL;
   len    = 0;
-  megabytes = 0;
 
   memory_handlers = NULL;
 }
 
-void BX_CPP_AttrRegparmN(2)
-BX_MEM_C::alloc_vector_aligned (Bit32u bytes, Bit32u alignment)
+Bit8u* alloc_vector_aligned(Bit8u **actual_vector, Bit32u bytes, Bit32u alignment)
 {
-  if (BX_MEM_THIS actual_vector != NULL) {
-    BX_INFO (("freeing existing memory vector"));
-    delete [] BX_MEM_THIS actual_vector;
-    BX_MEM_THIS actual_vector = NULL;
-    BX_MEM_THIS vector = NULL;
-  }
   Bit64u test_mask = alignment - 1;
-  BX_MEM_THIS actual_vector = new Bit8u [(Bit32u)(bytes+test_mask)];
-  // round address forward to nearest multiple of alignment.  Alignment 
+  *actual_vector = new Bit8u [(Bit32u)(bytes + test_mask)];
+  // round address forward to nearest multiple of alignment.  Alignment
   // MUST BE a power of two for this to work.
-  Bit64u masked = ((Bit64u)(BX_MEM_THIS actual_vector + test_mask)) & ~test_mask;
-  BX_MEM_THIS vector = (Bit8u *)masked;
+  Bit64u masked = ((Bit64u)(*actual_vector + test_mask)) & ~test_mask;
+  Bit8u *vector = (Bit8u *) masked;
   // sanity check: no lost bits during pointer conversion
-  BX_ASSERT (sizeof(masked) >= sizeof(BX_MEM_THIS vector));
+  BX_ASSERT (sizeof(masked) >= sizeof(vector));
   // sanity check: after realignment, everything fits in allocated space
-  BX_ASSERT (BX_MEM_THIS vector+bytes <= BX_MEM_THIS actual_vector+bytes+test_mask);
-  BX_INFO (("allocated memory at %p. after alignment, vector=%p", 
-	BX_MEM_THIS actual_vector, BX_MEM_THIS vector));
+  BX_ASSERT (vector+bytes <= *actual_vector+bytes+test_mask);
+  return vector;
 }
 
 BX_MEM_C::~BX_MEM_C()
@@ -90,12 +76,20 @@ void BX_MEM_C::init_memory(Bit32u memsize)
 {
   unsigned idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.107 2007/12/23 17:21:28 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.115 2008/05/10 21:36:55 sshwarts Exp $"));
 
-  alloc_vector_aligned(memsize+ BIOSROMSZ + EXROMSIZE  + 4096, BX_MEM_VECTOR_ALIGN);
+  if (BX_MEM_THIS actual_vector != NULL) {
+    BX_INFO (("freeing existing memory vector"));
+    delete [] BX_MEM_THIS actual_vector;
+    BX_MEM_THIS actual_vector = NULL;
+    BX_MEM_THIS vector = NULL;
+  }
+  BX_MEM_THIS vector = ::alloc_vector_aligned(&BX_MEM_THIS actual_vector, memsize + BIOSROMSZ + EXROMSIZE + 4096, BX_MEM_VECTOR_ALIGN);
+  BX_INFO (("allocated memory at %p. after alignment, vector=%p",
+	BX_MEM_THIS actual_vector, BX_MEM_THIS vector));
+
   BX_MEM_THIS len  = memsize;
-  BX_MEM_THIS megabytes = memsize / (1024*1024);
-  BX_MEM_THIS memory_handlers = new struct memory_handler_struct *[4096];
+  BX_MEM_THIS memory_handlers = new struct memory_handler_struct *[BX_MEM_HANDLERS];
   BX_MEM_THIS rom = &BX_MEM_THIS vector[memsize];
   BX_MEM_THIS bogus = &BX_MEM_THIS vector[memsize + BIOSROMSZ + EXROMSIZE];
 #if BX_DEBUGGER
@@ -103,9 +97,8 @@ void BX_MEM_C::init_memory(Bit32u memsize)
   BX_MEM_THIS dbg_dirty_pages = new Bit8u[pages];
   memset(BX_MEM_THIS dbg_dirty_pages, 0, pages);
 #endif
-  memset(BX_MEM_THIS rom, 0xff, BIOSROMSZ + EXROMSIZE);
-  memset(BX_MEM_THIS bogus, 0xff, 4096);
-  for (idx = 0; idx < 4096; idx++)
+  memset(BX_MEM_THIS rom, 0xff, BIOSROMSZ + EXROMSIZE + 4096);
+  for (idx = 0; idx < BX_MEM_HANDLERS; idx++)
     BX_MEM_THIS memory_handlers[idx] = NULL;
   for (idx = 0; idx < 65; idx++)
     BX_MEM_THIS rom_present[idx] = 0;
@@ -116,7 +109,7 @@ void BX_MEM_C::init_memory(Bit32u memsize)
 
   // accept only memory size which is multiply of 1M
   BX_ASSERT((BX_MEM_THIS len & 0xfffff) == 0);
-  BX_INFO(("%.2fMB", (float)(BX_MEM_THIS megabytes)));
+  BX_INFO(("%.2fMB", (float)(BX_MEM_THIS len / (1024.0*1024.0))));
 
 #if BX_SUPPORT_MONITOR_MWAIT
   BX_MEM_THIS monitor_active = new bx_bool[BX_SMP_PROCESSORS];
@@ -154,7 +147,7 @@ void BX_MEM_C::cleanup_memory()
     BX_MEM_THIS actual_vector = NULL;
     BX_MEM_THIS vector = NULL;
     if (BX_MEM_THIS memory_handlers != NULL) {
-      for (idx = 0; idx < 4096; idx++) {
+      for (idx = 0; idx < BX_MEM_HANDLERS; idx++) {
         struct memory_handler_struct *memory_handler = BX_MEM_THIS memory_handlers[idx];
         struct memory_handler_struct *prev = NULL;
         while (memory_handler) {
@@ -187,13 +180,13 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
 
   if (*path == '\0') {
     if (type == 2) {
-      BX_PANIC(( "ROM: Optional ROM image undefined"));
+      BX_PANIC(("ROM: Optional ROM image undefined"));
     }
     else if (type == 1) {
-      BX_PANIC(( "ROM: VGA BIOS image undefined"));
+      BX_PANIC(("ROM: VGA BIOS image undefined"));
     }
     else {
-      BX_PANIC(( "ROM: System BIOS image undefined"));
+      BX_PANIC(("ROM: System BIOS image undefined"));
     }
     return;
   }
@@ -205,20 +198,20 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
            );
   if (fd < 0) {
     if (type < 2) {
-      BX_PANIC(( "ROM: couldn't open ROM image file '%s'.", path));
+      BX_PANIC(("ROM: couldn't open ROM image file '%s'.", path));
     }
     else {
-      BX_ERROR(( "ROM: couldn't open ROM image file '%s'.", path));
+      BX_ERROR(("ROM: couldn't open ROM image file '%s'.", path));
     }
     return;
   }
   ret = fstat(fd, &stat_buf);
   if (ret) {
     if (type < 2) {
-      BX_PANIC(( "ROM: couldn't stat ROM image file '%s'.", path));
+      BX_PANIC(("ROM: couldn't stat ROM image file '%s'.", path));
     }
     else {
-      BX_ERROR(( "ROM: couldn't stat ROM image file '%s'.", path));
+      BX_ERROR(("ROM: couldn't stat ROM image file '%s'.", path));
     }
     return;
   }
@@ -243,7 +236,7 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
         return;
       }
     } else {
-      romaddress = (bx_phy_address)(-size);
+      romaddress = -size;
     }
     offset = romaddress & BIOS_MASK;
     if ((romaddress & 0xf0000) < 0xf0000) {
@@ -289,7 +282,7 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
   while (size > 0) {
     ret = read(fd, (bx_ptr_t) &BX_MEM_THIS rom[offset], size);
     if (ret <= 0) {
-      BX_PANIC(( "ROM: read failed on BIOS image: '%s'",path));
+      BX_PANIC(("ROM: read failed on BIOS image: '%s'",path));
     }
     size -= ret;
     offset += ret;
@@ -304,9 +297,9 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
     }
     if (checksum != 0) {
       if (type == 1) {
-        BX_PANIC(( "ROM: checksum error in VGABIOS image: '%s'", path));
+        BX_PANIC(("ROM: checksum error in VGABIOS image: '%s'", path));
       } else if (is_bochs_bios) {
-        BX_ERROR(( "ROM: checksum error in BIOS image: '%s'", path));
+        BX_ERROR(("ROM: checksum error in BIOS image: '%s'", path));
       }
     }
   }
@@ -323,7 +316,7 @@ void BX_MEM_C::load_RAM(const char *path, bx_phy_address ramaddress, Bit8u type)
   unsigned long size, offset;
 
   if (*path == '\0') {
-    BX_PANIC(( "RAM: Optional RAM image undefined"));
+    BX_PANIC(("RAM: Optional RAM image undefined"));
     return;
   }
   // read in RAM BIOS image file
@@ -333,12 +326,12 @@ void BX_MEM_C::load_RAM(const char *path, bx_phy_address ramaddress, Bit8u type)
 #endif
            );
   if (fd < 0) {
-    BX_PANIC(( "RAM: couldn't open RAM image file '%s'.", path));
+    BX_PANIC(("RAM: couldn't open RAM image file '%s'.", path));
     return;
   }
   ret = fstat(fd, &stat_buf);
   if (ret) {
-    BX_PANIC(( "RAM: couldn't stat RAM image file '%s'.", path));
+    BX_PANIC(("RAM: couldn't stat RAM image file '%s'.", path));
     return;
   }
 
@@ -346,9 +339,9 @@ void BX_MEM_C::load_RAM(const char *path, bx_phy_address ramaddress, Bit8u type)
 
   offset = ramaddress;
   while (size > 0) {
-    ret = read(fd, (bx_ptr_t) &BX_MEM_THIS vector[offset], size);
+    ret = read(fd, (bx_ptr_t) BX_MEM_THIS get_vector(offset), size);
     if (ret <= 0) {
-      BX_PANIC(( "RAM: read failed on RAM image: '%s'",path));
+      BX_PANIC(("RAM: read failed on RAM image: '%s'",path));
     }
     size -= ret;
     offset += ret;
@@ -362,7 +355,7 @@ void BX_MEM_C::load_RAM(const char *path, bx_phy_address ramaddress, Bit8u type)
 #endif // #if BX_PROVIDE_CPU_MEMORY
 
 
-#if ( BX_DEBUGGER || BX_DISASM || BX_GDBSTUB)
+#if (BX_DEBUGGER || BX_DISASM || BX_GDBSTUB)
 bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, Bit8u *buf)
 {
   bx_bool ret = 1;
@@ -371,8 +364,8 @@ bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
     // Reading standard PCI/ISA Video Mem / SMMRAM
     if ((addr & 0xfffe0000) == 0x000a0000) {
       if (BX_MEM_THIS smram_enable || cpu->smm_mode())
-        *buf = BX_MEM_THIS vector[addr];
-      else 
+        *buf = *(BX_MEM_THIS get_vector(addr));
+      else
         *buf = DEV_vga_mem_read(addr);
     }
 #if BX_SUPPORT_PCI
@@ -390,7 +383,7 @@ bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
           }
           break;
         case 0x1:  // Read from ShadowRAM
-          *buf = BX_MEM_THIS vector[addr];
+          *buf = *(BX_MEM_THIS get_vector(addr));
           break;
         default:
           BX_PANIC(("dbg_fetch_mem: default case"));
@@ -400,7 +393,7 @@ bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
     else if (addr < BX_MEM_THIS len)
     {
       if ((addr & 0xfffc0000) != 0x000c0000) {
-        *buf = BX_MEM_THIS vector[addr];
+        *buf = *(BX_MEM_THIS get_vector(addr));
       }
       else if ((addr & 0xfffe0000) == 0x000e0000)
       {
@@ -437,8 +430,8 @@ bx_bool BX_MEM_C::dbg_set_mem(bx_phy_address addr, unsigned len, Bit8u *buf)
     // Write to standard PCI/ISA Video Mem / SMMRAM
     if ((addr & 0xfffe0000) == 0x000a0000) {
       if (BX_MEM_THIS smram_enable)
-        BX_MEM_THIS vector[addr] = *buf;
-      else 
+        *(BX_MEM_THIS get_vector(addr)) = *buf;
+      else
         DEV_vga_mem_write(addr, *buf);
     }
 #if BX_SUPPORT_PCI
@@ -448,7 +441,7 @@ bx_bool BX_MEM_C::dbg_set_mem(bx_phy_address addr, unsigned len, Bit8u *buf)
         case 0x0:  // Ignore write to ROM
           break;
         case 0x1:  // Write to ShadowRAM
-          BX_MEM_THIS vector[addr] = *buf;
+          *(BX_MEM_THIS get_vector(addr)) = *buf;
           break;
         default:
           BX_PANIC(("dbg_fetch_mem: default case"));
@@ -457,14 +450,13 @@ bx_bool BX_MEM_C::dbg_set_mem(bx_phy_address addr, unsigned len, Bit8u *buf)
 #endif  // #if BX_SUPPORT_PCI
     else if ((addr & 0xfffc0000) != 0x000c0000 && (addr < (bx_phy_address)(~BIOS_MASK)))
     {
-      BX_MEM_THIS vector[addr] = *buf;
+      *(BX_MEM_THIS get_vector(addr)) = *buf;
     }
     buf++;
     addr++;
   }
   return(1);
 }
-#endif
 
 bx_bool BX_MEM_C::dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *crc)
 {
@@ -474,12 +466,21 @@ bx_bool BX_MEM_C::dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *
 
   if (addr2 >= BX_MEM_THIS len)
     return(0); // error, specified address past last phy mem addr
-  
+
   unsigned len = 1 + addr2 - addr1;
-  *crc = crc32(BX_MEM_THIS vector + addr1, len);
+
+  // do not cross 4K boundary
+  while(1) { 
+    unsigned remainsInPage = 0x1000 - (addr1 & 0xfff);
+    unsigned access_length = (len < remainsInPage) ? len : remainsInPage;
+   *crc = crc32(BX_MEM_THIS get_vector(addr1), access_length);
+    addr1 += access_length;
+    len -= access_length;
+  }
 
   return(1);
 }
+#endif
 
 //
 // Return a host address corresponding to the guest physical memory
@@ -520,14 +521,14 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
     if ((a20Addr & 0xfffe0000) == 0x000a0000 && (BX_MEM_THIS smram_available))
     {
       if (BX_MEM_THIS smram_enable || cpu->smm_mode())
-        return (Bit8u *) &BX_MEM_THIS vector[a20Addr];
+        return BX_MEM_THIS get_vector(a20Addr);
     }
   }
 
 #if BX_SUPPORT_MONITOR_MWAIT
   if (BX_MEM_THIS is_monitor(a20Addr & ~0xfff, 0x1000)) {
-     // Vetoed! Write monitored page !
-     if (op != BX_READ) return(NULL);
+    // Vetoed! Write monitored page !
+    if (op != BX_READ) return(NULL);
   }
 #endif
 
@@ -552,13 +553,12 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
           {
             return (Bit8u *) &BX_MEM_THIS rom[a20Addr & BIOS_MASK];
           }
-          else
-          {
+          else {
             return (Bit8u *) &BX_MEM_THIS rom[(a20Addr & EXROM_MASK) + BIOSROMSZ];
           }
           break;
         case 0x1:   // Read from ShadowRAM
-          return (Bit8u *) &BX_MEM_THIS vector[a20Addr];
+          return BX_MEM_THIS get_vector(a20Addr);
         default:
           BX_PANIC(("getHostMemAddr(): default case"));
           return(NULL);
@@ -568,15 +568,14 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
     else if(a20Addr < BX_MEM_THIS len)
     {
       if ((a20Addr & 0xfffc0000) != 0x000c0000) {
-        return (Bit8u *) &BX_MEM_THIS vector[a20Addr];
+        return BX_MEM_THIS get_vector(a20Addr);
       }
       else if ((a20Addr & 0xfffe0000) == 0x000e0000)
       {
         return (Bit8u *) &BX_MEM_THIS rom[a20Addr & BIOS_MASK];
       }
-      else
-      {
-        return( (Bit8u *) &BX_MEM_THIS rom[(a20Addr & EXROM_MASK) + BIOSROMSZ]);
+      else {
+        return((Bit8u *) &BX_MEM_THIS rom[(a20Addr & EXROM_MASK) + BIOSROMSZ]);
       }
     }
     else if (a20Addr >= (bx_phy_address)~BIOS_MASK)
@@ -598,6 +597,7 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
       return(NULL); // Vetoed!  Mem mapped IO (VGA)
     else if (a20Addr >= (bx_phy_address)~BIOS_MASK)
       return(NULL); // Vetoed!  ROMs
+
 #if BX_SUPPORT_PCI
     else if (BX_MEM_THIS pci_enabled && ((a20Addr & 0xfffc0000) == 0x000c0000))
     {
@@ -610,10 +610,9 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
     else
     {
       if ((a20Addr & 0xfffc0000) != 0x000c0000) {
-        retAddr = (Bit8u *) &BX_MEM_THIS vector[a20Addr];
+        retAddr = BX_MEM_THIS get_vector(a20Addr);
       }
-      else
-      {
+      else {
         return(NULL);  // Vetoed!  ROMs
       }
     }
@@ -630,7 +629,7 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
  * One needs to provide both a read_handler and a write_handler.
  * XXX: maybe we should check for overlapping memory handlers
  */
-  bx_bool 
+  bx_bool
 BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
 		memory_handler_t write_handler, bx_phy_address begin_addr, bx_phy_address end_addr)
 {
@@ -638,7 +637,7 @@ BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
     return 0;
   if (!read_handler || !write_handler)
     return 0;
-  BX_INFO(("Register memory access handlers: %08x-%08x", begin_addr, end_addr));
+  BX_INFO(("Register memory access handlers: 0x" FMT_PHY_ADDRX " - 0x" FMT_PHY_ADDRX, begin_addr, end_addr));
   for (unsigned page_idx = begin_addr >> 20; page_idx <= end_addr >> 20; page_idx++) {
     struct memory_handler_struct *memory_handler = new struct memory_handler_struct;
     memory_handler->next = BX_MEM_THIS memory_handlers[page_idx];
@@ -652,19 +651,19 @@ BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
   return 1;
 }
 
-  bx_bool 
+  bx_bool
 BX_MEM_C::unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler,
 		bx_phy_address begin_addr, bx_phy_address end_addr)
 {
   bx_bool ret = 1;
-  BX_INFO(("Memory access handlers unregistered: %08x-%08x", begin_addr, end_addr));
+  BX_INFO(("Memory access handlers unregistered: 0x" FMT_PHY_ADDRX " - 0x" FMT_PHY_ADDRX, begin_addr, end_addr));
   for (unsigned page_idx = begin_addr >> 20; page_idx <= end_addr >> 20; page_idx++) {
     struct memory_handler_struct *memory_handler = BX_MEM_THIS memory_handlers[page_idx];
     struct memory_handler_struct *prev = NULL;
-    while (memory_handler && 
+    while (memory_handler &&
          memory_handler->read_handler != read_handler &&
-         memory_handler->write_handler != write_handler && 
-         memory_handler->begin != begin_addr && 
+         memory_handler->write_handler != write_handler &&
+         memory_handler->begin != begin_addr &&
          memory_handler->end != end_addr)
     {
       prev = memory_handler;
@@ -679,7 +678,7 @@ BX_MEM_C::unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler
     else
       BX_MEM_THIS memory_handlers[page_idx] = memory_handler->next;
     delete memory_handler;
-  }  
+  }
   return ret;
 }
 
@@ -734,7 +733,7 @@ void BX_MEM_C::clear_monitor(unsigned cpu)
 bx_bool BX_MEM_C::is_monitor(bx_phy_address begin_addr, unsigned len)
 {
   if (BX_MEM_THIS n_monitors == 0) return 0;
-  
+
   for (int i=0; i<BX_SMP_PROCESSORS;i++) {
     if (BX_MEM_THIS monitor_active[i]) {
       if (BX_CPU(i)->is_monitor(begin_addr, len))

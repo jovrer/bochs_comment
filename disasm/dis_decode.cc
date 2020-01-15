@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_decode.cc,v 1.42 2007/11/17 16:19:14 sshwarts Exp $
+// $Id: dis_decode.cc,v 1.46 2008/04/27 19:47:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
@@ -15,21 +15,21 @@
 static const unsigned char instruction_has_modrm[512] = {
   /*       0 1 2 3 4 5 6 7 8 9 a b c d e f          */
   /*       -------------------------------          */
-  /* 00 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, 
-  /* 10 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, 
-  /* 20 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, 
-  /* 30 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0, 
-  /* 40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
-  /* 50 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
-  /* 60 */ 0,0,1,1,0,0,0,0,0,1,0,1,0,0,0,0, 
-  /* 70 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
-  /* 80 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 
-  /* 90 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
-  /* A0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
-  /* B0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
-  /* C0 */ 1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0, 
-  /* D0 */ 1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1, 
-  /* E0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, 
+  /* 00 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0,
+  /* 10 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0,
+  /* 20 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0,
+  /* 30 */ 1,1,1,1,0,0,0,0,1,1,1,1,0,0,0,0,
+  /* 40 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  /* 50 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  /* 60 */ 0,0,1,1,0,0,0,0,0,1,0,1,0,0,0,0,
+  /* 70 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  /* 80 */ 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+  /* 90 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  /* A0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  /* B0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+  /* C0 */ 1,1,0,0,1,1,1,1,0,0,0,0,0,0,0,0,
+  /* D0 */ 1,1,1,1,0,0,0,0,1,1,1,1,1,1,1,1,
+  /* E0 */ 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
   /* F0 */ 0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,
   /*       0 1 2 3 4 5 6 7 8 9 a b c d e f           */
   /*       -------------------------------           */
@@ -204,16 +204,17 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
   entry = opcode_table + insn.b1;
 
-  // will require 3rd byte for 3-byte opcode
-  if (entry->Attr & _GRP3BTAB) b3 = fetch_byte();
-
   if (instruction_has_modrm[insn.b1])
   {
+    // will require 3rd byte for 3-byte opcode
+    if (entry->Attr == _GRP3BOP)
+      b3 = fetch_byte();
+
     decode_modrm(&insn);
   }
 
   int attr = entry->Attr;
-  while(attr) 
+  while(attr)
   {
     switch(attr) {
        case _GROUPN:
@@ -222,7 +223,7 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
        case _GRPSSE:
          if(sse_prefix) insn.prefixes--;
-         /* For SSE opcodes, look into another 4 entries table 
+         /* For SSE opcodes, look into another 4 entries table
             with the opcode prefixes (NONE, 0x66, 0xF2, 0xF3) */
          entry = &(OPCODE_TABLE(entry)[sse_prefix]);
          break;
@@ -249,12 +250,8 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
          entry = &(BxDisasm3DNowGroup[peek_byte()]);
          break;
 
-       case _GRP3BTAB:
-         entry = &(OPCODE_TABLE(entry)[b3 >> 4]);
-         break;
-
        case _GRP3BOP:
-         entry = &(OPCODE_TABLE(entry)[b3 & 15]);
+         entry = &(OPCODE_TABLE(entry)[b3]);
          break;
 
        case _GRP64B:
@@ -296,7 +293,7 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
     if ((insn.b1 >= 0x070 && insn.b1 <= 0x07F) ||
         (insn.b1 >= 0x180 && insn.b1 <= 0x18F))
     {
-      if (prefix_byte == BRANCH_NOT_TAKEN || prefix_byte == BRANCH_TAKEN) 
+      if (prefix_byte == BRANCH_NOT_TAKEN || prefix_byte == BRANCH_TAKEN)
         branch_hint = prefix_byte;
     }
   }
@@ -326,13 +323,13 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
   {
     dis_sprintf(", taken");
   }
- 
+
   insn.ilen = (unsigned)(instruction - instruction_begin);
 
   return insn;
 }
 
-void disassembler::dis_sprintf(char *fmt, ...)
+void disassembler::dis_sprintf(const char *fmt, ...)
 {
   va_list ap;
 

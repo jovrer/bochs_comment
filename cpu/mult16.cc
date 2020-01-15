@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mult16.cc,v 1.25 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: mult16.cc,v 1.30 2008/05/24 10:26:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,14 +25,12 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
-void BX_CPU_C::MUL_AXEw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MUL_AXEw(bxInstruction_c *i)
 {
   Bit16u op1_16, op2_16;
 
@@ -43,6 +41,7 @@ void BX_CPU_C::MUL_AXEw(bxInstruction_c *i)
     op2_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_16 = read_virtual_word(i->seg(), RMAddr(i));
   }
@@ -62,7 +61,7 @@ void BX_CPU_C::MUL_AXEw(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::IMUL_AXEw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_AXEw(bxInstruction_c *i)
 {
   Bit16s op1_16, op2_16;
 
@@ -73,6 +72,7 @@ void BX_CPU_C::IMUL_AXEw(bxInstruction_c *i)
     op2_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_16 = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
   }
@@ -96,7 +96,7 @@ void BX_CPU_C::IMUL_AXEw(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::DIV_AXEw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIV_AXEw(bxInstruction_c *i)
 {
   Bit16u op2_16, remainder_16, quotient_16l;
   Bit32u op1_32, quotient_32;
@@ -108,6 +108,7 @@ void BX_CPU_C::DIV_AXEw(bxInstruction_c *i)
     op2_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_16 = read_virtual_word(i->seg(), RMAddr(i));
   }
@@ -122,20 +123,12 @@ void BX_CPU_C::DIV_AXEw(bxInstruction_c *i)
   if (quotient_32 != quotient_16l)
     exception(BX_DE_EXCEPTION, 0, 0);
 
-  /* set EFLAGS:
-   * DIV affects the following flags: O,S,Z,A,P,C are undefined
-   */
-
-#if INTEL_DIV_FLAG_BUG == 1
-  assert_CF();
-#endif
-
   /* now write quotient back to destination */
   AX = quotient_16l;
   DX = remainder_16;
 }
 
-void BX_CPU_C::IDIV_AXEw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IDIV_AXEw(bxInstruction_c *i)
 {
   Bit16s op2_16, remainder_16, quotient_16l;
   Bit32s op1_32, quotient_32;
@@ -147,6 +140,7 @@ void BX_CPU_C::IDIV_AXEw(bxInstruction_c *i)
     op2_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_16 = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
   }
@@ -154,8 +148,8 @@ void BX_CPU_C::IDIV_AXEw(bxInstruction_c *i)
   if (op2_16 == 0)
     exception(BX_DE_EXCEPTION, 0, 0);
 
-  /* check MIN_INT divided by -1 case */
-  if ((op1_32 == ((Bit32s)0x80000000)) && (op2_16 == -1))
+  /* check MIN_INT case */
+  if (op1_32 == ((Bit32s)0x80000000))
     exception(BX_DE_EXCEPTION, 0, 0);
 
   quotient_32  = op1_32 / op2_16;
@@ -165,20 +159,12 @@ void BX_CPU_C::IDIV_AXEw(bxInstruction_c *i)
   if (quotient_32 != quotient_16l)
     exception(BX_DE_EXCEPTION, 0, 0);
 
-  /* set EFLAGS:
-   * IDIV affects the following flags: O,S,Z,A,P,C are undefined
-   */
-
-#if INTEL_DIV_FLAG_BUG == 1
-  assert_CF();
-#endif
-
   /* now write quotient back to destination */
   AX = quotient_16l;
   DX = remainder_16;
 }
 
-void BX_CPU_C::IMUL_GwEwIw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_GwEwIw(bxInstruction_c *i)
 {
   Bit16s op2_16, op3_16;
 
@@ -189,6 +175,7 @@ void BX_CPU_C::IMUL_GwEwIw(bxInstruction_c *i)
     op2_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_16 = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
   }
@@ -210,7 +197,7 @@ void BX_CPU_C::IMUL_GwEwIw(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::IMUL_GwEw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IMUL_GwEw(bxInstruction_c *i)
 {
   Bit16s op1_16, op2_16;
 
@@ -219,13 +206,14 @@ void BX_CPU_C::IMUL_GwEw(bxInstruction_c *i)
     op2_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     op2_16 = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
   }
 
   op1_16 = BX_READ_16BIT_REG(i->nnn());
 
-  Bit32s product_32  = op1_16 * op2_16;
+  Bit32s product_32 = op1_16 * op2_16;
   Bit16u product_16 = (product_32 & 0xFFFF);
 
   /* now write product back to destination */

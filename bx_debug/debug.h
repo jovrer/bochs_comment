@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debug.h,v 1.36 2007/10/23 21:51:42 sshwarts Exp $
+// $Id: debug.h,v 1.44 2008/05/31 21:07:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -223,6 +223,7 @@ Bit32u bx_dbg_get_laddr(Bit16u sel, Bit32u ofs);
 void bx_dbg_step_over_command(void);
 void bx_dbg_trace_command(bx_bool enable);
 void bx_dbg_trace_reg_command(bx_bool enable);
+void bx_dbg_trace_mem_command(bx_bool enable);
 void bx_dbg_ptime_command(void);
 void bx_dbg_timebp_command(bx_bool absolute, Bit64u time);
 #define MAX_CONCURRENT_BPS 5
@@ -261,7 +262,7 @@ void bx_dbg_quit_command(void);
 #define BX_INFO_FPU_REGS 2
 #define BX_INFO_MMX_REGS 4
 #define BX_INFO_SSE_REGS 8
-void bx_dbg_info_registers_command(int); 
+void bx_dbg_info_registers_command(int);
 void bx_dbg_info_dirty_command(void);
 void bx_dbg_info_ivt_command(unsigned from, unsigned to);
 void bx_dbg_info_idt_command(unsigned from, unsigned to);
@@ -291,8 +292,18 @@ void bx_dbg_info_pci(void);
 void bx_dbg_print_help(void);
 void bx_dbg_calc_command(Bit64u value);
 void bx_dbg_dump_table(void);
+
+// callbacks from CPU
 void bx_dbg_exception(unsigned cpu, Bit8u vector, Bit16u error_code);
 void bx_dbg_interrupt(unsigned cpu, Bit8u vector, Bit16u error_code);
+void bx_dbg_halt(unsigned cpu);
+
+// memory trace callbacks from CPU, len=1,2,4 or 8
+void bx_dbg_lin_memory_access(unsigned cpu, bx_address lin, bx_phy_address phy, unsigned len, unsigned pl, unsigned rw, Bit8u *data);
+void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw, Bit8u *data);
+
+// check memory access for watchpoints
+void bx_dbg_check_memory_access_watchpoints(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw);
 
 // commands that work with Bochs param tree
 void bx_dbg_restore_command(const char *param_name, const char *path);
@@ -302,7 +313,7 @@ int bx_dbg_show_symbolic(void);
 void bx_dbg_set_symbol_command(char *symbol, Bit32u val);
 char* bx_dbg_symbolic_address(Bit32u context, Bit32u eip, Bit32u base);
 char* bx_dbg_symbolic_address_16bit(Bit32u eip, Bit32u cs);
-void bx_dbg_symbol_command(char* filename, bx_bool global, Bit32u offset);
+int bx_dbg_symbol_command(char* filename, bx_bool global, Bit32u offset);
 void bx_dbg_info_symbols_command(char *Symbol);
 int bx_dbg_lbreakpoint_symbol_command(char *Symbol);
 Bit32u bx_dbg_get_symbol_value(char *Symbol);
@@ -315,26 +326,18 @@ char* bx_dbg_disasm_symbolic_address(Bit32u eip, Bit32u base);
 // the rest for C++
 #ifdef __cplusplus
 
-// Read/write watchpoint hack
-#define MAX_WRITE_WATCHPOINTS 16
-#define MAX_READ_WATCHPOINTS 16
-extern unsigned num_write_watchpoints;
-extern bx_phy_address write_watchpoint[MAX_WRITE_WATCHPOINTS];
-extern unsigned num_read_watchpoints;
-extern bx_phy_address read_watchpoint[MAX_READ_WATCHPOINTS];
-
 typedef enum {
-      STOP_NO_REASON = 0,
-      STOP_TIME_BREAK_POINT,
-      STOP_READ_WATCH_POINT,
-      STOP_WRITE_WATCH_POINT,
-      STOP_MAGIC_BREAK_POINT,
-      STOP_MODE_BREAK_POINT,
-      STOP_CPU_HALTED
+  STOP_NO_REASON = 0,
+  STOP_TIME_BREAK_POINT,
+  STOP_READ_WATCH_POINT,
+  STOP_WRITE_WATCH_POINT,
+  STOP_MAGIC_BREAK_POINT,
+  STOP_MODE_BREAK_POINT,
+  STOP_CPU_HALTED
 } stop_reason_t;
 
 typedef enum {
-      BREAK_POINT_MAGIC, BREAK_POINT_READ, BREAK_POINT_WRITE, BREAK_POINT_TIME
+  BREAK_POINT_MAGIC, BREAK_POINT_READ, BREAK_POINT_WRITE, BREAK_POINT_TIME
 } break_point_t;
 
 #define BX_DBG_REG_EIP          10
@@ -357,7 +360,7 @@ void bx_debug_break(void);
 
 void bx_dbg_exit(int code);
 #if BX_DBG_EXTENSIONS
-  int bx_dbg_extensions(char *command);
+    int bx_dbg_extensions(char *command);
 #else
 #define bx_dbg_extensions(command) 0
 #endif

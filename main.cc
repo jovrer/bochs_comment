@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.370 2007/12/21 21:16:34 sshwarts Exp $
+// $Id: main.cc,v 1.382 2008/05/30 20:35:05 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -34,7 +34,7 @@
 
 #if BX_WITH_SDL
 // since SDL redefines main() to SDL_main(), we must include SDL.h so that the
-// C language prototype is found.  Otherwise SDL_main() will get its name 
+// C language prototype is found.  Otherwise SDL_main() will get its name
 // mangled and not match what the SDL library is expecting.
 #include <SDL.h>
 
@@ -91,7 +91,7 @@ Bit8u bx_cpu_count;
 
 #define LOG_THIS genlog->
 
-#if ( BX_PROVIDE_DEVICE_MODELS==1 )
+#if BX_PROVIDE_DEVICE_MODELS
 bx_pc_system_c bx_pc_system;
 #endif
 
@@ -129,29 +129,29 @@ void bx_print_header ()
 #if BX_WITH_CARBON
 /* Original code by Darrell Walisser - dwaliss1@purdue.edu */
 
-static void setupWorkingDirectory (char *path)
+static void setupWorkingDirectory(char *path)
 {
-    char parentdir[MAXPATHLEN];
-    char *c;
-    
-    strncpy ( parentdir, path, MAXPATHLEN );
-    c = (char*) parentdir;
-    
-    while (*c != '\0')     /* go to end */
-        c++;
-    
-    while (*c != '/')      /* back up to parent */
-        c--;
-    
-    *c = '\0';             /* cut off last part (binary name) */
-    
-        /* chdir to the binary app's parent */
-        int n;
-        n = chdir (parentdir);
-        if (n) BX_PANIC (("failed to change dir to parent"));
-        /* chdir to the .app's parent */
-        n = chdir ("../../../");
-    if (n) BX_PANIC (("failed to change to ../../.."));
+  char parentdir[MAXPATHLEN];
+  char *c;
+
+  strncpy (parentdir, path, MAXPATHLEN);
+  c = (char*) parentdir;
+
+  while (*c != '\0')     /* go to end */
+      c++;
+
+  while (*c != '/')      /* back up to parent */
+      c--;
+
+  *c = '\0';             /* cut off last part (binary name) */
+
+  /* chdir to the binary app's parent */
+  int n;
+  n = chdir (parentdir);
+  if (n) BX_PANIC (("failed to change dir to parent"));
+  /* chdir to the .app's parent */
+  n = chdir ("../../../");
+  if (n) BX_PANIC (("failed to change to ../../.."));
 }
 
 /* Panic button to display fatal errors.
@@ -164,7 +164,7 @@ static void carbonFatalDialog(const char *error, const char *exposition)
   DialogItemIndex               index;
   AlertStdCFStringAlertParamRec alertParam = {0};
   fprintf(stderr, "Entering carbonFatalDialog: %s\n", error);
-  
+
   // Init libraries
   InitCursor();
   // Assemble dialog
@@ -185,10 +185,10 @@ static void carbonFatalDialog(const char *error, const char *exposition)
     cfExposition,       /* can be NULL */
     &alertParam,             /* can be NULL */
     &alertDialog);
-  RunStandardAlert( alertDialog, NULL, &index);
+  RunStandardAlert(alertDialog, NULL, &index);
   // Cleanup
-  CFRelease( cfError );
-  if( cfExposition != NULL ) { CFRelease( cfExposition ); }
+  CFRelease(cfError);
+  if(cfExposition != NULL) { CFRelease(cfExposition); }
 }
 #endif
 
@@ -253,7 +253,7 @@ void print_tree(bx_param_c *node, int level)
 }
 #endif
 
-int bxmain () {
+int bxmain (void) {
 #ifdef HAVE_LOCALE_H
   // Initialize locale (for isprint() and other functions)
   setlocale (LC_ALL, "");
@@ -263,7 +263,7 @@ int bxmain () {
   static jmp_buf context;
   if (setjmp (context) == 0) {
     SIM->set_quit_context (&context);
-    if (bx_init_main(bx_startup_flags.argc, bx_startup_flags.argv) < 0) 
+    if (bx_init_main(bx_startup_flags.argc, bx_startup_flags.argv) < 0)
       return 0;
     // read a param to decide which config interface to start.
     // If one exists, start it.  If not, just begin.
@@ -322,13 +322,13 @@ int split_string_into_argv (
   char *string,
   int *argc_out,
   char **argv,
-  int max_argv) 
+  int max_argv)
 {
   char *buf0 = new char[strlen(string)+1];
   strcpy (buf0, string);
   char *buf = buf0;
   int in_double_quote = 0, in_single_quote = 0;
-  for (int i=0; i<max_argv; i++) 
+  for (int i=0; i<max_argv; i++)
     argv[i] = NULL;
   argv[0] = new char[6];
   strcpy (argv[0], "bochs");
@@ -352,7 +352,7 @@ int split_string_into_argv (
       done = true;
       // fall through into behavior for space
     case ' ':
-      if (in_double_quote || in_single_quote) 
+      if (in_double_quote || in_single_quote)
         goto do_default;
       *outp = 0;
       //fprintf (stderr, "completed arg %d = '%s'\n", argc, argv[argc]);
@@ -419,17 +419,17 @@ int RedirectIOToConsole()
   hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
   fp = _fdopen(hConHandle, "w");
   *stdout = *fp;
-  setvbuf( stdout, NULL, _IONBF, 0 );
+  setvbuf(stdout, NULL, _IONBF, 0);
   // redirect unbuffered STDIN to the console
   lStdHandle = (long)GetStdHandle(STD_INPUT_HANDLE);
   hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
   fp = _fdopen(hConHandle, "r");
   *stdin = *fp;
-  setvbuf( stdin, NULL, _IONBF, 0 );
+  setvbuf(stdin, NULL, _IONBF, 0);
   // redirect unbuffered STDERR to the console
   lStdHandle = (long)GetStdHandle(STD_ERROR_HANDLE);
   hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
-  fp = _fdopen( hConHandle, "w" );
+  fp = _fdopen(hConHandle, "w");
   *stderr = *fp;
   setvbuf(stderr, NULL, _IONBF, 0);
   return 1;
@@ -463,7 +463,7 @@ int WINAPI WinMain(
 #if !defined(__WXMSW__)
 // normal main function, presently in for all cases except for
 // wxWidgets under win32.
-int main (int argc, char *argv[])
+int CDECL main(int argc, char *argv[])
 {
   bx_startup_flags.argc = argc;
   bx_startup_flags.argv = argv;
@@ -480,9 +480,9 @@ int main (int argc, char *argv[])
 }
 #endif
 
-void print_usage()
+void print_usage(void)
 {
-  fprintf(stderr, 
+  fprintf(stderr,
     "Usage: bochs [flags] [bochsrc options]\n\n"
     "  -n               no configuration file\n"
     "  -f configfile    specify configuration file\n"
@@ -618,7 +618,7 @@ int bx_init_main(int argc, char *argv[])
       BX_PANIC(("Unable to work out bxshare path! (Most likely path too long!)"));
       return -1;
     }
-    char *c;    
+    char *c;
     c = (char*) bxshareDirPath;
     while (*c != '\0')  /* go to end */
       c++;
@@ -654,7 +654,7 @@ int bx_init_main(int argc, char *argv[])
     // our plugins into true frameworks and bundles either
     mainBundle = CFBundleGetMainBundle();
     BX_ASSERT(mainBundle != NULL);
-    libDir = CFBundleCopyAuxiliaryExecutableURL( mainBundle, CFSTR("lib"));
+    libDir = CFBundleCopyAuxiliaryExecutableURL(mainBundle, CFSTR("lib"));
     BX_ASSERT(libDir != NULL);
     // translate this to a unix style full path
     if(!CFURLGetFileSystemRepresentation(libDir, true, (UInt8 *)libDirPath, MAXPATHLEN))
@@ -670,14 +670,14 @@ int bx_init_main(int argc, char *argv[])
   if (getenv("LTDL_LIBRARY_PATH") != NULL) {
     BX_INFO (("LTDL_LIBRARY_PATH is set to '%s'", getenv("LTDL_LIBRARY_PATH")));
   } else {
-    BX_INFO (("LTDL_LIBRARY_PATH not set. using compile time default '%s'", 
+    BX_INFO (("LTDL_LIBRARY_PATH not set. using compile time default '%s'",
         BX_PLUGIN_PATH));
     setenv("LTDL_LIBRARY_PATH", BX_PLUGIN_PATH, 1);
   }
   if (getenv("BXSHARE") != NULL) {
     BX_INFO (("BXSHARE is set to '%s'", getenv("BXSHARE")));
   } else {
-    BX_INFO (("BXSHARE not set. using compile time default '%s'", 
+    BX_INFO (("BXSHARE not set. using compile time default '%s'",
         BX_SHARE_PATH));
     setenv("BXSHARE", BX_SHARE_PATH, 1);
   }
@@ -717,7 +717,7 @@ int bx_init_main(int argc, char *argv[])
     if (SIM->get_param_enum(BXPN_BOCHS_START)->get() == BX_QUICK_START) {
       if (!SIM->test_for_text_console())
         BX_PANIC(("Unable to start Bochs without a bochsrc.txt and without a text console"));
-      else 
+      else
         BX_ERROR(("Switching off quick start, because no configuration file was found."));
     }
     SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_LOAD_START);
@@ -743,7 +743,7 @@ int bx_init_main(int argc, char *argv[])
   return 0;
 }
 
-bx_bool load_and_init_display_lib()
+bx_bool load_and_init_display_lib(void)
 {
   if (bx_gui != NULL) {
     // bx_gui has already been filled in.  This happens when you start
@@ -774,47 +774,47 @@ bx_bool load_and_init_display_lib()
     BX_ERROR(("changing display library to '%s' instead", gui_name));
   }
 #if BX_WITH_AMIGAOS
-  if (!strcmp(gui_name, "amigaos")) 
+  if (!strcmp(gui_name, "amigaos"))
     PLUG_load_plugin (amigaos, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_BEOS
-  if (!strcmp(gui_name, "beos")) 
+  if (!strcmp(gui_name, "beos"))
     PLUG_load_plugin (beos, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_CARBON
-  if (!strcmp(gui_name, "carbon")) 
+  if (!strcmp(gui_name, "carbon"))
     PLUG_load_plugin (carbon, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_MACOS
-  if (!strcmp(gui_name, "macos")) 
+  if (!strcmp(gui_name, "macos"))
     PLUG_load_plugin (macintosh, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_NOGUI
-  if (!strcmp(gui_name, "nogui")) 
+  if (!strcmp(gui_name, "nogui"))
     PLUG_load_plugin (nogui, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_RFB
-  if (!strcmp(gui_name, "rfb")) 
+  if (!strcmp(gui_name, "rfb"))
     PLUG_load_plugin (rfb, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_SDL
-  if (!strcmp(gui_name, "sdl")) 
+  if (!strcmp(gui_name, "sdl"))
     PLUG_load_plugin (sdl, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_SVGA
-  if (!strcmp(gui_name, "svga")) 
+  if (!strcmp(gui_name, "svga"))
     PLUG_load_plugin (svga, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_TERM
-  if (!strcmp(gui_name, "term")) 
+  if (!strcmp(gui_name, "term"))
     PLUG_load_plugin (term, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_WIN32
-  if (!strcmp(gui_name, "win32")) 
+  if (!strcmp(gui_name, "win32"))
     PLUG_load_plugin (win32, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_X11
-  if (!strcmp(gui_name, "x")) 
+  if (!strcmp(gui_name, "x"))
     PLUG_load_plugin (x, PLUGTYPE_OPTIONAL);
 #endif
 
@@ -882,7 +882,7 @@ int bx_begin_simulation (int argc, char *argv[])
   // If using the debugger, it will take control and call
   // bx_init_hardware() and cpu_loop()
   bx_dbg_main();
-#else 
+#else
 #if BX_GDBSTUB
   // If using gdbstub, it will take control and call
   // bx_init_hardware() and cpu_loop()
@@ -895,7 +895,7 @@ int bx_begin_simulation (int argc, char *argv[])
       // quantums and loops.
       while (1) {
         BX_CPU(0)->cpu_loop(0);
-        if (bx_pc_system.kill_bochs_request) 
+        if (bx_pc_system.kill_bochs_request)
           break;
       }
       // for one processor, the only reason for cpu_loop to return is
@@ -911,9 +911,9 @@ int bx_begin_simulation (int argc, char *argv[])
         // do some instructions in each processor
         BX_CPU(processor)->cpu_loop(quantum);
         processor = (processor+1) % BX_SMP_PROCESSORS;
-        if (bx_pc_system.kill_bochs_request) 
+        if (bx_pc_system.kill_bochs_request)
           break;
-        if (processor == 0) 
+        if (processor == 0)
           BX_TICKN(quantum);
       }
     }
@@ -924,7 +924,7 @@ int bx_begin_simulation (int argc, char *argv[])
   return(0);
 }
 
-void bx_stop_simulation()
+void bx_stop_simulation(void)
 {
   // in wxWidgets, the whole simulator is running in a separate thread.
   // our only job is to end the thread as soon as possible, NOT to shut
@@ -977,7 +977,6 @@ void bx_init_hardware()
   BX_INFO(("  APIC support: %s",BX_SUPPORT_APIC?"yes":"no"));
   BX_INFO(("CPU configuration"));
   BX_INFO(("  level: %d",BX_CPU_LEVEL));
-  BX_INFO(("  TLB enabled: %s",BX_USE_TLB?"yes":"no"));
 #if BX_SUPPORT_SMP
   BX_INFO(("  SMP support: yes, quantum=%d", SIM->get_param_num(BXPN_SMP_QUANTUM)->get()));
 #else
@@ -988,7 +987,7 @@ void bx_init_hardware()
   if (BX_SUPPORT_SSE == 0)
     BX_INFO(("  SSE support: no"));
   else
-    BX_INFO(("  SSE support: %d",BX_SUPPORT_SSE));
+    BX_INFO(("  SSE support: %d%s",BX_SUPPORT_SSE,BX_SUPPORT_SSE_EXTENSION?"E":""));
   BX_INFO(("  CLFLUSH support: %s",BX_SUPPORT_CLFLUSH?"yes":"no"));
   BX_INFO(("  VME support: %s",BX_SUPPORT_VME?"yes":"no"));
   BX_INFO(("  3dnow! support: %s",BX_SUPPORT_3DNOW?"yes":"no"));
@@ -998,6 +997,8 @@ void bx_init_hardware()
   BX_INFO(("  x86-64 support: %s",BX_SUPPORT_X86_64?"yes":"no"));
   BX_INFO(("  SEP support: %s",BX_SUPPORT_SEP?"yes":"no"));
   BX_INFO(("  MWAIT support: %s",BX_SUPPORT_MONITOR_MWAIT?"yes":"no"));
+  BX_INFO(("  XSAVE support: %s",BX_SUPPORT_XSAVE?"yes":"no"));
+  BX_INFO(("  AES support: %s",BX_SUPPORT_AES?"yes":"no"));
   BX_INFO(("Optimization configuration"));
   BX_INFO(("  Guest2HostTLB support: %s",BX_SupportGuest2HostTLB?"yes":"no"));
   BX_INFO(("  RepeatSpeedups support: %s",BX_SupportRepeatSpeedups?"yes":"no"));
@@ -1032,10 +1033,6 @@ void bx_init_hardware()
   bx_param_num_c *bxp_memsize = SIM->get_param_num(BXPN_MEM_SIZE);
   Bit32u memSize = bxp_memsize->get() * 1024*1024;
 
-#if BX_SUPPORT_ICACHE
-  pageWriteStampTable.alloc(memSize);
-#endif
-
   BX_MEM(0)->init_memory(memSize);
 
   // First load the BIOS and VGABIOS
@@ -1064,7 +1061,7 @@ void bx_init_hardware()
     BX_MEM(0)->load_RAM(SIM->get_param_string(BXPN_OPTRAM4_PATH)->getptr(), SIM->get_param_num(BXPN_OPTRAM4_ADDRESS)->get(), 2);
 
 #if BX_SUPPORT_SMP == 0
-  BX_CPU(0)->initialize(BX_MEM(0));
+  BX_CPU(0)->initialize();
   BX_CPU(0)->sanity_checks();
   BX_CPU(0)->register_state();
   BX_INSTR_INIT(0);
@@ -1073,7 +1070,7 @@ void bx_init_hardware()
 
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++) {
     BX_CPU(i) = new BX_CPU_C(i);
-    BX_CPU(i)->initialize(BX_MEM(0));  // assign local apic id in 'initialize' method
+    BX_CPU(i)->initialize();  // assign local apic id in 'initialize' method
     BX_CPU(i)->sanity_checks();
     BX_CPU(i)->register_state();
     BX_INSTR_INIT(i);
@@ -1115,7 +1112,7 @@ void bx_init_hardware()
 #if !defined(__MINGW32__) && !defined(_MSC_VER)
   signal(SIGALRM, bx_signal_handler);
 #endif
-  alarm( 1 );
+  alarm(1);
 #endif
 }
 
@@ -1135,23 +1132,15 @@ void bx_init_bx_dbg(void)
   bx_dbg.a20 = 0;
   bx_dbg.interrupts = 0;
   bx_dbg.exceptions = 0;
-  bx_dbg.unsupported = 0;
-  bx_dbg.temp = 0;
-  bx_dbg.reset = 0;
   bx_dbg.mouse = 0;
   bx_dbg.io = 0;
   bx_dbg.debugger = 0;
-  bx_dbg.xms = 0;
-  bx_dbg.v8086 = 0;
-  bx_dbg.paging = 0;
-  bx_dbg.creg = 0;
-  bx_dbg.dreg = 0;
   bx_dbg.dma = 0;
   bx_dbg.unsupported_io = 0;
   bx_dbg.record_io = 0;
   bx_dbg.serial = 0;
   bx_dbg.cdrom = 0;
-#if BX_MAGIC_BREAKPOINT
+#if BX_DEBUGGER
   bx_dbg.magic_break_enabled = 0;
 #endif
 #if BX_GDBSTUB
@@ -1179,18 +1168,18 @@ int bx_atexit(void)
 
   BX_MEM(0)->cleanup_memory();
 
-#if BX_PROVIDE_DEVICE_MODELS==1
+#if BX_PROVIDE_DEVICE_MODELS
   bx_pc_system.exit();
 #endif
 
   // restore signal handling to defaults
-#if !BX_DEBUGGER
+#if BX_DEBUGGER == 0
   BX_INFO(("restoring default signal behavior"));
   signal(SIGINT, SIG_DFL);
 #endif
 
 #if BX_SHOW_IPS
-#ifndef __MINGW32__
+#if !defined(__MINGW32__) && !defined(_MSC_VER)
   signal(SIGALRM, SIG_DFL);
 #endif
 #endif
@@ -1200,7 +1189,7 @@ int bx_atexit(void)
   return 0;
 }
 
-void bx_signal_handler(int signum)
+void CDECL bx_signal_handler(int signum)
 {
   // in a multithreaded environment, a signal such as SIGINT can be sent to all
   // threads.  This function is only intended to handle signals in the
@@ -1235,13 +1224,13 @@ void bx_signal_handler(int signum)
       ticks_count = bx_pc_system.time_ticks();
       counts++;
       if (bx_dbg.print_timestamps) {
-        printf("IPS: %u\taverage = %u\t\t(%us)\n", 
+        printf("IPS: %u\taverage = %u\t\t(%us)\n",
            (unsigned) ips_count, (unsigned) (ticks_count/counts), (unsigned) counts);
       }
     }
 #if !defined(__MINGW32__) && !defined(_MSC_VER)
     signal(SIGALRM, bx_signal_handler);
-    alarm( 1 );
+    alarm(1);
 #endif
     return;
   }

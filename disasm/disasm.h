@@ -18,27 +18,32 @@
 /* Instruction set attributes */
 #define IA_386              0x00000000        /* 386 instruction */
 #define IA_486              0x00000001        /* 486 new instruction */
-#define IA_PENTIUM          0x00000002        /* Pentium+ mew instruction */
+#define IA_PENTIUM          0x00000002        /* Pentium new instruction */
 #define IA_P6               0x00000004        /* P6 new instruction */
-#define IA_LEGACY           0x00000008        /* legacy instruction */
-#define IA_X87              0x00000010        /* FPU (X87) instruction */
-#define IA_MMX              0x00000020        /* MMX instruction */
-#define IA_3DNOW            0x00000040        /* 3DNow! instruction */
-#define IA_3DNOW_EXT        0x00000080        /* 3DNow! extensions */
-#define IA_MONITOR_MWAIT    0x00000100        /* MONITOR/MWAIT instruction */
-#define IA_CLFLUSH          0x00000200        /* CLFLUSH instruction */
-#define IA_SSE              0x00000400        /* SSE  instruction */
-#define IA_SSE2             0x00000800        /* SSE2 instruction */
-#define IA_SSE3             0x00001000        /* SSE3 instruction */
-#define IA_SSE3E            0x00002000        /* SSE3E instruction */
-#define IA_SSE4_1           0x00004000        /* SSE4_1 instruction */
-#define IA_SSE4_2           0x00008000        /* SSE4_2 instruction */
-#define IA_SSE4A            0x00010000        /* SSE4A instruction */
-#define IA_SSE5             0x00020000        /* SSE5 instruction */
-#define IA_X86_64           0x00040000        /* x86-64 instruction */
-#define IA_SYSCALL_SYSRET   0x00080000        /* SYSCALL/SYSRET instruction */
-#define IA_SYSENTER_SYSEXIT 0x00100000        /* SYSENTER/SYSEXIT instruction */
-#define IA_VMX              0x00200000        /* VMX instruction */
+#define IA_X87              0x00000008        /* FPU (X87) instruction */
+#define IA_MMX              0x00000010        /* MMX instruction */
+#define IA_3DNOW            0x00000020        /* 3DNow! instruction */
+#define IA_3DNOW_EXT        0x00000040        /* 3DNow! extensions */
+#define IA_MONITOR_MWAIT    0x00000080        /* MONITOR/MWAIT instruction */
+#define IA_CLFLUSH          0x00000100        /* CLFLUSH instruction */
+#define IA_SSE              0x00000200        /* SSE  instruction */
+#define IA_SSE2             0x00000400        /* SSE2 instruction */
+#define IA_SSE3             0x00000800        /* SSE3 instruction */
+#define IA_SSE3E            0x00001000        /* SSE3E instruction */
+#define IA_SSE4_1           0x00002000        /* SSE4_1 instruction */
+#define IA_SSE4_2           0x00004000        /* SSE4_2 instruction */
+#define IA_SSE4A            0x00008000        /* SSE4A instruction */
+#define IA_SSE5A            0x00010000        /* SSE5A instruction */
+#define IA_X86_64           0x00020000        /* x86-64 instruction */
+#define IA_SYSCALL_SYSRET   0x00040000        /* SYSCALL/SYSRET instruction */
+#define IA_SYSENTER_SYSEXIT 0x00080000        /* SYSENTER/SYSEXIT instruction */
+#define IA_VMX              0x00100000        /* VMX instruction */
+#define IA_SMX              0x00200000        /* SMX instruction */
+#define IA_SVM              0x00400000        /* SVM instruction */
+#define IA_XSAVE            0x00800000        /* XSAVE/XRSTOR extensions instruction */
+#define IA_AES              0x01000000        /* AES instruction */
+#define IA_AVX              0x02000000        /* AVX instruction */
+#define IA_LEGACY           0x40000000        /* legacy instruction */
 #define IA_UNDOCUMENTED     0x80000000        /* instruction undocumented */
 
 /* general purpose bit register */
@@ -106,12 +111,12 @@ struct BxDisasmOpcodeTable_t
 // branch hint attribute
 #define BRANCH_HINT 0x1000
 
-struct x86_insn 
+struct x86_insn
 {
 public:
   x86_insn(bx_bool is32, bx_bool is64);
 
-  bx_bool is_seg_override() const { 
+  bx_bool is_seg_override() const {
      return (seg_override != NO_SEG_OVERRIDE);
  }
 
@@ -258,7 +263,7 @@ private:
   };
 
   void dis_putc(char symbol);
-  void dis_sprintf(char *fmt, ...);
+  void dis_sprintf(const char *fmt, ...);
   void decode_modrm(x86_insn *insn);
 
   void resolve16_mod0   (const x86_insn *insn, unsigned mode);
@@ -291,60 +296,60 @@ private:
 
 public:
 
-/* 
+/*
  * Codes for Addressing Method:
  * ---------------------------
- * A  - Direct address. The instruction has no ModR/M byte; the address 
- *      of the operand is encoded in the instruction; and no base register, 
+ * A  - Direct address. The instruction has no ModR/M byte; the address
+ *      of the operand is encoded in the instruction; and no base register,
  *      index register, or scaling factor can be applied.
  * C  - The reg field of the ModR/M byte selects a control register.
  * D  - The reg field of the ModR/M byte selects a debug register.
- * E  - A ModR/M byte follows the opcode and specifies the operand. The 
- *      operand is either a general-purpose register or a memory address. 
+ * E  - A ModR/M byte follows the opcode and specifies the operand. The
+ *      operand is either a general-purpose register or a memory address.
  *      In case of the register operand, the R/M field of the ModR/M byte
  *      selects a general register.
  * F  - Flags Register.
  * G  - The reg field of the ModR/M byte selects a general register.
- * H  - A ModR/M byte follows the opcode and specifies the operand. The 
- *      operand is either a general-purpose register or a memory address. 
- *      In case of the register operand, the reg field of the ModR/M byte 
+ * H  - A ModR/M byte follows the opcode and specifies the operand. The
+ *      operand is either a general-purpose register or a memory address.
+ *      In case of the register operand, the reg field of the ModR/M byte
  *      selects a general register.
- * I  - Immediate data. The operand value is encoded in subsequent bytes of 
+ * I  - Immediate data. The operand value is encoded in subsequent bytes of
  *      the instruction.
- * J  - The instruction contains a relative offset to be added to the 
+ * J  - The instruction contains a relative offset to be added to the
  *      instruction pointer register.
  * M  - The ModR/M byte may refer only to memory.
- * N  - The R/M field of the ModR/M byte selects a packed-quadword  MMX 
+ * N  - The R/M field of the ModR/M byte selects a packed-quadword  MMX
         technology register.
- * O  - The instruction has no ModR/M byte; the offset of the operand is 
- *      coded as a word or double word (depending on address size attribute) 
- *      in the instruction. No base register, index register, or scaling 
+ * O  - The instruction has no ModR/M byte; the offset of the operand is
+ *      coded as a word or double word (depending on address size attribute)
+ *      in the instruction. No base register, index register, or scaling
  *      factor can be applied.
- * P  - The reg field of the ModR/M byte selects a packed quadword MMX 
+ * P  - The reg field of the ModR/M byte selects a packed quadword MMX
  *      technology register.
- * Q  - A ModR/M byte follows the opcode and specifies the operand. The 
- *      operand is either an MMX technology register or a memory address. 
- *      If it is a memory address, the address is computed from a segment 
- *      register and any of the following values: a base register, an 
+ * Q  - A ModR/M byte follows the opcode and specifies the operand. The
+ *      operand is either an MMX technology register or a memory address.
+ *      If it is a memory address, the address is computed from a segment
+ *      register and any of the following values: a base register, an
  *      index register, a scaling factor, and a displacement.
  * R  - The mod field of the ModR/M byte may refer only to a general register.
  * S  - The reg field of the ModR/M byte selects a segment register.
  * T  - The reg field of the ModR/M byte selects a test register.
  * U  - The R/M field of the ModR/M byte selects a 128-bit XMM register.
  * V  - The reg field of the ModR/M byte selects a 128-bit XMM register.
- * W  - A ModR/M byte follows the opcode and specifies the operand. The 
- *      operand is either a 128-bit XMM register or a memory address. If 
- *      it is a memory address, the address is computed from a segment 
+ * W  - A ModR/M byte follows the opcode and specifies the operand. The
+ *      operand is either a 128-bit XMM register or a memory address. If
+ *      it is a memory address, the address is computed from a segment
  *      register and any of the following values: a base register, an
  *      index register, a scaling factor, and a displacement.
  * X  - Memory addressed by the DS:rSI register pair.
  * Y  - Memory addressed by the ES:rDI register pair.
- */   
+ */
 
-/* 
+/*
  * Codes for Operand Type:
  * ----------------------
- * a  - Two one-word operands in memory or two double-word operands in 
+ * a  - Two one-word operands in memory or two double-word operands in
  *      memory, depending on operand-size attribute (used only by the BOUND
  *      instruction).
  * b  - Byte, regardless of operand-size attribute.

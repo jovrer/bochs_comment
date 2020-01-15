@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer16.cc,v 1.49 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: ctrl_xfer16.cc,v 1.55 2008/05/08 21:04:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,7 +25,6 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
@@ -36,8 +35,7 @@
 #define RSP ESP
 #endif
 
-
-void BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
 {
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
@@ -48,9 +46,9 @@ void BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
 
   Bit16u return_IP = pop_16();
 
-  if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) 
+  if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
-    BX_ERROR(("retnear_iw: IP > limit"));
+    BX_ERROR(("RETnear16_Iw: IP > limit"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -68,7 +66,7 @@ void BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
-void BX_CPU_C::RETnear16(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear16(bxInstruction_c *i)
 {
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
@@ -79,9 +77,9 @@ void BX_CPU_C::RETnear16(bxInstruction_c *i)
 
   Bit16u return_IP = pop_16();
 
-  if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) 
+  if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
-    BX_ERROR(("retnear: IP > limit"));
+    BX_ERROR(("RETnear16: IP > limit"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -92,7 +90,7 @@ void BX_CPU_C::RETnear16(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
-void BX_CPU_C::RETfar16_Iw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETfar16_Iw(bxInstruction_c *i)
 {
   Bit16s imm16;
   Bit16u ip, cs_raw;
@@ -132,7 +130,7 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
-void BX_CPU_C::RETfar16(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETfar16(bxInstruction_c *i)
 {
   Bit16u ip, cs_raw;
 
@@ -164,7 +162,7 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
-void BX_CPU_C::CALL_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL_Jw(bxInstruction_c *i)
 {
   Bit32u new_EIP;
 
@@ -188,7 +186,7 @@ void BX_CPU_C::CALL_Jw(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
 }
 
-void BX_CPU_C::CALL16_Ap(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL16_Ap(bxInstruction_c *i)
 {
   Bit16u cs_raw;
   Bit16u disp16;
@@ -224,20 +222,15 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
-void BX_CPU_C::CALL_Ew(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL_EwM(bxInstruction_c *i)
 {
-  Bit16u op1_16;
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
 
-  if (i->modC0()) {
-    op1_16 = BX_READ_16BIT_REG(i->rm());
-  }
-  else {
-    op1_16 = read_virtual_word(i->seg(), RMAddr(i));
-  }
+  Bit16u op1_16 = read_virtual_word(i->seg(), RMAddr(i));
 
   if (op1_16 > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
@@ -251,7 +244,27 @@ void BX_CPU_C::CALL_Ew(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
 }
 
-void BX_CPU_C::CALL16_Ep(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL_EwR(bxInstruction_c *i)
+{
+  Bit16u op1_16 = BX_READ_16BIT_REG(i->rm());
+
+#if BX_DEBUGGER
+  BX_CPU_THIS_PTR show_flag |= Flag_call;
+#endif
+
+  if (op1_16 > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
+  {
+    BX_ERROR(("CALL_Ew: IP out of CS limits!"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
+
+  push_16(IP);
+  EIP = op1_16;
+
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CALL16_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
   Bit16u op1_16;
@@ -261,6 +274,8 @@ void BX_CPU_C::CALL16_Ep(bxInstruction_c *i)
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_16 = read_virtual_word(i->seg(), RMAddr(i));
   cs_raw = read_virtual_word(i->seg(), RMAddr(i)+2);
@@ -287,15 +302,23 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
-void BX_CPU_C::JMP_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP_Jw(bxInstruction_c *i)
 {
   Bit32u new_EIP = EIP + (Bit32s) i->Id();
   new_EIP &= 0x0000ffff;
-  branch_near32(new_EIP);
+
+  if (new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
+  {
+    BX_ERROR(("JMP_Jw: offset outside of CS limits"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
+
+  EIP = new_EIP;
+
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
-void BX_CPU_C::JO_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JO_Jw(bxInstruction_c *i)
 {
   if (get_OF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -308,7 +331,7 @@ void BX_CPU_C::JO_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNO_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNO_Jw(bxInstruction_c *i)
 {
   if (! get_OF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -321,7 +344,7 @@ void BX_CPU_C::JNO_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JB_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JB_Jw(bxInstruction_c *i)
 {
   if (get_CF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -334,7 +357,7 @@ void BX_CPU_C::JB_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNB_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNB_Jw(bxInstruction_c *i)
 {
   if (! get_CF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -347,7 +370,7 @@ void BX_CPU_C::JNB_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JZ_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JZ_Jw(bxInstruction_c *i)
 {
   if (get_ZF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -360,7 +383,7 @@ void BX_CPU_C::JZ_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNZ_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNZ_Jw(bxInstruction_c *i)
 {
   if (! get_ZF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -373,7 +396,7 @@ void BX_CPU_C::JNZ_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JBE_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JBE_Jw(bxInstruction_c *i)
 {
   if (get_CF() || get_ZF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -386,7 +409,7 @@ void BX_CPU_C::JBE_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNBE_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNBE_Jw(bxInstruction_c *i)
 {
   if (! (get_CF() || get_ZF())) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -399,7 +422,7 @@ void BX_CPU_C::JNBE_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JS_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JS_Jw(bxInstruction_c *i)
 {
   if (get_SF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -412,7 +435,7 @@ void BX_CPU_C::JS_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNS_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNS_Jw(bxInstruction_c *i)
 {
   if (! get_SF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -425,7 +448,7 @@ void BX_CPU_C::JNS_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JP_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JP_Jw(bxInstruction_c *i)
 {
   if (get_PF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -438,7 +461,7 @@ void BX_CPU_C::JP_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNP_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNP_Jw(bxInstruction_c *i)
 {
   if (! get_PF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -451,7 +474,7 @@ void BX_CPU_C::JNP_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JL_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JL_Jw(bxInstruction_c *i)
 {
   if (getB_SF() != getB_OF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -464,7 +487,7 @@ void BX_CPU_C::JL_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNL_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNL_Jw(bxInstruction_c *i)
 {
   if (getB_SF() == getB_OF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -477,7 +500,7 @@ void BX_CPU_C::JNL_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JLE_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JLE_Jw(bxInstruction_c *i)
 {
   if (get_ZF() || (getB_SF() != getB_OF())) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -490,7 +513,7 @@ void BX_CPU_C::JLE_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JNLE_Jw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JNLE_Jw(bxInstruction_c *i)
 {
   if (! get_ZF() && (getB_SF() == getB_OF())) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
@@ -503,29 +526,47 @@ void BX_CPU_C::JNLE_Jw(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JMP_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP_EwM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit16u new_IP = read_virtual_word(i->seg(), RMAddr(i));
 
-  branch_near32((Bit32u) new_IP);
+  if (new_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
+  {
+    BX_ERROR(("JMP_Ew: offset outside of CS limits"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
+
+  EIP = new_IP;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_IP);
 }
 
-void BX_CPU_C::JMP_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP_EwR(bxInstruction_c *i)
 {
-  Bit32u new_EIP = BX_READ_16BIT_REG(i->rm());
-  branch_near32(new_EIP);
-  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
+  Bit16u new_IP = BX_READ_16BIT_REG(i->rm());
+
+  if (new_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
+  {
+    BX_ERROR(("JMP_Ew: offset outside of CS limits"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
+
+  EIP = new_IP;
+
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_IP);
 }
 
 /* Far indirect jump */
-void BX_CPU_C::JMP16_Ep(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::JMP16_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
   Bit16u op1_16;
 
   invalidate_prefetch_q();
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op1_16 = read_virtual_word(i->seg(), RMAddr(i));
   cs_raw = read_virtual_word(i->seg(), RMAddr(i)+2);
@@ -544,7 +585,7 @@ done:
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
-void BX_CPU_C::IRET16(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IRET16(bxInstruction_c *i)
 {
   Bit16u ip, cs_raw, flags;
 

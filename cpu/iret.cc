@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: iret.cc,v 1.25 2007/12/23 17:21:27 sshwarts Exp $
+// $Id: iret.cc,v 1.37 2008/05/23 13:46:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005 Stanislav Shwartsman
@@ -56,14 +56,14 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     if (BX_CPU_THIS_PTR get_VM())
       BX_PANIC(("iret_protected: VM sholdn't be set here !"));
 
-    //BX_INFO(("IRET: nested task return"));
+    BX_DEBUG(("IRET: nested task return"));
 
     if (BX_CPU_THIS_PTR tr.cache.valid==0)
       BX_PANIC(("IRET: TR not valid"));
     Bit32u base32 = (Bit32u) BX_CPU_THIS_PTR tr.cache.u.system.base;
 
     // examine back link selector in TSS addressed by current TR:
-    access_linear(base32, 2, 0, BX_READ, &raw_link_selector);
+    access_read_linear(base32, 2, 0, BX_READ, &raw_link_selector);
 
     // must specify global, else #TS(new TSS selector)
     parse_selector(raw_link_selector, &link_selector);
@@ -110,10 +110,9 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
   }
 
   /* NT = 0: INTERRUPT RETURN ON STACK -or STACK_RETURN_TO_V86 */
-  unsigned top_nbytes_same, top_nbytes_outer;
+  unsigned top_nbytes_same;
   Bit32u new_eip = 0, new_esp, temp_ESP, new_eflags = 0;
   Bit16u new_ip = 0, new_flags = 0;
-  Bit32u ss_offset;
 
   /* 16bit opsize  |   32bit opsize
    * ==============================
@@ -126,20 +125,10 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
    */
 
   if (i->os32L()) {
-    top_nbytes_same  = 12;
-    top_nbytes_outer = 20;
-    ss_offset = 16;
+    top_nbytes_same = 12;
   }
   else {
-    top_nbytes_same  = 6;
-    top_nbytes_outer = 10;
-    ss_offset = 8;
-  }
-
-  /* CS on stack must be within stack limits, else #SS(0) */
-  if ( !can_pop(top_nbytes_same) ) {
-    BX_ERROR(("iret: CS not within stack limits"));
-    exception(BX_SS_EXCEPTION, 0, 0);
+    top_nbytes_same = 6;
   }
 
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
@@ -148,9 +137,9 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     temp_ESP = SP;
 
   if (i->os32L()) {
-    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_ESP + 4);
-    new_eip         = read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 0);
-    new_eflags      = read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 8);
+    new_eflags      =          read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 8);
+    raw_cs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 4);
+    new_eip         =          read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 0);
 
     // if VM=1 in flags image on stack then STACK_RETURN_TO_V86
     if (new_eflags & EFlagsVMMask) {
@@ -162,9 +151,9 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     }
   }
   else {
+    new_flags       = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 4);
     raw_cs_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 2);
     new_ip          = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 0);
-    new_flags       = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 4);
   }
 
   parse_selector(raw_cs_selector, &cs_selector);
@@ -197,7 +186,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
       branch_far32(&cs_selector, &cs_descriptor, new_eip, cs_selector.rpl);
 
       // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
-      Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | 
+      Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask |
                               EFlagsDFMask | EFlagsNTMask | EFlagsRFMask;
 #if BX_CPU_LEVEL >= 4
       changeMask |= (EFlagsIDMask | EFlagsACMask);  // ID/AC
@@ -237,17 +226,16 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
      * IP     eSP+0  |   EIP    eSP+0
      */
 
-    /* top 10/20 bytes on stack must be within limits else #SS(0) */
-    if ( !can_pop(top_nbytes_outer) ) {
-      BX_ERROR(("iret: top 10/20 bytes not within stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
+    /* examine return SS selector and associated descriptor */
+    if (i->os32L()) {
+      raw_ss_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 16);
+    }
+    else {
+      raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 8);
     }
 
-    /* examine return SS selector and associated descriptor */
-    raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP + ss_offset);
-
     /* selector must be non-null, else #GP(0) */
-    if ( (raw_ss_selector & 0xfffc) == 0 ) {
+    if ((raw_ss_selector & 0xfffc) == 0) {
       BX_ERROR(("iret: SS selector null"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
@@ -291,36 +279,34 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     }
 
     if (i->os32L()) {
-      new_eip    = read_virtual_dword(BX_SEG_REG_SS, temp_ESP +  0);
-      new_eflags = read_virtual_dword(BX_SEG_REG_SS, temp_ESP +  8);
       new_esp    = read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 12);
+      new_eflags = read_virtual_dword(BX_SEG_REG_SS, temp_ESP +  8);
+      new_eip    = read_virtual_dword(BX_SEG_REG_SS, temp_ESP +  0);
     }
     else {
-      new_eip    = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 0);
-      new_eflags = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 4);
       new_esp    = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 6);
+      new_eflags = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 4);
+      new_eip    = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 0);
     }
 
-    Bit8u prev_cpl = CPL; /* previous CPL */
+    // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
+    Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask |
+                            EFlagsDFMask | EFlagsNTMask | EFlagsRFMask;
+#if BX_CPU_LEVEL >= 4
+    changeMask |= (EFlagsIDMask | EFlagsACMask);  // ID/AC
+#endif
+    if (CPL <= BX_CPU_THIS_PTR get_IOPL())
+      changeMask |= EFlagsIFMask;
+    if (CPL == 0)
+      changeMask |= EFlagsVIPMask | EFlagsVIFMask | EFlagsIOPLMask;
+
+    if (! i->os32L()) // 16 bit
+      changeMask &= 0xffff;
 
     /* load CS:EIP from stack */
     /* load the CS-cache with CS descriptor */
     /* set CPL to the RPL of the return CS selector */
     branch_far32(&cs_selector, &cs_descriptor, new_eip, cs_selector.rpl);
-
-    // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
-    Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | 
-                            EFlagsDFMask | EFlagsNTMask | EFlagsRFMask;
-#if BX_CPU_LEVEL >= 4
-    changeMask |= (EFlagsIDMask | EFlagsACMask);  // ID/AC
-#endif
-    if (prev_cpl <= BX_CPU_THIS_PTR get_IOPL())
-      changeMask |= EFlagsIFMask;
-    if (prev_cpl == 0)
-      changeMask |= EFlagsVIPMask | EFlagsVIFMask | EFlagsIOPLMask;
-
-    if (cs_descriptor.u.segment.d_b)
-      changeMask &= 0xffff;
 
     // IF only changed if (prev_CPL <= EFLAGS.IOPL)
     // VIF, VIP, IOPL only changed if prev_CPL == 0
@@ -349,11 +335,10 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
   bx_descriptor_t cs_descriptor, ss_descriptor;
   Bit32u new_eflags;
   Bit64u new_rip, new_rsp, temp_RSP;
-  unsigned top_nbytes_outer, ss_offset;
 
   BX_DEBUG (("LONG MODE IRET"));
 
-  if (BX_CPU_THIS_PTR get_NT()) { 
+  if (BX_CPU_THIS_PTR get_NT()) {
     BX_ERROR(("iret64: return from nested task in x86-64 mode !"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
@@ -376,50 +361,30 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
 
   unsigned top_nbytes_same = 0; /* stop compiler warnings */
 
+#if BX_SUPPORT_X86_64
   if (i->os64L()) {
-    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP +  8);
-    new_rip         = read_virtual_qword(BX_SEG_REG_SS, temp_RSP +  0);
-    new_eflags      = (Bit32u) read_virtual_qword(BX_SEG_REG_SS, temp_RSP + 16);
-
-    top_nbytes_outer = 40;
-    ss_offset = 32;
+    new_eflags      = (Bit32u) read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 16);
+    raw_cs_selector = (Bit16u) read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP +  8);
+    new_rip         =          read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP +  0);
+    top_nbytes_same = 24;
   }
-  else if (i->os32L()) {
-    /* CS on stack must be within stack limits, else #SS(0) */
-    if ( !can_pop(12) ) {
-      BX_ERROR(("iret64: CS not within stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
-
-    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 4);
+  else
+#endif
+  if (i->os32L()) {
+    new_eflags      =          read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 8);
+    raw_cs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 4);
     new_rip         = (Bit64u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 0);
-    new_eflags      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 8);
-
-    top_nbytes_outer = 20;
     top_nbytes_same = 12;
-    ss_offset = 16;
   }
   else {
-    /* CS on stack must be within stack limits, else #SS(0) */
-    if ( !can_pop(6) ) {
-      BX_ERROR(("iret64: CS not within stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
-
-    raw_cs_selector  = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 2);
-    new_rip          = (Bit64u) read_virtual_word(BX_SEG_REG_SS, temp_RSP + 0);
-    new_eflags       = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 4);
-
-    top_nbytes_outer = 10;
+    new_eflags      =          read_virtual_word(BX_SEG_REG_SS, temp_RSP + 4);
+    raw_cs_selector =          read_virtual_word(BX_SEG_REG_SS, temp_RSP + 2);
+    new_rip         = (Bit64u) read_virtual_word(BX_SEG_REG_SS, temp_RSP + 0);
     top_nbytes_same = 6;
-    ss_offset = 8;
   }
 
-  // if VM=1 in flags image on stack then STACK_RETURN_TO_V86
-  if (new_eflags & EFlagsVMMask) {
-    BX_PANIC(("iret64: no V86 mode in x86-64 LONG mode"));
-    new_eflags &= ~EFlagsVMMask;
-  }
+  // ignore VM flag in long mode
+  new_eflags &= ~EFlagsVMMask;
 
   parse_selector(raw_cs_selector, &cs_selector);
 
@@ -451,7 +416,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
 
     /* load CS:EIP from stack */
     /* load CS-cache with new code segment descriptor */
-    branch_far32(&cs_selector, &cs_descriptor, new_rip, CPL);
+    branch_far32(&cs_selector, &cs_descriptor, (Bit32u) new_rip, CPL);
 
     // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
     Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | EFlagsDFMask |
@@ -461,15 +426,18 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
     if (CPL == 0)
       changeMask |= EFlagsVIPMask | EFlagsVIFMask | EFlagsIOPLMask;
 
+    if (! i->os32L()) // 16 bit
+      changeMask &= 0xffff;
+
     // IF only changed if (CPL <= EFLAGS.IOPL)
     // VIF, VIP, IOPL only changed if CPL == 0
     // VM unaffected
     writeEFlags(new_eflags, changeMask);
 
     /* we are NOT in 64-bit mode */
-    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) 
+    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
       ESP += top_nbytes_same;
-    else 
+    else
        SP += top_nbytes_same;
   }
   else { /* INTERRUPT RETURN TO OUTER PRIVILEGE LEVEL or 64 BIT MODE */
@@ -482,17 +450,27 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
      * EIP    eSP+0
      */
 
-    /* top 10/20 bytes on stack must be within limits else #SS(0) */
-    if (! can_pop(top_nbytes_outer)) {
-      BX_PANIC(("iret64: top bytes not within stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
+    /* examine return SS selector and associated descriptor */
+#if BX_SUPPORT_X86_64
+    if (i->os64L()) {
+      raw_ss_selector = (Bit16u) read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 32);
+      new_rsp         =          read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 24);
+    }
+    else
+#endif
+    {
+      if (i->os32L()) {
+        raw_ss_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 16);
+        new_rsp         = (Bit64u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 12);
+      }
+      else {
+        raw_ss_selector =          read_virtual_word(BX_SEG_REG_SS, temp_RSP + 8);
+        new_rsp         = (Bit64u) read_virtual_word(BX_SEG_REG_SS, temp_RSP + 6);
+      }
     }
 
-    /* examine return SS selector and associated descriptor */
-    raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + ss_offset);
-
     if ((raw_ss_selector & 0xfffc) == 0) {
-      if (! IS_LONG64_SEGMENT(cs_descriptor) || (cs_selector.rpl == 3)) {
+      if (! IS_LONG64_SEGMENT(cs_descriptor) || cs_selector.rpl == 3) {
         BX_ERROR(("iret64: SS selector null"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
@@ -536,31 +514,21 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
       }
     }
 
-    if (i->os64L()) {
-      new_rsp = read_virtual_qword(BX_SEG_REG_SS, temp_RSP + 24);
-    }
-    else if (i->os32L()) {
-      new_rsp = (Bit64u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 12);
-    }
-    else {
-      new_rsp = (Bit64u) read_virtual_word(BX_SEG_REG_SS, temp_RSP + 6);
-    }
-
     Bit8u prev_cpl = CPL; /* previous CPL */
 
-    /* set CPL to the RPL of the return CS selector */
-    branch_far64(&cs_selector, &cs_descriptor, new_rip, cs_selector.rpl);
-
     // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
-    Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | EFlagsDFMask | 
+    Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | EFlagsDFMask |
                             EFlagsNTMask | EFlagsRFMask | EFlagsIDMask | EFlagsACMask;
     if (prev_cpl <= BX_CPU_THIS_PTR get_IOPL())
       changeMask |= EFlagsIFMask;
     if (prev_cpl == 0)
       changeMask |= EFlagsVIPMask | EFlagsVIFMask | EFlagsIOPLMask;
 
-    if (cs_descriptor.u.segment.d_b)
+    if (! i->os32L()) // 16 bit
       changeMask &= 0xffff;
+
+    /* set CPL to the RPL of the return CS selector */
+    branch_far64(&cs_selector, &cs_descriptor, new_rip, cs_selector.rpl);
 
     // IF only changed if (prev_CPL <= EFLAGS.IOPL)
     // VIF, VIP, IOPL only changed if prev_CPL == 0
@@ -574,6 +542,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
     }
     else {
       // we are in 64-bit mode !
+      load_null_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS]);
       loadSRegLMNominal(BX_SEG_REG_SS, raw_ss_selector, cs_selector.rpl);
     }
 

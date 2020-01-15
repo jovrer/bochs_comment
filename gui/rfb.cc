@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc,v 1.52 2007/12/10 21:01:25 sshwarts Exp $
+// $Id: rfb.cc,v 1.58 2008/04/07 20:20:04 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -29,7 +29,7 @@
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -170,7 +170,7 @@ static SOCKET sGlobal;
 static Bit32u clientEncodingsCount = 0;
 static Bit32u *clientEncodings = NULL;
 
-void ServerThreadInit(void *indata);
+void CDECL ServerThreadInit(void *indata);
 void HandleRfbClient(SOCKET sClient);
 int  ReadExact(int sock, char *buf, int len);
 int  WriteExact(int sock, char *buf, int len);
@@ -238,7 +238,7 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
     }
   }
 
-  rfbScreen = (char *)malloc(rfbWindowX * rfbWindowY); 
+  rfbScreen = (char *)malloc(rfbWindowX * rfbWindowY);
   memset(&rfbPalette, 0, sizeof(rfbPalette));
   rfbPalette[7] = (char)0xAD;
   rfbPalette[63] = (char)0xFF;
@@ -348,7 +348,7 @@ bool StopWinsock()
 }
 #endif
 
-void ServerThreadInit(void *indata) 
+void CDECL ServerThreadInit(void *indata)
 {
     SOCKET             sServer;
     SOCKET             sClient;
@@ -360,18 +360,18 @@ void ServerThreadInit(void *indata)
 #ifdef WIN32
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_IDLE);
     if(!InitWinsock()) {
-        BX_PANIC(( "could not initialize winsock."));
+        BX_PANIC(("could not initialize winsock."));
         goto end_of_thread;
     }
 #endif
 
     sServer = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(sServer == -1) { 
-        BX_PANIC(( "could not create socket." ));
+    if(sServer == -1) {
+        BX_PANIC(("could not create socket."));
         goto end_of_thread;
     }
     if (setsockopt(sServer, SOL_SOCKET, SO_REUSEADDR, (const char *)&one, sizeof(int)) == -1)  {
-        BX_PANIC(( "could not set socket option." ));
+        BX_PANIC(("could not set socket option."));
         goto end_of_thread;
     }
 
@@ -381,11 +381,11 @@ void ServerThreadInit(void *indata)
       sai.sin_port        = htons(rfbPort);
       BX_INFO (("Trying port %d", rfbPort));
       if(bind(sServer, (struct sockaddr *)&sai, sizeof(sai)) == -1) {
-          BX_INFO(( "Could not bind socket."));
+          BX_INFO(("Could not bind socket."));
           continue;
       }
       if(listen(sServer, SOMAXCONN) == -1) {
-          BX_INFO(( "Could not listen on socket."));
+          BX_INFO(("Could not listen on socket."));
           continue;
       }
       // success
@@ -393,7 +393,7 @@ void ServerThreadInit(void *indata)
       break;
     }
     if (!port_ok) {
-      BX_PANIC (("RFB could not bind any port between %d and %d", 
+      BX_PANIC (("RFB could not bind any port between %d and %d",
         BX_RFB_PORT_MIN,
         BX_RFB_PORT_MAX));
       goto end_of_thread;
@@ -418,7 +418,7 @@ end_of_thread:
     return;
 }
 
-void HandleRfbClient(SOCKET sClient) 
+void HandleRfbClient(SOCKET sClient)
 {
     char rfbName[] = "Bochs-RFB";
     rfbProtocolVersionMessage pv;
@@ -430,9 +430,9 @@ void HandleRfbClient(SOCKET sClient)
     client_connected = true;
     setsockopt(sClient, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof(one));
     BX_INFO(("accepted client connection."));
-    snprintf(pv , rfbProtocolVersionMessageSize, 
-              rfbProtocolVersionFormat, 
-              rfbServerProtocolMajorVersion, 
+    snprintf(pv , rfbProtocolVersionMessageSize,
+              rfbProtocolVersionFormat,
+              rfbServerProtocolMajorVersion,
               rfbServerProtocolMinorVersion);
 
     if(WriteExact(sClient, pv, rfbProtocolVersionMessageSize) < 0) {
@@ -444,7 +444,7 @@ void HandleRfbClient(SOCKET sClient)
         return;
     }
     pv[rfbProtocolVersionMessageSize-1]=0; // Drop last character
-    BX_INFO(("Client protocol version is '%s'", pv)); 
+    BX_INFO(("Client protocol version is '%s'", pv));
     // FIXME should check for version number
 
     auth = htonl(rfbSecurityNone);
@@ -489,7 +489,7 @@ void HandleRfbClient(SOCKET sClient)
             }
             return;
         }
-        
+
         switch(msgType) {
         case rfbSetPixelFormat:
             {
@@ -506,7 +506,7 @@ void HandleRfbClient(SOCKET sClient)
                 spf.pixelFormat.redShift = spf.pixelFormat.redShift;
                 spf.pixelFormat.greenShift = spf.pixelFormat.greenShift;
                 spf.pixelFormat.blueShift = spf.pixelFormat.blueShift;
-                
+
                 if (!PF_EQ(spf.pixelFormat, BGR233Format)) {
                     BX_ERROR(("client has wrong pixel format (%d %d %d %d %d %d %d %d %d)",
 			      spf.pixelFormat.bitsPerPixel,spf.pixelFormat.depth,spf.pixelFormat.trueColourFlag,
@@ -529,7 +529,7 @@ void HandleRfbClient(SOCKET sClient)
                 U32                    enc;
 
                 // free previously registered encodings
-                if (clientEncodings != NULL) { 
+                if (clientEncodings != NULL) {
                     delete [] clientEncodings;
                     clientEncodingsCount = 0;
                 }
@@ -563,7 +563,7 @@ void HandleRfbClient(SOCKET sClient)
                              found=1;
                              break;
                              }
-                        } 
+                        }
                     if (!found) BX_INFO(("%08x Unknown", clientEncodings[i]));
                     }
                 break;
@@ -604,7 +604,7 @@ void HandleRfbClient(SOCKET sClient)
                 break;
             }
         case rfbPointerEvent:
-            {    
+            {
                 rfbPointerEventMessage pe;
                 ReadExact(sClient, (char *)&pe, sizeof(rfbPointerEventMessage));
                 while(bKeyboardInUse);
@@ -662,7 +662,6 @@ void bx_rfb_gui_c::handle_events(void)
     rfbUpdateRegion.updated = false;
 }
 
-
 // ::FLUSH()
 //
 // Called periodically, requesting that the gui code flush all pending
@@ -672,7 +671,6 @@ void bx_rfb_gui_c::flush(void)
 {
 }
 
-
 // ::CLEAR_SCREEN()
 //
 // Called to request that the VGA region is cleared.  Don't
@@ -681,8 +679,6 @@ void bx_rfb_gui_c::clear_screen(void)
 {
     memset(&rfbScreen[rfbWindowX * rfbHeaderbarY], 0, rfbWindowX * rfbDimensionY);
 }
-
-
 
 // ::TEXT_UPDATE()
 //
@@ -702,24 +698,27 @@ void bx_rfb_gui_c::clear_screen(void)
 // cursor_y: new y location of cursor
 // tm_info:  this structure contains information for additional
 //           features in text mode (cursor shape, line offset,...)
-// nrows:    number of text rows (unused here)
 
-void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t tm_info, unsigned nrows)
+void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t tm_info)
 {
   Bit8u *old_line, *new_line;
   Bit8u cAttr, cChar;
   unsigned int  curs, hchars, offset, rows, x, y, xc, yc;
-  bx_bool force_update=0, gfxchar;
+  bx_bool force_update=0, gfxchar, blink_state, blink_mode;
 
-  UNUSED(nrows);
-
+  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  if (blink_mode) {
+    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+      force_update = 1;
+  }
   if(charmap_updated) {
     force_update = 1;
     charmap_updated = 0;
   }
 
   // first invalidate character at previous and new cursor location
-  if ( (rfbCursorY < text_rows) && (rfbCursorX < text_cols) ) {
+  if ((rfbCursorY < text_rows) && (rfbCursorX < text_cols)) {
     curs = rfbCursorY * tm_info.line_offset + rfbCursorX * 2;
     old_text[curs] = ~new_text[curs];
   }
@@ -744,7 +743,13 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
       if (force_update || (old_text[0] != new_text[0])
           || (old_text[1] != new_text[1])) {
         cChar = new_text[0];
-        cAttr = new_text[1];
+        if (blink_mode) {
+          cAttr = new_text[1] & 0x7F;
+          if (!blink_state && (new_text[1] & 0x80))
+            cAttr = (cAttr & 0x70) | (cAttr >> 4);
+        } else {
+          cAttr = new_text[1];
+        }
         gfxchar = tm_info.line_graphics && ((cChar & 0xE0) == 0xC0);
         xc = x * font_width;
         DrawChar(xc, yc, font_width, font_height, 0, (char *)&vga_charmap[cChar<<5], cAttr, gfxchar);
@@ -773,18 +778,15 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
   rfbCursorY = cursor_y;
 }
 
-  int
-bx_rfb_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+int bx_rfb_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
 {
   return 0;
 }
 
-  int
-bx_rfb_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+int bx_rfb_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 {
   return 0;
 }
-
 
 // ::PALETTE_CHANGE()
 //
@@ -798,7 +800,6 @@ bx_bool bx_rfb_gui_c::palette_change(unsigned index, unsigned red, unsigned gree
     rfbPalette[index] = (((red * 7 + 127) / 255) << 0) | (((green * 7 + 127) / 255) << 3) | (((blue * 3 + 127) / 255) << 6);
     return(1);
 }
-
 
 // ::GRAPHICS_TILE_UPDATE()
 //
@@ -824,9 +825,7 @@ void bx_rfb_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
     rfbUpdateRegion.updated = true;
 }
 
-
-  bx_svga_tileinfo_t *
-bx_rfb_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
+bx_svga_tileinfo_t *bx_rfb_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
   if (!info) {
     info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
@@ -849,8 +848,7 @@ bx_rfb_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
   return info;
 }
 
-  Bit8u *
-bx_rfb_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
+Bit8u *bx_rfb_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
                             unsigned *w, unsigned *h)
 {
   if (x0+rfbTileX > rfbDimensionX) {
@@ -870,8 +868,7 @@ bx_rfb_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
   return (Bit8u *)rfbScreen + (rfbHeaderbarY + y0) * rfbWindowX + x0;
 }
 
-  void
-bx_rfb_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
+void bx_rfb_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
                                         unsigned w, unsigned h)
 {
   if(x0 < rfbUpdateRegion.x) rfbUpdateRegion.x = x0;
@@ -894,8 +891,7 @@ bx_rfb_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
 // fwidth : new VGA character width in text mode
 // bpp : bits per pixel in graphics mode
 
-  void
-bx_rfb_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
+void bx_rfb_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   if (bpp > 8) {
     BX_PANIC(("%d bpp graphics mode not supported yet", bpp));
@@ -938,7 +934,7 @@ unsigned bx_rfb_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, u
     rfbBitmaps[rfbBitmapCount].xdim = xdim;
     rfbBitmaps[rfbBitmapCount].ydim = ydim;
     memcpy(rfbBitmaps[rfbBitmapCount].bmap, bmap, (xdim * ydim) / 8);
-    
+
     rfbBitmapCount++;
     return(rfbBitmapCount - 1);
 }
@@ -1070,7 +1066,7 @@ void bx_rfb_gui_c::exit(void)
     }
 
     // Clear supported encodings
-    if (clientEncodings != NULL) { 
+    if (clientEncodings != NULL) {
         delete [] clientEncodings;
         clientEncodingsCount = 0;
     }
@@ -1087,7 +1083,7 @@ void bx_rfb_gui_c::exit(void)
 int ReadExact(int sock, char *buf, int len)
 {
     int n;
- 
+
     while (len > 0) {
     n = recv(sock, buf, len, 0);
     if (n > 0) {
@@ -1109,10 +1105,10 @@ int ReadExact(int sock, char *buf, int len)
 int WriteExact(int sock, char *buf, int len)
 {
     int n;
-    
+
     while (len > 0) {
     n = send(sock, buf, len,0);
-        
+
     if (n > 0) {
         buf += n;
         len -= n;
@@ -1131,7 +1127,7 @@ void DrawBitmap(int x, int y, int width, int height, char *bmap, char color, boo
     int  i;
     unsigned char *newBits;
     char fgcolor, bgcolor;
-    char vgaPalette[] = {(char)0x00, //Black 
+    char vgaPalette[] = {(char)0x00, //Black
                          (char)0x01, //Dark Blue
                          (char)0x02, //Dark Green
                          (char)0x03, //Dark Cyan
@@ -1316,12 +1312,12 @@ void StartThread()
 #define XK_dead_circumflex  0xFE52
 #define XK_dead_tilde       0xFE53
 
-#define XK_BackSpace        0xFF08    
+#define XK_BackSpace        0xFF08
 #define XK_Tab              0xFF09
 #define XK_Linefeed         0xFF0A
 #define XK_Clear            0xFF0B
 #define XK_Return           0xFF0D
-#define XK_Pause            0xFF13    
+#define XK_Pause            0xFF13
 #define XK_Scroll_Lock      0xFF14
 #define XK_Sys_Req          0xFF15
 #define XK_Escape           0xFF1B
@@ -1329,28 +1325,28 @@ void StartThread()
 #define XK_Delete           0xFFFF
 
 #define XK_Home             0xFF50
-#define XK_Left             0xFF51    
-#define XK_Up               0xFF52    
+#define XK_Left             0xFF51
+#define XK_Up               0xFF52
 #define XK_Right            0xFF53
 #define XK_Down             0xFF54
 #define XK_Page_Up          0xFF55
 #define XK_Page_Down        0xFF56
-#define XK_End              0xFF57    
-#define XK_Begin            0xFF58    
+#define XK_End              0xFF57
+#define XK_Begin            0xFF58
 
-#define XK_Select           0xFF60    
+#define XK_Select           0xFF60
 #define XK_Print            0xFF61
-#define XK_Execute          0xFF62    
-#define XK_Insert           0xFF63    
+#define XK_Execute          0xFF62
+#define XK_Insert           0xFF63
 
-#define XK_Cancel           0xFF69    
+#define XK_Cancel           0xFF69
 #define XK_Help             0xFF6A
 #define XK_Break            0xFF6B
 #define XK_Num_Lock         0xFF7F
 
 #define XK_KP_Space         0xFF80
 #define XK_KP_Tab           0xFF89
-#define XK_KP_Enter         0xFF8D    
+#define XK_KP_Enter         0xFF8D
 
 #define XK_KP_Home          0xFF95
 #define XK_KP_Left          0xFF96
@@ -1368,7 +1364,7 @@ void StartThread()
 #define XK_KP_Equal         0xFFBD
 #define XK_KP_Multiply      0xFFAA
 #define XK_KP_Add           0xFFAB
-#define XK_KP_Separator     0xFFAC    
+#define XK_KP_Separator     0xFFAC
 #define XK_KP_Subtract      0xFFAD
 #define XK_KP_Decimal       0xFFAE
 #define XK_KP_Divide        0xFFAF
@@ -1415,13 +1411,13 @@ void StartThread()
 #define XK_F24              0xFFD5
 
 
-#define XK_Shift_L          0xFFE1    
-#define XK_Shift_R          0xFFE2    
-#define XK_Control_L        0xFFE3    
-#define XK_Control_R        0xFFE4    
-#define XK_Caps_Lock        0xFFE5    
-#define XK_Shift_Lock       0xFFE6    
-#define XK_Meta_L           0xFFE7    
+#define XK_Shift_L          0xFFE1
+#define XK_Shift_R          0xFFE2
+#define XK_Control_L        0xFFE3
+#define XK_Control_R        0xFFE4
+#define XK_Caps_Lock        0xFFE5
+#define XK_Shift_Lock       0xFFE6
+#define XK_Meta_L           0xFFE7
 #define XK_Meta_R           0xFFE8
 #define XK_Alt_L            0xFFE9
 #define XK_Alt_R            0xFFEA
@@ -1721,7 +1717,7 @@ void rfbMouseMove(int x, int y, int bmask)
           xorigin = rfbHeaderbarBitmaps[i].xorigin;
         else
           xorigin = rfbWindowX - rfbHeaderbarBitmaps[i].xorigin;
-        if ( (x>=xorigin) && (x<(xorigin+int(rfbBitmaps[rfbHeaderbarBitmaps[i].index].xdim))) ) {
+        if ((x>=xorigin) && (x<(xorigin+int(rfbBitmaps[rfbHeaderbarBitmaps[i].index].xdim)))) {
           rfbHeaderbarBitmaps[i].f();
           return;
         }
@@ -1730,13 +1726,11 @@ void rfbMouseMove(int x, int y, int bmask)
   }
 }
 
-  void
-bx_rfb_gui_c::mouse_enabled_changed_specific (bx_bool val)
+void bx_rfb_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
 }
 
-  void
-bx_rfb_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
+void bx_rfb_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
 {
   *xres = BX_RFB_MAX_XDIM;
   *yres = BX_RFB_MAX_YDIM;

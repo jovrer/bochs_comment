@@ -37,7 +37,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f13[4] = {
   /* 66 */ { 0, &Ia_movlpd_Mq_Vpd },
   /* F2 */ { 0, &Ia_Invalid },
   /* F3 */ { 0, &Ia_Invalid }
-};                        
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f14[4] = {
   /* -- */ { 0, &Ia_unpcklps_Vps_Wdq },
@@ -476,6 +476,42 @@ static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f3841[4] = {
   /* F3 */ { 0, &Ia_Invalid }
 };
 
+static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f38db[4] = {
+  /* -- */ { 0, &Ia_Invalid },
+  /* 66 */ { 0, &Ia_aesimc_Vdq_Wdq },   // AES
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f38dc[4] = {
+  /* -- */ { 0, &Ia_Invalid },
+  /* 66 */ { 0, &Ia_aesenc_Vdq_Wdq },   // AES
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f38dd[4] = {
+  /* -- */ { 0, &Ia_Invalid },          // AES
+  /* 66 */ { 0, &Ia_aesenclast_Vdq_Wdq },
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f38de[4] = {
+  /* -- */ { 0, &Ia_Invalid },
+  /* 66 */ { 0, &Ia_aesdec_Vdq_Wdq  },  // AES
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid }
+};
+
+
+static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f38df[4] = {
+  /* -- */ { 0, &Ia_Invalid },          // AES
+  /* 66 */ { 0, &Ia_aesdeclast_Vdq_Wdq },
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid }
+};
+
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f38f0[4] = {
   /* -- */ { 0, &Ia_Invalid },
   /* 66 */ { 0, &Ia_Invalid },
@@ -573,7 +609,7 @@ static BxDisasmOpcodeTable_t BxDisasmGrpOs64B_pextr[3] = {
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f3a16[4] = {
-  /* -- */ { 0, &Ia_Invalid },         
+  /* -- */ { 0, &Ia_Invalid },
   /* 66 */ { GR64BIT(pextr) },          // SSE4
   /* F2 */ { 0, &Ia_Invalid },
   /* F3 */ { 0, &Ia_Invalid }
@@ -662,6 +698,13 @@ static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f3a63[4] = {
   /* F3 */ { 0, &Ia_Invalid }
 };
 
+static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f3adf[4] = {
+  /* -- */ { 0, &Ia_Invalid },            // AES
+  /* 66 */ { 0, &Ia_aeskeygenassist_Vdq_Wdq_Ib },
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid }
+};
+
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f50[4] = {
   /* -- */ { 0, &Ia_movmskps_Gd_Vps },
   /* 66 */ { 0, &Ia_movmskpd_Gd_Vpd },
@@ -730,7 +773,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f59[4] = {
   /* 66 */ { 0, &Ia_mulpd_Vpd_Wpd },
   /* F2 */ { 0, &Ia_mulsd_Vsd_Wsd },
   /* F3 */ { 0, &Ia_mulss_Vss_Wss }
-};                   
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0f5a[4] = {
   /* -- */ { 0, &Ia_cvtps2pd_Vpd_Wps },
@@ -1287,7 +1330,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0ff0[4] = {
   /* 66 */ { 0, &Ia_Invalid },
   /* F2 */ { 0, &Ia_lddqu_Vdq_Mdq },
   /* F3 */ { 0, &Ia_Invalid }
-};                        
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_0ff1[4] = {
   /* -- */ { 0, &Ia_psllw_Pq_Qq   },
@@ -1461,6 +1504,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupSSE_G1407[4] = {
 /* ************************************************************************ */
 /* Opcode GroupN */
 
+/* Group1 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG1EbIb[8] = {
   /* 0 */ { 0, &Ia_addb_Eb_Ib },
   /* 1 */ { 0, &Ia_orb_Eb_Ib  },
@@ -1481,7 +1525,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG1EwIw[8] = {
   /* 5 */ { 0, &Ia_subw_Ew_Iw },
   /* 6 */ { 0, &Ia_xorw_Ew_Iw },
   /* 7 */ { 0, &Ia_cmpw_Ew_Iw }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG1EdId[8] = {
   /* 0 */ { 0, &Ia_addl_Ed_Id },
@@ -1492,7 +1536,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG1EdId[8] = {
   /* 5 */ { 0, &Ia_subl_Ed_Id },
   /* 6 */ { 0, &Ia_xorl_Ed_Id },
   /* 7 */ { 0, &Ia_cmpl_Ed_Id }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG1EqId[8] = {
   /* 0 */ { 0, &Ia_addq_Eq_sId },
@@ -1503,10 +1547,10 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG1EqId[8] = {
   /* 5 */ { 0, &Ia_subq_Eq_sId },
   /* 6 */ { 0, &Ia_xorq_Eq_sId },
   /* 7 */ { 0, &Ia_cmpq_Eq_sId }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG1EwIb[8] = {
-  /* 0 */ { 0, &Ia_addw_Ew_sIb },	// sign-extend byte 
+  /* 0 */ { 0, &Ia_addw_Ew_sIb },	// sign-extend byte
   /* 1 */ { 0, &Ia_orw_Ew_sIb  },
   /* 2 */ { 0, &Ia_adcw_Ew_sIb },
   /* 3 */ { 0, &Ia_sbbw_Ew_sIb },
@@ -1514,10 +1558,10 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG1EwIb[8] = {
   /* 5 */ { 0, &Ia_subw_Ew_sIb },
   /* 6 */ { 0, &Ia_xorw_Ew_sIb },
   /* 7 */ { 0, &Ia_cmpw_Ew_sIb }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG1EdIb[8] = {
-  /* 0 */ { 0, &Ia_addl_Ed_sIb },	// sign-extend byte 
+  /* 0 */ { 0, &Ia_addl_Ed_sIb },	// sign-extend byte
   /* 1 */ { 0, &Ia_orl_Ed_sIb  },
   /* 2 */ { 0, &Ia_adcl_Ed_sIb },
   /* 3 */ { 0, &Ia_sbbl_Ed_sIb },
@@ -1525,10 +1569,10 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG1EdIb[8] = {
   /* 5 */ { 0, &Ia_subl_Ed_sIb },
   /* 6 */ { 0, &Ia_xorl_Ed_sIb },
   /* 7 */ { 0, &Ia_cmpl_Ed_sIb }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG1EqIb[8] = {
-  /* 0 */ { 0, &Ia_addq_Eq_sIb },	// sign-extend byte 
+  /* 0 */ { 0, &Ia_addq_Eq_sIb },	// sign-extend byte
   /* 1 */ { 0, &Ia_orq_Eq_sIb  },
   /* 2 */ { 0, &Ia_adcq_Eq_sIb },
   /* 3 */ { 0, &Ia_sbbq_Eq_sIb },
@@ -1536,8 +1580,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG1EqIb[8] = {
   /* 5 */ { 0, &Ia_subq_Eq_sIb },
   /* 6 */ { 0, &Ia_xorq_Eq_sIb },
   /* 7 */ { 0, &Ia_cmpq_Eq_sIb }
-}; 
+};
 
+/* Group2 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG2Eb[8] = {
   /* 0 */ { 0, &Ia_rolb_Eb_Ib },
   /* 1 */ { 0, &Ia_rorb_Eb_Ib },
@@ -1547,7 +1592,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2Eb[8] = {
   /* 5 */ { 0, &Ia_shrb_Eb_Ib },
   /* 6 */ { 0, &Ia_shlb_Eb_Ib },
   /* 7 */ { 0, &Ia_sarb_Eb_Ib }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EbI1[8] = {
   /* 0 */ { 0, &Ia_rolb_Eb_I1 },
@@ -1558,7 +1603,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EbI1[8] = {
   /* 5 */ { 0, &Ia_shrb_Eb_I1 },
   /* 6 */ { 0, &Ia_shlb_Eb_I1 },
   /* 7 */ { 0, &Ia_sarb_Eb_I1 }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EbCL[8] = {
   /* 0 */ { 0, &Ia_rolb_Eb_CL },
@@ -1569,7 +1614,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EbCL[8] = {
   /* 5 */ { 0, &Ia_shrb_Eb_CL },
   /* 6 */ { 0, &Ia_shlb_Eb_CL },
   /* 7 */ { 0, &Ia_sarb_Eb_CL }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2Ew[8] = {
   /* 0 */ { 0, &Ia_rolw_Ew_Ib },
@@ -1580,7 +1625,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2Ew[8] = {
   /* 5 */ { 0, &Ia_shrw_Ew_Ib },
   /* 6 */ { 0, &Ia_shlw_Ew_Ib },
   /* 7 */ { 0, &Ia_sarw_Ew_Ib }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2Ed[8] = {
   /* 0 */ { 0, &Ia_roll_Ed_Ib },
@@ -1591,7 +1636,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2Ed[8] = {
   /* 5 */ { 0, &Ia_shrl_Ed_Ib },
   /* 6 */ { 0, &Ia_shll_Ed_Ib },
   /* 7 */ { 0, &Ia_sarl_Ed_Ib }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2Eq[8] = {
   /* 0 */ { 0, &Ia_rolq_Eq_Ib },
@@ -1602,7 +1647,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2Eq[8] = {
   /* 5 */ { 0, &Ia_shrq_Eq_Ib },
   /* 6 */ { 0, &Ia_shlq_Eq_Ib },
   /* 7 */ { 0, &Ia_sarq_Eq_Ib }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EwI1[8] = {
   /* 0 */ { 0, &Ia_rolw_Ew_I1 },
@@ -1613,7 +1658,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EwI1[8] = {
   /* 5 */ { 0, &Ia_shrw_Ew_I1 },
   /* 6 */ { 0, &Ia_shlw_Ew_I1 },
   /* 7 */ { 0, &Ia_sarw_Ew_I1 }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EdI1[8] = {
   /* 0 */ { 0, &Ia_roll_Ed_I1 },
@@ -1624,7 +1669,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EdI1[8] = {
   /* 5 */ { 0, &Ia_shrl_Ed_I1 },
   /* 6 */ { 0, &Ia_shll_Ed_I1 },
   /* 7 */ { 0, &Ia_sarl_Ed_I1 }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EqI1[8] = {
   /* 0 */ { 0, &Ia_rolq_Eq_I1 },
@@ -1635,7 +1680,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EqI1[8] = {
   /* 5 */ { 0, &Ia_shrq_Eq_I1 },
   /* 6 */ { 0, &Ia_shlq_Eq_I1 },
   /* 7 */ { 0, &Ia_sarq_Eq_I1 }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EwCL[8] = {
   /* 0 */ { 0, &Ia_rolw_Ew_CL },
@@ -1646,7 +1691,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EwCL[8] = {
   /* 5 */ { 0, &Ia_shrw_Ew_CL },
   /* 6 */ { 0, &Ia_shlw_Ew_CL },
   /* 7 */ { 0, &Ia_sarw_Ew_CL }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EdCL[8] = {
   /* 0 */ { 0, &Ia_roll_Ed_CL },
@@ -1657,7 +1702,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EdCL[8] = {
   /* 5 */ { 0, &Ia_shrl_Ed_CL },
   /* 6 */ { 0, &Ia_shll_Ed_CL },
   /* 7 */ { 0, &Ia_sarl_Ed_CL }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG2EqCL[8] = {
   /* 0 */ { 0, &Ia_rolq_Eq_CL },
@@ -1668,8 +1713,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG2EqCL[8] = {
   /* 5 */ { 0, &Ia_shrq_Eq_CL },
   /* 6 */ { 0, &Ia_shlq_Eq_CL },
   /* 7 */ { 0, &Ia_sarq_Eq_CL }
-}; 
+};
 
+/* Group3 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG3Eb[8] = {
   /* 0 */ { 0, &Ia_testb_Eb_Ib },
   /* 1 */ { 0, &Ia_testb_Eb_Ib },
@@ -1679,7 +1725,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG3Eb[8] = {
   /* 5 */ { 0, &Ia_imulb_AL_Eb },
   /* 6 */ { 0, &Ia_divb_AL_Eb  },
   /* 7 */ { 0, &Ia_idivb_AL_Eb }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG3Ew[8] = {
   /* 0 */ { 0, &Ia_testw_Ew_Iw },
@@ -1690,7 +1736,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG3Ew[8] = {
   /* 5 */ { 0, &Ia_imulw_AX_Ew },
   /* 6 */ { 0, &Ia_divw_AX_Ew  },
   /* 7 */ { 0, &Ia_idivw_AX_Ew }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG3Ed[8] = {
   /* 0 */ { 0, &Ia_testl_Ed_Id  },
@@ -1701,7 +1747,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG3Ed[8] = {
   /* 5 */ { 0, &Ia_imull_EAX_Ed },
   /* 6 */ { 0, &Ia_divl_EAX_Ed  },
   /* 7 */ { 0, &Ia_idivl_EAX_Ed }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG3Eq[8] = {
   /* 0 */ { 0, &Ia_testq_Eq_sId },
@@ -1712,8 +1758,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG3Eq[8] = {
   /* 5 */ { 0, &Ia_imulq_RAX_Eq },
   /* 6 */ { 0, &Ia_divq_RAX_Eq  },
   /* 7 */ { 0, &Ia_idivq_RAX_Eq }
-}; 
+};
 
+/* Group4 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG4[8] = {
   /* 0 */ { 0, &Ia_incb_Eb },
   /* 1 */ { 0, &Ia_decb_Eb },
@@ -1723,8 +1770,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG4[8] = {
   /* 5 */ { 0, &Ia_Invalid },
   /* 6 */ { 0, &Ia_Invalid },
   /* 7 */ { 0, &Ia_Invalid }
-}; 
+};
 
+/* Group5 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG5w[8] = {
   /* 0 */ { 0, &Ia_incw_Ew  },
   /* 1 */ { 0, &Ia_decw_Ew  },
@@ -1734,7 +1782,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG5w[8] = {
   /* 5 */ { 0, &Ia_ljmp_Mp  },
   /* 6 */ { 0, &Ia_pushw_Ew },
   /* 7 */ { 0, &Ia_Invalid  }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG5d[8] = {
   /* 0 */ { 0, &Ia_incl_Ed  },
@@ -1745,7 +1793,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG5d[8] = {
   /* 5 */ { 0, &Ia_ljmp_Mp  },
   /* 6 */ { 0, &Ia_pushl_Ed },
   /* 7 */ { 0, &Ia_Invalid  }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroup64G5w[8] = {
   /* 0 */ { 0, &Ia_incw_Ew  },
@@ -1756,7 +1804,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroup64G5w[8] = {
   /* 5 */ { 0, &Ia_ljmp_Mp  },
   /* 6 */ { 0, &Ia_pushw_Ew },
   /* 7 */ { 0, &Ia_Invalid  }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroup64G5d[8] = {
   /* 0 */ { 0, &Ia_incl_Ed  },
@@ -1767,7 +1815,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroup64G5d[8] = {
   /* 5 */ { 0, &Ia_ljmp_Mp  },
   /* 6 */ { 0, &Ia_pushq_Eq },
   /* 7 */ { 0, &Ia_Invalid  }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroup64G5q[8] = {
   /* 0 */ { 0, &Ia_incq_Eq  },
@@ -1778,8 +1826,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroup64G5q[8] = {
   /* 5 */ { 0, &Ia_ljmp_Mp  },
   /* 6 */ { 0, &Ia_pushq_Eq },
   /* 7 */ { 0, &Ia_Invalid  }
-}; 
+};
 
+/* Group6 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG6[8] = {
   /* 0 */ { 0, &Ia_sldt    },
   /* 1 */ { 0, &Ia_str     },
@@ -1789,8 +1838,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG6[8] = {
   /* 5 */ { 0, &Ia_verw    },
   /* 6 */ { 0, &Ia_Invalid },
   /* 7 */ { 0, &Ia_Invalid }
-}; 
+};
 
+/* Group7 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG7M[8] = {
   /* 0 */ { 0, &Ia_sgdt    },
   /* 2 */ { 0, &Ia_sidt    },
@@ -1844,10 +1894,21 @@ static BxDisasmOpcodeTable_t BxDisasmGroupRmMONITOR[8] = {
   /* 7 */ { 0, &Ia_Invalid }
 };
 
+static BxDisasmOpcodeTable_t BxDisasmGroupRmXSETGET[8] = {
+  /* 0 */ { 0, &Ia_xgetbv },
+  /* 1 */ { 0, &Ia_xsetbv },
+  /* 2 */ { 0, &Ia_Invalid },
+  /* 3 */ { 0, &Ia_Invalid },
+  /* 4 */ { 0, &Ia_Invalid },
+  /* 5 */ { 0, &Ia_Invalid },
+  /* 6 */ { 0, &Ia_Invalid },
+  /* 7 */ { 0, &Ia_Invalid }
+};
+
 static BxDisasmOpcodeTable_t BxDisasmGroupG7R[8] = {
   /* 0 */ { GRPSSE(G7VMX)  }, // VMX
   /* 1 */ { GRPRM(MONITOR) },
-  /* 2 */ { 0, &Ia_Invalid },
+  /* 2 */ { GRPRM(XSETGET) },
   /* 3 */ { 0, &Ia_Invalid },
   /* 4 */ { 0, &Ia_smsw_Ew },
   /* 5 */ { 0, &Ia_Invalid },
@@ -1860,6 +1921,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupModG7[2] = {
   /* M */ { GRPN(G7M) }
 };
 
+/* Group8 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG8EwIb[8] = {
   /* 0 */ { 0, &Ia_Invalid },
   /* 1 */ { 0, &Ia_Invalid },
@@ -1869,7 +1931,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG8EwIb[8] = {
   /* 5 */ { 0, &Ia_btsw_Ew_Ib },
   /* 6 */ { 0, &Ia_btrw_Ew_Ib },
   /* 7 */ { 0, &Ia_btcw_Ew_Ib }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG8EdIb[8] = {
   /* 0 */ { 0, &Ia_Invalid },
@@ -1880,7 +1942,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG8EdIb[8] = {
   /* 5 */ { 0, &Ia_btsl_Ed_Ib },
   /* 6 */ { 0, &Ia_btrl_Ed_Ib },
   /* 7 */ { 0, &Ia_btcl_Ed_Ib }
-}; 
+};
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG8EqIb[8] = {
   /* 0 */ { 0, &Ia_Invalid },
@@ -1891,7 +1953,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG8EqIb[8] = {
   /* 5 */ { 0, &Ia_btsq_Eq_Ib },
   /* 6 */ { 0, &Ia_btrq_Eq_Ib },
   /* 7 */ { 0, &Ia_btcq_Eq_Ib }
-}; 
+};
+
+/* Group9 */
 
 /* VMX */
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_G9VMX6[4] = {
@@ -1931,6 +1995,52 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG9q[8] = {
   /* 7 */ { GRPSSE(G9VMX7) }  // VMX
 };
 
+/* Group11 */
+static BxDisasmOpcodeTable_t BxDisasmGroupG11Eb[8] = {
+  /* 0 */ { 0, &Ia_movb_Eb_Ib },
+  /* 1 */ { 0, &Ia_Invalid },
+  /* 2 */ { 0, &Ia_Invalid },
+  /* 3 */ { 0, &Ia_Invalid },
+  /* 4 */ { 0, &Ia_Invalid },
+  /* 5 */ { 0, &Ia_Invalid },
+  /* 6 */ { 0, &Ia_Invalid },
+  /* 7 */ { 0, &Ia_Invalid }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupG11Ew[8] = {
+  /* 0 */ { 0, &Ia_movw_Ew_Iw },
+  /* 1 */ { 0, &Ia_Invalid },
+  /* 2 */ { 0, &Ia_Invalid },
+  /* 3 */ { 0, &Ia_Invalid },
+  /* 4 */ { 0, &Ia_Invalid },
+  /* 5 */ { 0, &Ia_Invalid },
+  /* 6 */ { 0, &Ia_Invalid },
+  /* 7 */ { 0, &Ia_Invalid }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupG11Ed[8] = {
+  /* 0 */ { 0, &Ia_movl_Ed_Id },
+  /* 1 */ { 0, &Ia_Invalid },
+  /* 2 */ { 0, &Ia_Invalid },
+  /* 3 */ { 0, &Ia_Invalid },
+  /* 4 */ { 0, &Ia_Invalid },
+  /* 5 */ { 0, &Ia_Invalid },
+  /* 6 */ { 0, &Ia_Invalid },
+  /* 7 */ { 0, &Ia_Invalid }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupG11Eq[8] = {
+  /* 0 */ { 0, &Ia_movq_Eq_sId },
+  /* 1 */ { 0, &Ia_Invalid },
+  /* 2 */ { 0, &Ia_Invalid },
+  /* 3 */ { 0, &Ia_Invalid },
+  /* 4 */ { 0, &Ia_Invalid },
+  /* 5 */ { 0, &Ia_Invalid },
+  /* 6 */ { 0, &Ia_Invalid },
+  /* 7 */ { 0, &Ia_Invalid }
+};
+
+/* Group12 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG12[8] = {
   /* 0 */ { 0, &Ia_Invalid },
   /* 1 */ { 0, &Ia_Invalid },
@@ -1942,6 +2052,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG12[8] = {
   /* 7 */ { 0, &Ia_Invalid }
 };
 
+/* Group13 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG13[8] = {
   /* 0 */ { 0, &Ia_Invalid },
   /* 1 */ { 0, &Ia_Invalid },
@@ -1953,6 +2064,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG13[8] = {
   /* 7 */ { 0, &Ia_Invalid }
 };
 
+/* Group14 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG14[8] = {
   /* 0 */ { 0, &Ia_Invalid },
   /* 1 */ { 0, &Ia_Invalid },
@@ -1961,25 +2073,38 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG14[8] = {
   /* 4 */ { 0, &Ia_Invalid },
   /* 5 */ { 0, &Ia_Invalid },
   /* 6 */ { GRPSSE(G1406)  },
-  /* 7 */ { GRPSSE(G1407)  } 
+  /* 7 */ { GRPSSE(G1407)  }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupModCFLUSH[2] = {
-  /* R */ { 0, &Ia_sfence }, 
-  /* M */ { 0, &Ia_cflush }
-};
-
-static BxDisasmOpcodeTable_t BxDisasmGroupG15[8] = {
+/* Group15 */
+static BxDisasmOpcodeTable_t BxDisasmGroupG15M[8] = {
   /* 0 */ { 0, &Ia_fxsave  },
   /* 1 */ { 0, &Ia_fxrstor },
   /* 2 */ { 0, &Ia_ldmxcsr },
   /* 3 */ { 0, &Ia_stmxcsr },
+  /* 4 */ { 0, &Ia_xsave   },
+  /* 5 */ { 0, &Ia_xrstor  },
+  /* 6 */ { 0, &Ia_Invalid },
+  /* 7 */ { 0, &Ia_cflush  }
+};
+
+static BxDisasmOpcodeTable_t BxDisasmGroupG15R[8] = {
+  /* 0 */ { 0, &Ia_Invalid },
+  /* 1 */ { 0, &Ia_Invalid },
+  /* 2 */ { 0, &Ia_Invalid },
+  /* 3 */ { 0, &Ia_Invalid },
   /* 4 */ { 0, &Ia_Invalid },
   /* 5 */ { 0, &Ia_lfence  },
   /* 6 */ { 0, &Ia_mfence  },
-  /* 7 */ { GRPMOD(CFLUSH) }       /* SFENCE/CFLUSH */
+  /* 6 */ { 0, &Ia_sfence  },
 };
 
+static BxDisasmOpcodeTable_t BxDisasmGroupModG15[2] = {
+  /* R */ { GRPN(G15R) },
+  /* M */ { GRPN(G15M) }
+};
+
+/* Group16 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG16[8] =
 {
   /* 0 */ { 0, &Ia_prefetchnta },
@@ -2253,7 +2378,7 @@ static BxDisasmOpcodeTable_t BxDisasm3DNowGroup[256] = {
   /* FD */ { 0, &Ia_Invalid },
   /* FE */ { 0, &Ia_Invalid },
   /* FF */ { 0, &Ia_Invalid }
-};                                
+};
 
 /* ************************************************************************ */
 /* FPU Opcodes */
@@ -2263,7 +2388,7 @@ static BxDisasmOpcodeTable_t BxDisasm3DNowGroup[256] = {
 // the modrm byte. (the first byte is D8-DF)
 
   // D8 (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupD8[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupD8[8] = {
   /* 0 */ { 0, &Ia_fadds_Md  },
   /* 1 */ { 0, &Ia_fmuls_Md  },
   /* 2 */ { 0, &Ia_fcoms_Md  },
@@ -2275,7 +2400,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupD8[8] = {
 };
 
   // D9 (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupD9[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupD9[8] = {
   /* 0 */ { 0, &Ia_flds_Md   },
   /* 1 */ { 0, &Ia_Invalid   },
   /* 2 */ { 0, &Ia_fsts_Md   },
@@ -2287,7 +2412,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupD9[8] = {
 };
 
   // DA (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupDA[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupDA[8] = {
   /* 0 */ { 0, &Ia_fiaddl_Md  },
   /* 1 */ { 0, &Ia_fimull_Md  },
   /* 2 */ { 0, &Ia_ficoml_Md  },
@@ -2299,7 +2424,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupDA[8] = {
 };
 
   // DB (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupDB[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupDB[8] = {
   /* 0 */ { 0, &Ia_fildl_Md   },
   /* 1 */ { 0, &Ia_fisttpl_Md },
   /* 2 */ { 0, &Ia_fistl_Md   },
@@ -2311,7 +2436,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupDB[8] = {
 };
 
   // DC (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupDC[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupDC[8] = {
   /* 0 */ { 0, &Ia_faddl_Mq  },
   /* 1 */ { 0, &Ia_fmull_Mq  },
   /* 2 */ { 0, &Ia_fcoml_Mq  },
@@ -2323,7 +2448,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupDC[8] = {
 };
 
   // DD (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupDD[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupDD[8] = {
   /* 0 */ { 0, &Ia_fldl_Mq    },
   /* 1 */ { 0, &Ia_fisttpq_Mq },
   /* 2 */ { 0, &Ia_fstl_Mq    },
@@ -2335,7 +2460,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupDD[8] = {
 };
 
   // DE (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupDE[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupDE[8] = {
   /* 0 */ { 0, &Ia_fiadds_Mw  },
   /* 1 */ { 0, &Ia_fimuls_Mw  },
   /* 2 */ { 0, &Ia_ficoms_Mw  },
@@ -2347,7 +2472,7 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupDE[8] = {
 };
 
   // DF (modrm is outside 00h - BFh) (mod != 11)
-static BxDisasmOpcodeTable_t BxDisasmFPGroupDF[8] = { 
+static BxDisasmOpcodeTable_t BxDisasmFPGroupDF[8] = {
   /* 0 */ { 0, &Ia_filds_Mw   },
   /* 1 */ { 0, &Ia_fisttps_Mw },
   /* 2 */ { 0, &Ia_fists_Mw   },
@@ -2358,8 +2483,8 @@ static BxDisasmOpcodeTable_t BxDisasmFPGroupDF[8] = {
   /* 7 */ { 0, &Ia_fistpq_Mq  }
 };
 
-// 512 entries for second byte of floating point instructions. (when mod==11b) 
-static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = { 
+// 512 entries for second byte of floating point instructions. (when mod==11b)
+static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   // D8 (modrm is outside 00h - BFh) (mod == 11)
   /* D8 C0 */ { 0, &Ia_fadd_ST0_STi  },
   /* D8 C1 */ { 0, &Ia_fadd_ST0_STi  },
@@ -2425,7 +2550,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* D8 FD */ { 0, &Ia_fdivr_ST0_STi },
   /* D8 FE */ { 0, &Ia_fdivr_ST0_STi },
   /* D8 FF */ { 0, &Ia_fdivr_ST0_STi },
-  
+
   // D9 (modrm is outside 00h - BFh) (mod == 11)
   /* D9 C0 */ { 0, &Ia_fld_STi },
   /* D9 C1 */ { 0, &Ia_fld_STi },
@@ -2451,14 +2576,14 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* D9 D5 */ { 0, &Ia_Invalid },
   /* D9 D6 */ { 0, &Ia_Invalid },
   /* D9 D7 */ { 0, &Ia_Invalid },
-  /* D9 D8 */ { 0, &Ia_Invalid },
-  /* D9 D9 */ { 0, &Ia_Invalid },
-  /* D9 DA */ { 0, &Ia_Invalid },
-  /* D9 DB */ { 0, &Ia_Invalid },
-  /* D9 DC */ { 0, &Ia_Invalid },
-  /* D9 DD */ { 0, &Ia_Invalid },
-  /* D9 DE */ { 0, &Ia_Invalid },
-  /* D9 DF */ { 0, &Ia_Invalid },
+  /* D9 D8 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 D9 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 DA */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 DB */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 DC */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 DD */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 DE */ { 0, &Ia_fstp_STi }, // undocumented
+  /* D9 DF */ { 0, &Ia_fstp_STi }, // undocumented
   /* D9 E0 */ { 0, &Ia_fchs    },
   /* D9 E1 */ { 0, &Ia_fabs    },
   /* D9 E2 */ { 0, &Ia_Invalid },
@@ -2491,7 +2616,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* D9 FD */ { 0, &Ia_fscale  },
   /* D9 FE */ { 0, &Ia_fsin    },
   /* D9 FF */ { 0, &Ia_fcos    },
-                                  
+
   // DA (modrm is outside 00h - BFh) (mod == 11)
   /* DA C0 */ { 0, &Ia_fcmovb_ST0_STi  },
   /* DA C1 */ { 0, &Ia_fcmovb_ST0_STi  },
@@ -2641,22 +2766,22 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* DC CD */ { 0, &Ia_fmul_STi_ST0 },
   /* DC CE */ { 0, &Ia_fmul_STi_ST0 },
   /* DC CF */ { 0, &Ia_fmul_STi_ST0 },
-  /* DC D0 */ { 0, &Ia_Invalid },
-  /* DC D1 */ { 0, &Ia_Invalid },
-  /* DC D2 */ { 0, &Ia_Invalid },
-  /* DC D3 */ { 0, &Ia_Invalid },
-  /* DC D4 */ { 0, &Ia_Invalid },
-  /* DC D5 */ { 0, &Ia_Invalid },
-  /* DC D6 */ { 0, &Ia_Invalid },
-  /* DC D7 */ { 0, &Ia_Invalid },
-  /* DC D8 */ { 0, &Ia_Invalid },
-  /* DC D9 */ { 0, &Ia_Invalid },
-  /* DC DA */ { 0, &Ia_Invalid },
-  /* DC DB */ { 0, &Ia_Invalid },
-  /* DC DC */ { 0, &Ia_Invalid },
-  /* DC DD */ { 0, &Ia_Invalid },
-  /* DC DE */ { 0, &Ia_Invalid },
-  /* DC DF */ { 0, &Ia_Invalid },
+  /* DC D0 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D1 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D2 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D3 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D4 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D5 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D6 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D7 */ { 0, &Ia_fcom_STi     }, // undocumented
+  /* DC D8 */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC D9 */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC DA */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC DB */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC DC */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC DD */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC DE */ { 0, &Ia_fcomp_STi    }, // undocumented
+  /* DC DF */ { 0, &Ia_fcomp_STi    }, // undocumented
   /* DC E0 */ { 0, &Ia_fsubr_STi_ST0 },
   /* DC E1 */ { 0, &Ia_fsubr_STi_ST0 },
   /* DC E2 */ { 0, &Ia_fsubr_STi_ST0 },
@@ -2691,46 +2816,46 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* DC FF */ { 0, &Ia_fdiv_STi_ST0  },
 
   // DD (modrm is outside 00h - BFh) (mod == 11)
-  /* DD C0 */ { 0, &Ia_ffree_STi  },
-  /* DD C1 */ { 0, &Ia_ffree_STi  },
-  /* DD C2 */ { 0, &Ia_ffree_STi  },
-  /* DD C3 */ { 0, &Ia_ffree_STi  },
-  /* DD C4 */ { 0, &Ia_ffree_STi  },
-  /* DD C5 */ { 0, &Ia_ffree_STi  },
-  /* DD C6 */ { 0, &Ia_ffree_STi  },
-  /* DD C7 */ { 0, &Ia_ffree_STi  },
-  /* DD C8 */ { 0, &Ia_Invalid    },
-  /* DD C9 */ { 0, &Ia_Invalid    },
-  /* DD CA */ { 0, &Ia_Invalid    },
-  /* DD CB */ { 0, &Ia_Invalid    },
-  /* DD CC */ { 0, &Ia_Invalid    },
-  /* DD CD */ { 0, &Ia_Invalid    },
-  /* DD CE */ { 0, &Ia_Invalid    },
-  /* DD CF */ { 0, &Ia_Invalid    },
-  /* DD D0 */ { 0, &Ia_fst_STi    },
-  /* DD D1 */ { 0, &Ia_fst_STi    },
-  /* DD D2 */ { 0, &Ia_fst_STi    },
-  /* DD D3 */ { 0, &Ia_fst_STi    },
-  /* DD D4 */ { 0, &Ia_fst_STi    },
-  /* DD D5 */ { 0, &Ia_fst_STi    },
-  /* DD D6 */ { 0, &Ia_fst_STi    },
-  /* DD D7 */ { 0, &Ia_fst_STi    },
-  /* DD D8 */ { 0, &Ia_fstp_STi   },
-  /* DD D9 */ { 0, &Ia_fstp_STi   },
-  /* DD DA */ { 0, &Ia_fstp_STi   },
-  /* DD DB */ { 0, &Ia_fstp_STi   },
-  /* DD DC */ { 0, &Ia_fstp_STi   },
-  /* DD DD */ { 0, &Ia_fstp_STi   },
-  /* DD DE */ { 0, &Ia_fstp_STi   },
-  /* DD DF */ { 0, &Ia_fstp_STi   },
-  /* DD E0 */ { 0, &Ia_fucom_STi  },
-  /* DD E1 */ { 0, &Ia_fucom_STi  },
-  /* DD E2 */ { 0, &Ia_fucom_STi  },
-  /* DD E3 */ { 0, &Ia_fucom_STi  },
-  /* DD E4 */ { 0, &Ia_fucom_STi  },
-  /* DD E5 */ { 0, &Ia_fucom_STi  },
-  /* DD E6 */ { 0, &Ia_fucom_STi  },
-  /* DD E7 */ { 0, &Ia_fucom_STi  },
+  /* DD C0 */ { 0, &Ia_ffree_STi },
+  /* DD C1 */ { 0, &Ia_ffree_STi },
+  /* DD C2 */ { 0, &Ia_ffree_STi },
+  /* DD C3 */ { 0, &Ia_ffree_STi },
+  /* DD C4 */ { 0, &Ia_ffree_STi },
+  /* DD C5 */ { 0, &Ia_ffree_STi },
+  /* DD C6 */ { 0, &Ia_ffree_STi },
+  /* DD C7 */ { 0, &Ia_ffree_STi },
+  /* DD C8 */ { 0, &Ia_fxch      }, // undocumented
+  /* DD C9 */ { 0, &Ia_fxch      }, // undocumented
+  /* DD CA */ { 0, &Ia_fxch      }, // undocumented
+  /* DD CB */ { 0, &Ia_fxch      }, // undocumented
+  /* DD CC */ { 0, &Ia_fxch      }, // undocumented
+  /* DD CD */ { 0, &Ia_fxch      }, // undocumented
+  /* DD CE */ { 0, &Ia_fxch      }, // undocumented
+  /* DD CF */ { 0, &Ia_fxch      }, // undocumented
+  /* DD D0 */ { 0, &Ia_fst_STi   },
+  /* DD D1 */ { 0, &Ia_fst_STi   },
+  /* DD D2 */ { 0, &Ia_fst_STi   },
+  /* DD D3 */ { 0, &Ia_fst_STi   },
+  /* DD D4 */ { 0, &Ia_fst_STi   },
+  /* DD D5 */ { 0, &Ia_fst_STi   },
+  /* DD D6 */ { 0, &Ia_fst_STi   },
+  /* DD D7 */ { 0, &Ia_fst_STi   },
+  /* DD D8 */ { 0, &Ia_fstp_STi  },
+  /* DD D9 */ { 0, &Ia_fstp_STi  },
+  /* DD DA */ { 0, &Ia_fstp_STi  },
+  /* DD DB */ { 0, &Ia_fstp_STi  },
+  /* DD DC */ { 0, &Ia_fstp_STi  },
+  /* DD DD */ { 0, &Ia_fstp_STi  },
+  /* DD DE */ { 0, &Ia_fstp_STi  },
+  /* DD DF */ { 0, &Ia_fstp_STi  },
+  /* DD E0 */ { 0, &Ia_fucom_STi },
+  /* DD E1 */ { 0, &Ia_fucom_STi },
+  /* DD E2 */ { 0, &Ia_fucom_STi },
+  /* DD E3 */ { 0, &Ia_fucom_STi },
+  /* DD E4 */ { 0, &Ia_fucom_STi },
+  /* DD E5 */ { 0, &Ia_fucom_STi },
+  /* DD E6 */ { 0, &Ia_fucom_STi },
+  /* DD E7 */ { 0, &Ia_fucom_STi },
   /* DD E8 */ { 0, &Ia_fucomp_STi },
   /* DD E9 */ { 0, &Ia_fucomp_STi },
   /* DD EA */ { 0, &Ia_fucomp_STi },
@@ -2773,14 +2898,14 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* DE CD */ { 0, &Ia_fmulp_STi_ST0 },
   /* DE CE */ { 0, &Ia_fmulp_STi_ST0 },
   /* DE CF */ { 0, &Ia_fmulp_STi_ST0 },
-  /* DE D0 */ { 0, &Ia_Invalid },
-  /* DE D1 */ { 0, &Ia_Invalid },
-  /* DE D2 */ { 0, &Ia_Invalid },
-  /* DE D3 */ { 0, &Ia_Invalid },
-  /* DE D4 */ { 0, &Ia_Invalid },
-  /* DE D5 */ { 0, &Ia_Invalid },
-  /* DE D6 */ { 0, &Ia_Invalid },
-  /* DE D7 */ { 0, &Ia_Invalid },
+  /* DE D0 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D1 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D2 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D3 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D4 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D5 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D6 */ { 0, &Ia_fcomp_STi }, // undocumented
+  /* DE D7 */ { 0, &Ia_fcomp_STi }, // undocumented
   /* DE D8 */ { 0, &Ia_Invalid },
   /* DE D9 */ { 0, &Ia_fcompp  },
   /* DE DA */ { 0, &Ia_Invalid },
@@ -2831,30 +2956,30 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
   /* DF C5 */ { 0, &Ia_ffreep_STi },
   /* DF C6 */ { 0, &Ia_ffreep_STi },
   /* DF C7 */ { 0, &Ia_ffreep_STi },
-  /* DF C8 */ { 0, &Ia_Invalid },
-  /* DF C9 */ { 0, &Ia_Invalid },
-  /* DF CA */ { 0, &Ia_Invalid },
-  /* DF CB */ { 0, &Ia_Invalid },
-  /* DF CC */ { 0, &Ia_Invalid },
-  /* DF CD */ { 0, &Ia_Invalid },
-  /* DF CE */ { 0, &Ia_Invalid },
-  /* DF CF */ { 0, &Ia_Invalid },
-  /* DF D0 */ { 0, &Ia_Invalid },
-  /* DF D1 */ { 0, &Ia_Invalid },
-  /* DF D2 */ { 0, &Ia_Invalid },
-  /* DF D3 */ { 0, &Ia_Invalid },
-  /* DF D4 */ { 0, &Ia_Invalid },
-  /* DF D5 */ { 0, &Ia_Invalid },
-  /* DF D6 */ { 0, &Ia_Invalid },
-  /* DF D7 */ { 0, &Ia_Invalid },
-  /* DF D8 */ { 0, &Ia_Invalid },
-  /* DF D9 */ { 0, &Ia_Invalid },
-  /* DF DA */ { 0, &Ia_Invalid },
-  /* DF DB */ { 0, &Ia_Invalid },
-  /* DF DC */ { 0, &Ia_Invalid },
-  /* DF DD */ { 0, &Ia_Invalid },
-  /* DF DE */ { 0, &Ia_Invalid },
-  /* DF DF */ { 0, &Ia_Invalid },
+  /* DF C8 */ { 0, &Ia_fxch     }, // undocumented
+  /* DF C9 */ { 0, &Ia_fxch     }, // undocumented
+  /* DF CA */ { 0, &Ia_fxch     }, // undocumented
+  /* DF CB */ { 0, &Ia_fxch     }, // undocumented
+  /* DF CC */ { 0, &Ia_fxch     }, // undocumented
+  /* DF CD */ { 0, &Ia_fxch     }, // undocumented
+  /* DF CE */ { 0, &Ia_fxch     }, // undocumented
+  /* DF CF */ { 0, &Ia_fxch     }, // undocumented
+  /* DF D0 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D1 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D2 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D3 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D4 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D5 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D6 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D7 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D8 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF D9 */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF DA */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF DB */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF DC */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF DD */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF DE */ { 0, &Ia_fstp_STi }, // undocumented
+  /* DF DF */ { 0, &Ia_fstp_STi }, // undocumented
   /* DF E0 */ { 0, &Ia_fnstsw_AX },
   /* DF E1 */ { 0, &Ia_Invalid },
   /* DF E2 */ { 0, &Ia_Invalid },
@@ -2892,7 +3017,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodeInfoFP[512] = {
 /* ************************************************************************ */
 /* 3-byte opcode table (Table A-4, 0F 38) */
 
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f380x[16] = {
+static BxDisasmOpcodeTable_t BxDisasm3ByteOpTable0f38[256] = {
   /* 00 */ { GRPSSE(0f3800) },
   /* 01 */ { GRPSSE(0f3801) },
   /* 02 */ { GRPSSE(0f3802) },
@@ -2908,127 +3033,252 @@ static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f380x[16] = {
   /* 0C */ { 0, &Ia_Invalid },
   /* 0D */ { 0, &Ia_Invalid },
   /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f381x[16] = {
-  /* 00 */ { GRPSSE(0f3810) },
-  /* 01 */ { 0, &Ia_Invalid },
-  /* 02 */ { 0, &Ia_Invalid },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { GRPSSE(0f3814) },
-  /* 05 */ { GRPSSE(0f3815) },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { GRPSSE(0f3817) },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { GRPSSE(0f381c) },
-  /* 0D */ { GRPSSE(0f381d) },
-  /* 0E */ { GRPSSE(0f381e) },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f382x[16] = {
-  /* 00 */ { GRPSSE(0f3820) },
-  /* 01 */ { GRPSSE(0f3821) },
-  /* 02 */ { GRPSSE(0f3822) },
-  /* 03 */ { GRPSSE(0f3823) },
-  /* 04 */ { GRPSSE(0f3824) },
-  /* 05 */ { GRPSSE(0f3825) },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { GRPSSE(0f3828) },
-  /* 09 */ { GRPSSE(0f3829) },
-  /* 0A */ { GRPSSE(0f382a) },
-  /* 0B */ { GRPSSE(0f382b) },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f383x[16] = {
-  /* 00 */ { GRPSSE(0f3830) },
-  /* 01 */ { GRPSSE(0f3831) },
-  /* 02 */ { GRPSSE(0f3832) },
-  /* 03 */ { GRPSSE(0f3833) },
-  /* 04 */ { GRPSSE(0f3834) },
-  /* 05 */ { GRPSSE(0f3835) },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { GRPSSE(0f3837) },
-  /* 08 */ { GRPSSE(0f3838) },
-  /* 09 */ { GRPSSE(0f3839) },
-  /* 0A */ { GRPSSE(0f383a) },
-  /* 0B */ { GRPSSE(0f383b) },
-  /* 0C */ { GRPSSE(0f383c) },
-  /* 0D */ { GRPSSE(0f383d) },
-  /* 0E */ { GRPSSE(0f383e) },
-  /* 0F */ { GRPSSE(0f383f) }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f384x[16] = {
-  /* 00 */ { GRPSSE(0f3840) },
-  /* 01 */ { GRPSSE(0f3841) },
-  /* 02 */ { 0, &Ia_Invalid },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { 0, &Ia_Invalid },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f38fx[16] = {
-  /* 00 */ { GRPSSE(0f38f0) },
-  /* 01 */ { GRPSSE(0f38f1) },
-  /* 02 */ { 0, &Ia_Invalid },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { 0, &Ia_Invalid },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteTableA4[16] = {
-  /* 00 */ { GR3BOP(0f380x) },
-  /* 01 */ { GR3BOP(0f381x) },
-  /* 02 */ { GR3BOP(0f382x) },
-  /* 03 */ { GR3BOP(0f383x) },
-  /* 04 */ { GR3BOP(0f384x) },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { GR3BOP(0f38fx) }
+  /* 0F */ { 0, &Ia_Invalid },
+  /* 10 */ { GRPSSE(0f3810) },
+  /* 11 */ { 0, &Ia_Invalid },
+  /* 12 */ { 0, &Ia_Invalid },
+  /* 13 */ { 0, &Ia_Invalid },
+  /* 14 */ { GRPSSE(0f3814) },
+  /* 15 */ { GRPSSE(0f3815) },
+  /* 16 */ { 0, &Ia_Invalid },
+  /* 17 */ { GRPSSE(0f3817) },
+  /* 18 */ { 0, &Ia_Invalid },
+  /* 19 */ { 0, &Ia_Invalid },
+  /* 1A */ { 0, &Ia_Invalid },
+  /* 1B */ { 0, &Ia_Invalid },
+  /* 1C */ { GRPSSE(0f381c) },
+  /* 1D */ { GRPSSE(0f381d) },
+  /* 1E */ { GRPSSE(0f381e) },
+  /* 1F */ { 0, &Ia_Invalid },
+  /* 20 */ { GRPSSE(0f3820) },
+  /* 21 */ { GRPSSE(0f3821) },
+  /* 22 */ { GRPSSE(0f3822) },
+  /* 23 */ { GRPSSE(0f3823) },
+  /* 24 */ { GRPSSE(0f3824) },
+  /* 25 */ { GRPSSE(0f3825) },
+  /* 26 */ { 0, &Ia_Invalid },
+  /* 27 */ { 0, &Ia_Invalid },
+  /* 28 */ { GRPSSE(0f3828) },
+  /* 29 */ { GRPSSE(0f3829) },
+  /* 2A */ { GRPSSE(0f382a) },
+  /* 2B */ { GRPSSE(0f382b) },
+  /* 2C */ { 0, &Ia_Invalid },
+  /* 2D */ { 0, &Ia_Invalid },
+  /* 2E */ { 0, &Ia_Invalid },
+  /* 2F */ { 0, &Ia_Invalid },
+  /* 30 */ { GRPSSE(0f3830) },
+  /* 31 */ { GRPSSE(0f3831) },
+  /* 32 */ { GRPSSE(0f3832) },
+  /* 33 */ { GRPSSE(0f3833) },
+  /* 34 */ { GRPSSE(0f3834) },
+  /* 35 */ { GRPSSE(0f3835) },
+  /* 36 */ { 0, &Ia_Invalid },
+  /* 37 */ { GRPSSE(0f3837) },
+  /* 38 */ { GRPSSE(0f3838) },
+  /* 39 */ { GRPSSE(0f3839) },
+  /* 3A */ { GRPSSE(0f383a) },
+  /* 3B */ { GRPSSE(0f383b) },
+  /* 3C */ { GRPSSE(0f383c) },
+  /* 3D */ { GRPSSE(0f383d) },
+  /* 3E */ { GRPSSE(0f383e) },
+  /* 3F */ { GRPSSE(0f383f) },
+  /* 40 */ { GRPSSE(0f3840) },
+  /* 41 */ { GRPSSE(0f3841) },
+  /* 42 */ { 0, &Ia_Invalid },
+  /* 43 */ { 0, &Ia_Invalid },
+  /* 44 */ { 0, &Ia_Invalid },
+  /* 45 */ { 0, &Ia_Invalid },
+  /* 46 */ { 0, &Ia_Invalid },
+  /* 47 */ { 0, &Ia_Invalid },
+  /* 48 */ { 0, &Ia_Invalid },
+  /* 49 */ { 0, &Ia_Invalid },
+  /* 4A */ { 0, &Ia_Invalid },
+  /* 4B */ { 0, &Ia_Invalid },
+  /* 4C */ { 0, &Ia_Invalid },
+  /* 4D */ { 0, &Ia_Invalid },
+  /* 4E */ { 0, &Ia_Invalid },
+  /* 4F */ { 0, &Ia_Invalid },
+  /* 50 */ { 0, &Ia_Invalid },
+  /* 51 */ { 0, &Ia_Invalid },
+  /* 52 */ { 0, &Ia_Invalid },
+  /* 53 */ { 0, &Ia_Invalid },
+  /* 54 */ { 0, &Ia_Invalid },
+  /* 55 */ { 0, &Ia_Invalid },
+  /* 56 */ { 0, &Ia_Invalid },
+  /* 57 */ { 0, &Ia_Invalid },
+  /* 58 */ { 0, &Ia_Invalid },
+  /* 59 */ { 0, &Ia_Invalid },
+  /* 5A */ { 0, &Ia_Invalid },
+  /* 5B */ { 0, &Ia_Invalid },
+  /* 5C */ { 0, &Ia_Invalid },
+  /* 5D */ { 0, &Ia_Invalid },
+  /* 5E */ { 0, &Ia_Invalid },
+  /* 5F */ { 0, &Ia_Invalid },
+  /* 60 */ { 0, &Ia_Invalid },
+  /* 61 */ { 0, &Ia_Invalid },
+  /* 62 */ { 0, &Ia_Invalid },
+  /* 63 */ { 0, &Ia_Invalid },
+  /* 64 */ { 0, &Ia_Invalid },
+  /* 65 */ { 0, &Ia_Invalid },
+  /* 66 */ { 0, &Ia_Invalid },
+  /* 67 */ { 0, &Ia_Invalid },
+  /* 68 */ { 0, &Ia_Invalid },
+  /* 69 */ { 0, &Ia_Invalid },
+  /* 6A */ { 0, &Ia_Invalid },
+  /* 6B */ { 0, &Ia_Invalid },
+  /* 6C */ { 0, &Ia_Invalid },
+  /* 6D */ { 0, &Ia_Invalid },
+  /* 6E */ { 0, &Ia_Invalid },
+  /* 6F */ { 0, &Ia_Invalid },
+  /* 70 */ { 0, &Ia_Invalid },
+  /* 71 */ { 0, &Ia_Invalid },
+  /* 72 */ { 0, &Ia_Invalid },
+  /* 73 */ { 0, &Ia_Invalid },
+  /* 74 */ { 0, &Ia_Invalid },
+  /* 75 */ { 0, &Ia_Invalid },
+  /* 76 */ { 0, &Ia_Invalid },
+  /* 77 */ { 0, &Ia_Invalid },
+  /* 78 */ { 0, &Ia_Invalid },
+  /* 79 */ { 0, &Ia_Invalid },
+  /* 7A */ { 0, &Ia_Invalid },
+  /* 7B */ { 0, &Ia_Invalid },
+  /* 7C */ { 0, &Ia_Invalid },
+  /* 7D */ { 0, &Ia_Invalid },
+  /* 7E */ { 0, &Ia_Invalid },
+  /* 7F */ { 0, &Ia_Invalid },
+  /* 80 */ { 0, &Ia_Invalid },
+  /* 81 */ { 0, &Ia_Invalid },
+  /* 82 */ { 0, &Ia_Invalid },
+  /* 83 */ { 0, &Ia_Invalid },
+  /* 84 */ { 0, &Ia_Invalid },
+  /* 85 */ { 0, &Ia_Invalid },
+  /* 86 */ { 0, &Ia_Invalid },
+  /* 87 */ { 0, &Ia_Invalid },
+  /* 88 */ { 0, &Ia_Invalid },
+  /* 89 */ { 0, &Ia_Invalid },
+  /* 8A */ { 0, &Ia_Invalid },
+  /* 8B */ { 0, &Ia_Invalid },
+  /* 8C */ { 0, &Ia_Invalid },
+  /* 8D */ { 0, &Ia_Invalid },
+  /* 8E */ { 0, &Ia_Invalid },
+  /* 8F */ { 0, &Ia_Invalid },
+  /* 90 */ { 0, &Ia_Invalid },
+  /* 91 */ { 0, &Ia_Invalid },
+  /* 92 */ { 0, &Ia_Invalid },
+  /* 93 */ { 0, &Ia_Invalid },
+  /* 94 */ { 0, &Ia_Invalid },
+  /* 95 */ { 0, &Ia_Invalid },
+  /* 96 */ { 0, &Ia_Invalid },
+  /* 97 */ { 0, &Ia_Invalid },
+  /* 98 */ { 0, &Ia_Invalid },
+  /* 99 */ { 0, &Ia_Invalid },
+  /* 9A */ { 0, &Ia_Invalid },
+  /* 9B */ { 0, &Ia_Invalid },
+  /* 9C */ { 0, &Ia_Invalid },
+  /* 9D */ { 0, &Ia_Invalid },
+  /* 9E */ { 0, &Ia_Invalid },
+  /* 9F */ { 0, &Ia_Invalid },
+  /* A0 */ { 0, &Ia_Invalid },
+  /* A1 */ { 0, &Ia_Invalid },
+  /* A2 */ { 0, &Ia_Invalid },
+  /* A3 */ { 0, &Ia_Invalid },
+  /* A4 */ { 0, &Ia_Invalid },
+  /* A5 */ { 0, &Ia_Invalid },
+  /* A6 */ { 0, &Ia_Invalid },
+  /* A7 */ { 0, &Ia_Invalid },
+  /* A8 */ { 0, &Ia_Invalid },
+  /* A9 */ { 0, &Ia_Invalid },
+  /* AA */ { 0, &Ia_Invalid },
+  /* AB */ { 0, &Ia_Invalid },
+  /* AC */ { 0, &Ia_Invalid },
+  /* AD */ { 0, &Ia_Invalid },
+  /* AE */ { 0, &Ia_Invalid },
+  /* AF */ { 0, &Ia_Invalid },
+  /* B0 */ { 0, &Ia_Invalid },
+  /* B1 */ { 0, &Ia_Invalid },
+  /* B2 */ { 0, &Ia_Invalid },
+  /* B3 */ { 0, &Ia_Invalid },
+  /* B4 */ { 0, &Ia_Invalid },
+  /* B5 */ { 0, &Ia_Invalid },
+  /* B6 */ { 0, &Ia_Invalid },
+  /* B7 */ { 0, &Ia_Invalid },
+  /* B8 */ { 0, &Ia_Invalid },
+  /* B9 */ { 0, &Ia_Invalid },
+  /* BA */ { 0, &Ia_Invalid },
+  /* BB */ { 0, &Ia_Invalid },
+  /* BC */ { 0, &Ia_Invalid },
+  /* BD */ { 0, &Ia_Invalid },
+  /* BE */ { 0, &Ia_Invalid },
+  /* BF */ { 0, &Ia_Invalid },
+  /* C0 */ { 0, &Ia_Invalid },
+  /* C1 */ { 0, &Ia_Invalid },
+  /* C2 */ { 0, &Ia_Invalid },
+  /* C3 */ { 0, &Ia_Invalid },
+  /* C4 */ { 0, &Ia_Invalid },
+  /* C5 */ { 0, &Ia_Invalid },
+  /* C6 */ { 0, &Ia_Invalid },
+  /* C7 */ { 0, &Ia_Invalid },
+  /* C8 */ { 0, &Ia_Invalid },
+  /* C9 */ { 0, &Ia_Invalid },
+  /* CA */ { 0, &Ia_Invalid },
+  /* CB */ { 0, &Ia_Invalid },
+  /* CC */ { 0, &Ia_Invalid },
+  /* CD */ { 0, &Ia_Invalid },
+  /* CE */ { 0, &Ia_Invalid },
+  /* CF */ { 0, &Ia_Invalid },
+  /* D0 */ { 0, &Ia_Invalid },
+  /* D1 */ { 0, &Ia_Invalid },
+  /* D2 */ { 0, &Ia_Invalid },
+  /* D3 */ { 0, &Ia_Invalid },
+  /* D4 */ { 0, &Ia_Invalid },
+  /* D5 */ { 0, &Ia_Invalid },
+  /* D6 */ { 0, &Ia_Invalid },
+  /* D7 */ { 0, &Ia_Invalid },
+  /* D8 */ { 0, &Ia_Invalid },
+  /* D9 */ { 0, &Ia_Invalid },
+  /* DA */ { 0, &Ia_Invalid },
+  /* DB */ { GRPSSE(0f38db) },
+  /* DC */ { GRPSSE(0f38dc) },
+  /* DD */ { GRPSSE(0f38dd) },
+  /* DE */ { GRPSSE(0f38de) },
+  /* DF */ { GRPSSE(0f38df) },
+  /* E0 */ { 0, &Ia_Invalid },
+  /* E1 */ { 0, &Ia_Invalid },
+  /* E2 */ { 0, &Ia_Invalid },
+  /* E3 */ { 0, &Ia_Invalid },
+  /* E4 */ { 0, &Ia_Invalid },
+  /* E5 */ { 0, &Ia_Invalid },
+  /* E6 */ { 0, &Ia_Invalid },
+  /* E7 */ { 0, &Ia_Invalid },
+  /* E8 */ { 0, &Ia_Invalid },
+  /* E9 */ { 0, &Ia_Invalid },
+  /* EA */ { 0, &Ia_Invalid },
+  /* EB */ { 0, &Ia_Invalid },
+  /* EC */ { 0, &Ia_Invalid },
+  /* ED */ { 0, &Ia_Invalid },
+  /* EE */ { 0, &Ia_Invalid },
+  /* F0 */ { GRPSSE(0f38f0) },
+  /* F1 */ { GRPSSE(0f38f1) },
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid },
+  /* F4 */ { 0, &Ia_Invalid },
+  /* F5 */ { 0, &Ia_Invalid },
+  /* F6 */ { 0, &Ia_Invalid },
+  /* F7 */ { 0, &Ia_Invalid },
+  /* F8 */ { 0, &Ia_Invalid },
+  /* F9 */ { 0, &Ia_Invalid },
+  /* FA */ { 0, &Ia_Invalid },
+  /* FB */ { 0, &Ia_Invalid },
+  /* FC */ { 0, &Ia_Invalid },
+  /* FD */ { 0, &Ia_Invalid },
+  /* FE */ { 0, &Ia_Invalid },
+  /* FF */ { 0, &Ia_Invalid }
 };
 
 /* ************************************************************************ */
 /* 3-byte opcode table (Table A-5, 0F 3A) */
 
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f3a0x[16] = {
+static BxDisasmOpcodeTable_t BxDisasm3ByteOpTable0f3a[256] = {
   /* 00 */ { 0, &Ia_Invalid },
   /* 01 */ { 0, &Ia_Invalid },
   /* 02 */ { 0, &Ia_Invalid },
@@ -3044,102 +3294,246 @@ static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f3a0x[16] = {
   /* 0C */ { GRPSSE(0f3a0c) },
   /* 0D */ { GRPSSE(0f3a0d) },
   /* 0E */ { GRPSSE(0f3a0e) },
-  /* 0F */ { GRPSSE(0f3a0f) }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f3a1x[16] = {
-  /* 00 */ { 0, &Ia_Invalid },
-  /* 01 */ { 0, &Ia_Invalid },
-  /* 02 */ { 0, &Ia_Invalid },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { GRPSSE(0f3a14) },
-  /* 05 */ { GRPSSE(0f3a15) },
-  /* 06 */ { GRPSSE(0f3a16) },
-  /* 07 */ { GRPSSE(0f3a17) },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f3a2x[16] = {
-  /* 00 */ { GRPSSE(0f3a20) },
-  /* 01 */ { GRPSSE(0f3a21) },
-  /* 02 */ { GRPSSE(0f3a22) },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { 0, &Ia_Invalid },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f3a4x[16] = {
-  /* 00 */ { GRPSSE(0f3a40) },
-  /* 01 */ { GRPSSE(0f3a41) },
-  /* 02 */ { GRPSSE(0f3a42) },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { 0, &Ia_Invalid },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteOp0f3a6x[16] = {
-  /* 00 */ { GRPSSE(0f3a60) },
-  /* 01 */ { GRPSSE(0f3a61) },
-  /* 02 */ { GRPSSE(0f3a62) },
-  /* 03 */ { GRPSSE(0f3a63) },
-  /* 04 */ { 0, &Ia_Invalid },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { 0, &Ia_Invalid },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
-};
-
-static BxDisasmOpcodeTable_t BxDisasm3ByteTableA5[16] = {
-  /* 00 */ { GR3BOP(0f3a0x) },
-  /* 01 */ { GR3BOP(0f3a1x) },
-  /* 01 */ { GR3BOP(0f3a2x) },
-  /* 03 */ { 0, &Ia_Invalid },
-  /* 04 */ { GR3BOP(0f3a4x) },
-  /* 05 */ { 0, &Ia_Invalid },
-  /* 06 */ { GR3BOP(0f3a6x) },
-  /* 07 */ { 0, &Ia_Invalid },
-  /* 08 */ { 0, &Ia_Invalid },
-  /* 09 */ { 0, &Ia_Invalid },
-  /* 0A */ { 0, &Ia_Invalid },
-  /* 0B */ { 0, &Ia_Invalid },
-  /* 0C */ { 0, &Ia_Invalid },
-  /* 0D */ { 0, &Ia_Invalid },
-  /* 0E */ { 0, &Ia_Invalid },
-  /* 0F */ { 0, &Ia_Invalid }
+  /* 0F */ { GRPSSE(0f3a0f) },
+  /* 10 */ { 0, &Ia_Invalid },
+  /* 11 */ { 0, &Ia_Invalid },
+  /* 12 */ { 0, &Ia_Invalid },
+  /* 13 */ { 0, &Ia_Invalid },
+  /* 14 */ { GRPSSE(0f3a14) },
+  /* 15 */ { GRPSSE(0f3a15) },
+  /* 16 */ { GRPSSE(0f3a16) },
+  /* 17 */ { GRPSSE(0f3a17) },
+  /* 18 */ { 0, &Ia_Invalid },
+  /* 19 */ { 0, &Ia_Invalid },
+  /* 1A */ { 0, &Ia_Invalid },
+  /* 1B */ { 0, &Ia_Invalid },
+  /* 1C */ { 0, &Ia_Invalid },
+  /* 1D */ { 0, &Ia_Invalid },
+  /* 1E */ { 0, &Ia_Invalid },
+  /* 1F */ { 0, &Ia_Invalid },
+  /* 20 */ { GRPSSE(0f3a20) },
+  /* 21 */ { GRPSSE(0f3a21) },
+  /* 22 */ { GRPSSE(0f3a22) },
+  /* 23 */ { 0, &Ia_Invalid },
+  /* 24 */ { 0, &Ia_Invalid },
+  /* 25 */ { 0, &Ia_Invalid },
+  /* 26 */ { 0, &Ia_Invalid },
+  /* 27 */ { 0, &Ia_Invalid },
+  /* 28 */ { 0, &Ia_Invalid },
+  /* 29 */ { 0, &Ia_Invalid },
+  /* 2A */ { 0, &Ia_Invalid },
+  /* 2B */ { 0, &Ia_Invalid },
+  /* 2C */ { 0, &Ia_Invalid },
+  /* 2D */ { 0, &Ia_Invalid },
+  /* 2E */ { 0, &Ia_Invalid },
+  /* 2F */ { 0, &Ia_Invalid },
+  /* 30 */ { 0, &Ia_Invalid },
+  /* 31 */ { 0, &Ia_Invalid },
+  /* 32 */ { 0, &Ia_Invalid },
+  /* 33 */ { 0, &Ia_Invalid },
+  /* 34 */ { 0, &Ia_Invalid },
+  /* 35 */ { 0, &Ia_Invalid },
+  /* 36 */ { 0, &Ia_Invalid },
+  /* 37 */ { 0, &Ia_Invalid },
+  /* 38 */ { 0, &Ia_Invalid },
+  /* 39 */ { 0, &Ia_Invalid },
+  /* 3A */ { 0, &Ia_Invalid },
+  /* 3B */ { 0, &Ia_Invalid },
+  /* 3C */ { 0, &Ia_Invalid },
+  /* 3D */ { 0, &Ia_Invalid },
+  /* 3E */ { 0, &Ia_Invalid },
+  /* 3F */ { 0, &Ia_Invalid },
+  /* 40 */ { GRPSSE(0f3a40) },
+  /* 41 */ { GRPSSE(0f3a41) },
+  /* 42 */ { GRPSSE(0f3a42) },
+  /* 43 */ { 0, &Ia_Invalid },
+  /* 44 */ { 0, &Ia_Invalid },
+  /* 45 */ { 0, &Ia_Invalid },
+  /* 46 */ { 0, &Ia_Invalid },
+  /* 47 */ { 0, &Ia_Invalid },
+  /* 48 */ { 0, &Ia_Invalid },
+  /* 49 */ { 0, &Ia_Invalid },
+  /* 4A */ { 0, &Ia_Invalid },
+  /* 4B */ { 0, &Ia_Invalid },
+  /* 4C */ { 0, &Ia_Invalid },
+  /* 4D */ { 0, &Ia_Invalid },
+  /* 4E */ { 0, &Ia_Invalid },
+  /* 4F */ { 0, &Ia_Invalid },
+  /* 50 */ { 0, &Ia_Invalid },
+  /* 51 */ { 0, &Ia_Invalid },
+  /* 52 */ { 0, &Ia_Invalid },
+  /* 53 */ { 0, &Ia_Invalid },
+  /* 54 */ { 0, &Ia_Invalid },
+  /* 55 */ { 0, &Ia_Invalid },
+  /* 56 */ { 0, &Ia_Invalid },
+  /* 57 */ { 0, &Ia_Invalid },
+  /* 58 */ { 0, &Ia_Invalid },
+  /* 59 */ { 0, &Ia_Invalid },
+  /* 5A */ { 0, &Ia_Invalid },
+  /* 5B */ { 0, &Ia_Invalid },
+  /* 5C */ { 0, &Ia_Invalid },
+  /* 5D */ { 0, &Ia_Invalid },
+  /* 5E */ { 0, &Ia_Invalid },
+  /* 5F */ { 0, &Ia_Invalid },
+  /* 60 */ { GRPSSE(0f3a60) },
+  /* 61 */ { GRPSSE(0f3a61) },
+  /* 62 */ { GRPSSE(0f3a62) },
+  /* 63 */ { GRPSSE(0f3a63) },
+  /* 64 */ { 0, &Ia_Invalid },
+  /* 65 */ { 0, &Ia_Invalid },
+  /* 66 */ { 0, &Ia_Invalid },
+  /* 67 */ { 0, &Ia_Invalid },
+  /* 68 */ { 0, &Ia_Invalid },
+  /* 69 */ { 0, &Ia_Invalid },
+  /* 6A */ { 0, &Ia_Invalid },
+  /* 6B */ { 0, &Ia_Invalid },
+  /* 6C */ { 0, &Ia_Invalid },
+  /* 6D */ { 0, &Ia_Invalid },
+  /* 6E */ { 0, &Ia_Invalid },
+  /* 6F */ { 0, &Ia_Invalid },
+  /* 70 */ { 0, &Ia_Invalid },
+  /* 71 */ { 0, &Ia_Invalid },
+  /* 72 */ { 0, &Ia_Invalid },
+  /* 73 */ { 0, &Ia_Invalid },
+  /* 74 */ { 0, &Ia_Invalid },
+  /* 75 */ { 0, &Ia_Invalid },
+  /* 76 */ { 0, &Ia_Invalid },
+  /* 77 */ { 0, &Ia_Invalid },
+  /* 78 */ { 0, &Ia_Invalid },
+  /* 79 */ { 0, &Ia_Invalid },
+  /* 7A */ { 0, &Ia_Invalid },
+  /* 7B */ { 0, &Ia_Invalid },
+  /* 7C */ { 0, &Ia_Invalid },
+  /* 7D */ { 0, &Ia_Invalid },
+  /* 7E */ { 0, &Ia_Invalid },
+  /* 7F */ { 0, &Ia_Invalid },
+  /* 80 */ { 0, &Ia_Invalid },
+  /* 81 */ { 0, &Ia_Invalid },
+  /* 82 */ { 0, &Ia_Invalid },
+  /* 83 */ { 0, &Ia_Invalid },
+  /* 84 */ { 0, &Ia_Invalid },
+  /* 85 */ { 0, &Ia_Invalid },
+  /* 86 */ { 0, &Ia_Invalid },
+  /* 87 */ { 0, &Ia_Invalid },
+  /* 88 */ { 0, &Ia_Invalid },
+  /* 89 */ { 0, &Ia_Invalid },
+  /* 8A */ { 0, &Ia_Invalid },
+  /* 8B */ { 0, &Ia_Invalid },
+  /* 8C */ { 0, &Ia_Invalid },
+  /* 8D */ { 0, &Ia_Invalid },
+  /* 8E */ { 0, &Ia_Invalid },
+  /* 8F */ { 0, &Ia_Invalid },
+  /* 90 */ { 0, &Ia_Invalid },
+  /* 91 */ { 0, &Ia_Invalid },
+  /* 92 */ { 0, &Ia_Invalid },
+  /* 93 */ { 0, &Ia_Invalid },
+  /* 94 */ { 0, &Ia_Invalid },
+  /* 95 */ { 0, &Ia_Invalid },
+  /* 96 */ { 0, &Ia_Invalid },
+  /* 97 */ { 0, &Ia_Invalid },
+  /* 98 */ { 0, &Ia_Invalid },
+  /* 99 */ { 0, &Ia_Invalid },
+  /* 9A */ { 0, &Ia_Invalid },
+  /* 9B */ { 0, &Ia_Invalid },
+  /* 9C */ { 0, &Ia_Invalid },
+  /* 9D */ { 0, &Ia_Invalid },
+  /* 9E */ { 0, &Ia_Invalid },
+  /* 9F */ { 0, &Ia_Invalid },
+  /* A0 */ { 0, &Ia_Invalid },
+  /* A1 */ { 0, &Ia_Invalid },
+  /* A2 */ { 0, &Ia_Invalid },
+  /* A3 */ { 0, &Ia_Invalid },
+  /* A4 */ { 0, &Ia_Invalid },
+  /* A5 */ { 0, &Ia_Invalid },
+  /* A6 */ { 0, &Ia_Invalid },
+  /* A7 */ { 0, &Ia_Invalid },
+  /* A8 */ { 0, &Ia_Invalid },
+  /* A9 */ { 0, &Ia_Invalid },
+  /* AA */ { 0, &Ia_Invalid },
+  /* AB */ { 0, &Ia_Invalid },
+  /* AC */ { 0, &Ia_Invalid },
+  /* AD */ { 0, &Ia_Invalid },
+  /* AE */ { 0, &Ia_Invalid },
+  /* AF */ { 0, &Ia_Invalid },
+  /* B0 */ { 0, &Ia_Invalid },
+  /* B1 */ { 0, &Ia_Invalid },
+  /* B2 */ { 0, &Ia_Invalid },
+  /* B3 */ { 0, &Ia_Invalid },
+  /* B4 */ { 0, &Ia_Invalid },
+  /* B5 */ { 0, &Ia_Invalid },
+  /* B6 */ { 0, &Ia_Invalid },
+  /* B7 */ { 0, &Ia_Invalid },
+  /* B8 */ { 0, &Ia_Invalid },
+  /* B9 */ { 0, &Ia_Invalid },
+  /* BA */ { 0, &Ia_Invalid },
+  /* BB */ { 0, &Ia_Invalid },
+  /* BC */ { 0, &Ia_Invalid },
+  /* BD */ { 0, &Ia_Invalid },
+  /* BE */ { 0, &Ia_Invalid },
+  /* BF */ { 0, &Ia_Invalid },
+  /* C0 */ { 0, &Ia_Invalid },
+  /* C1 */ { 0, &Ia_Invalid },
+  /* C2 */ { 0, &Ia_Invalid },
+  /* C3 */ { 0, &Ia_Invalid },
+  /* C4 */ { 0, &Ia_Invalid },
+  /* C5 */ { 0, &Ia_Invalid },
+  /* C6 */ { 0, &Ia_Invalid },
+  /* C7 */ { 0, &Ia_Invalid },
+  /* C8 */ { 0, &Ia_Invalid },
+  /* C9 */ { 0, &Ia_Invalid },
+  /* CA */ { 0, &Ia_Invalid },
+  /* CB */ { 0, &Ia_Invalid },
+  /* CC */ { 0, &Ia_Invalid },
+  /* CD */ { 0, &Ia_Invalid },
+  /* CE */ { 0, &Ia_Invalid },
+  /* CF */ { 0, &Ia_Invalid },
+  /* D0 */ { 0, &Ia_Invalid },
+  /* D1 */ { 0, &Ia_Invalid },
+  /* D2 */ { 0, &Ia_Invalid },
+  /* D3 */ { 0, &Ia_Invalid },
+  /* D4 */ { 0, &Ia_Invalid },
+  /* D5 */ { 0, &Ia_Invalid },
+  /* D6 */ { 0, &Ia_Invalid },
+  /* D7 */ { 0, &Ia_Invalid },
+  /* D8 */ { 0, &Ia_Invalid },
+  /* D9 */ { 0, &Ia_Invalid },
+  /* DA */ { 0, &Ia_Invalid },
+  /* DB */ { 0, &Ia_Invalid },
+  /* DC */ { 0, &Ia_Invalid },
+  /* DD */ { 0, &Ia_Invalid },
+  /* DE */ { 0, &Ia_Invalid },
+  /* DF */ { GRPSSE(0f3adf) },
+  /* E0 */ { 0, &Ia_Invalid },
+  /* E1 */ { 0, &Ia_Invalid },
+  /* E2 */ { 0, &Ia_Invalid },
+  /* E3 */ { 0, &Ia_Invalid },
+  /* E4 */ { 0, &Ia_Invalid },
+  /* E5 */ { 0, &Ia_Invalid },
+  /* E6 */ { 0, &Ia_Invalid },
+  /* E7 */ { 0, &Ia_Invalid },
+  /* E8 */ { 0, &Ia_Invalid },
+  /* E9 */ { 0, &Ia_Invalid },
+  /* EA */ { 0, &Ia_Invalid },
+  /* EB */ { 0, &Ia_Invalid },
+  /* EC */ { 0, &Ia_Invalid },
+  /* ED */ { 0, &Ia_Invalid },
+  /* EE */ { 0, &Ia_Invalid },
+  /* F0 */ { 0, &Ia_Invalid },
+  /* F1 */ { 0, &Ia_Invalid },
+  /* F2 */ { 0, &Ia_Invalid },
+  /* F3 */ { 0, &Ia_Invalid },
+  /* F4 */ { 0, &Ia_Invalid },
+  /* F5 */ { 0, &Ia_Invalid },
+  /* F6 */ { 0, &Ia_Invalid },
+  /* F7 */ { 0, &Ia_Invalid },
+  /* F8 */ { 0, &Ia_Invalid },
+  /* F9 */ { 0, &Ia_Invalid },
+  /* FA */ { 0, &Ia_Invalid },
+  /* FB */ { 0, &Ia_Invalid },
+  /* FC */ { 0, &Ia_Invalid },
+  /* FD */ { 0, &Ia_Invalid },
+  /* FE */ { 0, &Ia_Invalid },
+  /* FF */ { 0, &Ia_Invalid }
 };
 
 /* ************************************************************************ */
@@ -3345,8 +3739,8 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes16[256*2] = {
   /* C3 */ { 0, &Ia_ret         },
   /* C4 */ { 0, &Ia_lesw_Gw_Mp  },
   /* C5 */ { 0, &Ia_ldsw_Gw_Mp  },
-  /* C6 */ { 0, &Ia_movb_Eb_Ib  },
-  /* C7 */ { 0, &Ia_movw_Ew_Iw  },
+  /* C6 */ { GRPN(G11Eb)        },
+  /* C7 */ { GRPN(G11Ew)        },
   /* C8 */ { 0, &Ia_enter       },
   /* C9 */ { 0, &Ia_leave       },
   /* CA */ { 0, &Ia_lret_Iw     },
@@ -3458,17 +3852,17 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes16[256*2] = {
   /* 0F 32 */ { 0, &Ia_rdmsr },
   /* 0F 33 */ { 0, &Ia_rdpmc },
   /* 0F 34 */ { 0, &Ia_sysenter },
-  /* 0F 35 */ { 0, &Ia_sysexit  },
-  /* 0F 36 */ { 0, &Ia_Invalid  },
-  /* 0F 37 */ { 0, &Ia_Invalid  },
-  /* 0F 38 */ { GR3BTAB(A4) },
+  /* 0F 35 */ { 0, &Ia_sysexit },
+  /* 0F 36 */ { 0, &Ia_Invalid },
+  /* 0F 37 */ { 0, &Ia_Invalid },
+  /* 0F 38 */ { GR3BTAB(0f38) },
   /* 0F 39 */ { 0, &Ia_Invalid  },
-  /* 0F 3A */ { GR3BTAB(A5) },
-  /* 0F 3B */ { 0, &Ia_Invalid  },
-  /* 0F 3C */ { 0, &Ia_Invalid  },
-  /* 0F 3D */ { 0, &Ia_Invalid  },
-  /* 0F 3E */ { 0, &Ia_Invalid  },
-  /* 0F 3F */ { 0, &Ia_Invalid  },
+  /* 0F 3A */ { GR3BTAB(0f3a) },
+  /* 0F 3B */ { 0, &Ia_Invalid },
+  /* 0F 3C */ { 0, &Ia_Invalid },
+  /* 0F 3D */ { 0, &Ia_Invalid },
+  /* 0F 3E */ { 0, &Ia_Invalid },
+  /* 0F 3F */ { 0, &Ia_Invalid },
   /* 0F 40 */ { 0, &Ia_cmovow_Gw_Ew  },
   /* 0F 41 */ { 0, &Ia_cmovnow_Gw_Ew },
   /* 0F 42 */ { 0, &Ia_cmovcw_Gw_Ew  },
@@ -3579,7 +3973,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes16[256*2] = {
   /* 0F AB */ { 0, &Ia_btsw_Ew_Gw     },
   /* 0F AC */ { 0, &Ia_shrdw_Ew_Gw_Ib },
   /* 0F AD */ { 0, &Ia_shrdw_Ew_Gw_CL },
-  /* 0F AE */ { GRPN(G15)             },
+  /* 0F AE */ { GRPMOD(G15)           },
   /* 0F AF */ { 0, &Ia_imulw_Gw_Ew    },
   /* 0F B0 */ { 0, &Ia_cmpxchgb_Eb_Gb },
   /* 0F B1 */ { 0, &Ia_cmpxchgw_Ew_Gw },
@@ -3866,8 +4260,8 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes32[256*2] = {
   /* C3 */ { 0, &Ia_ret           },
   /* C4 */ { 0, &Ia_lesl_Gd_Mp    },
   /* C5 */ { 0, &Ia_ldsl_Gd_Mp    },
-  /* C6 */ { 0, &Ia_movb_Eb_Ib    },
-  /* C7 */ { 0, &Ia_movl_Ed_Id    },
+  /* C6 */ { GRPN(G11Eb)          },
+  /* C7 */ { GRPN(G11Ed)          },
   /* C8 */ { 0, &Ia_enter         },
   /* C9 */ { 0, &Ia_leave         },
   /* CA */ { 0, &Ia_lret_Iw       },
@@ -3979,17 +4373,17 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes32[256*2] = {
   /* 0F 32 */ { 0, &Ia_rdmsr },
   /* 0F 33 */ { 0, &Ia_rdpmc },
   /* 0F 34 */ { 0, &Ia_sysenter },
-  /* 0F 35 */ { 0, &Ia_sysexit  },
-  /* 0F 36 */ { 0, &Ia_Invalid  },
-  /* 0F 37 */ { 0, &Ia_Invalid  },
-  /* 0F 38 */ { GR3BTAB(A4) },
+  /* 0F 35 */ { 0, &Ia_sysexit },
+  /* 0F 36 */ { 0, &Ia_Invalid },
+  /* 0F 37 */ { 0, &Ia_Invalid },
+  /* 0F 38 */ { GR3BTAB(0f38) },
   /* 0F 39 */ { 0, &Ia_Invalid  },
-  /* 0F 3A */ { GR3BTAB(A5) },
-  /* 0F 3B */ { 0, &Ia_Invalid  },
-  /* 0F 3C */ { 0, &Ia_Invalid  },
-  /* 0F 3D */ { 0, &Ia_Invalid  },
-  /* 0F 3E */ { 0, &Ia_Invalid  },
-  /* 0F 3F */ { 0, &Ia_Invalid  },
+  /* 0F 3A */ { GR3BTAB(0f3a) },
+  /* 0F 3B */ { 0, &Ia_Invalid },
+  /* 0F 3C */ { 0, &Ia_Invalid },
+  /* 0F 3D */ { 0, &Ia_Invalid },
+  /* 0F 3E */ { 0, &Ia_Invalid },
+  /* 0F 3F */ { 0, &Ia_Invalid },
   /* 0F 40 */ { 0, &Ia_cmovol_Gd_Ed  },
   /* 0F 41 */ { 0, &Ia_cmovnol_Gd_Ed },
   /* 0F 42 */ { 0, &Ia_cmovcl_Gd_Ed  },
@@ -4100,7 +4494,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes32[256*2] = {
   /* 0F AB */ { 0, &Ia_btsl_Ed_Gd },
   /* 0F AC */ { 0, &Ia_shrdl_Ed_Gd_Ib },
   /* 0F AD */ { 0, &Ia_shrdl_Ed_Gd_CL },
-  /* 0F AE */ { GRPN(G15)         },
+  /* 0F AE */ { GRPMOD(G15)           },
   /* 0F AF */ { 0, &Ia_imull_Gd_Ed    },
   /* 0F B0 */ { 0, &Ia_cmpxchgb_Eb_Gb },
   /* 0F B1 */ { 0, &Ia_cmpxchgl_Ed_Gd },
@@ -4387,8 +4781,8 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64w[256*2] = {
   /* C3 */ { 0, &Ia_ret         },
   /* C4 */ { 0, &Ia_Invalid     },
   /* C5 */ { 0, &Ia_Invalid     },
-  /* C6 */ { 0, &Ia_movb_Eb_Ib  },
-  /* C7 */ { 0, &Ia_movw_Ew_Iw  },
+  /* C6 */ { GRPN(G11Eb)        },
+  /* C7 */ { GRPN(G11Ew)        },
   /* C8 */ { 0, &Ia_enter       },
   /* C9 */ { 0, &Ia_leave       },
   /* CA */ { 0, &Ia_lret_Iw     },
@@ -4500,17 +4894,17 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64w[256*2] = {
   /* 0F 32 */ { 0, &Ia_rdmsr },
   /* 0F 33 */ { 0, &Ia_rdpmc },
   /* 0F 34 */ { 0, &Ia_sysenter },
-  /* 0F 35 */ { 0, &Ia_sysexit  },
-  /* 0F 36 */ { 0, &Ia_Invalid  },
-  /* 0F 37 */ { 0, &Ia_Invalid  },
-  /* 0F 38 */ { GR3BTAB(A4) },
+  /* 0F 35 */ { 0, &Ia_sysexit },
+  /* 0F 36 */ { 0, &Ia_Invalid },
+  /* 0F 37 */ { 0, &Ia_Invalid },
+  /* 0F 38 */ { GR3BTAB(0f38) },
   /* 0F 39 */ { 0, &Ia_Invalid  },
-  /* 0F 3A */ { GR3BTAB(A5) },
-  /* 0F 3B */ { 0, &Ia_Invalid  },
-  /* 0F 3C */ { 0, &Ia_Invalid  },
-  /* 0F 3D */ { 0, &Ia_Invalid  },
-  /* 0F 3E */ { 0, &Ia_Invalid  },
-  /* 0F 3F */ { 0, &Ia_Invalid  },
+  /* 0F 3A */ { GR3BTAB(0f3a) },
+  /* 0F 3B */ { 0, &Ia_Invalid },
+  /* 0F 3C */ { 0, &Ia_Invalid },
+  /* 0F 3D */ { 0, &Ia_Invalid },
+  /* 0F 3E */ { 0, &Ia_Invalid },
+  /* 0F 3F */ { 0, &Ia_Invalid },
   /* 0F 40 */ { 0, &Ia_cmovow_Gw_Ew  },
   /* 0F 41 */ { 0, &Ia_cmovnow_Gw_Ew },
   /* 0F 42 */ { 0, &Ia_cmovcw_Gw_Ew  },
@@ -4621,7 +5015,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64w[256*2] = {
   /* 0F AB */ { 0, &Ia_btsw_Ew_Gw     },
   /* 0F AC */ { 0, &Ia_shrdw_Ew_Gw_Ib },
   /* 0F AD */ { 0, &Ia_shrdw_Ew_Gw_CL },
-  /* 0F AE */ { GRPN(G15)             },
+  /* 0F AE */ { GRPMOD(G15)           },
   /* 0F AF */ { 0, &Ia_imulw_Gw_Ew    },
   /* 0F B0 */ { 0, &Ia_cmpxchgb_Eb_Gb },
   /* 0F B1 */ { 0, &Ia_cmpxchgw_Ew_Gw },
@@ -4905,8 +5299,8 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64d[256*2] = {
   /* C3 */ { 0, &Ia_ret           },
   /* C4 */ { 0, &Ia_Invalid       },
   /* C5 */ { 0, &Ia_Invalid       },
-  /* C6 */ { 0, &Ia_movb_Eb_Ib    },
-  /* C7 */ { 0, &Ia_movl_Ed_Id    },
+  /* C6 */ { GRPN(G11Eb)          },
+  /* C7 */ { GRPN(G11Ed)          },
   /* C8 */ { 0, &Ia_enter         },
   /* C9 */ { 0, &Ia_leave         },
   /* CA */ { 0, &Ia_lret_Iw       },
@@ -5018,17 +5412,17 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64d[256*2] = {
   /* 0F 32 */ { 0, &Ia_rdmsr },
   /* 0F 33 */ { 0, &Ia_rdpmc },
   /* 0F 34 */ { 0, &Ia_sysenter },
-  /* 0F 35 */ { 0, &Ia_sysexit  },
-  /* 0F 36 */ { 0, &Ia_Invalid  },
-  /* 0F 37 */ { 0, &Ia_Invalid  },
-  /* 0F 38 */ { GR3BTAB(A4) },
+  /* 0F 35 */ { 0, &Ia_sysexit },
+  /* 0F 36 */ { 0, &Ia_Invalid },
+  /* 0F 37 */ { 0, &Ia_Invalid },
+  /* 0F 38 */ { GR3BTAB(0f38) },
   /* 0F 39 */ { 0, &Ia_Invalid  },
-  /* 0F 3A */ { GR3BTAB(A5) },
-  /* 0F 3B */ { 0, &Ia_Invalid  },
-  /* 0F 3C */ { 0, &Ia_Invalid  },
-  /* 0F 3D */ { 0, &Ia_Invalid  },
-  /* 0F 3E */ { 0, &Ia_Invalid  },
-  /* 0F 3F */ { 0, &Ia_Invalid  },
+  /* 0F 3A */ { GR3BTAB(0f3a) },
+  /* 0F 3B */ { 0, &Ia_Invalid },
+  /* 0F 3C */ { 0, &Ia_Invalid },
+  /* 0F 3D */ { 0, &Ia_Invalid },
+  /* 0F 3E */ { 0, &Ia_Invalid },
+  /* 0F 3F */ { 0, &Ia_Invalid },
   /* 0F 40 */ { 0, &Ia_cmovol_Gd_Ed  },
   /* 0F 41 */ { 0, &Ia_cmovnol_Gd_Ed },
   /* 0F 42 */ { 0, &Ia_cmovcl_Gd_Ed  },
@@ -5139,7 +5533,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64d[256*2] = {
   /* 0F AB */ { 0, &Ia_btsl_Ed_Gd },
   /* 0F AC */ { 0, &Ia_shrdl_Ed_Gd_Ib },
   /* 0F AD */ { 0, &Ia_shrdl_Ed_Gd_CL },
-  /* 0F AE */ { GRPN(G15)         },
+  /* 0F AE */ { GRPMOD(G15)           },
   /* 0F AF */ { 0, &Ia_imull_Gd_Ed    },
   /* 0F B0 */ { 0, &Ia_cmpxchgb_Eb_Gb },
   /* 0F B1 */ { 0, &Ia_cmpxchgl_Ed_Gd },
@@ -5423,8 +5817,8 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64q[256*2] = {
   /* C3 */ { 0, &Ia_ret           },
   /* C4 */ { 0, &Ia_Invalid       },
   /* C5 */ { 0, &Ia_Invalid       },
-  /* C6 */ { 0, &Ia_movb_Eb_Ib    },
-  /* C7 */ { 0, &Ia_movq_Eq_sId   },
+  /* C6 */ { GRPN(G11Eb)          },
+  /* C7 */ { GRPN(G11Eq)          },
   /* C8 */ { 0, &Ia_enter         },
   /* C9 */ { 0, &Ia_leave         },
   /* CA */ { 0, &Ia_lret_Iw       },
@@ -5536,17 +5930,17 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64q[256*2] = {
   /* 0F 32 */ { 0, &Ia_rdmsr },
   /* 0F 33 */ { 0, &Ia_rdpmc },
   /* 0F 34 */ { 0, &Ia_sysenter },
-  /* 0F 35 */ { 0, &Ia_sysexit  },
-  /* 0F 36 */ { 0, &Ia_Invalid  },
-  /* 0F 37 */ { 0, &Ia_Invalid  },
-  /* 0F 38 */ { GR3BTAB(A4) },
+  /* 0F 35 */ { 0, &Ia_sysexit },
+  /* 0F 36 */ { 0, &Ia_Invalid },
+  /* 0F 37 */ { 0, &Ia_Invalid },
+  /* 0F 38 */ { GR3BTAB(0f38) },
   /* 0F 39 */ { 0, &Ia_Invalid  },
-  /* 0F 3A */ { GR3BTAB(A5) },
-  /* 0F 3B */ { 0, &Ia_Invalid  },
-  /* 0F 3C */ { 0, &Ia_Invalid  },
-  /* 0F 3D */ { 0, &Ia_Invalid  },
-  /* 0F 3E */ { 0, &Ia_Invalid  },
-  /* 0F 3F */ { 0, &Ia_Invalid  },
+  /* 0F 3A */ { GR3BTAB(0f3a) },
+  /* 0F 3B */ { 0, &Ia_Invalid },
+  /* 0F 3C */ { 0, &Ia_Invalid },
+  /* 0F 3D */ { 0, &Ia_Invalid },
+  /* 0F 3E */ { 0, &Ia_Invalid },
+  /* 0F 3F */ { 0, &Ia_Invalid },
   /* 0F 40 */ { 0, &Ia_cmovoq_Gq_Eq  },
   /* 0F 41 */ { 0, &Ia_cmovnoq_Gq_Eq },
   /* 0F 42 */ { 0, &Ia_cmovcq_Gq_Eq  },
@@ -5657,7 +6051,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64q[256*2] = {
   /* 0F AB */ { 0, &Ia_btsq_Eq_Gq },
   /* 0F AC */ { 0, &Ia_shrdq_Eq_Gq_Ib },
   /* 0F AD */ { 0, &Ia_shrdq_Eq_Gq_CL },
-  /* 0F AE */ { GRPN(G15)         },
+  /* 0F AE */ { GRPMOD(G15)           },
   /* 0F AF */ { 0, &Ia_imulq_Gq_Eq    },
   /* 0F B0 */ { 0, &Ia_cmpxchgb_Eb_Gb },
   /* 0F B1 */ { 0, &Ia_cmpxchgq_Eq_Gq },

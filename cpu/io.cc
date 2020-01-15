@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io.cc,v 1.48 2007/12/23 18:09:34 sshwarts Exp $
+// $Id: io.cc,v 1.59 2008/05/03 17:33:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,8 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+//
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -50,17 +51,13 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
   Bit32u wordsFitDst;
   signed int pointerDelta;
   Bit8u *hostAddrDst;
+  unsigned count;
 
   bx_segment_reg_t *dstSegPtr = &BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES];
+  if (!(dstSegPtr->cache.valid & SegAccessWOK4G))
+    return 0;
 
-  // Do segment checks for the 1st word.  We do not want to
-  // trip an exception beyond this, because the address would
-  // be incorrect.  After we know how many bytes we will directly
-  // transfer, we can do the full segment limit check ourselves
-  // without generating an exception.
-  write_virtual_checks(dstSegPtr, dstOff, 2);
-
-  bx_address laddrDst = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_ES) + dstOff;
+  bx_address laddrDst = BX_CPU_THIS_PTR get_laddr(BX_SEG_REG_ES, dstOff);
   // check that the address is word aligned
   if (laddrDst & 1) return 0;
 
@@ -76,7 +73,7 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
 
   // If we want to write directly into the physical memory array,
   // we need the A20 address.
-  hostAddrDst = BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS,
+  hostAddrDst = BX_MEM(0)->getHostMemAddr(BX_CPU_THIS,
             A20ADDR(paddrDst), BX_WRITE, DATA_ACCESS);
 #endif
 
@@ -86,14 +83,13 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
   // See how many words can fit in the rest of this page.
   if (BX_CPU_THIS_PTR get_DF()) {
     // Counting downward
-    // Note: 1st word must not cross page boundary.
-    if ((laddrDst & 0xfff) > 0xffe) return 0;
-    wordsFitDst = (2 + (laddrDst & 0xfff)) >> 1;
+    // 1st word must cannot cross page boundary because it is word aligned
+    wordsFitDst = (2 + (PAGE_OFFSET(laddrDst))) >> 1;
     pointerDelta = -2;
   }
   else {
     // Counting upward
-    wordsFitDst = (0x1000 - (laddrDst & 0xfff)) >> 1;
+    wordsFitDst = (0x1000 - PAGE_OFFSET(laddrDst)) >> 1;
     pointerDelta =  2;
   }
 
@@ -103,40 +99,6 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
 
   // If after all the restrictions, there is anything left to do...
   if (wordCount) {
-    Bit32u dstSegLimit = dstSegPtr->cache.u.segment.limit_scaled;
-    unsigned count;
-
-    // For 16-bit addressing mode, clamp the segment limits to 16bits
-    // so we don't have to worry about computations using si/di
-    // rolling over 16-bit boundaries.
-    if (!i->as32L()) {
-      if (dstSegLimit > 0xffff)
-          dstSegLimit = 0xffff;
-    }
-    // Before we copy memory, we need to make sure that the segments
-    // allow the accesses up to the given source and dest offset.  If
-    // the cache.valid bits have SegAccessWOK and ROK, we know that
-    // the cache is valid for those operations, and that the segments
-    // are non-expand down (thus we can make a simple limit check).
-    if (!(dstSegPtr->cache.valid & SegAccessWOK)) return 0;
-
-    if (BX_CPU_THIS_PTR cpu_mode != BX_MODE_LONG_64)
-    {
-      // Now make sure transfer will fit within the constraints of the
-      // segment boundaries, 0..limit for non expand-down.  We know
-      // wordCount >= 1 here.
-      if (BX_CPU_THIS_PTR get_DF()) {
-        // Counting downward
-        Bit32u minOffset = (wordCount-1) << 1;
-        if (dstOff < minOffset) return 0;
-      }
-      else {
-        // Counting upward
-        Bit32u dstMaxOffset = (dstSegLimit - (wordCount<<1)) + 1;
-        if (dstOff > dstMaxOffset) return 0;
-      }
-    }
-
     for (count=0; count<wordCount; ) {
       bx_devices.bulkIOQuantumsTransferred = 0;
       if (BX_CPU_THIS_PTR get_DF()==0) { // Only do accel for DF=0
@@ -147,15 +109,11 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
         bx_devices.bulkIOQuantumsRequested = 0;
       Bit16u temp16 = BX_INP(port, 2);
       if (bx_devices.bulkIOQuantumsTransferred) {
-        hostAddrDst =  bx_devices.bulkIOHostAddr;
+        hostAddrDst = bx_devices.bulkIOHostAddr;
         count += bx_devices.bulkIOQuantumsTransferred;
       }
       else {
-#ifdef BX_LITTLE_ENDIAN
-        * (Bit16u *) hostAddrDst = temp16;
-#else
-        * (Bit16u *) hostAddrDst = ((temp16 >> 8) | (temp16 << 8));
-#endif
+        WriteHostWordToLittleEndian(hostAddrDst, temp16);
         hostAddrDst += pointerDelta;
         count++;
       }
@@ -177,17 +135,13 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
   Bit32u wordsFitSrc;
   signed int pointerDelta;
   Bit8u *hostAddrSrc;
+  unsigned count;
 
   bx_segment_reg_t *srcSegPtr = &BX_CPU_THIS_PTR sregs[srcSeg];
+  if (!(srcSegPtr->cache.valid & SegAccessROK4G))
+    return 0;
 
-  // Do segment checks for the 1st word.  We do not want to
-  // trip an exception beyond this, because the address would
-  // be incorrect.  After we know how many bytes we will directly
-  // transfer, we can do the full segment limit check ourselves
-  // without generating an exception.
-  read_virtual_checks(srcSegPtr, srcOff, 2);
-
-  bx_address laddrSrc = BX_CPU_THIS_PTR get_segment_base(srcSeg) + srcOff;
+  bx_address laddrSrc = BX_CPU_THIS_PTR get_laddr(srcSeg, srcOff);
   // check that the address is word aligned
   if (laddrSrc & 1) return 0;
 
@@ -203,7 +157,7 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
 
   // If we want to write directly into the physical memory array,
   // we need the A20 address.
-  hostAddrSrc = BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS,
+  hostAddrSrc = BX_MEM(0)->getHostMemAddr(BX_CPU_THIS,
           A20ADDR(paddrSrc), BX_READ, DATA_ACCESS);
 #endif
 
@@ -213,14 +167,13 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
   // See how many words can fit in the rest of this page.
   if (BX_CPU_THIS_PTR get_DF()) {
     // Counting downward
-    // Note: 1st word must not cross page boundary.
-    if ((laddrSrc & 0xfff) > 0xffe) return 0;
-    wordsFitSrc = (2 + (laddrSrc & 0xfff)) >> 1;
+    // 1st word must cannot cross page boundary because it is word aligned
+    wordsFitSrc = (2 + (PAGE_OFFSET(laddrSrc))) >> 1;
     pointerDelta = (unsigned) -2;
   }
   else {
     // Counting upward
-    wordsFitSrc = (0x1000 - (laddrSrc & 0xfff)) >> 1;
+    wordsFitSrc = (0x1000 - PAGE_OFFSET(laddrSrc)) >> 1;
     pointerDelta =  2;
   }
 
@@ -230,41 +183,6 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
 
   // If after all the restrictions, there is anything left to do...
   if (wordCount) {
-    Bit32u srcSegLimit = srcSegPtr->cache.u.segment.limit_scaled;
-    unsigned count;
-
-    // For 16-bit addressing mode, clamp the segment limits to 16bits
-    // so we don't have to worry about computations using si/di
-    // rolling over 16-bit boundaries.
-    if (!i->as32L()) {
-      if (srcSegLimit > 0xffff)
-          srcSegLimit = 0xffff;
-    }
-
-    // Before we copy memory, we need to make sure that the segments
-    // allow the accesses up to the given source and dest offset.  If
-    // the cache.valid bits have SegAccessWOK and ROK, we know that
-    // the cache is valid for those operations, and that the segments
-    // are non-expand down (thus we can make a simple limit check).
-    if ( !(srcSegPtr->cache.valid & SegAccessROK) ) return 0;
-
-    if (BX_CPU_THIS_PTR cpu_mode != BX_MODE_LONG_64)
-    {
-      // Now make sure transfer will fit within the constraints of the
-      // segment boundaries, 0..limit for non expand-down.  We know
-      // wordCount >= 1 here.
-      if (BX_CPU_THIS_PTR get_DF()) {
-        // Counting downward
-        Bit32u minOffset = (wordCount-1) << 1;
-        if (srcOff < minOffset) return 0;
-      }
-      else {
-        // Counting upward
-        Bit32u srcMaxOffset = (srcSegLimit - (wordCount<<1)) + 1;
-        if (srcOff > srcMaxOffset) return 0;
-      }
-    }
-
     for (count=0; count<wordCount; ) {
       bx_devices.bulkIOQuantumsTransferred = 0;
       if (BX_CPU_THIS_PTR get_DF()==0) { // Only do accel for DF=0
@@ -273,14 +191,11 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
       }
       else
         bx_devices.bulkIOQuantumsRequested = 0;
-      Bit16u temp16 = * (Bit16u *) hostAddrSrc;
-#ifdef BX_LITTLE_ENDIAN
+      Bit16u temp16;
+      ReadHostWordFromLittleEndian(hostAddrSrc, temp16);
       BX_OUTP(port, temp16, 2);
-#else
-      BX_OUTP(port, ((temp16 >> 8) | (temp16 << 8)), 2);
-#endif
       if (bx_devices.bulkIOQuantumsTransferred) {
-        hostAddrSrc =  bx_devices.bulkIOHostAddr;
+        hostAddrSrc = bx_devices.bulkIOHostAddr;
         count += bx_devices.bulkIOQuantumsTransferred;
       }
       else {
@@ -306,26 +221,41 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
 // REP INS methods
 //
 
-void BX_CPU_C::REP_INSB_YbDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::REP_INSB_YbDX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR repeat(i, &BX_CPU_C::INSB_YbDX);
+#if BX_SUPPORT_X86_64
+  if (i->as32L()) {
+    BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RDI); // always clear upper part of RDI
+  }
+#endif
 }
 
-void BX_CPU_C::REP_INSW_YwDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::REP_INSW_YwDX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR repeat(i, &BX_CPU_C::INSW_YwDX);
+#if BX_SUPPORT_X86_64
+  if (i->as32L()) {
+    BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RDI); // always clear upper part of RDI
+  }
+#endif
 }
 
-void BX_CPU_C::REP_INSD_YdDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::REP_INSD_YdDX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR repeat(i, &BX_CPU_C::INSD_YdDX);
+#if BX_SUPPORT_X86_64
+  if (i->as32L()) {
+    BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RDI); // always clear upper part of RDI
+  }
+#endif
 }
 
 //
 // INSB/INSW/INSD methods
 //
 
-void BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
 {
   Bit8u value8=0;
 
@@ -387,7 +317,7 @@ void BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
 }
 
 // input word from port to string
-void BX_CPU_C::INSW_YwDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INSW_YwDX(bxInstruction_c *i)
 {
   Bit16u value16=0;
 
@@ -486,7 +416,7 @@ doIncr:
 }
 
 // input doubleword from port to string
-void BX_CPU_C::INSD_YdDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INSD_YdDX(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR allow_io(DX, 4)) {
     BX_DEBUG(("INSD_YdDX: I/O access not allowed !"));
@@ -559,26 +489,41 @@ void BX_CPU_C::INSD_YdDX(bxInstruction_c *i)
 // REP OUTS methods
 //
 
-void BX_CPU_C::REP_OUTSB_DXXb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::REP_OUTSB_DXXb(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR repeat(i, &BX_CPU_C::OUTSB_DXXb);
+#if BX_SUPPORT_X86_64
+  if (i->as32L()) {
+    BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RSI); // always clear upper part of RSI
+  }
+#endif
 }
 
-void BX_CPU_C::REP_OUTSW_DXXw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::REP_OUTSW_DXXw(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR repeat(i, &BX_CPU_C::OUTSW_DXXw);
+#if BX_SUPPORT_X86_64
+  if (i->as32L()) {
+    BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RSI); // always clear upper part of RSI
+  }
+#endif
 }
 
-void BX_CPU_C::REP_OUTSD_DXXd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::REP_OUTSD_DXXd(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR repeat(i, &BX_CPU_C::OUTSD_DXXd);
+#if BX_SUPPORT_X86_64
+  if (i->as32L()) {
+    BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RSI); // always clear upper part of RSI
+  }
+#endif
 }
 
 //
 // OUTSB/OUTSW/OUTSD methods
 //
 
-void BX_CPU_C::OUTSB_DXXb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUTSB_DXXb(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR allow_io(DX, 1)) {
     BX_DEBUG(("OUTSB_DXXb: I/O access not allowed !"));
@@ -632,7 +577,7 @@ void BX_CPU_C::OUTSB_DXXb(bxInstruction_c *i)
 }
 
 // output word string to port
-void BX_CPU_C::OUTSW_DXXw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUTSW_DXXw(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR allow_io(DX, 2)) {
     BX_DEBUG(("OUTSW_DXXw: I/O access not allowed !"));
@@ -660,7 +605,7 @@ void BX_CPU_C::OUTSW_DXXw(bxInstruction_c *i)
   {
     Bit32u esi;
     Bit32u incr = 2;
-  
+
     if (i->as32L())
       esi = ESI;
     else
@@ -718,7 +663,7 @@ void BX_CPU_C::OUTSW_DXXw(bxInstruction_c *i)
 }
 
 // output doubleword string to port
-void BX_CPU_C::OUTSD_DXXd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUTSD_DXXd(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR allow_io(DX, 4)) {
     BX_DEBUG(("OUTSD_DXXd: I/O access not allowed !"));
@@ -775,62 +720,62 @@ void BX_CPU_C::OUTSD_DXXd(bxInstruction_c *i)
 // non repeatable IN/OUT methods
 //
 
-void BX_CPU_C::IN_ALIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IN_ALIb(bxInstruction_c *i)
 {
   AL = BX_CPU_THIS_PTR inp8(i->Ib());
 }
 
-void BX_CPU_C::IN_AXIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IN_AXIb(bxInstruction_c *i)
 {
   AX = BX_CPU_THIS_PTR inp16(i->Ib());
 }
 
-void BX_CPU_C::IN_EAXIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IN_EAXIb(bxInstruction_c *i)
 {
   RAX = BX_CPU_THIS_PTR inp32(i->Ib());
 }
 
-void BX_CPU_C::OUT_IbAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUT_IbAL(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR outp8(i->Ib(), AL);
 }
 
-void BX_CPU_C::OUT_IbAX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUT_IbAX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR outp16(i->Ib(), AX);
 }
 
-void BX_CPU_C::OUT_IbEAX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUT_IbEAX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR outp32(i->Ib(), EAX);
 }
 
-void BX_CPU_C::IN_ALDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IN_ALDX(bxInstruction_c *i)
 {
   AL = BX_CPU_THIS_PTR inp8(DX);
 }
 
-void BX_CPU_C::IN_AXDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IN_AXDX(bxInstruction_c *i)
 {
   AX = BX_CPU_THIS_PTR inp16(DX);
 }
 
-void BX_CPU_C::IN_EAXDX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::IN_EAXDX(bxInstruction_c *i)
 {
   RAX = BX_CPU_THIS_PTR inp32(DX);
 }
 
-void BX_CPU_C::OUT_DXAL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUT_DXAL(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR outp8(DX, AL);
 }
 
-void BX_CPU_C::OUT_DXAX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUT_DXAX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR outp16(DX, AX);
 }
 
-void BX_CPU_C::OUT_DXEAX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::OUT_DXEAX(bxInstruction_c *i)
 {
   BX_CPU_THIS_PTR outp32(DX, EAX);
 }

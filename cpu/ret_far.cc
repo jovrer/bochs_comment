@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ret_far.cc,v 1.12 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: ret_far.cc,v 1.18 2008/05/10 18:10:53 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005 Stanislav Shwartsman
@@ -19,7 +19,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
-
+////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -31,7 +31,6 @@
 #define RIP EIP
 #define RSP ESP
 #endif
-
 
   void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
@@ -54,7 +53,7 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
 
 #if BX_SUPPORT_X86_64
   if (StackAddrSize64()) temp_RSP = RSP;
-  else 
+  else
 #endif
   {
     if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) temp_RSP = ESP;
@@ -63,42 +62,20 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
 
 #if BX_SUPPORT_X86_64
   if (i->os64L()) {
-    /* operand size=64: in long mode 1st and 2nd quadword on the stack 
-       must be in canonical address space */
-
-    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 8);
-    return_RIP      = read_virtual_qword(BX_SEG_REG_SS, temp_RSP);
-
+    raw_cs_selector = (Bit16u) read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 8);
+    return_RIP      =          read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP);
     stack_param_offset = 16;
-  } 
+  }
   else
 #endif
   if (i->os32L()) {
-    /* operand size=32: 2nd dword on stack must be within stack limits,
-     *   else #SS(0); */
-    if (! can_pop(8))
-    {
-      BX_ERROR(("return_protected: 2rd dword not in stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
-
-    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 4);
-    return_RIP      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP);
-
+    raw_cs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 4);
+    return_RIP      =          read_virtual_dword(BX_SEG_REG_SS, temp_RSP);
     stack_param_offset = 8;
   }
   else {
-    /* operand size=16: second word on stack must be within stack limits,
-     *   else #SS(0); */
-    if (! can_pop(4))
-    {
-      BX_ERROR(("return_protected: 2nd word not in stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
-
     raw_cs_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 2);
     return_RIP      = read_virtual_word(BX_SEG_REG_SS, temp_RSP);
-
     stack_param_offset = 4;
   }
 
@@ -132,22 +109,16 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
   {
     BX_DEBUG(("return_protected: return to SAME PRIVILEGE LEVEL"));
 
-    // top word on stack must be within stack limits, else #SS(0)
-    if (! can_pop(stack_param_offset + pop_bytes)) {
-      BX_ERROR(("return_protected: top word not in stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
-
     branch_far64(&cs_selector, &cs_descriptor, return_RIP, CPL);
 
 #if BX_SUPPORT_X86_64
-    if (StackAddrSize64()) 
+    if (StackAddrSize64())
       RSP += stack_param_offset + pop_bytes;
-    else 
+    else
 #endif
     {
       if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-        ESP += stack_param_offset + pop_bytes;
+        RSP = ESP + stack_param_offset + pop_bytes;
       else
          SP += stack_param_offset + pop_bytes;
     }
@@ -164,36 +135,20 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
     /* + 2:     CS      | + 4:         CS | + 8:         CS */
     /* + 0:     IP      | + 0:        EIP | + 0:        RIP */
 
+    BX_DEBUG(("return_protected: return to OUTER PRIVILEGE LEVEL"));
+
 #if BX_SUPPORT_X86_64
     if (i->os64L()) {
-      /* top 32+immediate bytes on stack must be within stack limits, else #SS(0) */
-      if (! can_pop(32 + pop_bytes)) {
-        BX_ERROR(("return_protected: 32 bytes not within stack limits"));
-        exception(BX_SS_EXCEPTION, 0, 0);
-      }
-
-      raw_ss_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes);
-      return_RSP      = read_virtual_qword(BX_SEG_REG_SS, temp_RSP + 16 + pop_bytes);
+      raw_ss_selector = read_virtual_word_64 (BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes);
+      return_RSP      = read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 16 + pop_bytes);
     }
     else
 #endif
     if (i->os32L()) {
-      /* top 16+immediate bytes on stack must be within stack limits, else #SS(0) */
-      if (! can_pop(16 + pop_bytes)) {
-        BX_ERROR(("return_protected: 16 bytes not within stack limits"));
-        exception(BX_SS_EXCEPTION, 0, 0);
-      }
-
       raw_ss_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 12 + pop_bytes);
       return_RSP      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP +  8 + pop_bytes);
     }
     else {
-      /* top 8+immediate bytes on stack must be within stack limits, else #SS(0) */
-      if (! can_pop(8 + pop_bytes)) {
-        BX_ERROR(("return_protected: 8 bytes not within stack limits"));
-        exception(BX_SS_EXCEPTION, 0, 0);
-      }
-
       raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 6 + pop_bytes);
       return_RSP      = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 4 + pop_bytes);
     }
@@ -256,11 +211,12 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
     load_ss(&ss_selector, &ss_descriptor, cs_selector.rpl);
 
 #if BX_SUPPORT_X86_64
-    if (StackAddrSize64()) RSP = return_RSP + pop_bytes;
-    else 
+    if (StackAddrSize64())
+      RSP = return_RSP + pop_bytes;
+    else
 #endif
     if (ss_descriptor.u.segment.d_b)
-      ESP = (Bit32u) return_RSP + pop_bytes;
+      RSP = (Bit32u) return_RSP + pop_bytes;
     else
       SP  = (Bit16u) return_RSP + pop_bytes;
 

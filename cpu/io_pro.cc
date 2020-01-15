@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io_pro.cc,v 1.26 2007/12/17 21:13:55 sshwarts Exp $
+// $Id: io_pro.cc,v 1.33 2008/05/26 18:02:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,8 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+//
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -111,10 +112,11 @@ bx_bool BX_CPU_C::allow_io(Bit16u addr, unsigned len)
 
   if (BX_CPU_THIS_PTR cr0.get_PE() && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL())))
   {
-    if (BX_CPU_THIS_PTR tr.cache.valid==0 || 
-        BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_386_TSS)
+    if (BX_CPU_THIS_PTR tr.cache.valid==0 ||
+       (BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_386_TSS &&
+        BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_BUSY_386_TSS))
     {
-      BX_ERROR(("allow_io(): TR doesn't point to a valid 32bit TSS"));
+      BX_ERROR(("allow_io(): TR doesn't point to a valid 32bit TSS, TR.TYPE=%u", BX_CPU_THIS_PTR tr.cache.type));
       return(0);
     }
 
@@ -123,21 +125,21 @@ bx_bool BX_CPU_C::allow_io(Bit16u addr, unsigned len)
       return(0);
     }
 
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + 102, 
+    access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + 102,
                    2, 0, BX_READ, &io_base);
-
+/*
     if (io_base <= 103) {
       BX_ERROR(("allow_io(): TR:io_base (%u) <= 103", io_base));
       return(0);
     }
-
-    if ( (Bit32s) (addr/8) >= (Bit32s) (BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled - io_base)) {
+*/
+    if ((io_base + addr/8) >= BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled) {
       BX_ERROR(("allow_io(): IO addr %x (len %d) outside TSS IO permission map (base=%x, limit=%x) #GP(0)",
         addr, len, io_base, BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled));
       return(0);
     }
 
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + io_base + addr/8,
+    access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + io_base + addr/8,
                    2, 0, BX_READ, &permission16);
 
     unsigned bit_index = addr & 0x07;

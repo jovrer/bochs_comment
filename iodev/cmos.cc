@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc,v 1.62 2007/09/28 19:51:59 sshwarts Exp $
+// $Id: cmos.cc,v 1.64 2008/02/15 22:05:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -26,7 +26,7 @@
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -140,14 +140,14 @@ bx_cmos_c::~bx_cmos_c(void)
 
 void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc,v 1.62 2007/09/28 19:51:59 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: cmos.cc,v 1.64 2008/02/15 22:05:41 sshwarts Exp $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);
   DEV_register_ioread_handler(this, read_handler, 0x0071, "CMOS RAM", 1);
   DEV_register_iowrite_handler(this, write_handler, 0x0070, "CMOS RAM", 1);
   DEV_register_iowrite_handler(this, write_handler, 0x0071, "CMOS RAM", 1);
-  DEV_register_irq(8, "CMOS RTC"); 
+  DEV_register_irq(8, "CMOS RTC");
   if (BX_CMOS_THIS s.periodic_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_CMOS_THIS s.periodic_timer_index =
       DEV_register_timer(this, periodic_timer_handler,
@@ -519,11 +519,11 @@ void bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
           unsigned prev_CRB;
           prev_CRB = BX_CMOS_THIS s.reg[REG_STAT_B];
           BX_CMOS_THIS s.reg[REG_STAT_B] = value;
-          if ( (prev_CRB & 0x02) != (value & 0x02) ) {
+          if ((prev_CRB & 0x02) != (value & 0x02)) {
             BX_CMOS_THIS s.rtc_mode_12hour = ((value & 0x02) == 0);
             update_clock();
           }
-          if ( (prev_CRB & 0x04) != (value & 0x04) ) {
+          if ((prev_CRB & 0x04) != (value & 0x04)) {
             BX_CMOS_THIS s.rtc_mode_binary = ((value & 0x04) != 0);
             update_clock();
           }
@@ -776,9 +776,9 @@ void bx_cmos_c::update_clock()
   BX_CMOS_THIS s.reg[REG_IBM_CENTURY_BYTE] = bin_to_bcd(century,
     BX_CMOS_THIS s.rtc_mode_binary);
 
-  // Raul Hudea pointed out that some bioses also use reg 0x37 for the 
+  // Raul Hudea pointed out that some bioses also use reg 0x37 for the
   // century byte.  Tony Heller says this is critical in getting WinXP to run.
-  BX_CMOS_THIS s.reg[REG_IBM_PS2_CENTURY_BYTE] = 
+  BX_CMOS_THIS s.reg[REG_IBM_PS2_CENTURY_BYTE] =
     BX_CMOS_THIS s.reg[REG_IBM_CENTURY_BYTE];
 }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h,v 1.5 2007/11/17 23:28:31 sshwarts Exp $
+// $Id: crregs.h,v 1.10 2008/04/16 16:44:04 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -90,6 +90,9 @@ struct bx_cr4_t {
   IMPLEMENT_CRREG_ACCESSORS(PCE, 8);
   IMPLEMENT_CRREG_ACCESSORS(OSFXSR, 9);
   IMPLEMENT_CRREG_ACCESSORS(OSXMMEXCPT, 10);
+#if BX_SUPPORT_XSAVE
+  IMPLEMENT_CRREG_ACCESSORS(OSXSAVE, 18);
+#endif
 
   BX_CPP_INLINE Bit32u getRegister() { return val32; }
   BX_CPP_INLINE void setRegister(Bit32u val) { val32 = val; }
@@ -103,14 +106,44 @@ struct bx_cr4_t {
 #endif
 
 #if BX_SUPPORT_X86_64
-typedef struct bx_efer_t {
-  // x86-64 EFER bits
-  bx_bool sce;		// system call extensions
-  bx_bool lme;		// long mode enable
-  bx_bool lma;		// long mode active
-  bx_bool nxe;		// no-execute enable
-  bx_bool ffxsr;	// fast FXSAVE/FXRSTOR
-} bx_efer_t;
+
+struct bx_efer_t {
+  Bit32u val32; // 32bit value of register
+
+  IMPLEMENT_CRREG_ACCESSORS(SCE,    0);
+  IMPLEMENT_CRREG_ACCESSORS(LME,    8);
+  IMPLEMENT_CRREG_ACCESSORS(LMA,   10);
+  IMPLEMENT_CRREG_ACCESSORS(NXE,   11);
+  IMPLEMENT_CRREG_ACCESSORS(FFXSR, 14);
+
+  BX_CPP_INLINE Bit32u getRegister() { return val32; }
+  BX_CPP_INLINE void setRegister(Bit32u val) { val32 = val; }
+};
+
+#define BX_EFER_LMA_MASK       (1<<10)
+#define BX_EFER_SUPPORTED_BITS BX_CONST64(0x00004d01)
+
+#endif
+
+#if BX_SUPPORT_XSAVE
+struct xcr0_t {
+  Bit32u  val32; // 32bit value of register
+
+#define BX_XCR0_SUPPORTED_BITS 0x3
+
+#define BX_XCR0_FPU_BIT   0
+#define BX_XCR0_FPU_MASK (1<<BX_XCR0_FPU_BIT)
+#define BX_XCR0_SSE_BIT   1
+#define BX_XCR0_SSE_MASK (1<<BX_XCR0_SSE_BIT)
+
+  IMPLEMENT_CRREG_ACCESSORS(FPU, BX_XCR0_FPU_BIT);
+#if BX_SUPPORT_SSE
+  IMPLEMENT_CRREG_ACCESSORS(SSE, BX_XCR0_SSE_BIT);
+#endif
+
+  BX_CPP_INLINE Bit32u getRegister() { return val32; }
+  BX_CPP_INLINE void setRegister(Bit32u val) { val32 = val; }
+};
 #endif
 
 #undef IMPLEMENT_CRREG_ACCESSORS

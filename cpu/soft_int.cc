@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc,v 1.36 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: soft_int.cc,v 1.42 2008/03/29 18:18:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -39,10 +39,12 @@
 #define RSP ESP
 #endif
 
-void BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 {
   Bit16s bound_min, bound_max;
   Bit16s op1_16 = BX_READ_16BIT_REG(i->nnn());
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   bound_min = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
   bound_max = (Bit16s) read_virtual_word(i->seg(), RMAddr(i)+2);
@@ -53,10 +55,12 @@ void BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
 {
   Bit32s bound_min, bound_max;
   Bit32s op1_32 = BX_READ_32BIT_REG(i->nnn());
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   bound_min = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   bound_max = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i)+4);
@@ -67,7 +71,7 @@ void BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
   }
 }
 
-void BX_CPU_C::INT1(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INT1(bxInstruction_c *i)
 {
   // This is an undocumented instrucion (opcode 0xf1)
   // which is useful for an ICE system.
@@ -77,7 +81,7 @@ void BX_CPU_C::INT1(bxInstruction_c *i)
 #endif
 
 #if BX_EXTERNAL_DEBUGGER
-  trap_debugger(0);
+  trap_debugger(0, BX_CPU_THIS);
 #endif
 
   BX_CPU_THIS_PTR speculative_rsp = 1;
@@ -93,7 +97,7 @@ void BX_CPU_C::INT1(bxInstruction_c *i)
                       EIP);
 }
 
-void BX_CPU_C::INT3(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INT3(bxInstruction_c *i)
 {
   // INT 3 is not IOPL sensitive
 
@@ -115,7 +119,7 @@ void BX_CPU_C::INT3(bxInstruction_c *i)
 }
 
 
-void BX_CPU_C::INT_Ib(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
 {
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_softint;
@@ -133,9 +137,9 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
       Bit8u vme_redirection_bitmap;
       Bit16u io_base;
 
-      access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + 102, 
+      access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + 102,
             2, 0, BX_READ, &io_base);
-      access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + io_base - 32 + (vector >> 3),
+      access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base + io_base - 32 + (vector >> 3),
             1, 0, BX_READ, &vme_redirection_bitmap);
 
       if (! (vme_redirection_bitmap & (1 << (vector & 7))))
@@ -155,7 +159,7 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
   }
 
 #ifdef SHOW_EXIT_STATUS
-  if ( (vector == 0x21) && (AH == 0x4c) ) {
+  if ((vector == 0x21) && (AH == 0x4c)) {
     BX_INFO(("INT 21/4C called AL=0x%02x, BX=0x%04x", (unsigned) AL, (unsigned) BX));
   }
 #endif
@@ -171,7 +175,7 @@ done:
                       EIP);
 }
 
-void BX_CPU_C::INTO(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INTO(bxInstruction_c *i)
 {
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_softint;

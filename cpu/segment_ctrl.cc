@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl.cc,v 1.17 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: segment_ctrl.cc,v 1.20 2008/03/22 21:29:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,16 +26,16 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
-void BX_CPU_C::LES_GwMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LES_GwMp(bxInstruction_c *i)
 {
   Bit16u reg_16, es;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_16 = read_virtual_word(i->seg(), RMAddr(i));
   es     = read_virtual_word(i->seg(), RMAddr(i) + 2);
@@ -45,10 +45,12 @@ void BX_CPU_C::LES_GwMp(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->nnn(), reg_16);
 }
 
-void BX_CPU_C::LES_GdMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LES_GdMp(bxInstruction_c *i)
 {
   Bit16u es;
   Bit32u reg_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_32 = read_virtual_dword(i->seg(), RMAddr(i));
   es     = read_virtual_word (i->seg(), RMAddr(i) + 4);
@@ -58,9 +60,11 @@ void BX_CPU_C::LES_GdMp(bxInstruction_c *i)
   BX_WRITE_32BIT_REGZ(i->nnn(), reg_32);
 }
 
-void BX_CPU_C::LDS_GwMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LDS_GwMp(bxInstruction_c *i)
 {
   Bit16u reg_16, ds;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_16 = read_virtual_word(i->seg(), RMAddr(i));
   ds     = read_virtual_word(i->seg(), RMAddr(i) + 2);
@@ -70,10 +74,12 @@ void BX_CPU_C::LDS_GwMp(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->nnn(), reg_16);
 }
 
-void BX_CPU_C::LDS_GdMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LDS_GdMp(bxInstruction_c *i)
 {
   Bit16u ds;
   Bit32u reg_32;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_32 = read_virtual_dword(i->seg(), RMAddr(i));
   ds     = read_virtual_word (i->seg(), RMAddr(i) + 4);
@@ -83,9 +89,11 @@ void BX_CPU_C::LDS_GdMp(bxInstruction_c *i)
   BX_WRITE_32BIT_REGZ(i->nnn(), reg_32);
 }
 
-void BX_CPU_C::LFS_GwMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LFS_GwMp(bxInstruction_c *i)
 {
   Bit16u reg_16, fs;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_16 = read_virtual_word(i->seg(), RMAddr(i));
   fs     = read_virtual_word(i->seg(), RMAddr(i) + 2);
@@ -95,10 +103,12 @@ void BX_CPU_C::LFS_GwMp(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->nnn(), reg_16);
 }
 
-void BX_CPU_C::LFS_GdMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LFS_GdMp(bxInstruction_c *i)
 {
   Bit32u reg_32;
   Bit16u fs;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_32 = read_virtual_dword(i->seg(), RMAddr(i));
   fs     = read_virtual_word (i->seg(), RMAddr(i) + 4);
@@ -109,10 +119,12 @@ void BX_CPU_C::LFS_GdMp(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-void BX_CPU_C::LFS_GqMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LFS_GqMp(bxInstruction_c *i)
 {
   Bit64u reg_64;
   Bit16u fs;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_64 = read_virtual_qword(i->seg(), RMAddr(i));
   fs     = read_virtual_word (i->seg(), RMAddr(i) + 8);
@@ -123,9 +135,11 @@ void BX_CPU_C::LFS_GqMp(bxInstruction_c *i)
 }
 #endif
 
-void BX_CPU_C::LGS_GwMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LGS_GwMp(bxInstruction_c *i)
 {
   Bit16u reg_16, gs;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_16 = read_virtual_word(i->seg(), RMAddr(i));
   gs     = read_virtual_word(i->seg(), RMAddr(i) + 2);
@@ -135,10 +149,12 @@ void BX_CPU_C::LGS_GwMp(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->nnn(), reg_16);
 }
 
-void BX_CPU_C::LGS_GdMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LGS_GdMp(bxInstruction_c *i)
 {
   Bit32u reg_32;
   Bit16u gs;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_32 = read_virtual_dword(i->seg(), RMAddr(i));
   gs     = read_virtual_word (i->seg(), RMAddr(i) + 4);
@@ -149,10 +165,12 @@ void BX_CPU_C::LGS_GdMp(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-void BX_CPU_C::LGS_GqMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LGS_GqMp(bxInstruction_c *i)
 {
   Bit64u reg_64;
   Bit16u gs;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_64 = read_virtual_qword(i->seg(), RMAddr(i));
   gs     = read_virtual_word (i->seg(), RMAddr(i) + 8);
@@ -163,9 +181,11 @@ void BX_CPU_C::LGS_GqMp(bxInstruction_c *i)
 }
 #endif
 
-void BX_CPU_C::LSS_GwMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LSS_GwMp(bxInstruction_c *i)
 {
   Bit16u reg_16, ss;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_16 = read_virtual_word(i->seg(), RMAddr(i));
   ss     = read_virtual_word(i->seg(), RMAddr(i) + 2);
@@ -175,10 +195,12 @@ void BX_CPU_C::LSS_GwMp(bxInstruction_c *i)
   BX_WRITE_16BIT_REG(i->nnn(), reg_16);
 }
 
-void BX_CPU_C::LSS_GdMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LSS_GdMp(bxInstruction_c *i)
 {
   Bit32u reg_32;
   Bit16u ss;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_32 = read_virtual_dword(i->seg(), RMAddr(i));
   ss     = read_virtual_word (i->seg(), RMAddr(i) + 4);
@@ -189,10 +211,12 @@ void BX_CPU_C::LSS_GdMp(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-void BX_CPU_C::LSS_GqMp(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LSS_GqMp(bxInstruction_c *i)
 {
   Bit64u reg_64;
   Bit16u ss;
+
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   reg_64 = read_virtual_qword(i->seg(), RMAddr(i));
   ss     = read_virtual_word (i->seg(), RMAddr(i) + 8);

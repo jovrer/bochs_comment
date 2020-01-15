@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit.cc,v 1.48 2007/12/20 20:58:37 sshwarts Exp $
+// $Id: bit.cc,v 1.56 2008/05/10 18:10:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,194 +25,224 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-
 #if BX_CPU_LEVEL >= 3
 
-void BX_CPU_C::SETO_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETO_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = getB_OF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETO_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETO_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), getB_OF());
 }
 
-void BX_CPU_C::SETNO_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNO_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !getB_OF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNO_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNO_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !getB_OF());
 }
 
-void BX_CPU_C::SETB_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETB_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = getB_CF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETB_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETB_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), getB_CF());
 }
 
-void BX_CPU_C::SETNB_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNB_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !getB_CF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNB_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNB_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !getB_CF());
 }
 
-void BX_CPU_C::SETZ_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETZ_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = getB_ZF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETZ_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETZ_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), getB_ZF());
 }
 
-void BX_CPU_C::SETNZ_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNZ_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !getB_ZF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNZ_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNZ_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !getB_ZF());
 }
 
-void BX_CPU_C::SETBE_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETBE_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = (getB_CF() | getB_ZF());
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETBE_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETBE_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), (getB_CF() | getB_ZF()));
 }
 
-void BX_CPU_C::SETNBE_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNBE_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !(getB_CF() | getB_ZF());
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNBE_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNBE_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !(getB_CF() | getB_ZF()));
 }
 
-void BX_CPU_C::SETS_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETS_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = getB_SF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETS_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETS_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), getB_SF());
 }
 
-void BX_CPU_C::SETNS_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNS_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !getB_SF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNS_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNS_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !getB_SF());
 }
 
-void BX_CPU_C::SETP_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETP_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = getB_PF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETP_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETP_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), getB_PF());
 }
 
-void BX_CPU_C::SETNP_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNP_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !getB_PF();
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNP_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNP_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !getB_PF());
 }
 
-void BX_CPU_C::SETL_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETL_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = (getB_SF() ^ getB_OF());
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETL_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETL_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), (getB_SF() ^ getB_OF()));
 }
 
-void BX_CPU_C::SETNL_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNL_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !(getB_SF() ^ getB_OF());
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNL_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNL_EbR(bxInstruction_c *i)
 {
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), !(getB_SF() ^ getB_OF()));
 }
 
-void BX_CPU_C::SETLE_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETLE_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = getB_ZF() | (getB_SF() ^ getB_OF());
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETLE_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETLE_EbR(bxInstruction_c *i)
 {
   Bit8u result_8 = getB_ZF() | (getB_SF() ^ getB_OF());
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result_8);
 }
 
-void BX_CPU_C::SETNLE_EbM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNLE_EbM(bxInstruction_c *i)
 {
+  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
   Bit8u result_8 = !(getB_ZF() | (getB_SF() ^ getB_OF()));
   write_virtual_byte(i->seg(), RMAddr(i), result_8);
 }
 
-void BX_CPU_C::SETNLE_EbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNLE_EbR(bxInstruction_c *i)
 {
   Bit8u result_8 = !(getB_ZF() | (getB_SF() ^ getB_OF()));
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result_8);
 }
 
-void BX_CPU_C::BSWAP_ERX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSWAP_ERX(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
   Bit32u val32, b0, b1, b2, b3;
@@ -237,7 +267,7 @@ void BX_CPU_C::BSWAP_ERX(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-void BX_CPU_C::BSWAP_RRX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSWAP_RRX(bxInstruction_c *i)
 {
   Bit64u val64, b0, b1, b2, b3, b4, b5, b6, b7;
 
@@ -263,49 +293,47 @@ void BX_CPU_C::BSWAP_RRX(bxInstruction_c *i)
 
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
 // primitives for CRC32 usage
-static Bit8u BitReflect8(Bit8u val8)
+BX_CPP_INLINE Bit8u BitReflect8(Bit8u val8)
 {
-   return ((val8 & 0x80) >> 7) |
-          ((val8 & 0x40) >> 5) |
-          ((val8 & 0x20) >> 3) |
-          ((val8 & 0x10) >> 1) |
-          ((val8 & 0x08) << 1) |
-          ((val8 & 0x04) << 3) |
-          ((val8 & 0x02) << 5) |
-          ((val8 & 0x01) << 7);
+  return ((val8 & 0x80) >> 7) |
+         ((val8 & 0x40) >> 5) |
+         ((val8 & 0x20) >> 3) |
+         ((val8 & 0x10) >> 1) |
+         ((val8 & 0x08) << 1) |
+         ((val8 & 0x04) << 3) |
+         ((val8 & 0x02) << 5) |
+         ((val8 & 0x01) << 7);
 }
 
 BX_CPP_INLINE Bit16u BitReflect16(Bit16u val16)
 {
-   return ((Bit16u)(BitReflect8(val16 & 0xff)) << 8) | BitReflect8(val16 >> 8);
+  return ((Bit16u)(BitReflect8(val16 & 0xff)) << 8) | BitReflect8(val16 >> 8);
 }
 
 BX_CPP_INLINE Bit32u BitReflect32(Bit32u val32)
 {
-   return ((Bit32u)(BitReflect16(val32 & 0xffff)) << 16) | BitReflect16(val32 >> 16);
+  return ((Bit32u)(BitReflect16(val32 & 0xffff)) << 16) | BitReflect16(val32 >> 16);
 }
 
 static Bit32u mod2_64bit(Bit64u divisor, Bit64u dividend)
 {
-    Bit64u remainder = dividend >> 32;
+  Bit64u remainder = dividend >> 32;
 
-    for (int bitpos=31; bitpos>=0; bitpos--)
-    {
-	// copy one more bit from the dividend
-	remainder = (remainder << 1) | ((dividend >> bitpos) & 1);
+  for (int bitpos=31; bitpos>=0; bitpos--) {
+    // copy one more bit from the dividend
+    remainder = (remainder << 1) | ((dividend >> bitpos) & 1);
 
-	// if MSB is set, then XOR divisor and get new remainder
-	if (((remainder >> 32) & 1) == 1)
-	{
-	    remainder ^= divisor;
-	}
+    // if MSB is set, then XOR divisor and get new remainder
+    if (((remainder >> 32) & 1) == 1) {
+      remainder ^= divisor;
     }
+  }
 
-    return remainder;
+  return remainder;
 }
 #endif // (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
 
-void BX_CPU_C::CRC32_GdEb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CRC32_GdEb(bxInstruction_c *i)
 {
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   Bit8u op1;
@@ -314,6 +342,8 @@ void BX_CPU_C::CRC32_GdEb(bxInstruction_c *i)
     op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
   }
   else {
+    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
     op1 = read_virtual_byte(i->seg(), RMAddr(i));
   }
 
@@ -328,12 +358,12 @@ void BX_CPU_C::CRC32_GdEb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_32BIT_REGZ(i->nnn(), BitReflect32(op2));
 #else
-  BX_INFO(("CRC32_GdEb: required SSE4_2 support, required SSE4.2, use --enable-sse and --enable-sse-extension options"));
+  BX_INFO(("CRC32_GdEb: required SSE4_2 support, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
 
-void BX_CPU_C::CRC32_GdEv(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CRC32_GdEv(bxInstruction_c *i)
 {
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
 
@@ -349,7 +379,8 @@ void BX_CPU_C::CRC32_GdEv(bxInstruction_c *i)
       op1 = BX_READ_64BIT_REG(i->rm());
     }
     else {
-      op1 = read_virtual_qword(i->seg(), RMAddr(i));
+      BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+      op1 = read_virtual_qword_64(i->seg(), RMAddr(i));
     }
 
     Bit64u tmp1 = ((Bit64u) BitReflect32(op1 & 0xffffffff)) << 32;
@@ -372,6 +403,7 @@ void BX_CPU_C::CRC32_GdEv(bxInstruction_c *i)
         op1 = BX_READ_32BIT_REG(i->rm());
       }
       else {
+        BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
         op1 = read_virtual_dword(i->seg(), RMAddr(i));
       }
 
@@ -387,6 +419,7 @@ void BX_CPU_C::CRC32_GdEv(bxInstruction_c *i)
         op1 = BX_READ_16BIT_REG(i->rm());
       }
       else {
+        BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
         op1 = read_virtual_word(i->seg(), RMAddr(i));
       }
 
@@ -399,9 +432,9 @@ void BX_CPU_C::CRC32_GdEv(bxInstruction_c *i)
 
   /* now write result back to destination */
   BX_WRITE_32BIT_REGZ(i->nnn(), BitReflect32(op2));
-  
+
 #else
-  BX_INFO(("CRC32_GdEv: required SSE4_2 support, required SSE4.2, use --enable-sse and --enable-sse-extension options"));
+  BX_INFO(("CRC32_GdEv: required SSE4_2 support, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }

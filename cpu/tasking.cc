@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: tasking.cc,v 1.44 2007/12/23 17:21:27 sshwarts Exp $
+// $Id: tasking.cc,v 1.59 2008/05/11 19:36:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,12 +25,10 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
 
 #if BX_CPU_LEVEL >= 2
 
@@ -68,33 +66,33 @@
   // ======================
   // 386 Task State Segment
   // ======================
-  // |31            16|15                    0|
-  // |I/O Map Base    |000000000000000000000|T| 64  static
-  // |0000000000000000| LDT                   | 60  static
-  // |0000000000000000| GS selector           | 5c  dynamic
-  // |0000000000000000| FS selector           | 58  dynamic
-  // |0000000000000000| DS selector           | 54  dynamic
-  // |0000000000000000| SS selector           | 50  dynamic
-  // |0000000000000000| CS selector           | 4c  dynamic
-  // |0000000000000000| ES selector           | 48  dynamic
-  // |                EDI                     | 44  dynamic
-  // |                ESI                     | 40  dynamic
-  // |                EBP                     | 3c  dynamic
-  // |                ESP                     | 38  dynamic
-  // |                EBX                     | 34  dynamic
-  // |                EDX                     | 30  dynamic
-  // |                ECX                     | 2c  dynamic
-  // |                EAX                     | 28  dynamic
-  // |                EFLAGS                  | 24  dynamic
-  // |                EIP (entry point)       | 20  dynamic
-  // |           CR3 (PDPR)                   | 1c  static
-  // |000000000000000 | SS for CPL 2          | 18  static
-  // |           ESP for CPL 2                | 14  static
-  // |000000000000000 | SS for CPL 1          | 10  static
-  // |           ESP for CPL 1                | 0c  static
-  // |000000000000000 | SS for CPL 0          | 08  static
-  // |           ESP for CPL 0                | 04  static
-  // |000000000000000 | back link to prev TSS | 00  dynamic (updated only when return expected)
+  // |31            16|15                    0| hex dec
+  // |I/O Map Base    |000000000000000000000|T| 64  100 static
+  // |0000000000000000| LDT                   | 60  96  static
+  // |0000000000000000| GS selector           | 5c  92  dynamic
+  // |0000000000000000| FS selector           | 58  88  dynamic
+  // |0000000000000000| DS selector           | 54  84  dynamic
+  // |0000000000000000| SS selector           | 50  80  dynamic
+  // |0000000000000000| CS selector           | 4c  76  dynamic
+  // |0000000000000000| ES selector           | 48  72  dynamic
+  // |                EDI                     | 44  68  dynamic
+  // |                ESI                     | 40  64  dynamic
+  // |                EBP                     | 3c  60  dynamic
+  // |                ESP                     | 38  56  dynamic
+  // |                EBX                     | 34  52  dynamic
+  // |                EDX                     | 30  48  dynamic
+  // |                ECX                     | 2c  44  dynamic
+  // |                EAX                     | 28  40  dynamic
+  // |                EFLAGS                  | 24  36  dynamic
+  // |                EIP (entry point)       | 20  32  dynamic
+  // |           CR3 (PDPR)                   | 1c  28  static
+  // |000000000000000 | SS for CPL 2          | 18  24  static
+  // |           ESP for CPL 2                | 14  20  static
+  // |000000000000000 | SS for CPL 1          | 10  16  static
+  // |           ESP for CPL 1                | 0c  12  static
+  // |000000000000000 | SS for CPL 0          | 08  08  static
+  // |           ESP for CPL 0                | 04  04  static
+  // |000000000000000 | back link to prev TSS | 00  00  dynamic (updated only when return expected)
 
 
   // ==================================================
@@ -162,18 +160,17 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
 
   // Gather info about old TSS
   if (BX_CPU_THIS_PTR tr.cache.type <= 3) {
-    // sanity check type: cannot have busy bit
-    old_TSS_max = 43;
+    old_TSS_max = 0x29;
   }
   else {
-    old_TSS_max = 103;
+    old_TSS_max = 0x5F;
   }
   // Gather info about new TSS
   if (tss_descriptor->type <= 3) { // {1,3}
-    new_TSS_max = 43;
+    new_TSS_max = 0x2B;
   }
   else { // tss_descriptor->type = {9,11}
-    new_TSS_max = 103;
+    new_TSS_max = 0x67;
   }
 
   obase32 = (Bit32u) BX_CPU_THIS_PTR tr.cache.u.system.base;        // old TSS.base
@@ -187,6 +184,11 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   {
     BX_ERROR(("task_switch(): new TSS limit < %d", new_TSS_max));
     exception(BX_TS_EXCEPTION, tss_selector->value & 0xfffc, 0);
+  }
+
+  if (old_TSS_limit < old_TSS_max) {
+    BX_ERROR(("task_switch(): old TSS limit < %d", old_TSS_max));
+    exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
   }
 
   if (obase32 == nbase32) {
@@ -218,8 +220,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
 
   // Privilege and busy checks done in CALL, JUMP, INT, IRET
 
-  // STEP 3: Save the current task state in the TSS. Up to this point, 
-  //         any exception that occurs aborts the task switch without 
+  // STEP 3: Save the current task state in the TSS. Up to this point,
+  //         any exception that occurs aborts the task switch without
   //         changing the processor state.
 
   /* save current machine state in old task's TSS */
@@ -234,48 +236,48 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   }
 
   if (BX_CPU_THIS_PTR tr.cache.type <= 3) {
-    temp16 = IP; access_linear(obase32 + 14, 2, 0, BX_WRITE, &temp16);
-    temp16 = oldEFLAGS; access_linear(obase32 + 16, 2, 0, BX_WRITE, &temp16);
-    temp16 = AX; access_linear(obase32 + 18, 2, 0, BX_WRITE, &temp16);
-    temp16 = CX; access_linear(obase32 + 20, 2, 0, BX_WRITE, &temp16);
-    temp16 = DX; access_linear(obase32 + 22, 2, 0, BX_WRITE, &temp16);
-    temp16 = BX; access_linear(obase32 + 24, 2, 0, BX_WRITE, &temp16);
-    temp16 = SP; access_linear(obase32 + 26, 2, 0, BX_WRITE, &temp16);
-    temp16 = BP; access_linear(obase32 + 28, 2, 0, BX_WRITE, &temp16);
-    temp16 = SI; access_linear(obase32 + 30, 2, 0, BX_WRITE, &temp16);
-    temp16 = DI; access_linear(obase32 + 32, 2, 0, BX_WRITE, &temp16);
+    temp16 = IP; access_write_linear(Bit32u(obase32 + 14), 2, 0, &temp16);
+    temp16 = oldEFLAGS; access_write_linear(Bit32u(obase32 + 16), 2, 0, &temp16);
+    temp16 = AX; access_write_linear(Bit32u(obase32 + 18), 2, 0, &temp16);
+    temp16 = CX; access_write_linear(Bit32u(obase32 + 20), 2, 0, &temp16);
+    temp16 = DX; access_write_linear(Bit32u(obase32 + 22), 2, 0, &temp16);
+    temp16 = BX; access_write_linear(Bit32u(obase32 + 24), 2, 0, &temp16);
+    temp16 = SP; access_write_linear(Bit32u(obase32 + 26), 2, 0, &temp16);
+    temp16 = BP; access_write_linear(Bit32u(obase32 + 28), 2, 0, &temp16);
+    temp16 = SI; access_write_linear(Bit32u(obase32 + 30), 2, 0, &temp16);
+    temp16 = DI; access_write_linear(Bit32u(obase32 + 32), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value;
-                 access_linear(obase32 + 34, 2, 0, BX_WRITE, &temp16);
+                 access_write_linear(Bit32u(obase32 + 34), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
-                 access_linear(obase32 + 36, 2, 0, BX_WRITE, &temp16);
+                 access_write_linear(Bit32u(obase32 + 36), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
-                 access_linear(obase32 + 38, 2, 0, BX_WRITE, &temp16);
+                 access_write_linear(Bit32u(obase32 + 38), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value;
-                 access_linear(obase32 + 40, 2, 0, BX_WRITE, &temp16);
+                 access_write_linear(Bit32u(obase32 + 40), 2, 0, &temp16);
   }
   else {
-    temp32 = EIP; access_linear(obase32 + 0x20, 4, 0, BX_WRITE, &temp32);
-    temp32 = oldEFLAGS; access_linear(obase32 + 0x24, 4, 0, BX_WRITE, &temp32);
-    temp32 = EAX; access_linear(obase32 + 0x28, 4, 0, BX_WRITE, &temp32);
-    temp32 = ECX; access_linear(obase32 + 0x2c, 4, 0, BX_WRITE, &temp32);
-    temp32 = EDX; access_linear(obase32 + 0x30, 4, 0, BX_WRITE, &temp32);
-    temp32 = EBX; access_linear(obase32 + 0x34, 4, 0, BX_WRITE, &temp32);
-    temp32 = ESP; access_linear(obase32 + 0x38, 4, 0, BX_WRITE, &temp32);
-    temp32 = EBP; access_linear(obase32 + 0x3c, 4, 0, BX_WRITE, &temp32);
-    temp32 = ESI; access_linear(obase32 + 0x40, 4, 0, BX_WRITE, &temp32);
-    temp32 = EDI; access_linear(obase32 + 0x44, 4, 0, BX_WRITE, &temp32);
+    temp32 = EIP; access_write_linear(Bit32u(obase32 + 0x20), 4, 0, &temp32);
+    temp32 = oldEFLAGS; access_write_linear(Bit32u(obase32 + 0x24), 4, 0, &temp32);
+    temp32 = EAX; access_write_linear(Bit32u(obase32 + 0x28), 4, 0, &temp32);
+    temp32 = ECX; access_write_linear(Bit32u(obase32 + 0x2c), 4, 0, &temp32);
+    temp32 = EDX; access_write_linear(Bit32u(obase32 + 0x30), 4, 0, &temp32);
+    temp32 = EBX; access_write_linear(Bit32u(obase32 + 0x34), 4, 0, &temp32);
+    temp32 = ESP; access_write_linear(Bit32u(obase32 + 0x38), 4, 0, &temp32);
+    temp32 = EBP; access_write_linear(Bit32u(obase32 + 0x3c), 4, 0, &temp32);
+    temp32 = ESI; access_write_linear(Bit32u(obase32 + 0x40), 4, 0, &temp32);
+    temp32 = EDI; access_write_linear(Bit32u(obase32 + 0x44), 4, 0, &temp32);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value;
-                  access_linear(obase32 + 0x48, 2, 0, BX_WRITE, &temp16);
+                  access_write_linear(Bit32u(obase32 + 0x48), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
-                  access_linear(obase32 + 0x4c, 2, 0, BX_WRITE, &temp16);
+                  access_write_linear(Bit32u(obase32 + 0x4c), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
-                  access_linear(obase32 + 0x50, 2, 0, BX_WRITE, &temp16);
+                  access_write_linear(Bit32u(obase32 + 0x50), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value;
-                  access_linear(obase32 + 0x54, 2, 0, BX_WRITE, &temp16);
+                  access_write_linear(Bit32u(obase32 + 0x54), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value;
-                  access_linear(obase32 + 0x58, 2, 0, BX_WRITE, &temp16);
+                  access_write_linear(Bit32u(obase32 + 0x58), 2, 0, &temp16);
     temp16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value;
-                  access_linear(obase32 + 0x5c, 2, 0, BX_WRITE, &temp16);
+                  access_write_linear(Bit32u(obase32 + 0x5c), 2, 0, &temp16);
   }
 
   // effect on link field of new task
@@ -283,15 +285,15 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   {
     // set to selector of old task's TSS
     temp16 = BX_CPU_THIS_PTR tr.selector.value;
-    access_linear(nbase32, 2, 0, BX_WRITE, &temp16);
+    access_write_linear(nbase32, 2, 0, &temp16);
   }
 
   // STEP 4: The new-task state is loaded from the TSS
 
   if (tss_descriptor->type <= 3) {
-    access_linear(nbase32 + 14, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 14), 2, 0, BX_READ, &temp16);
       newEIP = temp16; // zero out upper word
-    access_linear(nbase32 + 16, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 16), 2, 0, BX_READ, &temp16);
       newEFLAGS = temp16;
 
     // incoming TSS is 16bit:
@@ -299,28 +301,28 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     //   - upper word of eflags is zero'd
     //   - FS, GS are zero'd
     //   - upper word of eIP is zero'd
-    access_linear(nbase32 + 18, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 18), 2, 0, BX_READ, &temp16);
       newEAX = 0xffff0000 | temp16;
-    access_linear(nbase32 + 20, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 20), 2, 0, BX_READ, &temp16);
       newECX = 0xffff0000 | temp16;
-    access_linear(nbase32 + 22, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 22), 2, 0, BX_READ, &temp16);
       newEDX = 0xffff0000 | temp16;
-    access_linear(nbase32 + 24, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 24), 2, 0, BX_READ, &temp16);
       newEBX = 0xffff0000 | temp16;
-    access_linear(nbase32 + 26, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 26), 2, 0, BX_READ, &temp16);
       newESP = 0xffff0000 | temp16;
-    access_linear(nbase32 + 28, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 28), 2, 0, BX_READ, &temp16);
       newEBP = 0xffff0000 | temp16;
-    access_linear(nbase32 + 30, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 30), 2, 0, BX_READ, &temp16);
       newESI = 0xffff0000 | temp16;
-    access_linear(nbase32 + 32, 2, 0, BX_READ, &temp16);
+    access_read_linear(Bit32u(nbase32 + 32), 2, 0, BX_READ, &temp16);
       newEDI = 0xffff0000 | temp16;
 
-    access_linear(nbase32 + 34, 2, 0, BX_READ, &raw_es_selector);
-    access_linear(nbase32 + 36, 2, 0, BX_READ, &raw_cs_selector);
-    access_linear(nbase32 + 38, 2, 0, BX_READ, &raw_ss_selector);
-    access_linear(nbase32 + 40, 2, 0, BX_READ, &raw_ds_selector);
-    access_linear(nbase32 + 42, 2, 0, BX_READ, &raw_ldt_selector);
+    access_read_linear(Bit32u(nbase32 + 34), 2, 0, BX_READ, &raw_es_selector);
+    access_read_linear(Bit32u(nbase32 + 36), 2, 0, BX_READ, &raw_cs_selector);
+    access_read_linear(Bit32u(nbase32 + 38), 2, 0, BX_READ, &raw_ss_selector);
+    access_read_linear(Bit32u(nbase32 + 40), 2, 0, BX_READ, &raw_ds_selector);
+    access_read_linear(Bit32u(nbase32 + 42), 2, 0, BX_READ, &raw_ldt_selector);
 
     raw_fs_selector = 0; // use a NULL selector
     raw_gs_selector = 0; // use a NULL selector
@@ -330,27 +332,27 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   }
   else {
     if (BX_CPU_THIS_PTR cr0.get_PG())
-      access_linear(nbase32 + 0x1c, 4, 0, BX_READ, &newCR3);
+      access_read_linear(Bit32u(nbase32 + 0x1c), 4, 0, BX_READ, &newCR3);
     else
       newCR3 = 0;   // keep compiler happy (not used)
-    access_linear(nbase32 + 0x20, 4, 0, BX_READ, &newEIP);
-    access_linear(nbase32 + 0x24, 4, 0, BX_READ, &newEFLAGS);
-    access_linear(nbase32 + 0x28, 4, 0, BX_READ, &newEAX);
-    access_linear(nbase32 + 0x2c, 4, 0, BX_READ, &newECX);
-    access_linear(nbase32 + 0x30, 4, 0, BX_READ, &newEDX);
-    access_linear(nbase32 + 0x34, 4, 0, BX_READ, &newEBX);
-    access_linear(nbase32 + 0x38, 4, 0, BX_READ, &newESP);
-    access_linear(nbase32 + 0x3c, 4, 0, BX_READ, &newEBP);
-    access_linear(nbase32 + 0x40, 4, 0, BX_READ, &newESI);
-    access_linear(nbase32 + 0x44, 4, 0, BX_READ, &newEDI);
-    access_linear(nbase32 + 0x48, 2, 0, BX_READ, &raw_es_selector);
-    access_linear(nbase32 + 0x4c, 2, 0, BX_READ, &raw_cs_selector);
-    access_linear(nbase32 + 0x50, 2, 0, BX_READ, &raw_ss_selector);
-    access_linear(nbase32 + 0x54, 2, 0, BX_READ, &raw_ds_selector);
-    access_linear(nbase32 + 0x58, 2, 0, BX_READ, &raw_fs_selector);
-    access_linear(nbase32 + 0x5c, 2, 0, BX_READ, &raw_gs_selector);
-    access_linear(nbase32 + 0x60, 2, 0, BX_READ, &raw_ldt_selector);
-    access_linear(nbase32 + 0x64, 2, 0, BX_READ, &trap_word);
+    access_read_linear(Bit32u(nbase32 + 0x20), 4, 0, BX_READ, &newEIP);
+    access_read_linear(Bit32u(nbase32 + 0x24), 4, 0, BX_READ, &newEFLAGS);
+    access_read_linear(Bit32u(nbase32 + 0x28), 4, 0, BX_READ, &newEAX);
+    access_read_linear(Bit32u(nbase32 + 0x2c), 4, 0, BX_READ, &newECX);
+    access_read_linear(Bit32u(nbase32 + 0x30), 4, 0, BX_READ, &newEDX);
+    access_read_linear(Bit32u(nbase32 + 0x34), 4, 0, BX_READ, &newEBX);
+    access_read_linear(Bit32u(nbase32 + 0x38), 4, 0, BX_READ, &newESP);
+    access_read_linear(Bit32u(nbase32 + 0x3c), 4, 0, BX_READ, &newEBP);
+    access_read_linear(Bit32u(nbase32 + 0x40), 4, 0, BX_READ, &newESI);
+    access_read_linear(Bit32u(nbase32 + 0x44), 4, 0, BX_READ, &newEDI);
+    access_read_linear(Bit32u(nbase32 + 0x48), 2, 0, BX_READ, &raw_es_selector);
+    access_read_linear(Bit32u(nbase32 + 0x4c), 2, 0, BX_READ, &raw_cs_selector);
+    access_read_linear(Bit32u(nbase32 + 0x50), 2, 0, BX_READ, &raw_ss_selector);
+    access_read_linear(Bit32u(nbase32 + 0x54), 2, 0, BX_READ, &raw_ds_selector);
+    access_read_linear(Bit32u(nbase32 + 0x58), 2, 0, BX_READ, &raw_fs_selector);
+    access_read_linear(Bit32u(nbase32 + 0x5c), 2, 0, BX_READ, &raw_gs_selector);
+    access_read_linear(Bit32u(nbase32 + 0x60), 2, 0, BX_READ, &raw_ldt_selector);
+    access_read_linear(Bit32u(nbase32 + 0x64), 2, 0, BX_READ, &trap_word);
   }
 
   // Step 5: If CALL, interrupt, or JMP, set busy flag in new task's
@@ -359,10 +361,10 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   if (source == BX_TASK_FROM_JUMP || source == BX_TASK_FROM_CALL_OR_INT)
   {
     // set the new task's busy bit
-    bx_address laddr = BX_CPU_THIS_PTR gdtr.base + (tss_selector->index<<3) + 4;
-    access_linear(laddr, 4, 0, BX_READ,  &dword2);
-    dword2 |= 0x00000200;
-    access_linear(laddr, 4, 0, BX_WRITE, &dword2);
+    Bit32u laddr = (Bit32u)(BX_CPU_THIS_PTR gdtr.base) + (tss_selector->index<<3) + 4;
+    access_read_linear(laddr, 4, 0, BX_READ, &dword2);
+    dword2 |= 0x200;
+    access_write_linear(laddr, 4, 0, &dword2);
   }
 
   // Step 6: If JMP or IRET, clear busy bit in old task TSS descriptor,
@@ -371,11 +373,10 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   // effect on Busy bit of old task
   if (source == BX_TASK_FROM_JUMP || source == BX_TASK_FROM_IRET) {
     // Bit is cleared
-    bx_address laddr = BX_CPU_THIS_PTR gdtr.base +
-            (BX_CPU_THIS_PTR tr.selector.index<<3) + 4;
-    access_linear(laddr, 4, 0, BX_READ,  &temp32);
-    temp32 &= ~0x00000200;
-    access_linear(laddr, 4, 0, BX_WRITE, &temp32);
+    Bit32u laddr = (Bit32u) BX_CPU_THIS_PTR gdtr.base + (BX_CPU_THIS_PTR tr.selector.index<<3) + 4;
+    access_read_linear(laddr, 4, 0, BX_READ, &temp32);
+    temp32 &= ~0x200;
+    access_write_linear(laddr, 4, 0, &temp32);
   }
 
   //
@@ -392,9 +393,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
 
   BX_CPU_THIS_PTR tr.selector = *tss_selector;
   BX_CPU_THIS_PTR tr.cache    = *tss_descriptor;
-  // Reset the busy-flag, because all functions expect non-busy types in
-  // tr.cache. From Peter Lammich <peterl@sourceforge.net>.
-  BX_CPU_THIS_PTR tr.cache.type &= ~2;
+  BX_CPU_THIS_PTR tr.cache.type |= 2; // mark TSS in TR as busy
 
   // Step 8: Set TS flag in the CR0 image stored in the new task TSS.
   BX_CPU_THIS_PTR cr0.set_TS(1);
@@ -421,8 +420,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   if ((tss_descriptor->type >= 9) && BX_CPU_THIS_PTR cr0.get_PG()) {
     // change CR3 only if it actually modified
     if (newCR3 != BX_CPU_THIS_PTR cr3) {
-      CR3_change(newCR3); // Tell paging unit about new cr3 value
-      BX_DEBUG (("task_switch changing CR3 to 0x%08x", newCR3));
+      SetCR3(newCR3); // Tell paging unit about new cr3 value
+      BX_DEBUG (("task_switch changing CR3 to 0x" FMT_PHY_ADDRX, newCR3));
       BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_TASKSWITCH, newCR3);
     }
   }
@@ -477,7 +476,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     exception(BX_TS_EXCEPTION, raw_ldt_selector & 0xfffc, 0);
   }
 
-  if ( (raw_ldt_selector & 0xfffc) != 0 ) {
+  if ((raw_ldt_selector & 0xfffc) != 0) {
     bx_bool good = fetch_raw_descriptor2(&ldt_selector, &dword1, &dword2);
     if (!good) {
       BX_ERROR(("task_switch(exception after commit point): bad LDT fetch"));
@@ -519,6 +518,56 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   }
   else {
 
+    // SS
+    if ((raw_ss_selector & 0xfffc) != 0)
+    {
+      bx_bool good = fetch_raw_descriptor2(&ss_selector, &dword1, &dword2);
+      if (!good) {
+        BX_ERROR(("task_switch(exception after commit point): bad SS fetch"));
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      }
+
+      parse_descriptor(dword1, dword2, &ss_descriptor);
+      // SS selector must be within its descriptor table limits else #TS(SS)
+      // SS descriptor AR byte must must indicate writable data segment,
+      // else #TS(SS)
+      if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
+           IS_CODE_SEGMENT(ss_descriptor.type) ||
+          !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
+      {
+        BX_ERROR(("task_switch(exception after commit point): SS not valid or writeable segment"));
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      }
+
+      //
+      // Stack segment is present in memory, else #SS(new stack segment)
+      //
+      if (! IS_PRESENT(ss_descriptor)) {
+        BX_ERROR(("task_switch(exception after commit point): SS not present"));
+        exception(BX_SS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      }
+
+      // Stack segment DPL matches CS.RPL, else #TS(new stack segment)
+      if (ss_descriptor.dpl != cs_selector.rpl) {
+        BX_ERROR(("task_switch(exception after commit point): SS.rpl != CS.RPL"));
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      }
+
+      // Stack segment DPL matches selector RPL, else #TS(new stack segment)
+      if (ss_descriptor.dpl != ss_selector.rpl) {
+        BX_ERROR(("task_switch(exception after commit point): SS.dpl != SS.rpl"));
+        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+      }
+
+      // All checks pass, fill in shadow cache
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache = ss_descriptor;
+    }
+    else {
+      // SS selector is valid, else #TS(new stack segment)
+      BX_ERROR(("task_switch(exception after commit point): SS NULL"));
+      exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
+    }
+
     // if new selector is not null then perform following checks:
     //    index must be within its descriptor table limits else #TS(selector)
     //    AR byte must indicate data or readable code else #TS(selector)
@@ -529,7 +578,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     //    load cache with new segment descriptor and set valid bit
 
     // CS
-    if ( (raw_cs_selector & 0xfffc) != 0 ) {
+    if ((raw_cs_selector & 0xfffc) != 0) {
       bx_bool good = fetch_raw_descriptor2(&cs_selector, &dword1, &dword2);
       if (!good) {
         BX_ERROR(("task_switch(exception after commit point): bad CS fetch"));
@@ -585,56 +634,6 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     handleAlignmentCheck(); // task switch, CPL was modified
 #endif
 
-    // SS
-    if ((raw_ss_selector & 0xfffc) != 0)
-    {
-      bx_bool good = fetch_raw_descriptor2(&ss_selector, &dword1, &dword2);
-      if (!good) {
-        BX_ERROR(("task_switch(exception after commit point): bad SS fetch"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-      }
-
-      parse_descriptor(dword1, dword2, &ss_descriptor);
-      // SS selector must be within its descriptor table limits else #TS(SS)
-      // SS descriptor AR byte must must indicate writable data segment,
-      // else #TS(SS)
-      if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
-           IS_CODE_SEGMENT(ss_descriptor.type) ||
-          !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
-      {
-        BX_ERROR(("task_switch(exception after commit point): SS not valid or writeable segment"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-      }
-
-      //
-      // Stack segment is present in memory, else #SS(new stack segment)
-      //
-      if (! IS_PRESENT(ss_descriptor)) {
-        BX_ERROR(("task_switch(exception after commit point): SS not present"));
-        exception(BX_SS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-      }
-
-      // Stack segment DPL matches CS.RPL, else #TS(new stack segment)
-      if (ss_descriptor.dpl != cs_selector.rpl) {
-        BX_ERROR(("task_switch(exception after commit point): SS.rpl != CS.RPL"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-      }
-
-      // Stack segment DPL matches selector RPL, else #TS(new stack segment)
-      if (ss_descriptor.dpl != ss_selector.rpl) {
-        BX_ERROR(("task_switch(exception after commit point): SS.dpl != SS.rpl"));
-        exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-      }
-
-      // All checks pass, fill in shadow cache
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache = ss_descriptor;
-    }
-    else {
-      // SS selector is valid, else #TS(new stack segment)
-      BX_ERROR(("task_switch(exception after commit point): SS NULL"));
-      exception(BX_TS_EXCEPTION, raw_ss_selector & 0xfffc, 0);
-    }
-
     task_switch_load_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS],
         &ds_selector, raw_ds_selector, cs_selector.rpl);
     task_switch_load_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES],
@@ -645,7 +644,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
         &gs_selector, raw_gs_selector, cs_selector.rpl);
   }
 
-  if ((tss_descriptor->type>=9) && (trap_word & 0x0001)) {
+  if ((tss_descriptor->type>=9) && (trap_word & 0x1)) {
     BX_CPU_THIS_PTR debug_trap |= 0x00008000; // BT flag in DR6
     BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
     BX_INFO(("task_switch: T bit set in new TSS"));
@@ -654,7 +653,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   //
   // Step 14: Begin execution of new task.
   //
-  BX_DEBUG(( "TASKING: LEAVE" ));
+  BX_DEBUG(("TASKING: LEAVE"));
 }
 
 void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
@@ -675,7 +674,7 @@ void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
     parse_descriptor(dword1, dword2, &descriptor);
 
     /* AR byte must indicate data or readable code segment else #TS(selector) */
-    if (descriptor.segment==0 || (IS_CODE_SEGMENT(descriptor.type) && 
+    if (descriptor.segment==0 || (IS_CODE_SEGMENT(descriptor.type) &&
         IS_CODE_SEGMENT_READABLE(descriptor.type) == 0))
     {
       BX_ERROR(("task_switch(%s): not data or readable code !", strseg(seg)));
@@ -708,19 +707,23 @@ void BX_CPU_C::get_SS_ESP_from_TSS(unsigned pl, Bit16u *ss, Bit32u *esp)
   if (BX_CPU_THIS_PTR tr.cache.valid==0)
     BX_PANIC(("get_SS_ESP_from_TSS: TR.cache invalid"));
 
-  if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_386_TSS) {
+  if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_386_TSS ||
+      BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_BUSY_386_TSS)
+  {
     // 32-bit TSS
     Bit32u TSSstackaddr = 8*pl + 4;
     if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled) {
       BX_DEBUG(("get_SS_ESP_from_TSS(386): TSSstackaddr > TSS.LIMIT"));
       exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
     }
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
+    access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr+4, 2, 0, BX_READ, ss);
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
+    access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr,   4, 0, BX_READ, esp);
   }
-  else if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_286_TSS) {
+  else if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_286_TSS ||
+           BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_BUSY_286_TSS)
+  {
     // 16-bit TSS
     Bit16u temp16;
     Bit32u TSSstackaddr = 4*pl + 2;
@@ -728,9 +731,9 @@ void BX_CPU_C::get_SS_ESP_from_TSS(unsigned pl, Bit16u *ss, Bit32u *esp)
       BX_DEBUG(("get_SS_ESP_from_TSS(286): TSSstackaddr > TSS.LIMIT"));
       exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
     }
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
+    access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr+2, 2, 0, BX_READ, ss);
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
+    access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr,   2, 0, BX_READ, &temp16);
     *esp = temp16; // truncate
   }
@@ -753,7 +756,7 @@ void BX_CPU_C::get_RSP_from_TSS(unsigned pl, Bit64u *rsp)
     exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
   }
 
-  access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
+  access_read_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
     TSSstackaddr, 8, 0, BX_READ, rsp);
 }
 #endif  // #if BX_SUPPORT_X86_64

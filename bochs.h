@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.218 2007/12/20 18:32:14 sshwarts Exp $
+// $Id: bochs.h,v 1.231 2008/05/23 14:04:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,11 +25,11 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 //
-// bochs.h is the master header file for all C++ code.  It includes all 
+// bochs.h is the master header file for all C++ code.  It includes all
 // the system header files needed by bochs, and also includes all the bochs
-// C++ header files.  Because bochs.h and the files that it includes has 
+// C++ header files.  Because bochs.h and the files that it includes has
 // structure and class definitions, it cannot be called from C code.
-// 
+//
 
 #ifndef BX_BOCHS_H
 #  define BX_BOCHS_H 1
@@ -106,7 +106,7 @@ extern "C" {
 }
 #endif
 
-#include "osdep.h"       /* platform dependent includes and defines */ 
+#include "osdep.h"       /* platform dependent includes and defines */
 #include "bx_debug/debug.h"
 #include "bxversion.h"
 
@@ -152,6 +152,11 @@ void print_tree(bx_param_c *node, int level = 0);
 #define BXRS_PARAM_SPECIAL8(parent, name, save_handler, restore_handler) \
   BXRS_PARAM_SPECIAL(parent, name, BX_MAX_BIT8U,  save_handler, restore_handler)
 
+#define BXRS_HEX_PARAM_SIMPLE32(parent, name) \
+  new bx_shadow_num_c(parent, #name, (Bit32u*)&(name), BASE_HEX)
+#define BXRS_HEX_PARAM_SIMPLE64(parent, name) \
+  new bx_shadow_num_c(parent, #name, (Bit64u*)&(name), BASE_HEX)
+
 #define BXRS_HEX_PARAM_SIMPLE(parent, name) \
   new bx_shadow_num_c(parent, #name, &(name), BASE_HEX)
 #define BXRS_HEX_PARAM_FIELD(parent, name, field) \
@@ -193,19 +198,19 @@ void print_tree(bx_param_c *node, int level = 0);
 #define BX_GET_ENABLE_A20()         bx_pc_system.get_enable_a20()
 
 #if BX_SUPPORT_A20
-#  define A20ADDR(x)                ((x) & bx_pc_system.a20_mask)
+#  define A20ADDR(x)                (bx_phy_address(x) & bx_pc_system.a20_mask)
 #else
-#  define A20ADDR(x)                (x)
+#  define A20ADDR(x)                (bx_phy_address(x))
 #endif
 
 #if BX_SUPPORT_SMP
 #  define BX_TICK1_IF_SINGLE_PROCESSOR() \
-             if (BX_SMP_PROCESSORS == 1) BX_TICK1()
-#  define BX_TICKN_IF_SINGLE_PROCESSOR() \
-             if (BX_SMP_PROCESSORS == 1) BX_TICKN(n)
+              if (BX_SMP_PROCESSORS == 1) BX_TICK1()
+#  define BX_TICKN_IF_SINGLE_PROCESSOR(n) \
+              if (BX_SMP_PROCESSORS == 1) BX_TICKN(n)
 #else
-#  define BX_TICK1_IF_SINGLE_PROCESSOR() BX_TICK1()
-#  define BX_TICKN_IF_SINGLE_PROCESSOR() BX_TICKN(n)
+#  define BX_TICK1_IF_SINGLE_PROCESSOR()  BX_TICK1()
+#  define BX_TICKN_IF_SINGLE_PROCESSOR(n) BX_TICKN(n)
 #endif
 
 // you can't use static member functions on the CPU, if there are going
@@ -235,70 +240,77 @@ void print_tree(bx_param_c *node, int level = 0);
         if (bx_guard.report.io) bx_dbg_io_report(port, size, op, val)
 #  define BX_DBG_UCMEM_REPORT(addr, size, op, val) \
         if (bx_guard.report.ucmem) bx_dbg_ucmem_report(addr, size, op, val)
+#  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, pl, rw, data) \
+        bx_dbg_lin_memory_access(cpu, lin, phy, len, pl, rw, data)
+#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, data) \
+        bx_dbg_phy_memory_access(cpu, phy, len, rw, data)
 #else  // #if BX_DEBUGGER
 // debugger not compiled in, use empty stubs
 #  define BX_DBG_ASYNC_INTR 1
 #  define BX_DBG_ASYNC_DMA  1
-#  define BX_DBG_DMA_REPORT(addr, len, what, val)
-#  define BX_DBG_IAC_REPORT(vector, irq)
-#  define BX_DBG_A20_REPORT(val)
-#  define BX_DBG_IO_REPORT(addr, size, op, val)
-#  define BX_DBG_UCMEM_REPORT(addr, size, op, val)
+#  define BX_DBG_DMA_REPORT(addr, len, what, val)                    /* empty */
+#  define BX_DBG_IAC_REPORT(vector, irq)                             /* empty */
+#  define BX_DBG_A20_REPORT(val)                                     /* empty */
+#  define BX_DBG_IO_REPORT(addr, size, op, val)                      /* empty */
+#  define BX_DBG_UCMEM_REPORT(addr, size, op, val)                   /* empty */
+#  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, pl, rw, data) /* empty */
+#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, data)          /* empty */
 #endif  // #if BX_DEBUGGER
 
 #define MAGIC_LOGNUM 0x12345678
 
-typedef class BOCHSAPI logfunctions {
-	char *prefix;
-	int type;
+typedef class BOCHSAPI logfunctions
+{
+  char *prefix;
+  int type;
 // values of onoff: 0=ignore, 1=report, 2=ask, 3=fatal
 #define ACT_IGNORE 0
 #define ACT_REPORT 1
 #define ACT_ASK    2
 #define ACT_FATAL  3
 #define N_ACT      4
-	int onoff[N_LOGLEV];
-	class iofunctions *logio;
-	// default log actions for all devices, declared and initialized
-	// in logio.cc.
-	BOCHSAPI_CYGONLY static int default_onoff[N_LOGLEV];
+  int onoff[N_LOGLEV];
+  class iofunctions *logio;
+  // default log actions for all devices, declared and initialized
+  // in logio.cc.
+  BOCHSAPI_CYGONLY static int default_onoff[N_LOGLEV];
 public:
-	logfunctions(void);
-	logfunctions(class iofunctions *);
-	~logfunctions(void);
+  logfunctions(void);
+  logfunctions(class iofunctions *);
+ ~logfunctions(void);
 
-	void info(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
-	void error(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
-	void panic(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
-	void pass(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
-	void ldebug(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
-	void fatal (const char *prefix, const char *fmt, va_list ap, int exit_status);
+  void info(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
+  void error(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
+  void panic(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
+  void pass(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
+  void ldebug(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
+  void fatal (const char *prefix, const char *fmt, va_list ap, int exit_status);
 #if BX_EXTERNAL_DEBUGGER
-	virtual void ask (int level, const char *prefix, const char *fmt, va_list ap);
+  virtual void ask (int level, const char *prefix, const char *fmt, va_list ap);
 #else
-	void ask (int level, const char *prefix, const char *fmt, va_list ap);
+  void ask (int level, const char *prefix, const char *fmt, va_list ap);
 #endif
-	void put(const char *);
-	void settype(int);
-	void setio(class iofunctions *);
-	void setonoff(int loglev, int value) {
-	  assert (loglev >= 0 && loglev < N_LOGLEV);
-	  onoff[loglev] = value; 
-	}
-	char *getprefix () { return prefix; }
-	int getonoff(int level) {
-	  assert (level>=0 && level<N_LOGLEV);
-	  return onoff[level]; 
-        }
-	static void set_default_action (int loglev, int action) {
-	  assert (loglev >= 0 && loglev < N_LOGLEV);
-	  assert (action >= 0 && action < N_ACT);
-	  default_onoff[loglev] = action;
-	}
-	static int get_default_action (int loglev) {
-	  assert (loglev >= 0 && loglev < N_LOGLEV);
-	  return default_onoff[loglev];
-	}
+  void put(const char *);
+  void settype(int);
+  void setio(class iofunctions *);
+  void setonoff(int loglev, int value) {
+    assert (loglev >= 0 && loglev < N_LOGLEV);
+    onoff[loglev] = value;
+  }
+  char *getprefix () { return prefix; }
+  int getonoff(int level) {
+    assert (level>=0 && level<N_LOGLEV);
+    return onoff[level];
+  }
+  static void set_default_action (int loglev, int action) {
+    assert (loglev >= 0 && loglev < N_LOGLEV);
+    assert (action >= 0 && action < N_ACT);
+    default_onoff[loglev] = action;
+  }
+  static int get_default_action (int loglev) {
+    assert (loglev >= 0 && loglev < N_LOGLEV);
+    return default_onoff[loglev];
+  }
 } logfunc_t;
 
 #define BX_LOGPREFIX_SIZE 51
@@ -315,59 +327,58 @@ enum {
 };
 
 class BOCHSAPI iofunctions {
-	int magic;
-	char logprefix[BX_LOGPREFIX_SIZE];
-	FILE *logfd;
-	class logfunctions *log;
-	void init(void);
-	void flush(void);
+  int magic;
+  char logprefix[BX_LOGPREFIX_SIZE];
+  FILE *logfd;
+  class logfunctions *log;
+  void init(void);
+  void flush(void);
 
 // Log Class types
 public:
-	iofunctions(void);
-	iofunctions(FILE *);
-	iofunctions(int);
-	iofunctions(const char *);
-	~iofunctions(void);
+  iofunctions(void);
+  iofunctions(FILE *);
+  iofunctions(int);
+  iofunctions(const char *);
+ ~iofunctions(void);
 
-	void out(int facility, int level, const char *pre, const char *fmt, va_list ap);
+  void out(int facility, int level, const char *pre, const char *fmt, va_list ap);
 
-	void init_log(const char *fn);
-	void init_log(int fd);
-	void init_log(FILE *fs);
-	void exit_log();
-	void set_log_prefix(const char *prefix);
-	int get_n_logfns() { return n_logfn; }
-	logfunc_t *get_logfn(int index) { return logfn_list[index]; }
-	void add_logfn(logfunc_t *fn);
-	void remove_logfn(logfunc_t *fn);
-	void set_log_action(int loglevel, int action);
-	const char *getlevel(int i) {
-		static const char *loglevel[N_LOGLEV] = {
-			"DEBUG",
-			"INFO",
-			"ERROR",
-			"PANIC",
-			"PASS"
-		};
-                if (i>=0 && i<N_LOGLEV) return loglevel[i];
-                else return "?";
-	}
-	char *getaction(int i) {
-	   static const char *name[] = { "ignore", "report", "ask", "fatal" };
-	   assert (i>=ACT_IGNORE && i<N_ACT);
-	   return (char *) name[i];
-	}
+  void init_log(const char *fn);
+  void init_log(int fd);
+  void init_log(FILE *fs);
+  void exit_log();
+  void set_log_prefix(const char *prefix);
+  int get_n_logfns() { return n_logfn; }
+  logfunc_t *get_logfn(int index) { return logfn_list[index]; }
+  void add_logfn(logfunc_t *fn);
+  void remove_logfn(logfunc_t *fn);
+  void set_log_action(int loglevel, int action);
+  const char *getlevel(int i) {
+    static const char *loglevel[N_LOGLEV] = {
+      "DEBUG",
+      "INFO",
+      "ERROR",
+      "PANIC",
+      "PASS"
+    };
+    if (i>=0 && i<N_LOGLEV) return loglevel[i];
+    else return "?";
+  }
+  char *getaction(int i) {
+    static const char *name[] = { "ignore", "report", "ask", "fatal" };
+    assert (i>=ACT_IGNORE && i<N_ACT);
+    return (char *) name[i];
+  }
 
 protected:
-	int n_logfn;
+  int n_logfn;
 #define MAX_LOGFNS 128
-	logfunc_t *logfn_list[MAX_LOGFNS];
-	const char *logfn;
+  logfunc_t *logfn_list[MAX_LOGFNS];
+  const char *logfn;
 };
 
 typedef class BOCHSAPI iofunctions iofunc_t;
-
 
 #define SAFE_GET_IOFUNC() \
   ((io==NULL)? (io=new iofunc_t("/dev/stderr")) : io)
@@ -382,6 +393,8 @@ typedef class BOCHSAPI iofunctions iofunc_t;
 #define BX_PANIC(x) (LOG_THIS panic) x
 #define BX_PASS(x) (LOG_THIS pass) x
 
+#define BX_ASSERT(x)
+
 #else
 
 #define BX_INFO(x)  (LOG_THIS info) x
@@ -389,6 +402,8 @@ typedef class BOCHSAPI iofunctions iofunc_t;
 #define BX_ERROR(x) (LOG_THIS error) x
 #define BX_PANIC(x) (LOG_THIS panic) x
 #define BX_PASS(x) (LOG_THIS pass) x
+
+#define BX_ASSERT(x) do {if (!(x)) BX_PANIC(("failed assertion \"%s\" at %s:%d\n", #x, __FILE__, __LINE__));} while (0)
 
 #endif
 
@@ -404,6 +419,14 @@ BOCHSAPI extern logfunc_t *genlog;
 #else
 #define FMT_ADDRX FMT_ADDRX32
 #endif
+
+#if BX_PHY_ADDRESS_LONG
+  #define FMT_PHY_ADDRX FMT_ADDRX64
+#else
+  #define FMT_PHY_ADDRX FMT_ADDRX32
+#endif
+
+#define FMT_LIN_ADDRX FMT_ADDRX
 
 #if BX_GDBSTUB
 // defines for GDB stub
@@ -432,23 +455,15 @@ typedef struct {
   bx_bool a20;
   bx_bool interrupts;
   bx_bool exceptions;
-  bx_bool unsupported;
-  bx_bool temp;
-  bx_bool reset;
   bx_bool debugger;
   bx_bool mouse;
   bx_bool io;
-  bx_bool xms;
-  bx_bool v8086;
-  bx_bool paging;
-  bx_bool creg;
-  bx_bool dreg;
   bx_bool dma;
   bx_bool unsupported_io;
   bx_bool serial;
   bx_bool cdrom;
   bx_bool print_timestamps;
-#if BX_MAGIC_BREAKPOINT
+#if BX_DEBUGGER
   bx_bool magic_break_enabled;
 #endif
 #if BX_GDBSTUB
@@ -462,13 +477,11 @@ typedef struct {
   bx_bool linux_syscall;
 #endif
   void* record_io;
-  } bx_debug_t;
+} bx_debug_t;
 
-#define BX_ASSERT(x) do {if (!(x)) BX_PANIC(("failed assertion \"%s\" at %s:%d\n", #x, __FILE__, __LINE__));} while (0)
-void bx_signal_handler (int signum);
+void CDECL bx_signal_handler(int signum);
 int bx_atexit(void);
 BOCHSAPI extern bx_debug_t bx_dbg;
-
 
 // memory access type (read/write/rw)
 #define BX_READ         0
@@ -500,7 +513,7 @@ extern bx_bool bx_gui_sighandler;
 
 #define BX_KBD_XT_TYPE        0
 #define BX_KBD_AT_TYPE        1
-#define BX_KBD_MF_TYPE        2 
+#define BX_KBD_MF_TYPE        2
 
 #define BX_N_OPTROM_IMAGES 4
 #define BX_N_OPTRAM_IMAGES 4
@@ -515,9 +528,7 @@ extern bx_bool bx_gui_sighandler;
   #define BX_SMP_PROCESSORS 1
 #endif
 
-void bx_center_print(FILE *file, char *line, int maxwidth);
-
-#define BX_USE_PS2_MOUSE 1
+void bx_center_print(FILE *file, const char *line, unsigned maxwidth);
 
 #include "instrument.h"
 
@@ -537,55 +548,85 @@ void bx_center_print(FILE *file, char *line, int maxwidth);
     *((Bit32u*)(hostPtr)) = (nativeVar32)
 #define WriteHostQWordToLittleEndian(hostPtr, nativeVar64) \
     *((Bit64u*)(hostPtr)) = (nativeVar64)
-#define ReadHostWordFromLittleEndian(hostPtr, nativeVar16) \
+
+#define ReadHostWordFromLittleEndian(hostPtr,  nativeVar16) \
     (nativeVar16) = *((Bit16u*)(hostPtr))
 #define ReadHostDWordFromLittleEndian(hostPtr, nativeVar32) \
     (nativeVar32) = *((Bit32u*)(hostPtr))
 #define ReadHostQWordFromLittleEndian(hostPtr, nativeVar64) \
     (nativeVar64) = *((Bit64u*)(hostPtr))
 
+#define CopyHostWordLittleEndian(hostAddrDst,  hostAddrSrc)  \
+    (* (Bit16u *)(hostAddrDst)) = (* (Bit16u *)(hostAddrSrc));
+#define CopyHostDWordLittleEndian(hostAddrDst,  hostAddrSrc) \
+    (* (Bit32u *)(hostAddrDst)) = (* (Bit32u *)(hostAddrSrc));
+#define CopyHostQWordLittleEndian(hostAddrDst,  hostAddrSrc) \
+    (* (Bit64u *)(hostAddrDst)) = (* (Bit64u *)(hostAddrSrc));
+
 #else
 
 #define WriteHostWordToLittleEndian(hostPtr,  nativeVar16) { \
-    ((Bit8u *)(hostPtr))[0] = (Bit8u)  (nativeVar16); \
-    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar16)>>8); \
-    }
+    ((Bit8u *)(hostPtr))[0] = (Bit8u)  (nativeVar16);        \
+    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar16)>>8);    \
+}
 #define WriteHostDWordToLittleEndian(hostPtr, nativeVar32) { \
-    ((Bit8u *)(hostPtr))[0] = (Bit8u)  (nativeVar32); \
-    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar32)>>8); \
-    ((Bit8u *)(hostPtr))[2] = (Bit8u) ((nativeVar32)>>16); \
-    ((Bit8u *)(hostPtr))[3] = (Bit8u) ((nativeVar32)>>24); \
-    }
+    ((Bit8u *)(hostPtr))[0] = (Bit8u)  (nativeVar32);        \
+    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar32)>>8);    \
+    ((Bit8u *)(hostPtr))[2] = (Bit8u) ((nativeVar32)>>16);   \
+    ((Bit8u *)(hostPtr))[3] = (Bit8u) ((nativeVar32)>>24);   \
+}
 #define WriteHostQWordToLittleEndian(hostPtr, nativeVar64) { \
-    ((Bit8u *)(hostPtr))[0] = (Bit8u)  (nativeVar64); \
-    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar64)>>8); \
-    ((Bit8u *)(hostPtr))[2] = (Bit8u) ((nativeVar64)>>16); \
-    ((Bit8u *)(hostPtr))[3] = (Bit8u) ((nativeVar64)>>24); \
-    ((Bit8u *)(hostPtr))[4] = (Bit8u) ((nativeVar64)>>32); \
-    ((Bit8u *)(hostPtr))[5] = (Bit8u) ((nativeVar64)>>40); \
-    ((Bit8u *)(hostPtr))[6] = (Bit8u) ((nativeVar64)>>48); \
-    ((Bit8u *)(hostPtr))[7] = (Bit8u) ((nativeVar64)>>56); \
-    }
-#define ReadHostWordFromLittleEndian(hostPtr, nativeVar16) { \
-    (nativeVar16) =  ((Bit16u) ((Bit8u *)(hostPtr))[0]) | \
-                    (((Bit16u) ((Bit8u *)(hostPtr))[1])<<8) ; \
-    }
-#define ReadHostDWordFromLittleEndian(hostPtr, nativeVar32) { \
-    (nativeVar32) =  ((Bit32u) ((Bit8u *)(hostPtr))[0]) | \
-                    (((Bit32u) ((Bit8u *)(hostPtr))[1])<<8) | \
+    ((Bit8u *)(hostPtr))[0] = (Bit8u)  (nativeVar64);        \
+    ((Bit8u *)(hostPtr))[1] = (Bit8u) ((nativeVar64)>>8);    \
+    ((Bit8u *)(hostPtr))[2] = (Bit8u) ((nativeVar64)>>16);   \
+    ((Bit8u *)(hostPtr))[3] = (Bit8u) ((nativeVar64)>>24);   \
+    ((Bit8u *)(hostPtr))[4] = (Bit8u) ((nativeVar64)>>32);   \
+    ((Bit8u *)(hostPtr))[5] = (Bit8u) ((nativeVar64)>>40);   \
+    ((Bit8u *)(hostPtr))[6] = (Bit8u) ((nativeVar64)>>48);   \
+    ((Bit8u *)(hostPtr))[7] = (Bit8u) ((nativeVar64)>>56);   \
+}
+
+#define ReadHostWordFromLittleEndian(hostPtr, nativeVar16) {   \
+    (nativeVar16) =  ((Bit16u) ((Bit8u *)(hostPtr))[0]) |      \
+                    (((Bit16u) ((Bit8u *)(hostPtr))[1])<<8) ;  \
+}
+#define ReadHostDWordFromLittleEndian(hostPtr, nativeVar32) {  \
+    (nativeVar32) =  ((Bit32u) ((Bit8u *)(hostPtr))[0]) |      \
+                    (((Bit32u) ((Bit8u *)(hostPtr))[1])<<8) |  \
                     (((Bit32u) ((Bit8u *)(hostPtr))[2])<<16) | \
-                    (((Bit32u) ((Bit8u *)(hostPtr))[3])<<24); \
-    }
-#define ReadHostQWordFromLittleEndian(hostPtr, nativeVar64) { \
-    (nativeVar64) =  ((Bit64u) ((Bit8u *)(hostPtr))[0]) | \
-                    (((Bit64u) ((Bit8u *)(hostPtr))[1])<<8) | \
+                    (((Bit32u) ((Bit8u *)(hostPtr))[3])<<24);  \
+}
+#define ReadHostQWordFromLittleEndian(hostPtr, nativeVar64) {  \
+    (nativeVar64) =  ((Bit64u) ((Bit8u *)(hostPtr))[0]) |      \
+                    (((Bit64u) ((Bit8u *)(hostPtr))[1])<<8) |  \
                     (((Bit64u) ((Bit8u *)(hostPtr))[2])<<16) | \
                     (((Bit64u) ((Bit8u *)(hostPtr))[3])<<24) | \
                     (((Bit64u) ((Bit8u *)(hostPtr))[4])<<32) | \
                     (((Bit64u) ((Bit8u *)(hostPtr))[5])<<40) | \
                     (((Bit64u) ((Bit8u *)(hostPtr))[6])<<48) | \
-                    (((Bit64u) ((Bit8u *)(hostPtr))[7])<<56); \
-    }
+                    (((Bit64u) ((Bit8u *)(hostPtr))[7])<<56);  \
+}
+
+#define CopyHostWordLittleEndian(hostAddrDst, hostAddrSrc) {   \
+    ((Bit8u *)(hostAddrDst))[0] = ((Bit8u *)(hostAddrSrc))[0]; \
+    ((Bit8u *)(hostAddrDst))[1] = ((Bit8u *)(hostAddrSrc))[1]; \
+}
+#define CopyHostDWordLittleEndian(hostAddrDst, hostAddrSrc) {  \
+    ((Bit8u *)(hostAddrDst))[0] = ((Bit8u *)(hostAddrSrc))[0]; \
+    ((Bit8u *)(hostAddrDst))[1] = ((Bit8u *)(hostAddrSrc))[1]; \
+    ((Bit8u *)(hostAddrDst))[2] = ((Bit8u *)(hostAddrSrc))[2]; \
+    ((Bit8u *)(hostAddrDst))[3] = ((Bit8u *)(hostAddrSrc))[3]; \
+}
+#define CopyHostQWordLittleEndian(hostAddrDst, hostAddrSrc) {  \
+    ((Bit8u *)(hostAddrDst))[0] = ((Bit8u *)(hostAddrSrc))[0]; \
+    ((Bit8u *)(hostAddrDst))[1] = ((Bit8u *)(hostAddrSrc))[1]; \
+    ((Bit8u *)(hostAddrDst))[2] = ((Bit8u *)(hostAddrSrc))[2]; \
+    ((Bit8u *)(hostAddrDst))[3] = ((Bit8u *)(hostAddrSrc))[3]; \
+    ((Bit8u *)(hostAddrDst))[4] = ((Bit8u *)(hostAddrSrc))[4]; \
+    ((Bit8u *)(hostAddrDst))[5] = ((Bit8u *)(hostAddrSrc))[5]; \
+    ((Bit8u *)(hostAddrDst))[6] = ((Bit8u *)(hostAddrSrc))[6]; \
+    ((Bit8u *)(hostAddrDst))[7] = ((Bit8u *)(hostAddrSrc))[7]; \
+}
 
 #endif
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.68 2007/11/01 18:03:48 sshwarts Exp $
+// $Id: pc_system.cc,v 1.71 2008/05/10 20:39:53 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -127,25 +127,31 @@ bx_pc_system_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
   bx_devices.outp(addr, value, io_len);
 }
 
-#if BX_SUPPORT_A20
-
 void bx_pc_system_c::set_enable_a20(bx_bool value)
 {
+#if BX_SUPPORT_A20
   bx_bool old_enable_a20 = enable_a20;
 
   if (value) {
     enable_a20 = 1;
 #if BX_CPU_LEVEL < 2
-    a20_mask   =    0xfffff;
+    a20_mask =    0xfffff;
 #elif BX_CPU_LEVEL == 2
-    a20_mask   =   0xffffff;
-#else /* 386+ */
-    a20_mask   = 0xffffffff;
+    a20_mask =   0xffffff;
+#elif BX_PHY_ADDRESS_LONG
+    a20_mask = BX_CONST64(0xffffffffffffffff);
+#else  /* 386+ */
+    a20_mask = 0xffffffff;
 #endif
   }
   else {
     enable_a20 = 0;
-    a20_mask   = 0xffefffff;   /* mask off A20 address line */
+    /* mask off A20 address line */
+#if BX_PHY_ADDRESS_LONG
+    a20_mask = BX_CONST64(0xffffffffffefffff);
+#else
+    a20_mask = 0xffefffff;
+#endif
   }
 
   BX_DBG_A20_REPORT(enable_a20);
@@ -156,30 +162,23 @@ void bx_pc_system_c::set_enable_a20(bx_bool value)
   // they can potentially invalidate certain cache info based on
   // A20-line-applied physical addresses.
   if (old_enable_a20 != enable_a20) MemoryMappingChanged();
+#else
+  BX_DEBUG(("set_enable_a20: ignoring: BX_SUPPORT_A20 = 0"));
+#endif
 }
 
 bx_bool bx_pc_system_c::get_enable_a20(void)
 {
+#if BX_SUPPORT_A20
   if (bx_dbg.a20)
     BX_INFO(("A20: get() = %u", (unsigned) enable_a20));
 
   return enable_a20;
-}
-
 #else
-
-void bx_pc_system_c::set_enable_a20(bx_bool value)
-{
-  BX_DEBUG(("set_enable_a20: ignoring: SUPPORT_A20 = 0"));
-}
-
-bx_bool bx_pc_system_c::get_enable_a20(void)
-{
-  BX_DEBUG(("get_enable_a20: ignoring: SUPPORT_A20 = 0"));
+  BX_DEBUG(("get_enable_a20: ignoring: BX_SUPPORT_A20 = 0"));
   return 1;
+#endif
 }
-
-#endif  // #if BX_SUPPORT_A20
 
 void bx_pc_system_c::MemoryMappingChanged(void)
 {
@@ -258,7 +257,7 @@ void bx_pc_system_c::register_state(void)
 // Bochs internal timer delivery framework features
 // ================================================
 
-int bx_pc_system_c::register_timer( void *this_ptr, void (*funct)(void *),
+int bx_pc_system_c::register_timer(void *this_ptr, void (*funct)(void *),
   Bit32u useconds, bx_bool continuous, bx_bool active, const char *id)
 {
   // Convert useconds to number of ticks.

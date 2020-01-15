@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.89 2007/09/28 19:52:02 sshwarts Exp $
+// $Id: iodev.h,v 1.92 2008/04/17 14:39:32 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,6 +25,8 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 #ifndef IODEV_H
 #define IODEV_H
@@ -45,7 +47,6 @@
 #define BX_MAX_IRQS 16
 #define BX_NO_IRQ  -1
 
-
 class bx_pit_c;
 #if BX_SUPPORT_APIC
 class bx_ioapic_c;
@@ -57,10 +58,8 @@ class bx_iodebug_c;
 class bx_g2h_c;
 #endif
 
-
 typedef Bit32u (*bx_read_handler_t)(void *, Bit32u, unsigned);
 typedef void   (*bx_write_handler_t)(void *, Bit32u, Bit32u, unsigned);
-
 
 #if BX_USE_DEV_SMF
 #  define BX_DEV_SMF  static
@@ -74,9 +73,9 @@ typedef void   (*bx_write_handler_t)(void *, Bit32u, Bit32u, unsigned);
 // bx_devmodel_c declaration
 //////////////////////////////////////////////////////////////////////
 
-// This class defines virtual methods that are common to all devices. 
-// Child classes do not need to implement all of them, because in this 
-// definition they are defined as empty, as opposed to being pure 
+// This class defines virtual methods that are common to all devices.
+// Child classes do not need to implement all of them, because in this
+// definition they are defined as empty, as opposed to being pure
 // virtual (= 0).
 class BOCHSAPI bx_devmodel_c : public logfunctions {
   public:
@@ -99,7 +98,7 @@ class bx_list_c;
 class BOCHSAPI bx_pci_device_stub_c {
 public:
   virtual ~bx_pci_device_stub_c() {}
-  
+
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len) {
     return 0;
   }
@@ -115,7 +114,7 @@ public:
 
 //////////////////////////////////////////////////////////////////////
 #define STUBFUNC(dev,method) \
-   pluginlog->panic("%s called in %s stub. you must not have loaded the %s plugin", #dev, #method, #dev )
+   pluginlog->panic("%s called in %s stub. you must not have loaded the %s plugin", #dev, #method, #dev)
 //////////////////////////////////////////////////////////////////////
 
 class BOCHSAPI bx_keyb_stub_c : public bx_devmodel_c {
@@ -153,12 +152,12 @@ public:
   virtual unsigned set_cd_media_status(Bit32u handle, unsigned status) {
     STUBFUNC(HD, set_cd_media_status); return 0;
   }
-  virtual Bit32u virt_read_handler(Bit32u address, unsigned io_len) 
+  virtual Bit32u virt_read_handler(Bit32u address, unsigned io_len)
   {
     STUBFUNC(HD, virt_read_handler); return 0;
   }
   virtual void   virt_write_handler(Bit32u address,
-      Bit32u value, unsigned io_len) 
+      Bit32u value, unsigned io_len)
   {
     STUBFUNC(HD, virt_write_handler);
   }
@@ -212,7 +211,7 @@ public:
   virtual unsigned registerDMA16Channel(
     unsigned channel,
     void (* dmaRead)(Bit16u *data_word),
-    void (* dmaWrite)(Bit16u *data_word),   
+    void (* dmaWrite)(Bit16u *data_word),
     const char *name)
   {
     STUBFUNC(dma, registerDMA16Channel); return 0;
@@ -234,13 +233,13 @@ public:
 class BOCHSAPI bx_pic_stub_c : public bx_devmodel_c {
 public:
   virtual void raise_irq(unsigned irq_no) {
-    STUBFUNC(pic, raise_irq); 
+    STUBFUNC(pic, raise_irq);
   }
   virtual void lower_irq(unsigned irq_no) {
-    STUBFUNC(pic, lower_irq); 
+    STUBFUNC(pic, lower_irq);
   }
   virtual void set_mode(bx_bool ma_sl, Bit8u mode) {
-    STUBFUNC(pic, set_mode); 
+    STUBFUNC(pic, set_mode);
   }
   virtual Bit8u IAC(void) {
     STUBFUNC(pic, IAC); return 0;
@@ -252,9 +251,9 @@ public:
 
 class BOCHSAPI bx_vga_stub_c : public bx_devmodel_c {
 public:
-  virtual void redraw_area(unsigned x0, unsigned y0, 
+  virtual void redraw_area(unsigned x0, unsigned y0,
                            unsigned width, unsigned height) {
-    STUBFUNC(vga, redraw_area);  
+    STUBFUNC(vga, redraw_area);
   }
   virtual Bit8u mem_read(Bit32u addr) {
     STUBFUNC(vga, mem_read);  return 0;
@@ -262,12 +261,12 @@ public:
   virtual void mem_write(Bit32u addr, Bit8u value) {
     STUBFUNC(vga, mem_write);
   }
-  virtual void get_text_snapshot(Bit8u **text_snapshot, 
+  virtual void get_text_snapshot(Bit8u **text_snapshot,
                                  unsigned *txHeight, unsigned *txWidth) {
-    STUBFUNC(vga, get_text_snapshot); 
+    STUBFUNC(vga, get_text_snapshot);
   }
   virtual void trigger_timer(void *this_ptr) {
-    STUBFUNC(vga, trigger_timer); 
+    STUBFUNC(vga, trigger_timer);
   }
   virtual Bit8u get_actl_palette_idx(Bit8u index) {
     return 0;
@@ -283,7 +282,7 @@ public:
   {
     STUBFUNC(pci, register_pci_handlers); return 0;
   }
-  virtual bx_bool is_pci_device (const char *name) {
+  virtual bx_bool is_pci_device(const char *name) {
     return 0;
   }
   virtual bx_bool pci_set_base_mem(void *this_ptr, memory_handler_t f1, memory_handler_t f2,
@@ -299,12 +298,8 @@ public:
     return 0;
   }
 
-  virtual Bit8u rd_memType (Bit32u addr) {
-    return 0;
-  }
-  virtual Bit8u wr_memType (Bit32u addr) {
-    return 0;
-  }
+  virtual Bit8u rd_memType(Bit32u addr) { return 0; }
+  virtual Bit8u wr_memType(Bit32u addr) { return 0; }
   virtual void print_i440fx_state(void) {}
 };
 
@@ -354,12 +349,8 @@ public:
     STUBFUNC(pciusb, usb_key_enq);
     return 0;
   }
-  virtual bx_bool usb_keyboard_connected() {
-    return 0;
-  }
-  virtual bx_bool usb_mouse_connected() {
-    return 0;
-  }
+  virtual bx_bool usb_keyboard_connected() { return 0; }
+  virtual bx_bool usb_mouse_connected() { return 0; }
 };
 #endif
 
@@ -405,13 +396,13 @@ public:
   bx_bool register_io_write_handler(void *this_ptr, bx_write_handler_t f,
                                     Bit32u addr, const char *name, Bit8u mask);
   bx_bool unregister_io_write_handler(void *this_ptr, bx_write_handler_t f,
-                                      Bit32u addr, Bit8u mask );
+                                      Bit32u addr, Bit8u mask);
   bx_bool register_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
                                          Bit32u begin_addr, Bit32u end_addr,
                                          const char *name, Bit8u mask);
   bx_bool register_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
                                           Bit32u begin_addr, Bit32u end_addr,
-                                          const char *name, Bit8u mask );
+                                          const char *name, Bit8u mask);
   bx_bool unregister_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
                                            Bit32u begin, Bit32u end, Bit8u mask);
   bx_bool unregister_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
@@ -519,7 +510,7 @@ private:
 #define PORTS 0x10000
   struct io_handler_struct **read_port_to_handler;
   struct io_handler_struct **write_port_to_handler;
-  
+
   // more for informative purposes, the names of the devices which
   // are use each of the IRQ 0..15 lines are stored here
   char *irq_handler_name[BX_MAX_IRQS];
@@ -533,15 +524,36 @@ private:
   static void   default_write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
 
   int timer_handle;
-  bx_bool is_serial_enabled ();
-  bx_bool is_usb_enabled ();
-  bx_bool is_parallel_enabled ();
+  bx_bool is_serial_enabled();
+  bx_bool is_usb_enabled();
+  bx_bool is_parallel_enabled();
 };
 
-#define DEV_MEM_READ_PHYSICAL(phy_addr, len, ptr) \
-  BX_MEM(0)->readPhysicalPage(NULL, phy_addr, len, ptr)
-#define DEV_MEM_WRITE_PHYSICAL(phy_addr, len, ptr) \
-  BX_MEM(0)->writePhysicalPage(NULL, phy_addr, len, ptr)
+// memory stub has an assumption that there are no memory accesses splitting 4K page
+BX_CPP_INLINE void DEV_MEM_READ_PHYSICAL(bx_phy_address phy_addr, unsigned len, Bit8u *ptr)
+{
+  while(len > 0) { 
+    unsigned remainingInPage = 0x1000 - (phy_addr & 0xfff);
+    if (len < remainingInPage) remainingInPage = len;
+    BX_MEM(0)->readPhysicalPage(NULL, phy_addr, remainingInPage, ptr);
+    ptr += remainingInPage;
+    phy_addr += remainingInPage;
+    len -= remainingInPage;
+  }
+}
+
+// memory stub has an assumption that there are no memory accesses splitting 4K page
+BX_CPP_INLINE void DEV_MEM_WRITE_PHYSICAL(bx_phy_address phy_addr, unsigned len, Bit8u *ptr)
+{
+  while(len > 0) { 
+    unsigned remainingInPage = 0x1000 - (phy_addr & 0xfff);
+    if (len < remainingInPage) remainingInPage = len;
+    BX_MEM(0)->writePhysicalPage(NULL, phy_addr, remainingInPage, ptr);
+    ptr += remainingInPage;
+    phy_addr += remainingInPage;
+    len -= remainingInPage;
+  }
+}
 
 #ifndef NO_DEVICE_INCLUDES
 
@@ -598,8 +610,8 @@ private:
 
 #endif /* NO_DEVICE_INCLUDES */
 
-#if ( BX_PROVIDE_DEVICE_MODELS==1 )
-BOCHSAPI extern bx_devices_c   bx_devices;
+#if BX_PROVIDE_DEVICE_MODELS
+BOCHSAPI extern bx_devices_c bx_devices;
 #endif
 
 #endif /* IODEV_H */

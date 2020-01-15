@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h,v 1.42 2007/11/01 18:03:48 sshwarts Exp $
+// $Id: pc_system.h,v 1.44 2008/03/19 18:36:17 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -106,16 +106,16 @@ public:
       bx_pc_system.countdownEvent();
     }
   }
-  static BX_CPP_INLINE void tickn(Bit64u n) {
-    while (n >= Bit64u(bx_pc_system.currCountdown)) {
-      n -= Bit64u(bx_pc_system.currCountdown);
+  static BX_CPP_INLINE void tickn(Bit32u n) {
+    while (n >= bx_pc_system.currCountdown) {
+      n -= bx_pc_system.currCountdown;
       bx_pc_system.currCountdown = 0;
       bx_pc_system.countdownEvent();
       // bx_pc_system.currCountdown is adjusted to new value by countdownevent().
     }
     // 'n' is not (or no longer) >= the countdown size.  We can just decrement
     // the remaining requested ticks and continue.
-    bx_pc_system.currCountdown -= Bit32u(n);
+    bx_pc_system.currCountdown -= n;
   }
 
   int register_timer_ticks(void* this_ptr, bx_timer_handler_t, Bit64u ticks,
@@ -156,7 +156,7 @@ public:
   // when A20 line is disabled, mask physical memory addresses to:
   //    286:      20 bits
   //    386:      20 bits
-  Bit32u  a20_mask;
+  bx_phy_address a20_mask;
 
   volatile bx_bool kill_bochs_request;
 

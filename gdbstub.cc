@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gdbstub.cc,v 1.30 2007/10/18 22:44:38 sshwarts Exp $
+// $Id: gdbstub.cc,v 1.32 2008/02/15 19:03:53 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2006  The Bochs Project Team
@@ -102,7 +102,7 @@ static void put_reply(char* buffer)
 
   BX_DEBUG (("put_buffer %s", buffer));
 
-  do { 
+  do {
     put_debug_char('$');
 
     csum = 0;
@@ -206,7 +206,7 @@ char* mem2hex(char* mem, char* buf, int count)
     *buf = hexchars[ch >> 4];
     buf++;
     *buf = hexchars[ch % 16];
-    buf++;  
+    buf++;
   }
   *buf = 0;
   return(buf);
@@ -295,7 +295,7 @@ int bx_gdbstub_check(unsigned int eip)
     {
       r = recv(socket_fd, (char *)&ch, 1, 0);
     }
-#endif   
+#endif
     if (r == 1)
     {
       BX_INFO(("Got byte %x", (unsigned int)ch));
@@ -418,7 +418,7 @@ static int access_linear(Bit64u laddress,
     valid = access_linear(laddress,
                           len + (laddress & 0xfff) - 4096,
                           rw,
-                          (Bit8u *)((unsigned long)data + 
+                          (Bit8u *)((unsigned long)data +
                                     4096 - (laddress & 0xfff)));
     return(valid);
   }
@@ -454,11 +454,11 @@ static void debug_loop(void)
       case 'c':
       {
         char buf[255];
-        int new_eip;
+        Bit32u new_eip;
 
         if (buffer[1] != 0)
         {
-          new_eip = atoi(buffer + 1);
+          new_eip = (Bit32u) atoi(buffer + 1);
 
           BX_INFO(("continuing at %x", new_eip));
 
@@ -467,22 +467,21 @@ static void debug_loop(void)
           }
 
           saved_eip = EIP;
-
-          BX_CPU(0)->eip_reg.dword.eip = new_eip;
+          BX_CPU_THIS_PTR gen_reg[BX_32BIT_REG_EIP].dword.erx = new_eip;
         }
 
         stub_trace_flag = 0;
-        bx_cpu.cpu_loop(0);              
+        bx_cpu.cpu_loop(0);
 
         DEV_vga_refresh();
 
         if (buffer[1] != 0)
         {
           bx_cpu.invalidate_prefetch_q();
-          BX_CPU_THIS_PTR eip_reg.dword.eip = saved_eip;
+          BX_CPU_THIS_PTR gen_reg[BX_32BIT_REG_EIP].dword.erx = saved_eip;
         }
 
-        BX_INFO(("stopped with %x", last_stop_reason));                               
+        BX_INFO(("stopped with %x", last_stop_reason));
         buf[0] = 'S';
         if (last_stop_reason == GDBSTUB_EXECUTION_BREAKPOINT ||
             last_stop_reason == GDBSTUB_TRACE)
@@ -530,7 +529,7 @@ static void debug_loop(void)
 
         addr = strtoull(&buffer[1], &ebuf, 16);
         len = strtoul(ebuf + 1, &ebuf, 16);
-        hex2mem(ebuf + 1, mem, len);          
+        hex2mem(ebuf + 1, mem, len);
 
         if (len == 1 && mem[0] == 0xcc)
         {
@@ -552,7 +551,7 @@ static void debug_loop(void)
             put_reply("Eff");
           }
         }
-        break;                    
+        break;
       }
 
       case 'm':
@@ -582,7 +581,7 @@ static void debug_loop(void)
         value = read_little_endian_hex(ebuf);
 
         BX_INFO(("reg %d set to %Lx", reg, value));
-#if !BX_SUPPORT_X86_64                 
+#if !BX_SUPPORT_X86_64
         switch (reg)
         {
           case 1:
@@ -721,17 +720,17 @@ static void debug_loop(void)
           registers[8] = EIP;
         }
         registers[9] = BX_CPU_THIS_PTR read_eflags();
-        registers[10] = 
+        registers[10] =
           BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
-        registers[11] = 
+        registers[11] =
           BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
-        registers[12] = 
+        registers[12] =
           BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value;
-        registers[13] = 
+        registers[13] =
           BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value;
-        registers[14] = 
+        registers[14] =
           BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value;
-        registers[15] = 
+        registers[15] =
           BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value;
         mem2hex((char *)registers, obuf, NUMREGSBYTES);
 #else
@@ -814,7 +813,7 @@ static void debug_loop(void)
         else
         {
           put_reply("Eff");
-        }          
+        }
         break;
 
       case 'Z':
@@ -848,7 +847,7 @@ static void wait_for_connect(int portn)
     BX_PANIC(("Failed to create socket"));
     exit(1);
   }
-   
+
   /* Allow rapid reuse of this port */
   opt = 1;
 #if __MINGW32__

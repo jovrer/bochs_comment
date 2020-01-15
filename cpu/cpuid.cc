@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpuid.cc,v 1.59 2007/12/15 17:42:20 sshwarts Exp $
+// $Id: cpuid.cc,v 1.69 2008/05/30 20:35:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -21,12 +21,10 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
 
 #if BX_SUPPORT_X86_64==0
 // Make life easier for merging code.
@@ -43,7 +41,7 @@
 #endif
 
 /* Get CPU version information. */
-Bit32u BX_CPU_C::get_cpu_version_information()
+Bit32u BX_CPU_C::get_cpu_version_information(void)
 {
   Bit32u family = 0, model = 0, stepping = 0;
   Bit32u extended_model = 0;
@@ -114,68 +112,85 @@ Bit32u BX_CPU_C::get_cpu_version_information()
 
 #endif  // BX_CPU_LEVEL > 3
 
-  return (extended_family << 20) | 
-         (extended_model << 16) | 
-         (family << 8) | 
+  return (extended_family << 20) |
+         (extended_model << 16) |
+         (family << 8) |
          (model<<4) | stepping;
-}       
+}
 
 /* Get CPU extended feature flags. */
-Bit32u BX_CPU_C::get_extended_cpuid_features()
+Bit32u BX_CPU_C::get_extended_cpuid_features(void)
 {
   // [0:0]   SSE3: SSE3 Instructions
-  // [2:1]   reserved
+  // [1:1]   PCLMULQDQ Instruction support
+  // [2:2]   reserved
   // [3:3]   MONITOR/MWAIT support
   // [4:4]   DS-CPL: CPL qualified debug store
   // [5:5]   VMX: Virtual Machine Technology
-  // [6:6]   reserved
+  // [6:6]   SMX: Secure Virtual Machine Technology
   // [7:7]   EST: Enhanced Intel SpeedStep Technology
   // [8:8]   TM2: Thermal Monitor 2
   // [9:9]   SSE3E: SSE3E Instructions (Intel Core Duo 2 new instructions)
   // [10:10] CNXT-ID: L1 context ID
-  // [12:11] reserved
+  // [11:11] reserved
+  // [12:12] FMA Instructions support
   // [13:13] CMPXCHG16B: CMPXCHG16B instruction support
   // [14:14] xTPR update control
-  // [18:15] reserved
-  // [19:19] SSE4.1: SSE4.1 Instructions
-  // [20:20] SSE4.2: SSE4.2 (SSE4E) Instructions
-  // [21:22] Reserved
-  // [23:23] POPCNT instruction support
-  // [31:21] reserved
+  // [17:15] reserved
+  // [18:18] DCA - Direct Cache Access
+  // [19:19] SSE4.1 Instructions
+  // [20:20] SSE4.2 Instructions
+  // [21:22] X2APIC
+  // [22:22] Reserved
+  // [23:23] POPCNT instruction
+  // [24:24] reserved
+  // [25:25] AES Instructions
+  // [26:26] XSAVE extensions support
+  // [27:27] OSXSAVE support
+  // [28:28] AVX extensions support
+  // [31:29] reserved
 
   Bit32u features = 0;
 
 #if BX_SUPPORT_SSE >= 3
-  features |= 0x1;      // support SSE3
+  features |= 0x1;               // support SSE3
 #endif
 #if BX_SUPPORT_MONITOR_MWAIT
-  features |= (1<<3);   // support MONITOR/MWAIT
+  features |= (1<<3);            // support MONITOR/MWAIT
 #endif
 #if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
-  features |= (1<<9);   // support SSE3E
+  features |= (1<<9);            // support SSE3E
 #endif
 
 #if BX_SUPPORT_X86_64
-  features |= (1<<13);  // support CMPXCHG16B
+  features |= (1<<13);           // support CMPXCHG16B
 #endif
 
 #if BX_SUPPORT_SSE >= 4
-  features |= (1<<19);  // support SSE4.1
+  features |= (1<<19);           // support SSE4.1
 #endif
 
 #if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
-  features |= (1<<20);  // support SSE4.2 (SSE4E)
+  features |= (1<<20);           // support SSE4.2 (SSE4E)
 #endif
 
 #if BX_SUPPORT_POPCNT || (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
-  features |= (1<<23);  // support POPCNT instruction
-#endif  
-  
+  features |= (1<<23);           // support POPCNT instruction
+#endif
+
+#if BX_SUPPORT_AES
+  features |= (1<<25);           // support AES instructions
+#endif
+
+#if BX_SUPPORT_XSAVE
+  features |= (1<<26) | (1<<27); // support XSAVE extensions
+#endif
+
   return features;
 }
 
 /* Get CPU feature flags. Returned by CPUID functions 1 and 80000001.  */
-Bit32u BX_CPU_C::get_std_cpuid_features()
+Bit32u BX_CPU_C::get_std_cpuid_features(void)
 {
   Bit32u features = 0;
 
@@ -240,18 +255,21 @@ Bit32u BX_CPU_C::get_std_cpuid_features()
 
 #if BX_SUPPORT_SMP
   // Intel(R) HyperThreading Technology
-  if (SIM->get_param_num(BXPN_CPU_NTHREADS)->get() > 1) 
+  if (SIM->get_param_num(BXPN_CPU_NTHREADS)->get() > 1)
     features |= (1<<28);
 #endif
 
   return features;
 }
 
-void BX_CPU_C::CPUID(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
 {
-  Bit32u function = EAX;
-
 #if BX_CPU_LEVEL >= 4
+  Bit32u function    = EAX;
+#if BX_SUPPORT_XSAVE
+  Bit32u subfunction = ECX;
+#endif
+
   if(function < 0x80000000) {
     if(function < MAX_STD_CPUID_FUNCTION) {
       RAX = BX_CPU_THIS_PTR cpuid_std_function[function].eax;
@@ -266,6 +284,14 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
           RDX &= ~(1<<9); // APIC on chip
       }
 #endif
+#if BX_SUPPORT_XSAVE
+      if (function == 0xD && subfunction > 0) {
+        RAX = 0;
+        RBX = 0;
+        RCX = 0;
+        RDX = 0;
+      }
+#endif
       return;
     }
   }
@@ -277,7 +303,7 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       RCX = BX_CPU_THIS_PTR cpuid_ext_function[function].ecx;
       RDX = BX_CPU_THIS_PTR cpuid_ext_function[function].edx;
 #if BX_SUPPORT_APIC
-      if (EAX == 1) {
+      if (function == 1) {
         // if MSR_APICBASE APIC Global Enable bit has been cleared,
         // the CPUID feature flag for the APIC is set to 0.
         if ((BX_CPU_THIS_PTR msr.apicbase & 0x800) == 0)
@@ -330,9 +356,13 @@ void BX_CPU_C::set_cpuid_defaults(void)
 #if BX_CPU_LEVEL <= 5
   // 486 and Pentium processors
   cpuid->eax = 1;
-#else 
+#else
   // for Pentium Pro, Pentium II, Pentium 4 processors
-  cpuid->eax = BX_SUPPORT_MONITOR_MWAIT ? 5 : 2;
+  cpuid->eax = 2;
+  if (BX_SUPPORT_MONITOR_MWAIT)
+    cpuid->eax = 0x5;
+  if (BX_SUPPORT_XSAVE)
+    cpuid->eax = 0xD;
 #endif
 
 #if BX_CPU_VENDOR_INTEL
@@ -358,7 +388,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
 
   cpuid->eax = get_cpu_version_information();
 
-  // EBX:      
+  // EBX:
   //   [7:0]   Brand ID
   //   [15:8]  CLFLUSH cache line size (value*8 = cache line size in bytes)
   //   [23:16] Number of logical processors in one physical processor
@@ -379,22 +409,33 @@ void BX_CPU_C::set_cpuid_defaults(void)
 
   // ECX:       Extended Feature Flags
   //   [0:0]   SSE3: SSE3 Instructions
-  //   [2:1]   reserved
+  //   [1:1]   PCLMULQDQ Instruction support
+  //   [2:2]   reserved
   //   [3:3]   MONITOR/MWAIT support
   //   [4:4]   DS-CPL: CPL qualified debug store
   //   [5:5]   VMX: Virtual Machine Technology
-  //   [6:6]   reserved
+  //   [6:6]   SMX: Secure Virtual Machine Technology
   //   [7:7]   EST: Enhanced Intel SpeedStep Technology
   //   [8:8]   TM2: Thermal Monitor 2
   //   [9:9]   SSE3E: SSE3E Instructions (Intel Core Duo 2 new instructions)
   //   [10:10] CNXT-ID: L1 context ID
-  //   [12:11] reserved
+  //   [11:11] reserved
+  //   [12:12] FMA Instructions support
   //   [13:13] CMPXCHG16B: CMPXCHG16B instruction support
   //   [14:14] xTPR update control
-  //   [18:15] reserved
-  //   [19:19] SSE4.1: SSE4.1 Instructions
-  //   [20:20] SSE4.2: SSE4.2 (SSE4E) Instructions
-  //   [31:21] reserved
+  //   [17:15] reserved
+  //   [18:18] DCA - Direct Cache Access
+  //   [19:19] SSE4.1 Instructions
+  //   [20:20] SSE4.2 Instructions
+  //   [21:22] X2APIC
+  //   [22:22] Reserved
+  //   [23:23] POPCNT instruction
+  //   [24:24] reserved
+  //   [25:25] AES Instructions
+  //   [26:26] XSAVE extensions support
+  //   [27:27] OSXSAVE support
+  //   [28:28] AVX extensions support
+  //   [31:29] reserved
   cpuid->ecx = get_extended_cpuid_features();
 
   // EDX:       Feature Flags
@@ -485,6 +526,21 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->edx = 0;
 #endif
 
+#if BX_SUPPORT_XSAVE
+  // ------------------------------------------------------
+  // CPUID function 0x0000000D
+  cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[0xD]);
+
+  // EAX - XCR0 lower 32 bits
+  // EBX - Maximum size (in bytes) required by enabled features
+  // ECX - Maximum size (in bytes) required by CPU supported features
+  // EDX - XCR0 upper 32 bits
+  cpuid->eax = BX_CPU_THIS_PTR xcr0.getRegister();
+  cpuid->ebx = 512+64;
+  cpuid->ecx = 512+64;
+  cpuid->edx = 0;
+#endif
+
 #if BX_SUPPORT_SSE >= 2   // report Pentium 4 extended functions
 
   // ------------------------------------------------------
@@ -521,7 +577,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
   //     [1:1]   AMD CmpLegacy
   //     [2:2]   AMD Secure Virtual Machine Technology
   //     [3:3]   Extended APIC Space
-  //     [4:4]   Alternative CR8 (treat lock mov cr0 as mov cr8) 
+  //     [4:4]   Alternative CR8 (treat lock mov cr0 as mov cr8)
   //     [5:5]   LZCNT support
   //     [6:6]   SSE4A support
   //     [7:7]   Misaligned SSE support
@@ -537,7 +593,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->ecx |= (1<<7);
 #endif
 
-  // EDX: 
+  // EDX:
   // Many of the bits in EDX are the same as EAX [*] for AMD
   // [*] [0:0]   FPU on chip
   // [*] [1:1]   VME: Virtual-8086 Mode enhancements
@@ -582,7 +638,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
 
 #if BX_CPU_VENDOR_INTEL
   // Processor Brand String, use the value that is returned
-  // by the first processor in the Pentium 4 family 
+  // by the first processor in the Pentium 4 family
   // (according to Intel manual)
 
   // ------------------------------------------------------
@@ -607,7 +663,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->ecx = 0x20202020; // "    "
   cpuid->edx = 0x00202020; // "    "
 #else
-  // Processor Brand String, use the value given 
+  // Processor Brand String, use the value given
   // in AMD manuals.
 
   // ------------------------------------------------------
@@ -658,7 +714,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
 
   // ------------------------------------------------------
   // CPUID function 0x00000007
-  cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[7]);
+  cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[7]);
 
   cpuid->eax = 0;
   cpuid->ebx = 0;

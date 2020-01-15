@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer_pro.cc,v 1.64 2007/12/14 20:41:09 sshwarts Exp $
+// $Id: ctrl_xfer_pro.cc,v 1.75 2008/05/21 21:38:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -35,7 +35,7 @@
 #define RIP EIP
 #endif
 
-/* pass zero in check_rpl if no needed selector RPL checking for 
+/* pass zero in check_rpl if no needed selector RPL checking for
    non-conforming segments */
 void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_rpl, Bit8u check_cpl)
 {
@@ -43,18 +43,17 @@ void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_
   if (descriptor->valid==0 || descriptor->segment==0 ||
           IS_DATA_SEGMENT(descriptor->type))
   {
-    BX_ERROR(("check_cs: not a valid code segment !"));
+    BX_ERROR(("check_cs(0x%04x): not a valid code segment !", cs_raw));
     exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
   }
 
 #if BX_SUPPORT_X86_64
   if (descriptor->u.segment.l) {
-    if (! BX_CPU_THIS_PTR efer.lma) {
-      BX_PANIC(("check_cs: attempt to jump to long mode without enabling EFER.LMA !"));
+    if (! BX_CPU_THIS_PTR efer.get_LMA()) {
+      BX_ERROR(("check_cs(0x%04x): attempt to jump to long mode without enabling EFER.LMA !", cs_raw));
     }
-
-    if (descriptor->u.segment.d_b) {
-      BX_ERROR(("check_cs: Both L and D bits enabled for segment descriptor !"));
+    else if (descriptor->u.segment.d_b) {
+      BX_ERROR(("check_cs(0x%04x): Both L and D bits enabled for segment descriptor !", cs_raw));
       exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
     }
   }
@@ -63,27 +62,30 @@ void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_
   // if non-conforming, code segment descriptor DPL must = CPL else #GP(selector)
   if (IS_CODE_SEGMENT_NON_CONFORMING(descriptor->type)) {
     if (descriptor->dpl != check_cpl) {
-      BX_ERROR(("check_cs: non-conforming code seg descriptor dpl != cpl"));
+      BX_ERROR(("check_cs(0x%04x): non-conforming code seg descriptor dpl != cpl, dpl=%d, cpl=%d",
+         cs_raw, descriptor->dpl, check_cpl));
       exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
     }
 
     /* RPL of destination selector must be <= CPL else #GP(selector) */
     if (check_rpl > check_cpl) {
-      BX_ERROR(("check_cs: non-conforming code seg selector rpl > cpl"));
+      BX_ERROR(("check_cs(0x%04x): non-conforming code seg selector rpl > cpl, rpl=%d, cpl=%d",
+         cs_raw, check_rpl, check_cpl));
       exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
     }
   }
   // if conforming, then code segment descriptor DPL must <= CPL else #GP(selector)
   else {
     if (descriptor->dpl > check_cpl) {
-      BX_ERROR(("check_cs: conforming code seg descriptor dpl > cpl"));
+      BX_ERROR(("check_cs(0x%04x): conforming code seg descriptor dpl > cpl, dpl=%d, cpl=%d",
+         cs_raw, descriptor->dpl, check_cpl));
       exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
     }
   }
 
   // code segment must be present else #NP(selector)
   if (! descriptor->p) {
-    BX_ERROR(("check_cs: code segment not present !"));
+    BX_ERROR(("check_cs(0x%04x): code segment not present !", cs_raw));
     exception(BX_NP_EXCEPTION, cs_raw & 0xfffc, 0);
   }
 }
@@ -91,30 +93,20 @@ void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_
   void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cpl)
 {
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector = *selector;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache    = *descriptor;
+  // Add cpl to the selector value.
+  selector->value = (0xfffc & selector->value) | cpl;
 
-  /* caller may request different CPL then in selector */
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector = *selector;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache = *descriptor;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.rpl = cpl;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid  = 1;
-  // Add cpl to the selector value.
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value =
-    (0xfffc & BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value) | cpl;
 
 #if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR efer.lma) {
+  if (long_mode()) {
     if (descriptor->u.segment.l) {
-      BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_64;
-      BX_DEBUG(("Long Mode Activated"));
       loadSRegLMNominal(BX_SEG_REG_CS, selector->value, cpl);
     }
-    else {
-      BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_COMPAT;
-      BX_DEBUG(("Compatibility Mode Activated"));
-      if (BX_CPU_THIS_PTR eip_reg.dword.rip_upper != 0) {
-        BX_PANIC(("handleCpuModeChange: leaving long mode with RIP upper != 0 !"));
-      }
-    }
+    handleCpuModeChange();
   }
 #endif
 
@@ -130,30 +122,12 @@ BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
   invalidate_prefetch_q();
 }
 
-  void BX_CPP_AttrRegparmN(1) 
-BX_CPU_C::branch_near32(Bit32u new_EIP)
-{
-  // check always, not only in protected mode
-  if (new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
-  {
-    BX_ERROR(("branch_near: offset outside of CS limits"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-#if BX_SUPPORT_TRACE_CACHE
-  // assert magic async_event to stop trace execution
-  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-#endif
-
-  EIP = new_EIP;
-}
-
-void BX_CPU_C::branch_far32(bx_selector_t *selector, 
+void BX_CPU_C::branch_far32(bx_selector_t *selector,
            bx_descriptor_t *descriptor, Bit32u eip, Bit8u cpl)
 {
   /* instruction pointer must be in code segment limit else #GP(0) */
   if (eip > descriptor->u.segment.limit_scaled) {
-    BX_ERROR(("branch_far: EIP > limit"));
+    BX_ERROR(("branch_far32: EIP > limit"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -165,33 +139,13 @@ void BX_CPU_C::branch_far32(bx_selector_t *selector,
   EIP = eip;
 }
 
-#if BX_SUPPORT_X86_64
-  void BX_CPP_AttrRegparmN(1) 
-BX_CPU_C::branch_near64(bxInstruction_c *i)
-{
-  Bit64u new_RIP = RIP + (Bit32s) i->Id();
-
-  if (! IsCanonical(new_RIP)) {
-    BX_ERROR(("branch_near64: canonical RIP violation"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-#if BX_SUPPORT_TRACE_CACHE
-  // assert magic async_event to stop trace execution
-  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-#endif
-
-  RIP = new_RIP;
-}
-#endif
-
-void BX_CPU_C::branch_far64(bx_selector_t *selector, 
+void BX_CPU_C::branch_far64(bx_selector_t *selector,
            bx_descriptor_t *descriptor, bx_address rip, Bit8u cpl)
 {
 #if BX_SUPPORT_X86_64
-  if (descriptor->u.segment.l) {
+  if (long_mode() && descriptor->u.segment.l) {
     if (! IsCanonical(rip)) {
-      BX_ERROR(("branch_far: canonical RIP violation"));
+      BX_ERROR(("branch_far64: canonical RIP violation"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
@@ -200,7 +154,7 @@ void BX_CPU_C::branch_far64(bx_selector_t *selector,
   {
     /* instruction pointer must be in code segment limit else #GP(0) */
     if (rip > descriptor->u.segment.limit_scaled) {
-      BX_ERROR(("branch_far: RIP > limit"));
+      BX_ERROR(("branch_far64: RIP > limit"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }

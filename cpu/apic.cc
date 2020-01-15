@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.cc,v 1.105 2007/12/07 10:59:18 sshwarts Exp $
+// $Id: apic.cc,v 1.108 2008/05/09 22:33:36 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (c) 2002 Zwane Mwaikambo, Stanislav Shwartsman
@@ -69,7 +69,7 @@ int apic_bus_deliver_interrupt(Bit8u vector, Bit8u dest, Bit8u delivery_mode, Bi
 
        return 0;
     }
-  } 
+  }
   else {
     // logical destination mode
     if(dest == 0) return 0;
@@ -179,10 +179,10 @@ void bx_generic_apic_c::set_base(bx_phy_address newbase)
   newbase &= (~0xfff);
   base_addr = newbase;
   if (id != APIC_UNKNOWN_ID)
-    BX_INFO(("relocate APIC id=%d to 0x%08x", id, newbase));
+    BX_INFO(("relocate APIC id=%d to 0x" FMT_PHY_ADDRX, id, newbase));
 }
 
-void bx_generic_apic_c::set_id(Bit8u newid) 
+void bx_generic_apic_c::set_id(Bit8u newid)
 {
   BX_INFO(("set APIC ID to %d", newid));
   id = newid;
@@ -192,7 +192,7 @@ bx_bool bx_generic_apic_c::is_selected(bx_phy_address addr, unsigned len)
 {
   if((addr & ~0xfff) == get_base()) {
     if((addr & 0xf) != 0)
-      BX_INFO(("warning: misaligned APIC access. addr=0x%08x, len=%d", addr, len));
+      BX_INFO(("warning: misaligned APIC access. addr=0x" FMT_PHY_ADDRX ", len=%d", addr, len));
     return 1;
   }
   return 0;
@@ -201,7 +201,7 @@ bx_bool bx_generic_apic_c::is_selected(bx_phy_address addr, unsigned len)
 void bx_generic_apic_c::read(bx_phy_address addr, void *data, unsigned len)
 {
   if((addr & ~0x3) != ((addr+len-1) & ~0x3)) {
-    BX_PANIC(("APIC read at address 0x%08x spans 32-bit boundary !", addr));
+    BX_PANIC(("APIC read at address 0x" FMT_PHY_ADDRX " spans 32-bit boundary !", addr));
     return;
   }
   Bit32u value;
@@ -217,13 +217,13 @@ void bx_generic_apic_c::read(bx_phy_address addr, void *data, unsigned len)
   else if (len == 2)
     *((Bit16u *)data) = value & 0xffff;
   else
-    BX_PANIC(("Unsupported APIC read at address 0x%08x, len=%d", addr, len));
+    BX_PANIC(("Unsupported APIC read at address 0x" FMT_PHY_ADDRX ", len=%d", addr, len));
 }
 
 void bx_generic_apic_c::write(bx_phy_address addr, void *data, unsigned len)
 {
   if((addr & ~0x3) != ((addr+len-1) & ~0x3)) {
-    BX_PANIC(("APIC write at address 0x%08x spans 32-bit boundary !", addr));
+    BX_PANIC(("APIC write at address 0x" FMT_PHY_ADDRX " spans 32-bit boundary !", addr));
     return;
   }
   bx_phy_address addr_aligned = addr & ~0x3;
@@ -231,7 +231,7 @@ void bx_generic_apic_c::write(bx_phy_address addr, void *data, unsigned len)
     write_aligned(addr_aligned, (Bit32u*) data);
     return;
   }
-  // partial write to the apic register, need to update some bytes 
+  // partial write to the apic register, need to update some bytes
   // and do not touch the others, i.e. to do RMW operation
   Bit32u value;
   read_aligned(addr_aligned, &value);  // apic read has no side effects
@@ -246,7 +246,7 @@ void bx_generic_apic_c::write(bx_phy_address addr, void *data, unsigned len)
     value |= (*((Bit16u *)data) << shift);
   }
   else {
-    BX_PANIC(("Unsupported APIC write at address 0x%08x, len=%d", addr, len));
+    BX_PANIC(("Unsupported APIC write at address 0x" FMT_PHY_ADDRX ", len=%d", addr, len));
   }
   write_aligned(addr_aligned, &value);
 }
@@ -264,7 +264,7 @@ bx_local_apic_c::bx_local_apic_c(BX_CPU_C *mycpu)
   INTR = 0;
 }
 
-void bx_local_apic_c::reset() 
+void bx_local_apic_c::reset()
 {
   /* same as INIT but also sets arbitration ID and APIC ID */
   init();
@@ -335,11 +335,11 @@ void bx_local_apic_c::set_id(Bit8u newid)
 // APIC write: 4 byte write to 16-byte aligned APIC address
 void bx_local_apic_c::write_aligned(bx_phy_address addr, Bit32u *data)
 {
-  BX_DEBUG(("%s: LAPIC write 0x%08x to address %08x", cpu->name, *data, addr));
+  BX_DEBUG(("%s: LAPIC write 0x" FMT_PHY_ADDRX " to address %08x", cpu->name, *data, addr));
   BX_ASSERT((addr & 0xf) == 0);
-  addr &= 0xff0;
+  Bit32u apic_reg = addr & 0xff0;
   Bit32u value = *data;
-  switch(addr) {
+  switch(apic_reg) {
     case 0x20: // local APIC id
       id = (value>>24) & APIC_ID_MASK;
       break;
@@ -423,12 +423,12 @@ void bx_local_apic_c::write_aligned(bx_phy_address addr, Bit32u *data)
       // current count for timer
     case 0x390:
       // all read-only registers should fall into this line
-      BX_INFO(("warning: write to read-only APIC register 0x%02x", addr));
+      BX_INFO(("warning: write to read-only APIC register 0x%x", apic_reg));
       break;
     default:
       shadow_error_status |= APIC_ERR_ILLEGAL_ADDR;
       // but for now I want to know about it in case I missed some.
-      BX_PANIC(("APIC register %08x not implemented", addr));
+      BX_PANIC(("APIC register %x not implemented", apic_reg));
   }
 }
 
@@ -481,7 +481,7 @@ void bx_local_apic_c::send_ipi(void)
 
 void bx_local_apic_c::write_spurious_interrupt_register(Bit32u value)
 {
-  BX_DEBUG(("write %08x to spurious interrupt register", value));
+  BX_DEBUG(("write of %08x to spurious interrupt register", value));
 
 #ifdef BX_IMPLEMENT_XAPIC
   spurious_vector = value & 0xff;
@@ -509,7 +509,7 @@ void bx_local_apic_c::receive_EOI(Bit32u value)
   } else {
       if((Bit32u) vec != spurious_vector) {
         BX_DEBUG(("%s: local apic received EOI, hopefully for vector 0x%02x", cpu->name, vec));
-        isr[vec] = 0; 
+        isr[vec] = 0;
         if(tmr[vec]) {
             apic_bus_broadcast_eoi(vec);
             tmr[vec] = 0;
@@ -526,9 +526,10 @@ void bx_local_apic_c::startup_msg(Bit32u vector)
 {
   if(cpu->debug_trap & BX_DEBUG_TRAP_SPECIAL) {
     cpu->debug_trap &= ~BX_DEBUG_TRAP_SPECIAL;
-    cpu->eip_reg.dword.eip = 0;
+    cpu->gen_reg[BX_32BIT_REG_EIP].dword.erx = 0;
     cpu->load_seg_reg(&cpu->sregs[BX_SEG_REG_CS], vector*0x100);
-    BX_INFO(("%s started up at %04X:%08X by APIC", cpu->name, vector*0x100, cpu->eip_reg.dword.eip));
+    BX_INFO(("%s started up at %04X:%08X by APIC",
+       cpu->name, vector*0x100, cpu->get_eip()));
   } else {
     BX_INFO(("%s started up by APIC, but was not halted at the time", cpu->name));
   }
@@ -537,11 +538,11 @@ void bx_local_apic_c::startup_msg(Bit32u vector)
 // APIC read: 4 byte read from 16-byte aligned APIC address
 void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
 {
-  BX_DEBUG(("%s: LAPIC read from address %08x", cpu->name, addr));
+  BX_DEBUG(("%s: LAPIC read from address 0x" FMT_PHY_ADDRX, cpu->name, addr));
   BX_ASSERT((addr & 0xf) == 0);
   *data = 0;  // default value for unimplemented registers
-  bx_phy_address addr2 = addr & 0xff0;
-  switch(addr2) {
+  bx_phy_address apic_reg = addr & 0xff0;
+  switch(apic_reg) {
   case 0x20: // local APIC id
     *data = (id) << 24; break;
   case 0x30: // local APIC version
@@ -568,7 +569,7 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
       Bit32u reg = spurious_vector;
       if(software_enabled) reg |= 0x100;
       if(focus_disable) reg |= 0x200;
-      *data = reg; 
+      *data = reg;
     }
     break;
   case 0x100: case 0x110:
@@ -576,7 +577,7 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
   case 0x140: case 0x150:
   case 0x160: case 0x170:
     {
-      unsigned index = (addr2 - 0x100) << 1;
+      unsigned index = (apic_reg - 0x100) << 1;
       Bit32u value = 0, mask = 1;
       for(int i=0;i<32;i++) {
         if(isr[index+i]) value |= mask;
@@ -590,7 +591,7 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
   case 0x1c0: case 0x1d0:
   case 0x1e0: case 0x1f0:
     {
-      unsigned index = (addr2 - 0x180) << 1;
+      unsigned index = (apic_reg - 0x180) << 1;
       Bit32u value = 0, mask = 1;
       for(int i=0;i<32;i++) {
         if(tmr[index+i]) value |= mask;
@@ -604,7 +605,7 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
   case 0x240: case 0x250:
   case 0x260: case 0x270:
     {
-      unsigned index = (addr2 - 0x200) << 1;
+      unsigned index = (apic_reg - 0x200) << 1;
       Bit32u value = 0, mask = 1;
       for(int i=0;i<32;i++) {
         if(irr[index+i]) value |= mask;
@@ -626,7 +627,7 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
   case 0x360: // LVT Lint1 Reg
   case 0x370: // LVT Error Reg
     {
-      int index = (addr2 - 0x320) >> 4;
+      int index = (apic_reg - 0x320) >> 4;
       *data = lvt[index];
       break;
     }
@@ -637,10 +638,8 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
     if(timer_active==0) {
       *data = timer_current;
     } else {
-      Bit64u delta64;
-      Bit32u delta32;
-      delta64 = (bx_pc_system.time_ticks() - ticksInitial) / timer_divide_factor;
-      delta32 = (Bit32u) delta64;
+      Bit64u delta64 = (bx_pc_system.time_ticks() - ticksInitial) / timer_divide_factor;
+      Bit32u delta32 = (Bit32u) delta64;
       if(delta32 > timer_initial)
         BX_PANIC(("APIC: R(curr timer count): delta < initial"));
       timer_current = timer_initial - delta32;
@@ -648,13 +647,13 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
     }
     break;
   case 0x3e0: // timer divide configuration
-    *data = timer_divconf; 
+    *data = timer_divconf;
     break;
   default:
-    BX_INFO(("APIC register %08x not implemented", addr));
+    BX_INFO(("APIC register %08x not implemented", apic_reg));
   }
 
-  BX_DEBUG(("%s: read from APIC address %08x = %08x", cpu->name, addr, *data));
+  BX_DEBUG(("%s: read from APIC address 0x" FMT_PHY_ADDRX " = %08x", cpu->name, addr, *data));
 }
 
 int bx_local_apic_c::highest_priority_int(Bit8u *array)
@@ -730,7 +729,7 @@ bx_bool bx_local_apic_c::deliver(Bit8u vector, Bit8u delivery_mode, Bit8u trig_m
 void bx_local_apic_c::trigger_irq(unsigned vector, unsigned trigger_mode, bx_bool bypass_irr_isr)
 {
   BX_DEBUG(("Local apic on %s: trigger interrupt vector=0x%x", cpu->name, vector));
-  
+
   if(vector > BX_LAPIC_LAST_VECTOR || vector < BX_LAPIC_FIRST_VECTOR) {
     shadow_error_status |= APIC_ERR_RX_ILLEGAL_VEC;
     BX_INFO(("bogus vector %#x, ignoring ...", vector));
@@ -803,7 +802,7 @@ void bx_local_apic_c::print_status(void)
   BX_INFO(("}"));
 }
 
-bx_bool bx_local_apic_c::match_logical_addr(Bit8u address) 
+bx_bool bx_local_apic_c::match_logical_addr(Bit8u address)
 {
   if(dest_format != 0xf) {
     BX_PANIC(("bx_local_apic_c::match_logical_addr: cluster model addressing not implemented"));
@@ -818,9 +817,9 @@ Bit8u bx_local_apic_c::get_ppr(void)
 {
   int ppr = highest_priority_int(isr);
 
-  if((ppr < 0) || ((task_priority & 0xF0) >= ((Bit32u) ppr & 0xF0))) 
+  if((ppr < 0) || ((task_priority & 0xF0) >= ((Bit32u) ppr & 0xF0)))
     ppr = task_priority;
-  else 
+  else
     ppr &= 0xF0;
 
   return ppr;
@@ -967,7 +966,7 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, spurious_vector);
   BXRS_HEX_PARAM_SIMPLE(lapic, log_dest);
   BXRS_HEX_PARAM_SIMPLE(lapic, dest_format);
-  
+
   bx_list_c *ISR = new bx_list_c(lapic, "isr", BX_LAPIC_MAX_INTS);
   bx_list_c *TMR = new bx_list_c(lapic, "tmr", BX_LAPIC_MAX_INTS);
   bx_list_c *IRR = new bx_list_c(lapic, "irr", BX_LAPIC_MAX_INTS);

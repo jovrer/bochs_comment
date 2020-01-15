@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.55 2007/09/28 19:52:05 sshwarts Exp $
+// $Id: sb16.cc,v 1.57 2008/02/15 22:05:43 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -23,11 +23,13 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 // This file (SB16.CC) written and donated by Josef Drexler
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
@@ -135,7 +137,7 @@ void bx_sb16_c::init(void)
   bx_list_c *base;
 
   base = (bx_list_c*) SIM->get_param(BXPN_SB16);
-  if ( (strlen(SIM->get_param_string("logfile", base)->getptr()) < 1) )
+  if ((strlen(SIM->get_param_string("logfile", base)->getptr()) < 1))
     SIM->get_param_num("loglevel", base)->set(0);
 
   if (SIM->get_param_num("loglevel", base)->get() > 0)
@@ -162,8 +164,8 @@ void bx_sb16_c::init(void)
     BX_SB16_THIS wavemode = 0;
   }
 
-  if ( (BX_SB16_THIS midimode == 2) ||
-       (BX_SB16_THIS midimode == 3) )
+  if ((BX_SB16_THIS midimode == 2) ||
+      (BX_SB16_THIS midimode == 3))
   {
     MIDIDATA = fopen(SIM->get_param_string("midifile", base)->getptr(),"wb");
     if (MIDIDATA == NULL)
@@ -176,8 +178,8 @@ void bx_sb16_c::init(void)
       initmidifile();
   }
 
-  if ( (BX_SB16_THIS wavemode == 2) ||
-       (BX_SB16_THIS wavemode == 3) )
+  if ((BX_SB16_THIS wavemode == 2) ||
+      (BX_SB16_THIS wavemode == 3))
   {
     WAVEDATA = fopen(SIM->get_param_string("wavefile", base)->getptr(),"wb");
     if (WAVEDATA == NULL)
@@ -209,14 +211,14 @@ void bx_sb16_c::init(void)
 
   // allocate the FIFO buffers - except for the MPUMIDICMD buffer
   // these sizes are generous, 16 or 8 would probably be sufficient
-  MPU.datain.init( (int) 64);               // the input
-  MPU.dataout.init( (int) 64);               // and output
-  MPU.cmd.init( (int) 64);              // and command buffers
-  MPU.midicmd.init( (int) 256);         // and the midi command buffer (note- large SYSEX'es have to fit!)
-  DSP.datain.init( (int) 64);           // the DSP input
-  DSP.dataout.init( (int) 64);          // and output buffers
-  EMUL.datain.init( (int) 64);          // the emulator ports
-  EMUL.dataout.init( (int) 64);         // for changing emulator settings
+  MPU.datain.init((int) 64);               // the input
+  MPU.dataout.init((int) 64);               // and output
+  MPU.cmd.init((int) 64);              // and command buffers
+  MPU.midicmd.init((int) 256);         // and the midi command buffer (note- large SYSEX'es have to fit!)
+  DSP.datain.init((int) 64);           // the DSP input
+  DSP.dataout.init((int) 64);          // and output buffers
+  EMUL.datain.init((int) 64);          // the emulator ports
+  EMUL.dataout.init((int) 64);         // for changing emulator settings
 
   // reset all parts of the hardware by
   // triggering their reset functions
@@ -302,7 +304,7 @@ void bx_sb16_c::init(void)
   }
 
   writelog(MIDILOG(4), "Timers initialized, midi %d, dma %d, opl %d",
-          MPU.timer_handle, DSP.timer_handle, OPL.timer_handle );
+          MPU.timer_handle, DSP.timer_handle, OPL.timer_handle);
   MPU.current_timer = 0;
 
   // init runtime parameters
@@ -464,10 +466,10 @@ void bx_sb16_c::dsp_dmatimer(void *this_ptr)
   // However, don't do this if the next byte/word will fill up the
   // output buffer and the output functions are not ready yet.
 
-  if ( (BX_SB16_THIS wavemode != 1) ||
-       ( (This->dsp.dma.chunkindex + 1 < BX_SOUND_OUTPUT_WAVEPACKETSIZE) &&
-        (This->dsp.dma.count > 0) ) ||
-       (This->output->waveready() == BX_SOUND_OUTPUT_OK) ) {
+  if ((BX_SB16_THIS wavemode != 1) ||
+       ((This->dsp.dma.chunkindex + 1 < BX_SOUND_OUTPUT_WAVEPACKETSIZE) &&
+        (This->dsp.dma.count > 0)) ||
+       (This->output->waveready() == BX_SOUND_OUTPUT_OK)) {
     if ((DSP.dma.bits == 8) || (BX_SB16_DMAH == 0)) {
       DEV_dma_set_drq(BX_SB16_DMAL, 1);
     } else {
@@ -809,14 +811,14 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
          // set samplerate for output
        case 0x42:
          // 1,2: hi(frq) lo(frq)
-         DSP.datain.getw1( &(DSP.dma.samplerate) );
-         DSP.dma.timeconstant = 65536 - (Bit32u) 256000000 / (Bit32u) DSP.dma.samplerate ;
+         DSP.datain.getw1(&(DSP.dma.samplerate));
+         DSP.dma.timeconstant = 65536 - (Bit32u) 256000000 / (Bit32u) DSP.dma.samplerate;
          break;
 
          // set block length
        case 0x48:
          // 1,2: lo(blk len) hi(blk len)
-         DSP.datain.getw( &(DSP.dma.blocklength) );
+         DSP.datain.getw(&(DSP.dma.blocklength));
          break;
 
          // 4-bit comp'd, normal DAC DMA, no ref byte
@@ -992,7 +994,7 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
          // read speaker on/off (out ff=on, 00=off)
        case 0xd8:
          // none, o1: speaker; ff/00
-         DSP.dataout.put( (DSP.speaker == 1)?0xff:0x00);
+         DSP.dataout.put((DSP.speaker == 1)?0xff:0x00);
          break;
 
          // stop 16 bit auto DMA
@@ -1025,7 +1027,7 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
        case 0xe1:
          // none, o1/2: version major.minor
          DSP.dataout.put(4);
-         if (DSP.dataout.put(5) == 0) 
+         if (DSP.dataout.put(5) == 0)
          {
              writelog(WAVELOG(3), "DSP version couldn't be written - buffer overflow");
          }
@@ -1040,12 +1042,12 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
          break;
 
          // write test register
-       case 0xe4: 
+       case 0xe4:
          DSP.datain.get(&DSP.testreg);
          break;
 
          // read test register
-       case 0xe8: 
+       case 0xe8:
          DSP.dataout.put(DSP.testreg);
          break;
 
@@ -1058,7 +1060,7 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
          break;
 
          // ??? - Win98 needs this
-        case 0xf9: 
+        case 0xf9:
           DSP.datain.get(&value8);
           switch (value8) {
             case 0x0e:
@@ -1076,7 +1078,7 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
           break;
 
          // unknown command
-       default: 
+       default:
          writelog(WAVELOG(3), "unknown DSP command %x, ignored",
                  DSP.datain.currentcommand());
          break;
@@ -1091,7 +1093,7 @@ void bx_sb16_c::dsp_dma(Bit8u command, Bit8u mode, Bit16u length, Bit8u comp)
 {
   // command: 8bit, 16bit, in/out, single/auto, fifo
   // mode: mono/stereo, signed/unsigned
-  //   (for info on command and mode see sound blaster programmer's manual, 
+  //   (for info on command and mode see sound blaster programmer's manual,
   //    cmds bx and cx)
   // length: number of samples - not number of bytes
   // comp: bit-coded are: type of compression; ref-byte; highspeed
@@ -1102,23 +1104,23 @@ void bx_sb16_c::dsp_dma(Bit8u command, Bit8u mode, Bit16u length, Bit8u comp)
   writelog(WAVELOG(4), "DMA initialized. Cmd %02x, mode %02x, length %d, comp %d",
            command, mode, length, comp);
 
-  if ( (command >> 4) == 0xb )  // 0xb? = 16 bit DMA
+  if ((command >> 4) == 0xb)  // 0xb? = 16 bit DMA
   {
     DSP.dma.bits = 16;
     DSP.dma.bps = 2;
   }
-  else                          // 0xc? = 8 bit DMA
+  else                        // 0xc? = 8 bit DMA
   {
     DSP.dma.bits = 8;
     DSP.dma.bps = 1;
   }
 
   // Prevent division by zero in some instances
-  if ( DSP.dma.samplerate == 0 )
+  if (DSP.dma.samplerate == 0)
     DSP.dma.samplerate= 10752;
   command &= 0x0f;
   DSP.dma.output = 1 - (command >> 3);       // 1=output, 0=input
-  DSP.dma.mode = 1 + ( (command >> 2) & 1);  // 0=none, 1=normal, 2=auto
+  DSP.dma.mode = 1 + ((command >> 2) & 1);  // 0=none, 1=normal, 2=auto
   DSP.dma.fifo = (command >> 1) & 1;         // ? not sure what this is
 
   DSP.dma.stereo = (mode >> 5) & 1;
@@ -1149,7 +1151,7 @@ void bx_sb16_c::dsp_dma(Bit8u command, Bit8u mode, Bit16u length, Bit8u comp)
            (DSP.dma.highspeed == 1)?"highspeed":"normal speed",
            sampledatarate, DSP.dma.timer);
 
-  DSP.dma.format = DSP.dma.issigned | ( (comp & 7) << 1) | ( (comp & 8) << 4);
+  DSP.dma.format = DSP.dma.issigned | ((comp & 7) << 1) | ((comp & 8) << 4);
 
        // write the output to the device/file
   if (DSP.dma.output == 1)
@@ -1271,7 +1273,7 @@ void bx_sb16_c::dsp_getwavepacket()
     byteA = byteB;
 
   for (int i = 0; i < BX_SOUND_OUTPUT_WAVEPACKETSIZE; i++)
-    DSP.dma.chunk[i] = ( (i & 1) == 0) ? byteA : byteB;
+    DSP.dma.chunk[i] = ((i & 1) == 0) ? byteA : byteB;
 
   DSP.dma.chunkcount = BX_SOUND_OUTPUT_WAVEPACKETSIZE;
   DSP.dma.chunkindex = 0;
@@ -1292,7 +1294,7 @@ void bx_sb16_c::dsp_sendwavepacket()
       Bit8u temparray[12] =
        { DSP.dma.samplerate & 0xff, DSP.dma.samplerate >> 8, 0, 0,
          DSP.dma.bits, DSP.dma.stereo + 1, 0, 0, 0, 0, 0, 0 };
-      switch ( (DSP.dma.format >> 1) & 7)
+      switch ((DSP.dma.format >> 1) & 7)
       {
        case 2:
          temparray[7] = 3;
@@ -1338,7 +1340,7 @@ void bx_sb16_c::dsp_dmadone()
 {
   writelog(WAVELOG(4), "DMA transfer done, triggering IRQ");
 
-  if ( (DSP.dma.output == 1) && (DSP.dma.mode != 2) )
+  if ((DSP.dma.output == 1) && (DSP.dma.mode != 2))
   {
       dsp_sendwavepacket();  // flush the output
 
@@ -1456,7 +1458,7 @@ void bx_sb16_c::mixer_writedata(Bit32u value)
   int i;
 
   // do some action depending on what register was written
-  switch (MIXER.regindex) 
+  switch (MIXER.regindex)
   {
     case 0:  // initialize mixer
       writelog(BOTHLOG(4), "Initializing mixer...");
@@ -1615,7 +1617,7 @@ void bx_sb16_c::set_irq_dma()
   int oldDMA8, oldDMA16;
 
   // set the IRQ according to the value in mixer register 0x80
-  switch (MIXER.reg[0x80]) 
+  switch (MIXER.reg[0x80])
   {
     case 1:
       newirq = 2;
@@ -1631,7 +1633,7 @@ void bx_sb16_c::set_irq_dma()
       break;
     default:
       newirq = 5;
-      writelog(BOTHLOG(3), "Bad value %02x in mixer register 0x80. IRQ set to %d", 
+      writelog(BOTHLOG(3), "Bad value %02x in mixer register 0x80. IRQ set to %d",
               MIXER.reg[0x80], newirq);
       MIXER.reg[0x80] = 2;
   }
@@ -1648,7 +1650,7 @@ void bx_sb16_c::set_irq_dma()
   oldDMA8=BX_SB16_DMAL;
   switch (MIXER.reg[0x81] & 0x0f)
   {
-    case 1: 
+    case 1:
       BX_SB16_DMAL = 0;
       break;
     case 2:
@@ -1710,7 +1712,7 @@ void bx_sb16_c::set_irq_dma()
   if(!isInitialized) {
     isInitialized=1;
   } else {
-    writelog(BOTHLOG(1), "Resources set to I%d D%d H%d", 
+    writelog(BOTHLOG(1), "Resources set to I%d D%d H%d",
              BX_SB16_IRQ, BX_SB16_DMAL, BX_SB16_DMAH);
   }
 }
@@ -1725,9 +1727,9 @@ Bit32u bx_sb16_c::mpu_status()
 {
   Bit32u result = 0;
 
-  if ( (MPU.datain.full() == 1) ||
-       ( (BX_SB16_THIS midimode == 1) &&
-        (BX_SB16_OUTPUT->midiready() == BX_SOUND_OUTPUT_ERR) ) )
+  if ((MPU.datain.full() == 1) ||
+       ((BX_SB16_THIS midimode == 1) &&
+        (BX_SB16_OUTPUT->midiready() == BX_SOUND_OUTPUT_ERR)))
     result |= 0x40;       // output not ready
   if (MPU.dataout.empty() == 1)
     result |= 0x80;       // no input available
@@ -1747,7 +1749,7 @@ void bx_sb16_c::mpu_command(Bit32u value)
   if (MPU.cmd.hascommand() == 1) // already a command pending, abort that one
   {
       if ((MPU.cmd.currentcommand() != value) ||
-          (MPU.cmd.commanddone() == 0) )
+          (MPU.cmd.commanddone() == 0))
             // it's a different command, or the old one isn't done yet, abort it
        {
          MPU.cmd.clearcommand();
@@ -1761,7 +1763,7 @@ void bx_sb16_c::mpu_command(Bit32u value)
   if (MPU.cmd.hascommand() == 0)  // no command pending, set one up
   {
       bytesneeded = 0;
-      if ( (value >> 4) == 14) bytesneeded = 1;
+      if ((value >> 4) == 14) bytesneeded = 1;
       MPU.cmd.newcommand(value, bytesneeded);
   }
 
@@ -1805,7 +1807,7 @@ void bx_sb16_c::mpu_command(Bit32u value)
        case 0xd0:  // d0 and df: prefix for midi command
        case 0xdf:  // like uart mode, but only a single command
           MPU.singlecommand = 1;
-          writelog(MIDILOG(4), "MPU: prefix %02x received", 
+          writelog(MIDILOG(4), "MPU: prefix %02x received",
                   MPU.cmd.currentcommand());
           break;
        default:
@@ -1815,7 +1817,7 @@ void bx_sb16_c::mpu_command(Bit32u value)
      }
 
      // Need to put an MPU_ACK into the data port if command successful
-     // we'll fake it even if we didn't process the command, so as to 
+     // we'll fake it even if we didn't process the command, so as to
      // allow detection of the MPU 401.
      if (MPU.dataout.put(0xfe) == 0)
         writelog(MIDILOG(3), "MPU_ACK error - output buffer full");
@@ -1869,7 +1871,7 @@ void bx_sb16_c::mpu_datawrite(Bit32u value)
       if (MPU.cmd.commanddone() == 1)
        BX_SB16_THIS mpu_command(MPU.cmd.currentcommand());
   }
-  else if ( (MPU.uartmode == 0) && (MPU.singlecommand == 0) )
+  else if ((MPU.uartmode == 0) && (MPU.singlecommand == 0))
   {
       // Hm? No UART mode, but still data? Maybe should send it
       // to the command port...  Only SBMPU401.EXE does this...
@@ -1894,7 +1896,7 @@ void bx_sb16_c::mpu_mididata(Bit32u value)
       // denotes the end of a SYSEX chunk, not the start of a message
       {
          ismidicommand = 0;     // first, it's not a command
-         MPU.midicmd.newcommand(MPU.midicmd.currentcommand(), 
+         MPU.midicmd.newcommand(MPU.midicmd.currentcommand(),
                              MPU.midicmd.bytes());
          // Then, set needed bytes to current buffer
          // because we didn't know the length before
@@ -1906,8 +1908,8 @@ void bx_sb16_c::mpu_mididata(Bit32u value)
       if (MPU.midicmd.hascommand() == 1)
       {
          writelog(MIDILOG(3), "Midi command %02x incomplete, has %d of %d bytes.",
-                 MPU.midicmd.currentcommand(), MPU.midicmd.bytes(), 
-                 MPU.midicmd.commandbytes() );
+                 MPU.midicmd.currentcommand(), MPU.midicmd.bytes(),
+                 MPU.midicmd.commandbytes());
          // write as much as we can. Should we do this?
          processmidicommand(0);
          // clear the pending command
@@ -1918,7 +1920,7 @@ void bx_sb16_c::mpu_mididata(Bit32u value)
       // find the number of arguments to the command
       static const signed eventlength[] = { 2, 2, 2, 2, 1, 1, 2, 255};
       // note - length 255 commands have unknown length
-      MPU.midicmd.newcommand(value, eventlength[ (value & 0x70) >> 4 ]);
+      MPU.midicmd.newcommand(value, eventlength[(value & 0x70) >> 4]);
   }
   else  // no command, just arguments to the old command
   {
@@ -1934,8 +1936,8 @@ void bx_sb16_c::mpu_mididata(Bit32u value)
       if (MPU.midicmd.commanddone() == 1)
       {
          // the command is complete, process it
-         writelog(MIDILOG(5), "Midi command %02x complete, has %d bytes.", 
-                 MPU.midicmd.currentcommand(), MPU.midicmd.bytes() );
+         writelog(MIDILOG(5), "Midi command %02x complete, has %d bytes.",
+                 MPU.midicmd.currentcommand(), MPU.midicmd.bytes());
          processmidicommand(0);
          // and remove the command from the buffer
          MPU.midicmd.clearcommand();
@@ -1978,7 +1980,7 @@ void bx_sb16_c::emul_write(Bit32u value)
     {
        writelog(3, "emulator command %02x unknown, ignored.", value);
        return;
-    }       
+    }
     writelog(5, "emulator command %02x, needs %d arguments",
               value, cmdlength[value]);
     EMUL.dataout.newcommand(value, cmdlength[value]);
@@ -2056,20 +2058,20 @@ void bx_sb16_c::emul_write(Bit32u value)
        case 5: EMUL.dataout.get(&value8); // dump emulator state
          switch (value8)
          {
-           case 0: 
+           case 0:
              EMUL.datain.puts("SB16 Emulator for Bochs\n");
              break;
-           case 1: 
-             EMUL.datain.puts("UART mode=%d (force=%d)\n", 
+           case 1:
+             EMUL.datain.puts("UART mode=%d (force=%d)\n",
                             MPU.uartmode, MPU.forceuartmode);
              break;
-           case 2: 
+           case 2:
              EMUL.datain.puts("timer=%d\n", MPU.current_timer);
              break;
-           case 3: 
+           case 3:
              EMUL.datain.puts("%d remappings active\n", EMUL.remaps);
              break;
-           case 4: 
+           case 4:
              EMUL.datain.puts("Resources are A%3x I%d D%d H%d T%d P%3x; Adlib at %3x\n",
                             BX_SB16_IO, BX_SB16_IRQ, BX_SB16_DMAL,
                             BX_SB16_DMAH, 6, BX_SB16_IOMPU, BX_SB16_IOADLIB);
@@ -2083,7 +2085,7 @@ void bx_sb16_c::emul_write(Bit32u value)
                             (OPL.mode == opl3)?"OPL3\n":
                             "unknown");
              break;
-           default: 
+           default:
              EMUL.datain.puts("no info. Only slots 0..5 have values.\n");
              break;
          }
@@ -2098,7 +2100,7 @@ void bx_sb16_c::emul_write(Bit32u value)
          else if (BX_SB16_THIS midimode == 1)
            BX_SB16_OUTPUT->closemidioutput();
          BX_SB16_THIS midimode = 0;
-         
+
          if ((BX_SB16_THIS wavemode == 2) ||
              (BX_SB16_THIS wavemode == 3))
          {
@@ -2123,7 +2125,7 @@ void bx_sb16_c::emul_write(Bit32u value)
        case 9: // enter specific OPL2/3 mode
          EMUL.dataout.get(&value8);
          writelog(4, "Entering OPL2/3 mode %d", value8);
-         opl_entermode( (bx_sb16_fm_mode) value8);
+         opl_entermode((bx_sb16_fm_mode) value8);
          break;
        case 10: // check emulator present
          EMUL.datain.put(0x55);
@@ -2164,7 +2166,7 @@ void bx_sb16_c::opl_entermode(bx_sb16_fm_mode newmode)
     opl_keyonoff(i, 0);
 
   OPL.mode = newmode;
-  
+
   if (OPL.timer_running != 0)
   {
       bx_pc_system.deactivate_timer(OPL.timer_handle);
@@ -2197,7 +2199,7 @@ void bx_sb16_c::opl_entermode(bx_sb16_fm_mode newmode)
   OPL.oper[BX_SB16_FM_NOP-1][BX_SB16_FM_OPB-1] = 0;
 
   // initialize the channels
-  
+
   // first zero all values
   for (i=0; i<BX_SB16_FM_NCH; i++)
   {
@@ -2225,7 +2227,7 @@ void bx_sb16_c::opl_entermode(bx_sb16_fm_mode newmode)
       // ch:   0   1   2   3   4   5   6   7   8
       // op1:  0   1   2   6   7   8  12  13  14
       // op2:  3   4   5   9  10  11  15  16  17
-      OPL.chan[i].opnum[0] = i + ( (int) (i / 3) ) * 3;
+      OPL.chan[i].opnum[0] = i + ((int) (i / 3)) * 3;
       OPL.chan[i].opnum[1] = OPL.chan[i].opnum[0] + 3;
   }
 
@@ -2242,12 +2244,12 @@ void bx_sb16_c::opl_entermode(bx_sb16_fm_mode newmode)
 void bx_sb16_c::opl_timerevent()
 {
   for (int i=0; i<4; i++) {
-    if ((OPL.tmask[i/2] & (1 << (i % 2)) ) != 0)
+    if ((OPL.tmask[i/2] & (1 << (i % 2))) != 0)
     { // only running timers
        if ((OPL.timer[i]--) == 0)
        { // overflow occured, set flags accordingly
            OPL.timer[i] = OPL.timerinit[i];      // reset the counter
-           if ((OPL.tmask[i/2] >> (6 - (i % 2)) ) == 0)  // set flags only if unmasked
+           if ((OPL.tmask[i/2] >> (6 - (i % 2))) == 0)  // set flags only if unmasked
            {
               writelog(WAVELOG(5), "OPL Timer Interrupt: Chip %d, Timer %d", i/2, 1 << (i % 2));
               OPL.tflag[i/2] |= 1 << (6 - (i % 2));   // set the overflow flag
@@ -2267,7 +2269,7 @@ Bit32u bx_sb16_c::opl_status(int chipid)
   return status;
 }
 
-// set the register index for one of the OPL2's or the 
+// set the register index for one of the OPL2's or the
 // base or advanced register index for the OPL3
 void bx_sb16_c::opl_index(Bit32u value, int chipid)
 {
@@ -2288,8 +2290,8 @@ void bx_sb16_c::opl_data(Bit32u value, int chipid)
   // first find out operator and/or channel numbers
   // case 0x20 ... 0x95:  includes too many ports, but that is harmless
   // case 0xe0 ... 0xf5:
-  if ( ((index>=0x20) && (index<=0x95)) ||
-       ((index>=0xe0) && (index<=0xf5)) ) {
+  if (((index>=0x20) && (index<=0x95)) ||
+      ((index>=0xe0) && (index<=0xf5))) {
       // operator access
       // find the operator number. 0..17 on chip 1, 18..35 on chip 2
 
@@ -2313,7 +2315,7 @@ void bx_sb16_c::opl_data(Bit32u value, int chipid)
          opernum += BX_SB16_FM_NOP / 2;
 
       // find out the channel number, and which of the channel's operators this is
-      channum = opernum % 3 + ( (int) (opernum / 6) ) * 3;
+      channum = opernum % 3 + ((int) (opernum / 6)) * 3;
       subopnum = 0;
 
       if ((opernum % 6) > 2) // second operator
@@ -2331,7 +2333,7 @@ void bx_sb16_c::opl_data(Bit32u value, int chipid)
       writelog(MIDILOG(5), "Is Channel %d, Oper %d, Subop %d",
               channum, opernum, subopnum);
   }
-  else if ( (index>=0xa0) && (index<=0xc8) ) {
+  else if ((index>=0xa0) && (index<=0xc8)) {
       // channel access
       channum = index & 0x0f;
       if (OPL.chan[channum].nop == 0)
@@ -2346,7 +2348,7 @@ break_here:
     // WSEnable and Test Register
     case 0x01:
       OPL.wsenable[chipid] = (value >> 5) & 1;
-      if ( (value & 0x1f) != 0)
+      if ((value & 0x1f) != 0)
         writelog(MIDILOG(3), "Warning: Test Register set to %02x", value & 0x1f);
       break;
 
@@ -2360,7 +2362,7 @@ break_here:
     // if OPL2: timer masks
     // if OPL3: 4-operator modes
     case 0x04:
-      if ( (chipid == 0) || (OPL.mode == dual) )
+      if ((chipid == 0) || (OPL.mode == dual))
         opl_settimermask(value, chipid);
       else
         opl_set4opmode(value & 0x3f);
@@ -2370,7 +2372,7 @@ break_here:
     case 0x05:
       if (chipid == 1)
       {
-         if ( (value & 1) != 0)
+         if ((value & 1) != 0)
            opl_entermode(opl3);
          else
            opl_entermode(single);
@@ -2380,7 +2382,7 @@ break_here:
     // Composite Sine Wave and Note-sel (ignored)
     case 0x08:
       if (value != 0)
-        writelog(MIDILOG(3), 
+        writelog(MIDILOG(3),
                 "Warning: write of %02x to CSW/Note-sel ignored", value);
       break;
 
@@ -2627,7 +2629,7 @@ void bx_sb16_c::opl_set4opmode(int new4opmode)
       channel1 = i + (i / 3) * 6;
       channel2 = channel1 + 3;
 
-      if ( ( (new4opmode >> i) & 1) != 0)
+      if (((new4opmode >> i) & 1) != 0)
       {   // enable 4-op mode
          opl_keyonoff(channel1, 0);
          opl_keyonoff(channel2, 0);
@@ -2670,13 +2672,13 @@ void bx_sb16_c::opl_settimermask(int value, int chipid)
     if ((value & 0x03) != 0)    // yes, it's different. Start or stop?
     {
        writelog(MIDILOG(5), "Starting timers");
-       bx_pc_system.activate_timer( OPL.timer_handle, 0, 1);
+       bx_pc_system.activate_timer(OPL.timer_handle, 0, 1);
        OPL.timer_running = 1;
     }
     else
     {
        writelog(MIDILOG(5), "Stopping timers");
-       bx_pc_system.deactivate_timer( OPL.timer_handle );
+       bx_pc_system.deactivate_timer(OPL.timer_handle);
        OPL.timer_running = 0;
     }
   }
@@ -2733,7 +2735,7 @@ void bx_sb16_c::opl_setfreq(int channel)
 
   OPL.chan[channel].freqch = 0;
 
-  // definition: 
+  // definition:
   // low-byte of freq:  8 bit F-Number, LSB's
   // high-byte of freq: [2 reserved][KEY-ON][3 block][2 F-Number MSB's]
   // [KEY-ON] is ignored by this function
@@ -2785,10 +2787,10 @@ void bx_sb16_c::opl_setfreq(int channel)
          keyfreq = realfreq << (--octave);
          octave = -octave;
       }
-  
+
       // this is a reasonable approximation for keyfreq /= 1.059463
       // (that value is 2**(1/12), which is the difference between two keys)
-      while ( (keyfreq -= ( (keyfreq * 1000) / 17817) ) > freqC)
+      while ((keyfreq -= ((keyfreq * 1000) / 17817)) > freqC)
          keynum++;
   }
   else {
@@ -2820,7 +2822,7 @@ void bx_sb16_c::opl_keyonoff(int channel, bx_bool onoff)
   if (OPL.chan[channel].midichan == 0xff)
   {
     for (i=0; i<16; i++)
-       if (((OPL.midichannels >> i) & 1 ) != 0)
+       if (((OPL.midichannels >> i) & 1) != 0)
        {
            OPL.chan[channel].midichan = i;
            OPL.midichannels &= ~(1 << i);     // mark channel as used
@@ -2856,7 +2858,7 @@ void bx_sb16_c::opl_midichannelinit(int channel)
 
 /* Handlers for the midi commands/midi file output */
 
-// Write the header of the midi file. Track length is 0x7fffffff 
+// Write the header of the midi file. Track length is 0x7fffffff
 // until we know how long it's really going to be
 
 void bx_sb16_c::initmidifile()
@@ -2864,10 +2866,10 @@ void bx_sb16_c::initmidifile()
   struct {
     Bit8u chunk[4];
     Bit32u chunklen;  // all values in BIG Endian!
-    Bit16u smftype; 
+    Bit16u smftype;
     Bit16u tracknum;
     Bit16u timecode;  // 0x80 + deltatimesperquarter << 8
-  } midiheader = 
+  } midiheader =
 #ifdef BX_LITTLE_ENDIAN
       { "MTh", 0x06000000, 0, 0x0100, 0x8001 };
 #else
@@ -2879,7 +2881,7 @@ void bx_sb16_c::initmidifile()
     Bit8u chunk[4];
     Bit32u chunklen;
     Bit8u data[15];
-  } trackheader = 
+  } trackheader =
 #ifdef BX_LITTLE_ENDIAN
       { "MTr", 0xffffff7f,
 #else
@@ -2888,13 +2890,13 @@ void bx_sb16_c::initmidifile()
        { 0x00,0xff,0x51,3,0x07,0xa1,0x20,    // set tempo 120 (0x7a120 us per quarter)
          0x00,0xff,0x58,4,4,2,0x18,0x08 }};  // time sig 4/4
   trackheader.chunk[3] = 'k';
-    
+
   fwrite(&midiheader, 1, 14, MIDIDATA);
   fwrite(&trackheader, 1, 23, MIDIDATA);
 }
 
 // write the midi command to the midi file
-  
+
 void bx_sb16_c::writemidicommand(int command, int length, Bit8u data[])
 {
   /* We need to determine the time elapsed since the last MIDI command */
@@ -2908,7 +2910,7 @@ void bx_sb16_c::writemidicommand(int command, int length, Bit8u data[])
          writelog(MIDILOG(4), "Initializing Midi output.");
          if (BX_SB16_OUTPUT->openmidioutput(SIM->get_param_string(BXPN_SB16_MIDIFILE)->getptr()) == BX_SOUND_OUTPUT_OK)
            MPU.outputinit = 1;
-         else 
+         else
            MPU.outputinit = 0;
          if (MPU.outputinit != 1)
          {
@@ -2916,7 +2918,7 @@ void bx_sb16_c::writemidicommand(int command, int length, Bit8u data[])
              BX_SB16_THIS midimode = 0;
          }
       }
-      BX_SB16_OUTPUT->sendmidicommand(deltatime, command, length, data); 
+      BX_SB16_OUTPUT->sendmidicommand(deltatime, command, length, data);
       return;
   }
   else if (BX_SB16_THIS midimode < 2)
@@ -2926,7 +2928,7 @@ void bx_sb16_c::writemidicommand(int command, int length, Bit8u data[])
     writedeltatime(deltatime);
 
   fputc(command, MIDIDATA);
-  if ((command == 0xf0) || 
+  if ((command == 0xf0) ||
       (command == 0xf7))    // write event length for sysex/meta events
     writedeltatime(length);
 
@@ -2941,9 +2943,9 @@ int bx_sb16_c::currentdeltatime()
   int deltatime;
 
   // counting starts at first access
-  if (MPU.last_delta_time == 0xffffffff) 
+  if (MPU.last_delta_time == 0xffffffff)
     MPU.last_delta_time = MPU.current_timer;
- 
+
   deltatime = MPU.current_timer - MPU.last_delta_time;
   MPU.last_delta_time = MPU.current_timer;
 
@@ -2961,7 +2963,7 @@ void bx_sb16_c::processmidicommand(bx_bool force)
   channel = MPU.midicmd.currentcommand() & 0xf;
 
   // we need to log bank changes and program changes
-  if ( (MPU.midicmd.currentcommand() >> 4) == 0xc)
+  if ((MPU.midicmd.currentcommand() >> 4) == 0xc)
   {   // a program change
       value = MPU.midicmd.peek(0);
       writelog(MIDILOG(1), "* ProgramChange channel %d to %d",
@@ -2969,7 +2971,7 @@ void bx_sb16_c::processmidicommand(bx_bool force)
       MPU.program[channel] = value;
       needremap = 1;
   }
-  else if ( (MPU.midicmd.currentcommand() >> 4) == 0xb)
+  else if ((MPU.midicmd.currentcommand() >> 4) == 0xb)
   {   // a control change, could be a bank change
       if (MPU.midicmd.peek(0) == 0)
       {  // bank select MSB
@@ -2993,7 +2995,7 @@ void bx_sb16_c::processmidicommand(bx_bool force)
   Bit8u temparray[256];
   i = 0;
   while (MPU.midicmd.empty() == 0)
-    MPU.midicmd.get( &(temparray[i++]) );
+    MPU.midicmd.get(&(temparray[i++]));
 
   writemidicommand(MPU.midicmd.currentcommand(), i, temparray);
 
@@ -3024,32 +3026,32 @@ void bx_sb16_c::midiremapprogram(int channel)
 
   for(int i = 0; i < EMUL.remaps; i++)
   {
-     if (( (EMUL.remaplist[i].oldbankmsb == bankmsb) ||
-           (EMUL.remaplist[i].oldbankmsb == 0xff) ) &&
-         ( (EMUL.remaplist[i].oldbanklsb == banklsb) ||
-           (EMUL.remaplist[i].oldbanklsb == 0xff) ) &&
-         ( (EMUL.remaplist[i].oldprogch == program) ||
-           (EMUL.remaplist[i].oldprogch == 0xff) ) )
+     if (((EMUL.remaplist[i].oldbankmsb == bankmsb) ||
+          (EMUL.remaplist[i].oldbankmsb == 0xff)) &&
+         ((EMUL.remaplist[i].oldbanklsb == banklsb) ||
+          (EMUL.remaplist[i].oldbanklsb == 0xff)) &&
+         ((EMUL.remaplist[i].oldprogch == program) ||
+          (EMUL.remaplist[i].oldprogch == 0xff)))
      {
          writelog(5, "Remapping instrument for channel %d", channel);
-         if ( (EMUL.remaplist[i].newbankmsb != bankmsb) &&
-              (EMUL.remaplist[i].newbankmsb != 0xff) )
+         if ((EMUL.remaplist[i].newbankmsb != bankmsb) &&
+             (EMUL.remaplist[i].newbankmsb != 0xff))
          {   // write control change bank msb
              MPU.bankmsb[channel] = EMUL.remaplist[i].newbankmsb;
              commandbytes[0] = 0;
              commandbytes[1] = EMUL.remaplist[i].newbankmsb;
              writemidicommand(0xb0 | channel, 2, commandbytes);
          }
-         if ( (EMUL.remaplist[i].newbanklsb != banklsb) &&
-              (EMUL.remaplist[i].newbanklsb != 0xff) )
+         if ((EMUL.remaplist[i].newbanklsb != banklsb) &&
+             (EMUL.remaplist[i].newbanklsb != 0xff))
          {   // write control change bank lsb
              MPU.banklsb[channel] = EMUL.remaplist[i].newbanklsb;
              commandbytes[0] = 32;
              commandbytes[1] = EMUL.remaplist[i].newbanklsb;
              writemidicommand(0xb0 | channel, 2, commandbytes);
          }
-         if ( (EMUL.remaplist[i].newprogch != program) &&
-              (EMUL.remaplist[i].newprogch != 0xff) )
+         if ((EMUL.remaplist[i].newprogch != program) &&
+             (EMUL.remaplist[i].newprogch != 0xff))
          {   // write program change
              MPU.program[channel] = EMUL.remaplist[i].newprogch;
              commandbytes[0] = EMUL.remaplist[i].newprogch;
@@ -3058,7 +3060,6 @@ void bx_sb16_c::midiremapprogram(int channel)
      }
   }
 }
-
 
 // convert a number into a delta time coded value
 int bx_sb16_c::converttodeltatime(Bit32u deltatime, Bit8u value[4])
@@ -3073,7 +3074,7 @@ int bx_sb16_c::converttodeltatime(Bit32u deltatime, Bit8u value[4])
       count = 1;
       value[0] = 0;
   }
-  else 
+  else
   {
       while ((deltatime > 0) && (count < 4))   // split into parts
       {                                        // of seven bits
@@ -3091,12 +3092,11 @@ int bx_sb16_c::converttodeltatime(Bit32u deltatime, Bit8u value[4])
 void bx_sb16_c::writedeltatime(Bit32u deltatime)
 {
   Bit8u outbytes[4];
-  int count,i;
 
-  count = converttodeltatime(deltatime, outbytes);
+  int count = converttodeltatime(deltatime, outbytes);
 
-  for (i=0; i<count; i++)
-    fputc(outbytes[i], MIDIDATA );
+  for (int i=0; i<count; i++)
+    fputc(outbytes[i], MIDIDATA);
 }
 
 
@@ -3104,12 +3104,12 @@ void bx_sb16_c::writedeltatime(Bit32u deltatime)
 
 void bx_sb16_c::finishmidifile()
 {
-  struct { 
+  struct {
     Bit8u delta, statusbyte, metaevent, length;
   } metatrackend = { 0, 0xff, 0x2f, 0 };
 
      // Meta event track end (0xff 0x2f 0x00) plus leading delta time
-  fwrite(&metatrackend, 1, sizeof metatrackend, MIDIDATA );
+  fwrite(&metatrackend, 1, sizeof metatrackend, MIDIDATA);
 
   Bit32u tracklen = ftell(MIDIDATA);
   if (tracklen < 0)
@@ -3134,7 +3134,7 @@ void bx_sb16_c::finishmidifile()
 
 void bx_sb16_c::initvocfile()
 {
-  struct { 
+  struct {
     char id[20];
     Bit16u headerlen;  // All in LITTLE Endian!
     Bit16u version;
@@ -3153,7 +3153,7 @@ void bx_sb16_c::initvocfile()
 }
 
 // write one block to the voc file
-void bx_sb16_c::writevocblock(int block, 
+void bx_sb16_c::writevocblock(int block,
                            Bit32u headerlen, Bit8u header[],
                            Bit32u datalen, Bit8u data[])
 {
@@ -3178,7 +3178,7 @@ void bx_sb16_c::writevocblock(int block,
   fwrite(lengthbytes, 1, 3, WAVEDATA);
 #endif
   writelog(WAVELOG(5), "Voc block %d; Headerlen %d; Datalen %d",
-           block, headerlen, datalen );
+           block, headerlen, datalen);
   if (headerlen > 0)
     fwrite(header, 1, headerlen, WAVEDATA);
   if (datalen > 0)
@@ -3207,7 +3207,7 @@ Bit32u bx_sb16_c::read(Bit32u address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_SB16_SMF
 
-  switch (address) 
+  switch (address)
   {
     // 2x0: FM Music Status Port
     // 2x8 and 388 are aliases
@@ -3532,9 +3532,9 @@ bx_bool bx_sb16_buffer::puts(char *data, ...)
 
   while (string[index] != 0)
   {
-    if (put( (Bit8u) string[index]) == 0)
+    if (put((Bit8u) string[index]) == 0)
        return 0;  // buffer full
-      index++;
+    index++;
   }
   return 1;
 }
@@ -3555,11 +3555,11 @@ bx_bool bx_sb16_buffer::full(void)
 bx_bool bx_sb16_buffer::get(Bit8u *data)
 {
   if (empty() != 0)
-  { 
+  {
       // Buffer is empty. Still, if it was initialized, return
       // the last byte again.
-      if ( length > 0 )
-       (*data) = buffer[ (tail - 1) % length ];
+      if (length > 0)
+        (*data) = buffer[ (tail - 1) % length ];
       return 0;       // buffer empty
   }
 
@@ -3587,7 +3587,7 @@ bx_bool bx_sb16_buffer::getw(Bit16u *data)
   get(&dummy);
   *data = (Bit16u) dummy;
   get(&dummy);
-  *data |= ( (Bit16u) dummy ) << 8;
+  *data |= ((Bit16u) dummy) << 8;
   return 1;
 }
 
@@ -3600,14 +3600,14 @@ bx_bool bx_sb16_buffer::getw1(Bit16u *data)
       if (bytes() == 1)
       {
          get(&dummy);
-         *data = ( (Bit16u) dummy ) << 8;
+         *data = ((Bit16u) dummy) << 8;
       }
       else
          dummy = 0;
       return 0;
   }
   get(&dummy);
-  *data = ( (Bit16u) dummy ) << 8;
+  *data = ((Bit16u) dummy) << 8;
   get(&dummy);
   *data |= (Bit16u) dummy;
   return 1;

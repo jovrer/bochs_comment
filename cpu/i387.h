@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: i387.h,v 1.33 2007/03/23 21:27:12 sshwarts Exp $
+// $Id: i387.h,v 1.37 2008/05/10 13:34:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2004 Stanislav Shwartsman
@@ -19,7 +19,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
-
+/////////////////////////////////////////////////////////////////////////
 
 #ifndef _BX_I387_RELATED_EXTENSIONS_H_
 #define _BX_I387_RELATED_EXTENSIONS_H_
@@ -47,7 +47,7 @@ extern int FPU_tagof(const floatx80 &reg);
 //
 // Minimal i387 structure
 //
-struct BOCHSAPI_MSVCONLY i387_t 
+struct BOCHSAPI_MSVCONLY i387_t
 {
     i387_t() {}
 
@@ -66,11 +66,12 @@ public:
     void   	FPU_push();
 
     void   	FPU_settagi(int tag, int stnr);
+    void   	FPU_settagi_valid(int stnr);
     int    	FPU_gettagi(int stnr);
 
     floatx80 	FPU_read_regi(int stnr) { return st_space[(tos+stnr) & 7]; }
+    void  	FPU_save_regi(floatx80 reg, int stnr);
     void  	FPU_save_regi(floatx80 reg, int tag, int stnr);
-    void  	FPU_save_regi(floatx80 reg, int stnr) { FPU_save_regi(reg, FPU_tagof(reg), stnr); }
 
 public:
     Bit16u cwd; 	// control word
@@ -97,15 +98,21 @@ public:
 #define BX_READ_FPU_REG(i)		                                \
   (BX_CPU_THIS_PTR the_i387.FPU_read_regi(i))
 
-#define BX_WRITE_FPU_REGISTER_AND_TAG(value, tag, i)                    \
-    BX_CPU_THIS_PTR the_i387.FPU_save_regi((value), (tag), (i));
-
 #define BX_WRITE_FPU_REG(value, i)                                      \
     BX_CPU_THIS_PTR the_i387.FPU_save_regi((value), (i));
+
+#define BX_WRITE_FPU_REGISTER_AND_TAG(value, tag, i)                    \
+    BX_CPU_THIS_PTR the_i387.FPU_save_regi((value), (tag), (i));
 
 BX_CPP_INLINE int i387_t::FPU_gettagi(int stnr)
 {
   return (twd >> (((stnr+tos) & 7)*2)) & 3;
+}
+
+BX_CPP_INLINE void i387_t::FPU_settagi_valid(int stnr)
+{
+  int regnr = (stnr + tos) & 7;
+  twd &= ~(3 << (regnr*2));     // FPU_Tag_Valid == '00
 }
 
 BX_CPP_INLINE void i387_t::FPU_settagi(int tag, int stnr)
@@ -124,6 +131,15 @@ BX_CPP_INLINE void i387_t::FPU_pop(void)
 {
   twd |= 3 << (tos*2);
   tos = (tos + 1) & 7;
+}
+
+// it is only possisble to read FPU tag word through certain
+// instructions like FNSAVE, and they update tag word to its
+// real value anyway
+BX_CPP_INLINE void i387_t::FPU_save_regi(floatx80 reg, int stnr)
+{
+  st_space[(stnr+tos) & 7] = reg;
+  FPU_settagi_valid(stnr);
 }
 
 BX_CPP_INLINE void i387_t::FPU_save_regi(floatx80 reg, int tag, int stnr)
@@ -215,7 +231,7 @@ typedef union bx_packed_mmx_reg_t {
 
 #define MMXSQ(reg)  (reg.mmx64s)
 #define MMXUQ(reg)  (reg.mmx64u)
-                                
+
 #define MMXUD0(reg) (reg.mmx32u(0))
 #define MMXUD1(reg) (reg.mmx32u(1))
 
@@ -242,7 +258,7 @@ typedef union bx_packed_mmx_reg_t {
 {                                 					\
    (BX_FPU_REG(index)).fraction = MMXUQ(value);				\
    (BX_FPU_REG(index)).exp = 0xffff;       				\
-}                                                      
+}
 
 #endif 		/* BX_SUPPORT_MMX */
 
