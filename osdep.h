@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h,v 1.9 2001/10/05 13:52:25 bdenney Exp $
+// $Id: osdep.h,v 1.11 2002/03/08 04:45:00 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -48,8 +48,12 @@ extern "C" {
 //////////////////////////////////////////////////////////////////////
 #ifdef WIN32
 
+// Definitions that are needed for all WIN32 compilers.
+#  define ssize_t long
+
 #ifndef __MINGW32__
-// This is for win32 platforms EXCEPT FOR cygwin compiling with -mno-cygwin.
+// Definitions that are needed for WIN32 compilers EXCEPT FOR
+// cygwin compiling with -mno-cygwin.  e.g. VC++.
 
 // always return regular file.
 #  define S_ISREG(m)      (((m) & S_IFMT) == S_IFREG)
@@ -57,7 +61,6 @@ extern "C" {
 
   // VCPP includes also are missing these
 #  define off_t long
-#  define ssize_t int
 
 // win32 has snprintf though with different name.
 #define snprintf _snprintf
@@ -95,6 +98,11 @@ extern "C" {
 #if !BX_HAVE_STRDUP
 #define strdup bx_strdup
   extern char *bx_strdup(const char *str);
+#endif
+
+#if !BX_HAVE_SOCKLEN_T
+// needed on MacOS X 10.1
+typedef int socklen_t;
 #endif
 
 //////////////////////////////////////////////////////////////////////

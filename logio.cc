@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.14 2001/12/08 18:08:24 bdenney Exp $
+// $Id: logio.cc,v 1.16 2002/01/07 16:10:11 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -195,9 +195,10 @@ iofunctions::~iofunctions(void)
 
 logfunctions::logfunctions(void)
 {
+	prefix = NULL;
 	put(" ");
 	settype(GENLOG);
-	if(io == NULL && Allocio == 0) {
+	if (io == NULL && Allocio == 0) {
 		Allocio = 1;
 		io = new iofunc_t(stderr);
 	}
@@ -210,6 +211,7 @@ logfunctions::logfunctions(void)
 
 logfunctions::logfunctions(iofunc_t *iofunc)
 {
+	prefix = NULL;
 	put(" ");
 	settype(GENLOG);
 	setio(iofunc);
@@ -221,6 +223,11 @@ logfunctions::logfunctions(iofunc_t *iofunc)
 
 logfunctions::~logfunctions(void)
 {
+    if ( this->prefix )
+    {
+        free(this->prefix);
+        this->prefix = NULL;
+    }
 }
 
 void
@@ -238,6 +245,16 @@ logfunctions::put(char *p)
 	char *tmpbuf;
 	tmpbuf=strdup("[     ]");// if we ever have more than 32 chars,
 						   //  we need to rethink this
+
+	if ( tmpbuf == NULL)
+	{
+	    return ;                        /* allocation not successful */
+	}
+	if ( this->prefix != NULL )
+	{
+	    free(this->prefix);             /* free previously allocated memory */
+	    this->prefix = NULL;
+	}
 	int len=strlen(p);
 	for(int i=1;i<len+1;i++) {
 		tmpbuf[i]=p[i-1];

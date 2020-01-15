@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h,v 1.8 2001/10/03 13:10:37 bdenney Exp $
+// $Id: pc_system.h,v 1.10 2001/12/26 14:56:15 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -160,8 +160,10 @@ public:
   Bit64u time_usec();
   Bit64u time_ticks();
 
-  void dma_write8(Bit32u phy_addr, unsigned channel);
+  void dma_write8(Bit32u phy_addr, unsigned channel, Boolean verify);
   void dma_read8(Bit32u phy_addr, unsigned channel);
+  void dma_write16(Bit32u phy_addr, unsigned channel, Boolean verify);
+  void dma_read16(Bit32u phy_addr, unsigned channel);
 
   Bit32u  inp(Bit16u addr, unsigned io_len);
   void    outp(Bit16u addr, Bit32u value, unsigned io_len);

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h,v 1.7 2001/10/06 09:04:39 bdenney Exp $
+// $Id: harddrv.h,v 1.9 2002/02/03 20:49:44 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -26,7 +26,8 @@
 
 
 typedef enum _sense {
-      SENSE_NONE = 0, SENSE_NOT_READY = 2, SENSE_ILLEGAL_REQUEST = 5
+      SENSE_NONE = 0, SENSE_NOT_READY = 2, SENSE_ILLEGAL_REQUEST = 5,
+      SENSE_UNIT_ATTENTION = 6
 } sense_t;
 
 typedef enum _asc {
@@ -263,6 +264,8 @@ public:
   ~bx_hard_drive_c(void);
   BX_HD_SMF void   close_harddrive(void);
   BX_HD_SMF void   init(bx_devices_c *d, bx_cmos_c *cmos);
+  BX_HD_SMF unsigned get_cd_media_status(void);
+  BX_HD_SMF unsigned set_cd_media_status(unsigned status);
 
 #if !BX_USE_HD_SMF
   Bit32u read(Bit32u address, unsigned io_len);

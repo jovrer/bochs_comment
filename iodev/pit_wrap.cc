@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.cc,v 1.10 2001/10/11 13:01:27 yakovlev Exp $
+// $Id: pit_wrap.cc,v 1.17 2002/02/08 22:27:51 yakovlev Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -42,12 +42,33 @@ bx_pit_c bx_pit;
 #  undef OUT
 #endif
 
+#define DEBUG_REALTIME_WITH_PRINTF 0
+
+#define TIME_DIVIDER (1)
+#define TIME_MULTIPLIER (1)
+#define TIME_HEADSTART (1)
+//USEC_ALPHA is multiplier for the past.
+//USEC_ALPHA_B is 1-USEC_ALPHA, or multiplier for the present.
+#define USEC_ALPHA ((double)(.8))
+#define USEC_ALPHA_B ((double)(((double)1)-USEC_ALPHA))
+#define MIN_MULT (0.9)
+#define MIN_MULT_FLOOR (0.75)
+#define MAX_MULT (1.25)
+#define MAX_MULT_CEILING (1.5)
+
 //How many timer ticks per usecond.
-//1.193MHz Clock
+//1.193181MHz Clock
 //1193/1000 Ticks Per usecond.
+#define TICKS_PER_SECOND (1193181)
+#define USEC_PER_SECOND (1000000)
 #define TIME_MULT 1.193
-#define TICKS_TO_USEC(a) ( ((a)*1000)/1193 )
-#define USEC_TO_TICKS(a) ( ((a)*1193)/1000 )
+#if BX_USE_REALTIME_PIT
+#  define TICKS_TO_USEC(a) ( ((a)*BX_PIT_THIS s.usec_per_second)/BX_PIT_THIS s.ticks_per_second )
+#  define USEC_TO_TICKS(a) ( ((a)*BX_PIT_THIS s.ticks_per_second)/BX_PIT_THIS s.usec_per_second )
+#else
+#  define TICKS_TO_USEC(a) ( ((a)*USEC_PER_SECOND)/TICKS_PER_SECOND )
+#  define USEC_TO_TICKS(a) ( ((a)*TICKS_PER_SECOND)/USEC_PER_SECOND )
+#endif
 #define MAX(a,b) ( ((a)>(b))?(a):(b) )
 
 bx_pit_c::bx_pit_c( void )
@@ -105,6 +126,17 @@ bx_pit_c::init( bx_devices_c *d )
   BX_PIT_THIS s.last_next_event_time = BX_PIT_THIS s.timer.get_next_event_time();
   BX_PIT_THIS s.last_usec=bx_pc_system.time_usec();
 
+  BX_PIT_THIS s.total_ticks=0;
+
+#if BX_USE_REALTIME_PIT
+  BX_PIT_THIS s.usec_per_second=USEC_PER_SECOND;
+  BX_PIT_THIS s.ticks_per_second=TICKS_PER_SECOND;
+  BX_PIT_THIS s.total_sec=0;
+  BX_PIT_THIS s.last_time=(time(NULL)*TIME_MULTIPLIER/TIME_DIVIDER)+TIME_HEADSTART;
+#else
+  BX_PIT_THIS s.total_usec=0;
+#endif
+
   BX_DEBUG(("pit: finished init"));
 
   BX_DEBUG(("s.last_usec=%d",BX_PIT_THIS s.last_usec));
@@ -130,8 +162,8 @@ bx_pit_c::handle_timer() {
 
   BX_DEBUG(("pit: entering timer handler"));
 
-  if(time_passed32 && periodic(time_passed32)) {
-    bx_pic.trigger_irq(0);
+  if(time_passed32) {
+    periodic(time_passed32);
   }
   BX_PIT_THIS s.last_usec=BX_PIT_THIS s.last_usec + time_passed;
   if(time_passed ||
@@ -242,8 +274,8 @@ bx_pit_c::write( Bit32u   address, Bit32u   dvalue,
 
   BX_DEBUG(("pit: entering write handler"));
 
-  if(time_passed32 && periodic(time_passed32)) {
-    bx_pic.trigger_irq(0);
+  if(time_passed32) {
+    periodic(time_passed32);
   }
   BX_PIT_THIS s.last_usec=BX_PIT_THIS s.last_usec + time_passed;
 
@@ -287,6 +319,12 @@ bx_pit_c::write( Bit32u   address, Bit32u   dvalue,
     default:
       BX_PANIC(("pit: unsupported io write to port %04x = %02x",
         (unsigned) address, (unsigned) value));
+  }
+
+  if ((BX_PIT_THIS s.timer.read_OUT(0))==1) {
+    bx_pic.raise_irq(0);
+  } else {
+    bx_pic.lower_irq(0);
   }
 
   if(time_passed ||
@@ -347,10 +385,26 @@ bx_kbd_port61h_write(Bit8u   value)
   Boolean
 bx_pit_c::periodic( Bit32u   usec_delta )
 {
-  Bit32u i=0;
   Boolean prev_timer0_out = BX_PIT_THIS s.timer.read_OUT(0);
   Boolean want_interrupt = 0;
-  Bit32u ticks_delta=(Bit32u)(USEC_TO_TICKS((Bit64u)(usec_delta)));
+  Bit32u ticks_delta = 0;
+
+#if BX_USE_REALTIME_PIT
+  if(BX_PIT_THIS s.total_ticks < (MAX_MULT_CEILING*TICKS_PER_SECOND + (TICKS_PER_SECOND * BX_PIT_THIS s.total_sec))) {
+    ticks_delta=(Bit32u)(USEC_TO_TICKS(usec_delta));
+    BX_PIT_THIS s.total_ticks += ticks_delta;
+  }
+  second_update_data();
+#else
+  BX_PIT_THIS s.total_usec += usec_delta;
+  ticks_delta=(Bit32u)((USEC_TO_TICKS((Bit64u)(BX_PIT_THIS s.total_usec)))-BX_PIT_THIS s.total_ticks);
+  BX_PIT_THIS s.total_ticks += ticks_delta;
+
+  while ((BX_PIT_THIS s.total_ticks >= 1193181) && (BX_PIT_THIS s.total_usec >= 1000000)) {
+    BX_PIT_THIS s.total_ticks -= 1193181;
+    BX_PIT_THIS s.total_usec  -= 1000000;
+  }
+#endif
 
   while(ticks_delta>0) {
     Bit32u maxchange=BX_PIT_THIS s.timer.get_next_event_time();
@@ -359,8 +413,16 @@ bx_pit_c::periodic( Bit32u   usec_delta )
       timedelta=ticks_delta;
     }
     BX_PIT_THIS s.timer.clock_all(timedelta);
-    if ( (prev_timer0_out==0) && ((BX_PIT_THIS s.timer.read_OUT(0))==1) ) {
-      want_interrupt=1;
+    if ( (prev_timer0_out==0) ) {
+      if ((BX_PIT_THIS s.timer.read_OUT(0))==1) {
+        bx_pic.raise_irq(0);
+        prev_timer0_out=1;
+      }
+    } else {
+      if ((BX_PIT_THIS s.timer.read_OUT(0))==0) {
+        bx_pic.lower_irq(0);
+        prev_timer0_out=0;
+      }
     }
     prev_timer0_out=BX_PIT_THIS s.timer.read_OUT(0);
     ticks_delta-=timedelta;
@@ -369,4 +431,56 @@ bx_pit_c::periodic( Bit32u   usec_delta )
   return(want_interrupt);
 }
 
+
+#if BX_USE_REALTIME_PIT
+void
+bx_pit_c::second_update_data(void) {
+  Bit64u timediff=(time(NULL)*TIME_MULTIPLIER/TIME_DIVIDER)-BX_PIT_THIS s.last_time;
+  BX_PIT_THIS s.last_time += timediff;
+  if(timediff) {
+    Bit64s tickstemp;
+
+    BX_PIT_THIS s.total_sec += timediff;
+
+#if DEBUG_REALTIME_WITH_PRINTF
+    printf("timediff: %lld, total_sec: %lld, total_ticks: %lld\n",timediff, BX_PIT_THIS s.total_sec, BX_PIT_THIS s.total_ticks);
+#endif
+
+    tickstemp = 
+      (((BX_PIT_THIS s.total_sec)*TICKS_PER_SECOND)-BX_PIT_THIS s.total_ticks)
+       + TICKS_PER_SECOND;
+
+//    while((BX_PIT_THIS s.total_sec >= 0) && (BX_PIT_THIS s.total_ticks >= TICKS_PER_SECOND)) {
+//      BX_PIT_THIS s.total_sec -= 1;
+//      BX_PIT_THIS s.total_ticks -= TICKS_PER_SECOND;
+//    }
+
+    if(tickstemp > (TICKS_PER_SECOND*MAX_MULT)) {
+#if DEBUG_REALTIME_WITH_PRINTF
+      printf("Running WAY too slow. tps:%lld\n",tickstemp);
+#endif
+      tickstemp = TICKS_PER_SECOND*MAX_MULT_CEILING;
+#if DEBUG_REALTIME_WITH_PRINTF
+      printf("..................... tps:%lld\n",tickstemp);
+#endif
+    } else if(tickstemp < (TICKS_PER_SECOND*MIN_MULT)) {
+#if DEBUG_REALTIME_WITH_PRINTF
+      printf("Running WAY too fast. tps:%lld\n",tickstemp);
+#endif
+      tickstemp = TICKS_PER_SECOND*MIN_MULT_FLOOR;
+#if DEBUG_REALTIME_WITH_PRINTF
+      printf("..................... tps:%lld\n",tickstemp);
+#endif
+    }
+
+    BX_PIT_THIS s.ticks_per_second = tickstemp;
+
+    BX_PIT_THIS s.usec_per_second = ((bx_pc_system.time_usec()-BX_PIT_THIS s.last_sec_usec)/timediff)*USEC_ALPHA_B + USEC_ALPHA*BX_PIT_THIS s.usec_per_second;
+    BX_PIT_THIS s.last_sec_usec = bx_pc_system.time_usec();
+#if DEBUG_REALTIME_WITH_PRINTF
+    printf("Parms: ticks_per_second=%lld, usec_per_second=%lld\n",BX_PIT_THIS s.ticks_per_second, BX_PIT_THIS s.usec_per_second);
+#endif
+  }
+}
+#endif // #if BX_USE_REALTIME_PIT
 #endif // #if BX_USE_NEW_PIT

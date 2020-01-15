@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.cc,v 1.25 2001/11/06 20:30:09 fries Exp $
+// $Id: ne2k.cc,v 1.32 2002/03/09 01:05:41 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -41,7 +41,7 @@ bx_ne2k_c::bx_ne2k_c(void)
 {
 	put("NE2K");
 	settype(NE2KLOG);
-	BX_DEBUG(("Init $Id: ne2k.cc,v 1.25 2001/11/06 20:30:09 fries Exp $"));
+	BX_DEBUG(("Init $Id: ne2k.cc,v 1.32 2002/03/09 01:05:41 bdenney Exp $"));
 	// nothing for now
 }
 
@@ -207,7 +207,7 @@ bx_ne2k_c::write_cr(Bit32u value)
       BX_NE2K_THIS s.remote_bytes == 0) {
     BX_NE2K_THIS s.ISR.rdma_done = 1;
     if (BX_NE2K_THIS s.IMR.rdma_inte) {
-      BX_NE2K_THIS devices->pic->trigger_irq(BX_NE2K_THIS s.base_irq);
+      BX_NE2K_THIS devices->pic->raise_irq(BX_NE2K_THIS s.base_irq);
     }
   }
 }
@@ -237,7 +237,7 @@ bx_ne2k_c::chipmem_read(Bit32u address, unsigned int io_len)
     return (retval);
   }
 
-  if ((address >= BX_NE2K_MEMSTART) && (address <= BX_NE2K_MEMEND)) {
+  if ((address >= BX_NE2K_MEMSTART) && (address < BX_NE2K_MEMEND)) {
     retval = BX_NE2K_THIS s.mem[address - BX_NE2K_MEMSTART];
     if (io_len == 2) {
       retval |= (BX_NE2K_THIS s.mem[address - BX_NE2K_MEMSTART + 1] << 8);
@@ -256,7 +256,7 @@ bx_ne2k_c::chipmem_write(Bit32u address, Bit32u value, unsigned io_len)
   if ((io_len == 2) && (address & 0x1)) 
     BX_PANIC(("unaligned chipmem word write"));
 
-  if ((address >= BX_NE2K_MEMSTART) && (address <= BX_NE2K_MEMEND)) {
+  if ((address >= BX_NE2K_MEMSTART) && (address < BX_NE2K_MEMEND)) {
     BX_NE2K_THIS s.mem[address - BX_NE2K_MEMSTART] = value & 0xff;
     if (io_len == 2)
       BX_NE2K_THIS s.mem[address - BX_NE2K_MEMSTART + 1] = value >> 8;
@@ -306,7 +306,7 @@ bx_ne2k_c::asic_read(Bit32u offset, unsigned int io_len)
 	if (BX_NE2K_THIS s.remote_bytes == 0) {
 	    BX_NE2K_THIS s.ISR.rdma_done = 1;
 	    if (BX_NE2K_THIS s.IMR.rdma_inte) {
-		BX_NE2K_THIS devices->pic->trigger_irq(BX_NE2K_THIS s.base_irq);
+		BX_NE2K_THIS devices->pic->raise_irq(BX_NE2K_THIS s.base_irq);
 	    }
 	}
     break;
@@ -330,8 +330,10 @@ bx_ne2k_c::asic_write(Bit32u offset, Bit32u value, unsigned io_len)
   switch (offset) {
   case 0x0:  // Data register - see asic_read for a description
 
-    if (io_len != (1 + BX_NE2K_THIS s.DCR.wdsize))
-      BX_PANIC(("dma write, wrong size %d", io_len));
+    if ((io_len == 2) && (BX_NE2K_THIS s.DCR.wdsize == 0)) {
+      BX_PANIC(("dma write length 2 on byte mode operation"));
+      break;
+    }
 
     if (BX_NE2K_THIS s.remote_bytes == 0)
       BX_PANIC(("ne2K: dma write, byte count 0"));
@@ -339,16 +341,15 @@ bx_ne2k_c::asic_write(Bit32u offset, Bit32u value, unsigned io_len)
     chipmem_write(BX_NE2K_THIS s.remote_dma, value, io_len);
     BX_NE2K_THIS s.remote_dma   += io_len;
 
-    if (BX_NE2K_THIS s.remote_bytes > 1)
-	BX_NE2K_THIS s.remote_bytes -= (BX_NE2K_THIS s.DCR.wdsize + 1);
-    else
-	BX_NE2K_THIS s.remote_bytes = 0;
+    BX_NE2K_THIS s.remote_bytes -= io_len;
+    if (BX_NE2K_THIS s.remote_bytes > BX_NE2K_MEMSIZ)
+      BX_NE2K_THIS s.remote_bytes = 0;
 
     // If all bytes have been written, signal remote-DMA complete
     if (BX_NE2K_THIS s.remote_bytes == 0) {
       BX_NE2K_THIS s.ISR.rdma_done = 1;
       if (BX_NE2K_THIS s.IMR.rdma_inte) {
-	  BX_NE2K_THIS devices->pic->trigger_irq(BX_NE2K_THIS s.base_irq);
+	  BX_NE2K_THIS devices->pic->raise_irq(BX_NE2K_THIS s.base_irq);
       }
     }
     break;
@@ -530,6 +531,22 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
     BX_NE2K_THIS s.ISR.overwrite &= ~((value & 0x10) == 0x10);
     BX_NE2K_THIS s.ISR.cnt_oflow &= ~((value & 0x20) == 0x20);
     BX_NE2K_THIS s.ISR.rdma_done &= ~((value & 0x40) == 0x40);
+    value = ((BX_NE2K_THIS s.ISR.rdma_done << 6) |
+             (BX_NE2K_THIS s.ISR.cnt_oflow << 5) |
+             (BX_NE2K_THIS s.ISR.overwrite << 4) |
+             (BX_NE2K_THIS s.ISR.tx_err    << 3) |
+             (BX_NE2K_THIS s.ISR.rx_err    << 2) |
+             (BX_NE2K_THIS s.ISR.pkt_tx    << 1) |
+             (BX_NE2K_THIS s.ISR.pkt_rx));
+    value &= ((BX_NE2K_THIS s.IMR.rdma_inte << 6) |
+              (BX_NE2K_THIS s.IMR.cofl_inte << 5) |
+              (BX_NE2K_THIS s.IMR.overw_inte << 4) |
+              (BX_NE2K_THIS s.IMR.txerr_inte << 3) |
+              (BX_NE2K_THIS s.IMR.rxerr_inte << 2) |
+              (BX_NE2K_THIS s.IMR.tx_inte << 1) |
+              (BX_NE2K_THIS s.IMR.rx_inte));
+    if (value == 0)
+      BX_NE2K_THIS devices->pic->lower_irq(BX_NE2K_THIS s.base_irq);
     break;
 
   case 0x8:  // RSAR0
@@ -594,7 +611,7 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
       BX_PANIC(("TCR write, inhibit-CRC not supported"));
 
     // Auto-transmit disable very suspicious
-    if (value & 0x04)
+    if (value & 0x08)
       BX_PANIC(("TCR write, auto transmit disable not supported"));
 
     // Allow collision-offset to be set, although not used
@@ -930,7 +947,7 @@ bx_ne2k_c::tx_timer(void)
   // Generate an interrupt if not masked and not one in progress
   if (BX_NE2K_THIS s.IMR.tx_inte && !BX_NE2K_THIS s.ISR.pkt_tx) {
     BX_NE2K_THIS s.ISR.pkt_tx = 1;
-    BX_NE2K_THIS devices->pic->trigger_irq(BX_NE2K_THIS s.base_irq);
+    BX_NE2K_THIS devices->pic->raise_irq(BX_NE2K_THIS s.base_irq);
   }
   BX_NE2K_THIS s.tx_timer_active = 0;
 }
@@ -957,7 +974,7 @@ bx_ne2k_c::read(Bit32u address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_NE2K_SMF
   BX_DEBUG(("read addr %x, len %d", address, io_len));
-  Bit32u retval;
+  Bit32u retval = 0;
   int offset = address - BX_NE2K_THIS s.base_address;
 
   if (offset >= 0x10) {
@@ -1136,6 +1153,7 @@ bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
   }
 
   if ((io_len < 60) && !BX_NE2K_THIS s.RCR.runts_ok) {
+    BX_DEBUG(("rejected small packet, length %d", io_len));
     return;
   }
 
@@ -1209,7 +1227,7 @@ bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
   BX_NE2K_THIS s.ISR.pkt_rx = 1;
 
   if (BX_NE2K_THIS s.IMR.rx_inte) {
-    BX_NE2K_THIS devices->pic->trigger_irq(BX_NE2K_THIS s.base_irq);
+    BX_NE2K_THIS devices->pic->raise_irq(BX_NE2K_THIS s.base_irq);
   }
 
 }
@@ -1217,7 +1235,7 @@ bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
 void
 bx_ne2k_c::init(bx_devices_c *d)
 {
-  BX_DEBUG(("Init $Id: ne2k.cc,v 1.25 2001/11/06 20:30:09 fries Exp $"));
+  BX_DEBUG(("Init $Id: ne2k.cc,v 1.32 2002/03/09 01:05:41 bdenney Exp $"));
   BX_NE2K_THIS devices = d;
 
 
@@ -1285,6 +1303,8 @@ bx_ne2k_c::init(bx_devices_c *d)
 						this);
     
     if (BX_NE2K_THIS ethdev == NULL) {
+      BX_PANIC(("could not find eth module %s"));
+      // if they continue, use null.
       BX_INFO(("could not find eth module %s - using null instead",
 		bx_options.ne2k.Oethmod->getptr ()));
       

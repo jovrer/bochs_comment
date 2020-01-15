@@ -1,8 +1,11 @@
-/configbutton.h/1.1/Fri Nov  9 22:17:33 2001//TREL_1_3_FINAL
-/floppya.h/1.2/Wed Oct  3 13:10:37 2001//TREL_1_3_FINAL
-/floppyb.h/1.2/Wed Oct  3 13:10:37 2001//TREL_1_3_FINAL
-/mouse.h/1.2/Wed Oct  3 13:10:37 2001//TREL_1_3_FINAL
-/power.h/1.2/Wed Oct  3 13:10:37 2001//TREL_1_3_FINAL
-/reset.h/1.2/Wed Oct  3 13:10:37 2001//TREL_1_3_FINAL
-/snapshot.h/1.2/Wed Oct  3 13:10:37 2001//TREL_1_3_FINAL
+/cdromd.h/1.1/Thu Jan 31 21:16:52 2002//
+/configbutton.h/1.1/Fri Nov  9 22:17:34 2001//
+/copy.h/1.1/Mon Mar 11 15:04:58 2002//
+/floppya.h/1.2/Wed Oct  3 13:10:38 2001//
+/floppyb.h/1.2/Wed Oct  3 13:10:38 2001//
+/mouse.h/1.2/Wed Oct  3 13:10:38 2001//
+/paste.h/1.1/Mon Mar 11 15:04:58 2002//
+/power.h/1.2/Wed Oct  3 13:10:38 2001//
+/reset.h/1.2/Wed Oct  3 13:10:38 2001//
+/snapshot.h/1.2/Wed Oct  3 13:10:38 2001//
 D

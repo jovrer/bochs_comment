@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.cc,v 1.41 2001/11/12 03:34:45 bdenney Exp $
+// $Id: harddrv.cc,v 1.52 2002/03/25 01:47:13 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -85,6 +85,8 @@ static unsigned curr_multiple_sectors = 0; // was 0x3f
 
 bx_hard_drive_c::bx_hard_drive_c(void)
 {
+      s[0].hard_drive =  NULL;
+      s[1].hard_drive =  NULL;
       put("HD");
       settype(HDLOG);
 #if EXTERNAL_DISK_SIMULATOR
@@ -106,9 +108,19 @@ bx_hard_drive_c::bx_hard_drive_c(void)
 
 bx_hard_drive_c::~bx_hard_drive_c(void)
 {
-  // nothing for now
 	BX_DEBUG(("Exit."));
+  if ( s[0].hard_drive != NULL )      /* DT 17.12.2001 21:55 */
+  {
+    delete s[0].hard_drive;
+    s[0].hard_drive =  NULL;
+  }
+  if ( s[1].hard_drive != NULL )
+  {
+    delete s[1].hard_drive;
+    s[1].hard_drive =  NULL;        /* DT 17.12.2001 21:56 */
+  }
 }
+
 
 
 
@@ -116,7 +128,7 @@ bx_hard_drive_c::~bx_hard_drive_c(void)
 bx_hard_drive_c::init(bx_devices_c *d, bx_cmos_c *cmos)
 {
   BX_HD_THIS devices = d;
-	BX_DEBUG(("Init $Id: harddrv.cc,v 1.41 2001/11/12 03:34:45 bdenney Exp $"));
+	BX_DEBUG(("Init $Id: harddrv.cc,v 1.52 2002/03/25 01:47:13 cbothamy Exp $"));
 
   /* HARD DRIVE 0 */
 
@@ -196,6 +208,7 @@ bx_hard_drive_c::init(bx_devices_c *d, bx_cmos_c *cmos)
 	      } else {		    
 		    BX_INFO(( "Could not locate CD-ROM, continuing with media not present"));
 		    BX_HD_THIS s[1].cdrom.ready = 0;
+		    bx_options.cdromd.Oinserted->set(BX_EJECTED);
 	      }
 	} else {
 #endif
@@ -269,21 +282,36 @@ bx_hard_drive_c::init(bx_devices_c *d, bx_cmos_c *cmos)
       // AMI BIOS: 2nd hard disk, 0x80 if heads>8
       cmos->s.reg[0x29] = (bx_options.diskd.Oheads->get () > 8) ? 0x80 : 0x00;
       // AMI BIOS: 2nd hard disk landing zone, low byte
-      cmos->s.reg[0x2a] = cmos->s.reg[0x1b];
+      cmos->s.reg[0x2a] = cmos->s.reg[0x24];
       // AMI BIOS: 2nd hard disk landing zone, high byte
-      cmos->s.reg[0x2b] = cmos->s.reg[0x1c];
+      cmos->s.reg[0x2b] = cmos->s.reg[0x25];
       // AMI BIOS: 2nd hard disk sectors/track
       cmos->s.reg[0x2c] = bx_options.diskd.Ospt->get ();
     }
 
 
-    if ( bx_options.Obootdrive->get () == BX_BOOT_DISKC) {
+    // Set the "non-extended" boot device. This will default to DISKC if cdrom
+    if ( bx_options.Obootdrive->get () != BX_BOOT_FLOPPYA) {
       // system boot sequence C:, A:
       cmos->s.reg[0x2d] &= 0xdf;
       }
     else { // 'a'
       // system boot sequence A:, C:
       cmos->s.reg[0x2d] |= 0x20;
+      }
+
+    // Set the "extended" boot device, byte 0x3D (needed for cdrom booting)
+    if ( bx_options.Obootdrive->get () == BX_BOOT_FLOPPYA) {
+      // system boot sequence A:
+      cmos->s.reg[0x3d] = 0x01;
+      }
+    else if ( bx_options.Obootdrive->get () == BX_BOOT_DISKC) { 
+      // system boot sequence C:
+      cmos->s.reg[0x3d] = 0x02;
+      }
+    else if ( bx_options.Obootdrive->get () == BX_BOOT_CDROM) { 
+      // system boot sequence cdrom
+      cmos->s.reg[0x3d] = 0x03;
       }
     }
 
@@ -322,6 +350,18 @@ bx_hard_drive_c::init(bx_devices_c *d, bx_cmos_c *cmos)
 }
 
 
+#define GOTO_RETURN_VALUE  if(io_len==4){\
+                             goto return_value32;\
+                             }\
+                           else if(io_len==2){\
+                             value16=(Bit16u)value32;\
+                             goto return_value16;\
+                             }\
+                           else{\
+                             value8=(Bit8u)value32;\
+                             goto return_value8;\
+                             }
+                           
 
   // static IO port read callback handler
   // redirects to non-static class handler to avoid virtual functions
@@ -361,15 +401,24 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
       switch (BX_SELECTED_CONTROLLER.current_command) {
         case 0x20: // READ SECTORS, with retries
         case 0x21: // READ SECTORS, without retries
-          if (io_len != 2) {
-            BX_PANIC(("non-word IO read from %04x",
+          if (io_len == 1) {
+            BX_PANIC(("byte IO read from %04x",
                      (unsigned) address));
             }
           if (BX_SELECTED_CONTROLLER.buffer_index >= 512)
             BX_PANIC(("IO read(1f0): buffer_index >= 512"));
-          value16  = BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index];
-          value16 |= (BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+1] << 8);
-          BX_SELECTED_CONTROLLER.buffer_index += 2;
+
+          value32 = 0L;
+          switch(io_len){
+            case 4:
+              value32 |= (BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+3] << 24);
+              value32 |= (BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+2] << 16);
+            case 2:
+              value32 |= (BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+1] << 8);
+              value32 |=  BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index];
+            }
+
+          BX_SELECTED_CONTROLLER.buffer_index += io_len;
 
           // if buffer completely read
           if (BX_SELECTED_CONTROLLER.buffer_index >= 512) {
@@ -407,27 +456,27 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 	      if (!calculate_logical_address(&logical_sector)) {
 	        BX_ERROR(("multi-sector read reached invalid sector %u, aborting", logical_sector));
 		command_aborted (BX_SELECTED_CONTROLLER.current_command);
-	        goto return_value16;
+	        GOTO_RETURN_VALUE ;
 	      }
 	      ret = BX_SELECTED_HD.hard_drive->lseek(logical_sector * 512, SEEK_SET);
               if (ret < 0) {
                 BX_ERROR(("could not lseek() hard drive image file"));
 		command_aborted (BX_SELECTED_CONTROLLER.current_command);
-	        goto return_value16;
+	        GOTO_RETURN_VALUE ;
 	      }
 	      ret = BX_SELECTED_HD.hard_drive->read((bx_ptr_t) BX_SELECTED_CONTROLLER.buffer, 512);
               if (ret < 512) {
                 BX_ERROR(("logical sector was %u", (unsigned) logical_sector));
                 BX_ERROR(("could not read() hard drive image file at byte %d", logical_sector*512));
 		command_aborted (BX_SELECTED_CONTROLLER.current_command);
-	        goto return_value16;
+	        GOTO_RETURN_VALUE ;
 	      }
 
               BX_SELECTED_CONTROLLER.buffer_index = 0;
 	      raise_interrupt();
 	    }
 	  }
-	  goto return_value16;
+	  GOTO_RETURN_VALUE ;
           break;
 
         case 0xec:    // IDENTIFY DEVICE
@@ -461,15 +510,7 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 	      if (bx_dbg.disk || (CDROM_SELECTED && bx_dbg.cdrom))
 		    BX_INFO(("Read all drive ID Bytes ..."));
               }
-	    if (io_len == 1) {
-		  value8 = (Bit8u)value32;
-		  goto return_value8;
-	    } else if (io_len == 2) {
-		  value16 = (Bit16u)value32;
-		  goto return_value16;
-	    } else {
-		  goto return_value32;
-            }
+            GOTO_RETURN_VALUE;
 	  }
           else
             BX_PANIC(("IO read(1f0h): current command is %02xh",
@@ -561,15 +602,7 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 			      raise_interrupt();
 			}
 		  }
-		  if (io_len == 1) {
-			value8 = (Bit8u)value32;
-			goto return_value8;
-		  } else if (io_len == 2) {
-			value16 = (Bit16u)value32;
-			goto return_value16;
-		  } else {
-			goto return_value32;
-		  }
+                  GOTO_RETURN_VALUE;
 		  break;
 	    }
 
@@ -699,7 +732,8 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
 
     case 0x1f7: // Hard Disk Status
     case 0x3f6: // Hard Disk Alternate Status
-      if (BX_HD_THIS drive_select && !bx_options.diskd.Opresent->get ()) {
+      if ((!BX_HD_THIS drive_select && !bx_options.diskc.Opresent->get ()) ||
+          (BX_HD_THIS drive_select && !bx_options.diskd.Opresent->get ())) {
 	    // (mch) Just return zero for these registers
 	    value8 = 0;
       } else {
@@ -719,6 +753,7 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
         BX_SELECTED_CONTROLLER.status.index_pulse_count = 0;
         }
       }
+      if (address == 0x1f7) BX_HD_THIS devices->pic->lower_irq(14);
       goto return_value8;
       break;
 
@@ -824,16 +859,24 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
 
   switch (address) {
     case 0x1f0:
-      if (io_len != 2) {
-        BX_PANIC(("non-word IO read from %04x", (unsigned) address));
+      if (io_len == 1) {
+        BX_PANIC(("byte IO read from %04x", (unsigned) address));
         }
       switch (BX_SELECTED_CONTROLLER.current_command) {
         case 0x30: // WRITE SECTORS
           if (BX_SELECTED_CONTROLLER.buffer_index >= 512)
             BX_PANIC(("IO write(1f0): buffer_index >= 512"));
-          BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index] = value;
-          BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+1] = (value >> 8);
-          BX_SELECTED_CONTROLLER.buffer_index += 2;
+
+          switch(io_len){
+            case 4:
+              BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+3] = (Bit8u)(value >> 24);
+              BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+2] = (Bit8u)(value >> 16);
+            case 2:
+              BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index+1] = (Bit8u)(value >> 8);
+              BX_SELECTED_CONTROLLER.buffer[BX_SELECTED_CONTROLLER.buffer_index]   = (Bit8u) value;
+            }
+
+          BX_SELECTED_CONTROLLER.buffer_index += io_len;
 
           /* if buffer completely writtten */
           if (BX_SELECTED_CONTROLLER.buffer_index >= 512) {
@@ -908,7 +951,6 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
 		  if (BX_SELECTED_CONTROLLER.buffer_index >= PACKET_SIZE) {
 			// complete command received
 			Bit8u atapi_command = BX_SELECTED_CONTROLLER.buffer[0];
-			int alloc_length;
 
 			if (bx_dbg.cdrom)
 				BX_INFO(("cdrom: ATAPI command 0x%x started", atapi_command));
@@ -961,7 +1003,16 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
 				    } else if (!LoEj && Start) { // start the disc and read the TOC
 					  BX_PANIC(("Start disc not implemented"));
 				    } else if (LoEj && !Start) { // Eject the disc
-					  BX_PANIC(("Eject the disc not implemented"));
+                                          atapi_cmd_nop();
+                                          if (BX_HD_THIS s[1].cdrom.ready) {
+#ifdef LOWLEVEL_CDROM
+                                            BX_HD_THIS s[1].cdrom.cd->eject_cdrom();
+#endif
+                                            BX_HD_THIS s[1].cdrom.ready = 0;
+                                            bx_options.cdromd.Oinserted->set(BX_EJECTED);
+                                            bx_gui.update_drive_status_buttons();
+                                          }
+                                          raise_interrupt();
 				    } else { // Load the disc
 					  // My guess is that this command only closes the tray, that's a no-op for us
 					  atapi_cmd_nop();
@@ -1313,7 +1364,7 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
                                     UNUSED(data_format);
                                     UNUSED(track_number);
 
-				    if (BX_SELECTED_HD.cdrom.ready) {
+				    if (!BX_SELECTED_HD.cdrom.ready) {
 					  atapi_cmd_error(SENSE_NOT_READY, ASC_MEDIUM_NOT_PRESENT);
 					  raise_interrupt();
 				    } else {
@@ -1445,7 +1496,8 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
         case 0x10: // CALIBRATE DRIVE
 	  if (BX_SELECTED_HD.device_type != IDE_DISK)
 		BX_PANIC(("calibrate drive issued to non-disk"));
-          if (BX_HD_THIS drive_select != 0 && !bx_options.diskd.Opresent->get ()) {
+          if ((BX_HD_THIS drive_select == 0 && !bx_options.diskc.Opresent->get ()) ||
+              (BX_HD_THIS drive_select != 0 && !bx_options.diskd.Opresent->get ())) {
             BX_SELECTED_CONTROLLER.error_register = 0x02; // Track 0 not found
             BX_SELECTED_CONTROLLER.status.busy = 0;
             BX_SELECTED_CONTROLLER.status.drive_ready = 1;
@@ -1453,7 +1505,7 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
             BX_SELECTED_CONTROLLER.status.drq = 0;
             BX_SELECTED_CONTROLLER.status.err = 1;
 	    raise_interrupt();
-            BX_INFO(("calibrate drive != 0, with diskd not present"));
+            BX_INFO(("calibrate drive: disk%c not present", BX_HD_THIS drive_select+67));
             break;
             }
 
@@ -1579,8 +1631,9 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
             (unsigned) BX_SELECTED_CONTROLLER.sector_count,
             (unsigned) BX_HD_THIS drive_select,
             (unsigned) BX_SELECTED_CONTROLLER.head_no));
-          if (BX_HD_THIS drive_select != 0 && !bx_options.diskd.Opresent->get ()) {
-            BX_PANIC(("init drive params: drive != 0"));
+          if ((BX_HD_THIS drive_select == 0 && !bx_options.diskc.Opresent->get ()) ||
+              (BX_HD_THIS drive_select != 0 && !bx_options.diskd.Opresent->get ())) {
+            BX_PANIC(("init drive params: disk%c not present", BX_HD_THIS drive_select+67));
             //BX_SELECTED_CONTROLLER.error_register = 0x12;
             BX_SELECTED_CONTROLLER.status.busy = 0;
             BX_SELECTED_CONTROLLER.status.drive_ready = 1;
@@ -1605,6 +1658,11 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
 	    if (bx_dbg.disk || (CDROM_SELECTED && bx_dbg.cdrom))
 		  BX_INFO(("Drive ID Command issued : 0xec "));
 
+            if (!BX_HD_THIS drive_select && !bx_options.diskc.Opresent->get ()) {
+              BX_INFO(("1st drive not present, aborting"));
+              command_aborted(value);
+              break;
+              }
             if (BX_HD_THIS drive_select && !bx_options.diskd.Opresent->get ()) {
               BX_INFO(("2nd drive not present, aborting"));
               command_aborted(value);
@@ -2322,7 +2380,7 @@ bx_hard_drive_c::identify_drive(unsigned drive)
 
   // Word 48: 0000h = cannot perform dword IO
   //          0001h = can    perform dword IO
-  BX_SELECTED_HD.id_drive[48] = 0;
+  BX_SELECTED_HD.id_drive[48] = 1;
 
   // Word 49: Capabilities
   //   15-10: 0 = reserved
@@ -2558,7 +2616,7 @@ bx_hard_drive_c::raise_interrupt()
 	    Bit32u irq = 14;  // always 1st IDE controller
 	    // for second controller, you would want irq 15
 		BX_DEBUG(("Raising interrupt %d {%s}", irq, DEVICE_TYPE_STRING));
-	    BX_HD_THIS devices->pic->trigger_irq(irq);
+	    BX_HD_THIS devices->pic->raise_irq(irq);
       } else {
 	    if (bx_dbg.disk || (CDROM_SELECTED && bx_dbg.cdrom))
 		  BX_INFO(("Interrupt masked {%s}", DEVICE_TYPE_STRING));
@@ -2579,6 +2637,58 @@ bx_hard_drive_c::command_aborted(unsigned value)
   BX_SELECTED_CONTROLLER.status.corrected_data = 0;
   BX_SELECTED_CONTROLLER.buffer_index = 0;
   raise_interrupt();
+}
+
+  unsigned
+bx_hard_drive_c::get_cd_media_status(void)
+{
+  return( BX_HD_THIS s[1].cdrom.ready );
+}
+
+  unsigned
+bx_hard_drive_c::set_cd_media_status(unsigned status)
+{
+  // if setting to the current value, nothing to do
+  if (status == BX_HD_THIS s[1].cdrom.ready)
+    return(status);
+  // return 0 if no cdromd is present
+  if (!bx_options.cdromd.Opresent->get())
+    return(0);
+
+  if (status == 0) {
+    // eject cdrom if not locked by guest OS
+    if (BX_HD_THIS s[1].cdrom.locked) return(1);
+    else {
+#ifdef LOWLEVEL_CDROM
+      BX_HD_THIS s[1].cdrom.cd->eject_cdrom();
+#endif
+      BX_HD_THIS s[1].cdrom.ready = 0;
+      bx_options.cdromd.Oinserted->set(BX_EJECTED);
+      }
+    }
+  else {
+    // insert cdrom
+#ifdef LOWLEVEL_CDROM
+    if (BX_HD_THIS s[1].cdrom.cd->insert_cdrom(bx_options.cdromd.Opath->getptr())) {
+      BX_INFO(( "Media present in CD-ROM drive"));
+      BX_HD_THIS s[1].cdrom.ready = 1;
+      BX_HD_THIS s[1].cdrom.capacity = BX_HD_THIS s[1].cdrom.cd->capacity();
+      bx_options.cdromd.Oinserted->set(BX_INSERTED);
+      BX_SELECTED_HD.sense.sense_key = SENSE_UNIT_ATTENTION;
+      BX_SELECTED_HD.sense.asc = 0;
+      BX_SELECTED_HD.sense.ascq = 0;
+      raise_interrupt();
+      }
+    else {		    
+#endif
+      BX_INFO(( "Could not locate CD-ROM, continuing with media not present"));
+      BX_HD_THIS s[1].cdrom.ready = 0;
+      bx_options.cdromd.Oinserted->set(BX_EJECTED);
+#ifdef LOWLEVEL_CDROM
+      }
+#endif
+    }
+  return( BX_HD_THIS s[1].cdrom.ready );
 }
 
 

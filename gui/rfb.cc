@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc,v 1.13 2001/11/12 17:56:47 bdenney Exp $
+// $Id: rfb.cc,v 1.16 2002/03/16 11:30:06 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -522,7 +522,7 @@ void bx_gui_c::clear_screen(void)
 // cursor_x: new x location of cursor
 // cursor_y: new y location of cursor
 
-void bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long cursor_x, unsigned long cursor_y, unsigned nrows)
+void bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long cursor_x, unsigned long cursor_y, Bit16u cursor_state, unsigned nrows)
 {
 	unsigned char cChar;
 	unsigned int  nchars;
@@ -558,6 +558,18 @@ void bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long curso
 		//cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
 		DrawBitmap(rfbCursorX * 8, rfbCursorY * 16 + rfbHeaderbarY, 8, 16, (char *)&bx_vgafont[cChar].data, cAttr, false);
 	}
+}
+
+  int
+bx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+{
+  return 0;
+}
+
+  int
+bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+{
+  return 0;
 }
 
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.h,v 1.10 2001/10/03 13:10:38 bdenney Exp $
+// $Id: keyboard.h,v 1.14 2002/03/26 14:46:03 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -53,6 +53,8 @@ public:
   ~bx_keyb_c(void);
   BX_KEY_SMF void     init(bx_devices_c *d, bx_cmos_c *cmos);
   BX_KEY_SMF void     gen_scancode(Bit32u   scancode);
+  BX_KEY_SMF void     paste_bytes(Bit8u *data, Bit32s length);
+  BX_KEY_SMF void     service_paste_buf ();
   BX_KEY_SMF Bit8u    get_kbd_enable(void);
   BX_KEY_SMF void     mouse_motion(int delta_x, int delta_y, unsigned button_state);
   BX_KEY_SMF void     mouse_enabled_changed(bool enabled);
@@ -62,6 +64,9 @@ public:
   BX_KEY_SMF int      LoadState( class state_file *fd );
   BX_KEY_SMF unsigned periodic( Bit32u   usec_delta );
   BX_KEY_SMF void     put_scancode( unsigned char *code, int count );
+
+  // update the paste delay based on bx_options.Okeyboard_paste_delay
+  BX_KEY_SMF void     paste_delay_changed ();
 
 private:
 
@@ -87,7 +92,6 @@ private:
                     //       data before AT style machines
 
       /* internal to our version of the keyboard controller */
-      Boolean scan_convert;
       Boolean kbd_clock_enabled;
       Boolean aux_clock_enabled;
       Boolean allow_irq1;
@@ -101,6 +105,9 @@ private:
       Bit32u   timer_pending;
       Boolean irq1_requested;
       Boolean irq12_requested;
+      Boolean scancodes_translate;
+      Boolean expecting_scancodes_set;
+      Bit8u   current_scancodes_set;
       } kbd_controller;
 
     struct mouseStruct {
@@ -178,6 +185,17 @@ private:
     } s; // State information for saving/loading
 
   bx_devices_c *devices;
+
+  // The paste buffer does NOT exist in the hardware.  It is a bochs
+  // construction that allows the user to "paste" arbitrary length sequences of
+  // keystrokes into the emulated machine.  Since the hardware buffer is only
+  // 16 bytes, a very amount of data can be added to the hardware buffer at a
+  // time.  The paste buffer keeps track of the bytes that have not yet been
+  // pasted.
+  Bit8u *pastebuf;   // ptr to bytes to be pasted, or NULL if none in progress
+  Bit32u pastebuf_len; // length of pastebuf
+  Bit32u pastebuf_ptr; // ptr to next byte to be added to hw buffer
+  Bit32u pastedelay;   // count before paste
 
   BX_KEY_SMF void     resetinternals(Boolean powerup);
   BX_KEY_SMF void     set_kbd_clock_enable(Bit8u   value);

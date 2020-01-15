@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom.cc,v 1.25.2.1 2001/12/10 18:38:57 bdenney Exp $
+// $Id: cdrom.cc,v 1.30 2002/03/20 01:24:15 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -61,6 +61,7 @@ extern "C" {
 #endif /* __sun */
 
 #ifdef __BEOS__
+#include "cdrom_beos.h"
 #define BX_CD_FRAMESIZE 2048
 #endif
 
@@ -143,7 +144,7 @@ int ReadCDSector(unsigned int hid, unsigned int tid, unsigned int lun, unsigned 
 		WaitForSingleObject(hEventSRB, 100000);
 	}
 	CloseHandle(hEventSRB);
-	return 0;
+	return (srb.SRB_TargStat == STATUS_GOOD);
 }
 
 int GetCDCapacity(unsigned int hid, unsigned int tid, unsigned int lun)
@@ -199,9 +200,10 @@ cdrom_interface::cdrom_interface(char *dev)
   }
   using_file=0;
 }
+
 void
 cdrom_interface::init(void) {
-  BX_DEBUG(("Init $Id: cdrom.cc,v 1.25.2.1 2001/12/10 18:38:57 bdenney Exp $"));
+  BX_DEBUG(("Init $Id: cdrom.cc,v 1.30 2002/03/20 01:24:15 bdenney Exp $"));
   BX_INFO(("file = '%s'",path));
 }
 
@@ -215,13 +217,14 @@ cdrom_interface::~cdrom_interface(void)
 }
 
   bool
-cdrom_interface::insert_cdrom()
+cdrom_interface::insert_cdrom(char *dev)
 {
   unsigned char buffer[BX_CD_FRAMESIZE];
   ssize_t ret;
   struct stat stat_buf;
 
   // Load CD-ROM. Returns false if CD is not ready.
+  if (dev != NULL) path = strdup(dev);
   BX_INFO (("load cdrom with path=%s", path));
 #ifdef WIN32
     char drive[256];
@@ -248,6 +251,7 @@ cdrom_interface::insert_cdrom()
     {
       strcpy(drive,path);
       using_file = 1;
+      bUseASPI = FALSE;
       BX_INFO (("Opening image file as a cd"));
     }
 	if(bUseASPI) {
@@ -317,7 +321,9 @@ cdrom_interface::insert_cdrom()
   // I just see if I can read a sector to verify that a
   // CD is in the drive and readable.
 #ifdef WIN32
-	if(!bUseASPI) {
+	if(bUseASPI) {
+	  return ReadCDSector(hid, tid, lun, 0, buffer, BX_CD_FRAMESIZE);
+	} else {
       ReadFile(hFile, (void *) buffer, BX_CD_FRAMESIZE, (unsigned long *) &ret, NULL);
       if (ret < 0) {
          CloseHandle(hFile);
@@ -374,6 +380,11 @@ if (using_file == 0)
 		DeviceIoControl(hFile, IOCTL_STORAGE_EJECT_MEDIA, NULL, 0, NULL, 0, &lpBytesReturned, NULL);
 	}
 }
+#endif
+
+#if __linux__
+  if (!using_file)
+    ioctl (fd, CDROMEJECT, NULL);
 #endif
 
     close(fd);
@@ -597,7 +608,6 @@ cdrom_interface::capacity()
 #endif
 
 #ifdef __BEOS__
-	#include "cdrom_beos.h"
 	return GetNumDeviceBlocks(fd, BX_CD_FRAMESIZE);
 #elif defined(__sun)
   {

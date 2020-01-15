@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.55 2001/11/12 18:28:07 bdenney Exp $
+// $Id: bochs.h,v 1.61 2002/03/26 13:59:35 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -493,6 +493,7 @@ enum PCS_OP { PCS_CLEAR, PCS_SET, PCS_TOGGLE };
 
 #include "gui/gui.h"
 #include "gui/control.h"
+#include "gui/keymap.h"
 extern bx_gui_c   bx_gui;
 #include "iodev/iodev.h"
 
@@ -515,6 +516,10 @@ extern bx_devices_c   bx_devices;
 #define BX_RESET_SOFTWARE 10
 #define BX_RESET_HARDWARE 11
 
+// This value controls how often each I/O device's periodic() method
+// gets called.  The timer is set up in iodev/devices.cc.
+#define BX_IODEV_HANDLER_PERIOD 100    // microseconds
+//#define BX_IODEV_HANDLER_PERIOD 10    // microseconds
 
 char *bx_find_bochsrc (void);
 int bx_parse_cmdline (int arg, int argc, char *argv[]);
@@ -590,14 +595,28 @@ typedef struct {
   bx_param_num_c *Odmatimer;
   } bx_sb16_options;
 
+typedef struct {
+  bx_param_bool_c *OuseMapping;
+  bx_param_string_c *Okeymap;
+  } bx_keyboard_options;
+
 #define BX_BOOT_FLOPPYA 0
 #define BX_BOOT_DISKC   1
+#define BX_BOOT_CDROM   2
+
+#define BX_KBD_XT_TYPE        0
+#define BX_KBD_AT_TYPE        1
+#define BX_KBD_MF_TYPE        2 
 
 typedef struct {
   bx_floppy_options floppya;
   bx_floppy_options floppyb;
   bx_disk_options   diskc;
   bx_disk_options   diskd;
+  bx_serial_options com1;
+  bx_serial_options com2;
+  bx_serial_options com3;
+  bx_serial_options com4;
   bx_cdrom_options  cdromd; 
   bx_rom_options    rom;
   bx_vgarom_options vgarom;
@@ -608,6 +627,8 @@ typedef struct {
   bx_param_num_c    *Obootdrive;  //0=floppya, 0x80=diskc
   bx_param_num_c    *Ovga_update_interval;
   bx_param_num_c    *Okeyboard_serial_delay;
+  bx_param_num_c    *Okeyboard_paste_delay;
+  bx_param_enum_c   *Okeyboard_type;
   bx_param_num_c    *Ofloppy_command_delay;
   bx_param_num_c    *Oips;
   bx_param_bool_c   *Omouse_enabled;
@@ -622,6 +643,7 @@ typedef struct {
   bx_param_bool_c   *OnewHardDriveSupport;
   bx_load32bitOSImage_t load32bitOSImage;
   bx_log_options    log;
+  bx_keyboard_options keyboard;
   } bx_options_t;
 
 extern bx_options_t bx_options;

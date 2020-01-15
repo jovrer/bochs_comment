@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc,v 1.38 2001/12/08 14:02:57 bdenney Exp $
+// $Id: keyboard.cc,v 1.53 2002/03/27 16:42:54 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -39,8 +39,18 @@
 // auxb == 1 && outb == 1  => mouse output buffer full.
 // (das)
 
+// Notes from Christophe Bothamy <cbbochs@free.fr>
+//
+// This file includes code from Ludovic Lange (http://ludovic.lange.free.fr)
+// Implementation of 3 scancodes sets mf1,mf2,mf3 with or without translation. 
+// Default is mf2 with translation
+// Ability to switch between scancodes sets
+// Ability to turn translation on or off
+
 #include "bochs.h"
 #include "math.h"
+#include "scancodes.h"
+
 #define LOG_THIS  bx_keyboard.
 
 
@@ -53,8 +63,6 @@ bx_keyb_c bx_keyboard;
 #define this (&bx_keyboard)
 #endif
 
-
-
 bx_keyb_c::bx_keyb_c(void)
 {
   // constructor
@@ -62,7 +70,7 @@ bx_keyb_c::bx_keyb_c(void)
   memset( &s, 0, sizeof(s) );
   BX_KEY_THIS put("KBD");
   BX_KEY_THIS settype(KBDLOG);
-  BX_DEBUG(("Init $Id: keyboard.cc,v 1.38 2001/12/08 14:02:57 bdenney Exp $"));
+  BX_DEBUG(("Init $Id: keyboard.cc,v 1.53 2002/03/27 16:42:54 bdenney Exp $"));
 }
 
 bx_keyb_c::~bx_keyb_c(void)
@@ -85,6 +93,11 @@ bx_keyb_c::resetinternals(Boolean powerup)
 
   BX_KEY_THIS s.kbd_internal_buffer.expecting_typematic = 0;
 
+  // Default scancode set is mf2 with translation
+  BX_KEY_THIS s.kbd_controller.expecting_scancodes_set = 0;
+  BX_KEY_THIS s.kbd_controller.current_scancodes_set = 1;
+  BX_KEY_THIS s.kbd_controller.scancodes_translate = 1;
+  
   if (powerup) {
     BX_KEY_THIS s.kbd_internal_buffer.expecting_led_write = 0;
     BX_KEY_THIS s.kbd_internal_buffer.delay = 1; // 500 mS
@@ -97,7 +110,7 @@ bx_keyb_c::resetinternals(Boolean powerup)
   void
 bx_keyb_c::init(bx_devices_c *d, bx_cmos_c *cmos)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc,v 1.38 2001/12/08 14:02:57 bdenney Exp $"));
+  BX_DEBUG(("Init $Id: keyboard.cc,v 1.53 2002/03/27 16:42:54 bdenney Exp $"));
   Bit32u   i;
 
   BX_KEY_THIS devices = d;
@@ -133,7 +146,6 @@ bx_keyb_c::init(bx_devices_c *d, bx_cmos_c *cmos)
   BX_KEY_THIS s.kbd_controller.inpb = 0;
   BX_KEY_THIS s.kbd_controller.outb = 0;
 
-  BX_KEY_THIS s.kbd_controller.scan_convert = 1;
   BX_KEY_THIS s.kbd_controller.kbd_clock_enabled = 1;
   BX_KEY_THIS s.kbd_controller.aux_clock_enabled = 0;
   BX_KEY_THIS s.kbd_controller.allow_irq1 = 1;
@@ -163,11 +175,23 @@ bx_keyb_c::init(bx_devices_c *d, bx_cmos_c *cmos)
   BX_KEY_THIS s.controller_Qsize = 0;
   BX_KEY_THIS s.controller_Qsource = 0;
 
+  // clear paste buffer
+  BX_KEY_THIS pastebuf = NULL;
+  BX_KEY_THIS pastebuf_len = 0;
+  BX_KEY_THIS pastebuf_ptr = 0;
+  BX_KEY_THIS paste_delay_changed ();
+
   // mouse port installed on system board
   cmos->s.reg[0x14] |= 0x04;
+
 }
 
-#define RETURN(x) do { ret = (x); goto read_return; } while (0)
+  void
+bx_keyb_c::paste_delay_changed()
+{
+  BX_KEY_THIS pastedelay = bx_options.Okeyboard_paste_delay->get()/BX_IODEV_HANDLER_PERIOD;
+  BX_INFO(("will paste characters every %d keyboard ticks",BX_KEY_THIS pastedelay));
+}
 
   // static IO port read callback handler
   // redirects to non-static class handler to avoid virtual functions
@@ -196,8 +220,6 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_KEY_SMF
 
-  Bit32u ret = 0;
-
   if (io_len > 1)
     BX_PANIC(("kbd: io read to address %08x, len=%u",
              (unsigned) address, (unsigned) io_len));
@@ -213,6 +235,7 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
       //      BX_INFO(("kbd: %04d outb 0 auxb 0",__LINE__)); // das
       BX_KEY_THIS s.kbd_controller.outb = 0;
       BX_KEY_THIS s.kbd_controller.auxb = 0;
+      BX_KEY_THIS s.kbd_controller.irq12_requested = 0;
 
       if (BX_KEY_THIS s.controller_Qsize) {
         unsigned i;
@@ -231,16 +254,18 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
 
 //BX_DEBUG(("mouse: ___io_read aux = 0x%02x", (unsigned) val));
 
+      BX_KEY_THIS devices->pic->lower_irq(12);
       activate_timer();
       BX_DEBUG(("READ(%02x) (from mouse) = %02x", (unsigned) address,
           (unsigned) val));
-      RETURN(val);
+      return val;
       }
     else if (BX_KEY_THIS s.kbd_controller.outb) { /* kbd byte available */
       val = BX_KEY_THIS s.kbd_controller.kbd_output_buffer;
       // BX_INFO(("kbd: %04d outb 0 auxb 0",__LINE__)); // das
       BX_KEY_THIS s.kbd_controller.outb = 0;
       BX_KEY_THIS s.kbd_controller.auxb = 0;
+      BX_KEY_THIS s.kbd_controller.irq1_requested = 0;
 //BX_DEBUG(( "___io_read kbd"));
 
       if (BX_KEY_THIS s.controller_Qsize) {
@@ -255,27 +280,28 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
           // move Q elements towards head of queue by one
           BX_KEY_THIS s.controller_Q[i] = BX_KEY_THIS s.controller_Q[i+1];
           }
+	BX_DEBUG(("s.controller_Qsize: %02X",BX_KEY_THIS s.controller_Qsize));
         BX_KEY_THIS s.controller_Qsize--;
         }
 
+      BX_KEY_THIS devices->pic->lower_irq(1);
       activate_timer();
       BX_DEBUG(("READ(%02x) = %02x", (unsigned) address,
           (unsigned) val));
-      RETURN(val);
+      return val;
       }
     else {
         BX_DEBUG(("num_elements = %d", BX_KEY_THIS s.kbd_internal_buffer.num_elements));
         BX_DEBUG(("read from port 60h with outb empty"));
-        val = BX_KEY_THIS s.kbd_controller.kbd_output_buffer;
-      RETURN(val);
+//        val = BX_KEY_THIS s.kbd_controller.kbd_output_buffer;
+      return BX_KEY_THIS s.kbd_controller.kbd_output_buffer;
       }
     }
 
 #if BX_CPU_LEVEL >= 2
   else if (address == 0x64) { /* status register */
-    Bit8u   val;
 
-    val = (BX_KEY_THIS s.kbd_controller.pare << 7)  |
+    return (BX_KEY_THIS s.kbd_controller.pare << 7)  |
           (BX_KEY_THIS s.kbd_controller.tim  << 6)  |
           (BX_KEY_THIS s.kbd_controller.auxb << 5)  |
           (BX_KEY_THIS s.kbd_controller.keyl << 4)  |
@@ -283,26 +309,19 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
           (BX_KEY_THIS s.kbd_controller.sysf << 2)  |
           (BX_KEY_THIS s.kbd_controller.inpb << 1)  |
           BX_KEY_THIS s.kbd_controller.outb;
-    RETURN(val);
     }
 
 #else /* BX_CPU_LEVEL > 0 */
   /* XT MODE, System 8255 Mode Register */
   else if (address == 0x64) { /* status register */
     BX_DEBUG(("IO read from port 64h, system 8255 mode register"));
-    RETURN(BX_KEY_THIS s.kbd_controller.outb);
+    return BX_KEY_THIS s.kbd_controller.outb;
     }
 #endif /* BX_CPU_LEVEL > 0 */
 
-  else {
-    BX_PANIC(("unknown address in io read to keyboard port %x",
+  BX_PANIC(("unknown address in io read to keyboard port %x",
       (unsigned) address));
-    RETURN(0); /* keep compiler happy */
-    }
-
-  read_return:
-  BX_DEBUG(("keyboard: 8-bit read from %04x = %02x", (unsigned)address, ret));
-  return ret;
+  return 0; /* keep compiler happy */
 }
 
 
@@ -325,6 +344,7 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_KEY_SMF
   Bit8u   command_byte;
+  static int kbd_initialized=0;
 
   if (io_len > 1)
     BX_PANIC(("kbd: io write to address %08x, len=%u",
@@ -371,7 +391,7 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
               BX_ERROR(("keyboard: (mch) scan convert turned off"));
 
 	    // (mch) NT needs this
-	    BX_KEY_THIS s.kbd_controller.scan_convert = scan_convert;
+	    BX_KEY_THIS s.kbd_controller.scancodes_translate = scan_convert;
             }
             break;
           case 0xd1: // write output port
@@ -428,7 +448,7 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
             break;
             }
           command_byte =
-            (BX_KEY_THIS s.kbd_controller.scan_convert << 6) |
+            (BX_KEY_THIS s.kbd_controller.scancodes_translate << 6) |
             ((!BX_KEY_THIS s.kbd_controller.aux_clock_enabled) << 5) |
             ((!BX_KEY_THIS s.kbd_controller.kbd_clock_enabled) << 4) |
             (0 << 3) |
@@ -465,6 +485,12 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
           break;
         case 0xaa: // motherboard controller self test
           BX_DEBUG(("Self Test"));
+	  if( kbd_initialized == 0 )
+	  {
+	    BX_KEY_THIS s.controller_Qsize = 0;
+	    BX_KEY_THIS s.kbd_controller.outb = 0;
+	    kbd_initialized++;
+	  }
           // controller output buffer must be empty
           if (BX_KEY_THIS s.kbd_controller.outb) {
 		BX_ERROR(("kbd: OUTB set and command 0x%02x encountered", value));
@@ -569,18 +595,74 @@ BX_PANIC(("kbd: OUTB set and command 0x%02x encountered", value));
     }
 }
 
+// service_paste_buf() transfers data from the paste buffer to the hardware
+// keyboard buffer.  It tries to transfer as many chars as possible at a
+// time, but because different chars require different numbers of scancodes
+// we have to be conservative.  Note that this process depends on the
+// keymap tables to know what chars correspond to what keys, and which
+// chars require a shift or other modifier.
+void 
+bx_keyb_c::service_paste_buf ()
+{
+  if (!BX_KEY_THIS pastebuf) return;
+  BX_DEBUG (("service_paste_buf: ptr at %d out of %d", BX_KEY_THIS pastebuf_ptr, BX_KEY_THIS pastebuf_len));
+  int fill_threshold = BX_KBD_ELEMENTS - 8;
+  while (BX_KEY_THIS pastebuf_ptr < BX_KEY_THIS pastebuf_len) {
+    if (BX_KEY_THIS s.kbd_internal_buffer.num_elements >= fill_threshold)
+      return;
+    // there room in the buffer for a keypress and a key release.
+    // send one keypress and a key release.
+    Bit8u byte = BX_KEY_THIS pastebuf[BX_KEY_THIS pastebuf_ptr];
+    BXKeyEntry *entry = bx_keymap.getKeyASCII (byte);
+    if (!entry) {
+      BX_ERROR (("paste character 0x%02x ignored", byte));
+    } else {
+      BX_DEBUG (("pasting character 0x%02x. baseKey is %04x", byte, entry->baseKey));
+      if (entry->modKey != BX_KEYMAP_UNKNOWN)
+        bx_devices.keyboard->gen_scancode(entry->modKey);
+      bx_devices.keyboard->gen_scancode(entry->baseKey);
+      bx_devices.keyboard->gen_scancode(entry->baseKey | BX_KEY_RELEASED);
+      if (entry->modKey != BX_KEYMAP_UNKNOWN)
+        bx_devices.keyboard->gen_scancode(entry->modKey | BX_KEY_RELEASED);
+    }
+    BX_KEY_THIS pastebuf_ptr++;
+  }
+  // reached end of pastebuf.  free the memory it was using.
+  free (BX_KEY_THIS pastebuf);
+  BX_KEY_THIS pastebuf = NULL;
+}
+
+// paste_bytes schedules an arbitrary number of ASCII characters to be
+// inserted into the hardware queue as it become available.  Any previous
+// paste which is still in progress will be thrown out.  BYTES is a pointer
+// to a region of memory containing the chars to be pasted. When the paste
+// is complete, the keyboard code will call free(BYTES).
+void
+bx_keyb_c::paste_bytes (Bit8u *bytes, Bit32s length)
+{
+  BX_DEBUG (("paste_bytes: %d bytes", length));
+  if (BX_KEY_THIS pastebuf) {
+    BX_ERROR (("previous paste was not completed!  %d chars lost", 
+	  BX_KEY_THIS pastebuf_len - BX_KEY_THIS pastebuf_ptr));
+    free(BX_KEY_THIS pastebuf);
+  }
+  BX_KEY_THIS pastebuf = (Bit8u *) malloc (length);
+  memcpy (BX_KEY_THIS pastebuf, bytes, length);
+  BX_KEY_THIS pastebuf_ptr = 0;
+  BX_KEY_THIS pastebuf_len = length;
+  BX_KEY_THIS service_paste_buf ();
+}
 
   void
 bx_keyb_c::gen_scancode(Bit32u   key)
 {
-  Bit8u   scancode;
-  int extended;
-  static Boolean alt_pressed = 0;
+  unsigned char *scancode;
+  Bit8u  i;
 
   BX_DEBUG(( "gen_scancode %lld %x", bx_pc_system.time_ticks(), key));
 
-  if (!BX_KEY_THIS s.kbd_controller.scan_convert)
-	BX_PANIC(("keyboard: gen_scancode with scan_convert cleared"));
+  if (!BX_KEY_THIS s.kbd_controller.scancodes_translate)
+	BX_DEBUG(("keyboard: gen_scancode with scancode_translate cleared"));
 
   BX_DEBUG(("gen_scancode(): scancode: %08x", (unsigned) key));
 
@@ -592,135 +674,33 @@ bx_keyb_c::gen_scancode(Bit32u   key)
   if (BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled==0)
     return;
 
-  // should deal with conversions from KSCAN to system scan codes here
-
-  extended = 0;
-  switch (key & 0xff) {
-    case BX_KEY_CTRL_L:  scancode = 0x1d; break;
-    case BX_KEY_CTRL_R:  extended = 1; scancode = 0x1d; break;
-    case BX_KEY_SHIFT_L: scancode = 0x2a; break;
-    case BX_KEY_SHIFT_R: scancode = 0x36; break;
-    case BX_KEY_CAPS_LOCK: scancode = 0x3a; break;
-    case BX_KEY_ESC:   scancode = 0x01; break;
-
-    case BX_KEY_ALT_L: alt_pressed = (key >> 31); scancode = 0x38; break;
-    case BX_KEY_ALT_R: extended = 1; scancode = 0x38; break;
-
-    case BX_KEY_A:     scancode = 0x1e; break;
-    case BX_KEY_B:     scancode = 0x30; break;
-    case BX_KEY_C:     scancode = 0x2e; break;
-    case BX_KEY_D:     scancode = 0x20; break;
-    case BX_KEY_E:     scancode = 0x12; break;
-    case BX_KEY_F:     scancode = 0x21; break;
-    case BX_KEY_G:     scancode = 0x22; break;
-    case BX_KEY_H:     scancode = 0x23; break;
-    case BX_KEY_I:     scancode = 0x17; break;
-    case BX_KEY_J:     scancode = 0x24; break;
-    case BX_KEY_K:     scancode = 0x25; break;
-    case BX_KEY_L:     scancode = 0x26; break;
-    case BX_KEY_M:     scancode = 0x32; break;
-    case BX_KEY_N:     scancode = 0x31; break;
-    case BX_KEY_O:     scancode = 0x18; break;
-    case BX_KEY_P:     scancode = 0x19; break;
-    case BX_KEY_Q:     scancode = 0x10; break;
-    case BX_KEY_R:     scancode = 0x13; break;
-    case BX_KEY_S:     scancode = 0x1f; break;
-    case BX_KEY_T:     scancode = 0x14; break;
-    case BX_KEY_U:     scancode = 0x16; break;
-    case BX_KEY_V:     scancode = 0x2f; break;
-    case BX_KEY_W:     scancode = 0x11; break;
-    case BX_KEY_X:     scancode = 0x2d; break;
-    case BX_KEY_Y:     scancode = 0x15; break;
-    case BX_KEY_Z:     scancode = 0x2c; break;
-
-    case BX_KEY_0:     scancode = 0x0b; break;
-    case BX_KEY_1:     scancode = 0x02; break;
-    case BX_KEY_2:     scancode = 0x03; break;
-    case BX_KEY_3:     scancode = 0x04; break;
-    case BX_KEY_4:     scancode = 0x05; break;
-    case BX_KEY_5:     scancode = 0x06; break;
-    case BX_KEY_6:     scancode = 0x07; break;
-    case BX_KEY_7:     scancode = 0x08; break;
-    case BX_KEY_8:     scancode = 0x09; break;
-    case BX_KEY_9:     scancode = 0x0a; break;
-
-    case BX_KEY_SPACE:        scancode = 0x39; break;
-    case BX_KEY_SINGLE_QUOTE: scancode = 0x28; break;
-    case BX_KEY_COMMA:        scancode = 0x33; break;
-    case BX_KEY_PERIOD:       scancode = 0x34; break;
-    case BX_KEY_KP_DIVIDE:  extended = 1;
-    case BX_KEY_SLASH:        scancode = 0x35; break;
-
-    case BX_KEY_SEMICOLON:     scancode = 0x27; break;
-    case BX_KEY_EQUALS:        scancode = 0x0d; break;
-
-    case BX_KEY_LEFT_BRACKET:  scancode = 0x1a; break;
-    case BX_KEY_BACKSLASH:     scancode = 0x2b; break;
-    case BX_KEY_LEFT_BACKSLASH: scancode = 0x56; break;
-    case BX_KEY_RIGHT_BRACKET: scancode = 0x1b; break;
-    case BX_KEY_MINUS:         scancode = 0x0c; break;
-    case BX_KEY_GRAVE:         scancode = 0x29; break;
-
-    case BX_KEY_BACKSPACE:     scancode = 0x0e; break;
-    case BX_KEY_KP_ENTER:
-    case BX_KEY_ENTER:         scancode = 0x1c; break;
-    case BX_KEY_TAB:           scancode = 0x0f; break;
-
-    case BX_KEY_LEFT:          extended = 1;
-    case BX_KEY_KP_LEFT:       scancode = 0x4b; break;
-    case BX_KEY_RIGHT:         extended = 1;
-    case BX_KEY_KP_RIGHT:      scancode = 0x4d; break;
-    case BX_KEY_UP:            extended = 1;
-    case BX_KEY_KP_UP:         scancode = 0x48; break;
-    case BX_KEY_DOWN:          extended = 1;
-    case BX_KEY_KP_DOWN:       scancode = 0x50; break;
-
-    case BX_KEY_INSERT:        extended = 1;
-    case BX_KEY_KP_INSERT:        scancode = 0x52; break;
-    case BX_KEY_DELETE:        extended = 1;
-    case BX_KEY_KP_DELETE:        scancode = 0x53; break;
-    case BX_KEY_HOME:          extended = 1;
-    case BX_KEY_KP_HOME:          scancode = 0x47; break;
-    case BX_KEY_END:           extended = 1;
-    case BX_KEY_KP_END:           scancode = 0x4f; break;
-    case BX_KEY_PAGE_UP:       extended = 1;
-    case BX_KEY_KP_PAGE_UP:       scancode = 0x49; break;
-    case BX_KEY_PAGE_DOWN:     extended = 1;
-    case BX_KEY_KP_PAGE_DOWN:     scancode = 0x51; break;
-
-    case BX_KEY_KP_ADD:           scancode = 0x4e; break;
-    case BX_KEY_KP_SUBTRACT:      scancode = 0x4a; break;
-    case BX_KEY_KP_5:             scancode = 0x4c; break;
-    case BX_KEY_KP_MULTIPLY:      scancode = 0x37; break;
-    case BX_KEY_NUM_LOCK:         scancode = 0x45; break;
-
-    case BX_KEY_F1:               scancode = 0x3b; break;
-    case BX_KEY_F2:               scancode = 0x3c; break;
-    case BX_KEY_F3:               scancode = 0x3d; break;
-    case BX_KEY_F4:               scancode = 0x3e; break;
-    case BX_KEY_F5:               scancode = 0x3f; break;
-    case BX_KEY_F6:               scancode = 0x40; break;
-    case BX_KEY_F7:               scancode = 0x41; break;
-    case BX_KEY_F8:               scancode = 0x42; break;
-    case BX_KEY_F9:               scancode = 0x43; break;
-    case BX_KEY_F10:              scancode = 0x44; break;
-    case BX_KEY_F11:              scancode = 0x57; break;
-    case BX_KEY_F12:              scancode = 0x58; break;
-
-    case BX_KEY_PRINT:          if (alt_pressed) scancode = 0x54;
-			        else { extended = 1; scancode = 0x37; }
-    case BX_KEY_SCRL_LOCK:        scancode = 0x46; break;
-    case BX_KEY_PAUSE:         extended = 1; scancode = 0x45; break;
-
-    default:
-      BX_DEBUG(( "bx_keyb_c::gen_scancode : Unhandled %u",
-        (unsigned) key));
-      return;
-    }
-  if (extended) kbd_enQ(0xE0);
+  // Switch between make and break code
   if (key & BX_KEY_RELEASED)
-    scancode |= 0x80;
-  kbd_enQ(scancode);
+    scancode=(unsigned char *)scancodes[(key&0xFF)][BX_KEY_THIS s.kbd_controller.current_scancodes_set].brek;
+  else
+    scancode=(unsigned char *)scancodes[(key&0xFF)][BX_KEY_THIS s.kbd_controller.current_scancodes_set].make;
+
+  if (BX_KEY_THIS s.kbd_controller.scancodes_translate) {
+    // Translate before send
+    Bit8u escaped=0x00;
+
+    for (i=0; i<strlen( (const char *)scancode ); i++) {
+      if (scancode[i] == 0xF0)
+        escaped=0x80;
+      else {
+        kbd_enQ(translation8042[scancode[i] ] | escaped );
+	BX_DEBUG(("keyboard: writing translated %02x",translation8042[scancode[i] ] | escaped));
+        escaped=0x00;
+      }
+    }
+  } 
+  else {
+    // Send raw data
+    for (i=0; i<strlen( (const char *)scancode ); i++) {
+      kbd_enQ( scancode[i] );
+      BX_DEBUG(("keyboard: writing raw %02x",scancode[i]));
+    }
+  }
 }
 
 
@@ -923,6 +903,7 @@ bx_keyb_c::mouse_enQ(Bit8u   mouse_data)
   void
 bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
 {
+
   BX_DEBUG(("controller passed byte %02xh to keyboard", value));
 
   if (BX_KEY_THIS s.kbd_internal_buffer.expecting_typematic) {
@@ -950,6 +931,27 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
     return;
     }
 
+  if (BX_KEY_THIS s.kbd_controller.expecting_scancodes_set) {
+    BX_KEY_THIS s.kbd_controller.expecting_scancodes_set = 0;
+    if( value != 0 ) {
+      if( value<4 ) {
+        BX_KEY_THIS s.kbd_controller.current_scancodes_set = (value-1);
+        BX_INFO(("Switched to scancode set %d\n",
+          (unsigned) BX_KEY_THIS s.kbd_controller.current_scancodes_set));
+        kbd_enQ(0xFA);
+        } 
+      else {
+        BX_ERROR(("Received scancodes set out of range: %d\n", value ));
+        kbd_enQ(0xFF); // send ERROR
+        }
+      } 
+    else {
+      // Send current scancodes set to port 0x60
+      kbd_enQ( 1 + (BX_KEY_THIS s.kbd_controller.current_scancodes_set) ); 
+      }
+    return;
+    }
+
   switch (value) {
     case 0x00: // ??? ignore and let OS timeout with no response
       kbd_enQ(0xFA); // send ACK %%%
@@ -974,11 +976,30 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
       return;
       break;
 
+    case 0xf0: // Select alternate scan code set
+      BX_KEY_THIS s.kbd_controller.expecting_scancodes_set = 1;
+      BX_DEBUG(("Expecting scancode set info...\n"));
+      kbd_enQ(0xFA); // send ACK
+      return;
+      break;
+
     case 0xf2:  // identify keyboard
       BX_INFO(("identify keyboard command received"));
-      kbd_enQ(0xFA); // AT sends ACK, MFII sends ACK+ABh+41h
-      kbd_enQ(0xAB);
-      kbd_enQ(0x41);
+
+      // XT sends nothing, AT sends ACK 
+      // MFII with translation sends ACK+ABh+41h
+      // MFII without translation sends ACK+ABh+83h
+      if (bx_options.Okeyboard_type->get() != BX_KBD_XT_TYPE) {
+        kbd_enQ(0xFA); 
+        if (bx_options.Okeyboard_type->get() == BX_KBD_MF_TYPE) {
+          kbd_enQ(0xAB);
+          
+          if(BX_KEY_THIS s.kbd_controller.scancodes_translate)
+            kbd_enQ(0x41);
+          else
+            kbd_enQ(0x83);
+          }
+        }
       return;
       break;
 
@@ -1058,6 +1079,7 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
 bx_keyb_c::periodic( Bit32u   usec_delta )
 {
   static int multiple=0;
+  static int count_before_paste=0;
   Bit8u   retval;
 
   UNUSED( usec_delta );
@@ -1067,6 +1089,16 @@ bx_keyb_c::periodic( Bit32u   usec_delta )
     multiple=0;
     bx_gui.handle_events();
   }
+
+  if (BX_KEY_THIS s.kbd_controller.kbd_clock_enabled ) {
+    if(++count_before_paste>=BX_KEY_THIS pastedelay) {
+      // after the paste delay, consider adding moving more chars
+      // from the paste buffer to the keyboard buffer.
+      BX_KEY_THIS service_paste_buf ();
+      count_before_paste=0;
+    }
+  }
+
   retval = BX_KEY_THIS s.kbd_controller.irq1_requested | (BX_KEY_THIS s.kbd_controller.irq12_requested << 1);
   BX_KEY_THIS s.kbd_controller.irq1_requested = 0;
   BX_KEY_THIS s.kbd_controller.irq12_requested = 0;

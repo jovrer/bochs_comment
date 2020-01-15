@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial.cc,v 1.14 2001/11/17 18:10:54 vruppert Exp $
+// $Id: serial.cc,v 1.19 2002/03/05 15:40:23 grossman Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -52,7 +52,7 @@
 #endif
 
 #if defined(__FreeBSD__) || defined(__OpenBSD__)
-// #define SERIAL_ENABLE
+#define SERIAL_ENABLE
 #endif
 
 #ifdef SERIAL_ENABLE
@@ -76,8 +76,28 @@ bx_serial_c::bx_serial_c(void)
 {
   put("SER");
   settype(SERLOG);
+}
+
+bx_serial_c::~bx_serial_c(void)
+{
 #ifdef SERIAL_ENABLE
-  tty_id = open("/dev/ttyqf",O_RDWR|O_NONBLOCK,600);
+  tcsetattr(tty_id, TCSAFLUSH, &term_orig);
+#endif
+  // nothing for now
+}
+
+
+  void
+bx_serial_c::init(bx_devices_c *d)
+{
+  if (!bx_options.com1.Opresent->get ())
+    return;
+
+#ifdef SERIAL_ENABLE
+  tty_id = open(bx_options.com1.Odev->getptr (), O_RDWR|O_NONBLOCK,600);
+  if (tty_id < 0)
+    BX_PANIC(("open of %s (%s) failed\n",
+	      "com1", bx_options.com1.Odev->getptr ()));
   BX_DEBUG(("tty_id: %d",tty_id));
   tcgetattr(tty_id, &term_orig);
   bcopy((caddr_t) &term_orig, (caddr_t) &term_new, sizeof(struct termios));
@@ -93,27 +113,20 @@ bx_serial_c::bx_serial_c(void)
   term_new.c_iflag |= IGNBRK;
   term_new.c_iflag &= ~BRKINT;
 #endif    /* !def TRUE_CTLC */
+  term_new.c_iflag = 0;
+  term_new.c_oflag = 0;
+  term_new.c_cflag = CS8|CREAD|CLOCAL;
+  term_new.c_lflag = 0;
+  term_new.c_cc[VMIN] = 1;
+  term_new.c_cc[VTIME] = 0;
   //term_new.c_iflag |= IXOFF;
-  //tcsetattr(tty_id, TCSAFLUSH, &term_new);
+  tcsetattr(tty_id, TCSAFLUSH, &term_new);
 #endif   /* def SERIAL_ENABLE */
   // nothing for now
 #if USE_RAW_SERIAL
   this->raw = new serial_raw("/dev/cua0", SIGUSR1);
 #endif // USE_RAW_SERIAL
-}
 
-bx_serial_c::~bx_serial_c(void)
-{
-#ifdef SERIAL_ENABLE
-  tcsetattr(tty_id, TCSAFLUSH, &term_orig);
-#endif
-  // nothing for now
-}
-
-
-  void
-bx_serial_c::init(bx_devices_c *d)
-{
   BX_SER_THIS devices = d;
 
   BX_SER_THIS devices->register_irq(4, "Serial Port 1");
@@ -135,6 +148,12 @@ bx_serial_c::init(bx_devices_c *d)
     /* internal state */
     BX_SER_THIS s[i].rx_empty = 1;
     BX_SER_THIS s[i].tx_empty = 1;
+    BX_SER_THIS s[i].ls_ipending = 0;
+    BX_SER_THIS s[i].ms_ipending = 0;
+    BX_SER_THIS s[i].rx_ipending = 0;
+    BX_SER_THIS s[i].tx_ipending = 0;
+    BX_SER_THIS s[i].ls_interrupt = 0;
+    BX_SER_THIS s[i].ms_interrupt = 0;
     BX_SER_THIS s[i].rx_interrupt = 0;
     BX_SER_THIS s[i].tx_interrupt = 0;
 
@@ -256,29 +275,31 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
   switch (address) {
     case 0x03F8: /* receive buffer, or divisor latch LSB if DLAB set */
       if (BX_SER_THIS s[0].line_cntl.dlab) {
-	val = BX_SER_THIS s[0].divisor_lsb;
+        val = BX_SER_THIS s[0].divisor_lsb;
       } else {
-	val = BX_SER_THIS s[0].rxbuffer;
-	BX_SER_THIS s[0].line_status.rxdata_ready = 0;
-	BX_SER_THIS s[0].rx_empty = 1;
+        val = BX_SER_THIS s[0].rxbuffer;
+        BX_SER_THIS s[0].line_status.rxdata_ready = 0;
+        BX_SER_THIS s[0].rx_empty = 1;
 
-	/* If there are no more ints pending, clear the irq */
-	if ((BX_SER_THIS s[0].rx_interrupt == 1) &&
-	    (BX_SER_THIS s[0].tx_interrupt == 0)) {
-	  BX_SER_THIS devices->pic->untrigger_irq(4);
-	}
-	BX_SER_THIS s[0].rx_interrupt = 0;
+        /* If there are no more ints pending, clear the irq */
+        if ((BX_SER_THIS s[0].tx_interrupt == 0) &&
+            (BX_SER_THIS s[0].ls_interrupt == 0) &&
+            (BX_SER_THIS s[0].ms_interrupt == 0)) {
+          BX_SER_THIS devices->pic->lower_irq(4);
+        }
+        BX_SER_THIS s[0].rx_interrupt = 0;
+        BX_SER_THIS s[0].rx_ipending = 0;
       }
       break;
 
     case 0x03F9: /* interrupt enable register, or div. latch MSB */
       if (BX_SER_THIS s[0].line_cntl.dlab) {
-	val = BX_SER_THIS s[0].divisor_msb;
+        val = BX_SER_THIS s[0].divisor_msb;
       } else {
-	val = BX_SER_THIS s[0].int_enable.rxdata_enable     |
-	  (BX_SER_THIS s[0].int_enable.txhold_enable  << 1) |
-	  (BX_SER_THIS s[0].int_enable.rxlstat_enable << 2) |
-	  (BX_SER_THIS s[0].int_enable.modstat_enable << 3);	
+        val = BX_SER_THIS s[0].int_enable.rxdata_enable |
+              (BX_SER_THIS s[0].int_enable.txhold_enable  << 1) |
+              (BX_SER_THIS s[0].int_enable.rxlstat_enable << 2) |
+              (BX_SER_THIS s[0].int_enable.modstat_enable << 3);
       }
       break;
 
@@ -286,27 +307,36 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
       /*
        * Set the interrupt ID based on interrupt source
        */
-      if (BX_SER_THIS s[0].rx_interrupt) {
-	BX_SER_THIS s[0].int_ident.int_ID = 0x2;
-	BX_SER_THIS s[0].int_ident.ipending = 0;
+      if (BX_SER_THIS s[0].ls_interrupt) {
+        BX_SER_THIS s[0].int_ident.int_ID = 0x3;
+        BX_SER_THIS s[0].int_ident.ipending = 0;
+      } else if (BX_SER_THIS s[0].rx_interrupt) {
+        BX_SER_THIS s[0].int_ident.int_ID = 0x2;
+        BX_SER_THIS s[0].int_ident.ipending = 0;
       } else if (BX_SER_THIS s[0].tx_interrupt) {
-	BX_SER_THIS s[0].int_ident.int_ID = 0x1;
-	BX_SER_THIS s[0].int_ident.ipending = 0;
+        BX_SER_THIS s[0].int_ident.int_ID = 0x1;
+        BX_SER_THIS s[0].int_ident.ipending = 0;
+      } else if (BX_SER_THIS s[0].ms_interrupt) {
+        BX_SER_THIS s[0].int_ident.int_ID = 0x0;
+        BX_SER_THIS s[0].int_ident.ipending = 0;
       } else {
-	BX_SER_THIS s[0].int_ident.int_ID = 0x0;
-	BX_SER_THIS s[0].int_ident.ipending = 1;
+        BX_SER_THIS s[0].int_ident.int_ID = 0x0;
+        BX_SER_THIS s[0].int_ident.ipending = 1;
+      }
+
+      /* If there are no more ints pending, clear the irq */
+      if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
+          (BX_SER_THIS s[0].ls_interrupt == 0) &&
+          (BX_SER_THIS s[0].ms_interrupt == 0)) {
+        BX_SER_THIS devices->pic->lower_irq(4);
       }
 
       BX_SER_THIS s[0].tx_interrupt = 0;
-
-      /* no more ints pending, clear the irq */
-      if (BX_SER_THIS s[0].int_ident.int_ID == 0x1) {
-	BX_SER_THIS devices->pic->untrigger_irq(4);
-      }
+      BX_SER_THIS s[0].tx_ipending = 0;
 
       val = BX_SER_THIS s[0].int_ident.ipending  |
-	(BX_SER_THIS s[0].int_ident.int_ID << 1) |
-	(BX_SER_THIS s[0].int_ident.fifo_enabled << 6);
+            (BX_SER_THIS s[0].int_ident.int_ID << 1) |
+            (BX_SER_THIS s[0].int_ident.fifo_enabled << 6);
       break;
 
     case 0x03FB: /* Line control register */
@@ -320,11 +350,11 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
       break;
 
     case 0x03FC: /* MODEM control register */
-      val = BX_SER_THIS s[0].modem_cntl.dtr     |
-	(BX_SER_THIS s[0].modem_cntl.rts << 1)  |
-	(BX_SER_THIS s[0].modem_cntl.out1 << 2) |
-	(BX_SER_THIS s[0].modem_cntl.out2 << 3) |
-	(BX_SER_THIS s[0].modem_cntl.local_loopback);
+      val = BX_SER_THIS s[0].modem_cntl.dtr |
+            (BX_SER_THIS s[0].modem_cntl.rts << 1) |
+            (BX_SER_THIS s[0].modem_cntl.out1 << 2) |
+            (BX_SER_THIS s[0].modem_cntl.out2 << 3) |
+            (BX_SER_THIS s[0].modem_cntl.local_loopback << 4);
       break;
 
     case 0x03FD: /* Line status register */
@@ -336,7 +366,16 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
 	(BX_SER_THIS s[0].line_status.txhold_empty   << 5) |
 	(BX_SER_THIS s[0].line_status.txtransm_empty << 6) |
 	(BX_SER_THIS s[0].line_status.fifo_error     << 7);
+      BX_SER_THIS s[0].line_status.overrun_error = 0;
       BX_SER_THIS s[0].line_status.break_int = 0;
+      /* If there are no more ints pending, clear the irq */
+      if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
+          (BX_SER_THIS s[0].tx_interrupt == 0) &&
+          (BX_SER_THIS s[0].ms_interrupt == 0)) {
+        BX_SER_THIS devices->pic->lower_irq(4);
+      }
+      BX_SER_THIS s[0].ls_interrupt = 0;
+      BX_SER_THIS s[0].ls_ipending = 0;
       break;
 
     case 0x03FE: /* MODEM status register */
@@ -352,6 +391,14 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
       BX_SER_THIS s[0].modem_status.delta_dsr = 0;
       BX_SER_THIS s[0].modem_status.ri_trailedge = 0;
       BX_SER_THIS s[0].modem_status.delta_dcd = 0;
+      /* If there are no more ints pending, clear the irq */
+      if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
+          (BX_SER_THIS s[0].tx_interrupt == 0) &&
+          (BX_SER_THIS s[0].ls_interrupt == 0)) {
+        BX_SER_THIS devices->pic->lower_irq(4);
+      }
+      BX_SER_THIS s[0].ms_interrupt = 0;
+      BX_SER_THIS s[0].ms_ipending = 0;
       break;
 
     case 0x03FF: /* scratch register */
@@ -389,6 +436,9 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 #else
   UNUSED(this_ptr);
 #endif  // !BX_USE_SER_SMF
+  Boolean prev_cts, prev_dsr, prev_ri, prev_dcd;
+  Boolean gen_int = 0;
+
   BX_DEBUG(("write: 0x%x <- %d",address,value));
 
   /* SERIAL PORT 1 */
@@ -402,7 +452,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 
   switch (address) {
     case 0x03F8: /* transmit buffer, or divisor latch LSB if DLAB set */
-      if (BX_SER_THIS s[0].line_cntl.dlab) {	
+      if (BX_SER_THIS s[0].line_cntl.dlab) {
 	BX_SER_THIS s[0].divisor_lsb = value;
 
 	if (value != 0) {
@@ -414,24 +464,26 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 #endif // USE_RAW_SERIAL
 	}
       } else {
-	if (BX_SER_THIS s[0].tx_empty) {
-	  BX_SER_THIS s[0].tx_empty = 0;
-	  BX_SER_THIS s[0].line_status.txtransm_empty = 0;
-	  BX_SER_THIS s[0].line_status.txhold_empty = 0;
-	  /* If there are no more ints pending, clear the irq */
-	  if ((BX_SER_THIS s[0].tx_interrupt == 1) &&
-	      (BX_SER_THIS s[0].rx_interrupt == 0)) {
-	    BX_SER_THIS devices->pic->untrigger_irq(4);
-	  }
-	  BX_SER_THIS s[0].tx_interrupt = 0;
-	  BX_SER_THIS s[0].txbuffer = value;
-	  bx_pc_system.activate_timer(BX_SER_THIS s[0].tx_timer_index
-,
-		 (int) (1000000.0 / (BX_SER_THIS s[0].baudrate / 8)),
-				      0); /* not continuous */
-	} else {
-	  BX_ERROR(("write to tx hold register when not empty"));
-	}
+        if (BX_SER_THIS s[0].tx_empty) {
+          BX_SER_THIS s[0].tx_empty = 0;
+          BX_SER_THIS s[0].line_status.txtransm_empty = 0;
+          BX_SER_THIS s[0].line_status.txhold_empty = 0;
+          /* If there are no more ints pending, clear the irq */
+          if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
+              (BX_SER_THIS s[0].ls_interrupt == 0) &&
+              (BX_SER_THIS s[0].ms_interrupt == 0)) {
+            BX_SER_THIS devices->pic->lower_irq(4);
+          }
+          BX_SER_THIS s[0].tx_interrupt = 0;
+          BX_SER_THIS s[0].tx_ipending = 0;
+          Bit8u bitmask = 0xff >> (3 - BX_SER_THIS s[0].line_cntl.wordlen_sel);
+          BX_SER_THIS s[0].txbuffer = value & bitmask;
+          bx_pc_system.activate_timer(BX_SER_THIS s[0].tx_timer_index,
+                                      (int) (1000000.0 / (BX_SER_THIS s[0].baudrate / 8)),
+                                      0); /* not continuous */
+        } else {
+          BX_ERROR(("write to tx hold register when not empty"));
+        }
       }
       break;
 
@@ -452,6 +504,32 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 	BX_SER_THIS s[0].int_enable.txhold_enable  = (value & 0x02) >> 1;
 	BX_SER_THIS s[0].int_enable.rxlstat_enable = (value & 0x04) >> 2;
 	BX_SER_THIS s[0].int_enable.modstat_enable = (value & 0x08) >> 3;
+        if ((BX_SER_THIS s[0].ms_ipending == 1) &&
+            (BX_SER_THIS s[0].int_enable.modstat_enable == 1)) {
+          BX_SER_THIS s[0].ms_interrupt = 1;
+          BX_SER_THIS s[0].ms_ipending = 0;
+          gen_int = 1;
+        }
+        if ((BX_SER_THIS s[0].tx_ipending == 1) &&
+            (BX_SER_THIS s[0].int_enable.txhold_enable == 1)) {
+          BX_SER_THIS s[0].tx_interrupt = 1;
+          BX_SER_THIS s[0].tx_ipending = 0;
+          gen_int = 1;
+        }
+        if ((BX_SER_THIS s[0].rx_ipending == 1) &&
+            (BX_SER_THIS s[0].int_enable.rxdata_enable == 1)) {
+          BX_SER_THIS s[0].rx_interrupt = 1;
+          BX_SER_THIS s[0].rx_ipending = 0;
+          gen_int = 1;
+        if ((BX_SER_THIS s[0].ls_ipending == 1) &&
+            (BX_SER_THIS s[0].int_enable.rxlstat_enable == 1)) {
+          BX_SER_THIS s[0].ls_interrupt = 1;
+          BX_SER_THIS s[0].ls_ipending = 0;
+          gen_int = 1;
+        }
+        }
+        if (gen_int == 1)
+          BX_SER_THIS devices->pic->raise_irq(4);
       }
       break;
 
@@ -510,7 +588,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
       }
       BX_SER_THIS s[0].line_cntl.dlab = (value & 0x80) >> 7;
       break;
- 	
+
     case 0x03FC: /* MODEM control register */
       if ((value & 0x01) == 0) {
 #if USE_RAW_SERIAL
@@ -525,16 +603,41 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
       BX_SER_THIS s[0].modem_cntl.local_loopback = (value & 0x10) >> 4;
 
       if (BX_SER_THIS s[0].modem_cntl.local_loopback) {
-	BX_SER_THIS s[0].modem_status.cts = BX_SER_THIS s[0].modem_cntl.rts;
-	BX_SER_THIS s[0].modem_status.dsr = BX_SER_THIS s[0].modem_cntl.dtr;
-	BX_SER_THIS s[0].modem_status.ri  = BX_SER_THIS s[0].modem_cntl.out1;
-	BX_SER_THIS s[0].modem_status.dcd = BX_SER_THIS s[0].modem_cntl.out2;
+        prev_cts = BX_SER_THIS s[0].modem_status.cts;
+        prev_dsr = BX_SER_THIS s[0].modem_status.dsr;
+        prev_ri  = BX_SER_THIS s[0].modem_status.ri;
+        prev_dcd = BX_SER_THIS s[0].modem_status.dcd;
+        BX_SER_THIS s[0].modem_status.cts = BX_SER_THIS s[0].modem_cntl.rts;
+        BX_SER_THIS s[0].modem_status.dsr = BX_SER_THIS s[0].modem_cntl.dtr;
+        BX_SER_THIS s[0].modem_status.ri  = BX_SER_THIS s[0].modem_cntl.out1;
+        BX_SER_THIS s[0].modem_status.dcd = BX_SER_THIS s[0].modem_cntl.out2;
+        if (BX_SER_THIS s[0].modem_status.cts != prev_cts) {
+          BX_SER_THIS s[0].modem_status.delta_cts = 1;
+          BX_SER_THIS s[0].ms_ipending = 1;
+        }
+        if (BX_SER_THIS s[0].modem_status.dsr != prev_dsr) {
+          BX_SER_THIS s[0].modem_status.delta_dsr = 1;
+          BX_SER_THIS s[0].ms_ipending = 1;
+        }
+        if (BX_SER_THIS s[0].modem_status.ri != prev_ri)
+          BX_SER_THIS s[0].ms_ipending = 1;
+        if ((BX_SER_THIS s[0].modem_status.ri == 0) && (prev_ri == 1))
+          BX_SER_THIS s[0].modem_status.ri_trailedge = 1;
+        if (BX_SER_THIS s[0].modem_status.dcd != prev_dcd) {
+          BX_SER_THIS s[0].modem_status.delta_dcd = 1;
+          BX_SER_THIS s[0].ms_ipending = 1;
+        }
+        if ((BX_SER_THIS s[0].ms_ipending == 1) &&
+            (BX_SER_THIS s[0].int_enable.modstat_enable == 1)) {
+          BX_SER_THIS s[0].ms_interrupt = 1;
+          BX_SER_THIS s[0].ms_ipending = 0;
+        }
       } else {
-	/* set these to 0 for the time being */
-	BX_SER_THIS s[0].modem_status.cts = 0;
-	BX_SER_THIS s[0].modem_status.dsr = 0;
-	BX_SER_THIS s[0].modem_status.ri  = 0;
-	BX_SER_THIS s[0].modem_status.dcd = 0;
+        /* set these to 0 for the time being */
+        BX_SER_THIS s[0].modem_status.cts = 0;
+        BX_SER_THIS s[0].modem_status.dsr = 0;
+        BX_SER_THIS s[0].modem_status.ri  = 0;
+        BX_SER_THIS s[0].modem_status.dcd = 0;
       }
       break;
 
@@ -577,15 +680,29 @@ bx_serial_c::tx_timer(void)
   if (BX_SER_THIS s[0].int_enable.txhold_enable) {
     gen_int = 1;
     BX_SER_THIS s[0].tx_interrupt = 1;
+  } else {
+    BX_SER_THIS s[0].tx_ipending = 1;
   }
 
   if (BX_SER_THIS s[0].modem_cntl.local_loopback) {
+    if (BX_SER_THIS s[0].rx_empty == 0)
+      BX_SER_THIS s[0].line_status.overrun_error = 1;
     BX_SER_THIS s[0].rxbuffer = BX_SER_THIS s[0].txbuffer;
     BX_SER_THIS s[0].line_status.rxdata_ready = 1;
     BX_SER_THIS s[0].rx_empty = 0;
-    if (BX_SER_THIS s[0].int_enable.rxdata_enable) {
-      gen_int = 1;
-      BX_SER_THIS s[0].rx_interrupt = 1;
+    if (BX_SER_THIS s[0].modem_cntl.out2) {
+      if (BX_SER_THIS s[0].int_enable.rxdata_enable) {
+        gen_int = 1;
+        BX_SER_THIS s[0].rx_interrupt = 1;
+      } else {
+        BX_SER_THIS s[0].rx_ipending = 1;
+      }
+      if (BX_SER_THIS s[0].int_enable.rxlstat_enable) {
+        gen_int = 1;
+        BX_SER_THIS s[0].ls_interrupt = 1;
+      } else {
+        BX_SER_THIS s[0].ls_ipending = 1;
+      }
     }
   } else {
 #if defined (USE_TTY_HACK)
@@ -604,7 +721,7 @@ bx_serial_c::tx_timer(void)
   }
 
   if (gen_int) {
-    BX_SER_THIS devices->pic->trigger_irq(4);
+    BX_SER_THIS devices->pic->raise_irq(4);
   }
 }
 
@@ -640,6 +757,7 @@ bx_serial_c::rx_timer(void)
 // declared in the CodeWarrior standard library headers. I'm just
 // leaving it commented out for the moment.
 
+  FD_ZERO(&fds);
   FD_SET(tty_id, &fds);
 
   if (BX_SER_THIS s[0].line_status.rxdata_ready == 0) {
@@ -660,7 +778,7 @@ bx_serial_c::rx_timer(void)
     if (rdy) {
 	  chbuf = data;
 #elif defined(SERIAL_ENABLE)
-    if (select(1, &fds, NULL, NULL, &tval) == 1) {
+    if (select(tty_id + 1, &fds, NULL, NULL, &tval) == 1) {
       (void) read(tty_id, &chbuf, 1);
 	  BX_DEBUG(("read: '%c'",chbuf));
 #else
@@ -668,21 +786,23 @@ bx_serial_c::rx_timer(void)
 #endif
       if (!BX_SER_THIS s[0].modem_cntl.local_loopback) {
 
-	BX_SER_THIS s[0].rxbuffer = chbuf;
-	BX_SER_THIS s[0].line_status.rxdata_ready = 1;
-	BX_SER_THIS s[0].rx_empty = 0;
-	if (BX_SER_THIS s[0].int_enable.rxdata_enable) {
-	  BX_SER_THIS s[0].rx_interrupt = 1;
-	  BX_SER_THIS devices->pic->trigger_irq(4);
-	}
+        BX_SER_THIS s[0].rxbuffer = chbuf;
+        BX_SER_THIS s[0].line_status.rxdata_ready = 1;
+        BX_SER_THIS s[0].rx_empty = 0;
+        if (BX_SER_THIS s[0].int_enable.rxdata_enable) {
+          BX_SER_THIS s[0].rx_interrupt = 1;
+          BX_SER_THIS devices->pic->raise_irq(4);
+        } else {
+          BX_SER_THIS s[0].rx_ipending = 1;
+        }
       }
     } else {
-      bdrate = (int) (1000000.0 / 100); // Poll frequency is 100ms
+      bdrate = (int) (1000000.0 / 100000); // Poll frequency is 100ms
     }
   } else {
     // Poll at 4x baud rate to see if the next-char can
     // be read
-    bdrate *= 4; 
+    bdrate *= 4;
   }
 #endif
 #endif

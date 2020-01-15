@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.25 2001/12/05 20:38:32 vruppert Exp $
+// $Id: rombios.c,v 1.42 2002/03/28 07:10:18 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -79,6 +79,58 @@
 //   - NMI access (bit7 of addr written to 70h)
 //   - timer ISR should deal with floppy counter and turn floppy motor off
 
+// NOTES for ATA/ATAPI driver (cbbochs@free.fr)
+//   - The driver is based on source code by Hale Landis (www.ata-atapi.com)
+//     The source code is in the public domain and free for any use
+//     Many, many thanks to Hale Landis (hlandis@ata-atapi.com)
+//   - All ATA/ATAPI driver functions can be deactivated with 
+//     #define BX_USE_ATADRV 0
+//   - From the initial source code, I deleted all references to 
+//     the pci-dma, isa-dma, interrupt and trace functions
+//   - The driver makes use of EBDA segment. 
+//     I used memory starting at 0x5D in the segment (used for 2nd ide 
+//     interface in usual AMI bios). 
+//     It can easily be moved, look in EbdaData definition
+//     The filler in this structure can be splitted in members if needed
+//   - if performance tests are ok, the ATA driver could be used to handle
+//     Hard-Disks
+//   - Code can easily modified to handle multiple cdrom/harddrives
+
+// NOTES for El-Torito Boot (cbbochs@free.fr)
+//   - CD-ROM booting is only available if ATA/ATAPI Driver is available
+//   - El-Torito booting can be deactivated with 
+//     #define BX_ELTORITO_BOOT 0
+//   - Current code is only able to boot mono-session cds 
+//   - Current code can not boot and emulate a hard-disk
+//     the bios will panic otherwise
+//   - Current code also use memory in EBDA segement. It's only 14+6 bytes so
+//     it could be moved in segment 0x40 (0x40:0xC0 seems to be available)
+//   - I used cmos byte 0x3D to store extended information on boot-device
+//   - Code has to be modified modified to handle to handle multiple cdrom drives
+//   - Here are the cdrom boot failure codes:
+//       1 : no atapi device found
+//       2 : no atapi cdrom found
+//       3 : can not read cd - BRVD
+//       4 : cd is not eltorito (BRVD)
+//       5 : cd is not eltorito (ISO TAG)
+//       6 : cd is not eltorito (ELTORITO TAG)
+//       7 : can not read cd - boot catalog
+//       8 : boot catalog : bad header
+//       9 : boot catalog : bad platform
+//      10 : boot catalog : bad signature
+//      11 : boot catalog : bootable flag not set
+//      12 : can not read cd - boot image
+//
+// El-Torito TODO :
+//   - Emulate a Hard-disk (currently only diskette can be emulated) see "FIXME ElTorito Harddisk"
+//   - Implement remaining int13_cdemu functions (as defined by El-Torito specs)
+//   - Implement int13 for cdrom with 2048bytes sector-size (as defined by El-Torito specs) (started)
+//   - cdrom drive is hardcoded to ide 0 device 1 in several places. see "FIXME ElTorito Hardcoded"
+//   - Int13 functions 4Ah -> 4Dh sould be handled separatly, as DL is not the disk drive 
+//   - int13 Fix DL when emulating a cd. In that case DL is decremented before calling real int13.
+//     This is ok. But DL should be reincremented afterwards. Maybe int13 has to be reworked as well
+//   - Fix all "FIXME ElTorito Various"
+
 #define BX_CPU           3
 #define BX_USE_PS2_MOUSE 1
 #define BX_CALL_INT15_4F 1
@@ -86,16 +138,33 @@
 #define BX_SUPPORT_FLOPPY 1
 #define BX_PCIBIOS       1
 
+#define BX_USE_ATADRV		1
+#define BX_ELTORITO_BOOT	1
+
+#define BX_MAX_ATA_DEVICES	2
+
    /* model byte 0xFC = AT */
 #define SYS_MODEL_ID     0xFC
 #define SYS_SUBMODEL_ID  0x00
 #define BIOS_REVISION    1
-#define BIOS_CONFIG_TABLE 0xe6f5
+#define BIOS_CONFIG_TABLE 0xe716
   // 1K of base memory used for Extended Bios Data Area (EBDA)
   // EBDA is used for PS/2 mouse support, and IDE BIOS, etc.
-#define BASE_MEM_IN_K (640 - 1)
-#define EBDA_SEG 0x9FC0
+#define BASE_MEM_IN_K   (640 - 1)
+#define EBDA_SEG           0x9FC0
 
+  // Sanity Checks
+#if BX_USE_ATADRV && BX_CPU<3
+#    error ATA/ATAPI Driver can ony be used with 386+ cpu
+#endif
+#if BX_USE_ATADRV && !BX_USE_EBDA
+#    error ATA/ATAPI Driver can ony be used if EBDA is available
+#endif
+#if BX_ELTORITO_BOOT && !BX_USE_ATADRV
+#    error El-Torito Boot can only be use if ATA/ATAPI Driver is available
+#endif
+
+  
 #define PANIC_PORT 0x400
 
 // #20  is dec 20
@@ -160,10 +229,393 @@ MEND
 
 #endasm
 
-
 typedef unsigned char  Bit8u;
 typedef unsigned short Bit16u;
 typedef unsigned short Boolean;
+typedef unsigned long  Bit32u;
+
+#if BX_USE_ATADRV
+
+  void memsetb(seg,offset,value,count);
+  void memcpyb(dseg,doffset,sseg,soffset,count);
+  void memcpyd(dseg,doffset,sseg,soffset,count);
+  
+  // memset of count bytes
+    void 
+  memsetb(seg,offset,value,count)
+    Bit16u seg;
+    Bit16u offset;
+    Bit16u value;
+    Bit16u count;
+  {
+  #asm
+    push bp
+    mov  bp, sp
+  
+      push ax
+      push cx
+      push es
+      push di
+  
+      mov  cx, 10[bp] ; count
+      cmp  cx, #0x00
+      je   memsetb_end
+      mov  ax, 4[bp] ; segment
+      mov  es, ax
+      mov  ax, 6[bp] ; offset
+      mov  di, ax
+      mov  al, 8[bp] ; value
+      cld
+      rep
+       stosb
+  
+  memsetb_end:
+      pop di
+      pop es
+      pop cx
+      pop ax
+  
+    pop bp
+  #endasm
+  }
+  
+  // memcpy of count bytes
+    void 
+  memcpyb(dseg,doffset,sseg,soffset,count)
+    Bit16u dseg;
+    Bit16u doffset;
+    Bit16u sseg;
+    Bit16u soffset;
+    Bit16u count;
+  {
+  #asm
+    push bp
+    mov  bp, sp
+  
+      push ax
+      push cx
+      push es
+      push di
+      push ds
+      push si
+  
+      mov  cx, 12[bp] ; count
+      cmp  cx, #0x0000
+      je   memcpyb_end
+      mov  ax, 4[bp] ; dsegment
+      mov  es, ax
+      mov  ax, 6[bp] ; doffset
+      mov  di, ax
+      mov  ax, 8[bp] ; ssegment
+      mov  ds, ax
+      mov  ax, 10[bp] ; soffset
+      mov  si, ax
+      cld
+      rep
+       movsb
+  
+  memcpyb_end:
+      pop si
+      pop ds
+      pop di
+      pop es
+      pop cx
+      pop ax
+  
+    pop bp
+  #endasm
+  }
+
+  // memcpy of count dword
+    void 
+  memcpyd(dseg,doffset,sseg,soffset,count)
+    Bit16u dseg;
+    Bit16u doffset;
+    Bit16u sseg;
+    Bit16u soffset;
+    Bit16u count;
+  {
+  #asm
+    push bp
+    mov  bp, sp
+  
+      push ax
+      push cx
+      push es
+      push di
+      push ds
+      push si
+  
+      mov  cx, 12[bp] ; count
+      cmp  cx, #0x0000
+      je   memcpyd_end
+      mov  ax, 4[bp] ; dsegment
+      mov  es, ax
+      mov  ax, 6[bp] ; doffset
+      mov  di, ax
+      mov  ax, 8[bp] ; ssegment
+      mov  ds, ax
+      mov  ax, 10[bp] ; soffset
+      mov  si, ax
+      cld
+      rep
+       movsd
+  
+  memcpyd_end:
+      pop si
+      pop ds
+      pop di
+      pop es
+      pop cx
+      pop ax
+  
+    pop bp
+  #endasm
+  }
+
+  // read_dword and write_dword functions
+  static Bit32u         read_dword();
+  static void           write_dword();
+  
+    Bit32u
+  read_dword(seg, offset)
+    Bit16u seg;
+    Bit16u offset;
+  {
+  #asm
+    push bp
+    mov  bp, sp
+  
+      push bx
+      push ds
+      mov  ax, 4[bp] ; segment
+      mov  ds, ax
+      mov  bx, 6[bp] ; offset
+      mov  ax, [bx]
+      inc  bx
+      inc  bx
+      mov  dx, [bx]
+      ;; ax = return value (word)
+      ;; dx = return value (word)
+      pop  ds
+      pop  bx
+  
+    pop  bp
+  #endasm
+  }
+  
+    void
+  write_dword(seg, offset, data)
+    Bit16u seg;
+    Bit16u offset;
+    Bit32u data;
+  {
+  #asm
+    push bp
+    mov  bp, sp
+  
+      push ax
+      push bx
+      push ds
+      mov  ax, 4[bp] ; segment
+      mov  ds, ax
+      mov  bx, 6[bp] ; offset
+      mov  ax, 8[bp] ; data word
+      mov  [bx], ax  ; write data word
+      inc  bx
+      inc  bx
+      mov  ax, 10[bp] ; data word
+      mov  [bx], ax  ; write data word
+      pop  ds
+      pop  bx
+      pop  ax
+  
+    pop  bp
+  #endasm
+  }
+#endif //BX_USE_ATADRV
+  
+  // Bit32u (unsigned long) and long helper functions
+  #asm
+  
+  ;; and function
+  landl:
+  landul:
+    and ax,[di]
+    and bx,2[di]
+    ret
+  
+  ;; add function
+  laddl:
+  laddul:
+    add	ax,[di]
+    adc	bx,2[di]
+    ret
+  
+  ;; cmp function
+  lcmpl:
+  lcmpul:
+  ;;  cmp	bx,2[di]
+  ;;  je	lcmp_firstw_equal
+  ;;  ret
+  ;;lcmp_firstw_equal:
+  ;;  cmp	ax,[di]
+  ;;  jb    lcmp_below
+  ;;  jge   lcmp_exit
+  ;;  inc   bx
+  ;;lcmp_exit:
+  ;;  ret
+  ;;lcmp_below:
+  ;;  dec   bx
+
+    and eax, #0x0000FFFF
+    shl ebx, #16
+    add eax, ebx
+    shr ebx, #16
+    cmp eax, dword ptr [di]
+    ret
+  
+  ;; sub function
+  lsubl:
+  lsubul:
+    sub	ax,[di]
+    sbb	bx,2[di]
+    ret
+  
+  ;; mul function
+  lmull:
+  lmulul:
+    ;; mov	cx,ax
+    ;; mul	word ptr 2[di]
+    ;; xchg	ax,bx
+    ;; mul	word ptr [di]
+    ;; add	bx,ax
+    ;; mov	ax,ptr [di]
+    ;; mul	cx
+    ;; add	bx,dx
+
+    and eax, #0x0000FFFF
+    shl ebx, #16
+    add eax, ebx
+    mul eax, dword ptr [di]
+    mov ebx, eax
+    shr ebx, #16
+    ret
+  
+  ;; dec function
+  ldecl:
+  ldecul:
+  ;;  cmp	word ptr [bx],*0
+  ;;  je	ldec_both
+  ;;  dec	word ptr [bx]
+  ;;  ret
+  ;;ldec_both:
+  ;;  dec	word ptr [bx]
+  ;;  dec	word ptr 2[bx]
+
+    dec dword ptr [bx]
+    ret
+  
+  ;; or function
+  lorl:
+  lorul:
+    or	ax,[di]
+    or	bx,2[di]
+    ret
+  
+  ;; inc function
+  lincl:
+  lincul:
+  ;;  inc	word ptr [bx]
+  ;;  je	linc_hword
+  ;;  ret
+  ;;linc_hword:
+  ;;  inc	word ptr 2[bx]
+
+    inc dword ptr [bx]
+    ret
+  
+  ;; tst function
+  ltstl:
+  ltstul:
+  ;;  test	bx,bx
+  ;;  je	ltst_firstw_equal
+  ;;  ret
+  ;;ltst_firstw_equal:
+  ;;  test	ax,ax
+  ;;  js	ltst_sign
+  ;;  ret
+  ;;ltst_sign:
+  ;;  inc	bx
+
+    and eax, #0x0000FFFF
+    shl ebx, #16
+    add eax, ebx
+    shr ebx, #16
+    test eax, eax
+    ret
+  
+  ;; sr function
+  lsrul:
+  ;;  mov	cx,di
+  ;;  jcxz	lsru_exit
+  ;;  cmp	cx,*32
+  ;;  jae	lsru_zero
+  ;;lsru_loop:
+  ;;  shr	bx,*1
+  ;;  rcr	ax,*1
+  ;;  loop	lsru_loop
+  ;;lsru_exit:
+  ;;  ret
+  ;;lsru_zero:
+  ;;  xor	ax,ax
+  ;;  mov	bx,ax
+
+    mov  cx,di
+    jcxz lsr_exit
+    and  eax, #0x0000FFFF
+    shl  ebx, #16
+    add  eax, ebx
+  lsr_loop:
+    shr  eax, #1
+    loop lsr_loop
+    mov  ebx, eax
+    shr  ebx, #16
+  lsr_exit:
+    ret
+  
+  ;; sl function
+  lsll:
+  lslul:
+  ;;  mov	cx,di
+  ;;  jcxz	lsl_exit
+  ;;  cmp	cx,*32
+  ;;  jae	lsl_zero
+  ;;lsl_loop:
+  ;;  shl	ax,*1
+  ;;  rcl	bx,*1
+  ;;  loop	lsl_loop
+  ;;  lsl_exit:
+  ;;  ret
+  ;;lsl_zero:
+  ;;  xor	ax,ax
+  ;;  mov	bx,ax
+  ;;  ret
+
+    mov  cx,di
+    jcxz lsl_exit
+    and  eax, #0x0000FFFF
+    shl  ebx, #16
+    add  eax, ebx
+  lsl_loop: 
+    shl  eax, #1
+    loop lsl_loop
+    mov  ebx, eax
+    shr  ebx, #16
+  lsl_exit:
+    ret
+  
+  #endasm
 
 // for access to RAM area which is used by interrupt vectors
 // and BIOS Data Area
@@ -177,6 +629,256 @@ typedef struct {
   } bios_data_t;
 
 #define BiosData ((bios_data_t  *) 0)
+
+#if BX_USE_ATADRV
+  // Global defines -- ATA register and register bits.
+  // command block & control block regs
+  // these are the offsets into pio_reg_addrs[]
+  #define CB_DATA  0   // data reg         in/out pio_base_addr1+0
+  #define CB_ERR   1   // error            in     pio_base_addr1+1
+  #define CB_FR    1   // feature reg         out pio_base_addr1+1
+  #define CB_SC    2   // sector count     in/out pio_base_addr1+2
+  #define CB_SN    3   // sector number    in/out pio_base_addr1+3
+  #define CB_CL    4   // cylinder low     in/out pio_base_addr1+4
+  #define CB_CH    5   // cylinder high    in/out pio_base_addr1+5
+  #define CB_DH    6   // device head      in/out pio_base_addr1+6
+  #define CB_STAT  7   // primary status   in     pio_base_addr1+7
+  #define CB_CMD   7   // command             out pio_base_addr1+7
+  #define CB_ASTAT 8   // alternate status in     pio_base_addr2+6
+  #define CB_DC    8   // device control      out pio_base_addr2+6
+  #define CB_DA    9   // device address   in     pio_base_addr2+7
+  
+  #define CB_ER_ICRC 0x80    // ATA Ultra DMA bad CRC
+  #define CB_ER_BBK  0x80    // ATA bad block
+  #define CB_ER_UNC  0x40    // ATA uncorrected error
+  #define CB_ER_MC   0x20    // ATA media change
+  #define CB_ER_IDNF 0x10    // ATA id not found
+  #define CB_ER_MCR  0x08    // ATA media change request
+  #define CB_ER_ABRT 0x04    // ATA command aborted
+  #define CB_ER_NTK0 0x02    // ATA track 0 not found
+  #define CB_ER_NDAM 0x01    // ATA address mark not found
+  
+  #define CB_ER_P_SNSKEY 0xf0   // ATAPI sense key (mask)
+  #define CB_ER_P_MCR    0x08   // ATAPI Media Change Request
+  #define CB_ER_P_ABRT   0x04   // ATAPI command abort
+  #define CB_ER_P_EOM    0x02   // ATAPI End of Media
+  #define CB_ER_P_ILI    0x01   // ATAPI Illegal Length Indication
+  
+  // ATAPI Interrupt Reason bits in the Sector Count reg (CB_SC)
+  #define CB_SC_P_TAG    0xf8   // ATAPI tag (mask)
+  #define CB_SC_P_REL    0x04   // ATAPI release
+  #define CB_SC_P_IO     0x02   // ATAPI I/O
+  #define CB_SC_P_CD     0x01   // ATAPI C/D
+  
+  // bits 7-4 of the device/head (CB_DH) reg
+  #define CB_DH_DEV0 0xa0    // select device 0
+  #define CB_DH_DEV1 0xb0    // select device 1
+  
+  // status reg (CB_STAT and CB_ASTAT) bits
+  #define CB_STAT_BSY  0x80  // busy
+  #define CB_STAT_RDY  0x40  // ready
+  #define CB_STAT_DF   0x20  // device fault
+  #define CB_STAT_WFT  0x20  // write fault (old name)
+  #define CB_STAT_SKC  0x10  // seek complete
+  #define CB_STAT_SERV 0x10  // service
+  #define CB_STAT_DRQ  0x08  // data request
+  #define CB_STAT_CORR 0x04  // corrected
+  #define CB_STAT_IDX  0x02  // index
+  #define CB_STAT_ERR  0x01  // error (ATA)
+  #define CB_STAT_CHK  0x01  // check (ATAPI)
+  
+  // device control reg (CB_DC) bits
+  #define CB_DC_HD15   0x08  // bit should always be set to one
+  #define CB_DC_SRST   0x04  // soft reset
+  #define CB_DC_NIEN   0x02  // disable interrupts
+  
+  // Most mandtory and optional ATA commands (from ATA-3),
+  #define CMD_CFA_ERASE_SECTORS            0xC0
+  #define CMD_CFA_REQUEST_EXT_ERR_CODE     0x03
+  #define CMD_CFA_TRANSLATE_SECTOR         0x87
+  #define CMD_CFA_WRITE_MULTIPLE_WO_ERASE  0xCD
+  #define CMD_CFA_WRITE_SECTORS_WO_ERASE   0x38
+  #define CMD_CHECK_POWER_MODE1            0xE5
+  #define CMD_CHECK_POWER_MODE2            0x98
+  #define CMD_DEVICE_RESET                 0x08
+  #define CMD_EXECUTE_DEVICE_DIAGNOSTIC    0x90
+  #define CMD_FLUSH_CACHE                  0xE7
+  #define CMD_FORMAT_TRACK                 0x50
+  #define CMD_IDENTIFY_DEVICE              0xEC
+  #define CMD_IDENTIFY_DEVICE_PACKET       0xA1
+  #define CMD_IDENTIFY_PACKET_DEVICE       0xA1
+  #define CMD_IDLE1                        0xE3
+  #define CMD_IDLE2                        0x97
+  #define CMD_IDLE_IMMEDIATE1              0xE1
+  #define CMD_IDLE_IMMEDIATE2              0x95
+  #define CMD_INITIALIZE_DRIVE_PARAMETERS  0x91
+  #define CMD_INITIALIZE_DEVICE_PARAMETERS 0x91
+  #define CMD_NOP                          0x00
+  #define CMD_PACKET                       0xA0
+  #define CMD_READ_BUFFER                  0xE4
+  #define CMD_READ_DMA                     0xC8
+  #define CMD_READ_DMA_QUEUED              0xC7
+  #define CMD_READ_MULTIPLE                0xC4
+  #define CMD_READ_SECTORS                 0x20
+  #define CMD_READ_VERIFY_SECTORS          0x40
+  #define CMD_RECALIBRATE                  0x10
+  #define CMD_SEEK                         0x70
+  #define CMD_SET_FEATURES                 0xEF
+  #define CMD_SET_MULTIPLE_MODE            0xC6
+  #define CMD_SLEEP1                       0xE6
+  #define CMD_SLEEP2                       0x99
+  #define CMD_STANDBY1                     0xE2
+  #define CMD_STANDBY2                     0x96
+  #define CMD_STANDBY_IMMEDIATE1           0xE0
+  #define CMD_STANDBY_IMMEDIATE2           0x94
+  #define CMD_WRITE_BUFFER                 0xE8
+  #define CMD_WRITE_DMA                    0xCA
+  #define CMD_WRITE_DMA_QUEUED             0xCC
+  #define CMD_WRITE_MULTIPLE               0xC5
+  #define CMD_WRITE_SECTORS                0x30
+  #define CMD_WRITE_VERIFY                 0x3C
+  
+  #define REG_CONFIG_TYPE_NONE  0x00
+  #define REG_CONFIG_TYPE_UNKN  0x01
+  #define REG_CONFIG_TYPE_ATA   0x02
+  #define REG_CONFIG_TYPE_ATAPI 0x03
+
+  #define ATAPI_TYPE_CDROM	0x05
+  
+  #define DELAY400NS  { atapio_inbyte( CB_ASTAT ); atapio_inbyte( CB_ASTAT );  \
+                        atapio_inbyte( CB_ASTAT ); atapio_inbyte( CB_ASTAT ); }
+  
+  // Extended error information returned by
+  // reg_reset(), reg_non_data(), reg_pio_data_in() and reg_pio_data_out().
+  typedef struct {
+    Bit8u  ec;          // detailed error code
+    Bit8u  to;          // not zero if time out error
+    Bit8u  st2;         // status reg
+    Bit8u  as2;         // alt. status reg
+    Bit8u  er2;         // error reg
+    Bit32u totalBytesXfer;       // total bytes transfered
+    unsigned int failbits;     // failure bits (ATAPI protocol errors
+       #define FAILBIT15 0x8000   // extra interrupts detected
+       #define FAILBIT14 0x4000
+       #define FAILBIT13 0x2000
+       #define FAILBIT12 0x1000
+       #define FAILBIT11 0x0800
+       #define FAILBIT10 0x0400
+       #define FAILBIT9  0x0200
+       #define FAILBIT8  0x0100   // SC( CD/IO bits) wrong at end of cmd
+       #define FAILBIT7  0x0080   // byte count odd at data packet xfer time
+       #define FAILBIT6  0x0040   // byte count wrong at data packet xfer time
+       #define FAILBIT5  0x0020   // SC (IO bit) wrong at data packet xfer time
+       #define FAILBIT4  0x0010   // SC (CD bit) wrong at data packet xfer time
+       #define FAILBIT3  0x0008   // byte count wrong at cmd packet xfer time
+       #define FAILBIT2  0x0004   // SC wrong at cmd packet xfer time
+       #define FAILBIT1  0x0002   // got interrupt before cmd packet xfer
+       #define FAILBIT0  0x0001   // slow setting BSY=1 or DRQ=1 after AO cmd
+    Bit32u drqPackets;           // number of PIO DRQ packets
+    } reg_cmd_info_t;
+  
+  // ATA/ATAPI Driver data
+  typedef struct {
+    // PIO vars
+    Bit16u pio_base_addr1;
+    Bit16u pio_base_addr2;
+    Bit16u pio_memory_seg;
+    Bit16u pio_reg_addrs[10];
+    Bit8u  pio_last_write[10];
+    Bit8u  pio_last_read[10];
+    Bit16u pio_xfer_width;
+    
+    // REG vars
+    reg_cmd_info_t reg_cmd_info;
+    
+    // Configuration data for device 0 and 1
+    // returned by the reg_config() function.
+    Bit8u  reg_config_info[BX_MAX_ATA_DEVICES];
+
+    // Type of atapi device 0 and 1
+    Bit8u  atapi_device_type[BX_MAX_ATA_DEVICES];
+    
+    // no delay if the flag is zero.
+    Bit8u  reg_atapi_delay_flag;
+    
+    // the values in these variables are placed into the Feature,
+    // Sector Count, Sector Number and Device/Head register by
+    // reg_packet() before the A0H command is issued.  reg_packet()
+    // sets these variables to zero before returning.  These variables
+    // are initialized to zero.  Only bits 3,2,1,0 of reg_atapi_reg_dh
+    // are used.
+    Bit8u  reg_atapi_reg_fr;
+    Bit8u  reg_atapi_reg_sc;
+    Bit8u  reg_atapi_reg_sn;
+    Bit8u  reg_atapi_reg_dh;
+  
+    // flag to control the slow data transfer option:
+    // 0 = no slow data transfer
+    // !0= slow data transfer before this sector
+    Bit16u reg_slow_xfer_flag;
+    
+    // the maximum number of bytes that the reg_packet() function
+    // will transfer on the next packet command.  the caller
+    // can set this to the caller's buffer size minus the
+    // maximum DRQ packet size so that the packet command
+    // does not overrun the caller's buffer in memory.
+    // this is set to 65536 at the end of each packet command.
+    Bit32u reg_atapi_max_bytes;
+    
+    // last ATAPI command packet size and data
+    Bit16u reg_atapi_cp_size;
+    Bit8u  reg_atapi_cp_data[16];
+    
+    // Public timeout data 
+    Bit32u tmr_time_out;          // current time to timeout
+    Bit8u  tmr_timeout_delay;     // command time out in seconds
+    } atadrv_data_t;
+  
+#if BX_ELTORITO_BOOT
+  // ElTorito Device Emulation data (14 bytes)
+  typedef struct {
+    Bit8u  active;
+    Bit8u  media;
+    Bit8u  emulated_drive;
+    Bit8u  device;
+    Bit32u ilba;
+    Bit16u buffer_segment;
+    Bit16u load_segment;
+    Bit16u sector_count;
+    
+    // Virtual device
+    Bit16u vsectors;
+    Bit16u vcylinders;
+    Bit16u vheads;
+    } cdemu_data_t;
+#endif // BX_ELTORITO_BOOT
+  
+  // for access to EBDA area
+  typedef struct {
+    unsigned char filler[0x5D]; // Can be splitted in data members if needed
+    atadrv_data_t atadrv_data;        // ATA/ATAPI Driver data
+#if BX_ELTORITO_BOOT
+    cdemu_data_t cdemu_data;    // El Torito Emulation data
+#endif // BX_ELTORITO_BOOT
+    } ebda_data_t;
+  
+  #define EbdaData ((ebda_data_t *) 0)
+
+  // for access to a int13ext structure
+  typedef struct {
+    Bit8u  size;
+    Bit8u  filler1;
+    Bit8u  count;
+    Bit8u  filler2;
+    Bit16u offset;
+    Bit16u segment;
+    Bit32u lba1;
+    Bit32u lba2;
+    } int13ext_t;
+ 
+  #define Int13Ext ((int13ext_t *) 0)
+
+#endif // BX_USE_ATADRV
 
 typedef struct {
   union {
@@ -241,12 +943,15 @@ static Bit8u          get_mouse_data();
 static void           set_kbd_command_byte();
 
 static void           int09_function();
-static void           int13_function();
+static void           int13_harddisk();
+static void           int13_cdrom();
+static void           int13_cdemu();
 static void           int13_diskette_function();
 static void           int14_function();
 static void           int15_function();
 static void           int16_function();
 static void           int17_function();
+static Bit32u         int19_function();
 static void           int1a_function();
 static void           int70_function();
 static void           int74_function();
@@ -273,10 +978,76 @@ static void           boot_failure_msg();
 static void           nmi_handler_msg();
 static void           print_bios_banner();
 
-static char bios_cvs_version_string[] = "$Revision: 1.25 $";
-static char bios_date_string[] = "$Date: 2001/12/05 20:38:32 $";
+#if BX_USE_ATADRV
+void   atadrv_init();
 
-static char CVSID[] = "$Id: rombios.c,v 1.25 2001/12/05 20:38:32 vruppert Exp $";
+void   atapio_init(  );
+void   atapio_set_iobase_addr();
+void   atapio_set_memory_addr();
+Bit8u  atapio_inbyte();
+void   atapio_outbyte();
+Bit16u atapio_inword();
+void   atapio_outword();
+void   atapio_rep_inbyte();
+void   atapio_rep_outbyte();
+void   atapio_rep_inword();
+void   atapio_rep_outword();
+void   atapio_rep_indword();
+void   atapio_rep_outdword();
+
+void   atareg_init();
+Bit16u atareg_config();
+Bit16u atareg_reset();
+Bit16u atareg_non_data_lba();
+Bit16u atareg_non_data();
+Bit16u atareg_pio_data_in_lba();
+Bit16u atareg_pio_data_in();
+Bit16u atareg_pio_data_out_lba();
+Bit16u atareg_pio_data_out();
+Bit16u etareg_packet();
+
+void   atatmr_init();
+Bit32u atatmr_read_bios_timer();
+void   atatmr_set_timeout();
+Bit16u atatmr_chk_timeout();
+
+void   atasub_init();
+void   atasub_zero_return_data();
+void   atasub_trace_command();
+Bit16u atasub_select();
+void   atasub_atapi_delay();
+void   atasub_xfer_delay();
+
+void   ata_clear_buffer();
+Bit16u atapi_get_sense();
+Bit16u atapi_is_ready();
+Bit16u atapi_is_cdrom();
+Bit16u atapi_read_sectors2048();
+Bit16u atapi_read_sectors512();
+Bit16u atapi_read_sectors();
+void   ata_read_atapi_device_types();
+void   ata_show_devices();
+Bit16u ata_is_ata();
+Bit16u ata_is_atapi();
+
+#endif // BX_USE_ATADRV
+
+#if BX_ELTORITO_BOOT
+
+Bit8u  cdemu_isactive();
+Bit8u  cdemu_emulated_drive();
+
+void   boot_from_msg();
+void   cdrom_bootfailed_msg();
+Bit16u cdrom_boot();
+
+#endif // BX_ELTORITO_BOOT
+
+static char bios_cvs_version_string[] = "$Revision: 1.42 $";
+static char bios_date_string[] = "$Date: 2002/03/28 07:10:18 $";
+
+static char CVSID[] = "$Id: rombios.c,v 1.42 2002/03/28 07:10:18 bdenney Exp $";
+
 /* Offset to skip the CVS $Id: prefix */ 
 #define bios_version_string  (CVSID + 4)
 
@@ -295,7 +1066,6 @@ static char CVSID[] = "$Id: rombios.c,v 1.25 2001/12/05 20:38:32 vruppert Exp $"
 #  define printf(format, p...)
 #  define panic(format, p...)  bios_printf(BIOS_PRINTF_DEBHALT, format, ##p)
 #endif
-
 
 #define SET_AL(val8) AX = ((AX & 0xff00) | (val8))
 #define SET_BL(val8) BX = ((BX & 0xff00) | (val8))
@@ -644,6 +1414,7 @@ write_byte(seg, offset, data)
 write_word(seg, offset, data)
   Bit16u seg;
   Bit16u offset;
+  Bit16u data;
 {
 #asm
   push bp
@@ -741,7 +1512,7 @@ UDIV16(a, b)
 //  mov  ax, ds
 //#endasm
 //}
-
+//
 //  void
 //set_DS(ds_selector)
 //  Bit16u ds_selector;
@@ -915,25 +1686,27 @@ keyboard_panic()
   panic("Keyboard RESET error");
 }
 
+static char drivetypes[][10]={"Floppy","Hard Disk","CD-Rom"};
+
 /*
-This is called when the boot fails to print an appropriate message.
-If bit 16 is 0, the disk was not readable.
-If bit 16 is 1, the disk was readable but didn't have the boot signature.
-If bit 15 is 0, it tried to boot a floppy disk.
-If bit 15 is 1, it tried to boot a hard disk.
-Bits 14-0 are the drive number, usually just a 0 or 1.
+cdboot: 1 if boot from cd, 0 otherwise
+drive : drive number
+reason: 0 signature check failed, 1 read error
 */
   void
-boot_failure_msg(drive)
-  Bit16u drive;
+boot_failure_msg(cdboot, drive, reason)
+  Bit8u cdboot; Bit8u drive;
 {
   Bit16u drivenum = drive&0x7f;
-  //bios_printf(BIOS_PRINTF_SCREEN, "boot_failure_msg(%x)\n", drive);
-  if (drive & 0x80)
-    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from hard disk %d failed\n", drivenum);
+
+  if (cdboot)
+    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from %s failed\n",drivetypes[2]);
+  else if (drive & 0x80)
+    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from %s %d failed\n", drivetypes[1],drivenum);
   else
-    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from floppy disk %d failed\n", drivenum);
-  if (drive & 0x100)
+    bios_printf(BIOS_PRINTF_DEBUG | BIOS_PRINTF_SCREEN, "Boot from %s %d failed\n", drivetypes[0],drivenum);
+
+  if (reason==0)
     panic("Not a bootable disk\n");
   else
     panic("Could not read the boot disk\n");
@@ -1510,27 +2283,11 @@ printf("case default:\n");
       break;
 
     case 0xC4:
+    case 0xD8:
+    case 0xe0:
+    default:
       printf("BIOS: *** int 15h function AX=%04x, BX=%04x not yet supported!\n",
         (unsigned) AX, (unsigned) BX);
-      SET_CF();
-      SET_AH(UNSUPPORTED_FUNCTION);
-      break;
-
-    case 0xD8:
-      printf("BIOS: *** int 15h function AX=D8 not yet supported!\n");
-      SET_CF();
-      SET_AH(UNSUPPORTED_FUNCTION);
-      break;
-
-    case 0xe0:
-      printf("BIOS: *** int 15h function AH=e0 not yet supported!\n");
-      SET_CF();
-      SET_AH(UNSUPPORTED_FUNCTION);
-      break;
-
-    default:
-      printf("BIOS: *** int 15h function AH=%02x not yet supported!\n",
-        (unsigned) GET_AH());
       SET_CF();
       SET_AH(UNSUPPORTED_FUNCTION);
       break;
@@ -1640,7 +2397,7 @@ dequeue_key(scan_code, ascii_code, incr)
     }
 }
 
-
+static char panic_msg_keyb_buffer_full[] = "%s: keyboard input buffer full";
 
   Bit8u
 inhibit_mouse_int_and_events()
@@ -1649,14 +2406,14 @@ inhibit_mouse_int_and_events()
 
   // Turn off IRQ generation and aux data line
   if ( inb(0x64) & 0x02 )
-    panic("inhibmouse: keyboard input buffer full");
+    panic(panic_msg_keyb_buffer_full,"inhibmouse");
   outb(0x64, 0x20); // get command byte
   while ( (inb(0x64) & 0x01) != 0x01 );
   prev_command_byte = inb(0x60);
   command_byte = prev_command_byte;
   //while ( (inb(0x64) & 0x02) );
   if ( inb(0x64) & 0x02 )
-    panic("inhibmouse, keyboard input buffer full");
+    panic(panic_msg_keyb_buffer_full,"inhibmouse");
   command_byte &= 0xfd; // turn off IRQ 12 generation
   command_byte |= 0x20; // disable mouse serial clock line
   outb(0x64, 0x60); // write command byte
@@ -1671,13 +2428,13 @@ enable_mouse_int_and_events()
 
   // Turn on IRQ generation and aux data line
   if ( inb(0x64) & 0x02 )
-    panic("enabmouse: keyboard input buffer full");
+    panic(panic_msg_keyb_buffer_full,"enabmouse");
   outb(0x64, 0x20); // get command byte
   while ( (inb(0x64) & 0x01) != 0x01 );
   command_byte = inb(0x60);
   //while ( (inb(0x64) & 0x02) );
   if ( inb(0x64) & 0x02 )
-    panic("enabmouse, keyboard input buffer full");
+    panic(panic_msg_keyb_buffer_full,"enabmouse");
   command_byte |= 0x02; // turn on IRQ 12 generation
   command_byte &= 0xdf; // enable mouse serial clock line
   outb(0x64, 0x60); // write command byte
@@ -1692,7 +2449,7 @@ send_to_mouse_ctrl(sendbyte)
 
   // wait for chance to write to ctrl
   if ( inb(0x64) & 0x02 )
-    panic("sendmouse, keyboard input buffer full");
+    panic(panic_msg_keyb_buffer_full,"sendmouse");
   outb(0x64, 0xD4);
   outb(0x60, sendbyte);
   return(0);
@@ -1721,7 +2478,8 @@ set_kbd_command_byte(command_byte)
   Bit8u command_byte;
 {
   if ( inb(0x64) & 0x02 )
-    panic("setkbdcomm, input buffer full");
+    panic(panic_msg_keyb_buffer_full,"setkbdcomm");
+  outb(0x64, 0xD4);
 
   outb(0x64, 0x60); // write command byte
   outb(0x60, command_byte);
@@ -1877,7 +2635,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
     default:
       if (scancode & 0x80) return; /* toss key releases ... */
       if (scancode > MAX_SCAN_CODE) {
-        panic("KBD: int09h_handler(): unknown scancode read!");
+        printf("KBD: int09h_handler(): unknown scancode read!");
         return;
         }
       if (shift_flags & 0x08) { /* ALT */
@@ -1904,7 +2662,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
         scancode = scan_to_scanascii[scancode].normal >> 8;
         }
       if (scancode==0 && asciicode==0) {
-        panic("KBD: int09h_handler(): scancode & asciicode are zero?");
+        printf("KBD: int09h_handler(): scancode & asciicode are zero?");
         }
       enqueue_key(scancode, asciicode);
       break;
@@ -2018,12 +2776,14 @@ outLBA(cylinder,hd_heads,head,hd_sectors,sector,dl)
 	xor	ebx,ebx
 	mov	bl,6[bp]
 	imul	ebx
-	add	al,8[bp]
-	adc	ah,#0
+
+	mov 	bl,8[bp]
+	add 	eax,ebx
 	mov	bl,10[bp]
 	imul	ebx
-	add	al,12[bp]
-	adc	ah,#0
+	mov 	bl,12[bp]
+	add 	eax,ebx
+
 	dec	eax
 	mov	dx,#0x1f3
 	out	dx,al
@@ -2049,12 +2809,12 @@ outLBA(cylinder,hd_heads,head,hd_sectors,sector,dl)
 #endasm
 }
 
-
   void
-int13_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
-  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS;
+int13_harddisk(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
+  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS;
 {
   Bit8u    drive, num_sectors, sector, head, status, mod;
+  Bit8u    drive_map;
   Bit8u    n_drives;
   Bit16u   cyl_mod, ax;
   Bit16u   max_cylinder, cylinder, total_sectors;
@@ -2064,19 +2824,24 @@ int13_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
   Bit8u    sector_count;
   unsigned int i;
   Bit16u   tempbx;
-  Bit16u   lba;
+  Bit16u   dpsize;
+  Bit8u    checksum;
+
+  printf("BIOS: int13 harddisk: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
 
   write_byte(0x0040, 0x008e, 0);  // clear completion flag
 
   /* at this point, DL is >= 0x80 to be passed from the floppy int13h
      handler code */
   /* check how many disks first (cmos reg 0x12), return an error if
-     DL > n_drives */
-  n_drives = inb_cmos(0x12);
-  n_drives = ((n_drives & 0xf0)==0) ? 0 :
-    ((n_drives & 0x0f) ? 2 : 1);
+     drive not present */
+  drive_map = inb_cmos(0x12);
+  drive_map = (((drive_map & 0xf0)==0) ? 0 : 1) |
+              (((drive_map & 0x0f)==0) ? 0 : 2);
+  n_drives = (drive_map==0) ? 0 :
+    ((drive_map==3) ? 2 : 1);
 
-  if (!((GET_DL()&0x7f) < n_drives)) { /* allow 0, 1, or 2 disks */
+  if (!(drive_map & (1<<(GET_DL()&0x7f)))) { /* allow 0, 1, or 2 disks */
     SET_AH(0x01);
     set_disk_ret_status(0x01);
     SET_CF(); /* error occurred */
@@ -2150,7 +2915,7 @@ printf("int13_f01\n");
         }
 
       if ( (num_sectors > 128) || (num_sectors == 0) )
-        panic("int13_function(): num_sectors out of range!");
+        panic("int13_harddisk(): num_sectors out of range!");
 
       if (head > 15)
         panic("hard drive BIOS:(read/verify) head > 15\n");
@@ -2204,7 +2969,7 @@ printf("CHS: %x %x %x\n", cylinder, head, sector);
         ;; store temp bx in real DI register
         push bp
         mov  bp, sp
-        mov  di, _int13_function.tempbx + 2 [bp]
+        mov  di, _int13_harddisk.tempbx + 2 [bp]
         pop  bp
 
         ;; adjust if there will be an overrun
@@ -2227,7 +2992,7 @@ i13_f02_done:
         ;; store real DI register back to temp bx
         push bp
         mov  bp, sp
-        mov  _int13_function.tempbx + 2 [bp], di
+        mov  _int13_harddisk.tempbx + 2 [bp], di
         pop  bp
 #endasm
 
@@ -2296,7 +3061,7 @@ printf("int13_f03\n");
         }
 
       if ( (num_sectors > 128) || (num_sectors == 0) )
-        panic("int13_function(): num_sectors out of range!");
+        panic("int13_harddisk(): num_sectors out of range!");
 
       if (head > 15)
         panic("hard drive BIOS:(read) head > 15\n");
@@ -2344,7 +3109,7 @@ printf("CHS (write): %x %x %x\n", cylinder, head, sector);
         ;; store temp bx in real SI register
         push bp
         mov  bp, sp
-        mov  si, _int13_function.tempbx + 2 [bp]
+        mov  si, _int13_harddisk.tempbx + 2 [bp]
         pop  bp
 
         ;; adjust if there will be an overrun
@@ -2367,7 +3132,7 @@ i13_f03_no_adjust:
         ;; store real SI register back to temp bx
         push bp
         mov  bp, sp
-        mov  _int13_function.tempbx + 2 [bp], si
+        mov  _int13_harddisk.tempbx + 2 [bp], si
         pop  bp
 #endasm
 
@@ -2406,6 +3171,7 @@ printf("int13_f05\n");
 
     case 0x08: /* read disk drive parameters */
 printf("int13_f08\n");
+      
       drive = GET_DL ();
       get_hd_geometry(drive, &hd_cylinders, &hd_heads, &hd_sectors);
 
@@ -2441,6 +3207,7 @@ printf("int13_f08\n");
       SET_AH(0);
       set_disk_ret_status(0);
       CLEAR_CF(); /* successful */
+
       return;
       break;
 
@@ -2524,17 +3291,17 @@ printf("int13_f14\n");
 #asm
       push bp
       mov  bp, sp
-      mov  al, _int13_function.hd_heads + 2 [bp]
-      mov  ah, _int13_function.hd_sectors + 2 [bp]
+      mov  al, _int13_harddisk.hd_heads + 2 [bp]
+      mov  ah, _int13_harddisk.hd_sectors + 2 [bp]
       mul  al, ah ;; ax = heads * sectors
-      mov  bx, _int13_function.hd_cylinders + 2 [bp]
+      mov  bx, _int13_harddisk.hd_cylinders + 2 [bp]
       dec  bx     ;; use (cylinders - 1) ???
       mul  ax, bx ;; dx:ax = (cylinders -1) * (heads * sectors)
       ;; now we need to move the 32bit result dx:ax to what the
       ;; BIOS wants which is cx:dx.
       ;; and then into CX:DX on the stack
-      mov  _int13_function.CX + 2 [bp], dx
-      mov  _int13_function.DX + 2 [bp], ax
+      mov  _int13_harddisk.CX + 2 [bp], dx
+      mov  _int13_harddisk.DX + 2 [bp], ax
       pop  bp
 #endasm
       SET_AH(3);  // hard disk accessible
@@ -2544,6 +3311,7 @@ printf("int13_f14\n");
       break;
 
     case 0x18: /* */
+    // FIXME when adding IBM/MS extensions
     case 0x41: // IBM/MS installation check
     case 0x42: // IBM/MS extended read
     case 0x43: // IBM/MS extended write
@@ -2551,9 +3319,16 @@ printf("int13_f14\n");
     case 0x45: // IBM/MS lock/unlock drive
     case 0x46: // IBM/MS eject media
     case 0x47: // IBM/MS extended seek
-    case 0x48: // IBM/MS get drive parameters
+    case 0x48: // IBM/MS extended seek
     case 0x49: // IBM/MS extended media change
-printf("int13_f18,41-49\n");
+    case 0x4a: // ElTorito - Initiate disk emu
+    case 0x4b: // ElTorito - Terminate disk emu
+    case 0x4c: // ElTorito - Initiate disk emu and boot
+    case 0x4d: // ElTorito - Return boot catalog
+    case 0x4e: // ? - set hardware configuration
+    case 0x50: // ? - send packet command
+    case 0x66: // 
+printf("int13_f18,41-50\n");
       SET_AH(1);  // code=invalid function in AH or invalid parameter
       set_disk_ret_status(1);
       SET_CF(); /* unsuccessful */
@@ -2561,10 +3336,388 @@ printf("int13_f18,41-49\n");
       break;
 
     default:
-      panic("case 0x%x found in int13_function()", (unsigned) GET_AH());
+      panic("case 0x%x found in int13_harddisk()", (unsigned) GET_AH());
       break;
     }
 }
+
+#if BX_ELTORITO_BOOT
+
+// ---------------------------------------------------------------------------
+// Start of int13 for cdrom
+// ---------------------------------------------------------------------------
+
+  void
+int13_cdrom(DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS)
+  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, DS, ES, FLAGS;
+{
+  Bit8u  device, status;
+  Bit16u error;
+  Bit32u lba;
+  Bit16u count,segment,offset, i;
+
+  printf("BIOS: int13 cdrom: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
+  printf("BIOS: int13 cdrom: SS=%04x DS=%04x ES=%04x DI=%04x SI=%04x\n",get_SS(), DS, ES, DI, SI);
+  
+  device=GET_DL();
+
+  set_disk_ret_status(0x00);
+
+  /* basic check : device should be 0x80+ */
+  if(device<0x80) {
+    SET_AH(0x01);
+    set_disk_ret_status(0x01);
+    SET_CF(); /* error occurred */
+    return;
+    }
+  else device -= 0x80;
+
+  /* basic check : device should be an ATAPI cdrom */
+  if((!ata_is_atapi(device))||(!atapi_is_cdrom(device))) {
+    SET_AH(0x01);
+    set_disk_ret_status(0x01);
+    SET_CF(); /* error occurred */
+    return;
+    }
+  
+  switch (GET_AH()) {
+
+    // all those functions return SUCCESS
+    case 0x00: /* disk controller reset */
+    case 0x09: /* initialize drive parameters */
+    case 0x0c: /* seek to specified cylinder */
+    case 0x0d: /* alternate disk reset */  
+    case 0x10: /* check drive ready */    
+    case 0x11: /* recalibrate */      
+    case 0x14: /* controller internal diagnostic */
+    case 0x16: /* detect disk change */
+    case 0x45: // IBM/MS lock/unlock drive
+    case 0x46: // IBM/MS eject media
+    case 0x47: // IBM/MS extended seek
+    case 0x49: // IBM/MS extended media change
+    case 0x4e: // ? - set hardware configuration
+      SET_AH(0x00);
+      set_disk_ret_status(0x00);
+      CLEAR_CF(); /* successful */
+      return;
+      break;
+
+    // all those functions return disk write-protected
+    case 0x03: /* write disk sectors */
+    case 0x05: /* format disk track */
+    case 0x43: // IBM/MS extended write
+      SET_AH(0x03);
+      set_disk_ret_status(0x03);
+      SET_CF(); /* error occurred */
+      return;
+      break;
+
+    case 0x01: /* read disk status */
+      status=read_byte(0x0040, 0x0074);
+      SET_AH(status);
+      if(status==0x00)
+        CLEAR_CF();
+      else
+        SET_CF();
+      return;
+      break;
+
+    case 0x15: /* read disk drive size */
+      SET_AH(0x02);
+      set_disk_ret_status(0x00); 
+      CLEAR_CF(); 
+      return;
+      break;
+
+    case 0x41: // IBM/MS installation check
+      BX=0xaa55;     // install check
+      SET_AH(0x30);  // EDD 3.0
+      CX=0x0007;     // ext disk access and edd
+      CLEAR_CF(); 
+      return;
+      break;
+
+    case 0x42: // IBM/MS extended read
+    case 0x44: // IBM/MS verify sectors
+       
+      count=read_word(DS,SI+(Bit16u)&Int13Ext->count);
+      lba=read_dword(DS,SI+(Bit16u)&Int13Ext->lba1);
+      segment=read_word(DS,SI+(Bit16u)&Int13Ext->segment);
+      offset=read_word(DS,SI+(Bit16u)&Int13Ext->offset);
+
+      if((error=atapi_read_sectors2048(device,count,lba,segment,offset))!=0) {
+        SET_AH(0x0c);
+        set_disk_ret_status(0x0c);
+        SET_CF(); /* error */
+        return;
+        }
+      
+      // count stays the same in Int13Ext struct
+      SET_AH(0x00);
+      set_disk_ret_status(0x00); 
+      CLEAR_CF(); 
+      return;
+      break;
+
+    case 0x48: // IBM/MS get drive parameters  
+      // FIXME
+      return;
+      break;
+
+    // all those functions return unimplemented
+    case 0x02: /* read sectors */
+    case 0x04: /* verify sectors */
+    case 0x08: /* read disk drive parameters */
+    case 0x0a: /* read disk sectors with ECC */
+    case 0x0b: /* write disk sectors with ECC */
+    case 0x18: /* set media type for format */
+    case 0x50: // ? - send packet command
+      SET_AH(0x01);  // code=invalid function in AH or invalid parameter
+      set_disk_ret_status(0x01);
+      SET_CF(); /* unsuccessful */
+      return;
+      break;
+
+    // FIXME ElTorito Various. Should be implemented
+    case 0x4a: // ElTorito - Initiate disk emu
+    case 0x4c: // ElTorito - Initiate disk emu and boot
+    case 0x4d: // ElTorito - Return Boot catalog
+      panic("Int13 cdrom call with AX=%04x. Please report\n",AX);
+      SET_AH(0x01);  // code=invalid function in AH or invalid parameter
+      set_disk_ret_status(0x01);
+      SET_CF(); /* unsuccessful */
+      return;
+      break;
+
+    // all those functions should not be called when not emulating a device
+    case 0x4b: // ElTorito - Terminate disk emu
+      SET_AH(0x01);  
+      set_disk_ret_status(0x01);
+      SET_CF(); 
+      return;
+      break;
+
+    default:
+      panic("case 0x%x found in int13_cdrom()", (unsigned) GET_AH());
+      break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// End of int13 for cdrom
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Start of int13 when emulating a device from the cd
+// ---------------------------------------------------------------------------
+
+  void
+int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
+  Bit16u DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS;
+{
+  Bit16u ebda_seg=read_word(0x40,0x0E);
+  Bit8u  device, status;
+  Bit16u vheads, vsectors, vcylinders;
+  Bit16u head, sector, cylinder, nbsectors;
+  Bit32u vlba, ilba, slba, elba;
+  Bit16u before,after;
+  Bit16u segment,offset;
+  Bit16u error;
+
+  printf("BIOS: int13 cdemu: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
+  //printf("BIOS: int13 cdemu: SS=%04x ES=%04x DI=%04x SI=%04x\n", get_SS(), ES, DI, SI);
+  
+  /* at this point, we are emulating a floppy/harddisk */
+  // FIXME ElTorito Harddisk. Harddisk emulation is not implemented
+
+  device=read_byte(ebda_seg,&EbdaData->cdemu_data.device);
+
+  set_disk_ret_status(0x00);
+
+  /* basic checks : emulation should be active, dl should equal the emulated drive */
+  if( ( read_byte(ebda_seg,&EbdaData->cdemu_data.active )==0)
+   || ( read_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive )!=GET_DL())) {
+    SET_AH(0x01);
+    set_disk_ret_status(0x01);
+    SET_CF(); /* error occurred */
+    return;
+    }
+  
+  switch (GET_AH()) {
+
+    // all those functions return SUCCESS
+    case 0x00: /* disk controller reset */
+    case 0x09: /* initialize drive parameters */
+    case 0x0c: /* seek to specified cylinder */
+    case 0x0d: /* alternate disk reset */  // FIXME ElTorito Various. should really reset ?
+    case 0x10: /* check drive ready */     // FIXME ElTorito Various. should check if ready ?
+    case 0x11: /* recalibrate */      
+    case 0x14: /* controller internal diagnostic */
+    case 0x16: /* detect disk change */
+      SET_AH(0x00);
+      set_disk_ret_status(0x00);
+      CLEAR_CF(); /* successful */
+      return;
+      break;
+
+    // all those functions return disk write-protected
+    case 0x03: /* write disk sectors */
+    case 0x05: /* format disk track */
+      SET_AH(0x03);
+      set_disk_ret_status(0x03);
+      SET_CF(); /* error occurred */
+      return;
+      break;
+
+    case 0x01: /* read disk status */
+      status=read_byte(0x0040, 0x0074);
+      SET_AH(status);
+      if(status==0x00)
+        CLEAR_CF();
+      else
+        SET_CF();
+      return;
+      break;
+
+    case 0x02: // read disk sectors
+    case 0x04: // verify disk sectors
+      vsectors=read_word(ebda_seg,&EbdaData->cdemu_data.vsectors); 
+      vcylinders=read_word(ebda_seg,&EbdaData->cdemu_data.vcylinders); 
+      vheads=read_word(ebda_seg,&EbdaData->cdemu_data.vheads); 
+
+      ilba=read_dword(ebda_seg,&EbdaData->cdemu_data.ilba);
+
+      sector = GET_CL() & 0x003f;
+      cylinder = (GET_CL() & 0x00c0) << 2 | GET_CH();
+      head = GET_DH();
+      nbsectors = GET_AL();
+      segment = ES;
+      offset = BX;
+
+      if(nbsectors==0){
+        SET_AH(0);
+        set_disk_ret_status(0);
+        CLEAR_CF(); /* successful */
+        return;
+        }
+       
+      segment=ES+(BX/16);
+      offset=BX%16;
+
+      // calculate the virtual lba inside the image
+      vlba=((((Bit32u)cylinder*(Bit32u)vheads)+(Bit32u)head)*(Bit32u)vsectors)+((Bit32u)(sector-1));
+ 
+      // In advance so we don't loose the count
+      SET_AL(nbsectors);
+
+      // start lba on cd
+      slba=(Bit16u)vlba/4;               // FIXME ElTorito Harddisk. should allow Bit32u image size - needs compiler helper function
+      before=(Bit16u)vlba%4;
+
+      // end lba on cd
+      elba=(Bit16u)(vlba+nbsectors-1)/4; // FIXME ElTorito Harddisk. should allow Bit32u image size - needs compiler helper function
+      after=3-((Bit16u)(vlba+nbsectors-1)%4);
+      
+      if((error=atapi_read_sectors512(device,(Bit16u)(elba-slba+1),ilba+slba,before,after,segment,offset))!=0) {
+        SET_AH(0x02);
+        set_disk_ret_status(0x02);
+        SET_AL(0);
+        SET_CF(); /* error */
+        return;
+        }
+
+      SET_AH(0);
+      set_disk_ret_status(0);
+      CLEAR_CF(); /* successful */
+      return;
+      break;
+
+    case 0x08: /* read disk drive parameters */
+      vsectors=read_word(ebda_seg,&EbdaData->cdemu_data.vsectors); 
+      vcylinders=read_word(ebda_seg,&EbdaData->cdemu_data.vcylinders) - 1; 
+      vheads=read_word(ebda_seg,&EbdaData->cdemu_data.vheads) - 1; 
+ 
+      SET_AL( 0x00 );
+      SET_BL( 0x00 );
+      SET_CH( vcylinders & 0xff );
+      SET_CL((( vcylinders >> 2) & 0xc0) | ( vsectors  & 0x3f ));
+      SET_DH( vheads );
+      SET_DL( 0x02 );   // FIXME ElTorito Various. should send the real count of drives 1 or 2
+ 
+      switch(read_byte(ebda_seg,&EbdaData->cdemu_data.media)) {
+        case 0x01: SET_BL( 0x02 ); break;
+        case 0x02: SET_BL( 0x04 ); break;
+        case 0x03: SET_BL( 0x06 ); break;
+        }
+
+      SET_AH(0);
+      set_disk_ret_status(0);
+      DI = 0xefc7;
+      ES = 0xf000;
+      CLEAR_CF(); /* successful */
+      return;
+      break;
+
+    case 0x15: /* read disk drive size */
+      // FIXME ElTorito Harddisk. if we want to emulate a harddisk
+      SET_AH(0x01);
+      set_disk_ret_status(0x00); 
+      CLEAR_CF(); 
+      return;
+      break;
+
+    // all those functions return unimplemented
+    case 0x0a: /* read disk sectors with ECC */
+    case 0x0b: /* write disk sectors with ECC */
+    case 0x18: /* set media type for format */
+    case 0x41: // IBM/MS installation check
+    case 0x42: // IBM/MS extended read
+    case 0x43: // IBM/MS extended write
+    case 0x44: // IBM/MS verify sectors
+    case 0x45: // IBM/MS lock/unlock drive
+    case 0x46: // IBM/MS eject media
+    case 0x47: // IBM/MS extended seek
+    case 0x48: // IBM/MS get drive parameters  // FIXME ElTorito Various. should be handled for ElTorito
+    case 0x49: // IBM/MS extended media change
+    case 0x4e: // ? - set hardware configuration
+    case 0x50: // ? - send packet command
+      SET_AH(0x01);  // code=invalid function in AH or invalid parameter
+      set_disk_ret_status(0x01);
+      SET_CF(); /* unsuccessful */
+      return;
+      break;
+
+    // all those functions should not be called when emulating a device
+    case 0x4a: // ElTorito - Initiate disk emu
+    case 0x4c: // ElTorito - Initiate disk emu and boot
+    case 0x4d: // ElTorito - Return Boot catalog
+      panic("Int13 cdemu call with AX=%04x. Please report\n",AX);
+      SET_AH(0x01);  // code=invalid function in AH or invalid parameter
+      set_disk_ret_status(0x01);
+      SET_CF(); /* unsuccessful */
+      return;
+      break;
+
+    // FIXME ElTorito Various. Should be handled accordingly to spec
+    case 0x4b: // ElTorito - Terminate disk emu
+      write_byte(ebda_seg,&EbdaData->cdemu_data.active, 0x00); // bye bye
+      SET_AH(0x00);  
+      set_disk_ret_status(0x00);
+      CLEAR_CF(); 
+      return;
+      break;
+
+    default:
+      panic("case 0x%x found in int13_cdemu()", (unsigned) GET_AH());
+      break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// End of int13 when emulating a device from the cd
+// ---------------------------------------------------------------------------
+
+#endif // BX_ELTORITO_BOOT
 
 
 //////////////////////
@@ -2755,7 +3908,8 @@ int13_diskette_function(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
   Bit8u  drive_type, num_floppies, ah;
   Bit16u es, last_addr;
 
-//printf("BIOS: int13: AX=%04x BX=%04x CX=%04x DX=%04x\n", AX, BX, CX, DX);
+  printf("BIOS: int13 diskette: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
+  // printf("BIOS: int13 diskette: SS=%04x DS=%04x ES=%04x DI=%04x SI=%04x\n",get_SS(), get_DS(), ES, DI, SI);
 
   ah = GET_AH();
 
@@ -3157,27 +4311,148 @@ printf("floppy f05\n");
       head        = GET_DH();
       drive       = GET_DL();
 
-      if (drive > 1) {
+      if ((drive > 1) || (head > 1) || (track > 79) ||
+          (num_sectors == 0) || (num_sectors > 18)) {
         SET_AH(1);
         set_diskette_ret_status(1);
         SET_CF(); // error occurred
 	}
-      drive_type = inb_cmos(0x10);
-      if (drive == 0)
-        drive_type >>= 4;
-      else
-        drive_type &= 0x0f;
-      if (drive_type == 0) {
+
+      // see if drive exists
+      if (floppy_drive_exists(drive) == 0) {
         SET_AH(0x80); // drive not responding
         set_diskette_ret_status(0x80);
         SET_CF(); // error occurred
         return;
         }
 
-      /* nop */
+      // see if media in drive, and type is known
+      if (floppy_media_known(drive) == 0) {
+        if (floppy_media_sense(drive) == 0) {
+          SET_AH(0x0C); // Media type not found
+          set_diskette_ret_status(0x0C);
+          SET_AL(0); // no sectors read
+          SET_CF(); // error occurred
+          return;
+          }
+        }
+
+      // set up DMA controller for transfer
+      page = (ES >> 12);   // upper 4 bits
+      base_es = (ES << 4); // lower 16bits contributed by ES
+      base_address = base_es + BX; // lower 16 bits of address
+                                   // contributed by ES:BX
+      if ( base_address < base_es ) {
+        // in case of carry, adjust page by 1
+        page++;
+        }
+      base_count = (num_sectors * 4) - 1;
+
+      // check for 64K boundary overrun
+      last_addr = base_address + base_count;
+      if (last_addr < base_address) {
+        SET_AH(0x09);
+        set_diskette_ret_status(0x09);
+        SET_AL(0); // no sectors read
+        SET_CF(); // error occurred
+        return;
+        }
+
+      outb(0x000a, 0x06);
+      outb(0x000c, 0x00); // clear flip-flop
+      outb(0x0004, base_address);
+      outb(0x0004, base_address>>8);
+      outb(0x000c, 0x00); // clear flip-flop
+      outb(0x0005, base_count);
+      outb(0x0005, base_count>>8);
+      mode_register = 0x4a; // single mode, increment, autoinit disable,
+                            // transfer type=read, channel 2
+      outb(0x000b, mode_register);
+      // port 81: DMA-1 Page Register, channel 2
+      outb(0x0081, page);
+      outb(0x000a, 0x02);
+
+      // set up floppy controller for transfer
+      val8 = read_byte(0x0000, 0x043e);
+      val8 &= 0x7f;
+      write_byte(0x0000, 0x043e, val8);
+      // turn on motor of selected drive, DMA & int enabled, normal operation
+      if (drive)
+        dor = 0x20;
+      else
+        dor = 0x10;
+      dor |= 0x0c;
+      dor |= drive;
+      outb(0x03f2, dor);
+      // check port 3f4 for drive readiness
+      val8 = inb(0x3f4);
+      if ( (val8 & 0xf0) != 0x80 )
+        panic("int13_diskette:f05: ctrl not ready");
+
+      // send read-normal-data command (6 bytes) to controller
+      outb(0x03f5, 0x4d); // 4d: format track
+      outb(0x03f5, (head << 2) | drive); // HD DR1 DR2
+      outb(0x03f5, 2); // 512 byte sector size
+      outb(0x03f5, num_sectors); // number of sectors per track
+      outb(0x03f5, 0); // Gap length
+      outb(0x03f5, 0xf6); // Fill byte
+      // turn on interrupts
+  #asm
+      sti
+  #endasm
+      // wait on 40:3e bit 7 to become 1
+      val8 = (read_byte(0x0000, 0x043e) & 0x80);
+      while ( val8 == 0 ) {
+        val8 = (read_byte(0x0000, 0x043e) & 0x80);
+        }
+     val8 = 0; // separate asm from while() loop
+     // turn off interrupts
+  #asm
+      cli
+  #endasm
+      // set 40:3e bit 7 to 0
+      val8 = read_byte(0x0000, 0x043e);
+      val8 &= 0x7f;
+      write_byte(0x0000, 0x043e, val8);
+      // check port 3f4 for accessibility to status bytes
+      val8 = inb(0x3f4);
+      if ( (val8 & 0xc0) != 0xc0 )
+        panic("int13_diskette: ctrl not ready");
+
+      // read 7 return status bytes from controller
+      // using loop index broken, have to unroll...
+      return_status[0] = inb(0x3f5);
+      return_status[1] = inb(0x3f5);
+      return_status[2] = inb(0x3f5);
+      return_status[3] = inb(0x3f5);
+      return_status[4] = inb(0x3f5);
+      return_status[5] = inb(0x3f5);
+      return_status[6] = inb(0x3f5);
+      // record in BIOS Data Area
+      write_byte(0x0040, 0x0042, return_status[0]);
+      write_byte(0x0040, 0x0043, return_status[1]);
+      write_byte(0x0040, 0x0044, return_status[2]);
+      write_byte(0x0040, 0x0045, return_status[3]);
+      write_byte(0x0040, 0x0046, return_status[4]);
+      write_byte(0x0040, 0x0047, return_status[5]);
+      write_byte(0x0040, 0x0048, return_status[6]);
+
+      if ( (return_status[0] & 0xc0) != 0 ) {
+        if ( (return_status[1] & 0x02) != 0 ) {
+          // diskette not writable.
+          // AH=status code=0x03 (tried to write on write-protected disk)
+          // AL=number of sectors written=0
+          AX = 0x0300;
+          SET_CF();
+          return;
+        } else {
+          panic("int13_diskette_function: write error");
+        }
+      }
+
       SET_AH(0);
       set_diskette_ret_status(0);
-      set_diskette_current_cyl(drive, track);
+      set_diskette_current_cyl(drive, 0);
       CLEAR_CF(); // successful
       return;
 
@@ -3191,9 +4466,9 @@ printf("floppy f08\n");
         BX = 0;
         CX = 0;
         DX = 0;
-        //ES = 0; // ???
+        ES = 0;
+        DI = 0;
         SET_DL(num_floppies);
-        //set_diskette_ret_status(AH=1);
         SET_CF();
         return;
         }
@@ -3252,9 +4527,9 @@ printf("floppy f08\n");
           panic("floppy: int13: bad floppy type");
         }
 
-      /* set es & di to point to 11 byte diskette param table */
-      DI = read_word(0x0000, 0x0078);
-      ES = read_word(0x0000, 0x007a);
+      /* set es & di to point to 11 byte diskette param table in ROM */
+      DI = 0xefc7;
+      ES = 0xf000;
       CLEAR_CF(); // success
       /* disk status not changed upon success */
       return;
@@ -3282,6 +4557,12 @@ printf("floppy f15\n");
       else {
         SET_AH(1); // drive present, does not support change line
         }
+
+#if BX_ELTORITO_BOOT
+      // This is mandatory. Otherwise Win98 does not boot
+      if((cdemu_isactive()!=00)&&(cdemu_emulated_drive()==drive))
+        DX+=0x0001;
+#endif
       return;
 
     case 0x16: // get diskette change line status
@@ -3420,7 +4701,8 @@ determine_floppy_media(drive)
 #endif
 }
 
-
+static char panic_msg_reg12h[] = "HD%d cmos reg 12h not type F";
+static char panic_msg_reg19h[] = "HD%d cmos reg %02xh not user definable type 47";
 
   void
 get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
@@ -3438,18 +4720,18 @@ get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
   if (drive == 0x80) {
     hd_type = inb_cmos(0x12) & 0xf0;
     if (hd_type != 0xf0)
-      panic("HD0 cmos reg 12h not type F");
+      panic(panic_msg_reg12h,0);
     hd_type = inb_cmos(0x19); // HD0: extended type
     if (hd_type != 47)
-      panic("HD0 cmos reg 19h not user definable type 47");
+      panic(panic_msg_reg19h,0,0x19);
     iobase = 0x1b;
   } else {
     hd_type = inb_cmos(0x12) & 0x0f;
     if (hd_type != 0x0f)
-      panic("HD1 cmos reg 12h not type F");
+      panic(panic_msg_reg12h,1);
     hd_type = inb_cmos(0x1a); // HD0: extended type
     if (hd_type != 47)
-      panic("HD1 cmos reg 1ah not user definable type 47");
+      panic(panic_msg_reg19h,0,0x1a);
     iobase = 0x24;
   }
 
@@ -3509,6 +4791,128 @@ int17_function(regs, ds, iret_addr)
   } else {
     SetCF(iret_addr.flags); // Unsupported
   }
+}
+
+// returns bootsegment in ax, drive in bl
+  Bit32u 
+int19_function()
+{
+  Bit16u ebda_seg=read_word(0x40,0x0E);
+  Bit8u  bootseq;
+  Bit8u  bootdrv;
+  Bit8u  bootcd;
+  Bit8u  bootchk;
+  Bit16u bootseg;
+  Bit16u status;
+
+  // if BX_ELTORITO_BOOT is not defined, old behavior
+  //   check bit 5 in CMOS reg 0x2d.  load either 0x00 or 0x80 into DL
+  //   in preparation for the intial INT 13h (0=floppy A:, 0x80=C:)
+  //     0: system boot sequence, first drive C: then A:
+  //     1: system boot sequence, first drive A: then C:
+  // else BX_ELTORITO_BOOT is defined
+  //   CMOS reg 0x3D contains the boot device :
+  //     0x01 : floppy 
+  //     0x02 : harddrive
+  //     0x03 : cdrom
+  //     else : floppy for now.
+
+  // Get the boot sequence
+#if BX_ELTORITO_BOOT
+  outb(0x70, 0x3d);
+  bootseq=inb(0x71);
+
+  bootdrv=0x00; bootcd=0;
+  switch(bootseq) {
+    case 0x01: bootdrv=0x00; bootcd=0; break;
+    case 0x02: bootdrv=0x80; bootcd=0; break;
+    case 0x03: bootdrv=0x00; bootcd=1; break;
+    }
+#else
+  outb(0x70, 0x2d);
+  bootseq=inb(0x71);
+
+  bootdrv=0x00; bootcd=0;
+  if((bootseq&0x20)==0) bootdrv=0x80;
+#endif // BX_ELTORITO_BOOT
+
+#if BX_ELTORITO_BOOT
+  // We have to boot from cd
+  if (bootcd!=0) {
+    status=cdrom_boot();
+
+    // If failure
+    if ((status&0x00ff)!=0) {
+      cdrom_bootfailed_msg(status);
+      boot_failure_msg(bootcd, bootdrv, 1);
+      return 0x00000000;
+      }
+
+    bootseg=read_word(ebda_seg,&EbdaData->cdemu_data.load_segment);
+    bootdrv=(Bit8u)(status>>8);
+    }
+
+#endif // BX_ELTORITO_BOOT
+
+  // We have to boot from harddisk or floppy
+  if (bootcd==0) {
+    bootseg=0x07c0;
+
+#asm
+    push bp
+    mov  bp, sp
+
+    mov  ax, #0x0000
+    mov  _int19_function.status + 2[bp], ax
+    mov  dl, _int19_function.bootdrv + 2[bp]
+    mov  ax, _int19_function.bootseg + 2[bp]
+    mov  es, ax         ;; segment
+    mov  bx, #0x0000    ;; offset
+    mov  ah, #0x02      ;; function 2, read diskette sector
+    mov  al, #0x01      ;; read 1 sector
+    mov  ch, #0x00      ;; track 0
+    mov  cl, #0x01      ;; sector 1
+    mov  dh, #0x00      ;; head 0
+    int #0x13           ;; read sector
+    jnc  int19_load_done
+    mov  ax, #0x0001
+    mov  _int19_function.status + 2[bp], ax
+
+int19_load_done:
+    pop  bp
+#endasm
+    
+    if (status!=0) {
+      boot_failure_msg(bootcd, bootdrv, 1);
+      return 0x00000000;
+      }
+    }
+
+  // check signature
+  // FIXME the signature check could be made conditionnal
+  // by a cmos register
+  bootchk=1;
+
+#if BX_ELTORITO_BOOT
+  // if cdboot and no emulation : no check (ex win2000)
+  if (read_byte(ebda_seg,&EbdaData->cdemu_data.media)==0)
+    bootchk=0;
+#endif // BX_ELTORITO_BOOT
+
+  if (bootchk) {
+    if (read_word(bootseg,0x1fe) != 0xaa55) {
+      boot_failure_msg(bootcd, bootdrv, 0);
+      return 0x00000000;
+      }
+    }
+  
+#if BX_ELTORITO_BOOT
+  // Print out the boot string
+  boot_from_msg(bootcd, bootdrv);
+#endif // BX_ELTORITO_BOOT
+
+  // return the boot segment
+  return (((Bit32u)bootdrv)<<16)+bootseg;
 }
 
   void
@@ -3760,6 +5164,3044 @@ int70_function(regs, ds, iret_addr)
 #endasm
 }
 
+#if BX_USE_ATADRV
+// ---------------------------------------------------------------------------
+// ATA/ATAPI driver init
+// ---------------------------------------------------------------------------
+void atadrv_init( )
+{
+  atatmr_init();
+  atasub_init();
+  atareg_init();
+  atapio_init();
+}
+
+// ---------------------------------------------------------------------------
+// Start of ATA/ATAPI Driver
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Timer functions
+// ---------------------------------------------------------------------------
+void atatmr_init( )
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.tmr_timeout_delay,20);
+}
+
+//*************************************************************
+//
+// atatmr_read_bios_timer() - function to read the BIOS timer
+//
+//*************************************************************
+Bit32u atatmr_read_bios_timer( /* void */ )
+
+{
+   Bit32u curTime;
+
+   // Pointer to the low order word
+   // of the BIOS time of day counter at
+   // location 40:6C in the BIOS data area.
+
+   // loop so we get a valid value without
+   // turning interrupts off and on again
+
+   do
+   {
+     // Note from cbothamy@free.fr
+     // This is strange.... if i call a int10 it works
+     // otherwise it's locked up forever. The timer 0x40:0x6C
+     // seems not to be updated. There must be something
+     // with the interrupts. Can somebody explain ?
+#asm
+     mov ax,#0x0f00
+     int #0x10
+#endasm
+
+      curTime = read_dword( 0x40, 0x6c );
+   } while ( curTime != read_dword( 0x40, 0x6c ));
+
+   return curTime;
+}
+
+//*************************************************************
+//
+// atatmr_set_timeout() - function used to set command timeout time
+//
+// The command time out time is computed as follows:
+//
+//    timer + ( tmr_time_out * 18 )
+//
+//**************************************************************
+
+void atatmr_set_timeout( /* void */ )
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit32u timeOut;
+
+   // get value of BIOS timer
+   timeOut = atatmr_read_bios_timer();
+
+   timeOut = timeOut + ( (Bit32u)read_byte(ebda_seg,&EbdaData->atadrv_data.tmr_timeout_delay) * 18L );
+
+   // adjust timeout value if we are about to pass midnight
+   if ( timeOut >= 1573040L )
+      timeOut = timeOut - 1573040L;
+
+   // ignore the lower 4 bits
+
+   timeOut = timeOut & 0xfffffff0;
+   write_dword(ebda_seg,&EbdaData->atadrv_data.tmr_time_out,timeOut);
+}
+
+//*************************************************************
+//
+// atatmr_chk_timeout() - function used to check for command timeout.
+//
+// Gives non-zero return if command has timed out.
+//
+//**************************************************************
+
+Bit16u atatmr_chk_timeout( /* void */ )
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+
+   Bit32u curTime;
+   Bit32u timeOut;
+
+   timeOut=read_dword(ebda_seg,&EbdaData->atadrv_data.tmr_time_out);
+
+   // get current time
+
+   curTime = atatmr_read_bios_timer();
+
+   // ignore lower 4 bits
+
+   curTime = curTime & 0xfffffff0;
+
+   // timed out yet ?
+   // FIXME ElTorito Various. we get the midnight bug here
+   // and i don't want to use == as Hale Landis does
+   if ( curTime < timeOut )
+      return 0;
+
+   return 1;
+}
+
+// ---------------------------------------------------------------------------
+// subsystem functions
+// ---------------------------------------------------------------------------
+void atasub_init( )
+{
+  Bit16u ebda_seg=read_word(0x40,0x0E);
+
+  atasub_zero_return_data();
+  write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_delay_flag,0x00);
+}
+
+//*************************************************************
+//
+// atasub_zero_return_data() -- zero the return data areas.
+//
+//*************************************************************
+
+void atasub_zero_return_data( /* void */ )
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec , 0);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to , 0);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.st2, 0);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.as2, 0);
+   write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer, 0L);
+   write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits, 0);
+   write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets, 0L);
+}
+
+//*************************************************************
+//
+// atasub_trace_command() -- trace the end of a command.
+//
+//*************************************************************
+void atasub_trace_command( /* void */ )
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.st2, atapio_inbyte( CB_STAT ));
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.as2, atapio_inbyte( CB_ASTAT ));
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.er2, atapio_inbyte( CB_ERR ));
+}
+
+//*************************************************************
+//
+// atasub_select() - function used to select a drive.
+//
+// Function to select a drive. This subroutine waits for not BUSY,
+// selects a drive and waits for READY and SEEK COMPLETE status.
+//
+//**************************************************************
+
+Bit16u atasub_select( /* int */ dev )
+int dev;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   unsigned char status;
+
+   // PAY ATTENTION HERE
+   // The caller may want to issue a command to a device that doesn't
+   // exist (for example, Exec Dev Diag), so if we see this,
+   // just select that device, skip all status checking and return.
+   // We assume the caller knows what they are doing!
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[ dev ]) < REG_CONFIG_TYPE_ATA )
+   {
+      // select the device and return
+
+      atapio_outbyte( CB_DH, dev ? CB_DH_DEV1 : CB_DH_DEV0 );
+      DELAY400NS;
+      return 0;
+   }
+
+   // The rest of this is the normal ATA stuff for device selection
+   // and we don't expect the caller to be selecting a device that
+   // does not exist.
+   // We don't know which drive is currently selected but we should
+   // wait for it to be not BUSY.  Normally it will be not BUSY
+   // unless something is very wrong!
+
+   while ( 1 )
+   {
+      status = atapio_inbyte( CB_STAT );
+      if ( ( status & CB_STAT_BSY ) == 0 )
+         break;
+      if ( atatmr_chk_timeout() )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 11);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.st2, status);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.as2, atapio_inbyte( CB_ASTAT ));
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.er2, atapio_inbyte( CB_ERR ));
+
+         return 1;
+      }
+   }
+
+   // Here we select the drive we really want to work with by
+   // putting 0xA0 or 0xB0 in the Drive/Head register (1f6).
+
+   atapio_outbyte( CB_DH, dev ? CB_DH_DEV1 : CB_DH_DEV0 );
+   DELAY400NS;
+
+   // If the selected device is an ATA device,
+   // wait for it to have READY and SEEK COMPLETE
+   // status.  Normally the drive should be in this state unless
+   // something is very wrong (or initial power up is still in
+   // progress).  For any other type of device, just wait for
+   // BSY=0 and assume the caller knows what they are doing.
+
+   while ( 1 )
+   {
+      status = atapio_inbyte( CB_STAT );
+      if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[ dev ]) == REG_CONFIG_TYPE_ATA )
+      {
+           if ( ( status & ( CB_STAT_BSY | CB_STAT_RDY | CB_STAT_SKC ) )
+                     == ( CB_STAT_RDY | CB_STAT_SKC ) )
+         break;
+      }
+      else
+      {
+         if ( ( status & CB_STAT_BSY ) == 0 )
+            break;
+      }
+      if ( atatmr_chk_timeout() )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 12);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.st2, status);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.as2, atapio_inbyte( CB_ASTAT ));
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.er2, atapio_inbyte( CB_ERR ));
+         return 1;
+      }
+   }
+
+   // All done.  The return values of this function are described in
+   // ATAIO.H.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec ))
+      return 1;
+   return 0;
+}
+
+//*************************************************************
+//
+// atasub_atapi_delay() - delay for at least two ticks of the bios
+//                     timer (or at least 110ms).
+//
+//*************************************************************
+
+void atasub_atapi_delay( /* int */ dev )
+int dev;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   int ndx;
+   long lw;
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[dev]) != REG_CONFIG_TYPE_ATAPI )
+      return;
+   if ( ! read_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_delay_flag) )
+      return;
+   for ( ndx = 0; ndx < 3; ndx ++ )
+   {
+      lw = atatmr_read_bios_timer();
+      while ( lw == atatmr_read_bios_timer() )
+         /* do nothing */ ;
+   }
+}
+
+//*************************************************************
+//
+// atasub_xfer_delay() - delay until the bios timer ticks
+//                    (from 0 to 55ms).
+//
+//*************************************************************
+
+void atasub_xfer_delay( /* void */ )
+{
+   long lw;
+
+   lw = atatmr_read_bios_timer();
+   while ( lw == atatmr_read_bios_timer() )
+      /* do nothing */ ;
+}
+
+// ---------------------------------------------------------------------------
+// low-level port I/O functions
+// ---------------------------------------------------------------------------
+void atapio_init( )
+{
+  Bit16u ebda_seg=read_word(0x40,0x0E);
+
+  atapio_set_iobase_addr(0x1f0,0x3f0);
+  write_word(ebda_seg,&EbdaData->atadrv_data.pio_xfer_width, 16);
+}
+
+//*************************************************************
+//
+// Set the host adapter i/o base addresses.
+//
+//*************************************************************
+
+void atapio_set_iobase_addr( /* unsigned int */ base1, /* unsigned int */ base2 )
+Bit16u base1,base2;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_base_addr1, base1);
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_base_addr2, base2);
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg, 0);
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DATA ], base1 + 0);  // 0
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_FR   ], base1 + 1);  // 1
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_SC   ], base1 + 2);  // 2
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_SN   ], base1 + 3);  // 3
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_CL   ], base1 + 4);  // 4
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_CH   ], base1 + 5);  // 5
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DH   ], base1 + 6);  // 6
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_CMD  ], base1 + 7);  // 7
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DC   ], base2 + 6);  // 8
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DA   ], base2 + 7);  // 9
+}
+
+//*************************************************************
+//
+// Set the host adapter memory base addresses.
+//
+//*************************************************************
+
+void atapio_set_memory_addr( /* unsigned int */ seg )
+Bit16u seg;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u base1=0;
+   Bit16u base2=8;
+
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_base_addr1, base1);
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_base_addr2, base2);
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg, seg);
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DATA ], base1 + 0);  // 0
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_FR   ], base1 + 1);  // 1
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_SC   ], base1 + 2);  // 2
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_SN   ], base1 + 3);  // 3
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_CL   ], base1 + 4);  // 4
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_CH   ], base1 + 5);  // 5
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DH   ], base1 + 6);  // 6
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_CMD  ], base1 + 7);  // 7
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DC   ], base2 + 6);  // 8
+   write_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ CB_DA   ], base2 + 7);  // 9
+
+}
+
+//*************************************************************
+//
+// These functions do basic IN/OUT of byte and word values.
+//
+//*************************************************************
+
+Bit8u atapio_inbyte( /* unsigned int */ addr )
+Bit16u addr;
+{
+   Bit8u  uc;
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_memory_seg=read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+   Bit16u regAddr=read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addr ]);
+
+   if ( pio_memory_seg )
+   {
+      uc = read_byte(pio_memory_seg,regAddr);
+   }
+   else
+   {
+      uc = (Bit8u) inb( regAddr );
+   }
+   write_byte(ebda_seg,&EbdaData->atadrv_data.pio_last_read[ addr ], uc);
+
+   return uc;
+}
+
+//*********************************************************
+
+void atapio_outbyte( /* unsigned int */ addr, /* unsigned char */ data )
+Bit16u addr;
+Bit8u  data;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_memory_seg=read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+   Bit16u regAddr=read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addr ]);
+
+   if ( pio_memory_seg )
+   {
+      write_byte(pio_memory_seg, regAddr,data);
+   }
+   else
+   {
+      outb( regAddr, data );
+   }
+   write_byte(ebda_seg,&EbdaData->atadrv_data.pio_last_write[ addr ], data);
+}
+
+//*********************************************************
+
+void atapio_dummyinb( /* unsigned int */ addr , /* Bit16u */ count )
+Bit16u addr,count;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_memory_seg=read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+   Bit16u regAddr=read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addr ]);
+   Bit16u lcount=count;
+
+   if(count==0) return;
+
+   if ( pio_memory_seg )
+   {
+     while(count-->0)
+     {
+        read_byte(pio_memory_seg,regAddr);
+     }
+   }
+   else
+   {
+/*
+     while(count-->0)
+     {
+        inb(regAddr);
+     }
+*/
+#asm
+    push bp
+    mov  bp, sp
+
+      push cx
+      push dx
+
+      mov cx, _atapio_dummyinb.lcount + 2[bp]
+      mov dx, _atapio_dummyinb.regAddr + 2[bp]
+
+dummyinb_again:
+      in al, dx
+      loop dummyinb_again
+
+      pop cx
+      pop dx
+
+    pop bp
+#endasm
+   }
+}
+
+//*********************************************************
+
+Bit16u atapio_inword( /* unsigned int */ addr )
+Bit16u addr;
+{
+   Bit16u ui;
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_memory_seg=read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+   Bit16u regAddr=read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addr ]);
+
+   if ( pio_memory_seg )
+   {
+      ui = read_word(pio_memory_seg,regAddr);
+   }
+   else
+   {
+      ui = inw( regAddr );
+   }
+   return ui;
+}
+
+//*********************************************************
+
+void atapio_outword( /* unsigned int */ addr, /* unsigned int */ data )
+Bit16u addr,data;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_memory_seg=read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+   Bit16u regAddr=read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addr ]);
+
+   if ( pio_memory_seg )
+   {
+      write_word(pio_memory_seg, regAddr,data);
+   }
+   else
+   {
+      outw( regAddr, data );
+   }
+}
+
+//*************************************************************
+
+void atapio_repinsb(addr, count, seg, off)
+Bit16u addr, count, seg, off;
+{
+#asm
+  push bp
+  mov  bp, sp
+
+      push  ax
+      push  cx
+      push  dx
+      push  di
+      push  es
+
+      mov   ax,8[bp]    ;; seg
+      mov   es,ax
+      mov   di,10[bp]   ;; off
+
+      mov   cx,6[bp]    ;; count
+      mov   dx,4[bp]    ;; addr
+
+      cld
+
+      rep   
+            insb
+
+      pop   es
+      pop   di
+      pop   dx
+      pop   cx
+      pop   ax
+
+  pop  bp
+#endasm
+}
+
+void atapio_repoutsb(addr, count, seg, off)
+Bit16u addr, count, seg, off;
+{
+#asm
+  push bp
+  mov  bp, sp
+
+      push  ax
+      push  cx
+      push  dx
+      push  si
+      push  ds
+
+      mov   ax,8[bp]    ;; seg
+      mov   ds,ax
+      mov   si,10[bp]   ;; off
+
+      mov   cx,6[bp]    ;; count
+      mov   dx,4[bp]    ;; addr
+
+      cld
+
+      rep   
+            outsb
+
+      pop   ds
+      pop   si
+      pop   dx
+      pop   cx
+      pop   ax
+
+  pop  bp
+#endasm
+}
+void atapio_repinsw(addr, count, seg, off)
+Bit16u addr, count, seg, off;
+{
+#asm
+  push bp
+  mov  bp, sp
+
+      push  ax
+      push  cx
+      push  dx
+      push  di
+      push  es
+
+      mov   ax,8[bp]    ;; seg
+      mov   es,ax
+      mov   di,10[bp]   ;; off
+
+      mov   cx,6[bp]    ;; count
+      mov   dx,4[bp]    ;; addr
+
+      cld
+
+      rep   
+            insw
+
+      pop   es
+      pop   di
+      pop   dx
+      pop   cx
+      pop   ax
+
+  pop  bp
+#endasm
+}
+void atapio_repoutsw(addr, count, seg, off)
+Bit16u addr, count, seg, off;
+{
+#asm
+  push bp
+  mov  bp, sp
+
+      push  ax
+      push  cx
+      push  dx
+      push  si
+      push  ds
+
+      mov   ax,8[bp]    ;; seg
+      mov   ds,ax
+      mov   si,10[bp]   ;; off
+
+      mov   cx,6[bp]    ;; count
+      mov   dx,4[bp]    ;; addr
+
+      cld
+
+      rep   
+            outsw
+
+      pop   ds
+      pop   si
+      pop   dx
+      pop   cx
+      pop   ax
+
+  pop  bp
+#endasm
+}
+void atapio_repinsd(addr, count, seg, off)
+Bit16u addr, count, seg, off;
+{
+#asm
+  push bp
+  mov  bp, sp
+
+      push  ax
+      push  cx
+      push  dx
+      push  di
+      push  es
+
+      mov   ax,8[bp]    ;; seg
+      mov   es,ax
+      mov   di,10[bp]   ;; off
+
+      mov   cx,6[bp]    ;; count
+      mov   dx,4[bp]    ;; addr
+
+      cld
+
+      rep   
+            insd
+
+      pop   es
+      pop   di
+      pop   dx
+      pop   cx
+      pop   ax
+
+  pop  bp
+#endasm
+}
+void atapio_repoutsd(addr, count, seg, off)
+Bit16u addr, count, seg, off;
+{
+#asm
+  push bp
+  mov  bp, sp
+
+      push  ax
+      push  cx
+      push  dx
+      push  si
+      push  ds
+
+      mov   ax,8[bp]    ;; seg
+      mov   ds,ax
+      mov   si,10[bp]   ;; off
+
+      mov   cx,6[bp]    ;; count
+      mov   dx,4[bp]    ;; addr
+
+      cld
+
+      rep   
+            outsd
+
+      pop   ds
+      pop   si
+      pop   dx
+      pop   cx
+      pop   ax
+
+  pop  bp
+#endasm
+}
+
+//*************************************************************
+//
+// These functions do REP INS/OUTS (PIO data transfers).
+//
+//*************************************************************
+
+// Note: atapio_rep_inbyte() can be called directly but usually it
+// is called by atapio_rep_inword() based on the value of the
+// pio_xfer_width variables.
+
+void atapio_rep_inbyte( /* unsigned int */ addrDataReg,
+                     /* unsigned int */ bufSeg, /* unsigned int */ bufOff,
+                     /* long */ byteCnt )
+Bit16u addrDataReg,bufSeg,bufOff;
+Bit32u byteCnt;
+{
+   Bit16u bCnt;
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u dataRegAddr = read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addrDataReg ]);
+
+   while ( byteCnt > 0L )
+   {
+
+      if ( byteCnt > 16384L )
+         bCnt = 16384;
+      else
+         bCnt = (Bit16u) byteCnt;
+
+      atapio_repinsb(dataRegAddr,bCnt,bufSeg,bufOff);
+
+      byteCnt = byteCnt - (long) bCnt;
+
+      atapio_inbyte( CB_ASTAT );    // just for debugging
+
+   }
+}
+
+//*********************************************************
+
+// Note: atapio_rep_outbyte() can be called directly but usually it
+// is called by atapio_rep_outword() based on the value of the
+// pio_xfer_width variables.
+
+void atapio_rep_outbyte( /* unsigned int */ addrDataReg,
+                      /* unsigned int */ bufSeg, /* unsigned int */ bufOff,
+                      /* long */ byteCnt )
+Bit16u addrDataReg,bufSeg,bufOff;
+Bit32u byteCnt;
+{
+   Bit16u bCnt;
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u dataRegAddr = read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addrDataReg ]);
+
+   while ( byteCnt > 0L )
+   {
+
+      if ( byteCnt > 16384L )
+         bCnt = 16384;
+      else
+         bCnt = (Bit16u) byteCnt;
+
+      atapio_repoutsb(dataRegAddr,bCnt,bufSeg,bufOff);
+
+      byteCnt = byteCnt - (long) bCnt;
+
+      atapio_inbyte( CB_ASTAT );    // just for debugging
+
+   }
+}
+
+//*********************************************************
+
+// Note: atapio_rep_indword() can be called directly but usually it
+// is called by atapio_rep_inword() based on the value of the
+// pio_xfer_width variable.
+
+void atapio_rep_indword( /* unsigned int */ addrDataReg,
+                      /* unsigned int */ bufSeg, /* unsigned int */ bufOff,
+                      /* unsigned int */ dwordCnt )
+Bit16u addrDataReg,bufSeg,bufOff,dwordCnt;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u dataRegAddr = read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addrDataReg ]);
+
+   atapio_repinsd(dataRegAddr,dwordCnt,bufSeg,bufOff);
+
+}
+
+//*********************************************************
+
+// Note: atapio_rep_outdword() can be called directly but usually it
+// is called by atapio_rep_outword() based on the value of the
+// pio_xfer_width variable.
+
+void atapio_rep_outdword(/* unsigned int */ addrDataReg,
+                      /* unsigned int */ bufSeg, /* unsigned int */ bufOff,
+                      /* unsigned int */ dwordCnt )
+Bit16u addrDataReg,bufSeg,bufOff,dwordCnt;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u dataRegAddr = read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addrDataReg ]);
+
+   atapio_repoutsd(dataRegAddr,dwordCnt,bufSeg,bufOff);
+
+}
+
+//*********************************************************
+
+// Note: atapio_rep_inword() is the primary way perform PIO
+// Data In transfers. It will handle 8-bit, 16-bit and 32-bit
+// I/O based data transfers and 8-bit and 16-bit PCMCIA Memory
+// mode transfers.
+
+void atapio_rep_inword(/* unsigned int */ addrDataReg,
+                    /* unsigned int */ bufSeg, /* unsigned int */ bufOff,
+                    /* unsigned int */ wordCnt )
+Bit16u addrDataReg,bufSeg,bufOff,wordCnt;
+{
+   Bit32u bCnt;
+
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_xfer_width=read_word(ebda_seg,&EbdaData->atadrv_data.pio_xfer_width);
+   Bit16u dataRegAddr = read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addrDataReg ]);
+   Bit16u pio_memory_seg = read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+
+   if ( read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg ))
+   {
+
+      // PCMCIA Memory mode data transfer.
+
+      if ( pio_xfer_width == 8 )
+      {
+         // PCMCIA Memory mode 8-bit
+         bCnt = ( (Bit32u) wordCnt ) * 2L;
+         for ( ; bCnt > 0; bCnt -- )
+         {
+            write_byte(bufSeg, bufOff, read_byte(pio_memory_seg, dataRegAddr));
+         }
+      }
+      else
+      {
+         // PCMCIA Memory mode 16-bit
+         for ( ; wordCnt > 0; wordCnt -- )
+         {
+            write_word(bufSeg, bufOff, read_word(pio_memory_seg, dataRegAddr));
+         }
+      }
+   }
+   else
+   {
+
+      // Data transfer using INS instruction.
+
+      if ( pio_xfer_width == 8 )
+      {
+         // do REP INS
+         atapio_rep_inbyte( addrDataReg, bufSeg, bufOff, ( (long) wordCnt ) * 2L );
+         return;
+      }
+
+      if ( ( pio_xfer_width == 32 ) && ( ! ( wordCnt & 0x0001 ) ) )
+      {
+         // do REP INSD
+         atapio_rep_indword( addrDataReg, bufSeg, bufOff, wordCnt / 2 );
+         return;
+      }
+
+      // do REP INSW
+      atapio_repinsw(dataRegAddr,wordCnt,bufSeg,bufOff);
+
+   }
+}
+
+//*********************************************************
+
+// Note: atapio_rep_outword() is the primary way perform PIO
+// Data Out transfers. It will handle 8-bit, 16-bit and 32-bit
+// I/O based data transfers and 8-bit and 16-bit PCMCIA Memory
+// mode transfers.
+
+void atapio_rep_outword(/* unsigned int */ addrDataReg,
+                    /* unsigned int */ bufSeg, /* unsigned int */ bufOff,
+                    /* unsigned int */ wordCnt )
+Bit16u addrDataReg,bufSeg,bufOff,wordCnt;
+{
+   Bit32u bCnt;
+
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u pio_xfer_width=read_word(ebda_seg,&EbdaData->atadrv_data.pio_xfer_width);
+   Bit16u dataRegAddr = read_word(ebda_seg,&EbdaData->atadrv_data.pio_reg_addrs[ addrDataReg ]);
+   Bit16u pio_memory_seg = read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg);
+
+   if ( read_word(ebda_seg,&EbdaData->atadrv_data.pio_memory_seg ))
+   {
+      // PCMCIA Memory mode data transfer.
+
+      if ( pio_xfer_width == 8 )
+      {
+         // PCMCIA Memory mode 8-bit
+         bCnt = ( (long) wordCnt ) * 2L;
+         for ( ; bCnt > 0; bCnt -- )
+         {
+            write_byte(pio_memory_seg, dataRegAddr, read_byte(bufSeg, bufOff));
+         }
+      }
+      else
+      {
+         // PCMCIA Memory mode 16-bit
+         for ( ; wordCnt > 0; wordCnt -- )
+         {
+            write_word(pio_memory_seg, dataRegAddr, read_word(bufSeg, bufOff));
+         }
+      }
+   }
+   else
+   {
+      // Data transfer using OUTS instruction.
+
+      if ( pio_xfer_width == 8 )
+      {
+         // do REP OUTS
+         atapio_rep_outbyte( addrDataReg, bufSeg, bufOff, ( (long) wordCnt ) * 2L );
+         return;
+      }
+
+      if ( ( pio_xfer_width == 32 ) && ( ! ( wordCnt & 0x0001 ) ) )
+      {
+         // do REP OUTSD
+         atapio_rep_outdword( addrDataReg, bufSeg, bufOff, wordCnt / 2 );
+         return;
+      }
+
+      // do REP OUTSW
+      atapio_repoutsw(dataRegAddr,wordCnt,bufSeg,bufOff);
+
+   }
+}
+
+
+// ---------------------------------------------------------------------------
+// ATA (reset, non-data, data in, data out) ATAPI packet command functions
+// ---------------------------------------------------------------------------
+void atareg_init()
+{
+  Bit16u ebda_seg=read_word(0x40,0x0E);
+  write_dword(ebda_seg,&EbdaData->atadrv_data.reg_atapi_max_bytes, 65536L);
+  write_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag, 0);
+}
+
+//*************************************************************
+//
+// atareg_wait_poll() - wait for INT 7x or poll for BSY=0
+//
+//*************************************************************
+
+void atareg_wait_poll( /* int */ we, /* int */ pe  );
+
+void atareg_wait_poll( /* int */ we, /* int */ pe  )
+Bit16u we, pe;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   unsigned char status;
+
+   // Wait for INT 7x -or- wait for not BUSY -or- wait for time out.
+
+   // if ( we && read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag ))
+   // {
+   //    while ( 1 )
+   //    {
+   //       if ( read_word(ebda_seg,&EbdaData->atadrv_data.int_intr_flag ))  // wait for INT 7x
+   //          break;
+   //       if ( atatmr_chk_timeout() )            // time out yet ?
+   //       {
+   //          write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+   //          write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, we);
+   //          break;
+   //       }
+   //    }
+   // }
+   // else
+   // {
+      while ( 1 )
+      {
+         status = atapio_inbyte( CB_ASTAT );       // poll for not busy
+         if ( ( status & CB_STAT_BSY ) == 0 )
+            break;
+         if ( atatmr_chk_timeout() )               // time out yet ?
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, pe);
+            break;
+         }
+      }
+   // }
+
+   // Reset the interrupt flag.
+
+   // if (read_word(ebda_seg,&EbdaData->atadrv_data.int_intr_flag) > 1 )
+   // {
+   //    long failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+   //    failbits |= FAILBIT15;
+   //    write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits, failbits);
+   // }
+   // write_word(ebda_seg,&EbdaData->atadrv_data.int_intr_flag, 0);
+}
+
+//*************************************************************
+//
+// atareg_config() - Check the host adapter and determine the
+//                number and type of drives attached.
+//
+// This process is not documented by any of the ATA standards.
+//
+// Infomation is returned by this function is in
+// reg_config_info[] -- see ATAIO.H.
+//
+//*************************************************************
+
+Bit16u atareg_config( /* void */ )
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit16u numDev = 0;
+   Bit8u  sc;
+   Bit8u  sn;
+   Bit8u  cl;
+   Bit8u  ch;
+   Bit8u  st;
+   Bit8u  devCtrl;
+
+   // setup register values
+
+   // devCtrl = CB_DC_HD15 | ( read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) ? 0 : CB_DC_NIEN );
+   devCtrl = CB_DC_HD15 | CB_DC_NIEN;
+
+   // assume there are no devices
+
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0], REG_CONFIG_TYPE_NONE);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1], REG_CONFIG_TYPE_NONE);
+
+   // set up Device Control register
+
+   atapio_outbyte( CB_DC, devCtrl );
+
+   // lets see if there is a device 0
+
+   atapio_outbyte( CB_DH, CB_DH_DEV0 );
+   DELAY400NS;
+   atapio_outbyte( CB_SC, 0x55 );
+   atapio_outbyte( CB_SN, 0xaa );
+   atapio_outbyte( CB_SC, 0xaa );
+   atapio_outbyte( CB_SN, 0x55 );
+   atapio_outbyte( CB_SC, 0x55 );
+   atapio_outbyte( CB_SN, 0xaa );
+   sc = atapio_inbyte( CB_SC );
+   sn = atapio_inbyte( CB_SN );
+   if ( ( sc == 0x55 ) && ( sn == 0xaa ) )
+      write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0], REG_CONFIG_TYPE_UNKN);
+
+   // lets see if there is a device 1
+
+   atapio_outbyte( CB_DH, CB_DH_DEV1 );
+   DELAY400NS;
+   atapio_outbyte( CB_SC, 0x55 );
+   atapio_outbyte( CB_SN, 0xaa );
+   atapio_outbyte( CB_SC, 0xaa );
+   atapio_outbyte( CB_SN, 0x55 );
+   atapio_outbyte( CB_SC, 0x55 );
+   atapio_outbyte( CB_SN, 0xaa );
+   sc = atapio_inbyte( CB_SC );
+   sn = atapio_inbyte( CB_SN );
+   if ( ( sc == 0x55 ) && ( sn == 0xaa ) )
+      write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1], REG_CONFIG_TYPE_UNKN);
+
+   // now we think we know which devices, if any are there,
+   // so lets try a soft reset (ignoring any errors).
+
+   atapio_outbyte( CB_DH, CB_DH_DEV0 );
+   DELAY400NS;
+   atareg_reset( 0, 0 );
+
+   // lets check device 0 again, is device 0 really there?
+   // is it ATA or ATAPI?
+
+   atapio_outbyte( CB_DH, CB_DH_DEV0 );
+   DELAY400NS;
+   sc = atapio_inbyte( CB_SC );
+   sn = atapio_inbyte( CB_SN );
+   if ( ( sc == 0x01 ) && ( sn == 0x01 ) )
+   {
+      write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0], REG_CONFIG_TYPE_UNKN);
+      cl = atapio_inbyte( CB_CL );
+      ch = atapio_inbyte( CB_CH );
+      st = atapio_inbyte( CB_STAT );
+      if ( ( cl == 0x14 ) && ( ch == 0xeb ) )
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0], REG_CONFIG_TYPE_ATAPI);
+      else
+         if ( ( cl == 0x00 ) && ( ch == 0x00 ) && ( st != 0x00 ) )
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0], REG_CONFIG_TYPE_ATA);
+   }
+
+   // lets check device 1 again, is device 1 really there?
+   // is it ATA or ATAPI?
+
+   atapio_outbyte( CB_DH, CB_DH_DEV1 );
+   DELAY400NS;
+   sc = atapio_inbyte( CB_SC );
+   sn = atapio_inbyte( CB_SN );
+   if ( ( sc == 0x01 ) && ( sn == 0x01 ) )
+   {
+      write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1], REG_CONFIG_TYPE_UNKN);
+      cl = atapio_inbyte( CB_CL );
+      ch = atapio_inbyte( CB_CH );
+      st = atapio_inbyte( CB_STAT );
+      if ( ( cl == 0x14 ) && ( ch == 0xeb ) )
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1], REG_CONFIG_TYPE_ATAPI);
+      else
+         if ( ( cl == 0x00 ) && ( ch == 0x00 ) && ( st != 0x00 ) )
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1], REG_CONFIG_TYPE_ATA);
+   }
+
+   // If possible, select a device that exists, try device 0 first.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1]) != REG_CONFIG_TYPE_NONE )
+   {
+      atapio_outbyte( CB_DH, CB_DH_DEV1 );
+      DELAY400NS;
+      numDev ++ ;
+   }
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0]) != REG_CONFIG_TYPE_NONE )
+   {
+      atapio_outbyte( CB_DH, CB_DH_DEV0 );
+      DELAY400NS;
+      numDev ++ ;
+   }
+
+   // mark end of config in low level trace
+
+   // return the number of devices found
+
+   return numDev;
+}
+
+//*************************************************************
+//
+// atareg_reset() - Execute a Software Reset.
+//
+// See ATA-2 Section 9.2, ATA-3 Section 9.2, ATA-4 Section 8.3.
+//
+//*************************************************************
+
+Bit16u atareg_reset( /* int */ skipFlag, /* int */ devRtrn )
+Bit16u skipFlag, devRtrn;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit8u sc;
+   Bit8u sn;
+   Bit8u status;
+   Bit8u devCtrl;
+
+   // setup register values
+   // devCtrl = CB_DC_HD15 | ( read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) ? 0 : CB_DC_NIEN );
+   devCtrl = CB_DC_HD15 | CB_DC_NIEN;
+
+   // Reset error return data.
+   atasub_zero_return_data();
+
+   // initialize the command timeout counter
+   atatmr_set_timeout();
+
+   // Set and then reset the soft reset bit in the Device Control
+   // register.  This causes device 0 be selected.
+   if ( ! skipFlag )
+   {
+      atapio_outbyte( CB_DC, devCtrl | CB_DC_SRST );
+      DELAY400NS;
+      atapio_outbyte( CB_DC, devCtrl );
+      DELAY400NS;
+   }
+
+   // If there is a device 0, wait for device 0 to set BSY=0.
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0]) != REG_CONFIG_TYPE_NONE )
+   {
+      atasub_atapi_delay( 0 );
+      while ( 1 )
+      {
+         status = atapio_inbyte( CB_STAT );
+         if ( ( status & CB_STAT_BSY ) == 0 )
+            break;
+         if ( atatmr_chk_timeout() )
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 1);
+            break;
+         }
+      }
+   }
+
+   // If there is a device 1, wait until device 1 allows
+   // register access.
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1]) != REG_CONFIG_TYPE_NONE )
+   {
+      atasub_atapi_delay( 1 );
+      while ( 1 )
+      {
+         atapio_outbyte( CB_DH, CB_DH_DEV1 );
+         DELAY400NS;
+         sc = atapio_inbyte( CB_SC );
+         sn = atapio_inbyte( CB_SN );
+         if ( ( sc == 0x01 ) && ( sn == 0x01 ) )
+            break;
+         if ( atatmr_chk_timeout() )
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 1);
+            break;
+         }
+      }
+
+      // Now check if drive 1 set BSY=0.
+
+      if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) == 0 )
+      {
+         if ( atapio_inbyte( CB_STAT ) & CB_STAT_BSY )
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 3);
+         }
+      }
+   }
+
+   // RESET_DONE:
+
+   // We are done but now we must select the device the caller
+   // requested before we trace the command.  This will cause
+   // the correct data to be returned in reg_cmd_info.
+
+   atapio_outbyte( CB_DH, devRtrn ? CB_DH_DEV1 : CB_DH_DEV0 );
+   DELAY400NS;
+   atasub_trace_command();
+
+   // If possible, select a device that exists,
+   // try device 0 first.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1]) != REG_CONFIG_TYPE_NONE )
+   {
+      atapio_outbyte( CB_DH, CB_DH_DEV1 );
+      DELAY400NS;
+   }
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0]) != REG_CONFIG_TYPE_NONE )
+   {
+      atapio_outbyte( CB_DH, CB_DH_DEV0 );
+      DELAY400NS;
+   }
+
+   // mark end of reset in low level trace
+
+   // All done.  The return values of this function are described in
+   // ATAIO.H.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec ))
+      return 1;
+   return 0;
+}
+
+//*************************************************************
+//
+// atareg_non_data_lba() - Easy way to execute a non-data command
+//                      using an LBA sector address.
+//
+//*************************************************************
+
+Bit16u atareg_non_data_lba( /* int */ dev, /* int */ cmd,
+                      /* int */ fr, /* int */ sc,
+                      /* long */ lba )
+Bit16u dev, cmd, fr, sc;
+Bit32u lba;
+{
+   Bit16u cyl;
+   Bit16u head, sect;
+
+   sect = (Bit16u) ( lba & 0x000000ffL );
+   lba = lba >> 8;
+   cyl = (Bit16u) ( lba & 0x0000ffff );
+   lba = lba >> 16;
+   head = ( (Bit16u) ( lba & 0x0fL ) ) | 0x40;
+   return atareg_non_data( dev, cmd,
+                        fr, sc,
+                        cyl, head, sect );
+}
+
+//*************************************************************
+//
+// atareg_non_data() - Execute a non-data command.
+//
+// Note special handling for Execute Device Diagnostics
+// command when there is no device 0.
+//
+// See ATA-2 Section 9.5, ATA-3 Section 9.5,
+// ATA-4 Section 8.8 Figure 12.  Also see Section 8.5.
+//
+//*************************************************************
+
+Bit16u atareg_non_data( /* int */ dev, /* int */ cmd,
+                  /* int */ fr, /* int */ sc,
+                  /* unsigned int */ cyl, /* int */ head, /* int */ sect )
+Bit16u dev, cmd, fr, sc, cyl, head, sect;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit8u secCnt;
+   Bit8u secNum;
+   Bit8u devHead;
+   Bit8u devCtrl;
+   Bit8u cylLow;
+   Bit8u cylHigh;
+   Bit8u status;
+
+   // mark start of ND cmd in low level trace
+
+   // setup register values
+
+   // devCtrl = CB_DC_HD15 | ( read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) ? 0 : CB_DC_NIEN );
+   devCtrl = CB_DC_HD15 | CB_DC_NIEN;
+   devHead = dev ? CB_DH_DEV1 : CB_DH_DEV0;
+   devHead = devHead | ( head & 0x4f );
+   cylLow = cyl & 0x00ff;
+   cylHigh = ( cyl & 0xff00 ) >> 8;
+
+   // Reset error return data.
+   atasub_zero_return_data();
+
+   // Set command time out.
+   atatmr_set_timeout();
+
+   // PAY ATTENTION HERE
+   // If the caller is attempting a Device Reset command, then
+   // don't do most of the normal stuff.  Device Reset has no
+   // parameters, should not generate an interrupt and it is the
+   // only command that can be written to the Command register
+   // when a device has BSY=1 (a very strange command!).  Not
+   // all devices support this command (even some ATAPI devices
+   // don't support the command.
+
+   if ( cmd != CMD_DEVICE_RESET )
+   {
+      // Select the drive - call the atasub_select function.
+      // Quit now if this fails.
+
+      if ( atasub_select( dev ) )
+      {
+         atasub_trace_command();
+         return 1;
+      }
+
+      // Set up all the registers except the command register.
+
+      atapio_outbyte( CB_DC, devCtrl );
+      atapio_outbyte( CB_FR, fr );
+      atapio_outbyte( CB_SC, sc );
+      atapio_outbyte( CB_SN, sect );
+      atapio_outbyte( CB_CL, cylLow );
+      atapio_outbyte( CB_CH, cylHigh );
+      atapio_outbyte( CB_DH, devHead );
+
+      // For interrupt mode,
+      // Take over INT 7x and initialize interrupt controller
+      // and reset interrupt flag.
+
+      // int_save_int_vect();
+   }
+
+   // Start the command by setting the Command register.  The drive
+   // should immediately set BUSY status.
+
+   atapio_outbyte( CB_CMD, cmd );
+
+   // Waste some time by reading the alternate status a few times.
+   // This gives the drive time to set BUSY in the status register on
+   // really fast systems.  If we don't do this, a slow drive on a fast
+   // system may not set BUSY fast enough and we would think it had
+   // completed the command when it really had not even started the
+   // command yet.
+
+   DELAY400NS;
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0]) == REG_CONFIG_TYPE_ATAPI )
+      atasub_atapi_delay( 0 );
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[1]) == REG_CONFIG_TYPE_ATAPI )
+      atasub_atapi_delay( 1 );
+
+   // IF
+   //    This is an Exec Dev Diag command (cmd=0x90)
+   //    and there is no device 0 then
+   //    there will be no interrupt. So we must
+   //    poll device 1 until it allows register
+   //    access and then do normal polling of the Status
+   //    register for BSY=0.
+   // ELSE
+   // IF
+   //    This is a Dev Reset command (cmd=0x08) then
+   //    there should be no interrupt.  So we must
+   //    poll for BSY=0.
+   // ELSE
+   //    Do the normal wait for interrupt or polling for
+   //    completion.
+
+   if ( ( cmd == CMD_EXECUTE_DEVICE_DIAGNOSTIC )
+        &&
+        ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[0]) == REG_CONFIG_TYPE_NONE )
+      )
+   {
+      while ( 1 )
+      {
+         atapio_outbyte( CB_DH, CB_DH_DEV1 );
+         DELAY400NS;
+         secCnt = atapio_inbyte( CB_SC );
+         secNum = atapio_inbyte( CB_SN );
+         if ( ( secCnt == 0x01 ) && ( secNum == 0x01 ) )
+            break;
+         if ( atatmr_chk_timeout() )
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 24);
+            break;
+         }
+      }
+   }
+   else
+   {
+      if ( cmd == CMD_DEVICE_RESET )
+      {
+         // Wait for not BUSY -or- wait for time out.
+
+         atareg_wait_poll( 0, 23 );
+      }
+      else
+      {
+         // Wait for INT 7x -or- wait for not BUSY -or- wait for time out.
+
+         atareg_wait_poll( 22, 23 );
+      }
+   }
+
+   // Read the primary status register.  In keeping with the rules
+   // stated above the primary status register is read only
+   // ONCE.
+
+   status = atapio_inbyte( CB_STAT );
+
+   // Error if BUSY, DEVICE FAULT, DRQ or ERROR status now.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) == 0 )
+   {
+      if ( status & ( CB_STAT_BSY | CB_STAT_DF | CB_STAT_DRQ | CB_STAT_ERR ) )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 21);
+      }
+   }
+
+   // read the output registers and trace the command.
+   atasub_trace_command();
+
+   // NON_DATA_DONE:
+
+   // For interrupt mode, restore the INT 7x vector.
+   // int_restore_int_vect();
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+      return 1;
+   return 0;
+}
+
+//*************************************************************
+//
+// atareg_pio_data_in_lba() - Easy way to execute a PIO Data In command
+//                         using an LBA sector address.
+//
+//*************************************************************
+
+Bit16u atareg_pio_data_in_lba( /* int */ dev, /* int */ cmd,
+                         /* int */ fr, /* int */ sc,
+                         /* long */ lba,
+                         /* unsigned */ seg, /* unsigned */ off,
+                         /* int */ numSect, /* int */ multiCnt )
+Bit16u dev, cmd, fr, sc, seg, off, numSect, multiCnt;
+Bit32u lba;
+{
+   Bit16u cyl;
+   Bit16u head, sect;
+
+   sect = (Bit16u) ( lba & 0x000000ffL );
+   lba = lba >> 8;
+   cyl = (Bit16u) ( lba & 0x0000ffff );
+   lba = lba >> 16;
+   head = ( (Bit16u) ( lba & 0x0fL ) ) | 0x40;
+   return atareg_pio_data_in( dev, cmd,
+                           fr, sc,
+                           cyl, head, sect,
+                           seg, off,
+                           numSect, multiCnt );
+}
+
+//*************************************************************
+//
+// atareg_pio_data_in() - Execute a PIO Data In command.
+//
+// See ATA-2 Section 9.3, ATA-3 Section 9.3,
+// ATA-4 Section 8.6 Figure 10.
+//
+//*************************************************************
+
+Bit16u atareg_pio_data_in( /* int */ dev, /* int */ cmd,
+                     /* int */ fr, /* int */ sc,
+                     /* unsigned int */ cyl, /* int */ head, /* int */ sect,
+                     /* unsigned */ seg, /* unsigned */ off,
+                     /* int */ numSect, /* int */ multiCnt )
+Bit16u dev, cmd, fr, sc, cyl, head, sect, seg, off, numSect, multiCnt;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit8u  devHead;
+   Bit8u  devCtrl;
+   Bit8u  cylLow;
+   Bit8u  cylHigh;
+   Bit8u  status;
+   Bit16u wordCnt;
+   Bit32u drqPackets,totalBytesXfer;
+
+   // mark start of PDI cmd in low level trace
+
+   // setup register values and adjust parameters
+
+   // devCtrl = CB_DC_HD15 | ( read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) ? 0 : CB_DC_NIEN );
+   devCtrl = CB_DC_HD15 | CB_DC_NIEN;
+   devHead = dev ? CB_DH_DEV1 : CB_DH_DEV0;
+   devHead = devHead | ( head & 0x4f );
+   cylLow = cyl & 0x00ff;
+   cylHigh = ( cyl & 0xff00 ) >> 8;
+   // these commands transfer only 1 sector
+   if (    ( cmd == CMD_IDENTIFY_DEVICE )
+        || ( cmd == CMD_IDENTIFY_DEVICE_PACKET )
+        || ( cmd == CMD_READ_BUFFER )
+      )
+      numSect = 1;
+   // only Read Multiple uses multiCnt
+   if ( cmd != CMD_READ_MULTIPLE )
+      multiCnt = 1;
+
+   // Reset error return data.
+   atasub_zero_return_data();
+
+   // Set command time out.
+   atatmr_set_timeout();
+
+   // Select the drive - call the atasub_select function.
+   // Quit now if this fails.
+   if ( atasub_select( dev ) )
+   {
+      atasub_trace_command();
+      return 1;
+   }
+
+   // Set up all the registers except the command register.
+
+   atapio_outbyte( CB_DC, devCtrl );
+   atapio_outbyte( CB_FR, fr );
+   atapio_outbyte( CB_SC, sc );
+   atapio_outbyte( CB_SN, sect );
+   atapio_outbyte( CB_CL, cylLow );
+   atapio_outbyte( CB_CH, cylHigh );
+   atapio_outbyte( CB_DH, devHead );
+
+   // For interrupt mode,
+   // Take over INT 7x and initialize interrupt controller
+   // and reset interrupt flag.
+
+   // int_save_int_vect();
+
+   // Start the command by setting the Command register.  The drive
+   // should immediately set BUSY status.
+
+   atapio_outbyte( CB_CMD, cmd );
+
+   // Waste some time by reading the alternate status a few times.
+   // This gives the drive time to set BUSY in the status register on
+   // really fast systems.  If we don't do this, a slow drive on a fast
+   // system may not set BUSY fast enough and we would think it had
+   // completed the command when it really had not even started the
+   // command yet.
+
+   DELAY400NS;
+
+   // Loop to read each sector.
+
+   while ( 1 )
+   {
+      // READ_LOOP:
+      //
+      // NOTE NOTE NOTE ...  The primary status register (1f7) MUST NOT be
+      // read more than ONCE for each sector transferred!  When the
+      // primary status register is read, the drive resets IRQ 14.  The
+      // alternate status register (3f6) can be read any number of times.
+      // After INT 7x read the the primary status register ONCE
+      // and transfer the 256 words (REP INSW).  AS SOON as BOTH the
+      // primary status register has been read AND the last of the 256
+      // words has been read, the drive is allowed to generate the next
+      // IRQ 14 (newer and faster drives could generate the next IRQ 14 in
+      // 50 microseconds or less).  If the primary status register is read
+      // more than once, there is the possibility of a race between the
+      // drive and the software and the next IRQ 14 could be reset before
+      // the system interrupt controller sees it.
+
+      // Wait for INT 7x -or- wait for not BUSY -or- wait for time out.
+
+      atasub_atapi_delay( dev );
+      atareg_wait_poll( 34, 35 );
+
+      // Read the primary status register.  In keeping with the rules
+      // stated above the primary status register is read only
+      // ONCE.
+
+      status = atapio_inbyte( CB_STAT );
+
+      // If there was a time out error, go to READ_DONE.
+
+      if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+         break;   // go to READ_DONE
+
+      // If BSY=0 and DRQ=1, transfer the data,
+      // even if we find out there is an error later.
+
+      if ( ( status & ( CB_STAT_BSY | CB_STAT_DRQ ) ) == CB_STAT_DRQ )
+      {
+         // do the slow data transfer thing
+
+         if ( read_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag) )
+         {
+            if ( numSect <= read_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag) )
+            {
+               atasub_xfer_delay();
+               write_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag, 0);
+            }
+         }
+
+         // increment number of DRQ packets
+         drqPackets=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets);
+         drqPackets ++ ;
+         write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets, drqPackets);
+
+         // determine the number of sectors to transfer
+
+         wordCnt = multiCnt ? multiCnt : 1;
+         if ( wordCnt > numSect )
+            wordCnt = numSect;
+         wordCnt = wordCnt * 256;
+
+         // Do the REP INSW to read the data for one block.
+
+         totalBytesXfer=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer);
+         totalBytesXfer += ( wordCnt << 1 );
+         write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer, totalBytesXfer);
+         atapio_rep_inword( CB_DATA, seg, off, wordCnt );
+
+         DELAY400NS;    // delay so device can get the status updated
+
+         // Note: The drive should have dropped DATA REQUEST by now.  If there
+         // are more sectors to transfer, BUSY should be active now (unless
+         // there is an error).
+
+         // Decrement the count of sectors to be transferred
+         // and increment buffer address.
+
+         numSect = numSect - ( multiCnt ? multiCnt : 1 );
+         seg = seg + ( 32 * ( multiCnt ? multiCnt : 1 ) );
+      }
+
+      // So was there any error condition?
+
+      if ( status & ( CB_STAT_BSY | CB_STAT_DF | CB_STAT_ERR ) )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 31);
+         break;   // go to READ_DONE
+      }
+
+      // DRQ should have been set -- was it?
+
+      if ( ( status & CB_STAT_DRQ ) == 0 )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 32);
+         break;   // go to READ_DONE
+      }
+
+      // If all of the requested sectors have been transferred, make a
+      // few more checks before we exit.
+
+      if ( numSect < 1 )
+      {
+         // Since the drive has transferred all of the requested sectors
+         // without error, the drive should not have BUSY, DEVICE FAULT,
+         // DATA REQUEST or ERROR active now.
+
+         atasub_atapi_delay( dev );
+         status = atapio_inbyte( CB_STAT );
+         if ( status & ( CB_STAT_BSY | CB_STAT_DF | CB_STAT_DRQ | CB_STAT_ERR ) )
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 33);
+            break;   // go to READ_DONE
+         }
+
+         // All sectors have been read without error, go to READ_DONE.
+
+         break;   // go to READ_DONE
+
+      }
+
+      // This is the end of the read loop.  If we get here, the loop is
+      // repeated to read the next sector.  Go back to READ_LOOP.
+
+   }
+
+   // read the output registers and trace the command.
+   atasub_trace_command();
+
+   // READ_DONE:
+
+   // For interrupt mode, restore the INT 7x vector.
+   // int_restore_int_vect();
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+      return 1;
+   return 0;
+}
+
+//*************************************************************
+//
+// atareg_pio_data_out_lba() - Easy way to execute a PIO Data In command
+//                          using an LBA sector address.
+//
+//*************************************************************
+
+Bit16u atareg_pio_data_out_lba( /* int */ dev, /* int */ cmd,
+                          /* int */ fr, /* int */ sc,
+                          /* long */ lba,
+                          /* unsigned */ seg, /* unsigned */ off,
+                          /* int */ numSect, /* int */ multiCnt )
+Bit16u dev, cmd, fr, sc, seg, off, numSect, multiCnt;
+Bit32u lba;
+{
+   Bit16u cyl;
+   Bit16u head, sect;
+   sect = (Bit16u) ( lba & 0x000000ffL );
+   lba = lba >> 8;
+   cyl = (Bit16u) ( lba & 0x0000ffff );
+   lba = lba >> 16;
+   head = ( (Bit16u) ( lba & 0x0fL ) ) | 0x40;
+   return atareg_pio_data_out( dev, cmd,
+                            fr, sc,
+                            cyl, head, sect,
+                            seg, off,
+                            numSect, multiCnt );
+}
+
+//*************************************************************
+//
+// atareg_pio_data_out() - Execute a PIO Data Out command.
+//
+// See ATA-2 Section 9.4, ATA-3 Section 9.4,
+// ATA-4 Section 8.7 Figure 11.
+//
+//*************************************************************
+
+Bit16u atareg_pio_data_out(/* int */ dev, /* int */ cmd,
+                     /* int */ fr, /* int */ sc,
+                     /* unsigned int */ cyl, /* int */ head, /* int */ sect,
+                     /* unsigned */ seg, /* unsigned */ off,
+                     /* int */ numSect, /* int */ multiCnt )
+Bit16u dev, cmd, fr, sc, cyl, head, sect, seg, off, numSect, multiCnt;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit8u  devHead;
+   Bit8u  devCtrl;
+   Bit8u  cylLow;
+   Bit8u  cylHigh;
+   Bit8u  status;
+   Bit32u loopFlag = 1;
+   Bit16u wordCnt;
+   Bit32u drqPackets,totalBytesXfer;
+
+   // mark start of PDO cmd in low level trace
+
+   // setup register values and adjust parameters
+
+   // devCtrl = CB_DC_HD15 | ( read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) ? 0 : CB_DC_NIEN );
+   devCtrl = CB_DC_HD15 | CB_DC_NIEN;
+   devHead = dev ? CB_DH_DEV1 : CB_DH_DEV0;
+   devHead = devHead | ( head & 0x4f );
+   cylLow = cyl & 0x00ff;
+   cylHigh = ( cyl & 0xff00 ) >> 8;
+   // these commands transfer only 1 sector
+   if ( cmd == CMD_WRITE_BUFFER )
+      numSect = 1;
+   // only Write Multiple and CFA Write Multiple W/O Erase uses multCnt
+   if (    ( cmd != CMD_WRITE_MULTIPLE )
+        && ( cmd != CMD_CFA_WRITE_MULTIPLE_WO_ERASE )
+      )
+      multiCnt = 1;
+
+   // Reset error return data.
+   atasub_zero_return_data();
+
+   // Set command time out.
+   atatmr_set_timeout();
+
+   // Select the drive - call the atasub_select function.
+   // Quit now if this fails.
+
+   if ( atasub_select( dev ) )
+   {
+      atasub_trace_command();
+      return 1;
+   }
+
+   // Set up all the registers except the command register.
+
+   atapio_outbyte( CB_DC, devCtrl );
+   atapio_outbyte( CB_FR, fr );
+   atapio_outbyte( CB_SC, sc );
+   atapio_outbyte( CB_SN, sect );
+   atapio_outbyte( CB_CL, cylLow );
+   atapio_outbyte( CB_CH, cylHigh );
+   atapio_outbyte( CB_DH, devHead );
+
+   // For interrupt mode,
+   // Take over INT 7x and initialize interrupt controller
+   // and reset interrupt flag.
+
+   // int_save_int_vect();
+
+   // Start the command by setting the Command register.  The drive
+   // should immediately set BUSY status.
+
+   atapio_outbyte( CB_CMD, cmd );
+
+   // Waste some time by reading the alternate status a few times.
+   // This gives the drive time to set BUSY in the status register on
+   // really fast systems.  If we don't do this, a slow drive on a fast
+   // system may not set BUSY fast enough and we would think it had
+   // completed the command when it really had not even started the
+   // command yet.
+
+   DELAY400NS;
+
+   // Wait for not BUSY or time out.
+   // Note: No interrupt is generated for the
+   // first sector of a write command.  Well...
+   // that's not really true we are working with
+   // a PCMCIA PC Card ATA device.
+
+   atasub_atapi_delay( dev );
+   while ( 1 )
+   {
+      status = atapio_inbyte( CB_ASTAT );
+      if ( ( status & CB_STAT_BSY ) == 0 )
+         break;
+      if ( atatmr_chk_timeout() )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 47);
+         loopFlag = 0;
+         break;
+      }
+   }
+
+   // If we are using interrupts and we just got an interrupt, this is
+   // wrong.  The drive must not generate an interrupt at this time.
+
+   // if ( loopFlag && 
+   //      read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) && 
+   //      read_word(ebda_seg,&EbdaData->atadrv_data.int_intr_flag) )
+   // {
+   //    write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 46);
+   //    loopFlag = 0;
+   // }
+
+   // This loop writes each sector.
+
+   while ( loopFlag )
+   {
+      // WRITE_LOOP:
+      //
+      // NOTE NOTE NOTE ...  The primary status register (1f7) MUST NOT be
+      // read more than ONCE for each sector transferred!  When the
+      // primary status register is read, the drive resets IRQ 14.  The
+      // alternate status register (3f6) can be read any number of times.
+      // For correct results, transfer the 256 words (REP OUTSW), wait for
+      // INT 7x and then read the primary status register.  AS
+      // SOON as BOTH the primary status register has been read AND the
+      // last of the 256 words has been written, the drive is allowed to
+      // generate the next IRQ 14 (newer and faster drives could generate
+      // the next IRQ 14 in 50 microseconds or less).  If the primary
+      // status register is read more than once, there is the possibility
+      // of a race between the drive and the software and the next IRQ 14
+      // could be reset before the system interrupt controller sees it.
+
+      // If BSY=0 and DRQ=1, transfer the data,
+      // even if we find out there is an error later.
+
+      if ( ( status & ( CB_STAT_BSY | CB_STAT_DRQ ) ) == CB_STAT_DRQ )
+      {
+         // do the slow data transfer thing
+
+         if ( read_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag) )
+         {
+            if ( numSect <= read_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag) )
+            {
+               atasub_xfer_delay();
+               write_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag, 0);
+            }
+         }
+
+         // increment number of DRQ packets
+
+         drqPackets=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets);
+         drqPackets ++ ;
+         write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets, drqPackets);
+
+         // determine the number of sectors to transfer
+
+         wordCnt = multiCnt ? multiCnt : 1;
+         if ( wordCnt > numSect )
+            wordCnt = numSect;
+         wordCnt = wordCnt * 256;
+
+         // Do the REP OUTSW to write the data for one block.
+
+         totalBytesXfer=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer);
+         totalBytesXfer += ( wordCnt << 1 );
+         write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer, totalBytesXfer);
+         atapio_rep_outword( CB_DATA, seg, off, wordCnt );
+
+         DELAY400NS;    // delay so device can get the status updated
+
+         // Note: The drive should have dropped DATA REQUEST and
+         // raised BUSY by now.
+
+         // Decrement the count of sectors to be transferred
+         // and increment buffer address.
+
+         numSect = numSect - ( multiCnt ? multiCnt : 1 );
+         seg = seg + ( 32 * ( multiCnt ? multiCnt : 1 ) );
+      }
+
+      // So was there any error condition?
+
+      if ( status & ( CB_STAT_BSY | CB_STAT_DF | CB_STAT_ERR ) )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 41);
+         break;   // go to WRITE_DONE
+      }
+
+      // DRQ should have been set -- was it?
+
+      if ( ( status & CB_STAT_DRQ ) == 0 )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 42);
+         break;   // go to WRITE_DONE
+      }
+
+      // Wait for INT 7x -or- wait for not BUSY -or- wait for time out.
+
+      atasub_atapi_delay( dev );
+      atareg_wait_poll( 44, 45 );
+
+      // Read the primary status register.  In keeping with the rules
+      // stated above the primary status register is read only ONCE.
+
+      status = atapio_inbyte( CB_STAT );
+
+      // If there was a time out error, go to WRITE_DONE.
+
+      if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+         break;   // go to WRITE_DONE
+
+      // If all of the requested sectors have been transferred, make a
+      // few more checks before we exit.
+
+      if ( numSect < 1 )
+      {
+         // Since the drive has transferred all of the sectors without
+         // error, the drive MUST not have BUSY, DEVICE FAULT, DATA REQUEST
+         // or ERROR status at this time.
+
+         if ( status & ( CB_STAT_BSY | CB_STAT_DF | CB_STAT_DRQ | CB_STAT_ERR ) )
+         {
+            write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 43);
+            break;   // go to WRITE_DONE
+         }
+
+         // All sectors have been written without error, go to WRITE_DONE.
+
+         break;   // go to WRITE_DONE
+
+      }
+
+      //
+      // This is the end of the write loop.  If we get here, the loop
+      // is repeated to write the next sector.  Go back to WRITE_LOOP.
+
+   }
+
+   // read the output registers and trace the command.
+   atasub_trace_command();
+
+   // WRITE_DONE:
+
+   // For interrupt mode, restore the INT 7x vector.
+   // int_restore_int_vect();
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+      return 1;
+   return 0;
+}
+
+//*************************************************************
+//
+// atareg_packet() - Execute an ATAPI Packet (A0H) command.
+//
+// See ATA-4 Section 9.10, Figure 14.
+//
+//*************************************************************
+// Notes from cbbochs@free.fr
+// head and tail are a hack to be able to read less than 2048bytes 
+// for example when emulated a msdos 512 bytes/sector device
+// Normal use should be head=0 and tail=0
+Bit16u atareg_packet( /* int */ dev,
+                /* unsigned int */ cpbc,
+                /* unsigned int */ cpseg, /* unsigned int */ cpoff,
+                /* int */ dir,
+                /* long */ dpbc,
+                /* unsigned int */ head, /* unsigned int */ tail,
+                /* unsigned int */ dpseg, /* unsigned int */ dpoff )
+Bit16u dev, cpbc, cpseg, cpoff, dpseg, dpoff, head, tail;
+int dir; // signed ! */
+Bit32u dpbc;
+{
+   Bit16u ebda_seg=read_word(0x40,0x0E);
+   Bit8u  devCtrl;
+   Bit8u  devHead;
+   Bit8u  cylLow;
+   Bit8u  cylHigh;
+   Bit8u  frReg;
+   Bit8u  scReg;
+   Bit8u  snReg;
+   Bit8u  status;
+   Bit8u  reason;
+   Bit8u  lowCyl;
+   Bit8u  highCyl;
+   Bit16u byteCnt;
+   Bit16u wordCnt;
+   Bit16u realCnt;
+   Bit16u headCnt;
+   Bit16u tailCnt;
+   Bit16u ndx;
+   Bit32u dpaddr;
+
+   Bit16u slowXferCntr = 0;
+   Bit16u prevFailBit7 = 0;
+   Bit32u drqPackets,totalBytesXfer;
+
+   Bit8u  reg_atapi_reg_dh;
+   Bit16u offset;
+   Bit16u failbits;
+
+   // mark start of PI cmd in low level trace
+
+   // setup register values
+
+   // devCtrl = CB_DC_HD15 | ( read_word(ebda_seg,&EbdaData->atadrv_data.int_use_intr_flag) ? 0 : CB_DC_NIEN );
+   devCtrl = CB_DC_HD15 | CB_DC_NIEN;
+
+   reg_atapi_reg_dh=read_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_dh);
+   reg_atapi_reg_dh = reg_atapi_reg_dh & 0x0f;
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_dh,reg_atapi_reg_dh);
+
+   devHead = ( dev ? CB_DH_DEV1 : CB_DH_DEV0 ) | reg_atapi_reg_dh;
+   cylLow = dpbc & 0x00ff;
+   cylHigh = ( dpbc & 0xff00 ) >> 8;
+   frReg=read_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_fr);
+   scReg=read_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_sc);
+   snReg=read_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_sn);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_fr,0);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_sc,0);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_sn,0);
+   write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_reg_dh,0);
+
+   // Reset error return data.
+   atasub_zero_return_data();
+
+   // Make sure the command packet size is either 12 or 16
+   // and save the command packet size and data.
+   cpbc = cpbc < 12 ? 12 : cpbc;
+   cpbc = cpbc > 12 ? 16 : cpbc;
+   write_word(ebda_seg,&EbdaData->atadrv_data.reg_atapi_cp_size, cpbc);
+   offset=cpoff;
+
+   for ( ndx = 0; ndx < cpbc; ndx ++ )
+   {
+      write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_cp_data[ndx],read_byte(cpseg,offset));
+      offset++;
+   }
+
+   // Set command time out.
+
+   atatmr_set_timeout();
+
+   // Select the drive - call the atasub_select function.
+   // Quit now if this fails.
+
+   if ( atasub_select( dev ) )
+   {
+      atasub_trace_command();
+      write_dword(ebda_seg,&EbdaData->atadrv_data.reg_atapi_max_bytes, 65536L);    // reset max bytes
+      return 1;
+   }
+
+   // Set up all the registers except the command register.
+
+   atapio_outbyte( CB_DC, devCtrl );
+   atapio_outbyte( CB_FR, frReg );
+   atapio_outbyte( CB_SC, scReg );
+   atapio_outbyte( CB_SN, snReg );
+   atapio_outbyte( CB_CL, cylLow );
+   atapio_outbyte( CB_CH, cylHigh );
+   atapio_outbyte( CB_DH, devHead );
+
+   // For interrupt mode,
+   // Take over INT 7x and initialize interrupt controller
+   // and reset interrupt flag.
+
+   // int_save_int_vect();
+
+   // Start the command by setting the Command register.  The drive
+   // should immediately set BUSY status.
+
+   atapio_outbyte( CB_CMD, CMD_PACKET );
+
+   // Waste some time by reading the alternate status a few times.
+   // This gives the drive time to set BUSY in the status register on
+   // really fast systems.  If we don't do this, a slow drive on a fast
+   // system may not set BUSY fast enough and we would think it had
+   // completed the command when it really had not even started the
+   // command yet.
+
+   DELAY400NS;
+
+   // Command packet transfer...
+   // Check for protocol failures,
+   // the device should have BSY=1 or
+   // if BSY=0 then either DRQ=1 or CHK=1.
+
+   atasub_atapi_delay( dev );
+   status = atapio_inbyte( CB_ASTAT );
+   if ( status & CB_STAT_BSY )
+   {
+      // BSY=1 is OK
+   }
+   else
+   {
+      if ( status & ( CB_STAT_DRQ | CB_STAT_ERR ) )
+      {
+         // BSY=0 and DRQ=1 is OK
+         // BSY=0 and ERR=1 is OK
+      }
+      else
+      {
+         failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+         failbits |= FAILBIT0;  // not OK
+         write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+      }
+   }
+
+   // Command packet transfer...
+   // Poll Alternate Status for BSY=0.
+
+   while ( 1 )
+   {
+      status = atapio_inbyte( CB_ASTAT );       // poll for not busy
+      if ( ( status & CB_STAT_BSY ) == 0 )
+         break;
+      if ( atatmr_chk_timeout() )               // time out yet ?
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.to, 1);
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 51);
+         dir = -1;   // command done
+         break;
+      }
+   }
+
+   // Command packet transfer...
+   // Check for protocol failures... no interrupt here please!
+   // Clear any interrupt the command packet transfer may have caused.
+
+   // if ( read_word(ebda_seg,&EbdaData->atadrv_data.int_intr_flag) )
+   // {   
+   //     failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+   //     failbits |= FAILBIT1; 
+   //     write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+   // }
+   // write_word(ebda_seg,&EbdaData->atadrv_data.int_intr_flag, 0);
+
+   // Command packet transfer...
+   // If no error, transfer the command packet.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) == 0 )
+   {
+
+      // Command packet transfer...
+      // Read the primary status register and the other ATAPI registers.
+
+      status = atapio_inbyte( CB_STAT );
+      reason = atapio_inbyte( CB_SC );
+      lowCyl = atapio_inbyte( CB_CL );
+      highCyl = atapio_inbyte( CB_CH );
+
+      // Command packet transfer...
+      // check status: must have BSY=0, DRQ=1 now
+
+      if (    ( status & ( CB_STAT_BSY | CB_STAT_DRQ | CB_STAT_ERR ) )
+           != CB_STAT_DRQ
+         )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 52);
+         dir = -1;   // command done
+      }
+      else
+      {
+         // Command packet transfer...
+         // Check for protocol failures...
+         // check: C/nD=1, IO=0.
+
+         if ( ( reason &  ( CB_SC_P_TAG | CB_SC_P_REL | CB_SC_P_IO ) )
+              || ( ! ( reason &  CB_SC_P_CD ) )
+            )
+         {
+            failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+            failbits |= FAILBIT2; 
+            write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+         }
+         if ( ( lowCyl != cylLow ) || ( highCyl != cylHigh ) )
+         {
+            failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+            failbits |= FAILBIT3;
+            write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+         }
+
+         // Command packet transfer...
+         // trace cdb byte 0,
+         // xfer the command packet (the cdb)
+
+         atapio_rep_outword( CB_DATA, cpseg, cpoff, cpbc >> 1 );
+
+         DELAY400NS;    // delay so device can get the status updated
+      }
+   }
+
+   // Data transfer loop...
+   // If there is no error, enter the data transfer loop.
+   // First adjust the I/O buffer address so we are able to
+   // transfer large amounts of data (more than 64K).
+
+   dpaddr = dpseg;
+   dpaddr = dpaddr << 4;
+   dpaddr = dpaddr + dpoff;
+
+   while ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) == 0 )
+   {
+      // Data transfer loop...
+      // Wait for INT 7x -or- wait for not BUSY -or- wait for time out.
+
+      atasub_atapi_delay( dev );
+      atareg_wait_poll( 53, 54 );
+
+      // Data transfer loop...
+      // If there was a time out error, exit the data transfer loop.
+
+      if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+      {
+         dir = -1;   // command done
+         break;
+      }
+
+      // Data transfer loop...
+      // Read the primary status register.
+
+      status = atapio_inbyte( CB_STAT );
+      reason = atapio_inbyte( CB_SC );
+      lowCyl = atapio_inbyte( CB_CL );
+      highCyl = atapio_inbyte( CB_CH );
+
+      // Data transfer loop...
+      // Exit the read data loop if the device indicates this
+      // is the end of the command.
+
+      if ( ( status & ( CB_STAT_BSY | CB_STAT_DRQ ) ) == 0 )
+      {
+         dir = -1;   // command done
+         break;
+      }
+
+      // Data transfer loop...
+      // The device must want to transfer data...
+      // check status: must have BSY=0, DRQ=1 now.
+
+      if ( ( status & ( CB_STAT_BSY | CB_STAT_DRQ ) ) != CB_STAT_DRQ )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 55);
+         dir = -1;   // command done
+         break;
+      }
+      else
+      {
+         // Data transfer loop...
+         // Check for protocol failures...
+         // check: C/nD=0, IO=1 (read) or IO=0 (write).
+
+         if ( ( reason &  ( CB_SC_P_TAG | CB_SC_P_REL ) )
+              || ( reason &  CB_SC_P_CD )
+            )
+         {
+            failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+            failbits |= FAILBIT4; 
+            write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+         }
+         if ( ( reason & CB_SC_P_IO ) && dir )
+         {
+            failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+            failbits |= FAILBIT5; 
+            write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+         }
+      }
+
+      // do the slow data transfer thing
+
+      if ( read_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag) )
+      {
+         slowXferCntr ++ ;
+         if ( slowXferCntr <= read_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag) )
+         {
+            atasub_xfer_delay();
+            write_word(ebda_seg,&EbdaData->atadrv_data.reg_slow_xfer_flag, 0);
+         }
+      }
+
+      // Data transfer loop...
+      // get the byte count, check for zero...
+
+      byteCnt = ( highCyl << 8 ) | lowCyl;
+      if ( byteCnt < 1 )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 60);
+         dir = -1;   // command done
+         break;
+      }
+
+      // Data transfer loop...
+      // and check protocol failures...
+
+      if ( byteCnt > dpbc )
+      {
+         failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+         failbits |= FAILBIT6; 
+         write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+      }
+      failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+      failbits |= prevFailBit7; 
+      write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+
+      prevFailBit7 = 0;
+      if ( byteCnt & 0x0001 )
+         prevFailBit7 = FAILBIT7;
+
+      // Data transfer loop...
+      // make sure we don't overrun the caller's buffer
+
+      if ( ( read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer) + byteCnt ) 
+           > read_dword(ebda_seg,&EbdaData->atadrv_data.reg_atapi_max_bytes ))
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 59);
+         dir = -1;   // command done
+         break;
+      }
+
+      // increment number of DRQ packets
+
+      drqPackets=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets);
+      drqPackets ++ ;
+      write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.drqPackets, drqPackets);
+
+      // Data transfer loop...
+      // transfer the data and update the i/o buffer address
+      // and the number of bytes transfered.
+
+      totalBytesXfer=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer);
+
+      // take out head and tail
+      realCnt = byteCnt;
+      headCnt = 0;
+      tailCnt = 0;
+
+      // if we have to take out head bytes
+      if(head>0)
+      {
+        if(head>=byteCnt)
+        {
+          headCnt=byteCnt;
+          head-=byteCnt;
+          realCnt=0;
+        }
+        else
+        {
+          headCnt=head;
+          realCnt-=head;
+          head=0;
+        }
+      }
+        
+      // if we have to take out tail bytes
+      if(tail>0)
+      {
+        if(totalBytesXfer+byteCnt>(dpbc-tail))
+        {
+          if(tail>=byteCnt)
+          {
+            tailCnt=byteCnt;
+            tail-=byteCnt;
+            realCnt=0;
+          }
+          else
+          {
+            tailCnt=tail;
+            realCnt-=tail;
+            tail=0;
+          }
+        }
+      }
+
+      wordCnt = ( byteCnt >> 1 ) + ( byteCnt & 0x0001 );
+
+      totalBytesXfer=read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer);
+      totalBytesXfer += ( wordCnt << 1 );
+      write_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer, totalBytesXfer);
+
+      wordCnt = ( realCnt >> 1 ) + ( realCnt & 0x0001 );
+
+      dpseg = (unsigned int) ( dpaddr >> 4 );
+      dpoff = (unsigned int) ( dpaddr & 0x0000000fL );
+
+      if ( dir )
+      {
+         if((headCnt!=0)||(tailCnt!=0))
+           panic("");
+
+         atapio_rep_outword( CB_DATA, dpseg, dpoff, wordCnt );
+      }
+      else
+      {
+         atapio_dummyinb(CB_DATA,headCnt);
+         atapio_rep_inword( CB_DATA, dpseg, dpoff, wordCnt );
+         atapio_dummyinb(CB_DATA,tailCnt);
+      }
+      dpaddr = dpaddr + byteCnt;
+
+      DELAY400NS;    // delay so device can get the status updated
+   }
+
+   // End of command...
+   // Wait for interrupt or poll for BSY=0,
+   // but don't do this if there was any error or if this
+   // was a commmand that did not transfer data.
+
+   if ( ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) == 0 ) && ( dir >= 0 ) )
+   {
+      atasub_atapi_delay( dev );
+      atareg_wait_poll( 56, 57 );
+   }
+
+   // Final status check, only if no previous error.
+
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) == 0 )
+   {
+      // Final status check...
+      // Read the primary status register and other regs.
+
+      status = atapio_inbyte( CB_STAT );
+      reason = atapio_inbyte( CB_SC );
+      lowCyl = atapio_inbyte( CB_CL );
+      highCyl = atapio_inbyte( CB_CH );
+
+      // Final status check...
+      // check for any error.
+
+      if ( status & ( CB_STAT_BSY | CB_STAT_DRQ | CB_STAT_ERR ) )
+      {
+         write_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec, 58);
+      }
+   }
+
+   // Final status check...
+   // Check for protocol failures...
+   // check: C/nD=1, IO=1.
+
+   if ( ( reason & ( CB_SC_P_TAG | CB_SC_P_REL ) )
+        || ( ! ( reason & CB_SC_P_IO ) )
+        || ( ! ( reason & CB_SC_P_CD ) )
+      )
+      {
+         failbits=read_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits);
+         failbits |= FAILBIT8; 
+         write_word(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.failbits,failbits);
+      }
+
+   // Done...
+   atasub_trace_command();
+
+   // For interrupt mode, restore the INT 7x vector.
+   // int_restore_int_vect();
+
+   write_dword(ebda_seg,&EbdaData->atadrv_data.reg_atapi_max_bytes, 65536L);    // reset max bytes
+   if ( read_byte(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.ec) )
+      return 1;
+   return 0;
+}
+
+// ---------------------------------------------------------------------------
+// End of ATA/ATAPI Driver
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Start of ATA/ATAPI generic functions
+// ---------------------------------------------------------------------------
+
+  void  
+ata_clear_buffer(bufseg,bufoff,size)
+  Bit16u bufseg, bufoff, size;
+{
+  memsetb(bufseg,bufoff,0,size);
+}
+
+  Bit16u 
+ata_identify(device, bufseg, bufoff)
+  Bit16u device, bufseg, bufoff;
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit16u status;
+  Bit8u  atatype=read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[device]);
+
+  if(atatype==REG_CONFIG_TYPE_ATAPI) {
+    // write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_delay_flag,0x01);
+    status=atareg_pio_data_in_lba(device,CMD_IDENTIFY_DEVICE_PACKET, 0, 0, 0L, bufseg,bufoff, 1, 0);
+    }
+  else if(atatype==REG_CONFIG_TYPE_ATA) {
+    status=atareg_pio_data_in_lba(device,CMD_IDENTIFY_DEVICE, 0, 0, 0L, bufseg,bufoff, 1, 0);
+    }
+  else return 0x0001;
+
+  return 0x0000;
+}
+
+  Bit16u 
+atapi_get_sense(device)
+  Bit16u device;
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  atacmd[12];
+  Bit8u  buffer[128];
+  Bit8u i;
+
+  // Request SENSE
+  ata_clear_buffer(get_SS(),atacmd,12);
+  //write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_delay_flag,0x01);
+  atacmd[0]=0x03;    
+  atacmd[4]=0x20;    
+  if(atareg_packet(device,12,get_SS(),atacmd,0, 128L, 0,0, get_SS(), buffer)!=0)
+    return 0x0002;
+  if((buffer[0]&0x7e)==0x70){
+    
+    return (((Bit16u)buffer[2]&0x0f)*0x100)+buffer[12];
+    }
+
+  return 0;
+}
+
+  Bit16u 
+atapi_is_ready(device)
+  Bit16u device;
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  atacmd[12];
+  Bit8u  buffer[128];
+
+  // Test Unit Ready
+  ata_clear_buffer(get_SS(),atacmd,12);
+  //write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_delay_flag,0x01);
+  if(atareg_packet(device,12,get_SS(),atacmd,0, 128L, 0,0, get_SS(), buffer)!=0)
+    return 0x000f;
+  if(atapi_get_sense(device)!=0){
+    // try to send Test Unit Ready again
+    ata_clear_buffer(get_SS(),atacmd,12);
+    if(atareg_packet(device,12,get_SS(),atacmd,0, 128L, 0,0, get_SS(), buffer)!=0)
+      return 0x000f;
+    return atapi_get_sense(device);
+    }
+  return 0;
+}
+
+  Bit16u
+atapi_is_cdrom(device)
+  Bit8u device;
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  ldev = device & 0x7f;  
+
+  if(ldev>=BX_MAX_ATA_DEVICES)
+    return 0;
+
+  if(read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[ldev])!=REG_CONFIG_TYPE_ATAPI)
+    return 0;
+
+  if(read_byte(ebda_seg,&EbdaData->atadrv_data.atapi_device_type[ldev])!=ATAPI_TYPE_CDROM)
+    return 0;
+
+  return 1;
+}
+
+  Bit16u 
+atapi_read_sectors2048(device,count,lba,bufseg,bufoff)
+  Bit16u device,bufseg,bufoff,count;
+  Bit32u lba;
+{
+  return (atapi_read_sectors(device,count,lba,0,0,bufseg,bufoff));
+}
+
+// count : number of 2048B/sect sectors
+// lba : lba on cd
+// before : # 512B blocks to forget before reading
+// after : # 512B blocks to forget after reading
+  Bit16u 
+atapi_read_sectors512(device,count,lba,before,after,bufseg,bufoff)
+  Bit16u device,count,bufseg,bufoff,before,after;
+  Bit32u lba;
+{
+  return (atapi_read_sectors(device,count,lba,before*0x200,after*0x200,bufseg,bufoff));
+}
+
+  Bit16u 
+atapi_read_sectors(device,count,lba,head,tail,bufseg,bufoff)
+  Bit16u device,bufseg,bufoff,count,head,tail;
+  Bit32u lba;
+// Take care, the buffer should be big enough
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  atacmd[12];
+  Bit16u status;
+  Bit16u lcount,lhead,ltail;
+  Bit32u llba;
+
+  // We set the maximum transfer size to 32K -> 0x10 sectors
+  // Bigger transfer size are split in 32K chunks
+  llba=lba;
+  while(count>0) {
+
+    // Maximum 0x10 sectors
+    if(count>0x10) lcount=0x10;
+    else lcount=count;
+
+    // New count. Now we have to read lcount
+    count-=lcount;
+
+    // test if unit ready
+    if((status=atapi_is_ready(device))!=0) {
+      return 1;
+      }
+    //write_byte(ebda_seg,&EbdaData->atadrv_data.reg_atapi_delay_flag,0x01);
+
+    ata_clear_buffer(get_SS(),atacmd,12);
+    atacmd[0]=0x28;                // READ command
+    atacmd[7]=(lcount&0xff00)>>8;  // Sectors
+    atacmd[8]=(lcount&0x00ff);     // Sectors
+    atacmd[2]=(llba&0xff000000)>>24;
+    atacmd[3]=(llba&0x00ff0000)>>16;
+    atacmd[4]=(llba&0x0000ff00)>>8;
+    atacmd[5]=(llba&0x000000ff);
+
+    // We have to take the tail bytes into account only if last read
+    if(count==0)ltail=tail;
+    else ltail=0;
+
+    // We have to take the tail bytes into account only if first read
+    if(llba==lba)lhead=head;
+    else lhead=0;
+
+    // Read sectors
+    if(atareg_packet(device,12,get_SS(),atacmd,0, (Bit32u)lcount*2048L, lhead, ltail, bufseg, bufoff)!=0)
+      return 2;
+
+    // Check if all sectors read
+    if(read_dword(ebda_seg,&EbdaData->atadrv_data.reg_cmd_info.totalBytesXfer)!=((Bit32u)lcount*2048L))
+      return 3;
+
+    // increment lba
+    llba+=lcount;
+
+    // increment pointer by number of read bytes
+    bufoff+=(lcount*2048)-lhead;
+    // and normalize
+    bufseg+=(bufoff/16);
+    bufoff%=16;
+    }
+
+  return 0;
+}
+
+  void 
+ata_read_atapi_device_types( )
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  buffer[0x800];
+  Bit16u device;
+  Bit8u  type;
+  
+  atareg_reset(0,0);
+
+  for(device=0;device<2;device++) {
+    if(read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[device])==REG_CONFIG_TYPE_ATAPI) {
+      ata_clear_buffer(get_SS(),buffer,0x800);
+      ata_identify(device,get_SS(),buffer);
+      
+      type=buffer[1]&0x1F;
+      }
+    else type=0;
+  
+    write_byte(ebda_seg,&EbdaData->atadrv_data.atapi_device_type[device],type);
+    }
+}
+
+  Bit16u
+ata_is_ata(device)
+  Bit8u device;
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  ldev = device & 0x7f;  
+  
+  if(ldev>=BX_MAX_ATA_DEVICES)
+    return 0;
+
+  if(read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[ldev])!=REG_CONFIG_TYPE_ATA)
+    return 0;
+
+  return 1;
+}
+
+  Bit16u
+ata_is_atapi(device)
+  Bit8u device;
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  ldev = device & 0x7f;  
+
+  if(ldev>=BX_MAX_ATA_DEVICES)
+    return 0;
+
+  if(read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[ldev])!=REG_CONFIG_TYPE_ATAPI)
+    return 0;
+
+  return 1;
+}
+
+static char device_types[][10]={"Hard-Disk","CD-ROM","Unknown"};
+static char ata_atapi[][8]={"None","Unknown","ATA","ATAPI"};
+
+  void 
+ata_show_devices( )
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  buffer[0x800],model[41],version;
+  Bit8u  atapidev, atatype;
+  Bit16u i, device, type, ataversion;
+ 
+  atareg_reset(0,0);
+
+  for(device=0;device<2;device++) {
+    atatype=read_byte(ebda_seg,&EbdaData->atadrv_data.reg_config_info[device]);
+    atapidev=read_byte(ebda_seg,&EbdaData->atadrv_data.atapi_device_type[device]);
+    if(atatype>REG_CONFIG_TYPE_NONE){
+      if(atatype>REG_CONFIG_TYPE_UNKN){
+        ata_clear_buffer(get_SS(),buffer,0x800);
+        if(ata_identify(device, get_SS(), buffer)==0){
+
+          // Read ATA/ATAPI version
+          ataversion=(buffer[161]<<8)|buffer[160];
+          for(version=15;version>0;version--) { 
+            if((ataversion&(1<<version))!=0)
+              break;
+              }
+
+          // Read model name
+          for(i=0;i<20;i++){
+            model[(i*2)]=buffer[(i*2)+54+1];
+            model[(i*2)+1]=buffer[(i*2)+54];
+            }
+          model[40]=0x00;
+          for(i=39;i>0;i--){
+            if(model[i]==0x20)model[i]=0x00;
+            else break;
+            }
+
+          if(atatype==REG_CONFIG_TYPE_ATA)type=0;
+          else if(atapidev==ATAPI_TYPE_CDROM)type=1;
+          else type=2;
+
+          bios_printf(BIOS_PRINTF_SCREEN, "IDE0-%d: ",device);
+          i=0; while(model[i]) bios_printf(BIOS_PRINTF_SCREEN, "%c",model[i++]);
+          bios_printf(BIOS_PRINTF_SCREEN, " %s-%d %s device\n",ata_atapi[atatype],version,device_types[type]);
+          }
+        else
+          bios_printf(BIOS_PRINTF_SCREEN, "IDE0-%d: unknown device\n",device);
+        }
+      }
+    }
+  bios_printf(BIOS_PRINTF_SCREEN, "\n");
+}
+
+// ---------------------------------------------------------------------------
+// End of ATA/ATAPI generic functions
+// ---------------------------------------------------------------------------
+
+#endif // BX_USE_ATADRV
+
+#if BX_ELTORITO_BOOT
+
+// ---------------------------------------------------------------------------
+// Start of El-Torito boot functions
+// ---------------------------------------------------------------------------
+
+//
+// cdboot contains 0 if floppy/harddisk, 1 otherwise
+// drive contains real/emulated boot drive
+//
+  void
+boot_from_msg(cdboot, drive)
+  Bit16u drive;
+{
+  Bit8u i;
+
+  if(cdboot)i=2;                    // CD-Rom
+  else if((drive&0x0080)==0x00)i=0; // Floppy
+  else if((drive&0x0080)==0x80)i=1; // Hard drive
+  else return;
+  
+  bios_printf(BIOS_PRINTF_SCREEN, "Booting from %s...\n",drivetypes[i]);
+}
+
+  void
+cdemu_init()
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+
+  // the only important data is this one for now
+  write_byte(ebda_seg,&EbdaData->cdemu_data.active,0x00);
+}
+
+  Bit8u
+cdemu_isactive()
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+
+  // printf("cdemu_isactive %02x\n",read_byte(ebda_seg,&EbdaData->cdemu_data.active));
+
+  return(read_byte(ebda_seg,&EbdaData->cdemu_data.active));
+}
+
+  Bit8u
+cdemu_emulated_drive()
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+
+  // printf("cdemu_emulated_drive %02x\n",read_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive));
+
+  return(read_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive));
+}
+
+  void
+cdrom_bootfailed_msg( code )
+  Bit16u code;
+{
+  bios_printf(BIOS_PRINTF_SCREEN, "CDROM boot failure code : %04x\n",code);
+  
+  return;
+}
+
+static char isotag[6]="CD001";
+static char eltorito[24]="EL TORITO SPECIFICATION";
+//
+// Returns ah: emulated drive, al: error code
+//
+  Bit16u 
+cdrom_boot()
+{
+  Bit16u ebda_seg = read_word(0x0040, 0x000E);
+  Bit8u  buffer[2048];
+  Bit32u lba;
+  Bit16u boot_segment, nbsectors, i, error;
+
+  // Basic types checks
+  // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 1. Should be fixed if two ide interface
+  if(!ata_is_atapi(1))   return 1;
+  if(!atapi_is_cdrom(1)) return 2;
+
+  // Read the Boot Record Volume Descriptor
+  if((error=atapi_read_sectors2048(1,1,0x11L,get_SS(),buffer))!=0)
+    return 3;
+
+  // Validity checks
+  if(buffer[0]!=0)return 4;
+  for(i=0;i<5;i++){
+    if(buffer[1+i]!=read_byte(0xf000,&isotag[i]))return 5;
+   }
+  for(i=0;i<23;i++)
+    if(buffer[7+i]!=read_byte(0xf000,&eltorito[i]))return 6;
+  
+  // ok, now we calculate the Boot catalog address
+  lba=buffer[0x4A]*0x1000000+buffer[0x49]*0x10000+buffer[0x48]*0x100+buffer[0x47];
+
+  // And we read the Boot Catalog
+  if(atapi_read_sectors2048(1,1,lba,get_SS(),buffer)!=0)
+    return 7;
+ 
+  // Validation entry
+  if(buffer[0x00]!=0x01)return 8;   // Header
+  if(buffer[0x01]!=0x00)return 9;   // Platform
+  if(buffer[0x1E]!=0x55)return 10;  // key 1
+  if(buffer[0x1F]!=0xAA)return 10;  // key 2
+
+  // Initial/Default Entry
+  if(buffer[0x20]!=0x88)return 11; // Bootable
+
+  write_byte(ebda_seg,&EbdaData->cdemu_data.media,buffer[0x21]);
+  if(buffer[0x21]<4)
+    write_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive,0x00);
+  else
+    write_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive,0x80);
+
+  // FIXME ElTorito Harddisk. current code can only emulate a floppy
+  if(read_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive)!=0x00)
+    panic("El-Torito: Cannot boot as a harddisk yet\n");
+
+  // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 1. Should be fixed if two ide interface
+  write_byte(ebda_seg,&EbdaData->cdemu_data.device,0x01);
+
+  boot_segment=buffer[0x23]*0x100+buffer[0x22];
+  if(boot_segment==0x0000)boot_segment=0x07C0;
+
+  write_word(ebda_seg,&EbdaData->cdemu_data.load_segment,boot_segment);
+  write_word(ebda_seg,&EbdaData->cdemu_data.buffer_segment,0x0000);
+  
+  nbsectors=buffer[0x27]*0x100+buffer[0x26];
+  write_word(ebda_seg,&EbdaData->cdemu_data.sector_count,nbsectors);
+
+  lba=buffer[0x2B]*0x1000000+buffer[0x2A]*0x10000+buffer[0x29]*0x100+buffer[0x28];
+  write_dword(ebda_seg,&EbdaData->cdemu_data.ilba,lba);
+
+  // And we read the image in the buffer
+  // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 1. Should be fixed if two ide interface
+  if(atapi_read_sectors512(1,1+(nbsectors-1)/4,lba,0,3-((nbsectors-1)%4),boot_segment,0)!=0)
+    return 12;
+
+  // Remeber the media type
+  switch(read_byte(ebda_seg,&EbdaData->cdemu_data.media)) {
+    case 0x01:  // 1.2M floppy
+      write_word(ebda_seg,&EbdaData->cdemu_data.vsectors,15);
+      write_word(ebda_seg,&EbdaData->cdemu_data.vcylinders,80);
+      write_word(ebda_seg,&EbdaData->cdemu_data.vheads,2);
+      break;
+    case 0x02:  // 1.44M floppy
+      write_word(ebda_seg,&EbdaData->cdemu_data.vsectors,18);
+      write_word(ebda_seg,&EbdaData->cdemu_data.vcylinders,80);
+      write_word(ebda_seg,&EbdaData->cdemu_data.vheads,2);
+      break;
+    case 0x03:  // 2.88M floppy
+      write_word(ebda_seg,&EbdaData->cdemu_data.vsectors,36);
+      write_word(ebda_seg,&EbdaData->cdemu_data.vcylinders,80);
+      write_word(ebda_seg,&EbdaData->cdemu_data.vheads,2);
+      break;
+   }
+
+  // Increase bios installed hardware number of floppy, booted from floppy
+  if(read_byte(ebda_seg,&EbdaData->cdemu_data.media)!=0)
+    if(read_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive)==0x00)
+      write_byte(0x40,0x10,read_byte(0x40,0x10)|0x41);
+  
+  // everything is ok, so from now on, the emulation is active
+  if(read_byte(ebda_seg,&EbdaData->cdemu_data.media)!=0)
+    write_byte(ebda_seg,&EbdaData->cdemu_data.active,0x01);
+
+  // if we are emulating a device
+  if(read_byte(ebda_seg,&EbdaData->cdemu_data.media)!=0) {
+    // Return emulated drive + noerror 
+    return (read_byte(ebda_seg,&EbdaData->cdemu_data.emulated_drive)*0x100)+0;
+    }
+  else {
+    // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 0x81. 
+    // Return boot device + noerror. Win2000 cd boot needs this
+    return 0x8100;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// End of El-Torito boot functions
+// ---------------------------------------------------------------------------
+#endif // BX_ELTORITO_BOOT
 
 
 #asm
@@ -3820,71 +8262,131 @@ carry_set:
 ;- INT13h (relocated) -
 ;----------------------
 int13_relocated:
+#if BX_ELTORITO_BOOT
+  push  ax
+  push  bx
+  push  cx
+  push  dx
+
+// check if emulation active
+  call  _cdemu_isactive
+  cmp   al,#0x00
+  je    int13_cdemu_inactive
+
+// check if access to the emulated drive
+  call  _cdemu_emulated_drive
+  pop dx
+  push dx
+  cmp   al,dl                ;; int13 on emulated drive
+  je    int13_cdemu
+
+// otherwise 
+  and   dl,#0x80             ;; mask to get device class
+  cmp   al,dl                ;; al is 0x00 or 0x80
+  jne   int13_cdemu_inactive ;; inactive for device class
+  
+int13_cdemu_active:
+  pop   dx
+  pop   cx
+  pop   bx
+  pop   ax
+  dec   dl                   ;; real drive is dl - 1
+  jmp   int13_legacy
+  
+int13_cdemu_inactive:
+  pop   dx
+  pop   cx
+  pop   bx
+  pop   ax
+
+int13_legacy:
+
+#endif // BX_ELTORITO_BOOT
+
   pushf
   test  dl, #0x80
   jz    int13_floppy
 
+#if BX_ELTORITO_BOOT
+int13_disk_or_cdrom:
+    push  ax
+    push  bx
+    push  cx
+    push  dx
+
+    push  dx
+    call  _atapi_is_cdrom
+    pop   dx
+    cmp   al, #0x00
+
+    pop   dx
+    pop   cx
+    pop   bx
+    pop   ax
+    jne   int13_cdrom
+#endif // BX_ELTORITO_BOOT
+
 int13_disk:
   ;; pushf already done
   push  es
+  push  ds
+  push  ss
+  pop   ds
   pusha
-  call  _int13_function
+  call  _int13_harddisk
   popa
+  pop   ds
   pop   es
   popf
   //  JMPL(iret_modify_cf)
   jmp iret_modify_cf
+
 int13_floppy:
   popf
   // JMPL(int13_diskette)
   jmp int13_diskette
 
 
-;----------------------
-;- INT19h (relocated) -
-;----------------------
-int19_relocated:
-  ;; check bit 5 in CMOS reg 0x2d.  load either 0x00 or 0x80 into DL
-  ;; in preparation for the intial INT 13h (0=floppy A:, 0x80=C:)
-  ;;   0: system boot sequence, first drive C: then A:
-  ;;   1: system boot sequence, first drive A: then C:
+#if BX_ELTORITO_BOOT
+int13_cdrom:
+  ;; pushf already done
+  ;; popf
+  ;; pushf
+  push  es
+  push  ds
+  push  ss
+  pop   ds
+  pusha
+  call  _int13_cdrom
+  popa
+  pop   ds
+  pop   es
+  popf
+ 
+  //  JMPL(iret_modify_cf)
+  jmp iret_modify_cf
 
-  mov  al, #0x2d
-  out  0x70, al
-  in   al, 0x71
-  and  al, #0x20
-  jz   int19_usedisk
+int13_cdemu:
+  pop   dx
+  pop   cx
+  pop   bx
+  pop   ax
 
-int19_usefloppy:
-  mov  dl, #0x00
-  jmp  int19_loadsector
+  push  ds
+  push  ss
+  pop   ds
 
-int19_usedisk:
-  mov  dl, #0x80
+  pushf
+  push  es
+  pusha
+  call  _int13_cdemu
+  popa
+  pop   es
+  popf
 
-int19_loadsector:
-  mov  ax, #0x0000
-  mov  es, ax         ;; seg = 0000
-  mov  bx, #0x7c00    ;; load boot sector into 0000:7c000
-  mov  ah, #0x02      ;; function 2, read diskette sector
-  mov  al, #0x01      ;; read 1 sector
-  mov  ch, #0x00      ;; track 0
-  mov  cl, #0x01      ;; sector 1
-  mov  dh, #0x00      ;; head 0
-  int #0x13
-  jc int19_load_failed
-  ;; read sector ok.  now check floppy signature.
-  mov dh, #0x01
-  cmp WORD [0x7DFE], #0xAA55
-  jne bootstrap_problem
-  JMP_AP(0x0000, 0x7c00)  ;; sig ok.  Now execute the code.
-int19_load_failed:
-  xor dh,dh
-bootstrap_problem:
-  ;; if dh=0, load failed.  if dh=1, signature check failed.
-  push dx
-  call _boot_failure_msg
-  hlt
+  pop   ds
+  jmp iret_modify_cf
+#endif // BX_ELTORITO_BOOT
 
 ;----------
 ;- INT18h -
@@ -4179,6 +8681,8 @@ post_d1_type47:
   ;; 0x2b    landing zone high        D
   ;; 0x2c    sectors/track            E
 ;;; Fill EBDA table for hard disk 1.
+  mov  ax, #EBDA_SEG
+  mov  ds, ax
   mov  al, #0x28
   out  #0x70, al
   in   al, #0x71
@@ -4284,7 +8788,7 @@ hd1_post_checksum_loop:
   not   al  ;; now take 2s complement
   inc   al
   mov   [si], al
-;;; Done filling EBDA table for hard disk 0.
+;;; Done filling EBDA table for hard disk 1.
 
   ret
 
@@ -4534,11 +9038,6 @@ post_default_ints:
   /* keyboard end of buffer pointer */
   mov  0x041C, bx
 
-  /* keyboard buffer */
-// for (i=0; i<16; i++)
-//    bx_mem.access_physical(0x41E + i*2, 2, BX_WRITE, &zero16);
-
-
   /* keyboard pointer to start of buffer */
   mov  bx, #0x001E
   mov  0x0480, bx
@@ -4550,26 +9049,15 @@ post_default_ints:
   /* (mch) Keyboard self-test */
   mov  al, #0xaa
   out  0x64, al
+kbd_wait:
+  in   al, 0x64
+  test al, #0x01
+  jz   kbd_wait
   in   al, 0x60
   cmp  al, #0x55
   je   keyboard_ok
   call _keyboard_panic
- keyboard_ok:
-
-
-#if BX_USE_PS2_MOUSE
-  in   al, 0xa1
-  and  al, #0xef
-  out  0xa1, al
-
-  // hack to tell CMOS & BIOS data area that we have a mouse
-
-  mov  al, #0x14
-  out  0x70, al
-  in   al, 0x71
-  or   al, #0x04
-  out  0x71, al
-#endif
+keyboard_ok:
 
   ;; mov CMOS Equipment Byte to BDA Equipment Word
   mov  ax, 0x0410
@@ -4580,7 +9068,10 @@ post_default_ints:
 
 
   ;; DMA
-  ;; nothing for now
+  mov al, #0xC0
+  out 0xD6, al ; cascade mode of channel 4 enabled
+  mov al, #0x00
+  out 0xD4, al ; unmask channel 4
 
   ;; Parallel setup
   SET_INT_VECTOR(0x0F, #0xF000, #dummy_iret_handler)
@@ -4616,35 +9107,81 @@ post_default_ints:
   ;; Video setup
   SET_INT_VECTOR(0x10, #0xF000, #int10_handler)
 
-  ;; Call extension ROMs - scan C0000 to F4000 in 800 steps
+  ;; Scan for existence of valid expansion ROMS.
+  ;;   Video ROM:   from 0xC0000..0xC7FFF in 2k increments
+  ;;   General ROM: from 0xC8000..0xDFFFF in 2k increments
+  ;;   System  ROM: only 0xE0000
+  ;;
+  ;; Header:
+  ;;   Offset    Value
+  ;;   0         0x55
+  ;;   1         0xAA
+  ;;   2         ROM length in 512-byte blocks
+  ;;   3         ROM initialization entry point (FAR CALL)
 
-  mov  bx, #0xc000
-romscan:
+  mov  cx, #0xc000
+rom_scan_loop:
+  mov  ds, cx
+  mov  ax, #0x0004 ;; start with increment of 4 (512-byte) blocks = 2k
+  cmp [0], #0xAA55 ;; look for signature
+  jne  rom_scan_increment
+  mov  al, [2]  ;; change increment to ROM length in 512-byte blocks
+
+  ;; We want our increment in 512-byte quantities, rounded to
+  ;; the nearest 2k quantity, since we only scan at 2k intervals.
+  test al, #0x03
+  jz   block_count_rounded
+  and  al, #0xfc ;; needs rounding up
+  add  al, #0x04
+block_count_rounded:
+
+  xor  bx, bx   ;; Restore DS back to 0000:
   mov  ds, bx
-  mov  ax, 0x0000
-  cmp  ax, #0xAA55
-  jne  notrom
-  xor  ax,ax
-  mov  ds,ax
-  push bx
-  push #3
-  mov  bp,sp
-  db   0xff  ; call 0[bp]
+  push ax       ;; Save AX
+  ;; Push addr of ROM entry point
+  push cx       ;; Push seg
+  push #0x0003  ;; Push offset
+  mov  bp, sp   ;; Call ROM init routine using seg:off on stack
+  db   0xff     ;; call_far ss:[bp+0]
   db   0x5e
   db   0
-  pop  ax
-  pop  bx
-notrom:
-  add  bx,#0x80
-  cmp  bx,#0xf400
-  jne  romscan
-  xor  ax,ax
-  mov  ds,ax
+  cli           ;; In case expansion ROM BIOS turns IF on
+  add  sp, #2   ;; Pop offset value
+  pop  cx       ;; Pop seg value (restore CX)
+  pop  ax       ;; Restore AX
+rom_scan_increment:
+  shl  ax, #5   ;; convert 512-bytes blocks to 16-byte increments
+                ;; because the segment selector is shifted left 4 bits.
+  add  cx, ax
+  cmp  cx, #0xe000
+  jbe  rom_scan_loop
+
+  xor  ax, ax   ;; Restore DS back to 0000:
+  mov  ds, ax
 
   ;; PIC
-  mov  al, #0x00
-  out  0x21, AL ;master pic: all IRQs unmasked
-  out  0xA1, AL ;slave  pic: all IRQs unmasked
+  mov al, #0x11 ; send initialisation commands
+  out 0x20, al
+  out 0xa0, al
+  mov al, #0x08
+  out 0x21, al
+  mov al, #0x70
+  out 0xa1, al
+  mov al, #0x04
+  out 0x21, al
+  mov al, #0x02
+  out 0xa1, al
+  mov al, #0x01
+  out 0x21, al
+  out 0xa1, al
+  mov  al, #0xb8
+  out  0x21, AL ;master pic: unmask IRQ 0, 1, 2, 6
+#if BX_USE_PS2_MOUSE
+  mov  al, #0x8f
+#else
+  mov  al, #0x9f
+#endif
+  out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
 
   call _print_bios_banner
 
@@ -4658,6 +9195,23 @@ notrom:
   ;;
   call floppy_drive_post
 
+#if BX_USE_ATADRV
+  ;;
+  ;; ATA/ATAPI driver setup
+  ;;
+  call _atadrv_init
+  call _atareg_config
+  call _ata_read_atapi_device_types
+  call _ata_show_devices
+#endif // BX_USE_ATADRV
+
+#if BX_ELTORITO_BOOT
+  ;;
+  ;; floppy/harddisk cd emulation
+  ;;
+  call _cdemu_init
+#endif // BX_ELTORITO_BOOT
+ 
   int  #0x19
   //JMP_EP(0x0064) ; INT 19h location
 
@@ -4682,8 +9236,42 @@ int13_handler:
 ;----------
 .org 0xe6f2 ; INT 19h Boot Load Service Entry Point
 int19_handler:
-  //JMPL(int19_relocated)
-  jmp int19_relocated
+
+  ;; int19 was beginning to be really complex, so now it
+  ;; just calls an C function, that does the work
+  ;; it returns in BL the boot drive, and in AX the boot segment
+  ;; the boot segment will be 0x0000 if something has failed
+
+  push bp
+  mov  bp, sp
+
+  ;; drop ds
+  xor  ax, ax
+  mov  ds, ax
+
+  call _int19_function
+  ;; bl contains the boot drive
+  ;; ax contains the boot segment or 0 if failure
+
+  cmp ax, #0x0000
+  je  int19_fail
+
+  mov dl, bl       ;; set drive so guest os find it
+  mov 4[bp], ax    ;; set cs
+  xor ax, ax
+  mov 2[bp], ax    ;; set ip
+  mov [bp], ax     ;; set bp
+  mov ax, #0xaa55  ;; set ok flag
+
+  pop bp
+  iret             ;; Beam me up Scotty
+
+int19_fail:
+  hlt
+
+;; take care, there is no space between
+;; int19 and the System BIOS Configuration Data Table
+
 ;-------------------------------------------
 ;- System BIOS Configuration Data Table
 ;-------------------------------------------
@@ -4951,6 +9539,30 @@ i13d_f01:
 .org 0xef57 ; INT 0Eh Diskette Hardware ISR Entry Point
 int0e_handler:
   push ax
+  push dx
+  mov  dx, #0x03f4
+  in   al, dx
+  and  al, #0xc0
+  cmp  al, #0xc0
+  je   int0e_normal
+  mov  dx, #0x03f5
+  mov  al, #0x08 ; sense interrupt status
+  out  dx, al
+int0e_loop1:
+  mov  dx, #0x03f4
+  in   al, dx
+  and  al, #0xc0
+  cmp  al, #0xc0
+  jne  int0e_loop1
+int0e_loop2:
+  mov  dx, #0x03f5
+  in   al, dx
+  mov  dx, #0x03f4
+  in   al, dx
+  and  al, #0xc0
+  cmp  al, #0xc0
+  je int0e_loop2
+int0e_normal:
   push ds
   mov  ax, #0x0000 ;; segment 0000
   mov  ds, ax
@@ -4960,6 +9572,7 @@ int0e_handler:
   or   al, #0x80 ;; diskette interrupt has occurred
   mov  0x043e, al
   pop  ds
+  pop  dx
   pop  ax
   iret
 
@@ -4979,7 +9592,7 @@ db  0xFF
 db  0x6C
 db  0xF6
 db  0x0F
-db  0x01 ;; most systems default to 8
+db  0x08
 
 
 ;----------------------------------------

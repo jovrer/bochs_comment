@@ -1,10 +1,10 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc,v 1.35 2001/11/14 00:23:08 bdenney Exp $
+// $Id: siminterface.cc,v 1.39 2002/01/30 10:30:52 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 /*
  * gui/siminterface.cc
- * $Id: siminterface.cc,v 1.35 2001/11/14 00:23:08 bdenney Exp $
+ * $Id: siminterface.cc,v 1.39 2002/01/30 10:30:52 cbothamy Exp $
  *
  * Defines the actual link between bx_simulator_interface_c methods
  * and the simulator.  This file includes bochs.h because it needs
@@ -32,6 +32,7 @@ class bx_real_sim_c : public bx_simulator_interface_c {
   int enabled;
 public:
   bx_real_sim_c ();
+  virtual ~bx_real_sim_c ();
   virtual int get_init_done () { return init_done; }
   virtual int set_init_done (int n) { init_done = n; return 0;}
   virtual int register_param (bx_id id, bx_param_c *it);
@@ -125,6 +126,15 @@ bx_real_sim_c::bx_real_sim_c ()
   init_done = 0;
   registry_alloc_size = BXP_THIS_IS_THE_LAST - BXP_NULL;
   param_registry = new bx_param_c*  [registry_alloc_size];
+}
+
+bx_real_sim_c::~bx_real_sim_c ()
+{
+    if ( param_registry != NULL )
+    {
+        delete [] param_registry;
+        param_registry = NULL;
+    }
 }
 
 int
@@ -246,10 +256,12 @@ char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", NULL };
 int n_floppy_type_names = 5;
 char *floppy_status_names[] = { "ejected", "inserted", NULL };
 int n_floppy_status_names = 2;
-char *floppy_bootdisk_names[] = { "floppy", "hard", NULL };
-int n_floppy_bootdisk_names = 2;
+char *floppy_bootdisk_names[] = { "floppy", "hard","cdrom", NULL };
+int n_floppy_bootdisk_names = 3;
 char *loader_os_names[] = { "none", "linux", "nullkernel", NULL };
 int n_loader_os_names = 3;
+char *keyboard_type_names[] = { "xt", "at", "mf", NULL };
+int n_keyboard_tupe_names = 3;
 
 char *
 bx_real_sim_c::get_floppy_type_name (int type)
@@ -447,6 +459,26 @@ bx_param_string_c::bx_param_string_c (bx_id id,
   set (initial_val);
 }
 
+bx_param_string_c::~bx_param_string_c ()
+{
+    if ( this->val != NULL )
+    {
+        delete [] this->val;
+        this->val = NULL;
+    }
+    if ( this->initial_val != NULL )
+    {
+        delete [] this->initial_val;
+        this->initial_val = NULL;
+    }
+
+    if ( this->options != NULL )
+    {
+        delete [] this->options;
+        this->options = NULL;
+    }
+}
+
 void 
 bx_param_string_c::reset () {
   strncpy (this->val, this->initial_val, maxsize);
@@ -512,6 +544,30 @@ bx_list_c::bx_list_c (bx_id id, char *name, char *description, bx_param_c **init
   for (int i=0; i<this->size; i++)
     this->list[i] = init_list[i];
   init ();
+}
+
+bx_list_c::~bx_list_c()
+{
+    if (this->list)
+    {
+        delete [] this->list;
+        this->list = NULL;
+    }
+    if ( this->title != NULL)
+    {
+        delete this->title;
+        this->title = NULL;
+    }
+    if (this->options != NULL)
+    {
+        delete this->options;
+        this->options = NULL;
+    }
+    if ( this->choice != NULL )
+    {
+        delete this->choice;
+        this->choice = NULL;
+    }
 }
 
 void

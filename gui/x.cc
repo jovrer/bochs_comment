@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.24 2001/12/08 13:42:55 bdenney Exp $
+// $Id: x.cc,v 1.38 2002/03/19 23:38:08 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -24,6 +24,8 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#define XK_PUBLISHING
+#define XK_TECHNICAL
 
 extern "C" {
 #include <X11/Xlib.h>
@@ -81,6 +83,8 @@ static int warp_dy = 0;
 static void warp_cursor(int dx, int dy);
 static void disable_cursor();
 static void enable_cursor();
+
+static Bit32u convertStringToXKeysym (const char *string);
 
 struct {
   Pixmap bmap;
@@ -242,13 +246,47 @@ static void xkeypress(KeySym keysym, int press_release);
 #define ROUNDUP(nbytes, pad) ((((nbytes) + ((pad)-1)) / (pad)) * ((pad)>>3))
 
 
+#define MAX_VGA_COLORS 256
 
-unsigned long col_vals[256]; // 256 VGA colors
+unsigned long col_vals[MAX_VGA_COLORS]; // 256 VGA colors
 unsigned curr_foreground, curr_background;
 
 static unsigned x_tilesize, y_tilesize;
 
 
+// Try to allocate NCOLORS at once in the colormap provided.  If it can
+// be done, return true.  If not, return false.  (In either case, free
+// up the color cells so that we don't add to the problem!)  This is used
+// to determine whether Bochs should use a private colormap even when the
+// user did not specify it.
+static Boolean
+test_alloc_colors (Colormap cmap, Bit32u n_tries) {
+  XColor color;
+  unsigned long pixel[MAX_VGA_COLORS];
+  Boolean pixel_valid[MAX_VGA_COLORS];
+  Bit32u n_allocated = 0;
+  Bit32u i;
+  color.flags = DoRed | DoGreen | DoBlue;
+  for (i=0; i<n_tries; i++) {
+    // choose wierd color values that are unlikely to already be in the 
+    // colormap.
+    color.red   = ((i+41)%MAX_VGA_COLORS) << 8;
+    color.green = ((i+42)%MAX_VGA_COLORS) << 8;
+    color.blue  = ((i+43)%MAX_VGA_COLORS) << 8;
+    pixel_valid[i] = false;
+    if (XAllocColor (bx_x_display, cmap, &color)) {
+      pixel[i] = color.pixel;
+      pixel_valid[i] = true;
+      n_allocated++;
+    }
+  }
+  BX_INFO (("test_alloc_colors: %d colors available out of %d colors tried", n_allocated, n_tries));
+  // now free them all
+  for (i=0; i<n_tries; i++) {
+    if (pixel_valid[i]) XFreeColors (bx_x_display, cmap, &pixel[i], 1, 0);
+  }
+  return (n_allocated == n_tries);
+}
 
 
   void
@@ -285,10 +323,6 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth,
 
   th->put("XGUI");
   UNUSED(th);
-
-if (bx_options.Oprivate_colormap->get ()) {
-  BX_ERROR(( "Oprivate_colormap option not handled yet." ));
-  }
 
   x_tilesize = tilewidth;
   y_tilesize = tileheight;
@@ -343,11 +377,29 @@ if (bx_options.Oprivate_colormap->get ()) {
   default_depth  = DefaultDepth(bx_x_display, bx_x_screen_num);
   default_visual = DefaultVisual(bx_x_display, bx_x_screen_num);
 
+  if (!bx_options.Oprivate_colormap->get ()) {
+    default_cmap = DefaultColormap(bx_x_display, bx_x_screen_num);
+    // try to use default colormap.  If not enough colors are available,
+    // then switch to private colormap despite the user setting.  There
+    // are too many cases when no colors are available and Bochs simply
+    // draws everything in black on black.
+    if (!test_alloc_colors (default_cmap, 16)) {
+      BX_ERROR (("I can't even allocate 16 colors!  Switching to a private colormap"));
+      bx_options.Oprivate_colormap->set (1);
+    }
+    col_vals[0]  = BlackPixel(bx_x_display, bx_x_screen_num);
+    col_vals[15] = WhitePixel(bx_x_display, bx_x_screen_num);
+    for (i = 1; i < MAX_VGA_COLORS; i++) {
+      if (i==15) continue;
+      col_vals[i] = col_vals[0];
+    }
+  }
+
   if (bx_options.Oprivate_colormap->get ()) {
     default_cmap = XCreateColormap(bx_x_display, DefaultRootWindow(bx_x_display),
                                    default_visual, AllocNone);
     if (XAllocColorCells(bx_x_display, default_cmap, False,
-                         plane_masks_return, 0, col_vals, 256) == 0) {
+                         plane_masks_return, 0, col_vals, MAX_VGA_COLORS) == 0) {
       BX_PANIC(("XAllocColorCells returns error."));
       }
 
@@ -356,7 +408,7 @@ if (bx_options.Oprivate_colormap->get ()) {
 
     color.flags = DoRed | DoGreen | DoBlue;
 
-    for (i=0; i < 256; i++) {
+    for (i=0; i < MAX_VGA_COLORS; i++) {
       color.pixel = i;
       if (i==15) {
         color.red   = 0xffff;
@@ -369,15 +421,6 @@ if (bx_options.Oprivate_colormap->get ()) {
         color.blue  = 0;
         }
       XStoreColor(bx_x_display, default_cmap, &color);
-      }
-    }
-  else {
-    default_cmap = DefaultColormap(bx_x_display, bx_x_screen_num);
-    col_vals[0]  = BlackPixel(bx_x_display, bx_x_screen_num);
-    col_vals[15] = WhitePixel(bx_x_display, bx_x_screen_num);
-    for (i = 1; i < 256; i++) {
-      if (i==15) continue;
-      col_vals[i] = col_vals[0];
       }
     }
 
@@ -461,7 +504,7 @@ if (bx_options.Oprivate_colormap->get ()) {
 
   XSetState(bx_x_display, gc, white_pixel, black_pixel, GXcopy,AllPlanes);
 
-  XSetState(bx_x_display, gc_inv, black_pixel, white_pixel, GXcopy,AllPlanes);
+  XSetState(bx_x_display, gc_inv, black_pixel, white_pixel, GXinvert,AllPlanes);
 
   XSetState(bx_x_display, gc_headerbar, black_pixel, white_pixel, GXcopy,AllPlanes);
 
@@ -517,6 +560,11 @@ if (bx_options.Oprivate_colormap->get ()) {
 
 
   XFlush(bx_x_display);
+
+  // loads keymap for x11
+  if(bx_options.keyboard.OuseMapping->get()) {
+    bx_keymap.loadKeymap(convertStringToXKeysym);
+    }
 }
 
 
@@ -799,133 +847,142 @@ xkeypress(KeySym keysym, int press_release)
 {
   Bit32u key_event;
 
+  /* Old (no mapping) behavior */
+  if(!bx_options.keyboard.OuseMapping->get()){
 
-
-
-
-  // this depends on the fact that the X11 keysyms which
-  // correspond to the ascii characters space .. tilde
-  // are in consequtive order.
-  if ((keysym >= XK_space) && (keysym <= XK_asciitilde)) {
-    key_event = ascii_to_key_event[keysym - XK_space];
-    }
-  else switch (keysym) {
-    case XK_KP_1:
+    // this depends on the fact that the X11 keysyms which
+    // correspond to the ascii characters space .. tilde
+    // are in consequtive order.
+    if ((keysym >= XK_space) && (keysym <= XK_asciitilde)) {
+      key_event = ascii_to_key_event[keysym - XK_space];
+      }
+    else switch (keysym) {
+      case XK_KP_1:
 #ifdef XK_KP_End
-    case XK_KP_End:
+      case XK_KP_End:
 #endif
-      key_event = BX_KEY_KP_END; break;
+        key_event = BX_KEY_KP_END; break;
 
-    case XK_KP_2:
+      case XK_KP_2:
 #ifdef XK_KP_Down
-    case XK_KP_Down:
+      case XK_KP_Down:
 #endif
-      key_event = BX_KEY_KP_DOWN; break;
+        key_event = BX_KEY_KP_DOWN; break;
 
-    case XK_KP_3:
+      case XK_KP_3:
 #ifdef XK_KP_Page_Down
-    case XK_KP_Page_Down:
+      case XK_KP_Page_Down:
 #endif
-      key_event = BX_KEY_KP_PAGE_DOWN; break;
+        key_event = BX_KEY_KP_PAGE_DOWN; break;
 
-    case XK_KP_4:
+      case XK_KP_4:
 #ifdef XK_KP_Left
-    case XK_KP_Left:
+      case XK_KP_Left:
 #endif
-      key_event = BX_KEY_KP_LEFT; break;
+        key_event = BX_KEY_KP_LEFT; break;
 
-    case XK_KP_5:
-      key_event = BX_KEY_KP_5; break;
+      case XK_KP_5:
+        key_event = BX_KEY_KP_5; break;
 
-    case XK_KP_6:
+      case XK_KP_6:
 #ifdef XK_KP_Right
-    case XK_KP_Right:
+      case XK_KP_Right:
 #endif
-      key_event = BX_KEY_KP_RIGHT; break;
+        key_event = BX_KEY_KP_RIGHT; break;
 
-    case XK_KP_7:
+      case XK_KP_7:
 #ifdef XK_KP_Home
-    case XK_KP_Home:
+      case XK_KP_Home:
 #endif
-      key_event = BX_KEY_KP_HOME; break;
+        key_event = BX_KEY_KP_HOME; break;
 
-    case XK_KP_8:
+      case XK_KP_8:
 #ifdef XK_KP_Up
-    case XK_KP_Up:
+      case XK_KP_Up:
 #endif
-      key_event = BX_KEY_KP_UP; break;
+        key_event = BX_KEY_KP_UP; break;
 
-    case XK_KP_9:
+      case XK_KP_9:
 #ifdef XK_KP_Page_Up
-    case XK_KP_Page_Up:
+      case XK_KP_Page_Up:
 #endif
-      key_event = BX_KEY_KP_PAGE_UP; break;
+        key_event = BX_KEY_KP_PAGE_UP; break;
 
-    case XK_KP_0:
+      case XK_KP_0:
 #ifdef XK_KP_Insert
-    case XK_KP_Insert:
-      key_event = BX_KEY_KP_INSERT; break;
+      case XK_KP_Insert:
 #endif
+        key_event = BX_KEY_KP_INSERT; break;
 
-    case XK_KP_Decimal:
+      case XK_KP_Decimal:
 #ifdef XK_KP_Delete
-    case XK_KP_Delete:
-      key_event = BX_KEY_KP_DELETE; break;
+      case XK_KP_Delete:
 #endif
+        key_event = BX_KEY_KP_DELETE; break;
 
 #ifdef XK_KP_Enter
-    case XK_KP_Enter:
-      key_event = BX_KEY_KP_ENTER; break;
+      case XK_KP_Enter:
+        key_event = BX_KEY_KP_ENTER; break;
 #endif
 
-    case XK_KP_Subtract: key_event = BX_KEY_KP_SUBTRACT; break;
-    case XK_KP_Add:      key_event = BX_KEY_KP_ADD; break;
+      case XK_KP_Subtract: key_event = BX_KEY_KP_SUBTRACT; break;
+      case XK_KP_Add:      key_event = BX_KEY_KP_ADD; break;
 
-    case XK_KP_Multiply: key_event = BX_KEY_KP_MULTIPLY; break;
-    case XK_KP_Divide:   key_event = BX_KEY_KP_DIVIDE; break;
-
-
-    case XK_Up:          key_event = BX_KEY_UP; break;
-    case XK_Down:        key_event = BX_KEY_DOWN; break;
-    case XK_Left:        key_event = BX_KEY_LEFT; break;
-    case XK_Right:       key_event = BX_KEY_RIGHT; break;
+      case XK_KP_Multiply: key_event = BX_KEY_KP_MULTIPLY; break;
+      case XK_KP_Divide:   key_event = BX_KEY_KP_DIVIDE; break;
 
 
-    case XK_Delete:      key_event = BX_KEY_DELETE; break;
-    case XK_BackSpace:   key_event = BX_KEY_BACKSPACE; break;
-    case XK_Tab:         key_event = BX_KEY_TAB; break;
-    case XK_Return:      key_event = BX_KEY_ENTER; break;
-    case XK_Escape:      key_event = BX_KEY_ESC; break;
-    case XK_F1:          key_event = BX_KEY_F1; break;
-    case XK_F2:          key_event = BX_KEY_F2; break;
-    case XK_F3:          key_event = BX_KEY_F3; break;
-    case XK_F4:          key_event = BX_KEY_F4; break;
-    case XK_F5:          key_event = BX_KEY_F5; break;
-    case XK_F6:          key_event = BX_KEY_F6; break;
-    case XK_F7:          key_event = BX_KEY_F7; break;
-    case XK_F8:          key_event = BX_KEY_F8; break;
-    case XK_F9:          key_event = BX_KEY_F9; break;
-    case XK_F10:         key_event = BX_KEY_F10; break;
-    case XK_F11:         key_event = BX_KEY_F11; break;
-    case XK_F12:         key_event = BX_KEY_F12; break;
-    case XK_Control_L:   key_event = BX_KEY_CTRL_L; break;
-    case XK_Shift_L:     key_event = BX_KEY_SHIFT_L; break;
-    case XK_Shift_R:     key_event = BX_KEY_SHIFT_R; break;
-    case XK_Caps_Lock:   key_event = BX_KEY_CAPS_LOCK; break;
-    case XK_Num_Lock:    key_event = BX_KEY_NUM_LOCK; break;
-    case XK_Alt_L:       key_event = BX_KEY_ALT_L; break;
+      case XK_Up:          key_event = BX_KEY_UP; break;
+      case XK_Down:        key_event = BX_KEY_DOWN; break;
+      case XK_Left:        key_event = BX_KEY_LEFT; break;
+      case XK_Right:       key_event = BX_KEY_RIGHT; break;
 
-    case XK_Insert:      key_event = BX_KEY_INSERT; break;
-    case XK_Home:        key_event = BX_KEY_HOME; break;
-    case XK_End:         key_event = BX_KEY_END; break;
-    case XK_Page_Up:     key_event = BX_KEY_PAGE_UP; break;
-    case XK_Page_Down:   key_event = BX_KEY_PAGE_DOWN; break;
 
-    default:
-      BX_ERROR(( "xkeypress(): keysym %x unhandled!", (unsigned) keysym ));
-      return;
+      case XK_Delete:      key_event = BX_KEY_DELETE; break;
+      case XK_BackSpace:   key_event = BX_KEY_BACKSPACE; break;
+      case XK_Tab:         key_event = BX_KEY_TAB; break;
+      case XK_Return:      key_event = BX_KEY_ENTER; break;
+      case XK_Escape:      key_event = BX_KEY_ESC; break;
+      case XK_F1:          key_event = BX_KEY_F1; break;
+      case XK_F2:          key_event = BX_KEY_F2; break;
+      case XK_F3:          key_event = BX_KEY_F3; break;
+      case XK_F4:          key_event = BX_KEY_F4; break;
+      case XK_F5:          key_event = BX_KEY_F5; break;
+      case XK_F6:          key_event = BX_KEY_F6; break;
+      case XK_F7:          key_event = BX_KEY_F7; break;
+      case XK_F8:          key_event = BX_KEY_F8; break;
+      case XK_F9:          key_event = BX_KEY_F9; break;
+      case XK_F10:         key_event = BX_KEY_F10; break;
+      case XK_F11:         key_event = BX_KEY_F11; break;
+      case XK_F12:         key_event = BX_KEY_F12; break;
+      case XK_Control_L:   key_event = BX_KEY_CTRL_L; break;
+      case XK_Shift_L:     key_event = BX_KEY_SHIFT_L; break;
+      case XK_Shift_R:     key_event = BX_KEY_SHIFT_R; break;
+      case XK_Caps_Lock:   key_event = BX_KEY_CAPS_LOCK; break;
+      case XK_Num_Lock:    key_event = BX_KEY_NUM_LOCK; break;
+      case XK_Alt_L:       key_event = BX_KEY_ALT_L; break;
+
+      case XK_Insert:      key_event = BX_KEY_INSERT; break;
+      case XK_Home:        key_event = BX_KEY_HOME; break;
+      case XK_End:         key_event = BX_KEY_END; break;
+      case XK_Page_Up:     key_event = BX_KEY_PAGE_UP; break;
+      case XK_Page_Down:   key_event = BX_KEY_PAGE_DOWN; break;
+
+      default:
+        BX_ERROR(( "xkeypress(): keysym %x unhandled!", (unsigned) keysym ));
+        return;
       break;
+      }
     }
+  else {
+   /* use mapping */
+   BXKeyEntry *entry = bx_keymap.getKeyXwin (keysym);
+   if (!entry) {
+     BX_ERROR(( "xkeypress(): keysym %x unhandled!", (unsigned) keysym ));
+     return;
+   }
+   key_event = entry->baseKey;
+ }
 
   if (press_release)
     key_event |= BX_KEY_RELEASED;
@@ -946,13 +1003,17 @@ bx_gui_c::clear_screen(void)
   void
 bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-                      unsigned nrows)
+                      Bit16u cursor_state, unsigned nrows)
 {
   int font_height;
   unsigned i, x, y, curs;
   unsigned new_foreground, new_background;
   Bit8u string[1];
+  Bit8u cs_start, cs_end;
   unsigned nchars;
+
+  cs_start = (cursor_state >> 8) & 0x3f;
+  cs_end = cursor_state & 0x1f;
 
   font_height = font_info->ascent + font_info->descent;
 
@@ -1008,18 +1069,35 @@ bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   XSetBackground(bx_x_display, gc, black_pixel);
 
   // now draw character at new block cursor location in reverse
-  if ( (cursor_y*80 + cursor_x) < nchars ) {
-    string[0] = new_text[(cursor_y*80 + cursor_x)*2];
-    if (string[0] == 0) string[0] = ' '; // convert null to space
-    XDrawImageString(bx_x_display, win,
-      gc_inv,
-      cursor_x * font_info->max_bounds.width,
-      cursor_y * font_height + font_info->max_bounds.ascent + bx_headerbar_y,
-      (char *) string,
-      1);
+  if ( ( (cursor_y*80 + cursor_x) < nchars ) && (cs_start <= cs_end) ) {
+    for (unsigned i = cs_start; i <= cs_end; i++)
+      XDrawLine(bx_x_display, win,
+	gc_inv,
+	cursor_x * font_info->max_bounds.width,
+	cursor_y * font_height + bx_headerbar_y + i,
+	(cursor_x + 1) * font_info->max_bounds.width - 1,
+	cursor_y * font_height + bx_headerbar_y + i
+      );
     }
 
   XFlush(bx_x_display);
+}
+
+  int
+bx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+{
+  *bytes = (Bit8u *)XFetchBytes (bx_x_display, nbytes);
+  return 1;
+}
+
+  int
+bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+{
+  // this writes data to the clipboard.
+  BX_INFO (("storing %d bytes to X windows clipboard", len));
+  XSetSelectionOwner(bx_x_display, XA_PRIMARY, None, CurrentTime);
+  XStoreBytes (bx_x_display, (char *)text_snapshot, len);
+  return 1;
 }
 
 
@@ -1317,6 +1395,22 @@ static void enable_cursor ()
       XUndefineCursor(bx_x_display, win);
 }
 
+/* convertStringToXKeysym is a keymap callback
+ * used when reading the keymap file.
+ * It converts a Symblic String to a GUI Constant
+ *
+ * It returns a Bit32u constant or BX_KEYMAP_UNKNOWN if it fails
+ */
+static Bit32u convertStringToXKeysym (const char *string)
+{
+    KeySym keysym=XStringToKeysym(string);
+
+    // failure, return unknown
+    if(keysym==NoSymbol) return BX_KEYMAP_UNKNOWN;
+
+    return((Bit32u)keysym);
+}
+
 #if BX_USE_IDLE_HACK
 
 /* BX_USE_IDLE_HACK: a small idle hack by
@@ -1381,7 +1475,7 @@ Bool XPeekEventTimeout( Display *display, XEvent *event_return, struct timeval *
 }
 
 
-static void bx_gui_c::sim_is_idle () {
+void bx_gui_c::sim_is_idle () {
   XEvent dummy;
   struct timeval   timeout;   
   timeout.tv_sec  = 0;

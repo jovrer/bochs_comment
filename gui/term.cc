@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc,v 1.10 2001/10/03 13:10:37 bdenney Exp $
+// $Id: term.cc,v 1.13 2002/03/16 11:30:06 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -395,8 +395,10 @@ bx_gui_c::clear_screen(void)
 	void
 bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 	unsigned long cursor_x, unsigned long cursor_y,
-	unsigned nrows)
+	Bit16u cursor_state, unsigned nrows)
 {
+	UNUSED(cursor_state);
+
 	unsigned ncols = 4000/nrows/2;
 	// XXX There has GOT to be a better way of doing this
 	for(int i=0;i<4001;i+=2) {
@@ -414,6 +416,18 @@ bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 		cursor_y--;
 	}
 	mvaddch(cursor_y,cursor_x,new_text[(cursor_y*80+cursor_x)*2]);
+}
+
+  int
+bx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+{
+  return 0;
+}
+
+  int
+bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+{
+  return 0;
 }
 
 
