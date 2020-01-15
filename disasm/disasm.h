@@ -43,8 +43,8 @@
 #define IA_XSAVE            0x00800000        /* XSAVE/XRSTOR extensions instruction */
 #define IA_AES              0x01000000        /* AES instruction */
 #define IA_AVX              0x02000000        /* AVX instruction */
-#define IA_LEGACY           0x40000000        /* legacy instruction */
-#define IA_UNDOCUMENTED     0x80000000        /* instruction undocumented */
+#define IA_MOVBE            0x04000000        /* MOVBE Intel Atom(R) instruction */
+#define IA_LEGACY           0x80000000        /* legacy instruction */
 
 /* general purpose bit register */
 enum {
@@ -373,18 +373,18 @@ public:
   void Apd(const x86_insn *insn);
 
   // 8-bit general purpose registers
-  void AL(const x86_insn *insn);
-  void CL(const x86_insn *insn);
+  void AL_Reg(const x86_insn *insn);
+  void CL_Reg(const x86_insn *insn);
 
   // 16-bit general purpose registers
-  void AX(const x86_insn *insn);
-  void DX(const x86_insn *insn);
+  void AX_Reg(const x86_insn *insn);
+  void DX_Reg(const x86_insn *insn);
 
   // 32-bit general purpose registers
-  void EAX(const x86_insn *insn);
+  void EAX_Reg(const x86_insn *insn);
 
   // 64-bit general purpose registers
-  void RAX(const x86_insn *insn);
+  void RAX_Reg(const x86_insn *insn);
 
   // segment registers
   void CS(const x86_insn *insn);
@@ -409,7 +409,7 @@ public:
   void Dq(const x86_insn *insn);
 
   //  8-bit general purpose register
-  void R8(const x86_insn *insn);
+  void Reg8(const x86_insn *insn);
 
   // 16-bit general purpose register
   void RX(const x86_insn *insn);

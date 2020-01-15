@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.h,v 1.35 2008/05/04 15:07:08 sshwarts Exp $
+// $Id: icache.h,v 1.48 2009/04/06 18:27:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -17,24 +17,20 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
 #ifndef BX_ICACHE_H
 #define BX_ICACHE_H
 
-#if BX_SUPPORT_ICACHE
-
-// bit31: 1=CS is 32/64-bit, 0=CS is 16-bit.
-// bit30: 1=Long Mode, 0=not Long Mode.
-// Combination bit31=1 & bit30=1 is invalid (data page)
+// bit 31 indicates code page
 const Bit32u ICacheWriteStampInvalid  = 0xffffffff;
-const Bit32u ICacheWriteStampStart    = 0x3fffffff;
+const Bit32u ICacheWriteStampStart    = 0x7fffffff;
 const Bit32u ICacheWriteStampFetchModeMask = ~ICacheWriteStampStart;
 
 #if BX_SUPPORT_TRACE_CACHE
-extern void stopTraceExecution(void);
+extern void handleSMC(void);
 #endif
 
 class bxPageWriteStampTable
@@ -54,53 +50,58 @@ public:
   }
  ~bxPageWriteStampTable() { delete [] pageWriteStampTable; }
 
+  BX_CPP_INLINE Bit32u hash(bx_phy_address pAddr) const {
+#if BX_PHY_ADDRESS_LONG
+    // can share writeStamps between multiple pages
+    return (Bit32u) ((pAddr >> 12) & (PHY_MEM_PAGES-1));
+#else
+    return (Bit32u) (pAddr) >> 12;
+#endif
+  }
+
   BX_CPP_INLINE Bit32u getPageWriteStamp(bx_phy_address pAddr) const
   {
-    return pageWriteStampTable[pAddr>>12];
+    return pageWriteStampTable[hash(pAddr)];
   }
 
   BX_CPP_INLINE const Bit32u *getPageWriteStampPtr(bx_phy_address pAddr) const
   {
-    return &pageWriteStampTable[pAddr>>12];
+    return &pageWriteStampTable[hash(pAddr)];
   }
 
   BX_CPP_INLINE void setPageWriteStamp(bx_phy_address pAddr, Bit32u pageWriteStamp)
   {
-    pageWriteStampTable[pAddr>>12] = pageWriteStamp;
+    pageWriteStampTable[hash(pAddr)] = pageWriteStamp;
+  }
+
+  BX_CPP_INLINE void markICache(bx_phy_address pAddr)
+  {
+    pageWriteStampTable[hash(pAddr)] |= ICacheWriteStampFetchModeMask;
   }
 
   BX_CPP_INLINE void decWriteStamp(bx_phy_address pAddr)
   {
-    pAddr >>= 12;
+    Bit32u index = hash(pAddr);
+    if (pageWriteStampTable[index] & ICacheWriteStampFetchModeMask) {
 #if BX_SUPPORT_TRACE_CACHE
-    if ((pageWriteStampTable[pAddr] & ICacheWriteStampFetchModeMask) != ICacheWriteStampFetchModeMask) {
+      handleSMC(); // one of the CPUs might be running trace from this page
+#endif
       // Decrement page write stamp, so iCache entries with older stamps are
       // effectively invalidated.
-      pageWriteStampTable[pAddr]--;
-      stopTraceExecution(); // one of the CPUs might be running trace from this page
+      pageWriteStampTable[index] = (pageWriteStampTable[index] - 1) & ~ICacheWriteStampFetchModeMask;
     }
-#else
-    // Decrement page write stamp, so iCache entries with older stamps are
-    // effectively invalidated.
-    pageWriteStampTable[pAddr]--;
+#if BX_DEBUGGER
+    BX_DBG_DIRTY_PAGE(index);
 #endif
   }
 
   BX_CPP_INLINE void resetWriteStamps(void);
-  BX_CPP_INLINE void purgeWriteStamps(void);
 };
 
 BX_CPP_INLINE void bxPageWriteStampTable::resetWriteStamps(void)
 {
   for (Bit32u i=0; i<PHY_MEM_PAGES; i++) {
-    pageWriteStampTable[i] = ICacheWriteStampInvalid;
-  }
-}
-
-BX_CPP_INLINE void bxPageWriteStampTable::purgeWriteStamps(void)
-{
-  for (Bit32u i=0; i<PHY_MEM_PAGES; i++) {
-    pageWriteStampTable[i] |= ICacheWriteStampStart;
+    pageWriteStampTable[i] = ICacheWriteStampStart - 1;
   }
 }
 
@@ -131,36 +132,38 @@ class BOCHSAPI bxICache_c {
 public:
   bxICacheEntry_c entry[BxICacheEntries];
 #if BX_SUPPORT_TRACE_CACHE
-  bxInstruction_c  pool[BxICacheMemPool];
-  Bit32u mempool;
+  bxInstruction_c mpool[BxICacheMemPool];
+  unsigned mpindex;
 #endif
 
 public:
   bxICache_c() { flushICacheEntries(); }
 
-  BX_CPP_INLINE unsigned hash(bx_phy_address pAddr) const
+  BX_CPP_INLINE unsigned hash(bx_phy_address pAddr, unsigned fetchModeMask) const
   {
-    // A pretty dumb hash function for now.
-    return (pAddr + (pAddr << 2) + (pAddr>>6)) & (BxICacheEntries-1);
+//  return ((pAddr + (pAddr << 2) + (pAddr>>6)) & (BxICacheEntries-1)) ^ fetchModeMask;
+    return ((pAddr) & (BxICacheEntries-1)) ^ fetchModeMask;
   }
 
 #if BX_SUPPORT_TRACE_CACHE
   BX_CPP_INLINE void alloc_trace(bxICacheEntry_c *e)
   {
-    if (mempool + BX_MAX_TRACE_LENGTH > BxICacheMemPool) flushICacheEntries();
-    e->i = &pool[mempool];
+    if (mpindex + BX_MAX_TRACE_LENGTH > BxICacheMemPool) {
+      flushICacheEntries();
+    }
+    e->i = &mpool[mpindex];
     e->ilen = 0;
   }
 
-  BX_CPP_INLINE void commit_trace(unsigned len) { mempool += len; }
+  BX_CPP_INLINE void commit_trace(unsigned len) { mpindex += len; }
 #endif
 
   BX_CPP_INLINE void purgeICacheEntries(void);
   BX_CPP_INLINE void flushICacheEntries(void);
 
-  BX_CPP_INLINE bxICacheEntry_c* get_entry(bx_phy_address pAddr)
+  BX_CPP_INLINE bxICacheEntry_c* get_entry(bx_phy_address pAddr, unsigned fetchModeMask)
   {
-    return &(entry[hash(pAddr)]);
+    return &(entry[hash(pAddr, fetchModeMask)]);
   }
 
 };
@@ -172,7 +175,7 @@ BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
     e->writeStamp = ICacheWriteStampInvalid;
   }
 #if BX_SUPPORT_TRACE_CACHE
-  mempool = 0;
+  mpindex = 0;
 #endif
 }
 
@@ -185,7 +188,5 @@ BX_CPP_INLINE void bxICache_c::purgeICacheEntries(void)
 
 extern void purgeICaches(void);
 extern void flushICaches(void);
-
-#endif // BX_SUPPORT_ICACHE
 
 #endif

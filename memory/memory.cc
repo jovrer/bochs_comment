@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.cc,v 1.69 2008/05/31 20:59:38 sshwarts Exp $
+// $Id: memory.cc,v 1.76 2009/03/13 18:48:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -61,18 +61,10 @@ void BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned le
 
   if (cpu != NULL) {
 #if BX_SUPPORT_IODEBUG
-    bx_iodebug_c::mem_write(cpu, a20addr, len, data);
+    bx_devices.pluginIODebug->mem_write(cpu, a20addr, len, data);
 #endif
 
     BX_INSTR_PHY_WRITE(cpu->which_cpu(), a20addr, len);
-
-#if BX_SUPPORT_APIC
-    bx_generic_apic_c *local_apic = &cpu->local_apic;
-    if (local_apic->is_selected(a20addr, len)) {
-      local_apic->write(a20addr, (Bit32u *)data, len);
-      return;
-    }
-#endif
 
     if ((a20addr & 0xfffe0000) == 0x000a0000 && (BX_MEM_THIS smram_available))
     {
@@ -97,30 +89,24 @@ mem_write:
 
   // all memory access feets in single 4K page
   if (a20addr < BX_MEM_THIS len) {
-#if BX_SUPPORT_ICACHE
     pageWriteStampTable.decWriteStamp(a20addr);
-#endif
     // all of data is within limits of physical memory
     if ((a20addr & 0xfff80000) != 0x00080000 || (a20addr <= 0x0009ffff))
     {
       if (len == 8) {
         WriteHostQWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit64u*)data);
-        BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       if (len == 4) {
         WriteHostDWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit32u*)data);
-        BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       if (len == 2) {
         WriteHostWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit16u*)data);
-        BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       if (len == 1) {
         * (BX_MEM_THIS get_vector(a20addr)) = * (Bit8u *) data;
-        BX_DBG_DIRTY_PAGE(a20addr >> 12);
         return;
       }
       // len == other, just fall thru to special cases handling
@@ -137,7 +123,6 @@ mem_write:
       while(1) {
         // addr *not* in range 000A0000 .. 000FFFFF
         *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
-        BX_DBG_DIRTY_PAGE(a20addr >> 12);
         if (len == 1) return;
         len--;
         a20addr++;
@@ -158,7 +143,6 @@ mem_write:
         // devices are not allowed to access SMMRAM under VGA memory
         if (cpu) {
           *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
-          BX_DBG_DIRTY_PAGE(a20addr >> 12);
         }
         goto inc_one;
       }
@@ -175,7 +159,6 @@ mem_write:
           case 0x1:   // Writes to ShadowRAM
             BX_DEBUG(("Writing to ShadowRAM: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
             *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
-            BX_DBG_DIRTY_PAGE(a20addr >> 12);
             break;
 
           case 0x0:   // Writes to ROM, Inhibit
@@ -217,18 +200,10 @@ void BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
 
   if (cpu != NULL) {
 #if BX_SUPPORT_IODEBUG
-    bx_iodebug_c::mem_read(cpu, a20addr, len, data);
+    bx_devices.pluginIODebug->mem_read(cpu, a20addr, len, data);
 #endif
 
     BX_INSTR_PHY_READ(cpu->which_cpu(), a20addr, len);
-
-#if BX_SUPPORT_APIC
-    bx_generic_apic_c *local_apic = &cpu->local_apic;
-    if (local_apic->is_selected (a20addr, len)) {
-      local_apic->read(a20addr, data, len);
-      return;
-    }
-#endif
 
     if ((a20addr & 0xfffe0000) == 0x000a0000 && (BX_MEM_THIS smram_available))
     {
@@ -360,6 +335,11 @@ inc_one:
 #endif
 
     for (unsigned i = 0; i < len; i++) {
+#if BX_PHY_ADDRESS_LONG
+      if (a20addr >= BX_CONST64(0xFFFFFFFF))
+        *data_ptr = 0xff;
+      else
+#endif      
       if (a20addr >= (bx_phy_address)~BIOS_MASK)
         *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
       else

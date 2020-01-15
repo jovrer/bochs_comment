@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc,v 1.115 2008/05/10 21:36:55 sshwarts Exp $
+// $Id: misc_mem.cc,v 1.127 2009/03/29 20:08:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,7 +24,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -43,7 +43,6 @@ BX_MEM_C::BX_MEM_C()
   char mem[6];
   snprintf(mem, 6, "MEM0");
   put(mem);
-  settype(MEMLOG);
 
   vector = NULL;
   actual_vector = NULL;
@@ -76,7 +75,7 @@ void BX_MEM_C::init_memory(Bit32u memsize)
 {
   unsigned idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.115 2008/05/10 21:36:55 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.127 2009/03/29 20:08:27 sshwarts Exp $"));
 
   if (BX_MEM_THIS actual_vector != NULL) {
     BX_INFO (("freeing existing memory vector"));
@@ -219,7 +218,7 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
   size = (unsigned long)stat_buf.st_size;
 
   if (type > 0) {
-    max_size = 0x10000;
+    max_size = 0x20000;
   } else {
     max_size = BIOSROMSZ;
   }
@@ -404,6 +403,12 @@ bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
         *buf = BX_MEM_THIS rom[(addr & EXROM_MASK) + BIOSROMSZ];
       }
     }
+#if BX_PHY_ADDRESS_LONG
+    else if (addr >= BX_CONST64(0xFFFFFFFF)) {
+      *buf = 0xff;
+      ret = 0; // error, beyond limits of memory
+    }
+#endif
     else if (addr >= (bx_phy_address)~BIOS_MASK)
     {
       *buf = BX_MEM_THIS rom[addr & BIOS_MASK];
@@ -473,7 +478,7 @@ bx_bool BX_MEM_C::dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *
   while(1) { 
     unsigned remainsInPage = 0x1000 - (addr1 & 0xfff);
     unsigned access_length = (len < remainsInPage) ? len : remainsInPage;
-   *crc = crc32(BX_MEM_THIS get_vector(addr1), access_length);
+    *crc = crc32(BX_MEM_THIS get_vector(addr1), access_length);
     addr1 += access_length;
     len -= access_length;
   }
@@ -488,7 +493,7 @@ bx_bool BX_MEM_C::dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *
 // code will perform an 'op' operation.  This address will be
 // used for direct access to guest memory as an acceleration by
 // a few instructions, like REP {MOV, INS, OUTS, etc}.
-// Values of 'op' are { BX_READ, BX_WRITE, BX_RW }.
+// Values of 'op' are { BX_READ, BX_WRITE, BX_EXECUTE, BX_RW }.
 //
 // The other assumption is that the calling code _only_ accesses memory
 // directly within the page that encompasses the address requested.
@@ -505,18 +510,21 @@ bx_bool BX_MEM_C::dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *
 // 0xf0000 - 0xfffff    Upper BIOS Area (64K)
 //
 
-Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned op, unsigned access_type)
+Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw)
 {
-  BX_ASSERT(cpu != 0); // getHostMemAddr could be used only inside the CPU
+  bx_phy_address a20Addr = A20ADDR(addr);
 
 #if BX_SUPPORT_APIC
-  bx_generic_apic_c *local_apic = &cpu->local_apic;
-  if (local_apic->get_base() == (a20Addr & ~0xfff))
-    return(NULL); // Vetoed!  APIC address space
+  if (cpu != NULL) {
+    if (cpu->lapic.is_selected(a20Addr))
+      return(NULL); // Vetoed!  APIC address space
+  }
 #endif
 
+  bx_bool write = rw & 1;
+
   // allow direct access to SMRAM memory space for code and veto data
-  if (access_type == CODE_ACCESS) {
+  if ((cpu != NULL) && (rw == BX_EXECUTE)) {
     // reading from SMRAM memory space
     if ((a20Addr & 0xfffe0000) == 0x000a0000 && (BX_MEM_THIS smram_available))
     {
@@ -528,7 +536,7 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
 #if BX_SUPPORT_MONITOR_MWAIT
   if (BX_MEM_THIS is_monitor(a20Addr & ~0xfff, 0x1000)) {
     // Vetoed! Write monitored page !
-    if (op != BX_READ) return(NULL);
+    if (write) return(NULL);
   }
 #endif
 
@@ -541,7 +549,7 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
     memory_handler = memory_handler->next;
   }
 
-  if (op == BX_READ) {
+  if (! write) {
     if ((a20Addr & 0xfffe0000) == 0x000a0000)
       return(NULL); // Vetoed!  Mem mapped IO (VGA)
 #if BX_SUPPORT_PCI
@@ -578,6 +586,12 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
         return((Bit8u *) &BX_MEM_THIS rom[(a20Addr & EXROM_MASK) + BIOSROMSZ]);
       }
     }
+#if BX_PHY_ADDRESS_LONG
+    else if (a20Addr >= BX_CONST64(0xFFFFFFFF)) {
+      // Error, requested addr is out of bounds.
+      return (Bit8u *) &BX_MEM_THIS bogus[a20Addr & 0xfff];
+    }
+#endif
     else if (a20Addr >= (bx_phy_address)~BIOS_MASK)
     {
       return (Bit8u *) &BX_MEM_THIS rom[a20Addr & BIOS_MASK];
@@ -585,7 +599,7 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
     else
     {
       // Error, requested addr is out of bounds.
-      return (Bit8u *) &BX_MEM_THIS bogus[a20Addr & 0x0fff];
+      return (Bit8u *) &BX_MEM_THIS bogus[a20Addr & 0xfff];
     }
   }
   else
@@ -616,10 +630,6 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned 
         return(NULL);  // Vetoed!  ROMs
       }
     }
-
-#if BX_SUPPORT_ICACHE
-    pageWriteStampTable.decWriteStamp(a20Addr);
-#endif
 
     return retAddr;
   }

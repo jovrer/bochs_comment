@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svga.cc,v 1.17 2008/03/06 21:15:40 sshwarts Exp $
+// $Id: svga.cc,v 1.19 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  This library is free software; you can redistribute it and/or
@@ -14,7 +14,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #define _MULTI_THREAD
 

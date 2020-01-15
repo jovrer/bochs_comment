@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcivga.h,v 1.7 2007/09/28 19:52:03 sshwarts Exp $
+// $Id: pcivga.h,v 1.10 2009/04/10 11:10:32 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002,2003  Mike Nordell
@@ -16,7 +16,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #ifndef BX_IODEV_PCIVGA_H
 #define BX_IODEV_PCIVGA_H
@@ -34,12 +34,14 @@ public:
   virtual void init(void);
   virtual void reset(unsigned type);
   virtual void register_state(void);
+  virtual void after_restore_state(void);
 
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
 private:
   struct {
+    Bit32u base_address;
     Bit8u pci_conf[256];
   } s;
 };

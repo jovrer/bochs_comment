@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ferr.cc,v 1.11 2008/05/10 13:34:01 sshwarts Exp $
+// $Id: ferr.cc,v 1.16 2009/04/27 17:58:17 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -53,23 +53,22 @@ void BX_CPU_C::FPU_stack_underflow(int stnr, int pop_stack)
   FPU_exception(FPU_EX_Stack_Underflow);
 }
 
-/* Returns 1 if unmasked exception occured */
-bx_bool BX_CPU_C::FPU_exception(int exception)
+/* Returns unmasked exceptions if occured */
+unsigned BX_CPU_C::FPU_exception(unsigned exception, bx_bool is_store)
 {
-  int unmasked = 0;
-
   /* Extract only the bits which we use to set the status word */
   exception &= (FPU_SW_Exceptions_Mask);
+
+  Bit32u status = FPU_PARTIAL_STATUS;
 
   /* Set the corresponding exception bits */
   FPU_PARTIAL_STATUS |= exception;
 
+  unsigned unmasked = FPU_PARTIAL_STATUS & ~FPU_CONTROL_WORD & FPU_CW_Exceptions_Mask;
+
   /* Set summary bits iff exception isn't masked */
-  if (FPU_PARTIAL_STATUS & ~FPU_CONTROL_WORD & FPU_CW_Exceptions_Mask)
-  {
+  if (unmasked)
     FPU_PARTIAL_STATUS |= (FPU_SW_Summary | FPU_SW_Backward);
-    unmasked = 1;
-  }
 
   if (exception & (FPU_SW_Stack_Fault | FPU_EX_Precision))
   {
@@ -77,6 +76,27 @@ bx_bool BX_CPU_C::FPU_exception(int exception)
       /* This bit distinguishes over- from underflow for a stack fault,
            and roundup from round-down for precision loss. */
       FPU_PARTIAL_STATUS &= ~FPU_SW_C1;
+    }
+  }
+
+  // If #P unmasked exception occured the result still has to be
+  // written to the destination.
+  unmasked &= ~FPU_CW_Precision;
+
+  if (unmasked & (FPU_CW_Underflow | FPU_CW_Overflow)) {
+    // If unmasked over- or underflow occurs and dest is a memory location:
+    //   - the TOS and destination operands remain unchanged
+    //   - the inexact-result condition is not reported and C1 flag is cleared
+    //   - no result is stored in the memory
+    // If the destination is in the register stack, adjusted resulting value
+    // is stored in the destination operand.
+    if (! is_store) {
+       unmasked &= ~(FPU_CW_Underflow | FPU_CW_Overflow);
+    }
+    else {
+       FPU_PARTIAL_STATUS &= ~FPU_SW_C1; // clear C1 flag
+       if (! (status & FPU_CW_Precision))
+          FPU_PARTIAL_STATUS &= ~FPU_CW_Precision;
     }
   }
 

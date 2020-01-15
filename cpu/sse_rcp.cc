@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_rcp.cc,v 1.18 2008/03/22 21:29:41 sshwarts Exp $
+// $Id: sse_rcp.cc,v 1.21 2009/01/16 18:18:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -355,9 +355,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPPS_VpsWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   op.xmm32u(0) = approximate_rcp(op.xmm32u(0));
@@ -369,7 +369,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPPS_VpsWps(bxInstruction_c *i)
 
 #else
   BX_INFO(("RCPPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -389,9 +389,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPSS_VssWss(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   op = approximate_rcp(op);
@@ -399,7 +399,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCPSS_VssWss(bxInstruction_c *i)
 
 #else
   BX_INFO(("RCPSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -739,9 +739,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTSS_VssWss(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   op = approximate_rsqrt(op);
@@ -749,7 +749,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTSS_VssWss(bxInstruction_c *i)
 
 #else
   BX_INFO(("RSQRTSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -770,9 +770,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTPS_VpsWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   op.xmm32u(0) = approximate_rsqrt(op.xmm32u(0));
@@ -783,6 +783,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSQRTPS_VpsWps(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("RSQRTPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }

@@ -25,8 +25,7 @@ TODO (know issues in CPU model):
 
 [!] Some of APIC functionality still not implemented, for example
 
-    - Globally disabled APIC
-    - NMI, SMI, INIT signals, LVT pins handling
+    - LVT pins handling
     - Filter interrupts according processor priority (PPR)
 
 [!] REP NOP is PAUSE (on P4/XEON)
@@ -48,4 +47,11 @@ TODO (know issues in CPU model):
 
 [!] More flexible CPUID - vendor and etc
 
-[!] SSE4A, SSE5A, VMX, SMX, SVM, AVX
+[!] VMX:
+
+   - Dual-monitor treatment of SMIs and SMM not implemented yet
+   - NMI virtualization, APIC virtualization not implemented yet
+   - VMENTER to not-active state not supported yet
+   - No advanced features like Extended Page Tables (EPT) or VPID
+
+[!] SSE4A, SSE5A, SMX, SVM, AVX

@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt,v 1.14 2008/02/05 22:57:39 sshwarts Exp $
+$Id: PARAM_TREE.txt,v 1.23 2009/03/29 20:48:17 vruppert Exp $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -23,6 +23,10 @@ cpu
   ips
   quantum
   reset_on_triple_fault
+  cpuid_limit_winnt
+  vendor_string
+  brand_string
+  msrs
 
 memory
   standard
@@ -172,12 +176,14 @@ ports
     2
       (same options as ports.parallel.1)
   usb
-    1
+    uhci
       enabled
       port1
-      option1
       port2
-      option2
+    ohci
+      enabled
+      port1
+      port2
 
 network
   ne2k
@@ -213,6 +219,8 @@ misc
     text_base
     data_base
     bss_base
+  user_plugin
+    1 ... 8
 
 log
   filename
@@ -221,8 +229,12 @@ log
 
 menu
   disk
+  disk_win32
   memory
   runtime
+    cdrom
+    usb
+    misc
 
 bochs
   (subtree containing Bochs state)
@@ -230,4 +242,7 @@ bochs
 wxdebug
   (special subtree for wxBochs debugger)
 
-(updated Oct  8, 2006 by vruppert)
+user
+  (subtree for user-defined options)
+
+(updated Jan 19, 2008 by vruppert)

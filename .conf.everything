@@ -7,17 +7,17 @@
   --enable-apic \
   --enable-x86-64 \
   --enable-all-optimizations \
-  --enable-ne2000 \
-  --enable-pci \
-  --enable-acpi \
+  --enable-long-phy-address \
   --enable-large-pages \
   --enable-pae \
   --enable-global-pages \
   --enable-mtrr \
+  --enable-1g-pages \
   --enable-ignore-bad-msr \
-  --enable-port-e9-hack \
+  --enable-configurable-msrs \
   --enable-debugger \
   --enable-disasm \
+  --enable-debugger-gui \
   --enable-vbe \
   --enable-mmx \
   --enable-fpu \
@@ -26,18 +26,26 @@
   --enable-misaligned-sse \
   --enable-alignment-check \
   --enable-popcnt \
+  --enable-movbe \
   --enable-vme \
   --enable-sep \
   --enable-3dnow \
   --enable-monitor-mwait \
   --enable-xsave \
   --enable-aes \
+  --enable-vmx \
   --enable-x86-debugger \
-  --enable-cdrom \
-  --enable-sb16 \
+  --enable-a20-pin \
   --enable-instrumentation=instrument/example1 \
-  --enable-iodebug \
-  --enable-show-ips \
+  --enable-ne2000 \
+  --enable-pci \
+  --enable-acpi \
   --enable-clgd54xx \
   --enable-usb \
+  --enable-usb-ohci \
+  --enable-cdrom \
+  --enable-sb16 \
+  --enable-iodebug \
+  --enable-gdb-stub \
+  --enable-show-ips \
   --with-all-libs

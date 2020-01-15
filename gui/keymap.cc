@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keymap.cc,v 1.23 2008/02/15 22:05:40 sshwarts Exp $
+// $Id: keymap.cc,v 1.26 2009/02/23 11:06:53 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002 MandrakeSoft S.A.
@@ -16,7 +16,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 /////////////////////////////////////////////////////////////////////////
 //
@@ -26,6 +26,7 @@
 //
 
 #include "bochs.h"
+#include "keymap.h"
 
 // Table of bochs "BX_KEY_*" symbols
 // the table must be in BX_KEY_* order

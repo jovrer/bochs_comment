@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.116 2008/05/25 12:28:27 vruppert Exp $
+// $Id: x.cc,v 1.126 2009/03/22 20:18:17 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #define XK_PUBLISHING
 #define XK_TECHNICAL
@@ -33,7 +33,9 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "keymap.h"
 #include "iodev.h"
+#include "enh_dbg.h"
 #if BX_WITH_X11
 
 extern "C" {
@@ -65,7 +67,7 @@ public:
 #endif
   virtual void beep_on(float frequency);
   virtual void beep_off();
-  virtual void statusbar_setitem(int element, bx_bool active);
+  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
 #if BX_SHOW_IPS
   virtual void show_ips(Bit32u ips_count);
@@ -157,7 +159,7 @@ static unsigned bx_statusitem_pos[12] = {
   0, 200, 240, 280, 320, 360, 400, 440, 480, 520, 560, 600
   };
 static bx_bool bx_statusitem_active[12];
-static long bx_status_led_green, bx_status_graytext;
+static long bx_status_led_green, bx_status_led_red, bx_status_graytext;
 static char bx_status_info_text[34];
 #if BX_SHOW_IPS
 static bx_bool x11_ips_update = 0, x11_hide_ips = 0;
@@ -167,7 +169,7 @@ static Bit8u x11_mouse_msg_counter = 0;
 
 static void headerbar_click(int x, int y);
 static void send_keyboard_mouse_status(void);
-static void set_status_text(int element, const char *text, bx_bool active);
+static void set_status_text(int element, const char *text, bx_bool active, bx_bool w=0);
 
 
 Bit32u ascii_to_key_event[0x5f] = {
@@ -608,11 +610,13 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
   switch (imBPP) {
     case 16:
       bx_status_led_green = 0x07e0;
+      bx_status_led_red = 0xf900;
       bx_status_graytext = 0x8410;
       break;
     case 24:
     case 32:
       bx_status_led_green = 0x00ff00;
+      bx_status_led_red = 0xff4000;
       bx_status_graytext = 0x808080;
       break;
     default:
@@ -646,6 +650,14 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
   // parse x11 specific options
   if (argc > 1) {
     for (i = 1; i < argc; i++) {
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+      if (!strcmp(argv[i], "gui_debug")) {
+        void InitDebugDialog();
+        SIM->set_debug_gui(1);
+        InitDebugDialog();
+      }
+      else
+#endif
 #if BX_SHOW_IPS
       if (!strcmp(argv[i], "hideIPS")) {
         x11_hide_ips = 1;
@@ -662,7 +674,7 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
   dialog_caps |= (BX_GUI_DLG_USER | BX_GUI_DLG_SNAPSHOT | BX_GUI_DLG_CDROM);
 }
 
-void set_status_text(int element, const char *text, bx_bool active)
+void set_status_text(int element, const char *text, bx_bool active, bx_bool w)
 {
   int xleft, xsize, sb_ypos;
 
@@ -680,7 +692,10 @@ void set_status_text(int element, const char *text, bx_bool active)
   } else if (element <= BX_MAX_STATUSITEMS) {
     bx_statusitem_active[element] = active;
     if (active) {
-      XSetForeground(bx_x_display, gc_headerbar, bx_status_led_green);
+      if (w)
+        XSetForeground(bx_x_display, gc_headerbar, bx_status_led_red);
+      else
+        XSetForeground(bx_x_display, gc_headerbar, bx_status_led_green);
       XFillRectangle(bx_x_display, win, gc_headerbar, xleft, sb_ypos+2, xsize-1, bx_statusbar_y-2);
       XSetForeground(bx_x_display, gc_headerbar, black_pixel);
     } else {
@@ -693,14 +708,14 @@ void set_status_text(int element, const char *text, bx_bool active)
   }
 }
 
-void bx_x_gui_c::statusbar_setitem(int element, bx_bool active)
+void bx_x_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
-      set_status_text(i+1, statusitem_text[i], active);
+      set_status_text(i+1, statusitem_text[i], active, w);
     }
   } else if ((unsigned)element < statusitem_count) {
-    set_status_text(element+1, statusitem_text[element], active);
+    set_status_text(element+1, statusitem_text[element], active, w);
   }
 }
 
@@ -1259,8 +1274,13 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   y = 0;
   cs_y = 0;
   text_base = new_text - tm_info.start_address;
-  split_textrow = (line_compare + v_panning) / font_height;
-  split_fontrows = ((line_compare + v_panning) % font_height) + 1;
+  if (line_compare < dimension_y) {
+    split_textrow = (line_compare + v_panning) / font_height;
+    split_fontrows = ((line_compare + v_panning) % font_height) + 1;
+  } else {
+    split_textrow = rows + 1;
+    split_fontrows = 0;
+  }
   split_screen = 0;
   do {
     hchars = text_cols;
@@ -2172,7 +2192,7 @@ int x11_ask_dialog(BxEvent *event)
   return retcode;
 }
 
-int x11_string_dialog(bx_param_string_c *param, bx_param_enum_c *param2)
+int x11_string_dialog(bx_param_string_c *param, bx_param_bool_c *param2)
 {
   x11_dialog_t xdlg;
   x11_control_t xctl_edit, xbtn_ok, xbtn_cancel, xbtn_status;
@@ -2185,7 +2205,7 @@ int x11_string_dialog(bx_param_string_c *param, bx_param_enum_c *param2)
 
   if (param2 != NULL) {
     strcpy(name, "First CD-ROM image/device");
-    status = (param2->get() == BX_INSERTED);
+    status = param2->get();
     h = 110;
     ok_button = 2;
     num_ctrls = 4;
@@ -2357,23 +2377,26 @@ int x11_string_dialog(bx_param_string_c *param, bx_param_enum_c *param2)
     if (param2 != NULL) {
       if (status == 1) {
         if (len > 0) {
-          param2->set(BX_INSERTED);
           param->set(value);
+          param2->set(1);
         } else {
-          param2->set(BX_EJECTED);
+          param2->set(0);
         }
       } else {
-        param2->set(BX_EJECTED);
+        param2->set(0);
       }
     } else {
       param->set(value);
     }
   }
-  if (control == (num_ctrls - 1)) control = -1;
   XFreeGC(bx_x_display, xdlg.gc);
   XFreeGC(bx_x_display, xdlg.gc_inv);
   XDestroyWindow(bx_x_display, xdlg.dialog);
-  return control;
+  if (control == ok_button) {
+    return 1;
+  } else {
+    return -1;
+  }
 }
 
 int x11_yesno_dialog(bx_param_bool_c *param)
@@ -2505,7 +2528,7 @@ BxEvent *x11_notify_callback (void *unused, BxEvent *event)
   int opts;
   bx_param_c *param;
   bx_param_string_c *sparam;
-  bx_param_enum_c *eparam;
+  bx_param_bool_c *bparam;
   bx_list_c *list;
 
   switch (event->type)
@@ -2517,7 +2540,7 @@ BxEvent *x11_notify_callback (void *unused, BxEvent *event)
       param = event->u.param.param;
       if (param->get_type() == BXT_PARAM_STRING) {
         sparam = (bx_param_string_c *)param;
-        opts = sparam->get_options()->get();
+        opts = sparam->get_options();
         if ((opts & sparam->IS_FILENAME) == 0) {
           event->retcode = x11_string_dialog(sparam, NULL);
           return event;
@@ -2529,13 +2552,39 @@ BxEvent *x11_notify_callback (void *unused, BxEvent *event)
       } else if (param->get_type() == BXT_LIST) {
         list = (bx_list_c *)param;
         sparam = (bx_param_string_c *)list->get_by_name("path");
-        eparam = (bx_param_enum_c *)list->get_by_name("status");
-        event->retcode = x11_string_dialog(sparam, eparam);
+        bparam = (bx_param_bool_c *)list->get_by_name("status");
+        event->retcode = x11_string_dialog(sparam, bparam);
         return event;
       } else if (param->get_type() == BXT_PARAM_BOOL) {
         event->retcode = x11_yesno_dialog((bx_param_bool_c *)param);
         return event;
       }
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+    case BX_SYNC_EVT_GET_DBG_COMMAND:
+      {
+        debug_cmd = new char[512];
+        debug_cmd_ready = 0;
+        HitBreak();
+        while (debug_cmd_ready == 0 && bx_user_quit == 0)
+        {
+          if (vgaw_refresh != 0)  // is the GUI frontend requesting a VGAW refresh?
+            DEV_vga_refresh();
+          vgaw_refresh = 0;
+          sleep(1);
+        }
+        if (bx_user_quit != 0)
+          BX_EXIT(0);
+
+        event->u.debugcmd.command = debug_cmd;
+        event->retcode = 1;
+        return event;
+      }
+    case BX_ASYNC_EVT_DBG_MSG:
+      {
+        ParseIDText (event->u.logmsg.msg);
+        return event;
+      }
+#endif
     case BX_SYNC_EVT_TICK: // called periodically by siminterface.
     case BX_ASYNC_EVT_REFRESH: // called when some bx_param_c parameters have changed.
       // fall into default case

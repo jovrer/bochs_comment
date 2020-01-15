@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.h,v 1.6 2008/02/05 22:57:41 sshwarts Exp $
+// $Id: rfb.h,v 1.8 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,8 +22,9 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-//
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+/////////////////////////////////////////////////////////////////////////
+
 // This file includes the rfb spec header and the port numbers
 
 // Define the RFB types

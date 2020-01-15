@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: iret.cc,v 1.37 2008/05/23 13:46:52 sshwarts Exp $
+// $Id: iret.cc,v 1.44 2009/04/05 19:09:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -60,10 +60,9 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
 
     if (BX_CPU_THIS_PTR tr.cache.valid==0)
       BX_PANIC(("IRET: TR not valid"));
-    Bit32u base32 = (Bit32u) BX_CPU_THIS_PTR tr.cache.u.system.base;
 
-    // examine back link selector in TSS addressed by current TR:
-    access_read_linear(base32, 2, 0, BX_READ, &raw_link_selector);
+    // examine back link selector in TSS addressed by current TR
+    raw_link_selector = system_read_word(BX_CPU_THIS_PTR tr.cache.u.segment.base);
 
     // must specify global, else #TS(new TSS selector)
     parse_selector(raw_link_selector, &link_selector);
@@ -95,7 +94,7 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     }
 
     // switch tasks (without nesting) to TSS specified by back link selector
-    task_switch(&link_selector, &tss_descriptor,
+    task_switch(i, &link_selector, &tss_descriptor,
                 BX_TASK_FROM_IRET, dword1, dword2);
 
     // mark the task just abandoned as not busy
@@ -137,23 +136,23 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     temp_ESP = SP;
 
   if (i->os32L()) {
-    new_eflags      =          read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 8);
-    raw_cs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 4);
-    new_eip         =          read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 0);
+    new_eflags      =          read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP + 8);
+    raw_cs_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP + 4);
+    new_eip         =          read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP + 0);
 
     // if VM=1 in flags image on stack then STACK_RETURN_TO_V86
     if (new_eflags & EFlagsVMMask) {
       if (CPL == 0) {
-        BX_CPU_THIS_PTR stack_return_to_v86(new_eip, raw_cs_selector, new_eflags);
+        stack_return_to_v86(new_eip, raw_cs_selector, new_eflags);
         return;
       }
       else BX_INFO(("iret: VM set on stack, CPL!=0"));
     }
   }
   else {
-    new_flags       = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 4);
-    raw_cs_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 2);
-    new_ip          = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 0);
+    new_flags       = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 4);
+    raw_cs_selector = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 2);
+    new_ip          = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 0);
   }
 
   parse_selector(raw_cs_selector, &cs_selector);
@@ -228,10 +227,10 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
 
     /* examine return SS selector and associated descriptor */
     if (i->os32L()) {
-      raw_ss_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 16);
+      raw_ss_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP + 16);
     }
     else {
-      raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 8);
+      raw_ss_selector = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 8);
     }
 
     /* selector must be non-null, else #GP(0) */
@@ -279,14 +278,14 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     }
 
     if (i->os32L()) {
-      new_esp    = read_virtual_dword(BX_SEG_REG_SS, temp_ESP + 12);
-      new_eflags = read_virtual_dword(BX_SEG_REG_SS, temp_ESP +  8);
-      new_eip    = read_virtual_dword(BX_SEG_REG_SS, temp_ESP +  0);
+      new_esp    = read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP + 12);
+      new_eflags = read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP +  8);
+      new_eip    = read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP +  0);
     }
     else {
-      new_esp    = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 6);
-      new_eflags = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 4);
-      new_eip    = read_virtual_word(BX_SEG_REG_SS, temp_ESP + 0);
+      new_esp    = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 6);
+      new_eflags = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 4);
+      new_eip    = read_virtual_word_32(BX_SEG_REG_SS, temp_ESP + 0);
     }
 
     // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF

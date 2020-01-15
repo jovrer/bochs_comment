@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: slowdown_timer.cc,v 1.28 2008/02/15 22:05:43 sshwarts Exp $
+// $Id: slowdown_timer.cc,v 1.34 2009/04/10 08:15:25 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -30,6 +30,9 @@
 #include "slowdown_timer.h"
 
 #include <errno.h>
+#if !defined(_MSC_VER)
+#include <unistd.h>
+#endif
 
 //These need to stay printfs because they are useless in the log file.
 #define BX_SLOWDOWN_PRINTF_FEEDBACK 0
@@ -52,8 +55,7 @@ bx_slowdown_timer_c bx_slowdown_timer;
 
 bx_slowdown_timer_c::bx_slowdown_timer_c()
 {
-  put("STIMER");
-  settype(STIMERLOG);
+  put("STIME");
 
   s.start_time=0;
   s.start_emulated_time=0;

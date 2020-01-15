@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.231 2008/05/23 14:04:42 sshwarts Exp $
+// $Id: bochs.h,v 1.248 2009/04/26 06:56:27 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 //
 // bochs.h is the master header file for all C++ code.  It includes all
@@ -198,9 +198,9 @@ void print_tree(bx_param_c *node, int level = 0);
 #define BX_GET_ENABLE_A20()         bx_pc_system.get_enable_a20()
 
 #if BX_SUPPORT_A20
-#  define A20ADDR(x)                (bx_phy_address(x) & bx_pc_system.a20_mask)
+#  define A20ADDR(x)                ((bx_phy_address)(x) & bx_pc_system.a20_mask)
 #else
-#  define A20ADDR(x)                (bx_phy_address(x))
+#  define A20ADDR(x)                ((bx_phy_address)(x))
 #endif
 
 #if BX_SUPPORT_SMP
@@ -262,7 +262,6 @@ void print_tree(bx_param_c *node, int level = 0);
 typedef class BOCHSAPI logfunctions
 {
   char *prefix;
-  int type;
 // values of onoff: 0=ignore, 1=report, 2=ask, 3=fatal
 #define ACT_IGNORE 0
 #define ACT_REPORT 1
@@ -285,13 +284,8 @@ public:
   void pass(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
   void ldebug(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
   void fatal (const char *prefix, const char *fmt, va_list ap, int exit_status);
-#if BX_EXTERNAL_DEBUGGER
-  virtual void ask (int level, const char *prefix, const char *fmt, va_list ap);
-#else
   void ask (int level, const char *prefix, const char *fmt, va_list ap);
-#endif
   void put(const char *);
-  void settype(int);
   void setio(class iofunctions *);
   void setonoff(int loglev, int value) {
     assert (loglev >= 0 && loglev < N_LOGLEV);
@@ -315,17 +309,6 @@ public:
 
 #define BX_LOGPREFIX_SIZE 51
 
-enum {
-  IOLOG=0, FDLOG, GENLOG, CMOSLOG, CDLOG, DMALOG, ETHLOG, G2HLOG, HDLOG, KBDLOG,
-  NE2KLOG, PARLOG, PCILOG, PICLOG, PITLOG, SB16LOG, SERLOG, VGALOG,
-  DEVLOG, MEMLOG, DISLOG, GUILOG, IOAPICLOG, APICLOG, CPU0LOG, CPU1LOG,
-  CPU2LOG, CPU3LOG, CPU4LOG, CPU5LOG, CPU6LOG, CPU7LOG, CPU8LOG, CPU9LOG,
-  CPU10LOG, CPU11LOG, CPU12LOG, CPU13LOG, CPU14LOG, CPU15LOG, CTRLLOG,
-  UNMAPLOG, SERRLOG, BIOSLOG, PIT81LOG, PIT82LOG, IODEBUGLOG, PCI2ISALOG,
-  PLUGINLOG, EXTFPUIRQLOG , PCIVGALOG, PCIUSBLOG, VTIMERLOG, STIMERLOG,
-  PCIIDELOG, PCIDEVLOG, PCIPNICLOG, SPEAKERLOG, BUSMLOG, GAMELOG, ACPILOG
-};
-
 class BOCHSAPI iofunctions {
   int magic;
   char logprefix[BX_LOGPREFIX_SIZE];
@@ -342,7 +325,7 @@ public:
   iofunctions(const char *);
  ~iofunctions(void);
 
-  void out(int facility, int level, const char *pre, const char *fmt, va_list ap);
+  void out(int level, const char *pre, const char *fmt, va_list ap);
 
   void init_log(const char *fn);
   void init_log(int fd);
@@ -373,7 +356,7 @@ public:
 
 protected:
   int n_logfn;
-#define MAX_LOGFNS 128
+#define MAX_LOGFNS 512
   logfunc_t *logfn_list[MAX_LOGFNS];
   const char *logfn;
 };
@@ -403,7 +386,11 @@ typedef class BOCHSAPI iofunctions iofunc_t;
 #define BX_PANIC(x) (LOG_THIS panic) x
 #define BX_PASS(x) (LOG_THIS pass) x
 
-#define BX_ASSERT(x) do {if (!(x)) BX_PANIC(("failed assertion \"%s\" at %s:%d\n", #x, __FILE__, __LINE__));} while (0)
+#if BX_ASSERT_ENABLE
+  #define BX_ASSERT(x) do {if (!(x)) BX_PANIC(("failed assertion \"%s\" at %s:%d\n", #x, __FILE__, __LINE__));} while (0)
+#else
+  #define BX_ASSERT(x)
+#endif
 
 #endif
 
@@ -444,24 +431,9 @@ int bx_gdbstub_check(unsigned int eip);
 #endif
 
 typedef struct {
-  bx_bool floppy;
-  bx_bool keyboard;
-  bx_bool video;
-  bx_bool disk;
-  bx_bool pit;
-  bx_bool pic;
-  bx_bool bios;
-  bx_bool cmos;
-  bx_bool a20;
   bx_bool interrupts;
   bx_bool exceptions;
   bx_bool debugger;
-  bx_bool mouse;
-  bx_bool io;
-  bx_bool dma;
-  bx_bool unsupported_io;
-  bx_bool serial;
-  bx_bool cdrom;
   bx_bool print_timestamps;
 #if BX_DEBUGGER
   bx_bool magic_break_enabled;
@@ -471,7 +443,6 @@ typedef struct {
 #endif
 #if BX_SUPPORT_APIC
   bx_bool apic;
-  bx_bool ioapic;
 #endif
 #if BX_DEBUG_LINUX
   bx_bool linux_syscall;
@@ -483,20 +454,16 @@ void CDECL bx_signal_handler(int signum);
 int bx_atexit(void);
 BOCHSAPI extern bx_debug_t bx_dbg;
 
-// memory access type (read/write/rw)
+// memory access type (read/write/execute/rw)
 #define BX_READ         0
 #define BX_WRITE        1
-#define BX_RW           2
-
-#define DATA_ACCESS     0
-#define CODE_ACCESS     1
+#define BX_EXECUTE      2
+#define BX_RW           3
 
 #include "memory/memory.h"
 #include "pc_system.h"
 #include "plugin.h"
 #include "gui/gui.h"
-#include "gui/textconfig.h"
-#include "gui/keymap.h"
 
 /* --- EXTERNS --- */
 
@@ -519,14 +486,11 @@ extern bx_bool bx_gui_sighandler;
 #define BX_N_OPTRAM_IMAGES 4
 #define BX_N_SERIAL_PORTS 4
 #define BX_N_PARALLEL_PORTS 2
-#define BX_N_USB_HUBS 1
+#define BX_N_USB_UHCI_PORTS 2
+#define BX_N_USB_OHCI_PORTS 2
+#define BX_N_USB_HUB_PORTS 8
 #define BX_N_PCI_SLOTS 5
-
-#if BX_SUPPORT_SMP
-  #define BX_SMP_PROCESSORS (bx_cpu_count)
-#else
-  #define BX_SMP_PROCESSORS 1
-#endif
+#define BX_N_USER_PLUGINS 8
 
 void bx_center_print(FILE *file, const char *line, unsigned maxwidth);
 

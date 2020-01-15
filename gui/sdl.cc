@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.74 2008/03/06 21:15:40 sshwarts Exp $
+// $Id: sdl.cc,v 1.84 2009/03/24 16:28:02 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #define _MULTI_THREAD
@@ -33,6 +33,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "keymap.h"
 #include "iodev.h"
 #if BX_WITH_SDL
 
@@ -53,11 +54,13 @@ public:
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
   virtual void set_display_mode(disp_mode_t newmode);
-  virtual void statusbar_setitem(int element, bx_bool active);
+  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w = 0);
 #if BX_SHOW_IPS
   virtual void show_ips(Bit32u ips_count);
 #endif
 };
+
+void sdl_set_status_text(int element, const char *text, bx_bool active, bx_bool w = 0);
 
 // declare one instance of the gui object and call macro to insert the
 // plugin code
@@ -69,9 +72,11 @@ IMPLEMENT_GUI_PLUGIN_CODE(sdl)
 #if SDL_BYTEORDER == SDL_BIG_ENDIAN
 const Uint32 status_led_green = 0x00ff0000;
 const Uint32 status_gray_text = 0x80808000;
+const Uint32 status_led_red = 0x0040ff00;
 #else
 const Uint32 status_led_green = 0x0000ff00;
 const Uint32 status_gray_text = 0x00808080;
+const Uint32 status_led_red = 0x00ff4000;
 #endif
 
 static unsigned prev_cursor_x=0;
@@ -138,6 +143,12 @@ static char sdl_ips_text[20];
 
 static void headerbar_click(int x);
 
+#if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
+BxEvent *sdl_notify_callback (void *unused, BxEvent *event);
+bxevent_handler old_callback = NULL;
+void *old_callback_arg = NULL;
+#endif
+
 #if BX_SHOW_IPS
 #if  defined(__MINGW32__) || defined(_MSC_VER)
   Uint32 SDLCALL sdlTimer(Uint32 interval);
@@ -184,10 +195,15 @@ void switch_to_windowed(void)
   SDL_UpdateRect(tmp,0,0,res_x,res_y+headerbar_height+statusbar_height);
   SDL_FreeSurface(tmp);
 
-  SDL_ShowCursor(1);
-  SDL_WM_GrabInput(SDL_GRAB_OFF);
   bx_gui->show_headerbar();
-  sdl_grab = 0;
+  SDL_ShowCursor(1);
+  if (sdl_grab==1) {
+	SDL_WM_GrabInput(SDL_GRAB_OFF);
+
+  	sdl_grab = 0;
+  	bx_gui->toggle_mouse_enable();
+  }
+  bx_gui->flush();
 }
 
 void switch_to_fullscreen(void)
@@ -228,8 +244,12 @@ void switch_to_fullscreen(void)
   SDL_FreeSurface(tmp);
 
   SDL_ShowCursor(0);
-  SDL_WM_GrabInput(SDL_GRAB_ON);
-  sdl_grab = 1;
+  if (sdl_grab==0) {
+	SDL_WM_GrabInput(SDL_GRAB_ON);
+  	sdl_grab = 1;
+  	bx_gui->toggle_mouse_enable();
+  }
+  bx_gui->flush();
 }
 
 #if BX_SHOW_IPS
@@ -254,21 +274,21 @@ bx_sdl_gui_c::bx_sdl_gui_c ()
 #ifdef __MORPHOS__
 void bx_sdl_morphos_exit(void)
 {
-    SDL_Quit();
-    if (PowerSDLBase) CloseLibrary(PowerSDLBase);
+  SDL_Quit();
+  if (PowerSDLBase) CloseLibrary(PowerSDLBase);
 }
 #endif
 
-void bx_sdl_gui_c::specific_init(
-    int argc,
-    char **argv,
+void bx_sdl_gui_c::specific_init(int argc, char **argv,
     unsigned x_tilesize,
     unsigned y_tilesize,
     unsigned header_bar_y)
 {
   int i,j;
   Uint32 flags;
+  bx_bool gui_ci;
 
+  gui_ci = !strcmp(SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected(), "win32config");
   put("SDL");
 
   UNUSED(bochs_icon_bits);
@@ -289,7 +309,7 @@ void bx_sdl_gui_c::specific_init(
   if (!(PowerSDLBase=OpenLibrary("powersdl.library",0)))
   {
     LOG_THIS setonoff(LOGLEVEL_PANIC, ACT_FATAL);
-    BX_PANIC (("Unable to open SDL libraries"));
+    BX_PANIC(("Unable to open SDL libraries"));
     return;
   }
   #endif
@@ -302,7 +322,7 @@ void bx_sdl_gui_c::specific_init(
 #endif
   if (SDL_Init(flags) < 0) {
     LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-    BX_PANIC (("Unable to initialize SDL libraries"));
+    BX_PANIC(("Unable to initialize SDL libraries"));
     return;
   }
   #ifdef __MORPHOS__
@@ -330,6 +350,16 @@ void bx_sdl_gui_c::specific_init(
       if (!strcmp(argv[i], "fullscreen")) {
         sdl_fullscreen_toggle = 1;
         switch_to_fullscreen();
+#if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
+      } else if (!strcmp(argv[i], "gui_debug")) {
+        extern void InitDebugDialog();
+        SIM->set_debug_gui(1);
+        // redirect notify callback to sdl specific code
+        SIM->get_notify_callback (&old_callback, &old_callback_arg);
+        assert (old_callback != NULL);
+        SIM->set_notify_callback (sdl_notify_callback, NULL);
+        InitDebugDialog();
+#endif
       } else {
         BX_PANIC(("Unknown sdl option '%s'", argv[i]));
       }
@@ -338,12 +368,13 @@ void bx_sdl_gui_c::specific_init(
 
   new_gfx_api = 1;
 #ifdef WIN32
-  win32_init_notify_callback();
-  dialog_caps = BX_GUI_DLG_ALL;
+  if (gui_ci) {
+    dialog_caps = BX_GUI_DLG_ALL;
+  }
 #endif
 }
 
-void sdl_set_status_text(int element, const char *text, bx_bool active)
+void sdl_set_status_text(int element, const char *text, bx_bool active, bx_bool w)
 {
   Uint32 *buf, *buf_row;
   Uint32 disp, fgcolor, bgcolor;
@@ -361,7 +392,7 @@ void sdl_set_status_text(int element, const char *text, bx_bool active)
   rowsleft = statusbar_height - 2;
   fgcolor = active?headerbar_fg:status_gray_text;
   if (element > 0) {
-    bgcolor = active?status_led_green:headerbar_bg;
+    bgcolor = active?(w?status_led_red:status_led_green):headerbar_bg;
   } else {
     bgcolor = headerbar_bg;
   }
@@ -403,17 +434,17 @@ void sdl_set_status_text(int element, const char *text, bx_bool active)
     buf = buf_row + 8;
     x++;
   } while (--textlen);
-  SDL_UpdateRect( sdl_screen, xleft,res_y+headerbar_height+1,xsize,statusbar_height-2);
+  SDL_UpdateRect(sdl_screen, xleft,res_y+headerbar_height+1,xsize,statusbar_height-2);
 }
 
-void bx_sdl_gui_c::statusbar_setitem(int element, bx_bool active)
+void bx_sdl_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
-      sdl_set_status_text(i+1, statusitem_text[i], active);
+      sdl_set_status_text(i+1, statusitem_text[i], active, w);
     }
   } else if ((unsigned)element < statusitem_count) {
-    sdl_set_status_text(element+1, statusitem_text[element], active);
+    sdl_set_status_text(element+1, statusitem_text[element], active, w);
   }
 }
 
@@ -486,12 +517,16 @@ void bx_sdl_gui_c::text_update(
   y = 0;
   cs_y = 0;
   text_base = new_text - tm_info.start_address;
-  split_textrow = (line_compare + v_panning) / fontheight;
-  split_fontrows = ((line_compare + v_panning) % fontheight) + 1;
+  if (line_compare < res_y) {
+    split_textrow = (line_compare + v_panning) / fontheight;
+    split_fontrows = ((line_compare + v_panning) % fontheight) + 1;
+  } else {
+    split_textrow = rows + 1;
+    split_fontrows = 0;
+  }
   split_screen = 0;
 
-  do
-  {
+  do {
     buf = buf_row;
     hchars = text_cols;
     if (h_panning) hchars++;
@@ -654,8 +689,7 @@ int bx_sdl_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   return 0;
 }
 
-void bx_sdl_gui_c::graphics_tile_update(Bit8u *snapshot,
-    unsigned x, unsigned y)
+void bx_sdl_gui_c::graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y)
 {
   Uint32 *buf, disp;
   Uint32 *buf_row;
@@ -721,13 +755,13 @@ bx_svga_tileinfo_t *bx_sdl_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
   else {
     info->bpp = sdl_fullscreen->format->BitsPerPixel;
     info->pitch = sdl_fullscreen->pitch;
-    info->red_shift = sdl_fullscreen->format->Rshift + 8 - sdl_screen->format->Rloss;
-    info->green_shift = sdl_fullscreen->format->Gshift + 8 - sdl_screen->format->Gloss;
-    info->blue_shift = sdl_fullscreen->format->Bshift + 8 - sdl_screen->format->Bloss;
+    info->red_shift = sdl_fullscreen->format->Rshift + 8 - sdl_fullscreen->format->Rloss;
+    info->green_shift = sdl_fullscreen->format->Gshift + 8 - sdl_fullscreen->format->Gloss;
+    info->blue_shift = sdl_fullscreen->format->Bshift + 8 - sdl_fullscreen->format->Bloss;
     info->red_mask = sdl_fullscreen->format->Rmask;
     info->green_mask = sdl_fullscreen->format->Gmask;
     info->blue_mask = sdl_fullscreen->format->Bmask;
-    info->is_indexed = (sdl_screen->format->palette != NULL);
+    info->is_indexed = (sdl_fullscreen->format->palette != NULL);
   }
 
 #ifdef BX_LITTLE_ENDIAN
@@ -763,7 +797,7 @@ Bit8u *bx_sdl_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
   }
   else {
     return (Bit8u *)sdl_fullscreen->pixels +
-           sdl_fullscreen->pitch*(headerbar_height+y0) +
+           sdl_fullscreen->pitch*(y0) +
            sdl_fullscreen->format->BytesPerPixel*x0;
   }
 }
@@ -931,7 +965,7 @@ static Bit32u sdl_sym_to_bx_key (SDLKey sym)
     case SDLK_UNDO:                 return BX_KEY_UNDO;
 #endif
     default:
-      BX_ERROR (("sdl keysym %d not mapped", (int)sym));
+      BX_ERROR(("sdl keysym %d not mapped", (int)sym));
       return BX_KEY_UNHANDLED;
   }
 }
@@ -951,7 +985,7 @@ void bx_sdl_gui_c::handle_events(void)
 	if(sdl_fullscreen_toggle == 0)
 	  SDL_UpdateRect(sdl_screen, 0,0, res_x, res_y+headerbar_height+statusbar_height);
 	else
-	  SDL_UpdateRect(sdl_screen, 0,headerbar_height, res_x, res_y);
+	  SDL_UpdateRect(sdl_fullscreen, 0, headerbar_height, res_x, res_y);
 	break;
 
       case SDL_MOUSEMOTION:
@@ -1025,7 +1059,7 @@ void bx_sdl_gui_c::handle_events(void)
 	new_mousebuttons =
 	  (mouse_state & 0x01)    |
 	  ((mouse_state>>1)&0x02) |
-	  ((mouse_state<<1)&0x04) ;
+	  ((mouse_state<<1)&0x04);
 	// filter out middle button if not fullscreen
 	if(sdl_fullscreen_toggle == 0)
 	  new_mousebuttons &= 0x07;
@@ -1061,12 +1095,12 @@ void bx_sdl_gui_c::handle_events(void)
 	if (sdl_event.key.keysym.sym > SDLK_LAST) break;
         if (!SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
 	  key_event = sdl_sym_to_bx_key (sdl_event.key.keysym.sym);
-	  BX_DEBUG (("keypress scancode=%d, sym=%d, bx_key = %d", sdl_event.key.keysym.scancode, sdl_event.key.keysym.sym, key_event));
+	  BX_DEBUG(("keypress scancode=%d, sym=%d, bx_key = %d", sdl_event.key.keysym.scancode, sdl_event.key.keysym.sym, key_event));
 	} else {
 	  /* use mapping */
 	  BXKeyEntry *entry = bx_keymap.findHostKey (sdl_event.key.keysym.sym);
 	  if (!entry) {
-	    BX_ERROR(( "host key %d (0x%x) not mapped!",
+	    BX_ERROR(("host key %d (0x%x) not mapped!",
 		  (unsigned) sdl_event.key.keysym.sym,
 		  (unsigned) sdl_event.key.keysym.sym));
 	    break;
@@ -1093,7 +1127,7 @@ void bx_sdl_gui_c::handle_events(void)
             /* use mapping */
             BXKeyEntry *entry = bx_keymap.findHostKey (sdl_event.key.keysym.sym);
             if (!entry) {
-              BX_ERROR(( "host key %d (0x%x) not mapped!",
+              BX_ERROR(("host key %d (0x%x) not mapped!",
 		    (unsigned) sdl_event.key.keysym.sym,
 		    (unsigned) sdl_event.key.keysym.sym));
               break;
@@ -1110,7 +1144,7 @@ void bx_sdl_gui_c::handle_events(void)
 
       case SDL_QUIT:
 	LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-	BX_PANIC (("User requested shutdown."));
+	BX_PANIC(("User requested shutdown."));
     }
   }
 #if BX_SHOW_IPS
@@ -1164,11 +1198,7 @@ void bx_sdl_gui_c::clear_screen(void)
     SDL_UpdateRect(sdl_fullscreen,0,0,res_x,res_y);
 }
 
-bx_bool bx_sdl_gui_c::palette_change(
-    unsigned index,
-    unsigned red,
-    unsigned green,
-    unsigned blue)
+bx_bool bx_sdl_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
 {
   unsigned char palred = red & 0xFF;
   unsigned char palgreen = green & 0xFF;
@@ -1225,7 +1255,7 @@ void bx_sdl_gui_c::dimension_update(
     if(!sdl_screen)
     {
       LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-      BX_PANIC (("Unable to set requested videomode: %ix%i: %s",x,y,SDL_GetError()));
+      BX_PANIC(("Unable to set requested videomode: %ix%i: %s",x,y,SDL_GetError()));
     }
     headerbar_fg = SDL_MapRGB(
 	sdl_screen->format,
@@ -1244,7 +1274,7 @@ void bx_sdl_gui_c::dimension_update(
     if(!sdl_fullscreen)
     {
       LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-      BX_PANIC (("Unable to set requested videomode: %ix%i: %s",x,y,SDL_GetError()));
+      BX_PANIC(("Unable to set requested videomode: %ix%i: %s",x,y,SDL_GetError()));
     }
   }
   res_x = x;
@@ -1263,7 +1293,7 @@ unsigned bx_sdl_gui_c::create_bitmap(const unsigned char *bmap,
   unsigned char pixels;
 
   if (n_sdl_bitmaps >= MAX_SDL_BITMAPS) {
-    BX_PANIC (("too many SDL bitmaps. To fix, increase MAX_SDL_BITMAPS"));
+    BX_PANIC(("too many SDL bitmaps. To fix, increase MAX_SDL_BITMAPS"));
     return 0;
   }
 
@@ -1289,7 +1319,7 @@ unsigned bx_sdl_gui_c::create_bitmap(const unsigned char *bmap,
     delete tmp;
     bx_gui->exit();
     LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-    BX_PANIC (("Unable to create requested bitmap"));
+    BX_PANIC(("Unable to create requested bitmap"));
   }
   tmp->src.w = xdim;
   tmp->src.h = ydim;
@@ -1363,6 +1393,7 @@ void bx_sdl_gui_c::replace_bitmap(
 {
   SDL_Rect hb_dst;
   unsigned old_id;
+  if (!sdl_screen) return;
 
   old_id = hb_entry[hbar_id].bmp_id;
   hb_dst = sdl_bitmaps[old_id]->dst;
@@ -1495,7 +1526,7 @@ void headerbar_click(int x)
       xorigin = sdl_bitmaps[hb_entry[i].bmp_id]->dst.x;
     else
       xorigin = res_x - sdl_bitmaps[hb_entry[i].bmp_id]->dst.x;
-    if ( (x>=xorigin) && (x<(xorigin+xdim))) {
+    if ((x>=xorigin) && (x<(xorigin+xdim))) {
       hb_entry[i].f();
       return;
     }
@@ -1516,10 +1547,10 @@ void bx_sdl_gui_c::exit(void)
 }
 
 /// key mapping for SDL
-typedef struct keyTableEntry {
+typedef struct {
   const char *name;
   Bit32u value;
-};
+} keyTableEntry;
 
 #define DEF_SDL_KEY(key) \
   { #key, key },
@@ -1540,7 +1571,7 @@ static Bit32u convertStringToSDLKey (const char *string)
   keyTableEntry *ptr;
   for (ptr = &keytable[0]; ptr->name != NULL; ptr++) {
     //BX_DEBUG (("comparing string '%s' to SDL key '%s'", string, ptr->name));
-    if (!strcmp (string, ptr->name))
+    if (!strcmp(string, ptr->name))
       return ptr->value;
   }
   return BX_KEYMAP_UNKNOWN;
@@ -1557,12 +1588,12 @@ void bx_sdl_gui_c::set_display_mode(disp_mode_t newmode)
   if (sdl_fullscreen_toggle) {
     switch (newmode) {
       case DISP_MODE_CONFIG:
-	BX_DEBUG (("switch to configuration mode (windowed)"));
-	switch_to_windowed ();
+	BX_DEBUG(("switch to configuration mode (windowed)"));
+	switch_to_windowed();
 	break;
       case DISP_MODE_SIM:
-	BX_DEBUG (("switch to simulation mode (fullscreen)"));
-	switch_to_fullscreen ();
+	BX_DEBUG(("switch to simulation mode (fullscreen)"));
+	switch_to_fullscreen();
 	break;
     }
   }
@@ -1577,5 +1608,47 @@ void bx_sdl_gui_c::show_ips(Bit32u ips_count)
   }
 }
 #endif
+
+#if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
+
+#include "enh_dbg.h"
+
+BxEvent *sdl_notify_callback (void *unused, BxEvent *event)
+{
+  switch (event->type)
+  {
+    case BX_SYNC_EVT_GET_DBG_COMMAND:
+      {
+        debug_cmd = new char[512];
+        debug_cmd_ready = 0;
+        HitBreak();
+        while (debug_cmd_ready == 0 && bx_user_quit == 0)
+        {
+          if (vgaw_refresh != 0)  // is the GUI frontend requesting a VGAW refresh?
+            DEV_vga_refresh();
+          vgaw_refresh = 0;
+#ifdef WIN32
+          Sleep(100);
+#else
+          sleep(1);
+#endif
+        }
+        if (bx_user_quit != 0)
+          BX_EXIT(0);
+
+        event->u.debugcmd.command = debug_cmd;
+        event->retcode = 1;
+        return event;
+      }
+    case BX_ASYNC_EVT_DBG_MSG:
+      {
+        ParseIDText (event->u.logmsg.msg);
+        return event;
+      }
+    default:
+      return (*old_callback)(old_callback_arg, event);
+  }
+}
+#endif /* if BX_DEBUGGER */
 
 #endif /* if BX_WITH_SDL */

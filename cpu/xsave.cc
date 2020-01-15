@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: xsave.cc,v 1.10 2008/05/10 13:34:47 sshwarts Exp $
+// $Id: xsave.cc,v 1.16 2009/01/16 18:18:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -41,11 +41,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR prepareXSAVE();
 
-  BX_DEBUG(("XSAVE: save processor state XCR0=0x%08x", BX_CPU_THIS_PTR xcr0.getRegister()));
+  BX_DEBUG(("XSAVE: save processor state XCR0=0x%08x", BX_CPU_THIS_PTR xcr0.get32()));
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  bx_address laddr = get_laddr(i->seg(), RMAddr(i));
+  bx_address laddr = get_laddr(i->seg(), eaddr);
 
   if (laddr & 0x3f) {
     BX_ERROR(("XSAVE: access not aligned to 64-byte"));
@@ -84,11 +84,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
     else
 #endif
     {
-      xmm.xmm32u(2) = (Bit32u)(BX_CPU_THIS_PTR the_i387.fip) & 0xffffffff;
+      xmm.xmm32u(2) = (Bit32u)(BX_CPU_THIS_PTR the_i387.fip);
       xmm.xmm32u(3) =         (BX_CPU_THIS_PTR the_i387.fcs);
     }
 
-    write_virtual_dqword(i->seg(), RMAddr(i), (Bit8u *) &xmm);
+    write_virtual_dqword(i->seg(), eaddr, (Bit8u *) &xmm);
 
     /*
      * x87 FPU Instruction Operand (Data) Pointer Offset (32/64 bits)
@@ -102,15 +102,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
      */
 #if BX_SUPPORT_X86_64
     if (i->os64L()) {
-      write_virtual_qword(i->seg(), RMAddr(i) + 16, BX_CPU_THIS_PTR the_i387.fdp);
+      write_virtual_qword(i->seg(), eaddr + 16, BX_CPU_THIS_PTR the_i387.fdp);
     }
     else
 #endif
     {
-      write_virtual_dword(i->seg(), RMAddr(i) + 16, 
-            (Bit32u)(BX_CPU_THIS_PTR the_i387.fdp & 0xffffffff));
-      write_virtual_dword(i->seg(), RMAddr(i) + 20, 
-            (Bit32u)(BX_CPU_THIS_PTR the_i387.fds));
+      write_virtual_dword(i->seg(), eaddr + 16, (Bit32u) BX_CPU_THIS_PTR the_i387.fdp);
+      write_virtual_dword(i->seg(), eaddr + 20, (Bit32u) BX_CPU_THIS_PTR the_i387.fds);
     }
     /* do not touch MXCSR state */
 
@@ -123,15 +121,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
       xmm.xmm64u(1) = 0;
       xmm.xmm16u(4) = fp.exp;
 
-      write_virtual_dqword(i->seg(), RMAddr(i)+index*16+32, (Bit8u *) &xmm);
+      write_virtual_dqword(i->seg(), eaddr+index*16+32, (Bit8u *) &xmm);
     }
   }
 
   /////////////////////////////////////////////////////////////////////////////
   if (BX_CPU_THIS_PTR xcr0.get_SSE() && (EAX & BX_XCR0_SSE_MASK) != 0)
   {
-    write_virtual_dword(i->seg(), RMAddr(i) + 24, BX_MXCSR_REGISTER);
-    write_virtual_dword(i->seg(), RMAddr(i) + 28, MXCSR_MASK);
+    write_virtual_dword(i->seg(), eaddr + 24, BX_MXCSR_REGISTER);
+    write_virtual_dword(i->seg(), eaddr + 28, MXCSR_MASK);
 
     /* store XMM register file */
     for(index=0; index < BX_XMM_REGISTERS; index++)
@@ -139,7 +137,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
       // save XMM8-XMM15 only in 64-bit mode
       if (index < 8 || Is64BitMode()) {
         write_virtual_dqword(i->seg(),
-           RMAddr(i)+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
+           eaddr+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
       }
     }
   }
@@ -147,7 +145,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
   // skip header update for now, required to know if a CPU feature is in its initial state
 #else
   BX_INFO(("XSAVE: required XSAVE support, use --enable-xsave option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -160,22 +158,21 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR prepareXSAVE();
 
-  BX_DEBUG(("XRSTOR: restore processor state XCR0=0x%08x", BX_CPU_THIS_PTR xcr0.getRegister()));
+  BX_DEBUG(("XRSTOR: restore processor state XCR0=0x%08x", BX_CPU_THIS_PTR xcr0.get32()));
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  bx_address laddr = get_laddr(i->seg(), RMAddr(i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address laddr = get_laddr(i->seg(), eaddr);
 
   if (laddr & 0x3f) {
     BX_ERROR(("XRSTOR: access not aligned to 64-byte"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  Bit64u header1 = read_virtual_qword(i->seg(), RMAddr(i) + 512);
-  Bit64u header2 = read_virtual_qword(i->seg(), RMAddr(i) + 520);
-  Bit64u header3 = read_virtual_qword(i->seg(), RMAddr(i) + 528);
+  Bit64u header1 = read_virtual_qword(i->seg(), eaddr + 512);
+  Bit64u header2 = read_virtual_qword(i->seg(), eaddr + 520);
+  Bit64u header3 = read_virtual_qword(i->seg(), eaddr + 528);
 
-  if ((~BX_CPU_THIS_PTR xcr0.getRegister() & header1) != 0) {
+  if ((~BX_CPU_THIS_PTR xcr0.get32() & header1) != 0) {
     BX_ERROR(("XRSTOR: Broken header state"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
@@ -194,7 +191,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
   {
     if (header1 & BX_XCR0_FPU_MASK) {
       // load FPU state from XSAVE area
-      read_virtual_dqword(i->seg(), RMAddr(i), (Bit8u *) &xmm);
+      read_virtual_dqword(i->seg(), eaddr, (Bit8u *) &xmm);
 
       BX_CPU_THIS_PTR the_i387.cwd =  xmm.xmm16u(0);
       BX_CPU_THIS_PTR the_i387.swd =  xmm.xmm16u(1);
@@ -214,13 +211,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 #endif
       {
         BX_CPU_THIS_PTR the_i387.fip = xmm.xmm32u(2);
-        BX_CPU_THIS_PTR the_i387.fcs = xmm.xmm16u(5);
+        BX_CPU_THIS_PTR the_i387.fcs = xmm.xmm16u(6);
       }
 
       Bit32u tag_byte = xmm.xmmubyte(4);
 
       /* Restore x87 FPU DP */
-      read_virtual_dqword(i->seg(), RMAddr(i) + 16, (Bit8u *) &xmm);
+      read_virtual_dqword(i->seg(), eaddr + 16, (Bit8u *) &xmm);
 
 #if BX_SUPPORT_X86_64
       if (i->os64L()) {
@@ -237,27 +234,30 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
       /* load i387 register file */
       for(index=0; index < 8; index++)
       {
-        read_virtual_tword(i->seg(), RMAddr(i)+index*16+32, &(BX_FPU_REG(index)));
+        floatx80 reg;
+        reg.fraction = read_virtual_qword(i->seg(), eaddr+index*16+32);
+        reg.exp      = read_virtual_word (i->seg(), eaddr+index*16+40);
+        BX_FPU_REG(index) = reg;
       }
 
       /* Restore floating point tag word - see desription for FXRSTOR instruction */
       BX_CPU_THIS_PTR the_i387.twd = unpack_FPU_TW(tag_byte);
     }
     else {
-       // initialize FPU with reset values
-       BX_CPU_THIS_PTR the_i387.init();
+      // initialize FPU with reset values
+      BX_CPU_THIS_PTR the_i387.init();
 
-       for (index=0;index<8;index++) {
-         BX_CPU_THIS_PTR the_i387.st_space[index].exp      = 0;
-         BX_CPU_THIS_PTR the_i387.st_space[index].fraction = 0;
-       }
+      for (index=0;index<8;index++) {
+        floatx80 reg = { 0, 0 };
+        BX_FPU_REG(index) = reg;
+      }
     }
   }
 
   /////////////////////////////////////////////////////////////////////////////
   if (BX_CPU_THIS_PTR xcr0.get_SSE() && (EAX & BX_XCR0_SSE_MASK) != 0)
   {
-    Bit32u new_mxcsr = read_virtual_dword(i->seg(), RMAddr(i) + 24);
+    Bit32u new_mxcsr = read_virtual_dword(i->seg(), eaddr + 24);
     if(new_mxcsr & ~MXCSR_MASK)
        exception(BX_GP_EXCEPTION, 0, 0);
 
@@ -268,7 +268,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
          // restore XMM8-XMM15 only in 64-bit mode
          if (index < 8 || Is64BitMode()) {
            read_virtual_dqword(i->seg(),
-               RMAddr(i)+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
+               eaddr+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
          }
       }
     }
@@ -285,7 +285,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
   }
 #else
   BX_INFO(("XRSTOR: required XSAVE support, use --enable-xsave option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -306,10 +306,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XGETBV(bxInstruction_c *i)
   }
 
   RDX = 0;
-  RAX = BX_CPU_THIS_PTR xcr0.getRegister();
+  RAX = BX_CPU_THIS_PTR xcr0.get32();
 #else
   BX_INFO(("XGETBV: required XSAVE support, use --enable-xsave option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -344,9 +344,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  BX_CPU_THIS_PTR xcr0.setRegister(EAX);
+  BX_CPU_THIS_PTR xcr0.set32(EAX);
 #else
   BX_INFO(("XSETBV: required XSAVE support, use --enable-xsave option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.71 2008/05/10 20:39:53 sshwarts Exp $
+// $Id: pc_system.cc,v 1.75 2009/04/24 08:16:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,8 +22,9 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
 #include "cpu/cpu.h"
@@ -47,12 +48,7 @@ double     m_ips; // Millions of Instructions Per Second
 #define SpewPeriodicTimerInfo 0
 #define MinAllowableTimerPeriod 1
 
-#if BX_SUPPORT_ICACHE
 const Bit64u bx_pc_system_c::NullTimerInterval = ICacheWriteStampStart;
-#else
-// This must be the maximum 32-bit unsigned int value, NOT (Bit64u) -1.
-const Bit64u bx_pc_system_c::NullTimerInterval = 0xffffffff;
-#endif
 
   // constructor
 bx_pc_system_c::bx_pc_system_c()
@@ -170,8 +166,7 @@ void bx_pc_system_c::set_enable_a20(bx_bool value)
 bx_bool bx_pc_system_c::get_enable_a20(void)
 {
 #if BX_SUPPORT_A20
-  if (bx_dbg.a20)
-    BX_INFO(("A20: get() = %u", (unsigned) enable_a20));
+  BX_DEBUG(("A20: get() = %u", (unsigned) enable_a20));
 
   return enable_a20;
 #else
@@ -183,7 +178,7 @@ bx_bool bx_pc_system_c::get_enable_a20(void)
 void bx_pc_system_c::MemoryMappingChanged(void)
 {
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
-    BX_CPU(i)->TLB_flush(1);
+    BX_CPU(i)->TLB_flush();
 }
 
 void bx_pc_system_c::invlpg(bx_address addr)
@@ -417,9 +412,7 @@ void bx_pc_system_c::nullTimer(void* this_ptr)
   }
 #endif
 
-#if BX_SUPPORT_ICACHE
   purgeICaches();
-#endif
 }
 
 void bx_pc_system_c::benchmarkTimer(void* this_ptr)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: busmouse.cc,v 1.9 2008/02/15 22:05:41 sshwarts Exp $
+// $Id: busmouse.cc,v 1.14 2009/03/03 20:34:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 
 // Initial code by Ben Lunt 'fys frontiernet net'
@@ -33,6 +33,7 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "busmouse.h"
 
 #if BX_SUPPORT_BUSMOUSE
 
@@ -44,9 +45,6 @@ int libbusmouse_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
 {
   // Create one instance of the busmouse device object.
   theBusMouse = new bx_busm_c();
-  // Before this plugin was loaded, pluginBusMouse pointed to a stub.
-  // Now make it point to the real thing.
-  bx_devices.pluginBusMouse = theBusMouse;
   // Register this device.
   BX_REGISTER_DEVICE_DEVMODEL (plugin, type, theBusMouse, BX_PLUGIN_BUSMOUSE);
   return(0); // Success
@@ -60,7 +58,6 @@ void libbusmouse_LTX_plugin_fini(void)
 bx_busm_c::bx_busm_c()
 {
   put("BUSM");
-  settype(BUSMLOG);
 }
 
 bx_busm_c::~bx_busm_c()
@@ -70,7 +67,7 @@ bx_busm_c::~bx_busm_c()
 
 void bx_busm_c::init(void)
 {
-  BX_DEBUG(("Init $Id: busmouse.cc,v 1.9 2008/02/15 22:05:41 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: busmouse.cc,v 1.14 2009/03/03 20:34:50 vruppert Exp $"));
 
   DEV_register_irq(BUS_MOUSE_IRQ, "Bus Mouse");
 
@@ -82,6 +79,7 @@ void bx_busm_c::init(void)
     DEV_register_ioread_handler(this, read_handler, i, "Bus Mouse", 1);
     DEV_register_iowrite_handler(this, write_handler, i, "Bus Mouse", 1);
   }
+  DEV_register_default_mouse(this, mouse_enq_static, NULL);
 
   BX_BUSM_THIS mouse_delayed_dx = 0;
   BX_BUSM_THIS mouse_delayed_dy = 0;
@@ -117,21 +115,21 @@ void bx_busm_c::register_state(void)
   BXRS_HEX_PARAM_FIELD(list, current_y, BX_BUSM_THIS current_y);
   BXRS_HEX_PARAM_FIELD(list, current_b, BX_BUSM_THIS current_b);
   BXRS_HEX_PARAM_FIELD(list, sig_port_sequ, BX_BUSM_THIS sig_port_sequ);
-  BXRS_HEX_PARAM_FILED(list, control_val, BX_BUSM_THIS control_val);
+  BXRS_HEX_PARAM_FIELD(list, control_val, BX_BUSM_THIS control_val);
 
   bx_list_c *ctrl = new bx_list_c(list, "control", 7);
   BXRS_PARAM_BOOL(ctrl, mode_set, BX_BUSM_THIS control.mode_set);
-  BXRS_HEX_PARAM_FILED(ctrl, modeA_select, BX_BUSM_THIS control.modeA_select);
+  BXRS_HEX_PARAM_FIELD(ctrl, modeA_select, BX_BUSM_THIS control.modeA_select);
   BXRS_PARAM_BOOL(ctrl, portA_dir, BX_BUSM_THIS control.portA_dir);
   BXRS_PARAM_BOOL(ctrl, portC_upper_dir, BX_BUSM_THIS control.portC_upper_dir);
   BXRS_PARAM_BOOL(ctrl, modeBC_select, BX_BUSM_THIS control.modeBC_select);
   BXRS_PARAM_BOOL(ctrl, portB_dir, BX_BUSM_THIS control.portB_dir);
   BXRS_PARAM_BOOL(ctrl, portC_lower_dir, BX_BUSM_THIS control.portC_lower_dir);
 
-  BXRS_PARAM_BOOL(list, interrupts, BX_BUSM_THIS control.interrupts);
-  BXRS_PARAM_BOOL(list, packet_update, BX_BUSM_THIS control.packet_update);
-  BXRS_HEX_PARAM_FILED(list, cur_command, BX_BUSM_THIS cur_command);
-  BXRS_HEX_PARAM_FILED(list, command_val, BX_BUSM_THIS command_val);
+  BXRS_PARAM_BOOL(list, interrupts, BX_BUSM_THIS interrupts);
+  BXRS_PARAM_BOOL(list, packet_update, BX_BUSM_THIS packet_update);
+  BXRS_HEX_PARAM_FIELD(list, cur_command, BX_BUSM_THIS cur_command);
+  BXRS_HEX_PARAM_FIELD(list, command_val, BX_BUSM_THIS command_val);
 }
 
 // static IO port read callback handler
@@ -272,7 +270,12 @@ void bx_busm_c::write(Bit32u address, Bit32u value, unsigned io_len)
   }
 }
 
-void bx_busm_c::bus_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_busm_c::mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state)
+{
+  ((bx_busm_c*)dev)->mouse_enq(delta_x, delta_y, delta_z, button_state);
+}
+
+void bx_busm_c::mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
 {
   // scale down the motion
   if ((delta_x < -1) || (delta_x > 1))

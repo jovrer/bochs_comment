@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.h,v 1.25 2008/01/26 22:24:02 sshwarts Exp $
+// $Id: ioapic.h,v 1.33 2009/02/22 10:44:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,14 +22,16 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 #ifndef BX_DEVICES_IOAPIC_H
 #define BX_DEVICES_IOAPIC_H
 
-#include "cpu/apic.h"
-
-extern class bx_ioapic_c bx_ioapic;
+extern int apic_bus_deliver_lowest_priority(Bit8u vector, Bit8u dest, bx_bool trig_mode, bx_bool broadcast);
+extern int apic_bus_deliver_interrupt(Bit8u vector, Bit8u dest, Bit8u delivery_mode, bx_bool logical_dest, bx_bool level, bx_bool trig_mode);
+extern int apic_bus_broadcast_interrupt(Bit8u vector, Bit8u delivery_mode, bx_bool trig_mode, int exclude_cpu);
 
 #define BX_IOAPIC_NUM_PINS   (0x18)
 
@@ -71,8 +73,31 @@ public:
   void register_state(bx_param_c *parent);
 };
 
-class bx_ioapic_c : public bx_generic_apic_c
+class bx_ioapic_c : public bx_ioapic_stub_c
 {
+public:
+  bx_ioapic_c();
+  virtual ~bx_ioapic_c() {}
+  virtual void init();
+  virtual void reset(unsigned type);
+  virtual void register_state(void);
+
+  virtual void receive_eoi(Bit8u vector);
+  virtual void set_irq_level(Bit8u int_in, bx_bool level);
+
+  Bit32u read_aligned(bx_phy_address address);
+  void write_aligned(bx_phy_address address, Bit32u data);
+
+private:
+  bx_phy_address get_base(void) const { return base_addr; }
+  void set_id(Bit32u new_id) { id = new_id; }
+  Bit32u get_id() const { return id; }
+
+  void service_ioapic(void);
+
+  bx_phy_address base_addr;
+  Bit32u id;
+
   Bit32u ioregsel;    // selects between various registers
   Bit32u intin;
   // interrupt request bitmask, not visible from the outside.  Bits in the
@@ -82,18 +107,7 @@ class bx_ioapic_c : public bx_generic_apic_c
   // It's not clear if this is how the real device works.
   Bit32u irr;
 
-public:
   bx_io_redirect_entry_t ioredtbl[BX_IOAPIC_NUM_PINS];  // table of redirections
-  bx_ioapic_c();
-  virtual ~bx_ioapic_c();
-  virtual void init();
-  virtual void reset(unsigned type) {}
-  virtual void read_aligned(bx_phy_address address, Bit32u *data);
-  virtual void write_aligned(bx_phy_address address, Bit32u *data);
-  void set_irq_level(Bit8u int_in, bx_bool level);
-  void receive_eoi(Bit8u vector);
-  void service_ioapic(void);
-  virtual void register_state(void);
 };
 
 #endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h,v 1.51 2008/05/01 20:28:36 sshwarts Exp $
+// $Id: memory.h,v 1.56 2009/03/08 21:23:39 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -24,7 +24,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -111,7 +111,7 @@ public:
   BX_MEM_SMF bx_bool dbg_set_mem(bx_phy_address addr, unsigned len, Bit8u *buf);
   BX_MEM_SMF bx_bool dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *crc);
 #endif
-  BX_MEM_SMF Bit8u* getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned op, unsigned access_type);
+  BX_MEM_SMF Bit8u* getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw);
   BX_MEM_SMF bx_bool registerMemoryHandlers(void *param, memory_handler_t read_handler,
 		  memory_handler_t write_handler, bx_phy_address begin_addr, bx_phy_address end_addr);
   BX_MEM_SMF bx_bool unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler,
@@ -159,9 +159,7 @@ BX_CPP_INLINE Bit32u BX_MEM_C::get_num_allocated_pages(void)
 }
 
 #if BX_DEBUGGER
-#  define BX_DBG_DIRTY_PAGE(page) BX_MEM(0)->dbg_dirty_pages[page] = 1;
-#else
-#  define BX_DBG_DIRTY_PAGE(page)
+  #define BX_DBG_DIRTY_PAGE(page) BX_MEM(0)->dbg_dirty_pages[page] = 1;
 #endif
 
 #endif

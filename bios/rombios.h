@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.h,v 1.6 2008/01/26 09:15:27 sshwarts Exp $
+// $Id: rombios.h,v 1.9 2009/01/26 09:21:00 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2006 Volker Ruppert
@@ -56,7 +56,7 @@
 #define ACPI_DATA_SIZE    0x00010000L
 #define PM_IO_BASE        0xb000
 #define SMB_IO_BASE       0xb100
-#define CPU_COUNT_ADDR    0xf000
+#define SMP_MSR_ADDR      0x0510
 
   // Define the application NAME
 #if defined(BX_QEMU)

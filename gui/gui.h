@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h,v 1.57 2008/02/05 22:57:41 sshwarts Exp $
+// $Id: gui.h,v 1.61 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #define BX_MAX_STATUSITEMS 10
 
@@ -96,7 +96,7 @@ public:
   virtual int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)  = 0;
   virtual int set_clipboard_text(char *snapshot, Bit32u len) = 0;
   virtual void mouse_enabled_changed_specific (bx_bool val) = 0;
-  virtual void statusbar_setitem(int element, bx_bool active) {}
+  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w=0) {}
   virtual void set_tooltip(unsigned hbar_id, const char *tip) {}
   virtual void exit(void) = 0;
   // set_display_mode() changes the mode between the configuration interface
@@ -136,6 +136,7 @@ public:
   static void     mouse_enabled_changed(bx_bool val);
   int register_statusitem(const char *text);
   static void init_signal_handlers();
+  static void toggle_mouse_enable(void);
 
 
 protected:
@@ -151,7 +152,6 @@ protected:
   static void snapshot_handler(void);
   static void snapshot_checker(void *);
   static void config_handler(void);
-  static void toggle_mouse_enable(void);
   static void userbutton_handler(void);
   static void save_restore_handler(void);
 

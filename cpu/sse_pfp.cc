@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_pfp.cc,v 1.48 2008/05/10 18:10:53 sshwarts Exp $
+// $Id: sse_pfp.cc,v 1.54 2009/04/11 17:00:28 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -32,6 +32,7 @@
 
 void BX_CPU_C::check_exceptionsSSE(int exceptions_flags)
 {
+  exceptions_flags &= 0x3F;
   int unmasked = ~(MXCSR.get_exceptions_masks()) & exceptions_flags;
   MXCSR.set_exceptions(exceptions_flags);
 
@@ -86,20 +87,24 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareSSE();
 
+  /* check floating point status word for a pending FPU exceptions */
+  FPU_check_pending_exceptions();
+
   BxPackedMmxRegister op;
   BxPackedXmmRegister result;
 
   /* op is a register or memory reference */
   if (i->modC0()) {
-    BX_CPU_THIS_PTR prepareFPU2MMX();
     op = BX_READ_MMX_REG(i->rm());
   }
   else {
     // do not cause transition to MMX state if no MMX register touched
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    MMXUQ(op) = read_virtual_qword(i->seg(), RMAddr(i));
+    MMXUQ(op) = read_virtual_qword(i->seg(), eaddr);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -111,7 +116,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQq(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result.xmm64u(0));
 #else
   BX_INFO(("CVTPI2PS_VpsQq: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -125,20 +130,24 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PD_VpdQq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
+  /* check floating point status word for a pending FPU exceptions */
+  FPU_check_pending_exceptions();
+
   BxPackedMmxRegister op;
   BxPackedXmmRegister result;
 
   /* op is a register or memory reference */
   if (i->modC0()) {
-    BX_CPU_THIS_PTR prepareFPU2MMX();
     op = BX_READ_MMX_REG(i->rm());
   }
   else {
     // do not cause transition to MMX state if no MMX register touched
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    MMXUQ(op) = read_virtual_qword(i->seg(), RMAddr(i));
+    MMXUQ(op) = read_virtual_qword(i->seg(), eaddr);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   result.xmm64u(0) = int32_to_float64(MMXUD0(op));
   result.xmm64u(1) = int32_to_float64(MMXUD1(op));
@@ -146,7 +155,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PD_VpdQq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTPI2PD_VpdQd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -174,9 +183,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEd(bxInstruction_c *i)
       op = BX_READ_64BIT_REG(i->rm());
     }
     else {
-      BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+      bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
       /* pointer, segment address pair */
-      op = read_virtual_qword_64(i->seg(), RMAddr(i));
+      op = read_virtual_qword_64(i->seg(), eaddr);
     }
 
     result = int64_to_float64(op, status_word);
@@ -191,9 +200,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEd(bxInstruction_c *i)
       op = BX_READ_32BIT_REG(i->rm());
     }
     else {
-      BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+      bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
       /* pointer, segment address pair */
-      op = read_virtual_dword(i->seg(), RMAddr(i));
+      op = read_virtual_dword(i->seg(), eaddr);
     }
 
     result = int32_to_float64(op);
@@ -203,7 +212,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEd(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
 #else
   BX_INFO(("CVTSI2SD_VsdEd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -233,9 +242,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEd(bxInstruction_c *i)
       op = BX_READ_64BIT_REG(i->rm());
     }
     else {
-      BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+      bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
       /* pointer, segment address pair */
-      op = read_virtual_qword_64(i->seg(), RMAddr(i));
+      op = read_virtual_qword_64(i->seg(), eaddr);
     }
 
     result = int64_to_float32(op, status_word);
@@ -250,9 +259,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEd(bxInstruction_c *i)
       op = BX_READ_32BIT_REG(i->rm());
     }
     else {
-      BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+      bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
       /* pointer, segment address pair */
-      op = read_virtual_dword(i->seg(), RMAddr(i));
+      op = read_virtual_dword(i->seg(), eaddr);
     }
 
     result = int32_to_float32(op, status_word);
@@ -262,7 +271,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEd(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
 #else
   BX_INFO(("CVTSI2SS_VssEd: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -276,7 +285,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2PI_PqWps(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareSSE();
-  BX_CPU_THIS_PTR prepareFPU2MMX();
+
+  /* check floating point status word for a pending FPU exceptions */
+  FPU_check_pending_exceptions();
 
   Bit64u op;
   BxPackedMmxRegister result;
@@ -286,10 +297,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2PI_PqWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -309,7 +322,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2PI_PqWps(bxInstruction_c *i)
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTTPS2PI_PqWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -323,7 +336,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
-  BX_CPU_THIS_PTR prepareFPU2MMX();
+
+  /* check floating point status word for a pending FPU exceptions */
+  FPU_check_pending_exceptions();
 
   BxPackedXmmRegister op;
   BxPackedMmxRegister result;
@@ -333,10 +348,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -353,7 +370,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTTPD2PI_PqWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -375,9 +392,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSD2SI_GdWsd(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -399,10 +416,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSD2SI_GdWsd(bxInstruction_c *i)
     BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
     BX_WRITE_32BIT_REGZ(i->nnn(), result);
   }
-
 #else
   BX_INFO(("CVTTSD2SI_GdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -424,9 +440,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSS2SI_GdWss(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -448,10 +464,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSS2SI_GdWss(bxInstruction_c *i)
     BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
     BX_WRITE_32BIT_REGZ(i->nnn(), result);
   }
-
 #else
   BX_INFO(("CVTTSS2SI_GdWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -466,7 +481,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PI_PqWps(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareSSE();
-  BX_CPU_THIS_PTR prepareFPU2MMX();
+
+  /* check floating point status word for a pending FPU exceptions */
+  FPU_check_pending_exceptions();
 
   Bit64u op;
   BxPackedMmxRegister result;
@@ -476,10 +493,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PI_PqWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -499,7 +518,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PI_PqWps(bxInstruction_c *i)
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTPS2PI_PqWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -514,7 +533,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
-  BX_CPU_THIS_PTR prepareFPU2MMX();
+
+  /* check floating point status word for a pending FPU exceptions */
+  FPU_check_pending_exceptions();
 
   BxPackedXmmRegister op;
   BxPackedMmxRegister result;
@@ -524,10 +545,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -544,7 +567,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTPD2PI_PqWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -567,9 +590,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SI_GdWsd(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -590,10 +613,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SI_GdWsd(bxInstruction_c *i)
     BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
     BX_WRITE_32BIT_REGZ(i->nnn(), result);
   }
-
 #else
   BX_INFO(("CVTSD2SI_GdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -616,9 +638,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SI_GdWss(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -639,10 +661,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SI_GdWss(bxInstruction_c *i)
     BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
     BX_WRITE_32BIT_REGZ(i->nnn(), result);
   }
-
 #else
   BX_INFO(("CVTSS2SI_GdWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -664,9 +685,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PD_VpsWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -685,10 +706,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PD_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), result);
-
 #else
   BX_INFO(("CVTPS2PD_VpsWps: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -711,9 +731,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PS_VpdWpd(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -731,10 +751,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PS_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), result);
-
 #else
   BX_INFO(("CVTPD2PS_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -758,9 +777,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SS_VsdWsd(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -769,10 +788,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SS_VsdWsd(bxInstruction_c *i)
   result = float64_to_float32(op, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
-
 #else
   BX_INFO(("CVTSD2SS_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -794,9 +812,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SD_VssWss(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -805,10 +823,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SD_VssWss(bxInstruction_c *i)
   result = float32_to_float64(op, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
-
 #else
   BX_INFO(("CVTSS2SD_VssWss: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -831,10 +848,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PS_VpsWdq(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
+
+  BX_CPU_THIS_PTR prepareFPU2MMX(); /* FPU2MMX state transition */
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -848,7 +867,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PS_VpsWdq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("CVTDQ2PS_VpsWdq: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -871,9 +890,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2DQ_VdqWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -895,7 +914,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2DQ_VdqWps(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("CVTPS2DQ_VdqWps: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -917,9 +936,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2DQ_VdqWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -941,7 +960,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2DQ_VdqWps(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("CVTTPS2DQ_VdqWps: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -963,9 +982,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2DQ_VqWpd(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -984,7 +1003,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2DQ_VqWpd(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTTPD2DQ_VqWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1007,9 +1026,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2DQ_VqWpd(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -1028,7 +1047,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2DQ_VqWpd(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTPD2DQ_VqWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1050,9 +1069,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PD_VpdWq(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   Bit32u r0 = (Bit32u)(op & 0xFFFFFFFF);
@@ -1064,7 +1083,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PD_VpdWq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
   BX_INFO(("CVTDQ2PD_VpdWq: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1085,9 +1104,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1104,7 +1123,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISS_VssWss(bxInstruction_c *i)
   BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("UCOMISS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1125,9 +1144,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1144,7 +1163,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISD_VsdWsd(bxInstruction_c *i)
   BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("UCOMISD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1165,9 +1184,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1184,7 +1203,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISS_VpsWps(bxInstruction_c *i)
   BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("COMISS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1205,9 +1224,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1224,7 +1243,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISD_VpdWpd(bxInstruction_c *i)
   BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 #else
   BX_INFO(("COMISD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1245,9 +1264,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPS_VpsWps(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -1268,10 +1287,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op);
-
 #else
   BX_INFO(("SQRTPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1292,9 +1310,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPD_VpdWpd(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -1311,10 +1329,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op);
-
 #else
   BX_INFO(("SQRTPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1335,9 +1352,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSD_VsdWsd(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1346,10 +1363,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSD_VsdWsd(bxInstruction_c *i)
   op = float64_sqrt(op, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op);
-
 #else
   BX_INFO(("SQRTSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1370,9 +1386,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSS_VssWss(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1381,10 +1397,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSS_VssWss(bxInstruction_c *i)
   op = float32_sqrt(op, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
-
 #else
   BX_INFO(("SQRTSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1405,9 +1420,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1432,10 +1447,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("ADDPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1456,9 +1470,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1477,10 +1491,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("ADDPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1501,9 +1514,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1518,10 +1531,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSD_VsdWsd(bxInstruction_c *i)
   op1 = float64_add(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("ADDSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1542,9 +1554,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1559,10 +1571,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSS_VssWss(bxInstruction_c *i)
   op1 = float32_add(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("ADDSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1583,9 +1594,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1610,10 +1621,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("MULPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1634,9 +1644,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1655,10 +1665,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("MULPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1679,9 +1688,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1696,10 +1705,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSD_VsdWsd(bxInstruction_c *i)
   op1 = float64_mul(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("MULSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1720,9 +1728,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1737,10 +1745,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSS_VssWss(bxInstruction_c *i)
   op1 = float32_mul(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("MULSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1761,9 +1768,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1788,10 +1795,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("SUBPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1812,9 +1818,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1833,10 +1839,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("SUBPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1857,9 +1862,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1874,10 +1879,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSD_VsdWsd(bxInstruction_c *i)
   op1 = float64_sub(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("SUBSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1898,9 +1902,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -1915,10 +1919,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSS_VssWss(bxInstruction_c *i)
   op1 = float32_sub(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("SUBSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1939,9 +1942,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -1971,10 +1974,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("MINPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1995,9 +1997,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2019,10 +2021,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("MINPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2043,9 +2044,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2061,10 +2062,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSD_VsdWsd(bxInstruction_c *i)
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(),
          (rc == float_relation_less) ? op1 : op2);
-
 #else
   BX_INFO(("MINSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2085,9 +2085,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2103,10 +2103,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSS_VssWss(bxInstruction_c *i)
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(),
          (rc == float_relation_less) ? op1 : op2);
-
 #else
   BX_INFO(("MINSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2127,9 +2126,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2154,10 +2153,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("DIVPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2178,9 +2176,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2199,10 +2197,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("DIVPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2223,9 +2220,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2240,10 +2237,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSD_VsdWsd(bxInstruction_c *i)
   op1 = float64_div(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("DIVSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2264,9 +2260,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2281,10 +2277,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSS_VssWss(bxInstruction_c *i)
   op1 = float32_div(op1, op2, status_word);
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op1);
-
 #else
   BX_INFO(("DIVSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2305,9 +2300,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2337,10 +2332,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("MAXPS_VpsWps: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2361,9 +2355,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2385,10 +2379,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("MAXPD_VpdWpd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2409,9 +2402,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSD_VsdWsd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2427,10 +2420,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSD_VsdWsd(bxInstruction_c *i)
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(),
          (rc == float_relation_greater) ? op1 : op2);
-
 #else
   BX_INFO(("MAXSD_VsdWsd: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2451,9 +2443,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSS_VssWss(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2469,10 +2461,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSS_VssWss(bxInstruction_c *i)
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(),
          (rc == float_relation_greater) ? op1 : op2);
-
 #else
   BX_INFO(("MAXSS_VssWss: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2493,9 +2484,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2514,10 +2505,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("HADDPD_VpdWpd: required SSE3, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2538,9 +2528,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2565,10 +2555,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("HADDPS_VpsWps: required SSE3, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2589,9 +2578,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2610,10 +2599,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("HSUBPD_VpdWpd: required SSE3, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2634,9 +2622,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2661,10 +2649,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("HSUBPS_VpsWps: required SSE3, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2685,9 +2672,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPS_VpsWpsIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status;
@@ -2739,10 +2726,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPS_VpsWpsIb(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("CMPPS_VpsWpsIb: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2763,9 +2749,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPD_VpdWpdIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status;
@@ -2805,10 +2791,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPD_VpdWpdIb(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("CMPPD_VpdWpdIb: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2829,9 +2814,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), RMAddr(i));
+    op2 = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2868,7 +2853,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
 #else
   BX_INFO(("CMPSD_VsdWsdIb: required SSE2, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2889,9 +2874,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), RMAddr(i));
+    op2 = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -2928,7 +2913,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
 #else
   BX_INFO(("CMPSS_VssWssIb: required SSE, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2949,9 +2934,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPD_VpdWpd(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -2970,10 +2955,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPD_VpdWpd(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("ADDSUBPD_VpdWpd: required SSE3, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2994,9 +2978,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPS_VpsWps(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -3021,10 +3005,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPS_VpsWps(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
-
 #else
   BX_INFO(("ADDSUBPS_VpsWps: required SSE3, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -3044,9 +3027,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPS_VpsWpsIb(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -3082,7 +3065,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPS_VpsWpsIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("ROUNDPS_VpsWpsIb: required SSE4, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -3099,9 +3082,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPD_VpdWpdIb(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -3135,7 +3118,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPD_VpdWpdIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("ROUNDPD_VpdWpdIb: required SSE4, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -3152,9 +3135,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSS_VssWssIb(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_DWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), RMAddr(i));
+    op = read_virtual_dword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -3182,7 +3165,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSS_VssWssIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
 #else
   BX_INFO(("ROUNDSS_VssWssIb: required SSE4, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -3199,9 +3182,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSD_VsdWsdIb(bxInstruction_c *i)
     op = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), RMAddr(i));
+    op = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
@@ -3227,7 +3210,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSD_VsdWsdIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op);
 #else
   BX_INFO(("ROUNDSD_VsdWsdIb: required SSE4, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -3249,9 +3232,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPS_VpsWpsIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -3295,7 +3278,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPS_VpsWpsIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
   BX_INFO(("DPPS_VpsWpsIb: required SSE4, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -3317,9 +3300,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPD_VpdWpdIb(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   float_status_t status_word;
@@ -3351,7 +3334,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPD_VpdWpdIb(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
   BX_INFO(("DPPD_VpdWpdIb: required SSE4, use --enable-sse option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 

@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: carbon.cc,v 1.39 2008/03/14 18:23:33 vruppert Exp $
+// $Id: carbon.cc,v 1.42 2009/02/23 11:06:53 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -44,6 +44,7 @@
 #define Float32 KLUDGE_Float32
 #define Float64 KLUDGE_Float64
 #include "bochs.h"
+#include "keymap.h"
 #include "iodev.h"
 #undef Float32
 #undef Float64

@@ -6,17 +6,20 @@
 #
 # The configuration interface is a series of menus or dialog boxes that
 # allows you to change all the settings that control Bochs's behavior.
-# There are two choices of configuration interface: a text mode version
-# called "textconfig" and a graphical version called "wx".  The text
-# mode version uses stdin/stdout and is always compiled in.  The graphical
-# version is only available when you use "--with-wx" on the configure 
-# command.  If you do not write a config_interface line, Bochs will 
+# Depending on the platform there are up to 3 choices of configuration
+# interface: a text mode version called "textconfig" and two graphical versions
+# called "win32config" and "wx".  The text mode version uses stdin/stdout and
+# is always compiled in, unless Bochs is compiled for wx only. The choice
+# "win32config" is only available on win32 and it is the default there.
+# The choice "wx" is only available when you use "--with-wx" on the configure
+# command.  If you do not write a config_interface line, Bochs will
 # choose a default for you.
 #
 # NOTE: if you use the "wx" configuration interface, you must also use
 # the "wx" display library.
 #=======================================================================
 #config_interface: textconfig
+#config_interface: win32config
 #config_interface: wx
 
 #=======================================================================
@@ -59,9 +62,10 @@
 #display_library: sdl, options="fullscreen" # startup in fullscreen mode
 #display_library: term
 #display_library: win32, options="legacyF12" # use F12 to toggle mouse
-#display_library: win32, options="windebug" # use experimental debugger gui
+#display_library: win32, options="gui_debug" # use Win32 debugger gui
 #display_library: wx
 #display_library: x, options="hideIPS" # disable IPS output in status bar
+#display_library: x, options="gui_debug" # use GTK debugger gui
 
 #=======================================================================
 # ROMIMAGE:
@@ -100,12 +104,28 @@ romimage: file=$BXSHARE/BIOS-bochs-latest
 #  PANIC. Remember that if you trying to continue after triple fault the 
 #  simulation will be completely bogus !
 #
+#  CPUID_LIMIT_WINNT:
+#  Determine whether to limit maximum CPUID function to 3. This mode is
+#  required to workaround WinNT installation and boot issues.
+#
+#  MSRS:
+#  Define path to user CPU Model Specific Registers (MSRs) specification.
+#  See example in msrs.def.
+#
+#  VENDOR_STRING:
+#  Set the CPUID vendor string returned by CPUID(0x0). This should be a
+#  twelve-character ASCII string.  
+#
+#  BRAND_STRING:
+#  Set the CPUID vendor string returned by CPUID(0x80000002 .. 0x80000004).  
+#  This should be at most a forty-eight-character ASCII string.  
+#
 #  IPS:
-#  Emulated Instructions Per Second.  This is the number of IPS that bochs
+#  Emulated Instructions Per Second. This is the number of IPS that bochs
 #  is capable of running on your machine. You can recompile Bochs with
-#  --enable-show-ips option enabled, to find your workstation's capability.
-#  Measured IPS value will then be logged into your log file or status bar
-#  (if supported by the gui).
+#  --enable-show-ips option enabled, to find your host's capability.
+#  Measured IPS value will then be logged into your log file or shown
+#  in the status bar (if supported by the gui).
 #
 #  IPS is used to calibrate many time-dependent events within the bochs 
 #  simulation.  For example, changing IPS affects the frequency of VGA
@@ -122,7 +142,7 @@ romimage: file=$BXSHARE/BIOS-bochs-latest
 #  2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4         12 to 15 Mips
 #  2.0.1 1.6Ghz Intel P4 with Win2000/g++ 3.3             5 to  7 Mips
 #=======================================================================
-cpu: count=1, ips=10000000, reset_on_triple_fault=1
+cpu: count=1, ips=50000000, reset_on_triple_fault=1, cpuid_limit_winnt=0, msrs="msrs.def"
 
 #=======================================================================
 # MEGS
@@ -182,20 +202,23 @@ vga: extension=vbe
 # booting from 'a' (or 'floppy').
 #
 # You can set the initial status of the media to 'ejected' or 'inserted'.
-#   floppya: 2_88=path, status=ejected             (2.88M 3.5" floppy)
-#   floppya: 1_44=path, status=inserted            (1.44M 3.5" floppy)
-#   floppya: 1_2=path, status=ejected              (1.2M  5.25" floppy)
-#   floppya: 720k=path, status=inserted            (720K  3.5" floppy)
-#   floppya: 360k=path, status=inserted            (360K  5.25" floppy)
-#   floppya: 320k=path, status=inserted            (320K  5.25" floppy)
-#   floppya: 180k=path, status=inserted            (180K  5.25" floppy)
-#   floppya: 160k=path, status=inserted            (160K  5.25" floppy)
-#   floppya: image=path, status=inserted           (guess type from image size)
+#   floppya: 2_88=path, status=ejected    (2.88M 3.5"  media)
+#   floppya: 1_44=path, status=inserted   (1.44M 3.5"  media)
+#   floppya: 1_2=path, status=ejected     (1.2M  5.25" media)
+#   floppya: 720k=path, status=inserted   (720K  3.5"  media)
+#   floppya: 360k=path, status=inserted   (360K  5.25" media)
+#   floppya: 320k=path, status=inserted   (320K  5.25" media)
+#   floppya: 180k=path, status=inserted   (180K  5.25" media)
+#   floppya: 160k=path, status=inserted   (160K  5.25" media)
+#   floppya: image=path, status=inserted  (guess media type from image size)
+#   floppya: type=1_44                    (1.44M 3.5" floppy drive, no media)
 #
 # The path should be the name of a disk image file.  On Unix, you can use a raw
 # device name such as /dev/fd0 on Linux.  On win32 platforms, use drive letters
 # such as a: or b: as the path.  The parameter 'image' works with image files
 # only. In that case the size must match one of the supported types.
+# The parameter 'type' can be used to enable the floppy drive without media
+# and status specified. Usually the drive type is set up based on the media type.
 #=======================================================================
 floppya: 1_44=/dev/fd0, status=inserted
 #floppya: image=../1.44, status=inserted
@@ -250,7 +273,7 @@ ata3: enabled=0, ioaddr1=0x168, ioaddr2=0x360, irq=9
 #   translation=type of translation of the bios, only for disks [none|lba|large|rechs|auto]
 #   model=      string returned by identify device command
 #   journal=    optional filename of the redolog for undoable and volatile disks
-#   
+#
 # Point this at a hard disk image file, cdrom iso file, or physical cdrom
 # device.  To create a hard disk image, try running bximage.  It will help you
 # choose the size and then suggest a line that works with it.
@@ -263,10 +286,11 @@ ata3: enabled=0, ioaddr1=0x168, ioaddr2=0x360, irq=9
 # access the "first" cdrom in the system.  On MacOSX, use path="drive"
 # to access the physical drive.
 #
-# The path is always mandatory. Disk geometry autodetection works with images
-# created by bximage if CHS is set to 0/0/0 (cylinders are calculated using
-# heads=16 and spt=63). For other hard disk images and modes the cylinders,
-# heads, and spt are mandatory.
+# The path is mandatory for hard disks. Disk geometry autodetection works with
+# images created by bximage if CHS is set to 0/0/0 (cylinders are calculated
+# using  heads=16 and spt=63). For other hard disk images and modes the
+# cylinders, heads, and spt are mandatory. In all cases the disk size reported
+# from the image must be exactly C*H*S*512.
 #
 # Default values are:
 #   mode=flat, biosdetect=auto, translation=auto, model="Generic 1234"
@@ -310,7 +334,13 @@ boot: disk
 # This defines the parameters of the clock inside Bochs:
 #
 #  SYNC:
-#  TO BE COMPLETED (see Greg explanation in feature request #536329)
+#  This defines the method how to synchronize the Bochs internal time
+#  with realtime. With the value 'none' the Bochs time relies on the IPS
+#  value and no host time synchronization is used. The 'slowdown' method
+#  sacrifices performance to preserve reproducibility while allowing host
+#  time correlation. The 'realtime' method sacrifices reproducibility to
+#  preserve performance and host-time correlation.
+#  It is possible to enable both synchronization methods.
 #
 #  TIME0:
 #  Specifies the start (boot) time of the virtual machine. Use a time 
@@ -501,15 +531,16 @@ parport1: enabled=1, file="parport.out"
 #      non-continuous sound.  750000 is usually a good value.  This needs a
 #      reasonably correct setting for the IPS parameter of the CPU option.
 #
-# For an example look at the next line:
+# Examples for output devices:
+#   sb16: midimode=1, midi="", wavemode=1, wave=""           # win32
+#   sb16: midimode=1, midi=alsa:128:0, wavemode=1, wave=alsa # Linux with ALSA
 #=======================================================================
-
 #sb16: midimode=1, midi=/dev/midi00, wavemode=1, wave=/dev/dsp, loglevel=2, log=sb16.log, dmatimer=600000
 
 #=======================================================================
 # VGA_UPDATE_INTERVAL:
 # Video memory is scanned for updates and screen updated every so many
-# virtual seconds.  The default is 40000, about 25Hz. Keep in mind that
+# virtual seconds.  The default is 50000, about 20Hz. Keep in mind that
 # you must tweak the 'cpu: ips=N' directive to be as close to the number
 # of emulated instructions-per-second your workstation can do, for this
 # to be accurate.
@@ -549,19 +580,18 @@ keyboard_serial_delay: 250
 keyboard_paste_delay: 100000
 
 #=======================================================================
-# MOUSE: 
-# This option prevents Bochs from creating mouse "events" unless a mouse
-# is  enabled. The hardware emulation itself is not disabled by this.
-# You can turn the mouse on by setting enabled to 1, or turn it off by
-# setting enabled to 0. Unless you have a particular reason for enabling
-# the mouse by default, it is recommended that you leave it off.
-# You can also toggle the mouse usage at runtime (control key + middle
-# mouse button on X11, SDL, wxWidgets and Win32).
+# MOUSE:
+# The Bochs gui creates mouse "events" unless the 'enabled' option is
+# set to 0. The hardware emulation itself is not disabled by this.
+# Unless you have a particular reason for enabling the mouse by default,
+# it is recommended that you leave it off. You can also toggle the mouse
+# usage at runtime (control key + middle mouse button on X11, SDL,
+# wxWidgets and Win32).
 # With the mouse type option you can select the type of mouse to emulate.
 # The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
 # on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
-# setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb1'
-# option (requires PCI and USB support).
+# setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb_uhci'
+# or 'usb_ohci' option (requires PCI and USB support).
 #
 # Examples:
 #   mouse: enabled=1
@@ -603,7 +633,8 @@ private_colormap: enabled=0
 # ne2k: ioaddr=IOADDR, irq=IRQ, mac=MACADDR, ethmod=MODULE, ethdev=DEVICE, script=SCRIPT
 #
 # ioaddr, irq: You probably won't need to change ioaddr and irq, unless there
-# are IRQ conflicts.
+# are IRQ conflicts. These arguments are ignored when assign the ne2k to a
+# PCI slot.
 #
 # mac: The MAC address MUST NOT match the address of any machine on the net.
 # Also, the first byte must be an even number (bit 0 set means a multicast
@@ -645,6 +676,18 @@ private_colormap: enabled=0
 # ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=null, ethdev=eth0
 # ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
 # ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
+
+#=======================================================================
+# pnic: Bochs/Etherboot pseudo-NIC
+#
+# Example:
+# pnic: enabled=1, mac=MACADDR, ethmod=MODULE, ethdev=DEVICE, script=SCRIPT
+#
+# The pseudo-NIC accepts the same syntax (for mac, ethmod, ethdev, script) and
+# supports the same networking modules as the NE2000 adapter. In addition to
+# this, it must be assigned to a PCI slot.
+#=======================================================================
+#pnic: enabled=1, mac=b0:c4:20:00:00:00, ethmod=vnet
 
 #=======================================================================
 # KEYBOARD_MAPPING:
@@ -689,8 +732,8 @@ keyboard_mapping: enabled=0, map=
 # This option controls the presence of the i440FX PCI chipset. You can
 # also specify the devices connected to PCI slots. Up to 5 slots are
 # available now. These devices are currently supported: ne2k, pcivga,
-# pcidev and pcipnic. If Bochs is compiled with Cirrus SVGA support
-# you'll have the additional choice 'cirrus'.
+# pcidev, pcipnic and usb_ohci. If Bochs is compiled with Cirrus SVGA
+# support you'll have the additional choice 'cirrus'.
 #
 # Example:
 #   i440fxsupport: enabled=1, slot1=pcivga, slot2=ne2k
@@ -698,19 +741,36 @@ keyboard_mapping: enabled=0, map=
 i440fxsupport: enabled=1
 
 #=======================================================================
-# USB1:
+# USB_UHCI:
 # This option controls the presence of the USB root hub which is a part
 # of the i440FX PCI chipset. With the portX option you can connect devices
-# to the hub (currently supported: 'mouse', 'tablet', 'keypad' and 'disk').
+# to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom'
+# and 'hub').
 # If you connect the mouse or tablet to one of the ports, Bochs forwards the
 # mouse movement data to the USB device instead of the selected mouse type.
 # When connecting the keypad to one of the ports, Bochs forwards the input of
 # the numeric keypad to the USB device instead of the PS/2 keyboard.
 # To connect a flat image as an USB hardisk you can use the 'disk' device with
-# the path to the image separated with a colon (see below).
+# the path to the image separated with a colon (see below). To emulate an USB
+# cdrom you can use the 'cdrom' device name and the path to an ISO image or raw
+# device name also separated with a colon.
+# The device name 'hub' connects an external hub with max. 8 ports (default: 4)
+# to the root hub. To specify the number of ports you have to add the value
+# separated with a colon. Connecting devices to the external hub ports is only
+# available in the runtime configuration.
 #=======================================================================
-#usb1: enabled=1
-#usb1: enabled=1, port1=mouse, port2=disk:usbdisk.img
+#usb_uhci: enabled=1
+#usb_uhci: enabled=1, port1=mouse, port2=disk:usbdisk.img
+#usb_uhci: enabled=1, port1=hub:7, port2=cdrom:image.iso
+
+#=======================================================================
+# USB_OHCI:
+# This option controls the presence of the USB OHCI host controller with a
+# 2-port hub. The portX option accepts the same device types with the same
+# syntax as the UHCI controller (see above). The OHCI HC must be assigned to
+# a PCI slot.
+#=======================================================================
+#usb_ohci: enabled=1
 
 #=======================================================================
 # CMOSIMAGE:
@@ -734,6 +794,21 @@ i440fxsupport: enabled=1
 #   magic_break: enabled=1
 #=======================================================================
 #magic_break: enabled=1
+
+#=======================================================================
+# PORT_E9_HACK:
+# The 0xE9 port doesn't exists in normal ISA architecture. However, we
+# define a convention here, to display on the console of the system running
+# Bochs anything that is written to it. The idea is to provide debug output
+# very early when writing BIOS or OS code for example, without having to
+# bother with setting up a serial port or etc. Reading from port 0xE9 will
+# will return 0xe9 to let you know if the feature is available.
+# Leave this 0 unless you have a reason to use it.
+#
+# Example:
+#   port_e9_hack: enabled=1
+#=======================================================================
+#port_e9_hack: enabled=1
 
 #=======================================================================
 # DEBUG_SYMBOLS:
@@ -766,6 +841,23 @@ i440fxsupport: enabled=1
 # Default value is enabled=0.
 #=======================================================================
 #gdbstub: enabled=0, port=1234, text_base=0, data_base=0, bss_base=0
+
+#=======================================================================
+# PLUGIN_CTRL:
+# Controls the presence of optional plugins without a separate option.
+# By default all existing plugins are enabled. These plugins are currently
+# supported: 'acpi', 'biosdev', 'extfpuirq', 'gameport', 'iodebug',
+# 'pci_ide', 'speaker' and 'unmapped'.
+#=======================================================================
+#plugin_ctrl: biosdev=0, speaker=0
+
+#=======================================================================
+# USER_PLUGIN:
+# Load user-defined plugin. This option is available only if Bochs is
+# compiled with plugin support. Maximum 8 different plugins are supported.
+# See the example in the Bochs sources how to write a plugin device.
+#=======================================================================
+#user_plugin: name=testdev
 
 #=======================================================================
 # for Macintosh, use the style of pathnames in the following

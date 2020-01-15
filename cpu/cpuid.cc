@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpuid.cc,v 1.69 2008/05/30 20:35:07 sshwarts Exp $
+// $Id: cpuid.cc,v 1.80 2009/02/20 22:00:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -32,12 +32,6 @@
 #define RBX EBX
 #define RCX ECX
 #define RDX EDX
-#endif
-
-#if BX_SUPPORT_3DNOW
-  #define BX_CPU_VENDOR_INTEL 0
-#else
-  #define BX_CPU_VENDOR_INTEL 1
 #endif
 
 /* Get CPU version information. */
@@ -140,8 +134,8 @@ Bit32u BX_CPU_C::get_extended_cpuid_features(void)
   // [18:18] DCA - Direct Cache Access
   // [19:19] SSE4.1 Instructions
   // [20:20] SSE4.2 Instructions
-  // [21:22] X2APIC
-  // [22:22] Reserved
+  // [21:21] X2APIC
+  // [22:22] MOVBE instruction
   // [23:23] POPCNT instruction
   // [24:24] reserved
   // [25:25] AES Instructions
@@ -158,6 +152,9 @@ Bit32u BX_CPU_C::get_extended_cpuid_features(void)
 #if BX_SUPPORT_MONITOR_MWAIT
   features |= (1<<3);            // support MONITOR/MWAIT
 #endif
+#if BX_SUPPORT_VMX
+  features |= (1<<5);            // support VMX
+#endif
 #if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   features |= (1<<9);            // support SSE3E
 #endif
@@ -170,11 +167,15 @@ Bit32u BX_CPU_C::get_extended_cpuid_features(void)
   features |= (1<<19);           // support SSE4.1
 #endif
 
-#if (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
-  features |= (1<<20);           // support SSE4.2 (SSE4E)
+#if (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+  features |= (1<<20);           // support SSE4.2
 #endif
 
-#if BX_SUPPORT_POPCNT || (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+#if BX_SUPPORT_MOVBE
+  features |= (1<<22);           // support MOVBE instruction
+#endif
+
+#if BX_SUPPORT_POPCNT || (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
   features |= (1<<23);           // support POPCNT instruction
 #endif
 
@@ -270,6 +271,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
   Bit32u subfunction = ECX;
 #endif
 
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    BX_ERROR(("VMEXIT: CPUID in VMX non-root operation"));
+    VMexit(i, VMX_VMEXIT_CPUID, 0);
+  }
+#endif
+
   if(function < 0x80000000) {
     if(function < MAX_STD_CPUID_FUNCTION) {
       RAX = BX_CPU_THIS_PTR cpuid_std_function[function].eax;
@@ -321,12 +329,16 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
   RDX = 0;
 #else
   BX_INFO(("CPUID: not available on < 486"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 void BX_CPU_C::set_cpuid_defaults(void)
 {
+  Bit8u *vendor_string = (Bit8u *)SIM->get_param_string(BXPN_VENDOR_STRING)->getptr();
+  Bit8u *brand_string = (Bit8u *)SIM->get_param_string(BXPN_BRAND_STRING)->getptr();
+  bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
+
   cpuid_function_t *cpuid;
   int i;
 
@@ -359,21 +371,20 @@ void BX_CPU_C::set_cpuid_defaults(void)
 #else
   // for Pentium Pro, Pentium II, Pentium 4 processors
   cpuid->eax = 2;
-  if (BX_SUPPORT_MONITOR_MWAIT)
-    cpuid->eax = 0x5;
-  if (BX_SUPPORT_XSAVE)
-    cpuid->eax = 0xD;
+  // do not report CPUID functions above 0x3 if cpuid_limit_winnt is set
+  // to workaround WinNT issue.
+  if (! cpuid_limit_winnt) {
+    if (BX_SUPPORT_MONITOR_MWAIT)
+      cpuid->eax = 0x5;
+    if (BX_SUPPORT_XSAVE)
+      cpuid->eax = 0xD;
+  }
 #endif
 
-#if BX_CPU_VENDOR_INTEL
-  cpuid->ebx = 0x756e6547; // "Genu"
-  cpuid->edx = 0x49656e69; // "ineI"
-  cpuid->ecx = 0x6c65746e; // "ntel"
-#else
-  cpuid->ebx = 0x68747541; // "Auth"
-  cpuid->edx = 0x69746e65; // "enti"
-  cpuid->ecx = 0x444d4163; // "cAMD"
-#endif
+  // CPUID vendor string (e.g. GenuineIntel, AuthenticAMD, CentaurHauls, ...)
+  memcpy(&(cpuid->ebx), vendor_string    , 4);
+  memcpy(&(cpuid->edx), vendor_string + 4, 4);
+  memcpy(&(cpuid->ecx), vendor_string + 8, 4);
 
   // ------------------------------------------------------
   // CPUID function 0x00000001
@@ -396,7 +407,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
 
   cpuid->ebx = 0;
 #if BX_SUPPORT_APIC
-  cpuid->ebx |= (BX_CPU_THIS_PTR local_apic.get_id() << 24);
+  cpuid->ebx |= ((BX_CPU_THIS_PTR lapic.get_id() & 0xff) << 24);
 #endif
 #if BX_SUPPORT_CLFLUSH
   cpuid->ebx |= (CACHE_LINE_SIZE / 8) << 8;
@@ -427,8 +438,8 @@ void BX_CPU_C::set_cpuid_defaults(void)
   //   [18:18] DCA - Direct Cache Access
   //   [19:19] SSE4.1 Instructions
   //   [20:20] SSE4.2 Instructions
-  //   [21:22] X2APIC
-  //   [22:22] Reserved
+  //   [21:21] X2APIC
+  //   [22:22] MOVBE instruction
   //   [23:23] POPCNT instruction
   //   [24:24] reserved
   //   [25:25] AES Instructions
@@ -499,6 +510,10 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->ecx = 0;
   cpuid->edx = 0;
 
+  // do not report CPUID functions above 0x3 if cpuid_limit_winnt is set
+  // to workaround WinNT issue.
+  if (cpuid_limit_winnt) return;
+
   // ------------------------------------------------------
   // CPUID function 0x00000004 - Deterministic Cache Parameters
   cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[4]);
@@ -535,7 +550,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
   // EBX - Maximum size (in bytes) required by enabled features
   // ECX - Maximum size (in bytes) required by CPU supported features
   // EDX - XCR0 upper 32 bits
-  cpuid->eax = BX_CPU_THIS_PTR xcr0.getRegister();
+  cpuid->eax = BX_CPU_THIS_PTR xcr0.get32();
   cpuid->ebx = 512+64;
   cpuid->ecx = 512+64;
   cpuid->edx = 0;
@@ -557,9 +572,9 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->edx = 0;          // Reserved for Intel
   cpuid->ecx = 0;
 #else
-  cpuid->ebx = 0x68747541; // "Auth"
-  cpuid->edx = 0x69746e65; // "enti"
-  cpuid->ecx = 0x444d4163; // "cAMD"
+  memcpy(&(cpuid->ebx), vendor_string    , 4);
+  memcpy(&(cpuid->edx), vendor_string + 4, 4);
+  memcpy(&(cpuid->ecx), vendor_string + 8, 4);
 #endif
 
   // ------------------------------------------------------
@@ -633,63 +648,38 @@ void BX_CPU_C::set_cpuid_defaults(void)
 #endif
 #if BX_SUPPORT_X86_64
   features |= (1 << 29) | (1 << 27) | (1 << 25) | (1 << 20) | (1 << 11);
+#if BX_SUPPORT_1G_PAGES
+  features |= (1 << 27);
+#endif
 #endif
   cpuid->edx = features;
 
-#if BX_CPU_VENDOR_INTEL
   // Processor Brand String, use the value that is returned
   // by the first processor in the Pentium 4 family
-  // (according to Intel manual)
+  // (according to Intel manual or the AMD manual)
 
   // ------------------------------------------------------
   // CPUID function 0x80000002
+
   cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[2]);
-  cpuid->eax = 0x20202020; // "    "
-  cpuid->ebx = 0x20202020; // "    "
-  cpuid->ecx = 0x20202020; // "    "
-  cpuid->edx = 0x6E492020; // "  In"
+  memcpy(&(cpuid->eax), brand_string     , 4);
+  memcpy(&(cpuid->ebx), brand_string +  4, 4);
+  memcpy(&(cpuid->ecx), brand_string +  8, 4);
+  memcpy(&(cpuid->edx), brand_string + 12, 4);
 
   // CPUID function 0x80000003
   cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[3]);
-  cpuid->eax = 0x286C6574; // "tel("
-  cpuid->ebx = 0x50202952; // "R) P"
-  cpuid->ecx = 0x69746E65; // "enti"
-  cpuid->edx = 0x52286D75; // "um(R"
+  memcpy(&(cpuid->eax), brand_string + 16, 4);
+  memcpy(&(cpuid->ebx), brand_string + 20, 4);
+  memcpy(&(cpuid->ecx), brand_string + 24, 4);
+  memcpy(&(cpuid->edx), brand_string + 28, 4);
 
   // CPUID function 0x80000004
   cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[4]);
-  cpuid->eax = 0x20342029; // ") 4 "
-  cpuid->ebx = 0x20555043; // "CPU "
-  cpuid->ecx = 0x20202020; // "    "
-  cpuid->edx = 0x00202020; // "    "
-#else
-  // Processor Brand String, use the value given
-  // in AMD manuals.
-
-  // ------------------------------------------------------
-  // CPUID function 0x80000002
-  cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[2]);
-  cpuid->eax = 0x20444D41; // "AMD "
-  cpuid->ebx = 0x6C687441; // "Athl"
-  cpuid->ecx = 0x74286E6F; // "on(t"
-  cpuid->edx = 0x7020296D; // "m) p"
-
-  // ------------------------------------------------------
-  // CPUID function 0x80000003
-  cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[3]);
-  cpuid->eax = 0x65636F72; // "roce"
-  cpuid->ebx = 0x726F7373; // "ssor"
-  cpuid->ecx = 0x00000000;
-  cpuid->edx = 0x00000000;
-
-  // ------------------------------------------------------
-  // CPUID function 0x80000004
-  cpuid = &(BX_CPU_THIS_PTR cpuid_ext_function[4]);
-  cpuid->eax = 0x00000000;
-  cpuid->ebx = 0x00000000;
-  cpuid->ecx = 0x00000000;
-  cpuid->edx = 0x00000000;
-#endif
+  memcpy(&(cpuid->eax), brand_string + 32, 4);
+  memcpy(&(cpuid->ebx), brand_string + 36, 4);
+  memcpy(&(cpuid->ecx), brand_string + 40, 4);
+  memcpy(&(cpuid->edx), brand_string + 44, 4);
 
 #if BX_SUPPORT_X86_64
   // ------------------------------------------------------

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h,v 1.51 2008/01/26 22:24:02 sshwarts Exp $
+// $Id: harddrv.h,v 1.55 2009/04/21 10:18:42 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #ifndef BX_IODEV_HDDRIVE_H
 #define BX_IODEV_HDDRIVE_H
@@ -38,6 +38,7 @@ typedef enum _asc {
       ASC_ILLEGAL_OPCODE = 0x20,
       ASC_LOGICAL_BLOCK_OOR = 0x21,
       ASC_INV_FIELD_IN_CMD_PACKET = 0x24,
+      ASC_MEDIUM_MAY_HAVE_CHANGED = 0x28,
       ASC_SAVING_PARAMETERS_NOT_SUPPORTED = 0x39,
       ASC_MEDIUM_NOT_PRESENT = 0x3a
 } asc_t;
@@ -212,7 +213,7 @@ private:
   BX_HD_SMF void identify_ATAPI_drive(Bit8u channel);
   BX_HD_SMF void command_aborted(Bit8u channel, unsigned command);
 
-  BX_HD_SMF void init_send_atapi_command(Bit8u channel, Bit8u command, int req_length, int alloc_length, bx_bool lazy = false);
+  BX_HD_SMF void init_send_atapi_command(Bit8u channel, Bit8u command, int req_length, int alloc_length, bx_bool lazy = 0);
   BX_HD_SMF void ready_to_send_atapi(Bit8u channel) BX_CPP_AttrRegparmN(1);
   BX_HD_SMF void raise_interrupt(Bit8u channel) BX_CPP_AttrRegparmN(1);
   BX_HD_SMF void atapi_cmd_error(Bit8u channel, sense_t sense_key, asc_t asc, bx_bool show);

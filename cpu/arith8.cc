@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith8.cc,v 1.56 2008/04/04 22:39:45 sshwarts Exp $
+// $Id: arith8.cc,v 1.61 2009/01/16 18:18:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -34,38 +34,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EbGbM(bxInstruction_c *i)
 {
   Bit8u op1, op2, sum;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 = read_RMW_virtual_byte(i->seg(), eaddr);
   op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
   sum = op1 + op2;
   write_RMW_virtual_byte(sum);
-
-  SET_FLAGS_OSZAPC_ADD_8(op1, op2, sum);
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EbGbR(bxInstruction_c *i)
-{
-  Bit8u op1, op2, sum;
-
-  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
-  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  sum = op1 + op2;
-  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), sum);
-
-  SET_FLAGS_OSZAPC_ADD_8(op1, op2, sum);
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_GbEbM(bxInstruction_c *i)
-{
-  Bit8u op1, op2, sum;
-
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  op2 = read_virtual_byte(i->seg(), RMAddr(i));
-  sum = op1 + op2;
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), sum);
 
   SET_FLAGS_OSZAPC_ADD_8(op1, op2, sum);
 }
@@ -99,40 +73,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EbGbM(bxInstruction_c *i)
   Bit8u op1, op2, sum;
   bx_bool temp_CF = getB_CF();
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 = read_RMW_virtual_byte(i->seg(), eaddr);
   op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
   sum = op1 + op2 + temp_CF;
   write_RMW_virtual_byte(sum);
-
-  SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_LF_INSTR_ADD_ADC8(temp_CF));
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EbGbR(bxInstruction_c *i)
-{
-  Bit8u op1, op2, sum;
-  bx_bool temp_CF = getB_CF();
-
-  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
-  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  sum = op1 + op2 + temp_CF;
-  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), sum);
-
-  SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_LF_INSTR_ADD_ADC8(temp_CF));
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_GbEbM(bxInstruction_c *i)
-{
-  Bit8u op1, op2, sum;
-  bx_bool temp_CF = getB_CF();
-
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  op2 = read_virtual_byte(i->seg(), RMAddr(i));
-  sum = op1 + op2 + temp_CF;
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), sum);
 
   SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_LF_INSTR_ADD_ADC8(temp_CF));
 }
@@ -168,40 +114,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EbGbM(bxInstruction_c *i)
   Bit8u op1_8, op2_8, diff_8;
   bx_bool temp_CF = getB_CF();
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   op2_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
   diff_8 = op1_8 - (op2_8 + temp_CF);
   write_RMW_virtual_byte(diff_8);
-
-  SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_LF_INSTR_SUB_SBB8(temp_CF));
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EbGbR(bxInstruction_c *i)
-{
-  Bit8u op1_8, op2_8, diff_8;
-  bx_bool temp_CF = getB_CF();
-
-  op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
-  op2_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  diff_8 = op1_8 - (op2_8 + temp_CF);
-  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), diff_8);
-
-  SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_LF_INSTR_SUB_SBB8(temp_CF));
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_GbEbM(bxInstruction_c *i)
-{
-  Bit8u op1_8, op2_8, diff_8;
-  bx_bool temp_CF = getB_CF();
-
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  op1_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  op2_8 = read_virtual_byte(i->seg(), RMAddr(i));
-  diff_8 = op1_8 - (op2_8 + temp_CF);
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), diff_8);
 
   SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_LF_INSTR_SUB_SBB8(temp_CF));
 }
@@ -237,9 +155,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SBB_EbIbM(bxInstruction_c *i)
   Bit8u op1_8, op2_8 = i->Ib(), diff_8;
   bx_bool temp_CF = getB_CF();
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   diff_8 = op1_8 - (op2_8 + temp_CF);
   write_RMW_virtual_byte(diff_8);
 
@@ -262,38 +180,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EbGbM(bxInstruction_c *i)
 {
   Bit8u op1_8, op2_8, diff_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   op2_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
   diff_8 = op1_8 - op2_8;
   write_RMW_virtual_byte(diff_8);
-
-  SET_FLAGS_OSZAPC_SUB_8(op1_8, op2_8, diff_8);
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EbGbR(bxInstruction_c *i)
-{
-  Bit8u op1_8, op2_8, diff_8;
-
-  op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
-  op2_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  diff_8 = op1_8 - op2_8;
-  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), diff_8);
-
-  SET_FLAGS_OSZAPC_SUB_8(op1_8, op2_8, diff_8);
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_GbEbM(bxInstruction_c *i)
-{
-  Bit8u op1_8, op2_8, diff_8;
-
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  op1_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  op2_8 = read_virtual_byte(i->seg(), RMAddr(i));
-  diff_8 = op1_8 - op2_8;
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), diff_8);
 
   SET_FLAGS_OSZAPC_SUB_8(op1_8, op2_8, diff_8);
 }
@@ -326,34 +218,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EbGbM(bxInstruction_c *i)
 {
   Bit8u op1_8, op2_8, diff_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_virtual_byte(i->seg(), eaddr);
   op2_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  diff_8 = op1_8 - op2_8;
-
-  SET_FLAGS_OSZAPC_SUB_8(op1_8, op2_8, diff_8);
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EbGbR(bxInstruction_c *i)
-{
-  Bit8u op1_8, op2_8, diff_8;
-
-  op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
-  op2_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  diff_8 = op1_8 - op2_8;
-
-  SET_FLAGS_OSZAPC_SUB_8(op1_8, op2_8, diff_8);
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_GbEbM(bxInstruction_c *i)
-{
-  Bit8u op1_8, op2_8, diff_8;
-
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-  op1_8 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
-  op2_8 = read_virtual_byte(i->seg(), RMAddr(i));
   diff_8 = op1_8 - op2_8;
 
   SET_FLAGS_OSZAPC_SUB_8(op1_8, op2_8, diff_8);
@@ -392,9 +260,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EbGbM(bxInstruction_c *i)
    * dst  <-- tmp               | op1 = sum
    */
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 = read_RMW_virtual_byte(i->seg(), eaddr);
   op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
   sum = op1 + op2;
   write_RMW_virtual_byte(sum);
@@ -405,7 +273,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EbGbM(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_8(op1, op2, sum);
 #else
   BX_INFO(("XADD_EbGb: not supported on < 80486"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -434,7 +302,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XADD_EbGbR(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_ADD_8(op1, op2, sum);
 #else
   BX_INFO(("XADD_EbGb: not supported on < 80486"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -442,9 +310,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADD_EbIbM(bxInstruction_c *i)
 {
   Bit8u op1, op2 = i->Ib(), sum;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 = read_RMW_virtual_byte(i->seg(), eaddr);
   sum = op1 + op2;
   write_RMW_virtual_byte(sum);
 
@@ -467,9 +335,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADC_EbIbM(bxInstruction_c *i)
   Bit8u op1, op2 = i->Ib(), sum;
   bx_bool temp_CF = getB_CF();
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 = read_RMW_virtual_byte(i->seg(), eaddr);
   sum = op1 + op2 + temp_CF;
   write_RMW_virtual_byte(sum);
 
@@ -492,9 +360,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUB_EbIbM(bxInstruction_c *i)
 {
   Bit8u op1_8, op2_8 = i->Ib(), diff_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   diff_8 = op1_8 - op2_8;
   write_RMW_virtual_byte(diff_8);
 
@@ -516,9 +384,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMP_EbIbM(bxInstruction_c *i)
 {
   Bit8u op1_8, op2_8 = i->Ib(), diff_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_virtual_byte(i->seg(), eaddr);
 
   diff_8 = op1_8 - op2_8;
 
@@ -538,9 +406,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::NEG_EbM(bxInstruction_c *i)
 {
   Bit8u op1_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   op1_8 = - (Bit8s)(op1_8);
   write_RMW_virtual_byte(op1_8);
 
@@ -560,9 +428,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::INC_EbM(bxInstruction_c *i)
 {
   Bit8u op1_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   op1_8++;
   write_RMW_virtual_byte(op1_8);
 
@@ -582,9 +450,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DEC_EbM(bxInstruction_c *i)
 {
   Bit8u op1_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   op1_8--;
   write_RMW_virtual_byte(op1_8);
 
@@ -605,9 +473,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EbGbM(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 4
   Bit8u op1_8, op2_8, diff_8;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = read_RMW_virtual_byte(i->seg(), eaddr);
   diff_8 = AL - op1_8;
   SET_FLAGS_OSZAPC_SUB_8(AL, op1_8, diff_8);
 
@@ -623,7 +491,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EbGbM(bxInstruction_c *i)
 
 #else
   BX_INFO(("CMPXCHG_EbGb: not supported for cpulevel <= 3"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -648,6 +516,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPXCHG_EbGbR(bxInstruction_c *i)
 
 #else
   BX_INFO(("CMPXCHG_EbGb: not supported for cpulevel <= 3"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: aes.cc,v 1.1 2008/05/30 20:37:52 sshwarts Exp $
+// $Id: aes.cc,v 1.5 2009/01/16 18:18:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -233,7 +233,7 @@ static void AES_MixColumns(BxPackedXmmRegister &state)
                              AES_STATE(tmp, 3, j);
 
     AES_STATE(state, 2, j) = AES_STATE(tmp, 0, j) ^
-                             AES_STATE(tmp, 1, j);
+                             AES_STATE(tmp, 1, j) ^
                              gf_mul(0x2, AES_STATE(tmp, 2, j)) ^
                              gf_mul(0x3, AES_STATE(tmp, 3, j));
 
@@ -302,9 +302,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESIMC_VdqWdq(bxInstruction_c *i)
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   AES_InverseMixColumns(op);
@@ -312,7 +312,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESIMC_VdqWdq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op);
 #else
   BX_INFO(("AESIMC_VdqWdq: required AES support, use --enable-aes option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -329,9 +329,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESENC_VdqWdq(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   AES_ShiftRows(op1);
@@ -344,7 +344,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESENC_VdqWdq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
   BX_INFO(("AESENC_VdqWdq: required AES support, use --enable-aes option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -361,9 +361,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESENCLAST_VdqWdq(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   AES_ShiftRows(op1);
@@ -375,7 +375,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESENCLAST_VdqWdq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
   BX_INFO(("AESENCLAST_VdqWdq: required AES support, use --enable-aes option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -392,9 +392,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESDEC_VdqWdq(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   AES_InverseShiftRows(op1);
@@ -407,7 +407,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESDEC_VdqWdq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
   BX_INFO(("AESDEC_VdqWdq: required AES support, use --enable-aes option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -424,9 +424,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESDECLAST_VdqWdq(bxInstruction_c *i)
     op2 = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
   }
 
   AES_InverseShiftRows(op1);
@@ -438,7 +438,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESDECLAST_VdqWdq(bxInstruction_c *i)
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
   BX_INFO(("AESDECLAST_VdqWdq: required AES support, use --enable-aes option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -455,9 +455,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESKEYGENASSIST_VdqWdqIb(bxInstruction_c *
     op = BX_READ_XMM_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op);
+    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   Bit32u rcon32 = i->Ib();
@@ -470,6 +470,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::AESKEYGENASSIST_VdqWdqIb(bxInstruction_c *
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
   BX_INFO(("AESKEYGENASSIST_VdqWdqIb: required AES support, use --enable-aes option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }

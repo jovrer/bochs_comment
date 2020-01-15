@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: guest2host.h,v 1.10 2006/03/07 21:11:16 sshwarts Exp $
+// $Id: guest2host.h,v 1.12 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,9 +22,8 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
-
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
 
 #define BX_MAX_G2H_CHANNELS 8
 #define BX_G2H_ERROR        ((unsigned) -1)

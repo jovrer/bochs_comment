@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit32.cc,v 1.8 2008/04/25 07:40:51 sshwarts Exp $
+// $Id: bit32.cc,v 1.15 2009/01/16 18:18:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -32,70 +32,48 @@
 
 #if BX_CPU_LEVEL >= 3
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSF_GdEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSF_GdEdR(bxInstruction_c *i)
 {
-  /* for 32 bit operand size mode */
-  Bit32u op1_32, op2_32;
-
-  /* op2_32 is a register or memory reference */
-  if (i->modC0()) {
-    op2_32 = BX_READ_32BIT_REG(i->rm());
-  }
-  else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
-  }
+  Bit32u op2_32 = BX_READ_32BIT_REG(i->rm());
 
   if (op2_32 == 0) {
     assert_ZF(); /* op1_32 undefined */
-    return;
   }
+  else {
+    Bit32u op1_32 = 0;
+    while ((op2_32 & 0x01) == 0) {
+      op1_32++;
+      op2_32 >>= 1;
+    }
 
-  op1_32 = 0;
-  while ((op2_32 & 0x01) == 0) {
-    op1_32++;
-    op2_32 >>= 1;
+    SET_FLAGS_OSZAPC_LOGIC_32(op1_32);
+    clear_ZF();
+
+    /* now write result back to destination */
+    BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
   }
-
-  SET_FLAGS_OSZAPC_LOGIC_32(op1_32);
-  clear_ZF();
-
-  /* now write result back to destination */
-  BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
 }
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSR_GdEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSR_GdEdR(bxInstruction_c *i)
 {
-  /* for 32 bit operand size mode */
-  Bit32u op1_32, op2_32;
-
-  /* op2_32 is a register or memory reference */
-  if (i->modC0()) {
-    op2_32 = BX_READ_32BIT_REG(i->rm());
-  }
-  else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
-  }
+  Bit32u op2_32 = BX_READ_32BIT_REG(i->rm());
 
   if (op2_32 == 0) {
     assert_ZF(); /* op1_32 undefined */
-    return;
   }
+  else {
+    Bit32u op1_32 = 31;
+    while ((op2_32 & 0x80000000) == 0) {
+      op1_32--;
+      op2_32 <<= 1;
+    }
 
-  op1_32 = 31;
-  while ((op2_32 & 0x80000000) == 0) {
-    op1_32--;
-    op2_32 <<= 1;
+    SET_FLAGS_OSZAPC_LOGIC_32(op1_32);
+    clear_ZF();
+
+    /* now write result back to destination */
+    BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
   }
-
-  SET_FLAGS_OSZAPC_LOGIC_32(op1_32);
-  clear_ZF();
-
-  /* now write result back to destination */
-  BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BT_EdGdM(bxInstruction_c *i)
@@ -104,12 +82,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BT_EdGdM(bxInstruction_c *i)
   Bit32u op1_32, op2_32, index;
   Bit32s displacement32;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op2_32 = BX_READ_32BIT_REG(i->nnn());
   index = op2_32 & 0x1f;
   displacement32 = ((Bit32s) (op2_32&0xffffffe0)) / 32;
-  op1_addr = RMAddr(i) + 4 * displacement32;
+  op1_addr = eaddr + 4 * displacement32;
   if (! i->as32L())
     op1_addr = (Bit16u) op1_addr;
 #if BX_SUPPORT_X86_64
@@ -141,12 +119,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTS_EdGdM(bxInstruction_c *i)
   Bit32s displacement32;
   bx_bool bit_i;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op2_32 = BX_READ_32BIT_REG(i->nnn());
   index = op2_32 & 0x1f;
   displacement32 = ((Bit32s) (op2_32&0xffffffe0)) / 32;
-  op1_addr = RMAddr(i) + 4 * displacement32;
+  op1_addr = eaddr + 4 * displacement32;
   if (! i->as32L())
     op1_addr = (Bit16u) op1_addr;
 #if BX_SUPPORT_X86_64
@@ -185,12 +163,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTR_EdGdM(bxInstruction_c *i)
   Bit32u op1_32, op2_32, index;
   Bit32s displacement32;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op2_32 = BX_READ_32BIT_REG(i->nnn());
   index = op2_32 & 0x1f;
   displacement32 = ((Bit32s) (op2_32&0xffffffe0)) / 32;
-  op1_addr = RMAddr(i) + 4 * displacement32;
+  op1_addr = eaddr + 4 * displacement32;
   if (! i->as32L())
     op1_addr = (Bit16u) op1_addr;
 #if BX_SUPPORT_X86_64
@@ -230,13 +208,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTC_EdGdM(bxInstruction_c *i)
   Bit32u op1_32, op2_32, index_32;
   Bit32s displacement32;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   op2_32 = BX_READ_32BIT_REG(i->nnn());
   index_32 = op2_32 & 0x1f;
 
   displacement32 = ((Bit32s) (op2_32 & 0xffffffe0)) / 32;
-  op1_addr = RMAddr(i) + 4 * displacement32;
+  op1_addr = eaddr + 4 * displacement32;
   if (! i->as32L())
     op1_addr = (Bit16u) op1_addr;
 #if BX_SUPPORT_X86_64
@@ -269,9 +247,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTC_EdGdR(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BT_EdIbM(bxInstruction_c *i)
 {
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit32u op1_32 = read_virtual_dword(i->seg(), RMAddr(i));
+  Bit32u op1_32 = read_virtual_dword(i->seg(), eaddr);
   Bit8u  op2_8  = i->Ib() & 0x1f;
 
   set_CF((op1_32 >> op2_8) & 0x01);
@@ -289,9 +267,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTS_EdIbM(bxInstruction_c *i)
 {
   Bit8u op2_8 = i->Ib() & 0x1f;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
   bx_bool temp_CF = (op1_32 >> op2_8) & 0x01;
   op1_32 |= (((Bit32u) 1) << op2_8);
   write_RMW_virtual_dword(op1_32);
@@ -315,9 +293,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTC_EdIbM(bxInstruction_c *i)
 {
   Bit8u op2_8 = i->Ib() & 0x1f;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
   bx_bool temp_CF = (op1_32 >> op2_8) & 0x01;
   op1_32 ^= (((Bit32u) 1) << op2_8);  /* toggle bit */
   write_RMW_virtual_dword(op1_32);
@@ -341,9 +319,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTR_EdIbM(bxInstruction_c *i)
 {
   Bit8u op2_8 = i->Ib() & 0x1f;
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), RMAddr(i));
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
   bx_bool temp_CF = (op1_32 >> op2_8) & 0x01;
   op1_32 &= ~(((Bit32u) 1) << op2_8);
   write_RMW_virtual_dword(op1_32);
@@ -364,22 +342,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BTR_EdIbR(bxInstruction_c *i)
 }
 
 /* 0F B8 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 {
-#if BX_SUPPORT_POPCNT || (BX_SUPPORT_SSE >= 5) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
-  Bit32u op1_32, op2_32;
+#if BX_SUPPORT_POPCNT || (BX_SUPPORT_SSE > 4) || (BX_SUPPORT_SSE >= 4 && BX_SUPPORT_SSE_EXTENSION > 0)
+  Bit32u op2_32 = BX_READ_32BIT_REG(i->rm());
 
-  /* op2_16 is a register or memory reference */
-  if (i->modC0()) {
-    op2_32 = BX_READ_32BIT_REG(i->rm());
-  }
-  else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
-  }
-
-  op1_32 = 0;
+  Bit32u op1_32 = 0;
   while (op2_32 != 0) {
     if (op2_32 & 1) op1_32++;
     op2_32 >>= 1;
@@ -392,7 +360,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEd(bxInstruction_c *i)
   BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
 #else
   BX_INFO(("POPCNT_GdEd: required POPCNT support, use --enable-popcnt option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 

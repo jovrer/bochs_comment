@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc,v 1.64 2008/02/15 22:05:41 sshwarts Exp $
+// $Id: cmos.cc,v 1.70 2009/04/23 18:28:17 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -31,6 +31,7 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "cmos.h"
 
 #define LOG_THIS theCmosDevice->
 
@@ -81,6 +82,11 @@ bx_cmos_c *theCmosDevice = NULL;
 // 0x39   2   ata translation policy (ata0...ata3)
 // 0x3d   1   eltorito boot sequence (#1 + #2)
 //
+// Qemu CMOS map
+//
+// Idx  Len   Description
+// 0x5b   3   extra memory above 4GB
+// 0x5f   1   number of processors
 
 
 Bit8u bcd_to_bin(Bit8u value, bx_bool is_binary)
@@ -117,7 +123,6 @@ void libcmos_LTX_plugin_fini(void)
 bx_cmos_c::bx_cmos_c(void)
 {
   put("CMOS");
-  settype(CMOSLOG);
 
   for (unsigned i=0; i<128; i++) s.reg[i] = 0;
 
@@ -140,7 +145,7 @@ bx_cmos_c::~bx_cmos_c(void)
 
 void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc,v 1.64 2008/02/15 22:05:41 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: cmos.cc,v 1.70 2009/04/23 18:28:17 sshwarts Exp $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);
@@ -361,9 +366,7 @@ Bit32u bx_cmos_c::read(Bit32u address, unsigned io_len)
 #endif
   Bit8u ret8;
 
-  if (bx_dbg.cmos)
-    BX_INFO(("CMOS read of CMOS register 0x%02x",
-      (unsigned) BX_CMOS_THIS s.cmos_mem_address));
+  BX_DEBUG(("CMOS read of CMOS register 0x%02x", (unsigned) BX_CMOS_THIS s.cmos_mem_address));
 
   switch (address) {
     case 0x0070:

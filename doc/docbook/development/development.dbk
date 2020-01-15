@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/development/development.dbk
-$Id: development.dbk,v 1.27 2008/02/05 22:33:34 sshwarts Exp $
+$Id: development.dbk,v 1.31 2008/12/25 16:58:44 vruppert Exp $
 
 This is the top level file for the Bochs Developers Manual.
 ================================================================
@@ -577,6 +577,7 @@ shows all CMOS registers and their meaning.
 <screen>
 Legend:
 S	- set by the emulator (Bochs)
+Q	- set by the emulator (Qemu)
 B	- set by the bios
 U	- unused by the bios
 
@@ -689,6 +690,8 @@ LOC	NOTES	MEANING
 	bits
 	3-0	boot drive #1
 	7-4	boot drive #2
+0x5b	Q	extra memory above 4GB
+0x5f	Q	number of processors
 </screen>
 </para>
 </section>
@@ -2396,13 +2399,13 @@ This produces two rpm files in the current directory.  Test and upload.
 </section>
 <section><title>Uploading files and creating a file release on SF</title>
 <para>
-When you are ready with creating release packages you have to upload them to SF
-using anonymous FTP using this location:
+When you are ready with creating release packages you have to upload them to SF.
+Using the SF webupload feature is the easiest way to do this.
 <screen>
-upload.sourceforge.net/incoming
+https://frs.sourceforge.net/webupload
 </screen>
 Note that you cannot modify or delete files after uploading them. If you don't do
-anything with the uploaded files, they will be deleted by SF after 24 hours.
+anything with the uploaded files, they will be deleted by SF after 7 to 14 days.
 </para>
 <para>
 To create or edit a file release you have to log in to the <command>Admin</command>
@@ -2423,11 +2426,58 @@ section on the SF project page of Bochs. Then you have to go to the
       </para>
       </section>
 
-      <section id="shell-access"><title>shell access to the website</title>
-      <para>
-      &FIXME;
-      </para>
-      </section>
+<section id="update-cvs-snapshot"><title>Updating the CVS snapshot</title>
+<para>
+The CVS snapshot can be updated with SF shell access using SSH. There is a script
+called <command>update-snapshots.sh</command> that can do all the required steps
+(checking out CVS, packing the source tree into one archive, updating the website
+link).
+<screen>
+ssh -t vruppert,bochs@shell.sourceforge.net create
+vruppert,bochs@shell.sourceforge.net's password:
+
+Requesting a new shell for "vruppert" and waiting for it to start.
+queued... starting...
+
+This is an interactive shell created for user vruppert,bochs.
+Use the "timeleft" command to see how much time remains before shutdown.
+Use the "shutdown" command to destroy the shell before the time limit.
+For path information and login help, type "sf-help".
+
+[vruppert@shell-24002 ~]$ cd /home/groups/b/bo/bochs/sitebin/
+[vruppert@shell-24002 sitebin]$ ./update-snapshots.sh
+[vruppert@shell-24002 sitebin]$ shutdown
+Requesting that your shell be shut down.
+This request will be processed soon.
+[vruppert@shell-24002 sitebin]$
+Broadcast message from root (Sat Nov 15 08:36:01 2008):
+
+The system is going down for system halt NOW!
+Connection to shell-24002 closed by remote host.
+Connection to shell-24002 closed.
+Connection to shell.sourceforge.net closed.
+</screen>
+</para>
+</section>
+
+<section id="update-online-docs"><title>Updating the online documentation</title>
+<para>
+To update the online documentation, a file called<filename>bochsdoc.tar.gz</filename>
+must be generated with the <command>make</command>. This file must be uploaded
+to the location of the online documentation on SF using <command>scp</command>.
+<screen>
+cd doc/docbook
+make bochsdoc.tar.gz
+scp bochsdoc.tar.gz vruppert,bochs@web.sf.net:htdocs/doc/docbook
+</screen>
+After a successful upload, the HTML files must be unpacked from the SF shell.
+See previous section how to create a shell.
+<screen>
+cd /home/groups/b/bo/bochs/htdocs/doc/docbook
+tar xvzf bochsdoc.tar.gz
+</screen>
+</para>
+</section>
 
       <section id="repository"><title>website html repository</title>
       <para>

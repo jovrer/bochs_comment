@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.120 2008/06/01 10:56:29 vruppert Exp $
+// $Id: win32.cc,v 1.131 2009/04/08 06:31:38 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 //  Much of this file was written by:
@@ -35,6 +35,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "keymap.h"
 #include "iodev/iodev.h"
 #if BX_WITH_WIN32
 
@@ -50,7 +51,7 @@ class bx_win32_gui_c : public bx_gui_c {
 public:
   bx_win32_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS();
-  virtual void statusbar_setitem(int element, bx_bool active);
+  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
   virtual void set_tooltip(unsigned hbar_id, const char *tip);
 #if BX_SHOW_IPS
@@ -168,6 +169,7 @@ static char ipsText[20];
 long SB_Edges[BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1];
 char SB_Text[BX_MAX_STATUSITEMS][10];
 bx_bool SB_Active[BX_MAX_STATUSITEMS];
+bx_bool SB_ActiveW[BX_MAX_STATUSITEMS];
 
 // Misc stuff
 static unsigned dimension_x, dimension_y, current_bpp;
@@ -176,8 +178,8 @@ static unsigned stretch_factor=1;
 static BOOL BxTextMode = TRUE;
 static BOOL legacyF12 = FALSE;
 static BOOL fix_size = FALSE;
-#if BX_DEBUGGER
-static BOOL windebug = FALSE;
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+static BOOL gui_debug = FALSE;
 #endif
 static HWND hotKeyReceiver = NULL;
 static HWND saveParent = NULL;
@@ -207,7 +209,7 @@ sharedThreadInfo stInfo;
 LRESULT CALLBACK mainWndProc (HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK simWndProc (HWND, UINT, WPARAM, LPARAM);
 VOID CDECL UIThread(PVOID);
-void SetStatusText(int Num, const char *Text, bx_bool active);
+void SetStatusText(int Num, const char *Text, bx_bool active, bx_bool w=0);
 void terminateEmul(int);
 void create_vga_font(void);
 static unsigned char reverse_bitorder(unsigned char);
@@ -611,7 +613,9 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
                                    unsigned headerbar_y)
 {
   int i;
+  bx_bool gui_ci;
 
+  gui_ci = !strcmp(SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected(), "win32config");
   put("WGUI");
 
   // prepare for possible fullscreen mode
@@ -653,10 +657,14 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
       BX_INFO(("option %d: %s", i, argv[i]));
       if (!strcmp(argv[i], "legacyF12")) {
         legacyF12 = TRUE;
-#if BX_DEBUGGER
-      } else if (!strcmp(argv[i], "windebug")) {
-        windebug = TRUE;
-        SIM->set_debug_gui(1);
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+      } else if (!strcmp(argv[i], "gui_debug")) {
+        if (gui_ci) {
+          gui_debug = TRUE;
+          SIM->set_debug_gui(1);
+        } else {
+          BX_PANIC(("Config interface 'win32config' is required for gui debugger"));
+        }
 #endif
       } else {
         BX_PANIC(("Unknown win32 option '%s'", argv[i]));
@@ -726,8 +734,9 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
     bx_keymap.loadKeymap(NULL);  // I have no function to convert X windows symbols
   }
 
-  win32_init_notify_callback();
-  dialog_caps = BX_GUI_DLG_ALL;
+  if (gui_ci) {
+    dialog_caps = BX_GUI_DLG_ALL;
+  }
 }
 
 void resize_main_window()
@@ -918,9 +927,9 @@ VOID CDECL UIThread(PVOID pvoid)
     if (MemoryBitmap && MemoryDC) {
       resize_main_window();
       ShowWindow(stInfo.mainWnd, SW_SHOW);
-#if BX_DEBUGGER
-      if (windebug) {
-        InitDebugDialog(stInfo.mainWnd);
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+      if (gui_debug) {
+        InitDebugDialog();
       }
 #endif
       stInfo.UIinited = TRUE;
@@ -939,7 +948,7 @@ VOID CDECL UIThread(PVOID pvoid)
   _endthread();
 }
 
-void SetStatusText(int Num, const char *Text, bx_bool active)
+void SetStatusText(int Num, const char *Text, bx_bool active, bx_bool w)
 {
   char StatText[MAX_PATH];
 
@@ -952,20 +961,20 @@ void SetStatusText(int Num, const char *Text, bx_bool active)
     lstrcpy(StatText+1, Text);
     lstrcpy(SB_Text[Num-BX_SB_TEXT_ELEMENTS], StatText);
     SB_Active[Num-BX_SB_TEXT_ELEMENTS] = active;
+    SB_ActiveW[Num-BX_SB_TEXT_ELEMENTS] = w;
     SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (long)SB_Text[Num-BX_SB_TEXT_ELEMENTS]);
   }
   UpdateWindow(hwndSB);
 }
 
-void
-bx_win32_gui_c::statusbar_setitem(int element, bx_bool active)
+void bx_win32_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (int i = 0; i < (int)statusitem_count; i++) {
-      SetStatusText(i+BX_SB_TEXT_ELEMENTS, statusitem_text[i], active);
+      SetStatusText(i+BX_SB_TEXT_ELEMENTS, statusitem_text[i], active, w);
     }
   } else if (element < (int)statusitem_count) {
-    SetStatusText(element+BX_SB_TEXT_ELEMENTS, statusitem_text[element], active);
+    SetStatusText(element+BX_SB_TEXT_ELEMENTS, statusitem_text[element], active, w);
   }
 }
 
@@ -1009,7 +1018,7 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       SendMessage(hwndSB, WM_SIZE, 0, 0);
       // now fit simWindow to mainWindow
       int rect_data[] = { 1, 0, IsWindowVisible(hwndTB),
-       100, IsWindowVisible(hwndSB), 0x7712, 0, 0 };
+         100, IsWindowVisible(hwndSB), 0x7712, 0, 0 };
       RECT R;
       GetEffectiveClientRect(hwnd, &R, rect_data);
       x = R.right - R.left;
@@ -1031,7 +1040,10 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     if (lpdis->hwndItem == hwndSB) {
       sbtext = (char *)lpdis->itemData;
       if (SB_Active[lpdis->itemID-BX_SB_TEXT_ELEMENTS]) {
-        SetBkColor(lpdis->hDC, 0x0000FF00);
+        if (SB_ActiveW[lpdis->itemID-BX_SB_TEXT_ELEMENTS])
+          SetBkColor(lpdis->hDC, 0x000040FF);
+        else
+          SetBkColor(lpdis->hDC, 0x0000FF00);
       } else {
         SetBkMode(lpdis->hDC, TRANSPARENT);
         SetTextColor(lpdis->hDC, 0x00808080);
@@ -1047,16 +1059,15 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       lpttt = (LPTOOLTIPTEXT)lParam;
       idTT = (int)wParam;
       hbar_id = idTT - 101;
-      if ((SendMessage(hwndTB, TB_GETSTATE, idTT, 0)) &&
-          (bx_headerbar_entry[hbar_id].tooltip != NULL)) {
-          lstrcpy(lpttt->szText, bx_headerbar_entry[hbar_id].tooltip);
+      if (SendMessage(hwndTB, TB_GETSTATE, idTT, 0) && bx_headerbar_entry[hbar_id].tooltip != NULL) {
+        lstrcpy(lpttt->szText, bx_headerbar_entry[hbar_id].tooltip);
       }
     }
     return FALSE;
     break;
 
   }
-  return DefWindowProc (hwnd, iMsg, wParam, lParam);
+  return DefWindowProc(hwnd, iMsg, wParam, lParam);
 }
 
 void SetMouseCapture()
@@ -1586,8 +1597,13 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   y = 0;
   cs_y = 0;
   text_base = new_text - tm_info.start_address;
-  split_textrow = (line_compare + v_panning) / yChar;
-  split_fontrows = ((line_compare + v_panning) % yChar) + 1;
+  if (line_compare < dimension_y) {
+    split_textrow = (line_compare + v_panning) / yChar;
+    split_fontrows = ((line_compare + v_panning) % yChar) + 1;
+  } else {
+    split_textrow = rows + 1;
+    split_fontrows = 0;
+  }
   split_screen = 0;
   do {
     hchars = text_cols;
@@ -2217,7 +2233,7 @@ VOID CALLBACK MyTimer(HWND hwnd,UINT uMsg, UINT idEvent, DWORD dwTime)
 void alarm(int time)
 {
   UINT idTimer = 2;
-  SetTimer(stInfo.simWnd,idTimer,time*1000,MyTimer);
+  SetTimer(stInfo.simWnd,idTimer,time*1000,(TIMERPROC)MyTimer);
 }
 #endif
 #endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc,v 1.58 2008/04/07 20:20:04 sshwarts Exp $
+// $Id: rfb.cc,v 1.63 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -19,7 +19,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 // RFB still to do :
 // - properly handle SetPixelFormat, including big/little-endian flag
@@ -51,11 +51,13 @@ public:
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
   void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
-  void statusbar_setitem(int element, bx_bool active);
+  void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
 #if BX_SHOW_IPS
   void show_ips(Bit32u ips_count);
 #endif
 };
+
+void rfbSetStatusText(int element, const char *text, bx_bool active, bx_bool w=0);
 
 // declare one instance of the gui object and call macro to insert the
 // plugin code
@@ -288,7 +290,7 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
   dialog_caps = 0;
 }
 
-void rfbSetStatusText(int element, const char *text, bx_bool active)
+void rfbSetStatusText(int element, const char *text, bx_bool active, bx_bool w)
 {
   char *newBits;
   unsigned xleft, xsize, color, i, len;
@@ -302,7 +304,7 @@ void rfbSetStatusText(int element, const char *text, bx_bool active)
     newBits[((xsize / 8) + 1) * i] = 0;
   }
   if (element > 0) {
-    color = active?0xa0:0xf7;
+    color = active?(w?0xc0:0xa0):0xf7;
   } else {
     color = 0xf0;
   }
@@ -320,14 +322,14 @@ void rfbSetStatusText(int element, const char *text, bx_bool active)
   rfbUpdateRegion.updated = true;
 }
 
-void bx_rfb_gui_c::statusbar_setitem(int element, bx_bool active)
+void bx_rfb_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
-      rfbSetStatusText(i+1, statusitem_text[i], active);
+      rfbSetStatusText(i+1, statusitem_text[i], active, w);
     }
   } else if ((unsigned)element < statusitem_count) {
-    rfbSetStatusText(element+1, statusitem_text[element], active);
+    rfbSetStatusText(element+1, statusitem_text[element], active, w);
   }
 }
 
@@ -843,7 +845,11 @@ bx_svga_tileinfo_t *bx_rfb_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
   info->green_mask = 0x38;
   info->blue_mask = 0xc0;
   info->is_indexed = 0;
+#ifdef BX_LITTLE_ENDIAN
   info->is_little_endian = 1;
+#else
+  info->is_little_endian = 0;
+#endif
 
   return info;
 }

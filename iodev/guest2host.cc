@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: guest2host.cc,v 1.16 2008/02/15 22:05:42 sshwarts Exp $
+// $Id: guest2host.cc,v 1.20 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,10 +22,12 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #include "iodev.h"
+#include "guest2host.h"
+
 #define LOG_THIS  bx_g2h.
 
 bx_g2h_c bx_g2h;
@@ -33,7 +35,6 @@ bx_g2h_c bx_g2h;
 bx_g2h_c::bx_g2h_c()
 {
   put("G2H");
-  settype(G2HLOG);
   unsigned i;
 
   for (i=0; i<BX_MAX_G2H_CHANNELS; i++) {
@@ -49,7 +50,7 @@ bx_g2h_c::~bx_g2h_c()
 
 void bx_g2h_c::init(void)
 {
-  BX_DEBUG(("Init $Id: guest2host.cc,v 1.16 2008/02/15 22:05:42 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: guest2host.cc,v 1.20 2009/02/08 09:05:52 vruppert Exp $"));
   // Reserve a dword port for this interface
   for (Bit32u addr=BX_G2H_PORT; addr<=(BX_G2H_PORT+3); addr++) {
     bx_devices.register_io_read_handler(&bx_g2h,

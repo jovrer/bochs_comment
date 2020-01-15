@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc,v 1.135 2008/05/25 06:25:44 vruppert Exp $
+// $Id: config.cc,v 1.176 2009/04/26 06:56:27 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "bochs.h"
 #include "iodev/iodev.h"
@@ -41,6 +41,9 @@
 
 
 int bochsrc_include_count = 0;
+#if BX_PLUGINS
+Bit8u bx_user_plugin_count = 0;
+#endif
 
 #define LOG_THIS genlog->
 
@@ -69,118 +72,61 @@ static Bit64s bx_param_handler(bx_param_c *param, int set, Bit64s val)
     if (!strcmp(param->get_name(), "status")) {
       if ((set) && (SIM->get_init_done())) {
         Bit32u handle = DEV_hd_get_device_handle(channel, device);
-        DEV_hd_set_cd_media_status(handle, val == BX_INSERTED);
+        DEV_hd_set_cd_media_status(handle, val);
         bx_gui->update_drive_status_buttons();
       }
-    } else if (!strcmp(param->get_name(), "mode")) {
-      if (set) {
-        switch (val) {
-          case BX_ATA_MODE_UNDOABLE:
-          case BX_ATA_MODE_VOLATILE:
-//        case BX_ATA_MODE_Z_UNDOABLE:
-//        case BX_ATA_MODE_Z_VOLATILE:
-            SIM->get_param("journal", base)->set_enabled(1);
-            break;
-          default:
-            SIM->get_param("journal", base)->set_enabled(0);
-          }
-        }
     } else if (!strcmp(param->get_name(), "type")) {
       if (set) {
         switch (val) {
           case BX_ATA_DEVICE_DISK:
-            SIM->get_param_num("present", base)->set(1);
-            SIM->get_param("mode", base)->set_enabled(1);
-            SIM->get_param("path", base)->set_enabled(1);
-            //SIM->get_param("journal", base)->set_enabled(1);
-            SIM->get_param("cylinders", base)->set_enabled(1);
-            SIM->get_param("heads", base)->set_enabled(1);
-            SIM->get_param("spt", base)->set_enabled(1);
-            SIM->get_param("status", base)->set_enabled(0);
-            SIM->get_param("model", base)->set_enabled(1);
-            SIM->get_param("biosdetect", base)->set_enabled(1);
-            SIM->get_param("translation", base)->set_enabled(1);
-            SIM->get_param("path", base)->set_runtime_param(0);
-            SIM->get_param("status", base)->set_runtime_param(0);
+            ((bx_param_filename_c*)SIM->get_param("path", base))->set_extension("img");
             break;
           case BX_ATA_DEVICE_CDROM:
-            SIM->get_param_num("present", base)->set(1);
-            SIM->get_param("mode", base)->set_enabled(0);
-            SIM->get_param("path", base)->set_enabled(1);
-            SIM->get_param("journal", base)->set_enabled(0);
-            SIM->get_param("cylinders", base)->set_enabled(0);
-            SIM->get_param("heads", base)->set_enabled(0);
-            SIM->get_param("spt", base)->set_enabled(0);
-            SIM->get_param("status", base)->set_enabled(1);
-            SIM->get_param("model", base)->set_enabled(1);
-            SIM->get_param("biosdetect", base)->set_enabled(1);
-            SIM->get_param("translation", base)->set_enabled(0);
-            SIM->get_param("path", base)->set_runtime_param(1);
-            SIM->get_param("status", base)->set_runtime_param(1);
+            ((bx_param_filename_c*)SIM->get_param("path", base))->set_extension("iso");
             break;
         }
       }
+    } else {
+      BX_PANIC(("bx_param_handler called with unknown parameter '%s.%s'", pname, param->get_name()));
+      return -1;
     }
   } else {
     param->get_param_path(pname, BX_PATHNAME_LEN);
-    if (!strcmp(pname, BXPN_LOAD32BITOS_WHICH)) {
-      if (set) {
-        int enable = (val != Load32bitOSNone);
-        SIM->get_param(BXPN_LOAD32BITOS_PATH)->set_enabled(enable);
-        SIM->get_param(BXPN_LOAD32BITOS_IOLOG)->set_enabled(enable);
-        SIM->get_param(BXPN_LOAD32BITOS_INITRD)->set_enabled(enable);
-      }
-    } else if (!strcmp(pname, BXPN_FLOPPYA_TYPE)) {
+    if ((!strcmp(pname, BXPN_FLOPPYA_TYPE)) ||
+        (!strcmp(pname, BXPN_FLOPPYB_TYPE))) {
       if (set) {
         if (val == BX_FLOPPY_AUTO) {
-          val = get_floppy_type_from_image(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr());
-          SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(val);
-        } else if (!SIM->get_init_done()) {
+          val = get_floppy_type_from_image(SIM->get_param_string("path", base)->getptr());
+          SIM->get_param_enum("type", base)->set(val);
+        } else if (!SIM->get_init_done() && (val != BX_FLOPPY_NONE)) {
           switch (val) {
-            case BX_FLOPPY_1_2:
-            case BX_FLOPPY_1_44:
             case BX_FLOPPY_2_88:
-              device = val;
+              device = BX_FDD_350ED;
               break;
             case BX_FLOPPY_720K:
-              device = BX_FLOPPY_1_44;
-              break;
-            default:
-              device = BX_FLOPPY_1_2;
-          }
-          SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE)->set(device);
-        }
-      }
-    } else if (!strcmp(pname, BXPN_FLOPPYB_TYPE)) {
-      if (set) {
-        if (val == BX_FLOPPY_AUTO) {
-          val = get_floppy_type_from_image(SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr());
-          SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(val);
-        } else if (!SIM->get_init_done()) {
-          switch (val) {
-            case BX_FLOPPY_1_2:
             case BX_FLOPPY_1_44:
-            case BX_FLOPPY_2_88:
-              device = val;
-              break;
-            case BX_FLOPPY_720K:
-              device = BX_FLOPPY_1_44;
+              device = BX_FDD_350HD;
               break;
             default:
-              device = BX_FLOPPY_1_2;
+              device = BX_FDD_525HD;
           }
-          SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE)->set(device);
+          SIM->get_param_enum("devtype", base)->set(device);
         }
       }
     } else if (!strcmp(pname, BXPN_FLOPPYA_STATUS)) {
       if ((set) && (SIM->get_init_done())) {
-        DEV_floppy_set_media_status(0, val == BX_INSERTED);
+        DEV_floppy_set_media_status(0, val);
         bx_gui->update_drive_status_buttons();
       }
     } else if (!strcmp(pname, BXPN_FLOPPYB_STATUS)) {
       if ((set) && (SIM->get_init_done())) {
-        DEV_floppy_set_media_status(1, val == BX_INSERTED);
+        DEV_floppy_set_media_status(1, val);
         bx_gui->update_drive_status_buttons();
+      }
+    } else if (!strcmp(pname, BXPN_MOUSE_ENABLED)) {
+      if ((set) && (SIM->get_init_done())) {
+        bx_gui->mouse_enabled_changed(val!=0);
+        DEV_mouse_enabled_changed(val!=0);
       }
     } else {
       BX_PANIC(("bx_param_handler called with unknown parameter '%s'", pname));
@@ -190,7 +136,8 @@ static Bit64s bx_param_handler(bx_param_c *param, int set, Bit64s val)
   return val;
 }
 
-const char *bx_param_string_handler(bx_param_string_c *param, int set, const char *val, int maxlen)
+const char *bx_param_string_handler(bx_param_string_c *param, int set,
+                                    const char *oldval, const char *val, int maxlen)
 {
   char pname[BX_PATHNAME_LEN];
   Bit8u channel, device;
@@ -227,7 +174,7 @@ const char *bx_param_string_handler(bx_param_string_c *param, int set, const cha
             }
           }
           if (DEV_hd_present() &&
-              (SIM->get_param_num("status", base)->get() == BX_INSERTED) &&
+              (SIM->get_param_num("status", base)->get() == 1) &&
               (SIM->get_param_num("type", base)->get() == BX_ATA_DEVICE_CDROM)) {
             // tell the device model that we removed, then inserted the cd
             DEV_hd_set_cd_media_status(handle, 0);
@@ -242,101 +189,40 @@ const char *bx_param_string_handler(bx_param_string_c *param, int set, const cha
       if (set==1) {
         BX_INFO(("Screen mode changed to %s", val));
       }
-    } else if (!strcmp(pname, BXPN_FLOPPYA_PATH)) {
+    } else if ((!strcmp(pname, BXPN_FLOPPYA_PATH)) ||
+               (!strcmp(pname, BXPN_FLOPPYB_PATH))) {
       if (set==1) {
+        device = !strcmp(pname, BXPN_FLOPPYB_PATH);
         if (SIM->get_init_done()) {
           if (empty) {
-            DEV_floppy_set_media_status(0, 0);
+            DEV_floppy_set_media_status(device, 0);
             bx_gui->update_drive_status_buttons();
           } else {
-            if (!SIM->get_param_num(BXPN_FLOPPYA_TYPE)->get_enabled()) {
+            if (SIM->get_param_enum("devtype", base)->get() == BX_FDD_NONE) {
               BX_ERROR(("Cannot add a floppy drive at runtime"));
-              SIM->get_param_string(BXPN_FLOPPYA_PATH)->set("none");
+              SIM->get_param_string("path", base)->set("none");
             }
           }
           if ((DEV_floppy_present()) &&
-              (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED)) {
+              (SIM->get_param_bool("status", base)->get() == 1)) {
             // tell the device model that we removed, then inserted the disk
-            DEV_floppy_set_media_status(0, 0);
-            DEV_floppy_set_media_status(0, 1);
+            DEV_floppy_set_media_status(device, 0);
+            DEV_floppy_set_media_status(device, 1);
           }
-        } else {
-          SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set_enabled(!empty);
-          SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->set_enabled(!empty);
         }
       }
-    } else if (!strcmp(pname, BXPN_FLOPPYB_PATH)) {
-      if (set==1) {
-        if (SIM->get_init_done()) {
-          if (empty) {
-            DEV_floppy_set_media_status(1, 0);
-            bx_gui->update_drive_status_buttons();
-          } else {
-            if (!SIM->get_param_num(BXPN_FLOPPYB_TYPE)->get_enabled()) {
-              BX_ERROR(("Cannot add a floppy drive at runtime"));
-              SIM->get_param_string(BXPN_FLOPPYB_PATH)->set("none");
-            }
-          }
-          if ((DEV_floppy_present()) &&
-              (SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->get() == BX_INSERTED)) {
-            // tell the device model that we removed, then inserted the disk
-            DEV_floppy_set_media_status(1, 0);
-            DEV_floppy_set_media_status(1, 1);
-          }
-        } else {
-          SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set_enabled(!empty);
-          SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->set_enabled(!empty);
-        }
+#if BX_PLUGINS
+    } else if (!strncmp(pname, "misc.user_plugin", 16)) {
+      if ((strlen(oldval) > 0) && (strcmp(oldval, "none"))) {
+        PLUG_unload_user_plugin(oldval);
       }
+      if ((strlen(val) > 0) && (strcmp(val, "none"))) {
+        PLUG_load_user_plugin(val);
+      }
+#endif
     } else {
       BX_PANIC(("bx_param_string_handler called with unknown parameter '%s'", pname));
     }
-  }
-  return val;
-}
-
-static int bx_param_enable_handler (bx_param_c *param, int val)
-{
-  char pname[BX_PATHNAME_LEN];
-  Bit8u channel, device;
-
-  bx_list_c *base = (bx_list_c*) param->get_parent();
-  base->get_param_path(pname, BX_PATHNAME_LEN);
-  if (!strncmp(pname, "ata.", 4)) {
-    channel = pname[4] - '0';
-    if (!strcmp(base->get_name(), "master")) {
-      device = 0;
-    } else {
-      device = 1;
-    }
-    if (!strcmp(param->get_name(), "status")) {
-      if (val != 0) {
-        switch (SIM->get_param_enum("type", base)->get()) {
-          case BX_ATA_DEVICE_CDROM:
-            return (1);
-            break;
-        }
-      }
-    } else if (!strcmp(param->get_name(), "journal")) {
-      if (val != 0) {
-        switch (SIM->get_param_enum("type", base)->get()) {
-          case BX_ATA_DEVICE_DISK:
-            switch (SIM->get_param_enum("mode", base)->get()) {
-              case BX_ATA_MODE_UNDOABLE:
-              case BX_ATA_MODE_VOLATILE:
-//            case BX_ATA_MODE_Z_UNDOABLE:
-//            case BX_ATA_MODE_Z_VOLATILE:
-                return (1);
-                break;
-            }
-        }
-      }
-      return (0);
-    } else {
-      BX_PANIC(("bx_param_enable_handler called with unknown parameter '%s'", pname));
-    }
-  } else {
-    BX_PANIC(("bx_param_enable_handler called with unknown parameter '%s'", pname));
   }
   return val;
 }
@@ -347,8 +233,8 @@ void bx_init_options()
   bx_list_c *menu;
   bx_list_c *deplist;
   bx_param_num_c *ioaddr, *ioaddr2, *irq;
-  bx_param_bool_c *enabled;
-  bx_param_enum_c *mode, *status, *type, *ethmod;
+  bx_param_bool_c *enabled, *status;
+  bx_param_enum_c *mode, *type, *ethmod;
   bx_param_string_c *macaddr, *ethdev;
   bx_param_filename_c *path;
   char name[BX_PATHNAME_LEN], descr[512], group[16], label[512];
@@ -360,6 +246,9 @@ void bx_init_options()
 
  // config interface option, set in bochsrc or command line
   static const char *config_interface_list[] = {
+#ifdef WIN32
+    "win32config",
+#endif
 #if BX_USE_TEXTCONFIG
     "textconfig",
 #endif
@@ -408,8 +297,8 @@ void bx_init_options()
   bx_list_c *special_menus = new bx_list_c(root_param, "menu", "");
 
 #if BX_SUPPORT_SMP
-  #define BX_CPU_PROCESSORS_LIMIT 8
-  #define BX_CPU_CORES_LIMIT 4
+  #define BX_CPU_PROCESSORS_LIMIT 255
+  #define BX_CPU_CORES_LIMIT 8
   #define BX_CPU_HT_THREADS_LIMIT 4
 #else
   #define BX_CPU_PROCESSORS_LIMIT 1
@@ -418,7 +307,7 @@ void bx_init_options()
 #endif
 
   // cpu subtree
-  bx_list_c *cpu_param = new bx_list_c(root_param, "cpu", "CPU Options");
+  bx_list_c *cpu_param = new bx_list_c(root_param, "cpu", "CPU Options", 9 + BX_SUPPORT_SMP);
 
   // cpu options
   bx_param_num_c *nprocessors = new bx_param_num_c(cpu_param,
@@ -442,8 +331,8 @@ void bx_init_options()
   new bx_param_num_c(cpu_param,
       "ips", "Emulated instructions per second (IPS)",
       "Emulated instructions per second, used to calibrate bochs emulated time with wall clock time.",
-      1, BX_MAX_BIT32U,
-      2000000);
+      BX_MIN_IPS, BX_MAX_BIT32U,
+      4000000);
 #if BX_SUPPORT_SMP
   new bx_param_num_c(cpu_param,
       "quantum", "Quantum ticks in SMP simulation",
@@ -455,7 +344,39 @@ void bx_init_options()
       "reset_on_triple_fault", "Enable CPU reset on triple fault",
       "Enable CPU reset if triple fault occured (highly recommended)",
       1);
-  cpu_param->get_options()->set(menu->SHOW_PARENT);
+  new bx_param_bool_c(cpu_param,
+      "cpuid_limit_winnt", "Limit max CPUID function to 3",
+      "Limit max CPUID function reported to 3 to workaround WinNT issue",
+      0);
+#if BX_CONFIGURE_MSRS
+  new bx_param_string_c(cpu_param,
+      "msrs",
+      "Configurable MSR definition file",
+      "Set path to the configurable MSR definition file",
+      "", BX_PATHNAME_LEN);
+#endif
+  new bx_param_string_c(cpu_param,
+      "vendor_string",
+      "CPUID vendor string",
+      "Set the CPUID vendor string",
+#if BX_CPU_VENDOR_INTEL
+      "GenuineIntel", 
+#else
+      "AuthenticAMD", 
+#endif
+      BX_CPUID_VENDOR_LEN+1);
+  new bx_param_string_c(cpu_param,
+      "brand_string",
+      "CPUID brand string",
+      "Set the CPUID brand string",
+#if BX_CPU_VENDOR_INTEL
+      "              Intel(R) Pentium(R) 4 CPU        ", 
+#else
+      "AMD Athlon(tm) processor",
+#endif
+      BX_CPUID_BRAND_LEN+1);
+
+  cpu_param->set_options(menu->SHOW_PARENT);
 
   // memory subtree
   bx_list_c *memory = new bx_list_c(root_param, "memory", "Memory Options");
@@ -474,9 +395,7 @@ void bx_init_options()
       1, 2048,
       BX_DEFAULT_MEM_MEGS);
   ramsize->set_ask_format("Enter memory size (MB): [%d] ");
-#if BX_WITH_WX
-  ramsize->set_options(bx_param_num_c::USE_SPIN_CONTROL);
-#endif
+  ramsize->set_options(ramsize->USE_SPIN_CONTROL);
 
   path = new bx_param_filename_c(rom,
       "path",
@@ -532,9 +451,9 @@ void bx_init_options()
     sprintf(label, "Optional ROM #%d address:", i+1);
     strcat(label, " 0x%05x");
     optaddr->set_long_format(strdup(label));
-    optnum1->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::USE_BOX_TITLE);
+    optnum1->set_options(optnum1->SHOW_PARENT | optnum1->USE_BOX_TITLE);
   }
-  optrom->get_options()->set(bx_list_c::SHOW_PARENT);
+  optrom->set_options(optrom->SHOW_PARENT);
 
   for (i=0; i<BX_N_OPTRAM_IMAGES; i++) {
     sprintf(name, "%d", i+1);
@@ -561,10 +480,10 @@ void bx_init_options()
     sprintf(label, "Optional RAM #%d address:", i+1);
     strcat(label, " 0x%05x");
     optaddr->set_long_format(strdup(label));
-    optnum2->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::USE_BOX_TITLE);
+    optnum2->set_options(optnum2->SHOW_PARENT | optnum2->USE_BOX_TITLE);
   }
-  optrom->get_options()->set(bx_list_c::SHOW_PARENT);
-  memory->get_options()->set(bx_list_c::USE_TAB_WINDOW);
+  optrom->set_options(optrom->SHOW_PARENT);
+  memory->set_options(memory->USE_TAB_WINDOW);
 
   bx_param_c *memory_init_list[] = {
     SIM->get_param(BXPN_MEM_SIZE),
@@ -576,7 +495,7 @@ void bx_init_options()
     NULL
   };
   menu = new bx_list_c(special_menus, "memory", "Bochs Memory Options", memory_init_list);
-  menu->get_options()->set(bx_list_c::SHOW_PARENT);
+  menu->set_options(menu->SHOW_PARENT);
 
   // clock & cmos subtree
   bx_list_c *clock_cmos = new bx_list_c(root_param, "clock_cmos", "Clock & CMOS Options");
@@ -615,14 +534,14 @@ void bx_init_options()
 
   time0->set_ask_format("Enter Initial CMOS time (1:localtime, 2:utc, other:time in seconds): [%d] ");
   clock_sync->set_ask_format("Enter Synchronisation method: [%s] ");
-  clock_cmos->get_options()->set(bx_list_c::SHOW_PARENT);
-  cmosimage->get_options()->set(bx_list_c::SHOW_PARENT);
+  clock_cmos->set_options(clock_cmos->SHOW_PARENT);
+  cmosimage->set_options(cmosimage->SHOW_PARENT);
 
   // pci subtree
   bx_list_c *pci = new bx_list_c(root_param, "pci", "PCI Options");
 
   // pci options
-  bx_param_c *pci_deps_list[1+BX_N_PCI_SLOTS];
+  bx_param_c *pci_deps_list[3+BX_N_PCI_SLOTS+2*BX_SUPPORT_PCIDEV];
   bx_param_c **pci_deps_ptr = &pci_deps_list[0];
 
   bx_param_bool_c *i440fx_support = new bx_param_bool_c(pci,
@@ -679,9 +598,9 @@ void bx_init_options()
   // add final NULL at the end, and build the menu
   *pci_deps_ptr = NULL;
   i440fx_support->set_dependent_list(new bx_list_c(NULL, "", "", pci_deps_list));
-  pci->get_options()->set(bx_list_c::SHOW_PARENT);
-  slot->get_options()->set(bx_list_c::SHOW_PARENT);
-  pcidev->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::USE_BOX_TITLE);
+  pci->set_options(pci->SHOW_PARENT);
+  slot->set_options(slot->SHOW_PARENT);
+  pcidev->set_options(pcidev->SHOW_PARENT | pcidev->USE_BOX_TITLE);
 
   // display subtree
   bx_list_c *display = new bx_list_c(root_param, "display", "Bochs Display & Interface Options", 7);
@@ -768,8 +687,8 @@ void bx_init_options()
       "vga_update_interval",
       "VGA Update Interval",
       "Number of microseconds between VGA updates",
-      1, BX_MAX_BIT32U,
-      40000);
+      40000, BX_MAX_BIT32U,
+      50000);
   vga_update_interval->set_ask_format ("Type a new value for VGA update interval: [%d] ");
 
   bx_param_string_c *vga_extension = new bx_param_string_c(display,
@@ -782,7 +701,7 @@ void bx_init_options()
 #elif BX_SUPPORT_CLGD54XX
   vga_extension->set_initial_val("cirrus");
 #endif
-  display->get_options()->set(bx_list_c::SHOW_PARENT);
+  display->set_options(display->SHOW_PARENT);
 
   // keyboard & mouse subtree
   bx_list_c *kbd_mouse = new bx_list_c(root_param, "keyboard_mouse", "Keyboard & Mouse Options");
@@ -816,6 +735,7 @@ void bx_init_options()
       "keymap", "Keymap filename",
       "Pathname of the keymap file used",
       "", BX_PATHNAME_LEN);
+  keymap->set_extension("map");
   deplist = new bx_list_c(NULL, 1);
   deplist->add(keymap);
   use_kbd_mapping->set_dependent_list(deplist);
@@ -851,13 +771,16 @@ void bx_init_options()
       BX_MOUSE_TYPE_NONE);
   type->set_ask_format("Choose the type of mouse [%s] ");
 
-  new bx_param_bool_c(mouse,
-      "enabled", "Enable the mouse capture",
+  enabled = new bx_param_bool_c(mouse,
+      "enabled", "Enable mouse capture",
       "Controls whether the mouse sends events to the guest. The hardware emulation is always enabled.",
       0);
-  kbd_mouse->get_options()->set(bx_list_c::SHOW_PARENT);
-  keyboard->get_options()->set(bx_list_c::SHOW_PARENT);
-  mouse->get_options()->set(bx_list_c::SHOW_PARENT);
+  enabled->set_handler(bx_param_handler);
+  enabled->set_runtime_param(1);
+
+  kbd_mouse->set_options(kbd_mouse->SHOW_PARENT);
+  keyboard->set_options(keyboard->SHOW_PARENT);
+  mouse->set_options(mouse->SHOW_PARENT);
 
   // boot parameter subtree
   bx_list_c *boot_params = new bx_list_c(root_param, "boot_params", "Boot Options");
@@ -910,59 +833,79 @@ void bx_init_options()
   path->set_ask_format("Enter pathname of OS: [%s]");
   iolog->set_ask_format("Enter pathname of I/O log: [%s] ");
   initrd->set_ask_format("Enter pathname of initrd: [%s] ");
-  load32bitos->get_options()->set(menu->SERIES_ASK);
-  whichOS->set_handler(bx_param_handler);
+  load32bitos->set_options(menu->SERIES_ASK);
+  whichOS->set_dependent_list(load32bitos->clone(), 1);
+  whichOS->set_dependent_bitmap(Load32bitOSNone, 0);
   whichOS->set(Load32bitOSNone);
-  boot_params->get_options()->set(bx_list_c::SHOW_PARENT);
+  boot_params->set_options(menu->SHOW_PARENT);
 
   // floppy subtree
   bx_list_c *floppy = new bx_list_c(root_param, "floppy", "Floppy Options");
-  bx_list_c *floppya = new bx_list_c(floppy, "0", "Floppy Disk 0");
-  bx_list_c *floppyb = new bx_list_c(floppy, "1", "Floppy Disk 1");
+  bx_list_c *floppya = new bx_list_c(floppy, "0", "First Floppy Drive");
+  bx_list_c *floppyb = new bx_list_c(floppy, "1", "Second Floppy Drive");
 
   bx_param_enum_c *devtype;
   // floppy options
+  devtype = new bx_param_enum_c(floppya,
+      "devtype",
+      "Type of floppy drive",
+      "Type of floppy drive",
+      floppy_devtype_names,
+      BX_FDD_NONE,
+      BX_FDD_NONE);
+  devtype->set_ask_format("What type of floppy drive? [%s] ");
+
   path = new bx_param_filename_c(floppya,
       "path",
       "First floppy image/device",
       "Pathname of first floppy image file or device.  If you're booting from floppy, this should be a bootable floppy.",
       "", BX_PATHNAME_LEN);
   path->set_ask_format("Enter new filename, or 'none' for no disk: [%s] ");
+  path->set_extension("img");
+  path->set_handler(bx_param_string_handler);
+  path->set_initial_val("none");
   path->set_runtime_param(1);
 
-  devtype = new bx_param_enum_c(floppya,
+  type = new bx_param_enum_c(floppya,
+      "type",
+      "Type of floppy media",
+      "Type of floppy media",
+      floppy_type_names,
+      BX_FLOPPY_NONE,
+      BX_FLOPPY_NONE);
+  type->set_ask_format("What type of floppy media? (auto=detect) [%s] ");
+  type->set_handler(bx_param_handler);
+  type->set_runtime_param(1);
+
+  status = new bx_param_bool_c(floppya,
+      "status",
+      "Inserted",
+      "Floppy media status (inserted / ejected)",
+      0);
+  status->set_ask_format("Is media inserted in drive? [%s] ");
+  status->set_handler(bx_param_handler);
+  status->set_runtime_param(1);
+
+  deplist = new bx_list_c(NULL, 1);
+  deplist->add(path);
+  devtype->set_dependent_list(deplist, 1);
+  devtype->set_dependent_bitmap(BX_FDD_NONE, 0);
+
+  deplist = new bx_list_c(NULL, 2);
+  deplist->add(type);
+  deplist->add(status);
+  path->set_dependent_list(deplist);
+
+  floppya->set_options(floppya->SERIES_ASK | floppya->USE_BOX_TITLE);
+
+  devtype = new bx_param_enum_c(floppyb,
       "devtype",
       "Type of floppy drive",
       "Type of floppy drive",
-      floppy_type_names,
-      BX_FLOPPY_NONE,
-      BX_FLOPPY_NONE);
-  devtype->set_enabled(0); // hide devtype parameter
-  type = new bx_param_enum_c(floppya,
-      "type",
-      "Type of floppy disk",
-      "Type of floppy disk",
-      floppy_type_names,
-      BX_FLOPPY_NONE,
-      BX_FLOPPY_NONE);
-  type->set_ask_format("What type of floppy disk? (auto=detect) [%s] ");
-  type->set_runtime_param(1);
-
-  status = new bx_param_enum_c(floppya,
-      "status",
-      "Is floppya inserted",
-      "Inserted or ejected",
-      floppy_status_names,
-      BX_INSERTED,
-      BX_EJECTED);
-  status->set_ask_format("Is the floppy inserted or ejected? [%s] ");
-  status->set_runtime_param(1);
-
-  path->set_handler(bx_param_string_handler);
-  type->set_handler(bx_param_handler);
-  status->set_handler(bx_param_handler);
-  path->set_initial_val("none");
-  floppya->get_options()->set(bx_list_c::SERIES_ASK);
+      floppy_devtype_names,
+      BX_FDD_NONE,
+      BX_FDD_NONE);
+  devtype->set_ask_format("What type of floppy drive? [%s] ");
 
   path = new bx_param_filename_c(floppyb,
       "path",
@@ -970,45 +913,47 @@ void bx_init_options()
       "Pathname of second floppy image file or device.",
       "", BX_PATHNAME_LEN);
   path->set_ask_format("Enter new filename, or 'none' for no disk: [%s] ");
+  path->set_extension("img");
+  path->set_handler(bx_param_string_handler);
+  path->set_initial_val("none");
   path->set_runtime_param(1);
 
-  devtype = new bx_param_enum_c(floppyb,
-      "devtype",
-      "Type of floppy drive",
-      "Type of floppy drive",
-      floppy_type_names,
-      BX_FLOPPY_NONE,
-      BX_FLOPPY_NONE);
-  devtype->set_enabled(0); // hide devtype parameter
   type = new bx_param_enum_c(floppyb,
       "type",
-      "Type of floppy disk",
-      "Type of floppy disk",
+      "Type of floppy media",
+      "Type of floppy media",
       floppy_type_names,
       BX_FLOPPY_NONE,
       BX_FLOPPY_NONE);
-  type->set_ask_format("What type of floppy disk? (auto=detect) [%s] ");
+  type->set_ask_format("What type of floppy media? (auto=detect) [%s] ");
+  type->set_handler(bx_param_handler);
   type->set_runtime_param(1);
 
-  status = new bx_param_enum_c(floppyb,
+  status = new bx_param_bool_c(floppyb,
       "status",
-      "Is floppyb inserted",
-      "Inserted or ejected",
-      floppy_status_names,
-      BX_INSERTED,
-      BX_EJECTED);
-  status->set_ask_format("Is the floppy inserted or ejected? [%s] ");
+      "Inserted",
+      "Floppy media status (inserted / ejected)",
+      0);
+  status->set_ask_format("Is media inserted in drive? [%s] ");
+  status->set_handler(bx_param_handler);
   status->set_runtime_param(1);
 
-  path->set_handler(bx_param_string_handler);
-  type->set_handler(bx_param_handler);
-  status->set_handler(bx_param_handler);
-  path->set_initial_val("none");
-  floppyb->get_options()->set(bx_list_c::SERIES_ASK);
-  floppy->get_options()->set(bx_list_c::SHOW_PARENT);
+  deplist = new bx_list_c(NULL, 1);
+  deplist->add(path);
+  devtype->set_dependent_list(deplist, 1);
+  devtype->set_dependent_bitmap(BX_FDD_NONE, 0);
+
+  deplist = new bx_list_c(NULL, 2);
+  deplist->add(type);
+  deplist->add(status);
+  path->set_dependent_list(deplist);
+
+  floppyb->set_options(floppyb->SERIES_ASK | floppyb->USE_BOX_TITLE);
+  floppy->set_options(floppy->SHOW_PARENT);
 
   // ATA/ATAPI subtree
   bx_list_c *ata = new bx_list_c(root_param, "ata", "ATA/ATAPI Options");
+  ata->set_options(ata->USE_TAB_WINDOW);
 
   // disk options
   const char *s_atachannel[] = {
@@ -1051,9 +996,9 @@ void bx_init_options()
 
     sprintf(name, "%d", channel);
     ata_menu[channel] = new bx_list_c(ata, name, s_atachannel[channel]);
-    ata_menu[channel]->get_options()->set(bx_list_c::USE_TAB_WINDOW);
+    ata_menu[channel]->set_options(bx_list_c::USE_TAB_WINDOW);
     ata_res[channel] = new bx_list_c(ata_menu[channel], "resources", s_atachannel[channel], 8);
-    ata_res[channel]->get_options()->set(bx_list_c::SERIES_ASK);
+    ata_res[channel]->set_options(bx_list_c::SERIES_ASK);
 
     enabled = new bx_param_bool_c(ata_res[channel],
       "enabled",
@@ -1087,7 +1032,7 @@ void bx_init_options()
       0, 15,
       ata_default_irq[channel]);
     irq->set_ask_format("Enter new IRQ: [%d] ");
-    irq->set_options(bx_param_num_c::USE_SPIN_CONTROL);
+    irq->set_options(irq->USE_SPIN_CONTROL);
 
     // all items in the ata[channel] menu depend on the enabled flag.
     // The menu list is complete, but a few dependent_list items will
@@ -1100,7 +1045,7 @@ void bx_init_options()
           s_atadevname[slave],
           s_atadevice[channel][slave],
           BXP_PARAMS_PER_ATA_DEVICE + 1);
-      menu->get_options()->set(bx_list_c::SERIES_ASK);
+      menu->set_options(menu->SERIES_ASK);
 
       bx_param_bool_c *present = new bx_param_bool_c(menu,
         "present",
@@ -1124,6 +1069,7 @@ void bx_init_options()
         "Pathname of the image or physical device (cdrom only)",
         "", BX_PATHNAME_LEN);
       path->set_ask_format("Enter new filename: [%s] ");
+      path->set_extension("img");
 
       mode = new bx_param_enum_c(menu,
         "mode",
@@ -1134,14 +1080,12 @@ void bx_init_options()
         BX_ATA_MODE_FLAT);
       mode->set_ask_format("Enter mode of ATA device, (flat, concat, etc.): [%s] ");
 
-      status = new bx_param_enum_c(menu,
+      status = new bx_param_bool_c(menu,
         "status",
         "Inserted",
         "CD-ROM media status (inserted / ejected)",
-        atadevice_status_names,
-        BX_INSERTED,
-        BX_EJECTED);
-      status->set_ask_format("Is the device inserted or ejected? [%s] ");
+        0);
+      status->set_ask_format("Is media inserted in drive? [%s] ");
 
       bx_param_filename_c *journal = new bx_param_filename_c(menu,
         "journal",
@@ -1149,6 +1093,11 @@ void bx_init_options()
         "Pathname of the journal file",
         "", BX_PATHNAME_LEN);
       journal->set_ask_format("Enter path of journal file: [%s]");
+      deplist = new bx_list_c(NULL, 1);
+      deplist->add(journal);
+      mode->set_dependent_list(deplist, 0);
+      mode->set_dependent_bitmap(BX_ATA_MODE_UNDOABLE, 1);
+      mode->set_dependent_bitmap(BX_ATA_MODE_VOLATILE, 1);
 
       bx_param_num_c *cylinders = new bx_param_num_c(menu,
         "cylinders",
@@ -1176,7 +1125,7 @@ void bx_init_options()
         "model",
         "Model name",
         "String returned by the 'identify device' command",
-        "Generic 1234", 40);
+        "Generic 1234", 41);
       model->set_ask_format("Enter new model name: [%s]");
 
       bx_param_enum_c *biosdetect = new bx_param_enum_c(menu,
@@ -1198,20 +1147,35 @@ void bx_init_options()
       translation->set_ask_format("Enter translation type: [%s]");
 
       // the menu and all items on it depend on the present flag
-      present->set_dependent_list(menu->clone());
-      // the present flag depends on the ATA channel's enabled flag
-      enabled->get_dependent_list()->add(present);
+      deplist = new bx_list_c(NULL, 4);
+      deplist->add(type);
+      deplist->add(path);
+      deplist->add(model);
+      deplist->add(biosdetect);
+      present->set_dependent_list(deplist);
       // the master/slave menu depends on the ATA channel's enabled flag
       enabled->get_dependent_list()->add(menu);
+      // the present flag depends on the ATA channel's enabled flag
+      enabled->get_dependent_list()->add(present);
+
+      // some items depend on the drive type
+      bx_param_c *type_deplist[] = {
+        mode,
+        status,
+        cylinders,
+        heads,
+        spt,
+        translation,
+        NULL
+      };
+      deplist = new bx_list_c(NULL, "deplist", "", type_deplist);
+      type->set_dependent_list(deplist, 0);
+      type->set_dependent_bitmap(BX_ATA_DEVICE_DISK, 0x3d);
+      type->set_dependent_bitmap(BX_ATA_DEVICE_CDROM, 0x02);
 
       type->set_handler(bx_param_handler);
-      mode->set_handler(bx_param_handler);
       status->set_handler(bx_param_handler);
       path->set_handler(bx_param_string_handler);
-
-      // Set the enable_hanlders
-      journal->set_enable_handler(bx_param_enable_handler);
-      status->set_enable_handler(bx_param_enable_handler);
     }
 
     // Enable two ATA interfaces by default, disable the others.
@@ -1247,20 +1211,39 @@ void bx_init_options()
     NULL
   };
   menu = new bx_list_c(special_menus, "disk", "Bochs Disk Options", disk_menu_init_list);
-  menu->get_options()->set(bx_list_c::SHOW_PARENT);
+  menu->set_options(menu->SHOW_PARENT);
+
+  // disk menu for win32paramdlg
+  bx_param_c *disk_menu2_init_list[] = {
+    SIM->get_param("floppy"),
+    SIM->get_param("ata.0"),
+#if BX_MAX_ATA_CHANNEL>1
+    SIM->get_param("ata.1"),
+#endif
+#if BX_MAX_ATA_CHANNEL>2
+    SIM->get_param("ata.2"),
+#endif
+#if BX_MAX_ATA_CHANNEL>3
+    SIM->get_param("ata.3"),
+#endif
+    SIM->get_param("boot_params"),
+    NULL
+  };
+  menu = new bx_list_c(special_menus, "disk_win32", "Bochs Disk Options", disk_menu2_init_list);
+  menu->set_options(menu->USE_TAB_WINDOW);
 
   // ports subtree
   bx_list_c *ports = new bx_list_c(root_param, "ports", "Serial and Parallel Port Options");
-  ports->get_options()->set(bx_list_c::USE_TAB_WINDOW | bx_list_c::SHOW_PARENT);
+  ports->set_options(ports->USE_TAB_WINDOW | ports->SHOW_PARENT);
 
   // parallel ports
   bx_list_c *parallel = new bx_list_c(ports, "parallel", "Parallel Port Options");
-  parallel->get_options()->set(bx_list_c::SHOW_PARENT);
+  parallel->set_options(parallel->SHOW_PARENT);
   for (i=0; i<BX_N_PARALLEL_PORTS; i++) {
     sprintf(name, "%d", i+1);
     sprintf(label, "Parallel Port %d", i+1);
     menu = new bx_list_c(parallel, name, label);
-    menu->get_options()->set(bx_list_c::SERIES_ASK);
+    menu->set_options(menu->SERIES_ASK);
     sprintf(label, "Enable parallel port #%d", i+1);
     sprintf(descr, "Controls whether parallel port #%d is installed or not", i+1);
     enabled = new bx_param_bool_c(menu, "enabled", label, descr,
@@ -1269,6 +1252,7 @@ void bx_init_options()
     sprintf(descr, "Data written to parport#%d by the guest OS is written to this file", i+1);
     path = new bx_param_filename_c(menu, "outfile", label, descr,
       "", BX_PATHNAME_LEN);
+    path->set_extension("out");
     deplist = new bx_list_c(NULL, 1);
     deplist->add(path);
     enabled->set_dependent_list(deplist);
@@ -1291,12 +1275,12 @@ void bx_init_options()
 
   // serial ports
   bx_list_c *serial = new bx_list_c(ports, "serial", "Serial Port Options");
-  serial->get_options()->set(bx_list_c::SHOW_PARENT);
+  serial->set_options(serial->SHOW_PARENT);
   for (i=0; i<BX_N_SERIAL_PORTS; i++) {
     sprintf(name, "%d", i+1);
     sprintf(label, "Serial Port %d", i+1);
     menu = new bx_list_c(serial, name, label);
-    menu->get_options()->set(bx_list_c::SERIES_ASK);
+    menu->set_options(menu->SERIES_ASK);
     sprintf(label, "Enable serial port #%d (COM%d)", i+1, i+1);
     sprintf(descr, "Controls whether COM%d is installed or not", i+1);
     enabled = new bx_param_bool_c(menu, "enabled", label, descr,
@@ -1316,39 +1300,58 @@ void bx_init_options()
     enabled->set_dependent_list(deplist);
   }
 
+  // usb subtree
+  bx_list_c *usb = new bx_list_c(ports, "usb", "USB Configuration");
+  usb->set_options(usb->SHOW_PARENT);
   bx_param_string_c *port;
 
-  // usb hubs
-  bx_list_c *usb = new bx_list_c(ports, "usb", "USB Hub Options");
-  usb->get_options()->set(bx_list_c::SHOW_PARENT);
-  for (i=0; i<BX_N_USB_HUBS; i++) {
-    sprintf(group, "USB%d", i+1);
-    sprintf(name, "%d", i+1);
-    sprintf(label, "USB Hub %d", i+1);
-    menu = new bx_list_c(usb, name, label);
-    menu->set_enabled(BX_SUPPORT_PCIUSB);
-    sprintf(label, "Enable usb hub #%d", i+1);
-    sprintf(descr, "Controls whether %s is installed or not", group);
-    enabled = new bx_param_bool_c(menu, "enabled", label, descr, 0);
-    enabled->set_enabled(BX_SUPPORT_PCIUSB);
-    port = new bx_param_string_c(menu,
-      "port1",
-      "Port #1 device",
-      "Device connected to USB port #1",
-      "", BX_PATHNAME_LEN);
+  // UHCI options
+  strcpy(group, "USB UHCI");
+  menu = new bx_list_c(usb, "uhci", "UHCI Configuration");
+  menu->set_options(menu->SHOW_PARENT);
+  menu->set_enabled(BX_SUPPORT_USB_UHCI);
+  enabled = new bx_param_bool_c(menu,
+    "enabled",
+    "Enable UHCI emulation",
+    "Enables the UHCI emulation",
+    0);
+  enabled->set_enabled(BX_SUPPORT_USB_UHCI);
+  deplist = new bx_list_c(NULL, 2);
+  for (i=0; i<BX_N_USB_UHCI_PORTS; i++) {
+    sprintf(name, "port%d", i+1);
+    sprintf(label, "Port #%d device", i+1);
+    sprintf(descr, "Device connected to UHCI port #%d", i+1);
+    port = new bx_param_string_c(menu, name, label, descr, "", BX_PATHNAME_LEN);
     port->set_group(group);
-    port = new bx_param_string_c(menu,
-      "port2",
-      "Port #2 device",
-      "Device connected to USB port #2",
-      "", BX_PATHNAME_LEN);
-    port->set_group(group);
-    enabled->set_dependent_list(menu->clone());
+    deplist->add(port);
   }
+  enabled->set_dependent_list(deplist);
+
+  // OHCI options
+  strcpy(group, "USB OHCI");
+  menu = new bx_list_c(usb, "ohci", "OHCI Configuration");
+  menu->set_options(menu->SHOW_PARENT);
+  menu->set_enabled(BX_SUPPORT_USB_OHCI);
+  enabled = new bx_param_bool_c(menu,
+    "enabled",
+    "Enable OHCI emulation",
+    "Enables the OHCI emulation",
+    0);
+  enabled->set_enabled(BX_SUPPORT_USB_OHCI);
+  deplist = new bx_list_c(NULL, 2);
+  for (i=0; i<BX_N_USB_OHCI_PORTS; i++) {
+    sprintf(name, "port%d", i+1);
+    sprintf(label, "Port #%d device", i+1);
+    sprintf(descr, "Device connected to OHCI port #%d", i+1);
+    port = new bx_param_string_c(menu, name, label, descr, "", BX_PATHNAME_LEN);
+    port->set_group(group);
+    deplist->add(port);
+  }
+  enabled->set_dependent_list(deplist);
 
   // network subtree
   bx_list_c *network = new bx_list_c(root_param, "network", "Network Configuration");
-  network->get_options()->set(bx_list_c::USE_TAB_WINDOW | bx_list_c::SHOW_PARENT);
+  network->set_options(network->USE_TAB_WINDOW | network->SHOW_PARENT);
 
   // ne2k & pnic options
   static const char *eth_module_list[] = {
@@ -1379,7 +1382,7 @@ void bx_init_options()
   };
   // ne2k options
   menu = new bx_list_c(network, "ne2k", "NE2000", 7);
-  menu->get_options()->set(bx_list_c::SHOW_PARENT);
+  menu->set_options(menu->SHOW_PARENT);
   menu->set_enabled(BX_SUPPORT_NE2K);
   enabled = new bx_param_bool_c(menu,
     "enabled",
@@ -1400,13 +1403,14 @@ void bx_init_options()
     "IRQ used by the NE2K device",
     0, 15,
     9);
-  irq->set_options(bx_param_num_c::USE_SPIN_CONTROL);
+  irq->set_options(irq->USE_SPIN_CONTROL);
   macaddr = new bx_param_string_c(menu,
     "macaddr",
     "MAC Address",
     "MAC address of the NE2K device. Don't use an address of a machine on your net.",
-    "\xfe\xfd\xde\xad\xbe\xef", 6);
-  macaddr->get_options()->set(bx_param_string_c::RAW_BYTES);
+    "", 6);
+  macaddr->set_options(macaddr->RAW_BYTES);
+  macaddr->set_initial_val("\xfe\xfd\xde\xad\xbe\xef");
   macaddr->set_separator(':');
   ethmod = new bx_param_enum_c(menu,
     "ethmod",
@@ -1427,11 +1431,11 @@ void bx_init_options()
     "Device configuration script",
     "Name of the script that is executed after Bochs initializes the network interface (optional).",
     "none", BX_PATHNAME_LEN);
-    path->set_ask_format("Enter new script name, or 'none': [%s] ");
+  path->set_ask_format("Enter new script name, or 'none': [%s] ");
   enabled->set_dependent_list(menu->clone());
   // pnic options
   menu = new bx_list_c(network, "pnic", "PCI Pseudo NIC");
-  menu->get_options()->set(bx_list_c::SHOW_PARENT);
+  menu->set_options(menu->SHOW_PARENT);
   menu->set_enabled(BX_SUPPORT_PCIPNIC);
   enabled = new bx_param_bool_c(menu,
     "enabled",
@@ -1443,8 +1447,9 @@ void bx_init_options()
     "macaddr",
     "MAC Address",
     "MAC address of the Pseudo NIC device. Don't use an address of a machine on your net.",
-    "\xfe\xfd\xde\xad\xbe\xef", 6);
-  macaddr->get_options()->set(bx_param_string_c::RAW_BYTES);
+    "", 6);
+  macaddr->set_options(macaddr->RAW_BYTES);
+  macaddr->set_initial_val("\xfe\xfd\xde\xad\xbe\xef");
   macaddr->set_separator(':');
   ethmod = new bx_param_enum_c(menu,
     "ethmod",
@@ -1470,9 +1475,9 @@ void bx_init_options()
 
   // sound subtree
   bx_list_c *sound = new bx_list_c(root_param, "sound", "Sound Configuration");
-  sound->get_options()->set(bx_list_c::SHOW_PARENT);
+  sound->set_options(sound->SHOW_PARENT);
   menu = new bx_list_c(sound, "sb16", "SB16 Configuration", 8);
-  menu->get_options()->set(bx_list_c::SHOW_PARENT);
+  menu->set_options(menu->SHOW_PARENT);
   menu->set_enabled(BX_SUPPORT_SB16);
 
   // SB16 options
@@ -1515,6 +1520,7 @@ void bx_init_options()
     "Log file",
     "The file to write the SB16 emulator messages to.",
     "", BX_PATHNAME_LEN);
+  logfile->set_extension("log");
   bx_param_num_c *dmatimer = new bx_param_num_c(menu,
     "dmatimer",
     "DMA timer",
@@ -1522,14 +1528,17 @@ void bx_init_options()
     0, BX_MAX_BIT32U,
     0);
 
-#if BX_WITH_WX
-  midimode->set_options(bx_param_num_c::USE_SPIN_CONTROL);
-  wavemode->set_options(bx_param_num_c::USE_SPIN_CONTROL);
-  loglevel->set_options(bx_param_num_c::USE_SPIN_CONTROL);
-#endif
+  midimode->set_options(midimode->USE_SPIN_CONTROL);
+  wavemode->set_options(wavemode->USE_SPIN_CONTROL);
+  loglevel->set_options(loglevel->USE_SPIN_CONTROL);
   loglevel->set_group("SB16");
   dmatimer->set_group("SB16");
-  enabled->set_dependent_list(menu->clone());
+  deplist = new bx_list_c(NULL, 4);
+  deplist->add(midimode);
+  deplist->add(wavemode);
+  deplist->add(loglevel);
+  deplist->add(dmatimer);
+  enabled->set_dependent_list(deplist);
   deplist = new bx_list_c(NULL, 1);
   deplist->add(midifile);
   midimode->set_dependent_list(deplist);
@@ -1542,8 +1551,15 @@ void bx_init_options()
 
   // misc options subtree
   bx_list_c *misc = new bx_list_c(root_param, "misc", "Configure Everything Else");
-  misc->get_options()->set(bx_list_c::SHOW_PARENT);
+  misc->set_options(misc->SHOW_PARENT);
   bx_param_num_c *gdbstub_opt;
+
+  // port e9 hack
+  new bx_param_bool_c(misc,
+      "port_e9_hack",
+      "Enable port 0xE9 hack",
+      "Debug messages written to i/o port 0xE9 will be displayed on console",
+      0);
 
   // text snapshot check panic
   new bx_param_bool_c(misc,
@@ -1551,9 +1567,10 @@ void bx_init_options()
       "Enable text snapshot check panic",
       "Enable panic when text on screen matches snapchk.txt.\nUseful for regression testing.\nIn win32, turns off CR/LF in snapshots and cuts.",
       0);
+
   // GDB stub
   menu = new bx_list_c(misc, "gdbstub", "GDB Stub Options");
-  menu->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::USE_BOX_TITLE);
+  menu->set_options(menu->SHOW_PARENT | menu->USE_BOX_TITLE);
   menu->set_enabled(BX_GDBSTUB);
   enabled = new bx_param_bool_c(menu,
     "enabled",
@@ -1587,6 +1604,46 @@ void bx_init_options()
     0);
   enabled->set_dependent_list(menu->clone());
 
+  // optional plugin control
+  menu = new bx_list_c(misc, "plugin_ctrl", "Optional Plugin Control", 9);
+  menu->set_options(menu->SHOW_PARENT | menu->USE_BOX_TITLE);
+  new bx_param_bool_c(menu, "unmapped", "Enable 'unmapped'", "", 1);
+  new bx_param_bool_c(menu, "biosdev", "Enable 'biosdev'", "", 1);
+  new bx_param_bool_c(menu, "speaker", "Enable 'speaker'", "", 1);
+  new bx_param_bool_c(menu, "extfpuirq", "Enable 'extfpuirq'", "", 1);
+#if BX_SUPPORT_GAMEPORT
+  new bx_param_bool_c(menu, "gameport", "Enable 'gameport'", "", 1);
+#endif
+#if BX_SUPPORT_IODEBUG
+  new bx_param_bool_c(menu, "iodebug", "Enable 'iodebug'", "", 1);
+#endif
+#if BX_SUPPORT_PCI
+  new bx_param_bool_c(menu, "pci_ide", "Enable 'pci_ide'", "", 1);
+#endif
+#if BX_SUPPORT_ACPI
+  new bx_param_bool_c(menu, "acpi", "Enable 'acpi'", "", 1);
+#endif
+#if BX_SUPPORT_APIC
+  new bx_param_bool_c(menu, "ioapic", "Enable 'ioapic'", "", 1);
+#endif
+
+#if BX_PLUGINS
+  // user plugin options
+  menu = new bx_list_c(misc, "user_plugin", "User Plugin Options", BX_N_USER_PLUGINS);
+  menu->set_options(menu->SHOW_PARENT | menu->USE_BOX_TITLE);
+  for (i=0; i<BX_N_USER_PLUGINS; i++) {
+    sprintf(name, "%d", i+1);
+    sprintf(label, "User Plugin #%d", i+1);
+    sprintf(descr, "User-defined plugin device #%d", i+1);
+    bx_param_string_c *plugin = new bx_param_string_c(menu, name, label, descr,
+      "", BX_PATHNAME_LEN);
+    plugin->set_handler(bx_param_string_handler);
+  }
+  // user-defined options subtree
+  bx_list_c *user = new bx_list_c(root_param, "user", "User-defined options", 16);
+  user->set_options(user->SHOW_PARENT);
+#endif
+
   // log options subtree
   menu = new bx_list_c(root_param, "log", "Logfile Options");
 
@@ -1597,6 +1654,7 @@ void bx_init_options()
       "Pathname of bochs log file",
       "-", BX_PATHNAME_LEN);
   path->set_ask_format("Enter log filename: [%s] ");
+  path->set_extension("txt");
 
   bx_param_string_c *prefix = new bx_param_string_c(menu,
       "prefix",
@@ -1611,22 +1669,27 @@ void bx_init_options()
       "Pathname of debugger log file",
       "-", BX_PATHNAME_LEN);
   path->set_ask_format("Enter debugger log filename: [%s] ");
+  path->set_extension("log");
   path->set_enabled(BX_DEBUGGER);
 
   // runtime options
-  bx_param_c *runtime_init_list[] = {
+  menu = new bx_list_c(special_menus, "runtime", "Runtime options");
+  bx_list_c *cdrom = new bx_list_c(menu, "cdrom", "CD-ROM options", 10);
+  cdrom->set_options(cdrom->SHOW_PARENT);
+  usb = new bx_list_c(menu, "usb", "USB options", 10);
+  usb->set_options(usb->SHOW_PARENT | usb->SHOW_GROUP_NAME);
+  // misc runtime options
+  bx_param_c *rt_misc_init_list[] = {
       SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL),
       SIM->get_param_bool(BXPN_MOUSE_ENABLED),
       SIM->get_param_num(BXPN_KBD_PASTE_DELAY),
       SIM->get_param_string(BXPN_USER_SHORTCUT),
       SIM->get_param_num(BXPN_SB16_DMATIMER),
       SIM->get_param_num(BXPN_SB16_LOGLEVEL),
-      SIM->get_param_string(BXPN_USB1_PORT1),
-      SIM->get_param_string(BXPN_USB1_PORT2),
       NULL
   };
-  menu = new bx_list_c(special_menus, "runtime", "Misc runtime options", runtime_init_list);
-  menu->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::SHOW_GROUP_NAME);
+  misc = new bx_list_c(menu, "misc", "Misc options", rt_misc_init_list);
+  misc->set_options(misc->SHOW_PARENT | misc->SHOW_GROUP_NAME);
 }
 
 void bx_reset_options()
@@ -1658,7 +1721,7 @@ void bx_reset_options()
   // ata/atapi drives
   SIM->get_param("ata")->reset();
 
-  // standard ports
+  // serial/parallel/usb
   SIM->get_param("ports")->reset();
 
   // ne2k & pnic
@@ -1672,6 +1735,12 @@ void bx_reset_options()
 
   // logfile
   SIM->get_param("log")->reset();
+
+#if BX_PLUGINS
+  // user-defined options
+  SIM->get_param("user")->reset();
+  bx_user_plugin_count = 0;
+#endif
 }
 
 int bx_read_configuration(const char *rcfile)
@@ -1684,8 +1753,8 @@ int bx_read_configuration(const char *rcfile)
   }
   // update log actions
   for (int level=0; level<N_LOGLEV; level++) {
-    int action = SIM->get_default_log_action (level);
-    io->set_log_action (level, action);
+    int action = SIM->get_default_log_action(level);
+    io->set_log_action(level, action);
   }
   return 0;
 }
@@ -1701,8 +1770,8 @@ int bx_parse_cmdline(int arg, int argc, char *argv[])
   }
   // update log actions
   for (int level=0; level<N_LOGLEV; level++) {
-    int action = SIM->get_default_log_action (level);
-    io->set_log_action (level, action);
+    int action = SIM->get_default_log_action(level);
+    io->set_log_action(level, action);
   }
   return 0;
 }
@@ -1995,13 +2064,13 @@ static Bit32s parse_log_options(const char *context, char *loglev, char *param1)
   }
   char *action = param1 + 7;
   if (!strcmp(action, "fatal"))
-    SIM->set_default_log_action (level, ACT_FATAL);
+    SIM->set_default_log_action(level, ACT_FATAL);
   else if (!strcmp (action, "report"))
-    SIM->set_default_log_action (level, ACT_REPORT);
+    SIM->set_default_log_action(level, ACT_REPORT);
   else if (!strcmp (action, "ignore"))
-    SIM->set_default_log_action (level, ACT_IGNORE);
+    SIM->set_default_log_action(level, ACT_IGNORE);
   else if (!strcmp (action, "ask"))
-    SIM->set_default_log_action (level, ACT_ASK);
+    SIM->set_default_log_action(level, ACT_ASK);
   else {
     PARSE_ERR(("%s: %s directive malformed.", context, loglev));
   }
@@ -2063,109 +2132,86 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     }
     bx_read_configuration(params[1]);
   }
-  else if (!strcmp(params[0], "floppya")) {
-    for (i=1; i<num_params; i++) {
-      if (!strncmp(params[i], "2_88=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_2_88);
-      }
-      else if (!strncmp(params[i], "1_44=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_1_44);
-      }
-      else if (!strncmp(params[i], "1_2=", 4)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][4]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_1_2);
-      }
-      else if (!strncmp(params[i], "720k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_720K);
-      }
-      else if (!strncmp(params[i], "360k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_360K);
-      }
-      // use CMOS reserved types?
-      else if (!strncmp(params[i], "160k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_160K);
-      }
-      else if (!strncmp(params[i], "180k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_180K);
-      }
-      else if (!strncmp(params[i], "320k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(BX_FLOPPY_320K);
-      }
-      else if (!strncmp(params[i], "image=", 6)) {
-        /* "image=" means we should get floppy type from image */
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->set(&params[i][6]);
-        t = get_floppy_type_from_image(&params[i][6]);
-        if (t != BX_FLOPPY_UNKNOWN)
-          SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->set(t);
-        else
-          PARSE_ERR(("%s: floppya image size doesn't match one of the supported types.", context));
-      }
-      else if (!strncmp(params[i], "status=", 7)) {
-        SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->set_by_name(&params[i][7]);
-      }
-      else {
-        PARSE_ERR(("%s: floppya attribute '%s' not understood.", context,
-          params[i]));
-      }
+  else if ((!strcmp(params[0], "floppya")) ||
+           (!strcmp(params[0], "floppyb"))) {
+    if (!strcmp(params[0], "floppya")) {
+      base = (bx_list_c*) SIM->get_param(BXPN_FLOPPYA);
+    } else {
+      base = (bx_list_c*) SIM->get_param(BXPN_FLOPPYB);
     }
-  }
-
-  else if (!strcmp(params[0], "floppyb")) {
     for (i=1; i<num_params; i++) {
-      if (!strncmp(params[i], "2_88=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_2_88);
+      if (!strncmp(params[i], "type=", 5)) {
+        if (!strcmp(params[i]+5, "2_88")) {
+          SIM->get_param_enum("devtype", base)->set(BX_FDD_350ED);
+        }
+        else if (!strcmp(params[i]+5, "1_44")) {
+          SIM->get_param_enum("devtype", base)->set(BX_FDD_350HD);
+        }
+        else if (!strcmp(params[i]+5, "1_2")) {
+          SIM->get_param_enum("devtype", base)->set(BX_FDD_525HD);
+        }
+        else if (!strcmp(params[i]+5, "720k")) {
+          SIM->get_param_enum("devtype", base)->set(BX_FDD_350DD);
+        }
+        else if (!strcmp(params[i]+5, "360k")) {
+          SIM->get_param_enum("devtype", base)->set(BX_FDD_525DD);
+        }
+        else {
+          PARSE_ERR(("%s: %s: unknown type '%s'.", context, params[0],
+            params[i]+5));
+        }
+      }
+      else if (!strncmp(params[i], "2_88=", 5)) {
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_2_88);
       }
       else if (!strncmp(params[i], "1_44=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_1_44);
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_1_44);
       }
       else if (!strncmp(params[i], "1_2=", 4)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][4]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_1_2);
+        SIM->get_param_string("path", base)->set(&params[i][4]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_1_2);
       }
       else if (!strncmp(params[i], "720k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_720K);
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_720K);
       }
       else if (!strncmp(params[i], "360k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_360K);
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_360K);
       }
       // use CMOS reserved types?
       else if (!strncmp(params[i], "160k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_160K);
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_160K);
       }
       else if (!strncmp(params[i], "180k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_180K);
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_180K);
       }
       else if (!strncmp(params[i], "320k=", 5)) {
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][5]);
-        SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(BX_FLOPPY_320K);
+        SIM->get_param_string("path", base)->set(&params[i][5]);
+        SIM->get_param_enum("type", base)->set(BX_FLOPPY_320K);
       }
       else if (!strncmp(params[i], "image=", 6)) {
         /* "image=" means we should get floppy type from image */
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->set(&params[i][6]);
+        SIM->get_param_string("path", base)->set(&params[i][6]);
         t = get_floppy_type_from_image(&params[i][6]);
         if (t != BX_FLOPPY_UNKNOWN)
-          SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->set(t);
+          SIM->get_param_enum("type", base)->set(t);
         else
-          PARSE_ERR(("%s: floppyb image size doesn't match one of the supported types.", context));
+          PARSE_ERR(("%s: %s image size doesn't match one of the supported types.",
+            context, params[0]));
       }
-      else if (!strncmp(params[i], "status=", 7)) {
-        SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->set_by_name(&params[i][7]);
+      else if (!strcmp(params[i], "status=inserted")) {
+        SIM->get_param_bool("status", base)->set(1);
+      }
+      else if (!strcmp(params[i], "status=ejected")) {
+        SIM->get_param_bool("status", base)->set(0);
       }
       else {
-        PARSE_ERR(("%s: floppyb attribute '%s' not understood.", context,
+        PARSE_ERR(("%s: %s attribute '%s' not understood.", context, params[0],
           params[i]));
       }
     }
@@ -2231,7 +2277,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
   // ataX-master, ataX-slave
   else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) > 4)) {
     Bit8u channel = params[0][3];
-    int type = 0, mode = BX_ATA_MODE_FLAT, biosdetect = BX_ATA_BIOSDETECT_AUTO;
+    int type = -1, mode = BX_ATA_MODE_FLAT, biosdetect = BX_ATA_BIOSDETECT_AUTO;
     Bit32u cylinders = 0, heads = 0, sectors = 0;
     char tmpname[80];
 
@@ -2293,9 +2339,9 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       } else if (!strcmp(params[i], "translation=auto")) {
         SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_AUTO);
       } else if (!strcmp(params[i], "status=ejected")) {
-        SIM->get_param_enum("status", base)->set(BX_EJECTED);
+        SIM->get_param_bool("status", base)->set(0);
       } else if (!strcmp(params[i], "status=inserted")) {
-        SIM->get_param_enum("status", base)->set(BX_INSERTED);
+        SIM->get_param_bool("status", base)->set(1);
       } else if (!strncmp(params[i], "journal=", 8)) {
         SIM->get_param_string("journal", base)->set(&params[i][8]);
       } else {
@@ -2304,33 +2350,33 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     }
 
     // Enables the ata device
-    if (strlen(SIM->get_param_string("path", base)->getptr()) > 0) {
-      SIM->get_param_bool("present", base)->set(1);
+    if (type >= 0) {
       SIM->get_param_enum("type", base)->set(type);
-      SIM->get_param_enum("mode", base)->set(mode);
-      SIM->get_param_num("cylinders", base)->set(cylinders);
-      SIM->get_param_num("heads", base)->set(heads);
-      SIM->get_param_num("spt", base)->set(sectors);
       SIM->get_param_num("biosdetect", base)->set(biosdetect);
+      if (type == BX_ATA_DEVICE_DISK) {
+        if (strlen(SIM->get_param_string("path", base)->getptr()) > 0) {
+          SIM->get_param_bool("present", base)->set(1);
+          SIM->get_param_enum("mode", base)->set(mode);
+          if ((cylinders == 0) && (heads == 0) && (sectors == 0)) {
+            PARSE_WARN(("%s: ataX-master/slave CHS set to 0/0/0 - autodetection enabled", context));
+            // using heads = 16 and spt = 63 for autodetection (bximage defaults)
+            SIM->get_param_num("heads", base)->set(16);
+            SIM->get_param_num("spt", base)->set(63);
+          } else {
+            SIM->get_param_num("cylinders", base)->set(cylinders);
+            SIM->get_param_num("heads", base)->set(heads);
+            SIM->get_param_num("spt", base)->set(sectors);
+          }
+        } else {
+          SIM->get_param_bool("present", base)->set(0);
+        }
+      } else if (type == BX_ATA_DEVICE_CDROM) {
+        SIM->get_param_bool("present", base)->set(1);
+      }
     } else {
       SIM->get_param_bool("present", base)->set(0);
     }
 
-    // if enabled, check if device ok
-    if (SIM->get_param_bool("present", base)->get() == 1) {
-      if (SIM->get_param_enum("type", base)->get() == BX_ATA_DEVICE_DISK) {
-        if ((SIM->get_param_num("cylinders", base)->get() == 0) &&
-            (SIM->get_param_num("heads", base)->get() == 0) &&
-            (SIM->get_param_num("spt", base)->get() == 0)) {
-          PARSE_WARN(("%s: ataX-master/slave CHS set to 0/0/0 - autodetection enabled", context));
-          // using heads = 16 and spt = 63 for autodetection (bximage defaults)
-          SIM->get_param_num("heads", base)->set(16);
-          SIM->get_param_num("spt", base)->set(63);
-        }
-      } else if (SIM->get_param_enum("type", base)->get() != BX_ATA_DEVICE_CDROM) {
-        PARSE_WARN(("%s: ataX-master/slave: type should be specified", context));
-      }
-    }
   } else if (!strcmp(params[0], "boot")) {
     char tmppath[80];
     if (num_params < 2) {
@@ -2450,19 +2496,34 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         SIM->get_param_num(BXPN_CPU_NTHREADS)->set(threads);
       } else if (!strncmp(params[i], "ips=", 4)) {
         SIM->get_param_num(BXPN_IPS)->set(atol(&params[i][4]));
-        if (SIM->get_param_num(BXPN_IPS)->get() < BX_MIN_IPS) {
-          PARSE_WARN(("%s: WARNING: ips is AWFULLY low!", context));
-        }
 #if BX_SUPPORT_SMP
       } else if (!strncmp(params[i], "quantum=", 8)) {
         SIM->get_param_num(BXPN_SMP_QUANTUM)->set(atol(&params[i][8]));
 #endif
       } else if (!strncmp(params[i], "reset_on_triple_fault=", 22)) {
         if (params[i][22] == '0' || params[i][22] == '1') {
-          SIM->get_param_bool(BXPN_RESET_ON_TRIPLE_FAULT)->set (params[i][22] - '0');
+          SIM->get_param_bool(BXPN_RESET_ON_TRIPLE_FAULT)->set(params[i][22] - '0');
         } else {
           PARSE_ERR(("%s: cpu directive malformed.", context));
         }
+      } else if (!strncmp(params[i], "cpuid_limit_winnt=", 18)) {
+        if (params[i][18] == '0' || params[i][18] == '1') {
+          SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->set(params[i][18] - '0');
+        } else {
+          PARSE_ERR(("%s: cpu directive malformed.", context));
+        }
+      } else if (!strncmp(params[i], "msrs=", 5)) {
+        SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->set(&params[i][5]);
+      } else if (!strncmp(params[i], "vendor_string=", 14)) {
+        if (strlen(&params[i][14]) != BX_CPUID_VENDOR_LEN) {
+          PARSE_ERR(("%s: cpu directive malformed.", context));
+        }
+        SIM->get_param_string(BXPN_VENDOR_STRING)->set(&params[i][14]);
+      } else if (!strncmp(params[i], "brand_string=", 13)) {
+        if (strlen(&params[i][13]) > BX_CPUID_BRAND_LEN) {
+          PARSE_ERR(("%s: cpu directive malformed.", context));
+        } 
+        SIM->get_param_string(BXPN_BRAND_STRING)->set(&params[i][13]);
       } else {
         PARSE_ERR(("%s: cpu directive malformed.", context));
       }
@@ -2491,7 +2552,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         PARSE_ERR(("%s: romimage directive malformed.", context));
       }
     } else {
-      SIM->get_param_num(BXPN_ROM_ADDRESS)->set (0);
+      SIM->get_param_num(BXPN_ROM_ADDRESS)->set(0);
     }
   } else if (!strcmp(params[0], "vgaromimage")) {
     if (num_params != 2) {
@@ -2554,9 +2615,6 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: vga_update_interval directive: wrong # args.", context));
     }
     SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL)->set(atol(params[1]));
-    if (SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL)->get() < 50000) {
-      BX_INFO(("%s: vga_update_interval seems awfully small!", context));
-    }
   } else if (!strcmp(params[0], "vga")) {
     if (num_params != 2) {
       PARSE_ERR(("%s: vga directive: wrong # args.", context));
@@ -2730,35 +2788,30 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         BX_ERROR(("%s: unknown parameter for parport%d ignored.", context, idx));
       }
     }
-  } else if ((!strncmp(params[0], "usb", 3)) && (strlen(params[0]) == 4)) {
-    char tmpname[80];
-    idx = params[0][3];
-    if ((idx < '1') || (idx > '9')) {
-      PARSE_ERR(("%s: usbX directive malformed.", context));
-    }
-    idx -= '0';
-    if (idx > BX_N_USB_HUBS) {
-      PARSE_ERR(("%s: usbX hub number out of range.", context));
-    }
-    sprintf(tmpname, "ports.usb.%d", idx);
-    base = (bx_list_c*) SIM->get_param(tmpname);
+  } else if (!strcmp(params[0], "usb1")) {
+    PARSE_ERR(("%s: 'usb1' directive is now deprecated, use 'usb_uhci' instead", context));
+  } else if (!strcmp(params[0], "usb_uhci")) {
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "enabled=", 8)) {
-        SIM->get_param_bool("enabled", base)->set(atol(&params[i][8]));
+        SIM->get_param_bool(BXPN_UHCI_ENABLED)->set(atol(&params[i][8]));
       } else if (!strncmp(params[i], "port1=", 6)) {
-        SIM->get_param_string("port1", base)->set(&params[i][6]);
-      } else if (!strncmp(params[i], "option1=", 8)) {
-        PARSE_WARN(("%s: usb port1 option is now deprecated", context));
+        SIM->get_param_string(BXPN_UHCI_PORT1)->set(&params[i][6]);
       } else if (!strncmp(params[i], "port2=", 6)) {
-        SIM->get_param_string("port2", base)->set(&params[i][6]);
-      } else if (!strncmp(params[i], "option2=", 8)) {
-        PARSE_WARN(("%s: usb port2 option is now deprecated", context));
-      } else if (!strncmp(params[i], "ioaddr=", 7)) {
-        PARSE_WARN(("%s: usb ioaddr is now DEPRECATED (assigned by BIOS).", context));
-      } else if (!strncmp(params[i], "irq=", 4)) {
-        PARSE_WARN(("%s: usb irq is now DEPRECATED (assigned by BIOS).", context));
+        SIM->get_param_string(BXPN_UHCI_PORT2)->set(&params[i][6]);
       } else {
-        PARSE_WARN(("%s: unknown parameter '%s' for usb%d ignored.", context, params[i], idx));
+        PARSE_WARN(("%s: unknown parameter '%s' for usb_uhci ignored.", context, params[i]));
+      }
+    }
+  } else if (!strcmp(params[0], "usb_ohci")) {
+    for (i=1; i<num_params; i++) {
+      if (!strncmp(params[i], "enabled=", 8)) {
+        SIM->get_param_bool(BXPN_OHCI_ENABLED)->set(atol(&params[i][8]));
+      } else if (!strncmp(params[i], "port1=", 6)) {
+        SIM->get_param_string(BXPN_OHCI_PORT1)->set(&params[i][6]);
+      } else if (!strncmp(params[i], "port2=", 6)) {
+        SIM->get_param_string(BXPN_OHCI_PORT2)->set(&params[i][6]);
+      } else {
+        PARSE_WARN(("%s: unknown parameter '%s' for usb_ohci ignored.", context, params[i]));
       }
     }
   } else if (!strcmp(params[0], "i440fxsupport")) {
@@ -2918,6 +2971,20 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: print_timestamps directive malformed.", context));
     }
   }
+  else if (!strcmp(params[0], "port_e9_hack")) {
+    if (num_params != 2) {
+      PARSE_ERR(("%s: port_e9_hack directive: wrong # args.", context));
+    }
+    if (strncmp(params[1], "enabled=", 8)) {
+      PARSE_ERR(("%s: port_e9_hack directive malformed.", context));
+    }
+    if (params[1][8] == '0' || params[1][8] == '1') {
+      SIM->get_param_bool(BXPN_PORT_E9_HACK)->set(atoi(&params[1][8]));
+    }
+    else {
+      PARSE_ERR(("%s: port_e9_hack directive malformed.", context));
+    }
+  }
   else if (!strcmp(params[0], "ne2k")) {
     int tmp[6];
     char tmpchar[6];
@@ -2987,10 +3054,6 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "enabled=", 8)) {
         if (atol(&params[i][8]) == 0) valid |= 0x80;
-      } else if (!strncmp(params[i], "ioaddr=", 7)) {
-        PARSE_WARN(("%s: pnic ioaddr is now DEPRECATED (assigned by BIOS).", context));
-      } else if (!strncmp(params[i], "irq=", 4)) {
-        PARSE_WARN(("%s: pnic irq is now DEPRECATED (assigned by BIOS).", context));
       } else if (!strncmp(params[i], "mac=", 4)) {
         n = sscanf(&params[i][4], "%x:%x:%x:%x:%x:%x",
                    &tmp[0],&tmp[1],&tmp[2],&tmp[3],&tmp[4],&tmp[5]);
@@ -3106,10 +3169,42 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       }
     }
   }
+#if BX_PLUGINS
+  else if (!strcmp(params[0], "user_plugin")) {
+    char tmpname[80];
+    for (i=1; i<num_params; i++) {
+      if (!strncmp(params[i], "name=", 5)) {
+        if (bx_user_plugin_count < BX_N_USER_PLUGINS) {
+          sprintf(tmpname, "misc.user_plugin.%d", ++bx_user_plugin_count);
+          SIM->get_param_string(tmpname)->set(&params[i][5]);
+        } else {
+          PARSE_ERR(("%s: too many user plugins", context));
+        }
+      } else {
+        PARSE_ERR(("%s: unknown user plugin parameter '%s'", context, params[i]));
+      }
+    }
+  }
+#endif
+  else if (!strcmp(params[0], "plugin_ctrl")) {
+    char *pname, *val;
+    bx_param_bool_c *plugin;
+    for (i=1; i<num_params; i++) {
+      pname = strtok(params[i], "=");
+      val = strtok(NULL, "");
+      base = (bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL);
+      plugin = (bx_param_bool_c*)base->get_by_name(pname);
+      if (plugin != NULL) {
+        plugin->set(atoi(val));
+      } else {
+        PARSE_ERR(("%s: unknown optional plugin '%s'", context, pname));
+      }
+    }
+  }
   // user-defined options handled by registered functions
-  else if ((i = SIM->find_user_option(params[0])) >= 0)
+  else if (SIM->is_user_option(params[0]))
   {
-    return SIM->parse_user_option(i, context, num_params, &params[0]);
+    return SIM->parse_user_option(context, num_params, &params[0]);
   }
   else
   {
@@ -3125,23 +3220,40 @@ static const char *fdtypes[] = {
 
 int bx_write_floppy_options(FILE *fp, int drive)
 {
-  char path[80], type[80], status[80];
+  char devtype[80], path[80], type[80], status[80];
+  int ftype;
 
   BX_ASSERT(drive==0 || drive==1);
+  sprintf(devtype, "floppy.%d.devtype", drive);
   sprintf(path, "floppy.%d.path", drive);
   sprintf(type, "floppy.%d.type", drive);
   sprintf(status, "floppy.%d.status", drive);
-  if (SIM->get_param_enum(type)->get() == BX_FLOPPY_NONE) {
+  ftype = SIM->get_param_enum(devtype)->get();
+  if (ftype == BX_FDD_NONE) {
     fprintf(fp, "# no floppy%c\n", (char)'a'+drive);
     return 0;
+  } else {
+    fprintf(fp, "floppy%c: type=", (char)'a'+drive);
+    if (ftype == BX_FDD_350ED) {
+      fprintf(fp, "2_88");
+    } else if (ftype == BX_FDD_350HD) {
+      fprintf(fp, "1_44");
+    } else if (ftype == BX_FDD_525HD) {
+      fprintf(fp, "1_2");
+    } else if (ftype == BX_FDD_350DD) {
+      fprintf(fp, "720k");
+    } else if (ftype == BX_FDD_525DD) {
+      fprintf(fp, "360k");
+    }
   }
-  BX_ASSERT(SIM->get_param_enum(type)->get() > BX_FLOPPY_NONE &&
-            SIM->get_param_enum(type)->get() <= BX_FLOPPY_LAST);
-  fprintf(fp, "floppy%c: %s=\"%s\", status=%s\n",
-    (char)'a'+drive,
-    fdtypes[SIM->get_param_enum(type)->get() - BX_FLOPPY_NONE],
-    SIM->get_param_string(path)->getptr(),
-    SIM->get_param_enum(status)->get_selected());
+  if ((SIM->get_param_enum(type)->get() > BX_FLOPPY_NONE) &&
+      (SIM->get_param_enum(type)->get() <= BX_FLOPPY_LAST)) {
+    fprintf(fp, ", %s=\"%s\", status=%s",
+      fdtypes[SIM->get_param_enum(type)->get() - BX_FLOPPY_NONE],
+      SIM->get_param_string(path)->getptr(),
+      SIM->get_param_bool(status)->get() ? "inserted":"ejected");
+  }
+  fprintf(fp, "\n");
   return 0;
 }
 
@@ -3181,7 +3293,7 @@ int bx_write_atadevice_options(FILE *fp, Bit8u channel, Bit8u drive, bx_list_c *
     } else if (SIM->get_param_enum("type", base)->get() == BX_ATA_DEVICE_CDROM) {
       fprintf(fp, "type=cdrom, path=\"%s\", status=%s",
         SIM->get_param_string("path", base)->getptr(),
-        SIM->get_param_enum("status", base)->get_selected());
+        SIM->get_param_bool("status", base)->get() ? "inserted":"ejected");
     }
 
     fprintf(fp, ", biosdetect=%s", SIM->get_param_enum("biosdetect", base)->get_selected());
@@ -3216,9 +3328,9 @@ int bx_write_serial_options(FILE *fp, bx_list_c *base, int n)
   return 0;
 }
 
-int bx_write_usb_options(FILE *fp, bx_list_c *base, int n)
+int bx_write_usb_options(FILE *fp, bx_list_c *base)
 {
-  fprintf(fp, "usb%d: enabled=%d", n, SIM->get_param_bool("enabled", base)->get());
+  fprintf(fp, "usb_%s: enabled=%d", base->get_name(), SIM->get_param_bool("enabled", base)->get());
   if (SIM->get_param_bool("enabled", base)->get()) {
     fprintf(fp, ", port1=%s", SIM->get_param_string("port1", base)->getptr());
     fprintf(fp, ", port2=%s", SIM->get_param_string("port2", base)->getptr());
@@ -3350,17 +3462,19 @@ int bx_write_log_options(FILE *fp, bx_list_c *base)
 {
   fprintf(fp, "log: %s\n", SIM->get_param_string("filename", base)->getptr());
   fprintf(fp, "logprefix: %s\n", SIM->get_param_string("prefix", base)->getptr());
+#if BX_DEBUGGER
   fprintf(fp, "debugger_log: %s\n", SIM->get_param_string("debugger_filename", base)->getptr());
+#endif
   fprintf(fp, "panic: action=%s\n",
-      io->getaction(logfunctions::get_default_action (LOGLEV_PANIC)));
+      io->getaction(logfunctions::get_default_action(LOGLEV_PANIC)));
   fprintf(fp, "error: action=%s\n",
-      io->getaction(logfunctions::get_default_action (LOGLEV_ERROR)));
+      io->getaction(logfunctions::get_default_action(LOGLEV_ERROR)));
   fprintf(fp, "info: action=%s\n",
-      io->getaction(logfunctions::get_default_action (LOGLEV_INFO)));
+      io->getaction(logfunctions::get_default_action(LOGLEV_INFO)));
   fprintf(fp, "debug: action=%s\n",
-      io->getaction(logfunctions::get_default_action (LOGLEV_DEBUG)));
+      io->getaction(logfunctions::get_default_action(LOGLEV_DEBUG)));
   fprintf(fp, "pass: action=%s\n",
-      io->getaction(logfunctions::get_default_action (LOGLEV_PASS)));
+      io->getaction(logfunctions::get_default_action(LOGLEV_PASS)));
   return 0;
 }
 
@@ -3396,6 +3510,16 @@ int bx_write_configuration(const char *rc, int overwrite)
   if (fp == NULL) return -1;
   // finally it's open and we can start writing.
   fprintf(fp, "# configuration file generated by Bochs\n");
+#if BX_PLUGINS
+  // user plugins
+  for (i=0; i<BX_N_USER_PLUGINS; i++) {
+    sprintf(tmpdev, "misc.user_plugin.%d", i+1);
+    if (strlen(SIM->get_param_string(tmpdev)->getptr()) > 0) {
+      fprintf(fp, "user_plugin: name=%s\n",
+        SIM->get_param_string(tmpdev)->getptr());
+    }
+  }
+#endif
   fprintf(fp, "config_interface: %s\n", SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected());
   fprintf(fp, "display_library: %s", SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY)->get_selected());
   strptr = SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->getptr();
@@ -3468,8 +3592,11 @@ int bx_write_configuration(const char *rc, int overwrite)
     base = (bx_list_c*) SIM->get_param(tmpdev);
     bx_write_serial_options(fp, base, i+1);
   }
-  base = (bx_list_c*) SIM->get_param("ports.usb.1");
-  bx_write_usb_options(fp, base, 1);
+  // usb
+  base = (bx_list_c*) SIM->get_param("ports.usb.uhci");
+  bx_write_usb_options(fp, base);
+  base = (bx_list_c*) SIM->get_param("ports.usb.ohci");
+  bx_write_usb_options(fp, base);
   // pci
   fprintf(fp, "i440fxsupport: enabled=%d",
           SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get());
@@ -3491,15 +3618,27 @@ int bx_write_configuration(const char *rc, int overwrite)
   fprintf(fp, "vga_update_interval: %u\n", SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL)->get());
   fprintf(fp, "vga: extension=%s\n", SIM->get_param_string(BXPN_VGA_EXTENSION)->getptr());
 #if BX_SUPPORT_SMP
-  fprintf(fp, "cpu: count=%u:%u:%u, ips=%u, quantum=%d, reset_on_triple_fault=%d\n",
+  fprintf(fp, "cpu: count=%u:%u:%u, ips=%u, quantum=%d, ",
     SIM->get_param_num(BXPN_CPU_NPROCESSORS)->get(), SIM->get_param_num(BXPN_CPU_NCORES)->get(),
     SIM->get_param_num(BXPN_CPU_NTHREADS)->get(), SIM->get_param_num(BXPN_IPS)->get(),
-    SIM->get_param_num(BXPN_SMP_QUANTUM)->get(),
-    SIM->get_param_bool(BXPN_RESET_ON_TRIPLE_FAULT)->get());
+    SIM->get_param_num(BXPN_SMP_QUANTUM)->get());
 #else
-  fprintf(fp, "cpu: count=1, ips=%u, reset_on_triple_fault=%d\n",
-    SIM->get_param_num(BXPN_IPS)->get(), SIM->get_param_bool(BXPN_RESET_ON_TRIPLE_FAULT)->get());
+  fprintf(fp, "cpu: count=1, ips=%u, ", SIM->get_param_num(BXPN_IPS)->get());
 #endif
+  fprintf(fp, "reset_on_triple_fault=%d, cpuid_limit_winnt=%d",
+    SIM->get_param_bool(BXPN_RESET_ON_TRIPLE_FAULT)->get(),
+    SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get());
+#if BX_CONFIGURE_MSRS
+  strptr = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->getptr();
+  if (strlen(strptr) > 0)
+    fprintf(fp, ", msrs=\"%s\"", strptr);
+#endif  
+  fprintf(fp, "\n");
+  fprintf(fp, "print_timestamps: enabled=%d\n", bx_dbg.print_timestamps);
+#if BX_DEBUGGER
+  fprintf(fp, "magic_break: enabled=%d\n", bx_dbg.magic_break_enabled);
+#endif
+  fprintf(fp, "port_e9_hack: enabled=%d\n", SIM->get_param_bool(BXPN_PORT_E9_HACK)->get());
   fprintf(fp, "text_snapshot_check: enabled=%d\n", SIM->get_param_bool(BXPN_TEXT_SNAPSHOT_CHECK)->get());
   fprintf(fp, "private_colormap: enabled=%d\n", SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get());
 #if BX_WITH_AMIGAOS

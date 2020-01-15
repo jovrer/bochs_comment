@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl_pro.cc,v 1.34 2008/04/25 08:19:36 sshwarts Exp $
+// $Id: flag_ctrl_pro.cc,v 1.37 2009/02/13 20:09:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -40,6 +40,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::setEFlags(Bit32u val)
     val &= ~EFlagsVMMask;
   }
 #endif
+
+  if (val & (EFlagsTFMask|EFlagsRFMask)) {
+    BX_CPU_THIS_PTR async_event = 1; // TF == 1 || RF == 1
+  }
+
+  if (val & EFlagsIFMask) {
+    if (! BX_CPU_THIS_PTR get_IF())
+      BX_CPU_THIS_PTR async_event = 1; // IF bit was set
+  }
 
   BX_CPU_THIS_PTR eflags = val;
   BX_CPU_THIS_PTR lf_flags_status = 0; // OSZAPC flags are known.
@@ -71,10 +80,6 @@ BX_CPU_C::writeEFlags(Bit32u flags, Bit32u changeMask)
               (flags & changeMask);
   setEFlags(newEFlags);
   // OSZAPC flags are known - done in setEFlags(newEFlags)
-
-  if (newEFlags & EFlagsTFMask) {
-    BX_CPU_THIS_PTR async_event = 1; // TF = 1
-  }
 }
 
   void BX_CPP_AttrRegparmN(3)

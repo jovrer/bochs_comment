@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: descriptor.h,v 1.24 2008/05/26 18:02:07 sshwarts Exp $
+// $Id: descriptor.h,v 1.31 2009/04/05 19:09:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #ifndef BX_DESCRIPTOR_H
@@ -55,11 +55,10 @@ typedef struct { /* bx_selector_t */
 typedef struct
 {
 
+// do not go above 4 bits !
 #define SegValidCache  (0x01)
 #define SegAccessROK   (0x02)
 #define SegAccessWOK   (0x04)
-#define SegAccessROK4G (0x08)
-#define SegAccessWOK4G (0x10)
 
   unsigned valid;        // Holds above values, Or'd together.  Used to
                          // hold only 0 or 1.
@@ -126,7 +125,6 @@ typedef struct
 union {
   struct {
     bx_address base;       /* base address: 286=24bits, 386=32bits, long=64 */
-    Bit32u  limit;         /* limit: 286=16bits, 386=20bits */
     Bit32u  limit_scaled;  /* for efficiency, this contrived field is set to
                             * limit for byte granular, and
                             * (limit << 12) | 0xfff for page granular seg's
@@ -149,15 +147,6 @@ union {
   struct {                 /* type 5: Task Gate Descriptor */
     Bit16u  tss_selector;  /* TSS segment selector */
   } taskgate;
-  struct {
-    bx_address base;       /* 286=24 386+ = 32/64 bit base */
-    Bit32u  limit;         /* 286+ = 16/32 bit limit */
-#if BX_CPU_LEVEL >= 3
-    Bit32u  limit_scaled;  // Same notes as for 'segment' field
-    bx_bool g;             /* granularity: 0=byte, 1=4K (page) */
-    bx_bool avl;           /* available for use by system */
-#endif
-  } system;                /* TSS and LDT */
 } u;
 
 } bx_descriptor_t;
@@ -174,9 +163,7 @@ union {
 #define IS_CODE_SEGMENT_CONFORMING(type)  (((type) >> 2) & 0x1)
 #define IS_DATA_SEGMENT_EXPAND_DOWN(type) (((type) >> 2) & 0x1)
 #define IS_CODE_SEGMENT_READABLE(type)    (((type) >> 1) & 0x1)
-
-// data segment writeable bit is ignored when in 64-bit mode
-#define IS_DATA_SEGMENT_WRITEABLE(type)   (Is64BitMode() || (((type) >> 1) & 0x1))
+#define IS_DATA_SEGMENT_WRITEABLE(type)   (((type) >> 1) & 0x1)
 
 #define IS_SEGMENT_ACCESSED(type)         ((type) & 0x1)
 

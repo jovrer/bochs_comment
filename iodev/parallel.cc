@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parallel.cc,v 1.34 2008/01/26 22:24:02 sshwarts Exp $
+// $Id: parallel.cc,v 1.39 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 ////////////////////////////////////////////////////////
 // This code was just a few stubs until Volker.Ruppert@t-online.de
@@ -35,6 +35,8 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "parallel.h"
+
 #define LOG_THIS theParallelDevice->
 
 bx_parallel_c *theParallelDevice = NULL;
@@ -42,7 +44,6 @@ bx_parallel_c *theParallelDevice = NULL;
 int libparallel_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theParallelDevice = new bx_parallel_c();
-  bx_devices.pluginParallelDevice = theParallelDevice;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theParallelDevice, BX_PLUGIN_PARALLEL);
   return(0); // Success
 }
@@ -55,7 +56,6 @@ void libparallel_LTX_plugin_fini(void)
 bx_parallel_c::bx_parallel_c()
 {
   put("PAR");
-  settype(PARLOG);
   for (int i=0; i<BX_PARPORT_MAXDEV; i++) {
     s[i].output = NULL;
   }
@@ -77,7 +77,7 @@ void bx_parallel_c::init(void)
   char name[16], pname[20];
   bx_list_c *base;
 
-  BX_DEBUG(("Init $Id: parallel.cc,v 1.34 2008/01/26 22:24:02 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: parallel.cc,v 1.39 2009/02/08 09:05:52 vruppert Exp $"));
 
   for (unsigned i=0; i<BX_N_PARALLEL_PORTS; i++) {
     sprintf(pname, "ports.parallel.%d", i+1);

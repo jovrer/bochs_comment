@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pic.cc,v 1.49 2008/02/15 22:05:43 sshwarts Exp $
+// $Id: pic.cc,v 1.55 2009/04/21 20:27:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -31,6 +31,7 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "pic.h"
 
 #define LOG_THIS thePic->
 
@@ -52,7 +53,6 @@ void libpic_LTX_plugin_fini(void)
 bx_pic_c::bx_pic_c(void)
 {
   put("PIC");
-  settype(PICLOG);
 }
 
 bx_pic_c::~bx_pic_c(void)
@@ -622,7 +622,7 @@ void bx_pic_c::lower_irq(unsigned irq_no)
 #if BX_SUPPORT_APIC
   // forward this function call to the ioapic too
   if (DEV_ioapic_present() && (irq_no != 2)) {
-    bx_devices.ioapic->set_irq_level(irq_no, 0);
+    DEV_ioapic_set_irq_level(irq_no, 0);
   }
 #endif
 
@@ -644,7 +644,7 @@ void bx_pic_c::raise_irq(unsigned irq_no)
 #if BX_SUPPORT_APIC
   // forward this function call to the ioapic too
   if (DEV_ioapic_present() && (irq_no != 2)) {
-    bx_devices.ioapic->set_irq_level(irq_no, 1);
+    DEV_ioapic_set_irq_level(irq_no, 1);
   }
 #endif
 
@@ -872,16 +872,16 @@ Bit8u bx_pic_c::IAC(void)
   return(vector);
 }
 
-void bx_pic_c::show_pic_state(void)
+#if BX_DEBUGGER
+void bx_pic_c::debug_dump(void)
 {
-#if defined(BX_DEBUGGER) && (BX_DEBUGGER == 1)
-dbg_printf("s.master_pic.imr = %02x\n", BX_PIC_THIS s.master_pic.imr);
-dbg_printf("s.master_pic.isr = %02x\n", BX_PIC_THIS s.master_pic.isr);
-dbg_printf("s.master_pic.irr = %02x\n", BX_PIC_THIS s.master_pic.irr);
-dbg_printf("s.master_pic.irq = %02x\n", BX_PIC_THIS s.master_pic.irq);
-dbg_printf("s.slave_pic.imr = %02x\n", BX_PIC_THIS s.slave_pic.imr);
-dbg_printf("s.slave_pic.isr = %02x\n", BX_PIC_THIS s.slave_pic.isr);
-dbg_printf("s.slave_pic.irr = %02x\n", BX_PIC_THIS s.slave_pic.irr);
-dbg_printf("s.slave_pic.irq = %02x\n", BX_PIC_THIS s.slave_pic.irq);
-#endif
+  dbg_printf("s.master_pic.imr = %02x\n", BX_PIC_THIS s.master_pic.imr);
+  dbg_printf("s.master_pic.isr = %02x\n", BX_PIC_THIS s.master_pic.isr);
+  dbg_printf("s.master_pic.irr = %02x\n", BX_PIC_THIS s.master_pic.irr);
+  dbg_printf("s.master_pic.irq = %02x\n", BX_PIC_THIS s.master_pic.irq);
+  dbg_printf("s.slave_pic.imr = %02x\n", BX_PIC_THIS s.slave_pic.imr);
+  dbg_printf("s.slave_pic.isr = %02x\n", BX_PIC_THIS s.slave_pic.isr);
+  dbg_printf("s.slave_pic.irr = %02x\n", BX_PIC_THIS s.slave_pic.irr);
+  dbg_printf("s.slave_pic.irq = %02x\n", BX_PIC_THIS s.slave_pic.irq);
 }
+#endif

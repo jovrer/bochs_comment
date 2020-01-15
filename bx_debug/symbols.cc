@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: symbols.cc,v 1.11 2008/03/30 14:32:14 sshwarts Exp $
+// $Id: symbols.cc,v 1.15 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
@@ -95,6 +95,9 @@ char* bx_dbg_disasm_symbolic_address(Bit32u eip, Bit32u base)
 #endif
 
 using namespace std;
+#ifdef __GNUC__
+using namespace __gnu_cxx;
+#endif
 
 struct symbol_entry_t
 {
@@ -192,7 +195,9 @@ symbol_entry_t* context_t::get_symbol_entry(Bit32u ip)
     return 0;
   }
 
-  return *(--iter);
+  --iter;
+  if(iter == syms->end()) return 0;
+  return *iter;
 }
 
 symbol_entry_t* context_t::get_symbol_entry(const char *Symbol) const

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dma.cc,v 1.47 2008/04/17 14:39:32 sshwarts Exp $
+// $Id: dma.cc,v 1.51 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,8 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
 /////////////////////////////////////////////////////////////////////////
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -31,6 +32,7 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "dma.h"
 
 #define LOG_THIS theDmaDevice->
 
@@ -57,7 +59,6 @@ void libdma_LTX_plugin_fini(void)
 bx_dma_c::bx_dma_c()
 {
   put("DMA");
-  settype(DMALOG);
 }
 
 bx_dma_c::~bx_dma_c()
@@ -122,7 +123,7 @@ unsigned bx_dma_c::get_TC(void)
 void bx_dma_c::init(void)
 {
   unsigned c, i, j;
-  BX_DEBUG(("Init $Id: dma.cc,v 1.47 2008/04/17 14:39:32 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: dma.cc,v 1.51 2009/02/08 09:05:52 vruppert Exp $"));
 
   /* 8237 DMA controller */
 

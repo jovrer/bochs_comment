@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.h,v 1.27 2007/09/28 19:52:03 sshwarts Exp $
+// $Id: pci.h,v 1.31 2009/04/21 20:32:20 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #ifndef BX_IODEV_PCI_BRIDGE_H
 #define BX_IODEV_PCI_BRIDGE_H
@@ -71,12 +71,13 @@ public:
                                   bx_write_handler_t f2, Bit32u *addr,
                                   Bit8u *pci_conf, unsigned size,
                                   const Bit8u *iomask, const char *name);
-  virtual void  print_i440fx_state(void);
-  virtual Bit8u rd_memType (Bit32u addr);
-  virtual Bit8u wr_memType (Bit32u addr);
+  virtual Bit8u rd_memType(Bit32u addr);
+  virtual Bit8u wr_memType(Bit32u addr);
 
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+
+  virtual void debug_dump(void);
 
 private:
   Bit8u pci_handler_id[0x100];  // 256 devices/functions

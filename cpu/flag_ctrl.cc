@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl.cc,v 1.38 2008/04/08 17:58:56 sshwarts Exp $
+// $Id: flag_ctrl.cc,v 1.45 2009/03/27 16:42:21 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -62,13 +62,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::STC(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLI(bxInstruction_c *i)
 {
   Bit32u IOPL = BX_CPU_THIS_PTR get_IOPL();
-  Bit32u  cpl = CPL;
 
-#if BX_CPU_LEVEL >= 2
   if (protected_mode())
   {
 #if BX_SUPPORT_VME
-    if (BX_CPU_THIS_PTR cr4.get_PVI() && (cpl == 3))
+    if (BX_CPU_THIS_PTR cr4.get_PVI() && (CPL == 3))
     {
       if (IOPL < 3) {
         BX_CPU_THIS_PTR clear_VIF();
@@ -78,18 +76,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLI(bxInstruction_c *i)
     else
 #endif
     {
-      if (IOPL < cpl) {
+      if (IOPL < CPL) {
         BX_DEBUG(("CLI: IOPL < CPL in protected mode"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
     }
   }
-#if BX_CPU_LEVEL >= 3
   else if (v8086_mode())
   {
     if (IOPL != 3) {
 #if BX_SUPPORT_VME
-      if (CR4_VME_ENABLED) {
+      if (BX_CR4_VME_ENABLED) {
         BX_CPU_THIS_PTR clear_VIF();
         return;
       }
@@ -98,8 +95,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLI(bxInstruction_c *i)
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
-#endif
-#endif
 
   BX_CPU_THIS_PTR clear_IF();
 }
@@ -107,15 +102,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLI(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::STI(bxInstruction_c *i)
 {
   Bit32u IOPL = BX_CPU_THIS_PTR get_IOPL();
-  Bit32u  cpl = CPL;
 
-#if BX_CPU_LEVEL >= 2
   if (protected_mode())
   {
 #if BX_SUPPORT_VME
     if (BX_CPU_THIS_PTR cr4.get_PVI())
     {
-      if (cpl == 3 && IOPL < 3) {
+      if (CPL == 3 && IOPL < 3) {
         if (! BX_CPU_THIS_PTR get_VIP())
         {
           BX_CPU_THIS_PTR assert_VIF();
@@ -127,17 +120,16 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::STI(bxInstruction_c *i)
       }
     }
 #endif
-    if (cpl > IOPL) {
+    if (CPL > IOPL) {
       BX_DEBUG(("STI: CPL > IOPL in protected mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
-#if BX_CPU_LEVEL >= 3
   else if (v8086_mode())
   {
     if (IOPL != 3) {
 #if BX_SUPPORT_VME
-      if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_VIP() == 0)
+      if (BX_CR4_VME_ENABLED && BX_CPU_THIS_PTR get_VIP() == 0)
       {
         BX_CPU_THIS_PTR assert_VIF();
         return;
@@ -147,8 +139,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::STI(bxInstruction_c *i)
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
-#endif
-#endif
 
   if (!BX_CPU_THIS_PTR get_IF()) {
     BX_CPU_THIS_PTR assert_IF();
@@ -177,12 +167,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSHF_Fw(bxInstruction_c *i)
   Bit16u flags = (Bit16u) read_eflags();
 
   if (v8086_mode()) {
-    if ((BX_CPU_THIS_PTR get_IOPL() < 3) && (CR4_VME_ENABLED == 0)) {
+    if ((BX_CPU_THIS_PTR get_IOPL() < 3) && (BX_CR4_VME_ENABLED == 0)) {
       BX_DEBUG(("PUSHFW: #GP(0) in v8086 (no VME) mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
 #if BX_SUPPORT_VME
-    if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3) {
+    if (BX_CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3) {
       flags |= EFlagsIOPLMask;
       if (BX_CPU_THIS_PTR get_VIF())
         flags |=  EFlagsIFMask;
@@ -203,30 +193,29 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPF_Fw(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 3
   changeMask |= EFlagsNTMask;     // NT could be modified
 #endif
-  Bit16u flags16;
+
+  RSP_SPECULATIVE;
+
+  Bit16u flags16 = pop_16();
 
   if (protected_mode()) {
-    flags16 = pop_16();
     if (CPL==0)
       changeMask |= EFlagsIOPLMask;
     if (CPL <= BX_CPU_THIS_PTR get_IOPL())
       changeMask |= EFlagsIFMask;
   }
   else if (v8086_mode()) {
-    if ((BX_CPU_THIS_PTR get_IOPL() < 3) && (CR4_VME_ENABLED == 0)) {
+    if ((BX_CPU_THIS_PTR get_IOPL() < 3) && (BX_CR4_VME_ENABLED == 0)) {
       BX_DEBUG(("POPFW: #GP(0) in v8086 (no VME) mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
-    BX_CPU_THIS_PTR speculative_rsp = 1;
-    BX_CPU_THIS_PTR prev_rsp = RSP;
-
-    flags16 = pop_16();
 #if BX_SUPPORT_VME
-    if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3) {
+    if (BX_CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3) {
+
       if (((flags16 & EFlagsIFMask) && BX_CPU_THIS_PTR get_VIP()) ||
            (flags16 & EFlagsTFMask))
       {
-        BX_DEBUG(("POPFW: #GP(0) in VME mode"));
+        BX_ERROR(("POPFW: #GP(0) in VME mode"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
 
@@ -235,20 +224,21 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPF_Fw(bxInstruction_c *i)
       Bit32u flags32 = (Bit32u) flags16;
       if (BX_CPU_THIS_PTR get_IF()) flags32 |= EFlagsVIFMask;
       writeEFlags(flags32, changeMask);
+      RSP_COMMIT;
       return;
     }
 #endif
     changeMask |= EFlagsIFMask;
 
-    BX_CPU_THIS_PTR speculative_rsp = 0;
   }
   else {
-    flags16 = pop_16();
     // All non-reserved flags can be modified
     changeMask |= (EFlagsIOPLMask | EFlagsIFMask);
   }
 
   writeEFlags((Bit32u) flags16, changeMask);
+
+  RSP_COMMIT;
 }
 
 #if BX_CPU_LEVEL >= 3
@@ -273,10 +263,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPF_Fd(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 4
   changeMask |= (EFlagsIDMask | EFlagsACMask);  // ID/AC
 #endif
-  Bit32u flags32;
+
+  RSP_SPECULATIVE;
+
+  Bit32u flags32 = pop_32();
 
   if (protected_mode()) {
-    flags32 = pop_32();
     // IOPL changed only if (CPL == 0),
     // IF changed only if (CPL <= EFLAGS.IOPL),
     // VIF, VIP, VM are unaffected
@@ -287,20 +279,20 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POPF_Fd(bxInstruction_c *i)
   }
   else if (v8086_mode()) {
     if (BX_CPU_THIS_PTR get_IOPL() < 3) {
-      BX_DEBUG(("POPFD: #GP(0) in v8086 mode"));
+      BX_ERROR(("POPFD: #GP(0) in v8086 mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
-    flags32 = pop_32();
     // v8086-mode: VM, IOPL, VIP, VIF are unaffected
     changeMask |= EFlagsIFMask;
   }
   else { // Real-mode
-    flags32 = pop_32();
     // VIF, VIP, VM are unaffected
     changeMask |= (EFlagsIOPLMask | EFlagsIFMask);
   }
 
   writeEFlags(flags32, changeMask);
+
+  RSP_COMMIT;
 }
 
 #if BX_SUPPORT_X86_64

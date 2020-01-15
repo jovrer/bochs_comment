@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc,v 1.40 2008/03/06 21:15:40 sshwarts Exp $
+// $Id: term.cc,v 1.44 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -22,9 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
-
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
@@ -34,8 +32,6 @@
 #include "bochs.h"
 #include "iodev.h"
 #if BX_WITH_TERM
-
-#include "icon_bochs.h"
 
 extern "C" {
 #include <curses.h>
@@ -126,9 +122,14 @@ static void do_scan(int key_event, int shift, int ctrl, int alt)
 
 Bit32u bx_term_gui_c::get_sighandler_mask()
 {
-  return (1<<SIGHUP)
+  return 0
+#ifdef SIGHUP
+       | (1<<SIGHUP)
+#endif
        | (1<<SIGINT)
+#ifdef SIGQUIT
        | (1<<SIGQUIT)
+#endif
 #ifdef SIGSTOP
        | (1<<SIGSTOP)
 #endif
@@ -154,9 +155,11 @@ void bx_term_gui_c::sighandler(int signo)
       do_scan(BX_KEY_Z,0,1,0);
       break;
 #endif
+#ifdef SIGHUP
     case SIGHUP:
       BX_PANIC(("Received SIGHUP: quit simulation"));
       break;
+#endif
     default:
       BX_INFO(("sig %d caught",signo));
       break;
@@ -200,9 +203,9 @@ void bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, uns
 
 #if BX_HAVE_COLOR_SET
   if (has_colors()) {
-    for (int i=0; i<COLORS; i++) {
-      for (int j=0; j<COLORS; j++) {
-        if ((i!=0)||(j!=0)) init_pair(i * COLORS + j, j, i);
+    for (int i=0; i<8; i++) {
+      for (int j=0; j<8; j++) {
+        if ((i!=0)||(j!=0)) init_pair(i * 8 + j, j, i);
       }
     }
   }

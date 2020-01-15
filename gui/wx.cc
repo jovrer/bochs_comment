@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc,v 1.94 2008/02/15 22:05:40 sshwarts Exp $
+// $Id: wx.cc,v 1.100 2009/04/10 08:15:25 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
@@ -33,6 +33,7 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+#include "keymap.h"
 #include "iodev.h"
 #if BX_WITH_WX
 
@@ -63,7 +64,7 @@ public:
   bx_wx_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
-  void statusbar_setitem(int element, bx_bool active);
+  void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
 #if BX_SHOW_IPS
   void show_ips(Bit32u ips_count);
 #endif
@@ -822,9 +823,13 @@ bx_bool MyPanel::fillBxKeyEvent (wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rel
     case WXK_NUMPAD_RIGHT:         bx_key = BX_KEY_KP_RIGHT;     break;
     case WXK_NUMPAD_DOWN:          bx_key = BX_KEY_KP_DOWN;      break;
     case WXK_NUMPAD_PRIOR:         bx_key = BX_KEY_KP_PAGE_UP;   break;
+#if WXK_NUMPAD_PAGEUP != WXK_NUMPAD_PRIOR
     case WXK_NUMPAD_PAGEUP:        bx_key = BX_KEY_KP_PAGE_UP;   break;
+#endif
     case WXK_NUMPAD_NEXT:          bx_key = BX_KEY_KP_PAGE_DOWN; break;
+#if WXK_NUMPAD_PAGEDOWN != WXK_NUMPAD_NEXT
     case WXK_NUMPAD_PAGEDOWN:      bx_key = BX_KEY_KP_PAGE_DOWN; break;
+#endif
     case WXK_NUMPAD_END:           bx_key = BX_KEY_KP_END;       break;
     case WXK_NUMPAD_BEGIN:         bx_key = BX_KEY_KP_HOME;      break;
     case WXK_NUMPAD_INSERT:        bx_key = BX_KEY_KP_INSERT;    break;
@@ -849,7 +854,11 @@ bx_bool MyPanel::fillBxKeyEvent (wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rel
     case 220: bx_key = BX_KEY_BACKSLASH;     break; // \|
     case 222: bx_key = BX_KEY_SINGLE_QUOTE;  break; // '"
     case 305: bx_key = BX_KEY_KP_5;          break; // keypad 5
-    case 392: bx_key = BX_KEY_KP_ADD;        break; // keypad plus
+//#if defined(WXK_NUMPAD_ADD)
+    case WXK_NUMPAD_ADD: bx_key = BX_KEY_KP_ADD; break; // keypad plus
+//#else
+//    case 392: bx_key = BX_KEY_KP_ADD;        break; // keypad plus
+//#endif
 
     default:
       wxLogMessage(wxT ("Unhandled key event: %i (0x%x)"), key, key);
@@ -872,7 +881,7 @@ void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsig
   int b,i,j;
   unsigned char fc, vc;
 
-  put("WX  ");
+  put("WX");
   if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
     BX_INFO(("private_colormap option ignored."));
   }
@@ -1038,7 +1047,7 @@ void bx_wx_gui_c::handle_events(void)
   num_events = 0;
 }
 
-void bx_wx_gui_c::statusbar_setitem(int element, bx_bool active)
+void bx_wx_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
 #if defined(__WXMSW__)
   char status_text[10];
@@ -1230,8 +1239,13 @@ void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   y = 0;
   cs_y = 0;
   text_base = new_text - tm_info.start_address;
-  split_textrow = (line_compare + v_panning) / wxFontY;
-  split_fontrows = ((line_compare + v_panning) % wxFontY) + 1;
+  if (line_compare < wxScreenY) {
+    split_textrow = (line_compare + v_panning) / wxFontY;
+    split_fontrows = ((line_compare + v_panning) % wxFontY) + 1;
+  } else {
+    split_textrow = rows + 1;
+    split_fontrows = 0;
+  }
   split_screen = 0;
   do {
     hchars = text_cols;
@@ -1409,7 +1423,11 @@ bx_svga_tileinfo_t *bx_wx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
   info->green_mask = 0x00ff00;
   info->blue_mask = 0xff0000;
   info->is_indexed = 0;
+#ifdef BX_LITTLE_ENDIAN
   info->is_little_endian = 1;
+#else
+  info->is_little_endian = 0;
+#endif
 
   return info;
 }

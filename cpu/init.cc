@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.173 2008/05/30 21:10:37 sshwarts Exp $
+// $Id: init.cc,v 1.209 2009/05/01 09:32:46 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -38,14 +38,15 @@
 
 BX_CPU_C::BX_CPU_C(unsigned id): bx_cpuid(id)
 #if BX_SUPPORT_APIC
-   ,local_apic (this)
+   ,lapic (this, id)
 #endif
 {
   // in case of SMF, you cannot reference any member data
   // in the constructor because the only access to it is via
   // global variables which aren't initialized quite yet.
-  put("CPU");
-  settype (CPU0LOG);
+  char buffer[16];
+  sprintf(buffer, "CPU%x", bx_cpuid);
+  put(buffer);
 }
 
 #if BX_WITH_WX
@@ -150,19 +151,24 @@ static Bit64s cpu_param_handler(bx_param_c *param, int set, Bit64s val)
 
 #endif
 
+// BX_CPU_C constructor
 void BX_CPU_C::initialize(void)
 {
-  // BX_CPU_C constructor
   BX_CPU_THIS_PTR set_INTR (0);
 
-#if BX_SUPPORT_APIC
-  BX_CPU_THIS_PTR local_apic.set_id(BX_CPU_ID);
-  BX_CPU_THIS_PTR local_apic.init();
+#if BX_CONFIGURE_MSRS
+  for (unsigned n=0; n < BX_MSR_MAX_INDEX; n++) {
+    BX_CPU_THIS_PTR msrs[n] = 0;
+  }
+  const char *msrs_filename = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->getptr();
+  load_MSRs(msrs_filename);
 #endif
 
-  // in SMP mode, the prefix of the CPU will be changed to [CPUn] in
-  // bx_local_apic_c::set_id as soon as the apic ID is assigned.
-  sprintf(name, "CPU %d", BX_CPU_ID);
+  init_SMRAM();
+
+#if BX_SUPPORT_VMX
+  init_VMCS();
+#endif
 
 #if BX_WITH_WX
   register_wx_state();
@@ -208,7 +214,6 @@ void BX_CPU_C::register_wx_state(void)
       DEFPARAM_NORMAL(DR6, dr6);
       DEFPARAM_NORMAL(DR7, dr7);
       DEFPARAM_NORMAL(CR0, cr0.val32);
-      DEFPARAM_NORMAL(CR1, cr1);
       DEFPARAM_NORMAL(CR2, cr2);
       DEFPARAM_NORMAL(CR3, cr3);
 #if BX_CPU_LEVEL >= 4
@@ -298,17 +303,18 @@ void BX_CPU_C::register_wx_state(void)
 // save/restore functionality
 void BX_CPU_C::register_state(void)
 {
-  unsigned i;
+  unsigned n;
   char name[10];
 
   sprintf(name, "cpu%d", BX_CPU_ID);
 
-  bx_list_c *cpu = new bx_list_c(SIM->get_bochs_root(), name, name, 60);
+  bx_list_c *cpu = new bx_list_c(SIM->get_bochs_root(), name, name, 50 + BX_GENERAL_REGISTERS);
 
   BXRS_PARAM_SPECIAL32(cpu, cpu_version, param_save_handler, param_restore_handler);
   BXRS_PARAM_SPECIAL32(cpu, cpuid_std,   param_save_handler, param_restore_handler);
   BXRS_PARAM_SPECIAL32(cpu, cpuid_ext,   param_save_handler, param_restore_handler);
   BXRS_DEC_PARAM_SIMPLE(cpu, cpu_mode);
+  BXRS_HEX_PARAM_SIMPLE(cpu, activity_state);
   BXRS_HEX_PARAM_SIMPLE(cpu, inhibit_mask);
   BXRS_HEX_PARAM_SIMPLE(cpu, debug_trap);
 #if BX_SUPPORT_X86_64
@@ -360,13 +366,12 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(cpu, XCR0, xcr0.val32);
 #endif
 
-  for(i=0; i<6; i++) {
-    bx_segment_reg_t *segment = &BX_CPU_THIS_PTR sregs[i];
+  for(n=0; n<6; n++) {
+    bx_segment_reg_t *segment = &BX_CPU_THIS_PTR sregs[n];
     bx_list_c *sreg = new bx_list_c(cpu, strseg(segment), 9);
     BXRS_PARAM_SPECIAL16(sreg, selector,
            param_save_handler, param_restore_handler);
     BXRS_HEX_PARAM_FIELD(sreg, base, segment->cache.u.segment.base);
-    BXRS_HEX_PARAM_FIELD(sreg, limit, segment->cache.u.segment.limit);
     BXRS_HEX_PARAM_FIELD(sreg, limit_scaled, segment->cache.u.segment.limit_scaled);
     BXRS_PARAM_SPECIAL8 (sreg, ar_byte,
            param_save_handler, param_restore_handler);
@@ -378,7 +383,6 @@ void BX_CPU_C::register_state(void)
     BXRS_PARAM_BOOL(sreg, avl, segment->cache.u.segment.avl);
   }
 
-#if BX_CPU_LEVEL >= 2
   bx_list_c *GDTR = new bx_list_c(cpu, "GDTR", 2);
   BXRS_HEX_PARAM_FIELD(GDTR, base, gdtr.base);
   BXRS_HEX_PARAM_FIELD(GDTR, limit, gdtr.limit);
@@ -386,25 +390,24 @@ void BX_CPU_C::register_state(void)
   bx_list_c *IDTR = new bx_list_c(cpu, "IDTR", 2);
   BXRS_HEX_PARAM_FIELD(IDTR, base, idtr.base);
   BXRS_HEX_PARAM_FIELD(IDTR, limit, idtr.limit);
-#endif
 
-  bx_list_c *LDTR = new bx_list_c(cpu, "LDTR", 7);
+  bx_list_c *LDTR = new bx_list_c(cpu, "LDTR", 8);
   BXRS_PARAM_SPECIAL16(LDTR, selector, param_save_handler, param_restore_handler);
-  BXRS_HEX_PARAM_FIELD(LDTR, base,  ldtr.cache.u.system.base);
-  BXRS_HEX_PARAM_FIELD(LDTR, limit, ldtr.cache.u.system.limit);
-  BXRS_HEX_PARAM_FIELD(LDTR, limit_scaled, ldtr.cache.u.system.limit);
+  BXRS_HEX_PARAM_FIELD(LDTR, base,  ldtr.cache.u.segment.base);
+  BXRS_HEX_PARAM_FIELD(LDTR, limit_scaled, ldtr.cache.u.segment.limit_scaled);
   BXRS_PARAM_SPECIAL8 (LDTR, ar_byte, param_save_handler, param_restore_handler);
-  BXRS_PARAM_BOOL(LDTR, granularity, ldtr.cache.u.system.g);
-  BXRS_PARAM_BOOL(LDTR, avl, ldtr.cache.u.system.avl);
+  BXRS_PARAM_BOOL(LDTR, granularity, ldtr.cache.u.segment.g);
+  BXRS_PARAM_BOOL(LDTR, d_b, ldtr.cache.u.segment.d_b);
+  BXRS_PARAM_BOOL(LDTR, avl, ldtr.cache.u.segment.avl);
 
-  bx_list_c *TR = new bx_list_c(cpu, "TR", 7);
+  bx_list_c *TR = new bx_list_c(cpu, "TR", 8);
   BXRS_PARAM_SPECIAL16(TR, selector, param_save_handler, param_restore_handler);
-  BXRS_HEX_PARAM_FIELD(TR, base,  tr.cache.u.system.base);
-  BXRS_HEX_PARAM_FIELD(TR, limit, tr.cache.u.system.limit);
-  BXRS_HEX_PARAM_FIELD(TR, limit_scaled, tr.cache.u.system.limit_scaled);
+  BXRS_HEX_PARAM_FIELD(TR, base,  tr.cache.u.segment.base);
+  BXRS_HEX_PARAM_FIELD(TR, limit_scaled, tr.cache.u.segment.limit_scaled);
   BXRS_PARAM_SPECIAL8 (TR, ar_byte, param_save_handler, param_restore_handler);
-  BXRS_PARAM_BOOL(TR, granularity, tr.cache.u.system.g);
-  BXRS_PARAM_BOOL(TR, avl, tr.cache.u.system.avl);
+  BXRS_PARAM_BOOL(TR, granularity, tr.cache.u.segment.g);
+  BXRS_PARAM_BOOL(TR, d_b, tr.cache.u.segment.d_b);
+  BXRS_PARAM_BOOL(TR, avl, tr.cache.u.segment.avl);
 
   BXRS_HEX_PARAM_SIMPLE(cpu, smbase);
 
@@ -463,6 +466,20 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(MSR, pat, msr.pat);
   BXRS_HEX_PARAM_FIELD(MSR, mtrr_deftype, msr.mtrr_deftype);
 #endif
+#if BX_CONFIGURE_MSRS
+  bx_list_c *MSRS = new bx_list_c(cpu, "MSRS", BX_MSR_MAX_INDEX);
+  for(n=0; n < BX_MSR_MAX_INDEX; n++) {
+    if (! msrs[n]) continue;
+    sprintf(name, "msr_0x%03x", n);
+    bx_list_c *m = new bx_list_c(MSRS, name, 6);
+    BXRS_HEX_PARAM_FIELD(m, index, msrs[n]->index);
+    BXRS_DEC_PARAM_FIELD(m, type, msrs[n]->type);
+    BXRS_HEX_PARAM_FIELD(m, val64, msrs[n]->val64);
+    BXRS_HEX_PARAM_FIELD(m, reset, msrs[n]->reset_value);
+    BXRS_HEX_PARAM_FIELD(m, reserved, msrs[n]->reserved);
+    BXRS_HEX_PARAM_FIELD(m, ignored, msrs[n]->ignored);
+  }
+#endif
 #endif
 
 #if BX_SUPPORT_FPU || BX_SUPPORT_MMX
@@ -475,11 +492,11 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(fpu, fip, the_i387.fip);
   BXRS_HEX_PARAM_FIELD(fpu, fds, the_i387.fds);
   BXRS_HEX_PARAM_FIELD(fpu, fdp, the_i387.fdp);
-  for (i=0; i<8; i++) {
-    sprintf(name, "st%d", i);
+  for (n=0; n<8; n++) {
+    sprintf(name, "st%d", n);
     bx_list_c *STx = new bx_list_c(fpu, name, 8);
-    BXRS_HEX_PARAM_FIELD(STx, exp,      the_i387.st_space[i].exp);
-    BXRS_HEX_PARAM_FIELD(STx, fraction, the_i387.st_space[i].fraction);
+    BXRS_HEX_PARAM_FIELD(STx, exp,      the_i387.st_space[n].exp);
+    BXRS_HEX_PARAM_FIELD(STx, fraction, the_i387.st_space[n].fraction);
   }
   BXRS_DEC_PARAM_FIELD(fpu, tos, the_i387.tos);
 #endif
@@ -487,32 +504,39 @@ void BX_CPU_C::register_state(void)
 #if BX_SUPPORT_SSE
   bx_list_c *sse = new bx_list_c(cpu, "SSE", 2*BX_XMM_REGISTERS+1);
   BXRS_HEX_PARAM_FIELD(sse, mxcsr, mxcsr.mxcsr);
-  for (i=0; i<BX_XMM_REGISTERS; i++) {
-    sprintf(name, "xmm%02d_hi", i);
-    new bx_shadow_num_c(sse, name, &xmm[i].xmm64u(1), BASE_HEX);
-    sprintf(name, "xmm%02d_lo", i);
-    new bx_shadow_num_c(sse, name, &xmm[i].xmm64u(0), BASE_HEX);
+  for (n=0; n<BX_XMM_REGISTERS; n++) {
+    sprintf(name, "xmm%02d_hi", n);
+    new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(1), BASE_HEX);
+    sprintf(name, "xmm%02d_lo", n);
+    new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(0), BASE_HEX);
   }
 #endif
 
 #if BX_SUPPORT_MONITOR_MWAIT
-  bx_list_c *monitor_list = new bx_list_c(cpu, "MONITOR", 2);
+  bx_list_c *monitor_list = new bx_list_c(cpu, "MONITOR", 3);
   BXRS_HEX_PARAM_FIELD(monitor_list, begin_addr, monitor.monitor_begin);
   BXRS_HEX_PARAM_FIELD(monitor_list, end_addr,   monitor.monitor_end);
+  BXRS_PARAM_BOOL(monitor_list, armed, monitor.armed);
 #endif
 
 #if BX_SUPPORT_APIC
-  local_apic.register_state(cpu);
+  lapic.register_state(cpu);
+#endif
+
+#if BX_SUPPORT_VMX
+  register_vmx_state(cpu);
 #endif
 
   BXRS_HEX_PARAM_SIMPLE32(cpu, async_event);
 
-  BXRS_PARAM_BOOL(cpu, EXT, EXT);
   BXRS_PARAM_BOOL(cpu, INTR, INTR);
-  BXRS_PARAM_BOOL(cpu, smi_pending, smi_pending);
-  BXRS_PARAM_BOOL(cpu, nmi_pending, nmi_pending);
   BXRS_PARAM_BOOL(cpu, in_smm, in_smm);
-  BXRS_PARAM_BOOL(cpu, nmi_disable, nmi_disable);
+  BXRS_PARAM_BOOL(cpu, disable_SMI, disable_SMI);
+  BXRS_PARAM_BOOL(cpu, pending_SMI, pending_SMI);
+  BXRS_PARAM_BOOL(cpu, disable_NMI, disable_NMI);
+  BXRS_PARAM_BOOL(cpu, pending_NMI, pending_NMI);
+  BXRS_PARAM_BOOL(cpu, disable_INIT, disable_INIT);
+  BXRS_PARAM_BOOL(cpu, pending_INIT, pending_INIT);
   BXRS_PARAM_BOOL(cpu, trace, trace);
 }
 
@@ -647,9 +671,10 @@ void BX_CPU_C::after_restore_state(void)
 {
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_V8086) CPL = 3;
 
-  SetCR0(cr0.val32);
+  if (!SetCR0(cr0.val32))
+    BX_PANIC(("Incorrect CR0 state !"));
   SetCR3(cr3);
-  TLB_flush(1);
+  TLB_flush();
   assert_checks();
   invalidate_prefetch_q();
   debug(RIP);
@@ -664,7 +689,7 @@ BX_CPU_C::~BX_CPU_C()
 
 void BX_CPU_C::reset(unsigned source)
 {
-  unsigned i;
+  unsigned n;
 
   if (source == BX_RESET_HARDWARE)
     BX_INFO(("cpu hardware reset"));
@@ -709,6 +734,7 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
 
   BX_CPU_THIS_PTR inhibit_mask = 0;
+  BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
   BX_CPU_THIS_PTR debug_trap = 0;
 
   /* instruction pointer */
@@ -731,17 +757,15 @@ void BX_CPU_C::reset(unsigned source)
   parse_selector(0xf000,
           &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-#if BX_CPU_LEVEL >= 2
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid    = 1;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl      = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment  = 1;  /* data/code segment */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type     = BX_DATA_READ_WRITE_ACCESSED;
 
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0xFFFF0000;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFF;
-#endif
+
 #if BX_CPU_LEVEL >= 3
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g   = 0; /* byte granular */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b = 0; /* 16bit default size */
@@ -751,26 +775,21 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl = 0;
 #endif
 
-#if BX_SUPPORT_ICACHE
-  BX_CPU_THIS_PTR updateFetchModeMask();
+  updateFetchModeMask();
   flushICaches();
-#endif
 
   /* DS (Data Segment) and descriptor cache */
   parse_selector(0x0000,
           &BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector);
 
-#if BX_CPU_LEVEL >= 2
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.valid    = 1;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.dpl      = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.segment  = 1; /* data/code segment */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.type     = BX_DATA_READ_WRITE_ACCESSED;
 
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.base         = 0x00000000;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.limit        = 0xFFFF;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.limit_scaled = 0xFFFF;
-#endif
 #if BX_CPU_LEVEL >= 3
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.avl = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.g   = 0; /* byte granular */
@@ -788,7 +807,6 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS] = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS];
 #endif
 
-#if BX_CPU_LEVEL >= 2
   /* GDTR (Global Descriptor Table Register) */
   BX_CPU_THIS_PTR gdtr.base  = 0x00000000;
   BX_CPU_THIS_PTR gdtr.limit =     0xFFFF;
@@ -808,13 +826,10 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR ldtr.cache.dpl      = 0; /* field not used */
   BX_CPU_THIS_PTR ldtr.cache.segment  = 0; /* system segment */
   BX_CPU_THIS_PTR ldtr.cache.type     = BX_SYS_SEGMENT_LDT;
-  BX_CPU_THIS_PTR ldtr.cache.u.system.base       = 0x00000000;
-  BX_CPU_THIS_PTR ldtr.cache.u.system.limit      =     0xFFFF;
-#if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled =   0xFFFF;
-  BX_CPU_THIS_PTR ldtr.cache.u.system.avl = 0;
-  BX_CPU_THIS_PTR ldtr.cache.u.system.g   = 0;  /* byte granular */
-#endif
+  BX_CPU_THIS_PTR ldtr.cache.u.segment.base       = 0x00000000;
+  BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled =   0xFFFF;
+  BX_CPU_THIS_PTR ldtr.cache.u.segment.avl = 0;
+  BX_CPU_THIS_PTR ldtr.cache.u.segment.g   = 0;  /* byte granular */
 
   /* TR (Task Register) */
   BX_CPU_THIS_PTR tr.selector.value = 0x0000;
@@ -827,21 +842,15 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR tr.cache.dpl      = 0; /* field not used */
   BX_CPU_THIS_PTR tr.cache.segment  = 0; /* system segment */
   BX_CPU_THIS_PTR tr.cache.type     = BX_SYS_SEGMENT_BUSY_386_TSS;
-  BX_CPU_THIS_PTR tr.cache.u.system.base         = 0x00000000;
-  BX_CPU_THIS_PTR tr.cache.u.system.limit        =     0xFFFF;
-#if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled =     0xFFFF;
-  BX_CPU_THIS_PTR tr.cache.u.system.avl = 0;
-  BX_CPU_THIS_PTR tr.cache.u.system.g   = 0;  /* byte granular */
-#endif
-#endif
+  BX_CPU_THIS_PTR tr.cache.u.segment.base         = 0x00000000;
+  BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled =     0xFFFF;
+  BX_CPU_THIS_PTR tr.cache.u.segment.avl = 0;
+  BX_CPU_THIS_PTR tr.cache.u.segment.g   = 0;  /* byte granular */
 
   // DR0 - DR7 (Debug Registers)
 #if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR dr[0] = 0;   /* undefined */
-  BX_CPU_THIS_PTR dr[1] = 0;   /* undefined */
-  BX_CPU_THIS_PTR dr[2] = 0;   /* undefined */
-  BX_CPU_THIS_PTR dr[3] = 0;   /* undefined */
+  for (n=0; n<4; n++)
+    BX_CPU_THIS_PTR dr[n] = 0;   /* undefined */
 #endif
 
   BX_CPU_THIS_PTR dr7 = 0x00000400;
@@ -857,17 +866,22 @@ void BX_CPU_C::reset(unsigned source)
 #  error "DR6: CPU > 6"
 #endif
 
-  BX_CPU_THIS_PTR smi_pending = 0;
-  BX_CPU_THIS_PTR nmi_pending = 0;
   BX_CPU_THIS_PTR in_smm = 0;
-  BX_CPU_THIS_PTR nmi_disable = 0;
+  BX_CPU_THIS_PTR disable_SMI = 0;
+  BX_CPU_THIS_PTR pending_SMI = 0;
+  BX_CPU_THIS_PTR disable_NMI = 0;
+  BX_CPU_THIS_PTR pending_NMI = 0;
+  BX_CPU_THIS_PTR disable_INIT = 0;
+  BX_CPU_THIS_PTR pending_INIT = 0;
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  BX_CPU_THIS_PTR alignment_check_mask = LPF_MASK;
+  BX_CPU_THIS_PTR alignment_check_mask = 0;
 #endif
 
-  BX_CPU_THIS_PTR smbase = 0x30000;
+  if (source == BX_RESET_HARDWARE) {
+    BX_CPU_THIS_PTR smbase = 0x30000; // do not change SMBASE on INIT
+  }
 
-  BX_CPU_THIS_PTR cr0.setRegister(0x60000010);
+  BX_CPU_THIS_PTR cr0.set32(0x60000010);
   // handle reserved bits
 #if BX_CPU_LEVEL == 3
   // reserved bits all set to 1 on 386
@@ -875,33 +889,30 @@ void BX_CPU_C::reset(unsigned source)
 #endif
 
 #if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR cr1 = 0;
   BX_CPU_THIS_PTR cr2 = 0;
   BX_CPU_THIS_PTR cr3 = 0;
   BX_CPU_THIS_PTR cr3_masked = 0;
 #endif
 
 #if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR cr4.setRegister(0);
+  BX_CPU_THIS_PTR cr4.set32(0);
 #endif
 
 #if BX_SUPPORT_XSAVE
-  BX_CPU_THIS_PTR xcr0.setRegister(0x1);
+  BX_CPU_THIS_PTR xcr0.set32(0x1);
 #endif
-
-  // CR0/CR4 paging might be modified
-  TLB_flush(1);
 
 /* initialise MSR registers to defaults */
 #if BX_CPU_LEVEL >= 5
 #if BX_SUPPORT_APIC
   /* APIC Address, APIC enabled and BSP is default, we'll fill in the rest later */
   BX_CPU_THIS_PTR msr.apicbase = BX_LAPIC_BASE_ADDR;
-  BX_CPU_THIS_PTR local_apic.init();
+  BX_CPU_THIS_PTR lapic.reset(source);
   BX_CPU_THIS_PTR msr.apicbase |= 0x900;
+  BX_CPU_THIS_PTR lapic.set_base(BX_CPU_THIS_PTR msr.apicbase);
 #endif
 #if BX_SUPPORT_X86_64
-  BX_CPU_THIS_PTR efer.setRegister(0);
+  BX_CPU_THIS_PTR efer.set32(0);
 
   BX_CPU_THIS_PTR msr.star  = 0;
   BX_CPU_THIS_PTR msr.lstar = 0;
@@ -910,7 +921,9 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR msr.kernelgsbase = 0;
   BX_CPU_THIS_PTR msr.tsc_aux = 0;
 #endif
-  BX_CPU_THIS_PTR set_TSC(0);
+  if (source == BX_RESET_HARDWARE) {
+    BX_CPU_THIS_PTR set_TSC(0); // do not change TSC on INIT
+  }
 #endif
 
 #if BX_SUPPORT_SEP
@@ -919,19 +932,32 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR msr.sysenter_eip_msr = 0;
 #endif
 
+  // Do not change MTRR on INIT
 #if BX_SUPPORT_MTRR
-  for (i=0; i<16; i++)
-    BX_CPU_THIS_PTR msr.mtrrphys[i] = 0;
+  if (source == BX_RESET_HARDWARE) {
+    for (n=0; n<16; n++)
+      BX_CPU_THIS_PTR msr.mtrrphys[n] = 0;
 
-  BX_CPU_THIS_PTR msr.mtrrfix64k_00000 = 0; // all fix range MTRRs undefined according to manual
-  BX_CPU_THIS_PTR msr.mtrrfix16k_80000 = 0;
-  BX_CPU_THIS_PTR msr.mtrrfix16k_a0000 = 0;
+    BX_CPU_THIS_PTR msr.mtrrfix64k_00000 = 0; // all fix range MTRRs undefined according to manual
+    BX_CPU_THIS_PTR msr.mtrrfix16k_80000 = 0;
+    BX_CPU_THIS_PTR msr.mtrrfix16k_a0000 = 0;
 
-  for (i=0; i<8; i++)
-    BX_CPU_THIS_PTR msr.mtrrfix4k[i] = 0;
+    for (n=0; n<8; n++)
+      BX_CPU_THIS_PTR msr.mtrrfix4k[n] = 0;
 
-  BX_CPU_THIS_PTR msr.pat = BX_CONST64(0x0007040600070406);
-  BX_CPU_THIS_PTR msr.mtrr_deftype = 0;
+    BX_CPU_THIS_PTR msr.pat = BX_CONST64(0x0007040600070406);
+    BX_CPU_THIS_PTR msr.mtrr_deftype = 0;
+  }
+#endif
+
+  // All configurable MSRs do not change on INIT
+#if BX_CONFIGURE_MSRS
+  if (source == BX_RESET_HARDWARE) {
+    for (n=0; n < BX_MSR_MAX_INDEX; n++) {
+      if (BX_CPU_THIS_PTR msrs[n])
+        BX_CPU_THIS_PTR msrs[n]->reset();
+    }
+  }
 #endif
 
   BX_CPU_THIS_PTR EXT = 0;
@@ -956,24 +982,35 @@ void BX_CPU_C::reset(unsigned source)
 
   // Reset the Floating Point Unit
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR the_i387.reset(); // unchanged on #INIT
+  if (source == BX_RESET_HARDWARE) {
+    BX_CPU_THIS_PTR the_i387.reset();
+  }
 #endif
 
   // Reset XMM state
 #if BX_SUPPORT_SSE >= 1  // unchanged on #INIT
-  for(i=0; i<BX_XMM_REGISTERS; i++)
-  {
-    BX_CPU_THIS_PTR xmm[i].xmm64u(0) = 0;
-    BX_CPU_THIS_PTR xmm[i].xmm64u(1) = 0;
-  }
+  if (source == BX_RESET_HARDWARE) {
+    for(n=0; n<BX_XMM_REGISTERS; n++)
+    {
+      BX_CPU_THIS_PTR xmm[n].xmm64u(0) = 0;
+      BX_CPU_THIS_PTR xmm[n].xmm64u(1) = 0;
+    }
 
-  BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
+    BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
+  }
+#endif
+
+#if BX_SUPPORT_VMX
+  BX_CPU_THIS_PTR in_vmx = BX_CPU_THIS_PTR in_vmx_guest = 0;
+  BX_CPU_THIS_PTR in_event = 0;
+  BX_CPU_THIS_PTR vmx_interrupt_window = 0;
+  BX_CPU_THIS_PTR vmcsptr = BX_CONST64(0xFFFFFFFFFFFFFFFF);
 #endif
 
 #if BX_SUPPORT_SMP
   // notice if I'm the bootstrap processor.  If not, do the equivalent of
   // a HALT instruction.
-  int apic_id = local_apic.get_id();
+  int apic_id = lapic.get_id();
   if (BX_BOOTSTRAP_PROCESSOR == apic_id) {
     // boot normally
     BX_CPU_THIS_PTR msr.apicbase |= 0x0100; /* set bit 8 BSP */
@@ -982,7 +1019,8 @@ void BX_CPU_C::reset(unsigned source)
     // it's an application processor, halt until IPI is heard.
     BX_CPU_THIS_PTR msr.apicbase &= ~0x0100; /* clear bit 8 BSP */
     BX_INFO(("CPU[%d] is an application processor. Halting until IPI.", apic_id));
-    debug_trap |= BX_DEBUG_TRAP_WAIT_FOR_SIPI;
+    activity_state = BX_ACTIVITY_STATE_WAIT_FOR_SIPI;
+    disable_INIT = 1; // INIT is disabled when CPU is waiting for SIPI
     async_event = 1;
   }
 #endif
@@ -990,7 +1028,7 @@ void BX_CPU_C::reset(unsigned source)
   // initialize CPUID values - make sure apicbase already initialized
   set_cpuid_defaults();
 
-  BX_INSTR_RESET(BX_CPU_ID);
+  BX_INSTR_RESET(BX_CPU_ID, source);
 }
 
 void BX_CPU_C::sanity_checks(void)
@@ -1147,9 +1185,9 @@ void BX_CPU_C::assert_checks(void)
       case BX_SYS_SEGMENT_BUSY_286_TSS:
       case BX_SYS_SEGMENT_AVAIL_286_TSS:
 #if BX_CPU_LEVEL >= 3
-        if (BX_CPU_THIS_PTR tr.cache.u.system.g != 0)
+        if (BX_CPU_THIS_PTR tr.cache.u.segment.g != 0)
           BX_PANIC(("assert_checks: tss286.g != 0 !"));
-        if (BX_CPU_THIS_PTR tr.cache.u.system.avl != 0)
+        if (BX_CPU_THIS_PTR tr.cache.u.segment.avl != 0)
           BX_PANIC(("assert_checks: tss286.avl != 0 !"));
 #endif
         break;
@@ -1165,10 +1203,4 @@ void BX_CPU_C::assert_checks(void)
   if (BX_CPU_THIS_PTR monitor.monitor_end < BX_CPU_THIS_PTR monitor.monitor_begin)
     BX_PANIC(("assert_checks: MONITOR range is not set correctly !"));
 #endif
-}
-
-void BX_CPU_C::set_INTR(bx_bool value)
-{
-  BX_CPU_THIS_PTR INTR = value;
-  BX_CPU_THIS_PTR async_event = 1;
 }

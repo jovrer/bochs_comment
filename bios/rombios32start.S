@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios32start.S,v 1.5 2008/03/28 09:02:57 sshwarts Exp $
+// $Id: rombios32start.S,v 1.9 2009/01/26 09:21:00 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  32 bit Bochs BIOS init code
@@ -32,17 +32,38 @@ _start:
   /* clear bss section */
   xor %eax, %eax
   mov $__bss_start, %edi
-  mov $_end, %ecx
+  mov $__bss_end, %ecx
   sub %edi, %ecx
   rep stosb
+
+  /* copy data section */
+  mov $_end, %esi
+  mov $__data_start, %edi
+  mov $__data_end, %ecx
+  sub %edi, %ecx
+  rep movsb
 
   jmp rombios32_init
 
   .code16
 smp_ap_boot_code_start:
+  cli
   xor %ax, %ax
   mov %ax, %ds
-  lock incw CPU_COUNT_ADDR
+
+  mov $SMP_MSR_ADDR, %ebx
+11:
+  mov 0(%ebx), %ecx
+  test %ecx, %ecx
+  jz 12f
+  mov 4(%ebx), %eax
+  mov 8(%ebx), %edx
+  wrmsr
+  add $12, %ebx
+  jmp 11b
+12:
+
+  lock incw smp_cpus
 1:
   hlt
   jmp 1b

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl_pro.cc,v 1.95 2008/05/26 21:46:38 sshwarts Exp $
+// $Id: segment_ctrl_pro.cc,v 1.113 2009/04/05 19:09:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -102,7 +102,7 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
           access_write_linear(BX_CPU_THIS_PTR gdtr.base + ss_selector.index*8 + 4, 4, 0, &dword2);
         }
         else { /* LDT */
-          access_write_linear(BX_CPU_THIS_PTR ldtr.cache.u.system.base + ss_selector.index*8 + 4, 4, 0, &dword2);
+          access_write_linear(BX_CPU_THIS_PTR ldtr.cache.u.segment.base + ss_selector.index*8 + 4, 4, 0, &dword2);
         }
       }
 
@@ -175,7 +175,7 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
           access_write_linear(BX_CPU_THIS_PTR gdtr.base + selector.index*8 + 4, 4, 0, &dword2);
         }
         else { /* LDT */
-         access_write_linear(BX_CPU_THIS_PTR ldtr.cache.u.system.base + selector.index*8 + 4, 4, 0, &dword2);
+         access_write_linear(BX_CPU_THIS_PTR ldtr.cache.u.segment.base + selector.index*8 + 4, 4, 0, &dword2);
         }
       }
       return;
@@ -209,31 +209,28 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
   seg->cache.p = 1; /* present */
   seg->cache.type = BX_DATA_READ_WRITE_ACCESSED;
 
+  /* Do not modify segment limit and AR bytes when in real mode */
+  /* Support for big real mode */
+  if (!real_mode()) {
+    seg->cache.dpl = 3; /* we are in v8086 mode */
+    seg->cache.u.segment.limit_scaled = 0xffff;
+#if BX_CPU_LEVEL >= 3
+    seg->cache.u.segment.g     = 0; /* byte granular */
+    seg->cache.u.segment.d_b   = 0; /* default 16bit size */
+#if BX_SUPPORT_X86_64
+    seg->cache.u.segment.l     = 0; /* default 16bit size */
+#endif
+    seg->cache.u.segment.avl   = 0;
+#endif
+  }
+
   if (seg == &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS]) {
     invalidate_prefetch_q();
-#if BX_SUPPORT_ICACHE
-    BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
+    updateFetchModeMask();
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
     handleAlignmentCheck(); // CPL was modified
 #endif
   }
-
-  /* Do not modify segment limit and AR bytes when in real mode */
-  /* Support for big real mode */
-  if (real_mode()) return;
-
-  seg->cache.dpl = 3; /* we are in v8086 mode */
-  seg->cache.u.segment.limit        = 0xffff;
-  seg->cache.u.segment.limit_scaled = 0xffff;
-#if BX_CPU_LEVEL >= 3
-  seg->cache.u.segment.g     = 0; /* byte granular */
-  seg->cache.u.segment.d_b   = 0; /* default 16bit size */
-#if BX_SUPPORT_X86_64
-  seg->cache.u.segment.l     = 0; /* default 16bit size */
-#endif
-  seg->cache.u.segment.avl   = 0;
-#endif
 }
 
   void BX_CPP_AttrRegparmN(1)
@@ -251,7 +248,6 @@ BX_CPU_C::load_null_selector(bx_segment_reg_t *seg)
   seg->cache.type     = 0;
 
   seg->cache.u.segment.base         = 0;
-  seg->cache.u.segment.limit        = 0;
   seg->cache.u.segment.limit_scaled = 0;
   seg->cache.u.segment.g            = 0;
   seg->cache.u.segment.d_b          = 0;
@@ -312,7 +308,6 @@ void BX_CPU_C::validate_seg_regs(void)
   validate_seg_reg(BX_SEG_REG_GS);
 }
 
-#if BX_CPU_LEVEL >= 2
   void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::parse_selector(Bit16u raw_selector, bx_selector_t *selector)
 {
@@ -321,14 +316,11 @@ BX_CPU_C::parse_selector(Bit16u raw_selector, bx_selector_t *selector)
   selector->ti    = (raw_selector >> 2) & 0x01;
   selector->rpl   = raw_selector & 0x03;
 }
-#endif
 
   Bit8u  BX_CPP_AttrRegparmN(1)
 BX_CPU_C::ar_byte(const bx_descriptor_t *d)
 {
-  if (d->valid == 0) {
-    return(0);
-  }
+  if (d->valid == 0) return(0);
 
   return (d->type) |
          (d->segment << 4) |
@@ -348,32 +340,26 @@ BX_CPU_C::set_ar_byte(bx_descriptor_t *d, Bit8u ar_byte)
   Bit32u BX_CPP_AttrRegparmN(1)
 BX_CPU_C::get_descriptor_l(const bx_descriptor_t *d)
 {
-  Bit32u val;
+  Bit32u limit = d->u.segment.limit_scaled;
+  if (d->u.segment.g)
+    limit >>= 12;
 
-  if (d->valid == 0) {
-    return(0);
-  }
+  Bit32u val = ((d->u.segment.base & 0xffff) << 16) | (limit & 0xffff);
 
   if (d->segment) {
-    val = ((d->u.segment.base & 0xffff) << 16) | (d->u.segment.limit & 0xffff);
     return(val);
   }
   else {
     switch (d->type) {
-      case 0: // Reserved (not defined)
-        BX_ERROR(("#get_descriptor_l(): type %d not finished", d->type));
-        return(0);
-
       case BX_SYS_SEGMENT_LDT:
       case BX_SYS_SEGMENT_AVAIL_286_TSS:
       case BX_SYS_SEGMENT_BUSY_286_TSS:
       case BX_SYS_SEGMENT_AVAIL_386_TSS:
       case BX_SYS_SEGMENT_BUSY_386_TSS:
-        val = ((d->u.system.base & 0xffff) << 16) | (d->u.system.limit & 0xffff);
         return(val);
 
       default:
-        BX_PANIC(("#get_descriptor_l(): type %d not finished", d->type));
+        BX_ERROR(("#get_descriptor_l(): type %d not finished", d->type));
         return(0);
     }
   }
@@ -384,9 +370,9 @@ BX_CPU_C::get_descriptor_h(const bx_descriptor_t *d)
 {
   Bit32u val;
 
-  if (d->valid == 0) {
-    return(0);
-  }
+  Bit32u limit = d->u.segment.limit_scaled;
+  if (d->u.segment.g)
+    limit >>= 12;
 
   if (d->segment) {
     val = (d->u.segment.base & 0xff000000) |
@@ -394,8 +380,7 @@ BX_CPU_C::get_descriptor_h(const bx_descriptor_t *d)
           (d->type << 8) |
           (d->segment << 12) |
           (d->dpl << 13) |
-          (d->p << 15) |
-          (d->u.segment.limit & 0xf0000) |
+          (d->p << 15) | (limit & 0xf0000) |
           (d->u.segment.avl << 20) |
 #if BX_SUPPORT_X86_64
           (d->u.segment.l << 21) |
@@ -406,106 +391,56 @@ BX_CPU_C::get_descriptor_h(const bx_descriptor_t *d)
   }
   else {
     switch (d->type) {
-      case 0: // Reserved (not yet defined)
-        BX_ERROR(("#get_descriptor_h(): type %d not finished", d->type));
-        return(0);
-
       case BX_SYS_SEGMENT_AVAIL_286_TSS:
       case BX_SYS_SEGMENT_BUSY_286_TSS:
-        BX_ASSERT(d->u.system.g   == 0);
-        BX_ASSERT(d->u.system.avl == 0);
+        BX_ASSERT(d->u.segment.g   == 0);
+        BX_ASSERT(d->u.segment.avl == 0);
         // fall through
       case BX_SYS_SEGMENT_LDT:
       case BX_SYS_SEGMENT_AVAIL_386_TSS:
       case BX_SYS_SEGMENT_BUSY_386_TSS:
-        val = ((d->u.system.base >> 16) & 0xff) |
+        val = ((d->u.segment.base >> 16) & 0xff) |
               (d->type << 8) |
               (d->dpl << 13) |
-              (d->p << 15) |
-              (d->u.system.limit & 0xf0000) |
-              (d->u.system.avl << 20) |
-              (d->u.system.g << 23) |
-              (d->u.system.base & 0xff000000);
+              (d->p << 15) | (limit & 0xf0000) |
+              (d->u.segment.avl << 20) |
+              (d->u.segment.d_b << 22) |
+              (d->u.segment.g << 23) |
+              (d->u.segment.base & 0xff000000);
         return(val);
 
       default:
-        BX_PANIC(("#get_descriptor_h(): type %d not finished", d->type));
+        BX_ERROR(("#get_descriptor_h(): type %d not finished", d->type));
         return(0);
     }
   }
 }
 
 #if BX_CPU_LEVEL >= 3
-  Bit16u BX_CPP_AttrRegparmN(1)
-BX_CPU_C::get_segment_ar_data(const bx_descriptor_t *d)  // used for SMM
-{
-  Bit16u val = 0;
-
-  if (d->segment) { /* data/code segment descriptors */
-    val = (d->type) |
-          (d->segment << 4) |
-          (d->dpl << 5) |
-          (d->p << 7) |
-          (d->u.segment.avl << 12) |
-#if BX_SUPPORT_X86_64
-          (d->u.segment.l << 13) |
-#endif
-          (d->u.segment.d_b << 14) |
-          (d->u.segment.g << 15);
-    return(val);
-  }
-
-  switch (d->type) {
-    case BX_SYS_SEGMENT_AVAIL_286_TSS:
-    case BX_SYS_SEGMENT_BUSY_286_TSS:
-        BX_ASSERT(d->u.system.g   == 0);
-        BX_ASSERT(d->u.system.avl == 0);
-        // fall through
-    case BX_SYS_SEGMENT_LDT:
-    case BX_SYS_SEGMENT_AVAIL_386_TSS:
-    case BX_SYS_SEGMENT_BUSY_386_TSS:
-        val = (d->type) |
-              (d->dpl << 5) |
-              (d->p << 7) |
-              (d->u.system.avl << 12) |
-              (d->u.system.g << 15);
-        return(val);
-    default:
-        BX_PANIC(("get_segment_ar_data(): case %u unsupported", (unsigned) d->type));
-  }
-
-  return val;
-}
-
-bx_bool BX_CPU_C::set_segment_ar_data(bx_segment_reg_t *seg,
-            Bit16u raw_selector, bx_address base, Bit32u limit, Bit16u ar_data)
+bx_bool BX_CPU_C::set_segment_ar_data(bx_segment_reg_t *seg, bx_bool valid,
+            Bit16u raw_selector, bx_address base, Bit32u limit_scaled, Bit16u ar_data)
 {
   parse_selector(raw_selector, &seg->selector);
 
   bx_descriptor_t *d = &seg->cache;
 
-  d->p        = (ar_data >> 7) & 0x01;
-  d->dpl      = (ar_data >> 5) & 0x03;
-  d->segment  = (ar_data >> 4) & 0x01;
+  d->p        = (ar_data >> 7) & 0x1;
+  d->dpl      = (ar_data >> 5) & 0x3;
+  d->segment  = (ar_data >> 4) & 0x1;
   d->type     = (ar_data & 0x0f);
 
+  d->valid    = valid;
+
   if (d->segment) { /* data/code segment descriptors */
-    d->u.segment.g     = (ar_data >> 15) & 0x01;
-    d->u.segment.d_b   = (ar_data >> 14) & 0x01;
+    d->u.segment.g     = (ar_data >> 15) & 0x1;
+    d->u.segment.d_b   = (ar_data >> 14) & 0x1;
 #if BX_SUPPORT_X86_64
-    d->u.segment.l     = (ar_data >> 13) & 0x01;
+    d->u.segment.l     = (ar_data >> 13) & 0x1;
 #endif
-    d->u.segment.avl   = (ar_data >> 12) & 0x01;
+    d->u.segment.avl   = (ar_data >> 12) & 0x1;
 
     d->u.segment.base  = base;
-    d->u.segment.limit = limit;
-
-    if (d->u.segment.g)
-      d->u.segment.limit_scaled = (d->u.segment.limit << 12) | 0x0fff;
-    else
-      d->u.segment.limit_scaled = (d->u.segment.limit);
-
-    d->valid = 1;
+    d->u.segment.limit_scaled = limit_scaled;
   }
   else {
     switch(d->type) {
@@ -514,28 +449,19 @@ bx_bool BX_CPU_C::set_segment_ar_data(bx_segment_reg_t *seg,
       case BX_SYS_SEGMENT_BUSY_286_TSS:
       case BX_SYS_SEGMENT_AVAIL_386_TSS:
       case BX_SYS_SEGMENT_BUSY_386_TSS:
-        d->valid       = 1;
-        d->u.system.avl   = (ar_data >> 12) & 0x01;
-        d->u.system.g     = (ar_data >> 15) & 0x01;
-        d->u.system.base  = base;
-        d->u.system.limit = limit;
-        if (d->u.system.g)
-          d->u.system.limit_scaled = (d->u.system.limit << 12) | 0x0fff;
-        else
-          d->u.system.limit_scaled = (d->u.system.limit);
+        d->u.segment.avl   = (ar_data >> 12) & 0x1;
+        d->u.segment.d_b   = (ar_data >> 14) & 0x1;
+        d->u.segment.g     = (ar_data >> 15) & 0x1;
+        d->u.segment.base  = base;
+        d->u.segment.limit_scaled = limit_scaled;
         break;
 
       default:
-        BX_PANIC(("set_segment_ar_data(): case %u unsupported", (unsigned) d->type));
+        BX_ERROR(("set_segment_ar_data(): case %u unsupported, valid=%d", (unsigned) d->type, d->valid));
     }
   }
 
-  /* invalidate if null selector */
-  if ((raw_selector & 0xfffc) == 0) {
-     seg->cache.valid = 0;
-  }
-
-  return seg->cache.valid;
+  return d->valid;
 }
 #endif
 
@@ -543,19 +469,19 @@ bx_bool BX_CPU_C::set_segment_ar_data(bx_segment_reg_t *seg,
 BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
 {
   Bit8u AR_byte;
+  Bit32u limit;
 
   AR_byte        = dword2 >> 8;
-  temp->p        = (AR_byte >> 7) & 0x01;
-  temp->dpl      = (AR_byte >> 5) & 0x03;
-  temp->segment  = (AR_byte >> 4) & 0x01;
-  temp->type     = (AR_byte & 0x0f);
+  temp->p        = (AR_byte >> 7) & 0x1;
+  temp->dpl      = (AR_byte >> 5) & 0x3;
+  temp->segment  = (AR_byte >> 4) & 0x1;
+  temp->type     = (AR_byte & 0xf);
   temp->valid    = 0; /* start out invalid */
 
   if (temp->segment) { /* data/code segment descriptors */
-    temp->u.segment.limit      = (dword1 & 0xffff);
-    temp->u.segment.base       = (dword1 >> 16) | ((dword2 & 0xFF) << 16);
+    limit = (dword1 & 0xffff) | (dword2 & 0x000F0000);
 
-    temp->u.segment.limit     |= (dword2 & 0x000F0000);
+    temp->u.segment.base       = (dword1 >> 16) | ((dword2 & 0xFF) << 16);
     temp->u.segment.g          = (dword2 & 0x00800000) > 0;
     temp->u.segment.d_b        = (dword2 & 0x00400000) > 0;
 #if BX_SUPPORT_X86_64
@@ -565,9 +491,9 @@ BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
     temp->u.segment.base      |= (dword2 & 0xFF000000);
 
     if (temp->u.segment.g)
-      temp->u.segment.limit_scaled = (temp->u.segment.limit << 12) | 0x0fff;
+      temp->u.segment.limit_scaled = (limit << 12) | 0xfff;
     else
-      temp->u.segment.limit_scaled = (temp->u.segment.limit);
+      temp->u.segment.limit_scaled =  limit;
 
     temp->valid    = 1;
   }
@@ -611,15 +537,16 @@ BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
       case BX_SYS_SEGMENT_BUSY_286_TSS:
       case BX_SYS_SEGMENT_AVAIL_386_TSS:
       case BX_SYS_SEGMENT_BUSY_386_TSS:
-        temp->u.system.base  = (dword1 >> 16) |
+        limit = (dword1 & 0xffff) | (dword2 & 0x000F0000);
+        temp->u.segment.base  = (dword1 >> 16) |
                               ((dword2 & 0xff) << 16) | (dword2 & 0xff000000);
-        temp->u.system.limit = (dword1 & 0x0000ffff)  | (dword2 & 0x000f0000);
-        temp->u.system.g     = (dword2 & 0x00800000) > 0;
-        temp->u.system.avl   = (dword2 & 0x00100000) > 0;
-        if (temp->u.system.g)
-          temp->u.system.limit_scaled = (temp->u.system.limit << 12) | 0x0fff;
+        temp->u.segment.g     = (dword2 & 0x00800000) > 0;
+        temp->u.segment.d_b   = (dword2 & 0x00400000) > 0;
+        temp->u.segment.avl   = (dword2 & 0x00100000) > 0;
+        if (temp->u.segment.g)
+          temp->u.segment.limit_scaled = (limit << 12) | 0xfff;
         else
-          temp->u.system.limit_scaled = (temp->u.system.limit);
+          temp->u.segment.limit_scaled =  limit;
         temp->valid = 1;
         break;
 
@@ -653,7 +580,6 @@ BX_CPU_C::load_ss(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
     BX_PANIC(("load_ss(): invalid selector/descriptor passed."));
 }
 
-#if BX_CPU_LEVEL >= 2
 void BX_CPU_C::fetch_raw_descriptor(const bx_selector_t *selector,
                         Bit32u *dword1, Bit32u *dword2, unsigned exception_no)
 {
@@ -674,15 +600,15 @@ void BX_CPU_C::fetch_raw_descriptor(const bx_selector_t *selector,
       BX_ERROR(("fetch_raw_descriptor: LDTR.valid=0"));
       exception(exception_no, selector->value & 0xfffc, 0);
     }
-    if ((index*8 + 7) > BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled) {
+    if ((index*8 + 7) > BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled) {
       BX_ERROR(("fetch_raw_descriptor: LDT: index (%x)%x > limit (%x)",
-         index*8 + 7, index, BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled));
+         index*8 + 7, index, BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled));
       exception(exception_no, selector->value & 0xfffc, 0);
     }
-    offset = BX_CPU_THIS_PTR ldtr.cache.u.system.base + index*8;
+    offset = BX_CPU_THIS_PTR ldtr.cache.u.segment.base + index*8;
   }
 
-  access_read_linear(offset, 8, 0, BX_READ, &raw_descriptor);
+  raw_descriptor = system_read_qword(offset);
 
   *dword1 = GET32L(raw_descriptor);
   *dword2 = GET32H(raw_descriptor);
@@ -705,12 +631,12 @@ BX_CPU_C::fetch_raw_descriptor2(const bx_selector_t *selector, Bit32u *dword1, B
       BX_ERROR(("fetch_raw_descriptor2: LDTR.valid=0"));
       return 0;
     }
-    if ((index*8 + 7) > BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled)
+    if ((index*8 + 7) > BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled)
       return 0;
-    offset = BX_CPU_THIS_PTR ldtr.cache.u.system.base + index*8;
+    offset = BX_CPU_THIS_PTR ldtr.cache.u.segment.base + index*8;
   }
 
-  access_read_linear(offset, 8, 0, BX_READ, &raw_descriptor);
+  raw_descriptor = system_read_qword(offset);
 
   *dword1 = GET32L(raw_descriptor);
   *dword2 = GET32H(raw_descriptor);
@@ -739,18 +665,18 @@ void BX_CPU_C::fetch_raw_descriptor_64(const bx_selector_t *selector,
       BX_ERROR(("fetch_raw_descriptor64: LDTR.valid=0"));
       exception(exception_no, selector->value & 0xfffc, 0);
     }
-    if ((index*8 + 15) > BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled) {
+    if ((index*8 + 15) > BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled) {
       BX_ERROR(("fetch_raw_descriptor64: LDT: index (%x)%x > limit (%x)",
-         index*8 + 15, index, BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled));
+         index*8 + 15, index, BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled));
       exception(exception_no, selector->value & 0xfffc, 0);
     }
-    offset = BX_CPU_THIS_PTR ldtr.cache.u.system.base + index*8;
+    offset = BX_CPU_THIS_PTR ldtr.cache.u.segment.base + index*8;
   }
 
-  access_read_linear(offset,      8, 0, BX_READ, &raw_descriptor1);
-  access_read_linear(offset +  8, 8, 0, BX_READ, &raw_descriptor2);
+  raw_descriptor1 = system_read_qword(offset);
+  raw_descriptor2 = system_read_qword(offset + 8);
 
-  if (raw_descriptor2 & BX_CONST64(0x00001f0000000000)) {
+  if (raw_descriptor2 & BX_CONST64(0x00001F0000000000)) {
     BX_ERROR(("fetch_raw_descriptor64: extended attributes DWORD4 TYPE != 0"));
     exception(BX_GP_EXCEPTION, selector->value & 0xfffc, 0);
   }
@@ -759,6 +685,4 @@ void BX_CPU_C::fetch_raw_descriptor_64(const bx_selector_t *selector,
   *dword2 = GET32H(raw_descriptor1);
   *dword3 = GET32L(raw_descriptor2);
 }
-#endif
-
 #endif

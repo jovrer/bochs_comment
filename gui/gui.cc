@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.105 2008/05/04 09:29:45 vruppert Exp $
+// $Id: gui.cc,v 1.112 2009/04/20 18:11:13 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,11 +22,12 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 
 #include <signal.h>
 #include "bochs.h"
+#include "keymap.h"
 #include "iodev.h"
 #include "gui/bitmaps/floppya.h"
 #include "gui/bitmaps/floppyb.h"
@@ -102,7 +103,6 @@ static user_key_t user_keys[N_USER_KEYS] =
 bx_gui_c::bx_gui_c(void)
 {
   put("GUI"); // Init in specific_init
-  settype(GUILOG);
   statusitem_count = 0;
   framebuffer = NULL;
 }
@@ -247,9 +247,9 @@ void bx_gui_c::cleanup(void)
 void bx_gui_c::update_drive_status_buttons(void)
 {
   BX_GUI_THIS floppyA_status = DEV_floppy_get_media_status(0)
-    && (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED);
+    && (SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get());
   BX_GUI_THIS floppyB_status = DEV_floppy_get_media_status(1)
-    && (SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->get() == BX_INSERTED);
+    && (SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get());
   Bit32u handle = DEV_hd_get_first_cd_handle();
   BX_GUI_THIS cdromD_status = DEV_hd_get_cd_media_status(handle);
   if (BX_GUI_THIS floppyA_status)
@@ -283,7 +283,7 @@ void bx_gui_c::update_drive_status_buttons(void)
 
 void bx_gui_c::floppyA_handler(void)
 {
-  if (SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE)->get() == BX_FLOPPY_NONE)
+  if (SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE)->get() == BX_FDD_NONE)
     return; // no primary floppy device present
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, call win32dialog to bring up
@@ -301,7 +301,7 @@ void bx_gui_c::floppyA_handler(void)
 
 void bx_gui_c::floppyB_handler(void)
 {
-  if (SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE)->get() == BX_FLOPPY_NONE)
+  if (SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE)->get() == BX_FDD_NONE)
     return; // no secondary floppy device present
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, call win32dialog to bring up
@@ -373,6 +373,8 @@ Bit32s bx_gui_c::make_text_snapshot(char **snapshot, Bit32u *length)
   for (unsigned i=0; i<txHeight; i++) {
     line_addr = i * txWidth * 2;
     for (unsigned j=0; j<(txWidth*2); j+=2) {
+      if (!raw_snap[line_addr+j])
+        raw_snap[line_addr+j] = 0x20;
       clean_snap[txt_addr++] = raw_snap[line_addr+j];
     }
     while ((txt_addr > 0) && (clean_snap[txt_addr-1] == ' ')) txt_addr--;

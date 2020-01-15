@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_trans.cc,v 1.17 2008/05/10 13:34:01 sshwarts Exp $
+// $Id: fpu_trans.cc,v 1.22 2009/04/27 14:00:55 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -38,6 +38,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::F2XM1(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -51,10 +52,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::F2XM1(bxInstruction_c *i)
 
   floatx80 result = f2xm1(BX_READ_FPU_REG(0), status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_WRITE_FPU_REG(result, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
+     BX_WRITE_FPU_REG(result, 0);
 #else
   BX_INFO(("F2XM1: required FPU, configure --enable-fpu"));
 #endif
@@ -65,6 +64,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2X(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -79,11 +79,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2X(bxInstruction_c *i)
 
   floatx80 result = fyl2x(BX_READ_FPU_REG(0), BX_READ_FPU_REG(1), status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_CPU_THIS_PTR the_i387.FPU_pop();
-  BX_WRITE_FPU_REG(result, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     BX_CPU_THIS_PTR the_i387.FPU_pop();
+     BX_WRITE_FPU_REG(result, 0);
+  }
 #else
   BX_INFO(("FYL2X: required FPU, configure --enable-fpu"));
 #endif
@@ -94,6 +93,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPTAN(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
   clear_C2();
@@ -140,12 +140,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPTAN(bxInstruction_c *i)
      return;
   }
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_WRITE_FPU_REG(y, 0);
-  BX_CPU_THIS_PTR the_i387.FPU_push();
-  BX_WRITE_FPU_REG(Const_1, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     BX_WRITE_FPU_REG(y, 0);
+     BX_CPU_THIS_PTR the_i387.FPU_push();
+     BX_WRITE_FPU_REG(Const_1, 0);
+  }
 #else
   BX_INFO(("FPTAN: required FPU, configure --enable-fpu"));
 #endif
@@ -155,6 +154,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPTAN(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPATAN(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
+  BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -169,11 +170,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPATAN(bxInstruction_c *i)
 
   floatx80 result = fpatan(BX_READ_FPU_REG(0), BX_READ_FPU_REG(1), status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_CPU_THIS_PTR the_i387.FPU_pop();
-  BX_WRITE_FPU_REG(result, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     BX_CPU_THIS_PTR the_i387.FPU_pop();
+     BX_WRITE_FPU_REG(result, 0);
+  }
 #else
   BX_INFO(("FPATAN: required FPU, configure --enable-fpu"));
 #endif
@@ -184,6 +184,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXTRACT(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -211,12 +212,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FXTRACT(bxInstruction_c *i)
   floatx80 a = BX_READ_FPU_REG(0);
   floatx80 b = floatx80_extract(a, status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_WRITE_FPU_REG(b, 0);     // exponent
-  BX_CPU_THIS_PTR the_i387.FPU_push();
-  BX_WRITE_FPU_REG(a, 0);     // fraction
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     BX_WRITE_FPU_REG(b, 0);     // exponent
+     BX_CPU_THIS_PTR the_i387.FPU_push();
+     BX_WRITE_FPU_REG(a, 0);     // fraction
+  }
 #else
   BX_INFO(("FXTRACT: required FPU, configure --enable-fpu"));
 #endif
@@ -227,6 +227,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM1(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -246,20 +247,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM1(bxInstruction_c *i)
 
   floatx80 result = floatx80_ieee754_remainder(a, b, quotient, status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  int cc = 0;
-  if (quotient == (Bit64u) -1) cc = FPU_SW_C2;
-  else
-  {
-     if (quotient & 1) cc |= FPU_SW_C1;
-     if (quotient & 2) cc |= FPU_SW_C3;
-     if (quotient & 4) cc |= FPU_SW_C0;
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     int cc = 0;
+     if (quotient == (Bit64u) -1) cc = FPU_SW_C2;
+     else {
+        if (quotient & 1) cc |= FPU_SW_C1;
+        if (quotient & 2) cc |= FPU_SW_C3;
+        if (quotient & 4) cc |= FPU_SW_C0;
+     }
+     setcc(cc);
+     BX_WRITE_FPU_REG(result, 0);
   }
-  setcc(cc);
-
-  BX_WRITE_FPU_REG(result, 0);
 #else
   BX_INFO(("FPREM1: required FPU, configure --enable-fpu"));
 #endif
@@ -270,6 +268,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -289,20 +288,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPREM(bxInstruction_c *i)
 
   floatx80 result = floatx80_remainder(a, b, quotient, status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     int cc = 0;
+     if (quotient == (Bit64u) -1) cc = FPU_SW_C2;
+     else {
+        if (quotient & 1) cc |= FPU_SW_C1;
+        if (quotient & 2) cc |= FPU_SW_C3;
+        if (quotient & 4) cc |= FPU_SW_C0;
+     }
+     setcc(cc);
 
-  int cc = 0;
-  if (quotient == (Bit64u) -1) cc = FPU_SW_C2;
-  else
-  {
-     if (quotient & 1) cc |= FPU_SW_C1;
-     if (quotient & 2) cc |= FPU_SW_C3;
-     if (quotient & 4) cc |= FPU_SW_C0;
+     BX_WRITE_FPU_REG(result, 0);
   }
-  setcc(cc);
-
-  BX_WRITE_FPU_REG(result, 0);
 #else
   BX_INFO(("FPREM: required FPU, configure --enable-fpu"));
 #endif
@@ -313,6 +310,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2XP1(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -327,11 +325,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FYL2XP1(bxInstruction_c *i)
 
   floatx80 result = fyl2xp1(BX_READ_FPU_REG(0), BX_READ_FPU_REG(1), status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_CPU_THIS_PTR the_i387.FPU_pop();
-  BX_WRITE_FPU_REG(result, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     BX_CPU_THIS_PTR the_i387.FPU_pop();
+     BX_WRITE_FPU_REG(result, 0);
+  }
 #else
   BX_INFO(("FYL2XP1: required FPU, configure --enable-fpu"));
 #endif
@@ -342,6 +339,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSINCOS(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
   clear_C2();
@@ -375,12 +373,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSINCOS(bxInstruction_c *i)
      return;
   }
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_WRITE_FPU_REG(sin_y, 0);
-  BX_CPU_THIS_PTR the_i387.FPU_push();
-  BX_WRITE_FPU_REG(cos_y, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags)) {
+     BX_WRITE_FPU_REG(sin_y, 0);
+     BX_CPU_THIS_PTR the_i387.FPU_push();
+     BX_WRITE_FPU_REG(cos_y, 0);
+  }
 #else
   BX_INFO(("FSINCOS: required FPU, configure --enable-fpu"));
 #endif
@@ -391,6 +388,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSCALE(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
 
@@ -405,10 +403,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSCALE(bxInstruction_c *i)
 
   floatx80 result = floatx80_scale(BX_READ_FPU_REG(0), BX_READ_FPU_REG(1), status);
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-      return;
-
-  BX_WRITE_FPU_REG(result, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
+     BX_WRITE_FPU_REG(result, 0);
 #else
   BX_INFO(("FSCALE: required FPU, configure --enable-fpu"));
 #endif
@@ -419,6 +415,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSIN(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
   clear_C2();
@@ -438,10 +435,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FSIN(bxInstruction_c *i)
      return;
   }
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_WRITE_FPU_REG(y, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
+     BX_WRITE_FPU_REG(y, 0);
 #else
   BX_INFO(("FSIN: required FPU, configure --enable-fpu"));
 #endif
@@ -452,6 +447,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOS(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i);
+  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
   clear_C1();
   clear_C2();
@@ -471,10 +467,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOS(bxInstruction_c *i)
      return;
   }
 
-  if (BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
-     return;
-
-  BX_WRITE_FPU_REG(y, 0);
+  if (! BX_CPU_THIS_PTR FPU_exception(status.float_exception_flags))
+     BX_WRITE_FPU_REG(y, 0);
 #else
   BX_INFO(("FCOS: required FPU, configure --enable-fpu"));
 #endif

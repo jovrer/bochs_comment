@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc,v 1.238 2008/06/02 19:50:40 sshwarts Exp $
+// $Id: proc_ctrl.cc,v 1.295 2009/04/07 16:12:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -41,7 +41,7 @@
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i)
 {
-  BX_DEBUG(("UndefinedOpcode: 0x%d%02x causes #UD exception", i->hasOpcodeExtension(), i->b1()));
+  BX_DEBUG(("UndefinedOpcode: b1 = 0x%02x causes #UD exception", i->b1()));
   exception(BX_UD_EXCEPTION, 0, 0);
 }
 
@@ -50,11 +50,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::NOP(bxInstruction_c *i)
   // No operation.
 }
 
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
+{
+#if BX_SUPPORT_VMX
+  VMexit_PAUSE(i);
+#endif
+}
+
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PREFETCH(bxInstruction_c *i)
 {
 #if BX_INSTRUMENTATION
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->nnn(), i->seg(), RMAddr(i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->nnn(), i->seg(), eaddr);
 #endif
 }
 
@@ -72,7 +79,7 @@ void BX_CPU_C::shutdown(void)
   BX_CPU_THIS_PTR clear_IF();
 
   // artificial trap bit, why use another variable.
-  BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_TRAP_SHUTDOWN; // artificial trap
+  BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_HLT;
   BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
   // Execution of this instruction completes.  The processor
   // will remain in a halt state until one of the above conditions
@@ -103,6 +110,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
     BX_INFO(("WARNING: HLT instruction with IF=0!"));
   }
 
+#if BX_SUPPORT_VMX
+  VMexit_HLT(i);
+#endif
+
   // stops instruction execution and places the processor in a
   // HALT state.  An enabled interrupt, NMI, or reset will resume
   // execution.  If interrupt (including NMI) is used to resume
@@ -110,7 +121,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
   // following HLT.
 
   // artificial trap bit, why use another variable.
-  BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_TRAP_HALT; // artificial trap
+  BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_HLT;
   BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
   // Execution of this instruction completes.  The processor
   // will remain in a halt state until one of the above conditions
@@ -134,9 +145,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLTS(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
+#if BX_SUPPORT_VMX
+  if(VMexit_CLTS(i)) return;
+#endif
+
   BX_CPU_THIS_PTR cr0.set_TS(0);
 }
 
+/* 0F 08 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
@@ -145,26 +161,31 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    BX_ERROR(("VMEXIT: INVD in VMX non-root operation"));
+    VMexit(i, VMX_VMEXIT_INVD, 0);
+  }
+#endif
+
   invalidate_prefetch_q();
 
   BX_DEBUG(("INVD: Flush internal caches !"));
   BX_INSTR_CACHE_CNTRL(BX_CPU_ID, BX_INSTR_INVD);
 
-#if BX_SUPPORT_ICACHE
   flushICaches();
-#endif
-
 #else
   BX_INFO(("INVD: required 486 support, use --enable-cpu-level=4 option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
+/* 0F 09 */
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
   if (!real_mode() && CPL!=0) {
-    BX_ERROR(("WBINVD: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("INVD/WBINVD: priveledge check failed, generate #GP(0)"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -173,13 +194,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
   BX_DEBUG(("WBINVD: Flush internal caches !"));
   BX_INSTR_CACHE_CNTRL(BX_CPU_ID, BX_INSTR_WBINVD);
 
-#if BX_SUPPORT_ICACHE
   flushICaches();
-#endif
-
 #else
   BX_INFO(("WBINVD: required 486 support, use --enable-cpu-level=4 option"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -188,20 +206,31 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
 #if BX_SUPPORT_CLFLUSH
   bx_segment_reg_t *seg = &BX_CPU_THIS_PTR sregs[i->seg()];
 
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address laddr = BX_CPU_THIS_PTR get_laddr(i->seg(), eaddr);
 
-  // check if we could access the memory segment
-  if (!(seg->cache.valid & SegAccessROK4G)) {
-    execute_virtual_checks(seg, RMAddr(i), 1);
-  }
-
-  bx_address laddr = BX_CPU_THIS_PTR get_laddr(i->seg(), RMAddr(i));
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("CLFLUSH: non-canonical access !"));
-    exception(int_number(seg), 0, 0);
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    if (! IsCanonical(laddr)) {
+      BX_ERROR(("CLFLUSH: non-canonical access !"));
+      exception(int_number(i->seg()), 0, 0);
+    }
   }
+  else
 #endif
+  {
+    // check if we could access the memory segment
+    if (!(seg->cache.valid & SegAccessROK)) {
+      if (! execute_virtual_checks(seg, (Bit32u) eaddr, 1))
+        exception(int_number(i->seg()), 0, 0);
+    }
+    else {
+      if (eaddr > seg->cache.u.segment.limit_scaled) {
+        BX_ERROR(("CLFLUSH: segment limit violation"));
+        exception(int_number(i->seg()), 0, 0);
+      }
+    }
+  }
 
   bx_phy_address paddr;
 
@@ -218,18 +247,21 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
 
 #else
   BX_INFO(("CLFLUSH: not supported, enable with SSE2"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
-#if BX_CPU_LEVEL >= 3
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 {
+#if BX_SUPPORT_VMX
+  VMexit_DR_Access(i, 0 /* write */);
+#endif
+
 #if BX_CPU_LEVEL >= 4
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->nnn() & 0xE) == 4) {
       BX_ERROR(("MOV_DdRd: access to DR4/DR5 causes #UD"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
     }
   }
 #endif
@@ -238,7 +270,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7 & 0x2000) { // GD bit set
     BX_ERROR(("MOV_DdRd: DR7 GD bit is set"));
-    BX_CPU_THIS_PTR dr6 |= 0x2000;
+    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0, 0);
   }
 
@@ -296,27 +328,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
       // by setting the LE and/or GE flags.
 
       // Some sanity checks...
-      if ((((val_32>>16) & 3)==2) ||
-          (((val_32>>20) & 3)==2) ||
-          (((val_32>>24) & 3)==2) ||
-          (((val_32>>28) & 3)==2)) {
-        // IO breakpoints (10b) are not yet supported.
-        BX_PANIC(("MOV_DdRd: write of %08x contains IO breakpoint", val_32));
-      }
-      if ((((val_32>>18) & 3)==2) ||
-          (((val_32>>22) & 3)==2) ||
-          (((val_32>>26) & 3)==2) ||
-          (((val_32>>30) & 3)==2)) {
-        // LEN0..3 contains undefined length specifier (10b)
-        BX_PANIC(("MOV_DdRd: write of %08x contains undefined LENx", val_32));
-      }
       if (((((val_32>>16) & 3)==0) && (((val_32>>18) & 3)!=0)) ||
           ((((val_32>>20) & 3)==0) && (((val_32>>22) & 3)!=0)) ||
           ((((val_32>>24) & 3)==0) && (((val_32>>26) & 3)!=0)) ||
           ((((val_32>>28) & 3)==0) && (((val_32>>30) & 3)!=0)))
       {
         // Instruction breakpoint with LENx not 00b (1-byte length)
-        BX_PANIC(("MOV_DdRd: write of %08x, R/W=00b LEN!=00b", val_32));
+        BX_ERROR(("MOV_DdRd: write of %08x, R/W=00b LEN!=00b", val_32));
       }
 #if BX_CPU_LEVEL <= 4
       // 386/486: you can play with all the bits except b10 is always 1
@@ -326,15 +344,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
       // Even bits 11,10 are changeable though reserved.
       BX_CPU_THIS_PTR dr7 = (val_32 & 0xffff2fff) | 0x00000400;
 #endif
+#if BX_X86_DEBUGGER
       // if we have breakpoints enabled then we must check
       // breakpoints condition in cpu loop
       if(BX_CPU_THIS_PTR dr7 & 0xff)
         BX_CPU_THIS_PTR async_event = 1;
+#endif
       break;
 
     default:
       BX_ERROR(("MOV_DdRd: #UD - register index out of range"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 }
 
@@ -342,11 +362,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 {
   Bit32u val_32;
 
+#if BX_SUPPORT_VMX
+  VMexit_DR_Access(i, 1 /* read */);
+#endif
+
 #if BX_CPU_LEVEL >= 4
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->nnn() & 0xE) == 4) {
       BX_ERROR(("MOV_RdDd: access to DR4/DR5 causes #UD"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
     }
   }
 #endif
@@ -355,7 +379,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7 & 0x2000) { // GD bit set
     BX_ERROR(("MOV_RdDd: DR7 GD bit is set"));
-    BX_CPU_THIS_PTR dr6 |= 0x2000;
+    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0, 0);
   }
 
@@ -375,7 +399,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
     case 1: // DR1
     case 2: // DR2
     case 3: // DR3
-      val_32 = BX_CPU_THIS_PTR dr[i->nnn()];
+      val_32 = (Bit32u) BX_CPU_THIS_PTR dr[i->nnn()];
       break;
 
     case 4: // DR4
@@ -394,7 +418,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 
     default:
       BX_ERROR(("MOV_RdDd: #UD - register index out of range"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   BX_WRITE_32BIT_REGZ(i->rm(), val_32);
@@ -403,6 +427,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 #if BX_SUPPORT_X86_64
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
 {
+#if BX_SUPPORT_VMX
+  VMexit_DR_Access(i, 0 /* write */);
+#endif
+
   /* NOTES:
    *   64bit operands always used
    *   r/m field specifies general register
@@ -412,7 +440,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->nnn() & 0xE) == 4) {
       BX_ERROR(("MOV_DqRq: access to DR4/DR5 causes #UD"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
     }
   }
 
@@ -420,7 +448,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7 & 0x2000) { // GD bit set
     BX_ERROR(("MOV_DqRq: DR7 GD bit is set"));
-    BX_CPU_THIS_PTR dr6 |= 0x2000;
+    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0, 0);
   }
 
@@ -453,6 +481,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
       // DR4 aliased to DR6 by default. With Debug Extensions ON,
       // access to DR4 causes #UD
     case 6: // DR6
+      if (GET32H(val_64)) {
+        BX_ERROR(("MOV_DqRq: attempt to set upper part of DR6"));
+        exception(BX_GP_EXCEPTION, 0, 0);
+      }
       // On Pentium+, bit12 is always zero
       BX_CPU_THIS_PTR dr6 = (BX_CPU_THIS_PTR dr6 & 0xffff0ff0) |
                             (val_64 & 0x0000e00f);
@@ -466,34 +498,37 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
       // data breakpoint matching does not occur unless it is enabled
       // by setting the LE and/or GE flags.
 
-      // Some sanity checks...
-      if ((((val_64>>16) & 3)==2) ||
-          (((val_64>>20) & 3)==2) ||
-          (((val_64>>24) & 3)==2) ||
-          (((val_64>>28) & 3)==2))
-      {
-        // IO breakpoints (10b) are not yet supported.
-        BX_PANIC(("MOV_DqRq: write of %08x:%08x contains IO breakpoint",
-          (Bit32u)(val_64 >> 32), (Bit32u)(val_64 & 0xFFFFFFFF)));
+      if (GET32H(val_64)) {
+        BX_ERROR(("MOV_DqRq: attempt to set upper part of DR7"));
+        exception(BX_GP_EXCEPTION, 0, 0);
       }
+
+      // Some sanity checks...
       if (((((val_64>>16) & 3)==0) && (((val_64>>18) & 3)!=0)) ||
           ((((val_64>>20) & 3)==0) && (((val_64>>22) & 3)!=0)) ||
           ((((val_64>>24) & 3)==0) && (((val_64>>26) & 3)!=0)) ||
           ((((val_64>>28) & 3)==0) && (((val_64>>30) & 3)!=0)))
       {
         // Instruction breakpoint with LENx not 00b (1-byte length)
-        BX_PANIC(("MOV_DqRq: write of %08x:%08x , R/W=00b LEN!=00b",
+        BX_ERROR(("MOV_DqRq: write of %08x:%08x, R/W=00b LEN!=00b",
           (Bit32u)(val_64 >> 32), (Bit32u)(val_64 & 0xFFFFFFFF)));
       }
 
       // Pentium+: bits15,14,12 are hardwired to 0, rest are settable.
       // Even bits 11,10 are changeable though reserved.
       BX_CPU_THIS_PTR dr7 = (val_64 & 0xffff2fff) | 0x00000400;
+
+#if BX_X86_DEBUGGER
+      // if we have breakpoints enabled then we must check
+      // breakpoints condition in cpu loop
+      if(BX_CPU_THIS_PTR dr7 & 0xff)
+        BX_CPU_THIS_PTR async_event = 1;
+#endif
       break;
 
     default:
       BX_ERROR(("MOV_DqRq: #UD - register index out of range"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 }
 
@@ -501,10 +536,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
 {
   Bit64u val_64;
 
+#if BX_SUPPORT_VMX
+  VMexit_DR_Access(i, 1 /* read */);
+#endif
+
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->nnn() & 0xE) == 4) {
       BX_ERROR(("MOV_RqDq: access to DR4/DR5 causes #UD"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
     }
   }
 
@@ -512,7 +551,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7 & 0x2000) { // GD bit set
     BX_ERROR(("MOV_RqDq: DR7 GD bit is set"));
-    BX_CPU_THIS_PTR dr6 |= 0x2000;
+    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0, 0);
   }
 
@@ -552,7 +591,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
 
     default:
       BX_ERROR(("MOV_RqDq: #UD - register index out of range"));
-      UndefinedOpcode(i);
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   BX_WRITE_64BIT_REG(i->rm(), val_64);
@@ -572,8 +611,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
    *   reg field specifies which special register
    */
 
-  invalidate_prefetch_q();
-
   /* This instruction is always treated as a register-to-register,
    * regardless of the encoding of the MOD field in the MODRM byte.
    */
@@ -584,39 +621,44 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
 
   switch (i->nnn()) {
     case 0: // CR0 (MSW)
-      SetCR0(val_32);
+#if BX_SUPPORT_VMX
+      val_32 = VMexit_CR0_Write(i, val_32);
+#endif
+      if (! SetCR0(val_32))
+        exception(BX_GP_EXCEPTION, 0, 0);
       break;
     case 2: /* CR2 */
-      BX_DEBUG(("MOV_CdRd:CR2 = %08x", val_32));
       BX_CPU_THIS_PTR cr2 = val_32;
       break;
     case 3: // CR3
-      BX_DEBUG(("MOV_CdRd:CR3 = %08x", val_32));
+#if BX_SUPPORT_VMX
+      VMexit_CR3_Write(i, val_32);
+#endif
       // Reserved bits take on value of MOV instruction
       SetCR3(val_32);
       BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR3, val_32);
       break;
+#if BX_CPU_LEVEL > 3
     case 4: // CR4
-#if BX_CPU_LEVEL == 3
-      BX_PANIC(("MOV_CdRd: write to CR4 of 0x%08x on 386", val_32));
-      UndefinedOpcode(i);
-#else
+#if BX_SUPPORT_VMX
+      val_32 = VMexit_CR4_Write(i, val_32);
+#endif
       // Protected mode: #GP(0) if attempt to write a 1 to
       // any reserved bit of CR4
       if (! SetCR4(val_32))
         exception(BX_GP_EXCEPTION, 0, 0);
-#endif
       break;
+#endif
     default:
-      BX_ERROR(("MOV_CdRd: #UD - control register index out of range"));
-      UndefinedOpcode(i);
+      BX_ERROR(("MOV_CdRd: #UD - control register %d index out of range", i->nnn()));
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
 {
   // mov control register data to register
-  Bit32u val_32;
+  Bit32u val_32 = 0;
 
   if (!real_mode() && CPL!=0) {
     BX_ERROR(("MOV_RdCd: CPL!=0 not in real mode"));
@@ -637,29 +679,25 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
 
   switch (i->nnn()) {
     case 0: // CR0 (MSW)
-      val_32 = BX_CPU_THIS_PTR cr0.getRegister();
+      val_32 = (Bit32u) read_CR0(); /* correctly handle VMX */
       break;
     case 2: /* CR2 */
-      BX_DEBUG(("MOV_RdCd: reading CR2"));
       val_32 = (Bit32u) BX_CPU_THIS_PTR cr2;
       break;
     case 3: // CR3
-      BX_DEBUG(("MOV_RdCd: reading CR3"));
+#if BX_SUPPORT_VMX
+      VMexit_CR3_Read(i);
+#endif
       val_32 = (Bit32u) BX_CPU_THIS_PTR cr3;
       break;
     case 4: // CR4
-#if BX_CPU_LEVEL < 4
-      val_32 = 0;
-      BX_INFO(("MOV_RdCd: read of CR4 causes #UD"));
-      UndefinedOpcode(i);
-#else
-      BX_DEBUG(("MOV_RdCd: read of CR4"));
-      val_32 = BX_CPU_THIS_PTR cr4.getRegister();
+#if BX_CPU_LEVEL > 3
+      val_32 = (Bit32u) read_CR4(); /* correctly handle VMX */
 #endif
       break;
     default:
-      BX_ERROR(("MOV_RdCd: #UD - control register index out of range"));
-      UndefinedOpcode(i);
+      BX_ERROR(("MOV_RdCd: #UD - control register %d index out of range", i->nnn()));
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   BX_WRITE_32BIT_REGZ(i->rm(), val_32);
@@ -688,55 +726,62 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CqRq(bxInstruction_c *i)
   if (!i->modC0())
     BX_PANIC(("MOV_CqRq(): rm field not a register!"));
 
-  invalidate_prefetch_q();
-
   Bit64u val_64 = BX_READ_64BIT_REG(i->rm());
 
   switch (i->nnn()) {
-    case 0: // CR0 (MSW)
-      SetCR0((Bit32u) val_64);
+    case 0: // CR0
+#if BX_SUPPORT_VMX
+      val_64 = VMexit_CR0_Write(i, val_64);
+#endif
+      if (! SetCR0(val_64))
+        exception(BX_GP_EXCEPTION, 0, 0);
       break;
     case 2: /* CR2 */
-      BX_DEBUG(("MOV_CqRq: write to CR2 of %08x:%08x", GET32H(val_64), GET32L(val_64)));
       BX_CPU_THIS_PTR cr2 = val_64;
       break;
     case 3: // CR3
-      BX_DEBUG(("MOV_CqRq: write to CR3 of %08x:%08x", GET32H(val_64), GET32L(val_64)));
+#if BX_SUPPORT_VMX
+      VMexit_CR3_Write(i, val_64);
+#endif
       // Reserved bits take on value of MOV instruction
       SetCR3(val_64);
       BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR3, val_64);
       break;
     case 4: // CR4
-      // Protected mode: #GP(0) if attempt to write a 1 to
-      // any reserved bit of CR4
+#if BX_SUPPORT_VMX
+      val_64 = VMexit_CR4_Write(i, val_64);
+#endif
       BX_DEBUG(("MOV_CqRq: write to CR4 of %08x:%08x", GET32H(val_64), GET32L(val_64)));
       if (! SetCR4(val_64))
         exception(BX_GP_EXCEPTION, 0, 0);
       break;
-#if BX_SUPPORT_APIC
     case 8: // CR8
+#if BX_SUPPORT_VMX
+      VMexit_CR8_Write(i);
+#endif
       // CR8 is aliased to APIC->TASK PRIORITY register
       //   APIC.TPR[7:4] = CR8[3:0]
       //   APIC.TPR[3:0] = 0
       // Reads of CR8 return zero extended APIC.TPR[7:4]
       // Write to CR8 update APIC.TPR[7:4]
+#if BX_SUPPORT_APIC
       if (val_64 & BX_CONST64(0xfffffffffffffff0)) {
         BX_ERROR(("MOV_CqRq: Attempt to set reserved bits of CR8"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
-      BX_CPU_THIS_PTR local_apic.set_tpr((val_64 & 0xF) << 0x4);
+      BX_CPU_THIS_PTR lapic.set_tpr((val_64 & 0xF) << 0x4);
       break;
 #endif
     default:
-      BX_ERROR(("MOV_CqRq: #UD - control register index out of range"));
-      UndefinedOpcode(i);
+      BX_ERROR(("MOV_CqRq: #UD - control register %d index out of range", i->nnn()));
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCq(bxInstruction_c *i)
 {
   // mov control register data to register
-  Bit64u val_64;
+  Bit64u val_64 = 0;
 
   BX_ASSERT(protected_mode());
 
@@ -760,92 +805,96 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCq(bxInstruction_c *i)
 
   switch (i->nnn()) {
     case 0: // CR0 (MSW)
-      val_64 = BX_CPU_THIS_PTR cr0.getRegister();
+      val_64 = read_CR0(); /* correctly handle VMX */
       break;
     case 2: /* CR2 */
-      BX_DEBUG(("MOV_RqCq: read of CR2"));
       val_64 = BX_CPU_THIS_PTR cr2;
       break;
     case 3: // CR3
-      BX_DEBUG(("MOV_RqCq: read of CR3"));
+#if BX_SUPPORT_VMX
+      VMexit_CR3_Read(i);
+#endif
       val_64 = BX_CPU_THIS_PTR cr3;
       break;
     case 4: // CR4
-      BX_DEBUG(("MOV_RqCq: read of CR4"));
-      val_64 = BX_CPU_THIS_PTR cr4.getRegister();
+      val_64 = read_CR4(); /* correctly handle VMX */
       break;
-#if BX_SUPPORT_APIC
     case 8: // CR8
+#if BX_SUPPORT_VMX
+      VMexit_CR8_Read(i);
+#endif
       // CR8 is aliased to APIC->TASK PRIORITY register
       //   APIC.TPR[7:4] = CR8[3:0]
       //   APIC.TPR[3:0] = 0
       // Reads of CR8 return zero extended APIC.TPR[7:4]
       // Write to CR8 update APIC.TPR[7:4]
-      val_64 = (BX_CPU_THIS_PTR local_apic.get_tpr() & 0xF) >> 4;
+#if BX_SUPPORT_APIC
+      val_64 = (BX_CPU_THIS_PTR lapic.get_tpr() >> 4) & 0xF;
       break;
 #endif
     default:
-      BX_ERROR(("MOV_RqCq: #UD - control register index out of range"));
-      UndefinedOpcode(i);
+      BX_ERROR(("MOV_RqCq: #UD - control register %d index out of range", i->nnn()));
+      exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   BX_WRITE_64BIT_REG(i->rm(), val_64);
 }
 #endif // #if BX_SUPPORT_X86_64
 
-#endif // #if BX_CPU_LEVEL >= 3
-
-#if BX_CPU_LEVEL >= 2
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
 {
   Bit16u msw;
-  Bit32u cr0;
 
   if (!real_mode() && CPL!=0) {
     BX_ERROR(("LMSW: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  invalidate_prefetch_q();
-
   if (i->modC0()) {
     msw = BX_READ_16BIT_REG(i->rm());
   }
   else {
-    BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    /* use RMAddr(i) to save address for VMexit */
+    RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
     msw = read_virtual_word(i->seg(), RMAddr(i));
   }
 
   // LMSW does not affect PG,CD,NW,AM,WP,NE,ET bits, and cannot clear PE
 
+#if BX_SUPPORT_VMX
+  msw = VMexit_LMSW(i, msw);
+#endif
+
   // LMSW cannot clear PE
   if (BX_CPU_THIS_PTR cr0.get_PE())
-    msw |= 0x0001; // adjust PE bit to current value of 1
+    msw |= 0x1; // adjust PE bit to current value of 1
 
   msw &= 0xf; // LMSW only affects last 4 flags
-  cr0 = (BX_CPU_THIS_PTR cr0.getRegister() & 0xfffffff0) | msw;
-  SetCR0(cr0);
+
+  Bit32u cr0 = (BX_CPU_THIS_PTR cr0.get32() & 0xfffffff0) | msw;
+  if (! SetCR0(cr0))
+    exception(BX_GP_EXCEPTION, 0, 0);
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwR(bxInstruction_c *i)
 {
+  Bit32u msw = (Bit32u) read_CR0();  // handle CR0 shadow in VMX
+
   if (i->os32L()) {
-    BX_WRITE_32BIT_REGZ(i->rm(), BX_CPU_THIS_PTR cr0.getRegister());
+    BX_WRITE_32BIT_REGZ(i->rm(), msw);
   }
   else {
-    BX_WRITE_16BIT_REG(i->rm(), BX_CPU_THIS_PTR cr0.getRegister() & 0xffff);
+    BX_WRITE_16BIT_REG(i->rm(), msw & 0xffff);
   }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwM(bxInstruction_c *i)
 {
-  Bit16u msw  = BX_CPU_THIS_PTR cr0.getRegister() & 0xffff;
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  /* pointer, segment address pair */
-  write_virtual_word(i->seg(), RMAddr(i), msw);
+  Bit16u msw = read_CR0() & 0xffff;   // handle CR0 shadow in VMX
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  write_virtual_word(i->seg(), eaddr, msw);
 }
-#endif
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_TdRd(bxInstruction_c *i)
 {
@@ -854,7 +903,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_TdRd(bxInstruction_c *i)
 #else
   // Pentium+ does not have TRx.  They were redesigned using the MSRs.
   BX_INFO(("MOV_TdRd: causes #UD"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -865,7 +914,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdTd(bxInstruction_c *i)
 #else
   // Pentium+ does not have TRx.  They were redesigned using the MSRs.
   BX_INFO(("MOV_RdTd: causes #UD"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -912,13 +961,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
   BX_CPU_THIS_PTR tr.cache.segment     = (access & 0x10) >> 4;
   // don't allow busy bit in tr.cache.type, so bit 2 is masked away too.
   BX_CPU_THIS_PTR tr.cache.type        = (access & 0x0d);
-  BX_CPU_THIS_PTR tr.cache.u.system.base  = (base_23_16 << 16) | base_15_0;
-  BX_CPU_THIS_PTR tr.cache.u.system.limit = limit;
+  BX_CPU_THIS_PTR tr.cache.u.segment.base  = (base_23_16 << 16) | base_15_0;
+  BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled = limit;
 
   if ((BX_CPU_THIS_PTR tr.selector.value & 0xfffc) == 0) {
     BX_CPU_THIS_PTR tr.cache.valid = 0;
   }
-  if (BX_CPU_THIS_PTR tr.cache.u.system.limit < 43 ||
+  if (BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled < 43 ||
       BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_286_TSS ||
       BX_CPU_THIS_PTR tr.cache.segment)
   {
@@ -930,8 +979,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR tr.selector.index    = 0;
     BX_CPU_THIS_PTR tr.selector.ti       = 0;
     BX_CPU_THIS_PTR tr.selector.rpl      = 0;
-    BX_CPU_THIS_PTR tr.cache.u.system.base  = 0;
-    BX_CPU_THIS_PTR tr.cache.u.system.limit = 0;
+    BX_CPU_THIS_PTR tr.cache.u.segment.base = 0;
+    BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled = 0;
     BX_CPU_THIS_PTR tr.cache.p           = 0;
   }
 
@@ -954,8 +1003,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR ldtr.cache.p       = 0;
     BX_CPU_THIS_PTR ldtr.cache.segment = 0;
     BX_CPU_THIS_PTR ldtr.cache.type    = 0;
-    BX_CPU_THIS_PTR ldtr.cache.u.system.base = 0;
-    BX_CPU_THIS_PTR ldtr.cache.u.system.limit = 0;
+    BX_CPU_THIS_PTR ldtr.cache.u.segment.base = 0;
+    BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled = 0;
     BX_CPU_THIS_PTR ldtr.selector.value = 0;
     BX_CPU_THIS_PTR ldtr.selector.index = 0;
     BX_CPU_THIS_PTR ldtr.selector.ti    = 0;
@@ -970,8 +1019,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR ldtr.cache.dpl        = (access >> 5) & 0x03;
     BX_CPU_THIS_PTR ldtr.cache.segment    = (access >> 4) & 0x01;
     BX_CPU_THIS_PTR ldtr.cache.type       = (access & 0x0f);
-    BX_CPU_THIS_PTR ldtr.cache.u.system.base = (base_23_16 << 16) | base_15_0;
-    BX_CPU_THIS_PTR ldtr.cache.u.system.limit = limit;
+    BX_CPU_THIS_PTR ldtr.cache.u.segment.base = (base_23_16 << 16) | base_15_0;
+    BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled = limit;
 
     if (access == 0) {
       BX_PANIC(("loadall: LDTR case access byte=0"));
@@ -990,16 +1039,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
 
   /* DS */
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x81e, 2, &ds_raw);
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value = ds_raw;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.rpl   = (ds_raw & 0x03);  ds_raw >>= 2;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.ti    = (ds_raw & 0x01);  ds_raw >>= 1;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.index = ds_raw;
+  parse_selector(ds_raw, &BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x848, 2, &base_15_0);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x84a, 1, &base_23_16);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x84b, 1, &access);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x84c, 2, &limit);
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.base = (base_23_16 << 16) | base_15_0;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.limit = limit;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.u.segment.limit_scaled = limit;
   set_ar_byte(BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache, access);
 
   if ((BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value & 0xfffc) == 0) {
@@ -1016,16 +1062,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
 
   /* SS */
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x820, 2, &ss_raw);
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value = ss_raw;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.rpl   = (ss_raw & 0x03); ss_raw >>= 2;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.ti    = (ss_raw & 0x01); ss_raw >>= 1;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.index = ss_raw;
+  parse_selector(ss_raw, &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x842, 2, &base_15_0);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x844, 1, &base_23_16);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x845, 1, &access);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x846, 2, &limit);
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base = (base_23_16 << 16) | base_15_0;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit = limit;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled = limit;
   set_ar_byte(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, access);
 
   if ((BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value & 0xfffc) == 0) {
@@ -1042,17 +1085,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
 
   /* CS */
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x822, 2, &cs_raw);
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value = cs_raw;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.rpl   = (cs_raw & 0x03); cs_raw >>= 2;
-
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.ti    = (cs_raw & 0x01); cs_raw >>= 1;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.index = cs_raw;
+  parse_selector(cs_raw, &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x83c, 2, &base_15_0);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x83e, 1, &base_23_16);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x83f, 1, &access);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x840, 2, &limit);
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base = (base_23_16 << 16) | base_15_0;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit = limit;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = limit;
   set_ar_byte(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache, access);
 
   if ((BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value & 0xfffc) == 0) {
@@ -1067,24 +1106,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_PANIC(("loadall: CS invalid"));
   }
 
-#if BX_SUPPORT_ICACHE
-  BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
-
   handleCpuModeChange();
 
   /* ES */
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x824, 2, &es_raw);
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value = es_raw;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.rpl   = (es_raw & 0x03); es_raw >>= 2;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.ti    = (es_raw & 0x01); es_raw >>= 1;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.index = es_raw;
+  parse_selector(es_raw, &BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x836, 2, &base_15_0);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x838, 1, &base_23_16);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x839, 1, &access);
   BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, 0x83a, 2, &limit);
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].cache.u.segment.base = (base_23_16 << 16) | base_15_0;
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].cache.u.segment.limit = limit;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].cache.u.segment.limit_scaled = limit;
   set_ar_byte(BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].cache, access);
 
   if ((BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value & 0xfffc) == 0) {
@@ -1164,15 +1196,25 @@ void BX_CPU_C::handleCpuModeChange(void)
 #endif
   {
     if (BX_CPU_THIS_PTR cr0.get_PE()) {
-      if (BX_CPU_THIS_PTR get_VM())
+      if (BX_CPU_THIS_PTR get_VM()) {
         BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;
+      }
       else
         BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_PROTECTED;
     }
     else {
       BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_REAL;
+
+      // CS segment in real mode always allows full access
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p        = 1;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment  = 1;  /* data/code segment */
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type = BX_DATA_READ_WRITE_ACCESSED;
+
+      BX_ASSERT(CPL == 0);
     }
   }
+
+  updateFetchModeMask();
 
   if (mode != BX_CPU_THIS_PTR cpu_mode) {
     BX_DEBUG(("%s activated", cpu_mode_string(BX_CPU_THIS_PTR cpu_mode)));
@@ -1189,41 +1231,91 @@ void BX_CPU_C::handleCpuModeChange(void)
 void BX_CPU_C::handleAlignmentCheck(void)
 {
   if (CPL == 3 && BX_CPU_THIS_PTR cr0.get_AM() && BX_CPU_THIS_PTR get_AC()) {
-#if BX_SUPPORT_X86_64
-    BX_CPU_THIS_PTR alignment_check_mask = BX_CONST64(0xffffffffffffffff);
-#else
-    BX_CPU_THIS_PTR alignment_check_mask = 0xffffffff;
-#endif
-    BX_INFO(("Enable alignment check (#AC exception)"));
+    if (BX_CPU_THIS_PTR alignment_check_mask == 0) {
+      BX_CPU_THIS_PTR alignment_check_mask = 0xF;
+      BX_INFO(("Enable alignment check (#AC exception)"));
+      BX_CPU_THIS_PTR iCache.flushICacheEntries();
+    }
   }
   else {
-    BX_CPU_THIS_PTR alignment_check_mask = LPF_MASK;
+    if (BX_CPU_THIS_PTR alignment_check_mask != 0) {
+      BX_CPU_THIS_PTR alignment_check_mask = 0;
+      BX_INFO(("Disable alignment check (#AC exception)"));
+      BX_CPU_THIS_PTR iCache.flushICacheEntries();
+    }
   }
 }
 #endif
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(Bit32u val_32)
+bx_address BX_CPU_C::read_CR0(void)
 {
-  bx_bool pe = val_32 & 0x01;
-  bx_bool nw = (val_32 >> 29) & 0x01;
-  bx_bool cd = (val_32 >> 30) & 0x01;
-  bx_bool pg = (val_32 >> 31) & 0x01;
+  bx_address cr0_val = BX_CPU_THIS_PTR cr0.get32();
+
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+    cr0_val = (cr0_val & ~vm->vm_cr0_mask) | (vm->vm_cr0_read_shadow & vm->vm_cr0_mask);
+  }
+#endif
+
+  return cr0_val;
+}
+
+#if BX_CPU_LEVEL > 3
+bx_address BX_CPU_C::read_CR4(void)
+{
+  bx_address cr4_val = BX_CPU_THIS_PTR cr4.get32();
+
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+    cr4_val = (cr4_val & ~vm->vm_cr4_mask) | (vm->vm_cr4_read_shadow & vm->vm_cr4_mask);
+  }
+#endif
+
+  return cr4_val;
+}
+#endif
+
+bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(bx_address val)
+{
+#if BX_SUPPORT_X86_64
+  if (GET32H(val)) {
+    BX_ERROR(("SetCR0: GP(0) when trying to set CR0 > 32 bits"));
+    return 0;
+  }
+#endif
+
+  Bit32u val_32 = GET32L(val);
+
+  bx_bool pe = val_32 & 0x1;
+  bx_bool nw = (val_32 >> 29) & 0x1;
+  bx_bool cd = (val_32 >> 30) & 0x1;
+  bx_bool pg = (val_32 >> 31) & 0x1;
 
   if (pg && !pe) {
     BX_ERROR(("SetCR0: GP(0) when attempt to set CR0.PG with CR0.PE cleared !"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    return 0;
   }
 
   if (nw && !cd) {
     BX_ERROR(("SetCR0: GP(0) when attempt to set CR0.NW with CR0.CD cleared !"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+    return 0;
   }
 
-  if (pe && BX_CPU_THIS_PTR get_VM()) BX_PANIC(("EFLAGS.VM=1, enter_PM"));
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx) {
+    bx_bool ne = (val_32 >> 5) & 0x1;
+    if (!pe || !ne || !pg) {
+      BX_ERROR(("Attempt to clear CR0.PE/CR0.NE/CR0.PG in vmx mode"));
+      return 0;
+    }
+  }
+#endif
 
   // from either MOV_CdRd() or debug functions
   // protection checks made already or forcing from debug
-  Bit32u oldCR0 = BX_CPU_THIS_PTR cr0.getRegister();
+  Bit32u oldCR0 = BX_CPU_THIS_PTR cr0.get32();
 
 #if BX_SUPPORT_X86_64
   bx_bool prev_pg = BX_CPU_THIS_PTR cr0.get_PG();
@@ -1232,15 +1324,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(Bit32u val_32)
     if (BX_CPU_THIS_PTR efer.get_LME()) {
       if (!BX_CPU_THIS_PTR cr4.get_PAE()) {
         BX_ERROR(("SetCR0: attempt to enter x86-64 long mode without enabling CR4.PAE !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
+        return 0;
       }
       if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l) {
         BX_ERROR(("SetCR0: attempt to enter x86-64 long mode with CS.L !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
+        return 0;
       }
       if (BX_CPU_THIS_PTR tr.cache.type <= 3) {
         BX_ERROR(("SetCR0: attempt to enter x86-64 long mode with TSS286 in TR !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
+        return 0;
       }
       BX_CPU_THIS_PTR efer.set_LMA(1);
     }
@@ -1248,7 +1340,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(Bit32u val_32)
   else if (prev_pg==1 && ! pg) {
     if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
       BX_ERROR(("SetCR0: attempt to leave 64 bit mode directly to legacy mode !"));
-      exception(BX_GP_EXCEPTION, 0, 0);
+      return 0;
     }
     if (BX_CPU_THIS_PTR efer.get_LMA()) {
       if (BX_CPU_THIS_PTR gen_reg[BX_64BIT_REG_RIP].dword.hrx != 0) {
@@ -1271,7 +1363,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(Bit32u val_32)
 #else
 #error "SetCR0: implement reserved bits behaviour for this CPU_LEVEL"
 #endif
-  BX_CPU_THIS_PTR cr0.setRegister(val_32);
+  BX_CPU_THIS_PTR cr0.set32(val_32);
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
   handleAlignmentCheck();
@@ -1282,12 +1374,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(Bit32u val_32)
   // Give the paging unit a chance to look for changes in bits
   // it cares about, like {PG,PE}, so it can flush cache entries etc.
   pagingCR0Changed(oldCR0, val_32);
+
+  return 1;
 }
 
 #if BX_CPU_LEVEL >= 4
-bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
+bx_address get_cr4_allow_mask(void)
 {
-  Bit32u oldCR4 = BX_CPU_THIS_PTR cr4.getRegister();
   bx_address allowMask = 0;
 
   // CR4 bits definitions:
@@ -1345,9 +1438,21 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
   allowMask |= (1<<10);  /* OSXMMECPT */
 #endif
 
+#if BX_SUPPORT_VMX
+  allowMask |= (1<<13);  /* VMX Enable */
+#endif
+
 #if BX_SUPPORT_XSAVE
   allowMask |= (1<<18);  /* OSXSAVE */
 #endif
+
+  return allowMask;
+}
+
+bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
+{
+  Bit32u oldCR4 = BX_CPU_THIS_PTR cr4.get32();
+  bx_address allowMask = get_cr4_allow_mask();
 
 #if BX_SUPPORT_X86_64
   // need to GP(0) if LMA=1 and PAE=1->0
@@ -1359,26 +1464,39 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
   }
 #endif
 
+#if BX_SUPPORT_VMX
+  if (!(val & (1 << 13)) && BX_CPU_THIS_PTR in_vmx) {
+    BX_ERROR(("Attempt to clear CR4.VMXE in vmx mode"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
+#endif
+
   // Need to GPF if trying to set undefined bits.
   if (val & ~allowMask) {
-    BX_ERROR(("#GP(0): SetCR4: Write of 0x%08x not supported (allowMask=0x%x)", val, allowMask));
+    BX_ERROR(("#GP(0): SetCR4: Write of 0x%08x not supported (allowMask=0x%x)", (Bit32u) val, (Bit32u) allowMask));
     return 0;
   }
 
-  BX_CPU_THIS_PTR cr4.setRegister(val);
-  pagingCR4Changed(oldCR4, BX_CPU_THIS_PTR cr4.getRegister());
+  BX_CPU_THIS_PTR cr4.set32(val);
+  pagingCR4Changed(oldCR4, BX_CPU_THIS_PTR cr4.get32());
+
   return 1;
 }
-#endif
+#endif // BX_CPU_LEVEL >= 4
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 {
 /* We need to be Pentium with MMX or later */
-#if ((BX_CPU_LEVEL >= 6) || (BX_SUPPORT_MMX && BX_CPU_LEVEL == 5))
+#if (BX_CPU_LEVEL >= 6) || (BX_SUPPORT_MMX && BX_CPU_LEVEL == 5)
   bx_bool pce = BX_CPU_THIS_PTR cr4.get_PCE();
 
   if ((pce==1) || (CPL==0) || real_mode())
   {
+
+#if BX_SUPPORT_VMX
+    VMexit_RDPMC(i);
+#endif
+
     /* According to manual, Pentium 4 has 18 counters,
      * previous versions have two.  And the P4 also can do
      * short read-out (EDX always 0).  Otherwise it is
@@ -1408,14 +1526,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 #else
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 #if BX_CPU_LEVEL >= 5
-BX_CPP_INLINE Bit64u BX_CPU_C::get_TSC(void)
+Bit64u BX_CPU_C::get_TSC(void)
 {
-  return bx_pc_system.time_ticks() - BX_CPU_THIS_PTR msr.tsc_last_reset;
+  Bit64u tsc = bx_pc_system.time_ticks() - BX_CPU_THIS_PTR msr.tsc_last_reset;
+#if BX_SUPPORT_VMX
+  tsc += VMX_TSC_Offset();
+#endif
+  return tsc;
 }
 
 void BX_CPU_C::set_TSC(Bit64u newval)
@@ -1425,7 +1547,7 @@ void BX_CPU_C::set_TSC(Bit64u newval)
   BX_CPU_THIS_PTR msr.tsc_last_reset = bx_pc_system.time_ticks() - newval;
 
   // verify
-  BX_ASSERT (get_TSC() == newval);
+  BX_ASSERT(get_TSC() == newval);
 }
 #endif
 
@@ -1433,18 +1555,24 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   if (! BX_CPU_THIS_PTR cr4.get_TSD() || CPL==0) {
+
+#if BX_SUPPORT_VMX
+    VMexit_RDTSC(i);
+#endif
+
     // return ticks
     Bit64u ticks = BX_CPU_THIS_PTR get_TSC();
-    RAX = (Bit32u) (ticks & 0xffffffff);
-    RDX = (Bit32u) ((ticks >> 32) & 0xffffffff);
+
+    RAX = GET32L(ticks);
+    RDX = GET32H(ticks);
+
   } else {
-    // not allowed to use RDTSC!
-    BX_ERROR(("RDTSC: incorrect usage of RDTSC instruction !"));
+    BX_ERROR(("RDTSC: not allowed to use instruction !"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 #else
   BX_INFO(("RDTSC: Pentium CPU required, use --enable-cpu=5"));
-  UndefinedOpcode(i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -1455,439 +1583,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
   RCX = MSR_TSC_AUX;
 }
 #endif
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDMSR(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL >= 5
-  if (!real_mode() && CPL!=0) {
-    BX_ERROR(("RDMSR: CPL!=0 not in real mode"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  /* We have the requested MSR register in ECX */
-  switch(ECX) {
-
-#if BX_SUPPORT_SEP
-    case BX_MSR_SYSENTER_CS:
-      RAX = BX_CPU_THIS_PTR msr.sysenter_cs_msr;
-      RDX = 0;
-      return;
-
-    case BX_MSR_SYSENTER_ESP:
-      RAX = BX_CPU_THIS_PTR msr.sysenter_esp_msr;
-      RDX = 0;
-      return;
-
-    case BX_MSR_SYSENTER_EIP:
-      RAX = BX_CPU_THIS_PTR msr.sysenter_eip_msr;
-      RDX = 0;
-      return;
-#endif
-
-#if BX_SUPPORT_MTRR
-    case BX_MSR_MTRRCAP:   // read only MSR
-      RAX = 0x508;
-      RDX = 0;
-      return;
-
-    case BX_MSR_MTRRPHYSBASE0:
-    case BX_MSR_MTRRPHYSMASK0:
-    case BX_MSR_MTRRPHYSBASE1:
-    case BX_MSR_MTRRPHYSMASK1:
-    case BX_MSR_MTRRPHYSBASE2:
-    case BX_MSR_MTRRPHYSMASK2:
-    case BX_MSR_MTRRPHYSBASE3:
-    case BX_MSR_MTRRPHYSMASK3:
-    case BX_MSR_MTRRPHYSBASE4:
-    case BX_MSR_MTRRPHYSMASK4:
-    case BX_MSR_MTRRPHYSBASE5:
-    case BX_MSR_MTRRPHYSMASK5:
-    case BX_MSR_MTRRPHYSBASE6:
-    case BX_MSR_MTRRPHYSMASK6:
-    case BX_MSR_MTRRPHYSBASE7:
-    case BX_MSR_MTRRPHYSMASK7:
-      RAX = BX_CPU_THIS_PTR msr.mtrrphys[ECX - BX_MSR_MTRRPHYSBASE0] & 0xffffffff;
-      RDX = BX_CPU_THIS_PTR msr.mtrrphys[ECX - BX_MSR_MTRRPHYSBASE0] >> 32;
-      return;
-
-    case BX_MSR_MTRRFIX64K_00000:
-      RAX = BX_CPU_THIS_PTR msr.mtrrfix64k_00000 & 0xffffffff;
-      RDX = BX_CPU_THIS_PTR msr.mtrrfix64k_00000 >> 32;
-      return;
-    case BX_MSR_MTRRFIX16K_80000:
-      RAX = BX_CPU_THIS_PTR msr.mtrrfix16k_80000 & 0xffffffff;
-      RDX = BX_CPU_THIS_PTR msr.mtrrfix16k_80000 >> 32;
-      return;
-    case BX_MSR_MTRRFIX16K_A0000:
-      RAX = BX_CPU_THIS_PTR msr.mtrrfix16k_a0000 & 0xffffffff;
-      RAX = BX_CPU_THIS_PTR msr.mtrrfix16k_a0000 >> 32;
-      return;
-
-    case BX_MSR_MTRRFIX4K_C0000:
-    case BX_MSR_MTRRFIX4K_C8000:
-    case BX_MSR_MTRRFIX4K_D0000:
-    case BX_MSR_MTRRFIX4K_D8000:
-    case BX_MSR_MTRRFIX4K_E0000:
-    case BX_MSR_MTRRFIX4K_E8000:
-    case BX_MSR_MTRRFIX4K_F0000:
-    case BX_MSR_MTRRFIX4K_F8000:
-      RAX = BX_CPU_THIS_PTR msr.mtrrfix4k[ECX - BX_MSR_MTRRFIX4K_C0000] & 0xffffffff;
-      RDX = BX_CPU_THIS_PTR msr.mtrrfix4k[ECX - BX_MSR_MTRRFIX4K_C0000] >> 32;
-      return;
-
-    case BX_MSR_PAT:
-      RAX = BX_CPU_THIS_PTR msr.pat & 0xffffffff;
-      RDX = BX_CPU_THIS_PTR msr.pat >> 32;
-      return;
-
-    case BX_MSR_MTRR_DEFTYPE:
-      RAX = BX_CPU_THIS_PTR msr.mtrr_deftype;
-      RDX = 0;
-      return;
-#endif
-
-#if BX_CPU_LEVEL == 5
-    /* The following registers are defined for Pentium only */
-    case BX_MSR_P5_MC_ADDR:
-    case BX_MSR_MC_TYPE:
-      /* TODO */
-      return;
-
-    case BX_MSR_CESR:
-      /* TODO */
-      return;
-#else
-    /* These are noops on i686... */
-    case BX_MSR_P5_MC_ADDR:
-    case BX_MSR_MC_TYPE:
-      /* do nothing */
-      return;
-
-    /* ... And these cause an exception on i686 */
-    case BX_MSR_CESR:
-    case BX_MSR_CTR0:
-    case BX_MSR_CTR1:
-      exception(BX_GP_EXCEPTION, 0, 0);
-#endif  /* BX_CPU_LEVEL == 5 */
-
-    case BX_MSR_TSC:
-      RDTSC(i);
-      return;
-
-    /* MSR_APICBASE
-       0:7    Reserved
-       8     This is set if its the BSP
-       9:10    Reserved
-       11    APIC Global Enable bit (1=enabled 0=disabled)
-       12:35  APIC Base Address
-       36:63  Reserved
-    */
-#if BX_SUPPORT_APIC
-    case BX_MSR_APICBASE:
-      RAX = BX_CPU_THIS_PTR msr.apicbase;
-      RDX = 0;
-      BX_INFO(("RDMSR: Read %08x:%08x from MSR_APICBASE", EDX, EAX));
-      return;
-#endif
-
-#if BX_SUPPORT_X86_64
-    case BX_MSR_EFER:
-      RAX = BX_CPU_THIS_PTR efer.getRegister();
-      RDX = 0;
-      return;
-
-    case BX_MSR_STAR:
-      RAX = MSR_STAR & 0xffffffff;
-      RDX = MSR_STAR >> 32;
-      return;
-
-    case BX_MSR_LSTAR:
-      RAX = MSR_LSTAR & 0xffffffff;
-      RDX = MSR_LSTAR >> 32;
-      return;
-
-    case BX_MSR_CSTAR:
-      RAX = MSR_CSTAR & 0xffffffff;
-      RDX = MSR_CSTAR >> 32;
-      return;
-
-    case BX_MSR_FMASK:
-      RAX = MSR_FMASK;
-      RDX = 0;
-      return;
-
-    case BX_MSR_FSBASE:
-      RAX = MSR_FSBASE & 0xffffffff;
-      RDX = MSR_FSBASE >> 32;
-      return;
-
-    case BX_MSR_GSBASE:
-      RAX = MSR_GSBASE & 0xffffffff;
-      RDX = MSR_GSBASE >> 32;
-      return;
-
-    case BX_MSR_KERNELGSBASE:
-      RAX = MSR_KERNELGSBASE & 0xffffffff;
-      RDX = MSR_KERNELGSBASE >> 32;
-      return;
-
-    case BX_MSR_TSC_AUX:
-      RAX = MSR_TSC_AUX;   // 32 bit MSR
-      RDX = 0;
-      return;
-#endif  // #if BX_SUPPORT_X86_64
-
-    default:
-      BX_ERROR(("RDMSR: Unknown register %#x", ECX));
-#if BX_IGNORE_BAD_MSR
-      RAX = 0;
-      RDX = 0;
-      return;
-#endif
-  }
-
-  exception(BX_GP_EXCEPTION, 0, 0);
-
-#else  /* BX_CPU_LEVEL >= 5 */
-  BX_INFO(("RDMSR: Pentium CPU required, use --enable-cpu-level=5"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL >= 5
-  if (!real_mode() && CPL!=0) {
-    BX_ERROR(("WRMSR: CPL!=0 not in real mode"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  Bit64u val64 = ((Bit64u) EDX << 32) | EAX;
-
-  BX_INSTR_WRMSR(BX_CPU_ID, ECX, val64);
-
-  /* ECX has the MSR to write to */
-  switch(ECX) {
-
-#if BX_SUPPORT_SEP
-    case BX_MSR_SYSENTER_CS: {
-      BX_CPU_THIS_PTR msr.sysenter_cs_msr  = EAX;
-      return;
-    }
-    case BX_MSR_SYSENTER_ESP:
-#if BX_SUPPORT_X86_64
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_SYSENTER_ESP !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-#endif
-      BX_CPU_THIS_PTR msr.sysenter_esp_msr = val64;
-      return;
-    case BX_MSR_SYSENTER_EIP:
-#if BX_SUPPORT_X86_64
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_SYSENTER_EIP !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-#endif
-      BX_CPU_THIS_PTR msr.sysenter_eip_msr = val64;
-      return;
-#endif
-
-#if BX_SUPPORT_MTRR
-    case BX_MSR_MTRRCAP:
-      BX_ERROR(("WRMSR: MTRRCAP is read only MSR"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-
-    case BX_MSR_MTRRPHYSBASE0:
-    case BX_MSR_MTRRPHYSMASK0:
-    case BX_MSR_MTRRPHYSBASE1:
-    case BX_MSR_MTRRPHYSMASK1:
-    case BX_MSR_MTRRPHYSBASE2:
-    case BX_MSR_MTRRPHYSMASK2:
-    case BX_MSR_MTRRPHYSBASE3:
-    case BX_MSR_MTRRPHYSMASK3:
-    case BX_MSR_MTRRPHYSBASE4:
-    case BX_MSR_MTRRPHYSMASK4:
-    case BX_MSR_MTRRPHYSBASE5:
-    case BX_MSR_MTRRPHYSMASK5:
-    case BX_MSR_MTRRPHYSBASE6:
-    case BX_MSR_MTRRPHYSMASK6:
-    case BX_MSR_MTRRPHYSBASE7:
-    case BX_MSR_MTRRPHYSMASK7:
-      BX_CPU_THIS_PTR msr.mtrrphys[ECX - BX_MSR_MTRRPHYSBASE0] = val64;
-      return;
-
-    case BX_MSR_MTRRFIX64K_00000:
-      BX_CPU_THIS_PTR msr.mtrrfix64k_00000 = val64;
-      return;
-    case BX_MSR_MTRRFIX16K_80000:
-      BX_CPU_THIS_PTR msr.mtrrfix16k_80000 = val64;
-      return;
-    case BX_MSR_MTRRFIX16K_A0000:
-      BX_CPU_THIS_PTR msr.mtrrfix16k_a0000 = val64;
-      return;
-
-    case BX_MSR_MTRRFIX4K_C0000:
-    case BX_MSR_MTRRFIX4K_C8000:
-    case BX_MSR_MTRRFIX4K_D0000:
-    case BX_MSR_MTRRFIX4K_D8000:
-    case BX_MSR_MTRRFIX4K_E0000:
-    case BX_MSR_MTRRFIX4K_E8000:
-    case BX_MSR_MTRRFIX4K_F0000:
-    case BX_MSR_MTRRFIX4K_F8000:
-      BX_CPU_THIS_PTR msr.mtrrfix4k[ECX - BX_MSR_MTRRFIX4K_C0000] = val64;
-      return;
-
-    case BX_MSR_PAT:
-      BX_CPU_THIS_PTR msr.pat = val64;
-      return;
-
-    case BX_MSR_MTRR_DEFTYPE:
-      BX_CPU_THIS_PTR msr.mtrr_deftype = EAX;
-      return;
-#endif
-
-#if BX_CPU_LEVEL == 5
-    /* The following registers are defined for Pentium only */
-    case BX_MSR_P5_MC_ADDR:
-    case BX_MSR_MC_TYPE:
-    case BX_MSR_CESR:
-      /* TODO */
-      return;
-#else
-    /* These are noops on i686... */
-    case BX_MSR_P5_MC_ADDR:
-    case BX_MSR_MC_TYPE:
-      /* do nothing */
-      return;
-
-    /* ... And these cause an exception on i686 */
-    case BX_MSR_CESR:
-    case BX_MSR_CTR0:
-    case BX_MSR_CTR1:
-      exception(BX_GP_EXCEPTION, 0, 0);
-#endif  /* BX_CPU_LEVEL == 5 */
-
-    case BX_MSR_TSC:
-      BX_CPU_THIS_PTR set_TSC(val64);
-      BX_INFO(("WRMSR: wrote 0x%08x%08x to MSR_TSC", EDX, EAX));
-      return;
-
-    /* MSR_APICBASE
-       0:7    Reserved
-       8     This is set if its the BSP
-       9:10    Reserved
-       11    APIC Global Enable bit (1=enabled 0=disabled)
-       12:35  APIC Base Address (in Bochs 12:31 because of 32-bit physical addr)
-       36:63  Reserved
-    */
-#if BX_SUPPORT_APIC
-    case BX_MSR_APICBASE:
-      if (BX_CPU_THIS_PTR msr.apicbase & 0x800) {
-        BX_INFO(("WRMSR: wrote %08x:%08x to MSR_APICBASE", EDX, EAX));
-        BX_CPU_THIS_PTR msr.apicbase = EAX; /* ignore the high 32bits */
-#if BX_PHY_ADDRESS_WIDTH == 32
-        if (EDX != 0) {
-            BX_PANIC(("MSR_APICBASE: Only 32 bit physical address space is emulated !"));
-        }
-#endif
-        BX_CPU_THIS_PTR local_apic.set_base(BX_CPU_THIS_PTR msr.apicbase);
-        // TLB flush is required for emulation correctness
-        TLB_flush(1);  // don't care about performance of apic relocation
-      }
-      else {
-        BX_INFO(("WRMSR: MSR_APICBASE APIC global enable bit cleared !"));
-      }
-      return;
-#endif
-
-#if BX_SUPPORT_X86_64
-    case BX_MSR_EFER:
-      if (val64 & ~BX_EFER_SUPPORTED_BITS) {
-        BX_ERROR(("WRMSR: attempt to set reserved bits of EFER MSR !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-
-      // #GP(0) if changing EFER.LME when cr0.pg = 1
-      if ((BX_CPU_THIS_PTR efer.get_LME() != ((EAX >> 8) & 1)) &&
-           BX_CPU_THIS_PTR  cr0.get_PG())
-      {
-        BX_ERROR(("WRMSR: attempt to change LME when CR0.PG=1"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-
-      BX_CPU_THIS_PTR efer.setRegister((EAX & BX_EFER_SUPPORTED_BITS & ~BX_EFER_LMA_MASK)
-              | (BX_CPU_THIS_PTR efer.val32 & BX_EFER_LMA_MASK)); // keep LMA untouched
-      return;
-
-    case BX_MSR_STAR:
-      MSR_STAR   = val64;
-      return;
-
-    case BX_MSR_LSTAR:
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_LSTAR !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-      MSR_LSTAR  = val64;
-      return;
-
-    case BX_MSR_CSTAR:
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_CSTAR !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-      MSR_CSTAR  = val64;
-      return;
-
-    case BX_MSR_FMASK:
-      MSR_FMASK  = (Bit32u) val64;
-      return;
-
-    case BX_MSR_FSBASE:
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_FSBASE !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-      MSR_FSBASE = val64;
-      return;
-
-    case BX_MSR_GSBASE:
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_GSBASE !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-      MSR_GSBASE = val64;
-      return;
-
-    case BX_MSR_KERNELGSBASE:
-      if (! IsCanonical(val64)) {
-        BX_ERROR(("WRMSR: attempt to write non-canonical value to MSR_KERNELGSBASE !"));
-        exception(BX_GP_EXCEPTION, 0, 0);
-      }
-      MSR_KERNELGSBASE = val64;
-      return;
-
-    case BX_MSR_TSC_AUX:
-      MSR_TSC_AUX = EAX;
-      return;
-#endif  // #if BX_SUPPORT_X86_64
-
-    default:
-      BX_ERROR(("WRMSR: Unknown register %#x", ECX));
-#if BX_IGNORE_BAD_MSR
-      return;
-#endif
-  }
-
-  exception(BX_GP_EXCEPTION, 0, 0);
-
-#else  /* BX_CPU_LEVEL >= 5 */
-  BX_INFO(("WRMSR: Pentium CPU required, use --enable-cpu-level=5"));
-  UndefinedOpcode(i);
-#endif
-}
 
 #if BX_SUPPORT_MONITOR_MWAIT
 bx_bool BX_CPU_C::is_monitor(bx_phy_address begin_addr, unsigned len)
@@ -1903,10 +1598,11 @@ void BX_CPU_C::check_monitor(bx_phy_address begin_addr, unsigned len)
 {
   if (is_monitor(begin_addr, len)) {
     // wakeup from MWAIT state
-    BX_ASSERT(BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_MWAIT);
-    BX_CPU_THIS_PTR debug_trap &= ~BX_DEBUG_TRAP_SPECIAL;
+    BX_ASSERT(BX_CPU_THIS_PTR activity_state >= BX_ACTIVITY_STATE_MWAIT);
+    BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
     // clear monitor
     BX_MEM(0)->clear_monitor(BX_CPU_THIS_PTR bx_cpuid);
+    BX_CPU_THIS_PTR monitor.reset_monitor();
  }
 }
 #endif
@@ -1914,17 +1610,25 @@ void BX_CPU_C::check_monitor(bx_phy_address begin_addr, unsigned len)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
 {
 #if BX_SUPPORT_MONITOR_MWAIT
-  // TODO: #UD when CPL > 0 and
-  //       MSR 0xC0010015[MONITOR_MWAIT_USER_UNABLE] = 1
+  if (!real_mode() && CPL != 0) {
+    BX_DEBUG(("MWAIT instruction not recognized when CPL != 0"));
+    exception(BX_UD_EXCEPTION, 0, 0);
+  }
+
   BX_DEBUG(("MONITOR instruction executed EAX = 0x08x", (unsigned) EAX));
+
+#if BX_SUPPORT_VMX
+  VMexit_MONITOR(i);
+#endif
 
   if (RCX != 0) {
     BX_ERROR(("MONITOR: no optional extensions supported"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  bx_address offset, laddr;
-  bx_phy_address paddr;
+  bx_segment_reg_t *seg = &BX_CPU_THIS_PTR sregs[i->seg()];
+
+  bx_address offset;
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
@@ -1939,10 +1643,33 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
      offset =  AX;
   }
 
-  read_virtual_checks(&BX_CPU_THIS_PTR sregs[i->seg()], offset, 1);
-
   // set MONITOR
-  laddr = BX_CPU_THIS_PTR get_laddr(i->seg(), offset);
+  bx_address laddr = BX_CPU_THIS_PTR get_laddr(i->seg(), offset);
+
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    if (! IsCanonical(laddr)) {
+      BX_ERROR(("MONITOR: non-canonical access !"));
+      exception(int_number(i->seg()), 0, 0);
+    }
+  }
+  else
+#endif
+  {
+    // check if we could access the memory segment
+    if (!(seg->cache.valid & SegAccessROK)) {
+      if (! read_virtual_checks(seg, offset, 1))
+        exception(int_number(i->seg()), 0, 0);
+    }
+    else {
+      if (offset > seg->cache.u.segment.limit_scaled) {
+        BX_ERROR(("MONITOR: segment limit violation"));
+        exception(int_number(i->seg()), 0, 0);
+      }
+    }
+  }
+
+  bx_phy_address paddr;
 
   if (BX_CPU_THIS_PTR cr0.get_PG()) {
     paddr = dtranslate_linear(laddr, CPL, BX_READ);
@@ -1956,18 +1683,32 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
   BX_CPU_THIS_PTR monitor.monitor_begin = paddr;
   BX_CPU_THIS_PTR monitor.monitor_end   = paddr + CACHE_LINE_SIZE;
 
+  // Set the monitor immediately.  If monitor is still armed when we MWAIT,
+  // the processor will stall.
+  bx_pc_system.invlpg(BX_CPU_THIS_PTR monitor.monitor_begin);
+  if ((BX_CPU_THIS_PTR monitor.monitor_end & ~0xfff) != (BX_CPU_THIS_PTR monitor.monitor_begin & ~0xfff))
+    bx_pc_system.invlpg(BX_CPU_THIS_PTR monitor.monitor_end);
+  BX_DEBUG(("MONITOR for phys_addr=0x" FMT_PHY_ADDRX, BX_CPU_THIS_PTR monitor.monitor_begin));
+  BX_MEM(0)->set_monitor(BX_CPU_THIS_PTR bx_cpuid);
 #else
   BX_INFO(("MONITOR: use --enable-monitor-mwait to enable MONITOR/MWAIT support"));
-  UndefinedOpcode (i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
 {
 #if BX_SUPPORT_MONITOR_MWAIT
-  // TODO: #UD when CPL > 0 and
-  //       MSR 0xC0010015[MONITOR_MWAIT_USER_UNABLE] = 1
+  if (!real_mode() && CPL != 0) {
+    BX_DEBUG(("MWAIT instruction not recognized when CPL != 0"));
+    exception(BX_UD_EXCEPTION, 0, 0);
+  }
+
   BX_DEBUG(("MWAIT instruction executed ECX = 0x%08x", ECX));
+
+#if BX_SUPPORT_VMX
+  VMexit_MWAIT(i);
+#endif
 
   // only one extension is supported
   //   ECX[0] - interrupt MWAIT even if EFLAGS.IF = 0
@@ -1982,11 +1723,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
     return;
   }
 
-  bx_pc_system.invlpg(BX_CPU_THIS_PTR monitor.monitor_begin);
-  if ((BX_CPU_THIS_PTR monitor.monitor_end & ~0xfff) != (BX_CPU_THIS_PTR monitor.monitor_begin & ~0xfff))
-    bx_pc_system.invlpg(BX_CPU_THIS_PTR monitor.monitor_end);
-  BX_DEBUG(("MWAIT for phys_addr=" FMT_PHY_ADDRX, BX_CPU_THIS_PTR monitor.monitor_begin));
-  BX_MEM(0)->set_monitor(BX_CPU_THIS_PTR bx_cpuid);
+  // If monitor has already triggered, we just return.
+  if (!BX_CPU_THIS_PTR monitor.armed) {
+    BX_DEBUG(("MWAIT: the MONITOR was already triggered"));
+    return;
+  }
 
   // stops instruction execution and places the processor in a optimized
   // state.  Events that cause exit from MWAIT state are:
@@ -1995,10 +1736,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
   // the execution. Any far control transfer between MONITOR and MWAIT
   // resets the monitoring logic.
 
-  // artificial trap bit, why use another variable.
-  BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_TRAP_MWAIT; // artificial trap
   if (ECX & 1)
-    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_TRAP_MWAIT_IF;
+    BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_MWAIT_IF;
+  else
+    BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_MWAIT;
+
   BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
   // Execution of this instruction completes.  The processor
   // will remain in a optimized state until one of the above
@@ -2010,9 +1752,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
   bx_gui->sim_is_idle();
 #endif
 
+#if BX_DEBUGGER
+  bx_dbg_halt(BX_CPU_ID);
+#endif
+
 #else
   BX_INFO(("MWAIT: use --enable-monitor-mwait to enable MONITOR/MWAIT support"));
-  UndefinedOpcode (i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2050,13 +1796,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   parse_selector(BX_CPU_THIS_PTR msr.sysenter_cs_msr & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0;          // base address
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;     // segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF; // scaled segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1;          // 4k granularity
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0;          // available for use by system
@@ -2065,28 +1810,25 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l            =  long_mode();
 #endif
 
-#if BX_SUPPORT_ICACHE
-  BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
-
 #if BX_SUPPORT_X86_64
   handleCpuModeChange(); // mode change could happen only when in long_mode()
+#else
+  updateFetchModeMask();
 #endif
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  BX_CPU_THIS_PTR alignment_check_mask = LPF_MASK; // CPL=0
+  BX_CPU_THIS_PTR alignment_check_mask = 0; // CPL=0
 #endif
 
   parse_selector((BX_CPU_THIS_PTR msr.sysenter_cs_msr + 8) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = 1;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl      = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment  = 1; /* data/code segment */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.type     = BX_DATA_READ_WRITE_ACCESSED;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base         = 0;          // base address
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit        = 0xFFFF;     // segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled = 0xFFFFFFFF; // scaled segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.g            = 1;          // 4k granularity
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b          = 1;          // 32-bit mode
@@ -2111,7 +1853,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 #else
   BX_INFO(("SYSENTER: use --enable-sep to enable SYSENTER/SYSEXIT support"));
-  UndefinedOpcode (i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2147,13 +1889,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + 32) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0;           // base address
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      // segment limit
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  // scaled segment limit
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1;           // 4k granularity
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0;           // available for use by system
@@ -2169,13 +1910,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + 16) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0;           // base address
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      // segment limit
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  // scaled segment limit
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1;           // 4k granularity
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0;           // available for use by system
@@ -2188,12 +1928,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     EIP = EDX;
   }
 
-#if BX_SUPPORT_ICACHE
-  BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
-
 #if BX_SUPPORT_X86_64
   handleCpuModeChange(); // mode change could happen only when in long_mode()
+#else
+  updateFetchModeMask();
 #endif
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
@@ -2203,13 +1941,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
   parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + (i->os64L() ? 40:24)) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = 1;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl      = 3;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment  = 1; /* data/code segment */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.type     = BX_DATA_READ_WRITE_ACCESSED;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base         = 0;           // base address
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit        = 0xFFFF;      // segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  // scaled segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.g            = 1;           // 4k granularity
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b          = 1;           // 32-bit mode
@@ -2222,7 +1959,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 #else
   BX_INFO(("SYSEXIT: use --enable-sep to enable SYSENTER/SYSEXIT support"));
-  UndefinedOpcode (i);
+  exception(BX_UD_EXCEPTION, 0, 0);
 #endif
 }
 
@@ -2255,40 +1992,34 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     parse_selector((MSR_STAR >> 32) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l            = 1; /* 64-bit code */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0; /* available for use by system */
 
-#if BX_SUPPORT_ICACHE
-    BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
-
     handleCpuModeChange(); // mode change could only happen when in long_mode()
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-    BX_CPU_THIS_PTR alignment_check_mask = LPF_MASK; // CPL=0
+    BX_CPU_THIS_PTR alignment_check_mask = 0; // CPL=0
 #endif
 
     // set up SS segment, flat, 64-bit DPL=0
     parse_selector(((MSR_STAR >> 32) + 8) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1; /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base         = 0; /* base address */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.g            = 1; /* 4k granularity */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b          = 1; /* 32 bit stack */
@@ -2309,38 +2040,34 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     parse_selector((MSR_STAR >> 32) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l            = 0; /* 32-bit code */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0; /* available for use by system */
 
-#if BX_SUPPORT_ICACHE
-    BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
+    updateFetchModeMask();
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-    BX_CPU_THIS_PTR alignment_check_mask = LPF_MASK; // CPL=0
+    BX_CPU_THIS_PTR alignment_check_mask = 0; // CPL=0
 #endif
 
     // set up SS segment, flat, 32-bit DPL=0
     parse_selector(((MSR_STAR >> 32) + 8) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1; /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.base         = 0; /* base address */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.g            = 1; /* 4k granularity */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b          = 1; /* 32 bit stack */
@@ -2388,13 +2115,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
       parse_selector((((MSR_STAR >> 48) + 16) & BX_SELECTOR_RPL_MASK) | 3,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 0;
@@ -2408,13 +2134,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
       parse_selector((MSR_STAR >> 48) | 3,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 1;
@@ -2423,10 +2148,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 
       temp_RIP = ECX;
     }
-
-#if BX_SUPPORT_ICACHE
-    BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
 
     handleCpuModeChange(); // mode change could only happen when in long64 mode
 
@@ -2438,7 +2159,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     parse_selector((Bit16u)((MSR_STAR >> 48) + 8),
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1;  /* data/code segment */
@@ -2451,22 +2172,19 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     parse_selector((MSR_STAR >> 48) | 3,
                      &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit        = 0xFFFF;      /* segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b          = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l            = 0; /* 32-bit code */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl          = 0; /* available for use by system */
 
-#if BX_SUPPORT_ICACHE
-    BX_CPU_THIS_PTR updateFetchModeMask();
-#endif
+    updateFetchModeMask();
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
     handleAlignmentCheck(); // CPL was modified
@@ -2476,7 +2194,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     parse_selector((Bit16u)((MSR_STAR >> 48) + 8),
                      &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = 1;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1;  /* data/code segment */
@@ -2526,9 +2244,9 @@ void BX_CPU_C::hwbreakpoint_match(bx_address laddr, unsigned len, unsigned rw)
 {
   if (BX_CPU_THIS_PTR dr7 & 0x000000ff) {
     // Only compare debug registers if any breakpoints are enabled
-    unsigned opa, opb;
+    unsigned opa, opb, write = rw & 1;
     opa = BX_HWDebugMemRW; // Read or Write always compares vs 11b
-    if (rw==BX_READ) // only compares vs 11b
+    if (! write) // only compares vs 11b
       opb = opa;
     else // BX_WRITE or BX_RW; also compare vs 01b
       opb = BX_HWDebugMemW;
@@ -2551,31 +2269,30 @@ Bit32u BX_CPU_C::hwdebug_compare(bx_address laddr_0, unsigned size,
     {  0x0,   0x1,   0x7,          0x3   };
 
   bx_address laddr_n = laddr_0 + (size - 1);
-  bx_address dr[4], dr_n[4];
-  Bit32u dr_op[4], len[4];
+  Bit32u dr_op[4], dr_len[4];
   bx_bool ibpoint_found_n[4], ibpoint_found = 0;
 
-  len[0] = (dr7>>18) & 3;
-  len[1] = (dr7>>22) & 3;
-  len[2] = (dr7>>26) & 3;
-  len[3] = (dr7>>30) & 3;
+  dr_len[0] = (dr7>>18) & 3;
+  dr_len[1] = (dr7>>22) & 3;
+  dr_len[2] = (dr7>>26) & 3;
+  dr_len[3] = (dr7>>30) & 3;
 
   dr_op[0] = (dr7>>16) & 3;
   dr_op[1] = (dr7>>20) & 3;
   dr_op[2] = (dr7>>24) & 3;
   dr_op[3] = (dr7>>28) & 3;
 
-  for (unsigned i=0;i<4;i++) {
-    dr[i]   = BX_CPU_THIS_PTR dr[i] & ~alignment_mask[len[i]];
-    dr_n[i] = dr[i] + alignment_mask[len[i]];
-    ibpoint_found_n[i] = 0;
+  for (unsigned n=0;n<4;n++) {
+    bx_address dr_start = BX_CPU_THIS_PTR dr[n] & ~alignment_mask[dr_len[n]];
+    bx_address dr_end = dr_start + alignment_mask[dr_len[n]];
+    ibpoint_found_n[n] = 0;
 
     // See if this instruction address matches any breakpoints
-    if (dr7 & (3 << i*2)) {
-      if ((dr_op[i]==opa || dr_op[i]==opb) &&
-           (laddr_0 <= dr_n[i]) &&
-           (laddr_n >= dr[i])) {
-        ibpoint_found_n[i] = 1;
+    if (dr7 & (3 << n*2)) {
+      if ((dr_op[n]==opa || dr_op[n]==opb) &&
+           (laddr_0 <= dr_end) &&
+           (laddr_n >= dr_start)) {
+        ibpoint_found_n[n] = 1;
         ibpoint_found = 1;
       }
     }
@@ -2597,10 +2314,17 @@ Bit32u BX_CPU_C::hwdebug_compare(bx_address laddr_0, unsigned size,
 
   return dr6_mask;
 }
-#endif
 
-/*
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::LFENCE(bxInstruction_c *i) {}
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MFENCE(bxInstruction_c *i) {}
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SFENCE(bxInstruction_c *i) {}
-*/
+void BX_CPU_C::iobreakpoint_match(unsigned port, unsigned len)
+{
+  // Only compare debug registers if any breakpoints are enabled
+  if (BX_CPU_THIS_PTR cr4.get_DE() && (BX_CPU_THIS_PTR dr7 & 0x000000ff))
+  {
+    Bit32u dr6_bits = hwdebug_compare(port, len, BX_HWDebugIO, BX_HWDebugIO);
+    if (dr6_bits) {
+      BX_CPU_THIS_PTR debug_trap |= dr6_bits;
+      BX_CPU_THIS_PTR async_event = 1;
+    }
+  }
+}
+#endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y,v 1.30 2008/05/03 21:32:02 sshwarts Exp $
+// $Id: parser.y,v 1.34 2009/04/03 17:36:24 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -20,6 +20,7 @@
 %type <uval> BX_TOKEN_NONSEG_REG
 %type <uval> BX_TOKEN_SEGREG
 %type <bval> BX_TOKEN_TOGGLE_ON_OFF
+%type <sval> BX_TOKEN_REGISTERS
 
 %token <uval> BX_TOKEN_8BH_REG
 %token <uval> BX_TOKEN_8BL_REG
@@ -50,7 +51,8 @@
 %token <sval> BX_TOKEN_DISABLE_BREAKPOINT
 %token <sval> BX_TOKEN_INFO
 %token <sval> BX_TOKEN_QUIT
-%token <sval> BX_TOKEN_REGISTERS
+%token <sval> BX_TOKEN_R
+%token <sval> BX_TOKEN_REGS
 %token <sval> BX_TOKEN_CPU
 %token <sval> BX_TOKEN_FPU
 %token <sval> BX_TOKEN_SSE
@@ -193,6 +195,12 @@ BX_TOKEN_TOGGLE_ON_OFF:
     { $$=$1; }
 ;
 
+BX_TOKEN_REGISTERS:
+      BX_TOKEN_R
+    | BX_TOKEN_REGS
+    { $$=$1; }
+;
+
 BX_TOKEN_SEGREG:
       BX_TOKEN_CS
     | BX_TOKEN_ES
@@ -259,7 +267,7 @@ show_command:
     ;
 
 page_command:
-      BX_TOKEN_PAGE BX_TOKEN_NUMERIC '\n'
+      BX_TOKEN_PAGE expression '\n'
       {
           bx_dbg_xlate_address($2);
           free($1);
@@ -326,33 +334,33 @@ watch_point_command:
       }
     | BX_TOKEN_WATCH '\n'
       {
-          bx_dbg_watch(-1, 0);
+          bx_dbg_print_watchpoints();
           free($1);
+      }
+    | BX_TOKEN_WATCH BX_TOKEN_R expression '\n'
+      {
+          bx_dbg_watch(0, $3); /* BX_READ */
+          free($1); free($2);
+      }
+    | BX_TOKEN_WATCH BX_TOKEN_READ expression '\n'
+      {
+          bx_dbg_watch(0, $3); /* BX_READ */
+          free($1); free($2);
+      }
+    | BX_TOKEN_WATCH BX_TOKEN_WRITE expression '\n'
+      {
+          bx_dbg_watch(1, $3); /* BX_WRITE */
+          free($1); free($2);
       }
     | BX_TOKEN_UNWATCH '\n'
       {
-          bx_dbg_unwatch(-1, 0);
+          bx_dbg_unwatch_all();
           free($1);
       }
-    | BX_TOKEN_WATCH BX_TOKEN_READ BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_UNWATCH expression '\n'
       {
-          bx_dbg_watch(1, $3);
-          free($1); free($2);
-      }
-    | BX_TOKEN_UNWATCH BX_TOKEN_READ BX_TOKEN_NUMERIC '\n'
-      {
-          bx_dbg_unwatch(1, $3);
-          free($1); free($2);
-      }
-    | BX_TOKEN_WATCH BX_TOKEN_WRITE BX_TOKEN_NUMERIC '\n'
-          {
-          bx_dbg_watch(0, $3);
-          free($1); free($2);
-      }
-    | BX_TOKEN_UNWATCH BX_TOKEN_WRITE BX_TOKEN_NUMERIC '\n'
-      {
-          bx_dbg_unwatch(0, $3);
-          free($1); free($2);
+          bx_dbg_unwatch($2);
+          free($1);
       }
     ;
 
@@ -1020,15 +1028,14 @@ help_command:
          dbg_printf("watch - print current watch point status\n");
          dbg_printf("watch stop - stop simulation when a watchpoint is encountred\n");
          dbg_printf("watch continue - do not stop the simulation when watch point is encountred\n");
-         dbg_printf("watch read addr - insert a read watch point at physical address addr\n");
-         dbg_printf("watch write addr - insert a write watch point at physical address addr\n");
+         dbg_printf("watch r|read addr - insert a read watch point at physical address addr\n");
+         dbg_printf("watch w|write addr - insert a write watch point at physical address addr\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_UNWATCH '\n'
        {
-         dbg_printf("unwatch - remove all watch points\n");
-         dbg_printf("unwatch read addr - remove a read watch point at physical address addr\n");
-         dbg_printf("unwatch write addr - remove a write watch point at physical address addr\n");
+         dbg_printf("unwatch      - remove all watch points\n");
+         dbg_printf("unwatch addr - remove a watch point\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_EXAMINE '\n'

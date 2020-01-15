@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack64.cc,v 1.41 2008/05/10 18:10:53 sshwarts Exp $
+// $Id: stack64.cc,v 1.44 2009/03/10 16:28:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -34,19 +34,18 @@
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EqM(bxInstruction_c *i)
 {
-  BX_CPU_THIS_PTR speculative_rsp = 1;
-  BX_CPU_THIS_PTR prev_rsp = RSP;
+  RSP_SPECULATIVE;
 
   Bit64u val64 = pop_64();
 
   // Note: there is one little weirdism here.  It is possible to use
   // RSP in the modrm addressing. If used, the value of RSP after the
   // pop is used to calculate the address.
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  write_virtual_qword_64(i->seg(), RMAddr(i), val64);
+  write_virtual_qword_64(i->seg(), eaddr, val64);
 
-  BX_CPU_THIS_PTR speculative_rsp = 0;
+  RSP_COMMIT;
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_RRX(bxInstruction_c *i)
@@ -93,9 +92,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH64_Id(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EqM(bxInstruction_c *i)
 {
-  BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit64u op1_64 = read_virtual_qword_64(i->seg(), RMAddr(i));
+  Bit64u op1_64 = read_virtual_qword_64(i->seg(), eaddr);
 
   push_64(op1_64);
 }
@@ -105,8 +104,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ENTER64_IwIb(bxInstruction_c *i)
   Bit8u level = i->Ib2();
   level &= 0x1F;
 
-  BX_CPU_THIS_PTR speculative_rsp = 1;
-  BX_CPU_THIS_PTR prev_rsp = RSP;
+  RSP_SPECULATIVE;
 
   push_64(RBP);
 
@@ -135,7 +133,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ENTER64_IwIb(bxInstruction_c *i)
 
   RBP = frame_ptr64;
 
-  BX_CPU_THIS_PTR speculative_rsp = 0;
+  RSP_COMMIT;
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::LEAVE64(bxInstruction_c *i)

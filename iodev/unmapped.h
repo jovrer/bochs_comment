@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: unmapped.h,v 1.13 2006/09/10 17:18:44 vruppert Exp $
+// $Id: unmapped.h,v 1.16 2009/04/26 06:56:28 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #ifndef BX_IODEV_UNMAPPED_H
 #define BX_IODEV_UNMAPPED_H
@@ -55,6 +55,7 @@ private:
     Bit8u port80;
     Bit8u port8e;
     Bit8u shutdown;
+    bx_bool port_e9_hack;
   } s;  // state information
 };
 

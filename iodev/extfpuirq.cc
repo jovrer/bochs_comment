@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: extfpuirq.cc,v 1.9 2008/01/26 22:24:01 sshwarts Exp $
+// $Id: extfpuirq.cc,v 1.14 2009/02/08 09:05:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 //
 // External circuit for MSDOS compatible FPU exceptions
@@ -34,6 +34,7 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
+#include "extfpuirq.h"
 
 #define LOG_THIS theExternalFpuIrq->
 
@@ -42,7 +43,6 @@ bx_extfpuirq_c *theExternalFpuIrq = NULL;
 int libextfpuirq_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theExternalFpuIrq = new bx_extfpuirq_c();
-  bx_devices.pluginExtFpuIrq = theExternalFpuIrq;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theExternalFpuIrq, BX_PLUGIN_EXTFPUIRQ);
   return(0); // Success
 }
@@ -55,7 +55,6 @@ void libextfpuirq_LTX_plugin_fini(void)
 bx_extfpuirq_c::bx_extfpuirq_c(void)
 {
   put("EFIRQ");
-  settype(EXTFPUIRQLOG);
 }
 
 bx_extfpuirq_c::~bx_extfpuirq_c(void)

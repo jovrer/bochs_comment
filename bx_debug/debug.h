@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debug.h,v 1.44 2008/05/31 21:07:30 sshwarts Exp $
+// $Id: debug.h,v 1.52 2009/04/07 16:12:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 
 // if including from C parser, need basic types etc
@@ -219,7 +219,7 @@ void bx_dbg_set_reg8h_value(unsigned reg, Bit8u value);
 void bx_dbg_set_reg16_value(unsigned reg, Bit16u value);
 void bx_dbg_set_reg32_value(unsigned reg, Bit32u value);
 void bx_dbg_set_reg64_value(unsigned reg, Bit64u value);
-Bit32u bx_dbg_get_laddr(Bit16u sel, Bit32u ofs);
+bx_address bx_dbg_get_laddr(Bit16u sel, bx_address ofs);
 void bx_dbg_step_over_command(void);
 void bx_dbg_trace_command(bx_bool enable);
 void bx_dbg_trace_reg_command(bx_bool enable);
@@ -238,8 +238,11 @@ void bx_dbg_print_string_command(bx_address addr);
 void bx_dbg_xlate_address(bx_lin_address address);
 void bx_dbg_show_command(const char*);
 void bx_dbg_print_stack_command(unsigned nwords);
-void bx_dbg_watch(int read, bx_phy_address address);
-void bx_dbg_unwatch(int read, bx_phy_address address);
+extern bx_bool watchpoint_continue;
+void bx_dbg_print_watchpoints(void);
+void bx_dbg_watch(int type, bx_phy_address address);
+void bx_dbg_unwatch_all(void);
+void bx_dbg_unwatch(bx_phy_address handle);
 void bx_dbg_continue_command(void);
 void bx_dbg_stepN_command(Bit32u count);
 void bx_dbg_set_auto_disassemble(bx_bool enable);
@@ -283,7 +286,6 @@ void bx_dbg_disassemble_command(const char *, Bit64u from, Bit64u to);
 void bx_dbg_instrument_command(const char *);
 void bx_dbg_doit_command(unsigned);
 void bx_dbg_crc_command(bx_phy_address addr1, bx_phy_address addr2);
-extern bx_bool watchpoint_continue;
 void bx_dbg_linux_syscall(unsigned which_cpu);
 void bx_dbg_info_ne2k(int page, int reg);
 void bx_dbg_info_pic(void);
@@ -303,7 +305,7 @@ void bx_dbg_lin_memory_access(unsigned cpu, bx_address lin, bx_phy_address phy, 
 void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw, Bit8u *data);
 
 // check memory access for watchpoints
-void bx_dbg_check_memory_access_watchpoints(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw);
+void bx_dbg_check_memory_watchpoints(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw);
 
 // commands that work with Bochs param tree
 void bx_dbg_restore_command(const char *param_name, const char *path);
@@ -379,7 +381,7 @@ void bx_dbg_exit(int code);
 #define BX_DBG_GUARD_CTRL_C        0x0100
 
 typedef struct {
-  unsigned long guard_for;
+  unsigned guard_for;
 
   // instruction address breakpoints
   struct {
@@ -451,19 +453,22 @@ typedef struct {
 // working information for each simulator to update when a guard
 // is reached (found)
 typedef struct bx_guard_found_t {
-  unsigned long guard_found;
+  unsigned guard_found;
   unsigned iaddr_index;
-  Bit32u icount; // number of completed instructions
-  Bit32u  cs; // cs:eip and linear addr of instruction at guard point
+  Bit64u icount; // number of completed instructions from last breakpoint hit
+  Bit32u cs;     // cs:eip and linear addr of instruction at guard point
   bx_address eip;
   bx_address laddr;
-  bx_bool is_32bit_code; // CS seg size at guard point
-  bx_bool is_64bit_code;
+  // 00 - 16 bit, 01 - 32 bit, 10 - 64-bit, 11 - illegal
+  unsigned code_32_64; // CS seg size at guard point
   bx_bool ctrl_c; // simulator stopped due to Ctrl-C request
   Bit64u  time_tick; // time tick when guard reached
 } bx_guard_found_t;
 
 extern bx_guard_t bx_guard;
+
+#define IS_CODE_32(code_32_64) ((code_32_64 & 1) != 0)
+#define IS_CODE_64(code_32_64) ((code_32_64 & 2) != 0)
 
 void bx_dbg_init_infile(void);
 int  bx_dbg_set_rcfile(const char *rcfile);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.382 2008/05/30 20:35:05 sshwarts Exp $
+// $Id: main.cc,v 1.399 2009/04/23 18:28:17 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,9 +22,13 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "bochs.h"
+#include "gui/textconfig.h"
+#if BX_USE_TEXTCONFIG && defined(WIN32)
+#include "gui/win32dialog.h"
+#endif
 #include "cpu/cpu.h"
 #include "iodev/iodev.h"
 
@@ -113,17 +117,17 @@ BOCHSAPI BX_MEM_C bx_mem;
 
 char *bochsrc_filename = NULL;
 
-void bx_print_header ()
+void bx_print_header()
 {
-  fprintf (stderr, "%s\n", divider);
+  printf("%s\n", divider);
   char buffer[128];
   sprintf (buffer, "Bochs x86 Emulator %s\n", VER_STRING);
-  bx_center_print (stderr, buffer, 72);
+  bx_center_print(stdout, buffer, 72);
   if (REL_STRING[0]) {
-    sprintf (buffer, "%s\n", REL_STRING);
-    bx_center_print (stderr, buffer, 72);
+    sprintf(buffer, "%s\n", REL_STRING);
+    bx_center_print(stdout, buffer, 72);
   }
-  fprintf (stderr, "%s\n", divider);
+  printf("%s\n", divider);
 }
 
 #if BX_WITH_CARBON
@@ -219,7 +223,7 @@ void print_tree(bx_param_c *node, int level)
       dbg_printf("%s = '%s' (enum)\n", node->get_name(), ((bx_param_enum_c*)node)->get_selected());
       break;
     case BXT_PARAM_STRING:
-      if (((bx_param_string_c*)node)->get_options()->get() & bx_param_string_c::RAW_BYTES) {
+      if (((bx_param_string_c*)node)->get_options() & bx_param_string_c::RAW_BYTES) {
         tmpstr[0] = 0;
         for (i = 0; i < ((bx_param_string_c*)node)->get_maxsize(); i++) {
           if (i > 0) {
@@ -263,8 +267,11 @@ int bxmain (void) {
   static jmp_buf context;
   if (setjmp (context) == 0) {
     SIM->set_quit_context (&context);
+    BX_INSTR_INIT_ENV();
     if (bx_init_main(bx_startup_flags.argc, bx_startup_flags.argv) < 0)
+    { BX_INSTR_EXIT_ENV();
       return 0;
+    }
     // read a param to decide which config interface to start.
     // If one exists, start it.  If not, just begin.
     bx_param_enum_c *ci_param = SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE);
@@ -274,6 +281,13 @@ int bxmain (void) {
       init_text_config_interface();   // in textconfig.h
 #else
       BX_PANIC(("configuration interface 'textconfig' not present"));
+#endif
+    }
+    else if (!strcmp(ci_name, "win32config")) {
+#if BX_USE_TEXTCONFIG && defined(WIN32)
+      init_win32_config_interface();
+#else
+      BX_PANIC(("configuration interface 'win32config' not present"));
 #endif
     }
 #if BX_WITH_WX
@@ -303,6 +317,7 @@ int bxmain (void) {
     fgets(buf, sizeof(buf), stdin);
   }
 #endif
+  BX_INSTR_EXIT_ENV();
   return SIM->get_exit_code();
 }
 
@@ -489,8 +504,10 @@ void print_usage(void)
     "  -q               quick start (skip configuration interface)\n"
     "  -benchmark n     run bochs in benchmark mode for millions of emulated ticks\n"
     "  -r path          restore the Bochs state from path\n"
+    "  -log filename    specify Bochs log file name\n"
 #if BX_DEBUGGER
     "  -rc filename     execute debugger commands stored in file\n"
+    "  -dbglog filename specify Bochs internal debugger log file name\n"
 #endif
     "  --help           display this help and exit\n\n"
     "For information on Bochs configuration file arguments, see the\n"
@@ -541,6 +558,16 @@ int bx_init_main(int argc, char *argv[])
     else if (!strcmp("-q", argv[arg])) {
       SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_QUICK_START);
     }
+    else if (!strcmp("-log", argv[arg])) {
+      if (++arg >= argc) BX_PANIC(("-log must be followed by a filename"));
+      else SIM->get_param_string(BXPN_LOG_FILENAME)->set(argv[arg]);
+    }
+#if BX_DEBUGGER
+    else if (!strcmp("-dbglog", argv[arg])) {
+      if (++arg >= argc) BX_PANIC(("-dbglog must be followed by a filename"));
+      else SIM->get_param_string(BXPN_DEBUGGER_LOG_FILENAME)->set(argv[arg]);
+    }
+#endif
     else if (!strcmp("-f", argv[arg])) {
       if (++arg >= argc) BX_PANIC(("-f must be followed by a filename"));
       else bochsrc_filename = argv[arg];
@@ -686,6 +713,10 @@ int bx_init_main(int argc, char *argv[])
 #endif
 #endif  /* if BX_PLUGINS */
 
+  // initialize plugin system. This must happen before we attempt to
+  // load any modules.
+  plugin_startup();
+
   int norcfile = 1;
 
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
@@ -737,9 +768,6 @@ int bx_init_main(int argc, char *argv[])
       return -1;
     }
   }
-  // initialize plugin system. This must happen before we attempt to
-  // load any modules.
-  plugin_startup();
   return 0;
 }
 
@@ -974,7 +1002,11 @@ void bx_init_hardware()
   BX_INFO(("  processors: %d (cores=%u, HT threads=%u)", BX_SMP_PROCESSORS,
     SIM->get_param_num(BXPN_CPU_NCORES)->get(), SIM->get_param_num(BXPN_CPU_NTHREADS)->get()));
   BX_INFO(("  A20 line support: %s",BX_SUPPORT_A20?"yes":"no"));
-  BX_INFO(("  APIC support: %s",BX_SUPPORT_APIC?"yes":"no"));
+#if BX_CONFIGURE_MSRS
+  const char *msrs_file = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->getptr();
+  if(strlen(msrs_file) > 0)
+    BX_INFO(("  load configurable MSRs from file \"%s\"", msrs_file));
+#endif
   BX_INFO(("CPU configuration"));
   BX_INFO(("  level: %d",BX_CPU_LEVEL));
 #if BX_SUPPORT_SMP
@@ -982,6 +1014,7 @@ void bx_init_hardware()
 #else
   BX_INFO(("  SMP support: no"));
 #endif
+  BX_INFO(("  APIC support: %s",BX_SUPPORT_APIC?"yes":"no"));
   BX_INFO(("  FPU support: %s",BX_SUPPORT_FPU?"yes":"no"));
   BX_INFO(("  MMX support: %s",BX_SUPPORT_MMX?"yes":"no"));
   if (BX_SUPPORT_SSE == 0)
@@ -994,15 +1027,17 @@ void bx_init_hardware()
   BX_INFO(("  PAE support: %s",BX_SUPPORT_PAE?"yes":"no"));
   BX_INFO(("  PGE support: %s",BX_SUPPORT_GLOBAL_PAGES?"yes":"no"));
   BX_INFO(("  PSE support: %s",BX_SUPPORT_LARGE_PAGES?"yes":"no"));
+#if BX_SUPPORT_X86_64
+  BX_INFO(("  1G paging support: %s",BX_SUPPORT_1G_PAGES?"yes":"no"));
+#endif
   BX_INFO(("  x86-64 support: %s",BX_SUPPORT_X86_64?"yes":"no"));
   BX_INFO(("  SEP support: %s",BX_SUPPORT_SEP?"yes":"no"));
   BX_INFO(("  MWAIT support: %s",BX_SUPPORT_MONITOR_MWAIT?"yes":"no"));
   BX_INFO(("  XSAVE support: %s",BX_SUPPORT_XSAVE?"yes":"no"));
   BX_INFO(("  AES support: %s",BX_SUPPORT_AES?"yes":"no"));
+  BX_INFO(("  VMX support: %s",BX_SUPPORT_VMX?"yes":"no"));
   BX_INFO(("Optimization configuration"));
-  BX_INFO(("  Guest2HostTLB support: %s",BX_SupportGuest2HostTLB?"yes":"no"));
   BX_INFO(("  RepeatSpeedups support: %s",BX_SupportRepeatSpeedups?"yes":"no"));
-  BX_INFO(("  Icache support: %s",BX_SUPPORT_ICACHE?"yes":"no"));
   BX_INFO(("  Trace cache support: %s",BX_SUPPORT_TRACE_CACHE?"yes":"no"));
   BX_INFO(("  Fast function calls: %s",BX_FAST_FUNC_CALL?"yes":"no"));
   BX_INFO(("Devices configuration"));
@@ -1064,7 +1099,7 @@ void bx_init_hardware()
   BX_CPU(0)->initialize();
   BX_CPU(0)->sanity_checks();
   BX_CPU(0)->register_state();
-  BX_INSTR_INIT(0);
+  BX_INSTR_INITIALIZE(0);
 #else
   bx_cpu_array = new BX_CPU_C_PTR[BX_SMP_PROCESSORS];
 
@@ -1073,7 +1108,7 @@ void bx_init_hardware()
     BX_CPU(i)->initialize();  // assign local apic id in 'initialize' method
     BX_CPU(i)->sanity_checks();
     BX_CPU(i)->register_state();
-    BX_INSTR_INIT(i);
+    BX_INSTR_INITIALIZE(i);
   }
 #endif
 
@@ -1121,31 +1156,7 @@ void bx_init_bx_dbg(void)
 #if BX_DEBUGGER
   bx_dbg_init_infile();
 #endif
-  bx_dbg.floppy = 0;
-  bx_dbg.keyboard = 0;
-  bx_dbg.video = 0;
-  bx_dbg.disk = 0;
-  bx_dbg.pit = 0;
-  bx_dbg.pic = 0;
-  bx_dbg.bios = 0;
-  bx_dbg.cmos = 0;
-  bx_dbg.a20 = 0;
-  bx_dbg.interrupts = 0;
-  bx_dbg.exceptions = 0;
-  bx_dbg.mouse = 0;
-  bx_dbg.io = 0;
-  bx_dbg.debugger = 0;
-  bx_dbg.dma = 0;
-  bx_dbg.unsupported_io = 0;
-  bx_dbg.record_io = 0;
-  bx_dbg.serial = 0;
-  bx_dbg.cdrom = 0;
-#if BX_DEBUGGER
-  bx_dbg.magic_break_enabled = 0;
-#endif
-#if BX_GDBSTUB
-  bx_dbg.gdbstub_enabled = 0;
-#endif
+  memset(&bx_dbg, 0, sizeof(bx_debug_t));
 }
 
 int bx_atexit(void)

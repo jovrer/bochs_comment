@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pic.h,v 1.19 2007/09/28 19:52:04 sshwarts Exp $
+// $Id: pic.h,v 1.22 2009/04/21 20:27:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #ifndef BX_IODEV_PIC_H
 #define BX_IODEV_PIC_H
@@ -77,7 +77,9 @@ public:
   virtual void raise_irq(unsigned irq_no);
   virtual void set_mode(bx_bool ma_sl, Bit8u mode);
   virtual Bit8u IAC(void);
-  virtual void show_pic_state(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(void);
+#endif
   virtual void register_state(void);
 
 private:

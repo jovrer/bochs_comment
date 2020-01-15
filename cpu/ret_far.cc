@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ret_far.cc,v 1.18 2008/05/10 18:10:53 sshwarts Exp $
+// $Id: ret_far.cc,v 1.21 2009/01/16 18:18:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005 Stanislav Shwartsman
@@ -17,7 +17,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
 //
 ////////////////////////////////////////////////////////////////////////
 
@@ -139,13 +139,13 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
 
 #if BX_SUPPORT_X86_64
     if (i->os64L()) {
-      raw_ss_selector = read_virtual_word_64 (BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes);
+      raw_ss_selector = read_virtual_word_64(BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes);
       return_RSP      = read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 16 + pop_bytes);
     }
     else
 #endif
     if (i->os32L()) {
-      raw_ss_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 12 + pop_bytes);
+      raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 12 + pop_bytes);
       return_RSP      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP +  8 + pop_bytes);
     }
     else {

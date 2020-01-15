@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gdbstub.cc,v 1.32 2008/02/15 19:03:53 sshwarts Exp $
+// $Id: gdbstub.cc,v 1.35 2008/12/05 22:34:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2006  The Bochs Project Team
@@ -100,7 +100,7 @@ static void put_reply(char* buffer)
   unsigned char csum;
   int i;
 
-  BX_DEBUG (("put_buffer %s", buffer));
+  BX_DEBUG(("put_buffer '%s'", buffer));
 
   do {
     put_debug_char('$');
@@ -182,31 +182,25 @@ static void get_command(char* buffer)
 
 void hex2mem(char* buf, unsigned char* mem, int count)
 {
-  int i;
   unsigned char ch;
 
-  for (i = 0; i<count; i++)
+  for (int i = 0; i<count; i++)
   {
     ch = hex(*buf++) << 4;
     ch = ch + hex(*buf++);
-    *mem = ch;
-    mem++;
+    *mem++ = ch;
   }
 }
 
 char* mem2hex(char* mem, char* buf, int count)
 {
-  int i;
   unsigned char ch;
 
-  for (i = 0; i<count; i++)
+  for (int i = 0; i<count; i++)
   {
-    ch = *mem;
-    mem++;
-    *buf = hexchars[ch >> 4];
-    buf++;
-    *buf = hexchars[ch % 16];
-    buf++;
+    ch = *mem++;
+    *buf++ = hexchars[ch >> 4];
+    *buf++ = hexchars[ch % 16];
   }
   *buf = 0;
   return(buf);
@@ -426,10 +420,10 @@ static int access_linear(Bit64u laddress,
   valid = BX_CPU(0)->dbg_xlate_linear2phy(laddress, (bx_phy_address*)&phys);
   if (!valid) return(0);
 
-  if (rw == BX_READ) {
-    valid = BX_MEM(0)->dbg_fetch_mem(BX_CPU(0), phys, len, data);
-  } else {
+  if (rw & 1) {
     valid = BX_MEM(0)->dbg_set_mem(phys, len, data);
+  } else {
+    valid = BX_MEM(0)->dbg_fetch_mem(BX_CPU(0), phys, len, data);
   }
 
   return(valid);
@@ -439,15 +433,13 @@ static void debug_loop(void)
 {
   char buffer[255];
   char obuf[255];
-  int ne;
+  int ne = 0;
   unsigned char mem[255];
-
-  ne = 0;
 
   while (ne == 0)
   {
     get_command(buffer);
-    BX_DEBUG(("get_buffer %s", buffer));
+    BX_DEBUG(("get_buffer '%s'", buffer));
 
     switch (buffer[0])
     {
@@ -581,19 +573,23 @@ static void debug_loop(void)
         value = read_little_endian_hex(ebuf);
 
         BX_INFO(("reg %d set to %Lx", reg, value));
-#if !BX_SUPPORT_X86_64
+#if BX_SUPPORT_X86_64 == 0
         switch (reg)
         {
-          case 1:
-          EAX = value;
-          break;
+          case 0:
+            EAX = value;
+            break;
 
-          case 2:
+          case 1:
             ECX = value;
             break;
 
-          case 3:
+          case 2:
             EBX = value;
+            break;
+
+          case 3:
+            EDX = value;
             break;
 
           case 4:
@@ -640,19 +636,19 @@ static void debug_loop(void)
             break;
 
           case 4:
-            RSI = value;
+            RSP = value;
             break;
 
           case 5:
-            RDI = value;
+            RBP = value;
             break;
 
           case 6:
-            ESP = value;
+            RSI = value;
             break;
 
           case 7:
-            RBP = value;
+            RDI = value;
             break;
 
           case 8:
@@ -702,7 +698,7 @@ static void debug_loop(void)
       }
 
       case 'g':
-#if !BX_SUPPORT_X86_64
+#if BX_SUPPORT_X86_64 == 0
         registers[0] = EAX;
         registers[1] = ECX;
         registers[2] = EDX;
@@ -809,6 +805,10 @@ static void debug_loop(void)
                   SIM->get_param_num("data_base", gdbstub_list)->get(),
                   SIM->get_param_num("bss_base", gdbstub_list)->get());
           put_reply(obuf);
+        }
+        else if (strncmp(&buffer[1], "Supported", strlen("Supported")) == 0)
+        {
+          put_reply("");
         }
         else
         {
