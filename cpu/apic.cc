@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.cc,v 1.96 2007/04/04 16:55:50 sshwarts Exp $
+// $Id: apic.cc,v 1.105 2007/12/07 10:59:18 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (c) 2002 Zwane Mwaikambo, Stanislav Shwartsman
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +18,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -152,6 +147,22 @@ static void apic_bus_broadcast_eoi(Bit8u vector)
 {
   bx_devices.ioapic->receive_eoi(vector);
 }
+
+#endif
+
+// available even if APIC is not compiled in
+void apic_bus_deliver_smi(void)
+{
+  BX_CPU(0)->deliver_SMI();
+}
+
+void apic_bus_broadcast_smi(void)
+{
+  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
+    BX_CPU(i)->deliver_SMI();
+}
+
+#if BX_SUPPORT_APIC
 
 ////////////////////////////////////
 
@@ -513,11 +524,11 @@ void bx_local_apic_c::receive_EOI(Bit32u value)
 
 void bx_local_apic_c::startup_msg(Bit32u vector)
 {
-  if(cpu->debug_trap & BX_DEBUG_TRAP_HALT_STATE) {
-    cpu->debug_trap &= ~BX_DEBUG_TRAP_HALT_STATE;
-    cpu->dword.eip = 0;
+  if(cpu->debug_trap & BX_DEBUG_TRAP_SPECIAL) {
+    cpu->debug_trap &= ~BX_DEBUG_TRAP_SPECIAL;
+    cpu->eip_reg.dword.eip = 0;
     cpu->load_seg_reg(&cpu->sregs[BX_SEG_REG_CS], vector*0x100);
-    BX_INFO(("%s started up at %04X:%08X by APIC", cpu->name, vector*0x100, cpu->dword.eip));
+    BX_INFO(("%s started up at %04X:%08X by APIC", cpu->name, vector*0x100, cpu->eip_reg.dword.eip));
   } else {
     BX_INFO(("%s started up by APIC, but was not halted at the time", cpu->name));
   }
@@ -940,7 +951,6 @@ void bx_local_apic_c::set_initial_timer_count(Bit32u value)
   }
 }
 
-#if BX_SUPPORT_SAVE_RESTORE
 void bx_local_apic_c::register_state(bx_param_c *parent)
 {
   unsigned i;
@@ -987,6 +997,5 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, ticksInitial);
   BXRS_PARAM_BOOL(lapic, INTR, INTR);
 }
-#endif
 
 #endif /* if BX_SUPPORT_APIC */

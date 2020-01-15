@@ -36,7 +36,7 @@ case $which_config in
                 --enable-acpi \
                 --enable-clgd54xx \
                 --enable-usb \
-                --enable-save-restore \
+                --enable-show-ips \
                 ${CONFIGURE_ARGS}
     ;;
 
@@ -55,8 +55,8 @@ case $which_config in
                 --enable-acpi \
                 --enable-clgd54xx \
                 --enable-usb \
-                --enable-save-restore \
                 --enable-plugins \
+                --enable-show-ips \
                 --with-all-libs \
                 ${CONFIGURE_ARGS}
     ;;

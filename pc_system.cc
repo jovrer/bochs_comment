@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.65 2006/09/17 20:37:27 vruppert Exp $
+// $Id: pc_system.cc,v 1.68 2007/11/01 18:03:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -187,6 +187,12 @@ void bx_pc_system_c::MemoryMappingChanged(void)
     BX_CPU(i)->TLB_flush(1);
 }
 
+void bx_pc_system_c::invlpg(bx_address addr)
+{
+  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
+    BX_CPU(i)->TLB_invlpg(addr);
+}
+
 int bx_pc_system_c::Reset(unsigned type)
 {
   // type is BX_RESET_HARDWARE or BX_RESET_SOFTWARE
@@ -223,11 +229,10 @@ void bx_pc_system_c::exit(void)
   }
 }
 
-#if BX_SUPPORT_SAVE_RESTORE
 void bx_pc_system_c::register_state(void)
 {
 
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pc_system", "PC System State", 8);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pc_system", "PC System State", 8);
   BXRS_PARAM_BOOL(list, enable_a20, enable_a20);
   BXRS_DEC_PARAM_SIMPLE(list, currCountdown);
   BXRS_DEC_PARAM_SIMPLE(list, currCountdownPeriod);
@@ -248,8 +253,6 @@ void bx_pc_system_c::register_state(void)
     BXRS_PARAM_BOOL(bxtimer, continuous, timer[i].continuous);
   }
 }
-#endif
-
 
 // ================================================
 // Bochs internal timer delivery framework features
@@ -418,6 +421,13 @@ void bx_pc_system_c::nullTimer(void* this_ptr)
 #if BX_SUPPORT_ICACHE
   purgeICaches();
 #endif
+}
+
+void bx_pc_system_c::benchmarkTimer(void* this_ptr)
+{
+  bx_pc_system_c *class_ptr = (bx_pc_system_c *) this_ptr;
+  class_ptr->kill_bochs_request = 1;
+  bx_user_quit = 1;
 }
 
 #if BX_DEBUGGER

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.60 2006/11/19 16:18:41 sshwarts Exp $
+// $Id: logio.cc,v 1.62 2007/10/24 23:28:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -98,7 +98,7 @@ void iofunctions::init_log(const char *fn)
   // use newfd/newfn so that we can log the message to the OLD log
   // file descriptor.
   FILE *newfd = stderr;
-  char *newfn = "/dev/stderr";
+  const char *newfn = "/dev/stderr";
   if(strcmp(fn, "-") != 0) {
     newfd = fopen(fn, "w");
     if(newfd != NULL) {
@@ -146,7 +146,7 @@ void iofunctions::exit_log()
   if (logfd != stderr) {
     fclose(logfd);
     logfd = stderr;
-    free(logfn);
+    free((char *)logfn);
     logfn = "/dev/stderr";
   }
 }
@@ -196,7 +196,7 @@ void iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list
             break;
           case 'i':
 #if BX_SUPPORT_SMP == 0
-            fprintf(logfd, "%08x", BX_CPU(0)->dword.eip);
+            fprintf(logfd, "%08x", BX_CPU(0)->eip_reg.dword.eip);
 #endif
             break;
           case 'e':
@@ -314,7 +314,7 @@ void logfunctions::setio(iofunc_t *i)
   i->add_logfn(this);
 }
 
-void logfunctions::put(char *p)
+void logfunctions::put(const char *p)
 {
   char * tmpbuf=strdup("[     ]");   // if we ever have more than 32 chars,
                                      // we need to rethink this
@@ -593,7 +593,7 @@ void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int ex
   }
 #endif
 #if !BX_WITH_WX
-  static char *divider = "========================================================================";
+  static const char *divider = "========================================================================";
   fprintf(stderr, "%s\n", divider);
   fprintf(stderr, "Bochs is exiting with the following message:\n");
   fprintf(stderr, "%s ", prefix);

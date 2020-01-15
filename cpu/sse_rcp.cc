@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_rcp.cc,v 1.12 2007/04/19 16:12:20 sshwarts Exp $
+// $Id: sse_rcp.cc,v 1.15 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -19,6 +19,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -388,11 +389,11 @@ void BX_CPU_C::RCPSS_VssWss(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), &op);
+    op = read_virtual_dword(i->seg(), RMAddr(i));
   }
 
-  float32 result = approximate_rcp(op);
-  BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
+  op = approximate_rcp(op);
+  BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
 
 #else
   BX_INFO(("RCPSS_VssWss: required SSE, use --enable-sse option"));
@@ -737,11 +738,11 @@ void BX_CPU_C::RSQRTSS_VssWss(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), &op);
+    op = read_virtual_dword(i->seg(), RMAddr(i));
   }
 
-  float32 result = approximate_rsqrt(op);
-  BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
+  op = approximate_rsqrt(op);
+  BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
 
 #else
   BX_INFO(("RSQRTSS_VssWss: required SSE, use --enable-sse option"));

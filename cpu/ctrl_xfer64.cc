@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc,v 1.47 2006/06/09 22:29:06 sshwarts Exp $
+// $Id: ctrl_xfer64.cc,v 1.59 2007/12/21 17:30:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -36,15 +36,11 @@
 
 void BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
 {
-  Bit64u return_RIP;
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  Bit16u imm16 = i->Iw();
-
-  pop_64(&return_RIP);
+  Bit64u return_RIP = read_virtual_qword(BX_SEG_REG_SS, RSP);
 
   if (! IsCanonical(return_RIP)) {
     BX_ERROR(("RETnear64_Iw: canonical RIP violation"));
@@ -52,27 +48,26 @@ void BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
   }
 
   RIP = return_RIP;
-  RSP += imm16;
+  RSP += 8 + i->Iw();
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, RIP);
 }
 
 void BX_CPU_C::RETnear64(bxInstruction_c *i)
 {
-  Bit64u return_RIP;
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  pop_64(&return_RIP);
+  Bit64u return_RIP = read_virtual_qword(BX_SEG_REG_SS, RSP);
 
   if (! IsCanonical(return_RIP)) {
-    BX_ERROR(("RETnear64: canonical RIP violation"));
+    BX_ERROR(("RETnear64_Iw: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   RIP = return_RIP;
+  RSP += 8;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, RIP);
 }
@@ -87,9 +82,13 @@ void BX_CPU_C::RETfar64_Iw(bxInstruction_c *i)
 
   BX_ASSERT(protected_mode());
 
-  BX_INFO(("RETfar64_Iw instruction executed ..."));
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
+  // return_protected is not RSP safe
   return_protected(i, i->Iw());
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -105,15 +104,19 @@ void BX_CPU_C::RETfar64(bxInstruction_c *i)
 
   BX_ASSERT(protected_mode());
 
-  BX_INFO(("RETfar64 instruction executed ..."));
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
+  // return_protected is not RSP safe
   return_protected(i, 0);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
 
-void BX_CPU_C::CALL_Aq(bxInstruction_c *i)
+void BX_CPU_C::CALL_Jq(bxInstruction_c *i)
 {
   Bit64u new_RIP = RIP + (Bit32s) i->Id();
 
@@ -122,7 +125,7 @@ void BX_CPU_C::CALL_Aq(bxInstruction_c *i)
 #endif
 
   if (! IsCanonical(new_RIP)) {
-    BX_ERROR(("CALL_Aq: canonical RIP violation"));
+    BX_ERROR(("CALL_Jq: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -145,7 +148,7 @@ void BX_CPU_C::CALL_Eq(bxInstruction_c *i)
     op1_64 = BX_READ_64BIT_REG(i->rm());
   }
   else {
-    read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+    op1_64 = read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   if (! IsCanonical(op1_64))
@@ -171,21 +174,19 @@ void BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    BX_ERROR(("CALL64_Ep: op1 is a register"));
-    exception(BX_UD_EXCEPTION, 0, 0);
-  }
-
   /* pointer, segment address pair */
-  read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
-  read_virtual_word(i->seg(), RMAddr(i)+8, &cs_raw);
+  op1_32 = read_virtual_dword(i->seg(), RMAddr(i));
+  cs_raw = read_virtual_word (i->seg(), RMAddr(i)+8);
 
   BX_ASSERT(protected_mode());
 
-  BX_INFO(("CallFar64 instruction executed ..."));
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
-  BX_CPU_THIS_PTR call_protected(i, cs_raw, op1_32);
+  // call_protected is not RSP safe
+  call_protected(i, cs_raw, op1_32);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -197,44 +198,164 @@ void BX_CPU_C::JMP_Jq(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, RIP);
 }
 
-void BX_CPU_C::JCC_Jq(bxInstruction_c *i)
+void BX_CPU_C::JO_Jq(bxInstruction_c *i)
 {
-  bx_bool condition;
-
-  switch (i->b1() & 0x0f) {
-    case 0x00: /* JO */ condition = get_OF(); break;
-    case 0x01: /* JNO */ condition = !get_OF(); break;
-    case 0x02: /* JB */ condition = get_CF(); break;
-    case 0x03: /* JNB */ condition = !get_CF(); break;
-    case 0x04: /* JZ */ condition = get_ZF(); break;
-    case 0x05: /* JNZ */ condition = !get_ZF(); break;
-    case 0x06: /* JBE */ condition = get_CF() || get_ZF(); break;
-    case 0x07: /* JNBE */ condition = !get_CF() && !get_ZF(); break;
-    case 0x08: /* JS */ condition = get_SF(); break;
-    case 0x09: /* JNS */ condition = !get_SF(); break;
-    case 0x0A: /* JP */ condition = get_PF(); break;
-    case 0x0B: /* JNP */ condition = !get_PF(); break;
-    case 0x0C: /* JL */ condition = getB_SF() != getB_OF(); break;
-    case 0x0D: /* JNL */ condition = getB_SF() == getB_OF(); break;
-    case 0x0E: /* JLE */ condition = get_ZF() || (getB_SF() != getB_OF());
-      break;
-    case 0x0F: /* JNLE */ condition = (getB_SF() == getB_OF()) &&
-                            !get_ZF();
-      break;
-    default:
-      condition = 0; // For compiler...all targets should set condition.
-      break;
-  }
-
-  if (condition) {
+  if (get_OF()) {
     branch_near64(i);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
   }
-#if BX_INSTRUMENTATION
-  else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNO_Jq(bxInstruction_c *i)
+{
+  if (! get_OF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
   }
-#endif
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JB_Jq(bxInstruction_c *i)
+{
+  if (get_CF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNB_Jq(bxInstruction_c *i)
+{
+  if (! get_CF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JZ_Jq(bxInstruction_c *i)
+{
+  if (get_ZF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNZ_Jq(bxInstruction_c *i)
+{
+  if (! get_ZF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JBE_Jq(bxInstruction_c *i)
+{
+  if (get_CF() || get_ZF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNBE_Jq(bxInstruction_c *i)
+{
+  if (! (get_CF() || get_ZF())) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JS_Jq(bxInstruction_c *i)
+{
+  if (get_SF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNS_Jq(bxInstruction_c *i)
+{
+  if (! get_SF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JP_Jq(bxInstruction_c *i)
+{
+  if (get_PF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNP_Jq(bxInstruction_c *i)
+{
+  if (! get_PF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JL_Jq(bxInstruction_c *i)
+{
+  if (getB_SF() != getB_OF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNL_Jq(bxInstruction_c *i)
+{
+  if (getB_SF() == getB_OF()) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JLE_Jq(bxInstruction_c *i)
+{
+  if (get_ZF() || (getB_SF() != getB_OF())) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNLE_Jq(bxInstruction_c *i)
+{
+  if (! get_ZF() && (getB_SF() == getB_OF())) {
+    branch_near64(i);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
+    return;
+  }
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
 void BX_CPU_C::JMP_Eq(bxInstruction_c *i)
@@ -245,7 +366,7 @@ void BX_CPU_C::JMP_Eq(bxInstruction_c *i)
     op1_64 = BX_READ_64BIT_REG(i->rm());
   }
   else {
-    read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+    op1_64 = read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   if (! IsCanonical(op1_64)) {
@@ -266,18 +387,12 @@ void BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
-  if (i->modC0()) {
-    BX_ERROR(("JMP64_Ep(): op1 is a register"));
-    exception(BX_UD_EXCEPTION, 0, 0);
-  }
-
-  read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
-  read_virtual_word(i->seg(), RMAddr(i)+4, &cs_raw);
-
-  BX_INFO(("JmpFar64 instruction executed ..."));
+  op1_32 = read_virtual_dword(i->seg(), RMAddr(i));
+  cs_raw = read_virtual_word (i->seg(), RMAddr(i)+4);
 
   BX_ASSERT(protected_mode());
-  BX_CPU_THIS_PTR jump_protected(i, cs_raw, op1_32);
+
+  jump_protected(i, cs_raw, op1_32);
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -294,7 +409,14 @@ void BX_CPU_C::IRET64(bxInstruction_c *i)
   BX_CPU_THIS_PTR nmi_disable = 0;
 
   BX_ASSERT(protected_mode());
-  iret_protected(i);
+
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  // long_iret is not RSP safe
+  long_iret(i);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -320,64 +442,116 @@ void BX_CPU_C::JCXZ64_Jb(bxInstruction_c *i)
   BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
+//
+// There is some weirdness in LOOP instructions definition. If an exception
+// was generated during the instruction execution (for example #GP fault
+// because EIP was beyond CS segment limits) CPU state should restore the
+// state prior to instruction execution. 
+//
+// The final point that we are not allowed to decrement ECX register before
+// it is known that no exceptions can happen.
+//
+
 void BX_CPU_C::LOOPNE64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-    if (((--RCX) != 0) && (get_ZF()==0)) {
+    Bit64u count = RCX;
+
+    if (((--count) != 0) && (get_ZF()==0)) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      return;
     }
+#if BX_INSTRUMENTATION
+    else {
+      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    }
+#endif
+
+    RCX = count;
   }
   else {
-    if (((--ECX) != 0) && (get_ZF()==0)) {
+    Bit32u count = ECX;
+
+    if (((--count) != 0) && (get_ZF()==0)) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      return;
     }
-  }
+#if BX_INSTRUMENTATION
+    else {
+      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    }
+#endif
 
-  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    RCX = count;
+  }
 }
 
 void BX_CPU_C::LOOPE64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-    if (((--RCX)!=0) && (get_ZF())) {
+    Bit64u count = RCX;
+
+    if (((--count) != 0) && get_ZF()) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      return;
     }
+#if BX_INSTRUMENTATION
+    else {
+      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    }
+#endif
+
+    RCX = count;
   }
   else {
-    if (((--ECX)!=0) && get_ZF()) {
+    Bit32u count = ECX;
+
+    if (((--count) != 0) && get_ZF()) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      return;
     }
-  }
+#if BX_INSTRUMENTATION
+    else {
+      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    }
+#endif
 
-  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    RCX = count;
+  }
 }
 
 void BX_CPU_C::LOOP64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-    if ((--RCX) != 0) {
+    Bit64u count = RCX;
+
+    if ((--count) != 0) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      return;
     }
+#if BX_INSTRUMENTATION
+    else {
+      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    }
+#endif
+
+    RCX = count;
   }
   else {
-    if ((--ECX) != 0) {
+    Bit32u count = ECX;
+
+    if ((--count) != 0) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
-      return;
     }
-  }
+#if BX_INSTRUMENTATION
+    else {
+      BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    }
+#endif
 
-  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+    RCX = count;
+  }
 }
 
 #endif /* if BX_SUPPORT_X86_64 */

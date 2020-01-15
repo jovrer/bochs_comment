@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer8.cc,v 1.26 2007/01/12 22:47:20 sshwarts Exp $
+// $Id: data_xfer8.cc,v 1.34 2007/12/21 17:30:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -33,7 +34,7 @@
 
 void BX_CPU_C::MOV_RLIb(bxInstruction_c *i)
 {
-  BX_READ_8BIT_REGx(i->opcodeReg(),i->extend8bitL()) = i->Ib();
+  BX_READ_8BIT_REGx(i->opcodeReg(), i->extend8bitL()) = i->Ib();
 }
 
 void BX_CPU_C::MOV_RHIb(bxInstruction_c *i)
@@ -41,48 +42,47 @@ void BX_CPU_C::MOV_RHIb(bxInstruction_c *i)
   BX_CPU_THIS_PTR gen_reg[i->b1() & 0x03].word.byte.rh = i->Ib();
 }
 
-void BX_CPU_C::MOV_EEbGb(bxInstruction_c *i)
+void BX_CPU_C::MOV_EbGbM(bxInstruction_c *i)
 {
-  write_virtual_byte(i->seg(), RMAddr(i), &BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL()));
+  write_virtual_byte(i->seg(), RMAddr(i), BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL()));
 }
 
-void BX_CPU_C::MOV_EGbGb(bxInstruction_c *i)
+void BX_CPU_C::MOV_EbGbR(bxInstruction_c *i)
 {
-  Bit8u op2 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  Bit8u op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
   BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op2);
 }
 
-void BX_CPU_C::MOV_GbEEb(bxInstruction_c *i)
+void BX_CPU_C::MOV_GbEbM(bxInstruction_c *i)
 {
-  read_virtual_byte(i->seg(), RMAddr(i), &BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL()));
+  Bit8u val8 = read_virtual_byte(i->seg(), RMAddr(i));
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), val8);
 }
 
-void BX_CPU_C::MOV_GbEGb(bxInstruction_c *i)
+void BX_CPU_C::MOV_GbEbR(bxInstruction_c *i)
 {
-  Bit8u op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
+  Bit8u op2 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
   BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op2);
 }
 
 void BX_CPU_C::MOV_ALOd(bxInstruction_c *i)
 {
-  read_virtual_byte(i->seg(), i->Id(), &AL);
+  AL = read_virtual_byte(i->seg(), i->Id());
 }
 
 void BX_CPU_C::MOV_OdAL(bxInstruction_c *i)
 {
-  write_virtual_byte(i->seg(), i->Id(), &AL);
+  write_virtual_byte(i->seg(), i->Id(), AL);
 }
 
-void BX_CPU_C::MOV_EbIb(bxInstruction_c *i)
+void BX_CPU_C::MOV_EbIbM(bxInstruction_c *i)
 {
-  Bit8u op2 = i->Ib();
+  write_virtual_byte(i->seg(), RMAddr(i), i->Ib());
+}
 
-  if (i->modC0()) {
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op2);
-  }
-  else {
-    write_virtual_byte(i->seg(), RMAddr(i), &op2);
-  }
+void BX_CPU_C::MOV_EbIbR(bxInstruction_c *i)
+{
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), i->Ib());
 }
 
 void BX_CPU_C::XLAT(bxInstruction_c *i)
@@ -102,25 +102,26 @@ void BX_CPU_C::XLAT(bxInstruction_c *i)
     offset =  BX + AL;
   }
 
-  read_virtual_byte(i->seg(), offset, &AL);
+  AL = read_virtual_byte(i->seg(), offset);
 }
 
-void BX_CPU_C::XCHG_EbGb(bxInstruction_c *i)
+void BX_CPU_C::XCHG_EbGbM(bxInstruction_c *i)
 {
-  Bit8u op2, op1;
+  Bit8u op1, op2;
 
+  /* pointer, segment address pair */
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
   op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
 
-  /* op1 is a register or memory reference */
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op2);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-    write_RMW_virtual_byte(op2);
-  }
+  write_RMW_virtual_byte(op2);
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+}
+
+void BX_CPU_C::XCHG_EbGbR(bxInstruction_c *i)
+{
+  Bit8u op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  Bit8u op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
 
   BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op2);
 }

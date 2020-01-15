@@ -24,5 +24,5 @@ export CXXFLAGS
             --enable-acpi \
             --enable-clgd54xx \
             --enable-usb \
-            --enable-save-restore \
+            --enable-show-ips \
             --with-win32 --with-rfb --with-nogui

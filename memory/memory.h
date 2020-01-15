@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h,v 1.41 2006/10/02 17:40:20 vruppert Exp $
+// $Id: memory.h,v 1.44 2007/12/10 19:05:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -69,12 +69,17 @@ private:
   bx_bool smram_available;
   bx_bool smram_enable;
   bx_bool smram_restricted;
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  bx_bool *monitor_active;
+  Bit32u   n_monitors;
+#endif
   
 public:
   Bit8u   *actual_vector;
   Bit8u   *vector;   // aligned correctly
-  size_t  len;
-  size_t  megabytes; // (len in Megabytes)
+  Bit32u  len;
+  Bit32u  megabytes; // (len in Megabytes)
   Bit8u   *rom;      // 512k BIOS rom space + 128k expansion rom space
   Bit8u   *bogus;    // 4k for unexisting memory
 #if BX_DEBUGGER
@@ -83,8 +88,8 @@ public:
 
   BX_MEM_C();
  ~BX_MEM_C();
-  BX_MEM_SMF void    alloc_vector_aligned (size_t bytes, size_t alignment) BX_CPP_AttrRegparmN(2);
-  BX_MEM_SMF void    init_memory(int memsize);
+  BX_MEM_SMF void    alloc_vector_aligned (Bit32u bytes, Bit32u alignment) BX_CPP_AttrRegparmN(2);
+  BX_MEM_SMF void    init_memory(Bit32u memsize);
   BX_MEM_SMF void    cleanup_memory(void);
   BX_MEM_SMF void    enable_smram(bx_bool enable, bx_bool restricted);
   BX_MEM_SMF void    disable_smram(void);
@@ -104,18 +109,21 @@ public:
 		  memory_handler_t write_handler, bx_phy_address begin_addr, bx_phy_address end_addr);
   BX_MEM_SMF bx_bool unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler,
 		  bx_phy_address begin_addr, bx_phy_address end_addr);
-  BX_MEM_SMF Bit32u get_num_allocated_pages(void);
+  BX_MEM_SMF Bit32u  get_num_allocated_pages(void);
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  void    set_monitor(unsigned cpu);
+  void    clear_monitor(unsigned cpu);
+  bx_bool is_monitor(bx_phy_address begin_addr, unsigned len);
+  void    check_monitor(bx_phy_address addr, unsigned len);
+#endif
+
+  BX_MEM_SMF void register_state(void);
 };
 
 #if BX_PROVIDE_CPU_MEMORY==1
-
-#if BX_ADDRESS_SPACES==1
 BOCHSAPI extern BX_MEM_C bx_mem;
-#else
-BOCHSAPI extern BX_MEM_C bx_mem_array[BX_ADDRESS_SPACES];
-#endif  /* BX_ADDRESS_SPACES */
-
-#endif  /* BX_PROVIDE_CPU_MEMORY==1 */
+#endif
 
 #if BX_DEBUGGER
 #  define BX_DBG_DIRTY_PAGE(page) BX_MEM(0)->dbg_dirty_pages[page] = 1;

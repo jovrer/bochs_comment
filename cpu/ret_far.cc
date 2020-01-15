@@ -1,14 +1,9 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ret_far.cc,v 1.9 2007/02/03 21:36:40 sshwarts Exp $
+// $Id: ret_far.cc,v 1.12 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//   Copyright (c) 2005 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -68,16 +63,11 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
 
 #if BX_SUPPORT_X86_64
   if (i->os64L()) {
-    /* operand size=64: 2nd qword on stack must be within stack limits,
-     *   else #SS(0); */
-    if (!can_pop(16))
-    {
-      BX_ERROR(("return_protected: 2rd qword not in stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
+    /* operand size=64: in long mode 1st and 2nd quadword on the stack 
+       must be in canonical address space */
 
-    read_virtual_word (BX_SEG_REG_SS, temp_RSP + 8, &raw_cs_selector);
-    read_virtual_qword(BX_SEG_REG_SS, temp_RSP + 0, &return_RIP);
+    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 8);
+    return_RIP      = read_virtual_qword(BX_SEG_REG_SS, temp_RSP);
 
     stack_param_offset = 16;
   } 
@@ -92,10 +82,8 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
       exception(BX_SS_EXCEPTION, 0, 0);
     }
 
-    Bit32u return_EIP = 0;
-    read_virtual_word (BX_SEG_REG_SS, temp_RSP + 4, &raw_cs_selector);
-    read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 0, &return_EIP);
-    return_RIP = return_EIP;
+    raw_cs_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 4);
+    return_RIP      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP);
 
     stack_param_offset = 8;
   }
@@ -108,10 +96,8 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
       exception(BX_SS_EXCEPTION, 0, 0);
     }
 
-    Bit16u return_IP = 0;
-    read_virtual_word(BX_SEG_REG_SS, temp_RSP + 2, &raw_cs_selector);
-    read_virtual_word(BX_SEG_REG_SS, temp_RSP + 0, &return_IP);
-    return_RIP = return_IP;
+    raw_cs_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 2);
+    return_RIP      = read_virtual_word(BX_SEG_REG_SS, temp_RSP);
 
     stack_param_offset = 4;
   }
@@ -186,8 +172,8 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
         exception(BX_SS_EXCEPTION, 0, 0);
       }
 
-      read_virtual_word (BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes, &raw_ss_selector);
-      read_virtual_qword(BX_SEG_REG_SS, temp_RSP + 16 + pop_bytes, &return_RSP);
+      raw_ss_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes);
+      return_RSP      = read_virtual_qword(BX_SEG_REG_SS, temp_RSP + 16 + pop_bytes);
     }
     else
 #endif
@@ -198,10 +184,8 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
         exception(BX_SS_EXCEPTION, 0, 0);
       }
 
-      Bit32u return_ESP = 0;
-      read_virtual_word (BX_SEG_REG_SS, temp_RSP + 12 + pop_bytes, &raw_ss_selector);
-      read_virtual_dword(BX_SEG_REG_SS, temp_RSP +  8 + pop_bytes, &return_ESP);
-      return_RSP = return_ESP;
+      raw_ss_selector = read_virtual_word (BX_SEG_REG_SS, temp_RSP + 12 + pop_bytes);
+      return_RSP      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP +  8 + pop_bytes);
     }
     else {
       /* top 8+immediate bytes on stack must be within stack limits, else #SS(0) */
@@ -210,10 +194,8 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
         exception(BX_SS_EXCEPTION, 0, 0);
       }
 
-      Bit16u return_SP = 0;
-      read_virtual_word(BX_SEG_REG_SS, temp_RSP + 6 + pop_bytes, &raw_ss_selector);
-      read_virtual_word(BX_SEG_REG_SS, temp_RSP + 4 + pop_bytes, &return_SP);
-      return_RSP = return_SP;
+      raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 6 + pop_bytes);
+      return_RSP      = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 4 + pop_bytes);
     }
 
     /* selector index must be within its descriptor table limits,

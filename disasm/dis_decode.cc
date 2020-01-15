@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_decode.cc,v 1.39 2007/08/18 13:51:16 sshwarts Exp $
+// $Id: dis_decode.cc,v 1.42 2007/11/17 16:19:14 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdio.h>
@@ -34,7 +34,7 @@ static const unsigned char instruction_has_modrm[512] = {
   /*       0 1 2 3 4 5 6 7 8 9 a b c d e f           */
   /*       -------------------------------           */
            1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,1, /* 0F 00 */
-           1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1, /* 0F 10 */
+           1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F 10 */
            1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1, /* 0F 20 */
            0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0, /* 0F 30 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F 40 */
@@ -44,7 +44,7 @@ static const unsigned char instruction_has_modrm[512] = {
            0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0F 80 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F 90 */
            0,0,0,1,1,1,0,0,0,0,0,1,1,1,1,1, /* 0F A0 */
-           1,1,1,1,1,1,1,1,0,1,1,1,1,1,1,1, /* 0F B0 */
+           1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F B0 */
            1,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0, /* 0F C0 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F D0 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F E0 */
@@ -152,12 +152,12 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
         continue;
 
       case 0xf2:     // repne
-        if (!sse_prefix) sse_prefix = SSE_PREFIX_F2;
+        sse_prefix = SSE_PREFIX_F2;
         rex_prefix = 0;
         continue;
 
       case 0xf3:     // rep
-        if (!sse_prefix) sse_prefix = SSE_PREFIX_F3;
+        sse_prefix = SSE_PREFIX_F3;
         rex_prefix = 0;
         continue;
 
@@ -258,7 +258,7 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
          break;
 
        case _GRP64B:
-         entry = &(OPCODE_TABLE(entry)[insn.os_64]);
+         entry = &(OPCODE_TABLE(entry)[insn.os_64 ? 2 : insn.os_32]);
          break;
 
        default:

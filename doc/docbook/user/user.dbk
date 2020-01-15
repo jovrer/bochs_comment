@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.228 2007/09/15 16:00:19 vruppert Exp $
+$Id: user.dbk,v 1.231 2007/10/23 21:59:04 sshwarts Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -1170,6 +1170,10 @@ The tag tells which release you want, and it can be one of the following:
       </row>
     </thead>
     <tbody>
+      <row>
+        <entry>2.3.5</entry>
+        <entry>REL_2_3_5_FINAL</entry>
+      </row>
       <row>
         <entry>2.3</entry>
         <entry>REL_2_3_FINAL</entry>
@@ -2412,16 +2416,6 @@ turn it off.
       <entry>
       Enables logging of measured IPS, see the <command>ips</command> parameter
       of the <link linkend="bochsopt-cpu">cpu option</link>.
-      </entry>
-    </row>
-    <row>
-      <entry>--enable-save-restore</entry>
-      <entry>no</entry>
-      <entry>
-      Enables limited save/restore support. The state of CPU, memory and all
-      devices can be saved now (state of harddisk images not handled yet).
-      See <link linkend="using-save-restore">Save and restore simulation</link>
-      for more information.
       </entry>
     </row>
   </tbody>
@@ -4925,16 +4919,15 @@ file yet.
 <section id="using-save-restore"><title>Save and restore simulation</title>
 <para>
 Starting with version 2.3, Bochs has limited save/restore support. The state of
-cpu(s), memory and all devices can be saved now. To enable this feature, Bochs
-must be compiled with the <option>--enable-save-restore</option> option. When running
-Bochs with save/restore support there will be a new button in the header bar called
-"Suspend". Depending on config interface and gui there will be a prompt where you
-can enter a path or a gui folder selection dialog box. It is possible to save the
-state at any time, but we recommend to do it when the simulation is idle. After
-pressing OK/Enter, Bochs will save a set of files into the selected folder.
-The state of hard disk images is not handled yet, so Bochs will ask you if you
-want to continue after saving state. We don't recommend to continue unless you
-are running a read-only guest system (e.g. Live-CD).
+cpu(s), memory and all devices can be saved now. When running Bochs with there
+will be a button in the header bar called "Suspend". Depending on config interface
+and gui there will be a prompt where you can enter a path or a gui folder
+selection dialog box. It is possible to save the state at any time, but we
+recommend to do it when the simulation is idle. After pressing OK/Enter, Bochs
+will save a set of files into the selected folder. The state of hard disk images
+is not handled yet, so Bochs will ask you if you want to continue after saving
+state. We don't recommend to continue unless you are running a read-only guest
+system (e.g. Live-CD).
 </para>
 <para>
 To restore the saved simulation state you can select the restore function in the
@@ -6244,7 +6237,9 @@ From here, you may use the following commands:
   info cpu                     List of all CPU registers and their contents
   info fpu                     List of all FPU registers and their contents
   info sse                     List of all SSE registers and their contents
-  info cr                      Show CR0-4 registers and their contents
+  info mmx                     List of all MMX registers and their contents
+  info creg                    Show CR0-CR4 registers and their contents
+  info sreg                    Show segment registers and their contents
   info eflags                  Show decoded EFLAGS register
   info break                   Information about current breakpoint status
   info tab                     Show paging address translation
@@ -6268,59 +6263,6 @@ From here, you may use the following commands:
   regs
   reg
   r
-
-  dump_cpu          Dump complete CPU state
-  set_cpu           Set  complete CPU state
-
-    Format of "dump_cpu" and "set_cpu":
-    "eax:0x%x\n"
-    "ebx:0x%x\n"
-    "ecx:0x%x\n"
-    "edx:0x%x\n"
-    "ebp:0x%x\n"
-    "esi:0x%x\n"
-    "edi:0x%x\n"
-    "esp:0x%x\n"
-    "eflags:0x%x\n"
-    "eip:0x%x\n"
-    "cs:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "ss:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "ds:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "es:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "fs:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "gs:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "ldtr:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "tr:s=0x%x, dl=0x%x, dh=0x%x, valid=%u\n"
-    "gdtr:base=0x%x, limit=0x%x\n"
-    "idtr:base=0x%x, limit=0x%x\n"
-    "dr0:0x%x\n"
-    "dr1:0x%x\n"
-    "dr2:0x%x\n"
-    "dr3:0x%x\n"
-    "dr4:0x%x\n"
-    "dr5:0x%x\n"
-    "dr6:0x%x\n"
-    "dr7:0x%x\n"
-    "cr0:0x%x\n"
-    "cr1:0x%x\n"
-    "cr2:0x%x\n"
-    "cr3:0x%x\n"
-    "cr4:0x%x\n"
-    "inhibit_int:%u\n"
-    "done\n"
-
-    Notes:
-      - s is the selector
-      - dl is the shadow descriptor low  dword (4 byte quantitiy)
-      - dh is the shadow descriptor high dword (4 byte quantitiy)
-      - valid denotes if the segment register holds a validated shadow descriptor
-      - inhibit_int is set if the previous instruction was one which delays the
-          acceptance of interrupts by one instruction (STI, MOV SS)
-      - any errors encountered by the set_cpu command, are reported by
-        "Error: ...".  They may be reported after any of the input lines,
-        or after the "done" line, during limit checks.
-      - A successful set_cpu command ends with the separate line:
-        "OK".
 </screen>
 </para>
 </section>

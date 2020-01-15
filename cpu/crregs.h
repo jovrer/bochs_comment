@@ -1,14 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h,v 1.2 2007/09/10 16:04:41 sshwarts Exp $
+// $Id: crregs.h,v 1.5 2007/11/17 23:28:31 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2007  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//   Copyright (c) 2007 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +18,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
 /////////////////////////////////////////////////////////////////////////
 
 #ifndef BX_CRREGS
@@ -104,6 +100,17 @@ struct bx_cr4_t {
   #define CR4_VME_ENABLED (BX_CPU_THIS_PTR cr4.get_VME())
 #else
   #define CR4_VME_ENABLED (0)
+#endif
+
+#if BX_SUPPORT_X86_64
+typedef struct bx_efer_t {
+  // x86-64 EFER bits
+  bx_bool sce;		// system call extensions
+  bx_bool lme;		// long mode enable
+  bx_bool lma;		// long mode active
+  bx_bool nxe;		// no-execute enable
+  bx_bool ffxsr;	// fast FXSAVE/FXRSTOR
+} bx_efer_t;
 #endif
 
 #undef IMPLEMENT_CRREG_ACCESSORS

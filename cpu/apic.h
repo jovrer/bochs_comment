@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.h,v 1.34 2006/10/02 21:49:49 sshwarts Exp $
+// $Id: apic.h,v 1.36 2007/10/15 22:07:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (c) 2002 Zwane Mwaikambo, Stanislav Shwartsman
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -178,9 +172,7 @@ public:
   void periodic(void);
   void set_divide_configuration(Bit32u value);
   void set_initial_timer_count(Bit32u value);
-#if BX_SUPPORT_SAVE_RESTORE
   void register_state(bx_param_c *parent);
-#endif
 };
 
 #endif /* BX_INCLUDE_LOCAL_APIC */

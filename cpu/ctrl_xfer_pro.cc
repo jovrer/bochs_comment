@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer_pro.cc,v 1.57 2007/09/10 20:47:08 sshwarts Exp $
+// $Id: ctrl_xfer_pro.cc,v 1.64 2007/12/14 20:41:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -34,7 +34,6 @@
 // Make life easier merging cpu64 & cpu code.
 #define RIP EIP
 #endif
-
 
 /* pass zero in check_rpl if no needed selector RPL checking for 
    non-conforming segments */
@@ -49,8 +48,7 @@ void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_
   }
 
 #if BX_SUPPORT_X86_64
-  if (descriptor->u.segment.l)
-  {
+  if (descriptor->u.segment.l) {
     if (! BX_CPU_THIS_PTR efer.lma) {
       BX_PANIC(("check_cs: attempt to jump to long mode without enabling EFER.LMA !"));
     }
@@ -99,7 +97,7 @@ BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
   /* caller may request different CPL then in selector */
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.rpl = cpl;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid  = 1;
-  // Added cpl to the selector value.
+  // Add cpl to the selector value.
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value =
     (0xfffc & BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value) | cpl;
 
@@ -111,14 +109,21 @@ BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
       loadSRegLMNominal(BX_SEG_REG_CS, selector->value, cpl);
     }
     else {
-      BX_DEBUG(("Compatibility Mode Activated"));
       BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_COMPAT;
+      BX_DEBUG(("Compatibility Mode Activated"));
+      if (BX_CPU_THIS_PTR eip_reg.dword.rip_upper != 0) {
+        BX_PANIC(("handleCpuModeChange: leaving long mode with RIP upper != 0 !"));
+      }
     }
   }
 #endif
 
 #if BX_SUPPORT_ICACHE
   BX_CPU_THIS_PTR updateFetchModeMask();
+#endif
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  handleAlignmentCheck(); // CPL was modified
 #endif
 
   // Loading CS will invalidate the EIP fetch window.
@@ -134,6 +139,12 @@ BX_CPU_C::branch_near32(Bit32u new_EIP)
     BX_ERROR(("branch_near: offset outside of CS limits"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
+
+#if BX_SUPPORT_TRACE_CACHE
+  // assert magic async_event to stop trace execution
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+#endif
+
   EIP = new_EIP;
 }
 
@@ -160,15 +171,15 @@ BX_CPU_C::branch_near64(bxInstruction_c *i)
 {
   Bit64u new_RIP = RIP + (Bit32s) i->Id();
 
-  if (! i->os32L()) {
-    new_RIP &= 0xffff; // For 16-bit opSize, upper 48 bits of RIP are cleared.
+  if (! IsCanonical(new_RIP)) {
+    BX_ERROR(("branch_near64: canonical RIP violation"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
-  else {
-    if (! IsCanonical(new_RIP)) {
-      BX_ERROR(("branch_near64: canonical RIP violation"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
-  }
+
+#if BX_SUPPORT_TRACE_CACHE
+  // assert magic async_event to stop trace execution
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+#endif
 
   RIP = new_RIP;
 }
@@ -178,8 +189,7 @@ void BX_CPU_C::branch_far64(bx_selector_t *selector,
            bx_descriptor_t *descriptor, bx_address rip, Bit8u cpl)
 {
 #if BX_SUPPORT_X86_64
-  if (descriptor->u.segment.l)
-  {
+  if (descriptor->u.segment.l) {
     if (! IsCanonical(rip)) {
       BX_ERROR(("branch_far: canonical RIP violation"));
       exception(BX_GP_EXCEPTION, 0, 0);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.207 2007/04/19 16:12:12 sshwarts Exp $
+// $Id: bochs.h,v 1.218 2007/12/20 18:32:14 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -85,6 +85,7 @@ extern "C" {
 #  include <sys/types.h>
 #  include <sys/stat.h>
 #  include <sys/param.h> /* for MAXPATHLEN */
+#  include <sys/time.h>
 #  include <utime.h>
 #else
 #  ifndef WIN32
@@ -135,9 +136,8 @@ void print_tree(bx_param_c *node, int level = 0);
 // needed.
 //
 
-#if BX_SUPPORT_SAVE_RESTORE
-
-#define BXRS_PARAM_SPECIAL(parent, name, maxvalue, save_handler, restore_handler) { \
+#define BXRS_PARAM_SPECIAL(parent, name, maxvalue, save_handler, restore_handler) \
+{ \
   bx_param_num_c *param = new bx_param_num_c(parent, #name, "", "", 0, maxvalue, 0); \
   param->set_base(BASE_HEX); \
   param->set_sr_handlers(this, save_handler, restore_handler); \
@@ -165,8 +165,6 @@ void print_tree(bx_param_c *node, int level = 0);
 #define BXRS_PARAM_BOOL(parent, name, field) \
   new bx_shadow_bool_c(parent, #name, (bx_bool*)(&(field)))
 
-#endif
-
 // =-=-=-=-=-=-=- Normal optimized use -=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // some pc_systems functions just redirect to the IO devices so optimize
 // by eliminating call here
@@ -189,11 +187,7 @@ void print_tree(bx_param_c *node, int level = 0);
 #define BX_CPU(x)                   (&bx_cpu)
 #endif
 
-#if BX_ADDRESS_SPACES==1
 #define BX_MEM(x)                   (&bx_mem)
-#else
-#define BX_MEM(x)                   (&bx_mem_array[x])
-#endif
 
 #define BX_SET_ENABLE_A20(enabled)  bx_pc_system.set_enable_a20(enabled)
 #define BX_GET_ENABLE_A20()         bx_pc_system.get_enable_a20()
@@ -207,8 +201,11 @@ void print_tree(bx_param_c *node, int level = 0);
 #if BX_SUPPORT_SMP
 #  define BX_TICK1_IF_SINGLE_PROCESSOR() \
              if (BX_SMP_PROCESSORS == 1) BX_TICK1()
+#  define BX_TICKN_IF_SINGLE_PROCESSOR() \
+             if (BX_SMP_PROCESSORS == 1) BX_TICKN(n)
 #else
 #  define BX_TICK1_IF_SINGLE_PROCESSOR() BX_TICK1()
+#  define BX_TICKN_IF_SINGLE_PROCESSOR() BX_TICKN(n)
 #endif
 
 // you can't use static member functions on the CPU, if there are going
@@ -234,8 +231,8 @@ void print_tree(bx_param_c *node, int level = 0);
         if (bx_guard.report.irq) bx_dbg_iac_report(vector, irq)
 #  define BX_DBG_A20_REPORT(val) \
         if (bx_guard.report.a20) bx_dbg_a20_report(val)
-#  define BX_DBG_IO_REPORT(addr, size, op, val) \
-        if (bx_guard.report.io) bx_dbg_io_report(addr, size, op, val)
+#  define BX_DBG_IO_REPORT(port, size, op, val) \
+        if (bx_guard.report.io) bx_dbg_io_report(port, size, op, val)
 #  define BX_DBG_UCMEM_REPORT(addr, size, op, val) \
         if (bx_guard.report.ucmem) bx_dbg_ucmem_report(addr, size, op, val)
 #else  // #if BX_DEBUGGER
@@ -281,7 +278,7 @@ public:
 #else
 	void ask (int level, const char *prefix, const char *fmt, va_list ap);
 #endif
-	void put(char *);
+	void put(const char *);
 	void settype(int);
 	void setio(class iofunctions *);
 	void setonoff(int loglev, int value) {
@@ -357,16 +354,16 @@ public:
                 else return "?";
 	}
 	char *getaction(int i) {
-	   static char *name[] = { "ignore", "report", "ask", "fatal" };
+	   static const char *name[] = { "ignore", "report", "ask", "fatal" };
 	   assert (i>=ACT_IGNORE && i<N_ACT);
-	   return name[i];
+	   return (char *) name[i];
 	}
 
 protected:
 	int n_logfn;
 #define MAX_LOGFNS 128
 	logfunc_t *logfn_list[MAX_LOGFNS];
-	char *logfn;
+	const char *logfn;
 };
 
 typedef class BOCHSAPI iofunctions iofunc_t;
@@ -376,22 +373,20 @@ typedef class BOCHSAPI iofunctions iofunc_t;
   ((io==NULL)? (io=new iofunc_t("/dev/stderr")) : io)
 #define SAFE_GET_GENLOG() \
   ((genlog==NULL)? (genlog=new logfunc_t(SAFE_GET_IOFUNC())) : genlog)
-/* #define NO_LOGGING */
-#ifndef NO_LOGGING
 
-#define BX_INFO(x)  (LOG_THIS info) x
-#define BX_DEBUG(x) (LOG_THIS ldebug) x
-#define BX_ERROR(x) (LOG_THIS error) x
+#if BX_NO_LOGGING
+
+#define BX_INFO(x)
+#define BX_DEBUG(x)
+#define BX_ERROR(x)
 #define BX_PANIC(x) (LOG_THIS panic) x
 #define BX_PASS(x) (LOG_THIS pass) x
 
 #else
 
-#define EMPTY do { } while(0)
-
-#define BX_INFO(x)  EMPTY
-#define BX_DEBUG(x) EMPTY
-#define BX_ERROR(x) EMPTY
+#define BX_INFO(x)  (LOG_THIS info) x
+#define BX_DEBUG(x) (LOG_THIS ldebug) x
+#define BX_ERROR(x) (LOG_THIS error) x
 #define BX_PANIC(x) (LOG_THIS panic) x
 #define BX_PASS(x) (LOG_THIS pass) x
 
@@ -452,9 +447,10 @@ typedef struct {
   bx_bool unsupported_io;
   bx_bool serial;
   bx_bool cdrom;
+  bx_bool print_timestamps;
 #if BX_MAGIC_BREAKPOINT
   bx_bool magic_break_enabled;
-#endif /* BX_MAGIC_BREAKPOINT */
+#endif
 #if BX_GDBSTUB
   bx_bool gdbstub_enabled;
 #endif
@@ -519,13 +515,9 @@ extern bx_bool bx_gui_sighandler;
   #define BX_SMP_PROCESSORS 1
 #endif
 
-void bx_init_options();
-
-void bx_center_print (FILE *file, char *line, int maxwidth);
+void bx_center_print(FILE *file, char *line, int maxwidth);
 
 #define BX_USE_PS2_MOUSE 1
-
-int bx_init_hardware ();
 
 #include "instrument.h"
 
@@ -537,7 +529,7 @@ int bx_init_hardware ();
 // instructions to help perform these operations more efficiently than C++.
 
 
-#ifdef __i386__
+#ifdef BX_LITTLE_ENDIAN
 
 #define WriteHostWordToLittleEndian(hostPtr,  nativeVar16) \
     *((Bit16u*)(hostPtr)) = (nativeVar16)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc,v 1.119 2007/04/08 15:02:50 vruppert Exp $
+// $Id: config.cc,v 1.126 2007/12/23 17:21:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -46,7 +46,7 @@ int bochsrc_include_count = 0;
 
 extern bx_debug_t bx_dbg;
 
-static char *get_builtin_variable(char *varname);
+static const char *get_builtin_variable(const char *varname);
 static Bit32s parse_line_unformatted(const char *context, char *line);
 static Bit32s parse_line_formatted(const char *context, int num_params, char *params[]);
 static int parse_bochsrc(const char *rcfile);
@@ -335,7 +335,7 @@ void bx_init_options()
   menu = new bx_list_c(root_param, "general", "");
 
  // config interface option, set in bochsrc or command line
-  static char *config_interface_list[] = {
+  static const char *config_interface_list[] = {
 #if BX_USE_TEXTCONFIG
     "textconfig",
 #endif
@@ -361,7 +361,6 @@ void bx_init_options()
       BX_RUN_START,
       BX_QUICK_START);
 
-#if BX_SUPPORT_SAVE_RESTORE
   new bx_param_bool_c(menu,
       "restore",
       "Restore Bochs session",
@@ -373,7 +372,13 @@ void bx_init_options()
     "Path to data for restore",
     "",
     BX_PATHNAME_LEN);
-#endif
+
+  // benchmarking mode, set by command line arg
+  new bx_param_num_c(menu,
+      "benchmark",
+      "benchmark mode",
+      "set benchmark mode",
+      0, BX_MAX_BIT32U, 0);
 
   // subtree for special menus
   bx_list_c *special_menus = new bx_list_c(root_param, "menu", "");
@@ -455,7 +460,7 @@ void bx_init_options()
       "Pathname of ROM image to load",
       "", BX_PATHNAME_LEN);
   path->set_format("Name of ROM BIOS image: %s");
-  sprintf(name, "%s/BIOS-bochs-latest", get_builtin_variable("BXSHARE"));
+  sprintf(name, "%s/BIOS-bochs-latest", (char *)get_builtin_variable("BXSHARE"));
   path->set_initial_val(name);
   bx_param_num_c *romaddr = new bx_param_num_c(rom,
       "addr",
@@ -661,7 +666,7 @@ void bx_init_options()
   // compile time.  The one that is listed first will be the default,
   // which is used unless the user overrides it on the command line or
   // in a configuration file.
-  static char *display_library_list[] = {
+  static const char *display_library_list[] = {
 #if BX_WITH_X11
     "x",
 #endif
@@ -798,7 +803,7 @@ void bx_init_options()
       "none", 20);
   user_shortcut->set_runtime_param(1);
 
-  static char *mouse_type_list[] = {
+  static const char *mouse_type_list[] = {
     "none",
     "ps2",
     "imps2",
@@ -982,17 +987,17 @@ void bx_init_options()
   bx_list_c *ata = new bx_list_c(root_param, "ata", "ATA/ATAPI Options");
 
   // disk options
-  char *s_atachannel[] = {
+  const char *s_atachannel[] = {
     "ATA channel 0",
     "ATA channel 1",
     "ATA channel 2",
     "ATA channel 3",
     };
-  char *s_atadevname[2] = {
+  const char *s_atadevname[2] = {
     "master",
     "slave",
   };
-  char *s_atadevice[4][2] = {
+  const char *s_atadevice[4][2] = {
     { "First HD/CD on channel 0",
       "Second HD/CD on channel 0" },
     { "First HD/CD on channel 1",
@@ -1245,7 +1250,7 @@ void bx_init_options()
     enabled->set_dependent_list(deplist);
   }
 
-  static char *serial_mode_list[] = {
+  static const char *serial_mode_list[] = {
     "null",
     "file",
     "term",
@@ -1317,7 +1322,7 @@ void bx_init_options()
   network->get_options()->set(bx_list_c::USE_TAB_WINDOW | bx_list_c::SHOW_PARENT);
 
   // ne2k & pnic options
-  static char *eth_module_list[] = {
+  static const char *eth_module_list[] = {
     "null",
 #if defined(ETH_LINUX)
     "linux",
@@ -1731,7 +1736,7 @@ static int parse_bochsrc(const char *rcfile)
   do {
     ret = fgets(line, sizeof(line)-1, fd);
     line[sizeof(line) - 1] = '\0';
-    int len = strlen(line);
+    size_t len = strlen(line);
     if ((len>0) && (line[len-1] < ' '))
       line[len-1] = '\0';
     if ((ret != NULL) && strlen(line)) {
@@ -1748,7 +1753,7 @@ static int parse_bochsrc(const char *rcfile)
   return retval;
 }
 
-static char *get_builtin_variable(char *varname)
+static const char *get_builtin_variable(const char *varname)
 {
 #ifdef WIN32
   int code;
@@ -1832,7 +1837,7 @@ static Bit32s parse_line_unformatted(const char *context, char *line)
         if (ptr[i] == '$') {
           char varname[512];
           char *pv = varname;
-          char *value;
+          const char *value;
           *pv = 0;
           i++;
           while (isalpha(ptr[i]) || ptr[i]=='_') {
@@ -1842,14 +1847,14 @@ static Bit32s parse_line_unformatted(const char *context, char *line)
           if (strlen(varname)<1 || !(value = getenv(varname))) {
             if ((value = get_builtin_variable(varname))) {
               // append value to the string
-              for (pv=value; *pv; pv++)
+              for (pv=(char *)value; *pv; pv++)
                   string[string_i++] = *pv;
             } else {
               BX_PANIC (("could not look up environment variable '%s'", varname));
             }
           } else {
             // append value to the string
-            for (pv=value; *pv; pv++)
+            for (pv=(char *)value; *pv; pv++)
                 string[string_i++] = *pv;
           }
         }
@@ -2832,6 +2837,20 @@ static Bit32s parse_line_formatted(const char *context, int num_params, char *pa
     }
   }
 #endif
+  else if (!strcmp(params[0], "print_timestamps")) {
+    if (num_params != 2) {
+      PARSE_ERR(("%s: print_timestamps directive: wrong # args.", context));
+    }
+    if (strncmp(params[1], "enabled=", 8)) {
+      PARSE_ERR(("%s: print_timestamps directive malformed.", context));
+    }
+    if (params[1][8] == '0' || params[1][8] == '1') {
+      bx_dbg.print_timestamps = params[1][8] - '0';
+    }
+    else {
+      PARSE_ERR(("%s: print_timestamps directive malformed.", context));
+    }
+  }
   else if (!strcmp(params[0], "ne2k")) {
     int tmp[6];
     char tmpchar[6];
@@ -3042,7 +3061,7 @@ static Bit32s parse_line_formatted(const char *context, int num_params, char *pa
 }
 
 
-static char *fdtypes[] = {
+static const char *fdtypes[] = {
   "none", "1_2", "1_44", "2_88", "720k", "360k", "160k", "180k", "320k"
 };
 
@@ -3262,7 +3281,7 @@ int bx_write_clock_cmos_options(FILE *fp)
 
   if (strlen(SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr()) > 0) {
     fprintf(fp, "cmosimage: file=%s, ", SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr());
-    fprintf(fp, "rtc_init=%s", SIM->get_param_bool(BXPN_CMOSIMAGE_RTC_INIT)->get()?"image":"time0");
+    fprintf(fp, "rtc_init=%s\n", SIM->get_param_bool(BXPN_CMOSIMAGE_RTC_INIT)->get()?"image":"time0");
   } else {
     fprintf(fp, "# no cmosimage\n");
   }

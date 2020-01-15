@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.131 2007/09/10 20:47:08 sshwarts Exp $
+// $Id: init.cc,v 1.145 2007/11/24 14:22:34 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,8 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -34,7 +36,6 @@
 // Make life easier merging cpu64 & cpu code.
 #define RIP EIP
 #endif
-
 
 BX_CPU_C::BX_CPU_C(unsigned id): bx_cpuid(id)
 #if BX_SUPPORT_APIC
@@ -162,97 +163,18 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
 
   // in SMP mode, the prefix of the CPU will be changed to [CPUn] in 
   // bx_local_apic_c::set_id as soon as the apic ID is assigned.
-
-// <TAG-INIT-CPU-START>
-  // for decoding instructions: access to seg reg's via index number
-  sreg_mod00_rm16[0] = BX_SEG_REG_DS;
-  sreg_mod00_rm16[1] = BX_SEG_REG_DS;
-  sreg_mod00_rm16[2] = BX_SEG_REG_SS;
-  sreg_mod00_rm16[3] = BX_SEG_REG_SS;
-  sreg_mod00_rm16[4] = BX_SEG_REG_DS;
-  sreg_mod00_rm16[5] = BX_SEG_REG_DS;
-  sreg_mod00_rm16[6] = BX_SEG_REG_DS;
-  sreg_mod00_rm16[7] = BX_SEG_REG_DS;
-
-  sreg_mod01or10_rm16[0] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm16[1] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm16[2] = BX_SEG_REG_SS;
-  sreg_mod01or10_rm16[3] = BX_SEG_REG_SS;
-  sreg_mod01or10_rm16[4] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm16[5] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm16[6] = BX_SEG_REG_SS;
-  sreg_mod01or10_rm16[7] = BX_SEG_REG_DS;
-
-  // the default segment to use for a one-byte modrm with 
-  // mod==01b or mod==10b and rm == i
-  sreg_mod01or10_rm32[0] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[1] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[2] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[3] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[4] = BX_SEG_REG_NULL;
-    // this entry should never be accessed
-    // (escape to 2-byte)
-  sreg_mod01or10_rm32[5] = BX_SEG_REG_SS;
-  sreg_mod01or10_rm32[6] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[7] = BX_SEG_REG_DS;
-#if BX_SUPPORT_X86_64
-  sreg_mod01or10_rm32[8] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[9] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[10] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[11] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[12] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[13] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[14] = BX_SEG_REG_DS;
-  sreg_mod01or10_rm32[15] = BX_SEG_REG_DS;
-#endif
-
-  // the default segment to use for a two-byte modrm with
-  // mod==00b and base == i
-  sreg_mod0_base32[0] = BX_SEG_REG_DS;
-  sreg_mod0_base32[1] = BX_SEG_REG_DS;
-  sreg_mod0_base32[2] = BX_SEG_REG_DS;
-  sreg_mod0_base32[3] = BX_SEG_REG_DS;
-  sreg_mod0_base32[4] = BX_SEG_REG_SS;
-  sreg_mod0_base32[5] = BX_SEG_REG_DS;
-  sreg_mod0_base32[6] = BX_SEG_REG_DS;
-  sreg_mod0_base32[7] = BX_SEG_REG_DS;
-#if BX_SUPPORT_X86_64
-  sreg_mod0_base32[8] = BX_SEG_REG_DS;
-  sreg_mod0_base32[9] = BX_SEG_REG_DS;
-  sreg_mod0_base32[10] = BX_SEG_REG_DS;
-  sreg_mod0_base32[11] = BX_SEG_REG_DS;
-  sreg_mod0_base32[12] = BX_SEG_REG_DS;
-  sreg_mod0_base32[13] = BX_SEG_REG_DS;
-  sreg_mod0_base32[14] = BX_SEG_REG_DS;
-  sreg_mod0_base32[15] = BX_SEG_REG_DS;
-#endif
-
-  // the default segment to use for a two-byte modrm with
-  // mod==01b or mod==10b and base == i
-  sreg_mod1or2_base32[0] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[1] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[2] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[3] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[4] = BX_SEG_REG_SS;
-  sreg_mod1or2_base32[5] = BX_SEG_REG_SS;
-  sreg_mod1or2_base32[6] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[7] = BX_SEG_REG_DS;
-#if BX_SUPPORT_X86_64
-  sreg_mod1or2_base32[8] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[9] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[10] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[11] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[12] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[13] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[14] = BX_SEG_REG_DS;
-  sreg_mod1or2_base32[15] = BX_SEG_REG_DS;
-#endif
-// <TAG-INIT-CPU-END>
-
-  mem = addrspace;
   sprintf(name, "CPU %d", BX_CPU_ID);
 
+  mem = addrspace;
+
 #if BX_WITH_WX
+  register_wx_state();
+#endif
+}
+
+#if BX_WITH_WX
+void BX_CPU_C::register_wx_state(void)
+{
   if (SIM->get_param(BXPN_WX_CPU_STATE) != NULL) {
     // Register some of the CPUs variables as shadow parameters so that
     // they can be visible in the config interface.
@@ -375,74 +297,74 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
       bx_param_num_c::set_default_format(oldfmt);
     }
   }
-#endif
 }
+#endif
 
-#if BX_SUPPORT_SAVE_RESTORE
+// save/restore functionality
 void BX_CPU_C::register_state(void)
 {
   unsigned i;
-  char cpu_name[10], cpu_title[10], name[10];
+  char name[10];
 
-  sprintf(cpu_name, "%d", BX_CPU_ID);
-  sprintf(cpu_title, "CPU %d", BX_CPU_ID);
-  bx_list_c *list = new bx_list_c(SIM->get_param("save_restore.cpu"), 
-           cpu_name, cpu_title, 60);
+  sprintf(name, "cpu%d", BX_CPU_ID);
+  
+  bx_list_c *cpu = new bx_list_c(SIM->get_bochs_root(), name, name, 60);
 
-  BXRS_PARAM_SPECIAL32(list, cpu_version, param_save_handler, param_restore_handler);
-  BXRS_PARAM_SPECIAL32(list, cpuid_std,   param_save_handler, param_restore_handler);
-  BXRS_PARAM_SPECIAL32(list, cpuid_ext,   param_save_handler, param_restore_handler);
-  BXRS_DEC_PARAM_SIMPLE(list, cpu_mode);
-  BXRS_HEX_PARAM_SIMPLE(list, inhibit_mask);
+  BXRS_PARAM_SPECIAL32(cpu, cpu_version, param_save_handler, param_restore_handler);
+  BXRS_PARAM_SPECIAL32(cpu, cpuid_std,   param_save_handler, param_restore_handler);
+  BXRS_PARAM_SPECIAL32(cpu, cpuid_ext,   param_save_handler, param_restore_handler);
+  BXRS_DEC_PARAM_SIMPLE(cpu, cpu_mode);
+  BXRS_HEX_PARAM_SIMPLE(cpu, inhibit_mask);
+  BXRS_HEX_PARAM_SIMPLE(cpu, debug_trap);
 #if BX_SUPPORT_X86_64
-  BXRS_HEX_PARAM_SIMPLE(list, RAX);
-  BXRS_HEX_PARAM_SIMPLE(list, RBX);
-  BXRS_HEX_PARAM_SIMPLE(list, RCX);
-  BXRS_HEX_PARAM_SIMPLE(list, RDX);
-  BXRS_HEX_PARAM_SIMPLE(list, RSP);
-  BXRS_HEX_PARAM_SIMPLE(list, RBP);
-  BXRS_HEX_PARAM_SIMPLE(list, RSI);
-  BXRS_HEX_PARAM_SIMPLE(list, RDI);
-  BXRS_HEX_PARAM_SIMPLE(list, R8);
-  BXRS_HEX_PARAM_SIMPLE(list, R9);
-  BXRS_HEX_PARAM_SIMPLE(list, R10);
-  BXRS_HEX_PARAM_SIMPLE(list, R11);
-  BXRS_HEX_PARAM_SIMPLE(list, R12);
-  BXRS_HEX_PARAM_SIMPLE(list, R13);
-  BXRS_HEX_PARAM_SIMPLE(list, R14);
-  BXRS_HEX_PARAM_SIMPLE(list, R15);
-  BXRS_HEX_PARAM_SIMPLE(list, RIP);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RAX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RBX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RCX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RDX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RSP);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RBP);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RSI);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RDI);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R8);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R9);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R10);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R11);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R12);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R13);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R14);
+  BXRS_HEX_PARAM_SIMPLE(cpu, R15);
+  BXRS_HEX_PARAM_SIMPLE(cpu, RIP);
 #else
-  BXRS_HEX_PARAM_SIMPLE(list, EAX);
-  BXRS_HEX_PARAM_SIMPLE(list, EBX);
-  BXRS_HEX_PARAM_SIMPLE(list, ECX);
-  BXRS_HEX_PARAM_SIMPLE(list, EDX);
-  BXRS_HEX_PARAM_SIMPLE(list, ESP);
-  BXRS_HEX_PARAM_SIMPLE(list, EBP);
-  BXRS_HEX_PARAM_SIMPLE(list, ESI);
-  BXRS_HEX_PARAM_SIMPLE(list, EDI);
-  BXRS_HEX_PARAM_SIMPLE(list, EIP);
+  BXRS_HEX_PARAM_SIMPLE(cpu, EAX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, EBX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, ECX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, EDX);
+  BXRS_HEX_PARAM_SIMPLE(cpu, ESP);
+  BXRS_HEX_PARAM_SIMPLE(cpu, EBP);
+  BXRS_HEX_PARAM_SIMPLE(cpu, ESI);
+  BXRS_HEX_PARAM_SIMPLE(cpu, EDI);
+  BXRS_HEX_PARAM_SIMPLE(cpu, EIP);
 #endif
-  BXRS_PARAM_SPECIAL32(list, EFLAGS, 
+  BXRS_PARAM_SPECIAL32(cpu, EFLAGS, 
          param_save_handler, param_restore_handler);
 #if BX_CPU_LEVEL >= 3
-  BXRS_HEX_PARAM_FIELD(list, DR0, dr0);
-  BXRS_HEX_PARAM_FIELD(list, DR1, dr1);
-  BXRS_HEX_PARAM_FIELD(list, DR2, dr2);
-  BXRS_HEX_PARAM_FIELD(list, DR3, dr3);
-  BXRS_HEX_PARAM_FIELD(list, DR6, dr6);
-  BXRS_HEX_PARAM_FIELD(list, DR7, dr7);
+  BXRS_HEX_PARAM_FIELD(cpu, DR0, dr0);
+  BXRS_HEX_PARAM_FIELD(cpu, DR1, dr1);
+  BXRS_HEX_PARAM_FIELD(cpu, DR2, dr2);
+  BXRS_HEX_PARAM_FIELD(cpu, DR3, dr3);
+  BXRS_HEX_PARAM_FIELD(cpu, DR6, dr6);
+  BXRS_HEX_PARAM_FIELD(cpu, DR7, dr7);
 #endif
-  BXRS_HEX_PARAM_FIELD(list, CR0, cr0.val32);
-  BXRS_HEX_PARAM_FIELD(list, CR2, cr2);
-  BXRS_HEX_PARAM_FIELD(list, CR3, cr3);
+  BXRS_HEX_PARAM_FIELD(cpu, CR0, cr0.val32);
+  BXRS_HEX_PARAM_FIELD(cpu, CR2, cr2);
+  BXRS_HEX_PARAM_FIELD(cpu, CR3, cr3);
 #if BX_CPU_LEVEL >= 4
-  BXRS_HEX_PARAM_FIELD(list, CR4, cr4.val32);
+  BXRS_HEX_PARAM_FIELD(cpu, CR4, cr4.val32);
 #endif
 
   for(i=0; i<6; i++) {
     bx_segment_reg_t *segment = &BX_CPU_THIS_PTR sregs[i];
-    bx_list_c *sreg = new bx_list_c(list, strseg(segment), 9);
+    bx_list_c *sreg = new bx_list_c(cpu, strseg(segment), 9);
     BXRS_PARAM_SPECIAL16(sreg, selector, 
            param_save_handler, param_restore_handler);
     BXRS_HEX_PARAM_FIELD(sreg, base, segment->cache.u.segment.base);
@@ -459,13 +381,13 @@ void BX_CPU_C::register_state(void)
   }
 
 #if BX_CPU_LEVEL >= 2
-  BXRS_HEX_PARAM_FIELD(list, GDTR_BASE, BX_CPU_THIS_PTR gdtr.base);
-  BXRS_HEX_PARAM_FIELD(list, GDTR_LIMIT, BX_CPU_THIS_PTR gdtr.limit);
-  BXRS_HEX_PARAM_FIELD(list, IDTR_BASE, BX_CPU_THIS_PTR idtr.base);
-  BXRS_HEX_PARAM_FIELD(list, IDTR_LIMIT, BX_CPU_THIS_PTR idtr.limit);
+  BXRS_HEX_PARAM_FIELD(cpu, gdtr_base, gdtr.base);
+  BXRS_HEX_PARAM_FIELD(cpu, gdtr_limit, gdtr.limit);
+  BXRS_HEX_PARAM_FIELD(cpu, idtr_base, idtr.base);
+  BXRS_HEX_PARAM_FIELD(cpu, idtr_limit, idtr.limit);
 #endif
 
-  bx_list_c *LDTR = new bx_list_c (list, "LDTR", 7);
+  bx_list_c *LDTR = new bx_list_c (cpu, "LDTR", 7);
   BXRS_PARAM_SPECIAL16(LDTR, selector, param_save_handler, param_restore_handler);
   BXRS_HEX_PARAM_FIELD(LDTR, base,  ldtr.cache.u.system.base);
   BXRS_HEX_PARAM_FIELD(LDTR, limit, ldtr.cache.u.system.limit);
@@ -474,7 +396,7 @@ void BX_CPU_C::register_state(void)
   BXRS_PARAM_BOOL(LDTR, granularity, ldtr.cache.u.system.g);
   BXRS_PARAM_BOOL(LDTR, avl, ldtr.cache.u.system.avl);
 
-  bx_list_c *TR = new bx_list_c (list, "TR", 7);
+  bx_list_c *TR = new bx_list_c (cpu, "TR", 7);
   BXRS_PARAM_SPECIAL16(TR, selector, param_save_handler, param_restore_handler);
   BXRS_HEX_PARAM_FIELD(TR, base,  tr.cache.u.system.base);
   BXRS_HEX_PARAM_FIELD(TR, limit, tr.cache.u.system.limit);
@@ -483,10 +405,10 @@ void BX_CPU_C::register_state(void)
   BXRS_PARAM_BOOL(TR, granularity, tr.cache.u.system.g);
   BXRS_PARAM_BOOL(TR, avl, tr.cache.u.system.avl);
 
-  BXRS_HEX_PARAM_SIMPLE(list, smbase);
+  BXRS_HEX_PARAM_SIMPLE(cpu, smbase);
 
 #if BX_CPU_LEVEL >= 5
-  bx_list_c *MSR = new bx_list_c(list, "msr", 12);
+  bx_list_c *MSR = new bx_list_c(cpu, "MSR", 45);
 
 #if BX_SUPPORT_APIC
   BXRS_HEX_PARAM_FIELD(MSR, apicbase, msr.apicbase);
@@ -506,11 +428,44 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_esp_msr, msr.sysenter_esp_msr);
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_eip_msr, msr.sysenter_eip_msr);
 #endif
+#if BX_SUPPORT_MTRR
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase0, msr.mtrrphys[0]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask0, msr.mtrrphys[1]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase1, msr.mtrrphys[2]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask1, msr.mtrrphys[3]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase2, msr.mtrrphys[4]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask2, msr.mtrrphys[5]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase3, msr.mtrrphys[6]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask3, msr.mtrrphys[7]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase4, msr.mtrrphys[8]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask4, msr.mtrrphys[9]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase5, msr.mtrrphys[10]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask5, msr.mtrrphys[11]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase6, msr.mtrrphys[12]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask6, msr.mtrrphys[13]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase7, msr.mtrrphys[14]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask7, msr.mtrrphys[15]);
 
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix64k_00000, msr.mtrrfix64k_00000);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix16k_80000, msr.mtrrfix16k_80000);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix16k_a0000, msr.mtrrfix16k_a0000);
+
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_c0000, msr.mtrrfix4k[0]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_c8000, msr.mtrrfix4k[1]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_d0000, msr.mtrrfix4k[2]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_d8000, msr.mtrrfix4k[3]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_e0000, msr.mtrrfix4k[4]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_e8000, msr.mtrrfix4k[5]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_f0000, msr.mtrrfix4k[6]);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrrfix4k_f8000, msr.mtrrfix4k[7]);
+
+  BXRS_HEX_PARAM_FIELD(MSR, pat, msr.pat);
+  BXRS_HEX_PARAM_FIELD(MSR, mtrr_deftype, msr.mtrr_deftype);
+#endif
 #endif
 
 #if BX_SUPPORT_FPU || BX_SUPPORT_MMX
-  bx_list_c *fpu = new bx_list_c(list, "FPU", 17);
+  bx_list_c *fpu = new bx_list_c(cpu, "FPU", 17);
   BXRS_HEX_PARAM_FIELD(fpu, cwd, the_i387.cwd);
   BXRS_HEX_PARAM_FIELD(fpu, swd, the_i387.swd);
   BXRS_HEX_PARAM_FIELD(fpu, twd, the_i387.twd);
@@ -529,28 +484,34 @@ void BX_CPU_C::register_state(void)
 #endif
 
 #if BX_SUPPORT_SSE
-  bx_list_c *sse = new bx_list_c(list, "SSE", 2*BX_XMM_REGISTERS+1);
+  bx_list_c *sse = new bx_list_c(cpu, "SSE", 2*BX_XMM_REGISTERS+1);
   BXRS_HEX_PARAM_FIELD(sse, mxcsr, mxcsr.mxcsr);
   for (i=0; i<BX_XMM_REGISTERS; i++) {
     sprintf(name, "xmm%02d_hi", i);
-    new bx_shadow_num_c(sse, name, &BX_CPU_THIS_PTR xmm[i].xmm64u(1), BASE_HEX);
+    new bx_shadow_num_c(sse, name, &xmm[i].xmm64u(1), BASE_HEX);
     sprintf(name, "xmm%02d_lo", i);
-    new bx_shadow_num_c(sse, name, &BX_CPU_THIS_PTR xmm[i].xmm64u(0), BASE_HEX);
+    new bx_shadow_num_c(sse, name, &xmm[i].xmm64u(0), BASE_HEX);
   }
 #endif
 
-#if BX_SUPPORT_APIC
-  local_apic.register_state(list);
+#if BX_SUPPORT_MONITOR_MWAIT
+  bx_list_c *monitor_list = new bx_list_c(cpu, "MONITOR", 2);
+  BXRS_HEX_PARAM_FIELD(monitor_list, begin_addr, monitor.monitor_begin);
+  BXRS_HEX_PARAM_FIELD(monitor_list, end_addr,   monitor.monitor_end);
 #endif
 
-  BXRS_PARAM_BOOL(list, EXT, EXT);
-  BXRS_PARAM_BOOL(list, async_event, async_event);
-  BXRS_PARAM_BOOL(list, INTR, INTR);
-  BXRS_PARAM_BOOL(list, smi_pending, smi_pending);
-  BXRS_PARAM_BOOL(list, nmi_pending, nmi_pending);
-  BXRS_PARAM_BOOL(list, in_smm, in_smm);
-  BXRS_PARAM_BOOL(list, nmi_disable, nmi_disable);
-  BXRS_PARAM_BOOL(list, trace, trace);
+#if BX_SUPPORT_APIC
+  local_apic.register_state(cpu);
+#endif
+
+  BXRS_PARAM_BOOL(cpu, EXT, EXT);
+  BXRS_PARAM_BOOL(cpu, async_event, async_event);
+  BXRS_PARAM_BOOL(cpu, INTR, INTR);
+  BXRS_PARAM_BOOL(cpu, smi_pending, smi_pending);
+  BXRS_PARAM_BOOL(cpu, nmi_pending, nmi_pending);
+  BXRS_PARAM_BOOL(cpu, in_smm, in_smm);
+  BXRS_PARAM_BOOL(cpu, nmi_disable, nmi_disable);
+  BXRS_PARAM_BOOL(cpu, trace, trace);
 }
 
 Bit64s BX_CPU_C::param_save_handler(void *devptr, bx_param_c *param, Bit64s val)
@@ -647,11 +608,11 @@ Bit64s BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
     BX_CPU_THIS_PTR setEFlags((Bit32u)val);
 #if BX_SUPPORT_X86_64
   } else if (!strcmp(pname, "EFER")) {
-    BX_CPU_THIS_PTR efer.sce   = (val >> 0)  & 1;
-    BX_CPU_THIS_PTR efer.lme   = (val >> 8)  & 1;
-    BX_CPU_THIS_PTR efer.lma   = (val >> 10) & 1;
-    BX_CPU_THIS_PTR efer.nxe   = (val >> 11) & 1;
-    BX_CPU_THIS_PTR efer.ffxsr = (val >> 14) & 1;
+    BX_CPU_THIS_PTR efer.sce   = (bx_bool)((val >> 0)  & 1);
+    BX_CPU_THIS_PTR efer.lme   = (bx_bool)((val >> 8)  & 1);
+    BX_CPU_THIS_PTR efer.lma   = (bx_bool)((val >> 10) & 1);
+    BX_CPU_THIS_PTR efer.nxe   = (bx_bool)((val >> 11) & 1);
+    BX_CPU_THIS_PTR efer.ffxsr = (bx_bool)((val >> 14) & 1);
 #endif
   } else if (!strcmp(pname, "ar_byte") || !strcmp(pname, "selector")) {
     segname = param->get_parent()->get_name();
@@ -701,7 +662,7 @@ void BX_CPU_C::after_restore_state(void)
   invalidate_prefetch_q();
   debug(RIP);
 }
-#endif
+// end of save/restore functionality
 
 BX_CPU_C::~BX_CPU_C()
 {
@@ -711,7 +672,14 @@ BX_CPU_C::~BX_CPU_C()
 
 void BX_CPU_C::reset(unsigned source)
 {
-  UNUSED(source); // either BX_RESET_HARDWARE or BX_RESET_SOFTWARE
+  unsigned i;
+
+  if (source == BX_RESET_HARDWARE)
+    BX_INFO(("cpu hardware reset"));
+  else if (source == BX_RESET_SOFTWARE)
+    BX_INFO(("cpu software reset"));
+  else
+    BX_INFO(("cpu reset"));
 
 #if BX_SUPPORT_X86_64
   RAX = 0; // processor passed test :-)
@@ -750,14 +718,9 @@ void BX_CPU_C::reset(unsigned source)
 
   /* instruction pointer */
 #if BX_CPU_LEVEL < 2
-  BX_CPU_THIS_PTR prev_eip = EIP = 0x00000000;
+  BX_CPU_THIS_PTR prev_rip = EIP = 0x00000000;
 #else /* from 286 up */
-  BX_CPU_THIS_PTR prev_eip =
-#if BX_SUPPORT_X86_64
-  RIP = 0x0000FFF0;
-#else
-  EIP = 0x0000FFF0;
-#endif
+  BX_CPU_THIS_PTR prev_rip = RIP = 0x0000FFF0;
 #endif
 
   /* CS (Code Segment) and descriptor cache */
@@ -966,11 +929,26 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR msr.sysenter_eip_msr = 0;
 #endif
 
+#if BX_SUPPORT_MTRR
+  for (i=0; i<16; i++)
+    BX_CPU_THIS_PTR msr.mtrrphys[i] = 0;
+
+  BX_CPU_THIS_PTR msr.mtrrfix64k_00000 = 0; // all fix range MTRRs undefined according to manual
+  BX_CPU_THIS_PTR msr.mtrrfix16k_80000 = 0;
+  BX_CPU_THIS_PTR msr.mtrrfix16k_a0000 = 0;
+
+  for (i=0; i<8; i++)
+    BX_CPU_THIS_PTR msr.mtrrfix4k[i] = 0;
+
+  BX_CPU_THIS_PTR msr.pat = BX_CONST64(0x0007040600070406);
+  BX_CPU_THIS_PTR msr.mtrr_deftype = 0;
+#endif
+
   BX_CPU_THIS_PTR EXT = 0;
 
 #if BX_USE_TLB
   TLB_init();
-#endif // BX_USE_TLB
+#endif
 
   // invalidate the prefetch queue
   BX_CPU_THIS_PTR eipPageBias = 0;
@@ -995,10 +973,10 @@ void BX_CPU_C::reset(unsigned source)
 
   // Reset XMM state
 #if BX_SUPPORT_SSE >= 1  // unchanged on #INIT
-  for(unsigned index=0; index < BX_XMM_REGISTERS; index++)
+  for(i=0; i<BX_XMM_REGISTERS; i++)
   {
-    BX_CPU_THIS_PTR xmm[index].xmm64u(0) = 0;
-    BX_CPU_THIS_PTR xmm[index].xmm64u(1) = 0;
+    BX_CPU_THIS_PTR xmm[i].xmm64u(0) = 0;
+    BX_CPU_THIS_PTR xmm[i].xmm64u(1) = 0;
   }
 
   BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
@@ -1016,10 +994,13 @@ void BX_CPU_C::reset(unsigned source)
     // it's an application processor, halt until IPI is heard.
     BX_CPU_THIS_PTR msr.apicbase &= ~0x0100; /* clear bit 8 BSP */
     BX_INFO(("CPU[%d] is an application processor. Halting until IPI.", apic_id));
-    debug_trap |= BX_DEBUG_TRAP_HALT_STATE;
+    debug_trap |= BX_DEBUG_TRAP_WAIT_FOR_SIPI;
     async_event = 1;
   }
 #endif
+
+  // initialize CPUID values - make sure apicbase already initialized
+  set_cpuid_defaults();
 
   BX_INSTR_RESET(BX_CPU_ID);
 }
@@ -1191,6 +1172,11 @@ void BX_CPU_C::assert_checks(void)
         BX_PANIC(("assert_checks: TR is not TSS type !"));
     }
   }
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  if (BX_CPU_THIS_PTR monitor.monitor_end < BX_CPU_THIS_PTR monitor.monitor_begin)
+    BX_PANIC(("assert_checks: MONITOR range is not set correctly !"));
+#endif
 }
 
 void BX_CPU_C::set_INTR(bx_bool value)

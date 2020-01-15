@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer8.cc,v 1.22 2006/05/12 17:04:19 sshwarts Exp $
+// $Id: ctrl_xfer8.cc,v 1.25 2007/12/21 17:30:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -46,13 +47,21 @@ void BX_CPU_C::JCXZ_Jb(bxInstruction_c *i)
     if (i->os32L()==0) new_EIP &= 0x0000ffff;
     branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
-#if BX_INSTRUMENTATION
-  else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-  }
-#endif
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
+
+//
+// There is some weirdness in LOOP instructions definition. If an exception
+// was generated during the instruction execution (for example #GP fault
+// because EIP was beyond CS segment limits) CPU state should restore the
+// state prior to instruction execution. 
+//
+// The final point that we are not allowed to decrement ECX register before
+// it is known that no exceptions can happen.
+//
 
 void BX_CPU_C::LOOPNE_Jb(bxInstruction_c *i)
 {
@@ -65,7 +74,7 @@ void BX_CPU_C::LOOPNE_Jb(bxInstruction_c *i)
   if (i->as32L())
     count = ECX;
   else
-#endif /* BX_CPU_LEVEL >= 3 */
+#endif
     count = CX;
 
   count--;
@@ -98,7 +107,7 @@ void BX_CPU_C::LOOPE_Jb(bxInstruction_c *i)
   if (i->as32L())
     count = ECX;
   else
-#endif /* BX_CPU_LEVEL >= 3 */
+#endif
     count = CX;
 
   count--;
@@ -131,7 +140,7 @@ void BX_CPU_C::LOOP_Jb(bxInstruction_c *i)
   if (i->as32L())
     count = ECX;
   else
-#endif /* BX_CPU_LEVEL >= 3 */
+#endif
     count = CX;
 
   count--;

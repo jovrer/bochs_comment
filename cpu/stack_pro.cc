@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack_pro.cc,v 1.29 2006/06/12 16:58:27 sshwarts Exp $
+// $Id: stack_pro.cc,v 1.38 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -31,27 +32,24 @@
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
-  void BX_CPP_AttrRegparmN(1)
-BX_CPU_C::push_16(Bit16u value16)
+void BX_CPU_C::push_16(Bit16u value16)
 {
   /* must use StackAddrSize, and either RSP, ESP or SP accordingly */
-#if BX_CPU_LEVEL >= 3
 #if BX_SUPPORT_X86_64
   if (StackAddrSize64())
   {
-    write_virtual_word(BX_SEG_REG_SS, RSP-2, &value16);
+    write_virtual_word(BX_SEG_REG_SS, RSP-2, value16);
     RSP -= 2;
   }
   else
 #endif
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* StackAddrSize = 32 */
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (ESP-2), &value16);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (ESP-2), value16);
     ESP -= 2;
   }
   else
-#endif
   {
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (SP-2), &value16);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (SP-2), value16);
     SP  -= 2;
   }
 }
@@ -60,147 +58,96 @@ BX_CPU_C::push_16(Bit16u value16)
 void BX_CPU_C::push_32(Bit32u value32)
 {
   /* must use StackAddrSize, and either RSP, ESP or SP accordingly */
-#if BX_CPU_LEVEL >= 3
 #if BX_SUPPORT_X86_64
   if (StackAddrSize64())
   {
-    write_virtual_dword(BX_SEG_REG_SS, RSP-4, &value32);
+    write_virtual_dword(BX_SEG_REG_SS, RSP-4, value32);
     RSP -= 4;
   }
   else
 #endif
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* StackAddrSize = 32 */
-    write_virtual_dword(BX_SEG_REG_SS, (Bit32u) (ESP-4), &value32);
+    write_virtual_dword(BX_SEG_REG_SS, (Bit32u) (ESP-4), value32);
     ESP -= 4;
   }
   else
-#endif
   {
-    write_virtual_dword(BX_SEG_REG_SS, (Bit16u) (SP-4), &value32);
+    write_virtual_dword(BX_SEG_REG_SS, (Bit16u) (SP-4), value32);
     SP  -= 4;
   }
 }
 
 /* push 64 bit operand */
+#if BX_SUPPORT_X86_64
 void BX_CPU_C::push_64(Bit64u value64)
 {
-  /* must use StackAddrSize, and either RSP, ESP or SP accordingly */
-#if BX_CPU_LEVEL >= 3
-#if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
-  {
-    write_virtual_qword(BX_SEG_REG_SS, RSP-8, &value64);
-    RSP -= 8;
-  }
-  else
-#endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) { /* StackAddrSize = 32 */
-    write_virtual_qword(BX_SEG_REG_SS, (Bit32u) (ESP-8), &value64);
-    ESP -= 8;
-  }
-  else
-#endif
-  {
-    write_virtual_qword(BX_SEG_REG_SS, (Bit16u) (SP-8), &value64);
-    SP  -= 8;
-  }
+  BX_ASSERT(StackAddrSize64());
+
+  write_virtual_qword(BX_SEG_REG_SS, RSP-8, value64);
+  RSP -= 8;
 }
+#endif
 
 /* pop 16 bit operand from the stack */
-void BX_CPU_C::pop_16(Bit16u *value16_ptr)
+Bit16u BX_CPU_C::pop_16(void)
 {
-  bx_address temp_RSP;
+  Bit16u value16;
 
-#if BX_CPU_LEVEL >= 3
 #if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
-    temp_RSP = RSP;
-  else
-#endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-    temp_RSP = ESP;
-  else
-#endif
-    temp_RSP = SP;
-
-  read_virtual_word(BX_SEG_REG_SS, temp_RSP, value16_ptr);
-
-#if BX_CPU_LEVEL >= 3
-#if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
+  if (StackAddrSize64()) {
+    value16 = read_virtual_word(BX_SEG_REG_SS, RSP);
     RSP += 2;
+  }
   else
 #endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    value16 = read_virtual_word(BX_SEG_REG_SS, ESP);
     ESP += 2;
-  else
-#endif
+  }
+  else {
+    value16 = read_virtual_word(BX_SEG_REG_SS, SP);
     SP  += 2;
+  }
+
+  return value16;
 }
 
 /* pop 32 bit operand from the stack */
-void BX_CPU_C::pop_32(Bit32u *value32_ptr)
+Bit32u BX_CPU_C::pop_32()
 {
-  bx_address temp_RSP;
+  Bit32u value32;
 
-#if BX_CPU_LEVEL >= 3
 #if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
-    temp_RSP = RSP;
-  else
-#endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-    temp_RSP = ESP;
-  else
-#endif
-    temp_RSP = SP;
-
-  read_virtual_dword(BX_SEG_REG_SS, temp_RSP, value32_ptr);
-
-#if BX_CPU_LEVEL >= 3
-#if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
+  if (StackAddrSize64()) {
+    value32 = read_virtual_dword(BX_SEG_REG_SS, RSP);
     RSP += 4;
+  }
   else
 #endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    value32 = read_virtual_dword(BX_SEG_REG_SS, ESP);
     ESP += 4;
-  else
-#endif
+  }
+  else {
+    value32 = read_virtual_dword(BX_SEG_REG_SS, SP);
     SP  += 4;
+  }
+
+  return value32;
 }
 
 /* pop 64 bit operand from the stack */
-void BX_CPU_C::pop_64(Bit64u *value64_ptr)
+#if BX_SUPPORT_X86_64
+Bit64u BX_CPU_C::pop_64()
 {
-  bx_address temp_RSP;
+  BX_ASSERT(StackAddrSize64());
 
-#if BX_CPU_LEVEL >= 3
-#if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
-    temp_RSP = RSP;
-  else
-#endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-    temp_RSP = ESP;
-  else
-#endif
-    temp_RSP = SP;
+  Bit64u value64 = read_virtual_qword(BX_SEG_REG_SS, RSP);
+  RSP += 8;
 
-  read_virtual_qword(BX_SEG_REG_SS, temp_RSP, value64_ptr);
-
-#if BX_CPU_LEVEL >= 3
-#if BX_SUPPORT_X86_64
-  if (StackAddrSize64())
-    RSP += 8;
-  else
-#endif
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-    ESP += 8;
-  else
-#endif
-    SP  += 8;
+  return value64;
 }
+#endif
 
   bx_bool BX_CPP_AttrRegparmN(3)
 BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
@@ -244,11 +191,11 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
       return(0);
     }
     if ((esp - bytes) <= descriptor->u.segment.limit_scaled) {
-      BX_PANIC(("can_push(): expand-down: esp-N < limit"));
+      BX_ERROR(("can_push(): expand-down: esp-N < limit"));
       return(0);
     }
     if (esp > expand_down_limit) {
-      BX_PANIC(("can_push(): esp > expand-down-limit"));
+      BX_ERROR(("can_push(): esp > expand-down-limit"));
       return(0);
     }
     return(1);
@@ -266,7 +213,7 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
         return(1);
       if ((descriptor->u.segment.d_b==0) && (descriptor->u.segment.limit_scaled>=0xffff))
         return(1);
-      BX_INFO(("can_push(): esp=0, normal, wraparound? limit=%08x",
+      BX_ERROR(("can_push(): esp=0, normal, wraparound? limit=%08x",
         descriptor->u.segment.limit_scaled));
       return(0);
     }
@@ -276,11 +223,11 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
       esp = ((esp-bytes) & 0xffff) + bytes;
     }
     if (esp < bytes) {
-      BX_INFO(("can_push(): expand-up: esp < N"));
+      BX_ERROR(("can_push(): expand-up: esp < N"));
       return(0);
     }
     if ((esp-1) > descriptor->u.segment.limit_scaled) {
-      BX_INFO(("can_push(): expand-up: SP > limit"));
+      BX_ERROR(("can_push(): expand-up: SP > limit"));
       return(0);
     }
     /* all checks pass */
@@ -308,7 +255,7 @@ bx_bool BX_CPU_C::can_pop(Bit32u bytes)
   }
 
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid==0) {
-    BX_ERROR(("can_pop(): SS invalidated."));
+    BX_ERROR(("can_pop(): SS invalidated"));
     return(0); /* never gets here */
   }
 
@@ -328,52 +275,19 @@ bx_bool BX_CPU_C::can_pop(Bit32u bytes)
   }
   else { /* normal (expand-up) segment */
     if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled==0) {
-      BX_PANIC(("can_pop(): SS.limit = 0"));
+      BX_ERROR(("can_pop(): SS.limit = 0"));
       return(0);
     }
-    if ( temp_ESP == expand_down_limit ) {
-      BX_PANIC(("can_pop(): found SP=ffff"));
+    if (temp_ESP == expand_down_limit) {
+      BX_ERROR(("can_pop(): found SP=ffff"));
       return(0);
     }
     if (temp_ESP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled) {
-      BX_PANIC(("can_pop(): eSP > SS.limit"));
+      BX_ERROR(("can_pop(): eSP > SS.limit"));
       return(0);
     }
     if (((BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled - temp_ESP) + 1) >= bytes)
       return(1);
     return(0);
-  }
-}
-
-void BX_CPU_C::decrementESPForPush(unsigned nBytes, Bit32u *eSP_ptr)
-{
-  Bit32u eSP;
-
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
-    eSP = ESP;
-  else
-    eSP = SP;
-
-  if (protected_mode()) {
-    if (!can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, eSP, nBytes)) {
-      BX_INFO(("decrementESPForPush: push outside stack limits"));
-      exception(BX_SS_EXCEPTION, 0, 0);
-    }
-  }
-  else { // Real Mode.
-    if ( (eSP>=1) && (eSP<nBytes) ) {
-      BX_PANIC(("decrementESPForPush: eSP=%08x", (unsigned) eSP));
-    }
-  }
-
-  // And finally, decrement eSP and return the new eSP value.
-  eSP -= nBytes;
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
-    ESP = eSP;
-    *eSP_ptr = eSP;
-  }
-  else {
-    SP = (Bit16u) eSP;
-    *eSP_ptr = SP;
   }
 }

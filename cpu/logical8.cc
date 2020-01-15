@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logical8.cc,v 1.29 2007/04/17 21:38:51 sshwarts Exp $
+// $Id: logical8.cc,v 1.36 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -31,356 +32,310 @@
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
-void BX_CPU_C::XOR_EbGb(bxInstruction_c *i)
+void BX_CPU_C::XOR_EbGbM(bxInstruction_c *i)
 {
-  Bit8u op2, op1, result;
+  Bit8u op1, op2;
 
-  op2 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 ^= op2;
+  write_RMW_virtual_byte(op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-    result = op1 ^ op2;
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-    result = op1 ^ op2;
-    write_RMW_virtual_byte(result);
-  }
-
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::XOR_GbEb(bxInstruction_c *i)
+void BX_CPU_C::XOR_EbGbR(bxInstruction_c *i)
 {
-  Bit8u op1, op2, result;
+  Bit8u op1, op2;
 
-  op1 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 ^= op2;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1);
 
-  if (i->modC0()) {
-    op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-  }
-  else {
-    read_virtual_byte(i->seg(), RMAddr(i), &op2);
-  }
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
 
-  result = op1 ^ op2;
+void BX_CPU_C::XOR_GbEbM(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
 
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), result);
+  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op2 = read_virtual_byte(i->seg(), RMAddr(i));
+  op1 ^= op2;
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
 
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
+
+void BX_CPU_C::XOR_GbEbR(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 ^= op2;
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
 void BX_CPU_C::XOR_ALIb(bxInstruction_c *i)
 {
-  Bit8u op1, op2, result;
+  Bit8u op1;
 
   op1 = AL;
-  op2 = i->Ib();
-  result = op1 ^ op2;
-  AL = result;
+  op1 ^= i->Ib();
+  AL = op1;
 
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::XOR_EbIb(bxInstruction_c *i)
+void BX_CPU_C::XOR_EbIbM(bxInstruction_c *i)
 {
-  Bit8u op2, op1, result;
+  Bit8u op1, op2 = i->Ib();
 
-  op2 = i->Ib();
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 ^= op2;
+  write_RMW_virtual_byte(op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-    result = op1 ^ op2;
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-    result = op1 ^ op2;
-    write_RMW_virtual_byte(result);
-  }
-
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::OR_EbIb(bxInstruction_c *i)
+void BX_CPU_C::XOR_EbIbR(bxInstruction_c *i)
 {
-  Bit8u op2, op1, result;
+  Bit8u op1, op2 = i->Ib();
 
-  op2 = i->Ib();
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 ^= op2;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-    result = op1 | op2;
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-    result = op1 | op2;
-    write_RMW_virtual_byte(result);
-  }
-
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::NOT_Eb(bxInstruction_c *i)
+void BX_CPU_C::OR_EbIbM(bxInstruction_c *i)
 {
-  Bit8u op1_8, result_8;
+  Bit8u op1, op2 = i->Ib();
 
-  if (i->modC0()) {
-    op1_8 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-    result_8 = ~op1_8;
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result_8);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
-    result_8 = ~op1_8;
-    write_RMW_virtual_byte(result_8);
-  }
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 |= op2;
+  write_RMW_virtual_byte(op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::OR_EbGb(bxInstruction_c *i)
+void BX_CPU_C::OR_EbIbR(bxInstruction_c *i)
 {
-  Bit8u op2, op1, result;
+  Bit8u op1, op2 = i->Ib();
 
-  op2 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 |= op2;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-    result = op1 | op2;
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-    result = op1 | op2;
-    write_RMW_virtual_byte(result);
-  }
-
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::OR_GbEb(bxInstruction_c *i)
+void BX_CPU_C::NOT_EbM(bxInstruction_c *i)
 {
-  Bit8u op1, op2, result;
+  Bit8u op1_8;
 
-  op1 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1_8 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1_8 = ~op1_8;
+  write_RMW_virtual_byte(op1_8);
+}
 
-  if (i->modC0()) {
-    op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-   }
-  else {
-    read_virtual_byte(i->seg(), RMAddr(i), &op2);
-   }
+void BX_CPU_C::NOT_EbR(bxInstruction_c *i)
+{
+  Bit8u op1_8 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1_8 = ~op1_8;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1_8);
+}
 
-#if defined(BX_HostAsm_Or8)
-  Bit32u flags32;
-  asmOr8(result, op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  result = op1 | op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+void BX_CPU_C::OR_EbGbM(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
 
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), result);
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 |= op2;
+  write_RMW_virtual_byte(op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
+
+void BX_CPU_C::OR_EbGbR(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 |= op2;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
+
+void BX_CPU_C::OR_GbEbM(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op2 = read_virtual_byte(i->seg(), RMAddr(i));
+  op1 |= op2;
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
+
+void BX_CPU_C::OR_GbEbR(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 |= op2;
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
 void BX_CPU_C::OR_ALIb(bxInstruction_c *i)
 {
-  Bit8u op1, op2, result;
+  Bit8u op1, op2;
 
   op1 = AL;
   op2 = i->Ib();
+  op1 |= op2;
+  AL = op1;
 
-#if defined(BX_HostAsm_Or8)
-  Bit32u flags32;
-  asmOr8(result, op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  result = op1 | op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
-
-  AL = result;
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::AND_EbGb(bxInstruction_c *i)
+void BX_CPU_C::AND_EbGbM(bxInstruction_c *i)
 {
-  Bit8u op2, op1, result;
+  Bit8u op1, op2;
 
-  op2 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 &= op2;
+  write_RMW_virtual_byte(op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-
-#if defined(BX_HostAsm_And8)
-    Bit32u flags32;
-    asmAnd8(result, op1, op2, flags32);
-    setEFlagsOSZAPC(flags32);
-#else
-    result = op1 & op2;
-#endif
-
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-
-#if defined(BX_HostAsm_And8)
-    Bit32u flags32;
-    asmAnd8(result, op1, op2, flags32);
-    setEFlagsOSZAPC(flags32);
-#else
-    result = op1 & op2;
-#endif
-
-    write_RMW_virtual_byte(result);
-  }
-
-#if !defined(BX_HostAsm_And8)
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::AND_GbEb(bxInstruction_c *i)
+void BX_CPU_C::AND_EbGbR(bxInstruction_c *i)
 {
-  Bit8u op1, op2, result;
+  Bit8u op1, op2;
 
-  op1 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 &= op2;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1);
 
-  if (i->modC0()) {
-    op2 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-  }
-  else {
-    read_virtual_byte(i->seg(), RMAddr(i), &op2);
-  }
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
 
-#if defined(BX_HostAsm_And8)
-  Bit32u flags32;
-  asmAnd8(result, op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  result = op1 & op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+void BX_CPU_C::AND_GbEbM(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
 
-  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), result);
+  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op2 = read_virtual_byte(i->seg(), RMAddr(i));
+  op1 &= op2;
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
+
+void BX_CPU_C::AND_GbEbR(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 &= op2;
+  BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
 void BX_CPU_C::AND_ALIb(bxInstruction_c *i)
 {
-  Bit8u op1, op2, result;
+  Bit8u op1, op2;
 
   op1 = AL;
   op2 = i->Ib();
+  op1 &= op2;
+  AL = op1;
 
-#if defined(BX_HostAsm_And8)
-  Bit32u flags32;
-  asmAnd8(result, op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  result = op1 & op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
-
-  AL = result;
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::AND_EbIb(bxInstruction_c *i)
+void BX_CPU_C::AND_EbIbM(bxInstruction_c *i)
 {
-  Bit8u op2, op1, result;
+  Bit8u op1, op2 = i->Ib();
 
-  op2 = i->Ib();
+  op1 = read_RMW_virtual_byte(i->seg(), RMAddr(i));
+  op1 &= op2;
+  write_RMW_virtual_byte(op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-
-#if defined(BX_HostAsm_And8)
-    Bit32u flags32;
-    asmAnd8(result, op1, op2, flags32);
-    setEFlagsOSZAPC(flags32);
-#else
-    result = op1 & op2;
-#endif
-
-    BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), result);
-  }
-  else {
-    read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-
-#if defined(BX_HostAsm_And8)
-    Bit32u flags32;
-    asmAnd8(result, op1, op2, flags32);
-    setEFlagsOSZAPC(flags32);
-#else
-    result = op1 & op2;
-#endif
-
-    write_RMW_virtual_byte(result);
-  }
-
-#if !defined(BX_HostAsm_And8)
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::TEST_EbGb(bxInstruction_c *i)
+void BX_CPU_C::AND_EbIbR(bxInstruction_c *i)
 {
-  Bit8u op2, op1;
+  Bit8u op1, op2 = i->Ib();
 
-  op2 = BX_READ_8BIT_REGx(i->nnn(),i->extend8bitL());
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 &= op2;
+  BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op1);
 
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-  }
-  else {
-    read_virtual_byte(i->seg(), RMAddr(i), &op1);
-  }
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
 
-#if defined(BX_HostAsm_Test8)
-  Bit32u flags32;
-  asmTest8(op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  Bit8u result = op1 & op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+void BX_CPU_C::TEST_EbGbM(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = read_virtual_byte(i->seg(), RMAddr(i));
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 &= op2;
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
+
+void BX_CPU_C::TEST_EbGbR(bxInstruction_c *i)
+{
+  Bit8u op1, op2;
+
+  op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op2 = BX_READ_8BIT_REGx(i->nnn(), i->extend8bitL());
+  op1 &= op2;
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
 void BX_CPU_C::TEST_ALIb(bxInstruction_c *i)
 {
-  Bit8u op1 = AL;
-  Bit8u op2 = i->Ib();
+  Bit8u op1, op2;
 
-#if defined(BX_HostAsm_Test8)
-  Bit32u flags32;
-  asmTest8(op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  Bit8u result = op1 & op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+  op1 = AL;
+  op2 = i->Ib();
+  op1 &= op2;
+
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }
 
-void BX_CPU_C::TEST_EbIb(bxInstruction_c *i)
+void BX_CPU_C::TEST_EbIbM(bxInstruction_c *i)
 {
-  Bit8u op2, op1;
+  Bit8u op1 = read_virtual_byte(i->seg(), RMAddr(i));
+  op1 &= i->Ib();
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
+}
 
-  op2 = i->Ib();
-
-  if (i->modC0()) {
-    op1 = BX_READ_8BIT_REGx(i->rm(),i->extend8bitL());
-  }
-  else {
-    read_virtual_byte(i->seg(), RMAddr(i), &op1);
-  }
-
-#if defined(BX_HostAsm_Test8)
-  Bit32u flags32;
-  asmTest8(op1, op2, flags32);
-  setEFlagsOSZAPC(flags32);
-#else
-  Bit8u result;
-  result = op1 & op2;
-  SET_FLAGS_OSZAPC_RESULT_8(result, BX_INSTR_LOGIC8);
-#endif
+void BX_CPU_C::TEST_EbIbR(bxInstruction_c *i)
+{
+  Bit8u op1 = BX_READ_8BIT_REGx(i->rm(), i->extend8bitL());
+  op1 &= i->Ib();
+  SET_FLAGS_OSZAPC_LOGIC_8(op1);
 }

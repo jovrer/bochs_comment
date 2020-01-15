@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h,v 1.20 2005/11/14 18:25:41 sshwarts Exp $
+// $Id: instrument.h,v 1.24 2007/12/13 21:53:55 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -56,6 +56,7 @@ void bx_instr_init(unsigned cpu);
 void bx_instr_shutdown(unsigned cpu);
 void bx_instr_reset(unsigned cpu);
 void bx_instr_hlt(unsigned cpu);
+void bx_instr_mwait(unsigned cpu, bx_phy_address addr, unsigned len, Bit32u flags);
 void bx_instr_new_instruction(unsigned cpu);
 
 void bx_instr_debug_promt();
@@ -77,7 +78,7 @@ void bx_instr_interrupt(unsigned cpu, unsigned vector);
 void bx_instr_exception(unsigned cpu, unsigned vector);
 void bx_instr_hwinterrupt(unsigned cpu, unsigned vector, Bit16u cs, bx_address eip);
 
-void bx_instr_tlb_cntrl(unsigned cpu, unsigned what, Bit32u newval);
+void bx_instr_tlb_cntrl(unsigned cpu, unsigned what, bx_phy_address new_cr3);
 void bx_instr_cache_cntrl(unsigned cpu, unsigned what);
 void bx_instr_prefetch_hint(unsigned cpu, unsigned what, unsigned seg, bx_address offset);
 
@@ -93,8 +94,7 @@ void bx_instr_outp2(Bit16u addr, unsigned len, unsigned val);
 void bx_instr_mem_code(unsigned cpu, bx_address linear, unsigned size);
 void bx_instr_mem_data(unsigned cpu, bx_address linear, unsigned size, unsigned rw);
 
-void bx_instr_lin_read(unsigned cpu, bx_address lin, bx_address phy, unsigned len);
-void bx_instr_lin_write(unsigned cpu, bx_address lin, bx_address phy, unsigned len);
+void bx_instr_lin_access(unsigned cpu, bx_address lin, bx_address phy, unsigned len, unsigned rw);
 
 void bx_instr_phy_write(unsigned cpu, bx_address addr, unsigned len);
 void bx_instr_phy_read(unsigned cpu, bx_address addr, unsigned len);
@@ -106,6 +106,10 @@ void bx_instr_wrmsr(unsigned cpu, unsigned addr, Bit64u value);
 #  define BX_INSTR_SHUTDOWN(cpu_id)        bx_instr_shutdown(cpu_id)
 #  define BX_INSTR_RESET(cpu_id)           bx_instr_reset(cpu_id)
 #  define BX_INSTR_HLT(cpu_id)             bx_instr_hlt(cpu_id)
+
+#  define BX_INSTR_MWAIT(cpu_id, addr, len, flags) \
+                       bx_instr_hlt(cpu_id, addr, len, flags)
+
 #  define BX_INSTR_NEW_INSTRUCTION(cpu_id) bx_instr_new_instruction(cpu_id)
 
 /* called from command line debugger */
@@ -136,7 +140,7 @@ void bx_instr_wrmsr(unsigned cpu, unsigned addr, Bit64u value);
 
 /* TLB/CACHE control instruction executed */
 #  define BX_INSTR_CACHE_CNTRL(cpu_id, what)            bx_instr_cache_cntrl(cpu_id, what)
-#  define BX_INSTR_TLB_CNTRL(cpu_id, what, newval)      bx_instr_tlb_cntrl(cpu_id, what, newval)
+#  define BX_INSTR_TLB_CNTRL(cpu_id, what, new_cr3)     bx_instr_tlb_cntrl(cpu_id, what, new_cr3)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset) \
                        bx_instr_prefetch_hint(cpu_id, what, seg, offset)
 
@@ -146,9 +150,9 @@ void bx_instr_wrmsr(unsigned cpu, unsigned addr, Bit64u value);
 #  define BX_INSTR_REPEAT_ITERATION(cpu_id, i)          bx_instr_repeat_iteration(cpu_id, i)
 
 /* memory access */
-#  define BX_INSTR_LIN_READ(cpu_id, lin, phy, len)      bx_instr_lin_read(cpu_id, lin, phy, len)
-#  define BX_INSTR_LIN_WRITE(cpu_id, lin, phy, len)     bx_instr_lin_write(cpu_id, lin, phy, len)
+#  define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)  bx_instr_lin_access(cpu_id, lin, phy, len, rw)
 
+/* memory access */
 #  define BX_INSTR_MEM_CODE(cpu_id, linear, size)       bx_instr_mem_code(cpu_id, linear, size)
 #  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)   bx_instr_mem_data(cpu_id, linear, size, rw)
 
@@ -172,6 +176,7 @@ void bx_instr_wrmsr(unsigned cpu, unsigned addr, Bit64u value);
 #  define BX_INSTR_SHUTDOWN(cpu_id)
 #  define BX_INSTR_RESET(cpu_id)
 #  define BX_INSTR_HLT(cpu_id)
+#  define BX_INSTR_MWAIT(cpu_id, addr, len, flags)
 #  define BX_INSTR_NEW_INSTRUCTION(cpu_id)
 
 /* called from command line debugger */
@@ -200,7 +205,7 @@ void bx_instr_wrmsr(unsigned cpu, unsigned addr, Bit64u value);
 
 /* TLB/CACHE control instruction executed */
 #  define BX_INSTR_CACHE_CNTRL(cpu_id, what)
-#  define BX_INSTR_TLB_CNTRL(cpu_id, what, newval)
+#  define BX_INSTR_TLB_CNTRL(cpu_id, what, new_cr3)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
 
 /* execution */
@@ -209,10 +214,10 @@ void bx_instr_wrmsr(unsigned cpu, unsigned addr, Bit64u value);
 #  define BX_INSTR_REPEAT_ITERATION(cpu_id, i)
 
 /* memory access */
-#  define BX_INSTR_LIN_READ(cpu_id, lin, phy, len)
-#  define BX_INSTR_LIN_WRITE(cpu_id, lin, phy, len)
+#  define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
 
-#  define BX_INSTR_MEM_CODE(cpu_id, linear, size)      
+/* memory access */
+#  define BX_INSTR_MEM_CODE(cpu_id, linear, size)
 #  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)
 
 /* called from memory object */

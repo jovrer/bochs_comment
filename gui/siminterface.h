@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.210 2007/08/01 17:09:52 vruppert Exp $
+// $Id: siminterface.h,v 1.214 2007/10/24 23:09:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Intro to siminterface by Bryce Denney:
@@ -122,6 +122,7 @@ typedef enum {
 // the old BXP_* enum values, which have been eliminated.
 #define BXPN_SEL_CONFIG_INTERFACE        "general.config_interface"
 #define BXPN_BOCHS_START                 "general.start_mode"
+#define BXPN_BOCHS_BENCHMARK             "general.benchmark"
 #define BXPN_RESTORE_FLAG                "general.restore"
 #define BXPN_RESTORE_PATH                "general.restore_path"
 #define BXPN_DEBUG_RUNNING               "general.debug_running"
@@ -242,9 +243,7 @@ typedef enum {
   BX_TOOLBAR_CDROMD,
   BX_TOOLBAR_RESET,
   BX_TOOLBAR_POWER,
-#if BX_SUPPORT_SAVE_RESTORE
   BX_TOOLBAR_SAVE_RESTORE,
-#endif
   BX_TOOLBAR_COPY,
   BX_TOOLBAR_PASTE,
   BX_TOOLBAR_SNAPSHOT,
@@ -640,9 +639,7 @@ public:
 };
 
 typedef Bit64s (*param_event_handler)(class bx_param_c *, int set, Bit64s val);
-#if BX_SUPPORT_SAVE_RESTORE
 typedef Bit64s (*param_sr_handler)(void *devptr, class bx_param_c *, Bit64s val);
-#endif
 typedef int (*param_enable_handler)(class bx_param_c *, int en);
 
 class BOCHSAPI bx_param_num_c : public bx_param_c {
@@ -664,11 +661,9 @@ protected:
     bx_bool *pbool;  // used by bx_shadow_bool_c
   } val;
   param_event_handler handler;
-#if BX_SUPPORT_SAVE_RESTORE
   void *sr_devptr;
   param_sr_handler save_handler;
   param_sr_handler restore_handler;
-#endif
   param_enable_handler enable_handler;
   int base;
   Bit32u options;
@@ -685,12 +680,10 @@ public:
       const char *description,
       Bit64s min, Bit64s max, Bit64s initial_val,
       bx_bool is_shadow = 0);
-  virtual void reset();
+  virtual void reset() { val.number = initial_val; }
   void set_handler(param_event_handler handler);
-#if BX_SUPPORT_SAVE_RESTORE
   void set_sr_handlers(void *devptr, param_sr_handler save, param_sr_handler restore);
-#endif
-  void set_enable_handler(param_enable_handler handler);
+  void set_enable_handler(param_enable_handler handler) { enable_handler = handler; }
   virtual bx_list_c *get_dependent_list() { return dependent_list; }
   void set_dependent_list(bx_list_c *l);
   virtual void set_enabled(int enabled);
@@ -814,17 +807,17 @@ public:
 
 
 class BOCHSAPI bx_param_enum_c : public bx_param_num_c {
-  char **choices;
+  const char **choices;
 public:
   bx_param_enum_c(bx_param_c *parent,
       const char *name,
       const char *label,
       const char *description,
-      char **choices,
+      const char **choices,
       Bit64s initial_val,
       Bit64s value_base = 0);
-  char *get_choice(int n) { return choices[n]; }
-  char *get_selected() { return choices[val.number - min]; }
+  const char *get_choice(int n) { return choices[n]; }
+  const char *get_selected() { return choices[val.number - min]; }
   int find_by_name(const char *string);
   bx_bool set_by_name(const char *string);
 #if BX_USE_TEXTCONFIG
@@ -890,7 +883,6 @@ public:
       int maxsize=-1);
 };
 
-#if BX_SUPPORT_SAVE_RESTORE
 class BOCHSAPI bx_shadow_data_c : public bx_param_c {
   Bit32u data_size;
   Bit8u *data_ptr;
@@ -902,7 +894,6 @@ public:
   Bit8u *getptr() {return data_ptr;}
   Bit32u get_size() const {return data_size;}
 };
-#endif
 
 #define BX_DEFAULT_LIST_SIZE 6
 
@@ -949,8 +940,8 @@ public:
   } bx_listopt_bits;
   bx_list_c(bx_param_c *parent, int maxsize);
   bx_list_c(bx_param_c *parent, const char *name, int maxsize);
-  bx_list_c(bx_param_c *parent, const char *name, char *title, int maxsize = BX_DEFAULT_LIST_SIZE);
-  bx_list_c(bx_param_c *parent, const char *name, char *title, bx_param_c **init_list);
+  bx_list_c(bx_param_c *parent, const char *name, const char *title, int maxsize = BX_DEFAULT_LIST_SIZE);
+  bx_list_c(bx_param_c *parent, const char *name, const char *title, bx_param_c **init_list);
   virtual ~bx_list_c();
   bx_list_c *clone();
   void add(bx_param_c *param);
@@ -1054,19 +1045,19 @@ enum {
 #define BX_CLOCK_TIME0_LOCAL     1
 #define BX_CLOCK_TIME0_UTC       2
 
-BOCHSAPI extern char *bochs_start_names[];
-BOCHSAPI extern char *floppy_type_names[];
+BOCHSAPI extern const char *bochs_start_names[];
+BOCHSAPI extern const char *floppy_type_names[];
 BOCHSAPI extern int floppy_type_n_sectors[];
-BOCHSAPI extern char *floppy_status_names[];
-BOCHSAPI extern char *bochs_bootdisk_names[];
-BOCHSAPI extern char *loader_os_names[];
-BOCHSAPI extern char *keyboard_type_names[];
-BOCHSAPI extern char *atadevice_type_names[];
-BOCHSAPI extern char *atadevice_mode_names[];
-BOCHSAPI extern char *atadevice_status_names[];
-BOCHSAPI extern char *atadevice_biosdetect_names[];
-BOCHSAPI extern char *atadevice_translation_names[];
-BOCHSAPI extern char *clock_sync_names[];
+BOCHSAPI extern const char *floppy_status_names[];
+BOCHSAPI extern const char *bochs_bootdisk_names[];
+BOCHSAPI extern const char *loader_os_names[];
+BOCHSAPI extern const char *keyboard_type_names[];
+BOCHSAPI extern const char *atadevice_type_names[];
+BOCHSAPI extern const char *atadevice_mode_names[];
+BOCHSAPI extern const char *atadevice_status_names[];
+BOCHSAPI extern const char *atadevice_biosdetect_names[];
+BOCHSAPI extern const char *atadevice_translation_names[];
+BOCHSAPI extern const char *clock_sync_names[];
 
 ////////////////////////////////////////////////////////////////////
 // base class simulator interface, contains just virtual functions.
@@ -1166,9 +1157,9 @@ public:
   virtual int ask_param(const char *pname) {return -1;}
 
   // ask the user for a pathname
-  virtual int ask_filename(char *filename, int maxlen, char *prompt, char *the_default, int flags) {return -1;}
+  virtual int ask_filename(const char *filename, int maxlen, const char *prompt, const char *the_default, int flags) {return -1;}
   // yes/no dialog
-  virtual int ask_yes_no(char *title, char *prompt, bx_bool the_default) {return -1;}
+  virtual int ask_yes_no(const char *title, const char *prompt, bx_bool the_default) {return -1;}
   // called at a regular interval, currently by the keyboard handler.
   virtual void periodic() {}
   virtual int create_disk_image(const char *filename, int sectors, bx_bool overwrite) {return -3;}
@@ -1218,15 +1209,14 @@ public:
   virtual bx_bool register_user_option(const char *keyword, user_option_parser_t parser, user_option_save_t save_func) {return 0;}
   virtual Bit32s parse_user_option(int idx, const char *context, int num_params, char *params []) {return -1;}
   virtual Bit32s save_user_options(FILE *fp) {return -1;}
-#if BX_SUPPORT_SAVE_RESTORE
   // save/restore support
   virtual void init_save_restore() {}
   virtual bx_bool save_state(const char *checkpoint_path) {return 0;}
   virtual bx_bool restore_config() {return 0;}
   virtual bx_bool restore_logopts() {return 0;}
   virtual bx_bool restore_hardware() {return 0;}
-  virtual bx_list_c *get_sr_root() {return NULL;}
-#endif 
+  virtual bx_list_c *get_bochs_root() {return NULL;}
+  virtual bx_bool restore_bochs_param(bx_list_c *root, const char *sr_path, const char *restore_name) { return 0; }
 };
 
 BOCHSAPI extern bx_simulator_interface_c *SIM;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc,v 1.57 2007/08/25 13:11:53 akrisak Exp $
+// $Id: win32dialog.cc,v 1.61 2007/12/03 20:50:24 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include "config.h"
@@ -32,6 +32,17 @@ static bx_param_num_c *cpu_param[16];
 #endif
 
 int AskFilename(HWND hwnd, bx_param_filename_c *param, const char *ext);
+
+char *backslashes(char *s)
+{
+  if (s != NULL) {
+    while (*s != 0) {
+       if (*s == '/') *s = '\\';
+       s++;
+    }
+  }
+  return s;
+}
 
 HWND GetBochsWindow()
 {
@@ -247,7 +258,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
       switch (LOWORD(wParam)) {
         case IDBROWSE:
           GetDlgItemText(hDlg, IDPATH, path, MAX_PATH);
-          param->set(path);
+          param->set(backslashes(path));
           if (AskFilename(hDlg, param, "img") > 0) {
             SetWindowText(GetDlgItem(hDlg, IDPATH), param->getptr());
             SendMessage(GetDlgItem(hDlg, IDSTATUS), BM_SETCHECK, BST_CHECKED, 0);
@@ -292,6 +303,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           break;
         case IDCREATE:
           GetDlgItemText(hDlg, IDPATH, path, MAX_PATH);
+          backslashes(path);
           i = SendMessage(GetDlgItem(hDlg, IDMEDIATYPE), CB_GETCURSEL, 0, 0);
           if (CreateImage(hDlg, floppy_type_n_sectors[i], path)) {
             wsprintf(mesg, "Created a %s disk image called %s", floppy_type_names[i], path);
@@ -333,7 +345,7 @@ static BOOL CALLBACK Cdrom1DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
       switch (LOWORD(wParam)) {
         case IDBROWSE1:
           GetDlgItemText(hDlg, IDCDROM1, path, MAX_PATH);
-          SIM->get_param_string("path", cdromop)->set(path);
+          SIM->get_param_string("path", cdromop)->set(backslashes(path));
           if (AskFilename(hDlg, (bx_param_filename_c *)SIM->get_param_string("path", cdromop), "iso") > 0) {
             SetWindowText(GetDlgItem(hDlg, IDCDROM1), SIM->get_param_string("path", cdromop)->getptr());
             SendMessage(GetDlgItem(hDlg, IDSTATUS1), BM_SETCHECK, BST_CHECKED, 0);
@@ -523,7 +535,7 @@ static BOOL CALLBACK RTCdromDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
             case IDBROWSE4:
               device = LOWORD(wParam) - IDBROWSE1;
               GetDlgItemText(hDlg, IDCDROM1+device, path, MAX_PATH);
-              SIM->get_param_string("path", cdromop[device])->set(path);
+              SIM->get_param_string("path", cdromop[device])->set(backslashes(path));
               if (AskFilename(hDlg, (bx_param_filename_c *)SIM->get_param_string("path", cdromop[device]), "iso") > 0) {
                 SetWindowText(GetDlgItem(hDlg, IDCDROM1+device), SIM->get_param_string("path", cdromop[device])->getptr());
                 SendMessage(GetDlgItem(hDlg, IDSTATUS1+device), BM_SETCHECK, BST_CHECKED, 0);
@@ -895,7 +907,6 @@ int RuntimeOptionsDialog()
 #if BX_DEBUGGER
 void RefreshDebugDialog()
 {
-#if BX_SUPPORT_SAVE_RESTORE
   unsigned i;
   char buffer[20];
 
@@ -905,7 +916,6 @@ void RefreshDebugDialog()
       SetDlgItemText(hDebugDialog, IDCPUVAL1+i, buffer);
     }
   }
-#endif
 }
 
 static BOOL CALLBACK DebuggerDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -917,27 +927,34 @@ static BOOL CALLBACK DebuggerDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
   switch (msg) {
     case WM_INITDIALOG:
       GetWindowRect(hDlg, &R);
-#if BX_SUPPORT_SAVE_RESTORE
-      cpu_param[0] = SIM->get_param_num("cpu.0.EAX", SIM->get_sr_root());
-      cpu_param[1] = SIM->get_param_num("cpu.0.EBX", SIM->get_sr_root());
-      cpu_param[2] = SIM->get_param_num("cpu.0.ECX", SIM->get_sr_root());
-      cpu_param[3] = SIM->get_param_num("cpu.0.EDX", SIM->get_sr_root());
-      cpu_param[4] = SIM->get_param_num("cpu.0.ESP", SIM->get_sr_root());
-      cpu_param[5] = SIM->get_param_num("cpu.0.EBP", SIM->get_sr_root());
-      cpu_param[6] = SIM->get_param_num("cpu.0.ESI", SIM->get_sr_root());
-      cpu_param[7] = SIM->get_param_num("cpu.0.EDI", SIM->get_sr_root());
-      cpu_param[8] = SIM->get_param_num("cpu.0.EIP", SIM->get_sr_root());
-      cpu_param[9] = SIM->get_param_num("cpu.0.CS.selector", SIM->get_sr_root());
-      cpu_param[10] = SIM->get_param_num("cpu.0.DS.selector", SIM->get_sr_root());
-      cpu_param[11] = SIM->get_param_num("cpu.0.ES.selector", SIM->get_sr_root());
-      cpu_param[12] = SIM->get_param_num("cpu.0.FS.selector", SIM->get_sr_root());
-      cpu_param[13] = SIM->get_param_num("cpu.0.GS.selector", SIM->get_sr_root());
-      cpu_param[14] = SIM->get_param_num("cpu.0.EFLAGS", SIM->get_sr_root());
+#if BX_SUPPORT_X86_64
+      cpu_param[0] = SIM->get_param_num("cpu0.RAX", SIM->get_bochs_root());
+      cpu_param[1] = SIM->get_param_num("cpu0.RBX", SIM->get_bochs_root());
+      cpu_param[2] = SIM->get_param_num("cpu0.RCX", SIM->get_bochs_root());
+      cpu_param[3] = SIM->get_param_num("cpu0.RDX", SIM->get_bochs_root());
+      cpu_param[4] = SIM->get_param_num("cpu0.RSP", SIM->get_bochs_root());
+      cpu_param[5] = SIM->get_param_num("cpu0.RBP", SIM->get_bochs_root());
+      cpu_param[6] = SIM->get_param_num("cpu0.RSI", SIM->get_bochs_root());
+      cpu_param[7] = SIM->get_param_num("cpu0.RDI", SIM->get_bochs_root());
+      cpu_param[8] = SIM->get_param_num("cpu0.RIP", SIM->get_bochs_root());
 #else
-      EnableWindow(GetDlgItem(hDlg, IDSHOWCPU), FALSE);
+      cpu_param[0] = SIM->get_param_num("cpu0.EAX", SIM->get_bochs_root());
+      cpu_param[1] = SIM->get_param_num("cpu0.EBX", SIM->get_bochs_root());
+      cpu_param[2] = SIM->get_param_num("cpu0.ECX", SIM->get_bochs_root());
+      cpu_param[3] = SIM->get_param_num("cpu0.EDX", SIM->get_bochs_root());
+      cpu_param[4] = SIM->get_param_num("cpu0.ESP", SIM->get_bochs_root());
+      cpu_param[5] = SIM->get_param_num("cpu0.EBP", SIM->get_bochs_root());
+      cpu_param[6] = SIM->get_param_num("cpu0.ESI", SIM->get_bochs_root());
+      cpu_param[7] = SIM->get_param_num("cpu0.EDI", SIM->get_bochs_root());
+      cpu_param[8] = SIM->get_param_num("cpu0.EIP", SIM->get_bochs_root());
 #endif
+      cpu_param[9] = SIM->get_param_num("cpu0.CS.selector", SIM->get_bochs_root());
+      cpu_param[10] = SIM->get_param_num("cpu0.DS.selector", SIM->get_bochs_root());
+      cpu_param[11] = SIM->get_param_num("cpu0.ES.selector", SIM->get_bochs_root());
+      cpu_param[12] = SIM->get_param_num("cpu0.FS.selector", SIM->get_bochs_root());
+      cpu_param[13] = SIM->get_param_num("cpu0.GS.selector", SIM->get_bochs_root());
+      cpu_param[14] = SIM->get_param_num("cpu0.EFLAGS", SIM->get_bochs_root());
       return TRUE;
-      break;
     case WM_CLOSE:
       bx_user_quit = 1;
       SIM->debug_break();

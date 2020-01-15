@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vm8086.cc,v 1.29 2007/02/03 21:36:40 sshwarts Exp $
+// $Id: vm8086.cc,v 1.36 2007/12/23 17:21:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -30,13 +31,7 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#if BX_SUPPORT_X86_64==0
-// Make life easier for merging 64&32-bit code.
-#define RIP EIP
-#define RSP ESP
-#endif
-
-
+//
 // Notes:
 //
 // The high bits of the 32bit eip image are ignored by
@@ -48,16 +43,15 @@
 // eIP out of code limits.
 //
 // IRET to VM does affect IOPL, IF, VM, and RF
-
-
-#if BX_SUPPORT_V8086_MODE
+//
 
 #if BX_CPU_LEVEL >= 3
 
 void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
                               Bit32u flags32)
 {
-  Bit32u temp_ESP, new_esp, esp_laddr;
+  Bit32u temp_ESP, new_esp;
+  bx_address esp_laddr;
   Bit16u raw_es_selector, raw_ds_selector, raw_fs_selector,
          raw_gs_selector, raw_ss_selector;
 
@@ -83,21 +77,21 @@ void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
 
   // top 36 bytes of stack must be within stack limits, else #SS(0)
   if ( !can_pop(36) ) {
-    BX_INFO(("iret: VM: top 36 bytes not within limits"));
+    BX_ERROR(("stack_return_to_v86: top 36 bytes not within limits"));
     exception(BX_SS_EXCEPTION, 0, 0);
   }
 
   esp_laddr = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + temp_ESP;
 
   // load SS:ESP from stack
-  read_virtual_dword(BX_SEG_REG_SS, temp_ESP+12, &new_esp);
-  read_virtual_word (BX_SEG_REG_SS, temp_ESP+16, &raw_ss_selector);
+  new_esp = read_virtual_dword(BX_SEG_REG_SS, temp_ESP+12);
+  raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+16);
 
   // load ES,DS,FS,GS from stack
-  read_virtual_word (BX_SEG_REG_SS, temp_ESP+20, &raw_es_selector);
-  read_virtual_word (BX_SEG_REG_SS, temp_ESP+24, &raw_ds_selector);
-  read_virtual_word (BX_SEG_REG_SS, temp_ESP+28, &raw_fs_selector);
-  read_virtual_word (BX_SEG_REG_SS, temp_ESP+32, &raw_gs_selector);
+  raw_es_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+20);
+  raw_ds_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+24);
+  raw_fs_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+28);
+  raw_gs_selector = read_virtual_word(BX_SEG_REG_SS, temp_ESP+32);
 
   writeEFlags(flags32, EFlagsValidMask);
 
@@ -110,7 +104,7 @@ void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value = raw_fs_selector;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value = raw_gs_selector;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value = raw_ss_selector;
-  RSP = new_esp;	// full 32 bit are loaded
+  ESP = new_esp;	// full 32 bit are loaded
 
   init_v8086_mode();
 }
@@ -127,13 +121,13 @@ void BX_CPU_C::iret16_stack_return_from_v86(bxInstruction_c *i)
 
   if( !can_pop(6) )
   {
+    BX_DEBUG(("iret16_stack_return_from_v86(): can't pop 6 bytes from the stack"));
     exception(BX_SS_EXCEPTION, 0, 0);
-    return;
   }
 
-  pop_16(&ip);
-  pop_16(&cs_raw);
-  pop_16(&flags16);
+  ip      = pop_16();
+  cs_raw  = pop_16();
+  flags16 = pop_16();
 
 #if BX_SUPPORT_VME
   if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3)
@@ -141,12 +135,12 @@ void BX_CPU_C::iret16_stack_return_from_v86(bxInstruction_c *i)
     if (((flags16 & EFlagsIFMask) && BX_CPU_THIS_PTR get_VIP()) || 
          (flags16 & EFlagsTFMask))
     {
-      BX_DEBUG(("iret16_stack_return_from_v86: #GP(0) in VME mode"));
+      BX_DEBUG(("iret16_stack_return_from_v86(): #GP(0) in VME mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
 
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
-    RIP = (Bit32u) ip;
+    EIP = (Bit32u) ip;
 
     // IF, IOPL unchanged, EFLAGS.VIF = TMP_FLAGS.IF
     Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | 
@@ -160,7 +154,7 @@ void BX_CPU_C::iret16_stack_return_from_v86(bxInstruction_c *i)
 #endif
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
-  RIP = (Bit32u) ip;
+  EIP = (Bit32u) ip;
   write_flags(flags16, /*IOPL*/ 0, /*IF*/ 1);
 }
 
@@ -184,16 +178,16 @@ void BX_CPU_C::iret32_stack_return_from_v86(bxInstruction_c *i)
 
   if( !can_pop(12) )
   {
+    BX_DEBUG(("iret32_stack_return_from_v86(): can't pop 12 bytes from the stack"));
     exception(BX_SS_EXCEPTION, 0, 0);
-    return;
   }
   
-  pop_32(&eip);
-  pop_32(&cs_raw);
-  pop_32(&flags32);
+  eip     = pop_32();
+  cs_raw  = pop_32();
+  flags32 = pop_32();
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) cs_raw);
-  RIP = eip;
+  EIP = eip;
   // VIF, VIP, VM, IOPL unchanged
   writeEFlags(flags32, change_mask);
 }
@@ -223,7 +217,7 @@ void BX_CPU_C::v86_redirect_interrupt(Bit32u vector)
   push_16(old_IP);
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) temp_CS);
-  RIP = temp_IP;
+  EIP = temp_IP;
 
   BX_CPU_THIS_PTR clear_TF();
   BX_CPU_THIS_PTR clear_RF();
@@ -253,6 +247,10 @@ void BX_CPU_C::init_v8086_mode(void)
 
 #if BX_SUPPORT_ICACHE  // update instruction cache
   BX_CPU_THIS_PTR updateFetchModeMask();
+#endif
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  handleAlignmentCheck(); // CPL was modified
 #endif
 
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = 1;
@@ -327,19 +325,3 @@ void BX_CPU_C::init_v8086_mode(void)
 }
 
 #endif /* BX_CPU_LEVEL >= 3 */
-
-#else  // BX_SUPPORT_V8086_MODE
-
-// compiled without v8086 mode support
-
-void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector, Bit32u flags32)
-{
-  BX_PANIC(("stack_return_to_v86: virtual 8086 mode not supported !"));
-}
-
-void BX_CPU_C::stack_return_from_v86(void)
-{
-  BX_PANIC(("stack_return_from_v86: virtual 8086 mode not supported !"));
-}
-
-#endif // BX_SUPPORT_V8086_MODE

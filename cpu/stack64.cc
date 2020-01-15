@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack64.cc,v 1.23 2006/03/08 18:21:16 sshwarts Exp $
+// $Id: stack64.cc,v 1.32 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -32,38 +32,38 @@
 
 #if BX_SUPPORT_X86_64
 
-void BX_CPU_C::POP_Eq(bxInstruction_c *i)
+void BX_CPU_C::POP_EqM(bxInstruction_c *i)
 {
-  Bit64u val64;
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
-  pop_64(&val64);
+  Bit64u val64 = pop_64();
 
-  if (i->modC0()) {
-    BX_WRITE_64BIT_REG(i->rm(), val64);
+  // Note: there is one little weirdism here.  It is possible to use 
+  // RSP in the modrm addressing. If used, the value of RSP after the 
+  // pop is used to calculate the address.
+  if (i->rm()==4 && i->sibBase()==4) {
+    // call method on BX_CPU_C object
+    BX_CPU_CALL_METHODR (i->ResolveModrm, (i));
   }
-  else {
-    // Note: there is one little weirdism here.  When 64bit addressing
-    // is used, it is possible to use RSP in the modrm addressing.
-    // If used, the value of RSP after the pop is used to calculate
-    // the address.
-    if (i->as64L() && (!i->modC0()) && (i->rm()==4) && (i->sibBase()==4)) {
-      // call method on BX_CPU_C object
-      BX_CPU_CALL_METHODR (i->ResolveModrm, (i));
-    }
-    write_virtual_qword(i->seg(), RMAddr(i), &val64);
-  }
+  write_virtual_qword(i->seg(), RMAddr(i), val64);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+}
+
+void BX_CPU_C::POP_EqR(bxInstruction_c *i)
+{
+  BX_WRITE_64BIT_REG(i->rm(), pop_64());
 }
 
 void BX_CPU_C::PUSH_RRX(bxInstruction_c *i)
 {
-  push_64(BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].rrx);
+  push_64(BX_READ_64BIT_REG(i->opcodeReg()));
 }
 
 void BX_CPU_C::POP_RRX(bxInstruction_c *i)
 {
-  Bit64u rrx;
-  pop_64(&rrx);
-  BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].rrx = rrx;
+  BX_WRITE_64BIT_REG(i->opcodeReg(), pop_64());
 }
 
 void BX_CPU_C::PUSH64_FS(bxInstruction_c *i)
@@ -78,16 +78,18 @@ void BX_CPU_C::PUSH64_GS(bxInstruction_c *i)
 
 void BX_CPU_C::POP64_FS(bxInstruction_c *i)
 {
-  Bit64u fs;
-  pop_64(&fs);
+  // this way is faster and RSP safe
+  Bit64u fs = read_virtual_qword(BX_SEG_REG_SS, RSP);
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], (Bit16u) fs);
+  RSP += 8;
 }
 
 void BX_CPU_C::POP64_GS(bxInstruction_c *i)
 {
-  Bit64u gs;
-  pop_64(&gs);
+  // this way is faster and RSP safe
+  Bit64u gs = read_virtual_qword(BX_SEG_REG_SS, RSP);
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], (Bit16u) gs);
+  RSP += 8;
 }
 
 void BX_CPU_C::PUSH64_Id(bxInstruction_c *i)
@@ -96,20 +98,16 @@ void BX_CPU_C::PUSH64_Id(bxInstruction_c *i)
   push_64(imm64);
 }
 
-void BX_CPU_C::PUSH_Eq(bxInstruction_c *i)
+void BX_CPU_C::PUSH_EqM(bxInstruction_c *i)
 {
-  Bit64u op1_64;
-
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-  }
+  Bit64u op1_64 = read_virtual_qword(i->seg(), RMAddr(i));
 
   push_64(op1_64);
+}
+
+void BX_CPU_C::PUSH_EqR(bxInstruction_c *i)
+{
+  push_64(BX_READ_64BIT_REG(i->rm()));
 }
 
 void BX_CPU_C::ENTER64_IwIb(bxInstruction_c *i)
@@ -118,11 +116,8 @@ void BX_CPU_C::ENTER64_IwIb(bxInstruction_c *i)
   level &= 0x1F;
   Bit64u bytes_to_push = 8 + level*8 + i->Iw();
 
-  if (! can_push(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache, RSP, bytes_to_push))
-  {
-    BX_ERROR(("ENTER: not enough room on stack!"));
-    exception(BX_SS_EXCEPTION, 0, 0);
-  }
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
   push_64(RBP);
 
@@ -134,29 +129,27 @@ void BX_CPU_C::ENTER64_IwIb(bxInstruction_c *i)
       Bit64u temp64;
 
       RBP -= 8;
-      read_virtual_qword(BX_SEG_REG_SS, RBP, &temp64);
+      temp64 = read_virtual_qword(BX_SEG_REG_SS, RBP);
       RSP -= 8;
-      write_virtual_qword(BX_SEG_REG_SS, RSP, &temp64);
+      write_virtual_qword(BX_SEG_REG_SS, RSP, temp64);
     } /* while (--level) */
 
     /* push(frame pointer) */
     RSP -= 8;
-    write_virtual_qword(BX_SEG_REG_SS, RSP, &frame_ptr64);
+    write_virtual_qword(BX_SEG_REG_SS, RSP, frame_ptr64);
   } /* if (level > 0) ... */
 
-  RBP = frame_ptr64;
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
+  RBP = frame_ptr64;
   RSP -= i->Iw();
 }
 
 void BX_CPU_C::LEAVE64(bxInstruction_c *i)
 {
-  // delete frame
-  RSP = RBP;
-
   // restore frame pointer
-  Bit64u temp64;
-  pop_64(&temp64);
+  Bit64u temp64 = read_virtual_qword(BX_SEG_REG_SS, RBP);
+  RSP = RBP + 8;
   RBP = temp64;
 }
 

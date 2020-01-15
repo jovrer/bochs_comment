@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.cc,v 1.33 2006/09/18 18:10:49 vruppert Exp $
+// $Id: virt_timer.cc,v 1.35 2007/10/24 23:17:16 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -284,9 +284,8 @@ int bx_virt_timer_c::register_timer(void *this_ptr, bx_timer_handler_t handler,
 //unregister a previously registered timer.
 bx_bool bx_virt_timer_c::unregisterTimer(unsigned timerID)
 {
-  if(!use_virtual_timers) {
+  if(!use_virtual_timers)
     return bx_pc_system.unregisterTimer(timerID);
-  }
 
   BX_ASSERT(timerID < BX_MAX_VIRTUAL_TIMERS);
 
@@ -426,10 +425,9 @@ void bx_virt_timer_c::init(void)
   init_done = 1;
 }
 
-#if BX_SUPPORT_SAVE_RESTORE
 void bx_virt_timer_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "virt_timer", "Virtual Timer State", 17);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "virt_timer", "Virtual Timer State", 17);
   bx_list_c *vtimers = new bx_list_c(list, "timer", numTimers);
   for (unsigned i = 0; i < numTimers; i++) {
     char name[4];
@@ -459,7 +457,6 @@ void bx_virt_timer_c::register_state(void)
   BXRS_DEC_PARAM_SIMPLE(list, ticks_per_second);
 
 }
-#endif
 
 void bx_virt_timer_c::timer_handler(void)
 {
@@ -529,10 +526,10 @@ void bx_virt_timer_c::timer_handler(void)
 	temp2 = (total_real_usec);
 	temp3 = (Bit64u)total_ticks;
 	temp4 = (Bit64u)((total_real_usec) - total_ticks);
-	printf("useconds: %llu, ",temp1);
-	printf("expect ticks: %llu, ",temp2);
-	printf("ticks: %llu, ",temp3);
-	printf("diff: %llu\n",temp4);
+	printf("useconds: " FMT_LL "u, ", temp1);
+	printf("expect ticks: " FMT_LL "u, ", temp2);
+	printf("ticks: " FMT_LL "u, ", temp3);
+	printf("diff: "FMT_LL "u\n", temp4);
       }
 #  endif
 
@@ -545,9 +542,7 @@ void bx_virt_timer_c::timer_handler(void)
       stored_delta = system_time_delta;
     }
 
-
-    Bit64u a,b;
-    a=(usec_per_second);
+    Bit64u a = usec_per_second, b;
     if(real_time_delta) {
       //FIXME
       Bit64u em_realtime_delta = last_system_usec + stored_delta - em_last_realtime;
@@ -577,4 +572,3 @@ void bx_virt_timer_c::pc_system_timer_handler(void* this_ptr)
 {
   ((bx_virt_timer_c *)this_ptr)->timer_handler();
 }
-

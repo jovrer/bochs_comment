@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dbg_main.cc,v 1.94 2007/07/09 14:57:33 sshwarts Exp $
+// $Id: dbg_main.cc,v 1.108 2007/12/13 22:56:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -49,8 +49,10 @@ extern "C" {
 // default CPU in the debugger.  For commands like "dump_cpu" it will
 // use the default instead of always dumping all cpus.
 unsigned dbg_cpu = 0;
+bx_list_c *dbg_cpu_list = 0;
 
 extern const char* cpu_mode_string(unsigned cpu_mode);
+extern void bx_sr_after_restore_state(void);
 
 static bx_param_bool_c *sim_running = NULL;
 
@@ -70,8 +72,6 @@ static struct {
   Bit32u   default_addr;
   unsigned next_bpoint_id;
 } bx_debugger;
-
-#define BX_DBG_DEFAULT_ICOUNT_QUANTUM 5
 
 typedef struct {
   FILE    *fp;
@@ -101,11 +101,11 @@ static struct {
   unsigned this_many; // batch this many max before posting events
   unsigned Qsize;     // this many have been batched
   struct {
-    Bit32u   addr;    // address of DMA op
-    unsigned len;     // number of bytes in op
-    unsigned what;    // BX_READ or BX_WRITE
-    Bit32u   val;     // value of DMA op
-    Bit64u   time;    // system time at this dma op
+    bx_phy_address addr; // address of DMA op
+    unsigned len;        // number of bytes in op
+    unsigned what;       // BX_READ or BX_WRITE
+    Bit32u   val;        // value of DMA op
+    Bit64u   time;       // system time at this dma op
   } Q[BX_BATCH_DMA_BUFSIZE];
 } bx_dbg_batch_dma;
 
@@ -147,8 +147,6 @@ int bx_dbg_set_rcfile(const char *rcfile)
 
 int bx_dbg_main(void)
 {
-  int i;
-  
   setbuf(stdout, NULL);
   setbuf(stderr, NULL);
 
@@ -166,6 +164,8 @@ int bx_dbg_main(void)
   bx_debugger.default_unit_size      = 'w';
   bx_debugger.default_addr = 0;
   bx_debugger.next_bpoint_id = 1;
+
+  dbg_cpu_list = (bx_list_c*) SIM->get_param("cpu0", SIM->get_bochs_root());
 
   // Open debugger log file if needed
   if ((strlen(SIM->get_param_string(BXPN_DEBUGGER_LOG_FILENAME)->getptr()) > 0) 
@@ -203,11 +203,11 @@ int bx_dbg_main(void)
   // Print disassembly of the first instruction...  you wouldn't think it
   // would have to be so hard.  First initialize guard_found, since it is used
   // in the disassembly code to decide what instruction to print.
-  for (i=0; i<BX_SMP_PROCESSORS; i++) {
+  for (int i=0; i<BX_SMP_PROCESSORS; i++) {
     BX_CPU(i)->guard_found.cs = BX_CPU(i)->sregs[BX_SEG_REG_CS].selector.value;
-    BX_CPU(i)->guard_found.eip = BX_CPU(i)->prev_eip;
+    BX_CPU(i)->guard_found.eip = BX_CPU(i)->prev_rip;
     BX_CPU(i)->guard_found.laddr =
-      (BX_CPU(i)->get_segment_base(BX_SEG_REG_CS) + BX_CPU(i)->prev_eip);
+      (BX_CPU(i)->get_segment_base(BX_SEG_REG_CS) + BX_CPU(i)->prev_rip);
     BX_CPU(i)->guard_found.is_32bit_code =
       (BX_CPU(i)->sregs[BX_SEG_REG_CS].cache.u.segment.d_b);
     BX_CPU(i)->guard_found.is_64bit_code =
@@ -493,6 +493,259 @@ void bx_dbg_exit(int code)
 }
 
 //
+// functions for browsing of cpu state
+//
+
+void bx_dbg_print_sse_state(void)
+{
+#if BX_SUPPORT_SSE
+  Bit32u mxcsr = SIM->get_param_num("SSE.mxcsr", dbg_cpu_list)->get();
+  dbg_printf("MXCSR: 0x%08x\n", mxcsr);
+
+  char param_name[20];
+  for(unsigned i=0;i<BX_XMM_REGISTERS;i++) {
+    sprintf(param_name, "SSE.xmm%02d_hi", i);
+    Bit64u hi = SIM->get_param_num(param_name, dbg_cpu_list)->get();
+    sprintf(param_name, "SSE.xmm%02d_lo", i);
+    Bit64u lo = SIM->get_param_num(param_name, dbg_cpu_list)->get();
+    dbg_printf("XMM[%02u]: %08x%08x:%08x%08x\n", i,
+       GET32H(hi), GET32L(hi), GET32H(lo), GET32L(lo));
+  }
+#else
+  dbg_printf("The CPU doesn't support SSE state !");
+#endif
+}
+
+void bx_dbg_print_mmx_state(void)
+{
+#if BX_SUPPORT_MMX
+  char param_name[20];
+  for(unsigned i=0;i<8;i++) {
+    sprintf(param_name, "FPU.st%d.fraction", i);
+    Bit64u mmreg = SIM->get_param_num(param_name, dbg_cpu_list)->get();
+    dbg_printf("MM[%d]: %08x:%08x\n", i, GET32H(mmreg), GET32L(mmreg));
+  }
+#else
+  dbg_printf("The CPU doesn't support MMX state !");
+#endif
+}
+
+void bx_dbg_print_fpu_state(void)
+{
+#if BX_SUPPORT_FPU
+  BX_CPU(dbg_cpu)->print_state_FPU();
+#else
+  dbg_printf("The CPU doesn't support FPU state !");
+#endif
+}
+
+void bx_dbg_info_flags(void)
+{
+  dbg_printf("IOPL=%1u %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
+    BX_CPU(dbg_cpu)->get_IOPL(),
+    BX_CPU(dbg_cpu)->get_ID() ? "ID" : "id",
+    BX_CPU(dbg_cpu)->get_VIP() ? "VIP" : "vip",
+    BX_CPU(dbg_cpu)->get_VIF() ? "VIF" : "vif",
+    BX_CPU(dbg_cpu)->get_AC() ? "AC" : "ac",
+    BX_CPU(dbg_cpu)->get_VM() ? "VM" : "vm",
+    BX_CPU(dbg_cpu)->get_RF() ? "RF" : "rf",
+    BX_CPU(dbg_cpu)->get_NT() ? "NT" : "nt",
+    BX_CPU(dbg_cpu)->get_OF() ? "OF" : "of",
+    BX_CPU(dbg_cpu)->get_DF() ? "DF" : "df",
+    BX_CPU(dbg_cpu)->get_IF() ? "IF" : "if",
+    BX_CPU(dbg_cpu)->get_TF() ? "TF" : "tf",
+    BX_CPU(dbg_cpu)->get_SF() ? "SF" : "sf",
+    BX_CPU(dbg_cpu)->get_ZF() ? "ZF" : "zf",
+    BX_CPU(dbg_cpu)->get_AF() ? "AF" : "af",
+    BX_CPU(dbg_cpu)->get_PF() ? "PF" : "pf",
+    BX_CPU(dbg_cpu)->get_CF() ? "CF" : "cf");
+}
+
+void bx_dbg_info_control_regs_command(void)
+{
+  Bit32u cr0 = SIM->get_param_num("CR0", dbg_cpu_list)->get();
+  bx_address cr2 = SIM->get_param_num("CR2", dbg_cpu_list)->get();
+  bx_phy_address cr3 = SIM->get_param_num("CR3", dbg_cpu_list)->get();
+  dbg_printf("CR0=0x%08x\n", cr0);
+  dbg_printf("    PG=paging=%d\n", (cr0>>31) & 1);
+  dbg_printf("    CD=cache disable=%d\n", (cr0>>30) & 1);
+  dbg_printf("    NW=not write through=%d\n", (cr0>>29) & 1);
+  dbg_printf("    AM=alignment mask=%d\n", (cr0>>18) & 1);
+  dbg_printf("    WP=write protect=%d\n", (cr0>>16) & 1);
+  dbg_printf("    NE=numeric error=%d\n", (cr0>>5) & 1);
+  dbg_printf("    ET=extension type=%d\n", (cr0>>4) & 1);
+  dbg_printf("    TS=task switched=%d\n", (cr0>>3) & 1);
+  dbg_printf("    EM=FPU emulation=%d\n", (cr0>>2) & 1);
+  dbg_printf("    MP=monitor coprocessor=%d\n", (cr0>>1) & 1);
+  dbg_printf("    PE=protection enable=%d\n", (cr0>>0) & 1);
+  dbg_printf("CR2=page fault linear address=0x" FMT_ADDRX "\n", cr2);
+  dbg_printf("CR3=0x%08x\n", cr3);
+  dbg_printf("    PCD=page-level cache disable=%d\n", (cr3>>4) & 1);
+  dbg_printf("    PWT=page-level writes transparent=%d\n", (cr3>>3) & 1);
+#if BX_CPU_LEVEL >= 4
+  Bit32u cr4 = SIM->get_param_num("CR4", dbg_cpu_list)->get();
+  dbg_printf("CR4=0x%08x\n", cr4);
+  dbg_printf("    VME=virtual-8086 mode extensions=%d\n", (cr4>>0) & 1);
+  dbg_printf("    PVI=protected-mode virtual interrupts=%d\n", (cr4>>1) & 1);
+  dbg_printf("    TSD=time stamp disable=%d\n", (cr4>>2) & 1);
+  dbg_printf("    DE=debugging extensions=%d\n", (cr4>>3) & 1);
+  dbg_printf("    PSE=page size extensions=%d\n", (cr4>>4) & 1);
+  dbg_printf("    PAE=physical address extension=%d\n", (cr4>>5) & 1);
+  dbg_printf("    MCE=machine check enable=%d\n", (cr4>>6) & 1);
+  dbg_printf("    PGE=page global enable=%d\n", (cr4>>7) & 1);
+  dbg_printf("    PCE=performance-monitor counter enable=%d\n", (cr4>>8) & 1);
+  dbg_printf("    OXFXSR=OS support for FXSAVE/FXRSTOR=%d\n", (cr4>>9) & 1);
+  dbg_printf("    OSXMMEXCPT=OS support for unmasked SIMD FP exceptions=%d\n", (cr4>>10) & 1);
+#endif
+#if BX_SUPPORT_X86_64
+  Bit32u efer = SIM->get_param_num("MSR.EFER", dbg_cpu_list)->get();
+  dbg_printf("EFER=0x%08x\n", efer);
+  dbg_printf("    SCE=SYSCALL/SYSRET support=%d\n", (efer>>0) & 1);
+  dbg_printf("    LME=long mode enabled=%d\n", (efer>>8) & 1);
+  dbg_printf("    LMA=long mode activated=%d\n", (efer>>10) & 1);
+  dbg_printf("    NXE=non-execuable page protection=%d\n", (efer>>11) & 1);
+  dbg_printf("    FFXSR=OS support for fast FXSAVE/FXRSTOR=%d\n", (efer>>14) & 1);
+#endif
+}
+
+void bx_dbg_info_segment_regs_command(void)
+{
+  bx_dbg_sreg_t sreg;
+  bx_dbg_global_sreg_t global_sreg;
+
+  BX_CPU(dbg_cpu)->dbg_get_sreg(&sreg, BX_DBG_SREG_CS);
+  dbg_printf("cs:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_sreg(&sreg, BX_DBG_SREG_DS);
+  dbg_printf("ds:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_sreg(&sreg, BX_DBG_SREG_SS);
+  dbg_printf("ss:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_sreg(&sreg, BX_DBG_SREG_ES);
+  dbg_printf("es:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_sreg(&sreg, BX_DBG_SREG_FS);
+  dbg_printf("fs:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_sreg(&sreg, BX_DBG_SREG_GS);
+  dbg_printf("gs:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_ldtr(&sreg);
+  dbg_printf("ldtr:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_tr(&sreg);
+  dbg_printf("tr:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
+      (unsigned) sreg.sel, (unsigned) sreg.des_l,
+      (unsigned) sreg.des_h, (unsigned) sreg.valid);
+
+  BX_CPU(dbg_cpu)->dbg_get_gdtr(&global_sreg);
+  dbg_printf("gdtr:base=0x%08x, limit=0x%x\n",
+      (unsigned) global_sreg.base, (unsigned) global_sreg.limit);
+
+  BX_CPU(dbg_cpu)->dbg_get_idtr(&global_sreg);
+  dbg_printf("idtr:base=0x%08x, limit=0x%x\n",
+      (unsigned) global_sreg.base, (unsigned) global_sreg.limit);
+}
+
+void bx_dbg_info_registers_command(int which_regs_mask)
+{
+  bx_address reg;
+
+  if (which_regs_mask & BX_INFO_GENERAL_PURPOSE_REGS) {
+#if BX_SUPPORT_SMP
+    dbg_printf("%s:\n", BX_CPU(dbg_cpu)->name);
+#endif
+#if BX_SUPPORT_X86_64 == 0
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EAX);
+    dbg_printf("eax: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_ECX);
+    dbg_printf("ecx: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EDX);
+    dbg_printf("edx: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EBX);
+    dbg_printf("ebx: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_ESP);
+    dbg_printf("esp: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EBP);
+    dbg_printf("ebp: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_ESI);
+    dbg_printf("esi: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EDI);
+    dbg_printf("edi: 0x%08x %d\n", (unsigned) reg, (int) reg);
+    reg = bx_dbg_get_eip();
+    dbg_printf("eip: 0x%08x\n", (unsigned) reg);
+#else
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RAX);
+    dbg_printf("rax: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RCX);
+    dbg_printf("rcx: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RDX);
+    dbg_printf("rdx: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RBX);
+    dbg_printf("rbx: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RSP);
+    dbg_printf("rsp: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RBP);
+    dbg_printf("rbp: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RSI);
+    dbg_printf("rsi: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RDI);
+    dbg_printf("rdi: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R8);
+    dbg_printf("r8 : 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R9);
+    dbg_printf("r9 : 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R10);
+    dbg_printf("r10: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R11);
+    dbg_printf("r11: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R12);
+    dbg_printf("r12: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R13);
+    dbg_printf("r13: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R14);
+    dbg_printf("r14: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
+    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R15);
+    dbg_printf("r15: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+    reg = bx_dbg_get_instruction_pointer();
+    dbg_printf("rip: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
+#endif
+    reg = BX_CPU(dbg_cpu)->read_eflags();
+    dbg_printf("eflags 0x%08x\n", (unsigned) reg);
+    bx_dbg_info_flags();
+  }
+
+#if BX_SUPPORT_FPU
+  if (which_regs_mask & BX_INFO_FPU_REGS) {
+    bx_dbg_print_fpu_state();
+  }
+#endif
+
+  if (which_regs_mask & BX_INFO_MMX_REGS) {
+    bx_dbg_print_mmx_state();
+  }
+
+  if (which_regs_mask & BX_INFO_SSE_REGS) {
+    bx_dbg_print_sse_state();
+  }
+}
+
+//
 // commands invoked from parser
 //
 
@@ -703,7 +956,6 @@ static bx_bool bx_dbg_read_linear(unsigned which_cpu, bx_address laddr, unsigned
 next_page:
   remainsInPage = 0x1000 - (laddr & 0xfff);
   read_len = (remainsInPage < len) ? remainsInPage : len;
-  paddr_valid = 0;
 
   paddr_valid = BX_CPU(which_cpu)->dbg_xlate_linear2phy(laddr, &paddr);
   if (paddr_valid) {
@@ -713,7 +965,7 @@ next_page:
     }
   }
   else {
-    dbg_printf("bx_dbg_read_linear: physical address not available for linear " FMT_ADDRX "\n", laddr);
+    dbg_printf("bx_dbg_read_linear: physical address not available for linear 0x" FMT_ADDRX "\n", laddr);
     return 0;
   }
 
@@ -747,7 +999,7 @@ void bx_dbg_where_command()
   dbg_printf("(%d) 0x%08x\n", 0, ip);
   for (int i = 1; i < 50; i++) {
     // Up
-    Bit32u paddr;
+    bx_phy_address paddr;
     Bit8u buf[4];
 
     // bp = [bp];
@@ -811,6 +1063,20 @@ static void dbg_print_guard_found(unsigned cpu_mode, Bit32u cs, bx_address eip, 
     dbg_printf("%04x:%08x (0x%08x)", cs, (unsigned) eip, (unsigned) laddr);
   else // real or v8086 mode
     dbg_printf("%04x:%04x (0x%08x)", cs, (unsigned) eip, (unsigned) laddr);
+}
+
+void bx_dbg_xlate_address(bx_lin_address laddr)
+{
+  bx_phy_address paddr;
+  laddr &= BX_CONST64(0xfffffffffffff000);
+
+  bx_bool paddr_valid = BX_CPU(which_cpu)->dbg_xlate_linear2phy(laddr, &paddr);
+  if (paddr_valid) {
+    dbg_printf("linear page 0x" FMT_ADDRX " maps to physical page 0x%08x\n", laddr, paddr);
+  }
+  else {
+    dbg_printf("physical address not available for linear 0x" FMT_ADDRX "\n", laddr);
+  }
 }
 
 unsigned dbg_show_mask = 0;
@@ -962,16 +1228,9 @@ void bx_dbg_show_command(const char* arg)
 
 void bx_dbg_show_param_command(char *param)
 {
-#if BX_SUPPORT_SAVE_RESTORE
   // remove leading and trailing quotas
-  if (param[0]=='\"') param++;
-  unsigned len = strlen(param);
-  if (param[len - 1] == '\"') param[len - 1] = '\0';
   dbg_printf("show param name: <%s>\n", param);
-  print_tree(SIM->get_param(param, SIM->get_sr_root()), 0);
-#else
-  dbg_printf("You must compile with save/restore to use this command !\n");
-#endif
+  print_tree(SIM->get_param(param, SIM->get_bochs_root()), 0);
 }
 
 // return non zero to cause a stop
@@ -1060,7 +1319,7 @@ void bx_dbg_print_stack_command(unsigned nwords)
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU(dbg_cpu)->get_cpu_mode() == BX_MODE_LONG_64) {
-    linear_sp = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RSP);
+    linear_sp = BX_CPU(dbg_cpu)->get_reg64(BX_64BIT_REG_RSP);
     len = 8;
   }
   else 
@@ -1071,7 +1330,7 @@ void bx_dbg_print_stack_command(unsigned nwords)
       len = 4;
     }
     else {
-      linear_sp = BX_CPU(dbg_cpu)->get_reg32(BX_16BIT_REG_SP);
+      linear_sp = BX_CPU(dbg_cpu)->get_reg16(BX_16BIT_REG_SP);
       len = 2;
     }
   }
@@ -1106,17 +1365,17 @@ void bx_dbg_print_stack_command(unsigned nwords)
   }
 }
 
-int num_write_watchpoints = 0;
-int num_read_watchpoints = 0;
-Bit32u write_watchpoint[MAX_WRITE_WATCHPOINTS];
-Bit32u read_watchpoint[MAX_READ_WATCHPOINTS];
+unsigned num_write_watchpoints = 0;
+unsigned num_read_watchpoints = 0;
+bx_phy_address write_watchpoint[MAX_WRITE_WATCHPOINTS];
+bx_phy_address read_watchpoint[MAX_READ_WATCHPOINTS];
 bx_bool watchpoint_continue = 0;
 
-void bx_dbg_watch(int read, Bit32u address)
+void bx_dbg_watch(int read, bx_phy_address address)
 {
   if (read == -1) {
     // print watch point info
-    int i;
+    unsigned i;
     for (i = 0; i < num_read_watchpoints; i++) {
       Bit8u buf[2];
       if (BX_MEM(0)->dbg_fetch_mem(BX_CPU(dbg_cpu), read_watchpoint[i], 2, buf))
@@ -1125,33 +1384,33 @@ void bx_dbg_watch(int read, Bit32u address)
       else
         dbg_printf("read   %08x   (read error)\n", read_watchpoint[i]);
     }
-  for (i = 0; i < num_write_watchpoints; i++) {
-    Bit8u buf[2];
-    if (BX_MEM(0)->dbg_fetch_mem(BX_CPU(dbg_cpu), write_watchpoint[i], 2, buf))
-      dbg_printf("write  %08x   (%04x)\n", write_watchpoint[i], (int)buf[0] | ((int)buf[1] << 8));
-    else
-      dbg_printf("write  %08x   (read error)\n", write_watchpoint[i]);
-  }
+    for (i = 0; i < num_write_watchpoints; i++) {
+      Bit8u buf[2];
+      if (BX_MEM(0)->dbg_fetch_mem(BX_CPU(dbg_cpu), write_watchpoint[i], 2, buf))
+        dbg_printf("write  %08x   (%04x)\n", write_watchpoint[i], (int)buf[0] | ((int)buf[1] << 8));
+      else
+        dbg_printf("write  %08x   (read error)\n", write_watchpoint[i]);
+    }
   } else {
     if (read) {
-        if (num_read_watchpoints == MAX_READ_WATCHPOINTS) {
+      if (num_read_watchpoints == MAX_READ_WATCHPOINTS) {
         dbg_printf("Too many read watchpoints\n");
         return;
       }
       read_watchpoint[num_read_watchpoints++] = address;
-      dbg_printf("Read watchpoint at %08x inserted\n", address);
+      dbg_printf("Read watchpoint at 0x%08x inserted\n", address);
     } else {
       if (num_write_watchpoints == MAX_WRITE_WATCHPOINTS) {
         dbg_printf("Too many write watchpoints\n");
         return;
       }
       write_watchpoint[num_write_watchpoints++] = address;
-      dbg_printf("Write watchpoint at %08x inserted\n", address);
+      dbg_printf("Write watchpoint at 0x%08x inserted\n", address);
     }
   }
 }
 
-void bx_dbg_unwatch(int read, Bit32u address)
+void bx_dbg_unwatch(int read, bx_phy_address address)
 {
   if (read == -1) {
     // unwatch all
@@ -1195,7 +1454,10 @@ one_more:
     // setting should have no effect, although a low setting does
     // lead to poor performance because cpu_loop is returning and 
     // getting called again, over and over.
-    int quantum = BX_DBG_DEFAULT_ICOUNT_QUANTUM;
+
+#define BX_DBG_DEFAULT_ICOUNT_QUANTUM 5
+
+    Bit32u quantum = (BX_SMP_PROCESSORS>1) ? BX_DBG_DEFAULT_ICOUNT_QUANTUM : 0;
     int cpu;
     for (cpu=0; cpu < BX_SMP_PROCESSORS; cpu++) {
       BX_CPU(cpu)->guard_found.guard_found = 0;
@@ -1217,6 +1479,7 @@ one_more:
       // cpus set stop, too bad.
     }
 
+#if BX_SUPPORT_SMP
     // increment time tick only after all processors have had their chance.
     if (BX_SMP_PROCESSORS == 1) {
       // all ticks are handled inside the cpu loop
@@ -1227,7 +1490,7 @@ one_more:
       // execute.  Even this is tricky with SMP because one might
       // have hit a breakpoint, while others executed the whole
       // quantum.
-      int max_executed = 0;
+      Bit32u max_executed = 0;
       for (cpu=0; cpu<BX_SMP_PROCESSORS; cpu++) {
         if (BX_CPU(cpu)->guard_found.icount > max_executed)
           max_executed = BX_CPU(cpu)->guard_found.icount;
@@ -1240,6 +1503,7 @@ one_more:
 
       BX_TICKN(max_executed);
     }
+#endif
   }
 
   sim_running->set(0);
@@ -1318,7 +1582,7 @@ void bx_dbg_disassemble_current(int which_cpu, int print_time)
     // in each cpu description (see cpu/cpu.h) and update/compare those "prev" values
     // from here. (eks)
     if(BX_CPU(dbg_cpu)->trace_reg)
-      bx_dbg_info_registers_command(BX_INFO_CPU_REGS);
+      bx_dbg_info_registers_command(BX_INFO_GENERAL_PURPOSE_REGS);
 
     if (print_time)
       dbg_printf("(%u).[" FMT_LL "d] ", which_cpu, bx_pc_system.time_ticks());
@@ -1354,7 +1618,7 @@ void bx_dbg_print_guard_results(void)
   for (cpu=0; cpu<BX_SMP_PROCESSORS; cpu++) {
     unsigned long found = BX_CPU(cpu)->guard_found.guard_found;
     if (found & BX_DBG_GUARD_CTRL_C) { /* ... */ }
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
     else if (found & BX_DBG_GUARD_IADDR_VIR) {
       i = BX_CPU(cpu)->guard_found.iaddr_index;
       dbg_printf("(%u) Breakpoint %u, in ");
@@ -1364,7 +1628,7 @@ void bx_dbg_print_guard_results(void)
       dbg_printf("\n");
     }
 #endif
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
     else if (found & BX_DBG_GUARD_IADDR_LIN) {
       i = BX_CPU(cpu)->guard_found.iaddr_index;
       if (bx_guard.iaddr.lin[i].bpoint_id != 0)
@@ -1374,7 +1638,7 @@ void bx_dbg_print_guard_results(void)
             BX_CPU(cpu)->guard_found.laddr);
     }
 #endif
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
     else if (found & BX_DBG_GUARD_IADDR_PHY) {
       i = BX_CPU(cpu)->guard_found.iaddr_index;
       dbg_printf("(%u) Breakpoint %u, 0x" FMT_ADDRX " in ?? ()\n",
@@ -1426,21 +1690,21 @@ void bx_dbg_print_guard_results(void)
 
 void bx_dbg_breakpoint_changed(void)
 {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   if (bx_guard.iaddr.num_virtual)
     bx_guard.guard_for |= BX_DBG_GUARD_IADDR_VIR;
   else
     bx_guard.guard_for &= ~BX_DBG_GUARD_IADDR_VIR;
 #endif
 
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   if (bx_guard.iaddr.num_linear)
     bx_guard.guard_for |= BX_DBG_GUARD_IADDR_LIN;
   else
     bx_guard.guard_for &= ~BX_DBG_GUARD_IADDR_LIN;
 #endif
 
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   if (bx_guard.iaddr.num_physical)
     bx_guard.guard_for |= BX_DBG_GUARD_IADDR_PHY;
   else
@@ -1450,19 +1714,19 @@ void bx_dbg_breakpoint_changed(void)
 
 void bx_dbg_en_dis_breakpoint_command(unsigned handle, bx_bool enable)
 {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   if (bx_dbg_en_dis_vbreak(handle, enable))
-   goto done;
+    goto done;
 #endif
 
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   if (bx_dbg_en_dis_lbreak(handle, enable))
-   goto done;
+    goto done;
 #endif
 
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   if (bx_dbg_en_dis_pbreak(handle, enable))
-      goto done;
+    goto done;
 #endif
 
   dbg_printf("Error: breakpoint %u not found.\n", handle);
@@ -1474,7 +1738,7 @@ done:
 
 bx_bool bx_dbg_en_dis_pbreak(unsigned handle, bx_bool enable)
 {
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   // see if breakpoint is a physical breakpoint
   for (unsigned i=0; i<bx_guard.iaddr.num_physical; i++) {
     if (bx_guard.iaddr.phy[i].bpoint_id == handle) {
@@ -1483,12 +1747,12 @@ bx_bool bx_dbg_en_dis_pbreak(unsigned handle, bx_bool enable)
     }
   }
 #endif
-  return (bx_bool)false;
+  return 0;
 }
 
 bx_bool bx_dbg_en_dis_lbreak(unsigned handle, bx_bool enable)
 {
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   // see if breakpoint is a linear breakpoint
   for (unsigned i=0; i<bx_guard.iaddr.num_linear; i++) {
     if (bx_guard.iaddr.lin[i].bpoint_id == handle) {
@@ -1502,7 +1766,7 @@ bx_bool bx_dbg_en_dis_lbreak(unsigned handle, bx_bool enable)
 
 bx_bool bx_dbg_en_dis_vbreak(unsigned handle, bx_bool enable)
 {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   // see if breakpoint is a virtual breakpoint
   for (unsigned i=0; i<bx_guard.iaddr.num_virtual; i++) {
     if (bx_guard.iaddr.vir[i].bpoint_id == handle) {
@@ -1516,17 +1780,17 @@ bx_bool bx_dbg_en_dis_vbreak(unsigned handle, bx_bool enable)
 
 void bx_dbg_del_breakpoint_command(unsigned handle)
 {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   if (bx_dbg_del_vbreak(handle))
    goto done;
 #endif
 
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   if (bx_dbg_del_lbreak(handle))
    goto done;
 #endif
 
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   if (bx_dbg_del_pbreak(handle))
    goto done;
 #endif
@@ -1540,7 +1804,7 @@ done:
 
 bx_bool bx_dbg_del_pbreak(unsigned handle)
 {
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   // see if breakpoint is a physical breakpoint
   for (unsigned i=0; i<bx_guard.iaddr.num_physical; i++) {
     if (bx_guard.iaddr.phy[i].bpoint_id == handle) {
@@ -1558,7 +1822,7 @@ bx_bool bx_dbg_del_pbreak(unsigned handle)
 
 bx_bool bx_dbg_del_lbreak(unsigned handle)
 {
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   // see if breakpoint is a linear breakpoint
   for (unsigned i=0; i<bx_guard.iaddr.num_linear; i++) {
     if (bx_guard.iaddr.lin[i].bpoint_id == handle) {
@@ -1576,7 +1840,7 @@ bx_bool bx_dbg_del_lbreak(unsigned handle)
 
 bx_bool bx_dbg_del_vbreak(unsigned handle)
 {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   // see if breakpoint is a virtual breakpoint
   for (unsigned i=0; i<bx_guard.iaddr.num_virtual; i++) {
     if (bx_guard.iaddr.vir[i].bpoint_id == handle) {
@@ -1594,7 +1858,7 @@ bx_bool bx_dbg_del_vbreak(unsigned handle)
 
 int bx_dbg_vbreakpoint_command(BreakpointKind bk, Bit32u cs, bx_address eip)
 {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   if (bk != bkRegular) {
     dbg_printf("Error: vbreak of this kind not implemented yet.\n");
     return -1;
@@ -1617,14 +1881,14 @@ int bx_dbg_vbreakpoint_command(BreakpointKind bk, Bit32u cs, bx_address eip)
 
 #else
   dbg_printf("Error: virtual breakpoint support not compiled in.\n");
-  dbg_printf("Error: see BX_DBG_SUPPORT_VIR_BPOINT.\n");
+  dbg_printf("Error: make sure BX_DBG_MAX_VIR_BPOINTS > 0\n");
   return -1;
 #endif
 }
 
 int bx_dbg_lbreakpoint_command(BreakpointKind bk, bx_address laddress)
 {
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   if (bk == bkAtIP) {
     dbg_printf("Error: lbreak of this kind not implemented yet.\n");
     return -1;
@@ -1646,14 +1910,14 @@ int bx_dbg_lbreakpoint_command(BreakpointKind bk, bx_address laddress)
 
 #else
   dbg_printf("Error: linear breakpoint support not compiled in.\n");
-  dbg_printf("Error: see BX_DBG_SUPPORT_LIN_BPOINT.\n");
+  dbg_printf("Error: make sure BX_DBG_MAX_LIN_BPOINTS > 0\n");
   return -1;
 #endif
 }
 
-int bx_dbg_pbreakpoint_command(BreakpointKind bk, Bit32u paddress)
+int bx_dbg_pbreakpoint_command(BreakpointKind bk, bx_phy_address paddress)
 {
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   if (bk != bkRegular) {
     dbg_printf("Error: pbreak of this kind not implemented yet.\n");
     return -1;
@@ -1674,7 +1938,7 @@ int bx_dbg_pbreakpoint_command(BreakpointKind bk, Bit32u paddress)
   return BpId;
 #else
   dbg_printf("Error: physical breakpoint support not compiled in.\n");
-  dbg_printf("Error: see BX_DBG_SUPPORT_PHY_BPOINT.\n");
+  dbg_printf("Error: make sure BX_DBG_MAX_PHY_BPOINTS > 0\n");
   return -1;
 #endif
 }
@@ -1686,7 +1950,7 @@ void bx_dbg_info_bpoints_command(void)
 // 1   breakpoint     keep y   0x00010664 in main at temp.c:7
 
   dbg_printf("Num Type           Disp Enb Address\n");
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
   for (i=0; i<bx_guard.iaddr.num_virtual; i++) {
     dbg_printf("%3u ", bx_guard.iaddr.vir[i].bpoint_id);
     dbg_printf("vbreakpoint    ");
@@ -1698,7 +1962,7 @@ void bx_dbg_info_bpoints_command(void)
   }
 #endif
 
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
   for (i=0; i<bx_guard.iaddr.num_linear; i++) {
     dbg_printf("%3u ", bx_guard.iaddr.lin[i].bpoint_id);
     dbg_printf("lbreakpoint    ");
@@ -1708,7 +1972,7 @@ void bx_dbg_info_bpoints_command(void)
   }
 #endif
 
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
   for (i=0; i<bx_guard.iaddr.num_physical; i++) {
     dbg_printf("%3u ", bx_guard.iaddr.phy[i].bpoint_id);
     dbg_printf("pbreakpoint    ");
@@ -1769,154 +2033,6 @@ void bx_dbg_take_command(const char *what, unsigned n)
   }
 }
 
-void bx_dbg_info_registers_command(int which_regs_mask)
-{
-  bx_address reg;
-
-  if (which_regs_mask & BX_INFO_CPU_REGS) {
-#if BX_SUPPORT_SMP
-    dbg_printf("%s:\n", BX_CPU(dbg_cpu)->name);
-#endif
-#if BX_SUPPORT_X86_64 == 0
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EAX);
-    dbg_printf("eax: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_ECX);
-    dbg_printf("ecx: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EDX);
-    dbg_printf("edx: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EBX);
-    dbg_printf("ebx: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_ESP);
-    dbg_printf("esp: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EBP);
-    dbg_printf("ebp: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_ESI);
-    dbg_printf("esi: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_32BIT_REG_EDI);
-    dbg_printf("edi: 0x%08x %d\n", (unsigned) reg, (int) reg);
-    reg = bx_dbg_get_eip();
-    dbg_printf("eip: 0x%08x\n", (unsigned) reg);
-#else
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RAX);
-    dbg_printf("rax: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RCX);
-    dbg_printf("rcx: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RDX);
-    dbg_printf("rdx: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RBX);
-    dbg_printf("rbx: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RSP);
-    dbg_printf("rsp: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RBP);
-    dbg_printf("rbp: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RSI);
-    dbg_printf("rsi: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_RDI);
-    dbg_printf("rdi: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R8);
-    dbg_printf("r8 : 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R9);
-    dbg_printf("r9 : 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R10);
-    dbg_printf("r10: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R11);
-    dbg_printf("r11: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R12);
-    dbg_printf("r12: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R13);
-    dbg_printf("r13: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R14);
-    dbg_printf("r14: 0x%08x:%08x ", GET32H(reg), GET32L(reg));
-    reg = BX_CPU(dbg_cpu)->get_reg32(BX_64BIT_REG_R15);
-    dbg_printf("r15: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-    reg = bx_dbg_get_instruction_pointer();
-    dbg_printf("rip: 0x%08x:%08x\n", GET32H(reg), GET32L(reg));
-#endif
-    reg = BX_CPU(dbg_cpu)->read_eflags();
-    dbg_printf("eflags 0x%08x\n", (unsigned) reg);
-    bx_dbg_info_flags();
-  }
-#if BX_SUPPORT_FPU
-  if (which_regs_mask & BX_INFO_FPU_REGS) {
-    BX_CPU(dbg_cpu)->print_state_FPU();
-  }
-#endif
-#if BX_SUPPORT_SSE
-  if (which_regs_mask & BX_INFO_SSE_REGS) {
-    BX_CPU(dbg_cpu)->print_state_SSE();
-  }
-#endif
-}
-
-void bx_dbg_dump_cpu_command(void)
-{
-  bx_dbg_cpu_t cpu;
-
-  BX_CPU(dbg_cpu)->dbg_get_cpu(&cpu);
-
-#if BX_SUPPORT_SMP
-  dbg_printf("CPU#%u\n", dbg_cpu);
-#endif
-  dbg_printf("eax:0x%08x, ebx:0x%08x, ecx:0x%08x, edx:0x%08x\n", 
-      (unsigned) cpu.eax, (unsigned) cpu.ebx,
-      (unsigned) cpu.ecx, (unsigned) cpu.edx);
-  dbg_printf("ebp:0x%08x, esp:0x%08x, esi:0x%08x, edi:0x%08x\n", 
-      (unsigned) cpu.ebp, (unsigned) cpu.esp,
-      (unsigned) cpu.esi, (unsigned) cpu.edi);
-  dbg_printf("eip:0x%08x, eflags:0x%08x, inhibit_mask:%u\n",
-      (unsigned) cpu.eip, (unsigned) cpu.eflags, cpu.inhibit_mask);
-
-  dbg_printf("cs:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.cs.sel, (unsigned) cpu.cs.des_l,
-      (unsigned) cpu.cs.des_h, (unsigned) cpu.cs.valid);
-  dbg_printf("ss:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.ss.sel, (unsigned) cpu.ss.des_l,
-      (unsigned) cpu.ss.des_h, (unsigned) cpu.ss.valid);
-  dbg_printf("ds:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.ds.sel, (unsigned) cpu.ds.des_l,
-      (unsigned) cpu.ds.des_h, (unsigned) cpu.ds.valid);
-  dbg_printf("es:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.es.sel, (unsigned) cpu.es.des_l,
-      (unsigned) cpu.es.des_h, (unsigned) cpu.es.valid);
-  dbg_printf("fs:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.fs.sel, (unsigned) cpu.fs.des_l,
-      (unsigned) cpu.fs.des_h, (unsigned) cpu.fs.valid);
-  dbg_printf("gs:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.gs.sel, (unsigned) cpu.gs.des_l,
-      (unsigned) cpu.gs.des_h, (unsigned) cpu.gs.valid);
-
-  dbg_printf("ldtr:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.ldtr.sel, (unsigned) cpu.ldtr.des_l,
-      (unsigned) cpu.ldtr.des_h, (unsigned) cpu.ldtr.valid);
-
-  dbg_printf("tr:s=0x%04x, dl=0x%08x, dh=0x%08x, valid=%u\n",
-      (unsigned) cpu.tr.sel, (unsigned) cpu.tr.des_l,
-      (unsigned) cpu.tr.des_h, (unsigned) cpu.tr.valid);
-
-  dbg_printf("gdtr:base=0x%08x, limit=0x%x\n",
-      (unsigned) cpu.gdtr.base, (unsigned) cpu.gdtr.limit);
-  dbg_printf("idtr:base=0x%08x, limit=0x%x\n",
-      (unsigned) cpu.idtr.base, (unsigned) cpu.idtr.limit);
-
-  dbg_printf("dr0:0x%08x, dr1:0x%08x, dr2:0x%08x\n", 
-      (unsigned) cpu.dr0, (unsigned) cpu.dr1, (unsigned) cpu.dr2);
-  dbg_printf("dr3:0x%08x, dr6:0x%08x, dr7:0x%08x\n", 
-      (unsigned) cpu.dr3, (unsigned) cpu.dr6, (unsigned) cpu.dr7);
-
-  dbg_printf("cr0:0x%08x, cr1:0x%08x, cr2:0x%08x\n", 
-      (unsigned) cpu.cr0, (unsigned) cpu.cr1, (unsigned) cpu.cr2);
-  dbg_printf("cr3:0x%08x, cr4:0x%08x\n", 
-      (unsigned) cpu.cr3, (unsigned) cpu.cr4);
-
-#if BX_SUPPORT_PCI
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    DEV_pci_print_i440fx_state();
-  }
-#endif
-
-  dbg_printf("done\n");
-}
-
 static void bx_print_char(Bit8u ch)
 {
   if (ch < 10)
@@ -1939,7 +2055,7 @@ void dbg_printf_binary(char *format, Bit32u data, int bits)
 }
 
 void bx_dbg_examine_command(char *command, char *format, bx_bool format_passed,
-               Bit32u addr, bx_bool addr_passed)
+               bx_address addr, bx_bool addr_passed)
 {
   unsigned repeat_count, i;
   char ch, display_format, unit_size;
@@ -2098,9 +2214,9 @@ void bx_dbg_examine_command(char *command, char *format, bx_bool format_passed,
       if (i!=1)
         dbg_printf("\n");
       if (memory_dump)
-        dbg_printf("%08X  ", addr);
+        dbg_printf("0x" FMT_ADDRX ":", addr);
       else
-        dbg_printf("0x%08x <bogus+%8u>:", addr, offset);
+        dbg_printf("0x" FMT_ADDRX " <bogus+%8u>:", addr, offset);
       columns = 1;
     }
 
@@ -2212,7 +2328,7 @@ void bx_dbg_examine_command(char *command, char *format, bx_bool format_passed,
   dbg_printf("\n");
 }
 
-void bx_dbg_setpmem_command(Bit32u paddr, unsigned len, Bit32u val)
+void bx_dbg_setpmem_command(bx_phy_address paddr, unsigned len, Bit32u val)
 {
   Bit8u buf[4];
 
@@ -2270,13 +2386,15 @@ void bx_dbg_set_symbol_command(char *symbol, Bit32u val)
     is_OK = BX_CPU(dbg_cpu)->dbg_set_reg(BX_DBG_REG_GS, val);
   }
   else if ( !strcmp(symbol, "cpu") ) {
-#if BX_SUPPORT_SMP
-    if (val > BX_SMP_PROCESSORS) {
+    if (val >= BX_SMP_PROCESSORS) {
       dbg_printf("invalid cpu id number %d\n", val);
       return;
     }
+    char cpu_param_name[10];
+    sprintf(cpu_param_name, "cpu%d", val);
+    dbg_cpu_list = (bx_list_c*) SIM->get_param(cpu_param_name, SIM->get_bochs_root());
     dbg_cpu = val;
-#endif
+    return;
   }
   else if ( !strcmp(symbol, "synchronous_dma") ) {
     bx_guard.async.dma = !val;
@@ -2331,210 +2449,17 @@ void bx_dbg_query_command(const char *what)
   }
 }
 
-void bx_dbg_set_cpu_command(void)
+void bx_dbg_restore_command(const char *param_name, const char *restore_path)
 {
-  FILE *fp;
-  int   reti;
-  char *rets;
-  bx_bool retb;
-  unsigned long ul1, ul2, ul3, ul4;
-
-  bx_dbg_cpu_t cpu;
-
-  fp = bx_infile_stack[bx_infile_stack_index].fp;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "eax:0x%lx", &ul1); cpu.eax = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "ebx:0x%lx", &ul1); cpu.ebx = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "ecx:0x%lx", &ul1); cpu.ecx = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "edx:0x%lx", &ul1); cpu.edx = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "ebp:0x%lx", &ul1); cpu.ebp = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "esi:0x%lx", &ul1); cpu.esi = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "edi:0x%lx", &ul1); cpu.edi = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "esp:0x%lx", &ul1); cpu.esp = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "eflags:0x%lx", &ul1); cpu.eflags = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "eip:0x%lx", &ul1); cpu.eip = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "cs:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.cs.sel   = (Bit16u) ul1;
-  cpu.cs.des_l = ul2;
-  cpu.cs.des_h = ul3;
-  cpu.cs.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "ss:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.ss.sel   = (Bit16u) ul1;
-  cpu.ss.des_l = ul2;
-  cpu.ss.des_h = ul3;
-  cpu.ss.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "ds:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.ds.sel   = (Bit16u) ul1;
-  cpu.ds.des_l = ul2;
-  cpu.ds.des_h = ul3;
-  cpu.ds.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "es:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.es.sel   = (Bit16u) ul1;
-  cpu.es.des_l = ul2;
-  cpu.es.des_h = ul3;
-  cpu.es.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "fs:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.fs.sel   = (Bit16u) ul1;
-  cpu.fs.des_l = ul2;
-  cpu.fs.des_h = ul3;
-  cpu.fs.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "gs:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.gs.sel   = (Bit16u) ul1;
-  cpu.gs.des_l = ul2;
-  cpu.gs.des_h = ul3;
-  cpu.gs.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "ldtr:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.ldtr.sel   = (Bit16u) ul1;
-  cpu.ldtr.des_l = ul2;
-  cpu.ldtr.des_h = ul3;
-  cpu.ldtr.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "tr:s=0x%lx, dl=0x%lx, dh=0x%lx, valid=%lu",
-                &ul1, &ul2, &ul3, &ul4);
-  cpu.tr.sel   = (Bit16u) ul1;
-  cpu.tr.des_l = ul2;
-  cpu.tr.des_h = ul3;
-  cpu.tr.valid = ul4;
-  if (reti != 4) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "gdtr:base=0x%lx, limit=0x%lx",
-                &ul1, &ul2);
-  cpu.gdtr.base  = ul1;
-  cpu.gdtr.limit = ul2;
-  if (reti != 2) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "idtr:base=0x%lx, limit=0x%lx",
-                &ul1, &ul2);
-  cpu.idtr.base  = ul1;
-  cpu.idtr.limit = ul2;
-  if (reti != 2) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "dr0:0x%lx", &ul1); cpu.dr0 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "dr1:0x%lx", &ul1); cpu.dr1 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "dr2:0x%lx", &ul1); cpu.dr2 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "dr3:0x%lx", &ul1); cpu.dr3 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "dr6:0x%lx", &ul1); cpu.dr6 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "dr7:0x%lx", &ul1); cpu.dr7 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "cr0:0x%lx", &ul1); cpu.cr0 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "cr1:0x%lx", &ul1); cpu.cr1 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "cr2:0x%lx", &ul1); cpu.cr2 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "cr3:0x%lx", &ul1); cpu.cr3 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "cr4:0x%lx", &ul1); cpu.cr4 = ul1;
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "inhibit_mask:%u", &cpu.inhibit_mask);
-  if (reti != 1) goto scanf_error;
-
-  rets = fgets(tmp_buf, 512, fp); if (!rets) goto eof_error;
-  reti = sscanf(tmp_buf, "done");
-  if (reti != 0) goto scanf_error;
-
-  retb = BX_CPU(dbg_cpu)->dbg_set_cpu(&cpu);
-  if (retb == 0)
-    dbg_printf("Error: dbg_set_cpu encountered error\n");
-  else
-    dbg_printf("OK\n");
-  return;
-
-eof_error:
-  dbg_printf("Error: EOF encountered in dbg_set_cpu input stream\n");
-  return;
-
-scanf_error:
-  dbg_printf("Error: scanf returned error in dbg_set_cpu input stream\n");
-  return;
+  const char *path = (restore_path == NULL) ? "." : restore_path;
+  dbg_printf("restoring param (%s) state from file (%s/%s)\n", 
+      param_name, path, param_name);
+  if (! SIM->restore_bochs_param(SIM->get_bochs_root(), path, param_name)) {
+    dbg_printf("Error: error occured during restore\n");
+  }
+  else {
+    bx_sr_after_restore_state();
+  }
 }
 
 void bx_dbg_disassemble_current(const char *format)
@@ -2628,7 +2553,7 @@ void bx_dbg_doit_command(unsigned n)
   bx_dbg.exceptions = n;
 }
 
-void bx_dbg_crc_command(Bit32u addr1, Bit32u addr2)
+void bx_dbg_crc_command(bx_phy_address addr1, bx_phy_address addr2)
 {
   Bit32u crc1;
 
@@ -2661,7 +2586,6 @@ void bx_dbg_print_descriptor(unsigned char desc[8], int verbose)
 {
   Bit32u lo = (desc[3] << 24) | (desc[2] << 16) | (desc[1] << 8) | (desc[0]);
   Bit32u hi = (desc[7] << 24) | (desc[6] << 16) | (desc[5] << 8) | (desc[4]);
-//dbg_printf("Descriptor hi,lo = %08x,%08x\n", hi, lo);
   Bit32u base = ((lo >> 16) & 0xffff)
              | ((hi << 16) & 0xff0000)
              | (hi & 0xff000000);
@@ -2991,53 +2915,6 @@ void bx_dbg_info_tss_command(void)
   bx_dbg_print_tss(BX_MEM(0)->vector+paddr, len);
 }
 
-void bx_dbg_info_control_regs_command(void)
-{
-  Bit32u cr0 = BX_CPU(dbg_cpu)->dbg_get_reg(BX_DBG_REG_CR0);
-  Bit32u cr2 = BX_CPU(dbg_cpu)->dbg_get_reg(BX_DBG_REG_CR2);
-  Bit32u cr3 = BX_CPU(dbg_cpu)->dbg_get_reg(BX_DBG_REG_CR3);
-  dbg_printf("CR0=0x%08x\n", cr0);
-  dbg_printf("    PG=paging=%d\n", (cr0>>31) & 1);
-  dbg_printf("    CD=cache disable=%d\n", (cr0>>30) & 1);
-  dbg_printf("    NW=not write through=%d\n", (cr0>>29) & 1);
-  dbg_printf("    AM=alignment mask=%d\n", (cr0>>18) & 1);
-  dbg_printf("    WP=write protect=%d\n", (cr0>>16) & 1);
-  dbg_printf("    NE=numeric error=%d\n", (cr0>>5) & 1);
-  dbg_printf("    ET=extension type=%d\n", (cr0>>4) & 1);
-  dbg_printf("    TS=task switched=%d\n", (cr0>>3) & 1);
-  dbg_printf("    EM=FPU emulation=%d\n", (cr0>>2) & 1);
-  dbg_printf("    MP=monitor coprocessor=%d\n", (cr0>>1) & 1);
-  dbg_printf("    PE=protection enable=%d\n", (cr0>>0) & 1);
-  dbg_printf("CR2=page fault linear address=0x%08x\n", cr2);
-  dbg_printf("CR3=0x%08x\n", cr3);
-  dbg_printf("    PCD=page-level cache disable=%d\n", (cr3>>4) & 1);
-  dbg_printf("    PWT=page-level writes transparent=%d\n", (cr3>>3) & 1);
-#if BX_CPU_LEVEL >= 4
-  Bit32u cr4 = BX_CPU(dbg_cpu)->dbg_get_reg(BX_DBG_REG_CR4);
-  dbg_printf("CR4=0x%08x\n", cr4);
-  dbg_printf("    VME=virtual-8086 mode extensions=%d\n", (cr4>>0) & 1);
-  dbg_printf("    PVI=protected-mode virtual interrupts=%d\n", (cr4>>1) & 1);
-  dbg_printf("    TSD=time stamp disable=%d\n", (cr4>>2) & 1);
-  dbg_printf("    DE=debugging extensions=%d\n", (cr4>>3) & 1);
-  dbg_printf("    PSE=page size extensions=%d\n", (cr4>>4) & 1);
-  dbg_printf("    PAE=physical address extension=%d\n", (cr4>>5) & 1);
-  dbg_printf("    MCE=machine check enable=%d\n", (cr4>>6) & 1);
-  dbg_printf("    PGE=page global enable=%d\n", (cr4>>7) & 1);
-  dbg_printf("    PCE=performance-monitor counter enable=%d\n", (cr4>>8) & 1);
-  dbg_printf("    OXFXSR=OS support for FXSAVE/FXRSTOR=%d\n", (cr4>>9) & 1);
-  dbg_printf("    OSXMMEXCPT=OS support for unmasked SIMD FP exceptions=%d\n", (cr4>>10) & 1);
-#endif   /* BX_CPU_LEVEL >= 4 */
-#if BX_SUPPORT_X86_64
-  Bit32u efer = BX_CPU(dbg_cpu)->get_EFER();
-  dbg_printf("EFER=0x%08x\n", efer);
-  dbg_printf("    SCE=SYSCALL/SYSRET support=%d\n", (efer>>0) & 1);
-  dbg_printf("    LME=long mode enabled=%d\n", (efer>>8) & 1);
-  dbg_printf("    LMA=long mode activated=%d\n", (efer>>10) & 1);
-  dbg_printf("    NXE=non-execuable page protection=%d\n", (efer>>11) & 1);
-  dbg_printf("    FFXSR=OS support for fast FXSAVE/FXRSTOR=%d\n", (efer>>14) & 1);
-#endif
-}
-
 /*
  * this function implements the info ne2k commands in the debugger
  * info ne2k - shows all registers
@@ -3049,7 +2926,7 @@ void bx_dbg_info_ne2k(int page, int reg)
 #if BX_SUPPORT_NE2K
   DEV_ne2k_print_info(stderr, page, reg, 0);
 #else
-  dbg_printf("NE2000 support is not compiled in.\n");
+  dbg_printf("NE2000 support is not compiled in\n");
 #endif
 }
 
@@ -3071,6 +2948,25 @@ void bx_dbg_info_vga()
   DEV_vga_dump_status();
 }
 
+/*
+ * this implements the info pci command in the debugger.
+ * info pci - shows i440fx state
+ */
+void bx_dbg_info_pci()
+{
+#if BX_SUPPORT_PCI
+  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
+    DEV_pci_print_i440fx_state();
+  }
+  else {
+    dbg_printf("PCI support is disabled in .bochsrc\n");
+  }
+#else
+  dbg_printf("PCI support is not compiled in\n");
+#endif
+}
+
+
 //
 // Reports from various events
 //
@@ -3091,31 +2987,31 @@ void bx_dbg_a20_report(unsigned val)
   }
 }
 
-void bx_dbg_io_report(Bit32u addr, unsigned size, unsigned op, Bit32u val)
+void bx_dbg_io_report(Bit32u port, unsigned size, unsigned op, Bit32u val)
 {
   if (bx_guard.report.io) {
     dbg_printf("event at t=" FMT_LL "d IO addr=0x%x size=%u op=%s val=0x%x\n",
       bx_pc_system.time_ticks(),
-      (unsigned) addr,
+      port,
       size,
       (op==BX_READ) ? "read" : "write",
       (unsigned) val);
   }
 }
 
-void bx_dbg_ucmem_report(Bit32u addr, unsigned size, unsigned op, Bit32u val)
+void bx_dbg_ucmem_report(bx_address addr, unsigned size, unsigned op, Bit32u val)
 {
   if (bx_guard.report.ucmem) {
-    dbg_printf("event at t=" FMT_LL "d UCmem addr=0x%x size=%u op=%s val=0x%x\n",
+    dbg_printf("event at t=" FMT_LL "d UCmem addr=0x" FMT_ADDRX " size=%u op=%s val=0x%x\n",
       bx_pc_system.time_ticks(),
-      (unsigned) addr,
+      addr,
       size,
       (op==BX_READ) ? "read" : "write",
       (unsigned) val);
   }
 }
 
-void bx_dbg_dma_report(Bit32u addr, unsigned len, unsigned what, Bit32u val)
+void bx_dbg_dma_report(bx_phy_address addr, unsigned len, unsigned what, Bit32u val)
 {
   if (bx_dbg_batch_dma.this_many == 0) {
     dbg_printf("%s: DMA batch this_many=0.\n", argv0);
@@ -3210,9 +3106,8 @@ void bx_dbg_post_dma_reports(void)
 
 void bx_dbg_dump_table(void)
 {
-  Bit32u lin; // show only low 32 bit
-  Bit32u phy;
-  Bit32u start_lin, start_phy;  // start of a valid translation interval
+  Bit32u lin, start_lin; // show only low 32 bit
+  bx_phy_address phy, start_phy; // start of a valid translation interval
   bx_bool valid;
 
   if (! BX_CPU(dbg_cpu)->cr0.get_PG()) {
@@ -3220,7 +3115,7 @@ void bx_dbg_dump_table(void)
     return;
   }
 
-  printf("cr3: " FMT_ADDRX "\n", BX_CPU(dbg_cpu)->cr3);
+  printf("cr3: 0x" FMT_ADDRX "\n", BX_CPU(dbg_cpu)->cr3);
 
   lin = 0; 
   phy = 0; 
@@ -3267,7 +3162,9 @@ void bx_dbg_print_help(void)
   dbg_printf("    bpe, bpd, d|del|delete\n");
   dbg_printf("-*- CPU and memory contents -*-\n");
   dbg_printf("    x, xp, u|disasm|disassemble, r|reg|regs|registers, setpmem, crc, info,\n");
-  dbg_printf("    set, dump_cpu, set_cpu, ptime, print-stack, watch, unwatch, ?|calc\n");
+  dbg_printf("    page, set, ptime, print-stack, watch, unwatch, ?|calc\n");
+  dbg_printf("-*- Working with bochs param tree -*-\n");
+  dbg_printf("    show \"param\", restore\n");
 }
 
 void bx_dbg_calc_command(Bit64u value)
@@ -3568,28 +3465,6 @@ void bx_dbg_step_over_command()
   
   if (bx_dbg_del_lbreak (BpId))
     bx_dbg_breakpoint_changed();
-}
-
-void bx_dbg_info_flags(void)
-{
-  dbg_printf("IOPL=%1u %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s\n",
-    BX_CPU(dbg_cpu)->get_IOPL(),
-    BX_CPU(dbg_cpu)->get_ID() ? "ID" : "id",
-    BX_CPU(dbg_cpu)->get_VIP() ? "VIP" : "vip",
-    BX_CPU(dbg_cpu)->get_VIF() ? "VIF" : "vif",
-    BX_CPU(dbg_cpu)->get_AC() ? "AC" : "ac",
-    BX_CPU(dbg_cpu)->get_VM() ? "VM" : "vm",
-    BX_CPU(dbg_cpu)->get_RF() ? "RF" : "rf",
-    BX_CPU(dbg_cpu)->get_NT() ? "NT" : "nt",
-    BX_CPU(dbg_cpu)->get_OF() ? "OF" : "of",
-    BX_CPU(dbg_cpu)->get_DF() ? "DF" : "df",
-    BX_CPU(dbg_cpu)->get_IF() ? "IF" : "if",
-    BX_CPU(dbg_cpu)->get_TF() ? "TF" : "tf",
-    BX_CPU(dbg_cpu)->get_SF() ? "SF" : "sf",
-    BX_CPU(dbg_cpu)->get_ZF() ? "ZF" : "zf",
-    BX_CPU(dbg_cpu)->get_AF() ? "AF" : "af",
-    BX_CPU(dbg_cpu)->get_PF() ? "PF" : "pf",
-    BX_CPU(dbg_cpu)->get_CF() ? "CF" : "cf");
 }
 
 #endif /* if BX_DEBUGGER */

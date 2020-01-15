@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bcd.cc,v 1.17 2006/03/06 22:02:51 sshwarts Exp $
+// $Id: bcd.cc,v 1.20 2007/11/20 17:15:33 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -58,12 +59,12 @@ void BX_CPU_C::AAA(bxInstruction_c *)
   if ( ((AL & 0x0f) > 9) || get_AF() )
   {
     AX = AX + 0x106;
-    set_AF(1);
-    set_CF(1);
+    assert_AF();
+    assert_CF();
   }
   else {
-    set_AF(0);
-    set_CF(0);
+    clear_AF();
+    clear_CF();
   }
 
   AL = AL & 0x0f;
@@ -73,8 +74,8 @@ void BX_CPU_C::AAA(bxInstruction_c *)
 
   /* The following behaviour seems to match the P6 and 
      its derived processors. */
-  set_OF(0);
-  set_SF(0); /* sign is always 0 because bits 4-7 of AL are zeroed */
+  clear_OF();
+  clear_SF(); /* sign is always 0 because bits 4-7 of AL are zeroed */
   set_ZF(AL == 0);
   set_PF_base(AL);
 }
@@ -86,12 +87,12 @@ void BX_CPU_C::AAS(bxInstruction_c *)
   if ( ((AL & 0x0F) > 0x09) || get_AF() )
   {
     AX = AX - 0x106;
-    set_AF(1);
-    set_CF(1);
+    assert_AF();
+    assert_CF();
   }
   else {
-    set_CF(0);
-    set_AF(0);
+    clear_CF();
+    clear_AF();
   }
 
   AL = AL & 0x0f;
@@ -101,8 +102,8 @@ void BX_CPU_C::AAS(bxInstruction_c *)
 
   /* The following behaviour seems to match the P6 and 
      its derived processors. */
-  set_OF(0);
-  set_SF(0); /* sign is always 0 because bits 4-7 of AL are zeroed */
+  clear_OF();
+  clear_SF(); /* sign is always 0 because bits 4-7 of AL are zeroed */
   set_ZF(AL == 0);
   set_PF_base(AL);
 }
@@ -118,44 +119,24 @@ void BX_CPU_C::AAM(bxInstruction_c *i)
   AH = al / imm8;
   AL = al % imm8;
 
-  /* AAM effects the following flags: A,C,O,S,Z,P */
   /* modification of flags A,C,O is undocumented */
-
   /* The following behaviour seems to match the P6 and 
      its derived processors. */
-  clear_OF();	/* undocumented flag modification */
-  clear_AF();
-  clear_CF();
-
-  /* AAM affects the following flags: S,Z,P */
-  set_SF(AL >= 0x80);
-  set_ZF(AL == 0);
-  set_PF_base(AL);
+  SET_FLAGS_OSZAPC_LOGIC_8(AL);
 }
 
 void BX_CPU_C::AAD(bxInstruction_c *i)
 {
-  Bit8u imm8 = i->Ib();
-
   Bit16u tmp = AH;
-  tmp *= imm8;
+  tmp *= i->Ib();
   tmp += AL;
 
-  AL = tmp & 0xff;
-  AH = 0;
+  AX = (tmp & 0xff);
 
-  /* AAD effects the following flags: A,C,O,S,Z,P */
   /* modification of flags A,C,O is undocumented */
-
   /* The following behaviour seems to match the P6 and 
      its derived processors. */
-  clear_OF();	/* undocumented flag modification */
-  clear_AF();
-  clear_CF();
-
-  set_SF(AL >= 0x80);
-  set_ZF(AL == 0);
-  set_PF_base(AL);
+  SET_FLAGS_OSZAPC_LOGIC_8(AL);
 }
 
 void BX_CPU_C::DAA(bxInstruction_c *)
@@ -171,10 +152,10 @@ void BX_CPU_C::DAA(bxInstruction_c *)
   {
     tmpCF = ((AL > 0xF9) || get_CF());
     AL = AL + 0x06;
-    set_AF(1);
+    assert_AF();
   }
   else
-    set_AF(0);
+    clear_AF();
 
   if ((tmpAL > 0x99) || get_CF())
   {
@@ -184,7 +165,7 @@ void BX_CPU_C::DAA(bxInstruction_c *)
   else
     tmpCF = 0;
 
-  set_OF(0);	/* undocumented flag modification */
+  clear_OF();	/* undocumented flag modification */
   set_SF(AL >= 0x80);
   set_ZF(AL==0);
   set_PF_base(AL);
@@ -210,10 +191,10 @@ void BX_CPU_C::DAS(bxInstruction_c *)
   {
     tmpCF = (AL < 0x06) || get_CF();
     AL = AL - 0x06;
-    set_AF(1);
+    assert_AF();
   }
   else
-    set_AF(0);
+    clear_AF();
 
   if ((tmpAL > 0x99) || get_CF())
   {
@@ -221,7 +202,7 @@ void BX_CPU_C::DAS(bxInstruction_c *)
     tmpCF = 1;
   }
 
-  set_OF(0);	/* undocumented flag modification */
+  clear_OF();	/* undocumented flag modification */
   set_SF(AL >= 0x80);
   set_ZF(AL==0);
   set_PF_base(AL);

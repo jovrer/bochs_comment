@@ -1,7 +1,9 @@
-/* A Bison parser, made by GNU Bison 1.875b.  */
+/* A Bison parser, made by GNU Bison 2.3.  */
 
-/* Skeleton parser for Yacc-like parsing with Bison,
-   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003 Free Software Foundation, Inc.
+/* Skeleton interface for Bison's Yacc-like parsers in C
+
+   Copyright (C) 1984, 1989, 1990, 2000, 2001, 2002, 2003, 2004, 2005, 2006
+   Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -15,13 +17,21 @@
 
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
-   Foundation, Inc., 59 Temple Place - Suite 330,
-   Boston, MA 02111-1307, USA.  */
+   Foundation, Inc., 51 Franklin Street, Fifth Floor,
+   Boston, MA 02110-1301, USA.  */
 
-/* As a special exception, when this file is copied by Bison into a
-   Bison output file, you may use that output file without restriction.
-   This special exception was added by the Free Software Foundation
-   in version 1.24 of Bison.  */
+/* As a special exception, you may create a larger work that contains
+   part or all of the Bison parser skeleton and distribute that work
+   under terms of your choice, so long as that work isn't itself a
+   parser generator using the skeleton or a modified version thereof
+   as a parser skeleton.  Alternatively, if you modify or redistribute
+   the parser skeleton itself, you may (at your option) remove this
+   special exception, which will cause the skeleton and the resulting
+   Bison output files to be licensed under the GNU General Public
+   License without this special exception.
+
+   This special exception was added by the Free Software Foundation in
+   version 2.2 of Bison.  */
 
 /* Tokens.  */
 #ifndef YYTOKENTYPE
@@ -62,74 +72,77 @@
      BX_TOKEN_CPU = 288,
      BX_TOKEN_FPU = 289,
      BX_TOKEN_SSE = 290,
-     BX_TOKEN_ALL = 291,
-     BX_TOKEN_IDT = 292,
-     BX_TOKEN_IVT = 293,
-     BX_TOKEN_GDT = 294,
-     BX_TOKEN_LDT = 295,
-     BX_TOKEN_TSS = 296,
-     BX_TOKEN_TAB = 297,
-     BX_TOKEN_DIRTY = 298,
-     BX_TOKEN_LINUX = 299,
-     BX_TOKEN_CONTROL_REGS = 300,
-     BX_TOKEN_EXAMINE = 301,
-     BX_TOKEN_XFORMAT = 302,
-     BX_TOKEN_DISFORMAT = 303,
-     BX_TOKEN_SETPMEM = 304,
-     BX_TOKEN_SYMBOLNAME = 305,
-     BX_TOKEN_QUERY = 306,
-     BX_TOKEN_PENDING = 307,
-     BX_TOKEN_TAKE = 308,
-     BX_TOKEN_DMA = 309,
-     BX_TOKEN_IRQ = 310,
-     BX_TOKEN_DUMP_CPU = 311,
-     BX_TOKEN_SET_CPU = 312,
-     BX_TOKEN_DISASSEMBLE = 313,
-     BX_TOKEN_INSTRUMENT = 314,
-     BX_TOKEN_STRING = 315,
-     BX_TOKEN_STOP = 316,
-     BX_TOKEN_DOIT = 317,
-     BX_TOKEN_CRC = 318,
-     BX_TOKEN_TRACE = 319,
-     BX_TOKEN_TRACEREG = 320,
-     BX_TOKEN_SWITCH_MODE = 321,
-     BX_TOKEN_SIZE = 322,
-     BX_TOKEN_PTIME = 323,
-     BX_TOKEN_TIMEBP_ABSOLUTE = 324,
-     BX_TOKEN_TIMEBP = 325,
-     BX_TOKEN_RECORD = 326,
-     BX_TOKEN_PLAYBACK = 327,
-     BX_TOKEN_MODEBP = 328,
-     BX_TOKEN_PRINT_STACK = 329,
-     BX_TOKEN_WATCH = 330,
-     BX_TOKEN_UNWATCH = 331,
-     BX_TOKEN_READ = 332,
-     BX_TOKEN_WRITE = 333,
-     BX_TOKEN_SHOW = 334,
-     BX_TOKEN_LOAD_SYMBOLS = 335,
-     BX_TOKEN_SYMBOLS = 336,
-     BX_TOKEN_LIST_SYMBOLS = 337,
-     BX_TOKEN_GLOBAL = 338,
-     BX_TOKEN_WHERE = 339,
-     BX_TOKEN_PRINT_STRING = 340,
-     BX_TOKEN_NUMERIC = 341,
-     BX_TOKEN_NE2000 = 342,
-     BX_TOKEN_PIC = 343,
-     BX_TOKEN_PAGE = 344,
-     BX_TOKEN_HELP = 345,
-     BX_TOKEN_CALC = 346,
-     BX_TOKEN_VGA = 347,
-     BX_TOKEN_COMMAND = 348,
-     BX_TOKEN_GENERIC = 349,
-     BX_TOKEN_RSHIFT = 350,
-     BX_TOKEN_LSHIFT = 351,
-     BX_TOKEN_REG_IP = 352,
-     BX_TOKEN_REG_EIP = 353,
-     BX_TOKEN_REG_RIP = 354,
-     NEG = 355,
-     NOT = 356
+     BX_TOKEN_MMX = 291,
+     BX_TOKEN_ALL = 292,
+     BX_TOKEN_IDT = 293,
+     BX_TOKEN_IVT = 294,
+     BX_TOKEN_GDT = 295,
+     BX_TOKEN_LDT = 296,
+     BX_TOKEN_TSS = 297,
+     BX_TOKEN_TAB = 298,
+     BX_TOKEN_DIRTY = 299,
+     BX_TOKEN_LINUX = 300,
+     BX_TOKEN_CONTROL_REGS = 301,
+     BX_TOKEN_SEGMENT_REGS = 302,
+     BX_TOKEN_EXAMINE = 303,
+     BX_TOKEN_XFORMAT = 304,
+     BX_TOKEN_DISFORMAT = 305,
+     BX_TOKEN_RESTORE = 306,
+     BX_TOKEN_SETPMEM = 307,
+     BX_TOKEN_SYMBOLNAME = 308,
+     BX_TOKEN_QUERY = 309,
+     BX_TOKEN_PENDING = 310,
+     BX_TOKEN_TAKE = 311,
+     BX_TOKEN_DMA = 312,
+     BX_TOKEN_IRQ = 313,
+     BX_TOKEN_DISASSEMBLE = 314,
+     BX_TOKEN_INSTRUMENT = 315,
+     BX_TOKEN_STRING = 316,
+     BX_TOKEN_STOP = 317,
+     BX_TOKEN_DOIT = 318,
+     BX_TOKEN_CRC = 319,
+     BX_TOKEN_TRACE = 320,
+     BX_TOKEN_TRACEREG = 321,
+     BX_TOKEN_SWITCH_MODE = 322,
+     BX_TOKEN_SIZE = 323,
+     BX_TOKEN_PTIME = 324,
+     BX_TOKEN_TIMEBP_ABSOLUTE = 325,
+     BX_TOKEN_TIMEBP = 326,
+     BX_TOKEN_RECORD = 327,
+     BX_TOKEN_PLAYBACK = 328,
+     BX_TOKEN_MODEBP = 329,
+     BX_TOKEN_PRINT_STACK = 330,
+     BX_TOKEN_WATCH = 331,
+     BX_TOKEN_UNWATCH = 332,
+     BX_TOKEN_READ = 333,
+     BX_TOKEN_WRITE = 334,
+     BX_TOKEN_SHOW = 335,
+     BX_TOKEN_LOAD_SYMBOLS = 336,
+     BX_TOKEN_SYMBOLS = 337,
+     BX_TOKEN_LIST_SYMBOLS = 338,
+     BX_TOKEN_GLOBAL = 339,
+     BX_TOKEN_WHERE = 340,
+     BX_TOKEN_PRINT_STRING = 341,
+     BX_TOKEN_NUMERIC = 342,
+     BX_TOKEN_NE2000 = 343,
+     BX_TOKEN_PIC = 344,
+     BX_TOKEN_PAGE = 345,
+     BX_TOKEN_HELP = 346,
+     BX_TOKEN_CALC = 347,
+     BX_TOKEN_VGA = 348,
+     BX_TOKEN_PCI = 349,
+     BX_TOKEN_COMMAND = 350,
+     BX_TOKEN_GENERIC = 351,
+     BX_TOKEN_RSHIFT = 352,
+     BX_TOKEN_LSHIFT = 353,
+     BX_TOKEN_REG_IP = 354,
+     BX_TOKEN_REG_EIP = 355,
+     BX_TOKEN_REG_RIP = 356,
+     NEG = 357,
+     NOT = 358
    };
 #endif
+/* Tokens.  */
 #define BX_TOKEN_8BH_REG 258
 #define BX_TOKEN_8BL_REG 259
 #define BX_TOKEN_16B_REG 260
@@ -163,91 +176,93 @@
 #define BX_TOKEN_CPU 288
 #define BX_TOKEN_FPU 289
 #define BX_TOKEN_SSE 290
-#define BX_TOKEN_ALL 291
-#define BX_TOKEN_IDT 292
-#define BX_TOKEN_IVT 293
-#define BX_TOKEN_GDT 294
-#define BX_TOKEN_LDT 295
-#define BX_TOKEN_TSS 296
-#define BX_TOKEN_TAB 297
-#define BX_TOKEN_DIRTY 298
-#define BX_TOKEN_LINUX 299
-#define BX_TOKEN_CONTROL_REGS 300
-#define BX_TOKEN_EXAMINE 301
-#define BX_TOKEN_XFORMAT 302
-#define BX_TOKEN_DISFORMAT 303
-#define BX_TOKEN_SETPMEM 304
-#define BX_TOKEN_SYMBOLNAME 305
-#define BX_TOKEN_QUERY 306
-#define BX_TOKEN_PENDING 307
-#define BX_TOKEN_TAKE 308
-#define BX_TOKEN_DMA 309
-#define BX_TOKEN_IRQ 310
-#define BX_TOKEN_DUMP_CPU 311
-#define BX_TOKEN_SET_CPU 312
-#define BX_TOKEN_DISASSEMBLE 313
-#define BX_TOKEN_INSTRUMENT 314
-#define BX_TOKEN_STRING 315
-#define BX_TOKEN_STOP 316
-#define BX_TOKEN_DOIT 317
-#define BX_TOKEN_CRC 318
-#define BX_TOKEN_TRACE 319
-#define BX_TOKEN_TRACEREG 320
-#define BX_TOKEN_SWITCH_MODE 321
-#define BX_TOKEN_SIZE 322
-#define BX_TOKEN_PTIME 323
-#define BX_TOKEN_TIMEBP_ABSOLUTE 324
-#define BX_TOKEN_TIMEBP 325
-#define BX_TOKEN_RECORD 326
-#define BX_TOKEN_PLAYBACK 327
-#define BX_TOKEN_MODEBP 328
-#define BX_TOKEN_PRINT_STACK 329
-#define BX_TOKEN_WATCH 330
-#define BX_TOKEN_UNWATCH 331
-#define BX_TOKEN_READ 332
-#define BX_TOKEN_WRITE 333
-#define BX_TOKEN_SHOW 334
-#define BX_TOKEN_LOAD_SYMBOLS 335
-#define BX_TOKEN_SYMBOLS 336
-#define BX_TOKEN_LIST_SYMBOLS 337
-#define BX_TOKEN_GLOBAL 338
-#define BX_TOKEN_WHERE 339
-#define BX_TOKEN_PRINT_STRING 340
-#define BX_TOKEN_NUMERIC 341
-#define BX_TOKEN_NE2000 342
-#define BX_TOKEN_PIC 343
-#define BX_TOKEN_PAGE 344
-#define BX_TOKEN_HELP 345
-#define BX_TOKEN_CALC 346
-#define BX_TOKEN_VGA 347
-#define BX_TOKEN_COMMAND 348
-#define BX_TOKEN_GENERIC 349
-#define BX_TOKEN_RSHIFT 350
-#define BX_TOKEN_LSHIFT 351
-#define BX_TOKEN_REG_IP 352
-#define BX_TOKEN_REG_EIP 353
-#define BX_TOKEN_REG_RIP 354
-#define NEG 355
-#define NOT 356
+#define BX_TOKEN_MMX 291
+#define BX_TOKEN_ALL 292
+#define BX_TOKEN_IDT 293
+#define BX_TOKEN_IVT 294
+#define BX_TOKEN_GDT 295
+#define BX_TOKEN_LDT 296
+#define BX_TOKEN_TSS 297
+#define BX_TOKEN_TAB 298
+#define BX_TOKEN_DIRTY 299
+#define BX_TOKEN_LINUX 300
+#define BX_TOKEN_CONTROL_REGS 301
+#define BX_TOKEN_SEGMENT_REGS 302
+#define BX_TOKEN_EXAMINE 303
+#define BX_TOKEN_XFORMAT 304
+#define BX_TOKEN_DISFORMAT 305
+#define BX_TOKEN_RESTORE 306
+#define BX_TOKEN_SETPMEM 307
+#define BX_TOKEN_SYMBOLNAME 308
+#define BX_TOKEN_QUERY 309
+#define BX_TOKEN_PENDING 310
+#define BX_TOKEN_TAKE 311
+#define BX_TOKEN_DMA 312
+#define BX_TOKEN_IRQ 313
+#define BX_TOKEN_DISASSEMBLE 314
+#define BX_TOKEN_INSTRUMENT 315
+#define BX_TOKEN_STRING 316
+#define BX_TOKEN_STOP 317
+#define BX_TOKEN_DOIT 318
+#define BX_TOKEN_CRC 319
+#define BX_TOKEN_TRACE 320
+#define BX_TOKEN_TRACEREG 321
+#define BX_TOKEN_SWITCH_MODE 322
+#define BX_TOKEN_SIZE 323
+#define BX_TOKEN_PTIME 324
+#define BX_TOKEN_TIMEBP_ABSOLUTE 325
+#define BX_TOKEN_TIMEBP 326
+#define BX_TOKEN_RECORD 327
+#define BX_TOKEN_PLAYBACK 328
+#define BX_TOKEN_MODEBP 329
+#define BX_TOKEN_PRINT_STACK 330
+#define BX_TOKEN_WATCH 331
+#define BX_TOKEN_UNWATCH 332
+#define BX_TOKEN_READ 333
+#define BX_TOKEN_WRITE 334
+#define BX_TOKEN_SHOW 335
+#define BX_TOKEN_LOAD_SYMBOLS 336
+#define BX_TOKEN_SYMBOLS 337
+#define BX_TOKEN_LIST_SYMBOLS 338
+#define BX_TOKEN_GLOBAL 339
+#define BX_TOKEN_WHERE 340
+#define BX_TOKEN_PRINT_STRING 341
+#define BX_TOKEN_NUMERIC 342
+#define BX_TOKEN_NE2000 343
+#define BX_TOKEN_PIC 344
+#define BX_TOKEN_PAGE 345
+#define BX_TOKEN_HELP 346
+#define BX_TOKEN_CALC 347
+#define BX_TOKEN_VGA 348
+#define BX_TOKEN_PCI 349
+#define BX_TOKEN_COMMAND 350
+#define BX_TOKEN_GENERIC 351
+#define BX_TOKEN_RSHIFT 352
+#define BX_TOKEN_LSHIFT 353
+#define BX_TOKEN_REG_IP 354
+#define BX_TOKEN_REG_EIP 355
+#define BX_TOKEN_REG_RIP 356
+#define NEG 357
+#define NOT 358
 
 
 
 
-#if ! defined (YYSTYPE) && ! defined (YYSTYPE_IS_DECLARED)
+#if ! defined YYSTYPE && ! defined YYSTYPE_IS_DECLARED
+typedef union YYSTYPE
 #line 13 "parser.y"
-typedef union YYSTYPE {
+{
   char    *sval;
   Bit64u   uval;
   bx_bool  bval;
-} YYSTYPE;
-/* Line 1252 of yacc.c.  */
-#line 245 "y.tab.h"
+}
+/* Line 1489 of yacc.c.  */
+#line 261 "y.tab.h"
+	YYSTYPE;
 # define yystype YYSTYPE /* obsolescent; will be withdrawn */
 # define YYSTYPE_IS_DECLARED 1
 # define YYSTYPE_IS_TRIVIAL 1
 #endif
 
 extern YYSTYPE bxlval;
-
-
 

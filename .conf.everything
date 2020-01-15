@@ -10,9 +10,10 @@
   --enable-ne2000 \
   --enable-pci \
   --enable-acpi \
-  --enable-4meg-pages \
+  --enable-large-pages \
   --enable-pae \
   --enable-global-pages \
+  --enable-mtrr \
   --enable-ignore-bad-msr \
   --enable-port-e9-hack \
   --enable-debugger \
@@ -24,6 +25,7 @@
   --enable-sse-extension \
   --enable-misaligned-sse \
   --enable-alignment-check \
+  --enable-popcnt \
   --enable-vme \
   --enable-sep \
   --enable-3dnow \
@@ -33,7 +35,6 @@
   --enable-instrumentation=instrument/example1 \
   --enable-iodebug \
   --enable-show-ips \
-  --enable-save_restore \
   --enable-clgd54xx \
   --enable-usb \
   --with-all-libs

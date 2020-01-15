@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith64.cc,v 1.30 2006/06/09 22:29:06 sshwarts Exp $
+// $Id: arith64.cc,v 1.46 2007/12/23 17:21:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -34,56 +34,57 @@
 
 #if BX_SUPPORT_X86_64
 
-void BX_CPU_C::ADD_EqGq(bxInstruction_c *i)
+void BX_CPU_C::ADD_EqGqM(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, sum_64;
+  Bit64u op1_64, op2_64, sum_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = BX_READ_64BIT_REG(i->nnn());
+  sum_64 = op1_64 + op2_64;
+  write_RMW_virtual_qword(sum_64);
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    sum_64 = op1_64 + op2_64;
-    BX_WRITE_64BIT_REG(i->rm(), sum_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    sum_64 = op1_64 + op2_64;
-    write_RMW_virtual_qword(sum_64);
-  }
-
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD64);
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
 }
 
-void BX_CPU_C::ADD_GqEq(bxInstruction_c *i)
+void BX_CPU_C::ADD_EqGqR(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
+  Bit64u op1_64, op2_64, sum_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  sum_64 = op1_64 + op2_64;
+  BX_WRITE_64BIT_REG(i->rm(), sum_64);
+
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
+}
+
+void BX_CPU_C::ADD_GqEqM(bxInstruction_c *i)
+{
   Bit64u op1_64, op2_64, sum_64;
 
   op1_64 = BX_READ_64BIT_REG(i->nnn());
-
-  /* op2_64 is a register or memory reference */
-  if (i->modC0()) {
-    op2_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
-  }
-
+  op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
   sum_64 = op1_64 + op2_64;
-
-  /* now write sum back to destination */
   BX_WRITE_64BIT_REG(i->nnn(), sum_64);
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD64);
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
+}
+
+void BX_CPU_C::ADD_GqEqR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, sum_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = BX_READ_64BIT_REG(i->rm());
+  sum_64 = op1_64 + op2_64;
+  BX_WRITE_64BIT_REG(i->nnn(), sum_64);
+
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
 }
 
 void BX_CPU_C::ADD_RAXId(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
   Bit64u op1_64, op2_64, sum_64;
 
   op1_64 = RAX;
@@ -93,52 +94,62 @@ void BX_CPU_C::ADD_RAXId(bxInstruction_c *i)
   /* now write sum back to destination */
   RAX = sum_64;
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD64);
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
 }
 
-void BX_CPU_C::ADC_EqGq(bxInstruction_c *i)
+void BX_CPU_C::ADC_EqGqM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, sum_64;
+  Bit64u op1_64, op2_64, sum_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = BX_READ_64BIT_REG(i->nnn());
-
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    sum_64 = op1_64 + op2_64 + temp_CF;
-    BX_WRITE_64BIT_REG(i->rm(), sum_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    sum_64 = op1_64 + op2_64 + temp_CF;
-    write_RMW_virtual_qword(sum_64);
-  }
+  sum_64 = op1_64 + op2_64 + temp_CF;
+  write_RMW_virtual_qword(sum_64);
 
   SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD_ADC64(temp_CF));
 }
 
-void BX_CPU_C::ADC_GqEq(bxInstruction_c *i)
+void BX_CPU_C::ADC_EqGqR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
+  Bit64u op1_64, op2_64, sum_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  sum_64 = op1_64 + op2_64 + temp_CF;
+  BX_WRITE_64BIT_REG(i->rm(), sum_64);
+
+  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD_ADC64(temp_CF));
+}
+
+void BX_CPU_C::ADC_GqEqM(bxInstruction_c *i)
+{
+  bx_bool temp_CF = getB_CF();
+
   Bit64u op1_64, op2_64, sum_64;
 
   op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
+  sum_64 = op1_64 + op2_64 + temp_CF;
 
-  /* op2_64 is a register or memory reference */
-  if (i->modC0()) {
-    op2_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
-  }
+  /* now write sum back to destination */
+  BX_WRITE_64BIT_REG(i->nnn(), sum_64);
 
+  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD_ADC64(temp_CF));
+}
+
+void BX_CPU_C::ADC_GqEqR(bxInstruction_c *i)
+{
+  bx_bool temp_CF = getB_CF();
+
+  Bit64u op1_64, op2_64, sum_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = BX_READ_64BIT_REG(i->rm());
   sum_64 = op1_64 + op2_64 + temp_CF;
 
   /* now write sum back to destination */
@@ -151,7 +162,6 @@ void BX_CPU_C::ADC_RAXId(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
   Bit64u op1_64, op2_64, sum_64;
 
   op1_64 = RAX;
@@ -164,49 +174,59 @@ void BX_CPU_C::ADC_RAXId(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD_ADC64(temp_CF));
 }
 
-void BX_CPU_C::SBB_EqGq(bxInstruction_c *i)
+void BX_CPU_C::SBB_EqGqM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, diff_64;
+  Bit64u op1_64, op2_64, diff_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = BX_READ_64BIT_REG(i->nnn());
-
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    diff_64 = op1_64 - (op2_64 + temp_CF);
-    BX_WRITE_64BIT_REG(i->rm(), diff_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    diff_64 = op1_64 - (op2_64 + temp_CF);
-    write_RMW_virtual_qword(diff_64);
-  }
+  diff_64 = op1_64 - (op2_64 + temp_CF);
+  write_RMW_virtual_qword(diff_64);
 
   SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB_SBB64(temp_CF));
 }
 
-void BX_CPU_C::SBB_GqEq(bxInstruction_c *i)
+void BX_CPU_C::SBB_EqGqR(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  diff_64 = op1_64 - (op2_64 + temp_CF);
+  BX_WRITE_64BIT_REG(i->rm(), diff_64);
+
+  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB_SBB64(temp_CF));
+}
+
+void BX_CPU_C::SBB_GqEqM(bxInstruction_c *i)
+{
+  bx_bool temp_CF = getB_CF();
+
   Bit64u op1_64, op2_64, diff_64;
 
   op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
+  diff_64 = op1_64 - (op2_64 + temp_CF);
 
-  /* op2_64 is a register or memory reference */
-  if (i->modC0()) {
-    op2_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
-  }
+  /* now write diff back to destination */
+  BX_WRITE_64BIT_REG(i->nnn(), diff_64);
 
+  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB_SBB64(temp_CF));
+}
+
+void BX_CPU_C::SBB_GqEqR(bxInstruction_c *i)
+{
+  bx_bool temp_CF = getB_CF();
+
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = BX_READ_64BIT_REG(i->rm());
   diff_64 = op1_64 - (op2_64 + temp_CF);
 
   /* now write diff back to destination */
@@ -219,7 +239,6 @@ void BX_CPU_C::SBB_RAXId(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
   Bit64u op1_64, op2_64, diff_64;
 
   op1_64 = RAX;
@@ -232,81 +251,90 @@ void BX_CPU_C::SBB_RAXId(bxInstruction_c *i)
   SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB_SBB64(temp_CF));
 }
 
-void BX_CPU_C::SBB_EqId(bxInstruction_c *i)
+void BX_CPU_C::SBB_EqIdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, diff_64;
+  Bit64u op1_64, op2_64, diff_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = (Bit32s) i->Id();
-
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    diff_64 = op1_64 - (op2_64 + temp_CF);
-    BX_WRITE_64BIT_REG(i->rm(), diff_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    diff_64 = op1_64 - (op2_64 + temp_CF);
-    write_RMW_virtual_qword(diff_64);
-  }
+  diff_64 = op1_64 - (op2_64 + temp_CF);
+  write_RMW_virtual_qword(diff_64);
 
   SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB_SBB64(temp_CF));
 }
 
-void BX_CPU_C::SUB_EqGq(bxInstruction_c *i)
+void BX_CPU_C::SBB_EqIdR(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, diff_64;
+  bx_bool temp_CF = getB_CF();
 
-  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  Bit64u op1_64, op2_64, diff_64;
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    diff_64 = op1_64 - op2_64;
-    BX_WRITE_64BIT_REG(i->rm(), diff_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    diff_64 = op1_64 - op2_64;
-    write_RMW_virtual_qword(diff_64);
-  }
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = (Bit32s) i->Id();
+  diff_64 = op1_64 - (op2_64 + temp_CF);
+  BX_WRITE_64BIT_REG(i->rm(), diff_64);
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB64);
+  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB_SBB64(temp_CF));
 }
 
-void BX_CPU_C::SUB_GqEq(bxInstruction_c *i)
+void BX_CPU_C::SUB_EqGqM(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
+  Bit64u op1_64, op2_64, diff_64;
+
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  diff_64 = op1_64 - op2_64;
+  write_RMW_virtual_qword(diff_64);
+
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
+
+void BX_CPU_C::SUB_EqGqR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  diff_64 = op1_64 - op2_64;
+  BX_WRITE_64BIT_REG(i->rm(), diff_64);
+
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
+
+void BX_CPU_C::SUB_GqEqM(bxInstruction_c *i)
+{
   Bit64u op1_64, op2_64, diff_64;
 
   op1_64 = BX_READ_64BIT_REG(i->nnn());
-
-  /* op2_64 is a register or memory reference */
-  if (i->modC0()) {
-    op2_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
-  }
-
+  op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
   diff_64 = op1_64 - op2_64;
 
   /* now write diff back to destination */
   BX_WRITE_64BIT_REG(i->nnn(), diff_64);
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
+
+void BX_CPU_C::SUB_GqEqR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = BX_READ_64BIT_REG(i->rm());
+  diff_64 = op1_64 - op2_64;
+
+  /* now write diff back to destination */
+  BX_WRITE_64BIT_REG(i->nnn(), diff_64);
+
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
 void BX_CPU_C::SUB_RAXId(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
   Bit64u op1_64, op2_64, diff_64;
 
   op1_64 = RAX;
@@ -316,61 +344,62 @@ void BX_CPU_C::SUB_RAXId(bxInstruction_c *i)
   /* now write diff back to destination */
   RAX = diff_64;
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
-void BX_CPU_C::CMP_EqGq(bxInstruction_c *i)
+void BX_CPU_C::CMP_EqGqM(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, diff_64;
+  Bit64u op1_64, op2_64, diff_64;
 
+  op1_64 = read_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = BX_READ_64BIT_REG(i->nnn());
-
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-  }
-
   diff_64 = op1_64 - op2_64;
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_COMPARE64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
-void BX_CPU_C::CMP_GqEq(bxInstruction_c *i)
+void BX_CPU_C::CMP_EqGqR(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
+  diff_64 = op1_64 - op2_64;
+
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
+
+void BX_CPU_C::CMP_GqEqM(bxInstruction_c *i)
+{
   Bit64u op1_64, op2_64, diff_64;
 
   op1_64 = BX_READ_64BIT_REG(i->nnn());
-
-  /* op2_64 is a register or memory reference */
-  if (i->modC0()) {
-    op2_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
-  }
-
+  op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
   diff_64 = op1_64 - op2_64;
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_COMPARE64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
+
+void BX_CPU_C::CMP_GqEqR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->nnn());
+  op2_64 = BX_READ_64BIT_REG(i->rm());
+  diff_64 = op1_64 - op2_64;
+
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
 void BX_CPU_C::CMP_RAXId(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
   Bit64u op1_64, op2_64, diff_64;
 
   op1_64 = RAX;
   op2_64 = (Bit32s) i->Id();
   diff_64 = op1_64 - op2_64;
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_COMPARE64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
 void BX_CPU_C::CDQE(bxInstruction_c *i)
@@ -389,9 +418,9 @@ void BX_CPU_C::CQO(bxInstruction_c *i)
       RDX = 0;
 }
 
-void BX_CPU_C::XADD_EqGq(bxInstruction_c *i)
+void BX_CPU_C::XADD_EqGqM(bxInstruction_c *i)
 {
-  Bit64u op2_64, op1_64, sum_64;
+  Bit64u op1_64, op2_64, sum_64;
 
   /* XADD dst(r/m), src(r)
    * temp <-- src + dst         | sum = op2 + op1
@@ -399,217 +428,238 @@ void BX_CPU_C::XADD_EqGq(bxInstruction_c *i)
    * dst  <-- tmp               | op1 = sum
    */
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = BX_READ_64BIT_REG(i->nnn());
+  sum_64 = op1_64 + op2_64;
+  write_RMW_virtual_qword(sum_64);
 
-  /* op1 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-  }
+  /* and write destination into source */
+  BX_WRITE_64BIT_REG(i->nnn(), op1_64);
 
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
+}
+
+void BX_CPU_C::XADD_EqGqR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, sum_64;
+
+  /* XADD dst(r/m), src(r)
+   * temp <-- src + dst         | sum = op2 + op1
+   * src  <-- dst               | op2 = op1
+   * dst  <-- tmp               | op1 = sum
+   */
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = BX_READ_64BIT_REG(i->nnn());
   sum_64 = op1_64 + op2_64;
 
-  /* now write sum back to destination */
-  if (i->modC0()) {
-    // and write destination into source
-    // Note: if both op1 & op2 are registers, the last one written
-    //       should be the sum, as op1 & op2 may be the same register.
-    //       For example:  XADD AL, AL
-    BX_WRITE_64BIT_REG(i->nnn(), op1_64);
-    BX_WRITE_64BIT_REG(i->rm(), sum_64);
-  }
-  else {
-    write_RMW_virtual_qword(sum_64);
-    /* and write destination into source */
-    BX_WRITE_64BIT_REG(i->nnn(), op1_64);
-  }
+  // and write destination into source
+  // Note: if both op1 & op2 are registers, the last one written
+  //       should be the sum, as op1 & op2 may be the same register.
+  //       For example:  XADD AL, AL
+  BX_WRITE_64BIT_REG(i->nnn(), op1_64);
+  BX_WRITE_64BIT_REG(i->rm(), sum_64);
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD64);
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
 }
 
-void BX_CPU_C::ADD_EqId(bxInstruction_c *i)
+void BX_CPU_C::ADD_EqIdM(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, sum_64;
+  Bit64u op1_64, op2_64, sum_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = (Bit32s) i->Id();
+  sum_64 = op1_64 + op2_64;
+  write_RMW_virtual_qword(sum_64);
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    sum_64 = op1_64 + op2_64;
-    BX_WRITE_64BIT_REG(i->rm(), sum_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    sum_64 = op1_64 + op2_64;
-    write_RMW_virtual_qword(sum_64);
-  }
-
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD64);
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
 }
 
-void BX_CPU_C::ADC_EqId(bxInstruction_c *i)
+void BX_CPU_C::ADD_EqIdR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, sum_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = (Bit32s) i->Id();
+  sum_64 = op1_64 + op2_64;
+  BX_WRITE_64BIT_REG(i->rm(), sum_64);
+
+  SET_FLAGS_OSZAPC_ADD_64(op1_64, op2_64, sum_64);
+}
+
+void BX_CPU_C::ADC_EqIdM(bxInstruction_c *i)
 {
   bx_bool temp_CF = getB_CF();
 
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, sum_64;
+  Bit64u op1_64, op2_64, sum_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = (Bit32s) i->Id();
-
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    sum_64 = op1_64 + op2_64 + temp_CF;
-    BX_WRITE_64BIT_REG(i->rm(), sum_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    sum_64 = op1_64 + op2_64 + temp_CF;
-    write_RMW_virtual_qword(sum_64);
-  }
+  sum_64 = op1_64 + op2_64 + temp_CF;
+  write_RMW_virtual_qword(sum_64);
 
   SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD_ADC64(temp_CF));
 }
 
-void BX_CPU_C::SUB_EqId(bxInstruction_c *i)
+void BX_CPU_C::ADC_EqIdR(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, diff_64;
+  bx_bool temp_CF = getB_CF();
 
+  Bit64u op1_64, op2_64, sum_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
   op2_64 = (Bit32s) i->Id();
+  sum_64 = op1_64 + op2_64 + temp_CF;
+  BX_WRITE_64BIT_REG(i->rm(), sum_64);
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    diff_64 = op1_64 - op2_64;
-    BX_WRITE_64BIT_REG(i->rm(), diff_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    diff_64 = op1_64 - op2_64;
-    write_RMW_virtual_qword(diff_64);
-  }
-
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_SUB64);
+  SET_FLAGS_OSZAPC_64(op1_64, op2_64, sum_64, BX_INSTR_ADD_ADC64(temp_CF));
 }
 
-void BX_CPU_C::CMP_EqId(bxInstruction_c *i)
+void BX_CPU_C::SUB_EqIdM(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op2_64, op1_64, diff_64;
+  Bit64u op1_64, op2_64, diff_64;
 
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   op2_64 = (Bit32s) i->Id();
+  diff_64 = op1_64 - op2_64;
+  write_RMW_virtual_qword(diff_64);
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-  }
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
 
+void BX_CPU_C::SUB_EqIdR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = (Bit32s) i->Id();
+  diff_64 = op1_64 - op2_64;
+  BX_WRITE_64BIT_REG(i->rm(), diff_64);
+
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
+}
+
+void BX_CPU_C::CMP_EqIdM(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = read_virtual_qword(i->seg(), RMAddr(i));
+  op2_64 = (Bit32s) i->Id();
   diff_64 = op1_64 - op2_64;
 
-  SET_FLAGS_OSZAPC_64(op1_64, op2_64, diff_64, BX_INSTR_COMPARE64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
-void BX_CPU_C::NEG_Eq(bxInstruction_c *i)
+void BX_CPU_C::CMP_EqIdR(bxInstruction_c *i)
 {
-  /* for 64 bit operand size mode */
-  Bit64u op1_64, diff_64;
+  Bit64u op1_64, op2_64, diff_64;
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    diff_64 = -op1_64;
-    BX_WRITE_64BIT_REG(i->rm(), diff_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    diff_64 = -op1_64;
-    write_RMW_virtual_qword(diff_64);
-  }
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  op2_64 = (Bit32s) i->Id();
+  diff_64 = op1_64 - op2_64;
 
-  SET_FLAGS_OSZAPC_RESULT_64(diff_64, BX_INSTR_NEG64);
+  SET_FLAGS_OSZAPC_SUB_64(op1_64, op2_64, diff_64);
 }
 
-void BX_CPU_C::INC_Eq(bxInstruction_c *i)
+void BX_CPU_C::NEG_EqM(bxInstruction_c *i)
 {
   Bit64u op1_64;
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    op1_64++;
-    BX_WRITE_64BIT_REG(i->rm(), op1_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    op1_64++;
-    write_RMW_virtual_qword(op1_64);
-  }
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
+  op1_64 = (Bit64u) -op1_64;
+  write_RMW_virtual_qword(op1_64);
 
-  SET_FLAGS_OSZAP_RESULT_64(op1_64, BX_INSTR_INC64);
+  SET_FLAGS_OSZAPC_RESULT_64(op1_64, BX_INSTR_NEG64);
 }
 
-void BX_CPU_C::DEC_Eq(bxInstruction_c *i)
+void BX_CPU_C::NEG_EqR(bxInstruction_c *i)
+{
+  Bit64u op1_64 = BX_READ_64BIT_REG(i->rm());
+  op1_64 = (Bit64u) -op1_64;
+  BX_WRITE_64BIT_REG(i->rm(), op1_64);
+
+  SET_FLAGS_OSZAPC_RESULT_64(op1_64, BX_INSTR_NEG64);
+}
+
+void BX_CPU_C::INC_EqM(bxInstruction_c *i)
 {
   Bit64u op1_64;
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-    op1_64--;
-    BX_WRITE_64BIT_REG(i->rm(), op1_64);
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-    op1_64--;
-    write_RMW_virtual_qword(op1_64);
-  }
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
+  op1_64++;
+  write_RMW_virtual_qword(op1_64);
 
-  SET_FLAGS_OSZAP_RESULT_64(op1_64, BX_INSTR_DEC64);
+  SET_FLAGS_OSZAPC_INC_64(op1_64);
 }
 
-void BX_CPU_C::CMPXCHG_EqGq(bxInstruction_c *i)
+void BX_CPU_C::INC_EqR(bxInstruction_c *i)
 {
-  Bit64u op2_64, op1_64, diff_64;
+  Bit64u op1_64 = BX_READ_64BIT_REG(i->rm());
+  op1_64++;
+  BX_WRITE_64BIT_REG(i->rm(), op1_64);
 
-  /* op1_64 is a register or memory reference */
-  if (i->modC0()) {
-    op1_64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
-  }
+  SET_FLAGS_OSZAPC_INC_64(op1_64);
+}
 
+void BX_CPU_C::DEC_EqM(bxInstruction_c *i)
+{
+  Bit64u op1_64;
+
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
+  op1_64--;
+  write_RMW_virtual_qword(op1_64);
+
+  SET_FLAGS_OSZAPC_DEC_64(op1_64);
+}
+
+void BX_CPU_C::DEC_EqR(bxInstruction_c *i)
+{
+  Bit64u op1_64 = BX_READ_64BIT_REG(i->rm());
+  op1_64--;
+  BX_WRITE_64BIT_REG(i->rm(), op1_64);
+
+  SET_FLAGS_OSZAPC_DEC_64(op1_64);
+}
+
+void BX_CPU_C::CMPXCHG_EqGqM(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  /* pointer, segment address pair */
+  op1_64 = read_RMW_virtual_qword(i->seg(), RMAddr(i));
   diff_64 = RAX - op1_64;
-
-  SET_FLAGS_OSZAPC_64(RAX, op1_64, diff_64, BX_INSTR_COMPARE64);
+  SET_FLAGS_OSZAPC_SUB_64(RAX, op1_64, diff_64);
 
   if (diff_64 == 0) {  // if accumulator == dest
     // dest <-- src
     op2_64 = BX_READ_64BIT_REG(i->nnn());
+    write_RMW_virtual_qword(op2_64);
+  }
+  else {
+    // accumulator <-- dest
+    RAX = op1_64;
+  }
+}
 
-    if (i->modC0()) {
-      BX_WRITE_64BIT_REG(i->rm(), op2_64);
-    }
-    else {
-      write_RMW_virtual_qword(op2_64);
-    }
+void BX_CPU_C::CMPXCHG_EqGqR(bxInstruction_c *i)
+{
+  Bit64u op1_64, op2_64, diff_64;
+
+  op1_64 = BX_READ_64BIT_REG(i->rm());
+  diff_64 = RAX - op1_64;
+  SET_FLAGS_OSZAPC_SUB_64(RAX, op1_64, diff_64);
+
+  if (diff_64 == 0) {  // if accumulator == dest
+    // dest <-- src
+    op2_64 = BX_READ_64BIT_REG(i->nnn());
+    BX_WRITE_64BIT_REG(i->rm(), op2_64);
   }
   else {
     // accumulator <-- dest
@@ -621,32 +671,27 @@ void BX_CPU_C::CMPXCHG16B(bxInstruction_c *i)
 {
   Bit64u op1_64_lo, op1_64_hi, diff;
 
-  if (i->modC0()) {
-    BX_ERROR(("CMPXCHG16B: dest is not memory location (#UD)"));
-    UndefinedOpcode(i);
-  }
-
   if (RMAddr(i) & 0xf) {
     BX_ERROR(("CMPXCHG16B: not aligned memory location (#GP)"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  read_virtual_qword(i->seg(), RMAddr(i), &op1_64_lo);
-  read_RMW_virtual_qword(i->seg(), RMAddr(i) + 8, &op1_64_hi);
+  // check write permission for following write
+  op1_64_lo = read_RMW_virtual_qword(i->seg(), RMAddr(i));
+  op1_64_hi = read_RMW_virtual_qword(i->seg(), RMAddr(i) + 8);
 
   diff  = RAX - op1_64_lo;
   diff |= RDX - op1_64_hi;
 
   if (diff == 0) {  // if accumulator == dest
-    // ZF = 1
-    set_ZF(1);
     // dest <-- src
     write_RMW_virtual_qword(RCX);
-    write_virtual_qword(i->seg(), RMAddr(i), &RBX);
+    // write permissions already checked by read_RMW_virtual_qword
+    write_virtual_qword(i->seg(), RMAddr(i), RBX);
+    assert_ZF();
   }
   else {
-    // ZF = 0
-    set_ZF(0);
+    clear_ZF();
     // accumulator <-- dest
     RAX = op1_64_lo;
     RDX = op1_64_hi;

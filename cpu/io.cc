@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io.cc,v 1.38 2007/07/09 15:16:12 sshwarts Exp $
+// $Id: io.cc,v 1.48 2007/12/23 18:09:34 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,6 +37,7 @@
 #define RDI EDI
 #define RSI ESI
 #define RAX EAX
+#define RCX ECX
 #endif
 
 //
@@ -46,8 +47,9 @@
 #if BX_SupportRepeatSpeedups
 Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port, Bit32u wordCount)
 {
-  Bit32u paddrDst, wordsFitDst;
+  Bit32u wordsFitDst;
   signed int pointerDelta;
+  Bit8u *hostAddrDst;
 
   bx_segment_reg_t *dstSegPtr = &BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES];
 
@@ -59,32 +61,39 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
   write_virtual_checks(dstSegPtr, dstOff, 2);
 
   bx_address laddrDst = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_ES) + dstOff;
+  // check that the address is word aligned
+  if (laddrDst & 1) return 0;
+
+#if BX_SupportGuest2HostTLB
+  hostAddrDst = v2h_write_byte(laddrDst, CPL);
+#else
+  bx_phy_address paddrDst;
+
   if (BX_CPU_THIS_PTR cr0.get_PG())
-    paddrDst = dtranslate_linear(laddrDst, CPL==3, BX_WRITE);
+    paddrDst = dtranslate_linear(laddrDst, CPL, BX_WRITE);
   else
     paddrDst = laddrDst;
+
   // If we want to write directly into the physical memory array,
   // we need the A20 address.
-  paddrDst = A20ADDR(paddrDst);
+  hostAddrDst = BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS,
+            A20ADDR(paddrDst), BX_WRITE, DATA_ACCESS);
+#endif
 
-  Bit8u *hostAddrDst = BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS,
-            paddrDst, BX_WRITE, DATA_ACCESS);
-
-  // Check that native host access was not vetoed for that page, and
-  // that the address is word aligned.
-  if (!hostAddrDst || (paddrDst & 1)) return 0;
+  // Check that native host access was not vetoed for that page
+  if (!hostAddrDst) return 0;
 
   // See how many words can fit in the rest of this page.
   if (BX_CPU_THIS_PTR get_DF()) {
     // Counting downward
     // Note: 1st word must not cross page boundary.
-    if ((paddrDst & 0xfff) > 0xffe) return 0;
-    wordsFitDst = (2 + (paddrDst & 0xfff)) >> 1;
+    if ((laddrDst & 0xfff) > 0xffe) return 0;
+    wordsFitDst = (2 + (laddrDst & 0xfff)) >> 1;
     pointerDelta = -2;
   }
   else {
     // Counting upward
-    wordsFitDst = (0x1000 - (paddrDst & 0xfff)) >> 1;
+    wordsFitDst = (0x1000 - (laddrDst & 0xfff)) >> 1;
     pointerDelta =  2;
   }
 
@@ -165,8 +174,9 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
 
 Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address srcOff, Bit16u port, Bit32u wordCount)
 {
-  Bit32u paddrSrc, wordsFitSrc;
+  Bit32u wordsFitSrc;
   signed int pointerDelta;
+  Bit8u *hostAddrSrc;
 
   bx_segment_reg_t *srcSegPtr = &BX_CPU_THIS_PTR sregs[srcSeg];
 
@@ -178,106 +188,113 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
   read_virtual_checks(srcSegPtr, srcOff, 2);
 
   bx_address laddrSrc = BX_CPU_THIS_PTR get_segment_base(srcSeg) + srcOff;
+  // check that the address is word aligned
+  if (laddrSrc & 1) return 0;
+
+#if BX_SupportGuest2HostTLB
+  hostAddrSrc = v2h_read_byte(laddrSrc, CPL);
+#else
+  bx_phy_address paddrSrc;
+
   if (BX_CPU_THIS_PTR cr0.get_PG())
-    paddrSrc = dtranslate_linear(laddrSrc, CPL==3, BX_READ);
+    paddrSrc = dtranslate_linear(laddrSrc, CPL, BX_READ);
   else
     paddrSrc = laddrSrc;
+
   // If we want to write directly into the physical memory array,
   // we need the A20 address.
-  paddrSrc = A20ADDR(paddrSrc);
-
-  Bit8u *hostAddrSrc = BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS,
-          paddrSrc, BX_READ, DATA_ACCESS);
-
-  // Check that native host access was not vetoed for that page, and
-  // that the address is word aligned.
-  if (hostAddrSrc && ! (paddrSrc & 1)) {
-    // See how many words can fit in the rest of this page.
-    if (BX_CPU_THIS_PTR get_DF()) {
-      // Counting downward
-      // Note: 1st word must not cross page boundary.
-      if ((paddrSrc & 0xfff) > 0xffe) return 0;
-      wordsFitSrc = (2 + (paddrSrc & 0xfff)) >> 1;
-      pointerDelta = (unsigned) -2;
-    }
-    else {
-      // Counting upward
-      wordsFitSrc = (0x1000 - (paddrSrc & 0xfff)) >> 1;
-      pointerDelta =  2;
-    }
-
-    // Restrict word count to the number that will fit in this page.
-    if (wordCount > wordsFitSrc)
-        wordCount = wordsFitSrc;
-
-    // If after all the restrictions, there is anything left to do...
-    if (wordCount) {
-      Bit32u srcSegLimit = srcSegPtr->cache.u.segment.limit_scaled;
-      unsigned count;
-
-      // For 16-bit addressing mode, clamp the segment limits to 16bits
-      // so we don't have to worry about computations using si/di
-      // rolling over 16-bit boundaries.
-      if (!i->as32L()) {
-        if (srcSegLimit > 0xffff)
-            srcSegLimit = 0xffff;
-      }
-
-      // Before we copy memory, we need to make sure that the segments
-      // allow the accesses up to the given source and dest offset.  If
-      // the cache.valid bits have SegAccessWOK and ROK, we know that
-      // the cache is valid for those operations, and that the segments
-      // are non-expand down (thus we can make a simple limit check).
-      if ( !(srcSegPtr->cache.valid & SegAccessROK) ) return 0;
-
-      if (BX_CPU_THIS_PTR cpu_mode != BX_MODE_LONG_64)
-      {
-        // Now make sure transfer will fit within the constraints of the
-        // segment boundaries, 0..limit for non expand-down.  We know
-        // wordCount >= 1 here.
-        if (BX_CPU_THIS_PTR get_DF()) {
-          // Counting downward
-          Bit32u minOffset = (wordCount-1) << 1;
-          if (srcOff < minOffset) return 0;
-        }
-        else {
-          // Counting upward
-          Bit32u srcMaxOffset = (srcSegLimit - (wordCount<<1)) + 1;
-          if (srcOff > srcMaxOffset) return 0;
-        }
-      }
-
-      for (count=0; count<wordCount; ) {
-        bx_devices.bulkIOQuantumsTransferred = 0;
-        if (BX_CPU_THIS_PTR get_DF()==0) { // Only do accel for DF=0
-          bx_devices.bulkIOHostAddr = hostAddrSrc;
-          bx_devices.bulkIOQuantumsRequested = (wordCount - count);
-        }
-        else
-          bx_devices.bulkIOQuantumsRequested = 0;
-        Bit16u temp16 = * (Bit16u *) hostAddrSrc;
-#ifdef BX_LITTLE_ENDIAN
-        BX_OUTP(port, temp16, 2);
-#else
-        BX_OUTP(port, ((temp16 >> 8) | (temp16 << 8)), 2);
+  hostAddrSrc = BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS,
+          A20ADDR(paddrSrc), BX_READ, DATA_ACCESS);
 #endif
-        if (bx_devices.bulkIOQuantumsTransferred) {
-          hostAddrSrc =  bx_devices.bulkIOHostAddr;
-          count += bx_devices.bulkIOQuantumsTransferred;
-        }
-        else {
-          hostAddrSrc += pointerDelta;
-          count++;
-        }
-        // Terminate early if there was an event.
-        if (BX_CPU_THIS_PTR async_event) break;
-      }
 
-      // Reset for next non-bulk IO
-      bx_devices.bulkIOQuantumsRequested = 0;
+  // Check that native host access was not vetoed for that page
+  if (!hostAddrSrc) return 0;
 
-      return count;
+  // See how many words can fit in the rest of this page.
+  if (BX_CPU_THIS_PTR get_DF()) {
+    // Counting downward
+    // Note: 1st word must not cross page boundary.
+    if ((laddrSrc & 0xfff) > 0xffe) return 0;
+    wordsFitSrc = (2 + (laddrSrc & 0xfff)) >> 1;
+    pointerDelta = (unsigned) -2;
+  }
+  else {
+    // Counting upward
+    wordsFitSrc = (0x1000 - (laddrSrc & 0xfff)) >> 1;
+    pointerDelta =  2;
+  }
+
+  // Restrict word count to the number that will fit in this page.
+  if (wordCount > wordsFitSrc)
+      wordCount = wordsFitSrc;
+
+  // If after all the restrictions, there is anything left to do...
+  if (wordCount) {
+    Bit32u srcSegLimit = srcSegPtr->cache.u.segment.limit_scaled;
+    unsigned count;
+
+    // For 16-bit addressing mode, clamp the segment limits to 16bits
+    // so we don't have to worry about computations using si/di
+    // rolling over 16-bit boundaries.
+    if (!i->as32L()) {
+      if (srcSegLimit > 0xffff)
+          srcSegLimit = 0xffff;
     }
+
+    // Before we copy memory, we need to make sure that the segments
+    // allow the accesses up to the given source and dest offset.  If
+    // the cache.valid bits have SegAccessWOK and ROK, we know that
+    // the cache is valid for those operations, and that the segments
+    // are non-expand down (thus we can make a simple limit check).
+    if ( !(srcSegPtr->cache.valid & SegAccessROK) ) return 0;
+
+    if (BX_CPU_THIS_PTR cpu_mode != BX_MODE_LONG_64)
+    {
+      // Now make sure transfer will fit within the constraints of the
+      // segment boundaries, 0..limit for non expand-down.  We know
+      // wordCount >= 1 here.
+      if (BX_CPU_THIS_PTR get_DF()) {
+        // Counting downward
+        Bit32u minOffset = (wordCount-1) << 1;
+        if (srcOff < minOffset) return 0;
+      }
+      else {
+        // Counting upward
+        Bit32u srcMaxOffset = (srcSegLimit - (wordCount<<1)) + 1;
+        if (srcOff > srcMaxOffset) return 0;
+      }
+    }
+
+    for (count=0; count<wordCount; ) {
+      bx_devices.bulkIOQuantumsTransferred = 0;
+      if (BX_CPU_THIS_PTR get_DF()==0) { // Only do accel for DF=0
+        bx_devices.bulkIOHostAddr = hostAddrSrc;
+        bx_devices.bulkIOQuantumsRequested = (wordCount - count);
+      }
+      else
+        bx_devices.bulkIOQuantumsRequested = 0;
+      Bit16u temp16 = * (Bit16u *) hostAddrSrc;
+#ifdef BX_LITTLE_ENDIAN
+      BX_OUTP(port, temp16, 2);
+#else
+      BX_OUTP(port, ((temp16 >> 8) | (temp16 << 8)), 2);
+#endif
+      if (bx_devices.bulkIOQuantumsTransferred) {
+        hostAddrSrc =  bx_devices.bulkIOHostAddr;
+        count += bx_devices.bulkIOQuantumsTransferred;
+      }
+      else {
+        hostAddrSrc += pointerDelta;
+        count++;
+      }
+      // Terminate early if there was an event.
+      if (BX_CPU_THIS_PTR async_event) break;
+    }
+
+    // Reset for next non-bulk IO
+    bx_devices.bulkIOQuantumsRequested = 0;
+
+    return count;
   }
 
   return 0;
@@ -312,23 +329,21 @@ void BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
 {
   Bit8u value8=0;
 
-  if (BX_CPU_THIS_PTR cr0.get_PE() && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if (! BX_CPU_THIS_PTR allow_io(DX, 1)) {
-      BX_DEBUG(("INSB_YbDX: I/O access not allowed !"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (! BX_CPU_THIS_PTR allow_io(DX, 1)) {
+    BX_DEBUG(("INSB_YbDX: I/O access not allowed !"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
     // Write a zero to memory, to trigger any segment or page
     // faults before reading from IO port.
-    write_virtual_byte(BX_SEG_REG_ES, RDI, &value8);
+    write_virtual_byte(BX_SEG_REG_ES, RDI, value8);
 
     value8 = BX_INP(DX, 1);
 
     /* no seg override possible */
-    write_virtual_byte(BX_SEG_REG_ES, RDI, &value8);
+    write_virtual_byte(BX_SEG_REG_ES, RDI, value8);
 
     if (BX_CPU_THIS_PTR get_DF())
       RDI--;
@@ -340,12 +355,12 @@ void BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
    if (i->as32L()) {
     // Write a zero to memory, to trigger any segment or page
     // faults before reading from IO port.
-    write_virtual_byte(BX_SEG_REG_ES, EDI, &value8);
+    write_virtual_byte(BX_SEG_REG_ES, EDI, value8);
 
     value8 = BX_INP(DX, 1);
 
     /* no seg override possible */
-    write_virtual_byte(BX_SEG_REG_ES, EDI, &value8);
+    write_virtual_byte(BX_SEG_REG_ES, EDI, value8);
 
     if (BX_CPU_THIS_PTR get_DF()) {
       RDI = EDI - 1;
@@ -357,12 +372,12 @@ void BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
   else {
     // Write a zero to memory, to trigger any segment or page
     // faults before reading from IO port.
-    write_virtual_byte(BX_SEG_REG_ES, DI, &value8);
+    write_virtual_byte(BX_SEG_REG_ES, DI, value8);
 
     value8 = BX_INP(DX, 1);
 
     /* no seg override possible */
-    write_virtual_byte(BX_SEG_REG_ES, DI, &value8);
+    write_virtual_byte(BX_SEG_REG_ES, DI, value8);
 
     if (BX_CPU_THIS_PTR get_DF())
       DI--;
@@ -374,158 +389,169 @@ void BX_CPU_C::INSB_YbDX(bxInstruction_c *i)
 // input word from port to string
 void BX_CPU_C::INSW_YwDX(bxInstruction_c *i)
 {
-  bx_address edi;
-  unsigned int incr = 2;
-
-#if BX_SUPPORT_X86_64
-  if (i->as64L())
-    edi = RDI;
-  else
-#endif
-   if (i->as32L())
-    edi = EDI;
-  else
-    edi = DI;
-
   Bit16u value16=0;
-
-#if BX_SupportRepeatSpeedups
-#if (BX_DEBUGGER == 0)
-  /* If conditions are right, we can transfer IO to physical memory
-   * in a batch, rather than one instruction at a time.
-   */
-  if (i->repUsedL() && !BX_CPU_THIS_PTR async_event) {
-    Bit32u wordCount;
-
-#if BX_SUPPORT_X86_64
-    if (i->as64L())
-      wordCount = RCX; // Truncated to 32bits. (we're only doing 1 page)
-    else
-#endif
-    if (i->as32L())
-      wordCount = ECX;
-    else
-      wordCount =  CX;
-
-    BX_ASSERT(wordCount > 0);
-    wordCount = FastRepINSW(i, edi, DX, wordCount);
-    if (wordCount)
-    {
-      // Decrement the ticks count by the number of iterations, minus
-      // one, since the main cpu loop will decrement one.  Also,
-      // the count is predecremented before examined, so defintely
-      // don't roll it under zero.
-      BX_TICKN(wordCount-1);
-
-#if BX_SUPPORT_X86_64
-      if (i->as64L())
-        RCX -= (wordCount-1);
-      else
-#endif
-      if (i->as32L())
-        ECX -= (wordCount-1);
-      else
-        CX  -= (wordCount-1);
-
-      incr = wordCount << 1; // count * 2.
-      goto doIncr;
-    }
-  }
-#endif  // (BX_DEBUGGER == 0)
-#endif  // #if BX_SupportRepeatSpeedups
-
-  // Write a zero to memory, to trigger any segment or page
-  // faults before reading from IO port.
-  write_virtual_word(BX_SEG_REG_ES, edi, &value16);
-
-  value16 = BX_INP(DX, 2);
-
-  /* no seg override allowed */
-  write_virtual_word(BX_SEG_REG_ES, edi, &value16);
-  incr = 2;
-
-#if BX_SupportRepeatSpeedups
-#if (BX_DEBUGGER == 0)
-doIncr:
-#endif
-#endif
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
+    Bit64u rdi = RDI;
+
+    // Write a zero to memory, to trigger any segment or page
+    // faults before reading from IO port.
+    write_virtual_word(BX_SEG_REG_ES, rdi, value16);
+
+    value16 = BX_INP(DX, 2);
+
+    /* no seg override allowed */
+    write_virtual_word(BX_SEG_REG_ES, rdi, value16);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RDI = RDI - incr;
+      rdi -= 2;
     else
-      RDI = RDI + incr;
+      rdi += 2;
+
+    RDI = rdi;
   }
   else
 #endif
-  if (i->as32L()) {
-    if (BX_CPU_THIS_PTR get_DF())
-      RDI = EDI - incr;
+  {
+    Bit32u edi;
+    Bit32u incr = 2;
+
+    if (i->as32L())
+      edi = EDI;
     else
-      RDI = EDI + incr;
-  }
-  else {
-    if (BX_CPU_THIS_PTR get_DF())
-      DI = DI - incr;
-    else
-      DI = DI + incr;
+      edi = DI;
+
+#if (BX_SupportRepeatSpeedups) && (BX_DEBUGGER == 0)
+    /* If conditions are right, we can transfer IO to physical memory
+     * in a batch, rather than one instruction at a time.
+     */
+    if (i->repUsedL() && !BX_CPU_THIS_PTR async_event)
+    {
+      Bit32u wordCount;
+
+      if (i->as32L())
+        wordCount = ECX;
+      else
+        wordCount =  CX;
+
+      BX_ASSERT(wordCount > 0);
+
+      wordCount = FastRepINSW(i, edi, DX, wordCount);
+      if (wordCount)
+      {
+        // Decrement the ticks count by the number of iterations, minus
+        // one, since the main cpu loop will decrement one.  Also,
+        // the count is predecremented before examined, so defintely
+        // don't roll it under zero.
+        BX_TICKN(wordCount-1);
+
+        if (i->as32L())
+          RCX = ECX - (wordCount-1);
+        else
+           CX -= (wordCount-1);
+
+        incr = wordCount << 1; // count * 2.
+        goto doIncr;
+      }
+    }
+#endif
+
+    // Write a zero to memory, to trigger any segment or page
+    // faults before reading from IO port.
+    write_virtual_word(BX_SEG_REG_ES, edi, value16);
+
+    value16 = BX_INP(DX, 2);
+
+    /* no seg override allowed */
+    write_virtual_word(BX_SEG_REG_ES, edi, value16);
+
+#if (BX_SupportRepeatSpeedups) && (BX_DEBUGGER == 0)
+doIncr:
+#endif
+
+    if (i->as32L()) {
+      if (BX_CPU_THIS_PTR get_DF())
+        RDI = EDI - incr;
+      else
+        RDI = EDI + incr;
+    }
+    else {
+      if (BX_CPU_THIS_PTR get_DF())
+        DI -= incr;
+      else
+        DI += incr;
+    }
   }
 }
 
 // input doubleword from port to string
 void BX_CPU_C::INSD_YdDX(bxInstruction_c *i)
 {
-  if (BX_CPU_THIS_PTR cr0.get_PE() && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if (! BX_CPU_THIS_PTR allow_io(DX, 4)) {
-      BX_DEBUG(("INSD_YdDX: I/O access not allowed !"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (! BX_CPU_THIS_PTR allow_io(DX, 4)) {
+    BX_DEBUG(("INSD_YdDX: I/O access not allowed !"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
-
-  bx_address edi;
-
-#if BX_SUPPORT_X86_64
-  if (i->as64L())
-    edi = RDI;
-  else
-#endif
-   if (i->as32L())
-    edi = EDI;
-  else
-    edi = DI;
-
-  Bit32u value32=0;
-
-  // Write a zero to memory, to trigger any segment or page
-  // faults before reading from IO port.
-  write_virtual_dword(BX_SEG_REG_ES, edi, &value32);
-
-  value32 = BX_INP(DX, 4);
-
-  /* no seg override allowed */
-  write_virtual_dword(BX_SEG_REG_ES, edi, &value32);
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
+    Bit64u rdi = RDI;
+
+    // Write a zero to memory, to trigger any segment or page
+    // faults before reading from IO port.
+    write_virtual_dword(BX_SEG_REG_ES, rdi, 0);
+
+    Bit32u value32 = BX_INP(DX, 4);
+
+    /* no seg override allowed */
+    write_virtual_dword(BX_SEG_REG_ES, rdi, value32);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RDI = RDI - 4;
+      rdi -= 4;
     else
-      RDI = RDI + 4;
+      rdi += 4;
+
+    RDI = rdi;
   }
   else
 #endif
   if (i->as32L()) {
+    Bit32u edi = EDI;
+
+    // Write a zero to memory, to trigger any segment or page
+    // faults before reading from IO port.
+    write_virtual_dword(BX_SEG_REG_ES, edi, 0);
+
+    Bit32u value32 = BX_INP(DX, 4);
+
+    /* no seg override allowed */
+    write_virtual_dword(BX_SEG_REG_ES, edi, value32);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RDI = EDI - 4;
+      edi -= 4;
     else
-      RDI = EDI + 4;
+      edi += 4;
+
+    RDI = edi;
   }
   else {
+    Bit16u di = DI;
+
+    // Write a zero to memory, to trigger any segment or page
+    // faults before reading from IO port.
+    write_virtual_dword(BX_SEG_REG_ES, di, 0);
+
+    Bit32u value32 = BX_INP(DX, 4);
+
+    /* no seg override allowed */
+    write_virtual_dword(BX_SEG_REG_ES, di, value32);
+
     if (BX_CPU_THIS_PTR get_DF())
-      DI = DI - 4;
+      di -= 4;
     else
-      DI = DI + 4;
+      di += 4;
+
+    DI = di;
   }
 }
 
@@ -554,200 +580,194 @@ void BX_CPU_C::REP_OUTSD_DXXd(bxInstruction_c *i)
 
 void BX_CPU_C::OUTSB_DXXb(bxInstruction_c *i)
 {
-  Bit8u value8;
-  bx_address esi;
-
-  if (BX_CPU_THIS_PTR cr0.get_PE() && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if (! BX_CPU_THIS_PTR allow_io(DX, 1)) {
-      BX_DEBUG(("OUTSB_DXXb: I/O access not allowed !"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (! BX_CPU_THIS_PTR allow_io(DX, 1)) {
+    BX_DEBUG(("OUTSB_DXXb: I/O access not allowed !"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-#if BX_SUPPORT_X86_64
-  if (i->as64L())
-    esi = RSI;
-  else
-#endif
-  if (i->as32L())
-    esi = ESI;
-  else
-    esi = SI;
-
-  read_virtual_byte(i->seg(), esi, &value8);
-
-  BX_OUTP(DX, value8, 1);
+  Bit8u value8;
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
+    Bit64u rsi = RSI;
+
+    value8 = read_virtual_byte(i->seg(), rsi);
+    BX_OUTP(DX, value8, 1);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RSI--;
+      rsi--;
     else
-      RSI++;
+      rsi++;
+
+    RSI = rsi;
   }
   else
 #endif
   if (i->as32L()) {
+    Bit32u esi = ESI;
+
+    value8 = read_virtual_byte(i->seg(), esi);
+    BX_OUTP(DX, value8, 1);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RSI--;
+      esi--;
     else
-      RSI++;
+      esi++;
+
+    RSI = esi;
   }
   else {
+    Bit16u si = SI;
+
+    value8 = read_virtual_byte(i->seg(), si);
+    BX_OUTP(DX, value8, 1);
+
     if (BX_CPU_THIS_PTR get_DF())
-      SI--;
+      si--;
     else
-      SI++;
+      si++;
+
+    SI = si;
   }
 }
 
 // output word string to port
 void BX_CPU_C::OUTSW_DXXw(bxInstruction_c *i)
 {
-  bx_address esi;
-  unsigned incr = 2;
-
-  if (BX_CPU_THIS_PTR cr0.get_PE() && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if (! BX_CPU_THIS_PTR allow_io(DX, 2)) {
-      BX_DEBUG(("OUTSW_DXXw: I/O access not allowed !"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (! BX_CPU_THIS_PTR allow_io(DX, 2)) {
+    BX_DEBUG(("OUTSW_DXXw: I/O access not allowed !"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-#if BX_SUPPORT_X86_64
-  if (i->as64L())
-    esi = RSI;
-  else
-#endif
-  if (i->as32L())
-    esi = ESI;
-  else
-    esi = SI;
-
-  Bit16u value16=0;
-
-#if BX_SupportRepeatSpeedups
-#if (BX_DEBUGGER == 0)
-  /* If conditions are right, we can transfer IO to physical memory
-   * in a batch, rather than one instruction at a time.
-   */
-  if (i->repUsedL() && !BX_CPU_THIS_PTR async_event) {
-    Bit32u wordCount;
-
-#if BX_SUPPORT_X86_64
-    if (i->as64L())
-      wordCount = RCX; // Truncated to 32bits. (we're only doing 1 page)
-    else
-#endif
-    if (i->as32L())
-      wordCount = ECX;
-    else
-      wordCount = CX;
-
-    BX_ASSERT(wordCount > 0);
-    wordCount = FastRepOUTSW(i, i->seg(), esi, DX, wordCount);
-    if (wordCount)
-    {
-      // Decrement eCX.  Note, the main loop will decrement 1 also, so
-      // decrement by one less than expected, like the case above.
-      BX_TICKN(wordCount-1); // Main cpu loop also decrements one more.
-
-#if BX_SUPPORT_X86_64
-      if (i->as64L())
-        RCX -= (wordCount-1);
-      else
-#endif
-      if (i->as32L())
-        ECX -= (wordCount-1);
-      else
-        CX  -= (wordCount-1);
-      incr = wordCount << 1; // count * 2.
-      goto doIncr;
-    }
-  }
-
-#endif  // (BX_DEBUGGER == 0)
-#endif  // #if BX_SupportRepeatSpeedups
-
-  read_virtual_word(i->seg(), esi, &value16);
-  BX_OUTP(DX, value16, 2);
-  incr = 2;
-
-#if BX_SupportRepeatSpeedups
-#if (BX_DEBUGGER == 0)
-doIncr:
-#endif
-#endif
+  Bit16u value16;
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
+    Bit64u rsi = RSI;
+
+    value16 = read_virtual_word(i->seg(), rsi);
+    BX_OUTP(DX, value16, 2);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RSI = RSI - incr;
+      rsi -= 2;
     else
-      RSI = RSI + incr;
+      rsi += 2;
+
+    RSI = rsi;
   }
   else
 #endif
-  if (i->as32L()) {
-    if (BX_CPU_THIS_PTR get_DF())
-      RSI = ESI - incr;
+  {
+    Bit32u esi;
+    Bit32u incr = 2;
+  
+    if (i->as32L())
+      esi = ESI;
     else
-      RSI = ESI + incr;
-  }
-  else {
-    if (BX_CPU_THIS_PTR get_DF())
-      SI = SI - incr;
+      esi =  SI;
+
+#if (BX_SupportRepeatSpeedups) && (BX_DEBUGGER == 0)
+    /* If conditions are right, we can transfer IO to physical memory
+     * in a batch, rather than one instruction at a time.
+     */
+    if (i->repUsedL() && !BX_CPU_THIS_PTR async_event) {
+      Bit32u wordCount;
+
+      if (i->as32L())
+        wordCount = ECX;
+      else
+        wordCount =  CX;
+
+      wordCount = FastRepOUTSW(i, i->seg(), esi, DX, wordCount);
+      if (wordCount) {
+        // Decrement eCX.  Note, the main loop will decrement 1 also, so
+        // decrement by one less than expected, like the case above.
+        BX_TICKN(wordCount-1); // Main cpu loop also decrements one more.
+
+        if (i->as32L())
+          RCX = ECX - (wordCount-1);
+        else
+           CX -= (wordCount-1);
+        incr = wordCount << 1; // count * 2.
+      }
+      else {
+        value16 = read_virtual_word(i->seg(), esi);
+        BX_OUTP(DX, value16, 2);
+      }
+    }
     else
-      SI = SI + incr;
+#endif
+    {
+      value16 = read_virtual_word(i->seg(), esi);
+      BX_OUTP(DX, value16, 2);
+    }
+
+    if (i->as32L()) {
+      if (BX_CPU_THIS_PTR get_DF())
+        RSI = ESI - incr;
+      else
+        RSI = ESI + incr;
+    }
+    else {
+      if (BX_CPU_THIS_PTR get_DF())
+        SI = SI - incr;
+      else
+        SI = SI + incr;
+    }
   }
 }
 
 // output doubleword string to port
 void BX_CPU_C::OUTSD_DXXd(bxInstruction_c *i)
 {
-  if (BX_CPU_THIS_PTR cr0.get_PE() && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if (! BX_CPU_THIS_PTR allow_io(DX, 4)) {
-      BX_DEBUG(("OUTSD_DXXd: I/O access not allowed !"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (! BX_CPU_THIS_PTR allow_io(DX, 4)) {
+    BX_DEBUG(("OUTSD_DXXd: I/O access not allowed !"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  bx_address esi;
-
-#if BX_SUPPORT_X86_64
-  if (i->as64L())
-    esi = RSI;
-  else
-#endif
-  if (i->as32L())
-    esi = ESI;
-  else
-    esi =  SI;
-
-  Bit32u value32=0;
-  read_virtual_dword(i->seg(), esi, &value32);
-  BX_OUTP(DX, value32, 4);
+  Bit32u value32;
 
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
+    Bit64u rsi = RSI;
+
+    value32 = read_virtual_dword(i->seg(), rsi);
+    BX_OUTP(DX, value32, 4);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RSI = RSI - 4;
+      rsi -= 4;
     else
-      RSI = RSI + 4;
+      rsi += 4;
+
+    RSI = rsi;
   }
   else
 #endif
   if (i->as32L()) {
+    Bit32u esi = ESI;
+
+    value32 = read_virtual_dword(i->seg(), esi);
+    BX_OUTP(DX, value32, 4);
+
     if (BX_CPU_THIS_PTR get_DF())
-      RSI = ESI - 4;
+      esi -= 4;
     else
-      RSI = ESI + 4;
+      esi += 4;
+
+    RSI = esi;
   }
   else {
+    Bit16u si = SI;
+
+    value32 = read_virtual_dword(i->seg(), si);
+    BX_OUTP(DX, value32, 4);
+
     if (BX_CPU_THIS_PTR get_DF())
-      SI = SI - 4;
+      si -= 4;
     else
-      SI = SI + 4;
+      si += 4;
+
+    SI = si;
   }
 }
 

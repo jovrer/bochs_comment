@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl.cc,v 1.26 2006/06/09 22:29:07 sshwarts Exp $
+// $Id: flag_ctrl.cc,v 1.33 2007/12/20 18:29:38 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -31,24 +31,24 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+// Make code more tidy with a few macros.
+#if BX_SUPPORT_X86_64==0
+#define RSP ESP
+#endif
+
 
 void BX_CPU_C::SAHF(bxInstruction_c *i)
 {
   set_SF((AH & 0x80) >> 7);
   set_ZF((AH & 0x40) >> 6);
   set_AF((AH & 0x10) >> 4);
-  set_CF(AH & 0x01);
+  set_CF (AH & 0x01);
   set_PF((AH & 0x04) >> 2);
 }
 
 void BX_CPU_C::LAHF(bxInstruction_c *i)
 {
-  AH = (get_SF() ? 0x80 : 0) |
-       (get_ZF() ? 0x40 : 0) |
-       (get_AF() ? 0x10 : 0) |
-       (get_PF() ? 0x04 : 0) |
-       (0x02) |
-       (get_CF() ? 0x01 : 0);
+  AH = read_flags() & 0xFF;
 }
 
 void BX_CPU_C::CLC(bxInstruction_c *i)
@@ -182,7 +182,6 @@ void BX_CPU_C::PUSHF_Fw(bxInstruction_c *i)
     if ((BX_CPU_THIS_PTR get_IOPL() < 3) && (CR4_VME_ENABLED == 0)) {
       BX_DEBUG(("PUSHFW: #GP(0) in v8086 (no VME) mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
-      return;
     }
 #if BX_SUPPORT_VME
     if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3) {
@@ -209,7 +208,7 @@ void BX_CPU_C::POPF_Fw(bxInstruction_c *i)
   Bit16u flags16;
 
   if (protected_mode()) {
-    pop_16(&flags16);
+    flags16 = pop_16();
     if (CPL==0)
       changeMask |= EFlagsIOPLMask;
     if (CPL <= BX_CPU_THIS_PTR get_IOPL())
@@ -219,9 +218,11 @@ void BX_CPU_C::POPF_Fw(bxInstruction_c *i)
     if ((BX_CPU_THIS_PTR get_IOPL() < 3) && (CR4_VME_ENABLED == 0)) {
       BX_DEBUG(("POPFW: #GP(0) in v8086 (no VME) mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
-      return;
     }
-    pop_16(&flags16);
+    BX_CPU_THIS_PTR speculative_rsp = 1;
+    BX_CPU_THIS_PTR prev_rsp = RSP;
+
+    flags16 = pop_16();
 #if BX_SUPPORT_VME
     if (CR4_VME_ENABLED && BX_CPU_THIS_PTR get_IOPL() < 3) {
       if (((flags16 & EFlagsIFMask) && BX_CPU_THIS_PTR get_VIP()) || 
@@ -240,9 +241,11 @@ void BX_CPU_C::POPF_Fw(bxInstruction_c *i)
     }
 #endif
     changeMask |= EFlagsIFMask;
+
+    BX_CPU_THIS_PTR speculative_rsp = 0;
   }
   else {
-    pop_16(&flags16);
+    flags16 = pop_16();
     // All non-reserved flags can be modified
     changeMask |= (EFlagsIOPLMask | EFlagsIFMask);
   }
@@ -257,7 +260,6 @@ void BX_CPU_C::PUSHF_Fd(bxInstruction_c *i)
   if (v8086_mode() && (BX_CPU_THIS_PTR get_IOPL()<3)) {
     BX_DEBUG(("PUSHFD: #GP(0) in v8086 mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
-    return;
   }
 
   // VM & RF flags cleared in image stored on the stack
@@ -276,7 +278,7 @@ void BX_CPU_C::POPF_Fd(bxInstruction_c *i)
   Bit32u flags32;
 
   if (protected_mode()) {
-    pop_32(&flags32);
+    flags32 = pop_32();
     // IOPL changed only if (CPL == 0),
     // IF changed only if (CPL <= EFLAGS.IOPL),
     // VIF, VIP, VM are unaffected
@@ -289,14 +291,13 @@ void BX_CPU_C::POPF_Fd(bxInstruction_c *i)
     if (BX_CPU_THIS_PTR get_IOPL() < 3) {
       BX_DEBUG(("POPFD: #GP(0) in v8086 mode"));
       exception(BX_GP_EXCEPTION, 0, 0);
-      return;
     }
-    pop_32(&flags32);
+    flags32 = pop_32();
     // v8086-mode: VM, IOPL, VIP, VIF are unaffected
     changeMask |= EFlagsIFMask;
   }
   else { // Real-mode
-    pop_32(&flags32);
+    flags32 = pop_32();
     // VIF, VIP, VM are unaffected
     changeMask |= (EFlagsIOPLMask | EFlagsIFMask);
   }
@@ -318,19 +319,18 @@ void BX_CPU_C::POPF_Fq(bxInstruction_c *i)
   Bit32u changeMask = EFlagsOSZAPCMask | EFlagsTFMask | EFlagsDFMask
                         | EFlagsNTMask | EFlagsRFMask | EFlagsACMask
                         | EFlagsIDMask;
-  Bit64u flags64;
 
   BX_ASSERT (protected_mode());
 
-  pop_64(&flags64);
-  Bit32u flags32 = (Bit32u) flags64;
+  Bit32u eflags = (Bit32u) pop_64();
+
   if (CPL==0)
     changeMask |= EFlagsIOPLMask;
   if (CPL <= BX_CPU_THIS_PTR get_IOPL())
     changeMask |= EFlagsIFMask;
 
   // VIF, VIP, VM are unaffected
-  writeEFlags(flags32, changeMask);
+  writeEFlags(eflags, changeMask);
 }
 #endif
 

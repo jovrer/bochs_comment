@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer16.cc,v 1.37 2007/07/09 15:16:11 sshwarts Exp $
+// $Id: ctrl_xfer16.cc,v 1.49 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -30,16 +31,22 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+// Make code more tidy with a few macros.
+#if BX_SUPPORT_X86_64==0
+#define RSP ESP
+#endif
+
 
 void BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
 {
-  Bit16u return_IP;
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  pop_16(&return_IP);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u return_IP = pop_16();
 
   if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) 
   {
@@ -54,20 +61,23 @@ void BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) /* 32bit stack */
     ESP += imm16;
   else
-    SP  += imm16;
+     SP += imm16;
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
 void BX_CPU_C::RETnear16(bxInstruction_c *i)
 {
-  Bit16u return_IP;
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  pop_16(&return_IP);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u return_IP = pop_16();
 
   if (return_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) 
   {
@@ -76,6 +86,8 @@ void BX_CPU_C::RETnear16(bxInstruction_c *i)
   }
 
   EIP = return_IP;
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
@@ -93,25 +105,29 @@ void BX_CPU_C::RETfar16_Iw(bxInstruction_c *i)
 
   imm16 = i->Iw();
 
-#if BX_CPU_LEVEL >= 2
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
   if (protected_mode()) {
     BX_CPU_THIS_PTR return_protected(i, imm16);
     goto done;
   }
-#endif
 
-  pop_16(&ip);
-  pop_16(&cs_raw);
+  ip     = pop_16();
+  cs_raw = pop_16();
 
-  EIP = (Bit32u) ip;
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
+  EIP = (Bit32u) ip;
 
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
     ESP += imm16;
   else
-    SP  += imm16;
+     SP += imm16;
 
 done:
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
@@ -126,24 +142,29 @@ void BX_CPU_C::RETfar16(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-#if BX_CPU_LEVEL >= 2
-  if ( protected_mode() ) {
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  if (protected_mode()) {
     BX_CPU_THIS_PTR return_protected(i, 0);
     goto done;
   }
-#endif
 
-  pop_16(&ip);
-  pop_16(&cs_raw);
-  EIP = (Bit32u) ip;
+  ip     = pop_16();
+  cs_raw = pop_16();
+
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
+  EIP = (Bit32u) ip;
 
 done:
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
-void BX_CPU_C::CALL_Aw(bxInstruction_c *i)
+void BX_CPU_C::CALL_Jw(bxInstruction_c *i)
 {
   Bit32u new_EIP;
 
@@ -154,13 +175,11 @@ void BX_CPU_C::CALL_Aw(bxInstruction_c *i)
   new_EIP = EIP + (Bit32s) i->Id();
   new_EIP &= 0x0000ffff;
 
-#if BX_CPU_LEVEL >= 2
   if (new_EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
-    BX_ERROR(("CALL_Aw: new_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].limit"));
+    BX_ERROR(("CALL_Jw: new_IP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].limit"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
-#endif
 
   /* push 16 bit EA of next instruction */
   push_16(IP);
@@ -183,19 +202,24 @@ void BX_CPU_C::CALL16_Ap(bxInstruction_c *i)
   disp16 = i->Iw();
   cs_raw = i->Iw2();
 
-#if BX_CPU_LEVEL >= 2
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
   if (protected_mode()) {
     BX_CPU_THIS_PTR call_protected(i, cs_raw, disp16);
     goto done;
   }
-#endif
 
   push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
   push_16((Bit16u) EIP);
-  EIP = (Bit32u) disp16;
+
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
+  EIP = (Bit32u) disp16;
 
 done:
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
@@ -212,16 +236,14 @@ void BX_CPU_C::CALL_Ew(bxInstruction_c *i)
     op1_16 = BX_READ_16BIT_REG(i->rm());
   }
   else {
-    read_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    op1_16 = read_virtual_word(i->seg(), RMAddr(i));
   }
 
-#if BX_CPU_LEVEL >= 2
   if (op1_16 > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled)
   {
     BX_ERROR(("CALL_Ew: IP out of CS limits!"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
-#endif
 
   push_16(IP);
   EIP = op1_16;
@@ -240,15 +262,13 @@ void BX_CPU_C::CALL16_Ep(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
 
-  if (i->modC0()) {
-    BX_INFO(("CALL_Ep: op1 is a register"));
-    exception(BX_UD_EXCEPTION, 0, 0);
-  }
+  op1_16 = read_virtual_word(i->seg(), RMAddr(i));
+  cs_raw = read_virtual_word(i->seg(), RMAddr(i)+2);
 
-  read_virtual_word(i->seg(), RMAddr(i), &op1_16);
-  read_virtual_word(i->seg(), RMAddr(i)+2, &cs_raw);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
-  if ( protected_mode() ) {
+  if (protected_mode()) {
     BX_CPU_THIS_PTR call_protected(i, cs_raw, op1_16);
     goto done;
   }
@@ -256,10 +276,13 @@ void BX_CPU_C::CALL16_Ep(bxInstruction_c *i)
   push_16(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
   push_16(IP);
 
-  EIP = op1_16;
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
+  EIP = op1_16;
 
 done:
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
@@ -272,43 +295,56 @@ void BX_CPU_C::JMP_Jw(bxInstruction_c *i)
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
-void BX_CPU_C::JCC_Jw(bxInstruction_c *i)
+void BX_CPU_C::JO_Jw(bxInstruction_c *i)
 {
-  bx_bool condition;
-
-  switch (i->b1() & 0x0f) {
-    case 0x00: /* JO */ condition = get_OF(); break;
-    case 0x01: /* JNO */ condition = !get_OF(); break;
-    case 0x02: /* JB */ condition = get_CF(); break;
-    case 0x03: /* JNB */ condition = !get_CF(); break;
-    case 0x04: /* JZ */ condition = get_ZF(); break;
-    case 0x05: /* JNZ */ condition = !get_ZF(); break;
-    case 0x06: /* JBE */ condition = get_CF() || get_ZF(); break;
-    case 0x07: /* JNBE */ condition = !get_CF() && !get_ZF(); break;
-    case 0x08: /* JS */ condition = get_SF(); break;
-    case 0x09: /* JNS */ condition = !get_SF(); break;
-    case 0x0A: /* JP */ condition = get_PF(); break;
-    case 0x0B: /* JNP */ condition = !get_PF(); break;
-    case 0x0C: /* JL */ condition = getB_SF() != getB_OF(); break;
-    case 0x0D: /* JNL */ condition = getB_SF() == getB_OF(); break;
-    case 0x0E: /* JLE */ condition = get_ZF() || (getB_SF() != getB_OF()); break;
-    case 0x0F: /* JNLE */ condition = (getB_SF() == getB_OF()) && !get_ZF(); break;
-    default:
-      condition = 0; // For compiler...all targets should set condition.
-      break;
-  }
-
-  if (condition) {
+  if (get_OF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
     new_EIP &= 0x0000ffff;
     branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
-#if BX_INSTRUMENTATION
-  else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNO_Jw(bxInstruction_c *i)
+{
+  if (! get_OF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
-#endif
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JB_Jw(bxInstruction_c *i)
+{
+  if (get_CF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNB_Jw(bxInstruction_c *i)
+{
+  if (! get_CF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
 void BX_CPU_C::JZ_Jw(bxInstruction_c *i)
@@ -318,47 +354,172 @@ void BX_CPU_C::JZ_Jw(bxInstruction_c *i)
     new_EIP &= 0x0000ffff;
     branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
-#if BX_INSTRUMENTATION
-  else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-  }
-#endif
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
 void BX_CPU_C::JNZ_Jw(bxInstruction_c *i)
 {
-  if (!get_ZF()) {
+  if (! get_ZF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
     new_EIP &= 0x0000ffff;
     branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
-#if BX_INSTRUMENTATION
-  else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-  }
-#endif
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
 }
 
-void BX_CPU_C::JMP_Ew(bxInstruction_c *i)
+void BX_CPU_C::JBE_Jw(bxInstruction_c *i)
 {
-  Bit16u op1_16;
-
-  if (i->modC0()) {
-    op1_16 = BX_READ_16BIT_REG(i->rm());
+  if (get_CF() || get_ZF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
-  else {
-    read_virtual_word(i->seg(), RMAddr(i), &op1_16);
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNBE_Jw(bxInstruction_c *i)
+{
+  if (! (get_CF() || get_ZF())) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
   }
 
-  Bit32u new_EIP = op1_16;
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JS_Jw(bxInstruction_c *i)
+{
+  if (get_SF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNS_Jw(bxInstruction_c *i)
+{
+  if (! get_SF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JP_Jw(bxInstruction_c *i)
+{
+  if (get_PF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNP_Jw(bxInstruction_c *i)
+{
+  if (! get_PF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JL_Jw(bxInstruction_c *i)
+{
+  if (getB_SF() != getB_OF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNL_Jw(bxInstruction_c *i)
+{
+  if (getB_SF() == getB_OF()) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JLE_Jw(bxInstruction_c *i)
+{
+  if (get_ZF() || (getB_SF() != getB_OF())) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JNLE_Jw(bxInstruction_c *i)
+{
+  if (! get_ZF() && (getB_SF() == getB_OF())) {
+    Bit32u new_EIP = EIP + (Bit32s) i->Id();
+    new_EIP &= 0x0000ffff;
+    branch_near32(new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
+    return;
+  }
+
+  BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
+}
+
+void BX_CPU_C::JMP_EwM(bxInstruction_c *i)
+{
+  Bit16u new_IP = read_virtual_word(i->seg(), RMAddr(i));
+
+  branch_near32((Bit32u) new_IP);
+
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_IP);
+}
+
+void BX_CPU_C::JMP_EwR(bxInstruction_c *i)
+{
+  Bit32u new_EIP = BX_READ_16BIT_REG(i->rm());
   branch_near32(new_EIP);
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
-  /* Far indirect jump */
-
+/* Far indirect jump */
 void BX_CPU_C::JMP16_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
@@ -366,24 +527,17 @@ void BX_CPU_C::JMP16_Ep(bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
-  if (i->modC0()) {
-    /* far indirect must specify a memory address */
-    BX_INFO(("JMP_Ep(): op1 is a register"));
-    exception(BX_UD_EXCEPTION, 0, 0);
-  }
+  op1_16 = read_virtual_word(i->seg(), RMAddr(i));
+  cs_raw = read_virtual_word(i->seg(), RMAddr(i)+2);
 
-  read_virtual_word(i->seg(), RMAddr(i), &op1_16);
-  read_virtual_word(i->seg(), RMAddr(i)+2, &cs_raw);
-
-#if BX_CPU_LEVEL >= 2
-  if ( protected_mode() ) {
+  // jump_protected doesn't affect RSP so it is RSP safe
+  if (protected_mode()) {
     BX_CPU_THIS_PTR jump_protected(i, cs_raw, op1_16);
     goto done;
   }
-#endif
 
-  EIP = op1_16;
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
+  EIP = op1_16;
 
 done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP,
@@ -402,33 +556,31 @@ void BX_CPU_C::IRET16(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR nmi_disable = 0;
 
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
   if (v8086_mode()) {
     // IOPL check in stack_return_from_v86()
     iret16_stack_return_from_v86(i);
     goto done;
   }
 
-#if BX_CPU_LEVEL >= 2
-  if (BX_CPU_THIS_PTR cr0.get_PE()) {
+  if (protected_mode()) {
     iret_protected(i);
     goto done;
   }
-#endif
 
-  if (! can_pop(6)) {
-    BX_ERROR(("IRET: top 6 bytes of stack not within stack limits"));
-    exception(BX_SS_EXCEPTION, 0, 0);
-  }
-
-  pop_16(&ip);
-  pop_16(&cs_raw);
-  pop_16(&flags);
+  ip     = pop_16();
+  cs_raw = pop_16();
+  flags  = pop_16();
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
   EIP = (Bit32u) ip;
   write_flags(flags, /* change IOPL? */ 1, /* change IF? */ 1);
 
 done:
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }

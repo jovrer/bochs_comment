@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack16.cc,v 1.21 2007/03/02 21:03:23 sshwarts Exp $
+// $Id: stack16.cc,v 1.29 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -30,10 +31,14 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+// Make code more tidy with a few macros.
+#if BX_SUPPORT_X86_64==0
+#define RSP ESP
+#endif
 
 void BX_CPU_C::PUSH_RX(bxInstruction_c *i)
 {
-  push_16(BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx);
+  push_16(BX_READ_16BIT_REG(i->opcodeReg()));
 }
 
 void BX_CPU_C::PUSH16_CS(bxInstruction_c *i)
@@ -68,37 +73,58 @@ void BX_CPU_C::PUSH16_SS(bxInstruction_c *i)
 
 void BX_CPU_C::POP16_DS(bxInstruction_c *i)
 {
-  Bit16u ds;
-  pop_16(&ds);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u ds = pop_16();
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS], ds);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
 }
 
 void BX_CPU_C::POP16_ES(bxInstruction_c *i)
 {
-  Bit16u es;
-  pop_16(&es);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u es = pop_16();
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES], es);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 }
 
 void BX_CPU_C::POP16_FS(bxInstruction_c *i)
 {
-  Bit16u fs;
-  pop_16(&fs);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u fs = pop_16();
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], fs);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 }
 
 void BX_CPU_C::POP16_GS(bxInstruction_c *i)
 {
-  Bit16u gs;
-  pop_16(&gs);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u gs = pop_16();
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], gs);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 }
 
 void BX_CPU_C::POP16_SS(bxInstruction_c *i)
 {
-  Bit16u ss;
-  pop_16(&ss);
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  Bit16u ss = pop_16();
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], ss);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
 
   // POP SS inhibits interrupts, debug exceptions and single-step
   // trap exceptions until the execution boundary following the
@@ -111,30 +137,47 @@ void BX_CPU_C::POP16_SS(bxInstruction_c *i)
 
 void BX_CPU_C::POP_RX(bxInstruction_c *i)
 {
-  Bit16u rx;
-  pop_16(&rx);
-  BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx = rx;
+  BX_WRITE_16BIT_REG(i->opcodeReg(), pop_16());
 }
 
-void BX_CPU_C::POP_Ew(bxInstruction_c *i)
+void BX_CPU_C::POP_EwM(bxInstruction_c *i)
 {
-  Bit16u val16;
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
-  pop_16(&val16);
+  Bit16u val16 = pop_16();
 
-  if (i->modC0()) {
-    BX_WRITE_16BIT_REG(i->rm(), val16);
+  // Note: there is one little weirdism here.  It is possible to use 
+  // SP in the modrm addressing. If used, the value of SP after the 
+  // pop is used to calculate the address.
+  if (i->rm()==4 && i->sibBase()==4) {
+    BX_CPU_CALL_METHODR (i->ResolveModrm, (i));
   }
-  else {
-    // Note: there is one little weirdism here.  When 32bit addressing
-    // is used, it is possible to use ESP in the modrm addressing.
-    // If used, the value of ESP after the pop is used to calculate
-    // the address.
-    if (i->as32L() && (!i->modC0()) && (i->rm()==4) && (i->sibBase()==4)) {
-      BX_CPU_CALL_METHODR (i->ResolveModrm, (i));
-    }
-    write_virtual_word(i->seg(), RMAddr(i), &val16);
-  }
+  write_virtual_word(i->seg(), RMAddr(i), val16);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+}
+
+void BX_CPU_C::POP_EwR(bxInstruction_c *i)
+{
+  BX_WRITE_16BIT_REG(i->rm(), pop_16());
+}
+
+void BX_CPU_C::PUSH_Iw(bxInstruction_c *i)
+{
+  push_16(i->Iw());
+}
+
+void BX_CPU_C::PUSH_EwM(bxInstruction_c *i)
+{
+  Bit16u op1_16 = read_virtual_word(i->seg(), RMAddr(i));
+
+  push_16(op1_16);
+}
+
+void BX_CPU_C::PUSH_EwR(bxInstruction_c *i)
+{
+  push_16(BX_READ_16BIT_REG(i->rm()));
 }
 
 #if BX_CPU_LEVEL >= 3
@@ -145,26 +188,26 @@ void BX_CPU_C::PUSHAD16(bxInstruction_c *i)
 
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
   {
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  2), &AX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  4), &CX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  6), &DX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  8), &BX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 10), &temp_SP);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 12), &BP);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 14), &SI);
-    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 16), &DI);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  2), AX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  4), CX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  6), DX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP -  8), BX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 10), temp_SP);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 12), BP);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 14), SI);
+    write_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP - 16), DI);
     ESP -= 16;
   }
   else
   {
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  2), &AX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  4), &CX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  6), &DX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  8), &BX);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 10), &temp_SP);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 12), &BP);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 14), &SI);
-    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 16), &DI);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  2), AX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  4), CX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  6), DX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP -  8), BX);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 10), temp_SP);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 12), BP);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 14), SI);
+    write_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP - 16), DI);
     SP -= 16;
   }
 }
@@ -176,25 +219,25 @@ void BX_CPU_C::POPAD16(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
   {
     Bit32u temp_ESP = ESP;
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  0), &di);
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  2), &si);
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  4), &bp);
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  8), &bx);
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP + 10), &dx);
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP + 12), &cx);
-    read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP + 14), &ax);
+    di = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  0));
+    si = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  2));
+    bp = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  4));
+    bx = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP +  8));
+    dx = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP + 10));
+    cx = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP + 12));
+    ax = read_virtual_word(BX_SEG_REG_SS, (Bit32u) (temp_ESP + 14));
     ESP += 16;
   }
   else
   {
     Bit16u temp_SP = SP;
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  0), &di);
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  2), &si);
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  4), &bp);
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  8), &bx);
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP + 10), &dx);
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP + 12), &cx);
-    read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP + 14), &ax);
+    di = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  0));
+    si = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  2));
+    bp = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  4));
+    bx = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP +  8));
+    dx = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP + 10));
+    cx = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP + 12));
+    ax = read_virtual_word(BX_SEG_REG_SS, (Bit16u) (temp_SP + 14));
     SP += 16;
   }
 
@@ -207,24 +250,3 @@ void BX_CPU_C::POPAD16(bxInstruction_c *i)
   AX = ax;
 }
 #endif
-
-void BX_CPU_C::PUSH_Iw(bxInstruction_c *i)
-{
-  push_16(i->Iw());
-}
-
-void BX_CPU_C::PUSH_Ew(bxInstruction_c *i)
-{
-  Bit16u op1_16;
-
-  /* op1_16 is a register or memory reference */
-  if (i->modC0()) {
-    op1_16 = BX_READ_16BIT_REG(i->rm());
-  }
-  else {
-    /* pointer, segment address pair */
-    read_virtual_word(i->seg(), RMAddr(i), &op1_16);
-  }
-
-  push_16(op1_16);
-}

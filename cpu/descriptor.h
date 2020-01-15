@@ -1,14 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: descriptor.h,v 1.17 2006/08/31 18:18:15 sshwarts Exp $
+// $Id: descriptor.h,v 1.21 2007/12/10 19:08:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//   Copyright (c) 2007 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -45,9 +40,13 @@ typedef struct { /* bx_selector_t */
 typedef struct
 {
 
-#define SegValidCache (0x1)
-#define SegAccessROK  (0x2)
-#define SegAccessWOK  (0x4)
+#define SegValidCache   (0x1)
+#define SegAccessROK    (0x2)
+#define SegAccessWOK    (0x4)
+#define SegAccess4G     (0x8)
+
+#define SegAccessROK4G  (SegAccessROK|SegAccess4G)
+#define SegAccessWOK4G  (SegAccessWOK|SegAccess4G)
 
   unsigned valid;        // Holds above values, Or'd together.  Used to
                          // hold only 0 or 1.
@@ -129,19 +128,11 @@ union {
 #endif
   } segment;
   struct {
-    Bit8u   word_count;    /* 5bits (0..31) #words to copy from caller's stack
-                            * to called procedure's stack.  (call gates only)*/
-    Bit16u  dest_selector;
-    Bit16u  dest_offset;
-  } gate286;
-#if BX_CPU_LEVEL >= 3
-  struct {
-    Bit8u   dword_count;   /* 5bits (0..31) #dwords to copy from caller's stack
-                            * to called procedure's stack. (call gates only) */
+    Bit8u   param_count;   /* 5bits (0..31) #words/dword to copy from caller's
+                            * stack to called procedure's stack. */
     Bit16u  dest_selector;
     Bit32u  dest_offset;
-  } gate386;
-#endif
+  } gate;
   struct {                 /* type 5: Task Gate Descriptor */
     Bit16u  tss_selector;  /* TSS segment selector */
   } taskgate;
@@ -169,9 +160,12 @@ union {
 #define IS_CODE_SEGMENT(type)             (((type) >> 3) & 0x1)
 #define IS_CODE_SEGMENT_CONFORMING(type)  (((type) >> 2) & 0x1)
 #define IS_DATA_SEGMENT_EXPAND_DOWN(type) (((type) >> 2) & 0x1)
-#define IS_CODE_SEGMENT_READABLE(type)    (((type) >> 1) & 0x1)
-#define IS_DATA_SEGMENT_WRITEABLE(type)   (((type) >> 1) & 0x1)
-#define IS_SEGMENT_ACCESSED(type)         ( (type)       & 0x1)
+
+// readable/writeable bit is ignored when in 64-bit mode
+#define IS_CODE_SEGMENT_READABLE(type)    (Is64BitMode() || (((type) >> 1) & 0x1))
+#define IS_DATA_SEGMENT_WRITEABLE(type)   (Is64BitMode() || (((type) >> 1) & 0x1))
+
+#define IS_SEGMENT_ACCESSED(type)         ((type) & 0x1)
 
 #define BX_SEGMENT_CODE                   (0x8)
 #define BX_SEGMENT_DATA_EXPAND_DOWN       (0x4)

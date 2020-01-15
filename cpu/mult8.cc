@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mult8.cc,v 1.21 2006/03/06 22:03:01 sshwarts Exp $
+// $Id: mult8.cc,v 1.25 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -43,19 +44,23 @@ void BX_CPU_C::MUL_ALEb(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_byte(i->seg(), RMAddr(i), &op2);
+    op2 = read_virtual_byte(i->seg(), RMAddr(i));
   }
 
-  Bit32u product_16  = ((Bit16u) op1) * ((Bit16u) op2);
+  Bit32u product_16 = ((Bit16u) op1) * ((Bit16u) op2);
 
   Bit8u product_8l = (product_16 & 0xFF);
   Bit8u product_8h =  product_16 >> 8;
 
-  /* set EFLAGS */
-  SET_FLAGS_OSZAPC_S1S2_8(product_8l, product_8h, BX_INSTR_MUL8);
-
   /* now write product back to destination */
   AX = product_16;
+
+  /* set EFLAGS */
+  SET_FLAGS_OSZAPC_LOGIC_8(product_8l);
+  if(product_8h != 0)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::IMUL_ALEb(bxInstruction_c *i)
@@ -70,22 +75,25 @@ void BX_CPU_C::IMUL_ALEb(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_byte(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    op2 = (Bit8s) read_virtual_byte(i->seg(), RMAddr(i));
   }
 
   Bit16s product_16 = op1 * op2;
+  Bit8u  product_8 = (product_16 & 0xFF);
 
-  Bit8u product_8l = (product_16 & 0xFF);
-  Bit8u product_8h =  product_16 >> 8;
+  /* now write product back to destination */
+  AX = product_16;
 
   /* set EFLAGS:
    * IMUL r/m8: condition for clearing CF & OF:
    *   AX = sign-extend of AL to 16 bits
    */
-  SET_FLAGS_OSZAPC_S1S2_8(product_8l, product_8h, BX_INSTR_IMUL8);
 
-  /* now write product back to destination */
-  AX = product_16;
+  SET_FLAGS_OSZAPC_LOGIC_8(product_8);
+  if(product_16 != (Bit8s) product_16)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::DIV_ALEb(bxInstruction_c *i)
@@ -101,7 +109,7 @@ void BX_CPU_C::DIV_ALEb(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_byte(i->seg(), RMAddr(i), &op2);
+    op2 = read_virtual_byte(i->seg(), RMAddr(i));
   }
 
   if (op2 == 0) {
@@ -143,7 +151,7 @@ void BX_CPU_C::IDIV_ALEb(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_byte(i->seg(), RMAddr(i), (Bit8u *) &op2);
+    op2 = (Bit8s) read_virtual_byte(i->seg(), RMAddr(i));
   }
 
   if (op2 == 0)

@@ -1,3 +1,5 @@
+/batch-build.perl/1.11/Thu Sep 20 17:33:31 2007//TREL_2_3_6_FINAL
+/makeall.sh/1.1/Mon Sep 23 17:57:18 2002//TREL_2_3_6_FINAL
 D/beos////
 D/debian////
 D/linux////
@@ -5,5 +7,3 @@ D/macos////
 D/macosx////
 D/redhat////
 D/win32////
-/batch-build.perl/1.9/Sat Oct 26 13:14:11 2002//TREL_2_0_2_FINAL
-/makeall.sh/1.1/Mon Sep 23 17:57:18 2002//TREL_2_0_2_FINAL

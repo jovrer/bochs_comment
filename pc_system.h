@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h,v 1.39 2006/05/27 15:54:47 sshwarts Exp $
+// $Id: pc_system.h,v 1.42 2007/11/01 18:03:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -135,7 +135,7 @@ public:
 #if BX_DEBUGGER
   static void timebp_handler(void* this_ptr);
 #endif
-
+  static void benchmarkTimer(void* this_ptr);
 
   // ===========================
   // Non-timer oriented features
@@ -156,7 +156,6 @@ public:
   // when A20 line is disabled, mask physical memory addresses to:
   //    286:      20 bits
   //    386:      20 bits
-  //
   Bit32u  a20_mask;
 
   volatile bx_bool kill_bochs_request;
@@ -175,10 +174,9 @@ public:
   void    set_enable_a20(bx_bool value);
   bx_bool get_enable_a20(void);
   void    MemoryMappingChanged(void); // flush TLB in all CPUs
+  void    invlpg(bx_address addr);    // flush TLB page in all CPUs
   void    exit(void);
-#if BX_SUPPORT_SAVE_RESTORE
   void    register_state(void);
-#endif
 };
 
 #endif

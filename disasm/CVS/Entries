@@ -1,6 +1,11 @@
-/.cvsignore/1.2/Fri Sep  6 22:24:30 2002//TREL_2_0_2_FINAL
-/Makefile.in/1.10/Mon Nov 25 15:05:49 2002//TREL_2_0_2_FINAL
-/dis_decode.cc/1.12/Wed Jan 22 13:18:30 2003//TREL_2_0_2_FINAL
-/dis_groups.cc/1.7/Wed Jan 22 13:18:30 2003//TREL_2_0_2_FINAL
-/disasm.h/1.8/Fri Oct 25 11:44:35 2002//TREL_2_0_2_FINAL
+/.cvsignore/1.2/Fri Sep  6 22:24:30 2002//TREL_2_3_6_FINAL
+/Makefile.in/1.15/Fri Dec 23 14:15:13 2005//TREL_2_3_6_FINAL
+/dis_decode.cc/1.42/Sat Nov 17 16:19:14 2007//TREL_2_3_6_FINAL
+/dis_groups.cc/1.38/Wed Sep 19 19:38:10 2007//TREL_2_3_6_FINAL
+/dis_tables.h/1.32/Wed Sep 19 19:38:10 2007//TREL_2_3_6_FINAL
+/dis_tables.inc/1.19/Sat Nov 17 16:19:14 2007//TREL_2_3_6_FINAL
+/disasm.h/1.39/Sun Nov 18 21:29:17 2007//TREL_2_3_6_FINAL
+/opcodes.inc/1.18/Tue Oct  9 20:24:42 2007//TREL_2_3_6_FINAL
+/resolve.cc/1.16/Wed Nov 14 22:49:51 2007//TREL_2_3_6_FINAL
+/syntax.cc/1.12/Sun Nov 18 21:29:17 2007//TREL_2_3_6_FINAL
 D

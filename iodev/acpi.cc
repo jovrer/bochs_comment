@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: acpi.cc,v 1.9 2007/08/04 08:57:42 vruppert Exp $
+// $Id: acpi.cc,v 1.11 2007/11/25 20:22:10 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2006  Volker Ruppert
@@ -29,7 +29,6 @@
 #define BX_PLUGGABLE
 
 #include "bochs.h"
-#include "cpu/cpu.h"
 #include "iodev.h"
 #if BX_SUPPORT_PCI && BX_SUPPORT_ACPI
 
@@ -59,6 +58,8 @@ const Bit8u acpi_sm_iomask[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 2, 0, 0, 0
 
 #define ACPI_ENABLE 0xf1
 #define ACPI_DISABLE 0xf0
+
+extern void apic_bus_deliver_smi(void);
 
 int libacpi_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
@@ -189,10 +190,9 @@ void bx_acpi_ctrl_c::reset(unsigned type)
   }
 }
 
-#if BX_SUPPORT_SAVE_RESTORE
 void bx_acpi_ctrl_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "acpi", "ACPI Controller State", 6);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "acpi", "ACPI Controller State", 6);
   BXRS_HEX_PARAM_FIELD(list, pmsts, BX_ACPI_THIS s.pmsts);
   BXRS_HEX_PARAM_FIELD(list, pmen, BX_ACPI_THIS s.pmen);
   BXRS_HEX_PARAM_FIELD(list, pmcntrl, BX_ACPI_THIS s.pmcntrl);
@@ -231,7 +231,6 @@ void bx_acpi_ctrl_c::after_restore_state(void)
      BX_INFO(("new SM base address: 0x%04x", BX_ACPI_THIS s.sm_base));
   }
 }
-#endif
 
 void bx_acpi_ctrl_c::set_irq_level(bx_bool level)
 {
@@ -278,7 +277,7 @@ void bx_acpi_ctrl_c::generate_smi(Bit8u value)
   }
 
   if (BX_ACPI_THIS s.pci_conf[0x5b] & 0x02) {
-    BX_CPU(0)->deliver_SMI();
+    apic_bus_deliver_smi();
   }
 }
 

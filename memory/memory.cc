@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.cc,v 1.59 2006/12/29 08:02:35 sshwarts Exp $
+// $Id: memory.cc,v 1.62 2007/11/01 18:03:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -62,10 +62,10 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, vo
 #if BX_DEBUGGER
     // (mch) Check for physical write break points, TODO
     // (bbd) Each breakpoint should have an associated CPU#, TODO
-    for (int i = 0; i < num_write_watchpoints; i++) {
+    for (unsigned i = 0; i < num_write_watchpoints; i++) {
       if (write_watchpoint[i] == a20addr) {
-        BX_CPU(0)->watchpoint = a20addr;
-        BX_CPU(0)->break_point = BREAK_POINT_WRITE;
+        cpu->watchpoint  = a20addr;
+        cpu->break_point = BREAK_POINT_WRITE;
         break;
       }
     }
@@ -86,6 +86,10 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, vo
         goto mem_write;
     }
   }
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  BX_MEM_THIS check_monitor(a20addr, len);
+#endif
 
   memory_handler = BX_MEM_THIS memory_handlers[a20addr >> 20];
   while (memory_handler) {
@@ -219,10 +223,10 @@ BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, voi
 #if BX_DEBUGGER
     // (mch) Check for physical read break points, TODO
     // (bbd) Each breakpoint should have an associated CPU#, TODO
-    for (int i = 0; i < num_read_watchpoints; i++) {
+    for (unsigned i = 0; i < num_read_watchpoints; i++) {
       if (read_watchpoint[i] == a20addr) {
-         BX_CPU(0)->watchpoint = a20addr;
-         BX_CPU(0)->break_point = BREAK_POINT_READ;
+         cpu->watchpoint  = a20addr;
+         cpu->break_point = BREAK_POINT_READ;
          break;
       }
     }

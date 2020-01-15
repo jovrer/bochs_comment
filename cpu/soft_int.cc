@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc,v 1.32 2006/08/31 18:18:17 sshwarts Exp $
+// $Id: soft_int.cc,v 1.36 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -34,18 +34,18 @@
 #include "extdb.h"
 #endif
 
+// Make code more tidy with a few macros.
+#if BX_SUPPORT_X86_64==0
+#define RSP ESP
+#endif
+
 void BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 {
-  if (i->modC0()) {
-    BX_INFO(("BOUND_GwMa: op2 must be memory reference"));
-    UndefinedOpcode(i);
-  }
-
   Bit16s bound_min, bound_max;
   Bit16s op1_16 = BX_READ_16BIT_REG(i->nnn());
 
-  read_virtual_word(i->seg(), RMAddr(i),   (Bit16u *) &bound_min);
-  read_virtual_word(i->seg(), RMAddr(i)+2, (Bit16u *) &bound_max);
+  bound_min = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
+  bound_max = (Bit16s) read_virtual_word(i->seg(), RMAddr(i)+2);
 
   if (op1_16 < bound_min || op1_16 > bound_max) {
     BX_INFO(("BOUND_GdMa: fails bounds test"));
@@ -55,16 +55,11 @@ void BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 
 void BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
 {
-  if (i->modC0()) {
-    BX_INFO(("BOUND_GdMa: op2 must be memory reference"));
-    UndefinedOpcode(i);
-  }
-
   Bit32s bound_min, bound_max;
   Bit32s op1_32 = BX_READ_32BIT_REG(i->nnn());
 
-  read_virtual_dword(i->seg(), RMAddr(i),   (Bit32u *) &bound_min);
-  read_virtual_dword(i->seg(), RMAddr(i)+4, (Bit32u *) &bound_max);
+  bound_min = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
+  bound_max = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i)+4);
 
   if (op1_32 < bound_min || op1_32 > bound_max) {
     BX_INFO(("BOUND_GdMa: fails bounds test"));
@@ -85,7 +80,14 @@ void BX_CPU_C::INT1(bxInstruction_c *i)
   trap_debugger(0);
 #endif
 
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  // interrupt is not RSP safe
   interrupt(1, 1, 0, 0);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
@@ -99,7 +101,14 @@ void BX_CPU_C::INT3(bxInstruction_c *i)
   BX_CPU_THIS_PTR show_flag |= Flag_softint;
 #endif
 
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
+
+  // interrupt is not RSP safe
   interrupt(3, 1, 0, 0);
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
@@ -113,6 +122,9 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
 #endif
 
   Bit8u vector = i->Ib();
+
+  BX_CPU_THIS_PTR speculative_rsp = 1;
+  BX_CPU_THIS_PTR prev_rsp = RSP;
 
   if (v8086_mode()) {
 #if BX_SUPPORT_VME
@@ -130,7 +142,7 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
       {
         // redirect interrupt through virtual-mode idt
         v86_redirect_interrupt(vector);
-        return;
+        goto done;
       }
     }
 #endif
@@ -149,6 +161,11 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
 #endif
 
   interrupt(vector, 1, 0, 0);
+
+done:
+
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
@@ -161,7 +178,14 @@ void BX_CPU_C::INTO(bxInstruction_c *i)
 #endif
 
   if (get_OF()) {
+    BX_CPU_THIS_PTR speculative_rsp = 1;
+    BX_CPU_THIS_PTR prev_rsp = RSP;
+
+    // interrupt is not RSP safe
     interrupt(4, 1, 0, 0);
+
+    BX_CPU_THIS_PTR speculative_rsp = 0;
+
     BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                         BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                         EIP);

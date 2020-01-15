@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.352 2007/09/13 09:44:56 sshwarts Exp $
+// $Id: main.cc,v 1.370 2007/12/21 21:16:34 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -75,8 +75,11 @@ void   bx_unmapped_io_write_handler(Bit32u address, Bit32u value,
                                     unsigned io_len);
 #endif
 
+void bx_init_hardware(void);
+void bx_init_options(void);
 void bx_init_bx_dbg(void);
-static char *divider = "========================================================================";
+
+static const char *divider = "========================================================================";
 static logfunctions thePluginLog;
 logfunctions *pluginlog = &thePluginLog;
 
@@ -102,6 +105,10 @@ BOCHSAPI BX_CPU_C_PTR *bx_cpu_array = NULL;
 #else
 // single processor simulation, so there's one of everything
 BOCHSAPI BX_CPU_C bx_cpu;
+#endif
+
+#if BX_PROVIDE_CPU_MEMORY==1
+BOCHSAPI BX_MEM_C bx_mem;
 #endif
 
 char *bochsrc_filename = NULL;
@@ -237,11 +244,9 @@ void print_tree(bx_param_c *node, int level)
 	}
 	break;
       }
-#if BX_SUPPORT_SAVE_RESTORE
     case BXT_PARAM_DATA:
       dbg_printf("%s = 'size=%d' (binary data)\n", node->get_name(), ((bx_shadow_data_c*)node)->get_size());
       break;
-#endif
     default:
       dbg_printf("%s (unknown parameter type)\n", node->get_name());
   }
@@ -254,16 +259,16 @@ int bxmain () {
   setlocale (LC_ALL, "");
 #endif
   bx_user_quit = 0;
-  bx_init_siminterface ();   // create the SIM object
+  bx_init_siminterface();   // create the SIM object
   static jmp_buf context;
   if (setjmp (context) == 0) {
     SIM->set_quit_context (&context);
-    if (bx_init_main (bx_startup_flags.argc, bx_startup_flags.argv) < 0) 
+    if (bx_init_main(bx_startup_flags.argc, bx_startup_flags.argv) < 0) 
       return 0;
     // read a param to decide which config interface to start.
     // If one exists, start it.  If not, just begin.
     bx_param_enum_c *ci_param = SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE);
-    char *ci_name = ci_param->get_selected();
+    const char *ci_name = ci_param->get_selected();
     if (!strcmp(ci_name, "textconfig")) {
 #if BX_USE_TEXTCONFIG
       init_text_config_interface();   // in textconfig.h
@@ -482,9 +487,8 @@ void print_usage()
     "  -n               no configuration file\n"
     "  -f configfile    specify configuration file\n"
     "  -q               quick start (skip configuration interface)\n"
-#if BX_SUPPORT_SAVE_RESTORE
+    "  -benchmark n     run bochs in benchmark mode for millions of emulated ticks\n"
     "  -r path          restore the Bochs state from path\n"
-#endif
 #if BX_DEBUGGER
     "  -rc filename     execute debugger commands stored in file\n"
 #endif
@@ -497,7 +501,7 @@ void print_usage()
 #endif
 }
 
-int bx_init_main (int argc, char *argv[])
+int bx_init_main(int argc, char *argv[])
 {
   // To deal with initialization order problems inherent in C++, use the macros
   // SAFE_GET_IOFUNC and SAFE_GET_GENLOG to retrieve "io" and "genlog" in all
@@ -546,7 +550,11 @@ int bx_init_main (int argc, char *argv[])
       if (++arg >= argc) BX_PANIC(("-qf must be followed by a filename"));
       else bochsrc_filename = argv[arg];
     }
-#if BX_SUPPORT_SAVE_RESTORE
+    else if (!strcmp("-benchmark", argv[arg])) {
+      SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_QUICK_START);
+      if (++arg >= argc) BX_PANIC(("-benchmark must be followed by a number"));
+      else SIM->get_param_num(BXPN_BOCHS_BENCHMARK)->set(atoi(argv[arg]));
+    }
     else if (!strcmp("-r", argv[arg])) {
       if (++arg >= argc) BX_PANIC(("-r must be followed by a path"));
       else {
@@ -555,7 +563,6 @@ int bx_init_main (int argc, char *argv[])
         SIM->get_param_string(BXPN_RESTORE_PATH)->set(argv[arg]);
       }
     }
-#endif
 #if BX_WITH_CARBON
     else if (!strncmp("-psn", argv[arg], 4)) {
       // "-psn" is passed if we are launched by double-clicking
@@ -681,12 +688,10 @@ int bx_init_main (int argc, char *argv[])
 
   int norcfile = 1;
 
-#if BX_SUPPORT_SAVE_RESTORE
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     load_rcfile = 0;
     norcfile = 0;
   }
-#endif
   if (load_rcfile) {
     /* parse configuration file and command line arguments */
 #ifdef WIN32
@@ -718,15 +723,12 @@ int bx_init_main (int argc, char *argv[])
     SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_LOAD_START);
   }
 
-#if BX_SUPPORT_SAVE_RESTORE
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     if (arg < argc) {
       BX_ERROR(("WARNING: bochsrc options are ignored in restore mode!"));
     }
   }
-  else
-#endif
-  {
+  else {
     // parse the rest of the command line.  This is done after reading the
     // configuration file so that the command line arguments can override
     // the settings from the file.
@@ -752,9 +754,9 @@ bx_bool load_and_init_display_lib()
   }
   BX_ASSERT(bx_gui == NULL);
   bx_param_enum_c *ci_param = SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE);
-  char *ci_name = ci_param->get_selected();
+  const char *ci_name = ci_param->get_selected();
   bx_param_enum_c *gui_param = SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY);
-  char *gui_name = gui_param->get_selected();
+  const char *gui_name = gui_param->get_selected();
   if (!strcmp(ci_name, "wx")) {
     BX_ERROR(("change of the config interface to wx not implemented yet"));
   }
@@ -831,7 +833,6 @@ bx_bool load_and_init_display_lib()
 
 int bx_begin_simulation (int argc, char *argv[])
 {
-#if BX_SUPPORT_SAVE_RESTORE
   SIM->init_save_restore();
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     if (!SIM->restore_config()) {
@@ -839,7 +840,7 @@ int bx_begin_simulation (int argc, char *argv[])
       SIM->get_param_bool(BXPN_RESTORE_FLAG)->set(0);
     }
   }
-#endif
+
   // deal with gui selection
   if (!load_and_init_display_lib ()) {
     BX_PANIC (("no gui module was loaded"));
@@ -850,8 +851,8 @@ int bx_begin_simulation (int argc, char *argv[])
                  SIM->get_param_num(BXPN_CPU_NCORES)->get() *
                  SIM->get_param_num(BXPN_CPU_NTHREADS)->get();
 
-  BX_ASSERT(bx_cpu_count < BX_MAX_SMP_THREADS_SUPPORTED);
-  BX_ASSERT(bx_cpu_count > 0);
+  BX_ASSERT(bx_cpu_count <= BX_MAX_SMP_THREADS_SUPPORTED);
+  BX_ASSERT(bx_cpu_count >  0);
 
   bx_init_hardware();
 
@@ -864,10 +865,9 @@ int bx_begin_simulation (int argc, char *argv[])
 
   // update headerbar buttons since drive status can change during init
   bx_gui->update_drive_status_buttons();
+
   // iniialize statusbar and set all items inactive
-#if BX_SUPPORT_SAVE_RESTORE
   if (!SIM->get_param_bool(BXPN_RESTORE_FLAG)->get())
-#endif
   {
     bx_gui->statusbar_setitem(-1, 0);
   }
@@ -934,7 +934,6 @@ void bx_stop_simulation()
   // the cpu loop will exit very soon after this condition is set.
 }
 
-#if BX_SUPPORT_SAVE_RESTORE
 void bx_sr_after_restore_state(void)
 {
 #if BX_SUPPORT_SMP == 0
@@ -946,9 +945,8 @@ void bx_sr_after_restore_state(void)
 #endif
   DEV_after_restore_state();
 }
-#endif
 
-int bx_init_hardware()
+void bx_init_hardware()
 {
   // all configuration has been read, now initialize everything.
 
@@ -992,21 +990,22 @@ int bx_init_hardware()
   else
     BX_INFO(("  SSE support: %d",BX_SUPPORT_SSE));
   BX_INFO(("  CLFLUSH support: %s",BX_SUPPORT_CLFLUSH?"yes":"no"));
-  BX_INFO(("  v8086 mode support: %s",BX_SUPPORT_V8086_MODE?"yes":"no"));
   BX_INFO(("  VME support: %s",BX_SUPPORT_VME?"yes":"no"));
   BX_INFO(("  3dnow! support: %s",BX_SUPPORT_3DNOW?"yes":"no"));
   BX_INFO(("  PAE support: %s",BX_SUPPORT_PAE?"yes":"no"));
   BX_INFO(("  PGE support: %s",BX_SUPPORT_GLOBAL_PAGES?"yes":"no"));
-  BX_INFO(("  PSE support: %s",BX_SUPPORT_4MEG_PAGES?"yes":"no"));
+  BX_INFO(("  PSE support: %s",BX_SUPPORT_LARGE_PAGES?"yes":"no"));
   BX_INFO(("  x86-64 support: %s",BX_SUPPORT_X86_64?"yes":"no"));
   BX_INFO(("  SEP support: %s",BX_SUPPORT_SEP?"yes":"no"));
+  BX_INFO(("  MWAIT support: %s",BX_SUPPORT_MONITOR_MWAIT?"yes":"no"));
   BX_INFO(("Optimization configuration"));
   BX_INFO(("  Guest2HostTLB support: %s",BX_SupportGuest2HostTLB?"yes":"no"));
   BX_INFO(("  RepeatSpeedups support: %s",BX_SupportRepeatSpeedups?"yes":"no"));
   BX_INFO(("  Icache support: %s",BX_SUPPORT_ICACHE?"yes":"no"));
-  BX_INFO(("  Host Asm support: %s",BX_SupportHostAsms?"yes":"no"));
+  BX_INFO(("  Trace cache support: %s",BX_SUPPORT_TRACE_CACHE?"yes":"no"));
   BX_INFO(("  Fast function calls: %s",BX_FAST_FUNC_CALL?"yes":"no"));
   BX_INFO(("Devices configuration"));
+  BX_INFO(("  ACPI support: %s",BX_SUPPORT_ACPI?"yes":"no"));
   BX_INFO(("  NE2000 support: %s",BX_SUPPORT_NE2K?"yes":"no"));
   BX_INFO(("  PCI support: %s",BX_SUPPORT_PCI?"yes":"no"));
   BX_INFO(("  SB16 support: %s",BX_SUPPORT_SB16?"yes":"no"));
@@ -1017,6 +1016,16 @@ int bx_init_hardware()
   // Check if there is a romimage
   if (strcmp(SIM->get_param_string(BXPN_ROM_PATH)->getptr(),"") == 0) {
     BX_ERROR(("No romimage to load. Is your bochsrc file loaded/valid ?"));
+  }
+
+  // set one shot timer for benchmark mode if needed, the timer will fire
+  // once and kill Bochs simulation after predefined amount of emulated
+  // ticks
+  int benchmark_mode = SIM->get_param_num(BXPN_BOCHS_BENCHMARK)->get();
+  if (benchmark_mode) {
+    BX_INFO(("Bochs benchmark mode is ON (~%d millions of ticks)", benchmark_mode));
+    bx_pc_system.register_timer_ticks(&bx_pc_system, bx_pc_system_c::benchmarkTimer,
+        (Bit64u) benchmark_mode * 1000000, 0, 1, "benchmark.timer");
   }
 
   // set up memory and CPU objects
@@ -1057,9 +1066,7 @@ int bx_init_hardware()
 #if BX_SUPPORT_SMP == 0
   BX_CPU(0)->initialize(BX_MEM(0));
   BX_CPU(0)->sanity_checks();
-#if BX_SUPPORT_SAVE_RESTORE
   BX_CPU(0)->register_state();
-#endif
   BX_INSTR_INIT(0);
 #else
   bx_cpu_array = new BX_CPU_C_PTR[BX_SMP_PROCESSORS];
@@ -1068,15 +1075,12 @@ int bx_init_hardware()
     BX_CPU(i) = new BX_CPU_C(i);
     BX_CPU(i)->initialize(BX_MEM(0));  // assign local apic id in 'initialize' method
     BX_CPU(i)->sanity_checks();
-#if BX_SUPPORT_SAVE_RESTORE
     BX_CPU(i)->register_state();
-#endif
     BX_INSTR_INIT(i);
   }
 #endif
 
   DEV_init_devices();
-#if BX_SUPPORT_SAVE_RESTORE
   bx_pc_system.register_state();
   DEV_register_state();
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
@@ -1085,10 +1089,10 @@ int bx_init_hardware()
       SIM->get_param_bool(BXPN_RESTORE_FLAG)->set(0);
     }
   }
-#endif
+
   // will enable A20 line and reset CPU and devices
   bx_pc_system.Reset(BX_RESET_HARDWARE);
-#if BX_SUPPORT_SAVE_RESTORE
+
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     if (SIM->restore_hardware()) {
       bx_sr_after_restore_state();
@@ -1097,7 +1101,7 @@ int bx_init_hardware()
       SIM->get_param_bool(BXPN_RESTORE_FLAG)->set(0);
     }
   }
-#endif
+
   bx_gui->init_signal_handlers();
   bx_pc_system.start_timers();
 
@@ -1113,8 +1117,6 @@ int bx_init_hardware()
 #endif
   alarm( 1 );
 #endif
-
-  return(0);
 }
 
 void bx_init_bx_dbg(void)
@@ -1168,7 +1170,10 @@ int bx_atexit(void)
 #if BX_DEBUGGER == 0
   if (SIM && SIM->get_init_done()) {
     for (int cpu=0; cpu<BX_SMP_PROCESSORS; cpu++)
-      if (BX_CPU(cpu)) BX_CPU(cpu)->atexit();
+#if BX_SUPPORT_SMP
+      if (BX_CPU(cpu))
+#endif
+        BX_CPU(cpu)->atexit();
   }
 #endif
 
@@ -1219,6 +1224,7 @@ void bx_signal_handler(int signum)
 
 #if BX_SHOW_IPS
   static Bit64u ticks_count = 0;
+  static Bit64u counts = 0;
 
   if (signum == SIGALRM)
   {
@@ -1227,6 +1233,11 @@ void bx_signal_handler(int signum)
     if (ips_count) {
       bx_gui->show_ips((Bit32u) ips_count);
       ticks_count = bx_pc_system.time_ticks();
+      counts++;
+      if (bx_dbg.print_timestamps) {
+        printf("IPS: %u\taverage = %u\t\t(%us)\n", 
+           (unsigned) ips_count, (unsigned) (ticks_count/counts), (unsigned) counts);
+      }
     }
 #if !defined(__MINGW32__) && !defined(_MSC_VER)
     signal(SIGALRM, bx_signal_handler);

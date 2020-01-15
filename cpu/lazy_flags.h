@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: lazy_flags.h,v 1.23 2005/10/13 20:21:35 sshwarts Exp $
+// $Id: lazy_flags.h,v 1.29 2007/12/06 20:39:11 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -79,71 +79,28 @@
 #define BX_INSTR_LOGIC32        31
 #define BX_INSTR_LOGIC64        32
 
-//      BX_INSTR_BITSCAN8       not exists, leave number for alignment
-#define BX_INSTR_BITSCAN16      34
-#define BX_INSTR_BITSCAN32      35
-#define BX_INSTR_BITSCAN64      36
-
-#define BX_INSTR_SHL8           37
-#define BX_INSTR_SHL16          38
-#define BX_INSTR_SHL32          39
-#define BX_INSTR_SHL64          40
-
-#define BX_INSTR_SHR8           41
-#define BX_INSTR_SHR16          42
-#define BX_INSTR_SHR32          43
-#define BX_INSTR_SHR64          44
-
-#define BX_INSTR_SAR8           45
-#define BX_INSTR_SAR16          46
-#define BX_INSTR_SAR32          47
-#define BX_INSTR_SAR64          48
-
-#define BX_INSTR_MUL8           49
-#define BX_INSTR_MUL16          50
-#define BX_INSTR_MUL32          51
-#define BX_INSTR_MUL64          52
-
-#define BX_INSTR_IMUL8          53
-#define BX_INSTR_IMUL16         54
-#define BX_INSTR_IMUL32         55
-#define BX_INSTR_IMUL64         56
-
-//      BX_INSTR_SHRD8          not exists, leave number for alignment
-#define BX_INSTR_SHRD16         58
-#define BX_INSTR_SHRD32         59
-#define BX_INSTR_SHRD64         60
-
-#define BX_INSTR_COMPARE8       BX_INSTR_SUB8
-#define BX_INSTR_COMPARE16      BX_INSTR_SUB16
-#define BX_INSTR_COMPARE32      BX_INSTR_SUB32
-#define BX_INSTR_COMPARE64      BX_INSTR_SUB64
-
-
-#define BX_LF_INDEX_OSZAPC  1
-#define BX_LF_INDEX_OSZAP   2
-
-#define BX_LF_MASK_OSZAPC 0x111111
-#define BX_LF_MASK_OSZAP  0x222220
+#if BX_SUPPORT_X86_64
+  #define BX_LF_SIGN_BIT  63
+#else
+  #define BX_LF_SIGN_BIT  31
+#endif
 
 typedef struct {
   Bit8u op1_8;
   Bit8u op2_8;
-  Bit8u result_8;
 
   Bit16u op1_16;
   Bit16u op2_16;
-  Bit16u result_16;
 
   Bit32u op1_32;
   Bit32u op2_32;
-  Bit32u result_32;
 
 #if BX_SUPPORT_X86_64
   Bit64u op1_64;
   Bit64u op2_64;
-  Bit64u result_64;
 #endif
+
+  bx_address result;
 
   unsigned instr;
 } bx_lf_flags_entry;

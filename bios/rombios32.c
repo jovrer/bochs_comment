@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios32.c,v 1.15 2007/09/15 07:24:04 vruppert Exp $
+// $Id: rombios32.c,v 1.17 2007/12/09 15:37:27 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  32 bit Bochs BIOS init code
@@ -583,9 +583,11 @@ static void bios_shadow_init(PCIDevice *d)
 
     /* remap the BIOS to shadow RAM an keep it read/write while we
        are writing tables */
-    memcpy((void *)BIOS_TMP_STORAGE, (void *)0x000f0000, 0x10000);
     v = pci_config_readb(d, 0x59);
-    v = (v & 0x0f) | (0x30);
+    v &= 0xcf;
+    pci_config_writeb(d, 0x59, v);
+    memcpy((void *)BIOS_TMP_STORAGE, (void *)0x000f0000, 0x10000);
+    v |= 0x30;
     pci_config_writeb(d, 0x59, v);
     memcpy((void *)0x000f0000, (void *)BIOS_TMP_STORAGE, 0x10000);
     
@@ -641,32 +643,39 @@ extern uint8_t smm_code_start, smm_code_end;
 #ifdef BX_USE_SMM
 static void smm_init(PCIDevice *d)
 {
-    /* copy the SMM relocation code */
-    memcpy((void *)0x38000, &smm_relocation_start,
-           &smm_relocation_end - &smm_relocation_start);
+    uint32_t value;
 
-    /* enable SMI generation when writing to the APMC register */
-    pci_config_writel(d, 0x58, pci_config_readl(d, 0x58) | (1 << 25));
+    /* check if SMM init is already done */
+    value = pci_config_readl(d, 0x58);
+    if ((value & (1 << 25)) == 0) {
 
-    /* init APM status port */
-    outb(0xb3, 0x01);
+        /* copy the SMM relocation code */
+        memcpy((void *)0x38000, &smm_relocation_start,
+               &smm_relocation_end - &smm_relocation_start);
 
-    /* raise an SMI interrupt */
-    outb(0xb2, 0x00);
+        /* enable SMI generation when writing to the APMC register */
+        pci_config_writel(d, 0x58, value | (1 << 25));
 
-    /* wait until SMM code executed */
-    while (inb(0xb3) != 0x00);
+        /* init APM status port */
+        outb(0xb3, 0x01);
 
-    /* enable the SMM memory window */
-    pci_config_writeb(&i440_pcidev, 0x72, 0x02 | 0x48);
+        /* raise an SMI interrupt */
+        outb(0xb2, 0x00);
 
-    /* copy the SMM code */
-    memcpy((void *)0xa8000, &smm_code_start,
-           &smm_code_end - &smm_code_start);
-    wbinvd();
-    
-    /* close the SMM memory window and enable normal SMM */
-    pci_config_writeb(&i440_pcidev, 0x72, 0x02 | 0x08);
+        /* wait until SMM code executed */
+        while (inb(0xb3) != 0x00);
+
+        /* enable the SMM memory window */
+        pci_config_writeb(&i440_pcidev, 0x72, 0x02 | 0x48);
+
+        /* copy the SMM code */
+        memcpy((void *)0xa8000, &smm_code_start,
+               &smm_code_end - &smm_code_start);
+        wbinvd();
+
+        /* close the SMM memory window and enable normal SMM */
+        pci_config_writeb(&i440_pcidev, 0x72, 0x02 | 0x08);
+    }
 }
 #endif
 

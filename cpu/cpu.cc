@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.172 2007/07/09 15:16:10 sshwarts Exp $
+// $Id: cpu.cc,v 1.194 2007/12/23 17:21:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -36,57 +37,50 @@
 #include "extdb.h"
 #endif
 
-#if BX_PROVIDE_CPU_MEMORY
-#if BX_ADDRESS_SPACES==1
-BOCHSAPI BX_MEM_C bx_mem;
-#else
-BOCHSAPI BX_MEM_C bx_mem_array[BX_ADDRESS_SPACES];
-#endif
-#endif
-
 #if BX_SUPPORT_ICACHE
 
 bxPageWriteStampTable pageWriteStampTable;
 
 void purgeICaches(void)
 {
-#if BX_SUPPORT_SMP
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
     BX_CPU(i)->iCache.purgeICacheEntries();
-#else
-  BX_CPU(0)->iCache.purgeICacheEntries();
-#endif
 
   pageWriteStampTable.purgeWriteStamps();
 }
 
 void flushICaches(void)
 {
-#if BX_SUPPORT_SMP
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
     BX_CPU(i)->iCache.flushICacheEntries();
-#else
-  BX_CPU(0)->iCache.flushICacheEntries();
-#endif
 
   pageWriteStampTable.resetWriteStamps();
 }
 
-#define InstrumentICACHE 0
+#define InstrumentTRACECACHE 0
 
-#if InstrumentICACHE
-static unsigned iCacheLookups=0;
-static unsigned iCacheMisses=0;
+#if InstrumentTRACECACHE
+static Bit32u iCacheLookups=0;
+static Bit32u iCacheMisses=0;
+static Bit32u iCacheMergeTraces=0;
+static Bit32u iCacheTraceLengh[BX_MAX_TRACE_LENGTH];
 
-#define InstrICache_StatsMask 0xffffff
+#define InstrICache_StatsMask 0x3ffffff
 
 #define InstrICache_Stats() {\
   if ((iCacheLookups & InstrICache_StatsMask) == 0) { \
-    BX_INFO(("ICACHE lookups: %u, misses: %u, hit rate = %6.2f%% ", \
-          iCacheLookups, \
-          iCacheMisses,  \
+    BX_INFO(("ICACHE lookups: %u, misses: %u, merges: %u, hit rate = %3.2f%%", \
+          (unsigned) iCacheLookups, \
+          (unsigned) iCacheMisses,  \
+          (unsigned) iCacheMergeTraces, \
           (iCacheLookups-iCacheMisses) * 100.0 / iCacheLookups)); \
-    iCacheLookups = iCacheMisses = 0; \
+    for (unsigned trace_len_idx=0; trace_len_idx<BX_MAX_TRACE_LENGTH;trace_len_idx++) { \
+      BX_INFO(("trace[%02d]: %u\t(%3.2f%%)", trace_len_idx+1, \
+         iCacheTraceLengh[trace_len_idx], \
+         iCacheTraceLengh[trace_len_idx] * 100.0/(iCacheLookups-iCacheMisses))); \
+      iCacheTraceLengh[trace_len_idx] = 0; \
+    } \
+    iCacheLookups = iCacheMisses = iCacheMergeTraces = 0; \
   } \
 }
 #define InstrICache_Increment(v) (v)++
@@ -96,29 +90,154 @@ static unsigned iCacheMisses=0;
 #define InstrICache_Increment(v)
 #endif
 
-#endif // BX_SUPPORT_ICACHE
-
-// notes:
-
-// The CHECK_MAX_INSTRUCTIONS macro allows cpu_loop to execute a few
-// instructions and then return so that the other processors have a chance to
-// run.  This is used only when simulating multiple processors.
-// 
-// If maximum instructions have been executed, return. The zero-count
-// means run forever.
-#define CHECK_MAX_INSTRUCTIONS(count) \
-  if (count > 0) {                    \
-    count--;                          \
-    if (count == 0) return;           \
-  }
+#endif // InstrumentTRACECACHE
 
 // Make code more tidy with a few macros.
 #if BX_SUPPORT_X86_64==0
 #define RIP EIP
-#define RSP ESP
+#define RCX ECX
 #endif
 
-BX_CPP_INLINE bxInstruction_c* BX_CPU_C::fetchInstruction(bxInstruction_c *iStorage, bx_address eipBiased)
+#if BX_SUPPORT_TRACE_CACHE
+
+bxICacheEntry_c* BX_CPU_C::fetchInstructionTrace(bxInstruction_c *iStorage, bx_address eipBiased)
+{
+  bx_phy_address pAddr = (bx_phy_address)(BX_CPU_THIS_PTR pAddrA20Page + eipBiased);
+  unsigned iCacheHash = BX_CPU_THIS_PTR iCache.hash(pAddr);
+  bxICacheEntry_c *trace = &(BX_CPU_THIS_PTR iCache.entry[iCacheHash]);
+  Bit32u pageWriteStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
+
+  InstrICache_Increment(iCacheLookups);
+  InstrICache_Stats();
+
+  if ((trace->pAddr == pAddr) &&
+      (trace->writeStamp == pageWriteStamp))
+  {
+     InstrICache_Increment(iCacheTraceLengh[trace->ilen-1]);
+     return trace; // We are lucky - trace cache hit !
+  }
+
+  // We are not so lucky, but let's be optimistic - try to build trace from
+  // incoming instruction bytes stream !
+  trace->pAddr = pAddr;
+  trace->writeStamp = pageWriteStamp;
+  trace->ilen = 0;
+
+  InstrICache_Increment(iCacheMisses);
+
+  unsigned remainingInPage = (unsigned)(BX_CPU_THIS_PTR eipPageWindowSize - eipBiased);
+  Bit8u *fetchPtr = BX_CPU_THIS_PTR eipFetchPtr + eipBiased;
+  unsigned ret;
+
+  // We could include in trace maximum BX_MAX_TRACE_LEN instructions
+  unsigned max_length = BX_MAX_TRACE_LENGTH;
+  if ((pageWriteStamp & ICacheWriteStampMask) != ICacheWriteStampStart)
+    max_length = 1;  // seems like the entry has SMC ping-pong problem
+
+  bxInstruction_c *i = trace->i;
+
+  for (unsigned len=0;len<max_length;len++,i++)
+  {
+#if BX_SUPPORT_X86_64
+    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
+      ret = fetchDecode64(fetchPtr, i, remainingInPage);
+    else
+#endif
+      ret = fetchDecode32(fetchPtr, i, remainingInPage);
+
+    if (ret==0) {
+      // Fetching instruction on segment/page boundary
+      if (len > 0) {
+         // The trace is already valid, it has several instructions inside,
+         // in this case just drop the boundary instruction and stop
+         // tracing.
+         break;
+      }
+      // First instruction is boundary fetch, return iStorage and leave 
+      // the trace cache entry invalid (do not cache the instruction)
+      trace->writeStamp = ICacheWriteStampInvalid;
+      boundaryFetch(fetchPtr, remainingInPage, iStorage);
+      return 0;
+    }
+
+    // add instruction to the trace ...
+    unsigned iLen = i->ilen();
+    trace->ilen++;
+
+    // ... and continue to the next instruction
+    remainingInPage -= iLen;
+    if (remainingInPage == 0) break;
+    pAddr += iLen;
+    fetchPtr += iLen;
+
+    if (i->getStopTraceAttr()) {
+      unsigned b1 = i->b1() & 0x1f0;
+      if (b1 == 0x70 || b1 == 0x180) {    // JCC instruction
+         // try cross JCC branch merge of traces
+         mergeTraces(trace, i+1, pAddr);
+      }
+      break;
+    }
+
+    // try to find a trace starting from current pAddr and merge
+    if (mergeTraces(trace, i+1, pAddr)) break;
+  }
+
+  return trace;
+}
+
+bx_bool BX_CPU_C::mergeTraces(bxICacheEntry_c *trace, bxInstruction_c *i, bx_phy_address pAddr)
+{
+  bxICacheEntry_c *e = &(BX_CPU_THIS_PTR iCache.entry[BX_CPU_THIS_PTR iCache.hash(pAddr)]);
+
+  if ((e->pAddr == pAddr) && (e->writeStamp == trace->writeStamp))
+  {
+    // We are lucky - another trace hit !
+    InstrICache_Increment(iCacheMergeTraces);
+
+    // determine max amount of instruction to take from another trace
+    unsigned max_length = e->ilen;
+    if (max_length + trace->ilen > BX_MAX_TRACE_LENGTH)
+        max_length = BX_MAX_TRACE_LENGTH - trace->ilen;
+    if(max_length == 0) return 0;
+
+    memcpy(i, e->i, sizeof(bxInstruction_c)*max_length);
+    trace->ilen += max_length;
+    BX_ASSERT(trace->ilen <= BX_MAX_TRACE_LENGTH);
+
+    return 1;
+  }
+
+  return 0;
+}
+
+void BX_CPU_C::instrumentTraces(void)
+{
+  Bit32u currPageWriteStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
+  bxICacheEntry_c *e = BX_CPU_THIS_PTR iCache.entry;
+  Bit32u trace_length[BX_MAX_TRACE_LENGTH], invalid_entries = 0;
+  unsigned i;
+
+  for (i=0; i < BX_MAX_TRACE_LENGTH; i++) trace_length[i] = 0;
+
+  for (i=0; i<BxICacheEntries; i++, e++) {
+    if (e->writeStamp == currPageWriteStamp)
+      trace_length[e->ilen-1]++;
+    else 
+      invalid_entries++;
+  }
+
+  for (i=0; i < BX_MAX_TRACE_LENGTH; i++) {
+    BX_INFO(("traces[%02d]: %u\t%f%%", i+1,
+       trace_length[i], trace_length[i]*100.0/BxICacheEntries));
+  }
+  BX_INFO(("invalid entries: %u\t%f%%",
+       invalid_entries, invalid_entries*100.0/BxICacheEntries));
+}
+
+#else
+
+bxInstruction_c* BX_CPU_C::fetchInstruction(bxInstruction_c *iStorage, bx_address eipBiased)
 {
   unsigned ret;
   bxInstruction_c *i = iStorage;
@@ -151,9 +270,7 @@ BX_CPP_INLINE bxInstruction_c* BX_CPU_C::fetchInstruction(bxInstruction_c *iStor
   // iCache miss. No validated instruction with matching fetch parameters
   // is in the iCache. Or we're not compiling iCache support in, in which
   // case we always have an iCache miss.  :^)
-  bx_address remainingInPage = (BX_CPU_THIS_PTR eipPageWindowSize - eipBiased);
-  unsigned maxFetch = 15;
-  if (remainingInPage < 15) maxFetch = remainingInPage;
+  unsigned remainingInPage = (unsigned)(BX_CPU_THIS_PTR eipPageWindowSize - eipBiased);
   Bit8u *fetchPtr = BX_CPU_THIS_PTR eipFetchPtr + eipBiased;
 
 #if BX_SUPPORT_ICACHE
@@ -164,10 +281,10 @@ BX_CPP_INLINE bxInstruction_c* BX_CPU_C::fetchInstruction(bxInstruction_c *iStor
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
-    ret = fetchDecode64(fetchPtr, i, maxFetch);
+    ret = fetchDecode64(fetchPtr, i, remainingInPage);
   else
 #endif
-    ret = fetchDecode32(fetchPtr, i, maxFetch);
+    ret = fetchDecode32(fetchPtr, i, remainingInPage);
 
   if (ret==0) {
     // return iStorage and leave icache entry invalid (do not cache instr)
@@ -190,6 +307,25 @@ BX_CPP_INLINE bxInstruction_c* BX_CPU_C::fetchInstruction(bxInstruction_c *iStor
   return i;
 }
 
+#endif
+
+// The CHECK_MAX_INSTRUCTIONS macro allows cpu_loop to execute a few
+// instructions and then return so that the other processors have a chance to
+// run.  This is used by bochs internal debugger or when simulating 
+// multiple processors.
+// 
+// If maximum instructions have been executed, return. The zero-count
+// means run forever.
+#if BX_SUPPORT_SMP || BX_DEBUGGER
+  #define CHECK_MAX_INSTRUCTIONS(count) \
+    if ((count) > 0) {                  \
+      (count)--;                        \
+      if ((count) == 0) return;         \
+    }
+#else
+  #define CHECK_MAX_INSTRUCTIONS(count)
+#endif
+
 void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
 {
   bxInstruction_c iStorage BX_CPP_AlignN(32);
@@ -204,12 +340,14 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
 
   if (setjmp(BX_CPU_THIS_PTR jmp_buf_env)) 
   { 
-    // only from exception function can we get here ...
+    // only from exception function we can get here ...
     BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
+#if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
+    if (dbg_instruction_epilog()) return;
+#endif
+    CHECK_MAX_INSTRUCTIONS(max_instr_count);
 #if BX_GDBSTUB
-    if (bx_dbg.gdbstub_enabled) {
-      return;
-    }
+    if (bx_dbg.gdbstub_enabled) return;
 #endif
   }
 
@@ -227,12 +365,17 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
   // back from an exception() call.  In either case, commit the
   // new EIP/ESP, and set up other environmental fields.  This code
   // mirrors similar code below, after the interrupt() call.
-  BX_CPU_THIS_PTR prev_eip = RIP; // commit new EIP
-  BX_CPU_THIS_PTR prev_esp = RSP; // commit new ESP
+  BX_CPU_THIS_PTR prev_rip = RIP; // commit new EIP
+  BX_CPU_THIS_PTR speculative_rsp = 0;
   BX_CPU_THIS_PTR EXT = 0;
   BX_CPU_THIS_PTR errorno = 0;
 
   while (1) {
+
+#if BX_SUPPORT_TRACE_CACHE
+    // clear stop trace magic indication that probably was set by branch32/64
+    BX_CPU_THIS_PTR async_event &= ~BX_ASYNC_EVENT_STOP_TRACE;
+#endif
 
     // First check on events which occurred for previous instructions
     // (traps) and ones which are asynchronous to the CPU
@@ -251,57 +394,68 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
       eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
     }
 
-    // fetch and decode next instruction
+#if BX_SUPPORT_TRACE_CACHE == 0
+    // fetch and decode single instruction
     bxInstruction_c *i = fetchInstruction(&iStorage, eipBiased);
-    BxExecutePtr_tR resolveModRM = i->ResolveModrm; // Get as soon as possible for speculation
-    BxExecutePtr_t execute = i->execute; // fetch as soon as possible for speculation
-    if (resolveModRM)
-      BX_CPU_CALL_METHODR(resolveModRM, (i));
+#else
+    unsigned n, length = 1;
+    bxInstruction_c *i = &iStorage;
+    bxICacheEntry_c *trace = fetchInstructionTrace(&iStorage, eipBiased);
+    if (trace) {
+      i = trace->i; // execute from first instruction in trace
+      length = trace->ilen;
+    }
+    Bit32u currPageWriteStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
 
-    // An instruction will have been fetched using either the normal case,
-    // or the boundary fetch (across pages), by this point.
-    BX_INSTR_FETCH_DECODE_COMPLETED(BX_CPU_ID, i);
+    for (n=0; n < length; n++, i++) {
+#endif
+
+      BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+
+      // An instruction will have been fetched using either the normal case,
+      // or the boundary fetch (across pages), by this point.
+      BX_INSTR_FETCH_DECODE_COMPLETED(BX_CPU_ID, i);
 
 #if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
       if (dbg_instruction_prolog()) return;
 #endif
 
 #if BX_DISASM
-    if (BX_CPU_THIS_PTR trace) {
-      // print the instruction that is about to be executed
+      if (BX_CPU_THIS_PTR trace) {
+        // print the instruction that is about to be executed
 #if BX_DEBUGGER
-      bx_dbg_disassemble_current(BX_CPU_ID, 1); // only one cpu, print time stamp
+        bx_dbg_disassemble_current(BX_CPU_ID, 1); // only one cpu, print time stamp
 #else
-      debug_disasm_instruction(BX_CPU_THIS_PTR prev_eip);
+        debug_disasm_instruction(BX_CPU_THIS_PTR prev_rip);
 #endif
-    }
+      }
 #endif
 
-    // decoding instruction compeleted -> continue with execution
-    BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
-    RIP += i->ilen();
-    BX_CPU_CALL_METHOD(execute, (i)); // might iterate repeat instruction
-    BX_CPU_THIS_PTR prev_eip = RIP; // commit new RIP
-    BX_CPU_THIS_PTR prev_esp = RSP; // commit new RSP
-    BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
-    BX_TICK1_IF_SINGLE_PROCESSOR();
+      // decoding instruction compeleted -> continue with execution
+      BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
+      RIP += i->ilen();
+      BX_CPU_CALL_METHOD(i->execute, (i)); // might iterate repeat instruction
+      BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
+      BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
+      BX_TICK1_IF_SINGLE_PROCESSOR();
 
-    // inform instrumentation about new instruction
-    BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
+      // inform instrumentation about new instruction
+      BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
 
-      // note instr generating exceptions never reach this point
+      // note instructions generating exceptions never reach this point
 #if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
       if (dbg_instruction_epilog()) return;
 #endif
 
-#if BX_SUPPORT_SMP || BX_DEBUGGER
-    // The CHECK_MAX_INSTRUCTIONS macro allows cpu_loop to execute a few
-    // instructions and then return so that the other processors have a chance
-    // to run. This is used only when simulating multiple processors. If only
-    // one processor, don't waste any cycles on it!
-    CHECK_MAX_INSTRUCTIONS(max_instr_count);
-#endif
+      CHECK_MAX_INSTRUCTIONS(max_instr_count);
 
+#if BX_SUPPORT_TRACE_CACHE
+      if (currPageWriteStamp != *(BX_CPU_THIS_PTR currPageWriteStampPtr))
+        break; // probably it is self modifying code ...
+
+      if (BX_CPU_THIS_PTR async_event) break;
+    }
+#endif
   }  // while (1)
 }
 
@@ -313,45 +467,63 @@ void BX_CPU_C::repeat(bxInstruction_c *i, BxExecutePtr_t execute)
     return;
   }
 
-  while(1) {
-
 #if BX_SUPPORT_X86_64
-    if (i->as64L()) {
+  if (i->as64L()) {
+    while(1) {
       if (RCX != 0) {
         BX_CPU_CALL_METHOD(execute, (i));
         BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
         RCX --;
       }
       if (RCX == 0) return;
-    }
-    else
+
+      BX_TICK1_IF_SINGLE_PROCESSOR();
+
+#if BX_DEBUGGER == 0
+      if (BX_CPU_THIS_PTR async_event)
 #endif
-    if (i->as32L()) {
+        break; // exit always if debugger enabled
+    }
+  }
+  else
+#endif
+  if (i->as32L()) {
+    while(1) {
       if (ECX != 0) {
         BX_CPU_CALL_METHOD(execute, (i));
         BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-        ECX --;
+        RCX = ECX - 1;
       }
       if (ECX == 0) return;
+
+      BX_TICK1_IF_SINGLE_PROCESSOR();
+
+#if BX_DEBUGGER == 0
+      if (BX_CPU_THIS_PTR async_event)
+#endif
+        break; // exit always if debugger enabled
     }
-    else { // 16bit addrsize
+  }
+  else  // 16bit addrsize
+  {
+    while(1) {
       if (CX != 0) {
         BX_CPU_CALL_METHOD(execute, (i));
         BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
         CX --;
       }
       if (CX == 0) return;
-    }
 
-    BX_TICK1_IF_SINGLE_PROCESSOR();
+      BX_TICK1_IF_SINGLE_PROCESSOR();
 
 #if BX_DEBUGGER == 0
-    if (BX_CPU_THIS_PTR async_event)
+      if (BX_CPU_THIS_PTR async_event)
 #endif
-      break; // exit always if debugger enabled
+        break; // exit always if debugger enabled
+    }
   }
 
-  RIP = BX_CPU_THIS_PTR prev_eip; // repeat loop not done, restore RIP
+  RIP = BX_CPU_THIS_PTR prev_rip; // repeat loop not done, restore RIP
 }
 
 void BX_CPU_C::repeat_ZFL(bxInstruction_c *i, BxExecutePtr_t execute)
@@ -362,51 +534,71 @@ void BX_CPU_C::repeat_ZFL(bxInstruction_c *i, BxExecutePtr_t execute)
     return;
   }
 
-  while(1) {
+  unsigned rep = i->repUsedValue();
 
 #if BX_SUPPORT_X86_64
-    if (i->as64L()) {
+  if (i->as64L()) {
+    while(1) {
       if (RCX != 0) {
         BX_CPU_CALL_METHOD(execute, (i));
         BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
         RCX --;
       }
-      if ((i->repUsedValue()==3) && (get_ZF()==0)) return;
-      if ((i->repUsedValue()==2) && (get_ZF()!=0)) return;
+      if (rep==3 && get_ZF()==0) return;
+      if (rep==2 && get_ZF()!=0) return;
       if (RCX == 0) return;
-    }
-    else
+
+      BX_TICK1_IF_SINGLE_PROCESSOR();
+
+#if BX_DEBUGGER == 0
+      if (BX_CPU_THIS_PTR async_event)
 #endif
-    if (i->as32L()) {
+        break; // exit always if debugger enabled
+    }
+  }
+  else
+#endif
+  if (i->as32L()) {
+    while(1) {
       if (ECX != 0) {
         BX_CPU_CALL_METHOD(execute, (i));
         BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-        ECX --;
+        RCX = ECX - 1;
       }
-      if ((i->repUsedValue()==3) && (get_ZF()==0)) return;
-      if ((i->repUsedValue()==2) && (get_ZF()!=0)) return;
+      if (rep==3 && get_ZF()==0) return;
+      if (rep==2 && get_ZF()!=0) return;
       if (ECX == 0) return;
+
+      BX_TICK1_IF_SINGLE_PROCESSOR();
+
+#if BX_DEBUGGER == 0
+      if (BX_CPU_THIS_PTR async_event)
+#endif
+        break; // exit always if debugger enabled
     }
-    else {
+  }
+  else  // 16bit addrsize
+  {
+    while(1) {
       if (CX != 0) {
         BX_CPU_CALL_METHOD(execute, (i));
         BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
         CX --;
       }
-      if ((i->repUsedValue()==3) && (get_ZF()==0)) return;
-      if ((i->repUsedValue()==2) && (get_ZF()!=0)) return;
+      if (rep==3 && get_ZF()==0) return;
+      if (rep==2 && get_ZF()!=0) return;
       if (CX == 0) return;
-    }
 
-    BX_TICK1_IF_SINGLE_PROCESSOR();
+      BX_TICK1_IF_SINGLE_PROCESSOR();
 
 #if BX_DEBUGGER == 0
-    if (BX_CPU_THIS_PTR async_event)
+      if (BX_CPU_THIS_PTR async_event)
 #endif
-      break; // exit always if debugger enabled
+        break; // exit always if debugger enabled
+    }
   }
 
-  RIP = BX_CPU_THIS_PTR prev_eip; // repeat loop not done, restore RIP
+  RIP = BX_CPU_THIS_PTR prev_rip; // repeat loop not done, restore RIP
 }
 
 unsigned BX_CPU_C::handleAsyncEvent(void)
@@ -414,9 +606,8 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   //
   // This area is where we process special conditions and events.
   //
-  if (BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_HALT_STATE) {
+  if (BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_SPECIAL) {
     // I made up the bitmask above to mean HALT state.
-#if BX_SUPPORT_SMP == 0
     // for one processor, pass the time as quickly as possible until
     // an interrupt wakes up the CPU.
 #if BX_DEBUGGER
@@ -425,39 +616,37 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
     while (1)
 #endif
     {
-      if ((BX_CPU_INTR && BX_CPU_THIS_PTR get_IF()) || 
+      if ((BX_CPU_INTR && (BX_CPU_THIS_PTR get_IF() || (BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_MWAIT_IF))) || 
            BX_CPU_THIS_PTR nmi_pending || BX_CPU_THIS_PTR smi_pending)
       {
         // interrupt ends the HALT condition
+#if BX_SUPPORT_MONITOR_MWAIT
+        if (BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_MWAIT)
+          BX_CPU_THIS_PTR mem->clear_monitor(BX_CPU_THIS_PTR bx_cpuid);
+#endif
         BX_CPU_THIS_PTR debug_trap = 0; // clear traps for after resume
         BX_CPU_THIS_PTR inhibit_mask = 0; // clear inhibits for after resume
         break;
       }
-      if ((BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_HALT_STATE) == 0) {
+      if ((BX_CPU_THIS_PTR debug_trap & BX_DEBUG_TRAP_SPECIAL) == 0) {
         BX_INFO(("handleAsyncEvent: reset detected in HLT state"));
         break;
       }
+      // for multiprocessor simulation, even if this CPU is halted we still
+      // must give the others a chance to simulate.  If an interrupt has 
+      // arrived, then clear the HALT condition; otherwise just return from
+      // the CPU loop with stop_reason STOP_CPU_HALTED.
+#if BX_SUPPORT_SMP
+      if (BX_SMP_PROCESSORS > 1) {
+        // HALT condition remains, return so other CPUs have a chance
+#if BX_DEBUGGER
+        BX_CPU_THIS_PTR stop_reason = STOP_CPU_HALTED;
+#endif
+        return 1; // Return to caller of cpu_loop.
+      }
+#endif
       BX_TICK1();
     }
-#else   /* BX_SUPPORT_SMP */
-    // for multiprocessor simulation, even if this CPU is halted we still
-    // must give the others a chance to simulate.  If an interrupt has 
-    // arrived, then clear the HALT condition; otherwise just return from
-    // the CPU loop with stop_reason STOP_CPU_HALTED.
-    if ((BX_CPU_INTR && BX_CPU_THIS_PTR get_IF()) || 
-         BX_CPU_THIS_PTR nmi_pending || BX_CPU_THIS_PTR smi_pending)
-    {
-      // interrupt ends the HALT condition
-      BX_CPU_THIS_PTR debug_trap = 0; // clear traps for after resume
-      BX_CPU_THIS_PTR inhibit_mask = 0; // clear inhibits for after resume
-    } else {
-      // HALT condition remains, return so other CPUs have a chance
-#if BX_DEBUGGER
-      BX_CPU_THIS_PTR stop_reason = STOP_CPU_HALTED;
-#endif
-      return 1; // Return to caller of cpu_loop.
-    }
-#endif
   } else if (bx_pc_system.kill_bochs_request) {
     // setting kill_bochs_request causes the cpu loop to return ASAP.
     return 1; // Return to caller of cpu_loop.
@@ -530,11 +719,9 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
     if (BX_CPU_THIS_PTR local_apic.INTR)
       vector = BX_CPU_THIS_PTR local_apic.acknowledge_int();
     else
-      vector = DEV_pic_iac(); // may set INTR with next interrupt
-#else
-    // if no local APIC, always acknowledge the PIC.
-    vector = DEV_pic_iac(); // may set INTR with next interrupt
 #endif
+      // if no local APIC, always acknowledge the PIC.
+      vector = DEV_pic_iac(); // may set INTR with next interrupt
     BX_CPU_THIS_PTR errorno = 0;
     BX_CPU_THIS_PTR EXT = 1; /* external event */
     BX_INSTR_HWINTERRUPT(BX_CPU_ID, vector,
@@ -545,8 +732,8 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
     // the new EIP/ESP values.  But here, we call interrupt() much like
     // it was a sofware interrupt instruction, and need to effect the
     // commit here.  This code mirrors similar code above.
-    BX_CPU_THIS_PTR prev_eip = RIP; // commit new RIP
-    BX_CPU_THIS_PTR prev_esp = RSP; // commit new RSP
+    BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
+    BX_CPU_THIS_PTR speculative_rsp = 0;
     BX_CPU_THIS_PTR EXT = 0;
     BX_CPU_THIS_PTR errorno = 0;
   }
@@ -597,7 +784,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   else {
     // only bother comparing if any breakpoints enabled
     if (BX_CPU_THIS_PTR dr7 & 0x000000ff) {
-      bx_address iaddr = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + BX_CPU_THIS_PTR prev_eip;
+      bx_address iaddr = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + BX_CPU_THIS_PTR prev_rip;
       Bit32u dr6_bits = hwdebug_compare(iaddr, 1, BX_HWDebugInstruction, BX_HWDebugInstruction);
       if (dr6_bits)
       {
@@ -652,7 +839,7 @@ void BX_CPU_C::prefetch(void)
 
   // Calculate RIP at the beginning of the page.
   bx_address eipPageOffset0 = RIP - (laddr & 0xfff);
-  BX_CPU_THIS_PTR eipPageBias = -eipPageOffset0;
+  BX_CPU_THIS_PTR eipPageBias = (bx_address) -eipPageOffset0;
   BX_CPU_THIS_PTR eipPageWindowSize = 4096;
 
   if (! Is64BitMode()) {
@@ -668,7 +855,7 @@ void BX_CPU_C::prefetch(void)
 
   if (BX_CPU_THIS_PTR cr0.get_PG()) {
     // aligned block guaranteed to be all in one page, same A20 address
-    pAddr = itranslate_linear(laddr, CPL==3);
+    pAddr = itranslate_linear(laddr, CPL);
     pAddr = A20ADDR(pAddr);
   }
   else
@@ -740,14 +927,11 @@ void BX_CPU_C::boundaryFetch(Bit8u *fetchPtr, unsigned remainingInPage, bxInstru
     fetchBuffer[j] = *fetchPtr++;
   }
 #if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
     ret = fetchDecode64(fetchBuffer, i, 15);
-  }
   else
 #endif
-  {
     ret = fetchDecode32(fetchBuffer, i, 15);
-  }
 
   if (ret==0) {
     BX_INFO(("fetchDecode #GP(0): too many instruction prefixes"));
@@ -755,7 +939,7 @@ void BX_CPU_C::boundaryFetch(Bit8u *fetchPtr, unsigned remainingInPage, bxInstru
   }
 
   // Restore EIP since we fudged it to start at the 2nd page boundary.
-  RIP = BX_CPU_THIS_PTR prev_eip;
+  RIP = BX_CPU_THIS_PTR prev_rip;
 
   // Since we cross an instruction boundary, note that we need a prefetch()
   // again on the next instruction.  Perhaps we can optimize this to
@@ -826,7 +1010,7 @@ extern unsigned dbg_show_mask;
 bx_bool BX_CPU_C::dbg_check_begin_instr_bpoint(void)
 { 
   Bit64u tt = bx_pc_system.time_ticks();
-  bx_address debug_eip = BX_CPU_THIS_PTR prev_eip;
+  bx_address debug_eip = RIP;
   Bit16u cs = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
 
   BX_CPU_THIS_PTR guard_found.cs  = cs;
@@ -861,7 +1045,7 @@ bx_bool BX_CPU_C::dbg_check_begin_instr_bpoint(void)
 
   // see if debugger is looking for iaddr breakpoint of any type
   if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_ALL) {
-#if BX_DBG_SUPPORT_VIR_BPOINT
+#if (BX_DBG_MAX_VIR_BPOINTS > 0)
     if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_VIR) {
       if ((BX_CPU_THIS_PTR guard_found.icount!=0) ||
           (tt != BX_CPU_THIS_PTR guard_found.time_tick))
@@ -880,7 +1064,7 @@ bx_bool BX_CPU_C::dbg_check_begin_instr_bpoint(void)
       }
     }
 #endif
-#if BX_DBG_SUPPORT_LIN_BPOINT
+#if (BX_DBG_MAX_LIN_BPOINTS > 0)
     if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_LIN) {
       if ((BX_CPU_THIS_PTR guard_found.icount!=0) ||
           (tt != BX_CPU_THIS_PTR guard_found.time_tick))
@@ -898,7 +1082,7 @@ bx_bool BX_CPU_C::dbg_check_begin_instr_bpoint(void)
       }
     }
 #endif
-#if BX_DBG_SUPPORT_PHY_BPOINT
+#if (BX_DBG_MAX_PHY_BPOINTS > 0)
     if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_PHY) {
       bx_phy_address phy;
       bx_bool valid = dbg_xlate_linear2phy(BX_CPU_THIS_PTR guard_found.laddr, &phy);
@@ -928,13 +1112,12 @@ bx_bool BX_CPU_C::dbg_check_begin_instr_bpoint(void)
 
 bx_bool BX_CPU_C::dbg_check_end_instr_bpoint(void)
 {
-  bx_address debug_eip = BX_CPU_THIS_PTR prev_eip;
   BX_CPU_THIS_PTR guard_found.icount++;
   BX_CPU_THIS_PTR guard_found.cs  = 
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
-  BX_CPU_THIS_PTR guard_found.eip = debug_eip;
+  BX_CPU_THIS_PTR guard_found.eip = RIP;
   BX_CPU_THIS_PTR guard_found.laddr = 
-    BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + debug_eip;
+    BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + RIP;
   BX_CPU_THIS_PTR guard_found.is_32bit_code = 
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b;
   BX_CPU_THIS_PTR guard_found.is_64bit_code = Is64BitMode();

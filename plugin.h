@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.58 2007/08/04 08:57:42 vruppert Exp $
+// $Id: plugin.h,v 1.60 2007/10/24 23:28:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file provides macros and types needed for plugins.  It is based on
@@ -266,7 +266,7 @@ typedef void (*deviceInitMem_t)(BX_MEM_C *);
 typedef void (*deviceInitDev_t)(void);
 typedef void (*deviceReset_t)(unsigned);
 
-BOCHSAPI void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmodel_c *dev, char *name);
+BOCHSAPI void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmodel_c *dev, const char *name);
 BOCHSAPI bx_bool pluginDevicePresent(char *name);
 
 /* === IO port stuff === */
@@ -341,10 +341,8 @@ extern void bx_unload_plugin(const char *name);
 extern void bx_init_plugins(void);
 extern void bx_reset_plugins(unsigned);
 extern void bx_unload_plugins(void);
-#if BX_SUPPORT_SAVE_RESTORE
 extern void bx_plugins_register_state();
 extern void bx_plugins_after_restore_state();
-#endif
 
 // every plugin must define these, within the extern"C" block, so that
 // a non-mangled function symbol is available in the shared library.

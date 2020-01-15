@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mult32.cc,v 1.20 2006/03/06 22:03:01 sshwarts Exp $
+// $Id: mult32.cc,v 1.24 2007/12/20 20:58:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -50,19 +51,23 @@ void BX_CPU_C::MUL_EAXEd(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), &op2_32);
+    op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
   }
 
   product_64  = ((Bit64u) op1_32) * ((Bit64u) op2_32);
   product_32l = (Bit32u) (product_64 & 0xFFFFFFFF);
   product_32h = (Bit32u) (product_64 >> 32);
 
-  /* set EFLAGS */
-  SET_FLAGS_OSZAPC_S1S2_32(product_32l, product_32h, BX_INSTR_MUL32);
-
   /* now write product back to destination */
   RAX = product_32l;
   RDX = product_32h;
+
+  /* set EFLAGS */
+  SET_FLAGS_OSZAPC_LOGIC_32(product_32l);
+  if(product_32h != 0)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
@@ -77,7 +82,7 @@ void BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), (Bit32u *) &op2_32);
+    op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
 
   Bit64s product_64  = ((Bit64s) op1_32) * ((Bit64s) op2_32);
@@ -92,7 +97,11 @@ void BX_CPU_C::IMUL_EAXEd(bxInstruction_c *i)
    * IMUL r/m32: condition for clearing CF & OF:
    *   EDX:EAX = sign-extend of EAX
    */
-  SET_FLAGS_OSZAPC_S1S2_32(product_32l, product_32h, BX_INSTR_IMUL32);
+  SET_FLAGS_OSZAPC_LOGIC_32(product_32l);
+  if(product_64 != (Bit32s)product_64)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::DIV_EAXEd(bxInstruction_c *i)
@@ -108,7 +117,7 @@ void BX_CPU_C::DIV_EAXEd(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), &op2_32);
+    op2_32 = read_virtual_dword(i->seg(), RMAddr(i));
   }
 
   if (op2_32 == 0) {
@@ -146,7 +155,7 @@ void BX_CPU_C::IDIV_EAXEd(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), (Bit32u *) &op2_32);
+    op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
 
   if (op2_32 == 0)
@@ -186,21 +195,24 @@ void BX_CPU_C::IMUL_GdEdId(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), (Bit32u *) &op2_32);
+    op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
 
   Bit64s product_64  = ((Bit64s) op2_32) * ((Bit64s) op3_32);
-  Bit32u product_32l = (product_64 & 0xFFFFFFFF);
-  Bit32u product_32h = (product_64 >> 32);
+  Bit32u product_32 = (product_64 & 0xFFFFFFFF);
 
   /* now write product back to destination */
-  BX_WRITE_32BIT_REGZ(i->nnn(), product_32l);
+  BX_WRITE_32BIT_REGZ(i->nnn(), product_32);
 
   /* set eflags:
    * IMUL r32,r/m32,imm32: condition for clearing CF & OF:
    *   result exactly fits within r32
    */
-  SET_FLAGS_OSZAPC_S1S2_32(product_32l, product_32h, BX_INSTR_IMUL32);
+  SET_FLAGS_OSZAPC_LOGIC_32(product_32);
+  if(product_64 != (Bit32s) product_64)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::IMUL_GdEd(bxInstruction_c *i)
@@ -213,21 +225,24 @@ void BX_CPU_C::IMUL_GdEd(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_dword(i->seg(), RMAddr(i), (Bit32u *) &op2_32);
+    op2_32 = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
   }
 
   op1_32 = BX_READ_32BIT_REG(i->nnn());
 
   Bit64s product_64 = ((Bit64s) op1_32) * ((Bit64s) op2_32);
-  Bit32u product_32l = (product_64 & 0xFFFFFFFF);
-  Bit32u product_32h = (product_64 >> 32);
+  Bit32u product_32 = (product_64 & 0xFFFFFFFF);
 
   /* now write product back to destination */
-  BX_WRITE_32BIT_REGZ(i->nnn(), product_32l);
+  BX_WRITE_32BIT_REGZ(i->nnn(), product_32);
 
   /* set eflags:
-   * IMUL r32,r/m32,imm32: condition for clearing CF & OF:
+   * IMUL r32,r/m32: condition for clearing CF & OF:
    *   result exactly fits within r32
    */
-  SET_FLAGS_OSZAPC_S1S2_32(product_32l, product_32h, BX_INSTR_IMUL32);
+  SET_FLAGS_OSZAPC_LOGIC_32(product_32);
+  if(product_64 != (Bit32s) product_64)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mult64.cc,v 1.17 2006/03/06 22:03:01 sshwarts Exp $
+// $Id: mult64.cc,v 1.23 2007/12/23 17:21:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,7 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+/////////////////////////////////////////////////////////////////////////
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
@@ -74,7 +74,7 @@ void long_mul(Bit128u *product, Bit64u op1, Bit64u op2)
 void long_neg(Bit128s *n)
 {
   Bit64u t = n->lo;
-  n->lo = -n->lo;
+  n->lo = (Bit64u) -n->lo;
   if (t - 1 > t) --n->hi;
   n->hi = ~n->hi;
 }
@@ -219,7 +219,7 @@ void BX_CPU_C::MUL_RAXEq(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
+    op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   // product_128 = ((Bit128u) op1_64) * ((Bit128u) op2_64);
@@ -228,12 +228,16 @@ void BX_CPU_C::MUL_RAXEq(bxInstruction_c *i)
 
   long_mul(&product_128,op1_64,op2_64);
 
-  /* set EFLAGS */
-  SET_FLAGS_OSZAPC_S1S2_64(product_128.lo, product_128.hi, BX_INSTR_MUL64);
-
   /* now write product back to destination */
   RAX = product_128.lo;
   RDX = product_128.hi;
+
+  /* set EFLAGS */
+  SET_FLAGS_OSZAPC_LOGIC_64(product_128.lo);
+  if(product_128.hi != 0)
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::IMUL_RAXEq(bxInstruction_c *i)
@@ -249,7 +253,7 @@ void BX_CPU_C::IMUL_RAXEq(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2_64);
+    op2_64 = (Bit64s) read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   // product_128 = ((Bit128s) op1_64) * ((Bit128s) op2_64);
@@ -266,7 +270,13 @@ void BX_CPU_C::IMUL_RAXEq(bxInstruction_c *i)
    * IMUL r/m64: condition for clearing CF & OF:
    *   RDX:RAX = sign-extend of RAX
    */
-  SET_FLAGS_OSZAPC_S1S2_64(product_128.lo, product_128.hi, BX_INSTR_IMUL64);
+
+  SET_FLAGS_OSZAPC_LOGIC_64(product_128.lo);
+  if ((product_128.lo >= 0 && product_128.hi == 0) ||
+      (product_128.lo <  0 && product_128.hi == (Bit64s) BX_CONST64(0xffffffffffffffff)))
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::DIV_RAXEq(bxInstruction_c *i)
@@ -283,7 +293,7 @@ void BX_CPU_C::DIV_RAXEq(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), &op2_64);
+    op2_64 = read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   if (op2_64 == 0) {
@@ -323,7 +333,7 @@ void BX_CPU_C::IDIV_RAXEq(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2_64);
+    op2_64 = (Bit64s) read_virtual_qword(i->seg(), RMAddr(i));
   }
  
   if (op2_64 == 0) {
@@ -333,7 +343,7 @@ void BX_CPU_C::IDIV_RAXEq(bxInstruction_c *i)
   /* check MIN_INT divided by -1 case */
   if (op2_64 == -1)
   {
-    if ((op1_128.hi == BX_CONST64(0x8000000000000000)) && (!op1_128.lo))
+    if ((op1_128.hi == (Bit64s) BX_CONST64(0x8000000000000000)) && (!op1_128.lo))
       exception(BX_DE_EXCEPTION, 0, 0);
   }
 
@@ -344,8 +354,8 @@ void BX_CPU_C::IDIV_RAXEq(bxInstruction_c *i)
   long_idiv(&quotient_128,&remainder_64,&op1_128,op2_64);
   quotient_64l = quotient_128.lo;
 
-  if ((!(quotient_128.lo & BX_CONST64(0x8000000000000000)) && quotient_128.hi != 0) ||
-        (quotient_128.lo & BX_CONST64(0x8000000000000000)) && quotient_128.hi != BX_CONST64(0xffffffffffffffff))
+  if ((!(quotient_128.lo & BX_CONST64(0x8000000000000000)) && quotient_128.hi != (Bit64s) 0) ||
+        (quotient_128.lo & BX_CONST64(0x8000000000000000)) && quotient_128.hi != (Bit64s) BX_CONST64(0xffffffffffffffff))
   {
     exception(BX_DE_EXCEPTION, 0, 0);
   }
@@ -372,7 +382,7 @@ void BX_CPU_C::IMUL_GqEqId(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2_64);
+    op2_64 = (Bit64s) read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   long_imul(&product_128,op2_64,op3_64);
@@ -380,11 +390,12 @@ void BX_CPU_C::IMUL_GqEqId(bxInstruction_c *i)
   /* now write product back to destination */
   BX_WRITE_64BIT_REG(i->nnn(), product_128.lo);
 
-  /* set eflags:
-   * IMUL r64,r/m64,imm64: condition for clearing CF & OF:
-   *   result exactly fits within r64
-   */
-  SET_FLAGS_OSZAPC_S1S2_64(product_128.lo, product_128.hi, BX_INSTR_IMUL64);
+  SET_FLAGS_OSZAPC_LOGIC_64(product_128.lo);
+  if ((product_128.lo >= 0 && product_128.hi == 0) ||
+      (product_128.lo <  0 && product_128.hi == (Bit64s) BX_CONST64(0xffffffffffffffff)))
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 void BX_CPU_C::IMUL_GqEq(bxInstruction_c *i)
@@ -398,7 +409,7 @@ void BX_CPU_C::IMUL_GqEq(bxInstruction_c *i)
   }
   else {
     /* pointer, segment address pair */
-    read_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &op2_64);
+    op2_64 = (Bit64s) read_virtual_qword(i->seg(), RMAddr(i));
   }
 
   op1_64 = BX_READ_64BIT_REG(i->nnn());
@@ -408,11 +419,12 @@ void BX_CPU_C::IMUL_GqEq(bxInstruction_c *i)
   /* now write product back to destination */
   BX_WRITE_64BIT_REG(i->nnn(), product_128.lo);
 
-  /* set eflags:
-   * IMUL r64,r/m64,imm64: condition for clearing CF & OF:
-   *   result exactly fits within r64
-   */
-  SET_FLAGS_OSZAPC_S1S2_64(product_128.lo, product_128.hi, BX_INSTR_IMUL64);
+  SET_FLAGS_OSZAPC_LOGIC_64(product_128.lo);
+  if ((product_128.lo >= 0 && product_128.hi == 0) ||
+      (product_128.lo <  0 && product_128.hi == (Bit64s) BX_CONST64(0xffffffffffffffff)))
+  {
+    ASSERT_FLAGS_OxxxxC();
+  }
 }
 
 #endif /* if BX_SUPPORT_X86_64 */

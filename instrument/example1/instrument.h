@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h,v 1.14 2006/01/16 19:47:18 sshwarts Exp $
+// $Id: instrument.h,v 1.18 2007/12/13 21:53:55 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -73,10 +73,10 @@ public:
   /* memory accesses */
   unsigned num_data_accesses;
   struct {
-    bx_address laddr; // linear address
-    Bit32u paddr;     // physical address
-    unsigned op;      // BX_READ, BX_WRITE or BX_RW
-    unsigned size;    // 1 .. 8
+    bx_address laddr;     // linear address
+    bx_phy_address paddr; // physical address
+    unsigned op;          // BX_READ, BX_WRITE or BX_RW
+    unsigned size;        // 1 .. 8
   } data_access[MAX_DATA_ACCESSES];
 
   /* branch resolution and target */
@@ -126,6 +126,8 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_SHUTDOWN(cpu_id)
 #  define BX_INSTR_RESET(cpu_id)           icpu[cpu_id].bx_instr_reset()
 #  define BX_INSTR_HLT(cpu_id)
+#  define BX_INSTR_MWAIT(cpu_id, addr, len, flags)
+
 #  define BX_INSTR_NEW_INSTRUCTION(cpu_id) icpu[cpu_id].bx_instr_new_instruction()
 
 /* called from command line debugger */
@@ -156,7 +158,7 @@ extern bxInstrumentation *icpu;
 
 /* TLB/CACHE control instruction executed */
 #  define BX_INSTR_CACHE_CNTRL(cpu_id, what)
-#  define BX_INSTR_TLB_CNTRL(cpu_id, what, newval)
+#  define BX_INSTR_TLB_CNTRL(cpu_id, what, new_cr3)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
 
 /* execution */
@@ -165,8 +167,7 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_REPEAT_ITERATION(cpu_id, i)
 
 /* memory access */
-#  define BX_INSTR_LIN_READ(cpu_id, lin, phy, len)
-#  define BX_INSTR_LIN_WRITE(cpu_id, lin, phy, len)
+#  define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
 
 #  define BX_INSTR_MEM_CODE(cpu_id, linear, size)
 #  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)   icpu[cpu_id].bx_instr_mem_data(linear, size, rw)
@@ -191,6 +192,7 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_SHUTDOWN(cpu_id)
 #  define BX_INSTR_RESET(cpu_id)
 #  define BX_INSTR_HLT(cpu_id)
+#  define BX_INSTR_MWAIT(cpu_id, addr, len, flags)
 #  define BX_INSTR_NEW_INSTRUCTION(cpu_id)
 
 /* called from command line debugger */
@@ -219,7 +221,7 @@ extern bxInstrumentation *icpu;
 
 /* TLB/CACHE control instruction executed */
 #  define BX_INSTR_CACHE_CNTRL(cpu_id, what)
-#  define BX_INSTR_TLB_CNTRL(cpu_id, what, newval)
+#  define BX_INSTR_TLB_CNTRL(cpu_id, what, new_cr3)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
 
 /* execution */
@@ -228,9 +230,9 @@ extern bxInstrumentation *icpu;
 #  define BX_INSTR_REPEAT_ITERATION(cpu_id, i)
 
 /* memory access */
-#  define BX_INSTR_LIN_READ(cpu_id, lin, phy, len)
-#  define BX_INSTR_LIN_WRITE(cpu_id, lin, phy, len)
+#  define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
 
+/* memory access */
 #  define BX_INSTR_MEM_CODE(cpu_id, linear, size)      
 #  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)
 

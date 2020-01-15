@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc,v 1.50 2006/12/27 15:21:03 vruppert Exp $
+// $Id: rfb.cc,v 1.52 2007/12/10 21:01:25 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -107,7 +107,7 @@ static struct {
 } rfbBitmaps[BX_MAX_PIXMAPS];
 
 static unsigned rfbHeaderbarBitmapCount = 0;
-struct {
+struct _rfbHeaderbarBitmaps {
     unsigned int index;
     unsigned int xorigin;
     unsigned int yorigin;
@@ -545,7 +545,7 @@ void HandleRfbClient(SOCKET sClient)
                         if(n == 0) {
                             BX_ERROR(("client closed connection."));
                         } else {
-                            BX_ERROR(("error recieving data."));
+                            BX_ERROR(("error receiving data."));
                         }
                         return;
                     }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.cc,v 1.26 2007/09/10 20:47:08 sshwarts Exp $
+// $Id: smm.cc,v 1.29 2007/11/24 14:22:34 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006 Stanislav Shwartsman
@@ -75,7 +75,7 @@ void BX_CPU_C::RSM(bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
-  BX_INFO(("RSM: Resuming from System Management Mode !"));
+  BX_INFO(("RSM: Resuming from System Management Mode"));
 
   BX_CPU_THIS_PTR nmi_disable = 0;
 
@@ -104,9 +104,9 @@ void BX_CPU_C::enter_system_management_mode(void)
 {
   invalidate_prefetch_q();
 
-  BX_INFO(("Enter to System Management Mode !"));
+  BX_INFO(("Enter to System Management Mode"));
 
-  // debug(BX_CPU_THIS_PTR prev_eip);
+  // debug(BX_CPU_THIS_PTR prev_rip);
 
   BX_CPU_THIS_PTR in_smm = 1;
 
@@ -124,7 +124,7 @@ void BX_CPU_C::enter_system_management_mode(void)
   }
 
   BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
-  BX_CPU_THIS_PTR prev_eip = RIP = 0x00008000;
+  BX_CPU_THIS_PTR prev_rip = RIP = 0x00008000;
   BX_CPU_THIS_PTR dr7 = 0x00000400;
 
   // CR0 - PE, EM, TS, and PG flags set to 0; others unmodified
@@ -169,6 +169,10 @@ void BX_CPU_C::enter_system_management_mode(void)
 
 #if BX_SUPPORT_ICACHE
   BX_CPU_THIS_PTR updateFetchModeMask();
+#endif
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  BX_CPU_THIS_PTR alignment_check = 0;
 #endif
 
   /* DS (Data Segment) and descriptor cache */

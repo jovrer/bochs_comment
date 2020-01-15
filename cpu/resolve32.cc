@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: resolve32.cc,v 1.11 2006/03/06 22:03:02 sshwarts Exp $
+// $Id: resolve32.cc,v 1.15 2007/12/18 21:41:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,6 +23,7 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -32,256 +33,25 @@
 
 
   void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm0(bxInstruction_c *i)
-{
-  RMAddr(i) = EAX;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm1(bxInstruction_c *i)
-{
-  RMAddr(i) = ECX;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm2(bxInstruction_c *i)
-{
-  RMAddr(i) = EDX;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm3(bxInstruction_c *i)
-{
-  RMAddr(i) = EBX;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm5(bxInstruction_c *i)
+BX_CPU_C::BxResolve32Disp(bxInstruction_c *i)
 {
   RMAddr(i) = i->displ32u();
 }
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm6(bxInstruction_c *i)
-{
-  RMAddr(i) = ESI;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Rm7(bxInstruction_c *i)
-{
-  RMAddr(i) = EDI;
-}
-
 
   void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm0(bxInstruction_c *i)
+BX_CPU_C::BxResolve32Base(bxInstruction_c *i)
 {
-  RMAddr(i) = EAX + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm1(bxInstruction_c *i)
-{
-  RMAddr(i) = ECX + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm2(bxInstruction_c *i)
-{
-  RMAddr(i) = EDX + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm3(bxInstruction_c *i)
-{
-  RMAddr(i) = EBX + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm5(bxInstruction_c *i)
-{
-  RMAddr(i) = EBP + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm6(bxInstruction_c *i)
-{
-  RMAddr(i) = ESI + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Rm7(bxInstruction_c *i)
-{
-  RMAddr(i) = EDI + i->displ32u();
+  RMAddr(i) = BX_READ_32BIT_REG(i->sibBase()) + i->displ32u();
 }
 
-
   void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base0(bxInstruction_c *i)
+BX_CPU_C::BxResolve32DispIndex(bxInstruction_c *i)
 {
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EAX + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base1(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = ECX + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base2(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EDX + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base3(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EBX + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base4(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = ESP + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base5(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = i->displ32u() + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base6(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = ESI + scaled_index;
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod0Base7(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EDI + scaled_index;
+  RMAddr(i) = i->displ32u() + (BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale());
 }
 
-
-
-
   void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base0(bxInstruction_c *i)
+BX_CPU_C::BxResolve32BaseIndex(bxInstruction_c *i)
 {
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EAX + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base1(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = ECX + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base2(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EDX + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base3(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EBX + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base4(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = ESP + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base5(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EBP + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base6(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = ESI + scaled_index + i->displ32u();
-}
-  void  BX_CPP_AttrRegparmN(1)
-BX_CPU_C::Resolve32Mod1or2Base7(bxInstruction_c *i)
-{
-  Bit32u scaled_index;
-
-  if (i->sibIndex() != 4)
-    scaled_index = BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale();
-  else
-    scaled_index = 0;
-  RMAddr(i) = EDI + scaled_index + i->displ32u();
+  RMAddr(i) = BX_READ_32BIT_REG(i->sibBase()) + (BX_READ_32BIT_REG(i->sibIndex()) << i->sibScale()) + i->displ32u();
 }
