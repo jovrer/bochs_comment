@@ -1,14 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc,v 1.32 2009/02/09 10:35:55 vruppert Exp $
+// $Id: instrument.cc,v 1.34 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//   Copyright (c) 2006-2009 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -40,9 +35,7 @@ void bx_instr_mwait(unsigned cpu, bx_phy_address addr, unsigned len, Bit32u flag
 void bx_instr_new_instruction(unsigned cpu) {}
 
 void bx_instr_debug_promt() {}
-void bx_instr_start() {}
-void bx_instr_stop() {}
-void bx_instr_print() {}
+void bx_instr_debug_cmd(const char *cmd) {}
 
 void bx_instr_cnear_branch_taken(unsigned cpu, bx_address new_eip) {}
 void bx_instr_cnear_branch_not_taken(unsigned cpu) {}

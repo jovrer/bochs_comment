@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $$
+// $Id: vmx.h,v 1.7 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009 Stanislav Shwartsman
@@ -415,9 +415,7 @@ typedef struct bx_VMCS_GUEST_STATE
 
    Bit64u link_pointer;
 
-#if BX_SUPPORT_MTRR
    Bit64u pat_msr;
-#endif
 #if BX_SUPPORT_X86_64
    Bit64u efer_msr;
 #endif
@@ -447,9 +445,7 @@ typedef struct bx_VMCS_HOST_STATE
    bx_address sysenter_eip_msr;
    Bit32u sysenter_cs_msr;
 
-#if BX_SUPPORT_MTRR
    Bit64u pat_msr;
-#endif
 #if BX_SUPPORT_X86_64
    Bit64u efer_msr;
 #endif

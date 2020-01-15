@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.cc,v 1.165.2.1 2009/06/07 07:49:11 vruppert Exp $
+// $Id: vga.cc,v 1.168 2009/09/27 18:37:02 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -2156,7 +2156,7 @@ void bx_vga_c::update(void)
     }
     rows = (VDE+1)/(MSL+1);
     if ((rows * tm_info.line_offset) > (1 << 17)) {
-      BX_PANIC(("update(): text mode: out of memory"));
+      BX_ERROR(("update(): text mode: out of memory"));
       return;
     }
     cWidth = ((BX_VGA_THIS s.sequencer.reg1 & 0x01) == 1) ? 8 : 9;
@@ -2390,7 +2390,7 @@ void bx_vga_c::mem_write(bx_phy_address addr, Bit8u value)
 
   switch (BX_VGA_THIS s.graphics_ctrl.memory_mapping) {
     case 1: // 0xA0000 .. 0xAFFFF
-      if (addr > 0xAFFFF) return;
+      if ((addr < 0xA0000) || (addr > 0xAFFFF)) return;
       offset = addr - 0xA0000;
       break;
     case 2: // 0xB0000 .. 0xB7FFF
@@ -2398,10 +2398,11 @@ void bx_vga_c::mem_write(bx_phy_address addr, Bit8u value)
       offset = addr - 0xB0000;
       break;
     case 3: // 0xB8000 .. 0xBFFFF
-      if (addr < 0xB8000) return;
+      if ((addr < 0xB8000) || (addr > 0xBFFFF)) return;
       offset = addr - 0xB8000;
       break;
     default: // 0xA0000 .. 0xBFFFF
+      if ((addr < 0xA0000) || (addr > 0xBFFFF)) return;
       offset = addr - 0xA0000;
   }
 

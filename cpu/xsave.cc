@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: xsave.cc,v 1.16 2009/01/16 18:18:59 sshwarts Exp $
+// $Id: xsave.cc,v 1.22 2009/10/27 20:03:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008 Stanislav Shwartsman
+//   Copyright (c) 2008-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -55,6 +55,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
   //
   // We will go feature-by-feature and not run over all XCR0 bits
   //
+
+  Bit64u header1 = read_virtual_qword(i->seg(), eaddr + 512);
 
   /////////////////////////////////////////////////////////////////////////////
   if (BX_CPU_THIS_PTR xcr0.get_FPU() && (EAX & BX_XCR0_FPU_MASK) != 0)
@@ -123,6 +125,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
 
       write_virtual_dqword(i->seg(), eaddr+index*16+32, (Bit8u *) &xmm);
     }
+
+    header1 |= BX_XCR0_FPU_MASK;
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -140,9 +144,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSAVE(bxInstruction_c *i)
            eaddr+index*16+160, (Bit8u *) &(BX_CPU_THIS_PTR xmm[index]));
       }
     }
+
+    header1 |= BX_XCR0_SSE_MASK;
   }
 
-  // skip header update for now, required to know if a CPU feature is in its initial state
+  // always update header to 'dirty' state
+  write_virtual_qword(i->seg(), eaddr + 512, header1);
 #else
   BX_INFO(("XSAVE: required XSAVE support, use --enable-xsave option"));
   exception(BX_UD_EXCEPTION, 0, 0);
@@ -242,6 +249,16 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
 
       /* Restore floating point tag word - see desription for FXRSTOR instruction */
       BX_CPU_THIS_PTR the_i387.twd = unpack_FPU_TW(tag_byte);
+
+      /* check for unmasked exceptions */
+      if (FPU_PARTIAL_STATUS & ~FPU_CONTROL_WORD & FPU_CW_Exceptions_Mask) {
+        /* set the B and ES bits in the status-word */
+        FPU_PARTIAL_STATUS |= FPU_SW_Summary | FPU_SW_Backward;
+      }
+      else {
+        /* clear the B and ES bits in the status-word */
+        FPU_PARTIAL_STATUS &= ~(FPU_SW_Summary | FPU_SW_Backward);
+      }
     }
     else {
       // initialize FPU with reset values
@@ -260,6 +277,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XRSTOR(bxInstruction_c *i)
     Bit32u new_mxcsr = read_virtual_dword(i->seg(), eaddr + 24);
     if(new_mxcsr & ~MXCSR_MASK)
        exception(BX_GP_EXCEPTION, 0, 0);
+    BX_MXCSR_REGISTER = new_mxcsr;
 
     if (header1 & BX_XCR0_SSE_MASK) {
       // load SSE state from XSAVE area
@@ -317,17 +335,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::XGETBV(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XSETBV(bxInstruction_c *i)
 {
 #if BX_SUPPORT_XSAVE
-  if (real_mode() || v8086_mode()) {
-    BX_ERROR(("XSETBV: not recognized in real or virtual-8086 mode"));
-    exception(BX_UD_EXCEPTION, 0, 0);
-  }
-
   if(! (BX_CPU_THIS_PTR cr4.get_OSXSAVE())) {
     BX_ERROR(("XSETBV: OSXSAVE feature is not enabled in CR4!"));
     exception(BX_UD_EXCEPTION, 0, 0);
   }
 
-  if (CPL != 0) {
+  if (v8086_mode() || CPL != 0) {
     BX_ERROR(("XSETBV: The current priveledge level is not 0"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }

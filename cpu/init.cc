@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.209.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: init.cc,v 1.219 2009/10/30 09:13:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -432,7 +432,7 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_esp_msr, msr.sysenter_esp_msr);
   BXRS_HEX_PARAM_FIELD(MSR, sysenter_eip_msr, msr.sysenter_eip_msr);
 #endif
-#if BX_SUPPORT_MTRR
+#if BX_CPU_LEVEL >= 6
   BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase0, msr.mtrrphys[0]);
   BXRS_HEX_PARAM_FIELD(MSR, mtrrphysmask0, msr.mtrrphys[1]);
   BXRS_HEX_PARAM_FIELD(MSR, mtrrphysbase1, msr.mtrrphys[2]);
@@ -528,8 +528,12 @@ void BX_CPU_C::register_state(void)
 #endif
 
   BXRS_HEX_PARAM_SIMPLE32(cpu, async_event);
-
   BXRS_PARAM_BOOL(cpu, INTR, INTR);
+
+#if BX_X86_DEBUGGER
+  BXRS_PARAM_BOOL(cpu, in_repeat, in_repeat);
+#endif
+
   BXRS_PARAM_BOOL(cpu, in_smm, in_smm);
   BXRS_PARAM_BOOL(cpu, disable_SMI, disable_SMI);
   BXRS_PARAM_BOOL(cpu, pending_SMI, pending_SMI);
@@ -540,20 +544,21 @@ void BX_CPU_C::register_state(void)
   BXRS_PARAM_BOOL(cpu, trace, trace);
 }
 
-Bit64s BX_CPU_C::param_save_handler(void *devptr, bx_param_c *param, Bit64s val)
+Bit64s BX_CPU_C::param_save_handler(void *devptr, bx_param_c *param)
 {
 #if !BX_USE_CPU_SMF
   BX_CPU_C *class_ptr = (BX_CPU_C *) devptr;
-  return class_ptr->param_save(param, val);
+  return class_ptr->param_save(param);
 }
 
-Bit64s BX_CPU_C::param_save(bx_param_c *param, Bit64s val)
+Bit64s BX_CPU_C::param_save(bx_param_c *param)
 {
 #else
   UNUSED(devptr);
 #endif // !BX_USE_CPU_SMF
   const char *pname, *segname;
   bx_segment_reg_t *segment = NULL;
+  Bit64s val = 0;
 
   pname = param->get_name();
   if (!strcmp(pname, "cpu_version")) {
@@ -585,7 +590,7 @@ Bit64s BX_CPU_C::param_save(bx_param_c *param, Bit64s val)
     }
     if (segment != NULL) {
       if (!strcmp(pname, "ar_byte")) {
-        val = ar_byte(&(segment->cache));
+        val = get_ar_byte(&(segment->cache));
       }
       else if (!strcmp(pname, "selector")) {
         val = segment->selector.value;
@@ -598,14 +603,14 @@ Bit64s BX_CPU_C::param_save(bx_param_c *param, Bit64s val)
   return val;
 }
 
-Bit64s BX_CPU_C::param_restore_handler(void *devptr, bx_param_c *param, Bit64s val)
+void BX_CPU_C::param_restore_handler(void *devptr, bx_param_c *param, Bit64s val)
 {
 #if !BX_USE_CPU_SMF
   BX_CPU_C *class_ptr = (BX_CPU_C *) devptr;
-  return class_ptr->param_restore(param, val);
+  class_ptr->param_restore(param, val);
 }
 
-Bit64s BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
+void BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
 {
 #else
   UNUSED(devptr);
@@ -664,7 +669,6 @@ Bit64s BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
   else {
     BX_PANIC(("Unknown param %s in param_restore handler !", pname));
   }
-  return val;
 }
 
 void BX_CPU_C::after_restore_state(void)
@@ -853,7 +857,7 @@ void BX_CPU_C::reset(unsigned source)
   // DR0 - DR7 (Debug Registers)
 #if BX_CPU_LEVEL >= 3
   for (n=0; n<4; n++)
-    BX_CPU_THIS_PTR dr[n] = 0;   /* undefined */
+    BX_CPU_THIS_PTR dr[n] = 0;
 #endif
 
   BX_CPU_THIS_PTR dr7 = 0x00000400;
@@ -869,6 +873,9 @@ void BX_CPU_C::reset(unsigned source)
 #  error "DR6: CPU > 6"
 #endif
 
+#if BX_X86_DEBUGGER
+  BX_CPU_THIS_PTR in_repeat = 0;
+#endif
   BX_CPU_THIS_PTR in_smm = 0;
   BX_CPU_THIS_PTR disable_SMI = 0;
   BX_CPU_THIS_PTR pending_SMI = 0;
@@ -936,7 +943,7 @@ void BX_CPU_C::reset(unsigned source)
 #endif
 
   // Do not change MTRR on INIT
-#if BX_SUPPORT_MTRR
+#if BX_CPU_LEVEL >= 6
   if (source == BX_RESET_HARDWARE) {
     for (n=0; n<16; n++)
       BX_CPU_THIS_PTR msr.mtrrphys[n] = 0;

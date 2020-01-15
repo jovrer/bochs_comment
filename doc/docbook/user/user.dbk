@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.261 2009/05/02 11:25:34 sshwarts Exp $
+$Id: user.dbk,v 1.269 2009/11/10 18:10:37 vruppert Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -241,7 +241,7 @@ Bochs only provides you with the "virtual hardware", and it is up to you to do t
 If you are running on x86 hardware, you have a range of choices.
 Check the installation section for your host platform to see what options
 Bochs supports on your platform.  If the most important factor is speed,
-you may want to try a virtualization product instead of Bochs (VMware, plex86).
+you may want to try a virtualization product instead of Bochs (VMware, VirtualBox, plex86).
 </para>
 
 <para>
@@ -361,7 +361,7 @@ currently work with.
   <row>
     <entry>x86-64 Extensions Emulation</entry>
     <entry>Yes</entry>
-    <entry>Bochs can be configured to emulate x86-64 with all Intel (CMPXCHG16B instruction) or AMD (RDTSCP instruction) extensions.</entry>
+    <entry>Bochs can be configured to emulate x86-64 with many recent Intel or AMD extensions.</entry>
   </row>
   <row>
     <entry>Command Line Debugger</entry>
@@ -553,8 +553,8 @@ currently work with.
     <entry>Simulate a Multiprocessor</entry>
     <entry>Yes</entry>
     <entry>Bochs can be configured to simulate up to 8 processors.  This
-    feature is still experimental, but it can boot Linux 2.2 kernels with SMP
-    support.  Please note that this does NOT mean that Bochs can run
+    feature is still experimental, but it can boot several Linux or Windows guests
+    with SMP support.  Please note that this does NOT mean that Bochs can run
     faster on a physical SMP machine.
     </entry>
   </row>
@@ -643,7 +643,7 @@ code that displays the Bochs VGA screen and handles keyboard and mouse events.
     </row>
 
     <row>
-      <entry>Macintosh</entry>
+      <entry>PowerPC-Macintosh</entry>
       <entry>
         David Batterham<!-- <email>drbatter@socs.uts.edu.au</email> or <email>drbatter@yahoo.com</email> -->
         ported Bochs to the Mac. He compiled with CodeWarrior Pro R1 (CW12)
@@ -1165,6 +1165,14 @@ The tag tells which release you want, and it can be one of the following:
     </thead>
     <tbody>
       <row>
+        <entry>2.4.1</entry>
+        <entry>REL_2_4_1_FINAL</entry>
+      </row>
+      <row>
+        <entry>2.4</entry>
+        <entry>REL_2_4_FINAL</entry>
+      </row>
+      <row>
         <entry>2.3.7</entry>
         <entry>REL_2_3_7_FINAL</entry>
       </row>
@@ -1247,10 +1255,6 @@ The tag tells which release you want, and it can be one of the following:
       <row>
         <entry>1.1 (bugfix1)</entry>
         <entry>REL_1_1_BASE</entry>
-      </row>
-      <row>
-        <entry>March 25, 2000</entry>
-        <entry>REL-bochs-2000-03-25</entry>
       </row>
     </tbody>
    </tgroup>
@@ -2184,6 +2188,11 @@ turn it off.
       </entry>
     </row>
     <row>
+      <entry>--enable-1g-pages</entry>
+      <entry>no</entry>
+      <entry>support for 1G page extensions in x86-64 long mode</entry>
+    </row>
+    <row>
       <entry>--enable-mmx</entry>
       <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> >= 5)</entry>
       <entry>
@@ -2219,11 +2228,6 @@ turn it off.
       <entry>--enable-vmx</entry>
       <entry>no</entry>
       <entry>Intel Virtualization Extensions (VMX) support</entry>
-    </row>
-    <row>
-      <entry>--enable-vme</entry>
-      <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> >= 5)</entry>
-      <entry>Add support for VME (v8086 mode extensions)</entry>
     </row>
     <row>
       <entry>--enable-compressed-hd</entry>
@@ -2332,26 +2336,6 @@ turn it off.
         Enable experimental USB OHCI support. The host controller with 2-port
         root hub is available (USB device types: same as UHCI).
       </entry>
-    </row>
-    <row>
-      <entry>--enable-large-pages</entry>
-      <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> > 4)</entry>
-      <entry>support 4 megabyte page extensions (PSE, page size extension)</entry>
-    </row>
-    <row>
-      <entry>--enable-pae</entry>
-      <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> > 5)</entry>
-      <entry>support physical address extensions</entry>
-    </row>
-    <row>
-      <entry>--enable-1g-pages</entry>
-      <entry>no</entry>
-      <entry>support for 1G page extensions in x86-64 long mode</entry>
-    </row>
-    <row>
-      <entry>--enable-global-pages</entry>
-      <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> > 5)</entry>
-      <entry>support global pages</entry>
     </row>
     <row>
       <entry>--enable-smp</entry>
@@ -4997,6 +4981,12 @@ using the fixed filename "snapshot.txt".</para>
 <para>Press this button to trigger a hardware reset.</para>
 </listitem>
 <listitem>
+<para>suspend button</para>
+<para>Press this button to save current simulation state to a disk. The simulation
+could be restored back using bochs -r command. For more details read
+"Save and restore simulation" section of the user manual.</para>
+</listitem>
+<listitem>
 <para>power button</para>
 <para>This button stops the simulation and quits bochs.</para>
 </listitem>
@@ -6267,11 +6257,17 @@ From here, you may use the following commands:
 <para>
 <screen>
   c                           continue executing
+  cont
   continue
 
   s     [count]               execute count instructions, default is 1
   step  [count]
-  stepi [count]
+
+  s     [cpu] [count]         for SMP simulation, execute count instructions on cpu, default is 1
+  step  [cpu] [count]
+
+  s     all [count]           for SMP simulation, execute count instructions on all cpus
+  step  all [count]
 
   Ctrl-C                      stop execution, and return to command line prompt
   Ctrl-D                      if at empty line on command line, exit
@@ -6373,8 +6369,6 @@ From here, you may use the following commands:
                                datasize to value val.
 
   crc  addr1  addr2            Show CRC32 for physical memory range addr1..addr2
-  info dirty                   Show physical pages dirtied (written to) since last display
-                               Values displayed are the top 20 bits only (page addresses)
 
 </screen>
 </para>
@@ -6389,6 +6383,7 @@ From here, you may use the following commands:
   mmx                          List of all MMX registers and their contents
   sse                          List of all SSE registers and their contents
   sreg                         Show segment registers and their contents
+  dreg                         Show debug registers and their contents
   creg                         Show control registers and their contents
 
   info cpu                     List of all CPU registers and their contents
@@ -6495,10 +6490,7 @@ the "instrument/stubs" directory to it, then customize it.  Use:
 <title>Instrumentation commands</title>
 <para>
 <screen>
-  instrument start            calls bx_instr_start()
-  instrument stop             calls bx_instr_stop()
-  instrument reset            calls bx_instr_reset()
-  instrument print            calls bx_instr_print()
+  instrument [command]        calls BX_INSTR_DEBUG_CMD instrumentation callback with [command]
 </screen>
 </para>
 </section>

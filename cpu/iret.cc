@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: iret.cc,v 1.44 2009/04/05 19:09:44 sshwarts Exp $
+// $Id: iret.cc,v 1.46 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005 Stanislav Shwartsman
+//   Copyright (c) 2005-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -541,7 +541,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
     }
     else {
       // we are in 64-bit mode !
-      load_null_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS]);
+      load_null_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], raw_ss_selector);
       loadSRegLMNominal(BX_SEG_REG_SS, raw_ss_selector, cs_selector.rpl);
     }
 

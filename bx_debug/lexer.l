@@ -1,6 +1,6 @@
 %{
 /////////////////////////////////////////////////////////////////////////
-// $Id: lexer.l,v 1.29 2009/04/07 16:12:19 sshwarts Exp $
+// $Id: lexer.l,v 1.32 2009/10/29 15:49:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdlib.h>
@@ -57,7 +57,6 @@ crc             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CRC); }
 c               |
 cont            |
 continue        { bxlval.sval = strdup(bxtext); return(BX_TOKEN_CONTINUE); }
-stepi           |
 step            |
 s               { bxlval.sval = strdup(bxtext); return(BX_TOKEN_STEPN); }
 next            |
@@ -71,10 +70,10 @@ b|pb            |
 pbreak          { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PBREAKPOINT); }
 info            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_INFO); }
 cr		|
-creg		|
-cregs		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_CONTROL_REGS); }
-sreg		|
-sregs		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_SEGMENT_REGS); }
+creg		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_CONTROL_REGS); }
+dr		|
+dreg		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_DEBUG_REGS); }
+sreg		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_SEGMENT_REGS); }
 r               { bxlval.sval = strdup(bxtext); return(BX_TOKEN_R); }
 reg|regs        |
 registers       { bxlval.sval = strdup(bxtext); return(BX_TOKEN_REGS); }
@@ -89,7 +88,6 @@ gdt		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_GDT); }
 ldt		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_LDT); }
 tss		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_TSS); }
 tab		{ bxlval.sval = strdup(bxtext); return(BX_TOKEN_TAB); }
-dirty           { bxlval.sval = strdup(bxtext); return(BX_TOKEN_DIRTY); }
 linux           { bxlval.sval = strdup(bxtext); return(BX_TOKEN_LINUX); }
 delete          |
 del             |
@@ -142,6 +140,7 @@ ne2k|ne2000     { bxlval.sval = strdup(bxtext); return(BX_TOKEN_NE2000); }
 page            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PAGE); }
 vga             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_VGA); }
 pci             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_PCI); }
+all             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_ALL); }
 al              { bxlval.uval = BX_DBG_REG8L_AL; return(BX_TOKEN_8BL_REG);}
 bl              { bxlval.uval = BX_DBG_REG8L_BL; return(BX_TOKEN_8BL_REG);}
 cl              { bxlval.uval = BX_DBG_REG8L_CL; return(BX_TOKEN_8BL_REG);}

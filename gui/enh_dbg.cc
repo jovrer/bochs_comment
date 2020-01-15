@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.cc,v 1.15 2009/04/12 05:52:38 sshwarts Exp $
+// $Id: enh_dbg.cc,v 1.19 2009/10/31 16:01:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -50,7 +50,7 @@ bx_bool SeeReg[8] = {
     FALSE,  // show FPU (STi) / MMX registers
     FALSE,  // show XMM registers
     FALSE,  // show the Debug Registers (DR0, ...)
-    FALSE       // Test Registers not yet supported in bochs (2.3.7)
+    FALSE   // Test Registers not yet supported in bochs
 };
 
 bx_bool SingleCPU = FALSE;      // Display all SMP CPUs
@@ -122,10 +122,10 @@ static const char* RegLCName[EFER_Rnum + 1] = {
     "r8","r9","r10","r11","r12","r13","r14","r15",
     "eflags","eax","ebx","ecx","edx","esi","edi","ebp","esp","eip",
     "cs","ds","es","ss","fs","gs",
-    "gdtr","idtr","ldtr","tr","cr0","cr3","cr4","efer"
+    "gdtr","idtr","ldtr","tr","cr0","cr2","cr3","cr4","efer"
 };
-char* RDispName[EFER_Rnum + 1];
-bx_param_num_c *RegObject[BX_MAX_SMP_THREADS_SUPPORTED][TOT_REG_NUM + EXTRA_REGS];
+static char* RDispName[EFER_Rnum + 1];
+static bx_param_num_c *RegObject[BX_MAX_SMP_THREADS_SUPPORTED][TOT_REG_NUM + EXTRA_REGS];
 Bit64u rV[EFER_Rnum + 1];   // current values of registers
 Bit64u PV[EFER_Rnum + 1];   // previous values of registers
 Bit32s GDT_Len;             // "limits" (= bytesize-1) for GDT and IDT
@@ -148,9 +148,9 @@ int DViewMode = VIEW_MEMDUMP;
 bx_bool LinearDump = TRUE;     // FALSE = memdump uses physical addressing
 
 char *tmpcb;                   // 512b is allocated in bigbuf
-char *AsmData;                 // 5K for binary disassembly data
 char *CurStack;                // Stack workspace (400b usually)
-char *AsciiHex;                // Unsigned char to printable hex xlat table
+char AsciiHex[512];            // Unsigned char to printable hex xlat table
+static char UCtable[256];
 
 char bigbuf[outbufSIZE];       // 40K preallocated storage for all char buffers (see DoAllInit)
 char *DbgAppendPtr = bigbuf;
@@ -219,7 +219,6 @@ unsigned short WWPSnapCount;
 unsigned short RWPSnapCount;
 bx_phy_address WWP_Snapshot[16];
 bx_phy_address RWP_Snapshot[16];
-static char UCtable[256];
 
 short nDock[36] = {     // lookup table for alternate DockOrders
     0x231, 0x312, 0x231, 0x213, 0x132, 0x132,
@@ -497,27 +496,7 @@ void UpdateStatus()
 // Note: laddr + len must not cross a 4K boundary -- otherwise, there are no limits
 bx_bool ReadBxLMem(Bit64u laddr, unsigned len, Bit8u *buf)
 {
-    bx_phy_address paddr;
-    bx_bool retval = TRUE;
-
-    // on same physical page as the last access?
-    if (laddr < ladrmin || laddr > ladrmax)
-    {
-        // No -- create a new translation offset for the new page.
-        if (laddr > (Bit64u) 0xffffffff && In64Mode == FALSE)
-            return FALSE;
-        bx_address la_4K = (bx_address) laddr & (~0xfff);
-        ladrmin = la_4K;
-        ladrmax = la_4K + 0xfff;
-        retval = BX_CPU(CurrentCPU)->dbg_xlate_linear2phy(la_4K, &paddr);
-        if (retval == FALSE)
-            return FALSE;
-        l_p_offset = la_4K - paddr;
-    }
-    paddr = (bx_phy_address)(laddr - l_p_offset);
-    if (len != 0)
-        retval = bx_mem.dbg_fetch_mem(BX_CPU(CurrentCPU), paddr, len, buf);
-    return retval;
+    return bx_dbg_read_linear(CurrentCPU, laddr, len, buf);
 }
 
 // binary conversion (and validity testing) on hex/decimal char string inputs
@@ -896,7 +875,7 @@ int FillDebugRegs(int itemnum)
     cols[0] = drtxt;
     cols[1] = drtxt + 4;
 
-    for(i = 0 ; i < 6 ; i++)
+    for(i = 0; i < 6; i++)
     {
         bxp = RegObject[CurrentCPU][DR0_Rnum + i];
         val = 0;
@@ -913,6 +892,8 @@ int FillDebugRegs(int itemnum)
     return itemnum;
 }
 
+#define BX_GUI_DB_ASM_DATA (4400)
+
 // Disassemble a linear memory area, in a loop, loading text into ASM window
 // completely update the ASM display with new data
 void FillAsm(Bit64u LAddr, int MaxLines)
@@ -922,8 +903,8 @@ void FillAsm(Bit64u LAddr, int MaxLines)
     int i, len;
     bx_bool BufEmpty;
     bx_bool Go = TRUE;
-    char *s;
-    char *p = AsmData;  // just to avoid a compiler warning
+    char AsmData[BX_GUI_DB_ASM_DATA];  // 5K for binary disassembly data
+    char *s, *p = AsmData;  // just to avoid a compiler warning
     char *cols[3];
     char asmtxt[200];
 
@@ -944,7 +925,7 @@ void FillAsm(Bit64u LAddr, int MaxLines)
             *(s++)= *(p++);
         // load buffer, up to the next 4k boundary
         len = 4096 - (((int) ReadAddr) & 0xfff);    // calculate read amount
-        Go = ReadBxLMem (ReadAddr, len, (Bit8u *) s);
+        Go = ReadBxLMem(ReadAddr, len, (Bit8u *) s);
         BufLen += len;
         ReadAddr += len;
         if (Go == FALSE)
@@ -982,8 +963,8 @@ void FillAsm(Bit64u LAddr, int MaxLines)
                 while (len-- > 0)
                 {
                     i = (unsigned char) *(p++);
-                    *(s++) = AsciiHex[ 2* i ];
-                    *(s++) = AsciiHex[ 1+ 2*i ];
+                    *(s++) = AsciiHex[2*i];
+                    *(s++) = AsciiHex[2*i+1];
                 }
                 *s = 0;     // zero terminate the "bytes" string
 
@@ -1022,11 +1003,11 @@ void LoadRegList()
     if (In64Mode != FALSE)
     {
         showEreg = SeeReg[0];       // get user option setting for EAX, etc.
-        for (i = RAX_Rnum ; i <= R15_Rnum ; i++)
+        for (i = RAX_Rnum; i <= R15_Rnum; i++)
         {
             RitemToRnum[itemnum] = i;   // always recreate the register -> itemnum mapping
-            sprintf(regtxt,Fmt64b[UprCase],rV[i]);  // print the hex column
-            sprintf(cols[2], FMT_LL "d",rV[i]);     // and decimal
+            sprintf(regtxt,Fmt64b[UprCase], rV[i]);  // print the hex column
+            sprintf(cols[2], FMT_LL "d", rV[i]);     // and decimal
             cols[0] = RDispName[i];
             InsertListRow(cols, 3, REG_WND, itemnum, 0);    // 3 cols, group 0
             ++itemnum;
@@ -1036,11 +1017,11 @@ void LoadRegList()
     // then 32bit GP registers (if appropriate)
     if (showEreg != FALSE)
     {
-        for (i = EAX_Rnum ; i <= EIP_Rnum ; i++)
+        for (i = EAX_Rnum; i <= EIP_Rnum; i++)
         {
             RitemToRnum[itemnum] = i;
-            sprintf(regtxt,Fmt32b[UprCase],(Bit32u)rV[i]);  // print the hex column
-            sprintf(cols[2], FMT_LL "d",rV[i]);     // and decimal
+            sprintf(regtxt, Fmt32b[UprCase], (Bit32u)rV[i]);  // print the hex column
+            sprintf(cols[2], FMT_LL "d", rV[i]);     // and decimal
             cols[0] = RDispName[i];
 
             if (In32Mode == FALSE && i == 26)   // Check for Real Mode (Pmode is TRUE in Long Mode)
@@ -1065,10 +1046,10 @@ void LoadRegList()
     // display Segment registers (if requested)
     if (SeeReg[1])
     {
-        for(i = CS_Rnum ; i <= GS_Rnum ; i++)       // segment registers
+        for(i = CS_Rnum; i <= GS_Rnum; i++)       // segment registers
         {
             RitemToRnum[itemnum] = i;
-            sprintf(regtxt,Fmt16b[UprCase], rV[i] & 0xffff);
+            sprintf(regtxt, Fmt16b[UprCase], rV[i] & 0xffff);
             cols[0] = RDispName[i];
             InsertListRow(cols, 2, REG_WND, itemnum, 1);    // 2 cols, group 1
             ++itemnum;
@@ -1081,7 +1062,7 @@ void LoadRegList()
         int j = TRRnum;
         if (In32Mode == FALSE)      // don't show lgdt or tr in Real mode
             j= IDTRnum;
-        for(i = GDTRnum ; i <= j ; i++)
+        for(i = GDTRnum; i <= j; i++)
         {
             RitemToRnum[itemnum] = i;
             if (i == GDTRnum || i == IDTRnum)
@@ -1106,7 +1087,7 @@ void LoadRegList()
     // display Control Registers (if requested)
     if (SeeReg[3])
     {
-        for(i = CR0_Rnum ; i <= EFER_Rnum ; i++)
+        for(i = CR0_Rnum; i <= EFER_Rnum; i++)
         {
             RitemToRnum[itemnum] = i;
             sprintf(regtxt,"%08X",(Bit32u)rV[i]);
@@ -1216,7 +1197,7 @@ void InitRegObjects()
     // get the param tree interface objects for every single register on all CPUs
     while (--j >= 0)
     {
-    // RegObject[j]s are all initted to NULL when allocated in the BSS area
+    // RegObject[j]s are all initialized to NULL when allocated in the BSS area
     // but it doesn't hurt anything to do it again, once
         int i = TOT_REG_NUM + EXTRA_REGS;
         while (--i >= 0)
@@ -1254,88 +1235,89 @@ void InitRegObjects()
         RegObject[j][R14_Rnum] = SIM->get_param_num("R14", cpu_list);
         RegObject[j][R15_Rnum] = SIM->get_param_num("R15", cpu_list);
 #endif
-        RegObject[j][EFL_Rnum]= SIM->get_param_num("EFLAGS", cpu_list);
-        RegObject[j][CS_Rnum]= SIM->get_param_num("CS.selector", cpu_list);
-        RegObject[j][DS_Rnum]= SIM->get_param_num("DS.selector", cpu_list);
-        RegObject[j][ES_Rnum]= SIM->get_param_num("ES.selector", cpu_list);
-        RegObject[j][SS_Rnum]= SIM->get_param_num("SS.selector", cpu_list);
-        RegObject[j][FS_Rnum]= SIM->get_param_num("FS.selector", cpu_list);
-        RegObject[j][GS_Rnum]= SIM->get_param_num("GS.selector", cpu_list);
-        RegObject[j][GDTRnum]= SIM->get_param_num("GDTR.base", cpu_list);
-        RegObject[j][GDTR_Lim]= SIM->get_param_num("GDTR.limit", cpu_list);
-        RegObject[j][IDTRnum]= SIM->get_param_num("IDTR.base", cpu_list);
-        RegObject[j][IDTR_Lim]= SIM->get_param_num("IDTR.limit", cpu_list);
-        RegObject[j][LDTRnum]= SIM->get_param_num("LDTR.base", cpu_list);
-        RegObject[j][TRRnum]= SIM->get_param_num("TR.base", cpu_list);
-        RegObject[j][CR0_Rnum]= SIM->get_param_num("CR0", cpu_list);
-        RegObject[j][CR3_Rnum]= SIM->get_param_num("CR3", cpu_list);
+        RegObject[j][EFL_Rnum] = SIM->get_param_num("EFLAGS", cpu_list);
+        RegObject[j][CS_Rnum] = SIM->get_param_num("CS.selector", cpu_list);
+        RegObject[j][DS_Rnum] = SIM->get_param_num("DS.selector", cpu_list);
+        RegObject[j][ES_Rnum] = SIM->get_param_num("ES.selector", cpu_list);
+        RegObject[j][SS_Rnum] = SIM->get_param_num("SS.selector", cpu_list);
+        RegObject[j][FS_Rnum] = SIM->get_param_num("FS.selector", cpu_list);
+        RegObject[j][GS_Rnum] = SIM->get_param_num("GS.selector", cpu_list);
+        RegObject[j][GDTRnum] = SIM->get_param_num("GDTR.base", cpu_list);
+        RegObject[j][GDTR_Lim] = SIM->get_param_num("GDTR.limit", cpu_list);
+        RegObject[j][IDTRnum] = SIM->get_param_num("IDTR.base", cpu_list);
+        RegObject[j][IDTR_Lim] = SIM->get_param_num("IDTR.limit", cpu_list);
+        RegObject[j][LDTRnum] = SIM->get_param_num("LDTR.base", cpu_list);
+        RegObject[j][TRRnum] = SIM->get_param_num("TR.base", cpu_list);
+        RegObject[j][CR0_Rnum] = SIM->get_param_num("CR0", cpu_list);
+        RegObject[j][CR2_Rnum] = SIM->get_param_num("CR2", cpu_list);
+        RegObject[j][CR3_Rnum] = SIM->get_param_num("CR3", cpu_list);
 #if BX_CPU_LEVEL >= 4
         RegObject[j][CR4_Rnum] = SIM->get_param_num("CR4", cpu_list);
 #endif
 #if BX_SUPPORT_X86_64
-        RegObject[j][EFER_Rnum]= SIM->get_param_num("MSR.EFER", cpu_list);
+        RegObject[j][EFER_Rnum] = SIM->get_param_num("MSR.EFER", cpu_list);
 #endif
 #if BX_SUPPORT_FPU
-        RegObject[j][ST0_Rnum]= SIM->get_param_num("FPU.st0.fraction", cpu_list);
-        RegObject[j][ST1_Rnum]= SIM->get_param_num("FPU.st1.fraction", cpu_list);
-        RegObject[j][ST2_Rnum]= SIM->get_param_num("FPU.st2.fraction", cpu_list);
-        RegObject[j][ST3_Rnum]= SIM->get_param_num("FPU.st3.fraction", cpu_list);
-        RegObject[j][ST4_Rnum]= SIM->get_param_num("FPU.st4.fraction", cpu_list);
-        RegObject[j][ST5_Rnum]= SIM->get_param_num("FPU.st5.fraction", cpu_list);
-        RegObject[j][ST6_Rnum]= SIM->get_param_num("FPU.st6.fraction", cpu_list);
-        RegObject[j][ST7_Rnum]= SIM->get_param_num("FPU.st7.fraction", cpu_list);
-        RegObject[j][ST0_exp]= SIM->get_param_num("FPU.st0.exp", cpu_list);
-        RegObject[j][ST1_exp]= SIM->get_param_num("FPU.st1.exp", cpu_list);
-        RegObject[j][ST2_exp]= SIM->get_param_num("FPU.st2.exp", cpu_list);
-        RegObject[j][ST3_exp]= SIM->get_param_num("FPU.st3.exp", cpu_list);
-        RegObject[j][ST4_exp]= SIM->get_param_num("FPU.st4.exp", cpu_list);
-        RegObject[j][ST5_exp]= SIM->get_param_num("FPU.st5.exp", cpu_list);
-        RegObject[j][ST6_exp]= SIM->get_param_num("FPU.st6.exp", cpu_list);
-        RegObject[j][ST7_exp]= SIM->get_param_num("FPU.st7.exp", cpu_list);
+        RegObject[j][ST0_Rnum] = SIM->get_param_num("FPU.st0.fraction", cpu_list);
+        RegObject[j][ST1_Rnum] = SIM->get_param_num("FPU.st1.fraction", cpu_list);
+        RegObject[j][ST2_Rnum] = SIM->get_param_num("FPU.st2.fraction", cpu_list);
+        RegObject[j][ST3_Rnum] = SIM->get_param_num("FPU.st3.fraction", cpu_list);
+        RegObject[j][ST4_Rnum] = SIM->get_param_num("FPU.st4.fraction", cpu_list);
+        RegObject[j][ST5_Rnum] = SIM->get_param_num("FPU.st5.fraction", cpu_list);
+        RegObject[j][ST6_Rnum] = SIM->get_param_num("FPU.st6.fraction", cpu_list);
+        RegObject[j][ST7_Rnum] = SIM->get_param_num("FPU.st7.fraction", cpu_list);
+        RegObject[j][ST0_exp] = SIM->get_param_num("FPU.st0.exp", cpu_list);
+        RegObject[j][ST1_exp] = SIM->get_param_num("FPU.st1.exp", cpu_list);
+        RegObject[j][ST2_exp] = SIM->get_param_num("FPU.st2.exp", cpu_list);
+        RegObject[j][ST3_exp] = SIM->get_param_num("FPU.st3.exp", cpu_list);
+        RegObject[j][ST4_exp] = SIM->get_param_num("FPU.st4.exp", cpu_list);
+        RegObject[j][ST5_exp] = SIM->get_param_num("FPU.st5.exp", cpu_list);
+        RegObject[j][ST6_exp] = SIM->get_param_num("FPU.st6.exp", cpu_list);
+        RegObject[j][ST7_exp] = SIM->get_param_num("FPU.st7.exp", cpu_list);
 #endif
 #if BX_SUPPORT_SSE
-        RegObject[j][XMM0_Rnum]= SIM->get_param_num("SSE.xmm00_lo", cpu_list);
-        RegObject[j][XMM1_Rnum]= SIM->get_param_num("SSE.xmm01_lo", cpu_list);
-        RegObject[j][XMM2_Rnum]= SIM->get_param_num("SSE.xmm02_lo", cpu_list);
-        RegObject[j][XMM3_Rnum]= SIM->get_param_num("SSE.xmm03_lo", cpu_list);
-        RegObject[j][XMM4_Rnum]= SIM->get_param_num("SSE.xmm04_lo", cpu_list);
-        RegObject[j][XMM5_Rnum]= SIM->get_param_num("SSE.xmm05_lo", cpu_list);
-        RegObject[j][XMM6_Rnum]= SIM->get_param_num("SSE.xmm06_lo", cpu_list);
-        RegObject[j][XMM7_Rnum]= SIM->get_param_num("SSE.xmm07_lo", cpu_list);
-        RegObject[j][XMM0_hi]= SIM->get_param_num("SSE.xmm00_hi", cpu_list);
-        RegObject[j][XMM1_hi]= SIM->get_param_num("SSE.xmm01_hi", cpu_list);
-        RegObject[j][XMM2_hi]= SIM->get_param_num("SSE.xmm02_hi", cpu_list);
-        RegObject[j][XMM3_hi]= SIM->get_param_num("SSE.xmm03_hi", cpu_list);
-        RegObject[j][XMM4_hi]= SIM->get_param_num("SSE.xmm04_hi", cpu_list);
-        RegObject[j][XMM5_hi]= SIM->get_param_num("SSE.xmm05_hi", cpu_list);
-        RegObject[j][XMM6_hi]= SIM->get_param_num("SSE.xmm06_hi", cpu_list);
-        RegObject[j][XMM7_hi]= SIM->get_param_num("SSE.xmm07_hi", cpu_list);
+        RegObject[j][XMM0_Rnum] = SIM->get_param_num("SSE.xmm00_lo", cpu_list);
+        RegObject[j][XMM1_Rnum] = SIM->get_param_num("SSE.xmm01_lo", cpu_list);
+        RegObject[j][XMM2_Rnum] = SIM->get_param_num("SSE.xmm02_lo", cpu_list);
+        RegObject[j][XMM3_Rnum] = SIM->get_param_num("SSE.xmm03_lo", cpu_list);
+        RegObject[j][XMM4_Rnum] = SIM->get_param_num("SSE.xmm04_lo", cpu_list);
+        RegObject[j][XMM5_Rnum] = SIM->get_param_num("SSE.xmm05_lo", cpu_list);
+        RegObject[j][XMM6_Rnum] = SIM->get_param_num("SSE.xmm06_lo", cpu_list);
+        RegObject[j][XMM7_Rnum] = SIM->get_param_num("SSE.xmm07_lo", cpu_list);
+        RegObject[j][XMM0_hi] = SIM->get_param_num("SSE.xmm00_hi", cpu_list);
+        RegObject[j][XMM1_hi] = SIM->get_param_num("SSE.xmm01_hi", cpu_list);
+        RegObject[j][XMM2_hi] = SIM->get_param_num("SSE.xmm02_hi", cpu_list);
+        RegObject[j][XMM3_hi] = SIM->get_param_num("SSE.xmm03_hi", cpu_list);
+        RegObject[j][XMM4_hi] = SIM->get_param_num("SSE.xmm04_hi", cpu_list);
+        RegObject[j][XMM5_hi] = SIM->get_param_num("SSE.xmm05_hi", cpu_list);
+        RegObject[j][XMM6_hi] = SIM->get_param_num("SSE.xmm06_hi", cpu_list);
+        RegObject[j][XMM7_hi] = SIM->get_param_num("SSE.xmm07_hi", cpu_list);
 
 #if BX_SUPPORT_X86_64
-        RegObject[j][XMM8_Rnum]= SIM->get_param_num("SSE.xmm08_lo", cpu_list);
-        RegObject[j][XMM9_Rnum]= SIM->get_param_num("SSE.xmm09_lo", cpu_list);
-        RegObject[j][XMMA_Rnum]= SIM->get_param_num("SSE.xmm10_lo", cpu_list);
-        RegObject[j][XMMB_Rnum]= SIM->get_param_num("SSE.xmm11_lo", cpu_list);
-        RegObject[j][XMMC_Rnum]= SIM->get_param_num("SSE.xmm12_lo", cpu_list);
-        RegObject[j][XMMD_Rnum]= SIM->get_param_num("SSE.xmm13_lo", cpu_list);
-        RegObject[j][XMME_Rnum]= SIM->get_param_num("SSE.xmm14_lo", cpu_list);
-        RegObject[j][XMMF_Rnum]= SIM->get_param_num("SSE.xmm15_lo", cpu_list);
-        RegObject[j][XMM8_hi]= SIM->get_param_num("SSE.xmm08_hi", cpu_list);
-        RegObject[j][XMM9_hi]= SIM->get_param_num("SSE.xmm09_hi", cpu_list);
-        RegObject[j][XMMA_hi]= SIM->get_param_num("SSE.xmm00_hi", cpu_list);
-        RegObject[j][XMMB_hi]= SIM->get_param_num("SSE.xmm11_hi", cpu_list);
-        RegObject[j][XMMC_hi]= SIM->get_param_num("SSE.xmm12_hi", cpu_list);
-        RegObject[j][XMMD_hi]= SIM->get_param_num("SSE.xmm13_hi", cpu_list);
-        RegObject[j][XMME_hi]= SIM->get_param_num("SSE.xmm14_hi", cpu_list);
-        RegObject[j][XMMF_hi]= SIM->get_param_num("SSE.xmm15_hi", cpu_list);
+        RegObject[j][XMM8_Rnum] = SIM->get_param_num("SSE.xmm08_lo", cpu_list);
+        RegObject[j][XMM9_Rnum] = SIM->get_param_num("SSE.xmm09_lo", cpu_list);
+        RegObject[j][XMMA_Rnum] = SIM->get_param_num("SSE.xmm10_lo", cpu_list);
+        RegObject[j][XMMB_Rnum] = SIM->get_param_num("SSE.xmm11_lo", cpu_list);
+        RegObject[j][XMMC_Rnum] = SIM->get_param_num("SSE.xmm12_lo", cpu_list);
+        RegObject[j][XMMD_Rnum] = SIM->get_param_num("SSE.xmm13_lo", cpu_list);
+        RegObject[j][XMME_Rnum] = SIM->get_param_num("SSE.xmm14_lo", cpu_list);
+        RegObject[j][XMMF_Rnum] = SIM->get_param_num("SSE.xmm15_lo", cpu_list);
+        RegObject[j][XMM8_hi] = SIM->get_param_num("SSE.xmm08_hi", cpu_list);
+        RegObject[j][XMM9_hi] = SIM->get_param_num("SSE.xmm09_hi", cpu_list);
+        RegObject[j][XMMA_hi] = SIM->get_param_num("SSE.xmm00_hi", cpu_list);
+        RegObject[j][XMMB_hi] = SIM->get_param_num("SSE.xmm11_hi", cpu_list);
+        RegObject[j][XMMC_hi] = SIM->get_param_num("SSE.xmm12_hi", cpu_list);
+        RegObject[j][XMMD_hi] = SIM->get_param_num("SSE.xmm13_hi", cpu_list);
+        RegObject[j][XMME_hi] = SIM->get_param_num("SSE.xmm14_hi", cpu_list);
+        RegObject[j][XMMF_hi] = SIM->get_param_num("SSE.xmm15_hi", cpu_list);
 #endif      // 64bit
 #endif      // SSE
-        RegObject[j][DR0_Rnum]= SIM->get_param_num("DR0", cpu_list);
-        RegObject[j][DR1_Rnum]= SIM->get_param_num("DR1", cpu_list);
-        RegObject[j][DR2_Rnum]= SIM->get_param_num("DR2", cpu_list);
-        RegObject[j][DR3_Rnum]= SIM->get_param_num("DR3", cpu_list);
-        RegObject[j][DR6_Rnum]= SIM->get_param_num("DR6", cpu_list);
-        RegObject[j][DR7_Rnum]= SIM->get_param_num("DR7", cpu_list);
+        RegObject[j][DR0_Rnum] = SIM->get_param_num("DR0", cpu_list);
+        RegObject[j][DR1_Rnum] = SIM->get_param_num("DR1", cpu_list);
+        RegObject[j][DR2_Rnum] = SIM->get_param_num("DR2", cpu_list);
+        RegObject[j][DR3_Rnum] = SIM->get_param_num("DR3", cpu_list);
+        RegObject[j][DR6_Rnum] = SIM->get_param_num("DR6", cpu_list);
+        RegObject[j][DR7_Rnum] = SIM->get_param_num("DR7", cpu_list);
 // is there an #if for whether the test registers are supported?
 //  RegObject[j][71]= SIM->get_param_num("TR3", cpu_list);
 // {"TR3","TR4","TR5","TR6","TR7"};
@@ -1378,7 +1360,6 @@ void doUpdate()
 // Fill the GDT ListView, reading GDT data directly from bochs linear mem
 void FillGDT()
 {
-    Bit64u laddr;
     unsigned int i, j, GroupId;
     unsigned int k = (GDT_Len + 1) / 8;
     Bit8u gdtbuf[8];
@@ -1386,7 +1367,7 @@ void FillGDT()
     char gdttxt[90];
     doDumpRefresh = FALSE;
 
-    laddr = rV[GDTRnum] & (~7);         // recover the GDT base address (force 8b align)
+    Bit64u laddr = rV[GDTRnum];
     StartListUpdate(DUMP_WND);
 
     *gdttxt = 0;
@@ -1407,10 +1388,11 @@ void FillGDT()
     cols[14]= gdttxt;
     cols[15]= gdttxt;
     cols[16]= gdttxt;
-    for(i = 0 ; i < k ; i++)
+
+    for(i = 0; i < k; i++)
     {
         // read 2 dwords from bochs linear mem into "buffer"
-        sprintf(cols[0],"%02u (Selector 0x%04X)",i,i << 3);
+        sprintf(cols[0], "%02u (Selector 0x%04X)", i, i << 3);
         if (ReadBxLMem(laddr, 8, gdtbuf) == FALSE)      // abort the current GDT dump on a memory error
         {
             cols[1]= gdttxt;    // ERROR - blank out cols #2 - 4 for this new row
@@ -1428,8 +1410,8 @@ void FillGDT()
         // enforce proper littleendianness on the gdtbuf bytes
         Bit32u limit = gdtbuf[0] | ((Bit32u) gdtbuf[1] << 8);
         limit |= ((Bit32u)gdtbuf[6] & 0xf) << 16;
-        if ((gdtbuf[6] & 0x80) != 0)    // 'Granularity' bit = 4K limit multiplier
-            limit = limit * 4096 + 4095;    // and the bottom 12 bits aren't tested
+        if ((gdtbuf[6] & 0x80) != 0)       // 'Granularity' bit = 4K limit multiplier
+            limit = limit * 4096 + 4095;   // and the bottom 12 bits aren't tested
 
         GroupId = 8;        // default to "blank" group
         cols[17]= (char*)GDTsT[0]; // default info string is blank
@@ -1476,6 +1458,7 @@ void FillGDT()
             cols[17] = (char*)GDTt2[7];    // call "Null" selector "unused"
         InsertListRow(cols, 18, DUMP_WND, i, GroupId);  // 18 cols
     }
+
     RedrawColumns(DUMP_WND);
     EndListUpdate(DUMP_WND);
 }
@@ -1517,7 +1500,7 @@ void FillIDT()
     cols[15]= idttxt;
     cols[16]= idttxt;
     cols[17]= idttxt + 10;
-    entrysize = 4 << mode ;     // calculate the bytesize of the entries
+    entrysize = 4 << mode; // calculate the bytesize of the entries
     unsigned int k = (IDT_Len + 1) / entrysize;
     StartListUpdate(DUMP_WND);
 
@@ -1526,10 +1509,10 @@ void FillIDT()
 
     if (k > 256)    // if IDT_Len is unreasonably large, set a reasonable maximum
         k = 256;
-    for(i = 0 ; i < k ; i++)
+    for(i = 0; i < k; i++)
     {
-        idttxt[1] = AsciiHex[ 2* i ];
-        idttxt[2] = AsciiHex[ 1+ 2*i ];
+        idttxt[1] = AsciiHex[2*i];
+        idttxt[2] = AsciiHex[2*i+1];
         idttxt[3] = 0;
         if (ReadBxLMem(laddr, entrysize, idtbuf) == FALSE)      // abort the current IDT dump on a memory error
         {
@@ -1713,7 +1696,7 @@ void FillStack()
     {
         unsigned int ReadSize = 0x1000 - i;
         // read up to the 4K boundary, then try to read the last chunk
-        if (ReadBxLMem (StackLA, ReadSize, (Bit8u *) cp) == FALSE)
+        if (ReadBxLMem(StackLA, ReadSize, (Bit8u *) cp) == FALSE)
         {
             // no data to show -- just one error message
             sprintf (cols[17],"illegal address");
@@ -1722,12 +1705,12 @@ void FillStack()
             EndListUpdate(DUMP_WND);
             return;
         }
-        LglAddy = ReadBxLMem (StackLA + ReadSize, len + i - 0x1000, (Bit8u *) cp + ReadSize);
+        LglAddy = ReadBxLMem(StackLA + ReadSize, len + i - 0x1000, (Bit8u *) cp + ReadSize);
         if (LglAddy == FALSE)
             len = ReadSize;
     }
     else
-        ReadBxLMem (StackLA, len, (Bit8u *) cp);
+        ReadBxLMem(StackLA, len, (Bit8u *) cp);
 
     UpdateDisp = CpuModeChange;     // calculate which stack entries have changed
     cp = CurStack;
@@ -1849,6 +1832,11 @@ void prtbrk (Bit32u seg, Bit64u addy, unsigned int id, bx_bool enabled, char *co
     sprintf (cols[0] + i,FMT_LLCAPX,addy);
 }
 
+extern unsigned num_write_watchpoints;
+extern unsigned num_read_watchpoints;
+extern bx_phy_address write_watchpoint[];   // currently 32bit only
+extern bx_phy_address read_watchpoint[];
+
 // Displays all Breakpoints and Watchpoints
 void FillBrkp()
 {
@@ -1856,10 +1844,6 @@ void FillBrkp()
     char *cols[18];
     char brktxt[60];
     unsigned int brktype;
-    extern unsigned num_write_watchpoints;
-    extern unsigned num_read_watchpoints;
-    extern bx_phy_address write_watchpoint[];   // currently 32bit only
-    extern bx_phy_address read_watchpoint[];
     extern bx_guard_t bx_guard;
 
     doDumpRefresh = FALSE;
@@ -1995,8 +1979,8 @@ void FillDataX(char* t, char C, bx_bool doHex)
 
     if (doHex != FALSE)
     {
-        *d = AsciiHex[ 2* (unsigned char)C ];
-        d[1] = AsciiHex[ 1+ 2* (unsigned char)C ];
+        *d = AsciiHex[2* (unsigned char)C];
+        d[1] = AsciiHex[2* (unsigned char)C + 1];
         d[2] = 0;
         if (isLittleEndian != FALSE)    // little endian => reverse hex digits
         {
@@ -2038,7 +2022,7 @@ void ShowData()
     StartListUpdate(DUMP_WND);
 
     x = DataDump;       // data dumps are ALWAYS 4K
-    for(i = 0 ; i < 4096 ; i += 16)
+    for(i = 0; i < 4096; i += 16)
     {
         if (In64Mode == FALSE)
             sprintf(cols[0],"0x%08X",(Bit32u) (DumpStart + i));
@@ -2047,7 +2031,7 @@ void ShowData()
 
         *tmphex = 0;
         *cols[17] = 0;
-        for(unsigned int y = 0 ; y < 16 ; y++)
+        for(unsigned y = 0; y < 16; y++)
         {
             if ((DumpInAsciiMode & 1) != 0)
                 // verify the char is printable, then append it to the "ascii" column
@@ -2078,7 +2062,7 @@ void ShowData()
 void MakeRDnames()
 {
     char *p = RDispName[0];       // first storage location
-    for (int i=0; i < 41; i++)
+    for (int i=0; i <= EFER_Rnum; i++)
     {
         RDispName[i] = p;   // create the Name pointer
         const char *c = RegLCName[i];   // Register name in lower case
@@ -2115,8 +2099,6 @@ void DoAllInit()
     RDispName[0] = p;
     p -= 4096;
     DataDump = p;       // storage for 4K memory dumps
-    p -= 4400;          // 4K+ for disassembly data
-    AsmData = p;
     p -= OutWinCnt;     // 10K for Output Window buffer
     OutWindow = p;
     i = 64;
@@ -2131,7 +2113,6 @@ void DoAllInit()
     p -= STACK_ENTRIES * 8;     // and another one
     CurStack = p;
     p -= 512;
-    AsciiHex = p;       // storage for the binary->ascii table
     p -= 512;           // 2 "hex" bytes per byte value
     tmpcb = p;
 
@@ -2245,7 +2226,7 @@ void OnBreak()
         RefreshDataWin();
 }
 
-int HexFromAsk(char* ask,char* b)       // this routine converts a user-typed hex string into binary bytes
+static int HexFromAsk(const char* ask,char* b)       // this routine converts a user-typed hex string into binary bytes
 {                   // it ignores any bigendian issues -- binary is converted front to end as chars
     int y = 0;
     int i = 0;
@@ -2262,13 +2243,13 @@ int HexFromAsk(char* ask,char* b)       // this routine converts a user-typed he
     return y;
 }
 
-bx_bool FindHex(unsigned char* b1,int bs,unsigned char* b2,int by)
+static bx_bool FindHex(const unsigned char* b1,int bs,const unsigned char* b2,int by)
 {
     // search bs bytes of b1
-    for(int i = 0 ; i < bs ; i++)       // TODO: this loop could be a little more efficient.
+    for(int i = 0; i < bs; i++)       // TODO: this loop could be a little more efficient.
     {                       // -- it just scans an input byte string against DataDump memory
         bx_bool Match = TRUE;
-        for(int y = 0 ; y < by ; y++)
+        for(int y = 0; y < by; y++)
         {
             if (b1[i + y] != b2[y])
             {
@@ -2320,9 +2301,9 @@ bx_bool InitDataDump(bx_bool isLinear, Bit64u newDS)
         unsigned int len = (int) newDS & 0xfff;
         unsigned int i = 4096 - len;
         Bit64u h = newDS + i;
-        retval = ReadBxLMem (newDS,i,(Bit8u *)DataDump);
+        retval = ReadBxLMem(newDS,i,(Bit8u *)DataDump);
         if (retval != FALSE && len != 0)
-            retval = ReadBxLMem (h,len,(Bit8u *)DataDump + i);
+            retval = ReadBxLMem(h,len,(Bit8u *)DataDump + i);
     }
     else
         retval = (bx_bool) bx_mem.dbg_fetch_mem( BX_CPU(CurrentCPU),
@@ -2485,7 +2466,6 @@ void TogglePTree()
     }
 }
 
-
 void doFind()
 {
     unsigned int i, L;
@@ -2506,11 +2486,11 @@ void doFind()
 
         if (UprCase != FALSE)   // convert search string to uppercase if ASM is that way
             upr(srchstr);
-        for(i = 0 ; i < (unsigned) AsmLineCount ; i++)
+        for(i = 0; i < (unsigned) AsmLineCount; i++)
         {
-            GetLIText(ASM_WND,i,2,tmpcb);       // retrieve the ASM column 2 text for row i
+            GetLIText(ASM_WND, i, 2, tmpcb);       // retrieve the ASM column 2 text for row i
             Select = FALSE;
-            if (IsMatching(tmpcb,srchstr,TRUE) != FALSE)
+            if (IsMatching(tmpcb, srchstr, TRUE) != FALSE)
                 Select = TRUE;
             SetLIState(ASM_WND, i, Select);
         }
@@ -2524,7 +2504,7 @@ void doFind()
         int by = HexFromAsk(tmpcb,srchstr);     // by = len of binary search string
 
         // Find in all rows of 16 bytes -- must do rows, so they can be selected
-        for(i = 0,L = 0 ; i < 4096 ; i += 16, L++)
+        for(i = 0, L = 0; i < 4096; i += 16, L++)
         {
             Select = FALSE;
             if (by != 0 && FindHex((unsigned char *)DataDump + i,16,(unsigned char *)srchstr,by))
@@ -2535,7 +2515,7 @@ void doFind()
         // Try ascii for additional matches and selected lines
         Select = TRUE;          // this loop, only add selected lines to the display
         by = strlen(tmpcb);
-        for(i = 0,L = 0 ; i < 4096 ; i += 16, L++)
+        for(i = 0, L = 0; i < 4096; i += 16, L++)
         {
             if (by != 0 && FindHex((unsigned char *)DataDump + i,16,(unsigned char *)tmpcb,by))
                 SetLIState(DUMP_WND, L, Select);
@@ -2557,7 +2537,7 @@ void doStepN()
     PrevStepNSize = i;
     AtBreak = FALSE;
     StatusChange = TRUE;
-    bx_dbg_stepN_command(i);
+    bx_dbg_stepN_command(CurrentCPU, i);
     AtBreak = TRUE;
     StatusChange = TRUE;
     OnBreak();
@@ -2590,7 +2570,6 @@ void doDisAsm()
         j = AsmLineCount;
     TopAsmLA = AsmLA[AsmLineCount - j];     //TopAsmLA is the scroll point
 }
-
 
 // Toggle all "selected" items as linear breakpoint on the ASM window
 void SetBreak(int OneEntry)
@@ -2687,8 +2666,7 @@ void SetWatchpoint(unsigned * num_watchpoints, bx_phy_address * watchpoint)
     {
         // Set a watchpoint to last clicked address -- the list is not sorted
         if (*num_watchpoints >= BX_DBG_MAX_WATCHPONTS)
-            DispMessage ("Too many of that type of watchpoint. Max: 16",
-                "Table Overflow") ;
+            DispMessage("Too many of that type of watchpoint. Max: 16", "Table Overflow");
         else
             watchpoint[(*num_watchpoints)++] = (bx_phy_address) SelectedDataAddress;
     }
@@ -2705,8 +2683,7 @@ void ChangeReg()
     int i = RitemToRnum[L];
     if (i > EFER_Rnum)      // TODO: extend this to more reg -- need display names for all
         return;
-    char *d1;
-    d1 = RDispName[i];
+    char *d1 = RDispName[i];
 //  if (i > EFER_Rnum)
 //      *tmpcb = 0;
 //  else
@@ -2722,7 +2699,7 @@ void ChangeReg()
         RegObject[CurrentCPU][i]->set(val);         // the set function should be a bool, not a void
 //      bx_bool worked = RegObject[CurrentCPU][i]->set(val);
 //      if (worked == FALSE)
-//          DispMessage ("Bochs does not allow you to set that register","Selection Error") ;
+//          DispMessage ("Bochs does not allow you to set that register","Selection Error");
 //      else
             LoadRegList();      // update the register window
     }
@@ -2756,7 +2733,7 @@ void SetMemLine(int L)
         if (LinearDump != FALSE)    // is h is a LINEAR address? Convert to physical!
         {
             // use the ReadBx function to calculate the lin->phys offset
-            if (ReadBxLMem (h,0,(Bit8u *)addrstr) == FALSE) // "read" 0 bytes
+            if (ReadBxLMem(h,0,(Bit8u *)addrstr) == FALSE) // "read" 0 bytes
                 err = 2;
             else
                 h -= l_p_offset;    // convert h to a physmem address
@@ -2784,7 +2761,7 @@ void SetMemLine(int L)
             {
                 // convert the hex to a byte, and try to store the byte in bochs physmem
                 sscanf (s,"%2X", (unsigned int*)&newval);
-                if ( bx_mem.dbg_set_mem( (bx_phy_address) h, 1, &newval) == FALSE )
+                if (bx_mem.dbg_set_mem( (bx_phy_address) h, 1, &newval) == FALSE)
                     err = 2;
                 ++h;                    // bump to the next mem address
                 while (*x == ' ')       // scan past whitespace
@@ -2807,10 +2784,6 @@ void SetMemLine(int L)
 // Normal return value is 0, return != 0 has OS-specific meaning.
 int HotKey (int ww, int Alt, int Shift, int Control)
 {
-    extern unsigned num_write_watchpoints;
-    extern unsigned num_read_watchpoints;
-    extern bx_phy_address write_watchpoint[];
-    extern bx_phy_address read_watchpoint[];
     if (Alt < 0){
         if (ww == '1')
             doNewWSize(0);
@@ -3017,7 +2990,7 @@ int HotKey (int ww, int Alt, int Shift, int Control)
         case VK_F11:
             if (AtBreak != FALSE && debug_cmd_ready == FALSE)
             {
-                bx_dbg_stepN_command(1);        // singlestep
+                bx_dbg_stepN_command(CurrentCPU, 1);        // singlestep
                 StatusChange = TRUE;
                 OnBreak();
             }
@@ -3060,7 +3033,7 @@ int HotKey (int ww, int Alt, int Shift, int Control)
                 StatusChange = TRUE;
                 if (*tmpcb == 0)            // Hitting <CR> on a blank line means SINGLESTEP
                 {
-                    bx_dbg_stepN_command(1);        // singlestep
+                    bx_dbg_stepN_command(CurrentCPU, 1);        // singlestep
                     OnBreak();
                 }
                 else
@@ -3090,10 +3063,6 @@ int HotKey (int ww, int Alt, int Shift, int Control)
 void ActivateMenuItem (int cmd)
 {
     int i;
-    extern unsigned num_write_watchpoints;
-    extern unsigned num_read_watchpoints;
-    extern bx_phy_address write_watchpoint[];
-    extern bx_phy_address read_watchpoint[];
 
     switch(cmd)
     {
@@ -3113,7 +3082,7 @@ void ActivateMenuItem (int cmd)
         case CMD_STEP1: // step 1
             if (AtBreak != FALSE && debug_cmd_ready == FALSE)
             {
-                bx_dbg_stepN_command(1);        // singlestep
+                bx_dbg_stepN_command(CurrentCPU, 1);        // singlestep
                 StatusChange = TRUE;
                 OnBreak();
             }

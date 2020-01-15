@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmexit.cc,v 1.5 2009/02/17 19:20:47 sshwarts Exp $
+// $Id: vmexit.cc,v 1.11 2009/10/12 16:30:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009 Stanislav Shwartsman
@@ -28,6 +28,7 @@
 
 #if BX_SUPPORT_X86_64==0
 // Make life easier for merging cpu64 and cpu32 code.
+#define RIP EIP
 #define RDI EDI
 #define RSI ESI
 #endif
@@ -282,6 +283,10 @@ void BX_CPU_C::VMexit_Event(bxInstruction_c *i, unsigned type, unsigned vector, 
   // [31:31] | interruption info valid
   //
 
+  if (i) {
+    VMwrite32(VMCS_32BIT_VMEXIT_INSTRUCTION_LENGTH, i->ilen());
+  }
+
   if (! vmexit) {
     // record IDT vectoring information 
     vm->idt_vector_error_code = errcode;
@@ -298,9 +303,14 @@ void BX_CPU_C::VMexit_Event(bxInstruction_c *i, unsigned type, unsigned vector, 
   if (vector == BX_DF_EXCEPTION)
     BX_CPU_THIS_PTR in_event = 0; // clear in_event indication on #DF
 
-  // qualifcation for debug exceptions similar to debug_trap field
-  if (vector == BX_DB_EXCEPTION) 
+  if (vector == BX_DB_EXCEPTION)  {
+    // qualifcation for debug exceptions similar to debug_trap field
     qualification = BX_CPU_THIS_PTR debug_trap & 0x0000600f;
+  }
+
+  // clear debug_trap field
+  BX_CPU_THIS_PTR debug_trap = 0;
+  BX_CPU_THIS_PTR inhibit_mask = 0;
 
   Bit32u interruption_info = vector | (type << 8);
   if (errcode_valid)
@@ -310,7 +320,7 @@ void BX_CPU_C::VMexit_Event(bxInstruction_c *i, unsigned type, unsigned vector, 
   VMwrite32(VMCS_32BIT_VMEXIT_INTERRUPTION_INFO, interruption_info);
   VMwrite32(VMCS_32BIT_VMEXIT_INTERRUPTION_ERR_CODE, errcode);
 
-  VMexit(i, reason, qualification);
+  VMexit(0, reason, qualification);
 }
 
 void BX_CPU_C::VMexit_TripleFault(void)
@@ -354,7 +364,7 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_MSR(bxInstruction_c *i, unsigned op
        if (msr > 0xC0001FFF) vmexit = 1;
        else {
          // check MSR-HI bitmaps
-         bx_phy_address pAddr = vm->msr_bitmap_addr + (msr >> 3) + 1024 + (op == VMX_VMEXIT_RDMSR) ? 0 : 2048;
+         bx_phy_address pAddr = vm->msr_bitmap_addr + (msr >> 3) + 1024 + ((op == VMX_VMEXIT_RDMSR) ? 0 : 2048);
          access_read_physical(pAddr, 1, &field);
          BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 1, BX_READ, &field);
          if (field & (1 << (msr & 7)))
@@ -365,7 +375,7 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_MSR(bxInstruction_c *i, unsigned op
        if (msr > 0x00001FFF) vmexit = 1;
        else {
          // check MSR-LO bitmaps
-         bx_phy_address pAddr = vm->msr_bitmap_addr + (msr >> 3) + (op == VMX_VMEXIT_RDMSR) ? 0 : 2048;
+         bx_phy_address pAddr = vm->msr_bitmap_addr + (msr >> 3) + ((op == VMX_VMEXIT_RDMSR) ? 0 : 2048);
          access_read_physical(pAddr, 1, &field);
          BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 1, BX_READ, &field);
          if (field & (1 << (msr & 7)))
@@ -395,19 +405,15 @@ void BX_CPP_AttrRegparmN(3) BX_CPU_C::VMexit_IO(bxInstruction_c *i, unsigned por
 
   if (VMEXIT(VMX_VM_EXEC_CTRL2_IO_BITMAPS)) {
      // always VMEXIT on port "wrap around" case
-     if (port + len > 0x10000) vmexit = 1;
+     if ((port + len) > 0x10000) vmexit = 1;
      else {
-        bx_phy_address pAddr = BX_CPU_THIS_PTR vmcs.io_bitmap_addr[(port >> 15) & 1] + ((port & 0x7fff) >> 4);
+        bx_phy_address pAddr = BX_CPU_THIS_PTR vmcs.io_bitmap_addr[(port >> 15) & 1] + ((port & 0x7fff) >> 3);
         Bit16u bitmap;
         access_read_physical(pAddr, 2, (Bit8u*) &bitmap);
         BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 2, BX_READ, (Bit8u*) &bitmap);
 
-        for (unsigned n = port; n < port + len; n++) {
-           if (bitmap & (1 << (n & 15))) {
-              vmexit = 1;
-              break;
-           }
-        }
+        unsigned mask = ((1 << len) - 1) << (port & 7);
+        if (bitmap & mask) vmexit = 1;
      }
   }
   else if (VMEXIT(VMX_VM_EXEC_CTRL2_IO_VMEXIT)) vmexit = 1;
@@ -656,6 +662,33 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::VMexit_DR_Access(bxInstruction_c *i, unsig
        qualification |= (1 << 4);
 
     VMexit(i, VMX_VMEXIT_DR_ACCESS, qualification);
+  }
+}
+
+Bit32u BX_CPU_C::VMX_Read_TPR_Shadow(void)
+{
+  bx_phy_address pAddr = BX_CPU_THIS_PTR vmcs.virtual_apic_page_addr + 0x80;
+  Bit8u tpr_shadow;
+
+  access_read_physical(pAddr, 1, &tpr_shadow);
+  BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 1, BX_READ, &tpr_shadow);
+
+  return (tpr_shadow >> 4) & 0xF;
+}
+
+void BX_CPU_C::VMX_Write_TPR_Shadow(Bit8u tpr_shadow)
+{
+  VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
+  bx_phy_address pAddr = vm->virtual_apic_page_addr + 0x80;
+  Bit8u field = tpr_shadow << 4;
+
+  access_write_physical(pAddr, 1, &field);
+  BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 1, BX_WRITE, &field);
+
+  if (tpr_shadow < vm->vm_tpr_threshold) {
+    // commit current instruction to produce trap-like VMexit
+    BX_CPU_THIS_PTR prev_rip = RIP; // commit new RIP
+    VMexit(0, VMX_VMEXIT_TPR_THRESHOLD, 0);
   }
 }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc,v 1.176.2.1 2009/06/07 07:49:08 vruppert Exp $
+// $Id: config.cc,v 1.187 2009/10/17 17:52:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #include "bochs.h"
 #include "iodev/iodev.h"
@@ -242,7 +242,7 @@ void bx_init_options()
   bx_param_c *root_param = SIM->get_param(".");
 
   // general options subtree
-  menu = new bx_list_c(root_param, "general", "");
+  menu = new bx_list_c(root_param, "general", "", 10);
 
  // config interface option, set in bochsrc or command line
   static const char *config_interface_list[] = {
@@ -392,10 +392,19 @@ void bx_init_options()
       "size",
       "Memory size (megabytes)",
       "Amount of RAM in megabytes",
-      1, 2048,
+      1, ((Bit64u)(1) << BX_PHY_ADDRESS_WIDTH) / (1024*1024),
       BX_DEFAULT_MEM_MEGS);
   ramsize->set_ask_format("Enter memory size (MB): [%d] ");
   ramsize->set_options(ramsize->USE_SPIN_CONTROL);
+
+  bx_param_num_c *host_ramsize = new bx_param_num_c(ram,
+      "host_size",
+      "Host allocated memory size (megabytes)",
+      "Amount of host allocated memory in megabytes",
+      1, 2048,
+      BX_DEFAULT_MEM_MEGS);
+  host_ramsize->set_ask_format("Enter memory size (MB): [%d] ");
+  host_ramsize->set_options(ramsize->USE_SPIN_CONTROL);
 
   path = new bx_param_filename_c(rom,
       "path",
@@ -1776,7 +1785,6 @@ int bx_parse_cmdline(int arg, int argc, char *argv[])
   return 0;
 }
 
-#if BX_PROVIDE_MAIN
 char *bx_find_bochsrc()
 {
   FILE *fd = NULL;
@@ -2533,6 +2541,20 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: megs directive: wrong # args.", context));
     }
     SIM->get_param_num(BXPN_MEM_SIZE)->set(atol(params[1]));
+    SIM->get_param_num(BXPN_HOST_MEM_SIZE)->set(atol(params[1]));
+  } else if (!strcmp(params[0], "memory")) {
+    if (num_params < 3) {
+      PARSE_ERR(("%s: memory directive malformed.", context));
+    }
+    for (i=1; i<num_params; i++) {
+      if (!strncmp(params[i], "host=", 5)) {
+        SIM->get_param_num(BXPN_HOST_MEM_SIZE)->set(atol(&params[i][5]));
+      } else if (!strncmp(params[i], "guest=", 6)) {
+        SIM->get_param_num(BXPN_MEM_SIZE)->set(atol(&params[i][6]));
+      } else {
+        PARSE_ERR(("%s: memory directive malformed.", context));
+      }
+    }
   } else if (!strcmp(params[0], "romimage")) {
     if ((num_params < 2) || (num_params > 3)) {
       PARSE_ERR(("%s: romimage directive: wrong # args.", context));
@@ -3559,7 +3581,8 @@ int bx_write_configuration(const char *rc, int overwrite)
     fprintf(fp, ", options=\"%s\"\n", strptr);
   else
     fprintf(fp, "\n");
-  fprintf(fp, "megs: %d\n", SIM->get_param_num(BXPN_MEM_SIZE)->get());
+  fprintf(fp, "memory: host=%d, guest=%d\n", SIM->get_param_num(BXPN_HOST_MEM_SIZE)->get(),
+    SIM->get_param_num(BXPN_MEM_SIZE)->get());
   strptr = SIM->get_param_string(BXPN_ROM_PATH)->getptr();
   if (strlen(strptr) > 0) {
     fprintf(fp, "romimage: file=\"%s\"", strptr);
@@ -3689,5 +3712,3 @@ int bx_write_configuration(const char *rc, int overwrite)
   fclose(fp);
   return 0;
 }
-
-#endif // #if BX_PROVIDE_MAIN

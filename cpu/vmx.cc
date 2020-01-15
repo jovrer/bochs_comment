@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.cc,v 1.14.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: vmx.cc,v 1.26 2009/10/08 14:33:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009 Stanislav Shwartsman
@@ -84,6 +84,52 @@ void BX_CPU_C::set_VMCSPTR(Bit64u vmxptr)
     BX_CPU_THIS_PTR vmcshostptr = (bx_hostpageaddr_t) BX_MEM(0)->getHostMemAddr(BX_CPU_THIS, vmxptr, BX_WRITE);
   else
     BX_CPU_THIS_PTR vmcshostptr = 0;
+}
+
+Bit16u BX_CPU_C::VMread16(unsigned encoding)
+{
+  Bit16u field;
+
+  unsigned offset = vmcs_map[VMCS_FIELD_INDEX(encoding)][VMCS_FIELD(encoding)];
+  if(offset >= VMX_VMCS_AREA_SIZE)
+    BX_PANIC(("VMread16: can't access encoding 0x%08x, offset=0x%x", encoding, offset));
+  bx_phy_address pAddr = BX_CPU_THIS_PTR vmcsptr + offset;
+
+  BX_ASSERT(VMCS_FIELD_WIDTH(encoding) == VMCS_FIELD_WIDTH_16BIT);
+
+  if (BX_CPU_THIS_PTR vmcshostptr) {
+    Bit16u *hostAddr = (Bit16u*) (BX_CPU_THIS_PTR vmcshostptr | offset);
+    ReadHostDWordFromLittleEndian(hostAddr, field);
+  }
+  else {
+    access_read_physical(pAddr, 2, (Bit8u*)(&field));
+  }
+
+  BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 2, BX_READ, (Bit8u*)(&field));
+
+  return field;
+}
+
+// write 16-bit value into VMCS 16-bit field
+void BX_CPU_C::VMwrite16(unsigned encoding, Bit16u val_16)
+{
+  unsigned offset = vmcs_map[VMCS_FIELD_INDEX(encoding)][VMCS_FIELD(encoding)];
+  if(offset >= VMX_VMCS_AREA_SIZE)
+    BX_PANIC(("VMwrite16: can't access encoding 0x%08x, offset=0x%x", encoding, offset));
+  bx_phy_address pAddr = BX_CPU_THIS_PTR vmcsptr + offset;
+
+  BX_ASSERT(VMCS_FIELD_WIDTH(encoding) == VMCS_FIELD_WIDTH_16BIT);
+
+  if (BX_CPU_THIS_PTR vmcshostptr) {
+    Bit16u *hostAddr = (Bit16u*) (BX_CPU_THIS_PTR vmcshostptr | offset);
+    pageWriteStampTable.decWriteStamp(pAddr);
+    WriteHostWordToLittleEndian(hostAddr, val_16);
+  }
+  else {
+    access_write_physical(pAddr, 2, (Bit8u*)(&val_16));
+  }
+
+  BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, pAddr, 2, BX_WRITE, (Bit8u*)(&val_16));
 }
 
 Bit32u BX_CPU_C::VMread32(unsigned encoding)
@@ -317,6 +363,16 @@ VMX_error_code BX_CPU_C::VMenterLoadCheckVmControls(void)
   if (vm->vmexec_ctrls2 & VMX_VM_EXEC_CTRL2_TPR_SHADOW) {
      if ((vm->virtual_apic_page_addr & 0xfff) != 0 || ! IsValidPhyAddr(vm->virtual_apic_page_addr)) {
        BX_ERROR(("VMFAIL: VMCS EXEC CTRL: virtual apic phy addr malformed"));
+       return VMXERR_VMENTRY_INVALID_VM_CONTROL_FIELD;
+     }
+
+     if (vm->vm_tpr_threshold & 0xfffffff0) {
+       BX_ERROR(("VMFAIL: VMCS EXEC CTRL: TPR threshold too big"));
+       return VMXERR_VMENTRY_INVALID_VM_CONTROL_FIELD;
+     }
+
+     if (vm->vm_tpr_threshold > VMX_Read_TPR_Shadow()) {
+       BX_ERROR(("VMFAIL: VMCS EXEC CTRL: TPR threshold > TPR shadow"));
        return VMXERR_VMENTRY_INVALID_VM_CONTROL_FIELD;
      }
   }
@@ -562,7 +618,7 @@ VMX_error_code BX_CPU_C::VMenterLoadCheckHostState(void)
 
   host_state->cr3 = (bx_address) VMread64(VMCS_HOST_CR3);
 #if BX_SUPPORT_X86_64
-  if (host_state->cr3 & (BX_CONST64(0xfff0000000000000) | BX_PHY_ADDRESS_RESERVED_BITS)) {
+  if (! IsValidPhyAddr(host_state->cr3)) {
      BX_ERROR(("VMFAIL: VMCS host state invalid CR3"));
      return VMXERR_VMENTRY_INVALID_VM_HOST_STATE_FIELD;
   }
@@ -579,7 +635,7 @@ VMX_error_code BX_CPU_C::VMenterLoadCheckHostState(void)
   }
 
   for(int n=0; n<6; n++) {
-     host_state->segreg_selector[n] = (Bit16u) VMread32(VMCS_16BIT_HOST_ES_SELECTOR + 2*n);
+     host_state->segreg_selector[n] = VMread16(VMCS_16BIT_HOST_ES_SELECTOR + 2*n);
      if (host_state->segreg_selector[n] & 7) {
         BX_ERROR(("VMFAIL: VMCS host segreg %d TI/RPL != 0", n));
         return VMXERR_VMENTRY_INVALID_VM_HOST_STATE_FIELD;
@@ -596,7 +652,7 @@ VMX_error_code BX_CPU_C::VMenterLoadCheckHostState(void)
      return VMXERR_VMENTRY_INVALID_VM_HOST_STATE_FIELD;
   }
 
-  host_state->tr_selector = (Bit16u) VMread32(VMCS_16BIT_HOST_TR_SELECTOR);
+  host_state->tr_selector = VMread16(VMCS_16BIT_HOST_TR_SELECTOR);
   if (! host_state->tr_selector || (host_state->tr_selector & 7) != 0) {
      BX_ERROR(("VMFAIL: VMCS invalid host TR selector"));
      return VMXERR_VMENTRY_INVALID_VM_HOST_STATE_FIELD;
@@ -754,7 +810,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
 
   guest.cr3 = VMread64(VMCS_GUEST_CR3);
 #if BX_SUPPORT_X86_64
-  if (guest.cr3 & (BX_CONST64(0xfff0000000000000) | BX_PHY_ADDRESS_RESERVED_BITS)) {
+  if (! IsValidPhyAddr(guest.cr3)) {
      BX_ERROR(("VMENTER FAIL: VMCS guest invalid CR3"));
      return VMX_VMEXIT_VMENTRY_FAILURE_GUEST_STATE;
   }
@@ -793,7 +849,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
   //
 
   for (int n=0; n<6; n++) {
-     Bit32u selector = VMread32(VMCS_16BIT_GUEST_ES_SELECTOR + 2*n);
+     Bit16u selector = VMread16(VMCS_16BIT_GUEST_ES_SELECTOR + 2*n);
      bx_address base = (bx_address) VMread64(VMCS_GUEST_ES_BASE + 2*n);
      Bit32u limit = VMread32(VMCS_32BIT_GUEST_ES_LIMIT + 2*n);
      Bit32u ar = VMread32(VMCS_32BIT_GUEST_ES_ACCESS_RIGHTS + 2*n) >> 8;
@@ -804,7 +860,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
 
      if (v8086_guest) {
         // guest in V8086 mode
-        if (base != (selector << 4)) {
+        if (base != ((bx_address)(selector << 4))) {
           BX_ERROR(("VMENTER FAIL: VMCS v8086 guest bad %s.BASE", segname[n]));
           return VMX_VMEXIT_VMENTRY_FAILURE_GUEST_STATE;
         }
@@ -967,7 +1023,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
   // Load and Check Guest State from VMCS - LDTR
   //
 
-  Bit32u ldtr_selector = VMread32(VMCS_16BIT_GUEST_LDTR_SELECTOR);
+  Bit16u ldtr_selector = VMread16(VMCS_16BIT_GUEST_LDTR_SELECTOR);
   Bit64u ldtr_base = VMread64(VMCS_GUEST_LDTR_BASE);
   Bit32u ldtr_limit = VMread32(VMCS_32BIT_GUEST_LDTR_LIMIT);
   Bit32u ldtr_ar = VMread32(VMCS_32BIT_GUEST_LDTR_ACCESS_RIGHTS) >> 8;
@@ -1008,7 +1064,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
   // Load and Check Guest State from VMCS - TR
   //
 
-  Bit32u tr_selector = VMread32(VMCS_16BIT_GUEST_TR_SELECTOR);
+  Bit16u tr_selector = VMread16(VMCS_16BIT_GUEST_TR_SELECTOR);
   Bit64u tr_base = VMread64(VMCS_GUEST_TR_BASE);
   Bit32u tr_limit = VMread32(VMCS_32BIT_GUEST_TR_LIMIT);
   Bit32u tr_ar = VMread32(VMCS_32BIT_GUEST_TR_ACCESS_RIGHTS) >> 8;
@@ -1194,7 +1250,7 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
     }
   }
 
-#if BX_SUPPORT_PAE
+#if BX_CPU_LEVEL >= 6
   if (! x86_64_guest && (guest.cr4 & (1 << 5)) != 0 /* PAE */) {
     // CR0.PG is always set in VMX mode
     if (! CheckPDPTR(guest.cr3)) {
@@ -1306,7 +1362,9 @@ Bit32u BX_CPU_C::VMenterLoadCheckGuestState(Bit64u *qualification)
 #endif
 
   invalidate_prefetch_q();
+#if BX_SUPPORT_ALIGNMENT_CHECK
   handleAlignmentCheck();
+#endif
   handleCpuModeChange();
 
   return VMXERR_NO_ERROR;
@@ -1444,7 +1502,7 @@ void BX_CPU_C::VMexitSaveGuestState(void)
      Bit32u limit = BX_CPU_THIS_PTR sregs[n].cache.u.segment.limit_scaled;
      Bit32u ar = get_descriptor_h(&BX_CPU_THIS_PTR sregs[n].cache) & 0x00f0ff00;
 
-     VMwrite32(VMCS_16BIT_GUEST_ES_SELECTOR + 2*n, selector);
+     VMwrite16(VMCS_16BIT_GUEST_ES_SELECTOR + 2*n, selector);
      VMwrite64(VMCS_GUEST_ES_BASE + 2*n, base);
      VMwrite32(VMCS_32BIT_GUEST_ES_LIMIT + 2*n, limit);
      VMwrite32(VMCS_32BIT_GUEST_ES_ACCESS_RIGHTS + 2*n, ar | (invalid << 24));
@@ -1457,7 +1515,7 @@ void BX_CPU_C::VMexitSaveGuestState(void)
   Bit32u ldtr_limit = BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled;
   Bit32u ldtr_ar = get_descriptor_h(&BX_CPU_THIS_PTR ldtr.cache) & 0x00f0ff00;
 
-  VMwrite32(VMCS_16BIT_GUEST_LDTR_SELECTOR, ldtr_selector);
+  VMwrite16(VMCS_16BIT_GUEST_LDTR_SELECTOR, ldtr_selector);
   VMwrite64(VMCS_GUEST_LDTR_BASE, ldtr_base);
   VMwrite32(VMCS_32BIT_GUEST_LDTR_LIMIT, ldtr_limit);
   VMwrite32(VMCS_32BIT_GUEST_LDTR_ACCESS_RIGHTS, ldtr_ar | (ldtr_invalid << 24));
@@ -1469,7 +1527,7 @@ void BX_CPU_C::VMexitSaveGuestState(void)
   Bit32u tr_limit = BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled;
   Bit32u tr_ar = get_descriptor_h(&BX_CPU_THIS_PTR tr.cache) & 0x00f0ff00;
 
-  VMwrite32(VMCS_16BIT_GUEST_TR_SELECTOR, tr_selector);
+  VMwrite16(VMCS_16BIT_GUEST_TR_SELECTOR, tr_selector);
   VMwrite64(VMCS_GUEST_TR_BASE, tr_base);
   VMwrite32(VMCS_32BIT_GUEST_TR_LIMIT, tr_limit);
   VMwrite32(VMCS_32BIT_GUEST_TR_ACCESS_RIGHTS, tr_ar | (tr_invalid << 24));
@@ -1653,7 +1711,9 @@ void BX_CPU_C::VMexitLoadHostState(void)
 #endif
 
   invalidate_prefetch_q();
+#if BX_SUPPORT_ALIGNMENT_CHECK
   handleAlignmentCheck();
+#endif
   handleCpuModeChange();
 }
 
@@ -2190,7 +2250,8 @@ void BX_CPU_C::VMREAD(bxInstruction_c *i)
     case VMCS_16BIT_HOST_FS_SELECTOR:
     case VMCS_16BIT_HOST_GS_SELECTOR:
     case VMCS_16BIT_HOST_TR_SELECTOR:
-      // fall through
+      field_64 = VMread16(encoding);
+      break;
 
     /* VMCS 32_bit control fields */
     /* binary 0100_00xx_xxxx_xxx0 */
@@ -2442,36 +2503,35 @@ void BX_CPU_C::VMWRITE(bxInstruction_c *i)
     Bit64u enc_64;
 
     if (i->modC0()) {
-       enc_64 = BX_READ_64BIT_REG(i->nnn());
+       val_64 = BX_READ_64BIT_REG(i->rm());
     }
     else {
        Bit64u eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-       enc_64 = read_virtual_qword_64(i->seg(), eaddr);
+       val_64 = read_virtual_qword_64(i->seg(), eaddr);
     }
+
+    enc_64 = BX_READ_64BIT_REG(i->nnn());
     if (enc_64 >> 32) {
        BX_ERROR(("VMWRITE: not supported field !"));
        VMfail(VMXERR_UNSUPPORTED_VMCS_COMPONENT_ACCESS);
        return;
     }
-
     encoding = GET32L(enc_64);
-
-    val_64 = BX_READ_64BIT_REG(i->rm());
-    val_32 = GET32L(val_64);
+    val_32   = GET32L(val_64);
   }
   else
 #endif
   {
     if (i->modC0()) {
-       encoding = BX_READ_32BIT_REG(i->nnn());
+       val_32 = BX_READ_32BIT_REG(i->rm());
     }
     else {
        Bit32u eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-       encoding = read_virtual_dword_32(i->seg(), eaddr);
+       val_32 = read_virtual_dword_32(i->seg(), eaddr);
     }
 
-    val_32 = BX_READ_32BIT_REG(i->rm());
-    val_64 = (Bit64u) val_32;
+    encoding = BX_READ_32BIT_REG(i->nnn());
+    val_64   = (Bit64u) val_32;
   }
 /*
   if (VMCS_FIELD_TYPE(encoding) == VMCS_FIELD_TYPE_READ_ONLY)
@@ -2503,7 +2563,8 @@ void BX_CPU_C::VMWRITE(bxInstruction_c *i)
     case VMCS_16BIT_HOST_FS_SELECTOR:
     case VMCS_16BIT_HOST_GS_SELECTOR:
     case VMCS_16BIT_HOST_TR_SELECTOR:
-      // fall through
+      VMwrite16(encoding, val_32 & 0xffff);
+      break;
 
     /* VMCS 32_bit control fields */
     /* binary 0100_00xx_xxxx_xxx0 */
@@ -2869,9 +2930,7 @@ void BX_CPU_C::register_vmx_state(bx_param_c *parent)
   BXRS_HEX_PARAM_FIELD(host, sysenter_esp_msr, BX_CPU_THIS_PTR vmcs.host_state.sysenter_esp_msr);
   BXRS_HEX_PARAM_FIELD(host, sysenter_eip_msr, BX_CPU_THIS_PTR vmcs.host_state.sysenter_eip_msr);
   BXRS_HEX_PARAM_FIELD(host, sysenter_cs_msr, BX_CPU_THIS_PTR vmcs.host_state.sysenter_cs_msr);
-#if BX_SUPPORT_MTRR
   BXRS_HEX_PARAM_FIELD(host, pat_msr, BX_CPU_THIS_PTR vmcs.host_state.pat_msr);
-#endif
 #if BX_SUPPORT_X86_64
   BXRS_HEX_PARAM_FIELD(host, efer_msr, BX_CPU_THIS_PTR vmcs.host_state.efer_msr);
 #endif

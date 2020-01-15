@@ -1,6 +1,23 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_groups.cc,v 1.41.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: dis_groups.cc,v 1.44 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
+//
+//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
+//
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #include <stdio.h>
 #include <assert.h>
@@ -579,6 +596,36 @@ void disassembler::Yb(const x86_insn *insn) { OP_Y(insn, B_SIZE); }
 void disassembler::Yw(const x86_insn *insn) { OP_Y(insn, W_SIZE); }
 void disassembler::Yd(const x86_insn *insn) { OP_Y(insn, D_SIZE); }
 void disassembler::Yq(const x86_insn *insn) { OP_Y(insn, Q_SIZE); }
+
+void disassembler::OP_sY(const x86_insn *insn, unsigned size)
+{
+  const char *rdi, *seg;
+
+  if (insn->as_64) {
+    rdi = general_64bit_regname[rDI_REG];
+  }
+  else {
+    if (insn->as_32)
+      rdi = general_32bit_regname[rDI_REG];
+    else
+      rdi = general_16bit_regname[rDI_REG];
+  }
+
+  print_datasize(size);
+
+  if (insn->is_seg_override())
+    seg = segment_name[insn->seg_override];
+  else
+    seg = segment_name[DS_REG];
+
+  if (intel_mode)
+    dis_sprintf("%s:[%s]", seg, rdi);
+  else
+    dis_sprintf("%s:(%s)", seg, rdi);
+}
+
+void disassembler::sYq(const x86_insn *insn) { OP_sY(insn, Q_SIZE); }
+void disassembler::sYdq(const x86_insn *insn) { OP_sY(insn, O_SIZE); }
 
 #define BX_JUMP_TARGET_NOT_REQ ((bx_address)(-1))
 

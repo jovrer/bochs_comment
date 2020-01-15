@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.cc,v 1.128.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: apic.cc,v 1.131 2009/11/02 15:00:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2002 Zwane Mwaikambo, Stanislav Shwartsman
+//  Copyright (c) 2002-2009 Zwane Mwaikambo, Stanislav Shwartsman
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -991,6 +991,7 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, timer_current);
   BXRS_HEX_PARAM_SIMPLE(lapic, timer_divconf);
   BXRS_DEC_PARAM_SIMPLE(lapic, timer_divide_factor);
+  BXRS_DEC_PARAM_SIMPLE(lapic, timer_handle);
   BXRS_PARAM_BOOL(lapic, timer_active, timer_active);
   BXRS_HEX_PARAM_SIMPLE(lapic, ticksInitial);
   BXRS_PARAM_BOOL(lapic, INTR, INTR);

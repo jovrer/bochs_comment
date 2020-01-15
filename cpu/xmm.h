@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: xmm.h,v 1.28 2009/01/16 18:18:59 sshwarts Exp $
+// $Id: xmm.h,v 1.30 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003 Stanislav Shwartsman
+//   Copyright (c) 2003-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -201,9 +201,9 @@ struct BOCHSAPI bx_mxcsr_t
 };
 
 /* reset reserved bits */
-#define MXCSR_MASK (0x0000FFBF |                 \
-         (BX_SUPPORT_DAZ ? MXCSR_DAZ : 0) |      \
-         (BX_SUPPORT_MISALIGNED_SSE ? MXCSR_MISALIGNED_EXCEPTION_MASK : 0))
+#define MXCSR_MASK (0x0000FFBF |                        \
+         ((BX_SUPPORT_SSE >= 2) ? MXCSR_DAZ : 0) |      \
+         ((BX_SUPPORT_MISALIGNED_SSE) ? MXCSR_MISALIGNED_EXCEPTION_MASK : 0))
 
 #if defined(NEED_CPU_REG_SHORTCUTS)
   #define MXCSR             (BX_CPU_THIS_PTR mxcsr)

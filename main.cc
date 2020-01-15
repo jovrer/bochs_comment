@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.399.2.1 2009/06/07 07:49:09 vruppert Exp $
+// $Id: main.cc,v 1.409 2009/10/17 18:17:28 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #include "bochs.h"
 #include "gui/textconfig.h"
@@ -67,13 +67,11 @@ extern "C" {
 bx_bool bx_gui_sighandler = 0;
 #endif
 
-#if BX_PROVIDE_DEVICE_MODELS==1
 // some prototypes from iodev/
 // I want to stay away from including iodev/iodev.h here
 Bit32u bx_unmapped_io_read_handler(Bit32u address, unsigned io_len);
 void   bx_unmapped_io_write_handler(Bit32u address, Bit32u value,
                                     unsigned io_len);
-#endif
 
 void bx_init_hardware(void);
 void bx_init_options(void);
@@ -91,9 +89,7 @@ Bit8u bx_cpu_count;
 
 #define LOG_THIS genlog->
 
-#if BX_PROVIDE_DEVICE_MODELS
 bx_pc_system_c bx_pc_system;
-#endif
 
 bx_debug_t bx_dbg;
 
@@ -107,9 +103,7 @@ BOCHSAPI BX_CPU_C_PTR *bx_cpu_array = NULL;
 BOCHSAPI BX_CPU_C bx_cpu;
 #endif
 
-#if BX_PROVIDE_CPU_MEMORY==1
 BOCHSAPI BX_MEM_C bx_mem;
-#endif
 
 char *bochsrc_filename = NULL;
 
@@ -1018,11 +1012,7 @@ void bx_init_hardware()
   else
     BX_INFO(("  SSE support: %d%s",BX_SUPPORT_SSE,BX_SUPPORT_SSE_EXTENSION?"E":""));
   BX_INFO(("  CLFLUSH support: %s",BX_SUPPORT_CLFLUSH?"yes":"no"));
-  BX_INFO(("  VME support: %s",BX_SUPPORT_VME?"yes":"no"));
   BX_INFO(("  3dnow! support: %s",BX_SUPPORT_3DNOW?"yes":"no"));
-  BX_INFO(("  PAE support: %s",BX_SUPPORT_PAE?"yes":"no"));
-  BX_INFO(("  PGE support: %s",BX_SUPPORT_GLOBAL_PAGES?"yes":"no"));
-  BX_INFO(("  PSE support: %s",BX_SUPPORT_LARGE_PAGES?"yes":"no"));
 #if BX_SUPPORT_X86_64
   BX_INFO(("  1G paging support: %s",BX_SUPPORT_1G_PAGES?"yes":"no"));
 #endif
@@ -1039,7 +1029,8 @@ void bx_init_hardware()
   BX_INFO(("Devices configuration"));
   BX_INFO(("  ACPI support: %s",BX_SUPPORT_ACPI?"yes":"no"));
   BX_INFO(("  NE2000 support: %s",BX_SUPPORT_NE2K?"yes":"no"));
-  BX_INFO(("  PCI support: %s",BX_SUPPORT_PCI?"yes":"no"));
+  BX_INFO(("  PCI support: %s, enabled=%s",BX_SUPPORT_PCI?"yes":"no",
+    SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get() ? "yes" : "no"));
   BX_INFO(("  SB16 support: %s",BX_SUPPORT_SB16?"yes":"no"));
   BX_INFO(("  USB support: %s",BX_SUPPORT_PCIUSB?"yes":"no"));
   BX_INFO(("  VGA extension support: %s %s",BX_SUPPORT_VBE?"vbe":"",
@@ -1062,9 +1053,15 @@ void bx_init_hardware()
 
   // set up memory and CPU objects
   bx_param_num_c *bxp_memsize = SIM->get_param_num(BXPN_MEM_SIZE);
-  Bit32u memSize = bxp_memsize->get() * 1024*1024;
+  Bit64u memSize = bxp_memsize->get64() * BX_CONST64(1024*1024);
 
-  BX_MEM(0)->init_memory(memSize);
+  bx_param_num_c *bxp_host_memsize = SIM->get_param_num(BXPN_HOST_MEM_SIZE);
+  Bit64u hostMemSize = bxp_host_memsize->get64() * BX_CONST64(1024*1024);
+
+  // do not allocate more host memory than needed for emulation of guest RAM 
+  if (memSize < hostMemSize) hostMemSize = memSize;
+
+  BX_MEM(0)->init_memory(memSize, hostMemSize);
 
   // First load the BIOS and VGABIOS
   BX_MEM(0)->load_ROM(SIM->get_param_string(BXPN_ROM_PATH)->getptr(),
@@ -1175,9 +1172,7 @@ int bx_atexit(void)
 
   BX_MEM(0)->cleanup_memory();
 
-#if BX_PROVIDE_DEVICE_MODELS
   bx_pc_system.exit();
-#endif
 
   // restore signal handling to defaults
 #if BX_DEBUGGER == 0

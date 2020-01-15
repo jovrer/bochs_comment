@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu.cc,v 1.55 2009/04/27 14:00:55 sshwarts Exp $
+// $Id: fpu.cc,v 1.58 2009/10/27 20:03:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003 Stanislav Shwartsman
+//   Copyright (c) 2003-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -312,8 +312,7 @@ bx_address BX_CPU_C::fpu_load_environment(bxInstruction_c *i)
         /* set the B and ES bits in the status-word */
         FPU_PARTIAL_STATUS |= FPU_SW_Summary | FPU_SW_Backward;
     }
-    else
-    {
+    else {
         /* clear the B and ES bits in the status-word */
         FPU_PARTIAL_STATUS &= ~(FPU_SW_Summary | FPU_SW_Backward);
     }
@@ -325,7 +324,7 @@ bx_address BX_CPU_C::fpu_load_environment(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDCW(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
@@ -352,7 +351,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDCW(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTCW(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   Bit16u cwd = BX_CPU_THIS_PTR the_i387.get_control_word();
 
@@ -368,7 +367,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTCW(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   Bit16u swd = BX_CPU_THIS_PTR the_i387.get_status_word();
 
@@ -384,7 +383,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW_AX(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
   AX = BX_CPU_THIS_PTR the_i387.get_status_word();
 #else
   BX_INFO(("FNSTSW_AX: required FPU, configure --enable-fpu"));
@@ -395,7 +394,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTSW_AX(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FRSTOR(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
 
   bx_address offset = fpu_load_environment(i);
   floatx80 tmp;
@@ -419,7 +418,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FRSTOR(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSAVE(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   bx_address offset = fpu_save_environment(i);
 
@@ -441,7 +440,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSAVE(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNCLEX(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   FPU_PARTIAL_STATUS &= ~(FPU_SW_Backward|FPU_SW_Summary|FPU_SW_Stack_Fault|FPU_SW_Precision|
                    FPU_SW_Underflow|FPU_SW_Overflow|FPU_SW_Zero_Div|FPU_SW_Denormal_Op|
@@ -457,7 +456,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNCLEX(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNINIT(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
   BX_CPU_THIS_PTR the_i387.init();
 #else
   BX_INFO(("FNINIT: required FPU, configure --enable-fpu"));
@@ -468,7 +467,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNINIT(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDENV(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
   fpu_load_environment(i);
 
   /* read all registers in stack order and update x87 tag word */
@@ -488,7 +487,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FLDENV(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTENV(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
   fpu_save_environment(i);
   /* mask all floating point exceptions */
   FPU_CONTROL_WORD |= FPU_CW_Exceptions_Mask;
@@ -503,7 +502,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNSTENV(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNOP(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, CHECK_PENDING_EXCEPTIONS);
+  FPU_update_last_instruction(i);
 
   // Perform no FPU operation. This instruction takes up space in the
   // instruction stream but does not affect the FPU or machine
@@ -516,7 +516,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::FNOP(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::FPLEGACY(bxInstruction_c *i)
 {
 #if BX_SUPPORT_FPU
-  BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
+  prepareFPU(i, !CHECK_PENDING_EXCEPTIONS);
 
   // FPU performs no specific operation and no internal x87 states
   // are affected
@@ -581,12 +581,12 @@ void BX_CPU_C::print_state_FPU(void)
   fprintf(stderr, "tag word:     0x%04x\n", reg);
   reg = BX_CPU_THIS_PTR the_i387.foo;
   fprintf(stderr, "operand:      0x%04x\n", reg);
-  reg = (Bit32u)(BX_CPU_THIS_PTR the_i387.fip) & 0xffffffff;
-  fprintf(stderr, "fip:          0x%08x\n", reg);
+  fprintf(stderr, "fip:          0x" FMT_ADDRX "\n",
+        BX_CPU_THIS_PTR the_i387.fip);
   reg = BX_CPU_THIS_PTR the_i387.fcs;
   fprintf(stderr, "fcs:          0x%04x\n", reg);
-  reg = (Bit32u)(BX_CPU_THIS_PTR the_i387.fdp) & 0xffffffff;
-  fprintf(stderr, "fdp:          0x%08x\n", reg);
+  fprintf(stderr, "fdp:          0x" FMT_ADDRX "\n",
+        BX_CPU_THIS_PTR the_i387.fdp);
   reg = BX_CPU_THIS_PTR the_i387.fds;
   fprintf(stderr, "fds:          0x%04x\n", reg);
 

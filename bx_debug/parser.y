@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y,v 1.34 2009/04/03 17:36:24 sshwarts Exp $
+// $Id: parser.y,v 1.38 2009/10/31 17:46:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -63,8 +63,9 @@
 %token <sval> BX_TOKEN_LDT
 %token <sval> BX_TOKEN_TSS
 %token <sval> BX_TOKEN_TAB
-%token <sval> BX_TOKEN_DIRTY
+%token <sval> BX_TOKEN_ALL
 %token <sval> BX_TOKEN_LINUX
+%token <sval> BX_TOKEN_DEBUG_REGS
 %token <sval> BX_TOKEN_CONTROL_REGS
 %token <sval> BX_TOKEN_SEGMENT_REGS
 %token <sval> BX_TOKEN_EXAMINE
@@ -150,6 +151,7 @@ command:
     | mmx_regs_command
     | sse_regs_command
     | segment_regs_command
+    | debug_regs_command
     | control_regs_command
     | blist_command
     | slist_command
@@ -414,12 +416,22 @@ continue_command:
 stepN_command:
       BX_TOKEN_STEPN '\n'
       {
-        bx_dbg_stepN_command(1);
+        bx_dbg_stepN_command(dbg_cpu, 1);
         free($1);
       }
     | BX_TOKEN_STEPN BX_TOKEN_NUMERIC '\n'
       {
-        bx_dbg_stepN_command($2);
+        bx_dbg_stepN_command(dbg_cpu, $2);
+        free($1);
+      }
+    | BX_TOKEN_STEPN BX_TOKEN_ALL BX_TOKEN_NUMERIC '\n'
+      {
+        bx_dbg_stepN_command(-1, $2);
+        free($1); free($2);
+      }
+    | BX_TOKEN_STEPN BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC '\n'
+      {
+        bx_dbg_stepN_command($2, $3);
         free($1);
       }
     ;
@@ -538,11 +550,6 @@ info_command:
     | BX_TOKEN_INFO BX_TOKEN_CPU '\n'
       {
         bx_dbg_info_registers_command(BX_INFO_GENERAL_PURPOSE_REGS | BX_INFO_FPU_REGS | BX_INFO_SSE_REGS);
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_DIRTY '\n'
-      {
-        bx_dbg_info_dirty_command();
         free($1); free($2);
       }
     | BX_TOKEN_INFO BX_TOKEN_IDT optional_numeric optional_numeric '\n'
@@ -675,6 +682,14 @@ control_regs_command:
       BX_TOKEN_CONTROL_REGS '\n'
       {
         bx_dbg_info_control_regs_command();
+        free($1);
+      }
+    ;
+
+debug_regs_command:
+      BX_TOKEN_DEBUG_REGS '\n'
+      {
+        bx_dbg_info_debug_regs_command();
         free($1);
       }
     ;
@@ -860,7 +875,9 @@ help_command:
        }
      | BX_TOKEN_HELP BX_TOKEN_STEPN '\n'
        {
-         dbg_printf("s|step|stepi [count] - execute #count instructions (default is one instruction)\n");
+         dbg_printf("s|step [count] - execute #count instructions on current processor (default is one instruction)\n");
+         dbg_printf("s|step [cpu] <count> - execute #count instructions on processor #cpu\n");
+         dbg_printf("s|step all <count> - execute #count instructions on all the processors\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_STEP_OVER '\n'
@@ -986,7 +1003,7 @@ help_command:
        }
      | BX_TOKEN_HELP BX_TOKEN_FPU '\n'
        {
-         dbg_printf("fp|fpu| - print FPU state\n");
+         dbg_printf("fp|fpu - print FPU state\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_MMX '\n'
@@ -1053,10 +1070,7 @@ help_command:
        }
      | BX_TOKEN_HELP BX_TOKEN_INSTRUMENT '\n'
        {
-         dbg_printf("instrument start - calls bx_instr_start() callback\n");
-         dbg_printf("instrument stop  - calls bx_instr_stop () callback\n");
-         dbg_printf("instrument reset - calls bx_instr_reset() callback\n");
-         dbg_printf("instrument print - calls bx_instr_print() callback\n");
+         dbg_printf("instrument <command> - calls BX_INSTR_DEBUG_CMD instrumentation callback with <command>\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_SET '\n'
@@ -1077,7 +1091,6 @@ help_command:
      | BX_TOKEN_HELP BX_TOKEN_INFO '\n'
        {
          dbg_printf("info break - show information about current breakpoint status\n");
-         dbg_printf("info dirty - show physical pages dirtied (written to) since last display\n");
          dbg_printf("info idt - show interrupt descriptor table\n");
          dbg_printf("info ivt - show interrupt vector table\n");
          dbg_printf("info gdt - show global descriptor table\n");

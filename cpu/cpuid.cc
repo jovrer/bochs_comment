@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpuid.cc,v 1.80.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: cpuid.cc,v 1.86 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2007 Stanislav Shwartsman
+//   Copyright (c) 2007-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -231,13 +231,13 @@ Bit32u BX_CPU_C::get_std_cpuid_features(void)
 #if BX_SUPPORT_FPU
   features |= (1<<0);
 #endif
-#if BX_SUPPORT_VME
+#if BX_CPU_LEVEL >= 5
   features |= (1<<1);
 #endif
 
   features |= (1<<2);   // support Debug Extensions
 
-#if (BX_CPU_LEVEL >= 5)
+#if BX_CPU_LEVEL >= 5
   features |= (1<<4);             // support Time Stamp Counter
   features |= (1<<5);             // support RDMSR/WRMSR
   features |= (1<<7) | (1<<14);   // support Machine Check
@@ -278,17 +278,15 @@ Bit32u BX_CPU_C::get_std_cpuid_features(void)
   features |= (1<<15);  // Implement CMOV instructions.
 #endif
 
-#if BX_SUPPORT_LARGE_PAGES
-  features |= (1<<3) | (1<<17);  // support Page-Size Extension (4M pages)
+#if BX_CPU_LEVEL >= 5
+  features |= (1<<3);   // support PSE
 #endif
-#if BX_SUPPORT_PAE
+#if BX_CPU_LEVEL >= 6
   features |= (1<<6);   // support PAE
-#endif
-#if BX_SUPPORT_MTRR
-  features |= (1<<12) | (1<<16);  // Implement MTRRs and PAT
-#endif
-#if BX_SUPPORT_GLOBAL_PAGES
+  features |= (1<<12);  // support MTRRs
   features |= (1<<13);  // support Global pages
+  features |= (1<<16);  // support PAT
+  features |= (1<<17);  // support PSE-36
 #endif
 
 #if BX_SUPPORT_SMP

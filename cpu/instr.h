@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instr.h,v 1.20 2009/01/16 18:18:58 sshwarts Exp $
+// $Id: instr.h,v 1.23 2009/11/04 15:48:28 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008 Stanislav Shwartsman
+//   Copyright (c) 2008-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -22,7 +22,11 @@
 /////////////////////////////////////////////////////////////////////////
 
 #ifndef BX_INSTR_H
-#  define BX_INSTR_H 1
+#define BX_INSTR_H
+
+#ifndef BX_INSTRUMENT_IA_OPCODE
+  #define BX_INSTRUMENT_IA_OPCODE 0
+#endif
 
 class bxInstruction_c;
 
@@ -46,7 +50,7 @@ public:
   BxExecutePtr_tR execute;
   BxExecutePtr_tR execute2;
   BxResolvePtr_tR ResolveModrm;
-#if BX_INSTRUMENTATION
+#if BX_INSTRUMENT_IA_OPCODE
   Bit16u ia_opcode;
 #endif
 
@@ -283,5 +287,16 @@ public:
 #endif
 };
 // <TAG-CLASS-INSTRUCTION-END>
+
+#if BX_INSTRUMENT_IA_OPCODE
+extern const char* BxOpcodeNamesTable[];
+#endif
+
+enum {
+#define bx_define_opcode(a, b, c) a,
+#include "ia_opcodes.h"
+   BX_IA_LAST
+};
+#undef  bx_define_opcode
 
 #endif

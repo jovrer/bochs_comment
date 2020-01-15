@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.75 2009/04/24 08:16:06 sshwarts Exp $
+// $Id: pc_system.cc,v 1.78 2009/10/23 08:37:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 //
 /////////////////////////////////////////////////////////////////////////
 
@@ -225,9 +225,9 @@ void bx_pc_system_c::exit(void)
 
 void bx_pc_system_c::register_state(void)
 {
-
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pc_system", "PC System State", 8);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pc_system", "PC System State", 10);
   BXRS_PARAM_BOOL(list, enable_a20, enable_a20);
+  BXRS_HEX_PARAM_SIMPLE(list, a20_mask);
   BXRS_DEC_PARAM_SIMPLE(list, currCountdown);
   BXRS_DEC_PARAM_SIMPLE(list, currCountdownPeriod);
   BXRS_DEC_PARAM_SIMPLE(list, ticksTotal);

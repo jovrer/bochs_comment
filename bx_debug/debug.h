@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debug.h,v 1.52.2.1 2009/06/07 07:49:09 vruppert Exp $
+// $Id: debug.h,v 1.59 2009/11/09 21:26:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,8 +31,6 @@
 
 #define BX_DBG_NO_HANDLE 1000
 
-extern Bit32u dbg_cpu;
-
 Bit32u crc32(const Bit8u *buf, int len);
 
 #if BX_DEBUGGER
@@ -41,6 +39,8 @@ Bit32u crc32(const Bit8u *buf, int len);
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+extern Bit32u dbg_cpu;
 
 void dbg_printf (const char *fmt, ...);
 
@@ -205,6 +205,7 @@ extern void bxerror(char *s);
 
 #define EMPTY_ARG (-1)
 
+bx_bool bx_dbg_read_linear(unsigned which_cpu, bx_address laddr, unsigned len, Bit8u *buf);
 Bit16u bx_dbg_get_selector_value(unsigned int seg_no);
 Bit16u bx_dbg_get_ip (void);
 Bit32u bx_dbg_get_eip(void);
@@ -244,7 +245,7 @@ void bx_dbg_watch(int type, bx_phy_address address);
 void bx_dbg_unwatch_all(void);
 void bx_dbg_unwatch(bx_phy_address handle);
 void bx_dbg_continue_command(void);
-void bx_dbg_stepN_command(Bit32u count);
+void bx_dbg_stepN_command(int cpu, Bit32u count);
 void bx_dbg_set_auto_disassemble(bx_bool enable);
 void bx_dbg_disassemble_switch_mode(void);
 void bx_dbg_set_disassemble_size(unsigned size);
@@ -266,12 +267,12 @@ void bx_dbg_quit_command(void);
 #define BX_INFO_MMX_REGS 4
 #define BX_INFO_SSE_REGS 8
 void bx_dbg_info_registers_command(int);
-void bx_dbg_info_dirty_command(void);
 void bx_dbg_info_ivt_command(unsigned from, unsigned to);
 void bx_dbg_info_idt_command(unsigned from, unsigned to);
 void bx_dbg_info_gdt_command(unsigned from, unsigned to);
 void bx_dbg_info_ldt_command(unsigned from, unsigned to);
 void bx_dbg_info_tss_command(void);
+void bx_dbg_info_debug_regs_command(void);
 void bx_dbg_info_control_regs_command(void);
 void bx_dbg_info_segment_regs_command(void);
 void bx_dbg_info_flags(void);
@@ -423,7 +424,6 @@ typedef struct {
     bx_bool irq;
     bx_bool a20;
     bx_bool io;
-    bx_bool ucmem;
     bx_bool dma;
   } report;
 
@@ -479,6 +479,9 @@ void bx_dbg_interpret_line(char *cmd);
 typedef struct {
   Bit16u sel;
   Bit32u des_l, des_h, valid;
+#if BX_SUPPORT_X86_64
+  Bit32u dword3;
+#endif
 } bx_dbg_sreg_t;
 
 typedef struct {
@@ -490,7 +493,6 @@ void bx_dbg_dma_report(bx_phy_address addr, unsigned len, unsigned what, Bit32u 
 void bx_dbg_iac_report(unsigned vector, unsigned irq);
 void bx_dbg_a20_report(unsigned val);
 void bx_dbg_io_report(Bit32u port, unsigned size, unsigned op, Bit32u val);
-void bx_dbg_ucmem_report(Bit32u addr, unsigned size, unsigned op, Bit32u val);
 void bx_dbg_disassemble_current(int which_cpu, int print_time);
 
 #endif // #ifdef __cplusplus

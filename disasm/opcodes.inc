@@ -1,3 +1,26 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: opcodes.inc,v 1.27 2009/10/14 20:45:29 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
+//
+//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
+//
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////////////
+
 Ia_aaa = { "aaa", "aaa", XX, XX, XX, XX, 0 },
 Ia_aad = { "aad", "aad", Ib, XX, XX, XX, 0 },
 Ia_aam = { "aam", "aam", Ib, XX, XX, XX, 0 },
@@ -565,8 +588,8 @@ Ia_lssl_Gd_Mp = { "lss", "lssl", Gd, Mp, XX, XX, 0 },
 Ia_lssq_Gq_Mp = { "lss", "lssq", Gq, Mp, XX, XX, IA_X86_64 },
 Ia_lssw_Gw_Mp = { "lss", "lssw", Gw, Mp, XX, XX, 0 },
 Ia_ltr = { "ltr", "ltr", Ew, XX, XX, XX, 0 },
-Ia_maskmovdqu_Vdq_Udq = { "maskmovdqu", "maskmovdqu", Vdq, Udq, XX, XX, IA_SSE2 },
-Ia_maskmovq_Pq_Nq = { "maskmovq", "maskmovq", Pq, Nq, XX, XX, IA_3DNOW | IA_SSE },
+Ia_maskmovdqu_Vdq_Udq = { "maskmovdqu", "maskmovdqu", Vdq, Udq, sYdq, XX, IA_SSE2 },
+Ia_maskmovq_Pq_Nq = { "maskmovq", "maskmovq", Pq, Nq, sYq, XX, IA_3DNOW | IA_SSE },
 Ia_maxpd_Vpd_Wpd = { "maxpd", "maxpd", Vpd, Wpd, XX, XX, IA_SSE2 },
 Ia_maxps_Vps_Wps = { "maxps", "maxps", Vps, Wps, XX, XX, IA_SSE },
 Ia_maxsd_Vsd_Wsd = { "maxsd", "maxsd", Vsd, Wsd, XX, XX, IA_SSE2 },

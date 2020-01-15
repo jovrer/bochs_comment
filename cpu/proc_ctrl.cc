@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc,v 1.295.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: proc_ctrl.cc,v 1.307 2009/11/08 21:03:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -244,6 +244,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
   }
 
   BX_INSTR_CLFLUSH(BX_CPU_ID, laddr, paddr);
+
+#if BX_X86_DEBUGGER
+  hwbreakpoint_match(laddr, 1, BX_READ);
+#endif
 
 #else
   BX_INFO(("CLFLUSH: not supported, enable with SSE2"));
@@ -535,7 +539,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
             ((BX_CPU_THIS_PTR dr7 >> 24) & 3) == 0 ||
             ((BX_CPU_THIS_PTR dr7 >> 28) & 3) == 0)
         {
-          BX_INFO(("MOV_DdRd(): code breakpoint is set"));
+          BX_INFO(("MOV_DqRq(): code breakpoint is set"));
           BX_CPU_THIS_PTR async_event = 1;
         }
       }
@@ -650,12 +654,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
       VMexit_CR3_Write(i, val_32);
 #endif
+#if BX_CPU_LEVEL >= 6
       if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
         if (! CheckPDPTR(val_32)) {
           BX_ERROR(("SetCR3(): PDPTR check failed !"));
           exception(BX_GP_EXCEPTION, 0, 0);
         }
       }
+#endif
       SetCR3(val_32);
       BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR3, val_32);
       break;
@@ -664,12 +670,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
       val_32 = VMexit_CR4_Write(i, val_32);
 #endif
+#if BX_CPU_LEVEL >= 6
       if (BX_CPU_THIS_PTR cr0.get_PG() && (val_32 & (1<<5)) != 0 /* PAE */ && !long_mode()) {
         if (! CheckPDPTR(BX_CPU_THIS_PTR cr3)) {
           BX_ERROR(("SetCR4(): PDPTR check failed !"));
           exception(BX_GP_EXCEPTION, 0, 0);
         }
       }
+#endif
       // Protected mode: #GP(0) if attempt to write a 1 to
       // any reserved bit of CR4
       if (! SetCR4(val_32))
@@ -797,6 +805,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CqRq(bxInstruction_c *i)
         BX_ERROR(("MOV_CqRq: Attempt to set reserved bits of CR8"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
+#if BX_SUPPORT_VMX
+      if (VMEXIT(VMX_VM_EXEC_CTRL2_TPR_SHADOW)) {
+        VMX_Write_TPR_Shadow(val_64 & 0xF);
+        break;
+      }
+#endif
       BX_CPU_THIS_PTR lapic.set_tpr((val_64 & 0xF) << 0x4);
       break;
 #endif
@@ -850,6 +864,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCq(bxInstruction_c *i)
     case 8: // CR8
 #if BX_SUPPORT_VMX
       VMexit_CR8_Read(i);
+      if (VMEXIT(VMX_VM_EXEC_CTRL2_TPR_SHADOW)) {
+         val_64 = VMX_Read_TPR_Shadow();
+         break;
+      }
 #endif
       // CR8 is aliased to APIC->TASK PRIORITY register
       //   APIC.TPR[7:4] = CR8[3:0]
@@ -1364,7 +1382,7 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(bx_address val)
       }
       BX_CPU_THIS_PTR efer.set_LMA(1);
     }
-#if BX_SUPPORT_PAE
+#if BX_CPU_LEVEL >= 6
     if (BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
       if (! CheckPDPTR(BX_CPU_THIS_PTR cr3)) {
         BX_ERROR(("SetCR0(): PDPTR check failed !"));
@@ -1438,7 +1456,7 @@ bx_address get_cr4_allow_mask(void)
   //   [1]     PVI: Protected-Mode Virtual Interrupts R/W
   //   [0]     VME: Virtual-8086 Mode Extensions R/W
 
-#if BX_SUPPORT_VME
+#if BX_CPU_LEVEL >= 5
   allowMask |= (1<<0) | (1<<1);  /* VME */
 #endif
 
@@ -1448,11 +1466,11 @@ bx_address get_cr4_allow_mask(void)
 
   allowMask |= (1<<3);   /* DE  */
 
-#if BX_SUPPORT_LARGE_PAGES
+#if BX_CPU_LEVEL >= 5
   allowMask |= (1<<4);   /* PSE */
 #endif
 
-#if BX_SUPPORT_PAE
+#if BX_CPU_LEVEL >= 6
   allowMask |= (1<<5);   /* PAE */
 #endif
 
@@ -1461,11 +1479,8 @@ bx_address get_cr4_allow_mask(void)
   allowMask |= (1<<6);   /* MCE */
 #endif
 
-#if BX_SUPPORT_GLOBAL_PAGES
-  allowMask |= (1<<7);
-#endif
-
 #if BX_CPU_LEVEL >= 6
+  allowMask |= (1<<7);   /* PGE */
   allowMask |= (1<<8);   /* PCE */
   allowMask |= (1<<9);   /* OSFXSR */
 #endif
@@ -1476,6 +1491,10 @@ bx_address get_cr4_allow_mask(void)
 
 #if BX_SUPPORT_VMX
   allowMask |= (1<<13);  /* VMX Enable */
+#endif
+
+#if BX_SUPPORT_SMX
+  allowMask |= (1<<14);  /* SMX Enable */
 #endif
 
 #if BX_SUPPORT_XSAVE
@@ -1824,7 +1843,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
     }
     if (!IsCanonical(BX_CPU_THIS_PTR msr.sysenter_esp_msr)) {
       BX_ERROR(("SYSENTER with non-canonical SYSENTER_ESP_MSR !"));
-      exception(BX_SS_EXCEPTION, 0, 0);
+      exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
 #endif
@@ -1836,7 +1855,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0;          // base address
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF; // scaled segment limit
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1;          // 4k granularity
@@ -1913,7 +1932,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     }
     if (!IsCanonical(RCX)) {
       BX_ERROR(("SYSEXIT with non-canonical RCX (RSP) pointer !"));
-      exception(BX_SS_EXCEPTION, 0, 0);
+      exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
 #endif
@@ -1929,7 +1948,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0;           // base address
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  // scaled segment limit
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1;           // 4k granularity
@@ -1950,7 +1969,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0;           // base address
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  // scaled segment limit
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1;           // 4k granularity
@@ -2032,7 +2051,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
@@ -2080,7 +2099,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
@@ -2155,7 +2174,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
@@ -2174,7 +2193,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */
@@ -2212,7 +2231,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_DATA_READ_WRITE_ACCESSED;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type    = BX_CODE_EXEC_READ_ACCESSED;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base         = 0; /* base address */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled = 0xFFFFFFFF;  /* scaled segment limit */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g            = 1; /* 4k granularity */

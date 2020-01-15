@@ -1,14 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h,v 1.34 2009/02/09 10:35:55 vruppert Exp $
+// $Id: instrument.h,v 1.36 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//   Copyright (c) 2006-2009 Stanislav Shwartsman
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -92,9 +87,7 @@ void bx_instr_mem_data_access(unsigned cpu, unsigned seg, bx_address offset, uns
 
 /* called from command line debugger */
 #define BX_INSTR_DEBUG_PROMPT()
-#define BX_INSTR_START()
-#define BX_INSTR_STOP()
-#define BX_INSTR_PRINT()
+#define BX_INSTR_DEBUG_CMD(cmd)
 
 /* branch resoultion */
 #define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, new_eip)       bx_instr_cnear_branch_taken(cpu_id, new_eip)
@@ -159,9 +152,7 @@ void bx_instr_mem_data_access(unsigned cpu, unsigned seg, bx_address offset, uns
 
 /* called from command line debugger */
 #define BX_INSTR_DEBUG_PROMPT()
-#define BX_INSTR_START()
-#define BX_INSTR_STOP()
-#define BX_INSTR_PRINT()
+#define BX_INSTR_DEBUG_CMD(cmd)
 
 /* branch resoultion */
 #define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, new_eip)

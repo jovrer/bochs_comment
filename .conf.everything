@@ -8,10 +8,6 @@
   --enable-x86-64 \
   --enable-all-optimizations \
   --enable-long-phy-address \
-  --enable-large-pages \
-  --enable-pae \
-  --enable-global-pages \
-  --enable-mtrr \
   --enable-1g-pages \
   --enable-ignore-bad-msr \
   --enable-configurable-msrs \
@@ -27,7 +23,6 @@
   --enable-alignment-check \
   --enable-popcnt \
   --enable-movbe \
-  --enable-vme \
   --enable-sep \
   --enable-3dnow \
   --enable-monitor-mwait \

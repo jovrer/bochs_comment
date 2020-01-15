@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.289.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: cpu.cc,v 1.298 2009/11/05 16:06:57 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -142,12 +142,9 @@ no_async_event:
     InstrICache_Increment(iCacheLookups);
     InstrICache_Stats();
 
-    if ((entry->pAddr == pAddr) &&
-        (entry->writeStamp == *(BX_CPU_THIS_PTR currPageWriteStampPtr)))
+    if ((entry->pAddr != pAddr) ||
+        (entry->writeStamp != *(BX_CPU_THIS_PTR currPageWriteStampPtr)))
     {
-      // iCache hit. An instruction was found in the iCache
-    }
-    else {
       // iCache miss. No validated instruction with matching fetch parameters
       // is in the iCache.
       InstrICache_Increment(iCacheMisses);
@@ -218,6 +215,10 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat(bxInstruction_c *i, BxExecutePtr_tR
     return;
   }
 
+#if BX_X86_DEBUGGER
+  BX_CPU_THIS_PTR in_repeat = 0;
+#endif
+
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
     while(1) {
@@ -274,6 +275,10 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat(bxInstruction_c *i, BxExecutePtr_tR
     }
   }
 
+#if BX_X86_DEBUGGER
+  BX_CPU_THIS_PTR in_repeat = 1;
+#endif
+
   RIP = BX_CPU_THIS_PTR prev_rip; // repeat loop not done, restore RIP
 
 #if BX_SUPPORT_TRACE_CACHE
@@ -291,6 +296,10 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat_ZF(bxInstruction_c *i, BxExecutePtr
     BX_CPU_CALL_METHOD(execute, (i));
     return;
   }
+
+#if BX_X86_DEBUGGER
+  BX_CPU_THIS_PTR in_repeat = 0;
+#endif
 
   if (rep == 3) { /* repeat prefix 0xF3 */
 #if BX_SUPPORT_X86_64
@@ -406,6 +415,10 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat_ZF(bxInstruction_c *i, BxExecutePtr
       }
     }
   }
+
+#if BX_X86_DEBUGGER
+  BX_CPU_THIS_PTR in_repeat = 1;
+#endif
 
   RIP = BX_CPU_THIS_PTR prev_rip; // repeat loop not done, restore RIP
 
@@ -617,14 +630,6 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   //   Alignment check
   // (handled by rest of the code)
 
-  if (BX_CPU_THIS_PTR get_TF())
-  {
-    // TF is set before execution of next instruction.  Schedule
-    // a debug trap (#DB) after execution.  After completion of
-    // next instruction, the code above will invoke the trap.
-    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_SINGLE_STEP_BIT;
-  }
-
   // Now we can handle things which are synchronous to instruction
   // execution.
   if (BX_CPU_THIS_PTR get_RF()) {
@@ -632,17 +637,15 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   }
 #if BX_X86_DEBUGGER
   else {
-    // only bother comparing if any breakpoints enabled
-    if (BX_CPU_THIS_PTR dr7 & 0x000000ff) {
-      bx_address iaddr = get_laddr(BX_SEG_REG_CS, BX_CPU_THIS_PTR prev_rip);
-      Bit32u dr6_bits = hwdebug_compare(iaddr, 1, BX_HWDebugInstruction, BX_HWDebugInstruction);
-      if (dr6_bits) {
-        // Add to the list of debug events thus far.
-        BX_CPU_THIS_PTR debug_trap |= dr6_bits;
-        // If debug events are not inhibited on this boundary,
-        // fire off a debug fault.  Otherwise handle it on the next
-        // boundary. (becomes a trap)
-        if (! (BX_CPU_THIS_PTR inhibit_mask & BX_INHIBIT_DEBUG_SHADOW)) {
+    // only bother comparing if any breakpoints enabled and
+    // debug events are not inhibited on this boundary.
+    if (! (BX_CPU_THIS_PTR inhibit_mask & BX_INHIBIT_DEBUG_SHADOW) && ! BX_CPU_THIS_PTR in_repeat) {
+      if (BX_CPU_THIS_PTR dr7 & 0x000000ff) {
+        bx_address iaddr = get_laddr(BX_SEG_REG_CS, BX_CPU_THIS_PTR prev_rip);
+        Bit32u dr6_bits = hwdebug_compare(iaddr, 1, BX_HWDebugInstruction, BX_HWDebugInstruction);
+        if (dr6_bits) {
+          // Add to the list of debug events thus far.
+          BX_CPU_THIS_PTR debug_trap |= dr6_bits;
           BX_ERROR(("#DB: x86 code breakpoint catched"));
           exception(BX_DB_EXCEPTION, 0, 0); // no error, not interrupt
         }
@@ -651,10 +654,18 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
   }
 #endif
 
+  if (BX_CPU_THIS_PTR get_TF())
+  {
+    // TF is set before execution of next instruction.  Schedule
+    // a debug trap (#DB) after execution.  After completion of
+    // next instruction, the code above will invoke the trap.
+    BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_SINGLE_STEP_BIT;
+  }
+
   if (!((BX_CPU_INTR && BX_CPU_THIS_PTR get_IF()) ||
         BX_CPU_THIS_PTR debug_trap ||
-        BX_HRQ ||
-        BX_CPU_THIS_PTR get_TF()
+//      BX_CPU_THIS_PTR get_TF() // implies debug_trap is set
+        BX_HRQ
 #if BX_SUPPORT_VMX
      || BX_CPU_THIS_PTR vmx_interrupt_window || BX_CPU_THIS_PTR inhibit_mask
 #endif
@@ -751,16 +762,16 @@ void BX_CPU_C::prefetch(void)
   else {
     BX_CPU_THIS_PTR eipFetchPtr = BX_MEM(0)->getHostMemAddr(BX_CPU_THIS,
         BX_CPU_THIS_PTR pAddrPage, BX_EXECUTE);
-  }
 
-  // Sanity checks
-  if (! BX_CPU_THIS_PTR eipFetchPtr) {
-    bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrPage + pageOffset;
-    if (pAddr >= BX_MEM(0)->get_memory_len()) {
-      BX_PANIC(("prefetch: running in bogus memory, pAddr=0x" FMT_PHY_ADDRX, pAddr));
-    }
-    else {
-      BX_PANIC(("prefetch: getHostMemAddr vetoed direct read, pAddr=0x" FMT_PHY_ADDRX, pAddr));
+    // Sanity checks
+    if (! BX_CPU_THIS_PTR eipFetchPtr) {
+      bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrPage + pageOffset;
+      if (pAddr >= BX_MEM(0)->get_memory_len()) {
+        BX_PANIC(("prefetch: running in bogus memory, pAddr=0x" FMT_PHY_ADDRX, pAddr));
+      }
+      else {
+        BX_PANIC(("prefetch: getHostMemAddr vetoed direct read, pAddr=0x" FMT_PHY_ADDRX, pAddr));
+      }
     }
   }
 
@@ -769,8 +780,8 @@ void BX_CPU_C::prefetch(void)
 
 void BX_CPU_C::boundaryFetch(const Bit8u *fetchPtr, unsigned remainingInPage, bxInstruction_c *i)
 {
-  unsigned j;
-  Bit8u fetchBuffer[16]; // Really only need 15
+  unsigned j, k;
+  Bit8u fetchBuffer[32];
   unsigned ret;
 
   if (remainingInPage >= 15) {
@@ -792,7 +803,7 @@ void BX_CPU_C::boundaryFetch(const Bit8u *fetchPtr, unsigned remainingInPage, bx
 
   unsigned fetchBufferLimit = 15;
   if (BX_CPU_THIS_PTR eipPageWindowSize < 15) {
-    BX_DEBUG(("boundaryFetch: small window size after prefetch - %d bytes", BX_CPU_THIS_PTR eipPageWindowSize));
+    BX_DEBUG(("boundaryFetch: small window size after prefetch=%d bytes, remainingInPage=%d bytes", BX_CPU_THIS_PTR eipPageWindowSize, remainingInPage));
     fetchBufferLimit = BX_CPU_THIS_PTR eipPageWindowSize;
   }
 
@@ -800,9 +811,10 @@ void BX_CPU_C::boundaryFetch(const Bit8u *fetchPtr, unsigned remainingInPage, bx
   fetchPtr = BX_CPU_THIS_PTR eipFetchPtr;
 
   // read leftover bytes in next page
-  for (; j<fetchBufferLimit; j++) {
+  for (k=0; k<fetchBufferLimit; k++, j++) {
     fetchBuffer[j] = *fetchPtr++;
   }
+
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
     ret = fetchDecode64(fetchBuffer, i, remainingInPage+fetchBufferLimit);

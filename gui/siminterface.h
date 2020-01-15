@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.242 2009/04/26 06:56:27 vruppert Exp $
+// $Id: siminterface.h,v 1.244 2009/10/17 17:38:58 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -155,6 +155,7 @@ typedef enum {
 #define BXPN_VENDOR_STRING               "cpu.vendor_string"
 #define BXPN_BRAND_STRING                "cpu.brand_string"
 #define BXPN_MEM_SIZE                    "memory.standard.ram.size"
+#define BXPN_HOST_MEM_SIZE               "memory.standard.ram.host_size"
 #define BXPN_ROM_PATH                    "memory.standard.rom.path"
 #define BXPN_ROM_ADDRESS                 "memory.standard.rom.addr"
 #define BXPN_VGA_ROM_PATH                "memory.standard.vgarom.path"
@@ -684,7 +685,8 @@ public:
 };
 
 typedef Bit64s (*param_event_handler)(class bx_param_c *, int set, Bit64s val);
-typedef Bit64s (*param_sr_handler)(void *devptr, class bx_param_c *, Bit64s val);
+typedef Bit64s (*param_save_handler)(void *devptr, class bx_param_c *);
+typedef void (*param_restore_handler)(void *devptr, class bx_param_c *, Bit64s val);
 typedef int (*param_enable_handler)(class bx_param_c *, int en);
 
 class BOCHSAPI bx_param_num_c : public bx_param_c {
@@ -702,8 +704,8 @@ protected:
   } val;
   param_event_handler handler;
   void *sr_devptr;
-  param_sr_handler save_handler;
-  param_sr_handler restore_handler;
+  param_save_handler save_handler;
+  param_restore_handler restore_handler;
   param_enable_handler enable_handler;
   int base;
   bx_bool is_shadow;
@@ -721,7 +723,7 @@ public:
       bx_bool is_shadow = 0);
   virtual void reset() { val.number = initial_val; }
   void set_handler(param_event_handler handler);
-  void set_sr_handlers(void *devptr, param_sr_handler save, param_sr_handler restore);
+  void set_sr_handlers(void *devptr, param_save_handler save, param_restore_handler restore);
   void set_enable_handler(param_enable_handler handler) { enable_handler = handler; }
   void set_dependent_list(bx_list_c *l);
   virtual void set_enabled(int enabled);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack32.cc,v 1.60.2.1 2009/06/07 07:49:10 vruppert Exp $
+// $Id: stack32.cc,v 1.63 2009/11/02 15:00:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -44,9 +44,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EdM(bxInstruction_c *i)
   // Note: there is one little weirdism here.  It is possible to use
   // ESP in the modrm addressing. If used, the value of ESP after the
   // pop is used to calculate the address.
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  Bit32u eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  write_virtual_dword(i->seg(), eaddr, val32);
+  write_virtual_dword_32(i->seg(), eaddr, val32);
 
   RSP_COMMIT;
 }
@@ -93,52 +93,82 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_SS(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP32_DS(bxInstruction_c *i)
 {
-  RSP_SPECULATIVE;
+  Bit16u ds;
 
-  Bit32u ds = pop_32();
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS], (Bit16u) ds);
-
-  RSP_COMMIT;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    ds = read_virtual_word_32(BX_SEG_REG_SS, ESP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS], ds);
+    ESP += 4;
+  }
+  else {
+    ds = read_virtual_word_32(BX_SEG_REG_SS, SP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS], ds);
+    SP += 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP32_ES(bxInstruction_c *i)
 {
-  RSP_SPECULATIVE;
+  Bit16u es;
 
-  Bit32u es = pop_32();
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES], (Bit16u) es);
-
-  RSP_COMMIT;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    es = read_virtual_word_32(BX_SEG_REG_SS, ESP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES], es);
+    ESP += 4;
+  }
+  else {
+    es = read_virtual_word_32(BX_SEG_REG_SS, SP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES], es);
+    SP += 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP32_FS(bxInstruction_c *i)
 {
-  RSP_SPECULATIVE;
+  Bit16u fs;
 
-  Bit32u fs = pop_32();
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], (Bit16u) fs);
-
-  RSP_COMMIT;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    fs = read_virtual_word_32(BX_SEG_REG_SS, ESP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], fs);
+    ESP += 4;
+  }
+  else {
+    fs = read_virtual_word_32(BX_SEG_REG_SS, SP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], fs);
+    SP += 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP32_GS(bxInstruction_c *i)
 {
-  RSP_SPECULATIVE;
+  Bit16u gs;
 
-  Bit32u gs = pop_32();
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], (Bit16u) gs);
-
-  RSP_COMMIT;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    gs = read_virtual_word_32(BX_SEG_REG_SS, ESP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], gs);
+    ESP += 4;
+  }
+  else {
+    gs = read_virtual_word_32(BX_SEG_REG_SS, SP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], gs);
+    SP += 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP32_SS(bxInstruction_c *i)
 {
-  RSP_SPECULATIVE;
+  Bit16u ss;
 
-  Bit32u ss = pop_32();
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], (Bit16u) ss);
-
-  RSP_COMMIT;
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    ss = read_virtual_word_32(BX_SEG_REG_SS, ESP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], ss);
+    ESP += 4;
+  }
+  else {
+    ss = read_virtual_word_32(BX_SEG_REG_SS, SP);
+    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], ss);
+    SP += 4;
+  }
 
   // POP SS inhibits interrupts, debug exceptions and single-step
   // trap exceptions until the execution boundary following the
@@ -264,7 +294,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ENTER32_IwIb(bxInstruction_c *i)
     // ENTER finishes with memory write check on the final stack pointer
     // the memory is touched but no write actually occurs
     // emulate it by doing RMW read access from SS:ESP
-    read_RMW_virtual_dword(BX_SEG_REG_SS, ESP);
+    read_RMW_virtual_dword_32(BX_SEG_REG_SS, ESP);
   }
   else {
     Bit16u bp = BP;

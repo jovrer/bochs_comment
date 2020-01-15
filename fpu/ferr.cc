@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ferr.cc,v 1.16.2.1 2009/06/07 07:49:11 vruppert Exp $
+// $Id: ferr.cc,v 1.19 2009/10/14 20:45:29 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003 Stanislav Shwartsman
+//   Copyright (c) 2003-2009 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
