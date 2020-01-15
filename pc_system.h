@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h,v 1.34 2006/01/20 19:12:03 vruppert Exp $
+// $Id: pc_system.h,v 1.39 2006/05/27 15:54:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -24,14 +24,13 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
-
+#ifndef BX_PCSYS_H
+#define BX_PCSYS_H
 
 #define BX_MAX_TIMERS 64
 #define BX_NULL_TIMER_HANDLE 10000
 
-
 typedef void (*bx_timer_handler_t)(void *);
-
 
 BOCHSAPI extern class bx_pc_system_c bx_pc_system;
 
@@ -92,14 +91,13 @@ public:
   // Timer oriented public features
   // ==============================
 
-  void   init_ips(Bit32u ips);
-  int    register_timer( void *this_ptr, bx_timer_handler_t, Bit32u useconds,
+  void   initialize(Bit32u ips);
+  int    register_timer(void *this_ptr, bx_timer_handler_t, Bit32u useconds,
                          bx_bool continuous, bx_bool active, const char *id);
-  unsigned unregisterTimer(int timerID);
+  bx_bool unregisterTimer(unsigned timerID);
   void   start_timers(void);
-  void   activate_timer( unsigned timer_index, Bit32u useconds,
-                         bx_bool continuous );
-  void   deactivate_timer( unsigned timer_index );
+  void   activate_timer(unsigned timer_index, Bit32u useconds, bx_bool continuous);
+  void   deactivate_timer(unsigned timer_index);
   unsigned triggeredTimerID(void) {
     return triggeredTimer;
   }
@@ -161,18 +159,26 @@ public:
   //
   Bit32u  a20_mask;
 
+  volatile bx_bool kill_bochs_request;
+
   void set_HRQ(bx_bool val);  // set the Hold ReQuest line
   void set_INTR(bx_bool value); // set the INTR line to value
 
   // Cpu and System Reset
-  int Reset( unsigned type );
+  int Reset(unsigned type);
   Bit8u  IAC(void);
 
-  bx_pc_system_c(void);
+  bx_pc_system_c();
 
   Bit32u  inp(Bit16u addr, unsigned io_len) BX_CPP_AttrRegparmN(2);
   void    outp(Bit16u addr, Bit32u value, unsigned io_len) BX_CPP_AttrRegparmN(3);
-  void    set_enable_a20(Bit8u value) BX_CPP_AttrRegparmN(1);
+  void    set_enable_a20(bx_bool value);
   bx_bool get_enable_a20(void);
+  void    MemoryMappingChanged(void); // flush TLB in all CPUs
   void    exit(void);
+#if BX_SUPPORT_SAVE_RESTORE
+  void    register_state(void);
+#endif
 };
+
+#endif

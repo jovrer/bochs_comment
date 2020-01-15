@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pciusb.h,v 1.14 2005/11/29 20:46:17 vruppert Exp $
+// $Id: pciusb.h,v 1.18 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -25,6 +25,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 // Benjamin D Lunt (fys at frontiernet net) coded most of this usb emulation.
+
+#ifndef BX_IODEV_PCIUSB_H
+#define BX_IODEV_PCIUSB_H
 
 #if BX_USE_PCIUSB_SMF
 #  define BX_USB_THIS theUSBDevice->
@@ -332,22 +335,27 @@ struct HCSTACK {
   bx_bool t;
 };
 
-class bx_pciusb_c : public bx_usb_stub_c
-{
+class bx_pciusb_c : public bx_pci_usb_stub_c {
 public:
-  bx_pciusb_c(void);
-  ~bx_pciusb_c(void);
-  virtual void  init(void);
-  virtual void  reset(unsigned);
-  virtual void  usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state);
-  virtual void  usb_mouse_enable(bx_bool enable);
+  bx_pciusb_c();
+  virtual ~bx_pciusb_c();
+  virtual void init(void);
+  virtual void reset(unsigned);
+  virtual void usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state);
+  virtual void usb_mouse_enable(bx_bool enable);
   virtual bx_bool usb_key_enq(Bit8u *scan_code);
   virtual bx_bool usb_keyboard_connected();
   virtual bx_bool usb_mouse_connected();
-  static char  *usb_param_handler(bx_param_string_c *param, int set, char *val, int maxlen);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+  virtual void after_restore_state(void);
+#endif
+  virtual Bit32u  pci_read_handler(Bit8u address, unsigned io_len);
+  virtual void    pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+
+  static const char *usb_param_handler(bx_param_string_c *param, int set, const char *val, int maxlen);
 
 private:
-
   bx_bool  busy;
 
   bx_usb_t hub[BX_USB_CONFDEV];
@@ -376,8 +384,8 @@ private:
   bx_bool  mouse_connected;
   bx_bool  flash_connected;
 
-  static void  init_device(Bit8u port, char *devname);
-  static void  usb_set_connect_status(Bit8u port, int type, bx_bool connected);
+  static void init_device(Bit8u port, char *devname);
+  static void usb_set_connect_status(Bit8u port, int type, bx_bool connected);
 
   static void usb_timer_handler(void *);
   void usb_timer(void);
@@ -390,13 +398,10 @@ private:
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
-  static Bit32u pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len);
-  static void   pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len);
 #if !BX_USE_PCIUSB_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
-  Bit32u pci_read(Bit8u address, unsigned io_len);
-  void   pci_write(Bit8u address, Bit32u value, unsigned io_len);
 #endif
 };
 
+#endif

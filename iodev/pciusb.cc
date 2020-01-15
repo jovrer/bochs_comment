@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pciusb.cc,v 1.31 2006/01/11 21:39:34 vruppert Exp $
+// $Id: pciusb.cc,v 1.40 2006/08/20 09:19:59 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -38,10 +38,17 @@
      I have been doing.  Many BX_INFO()'s here and there.
    - My purpose of coding this emulation was/is to learn about the USB.
      It has been a challenge, but I have learned a lot.
-   - 
-   -
-   -
    - If I forget, there are a lot of BX_INFO's that can be changed to BX_DEBUG's.
+   - 31 July 2006:
+     I now have a Beagle USB Protocol Analyzer from Total Phase for my research.
+     (http://www.totalphase.com/products/beagle/usb/)
+     With this device, I plan on doing a lot of research and development to get this
+     code to a state where it is actually very useful.  I plan on adding support
+     of many "plug-in" type modules so that you can simply add a plug-in for your
+     specific device without having to modify the root code.
+     I hope to have some working code to upload to the CVS as soon as possible.
+     Thanks to Total Phase for their help in my research and the development of
+     this project.
   */
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -59,8 +66,7 @@ bx_pciusb_c* theUSBDevice = NULL;
 const Bit8u usb_iomask[32] = {2, 1, 2, 1, 2, 1, 2, 0, 4, 0, 0, 0, 1, 0, 0, 0,
                               3, 1, 3, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  int
-libpciusb_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int libpciusb_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theUSBDevice = new bx_pciusb_c ();
   bx_devices.pluginPciUSBAdapter = theUSBDevice;
@@ -68,19 +74,17 @@ libpciusb_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *a
   return 0; // Success
 }
 
-  void
-libpciusb_LTX_plugin_fini(void)
+void libpciusb_LTX_plugin_fini(void)
 {
 }
 
-
-bx_pciusb_c::bx_pciusb_c(void)
+bx_pciusb_c::bx_pciusb_c()
 {
   put("USB");
   settype(PCIUSBLOG);
 }
 
-bx_pciusb_c::~bx_pciusb_c(void)
+bx_pciusb_c::~bx_pciusb_c()
 {
   //TODO:  free  BX_USB_THIS device_buffer
 
@@ -92,13 +96,11 @@ bx_pciusb_c::~bx_pciusb_c(void)
   BX_DEBUG(("Exit."));
 }
 
-
-  void
-bx_pciusb_c::init(void)
+void bx_pciusb_c::init(void)
 {
   // called once when bochs initializes
 
-  if (!bx_options.usb[0].Oenabled->get()) return;
+  if (!SIM->get_param_bool(BXPN_USB1_ENABLED)->get()) return;
 
   BX_USB_THIS device_buffer = new Bit8u[65536];
 
@@ -108,10 +110,7 @@ bx_pciusb_c::init(void)
                    bx_pc_system.register_timer(this, usb_timer_handler, 1000, 1,1, "usb.timer");
 
   BX_USB_THIS hub[0].devfunc = BX_PCI_DEVICE(1,2);
-  DEV_register_pci_handlers(this,
-                            pci_read_handler,
-                            pci_write_handler,
-                            &BX_USB_THIS hub[0].devfunc, BX_PLUGIN_PCIUSB,
+  DEV_register_pci_handlers(this, &BX_USB_THIS hub[0].devfunc, BX_PLUGIN_PCIUSB,
                             "Experimental PCI USB");
 
   for (unsigned i=0; i<256; i++) {
@@ -125,25 +124,24 @@ bx_pciusb_c::init(void)
   //FIXME: for now, we want a status bar // hub zero, port zero
   BX_USB_THIS hub[0].statusbar_id[0] = bx_gui->register_statusitem("USB");
 
-  bx_options.usb[0].Oport1->set_handler(usb_param_handler);
-  bx_options.usb[0].Oport1->set_runtime_param(1);
-  bx_options.usb[0].Ooption1->set_handler(usb_param_handler);
-  bx_options.usb[0].Ooption1->set_runtime_param(1);
-  bx_options.usb[0].Oport2->set_handler(usb_param_handler);
-  bx_options.usb[0].Oport2->set_runtime_param(1);
-  bx_options.usb[0].Ooption2->set_handler(usb_param_handler);
-  bx_options.usb[0].Ooption2->set_runtime_param(1);
+  SIM->get_param_string(BXPN_USB1_PORT1)->set_handler(usb_param_handler);
+  SIM->get_param_string(BXPN_USB1_PORT1)->set_runtime_param(1);
+  SIM->get_param_string(BXPN_USB1_OPTION1)->set_handler(usb_param_handler);
+  SIM->get_param_string(BXPN_USB1_OPTION1)->set_runtime_param(1);
+  SIM->get_param_string(BXPN_USB1_PORT2)->set_handler(usb_param_handler);
+  SIM->get_param_string(BXPN_USB1_PORT2)->set_runtime_param(1);
+  SIM->get_param_string(BXPN_USB1_OPTION2)->set_handler(usb_param_handler);
+  SIM->get_param_string(BXPN_USB1_OPTION2)->set_runtime_param(1);
 
   //HACK: Turn on debug messages from the start
   //BX_USB_THIS setonoff(LOGLEV_DEBUG, ACT_REPORT);
 }
 
-  void
-bx_pciusb_c::reset(unsigned type)
+void bx_pciusb_c::reset(unsigned type)
 {
   unsigned i, j;
 
-  if (!bx_options.usb[0].Oenabled->get()) return;
+  if (!SIM->get_param_bool(BXPN_USB1_ENABLED)->get()) return;
 
   if (type == BX_RESET_HARDWARE) {
     static const struct reset_vals_t {
@@ -241,12 +239,107 @@ bx_pciusb_c::reset(unsigned type)
   // include the device(s) initialize code
   #include "pciusb_devs.h"
 
-  init_device(0, bx_options.usb[0].Oport1->getptr());
-  init_device(1, bx_options.usb[0].Oport2->getptr());
+  init_device(0, SIM->get_param_string(BXPN_USB1_PORT1)->getptr());
+  init_device(1, SIM->get_param_string(BXPN_USB1_PORT2)->getptr());
 }
 
-  void
-bx_pciusb_c::init_device(Bit8u port, char *devname)
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_pciusb_c::register_state(void)
+{
+  unsigned i, j, n;
+  char hubnum[8], portnum[8], name[6];
+  bx_list_c *hub, *usb_cmd, *usb_st, *usb_en, *port;
+
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pciusb", "PCI USB Controller State", BX_USB_CONFDEV + 15);
+  for (i=0; i<BX_USB_CONFDEV; i++) {
+    sprintf(hubnum, "hub%d", i+1);
+    hub = new bx_list_c(list, hubnum, USB_NUM_PORTS + 7);
+    usb_cmd = new bx_list_c(hub, "usb_command", 8);
+    new bx_shadow_bool_c(usb_cmd, "max_packet_size", &BX_USB_THIS hub[i].usb_command.max_packet_size);
+    new bx_shadow_bool_c(usb_cmd, "configured", &BX_USB_THIS hub[i].usb_command.configured);
+    new bx_shadow_bool_c(usb_cmd, "debug", &BX_USB_THIS hub[i].usb_command.debug);
+    new bx_shadow_bool_c(usb_cmd, "resume", &BX_USB_THIS hub[i].usb_command.resume);
+    new bx_shadow_bool_c(usb_cmd, "suspend", &BX_USB_THIS hub[i].usb_command.suspend);
+    new bx_shadow_bool_c(usb_cmd, "reset", &BX_USB_THIS hub[i].usb_command.reset);
+    new bx_shadow_bool_c(usb_cmd, "host_reset", &BX_USB_THIS hub[i].usb_command.host_reset);
+    new bx_shadow_bool_c(usb_cmd, "schedule", &BX_USB_THIS hub[i].usb_command.schedule);
+    usb_st = new bx_list_c(hub, "usb_status");
+    new bx_shadow_bool_c(usb_st, "host_halted", &BX_USB_THIS hub[i].usb_status.host_halted);
+    new bx_shadow_bool_c(usb_st, "host_error", &BX_USB_THIS hub[i].usb_status.host_error);
+    new bx_shadow_bool_c(usb_st, "pci_error", &BX_USB_THIS hub[i].usb_status.pci_error);
+    new bx_shadow_bool_c(usb_st, "resume", &BX_USB_THIS hub[i].usb_status.resume);
+    new bx_shadow_bool_c(usb_st, "error_interrupt", &BX_USB_THIS hub[i].usb_status.error_interrupt);
+    new bx_shadow_bool_c(usb_st, "interrupt", &BX_USB_THIS hub[i].usb_status.interrupt);
+    usb_en = new bx_list_c(hub, "usb_enable");
+    new bx_shadow_bool_c(usb_en, "short_packet", &BX_USB_THIS hub[i].usb_enable.short_packet);
+    new bx_shadow_bool_c(usb_en, "on_complete", &BX_USB_THIS hub[i].usb_enable.on_complete);
+    new bx_shadow_bool_c(usb_en, "resume", &BX_USB_THIS hub[i].usb_enable.resume);
+    new bx_shadow_bool_c(usb_en, "timeout_crc", &BX_USB_THIS hub[i].usb_enable.timeout_crc);
+    new bx_shadow_num_c(hub, "frame_num", &BX_USB_THIS hub[i].usb_frame_num.frame_num, BASE_HEX);
+    new bx_shadow_num_c(hub, "frame_base", &BX_USB_THIS hub[i].usb_frame_base.frame_base, BASE_HEX);
+    new bx_shadow_num_c(hub, "sof_timing", &BX_USB_THIS hub[i].usb_sof.sof_timing, BASE_HEX);
+    for (j=0; j<USB_NUM_PORTS; j++) {
+      sprintf(portnum, "port%d", j+1);
+      port = new bx_list_c(hub, portnum, 10);
+      new bx_shadow_bool_c(port, "suspend", &BX_USB_THIS hub[i].usb_port[j].suspend);
+      new bx_shadow_bool_c(port, "reset", &BX_USB_THIS hub[i].usb_port[j].reset);
+      new bx_shadow_bool_c(port, "low_speed", &BX_USB_THIS hub[i].usb_port[j].low_speed);
+      new bx_shadow_bool_c(port, "resume", &BX_USB_THIS hub[i].usb_port[j].resume);
+      new bx_shadow_bool_c(port, "line_dminus", &BX_USB_THIS hub[i].usb_port[j].line_dminus);
+      new bx_shadow_bool_c(port, "line_dplus", &BX_USB_THIS hub[i].usb_port[j].line_dplus);
+      new bx_shadow_bool_c(port, "able_changed", &BX_USB_THIS hub[i].usb_port[j].able_changed);
+      new bx_shadow_bool_c(port, "enabled", &BX_USB_THIS hub[i].usb_port[j].enabled);
+      new bx_shadow_bool_c(port, "connect_changed", &BX_USB_THIS hub[i].usb_port[j].connect_changed);
+      new bx_shadow_bool_c(port, "status", &BX_USB_THIS hub[i].usb_port[j].status);
+    }
+    bx_list_c *pci_conf = new bx_list_c(hub, "pci_conf", 256);
+    for (n=0; n<256; n++) {
+      sprintf(name, "0x%02x", n);
+      new bx_shadow_num_c(pci_conf, name, &BX_USB_THIS hub[i].pci_conf[n], BASE_HEX);
+    }
+  }
+  new bx_shadow_bool_c(list, "busy", &BX_USB_THIS busy);
+  new bx_shadow_num_c(list, "global_reset", &BX_USB_THIS global_reset);
+  new bx_shadow_num_c(list, "mouse_delayed_dx", &BX_USB_THIS mouse_delayed_dx);
+  new bx_shadow_num_c(list, "mouse_delayed_dy", &BX_USB_THIS mouse_delayed_dy);
+  new bx_shadow_num_c(list, "mouse_delayed_dz", &BX_USB_THIS mouse_delayed_dz);
+  new bx_shadow_num_c(list, "button_state", &BX_USB_THIS button_state);
+  new bx_shadow_num_c(list, "mouse_x", &BX_USB_THIS mouse_x);
+  new bx_shadow_num_c(list, "mouse_y", &BX_USB_THIS mouse_y);
+  new bx_shadow_num_c(list, "mouse_z", &BX_USB_THIS mouse_z);
+  new bx_shadow_num_c(list, "b_state", &BX_USB_THIS b_state);
+  bx_list_c *svkey = new bx_list_c(list, "saved_key", 8);
+  for (i=0; i<8; i++) {
+    sprintf(name, "%d", i);
+    new bx_shadow_num_c(svkey, name, &BX_USB_THIS saved_key[i]);
+  }
+  bx_list_c *kppkt = new bx_list_c(list, "key_pad_packet", 8);
+  for (i=0; i<8; i++) {
+    sprintf(name, "%d", i);
+    new bx_shadow_num_c(kppkt, name, &BX_USB_THIS key_pad_packet[i]);
+  }
+  new bx_shadow_data_c(list, "device_buffer", BX_USB_THIS device_buffer, 65536);
+  new bx_shadow_num_c(list, "set_address_stk", &BX_USB_THIS set_address_stk);
+  bx_list_c *setaddr = new bx_list_c(list, "set_address", 128);
+  for (i=0; i<128; i++) {
+    sprintf(name, "0x%02x", i);
+    new bx_shadow_num_c(setaddr, name, &BX_USB_THIS set_address[i], BASE_HEX);
+  }
+}
+
+void bx_pciusb_c::after_restore_state(void)
+{
+  if (DEV_pci_set_base_io(BX_USB_THIS_PTR, read_handler, write_handler,
+                         &BX_USB_THIS hub[0].base_ioaddr,
+                         &BX_USB_THIS hub[0].pci_conf[0x20],
+                         32, &usb_iomask[0], "USB Hub #1"))
+  {
+     BX_INFO(("new base address: 0x%04x", BX_USB_THIS hub[0].base_ioaddr));
+  }
+}
+#endif
+
+void bx_pciusb_c::init_device(Bit8u port, char *devname)
 {
   Bit8u type = USB_DEV_TYPE_NONE;
   bx_bool connected = 0;
@@ -255,8 +348,8 @@ bx_pciusb_c::init_device(Bit8u port, char *devname)
 
   if (!strcmp(devname, "mouse")) {
     type = USB_DEV_TYPE_MOUSE;
-    connected = bx_options.Omouse_enabled->get();
-    if (bx_options.Omouse_type->get() == BX_MOUSE_TYPE_USB) {
+    connected = SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get();
+    if (SIM->get_param_enum(BXPN_MOUSE_TYPE)->get() == BX_MOUSE_TYPE_USB) {
       BX_USB_THIS mouse_connected = connected;
     } else if (connected) {
       BX_ERROR(("USB mouse connect ignored, since other mouse type is configured"));
@@ -283,27 +376,22 @@ bx_pciusb_c::init_device(Bit8u port, char *devname)
   usb_set_connect_status(port, type, connected);
 }
 
-  void
-bx_pciusb_c::set_irq_level(bx_bool level)
+void bx_pciusb_c::set_irq_level(bx_bool level)
 {
   DEV_pci_set_irq(BX_USB_THIS hub[0].devfunc, BX_USB_THIS hub[0].pci_conf[0x3d], level);
 }
 
-  // static IO port read callback handler
-  // redirects to non-static class handler to avoid virtual functions
+// static IO port read callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  Bit32u
-bx_pciusb_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+Bit32u bx_pciusb_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
 #if !BX_USE_PCIUSB_SMF
   bx_pciusb_c *class_ptr = (bx_pciusb_c *) this_ptr;
-
-  return( class_ptr->read(address, io_len) );
+  return class_ptr->read(address, io_len);
 }
 
-
-  Bit32u
-bx_pciusb_c::read(Bit32u address, unsigned io_len)
+Bit32u bx_pciusb_c::read(Bit32u address, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -390,21 +478,17 @@ bx_pciusb_c::read(Bit32u address, unsigned io_len)
   return(val);
 }
 
+// static IO port write callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  // static IO port write callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  void
-bx_pciusb_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
+void bx_pciusb_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
 #if !BX_USE_PCIUSB_SMF
   bx_pciusb_c *class_ptr = (bx_pciusb_c *) this_ptr;
-
   class_ptr->write(address, value, io_len);
 }
 
-  void
-bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
+void bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -635,7 +719,7 @@ void bx_pciusb_c::usb_timer(void)
     Bit32u item, address, lastvertaddr = 0, queue_num = 0;
     Bit32u frame, frm_addr = BX_USB_THIS hub[0].usb_frame_base.frame_base + 
                                 (BX_USB_THIS hub[0].usb_frame_num.frame_num << 2);
-    BX_MEM_READ_PHYSICAL(frm_addr, 4, &frame);
+    DEV_MEM_READ_PHYSICAL(frm_addr, 4, &frame);
     if ((frame & 1) == 0) {
       stack[stk].next = (frame & ~0xF);
       stack[stk].d = 0;
@@ -655,14 +739,14 @@ void bx_pciusb_c::usb_timer(void)
           lastvertaddr = address + 4;
           // get HORZ slot
           stk++;
-          BX_MEM_READ_PHYSICAL(address, 4, &item);
+          DEV_MEM_READ_PHYSICAL(address, 4, &item);
           stack[stk].next = item & ~0xF;
           stack[stk].d = HC_HORZ;
           stack[stk].q = (item & 0x0002) ? 1 : 0;
           stack[stk].t = (item & 0x0001) ? 1 : 0;
           // get VERT slot
           stk++;
-          BX_MEM_READ_PHYSICAL(lastvertaddr, 4, &item);
+          DEV_MEM_READ_PHYSICAL(lastvertaddr, 4, &item);
           stack[stk].next = item & ~0xF;
           stack[stk].d = HC_VERT;
           stack[stk].q = (item & 0x0002) ? 1 : 0;
@@ -673,7 +757,7 @@ void bx_pciusb_c::usb_timer(void)
           queue_num++;
         } else {  // else is a TD
           address = stack[stk].next;
-          BX_MEM_READ_PHYSICAL(address, 32, &td);
+          DEV_MEM_READ_PHYSICAL(address, 32, &td);
           bx_bool spd = (td.dword1 & (1<<29)) ? 1 : 0;
           stack[stk].next = td.dword0 & ~0xF;
           bx_bool depthbreadth = (td.dword0 & 0x0004) ? 1 : 0;     // 1 = depth first, 0 = breadth first
@@ -693,10 +777,10 @@ void bx_pciusb_c::usb_timer(void)
               }
               if (td.dword1 & (1<<22)) stalled = 1;
 
-              BX_MEM_WRITE_PHYSICAL(address+4, 4, &td.dword1);  // write back the status
+              DEV_MEM_WRITE_PHYSICAL(address+4, 4, &td.dword1);  // write back the status
               // copy pointer for next queue item, in to vert queue head
               if ((stk > 0) && !shortpacket && (stack[stk].d == HC_VERT))
-                BX_MEM_WRITE_PHYSICAL(lastvertaddr, 4, &td.dword0);
+                DEV_MEM_WRITE_PHYSICAL(lastvertaddr, 4, &td.dword0);
             }
           }
 
@@ -777,7 +861,7 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
 
   // if packet, read in the packet data
   if (pid == TOKEN_SETUP) {
-    if (td->dword3) BX_MEM_READ_PHYSICAL(td->dword3, 8, data);
+    if (td->dword3) DEV_MEM_READ_PHYSICAL(td->dword3, 8, data);
     // the '8' above may need to be maxlen (unless maxlen == 0)
   }
 
@@ -855,7 +939,7 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
 
               memcpy(device_buffer, BX_USB_THIS key_pad_packet, 8);
 
-              BX_MEM_WRITE_PHYSICAL(td->dword3, cnt, device_buffer);
+              DEV_MEM_WRITE_PHYSICAL(td->dword3, cnt, device_buffer);
               BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, cnt-1);
               break;
 
@@ -872,7 +956,7 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
               BX_USB_THIS mouse_x = 0;
               BX_USB_THIS mouse_y = 0;
               BX_USB_THIS mouse_z = 0;
-              BX_MEM_WRITE_PHYSICAL(td->dword3, cnt, device_buffer);
+              DEV_MEM_WRITE_PHYSICAL(td->dword3, cnt, device_buffer);
               BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, cnt-1);
               break;
 
@@ -917,7 +1001,7 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
         if (dev->function.in_cnt > 0) {
           bx_gui->statusbar_setitem(BX_USB_THIS hub[0].statusbar_id[0], 1);
           cnt = (dev->function.in_cnt < maxlen) ? dev->function.in_cnt : maxlen;
-          BX_MEM_WRITE_PHYSICAL(td->dword3, cnt, dev->function.in);
+          DEV_MEM_WRITE_PHYSICAL(td->dword3, cnt, dev->function.in);
           dump_packet(dev->function.in, cnt);
           dev->function.in += cnt;
           dev->function.in_cnt -= cnt;
@@ -943,7 +1027,7 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
         if (fnd) {
           // Read in the packet
           Bit8u bulk_int_packet[1024];
-          BX_MEM_READ_PHYSICAL(td->dword3, maxlen, bulk_int_packet);
+          DEV_MEM_READ_PHYSICAL(td->dword3, maxlen, bulk_int_packet);
 
           // now do the task
           switch (protocol) {
@@ -1295,8 +1379,8 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
   return 1;
 }
 
-unsigned bx_pciusb_c::GetDescriptor(struct USB_DEVICE *dev, struct REQUEST_PACKET *packet) {
-
+unsigned bx_pciusb_c::GetDescriptor(struct USB_DEVICE *dev, struct REQUEST_PACKET *packet)
+{
   Bit8u *p = device_buffer;
   unsigned i, j, fnd, ret = 0; // ret = 0 = no error
 
@@ -1417,8 +1501,8 @@ unsigned bx_pciusb_c::GetDescriptor(struct USB_DEVICE *dev, struct REQUEST_PACKE
 
 // If the request fails, set the stall bit ????
 void bx_pciusb_c::set_status(struct TD *td, bx_bool stalled, bx_bool data_buffer_error, bx_bool babble, 
-                             bx_bool nak, bx_bool crc_time_out, bx_bool bitstuff_error, Bit16u act_len) {
-
+                             bx_bool nak, bx_bool crc_time_out, bx_bool bitstuff_error, Bit16u act_len)
+{
   // clear out the bits we can modify and/or want zero
   td->dword1 &= 0xDF00F800;
 
@@ -1434,27 +1518,9 @@ void bx_pciusb_c::set_status(struct TD *td, bx_bool stalled, bx_bool data_buffer
     td->dword1 &= ~((1<<28) | (1<<27));  // clear the c_err field in there was an error
 }
  
- 
-  // static pci configuration space read callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  Bit32u
-bx_pciusb_c::pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len)
+// pci configuration space read callback handler
+Bit32u bx_pciusb_c::pci_read_handler(Bit8u address, unsigned io_len)
 {
-#if !BX_USE_PCIUSB_SMF
-  bx_pciusb_c *class_ptr = (bx_pciusb_c *) this_ptr;
-
-  return class_ptr->pci_read(address, io_len);
-}
-
-
-  Bit32u
-bx_pciusb_c::pci_read(Bit8u address, unsigned io_len)
-{
-#else
-  UNUSED(this_ptr);
-#endif // !BX_USE_PCIUSB_SMF
-
   Bit32u value = 0;
 
   if (io_len > 4 || io_len == 0) {
@@ -1509,25 +1575,9 @@ bx_pciusb_c::pci_read(Bit8u address, unsigned io_len)
 }
 
 
-  // static pci configuration space write callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  void
-bx_pciusb_c::pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len)
+// pci configuration space write callback handler
+void bx_pciusb_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
-#if !BX_USE_PCIUSB_SMF
-  bx_pciusb_c *class_ptr = (bx_pciusb_c *) this_ptr;
-
-  class_ptr->pci_write(address, value, io_len);
-}
-
-  void
-bx_pciusb_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
-{
-#else
-  UNUSED(this_ptr);
-#endif // !BX_USE_PCIUSB_SMF
-
   Bit8u value8, oldval;
   bx_bool baseaddr_change = 0;
 
@@ -1590,8 +1640,7 @@ bx_pciusb_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
   BX_DEBUG(("USB PCI write register 0x%02x                   value 0x%s", address, szTmp));
 }
 
-  void
-bx_pciusb_c::usb_mouse_enable(bx_bool enable)
+void bx_pciusb_c::usb_mouse_enable(bx_bool enable)
 {
   BX_USB_THIS mouse_connected = enable;
   if (BX_USB_THIS last_connect != enable) {
@@ -1601,8 +1650,7 @@ bx_pciusb_c::usb_mouse_enable(bx_bool enable)
   }
 }
 
-  void
-bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected)
+void bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected)
 {
   if (BX_USB_THIS hub[0].usb_port[port].device_num > -1) {
     if (BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].dev_type == type) {
@@ -1670,8 +1718,7 @@ bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected)
   }
 }
 
-  void
-bx_pciusb_c::usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_pciusb_c::usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
 {
   // scale down the motion
   if ( (delta_x < -1) || (delta_x > 1) )
@@ -1714,8 +1761,7 @@ bx_pciusb_c::usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned butto
   BX_USB_THIS b_state = (Bit8u) button_state;
 }
 
-  bx_bool
-bx_pciusb_c::usb_key_enq(Bit8u *scan_code)
+bx_bool bx_pciusb_c::usb_key_enq(Bit8u *scan_code)
 {
   bx_bool is_break_code = 0;
   Bit8u our_scan_code[8];
@@ -1792,21 +1838,19 @@ bx_pciusb_c::usb_key_enq(Bit8u *scan_code)
   return fnd;
 }
 
-  bx_bool
-bx_pciusb_c::usb_keyboard_connected()
+bx_bool bx_pciusb_c::usb_keyboard_connected()
 {
   return BX_USB_THIS keyboard_connected;
 }
 
-  bx_bool
-bx_pciusb_c::usb_mouse_connected()
+bx_bool bx_pciusb_c::usb_mouse_connected()
 {
   return BX_USB_THIS mouse_connected;
 }
 
 // Dumps the contents of a buffer to the log file
-  void 
-bx_pciusb_c::dump_packet(Bit8u *data, unsigned size) {
+void bx_pciusb_c::dump_packet(Bit8u *data, unsigned size)
+{
   char the_packet[256], str[16];
   strcpy(the_packet, "Packet contents (in hex):");
   unsigned offset = 0;
@@ -1827,9 +1871,9 @@ bx_pciusb_c::dump_packet(Bit8u *data, unsigned size) {
 // packet is the data coming in/going out
 // size is the size of the data
 // out = 1 if Host to Device, 0 it Device to Host
-  bx_bool 
-bx_pciusb_c::flash_stick(Bit8u *packet, Bit16u size, bx_bool out) {
-  
+
+bx_bool bx_pciusb_c::flash_stick(Bit8u *packet, Bit16u size, bx_bool out)
+{
   // packet contains the SCSI interface command
   dump_packet(packet, size);
   
@@ -1853,26 +1897,22 @@ bx_pciusb_c::flash_stick(Bit8u *packet, Bit16u size, bx_bool out) {
   return 1;
 }
 
-char *bx_pciusb_c::usb_param_handler(bx_param_string_c *param, int set, char *val, int maxlen)
+const char *bx_pciusb_c::usb_param_handler(bx_param_string_c *param, int set, const char *val, int maxlen)
 {
   // handler for USB runtime parameters
   if (set) {
-    bx_id id = param->get_id ();
-    switch (id) {
-      case BXP_USB1_PORT1:
-        BX_ERROR(("USB port #1 device change not implemented yet"));
-        break;
-      case BXP_USB1_OPTION1:
-        BX_ERROR(("USB port #1 option change not implemented yet"));
-        break;
-      case BXP_USB1_PORT2:
-        BX_ERROR(("USB port #2 device change not implemented yet"));
-        break;
-      case BXP_USB1_OPTION2:
-        BX_ERROR(("USB port #2 option change not implemented yet"));
-        break;
-      default:
-        BX_PANIC(("usb_param_handler called with unexpected parameter %d", id));
+    char pname[BX_PATHNAME_LEN];
+    param->get_param_path(pname, BX_PATHNAME_LEN);
+    if (!strcmp(pname, BXPN_USB1_PORT1)) {
+      BX_ERROR(("USB port #1 device change not implemented yet"));
+    } else if (!strcmp(pname, BXPN_USB1_OPTION1)) {
+      BX_ERROR(("USB port #1 option change not implemented yet"));
+    } else if (!strcmp(pname, BXPN_USB1_PORT2)) {
+      BX_ERROR(("USB port #2 device change not implemented yet"));
+    } else if (!strcmp(pname, BXPN_USB1_OPTION2)) {
+      BX_ERROR(("USB port #2 option change not implemented yet"));
+    } else {
+      BX_PANIC(("usb_param_handler called with unexpected parameter '%s'", pname));
     }
   }
   return val;

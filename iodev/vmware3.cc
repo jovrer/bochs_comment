@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: vmware3.cc,v 1.15 2006/06/15 09:44:37 vruppert Exp $
+/////////////////////////////////////////////////////////////////////////
+
 /*
  * This file provides support for VMWare's virtual disk image
  * format.
@@ -284,11 +288,12 @@ int vmware3_image_t::open(const char * pathname)
         cylinders = header.cylinders_in_disk;
         heads = header.heads_in_disk;
         sectors = header.sectors_in_disk;
-    }
-    else {
+        hd_size = header.total_sectors_in_disk * 512;
+    } else {
         cylinders = header.cylinders;
         heads = header.heads;
         sectors = header.sectors;
+        hd_size = header.total_sectors * 512;
     }
 
     return 1;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.h,v 1.31 2005/12/02 17:27:19 vruppert Exp $
+// $Id: keyboard.h,v 1.36 2006/08/25 18:26:27 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -48,15 +48,19 @@
 
 class bx_keyb_c : public bx_keyb_stub_c {
 public:
-  bx_keyb_c(void);
-  ~bx_keyb_c(void);
+  bx_keyb_c();
+  virtual ~bx_keyb_c() {}
   // implement bx_devmodel_c interface
-  virtual void     init(void);
-  virtual void     reset(unsigned type);
+  virtual void init(void);
+  virtual void reset(unsigned type);
   // override stubs from bx_keyb_stub_c
-  virtual void     gen_scancode(Bit32u key);
-  virtual void     paste_bytes(Bit8u *data, Bit32s length);
-  virtual void     mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state);
+  virtual void gen_scancode(Bit32u key);
+  virtual void paste_bytes(Bit8u *data, Bit32s length);
+  virtual void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+  virtual void after_restore_state(void);
+#endif
 
   // runtime options
   static     Bit64s   kbd_param_handler(bx_param_c *param, int set, Bit64s val);
@@ -112,6 +116,7 @@ private:
     } kbd_controller;
 
     struct mouseStruct {
+      bx_bool captured; // host mouse capture enabled
       Bit8u   type;
       Bit8u   sample_rate;
       Bit8u   resolution_cpmm; // resolution in counts per mm
@@ -214,7 +219,8 @@ private:
   Bit32u pastebuf_len; // length of pastebuf
   Bit32u pastebuf_ptr; // ptr to next byte to be added to hw buffer
   Bit32u pastedelay;   // count before paste
-  bx_bool stop_paste;  // stop the current paste operation on hardware reset
+  bx_bool paste_service;  // set to 1 when gen_scancode() is called from paste service
+  bx_bool stop_paste;  // stop the current paste operation on keypress or hardware reset
 
   BX_KEY_SMF void     resetinternals(bx_bool powerup);
   BX_KEY_SMF void     set_kbd_clock_enable(Bit8u value) BX_CPP_AttrRegparmN(1);

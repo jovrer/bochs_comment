@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.89 2006/01/25 17:37:22 vruppert Exp $
+// $Id: gui.cc,v 1.97 2006/06/07 19:40:14 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -39,6 +39,10 @@
 #include "gui/bitmaps/configbutton.h"
 #include "gui/bitmaps/cdromd.h"
 #include "gui/bitmaps/userbutton.h"
+#if BX_SUPPORT_SAVE_RESTORE
+#include "gui/bitmaps/saverestore.h"
+#endif
+
 #if BX_WITH_MACOS
 #  include <Disks.h>
 #endif
@@ -110,14 +114,13 @@ bx_gui_c::~bx_gui_c()
   }
 }
 
-  void
-bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
+void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
 {
   BX_GUI_THIS new_gfx_api = 0;
   BX_GUI_THIS host_xres = 640;
   BX_GUI_THIS host_yres = 480;
   BX_GUI_THIS host_bpp = 8;
-  BX_GUI_THIS dialog_caps = BX_GUI_DLG_RUNTIME;
+  BX_GUI_THIS dialog_caps = BX_GUI_DLG_RUNTIME | BX_GUI_DLG_SAVE_RESTORE;
 
   specific_init(argc, argv, tilewidth, tileheight, BX_HEADER_BAR_Y);
 
@@ -139,7 +142,6 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   BX_GUI_THIS nomouse_bmap_id = create_bitmap(bx_nomouse_bmap,
                           BX_MOUSE_BMAP_X, BX_MOUSE_BMAP_Y);
 
-
   BX_GUI_THIS power_bmap_id = create_bitmap(bx_power_bmap, BX_POWER_BMAP_X, BX_POWER_BMAP_Y);
   BX_GUI_THIS reset_bmap_id = create_bitmap(bx_reset_bmap, BX_RESET_BMAP_X, BX_RESET_BMAP_Y);
   BX_GUI_THIS snapshot_bmap_id = create_bitmap(bx_snapshot_bmap, BX_SNAPSHOT_BMAP_X, BX_SNAPSHOT_BMAP_Y);
@@ -148,6 +150,10 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   BX_GUI_THIS config_bmap_id = create_bitmap(bx_config_bmap, BX_CONFIG_BMAP_X, BX_CONFIG_BMAP_Y);
   BX_GUI_THIS user_bmap_id = create_bitmap(bx_user_bmap, BX_USER_BMAP_X, BX_USER_BMAP_Y);
 
+#if BX_SUPPORT_SAVE_RESTORE
+  BX_GUI_THIS save_restore_bmap_id = create_bitmap(bx_save_restore_bmap,
+                          BX_SAVE_RESTORE_BMAP_X, BX_SAVE_RESTORE_BMAP_Y);
+#endif
 
   // Add the initial bitmaps to the headerbar, and enable callback routine, for use
   // when that bitmap is clicked on
@@ -180,7 +186,7 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   BX_GUI_THIS set_tooltip(BX_GUI_THIS cdromD_hbar_id, "Change first CDROM media");
 
   // Mouse button
-  if (bx_options.Omouse_enabled->get ())
+  if (SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get())
     BX_GUI_THIS mouse_hbar_id = headerbar_bitmap(BX_GUI_THIS mouse_bmap_id,
                           BX_GRAVITY_LEFT, toggle_mouse_enable);
   else
@@ -195,6 +201,12 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   BX_GUI_THIS power_hbar_id = headerbar_bitmap(BX_GUI_THIS power_bmap_id,
                           BX_GRAVITY_RIGHT, power_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS power_hbar_id, "Turn power off");
+  // Save/Restore Button
+#if BX_SUPPORT_SAVE_RESTORE
+  BX_GUI_THIS save_restore_hbar_id = headerbar_bitmap(BX_GUI_THIS save_restore_bmap_id,
+                          BX_GRAVITY_RIGHT, save_restore_handler);
+  BX_GUI_THIS set_tooltip(BX_GUI_THIS save_restore_hbar_id, "Save simulation state");
+#endif
   // Reset button
   BX_GUI_THIS reset_hbar_id = headerbar_bitmap(BX_GUI_THIS reset_bmap_id,
                           BX_GRAVITY_RIGHT, reset_handler);
@@ -220,7 +232,7 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
                           BX_GRAVITY_RIGHT, userbutton_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS user_hbar_id, "Send keyboard shortcut");
 
-  if(bx_options.Otext_snapshot_check->get()) {
+  if (SIM->get_param_bool(BXPN_TEXT_SNAPSHOT_CHECK)->get()) {
     bx_pc_system.register_timer(this, bx_gui_c::snapshot_checker, (unsigned) 1000000, 1, 1, "snap_chk");
   }
 
@@ -232,14 +244,12 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   show_headerbar();
 }
 
-void
-bx_gui_c::update_drive_status_buttons (void) {
-  BX_GUI_THIS floppyA_status = 
-    DEV_floppy_get_media_status(0)
-    && bx_options.floppya.Ostatus->get ();
-  BX_GUI_THIS floppyB_status = 
-      DEV_floppy_get_media_status(1)
-      && bx_options.floppyb.Ostatus->get ();
+void bx_gui_c::update_drive_status_buttons (void)
+{
+  BX_GUI_THIS floppyA_status = DEV_floppy_get_media_status(0)
+    && (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED);
+  BX_GUI_THIS floppyB_status = DEV_floppy_get_media_status(1)
+    && (SIM->get_param_enum(BXPN_FLOPPYB_STATUS)->get() == BX_INSERTED);
   Bit32u handle = DEV_hd_get_first_cd_handle();
   BX_GUI_THIS cdromD_status = DEV_hd_get_cd_media_status(handle);
   if (BX_GUI_THIS floppyA_status)
@@ -248,69 +258,66 @@ bx_gui_c::update_drive_status_buttons (void) {
 #if BX_WITH_MACOS
     // If we are using the Mac floppy driver, eject the disk
     // from the floppy drive.  This doesn't work in MacOS X.
-    if (!strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
+    if (!strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
       DiskEject(1);
 #endif
     replace_bitmap(BX_GUI_THIS floppyA_hbar_id, BX_GUI_THIS floppyA_eject_bmap_id);
-    }
+  }
   if (BX_GUI_THIS floppyB_status)
     replace_bitmap(BX_GUI_THIS floppyB_hbar_id, BX_GUI_THIS floppyB_bmap_id);
   else {
 #if BX_WITH_MACOS
     // If we are using the Mac floppy driver, eject the disk
     // from the floppy drive.  This doesn't work in MacOS X.
-    if (!strcmp(bx_options.floppyb.Opath->getptr (), SuperDrive))
+    if (!strcmp(SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr(), SuperDrive))
       DiskEject(1);
 #endif
     replace_bitmap(BX_GUI_THIS floppyB_hbar_id, BX_GUI_THIS floppyB_eject_bmap_id);
-    }
+  }
   if (BX_GUI_THIS cdromD_status)
     replace_bitmap(BX_GUI_THIS cdromD_hbar_id, BX_GUI_THIS cdromD_bmap_id);
   else {
     replace_bitmap(BX_GUI_THIS cdromD_hbar_id, BX_GUI_THIS cdromD_eject_bmap_id);
-    }
+  }
 }
 
-  void
-bx_gui_c::floppyA_handler(void)
+void bx_gui_c::floppyA_handler(void)
 {
-  if (bx_options.floppya.Odevtype->get() == BX_FLOPPY_NONE)
+  if (SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE)->get() == BX_FLOPPY_NONE)
     return; // no primary floppy device present
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
-    int ret = SIM->ask_param (BXP_FLOPPYA_PATH);
+    int ret = SIM->ask_param(BXPN_FLOPPYA_PATH);
     if (ret > 0) {
-      BX_GUI_THIS update_drive_status_buttons ();
+      BX_GUI_THIS update_drive_status_buttons();
     }
     return;
   }
   BX_GUI_THIS floppyA_status = !BX_GUI_THIS floppyA_status;
   DEV_floppy_set_media_status(0, BX_GUI_THIS floppyA_status);
-  BX_GUI_THIS update_drive_status_buttons ();
+  BX_GUI_THIS update_drive_status_buttons();
 }
 
-  void
-bx_gui_c::floppyB_handler(void)
+void bx_gui_c::floppyB_handler(void)
 {
-  if (bx_options.floppyb.Odevtype->get() == BX_FLOPPY_NONE)
+  if (SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE)->get() == BX_FLOPPY_NONE)
     return; // no secondary floppy device present
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
-    int ret = SIM->ask_param (BXP_FLOPPYB_PATH);
+    int ret = SIM->ask_param(BXPN_FLOPPYB_PATH);
     if (ret > 0) {
-      BX_GUI_THIS update_drive_status_buttons ();
+      BX_GUI_THIS update_drive_status_buttons();
     }
     return;
   }
   BX_GUI_THIS floppyB_status = !BX_GUI_THIS floppyB_status;
   DEV_floppy_set_media_status(1, BX_GUI_THIS floppyB_status);
-  BX_GUI_THIS update_drive_status_buttons ();
+  BX_GUI_THIS update_drive_status_buttons();
 }
 
-  void
-bx_gui_c::cdromD_handler(void)
+void bx_gui_c::cdromD_handler(void)
 {
   Bit32u handle = DEV_hd_get_first_cd_handle();
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_CDROM) {
@@ -318,30 +325,31 @@ bx_gui_c::cdromD_handler(void)
     // a dialog asking what disk image you want to switch to.
     // This code handles the first cdrom only. The cdrom drives #2, #3 and
     // #4 are handled in the win32 runtime dialog.
-    bx_param_c *cdrom = SIM->get_first_cdrom ();
+    bx_param_c *cdrom = SIM->get_first_cdrom();
     if (cdrom == NULL)
       return;  // no cdrom found
-    int ret = SIM->ask_param (cdrom->get_id ());
+    int ret = SIM->ask_param(cdrom);
     if (ret > 0) {
-      BX_GUI_THIS update_drive_status_buttons ();
+      BX_GUI_THIS update_drive_status_buttons();
     }
     return;
   }
   BX_GUI_THIS cdromD_status =
     DEV_hd_set_cd_media_status(handle, !BX_GUI_THIS cdromD_status);
-  BX_GUI_THIS update_drive_status_buttons ();
+  BX_GUI_THIS update_drive_status_buttons();
 }
 
-  void
-bx_gui_c::reset_handler(void)
+void bx_gui_c::reset_handler(void)
 {
-  BX_INFO(( "system RESET callback." ));
-  bx_pc_system.Reset( BX_RESET_HARDWARE );
+  BX_INFO(("system RESET callback"));
+  bx_pc_system.Reset(BX_RESET_HARDWARE);
 }
 
-  void
-bx_gui_c::power_handler(void)
+void bx_gui_c::power_handler(void)
 {
+  // test case for yes/no dialog: confirm power off
+  //if (!SIM->ask_yes_no("Quit Bochs", "Are you sure ?", 0))
+  //  return;
   // the user pressed power button, so there's no doubt they want bochs
   // to quit.  Change panics to fatal for the GUI and then do a panic.
   bx_user_quit = 1;
@@ -352,8 +360,7 @@ bx_gui_c::power_handler(void)
   BX_EXIT (1);
 }
 
-Bit32s
-bx_gui_c::make_text_snapshot (char **snapshot, Bit32u *length)
+Bit32s bx_gui_c::make_text_snapshot(char **snapshot, Bit32u *length)
 {
   Bit8u* raw_snap = NULL;
   char *clean_snap;
@@ -370,7 +377,7 @@ bx_gui_c::make_text_snapshot (char **snapshot, Bit32u *length)
     }
     while ((txt_addr > 0) && (clean_snap[txt_addr-1] == ' ')) txt_addr--;
 #ifdef WIN32
-    if(!(bx_options.Otext_snapshot_check->get())) {
+    if(!(SIM->get_param_bool(BXPN_TEXT_SNAPSHOT_CHECK)->get())) {
       clean_snap[txt_addr++] = 13;
     }
 #endif
@@ -384,8 +391,7 @@ bx_gui_c::make_text_snapshot (char **snapshot, Bit32u *length)
 
 // create a text snapshot and copy to the system clipboard.  On guis that
 // we haven't figured out how to support yet, dump to a file instead.
-  void
-bx_gui_c::copy_handler(void)
+void bx_gui_c::copy_handler(void)
 {
   Bit32u len;
   char *text_snapshot;
@@ -403,8 +409,7 @@ bx_gui_c::copy_handler(void)
 }
 
 // Check the current text snapshot against file snapchk.txt.
-  void
-bx_gui_c::snapshot_checker(void * this_ptr)
+void bx_gui_c::snapshot_checker(void *this_ptr)
 {
   char filename[BX_PATHNAME_LEN];
   strcpy(filename,"snapchk.txt");
@@ -451,8 +456,7 @@ bx_gui_c::snapshot_checker(void * this_ptr)
 }
 
 // create a text snapshot and dump it to a file
-  void
-bx_gui_c::snapshot_handler(void)
+void bx_gui_c::snapshot_handler(void)
 {
   char *text_snapshot;
   Bit32u len;
@@ -481,8 +485,7 @@ bx_gui_c::snapshot_handler(void)
 
 // Read ASCII chars from the system clipboard and paste them into bochs.
 // Note that paste cannot work with the key mapping tables loaded.
-  void
-bx_gui_c::paste_handler(void)
+void bx_gui_c::paste_handler(void)
 {
   Bit32s nbytes;
   Bit8u *bytes;
@@ -498,21 +501,18 @@ bx_gui_c::paste_handler(void)
   DEV_kbd_paste_bytes (bytes, nbytes);
 }
 
-
-  void
-bx_gui_c::config_handler(void)
+void bx_gui_c::config_handler(void)
 {
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_RUNTIME) {
-    SIM->configuration_interface (NULL, CI_RUNTIME_CONFIG);
+    SIM->configuration_interface(NULL, CI_RUNTIME_CONFIG);
   }
 }
 
-  void
-bx_gui_c::toggle_mouse_enable(void)
+void bx_gui_c::toggle_mouse_enable(void)
 {
-  int old = bx_options.Omouse_enabled->get ();
+  int old = SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get();
   BX_DEBUG (("toggle mouse_enabled, now %d", !old));
-  bx_options.Omouse_enabled->set (!old);
+  SIM->get_param_bool(BXPN_MOUSE_ENABLED)->set(!old);
 }
 
 Bit32u get_user_key(char *key)
@@ -527,8 +527,7 @@ Bit32u get_user_key(char *key)
   return BX_KEY_UNKNOWN;
 }
 
-  void
-bx_gui_c::userbutton_handler(void)
+void bx_gui_c::userbutton_handler(void)
 {
   Bit32u shortcut[4];
   Bit32u symbol;
@@ -537,13 +536,13 @@ bx_gui_c::userbutton_handler(void)
   int i, len = 0, ret = 1;
 
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_USER) {
-    ret = SIM->ask_param (BXP_USER_SHORTCUT);
+    ret = SIM->ask_param(BXPN_USER_SHORTCUT);
   }
-  strcpy(user_shortcut, bx_options.Ouser_shortcut->getptr());
+  strcpy(user_shortcut, SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr());
   if ((ret > 0) && user_shortcut[0] && (strcmp(user_shortcut, "none"))) {
     ptr = strtok(user_shortcut, "-");
-    if ((strcmp(ptr, bx_options.Ouser_shortcut->getptr())) ||
-        (strlen(bx_options.Ouser_shortcut->getptr()) < 6)) {
+    if ((strcmp(ptr, SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr())) ||
+        (strlen(SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr()) < 6)) {
       while (ptr) {
         symbol = get_user_key(ptr);
         if (symbol == BX_KEY_UNKNOWN) {
@@ -599,12 +598,20 @@ bx_gui_c::userbutton_handler(void)
   }
 }
 
-  void
-bx_gui_c::mouse_enabled_changed (bx_bool val)
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_gui_c::save_restore_handler(void)
+{
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_SAVE_RESTORE) {
+    SIM->configuration_interface(NULL, CI_SAVE_RESTORE);
+  }
+}
+#endif
+
+void bx_gui_c::mouse_enabled_changed (bx_bool val)
 {
   // This is only called when SIM->get_init_done is 1.  Note that VAL
   // is the new value of mouse_enabled, which may not match the old
-  // value which is still in bx_options.Omouse_enabled->get ().
+  // value which is still in SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get().
   BX_DEBUG (("replacing the mouse bitmaps"));
   if (val)
     BX_GUI_THIS replace_bitmap(BX_GUI_THIS mouse_hbar_id, BX_GUI_THIS mouse_bmap_id);
@@ -616,8 +623,7 @@ bx_gui_c::mouse_enabled_changed (bx_bool val)
   BX_GUI_THIS mouse_enabled_changed_specific (val);
 }
 
-void
-bx_gui_c::init_signal_handlers ()
+void bx_gui_c::init_signal_handlers()
 {
 #if BX_GUI_SIGHANDLER
   if (bx_gui_sighandler) 
@@ -632,37 +638,31 @@ bx_gui_c::init_signal_handlers ()
 #endif
 }
 
-  void
-bx_gui_c::set_text_charmap(Bit8u *fbuffer)
+void bx_gui_c::set_text_charmap(Bit8u *fbuffer)
 {
   memcpy(& BX_GUI_THIS vga_charmap, fbuffer, 0x2000);
   for (unsigned i=0; i<256; i++) BX_GUI_THIS char_changed[i] = 1;
   BX_GUI_THIS charmap_updated = 1;
 }
 
-  void
-bx_gui_c::set_text_charbyte(Bit16u address, Bit8u data)
+void bx_gui_c::set_text_charbyte(Bit16u address, Bit8u data)
 {
   BX_GUI_THIS vga_charmap[address] = data;
   BX_GUI_THIS char_changed[address >> 5] = 1;
   BX_GUI_THIS charmap_updated = 1;
 }
-
   
-  void
-bx_gui_c::beep_on(float frequency)
+void bx_gui_c::beep_on(float frequency)
 {
-  BX_INFO(( "GUI Beep ON (frequency=%.2f)",frequency));
+  BX_INFO(("GUI Beep ON (frequency=%.2f)", frequency));
 }
 
-  void
-bx_gui_c::beep_off()
+void bx_gui_c::beep_off()
 {
-  BX_INFO(( "GUI Beep OFF"));
+  BX_INFO(("GUI Beep OFF"));
 }
 
-  int
-bx_gui_c::register_statusitem(const char *text)
+int bx_gui_c::register_statusitem(const char *text)
 {
   if (statusitem_count < BX_MAX_STATUSITEMS) {
     strncpy(statusitem_text[statusitem_count], text, 8);
@@ -673,16 +673,14 @@ bx_gui_c::register_statusitem(const char *text)
   }
 }
 
-  void
-bx_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
+void bx_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
 {
   *xres = 1024;
   *yres = 768;
   *bpp = 32;
 }
 
-  bx_svga_tileinfo_t *
-bx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
+bx_svga_tileinfo_t *bx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
   if (!info) {
     info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
@@ -732,8 +730,7 @@ bx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
   return info;
 }
 
-  Bit8u *
-bx_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
+Bit8u *bx_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
                             unsigned *w, unsigned *h)
 {
   if (x0+X_TILESIZE > BX_GUI_THIS host_xres) {
@@ -754,8 +751,7 @@ bx_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
                   x0 * ((BX_GUI_THIS host_bpp + 1) >> 3);
 }
 
-  void
-bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
+void bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
                                         unsigned w, unsigned h)
 {
   Bit8u tile[X_TILESIZE * Y_TILESIZE * 4];

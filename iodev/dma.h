@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dma.h,v 1.17 2005/04/06 21:09:25 vruppert Exp $
+// $Id: dma.h,v 1.20 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -37,19 +37,19 @@
 #  define BX_DMA_THIS this->
 #endif
 
-
-
 class bx_dma_c : public bx_dma_stub_c {
 public:
-
   bx_dma_c();
-  ~bx_dma_c(void);
+  virtual ~bx_dma_c();
 
   virtual void     init(void);
   virtual void     reset(unsigned type);
   virtual void     raise_HLDA(void);
   virtual void     set_DRQ(unsigned channel, bx_bool val);
   virtual unsigned get_TC(void);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void     register_state(void);
+#endif
 
   virtual unsigned registerDMA8Channel(unsigned channel,
     void (* dmaRead)(Bit8u *data_byte),
@@ -87,15 +87,15 @@ private:
         Bit8u address_decrement;
         Bit8u autoinit_enable;
         Bit8u transfer_type;
-        } mode;
+      } mode;
       Bit16u  base_address;
       Bit16u  current_address;
       Bit16u  base_count;
       Bit16u  current_count;
       Bit8u   page_reg;
       bx_bool used;
-      } chan[4]; /* DMA channels 0..3 */
-    } s[2];  // state information DMA-1 / DMA-2
+    } chan[4]; /* DMA channels 0..3 */
+  } s[2];  // state information DMA-1 / DMA-2
 
   bx_bool HLDA;    // Hold Acknowlege
   bx_bool TC;      // Terminal Count
@@ -107,8 +107,7 @@ private:
     void (* dmaWrite8)(Bit8u *data_byte);
     void (* dmaRead16)(Bit16u *data_word);
     void (* dmaWrite16)(Bit16u *data_word);
-    } h[4]; // DMA read and write handlers
-
-  };
+  } h[4]; // DMA read and write handlers
+};
 
 #endif  // #ifndef _PCDMA_H

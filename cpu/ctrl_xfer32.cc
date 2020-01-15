@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer32.cc,v 1.44 2005/10/17 13:06:09 sshwarts Exp $
+// $Id: ctrl_xfer32.cc,v 1.49 2006/06/09 22:29:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -42,7 +43,7 @@ void BX_CPU_C::RETnear32_Iw(bxInstruction_c *i)
 
   Bit16u imm16 = i->Iw();
   pop_32(&return_EIP);
-  branch_near32(return_EIP); // includes revalidate_prefetch_q()
+  branch_near32(return_EIP);
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b)
     ESP += imm16;
   else
@@ -60,7 +61,7 @@ void BX_CPU_C::RETnear32(bxInstruction_c *i)
 #endif
 
   pop_32(&return_EIP);
-  branch_near32(return_EIP); // includes revalidate_prefetch_q()
+  branch_near32(return_EIP);
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
@@ -238,7 +239,7 @@ done:
 void BX_CPU_C::JMP_Jd(bxInstruction_c *i)
 {
   Bit32u new_EIP = EIP + (Bit32s) i->Id();
-  branch_near32(new_EIP); // includes revalidate_prefetch_q()
+  branch_near32(new_EIP);
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
@@ -270,7 +271,7 @@ void BX_CPU_C::JCC_Jd(bxInstruction_c *i)
 
   if (condition) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
-    branch_near32(new_EIP); // includes revalidate_prefetch_q()
+    branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
   }
 #if BX_INSTRUMENTATION
@@ -284,7 +285,7 @@ void BX_CPU_C::JZ_Jd(bxInstruction_c *i)
 {
   if (get_ZF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
-    branch_near32(new_EIP); // includes revalidate_prefetch_q()
+    branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
   }
 #if BX_INSTRUMENTATION
@@ -298,7 +299,7 @@ void BX_CPU_C::JNZ_Jd(bxInstruction_c *i)
 {
   if (!get_ZF()) {
     Bit32u new_EIP = EIP + (Bit32s) i->Id();
-    branch_near32(new_EIP); // includes revalidate_prefetch_q()
+    branch_near32(new_EIP);
     BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
   }
 #if BX_INSTRUMENTATION
@@ -349,13 +350,12 @@ void BX_CPU_C::JMP_Ed(bxInstruction_c *i)
     read_virtual_dword(i->seg(), RMAddr(i), &new_EIP);
   }
 
-  branch_near32(new_EIP); // includes revalidate_prefetch_q()
+  branch_near32(new_EIP);
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
-  /* Far indirect jump */
-
+/* Far indirect jump */
 void BX_CPU_C::JMP32_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
@@ -393,8 +393,9 @@ void BX_CPU_C::IRET32(bxInstruction_c *i)
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_iret;
-  BX_CPU_THIS_PTR show_eip = EIP;
 #endif
+
+  BX_CPU_THIS_PTR nmi_disable = 0;
 
   if (v8086_mode()) {
     // IOPL check in stack_return_from_v86()
@@ -410,7 +411,7 @@ void BX_CPU_C::IRET32(bxInstruction_c *i)
   Bit32u eip, ecs, eflags;
 
   if (! can_pop(12)) {
-    BX_PANIC(("IRETD: to 12 bytes of stack not within stack limits"));
+    BX_ERROR(("IRETD: to 12 bytes of stack not within stack limits"));
     exception(BX_SS_EXCEPTION, 0, 0);
   }
 
@@ -418,7 +419,7 @@ void BX_CPU_C::IRET32(bxInstruction_c *i)
 
   // CS.LIMIT in real mode is 0xffff
   if (eip > 0xffff) {
-    BX_PANIC(("IRETD: instruction pointer not within code segment limits"));
+    BX_ERROR(("IRETD: instruction pointer not within code segment limits"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id:
+// $Id: cpuid.cc,v 1.38 2006/06/09 21:17:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -29,6 +29,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -48,19 +49,21 @@ Bit32u BX_CPU_C::get_cpu_version_information()
   Bit32u extended_model = 0;
   Bit32u extended_family = 0;
 
+#if BX_CPU_LEVEL > 3
+
   /* ****** */
   /*  i486  */
   /* ****** */
 
 #if BX_CPU_LEVEL == 4
-    family = 4;
+  family = 4;
 
 #if BX_SUPPORT_FPU
-    model = 1;		// 486dx
-    stepping = 3;
+  model = 1;            // 486dx
+  stepping = 3;
 #else
-    model = 2;		// 486sx
-    stepping = 3;
+  model = 2;            // 486sx
+  stepping = 3;
 #endif
 
   /* **************** */
@@ -68,13 +71,13 @@ Bit32u BX_CPU_C::get_cpu_version_information()
   /* **************** */
 
 #elif BX_CPU_LEVEL == 5	
-    family   = 5;
+  family   = 5;
 #if BX_SUPPORT_MMX
-    model    = 4;	// Pentium MMX
+  model    = 4;         // Pentium MMX
 #else
-    model    = 1;	// Pentium 60/66
+  model    = 1;         // Pentium 60/66
 #endif
-    stepping = 3;
+  stepping = 3;
 
   /* ****** */
   /*  i686  */
@@ -82,7 +85,7 @@ Bit32u BX_CPU_C::get_cpu_version_information()
 
 #elif BX_CPU_LEVEL == 6
 
-#if BX_SUPPORT_SSE >= 2		// Pentium 4 processor
+#if BX_SUPPORT_SSE >= 2 // Pentium 4 processor
 /*
      The model, family, and processor type for the first
      processor in the Intel Pentium 4 family is as follows:
@@ -91,23 +94,25 @@ Bit32u BX_CPU_C::get_cpu_version_information()
 		* Processor Type-00B (OEM)
                 * Stepping-0B
 */
-    model    = 0;
-    family   = 0xf;
-    stepping = 0;
+  model    = 0;
+  family   = 0xf;
+  stepping = 0;
 
 #if BX_SUPPORT_X86_64
-    model = 2;    	// Hammer returns what?
+  model = 2;            // Hammer returns what?
 #endif
 
-#else			// Pentium Pro/Pentium II/Pentium III processor
-    family   = 6;
-    model    = 8;
-    stepping = 3;
+#else	                // Pentium Pro/Pentium II/Pentium III processor
+  family   = 6;
+  model    = 8;
+  stepping = 3;
 #endif
 
 #else
-    BX_PANIC(("CPUID family ID not implemented for CPU LEVEL > 6"));
+  BX_PANIC(("CPUID family ID not implemented for CPU LEVEL > 6"));
 #endif
+
+#endif  // BX_CPU_LEVEL > 3
 
   return (extended_family << 20) | 
          (extended_model << 16) | 
@@ -120,12 +125,15 @@ Bit32u BX_CPU_C::get_extended_cpuid_features()
 {
   Bit32u features = 0;
 
-#if BX_SUPPORT_PNI
-    features |= 0x01;     // report PNI
+#if BX_SUPPORT_SSE >= 3
+  features |= 0x1;      // report SSE3
+#endif
+#if BX_SUPPORT_SSE >= 4
+  features |= (1<<9);   // report SSE4
 #endif
 
 #if BX_SUPPORT_X86_64
-    features |= (1<<13);  // support CMPXCHG16B
+  features |= (1<<13);  // support CMPXCHG16B
 #endif
   
   return features;
@@ -137,56 +145,62 @@ Bit32u BX_CPU_C::get_std_cpuid_features()
   Bit32u features = 0;
 
 #if BX_SUPPORT_FPU
-      features |= (1<<0);
+  features |= (1<<0);
 #endif
 
 #if BX_SUPPORT_VME
-      features |= (1<<1);
+  features |= (1<<1);
 #endif
 
 #if (BX_CPU_LEVEL >= 5)
-      features |= (1<<4);   // implement TSC
-      features |= (1<<5);   // support RDMSR/WRMSR
-      features |= (1<<8);   // Support CMPXCHG8B instruction
+  features |= (1<<4);   // implement TSC
+  features |= (1<<5);   // support RDMSR/WRMSR
+  features |= (1<<8);   // Support CMPXCHG8B instruction
 
 #if BX_SUPPORT_MMX
-      features |= (1<<23);  // support MMX
+  features |= (1<<23);  // support MMX
 #endif
 
 #endif
 
 #if (BX_CPU_LEVEL >= 6) || (BX_CPU_LEVEL_HACKED >= 6)
-      features |= (1<<24);  // Implement FSAVE/FXRSTOR instructions.
+  features |= (1<<24);  // Implement FSAVE/FXRSTOR instructions.
 #endif
 
 #if BX_CPU_LEVEL >= 6
-      features |= (1<<15);  // Implement CMOV instructions.
+  features |= (1<<15);  // Implement CMOV instructions.
 #if BX_SUPPORT_APIC
-      // if MSR_APICBASE APIC Global Enable bit has been cleared,
-      // the CPUID feature flag for the APIC is set to 0.
-      if (BX_CPU_THIS_PTR msr.apicbase & 0x800)
-        features |= (1<<9); // APIC on chip
+  // if MSR_APICBASE APIC Global Enable bit has been cleared,
+  // the CPUID feature flag for the APIC is set to 0.
+  if (BX_CPU_THIS_PTR msr.apicbase & 0x800)
+    features |= (1<<9); // APIC on chip
 #endif
 #if BX_SUPPORT_SSE >= 1
-      features |= (1<<25);  // support SSE
+  features |= (1<<25);  // support SSE
 #endif
 #if BX_SUPPORT_SSE >= 2
-      features |= (1<<26);  // support SSE2
+  features |= (1<<26);  // support SSE2
 #endif
 #endif
 
 #if BX_SUPPORT_4MEG_PAGES
-      features |= (1<< 3);  // Support Page-Size Extension (4M pages)
+  features |= (1<< 3);  // Support Page-Size Extension (4M pages)
 #endif
 #if BX_SUPPORT_GLOBAL_PAGES
-      features |= (1<<13);  // Support Global pages
+  features |= (1<<13);  // Support Global pages
 #endif
 #if BX_SUPPORT_PAE
-      features |= (1<<6);   // Support PAE
+  features |= (1<<6);   // Support PAE
 #endif
 
 #if BX_SUPPORT_SEP
-      features |= (1<<11);  // SYSENTER/SYSEXIT
+  features |= (1<<11);  // SYSENTER/SYSEXIT
+#endif
+
+#if BX_SUPPORT_SMP
+  // Intel(R) HyperThreading Technology
+  if (SIM->get_param_num(BXPN_CPU_NTHREADS)->get() > 1) 
+    features |= (1<<28);
 #endif
 
   return features;
@@ -196,6 +210,10 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
 {
 #if BX_SUPPORT_X86_64
   unsigned features;
+#endif
+
+#if BX_SUPPORT_SMP
+  unsigned n_logical_processors;
 #endif
 
 #if BX_CPU_LEVEL >= 4
@@ -235,7 +253,7 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       //   [23:16] Number of logical processors in one physical processor
       //   [31:24] Local Apic ID
       // ECX:       Feature Flags::Extended
-      //   [0:0]   PNI
+      //   [0:0]   SSE3
       //   [2:1]   Reserved
       //   [3:3]   MONITOR/MWAIT
       //   [4:4]   CPL qualified debug store available
@@ -270,18 +288,23 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       //   [21:21] DS: Debug Store
       //   [22:22] ACPI: Thermal Monitor and Software Controlled Clock Facilities
       //   [23:23] MMX Technology
-      //   [24]    FXSR: FXSAVE/FXRSTOR (also indicates CR4.OSFXSR is available)
-      //   [25]    SSE: SSE Extensions
-      //   [26]    SSE2: SSE2 Extensions
-      //   [27]    Reserved
-      //   [28]    Hyper Threading Technology
-      //   [29]    TM: Thermal Monitor
+      //   [24;24] FXSR: FXSAVE/FXRSTOR (also indicates CR4.OSFXSR is available)
+      //   [25:25] SSE: SSE Extensions
+      //   [26:26] SSE2: SSE2 Extensions
+      //   [27:27] Reserved
+      //   [28:28] Hyper Threading Technology
+      //   [29:29] TM: Thermal Monitor
       //   [31:30] Reserved
       RAX = get_cpu_version_information();
 #if BX_SUPPORT_APIC
       RBX = (BX_CPU_THIS_PTR local_apic.get_id() << 24);
 #else
       RBX = 0;
+#endif
+#if BX_SUPPORT_SMP
+      n_logical_processors = SIM->get_param_num(BXPN_CPU_NCORES)->get()*SIM->get_param_num(BXPN_CPU_NTHREADS)->get();
+      if (n_logical_processors > 1)
+          RBX |= (n_logical_processors << 16);
 #endif
       RCX = get_extended_cpuid_features ();
       RDX = get_std_cpuid_features ();
@@ -316,7 +339,7 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       // [*] [7:7]   MCE: Machine Check Exception
       // [*] [8:8]   CXS: CMPXCHG8B instruction
       // [*] [9:9]   APIC: APIC on Chip
-      // [*] [10:10] Reserved
+      //     [10:10] Reserved
       //     [11:11] SYSCALL/SYSRET support
       // [*] [12:12] MTRR: Memory Type Range Reg
       // [*] [13:13] PGE/PTE Global Bit
@@ -328,6 +351,8 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       //     [20:20] No-Execute page protection
       //     [21:21] Reserved
       //     [22:22] AMD MMX Extensions
+      // [*] [23:23] MMX Technology
+      // [*] [24;24] FXSR: FXSAVE/FXRSTOR (also indicates CR4.OSFXSR is available)
       //     [25:25] Fast FXSAVE/FXRSTOR mode support
       //     [26:26] Reserved
       //     [27:27] Support RDTSCP Instruction
@@ -335,7 +360,7 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       //     [29:29] Long Mode
       //     [30:30] AMD 3DNow! Extensions
       //     [31:31] AMD 3DNow! Instructions
-      features = features & 0x00003F3FF;
+      features = features & 0x0183F3FF;
 
       RDX = features | (1 << 29) | (1 << 27) | (1 << 25) | 
                        (1 << 22) | (1 << 20) | (1 << 11);

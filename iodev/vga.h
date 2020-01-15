@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.h,v 1.50 2006/01/07 12:10:59 vruppert Exp $
+// $Id: vga.h,v 1.57 2006/08/18 15:43:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,6 +24,9 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#ifndef BX_IODEV_VGA_H
+#define BX_IODEV_VGA_H
+
 // Make colour
 #define MAKE_COLOUR(red, red_shiftfrom, red_shiftto, red_mask, \
                     green, green_shiftfrom, green_shiftto, green_mask, \
@@ -44,13 +47,14 @@
 )
 
 #if BX_SUPPORT_VBE
-  #define VBE_DISPI_TOTAL_VIDEO_MEMORY_MB 4
+  #define VBE_DISPI_TOTAL_VIDEO_MEMORY_MB 8
+  #define VBE_DISPI_4BPP_PLANE_SHIFT      21
 
   #define VBE_DISPI_BANK_ADDRESS          0xA0000
   #define VBE_DISPI_BANK_SIZE_KB          64
 
-  #define VBE_DISPI_MAX_XRES              1024
-  #define VBE_DISPI_MAX_YRES              768
+  #define VBE_DISPI_MAX_XRES              1600
+  #define VBE_DISPI_MAX_YRES              1200
   #define VBE_DISPI_MAX_BPP               32
 
   #define VBE_DISPI_IOPORT_INDEX          0x01CE
@@ -74,6 +78,7 @@
   #define VBE_DISPI_ID1                   0xB0C1
   #define VBE_DISPI_ID2                   0xB0C2
   #define VBE_DISPI_ID3                   0xB0C3
+  #define VBE_DISPI_ID4                   0xB0C4
 
   #define VBE_DISPI_BPP_4                 0x04
   #define VBE_DISPI_BPP_8                 0x08
@@ -92,8 +97,8 @@
   #define VBE_DISPI_LFB_PHYSICAL_ADDRESS  0xE0000000
 
   
-#define VBE_DISPI_TOTAL_VIDEO_MEMORY_KB		(VBE_DISPI_TOTAL_VIDEO_MEMORY_MB * 1024)  
-#define VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES 	(VBE_DISPI_TOTAL_VIDEO_MEMORY_KB * 1024)  
+#define VBE_DISPI_TOTAL_VIDEO_MEMORY_KB		(VBE_DISPI_TOTAL_VIDEO_MEMORY_MB * 1024)
+#define VBE_DISPI_TOTAL_VIDEO_MEMORY_BYTES 	(VBE_DISPI_TOTAL_VIDEO_MEMORY_KB * 1024)
 
 #define BX_MAX_XRES VBE_DISPI_MAX_XRES
 #define BX_MAX_YRES VBE_DISPI_MAX_YRES
@@ -127,12 +132,10 @@
 #  define BX_VGA_THIS this->
 #endif
 
-
 class bx_vga_c : public bx_vga_stub_c {
 public:
-
-  bx_vga_c(void);
-  ~bx_vga_c(void);
+  bx_vga_c();
+  virtual ~bx_vga_c();
   virtual void   init(void);
   virtual void   reset(unsigned type);
   BX_VGA_SMF bx_bool mem_read_handler(unsigned long addr, unsigned long len, void *data, void *param);
@@ -141,6 +144,10 @@ public:
   virtual void   mem_write(Bit32u addr, Bit8u value);
   virtual void   trigger_timer(void *this_ptr);
   virtual void   dump_status(void);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void   register_state(void);
+  virtual void   after_restore_state(void);
+#endif
 
 #if BX_SUPPORT_VBE
   BX_VGA_SMF Bit8u  vbe_mem_read(Bit32u addr) BX_CPP_AttrRegparmN(1);
@@ -182,13 +189,13 @@ protected:
                                 //   1 = 400 lines
                                 //   2 = 350 lines
                                 //   3 - 480 lines
-      } misc_output;
+    } misc_output;
 
     struct {
       Bit8u   address;
       Bit8u   reg[0x19];
       bx_bool write_protect;
-      } CRTC;
+    } CRTC;
 
     struct {
       bx_bool  flip_flop; /* 0 = address, 1 = data-write */
@@ -207,8 +214,8 @@ protected:
         bx_bool pixel_panning_compat;
         bx_bool pixel_clock_select;
         bx_bool internal_palette_size;
-        } mode_ctrl;
-      } attribute_ctrl;
+      } mode_ctrl;
+    } attribute_ctrl;
 
     struct {
       Bit8u write_data_register;
@@ -220,10 +227,9 @@ protected:
         Bit8u red;
         Bit8u green;
         Bit8u blue;
-        } data[256];
+      } data[256];
       Bit8u mask;
-      } pel;
-
+    } pel;
 
     struct {
       Bit8u   index;
@@ -247,12 +253,11 @@ protected:
       Bit8u   color_dont_care;
       Bit8u   bitmask;
       Bit8u   latch[4];
-      } graphics_ctrl;
+    } graphics_ctrl;
 
     struct {
       Bit8u   index;
       Bit8u   map_mask;
-      bx_bool map_mask_bit[4];
       bx_bool reset1;
       bx_bool reset2;
       Bit8u   reg1;
@@ -260,7 +265,7 @@ protected:
       bx_bool extended_mem;
       bx_bool odd_even;
       bx_bool chain_four;
-      } sequencer;
+    } sequencer;
 
     bx_bool  vga_enabled;
     bx_bool  vga_mem_updated;
@@ -270,9 +275,9 @@ protected:
     unsigned line_compare;
     unsigned vertical_display_end;
     bx_bool  vga_tile_updated[BX_NUM_X_TILES][BX_NUM_Y_TILES];
-    Bit8u vga_memory[256 * 1024];
+    Bit8u *memory;
+    Bit32u memsize;
     Bit8u text_snapshot[128 * 1024]; // current text snapshot
-    Bit8u rgb[3 * 256];
     Bit8u tile[X_TILESIZE * Y_TILESIZE * 4]; /**< Currently allocates the tile as large as needed. */
     Bit16u charmap_address;
     bx_bool x_dotclockdiv2;
@@ -280,7 +285,6 @@ protected:
     Bit8u last_bpp;
 
 #if BX_SUPPORT_VBE    
-    Bit8u   *vbe_memory;
     Bit16u  vbe_cur_dispi;
     Bit16u  vbe_xres;
     Bit16u  vbe_yres;
@@ -302,12 +306,12 @@ protected:
     bx_bool vbe_get_capabilities;
     bx_bool vbe_8bit_dac;
 #endif    
-    } s;  // state information
+  } s;  // state information
 
 
 #if !BX_USE_VGA_SMF
   Bit32u read(Bit32u address, unsigned io_len);
-  void   write(Bit32u address, Bit32u value, unsigned io_len, bx_bool no_log);
+  void  write(Bit32u address, Bit32u value, unsigned io_len, bx_bool no_log);
 #else
   void write(Bit32u address, Bit32u value, unsigned io_len, bx_bool no_log);
 #endif
@@ -316,7 +320,7 @@ protected:
 
 #if !BX_USE_VGA_SMF
   Bit32u vbe_read(Bit32u address, unsigned io_len);
-  void   vbe_write(Bit32u address, Bit32u value, unsigned io_len, bx_bool no_log);
+  void  vbe_write(Bit32u address, Bit32u value, unsigned io_len, bx_bool no_log);
 #else
   void vbe_write(Bit32u address, Bit32u value, unsigned io_len, bx_bool no_log);
 #endif
@@ -335,10 +339,11 @@ protected:
   BX_VGA_SMF void update(void);
   BX_VGA_SMF void determine_screen_dimensions(unsigned *piHeight,
                                               unsigned *piWidth);
-  };
+};
 
 #if BX_SUPPORT_CLGD54XX
-  void
-libvga_set_smf_pointer(bx_vga_c *theVga_ptr);
+void libvga_set_smf_pointer(bx_vga_c *theVga_ptr);
 #include "iodev/svga_cirrus.h"
-#endif // BX_SUPPORT_CLGD54XX
+#endif
+
+#endif

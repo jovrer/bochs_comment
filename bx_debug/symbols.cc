@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: symbols.cc,v 1.2 2006/01/15 17:57:48 sshwarts Exp $
+// $Id: symbols.cc,v 1.4 2006/03/06 22:02:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,6 +26,7 @@
 /////////////////////////////////////////////////////////////////////////
 
 #include "bochs.h"
+#include "cpu/cpu.h"
 
 #if !((BX_HAVE_HASH_MAP || BX_HAVE_HASH_MAP_H) && (BX_HAVE_SET || BX_HAVE_SET_H))
 
@@ -35,7 +36,7 @@ char* bx_dbg_symbolic_address(Bit32u context, Bit32u eip, Bit32u base)
 {
   static bx_bool first = true;
   if (first) {
-    dbg_printf ( BX_HAVE_HASH_MAP_ERR);
+    dbg_printf(BX_HAVE_HASH_MAP_ERR);
     first = false;
   }
   return "unk. ctxt";
@@ -49,17 +50,17 @@ char* bx_dbg_symbolic_address_16bit(Bit32u eip, Bit32u cs)
 
 void bx_dbg_symbol_command(char* filename, bx_bool global, Bit32u offset)
 {
-  dbg_printf ( BX_HAVE_HASH_MAP_ERR);
+  dbg_printf(BX_HAVE_HASH_MAP_ERR);
 }
 
 void bx_dbg_info_symbols_command(char *Symbol)
 {
-  dbg_printf ( BX_HAVE_HASH_MAP_ERR);
+  dbg_printf(BX_HAVE_HASH_MAP_ERR);
 }
 
 int bx_dbg_lbreakpoint_symbol_command(char *Symbol)
 {
-  dbg_printf ( BX_HAVE_HASH_MAP_ERR);
+  dbg_printf(BX_HAVE_HASH_MAP_ERR);
   return -1;
 }
 

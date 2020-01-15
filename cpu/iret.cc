@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: iret.cc,v 1.10 2005/12/12 22:01:22 sshwarts Exp $
+// $Id: iret.cc,v 1.15 2006/06/12 16:58:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -28,6 +28,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if BX_SUPPORT_X86_64==0
@@ -54,28 +55,21 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
   }
 #endif
 
-  if ( BX_CPU_THIS_PTR get_NT () ) { /* NT = 1: RETURN FROM NESTED TASK */
+  if (BX_CPU_THIS_PTR get_NT ())   /* NT = 1: RETURN FROM NESTED TASK */
+  {
     /* what's the deal with NT & VM ? */
-    Bit32u base32;
     Bit16u raw_link_selector;
     bx_selector_t   link_selector;
     bx_descriptor_t tss_descriptor;
 
-    if ( BX_CPU_THIS_PTR get_VM () )
+    if (BX_CPU_THIS_PTR get_VM())
       BX_PANIC(("iret_protected: VM sholdn't be set here !"));
 
     //BX_INFO(("IRET: nested task return"));
 
     if (BX_CPU_THIS_PTR tr.cache.valid==0)
       BX_PANIC(("IRET: TR not valid"));
-    if (BX_CPU_THIS_PTR tr.cache.type == BX_SYS_SEGMENT_AVAIL_286_TSS)
-      base32 = BX_CPU_THIS_PTR tr.cache.u.tss286.base;
-    else if (BX_CPU_THIS_PTR tr.cache.type == BX_SYS_SEGMENT_AVAIL_386_TSS)
-      base32 = BX_CPU_THIS_PTR tr.cache.u.tss386.base;
-    else {
-      BX_PANIC(("IRET: TR not valid"));
-      base32 = 0; // keep compiler happy
-    }
+    Bit32u base32 = BX_CPU_THIS_PTR tr.cache.u.tss.base;
 
     // examine back link selector in TSS addressed by current TR:
     access_linear(base32, 2, 0, BX_READ, &raw_link_selector);
@@ -95,11 +89,11 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
     // new TSS must be busy, else #TS(new TSS selector)
     parse_descriptor(dword1, dword2, &tss_descriptor);
     if (tss_descriptor.valid==0 || tss_descriptor.segment) {
-      BX_INFO(("iret: TSS selector points to bad TSS"));
+      BX_ERROR(("iret: TSS selector points to bad TSS"));
       exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc, 0);
     }
     if ((tss_descriptor.type!=11) && (tss_descriptor.type!=3)) {
-      BX_INFO(("iret: TSS selector points to bad TSS"));
+      BX_ERROR(("iret: TSS selector points to bad TSS"));
       exception(BX_TS_EXCEPTION, raw_link_selector & 0xfffc, 0);
     }
 
@@ -141,13 +135,13 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
    */
 
   if (i->os32L()) {
-    top_nbytes_same    = 12;
-    top_nbytes_outer   = 20;
+    top_nbytes_same  = 12;
+    top_nbytes_outer = 20;
     ss_offset = 16;
   }
   else {
-    top_nbytes_same    = 6;
-    top_nbytes_outer   = 10;
+    top_nbytes_same  = 6;
+    top_nbytes_outer = 10;
     ss_offset = 8;
   }
 
@@ -291,10 +285,9 @@ BX_CPU_C::iret_protected(bxInstruction_c *i)
 
     /* AR byte must indicate a writable data segment,
      * else #GP(SS selector) */
-    if ( ss_descriptor.valid==0 ||
-         ss_descriptor.segment==0  ||
-         ss_descriptor.u.segment.executable ||
-         ss_descriptor.u.segment.r_w==0 )
+    if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
+         IS_CODE_SEGMENT(ss_descriptor.type) ||
+        !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
     {
       BX_ERROR(("iret: SS AR byte not writable code segment"));
       exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
@@ -386,9 +379,9 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
 
   BX_DEBUG (("LONG MODE IRET"));
 
-  if ( BX_CPU_THIS_PTR get_NT () ) { 
-   BX_ERROR(("iret64: return from nested task not supported in x86-64 mode !"));
-   exception(BX_GP_EXCEPTION, 0, 0);
+  if (BX_CPU_THIS_PTR get_NT()) { 
+    BX_ERROR(("iret64: return from nested task in x86-64 mode !"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   /* 64bit opsize
@@ -470,7 +463,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
   parse_selector(raw_cs_selector, &cs_selector);
 
   // return CS selector must be non-null, else #GP(0)
-  if ( (raw_cs_selector & 0xfffc) == 0 ) {
+  if ((raw_cs_selector & 0xfffc) == 0) {
     BX_ERROR(("iret64: return CS selector null"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
@@ -529,7 +522,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
      */
 
     /* top 10/20 bytes on stack must be within limits else #SS(0) */
-    if ( !can_pop(top_nbytes_outer) ) {
+    if (! can_pop(top_nbytes_outer)) {
       BX_PANIC(("iret64: top bytes not within stack limits"));
       exception(BX_SS_EXCEPTION, 0, 0);
     }
@@ -561,10 +554,9 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
 
       /* AR byte must indicate a writable data segment,
        * else #GP(SS selector) */
-      if ( ss_descriptor.valid==0 ||
-           ss_descriptor.segment==0  ||
-           ss_descriptor.u.segment.executable  ||
-           ss_descriptor.u.segment.r_w==0 )
+      if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
+          IS_CODE_SEGMENT(ss_descriptor.type) ||
+         !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
       {
         BX_ERROR(("iret64: SS AR byte not writable code segment"));
         exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
@@ -572,7 +564,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
 
       /* stack segment DPL must equal the RPL of the return CS selector,
        * else #GP(SS selector) */
-      if ( ss_descriptor.dpl != cs_selector.rpl ) {
+      if (ss_descriptor.dpl != cs_selector.rpl) {
         BX_ERROR(("iret64: SS.dpl != CS selector RPL"));
         exception(BX_GP_EXCEPTION, raw_ss_selector & 0xfffc, 0);
       }
@@ -622,7 +614,7 @@ BX_CPU_C::long_iret(bxInstruction_c *i)
     // VM unaffected
     writeEFlags(new_eflags, changeMask);
 
-    if ( (raw_ss_selector & 0xfffc) != 0 ) {
+    if ((raw_ss_selector & 0xfffc) != 0) {
       // load SS:RSP from stack
       // load the SS-cache with SS descriptor
       load_ss(&ss_selector, &ss_descriptor, cs_selector.rpl);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.169 2006/01/28 16:16:02 sshwarts Exp $
+// $Id: bochs.h,v 1.195 2006/05/28 17:07:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -105,19 +105,54 @@ extern "C" {
 #endif
 
 // prototypes
-int bx_begin_simulation (int argc, char *argv[]);
-char *bx_find_bochsrc (void);
-int bx_parse_cmdline (int arg, int argc, char *argv[]);
-int bx_read_configuration (char *rcfile);
-int bx_write_configuration (char *rcfile, int overwrite);
-void bx_reset_options (void);
+int bx_begin_simulation(int argc, char *argv[]);
+void bx_stop_simulation();
+char *bx_find_bochsrc(void);
+int bx_parse_cmdline(int arg, int argc, char *argv[]);
+int bx_read_configuration(const char *rcfile);
+int bx_write_configuration(const char *rcfile, int overwrite);
+void bx_reset_options(void);
 Bit32u crc32(const Bit8u *buf, int len);
+// for param-tree testing only
+void print_tree(bx_param_c *node, int level = 0);
 
 //
 // some macros to interface the CPU and memory to external environment
 // so that these functions can be redirected to the debugger when
 // needed.
 //
+
+#if BX_SUPPORT_SAVE_RESTORE
+
+#define BXRS_PARAM_SPECIAL(parent, name, maxvalue, save_handler, restore_handler) { \
+  bx_param_num_c *param = new bx_param_num_c(parent, #name, "", "", 0, maxvalue, 0); \
+  param->set_base(BASE_HEX); \
+  param->set_sr_handlers(this, save_handler, restore_handler); \
+}
+
+#define BXRS_PARAM_SPECIAL64(parent, name, save_handler, restore_handler) \
+  BXRS_PARAM_SPECIAL(parent, name, BX_MAX_BIT64U, save_handler, restore_handler)
+#define BXRS_PARAM_SPECIAL32(parent, name, save_handler, restore_handler) \
+  BXRS_PARAM_SPECIAL(parent, name, BX_MAX_BIT32U, save_handler, restore_handler)
+#define BXRS_PARAM_SPECIAL16(parent, name, save_handler, restore_handler) \
+  BXRS_PARAM_SPECIAL(parent, name, BX_MAX_BIT16U, save_handler, restore_handler)
+#define BXRS_PARAM_SPECIAL8(parent, name, save_handler, restore_handler) \
+  BXRS_PARAM_SPECIAL(parent, name, BX_MAX_BIT8U,  save_handler, restore_handler)
+
+#define BXRS_HEX_PARAM_SIMPLE(parent, name) \
+  new bx_shadow_num_c(parent, #name, &(name), BASE_HEX)
+#define BXRS_HEX_PARAM_FIELD(parent, name, field) \
+  new bx_shadow_num_c(parent, #name, &(field), BASE_HEX)
+
+#define BXRS_DEC_PARAM_SIMPLE(parent, name) \
+  new bx_shadow_num_c(parent, #name, &(name), BASE_DEC)
+#define BXRS_DEC_PARAM_FIELD(parent, name, field) \
+  new bx_shadow_num_c(parent, #name, &(field), BASE_DEC)
+
+#define BXRS_PARAM_BOOL(parent, name, field) \
+  new bx_shadow_bool_c(parent, #name, (bx_bool*)(&(field)))
+
+#endif
 
 // =-=-=-=-=-=-=- Normal optimized use -=-=-=-=-=-=-=-=-=-=-=-=-=-=
 // some pc_systems functions just redirect to the IO devices so optimize
@@ -134,10 +169,6 @@ Bit32u crc32(const Bit8u *buf, int len);
 #define BX_CPU_C                    bx_cpu_c
 #define BX_MEM_C                    bx_mem_c
 #define BX_HRQ                      (bx_pc_system.HRQ)
-#define BX_MEM_READ_PHYSICAL(phy_addr, len, ptr) \
-  BX_MEM(0)->readPhysicalPage(BX_CPU(0), phy_addr, len, ptr)
-#define BX_MEM_WRITE_PHYSICAL(phy_addr, len, ptr) \
-  BX_MEM(0)->writePhysicalPage(BX_CPU(0), phy_addr, len, ptr)
 
 #if BX_SUPPORT_SMP
 #define BX_CPU(x)                   (bx_cpu_array[x])
@@ -314,8 +345,6 @@ protected:
 #define MAX_LOGFNS 128
 	logfunc_t *logfn_list[MAX_LOGFNS];
 	char *logfn;
-
-
 };
 
 typedef class BOCHSAPI iofunctions iofunc_t;
@@ -357,18 +386,6 @@ BOCHSAPI extern logfunc_t *genlog;
 #define FMT_ADDRX FMT_ADDRX64
 #else
 #define FMT_ADDRX FMT_ADDRX32
-#endif
-
-#if BX_DISASM
-#  include "disasm/disasm.h"
-#endif
-
-#if BX_PROVIDE_CPU_MEMORY==1
-#  include "cpu/cpu.h"
-#endif
-
-#if BX_EXTERNAL_DEBUGGER
-#  include "cpu/extdb.h"
 #endif
 
 #if BX_GDBSTUB
@@ -462,157 +479,16 @@ extern bx_bool bx_gui_sighandler;
 
 #define BX_PATHNAME_LEN 512
 
-typedef struct {
-  bx_param_bool_c *Opresent;
-  bx_param_num_c *Oioaddr1;
-  bx_param_num_c *Oioaddr2;
-  bx_param_num_c *Oirq;
-  } bx_ata_options;
-
-typedef struct {
-  bx_param_string_c *Opath;
-  bx_param_num_c *Oaddress;
-  } bx_rom_options;
-
-typedef struct {
-  bx_param_string_c *Opath;
-  } bx_vgarom_options;
-
-typedef struct {
-  bx_param_num_c *Osize;
-  } bx_mem_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_string_c *Ooutfile;
-} bx_parport_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_string_c *Opath;
-  bx_param_bool_c *Ortc_init;
-} bx_cmosimage_options;
-
-typedef struct {
-  bx_param_num_c   *Otime0;
-  bx_param_enum_c  *Osync;
-  } bx_clock_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_num_c *Oioaddr;
-  bx_param_num_c *Oirq;
-  bx_param_string_c *Omacaddr;
-  bx_param_enum_c *Oethmod;
-  bx_param_string_c *Oethdev;
-  bx_param_string_c *Oscript;
-  } bx_ne2k_options;
-
-typedef struct {
-  bx_param_num_c *Ovendor;
-  bx_param_num_c *Odevice;
-  } bx_pcidev_options;
-
-typedef struct {
-// These options are used for a special hack to load a
-// 32bit OS directly into memory, so it can be run without
-// any of the 16bit real mode or BIOS assistance.  This
-// is for the development of plex86, so we don't have
-// to implement real mode up front.
-  bx_param_num_c *OwhichOS;
-  bx_param_string_c *Opath;
-  bx_param_string_c *Oiolog;
-  bx_param_string_c *Oinitrd;
-  } bx_load32bitOSImage_t;
-
-typedef struct {
-  bx_param_string_c *Ofilename;
-  bx_param_string_c *Oprefix;
-  bx_param_string_c *Odebugger_filename;
-} bx_log_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_string_c *Omidifile;
-  bx_param_string_c *Owavefile;
-  bx_param_string_c *Ologfile;
-  bx_param_num_c *Omidimode;
-  bx_param_num_c *Owavemode;
-  bx_param_num_c *Ologlevel;
-  bx_param_num_c *Odmatimer;
-  } bx_sb16_options;
-
-typedef struct {
-  unsigned int port;
-  unsigned int text_base;
-  unsigned int data_base;
-  unsigned int bss_base;
-  } bx_gdbstub_t;
-
-typedef struct {
-  bx_param_bool_c *OuseMapping;
-  bx_param_string_c *Okeymap;
-  } bx_keyboard_options;
-
 #define BX_KBD_XT_TYPE        0
 #define BX_KBD_AT_TYPE        1
 #define BX_KBD_MF_TYPE        2 
 
 #define BX_N_OPTROM_IMAGES 4
+#define BX_N_OPTRAM_IMAGES 4
 #define BX_N_SERIAL_PORTS 4
 #define BX_N_PARALLEL_PORTS 2
 #define BX_N_USB_HUBS 1
 #define BX_N_PCI_SLOTS 5
-
-typedef struct BOCHSAPI {
-  bx_floppy_options floppya;
-  bx_floppy_options floppyb;
-  bx_ata_options    ata[BX_MAX_ATA_CHANNEL];
-  bx_atadevice_options  atadevice[BX_MAX_ATA_CHANNEL][2];
-  bx_serial_options com[BX_N_SERIAL_PORTS];
-  bx_usb_options    usb[BX_N_USB_HUBS];
-  bx_pcislot_options pcislot[BX_N_PCI_SLOTS];
-  bx_pnic_options   pnic;
-  bx_rom_options    rom;
-  bx_vgarom_options vgarom;
-  bx_rom_options    optrom[BX_N_OPTROM_IMAGES]; // Optional rom images 
-  bx_rom_options    optram[BX_N_OPTROM_IMAGES]; // Optional ram images 
-  bx_mem_options    memory;
-  bx_parport_options par[BX_N_PARALLEL_PORTS]; // parallel ports
-  bx_sb16_options   sb16;
-  bx_param_enum_c   *Obootdrive[3];  
-  bx_param_bool_c   *OfloppySigCheck;
-  bx_param_string_c *Ovga_extension;
-  bx_param_num_c    *Ovga_update_interval;
-  bx_param_num_c    *Okeyboard_serial_delay;
-  bx_param_num_c    *Okeyboard_paste_delay;
-  bx_param_enum_c   *Okeyboard_type;
-  bx_param_num_c    *Ocpu_count;
-  bx_param_num_c    *Oips;
-  bx_param_bool_c   *Otext_snapshot_check;
-  bx_param_bool_c   *Omouse_enabled;
-  bx_param_enum_c   *Omouse_type;
-  bx_param_bool_c   *Oprivate_colormap;
-#if BX_WITH_AMIGAOS
-  bx_param_bool_c   *Ofullscreen;
-  bx_param_string_c *Oscreenmode;
-#endif
-  bx_param_bool_c   *Oi440FXSupport;
-  bx_pcidev_options pcidev;
-  bx_cmosimage_options   cmosimage;
-  bx_clock_options  clock;
-  bx_ne2k_options   ne2k;
-  bx_load32bitOSImage_t load32bitOSImage;
-  bx_log_options    log;
-  bx_keyboard_options keyboard;
-  bx_param_string_c *Ouser_shortcut;
-  bx_gdbstub_t      gdbstub;
-  bx_param_enum_c *Osel_config;
-  bx_param_enum_c *Osel_displaylib;
-  bx_param_string_c *Odisplaylib_options;
-} bx_options_t;
-
-BOCHSAPI extern bx_options_t bx_options;
 
 #if BX_SUPPORT_SMP
   #define BX_SMP_PROCESSORS (bx_cpu_count)

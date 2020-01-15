@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.48 2006/01/25 22:19:57 sshwarts Exp $
+// $Id: pc_system.cc,v 1.62 2006/05/29 22:33:38 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,8 +25,8 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
 #include "bochs.h"
+#include "cpu/cpu.h"
 #include "iodev/iodev.h"
 #define LOG_THIS bx_pc_system.
 
@@ -48,21 +48,24 @@ double     m_ips; // Millions of Instructions Per Second
 #define MinAllowableTimerPeriod 1
 
 #if BX_SUPPORT_ICACHE
-const Bit64u bx_pc_system_c::NullTimerInterval = ICacheWriteStampMax;
+const Bit64u bx_pc_system_c::NullTimerInterval = ICacheWriteStampStart;
 #else
 // This must be the maximum 32-bit unsigned int value, NOT (Bit64u) -1.
 const Bit64u bx_pc_system_c::NullTimerInterval = 0xffffffff;
 #endif
 
   // constructor
-bx_pc_system_c::bx_pc_system_c(void)
+bx_pc_system_c::bx_pc_system_c()
 {
   this->put("SYS");
+
+  BX_ASSERT(numTimers == 0);
 
   // Timer[0] is the null timer.  It is initialized as a special
   // case here.  It should never be turned off or modified, and its
   // duration should always remain the same.
   ticksTotal = 0; // Reset ticks since emulator started.
+  timer[0].inUse      = 1;
   timer[0].period     = NullTimerInterval;
   timer[0].timeToFire = ticksTotal + NullTimerInterval;
   timer[0].active     = 1;
@@ -77,19 +80,11 @@ bx_pc_system_c::bx_pc_system_c(void)
   usecSinceLast = 0;
 }
 
-void bx_pc_system_c::init_ips(Bit32u ips)
+void bx_pc_system_c::initialize(Bit32u ips)
 {
   HRQ = 0;
 
-  enable_a20 = 1;
-
-#if BX_CPU_LEVEL < 2
-  a20_mask   =    0xfffff;
-#elif BX_CPU_LEVEL == 2
-  a20_mask   =   0xffffff;
-#else /* 386+ */
-  a20_mask   = 0xffffffff;
-#endif
+  kill_bochs_request = 0;
 
   // parameter 'ips' is the processor speed in Instructions-Per-Second
   m_ips = double(ips) / 1000000.0L;
@@ -118,13 +113,9 @@ void bx_pc_system_c::set_INTR(bx_bool value)
   Bit32u BX_CPP_AttrRegparmN(2)
 bx_pc_system_c::inp(Bit16u addr, unsigned io_len)
 {
-  Bit32u ret;
-
-  ret = bx_devices.inp(addr, io_len);
-
-  return( ret );
+  Bit32u ret = bx_devices.inp(addr, io_len);
+  return ret;
 }
-
 
 //
 // Write to the IO memory address space.
@@ -136,22 +127,20 @@ bx_pc_system_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
   bx_devices.outp(addr, value, io_len);
 }
 
-  void BX_CPP_AttrRegparmN(1)
-bx_pc_system_c::set_enable_a20(Bit8u value)
-{
-#if BX_CPU_LEVEL < 2
-    BX_PANIC(("set_enable_a20() called: 8086 emulation"));
-#else
-
 #if BX_SUPPORT_A20
-  unsigned old_enable_a20 = enable_a20;
+
+void bx_pc_system_c::set_enable_a20(bx_bool value)
+{
+  bx_bool old_enable_a20 = enable_a20;
 
   if (value) {
     enable_a20 = 1;
-#if BX_CPU_LEVEL == 2
-    a20_mask   = 0xffffff;   /* 286: enable all 24 address lines */
+#if BX_CPU_LEVEL < 2
+    a20_mask   =    0xfffff;
+#elif BX_CPU_LEVEL == 2
+    a20_mask   =   0xffffff;
 #else /* 386+ */
-    a20_mask   = 0xffffffff; /* 386: enable all 32 address lines */
+    a20_mask   = 0xffffffff;
 #endif
   }
   else {
@@ -159,42 +148,51 @@ bx_pc_system_c::set_enable_a20(Bit8u value)
     a20_mask   = 0xffefffff;   /* mask off A20 address line */
   }
 
-  BX_DBG_A20_REPORT(value);
+  BX_DBG_A20_REPORT(enable_a20);
 
   BX_DEBUG(("A20: set() = %u", (unsigned) enable_a20));
 
   // If there has been a transition, we need to notify the CPUs so
   // they can potentially invalidate certain cache info based on
   // A20-line-applied physical addresses.
-  if (old_enable_a20 != enable_a20) {
-    for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
-      BX_CPU(i)->pagingA20Changed();
-    }
-#else
-  BX_DEBUG(("set_enable_a20: ignoring: SUPPORT_A20 = 0"));
-#endif  // #if BX_SUPPORT_A20
-
-#endif
+  if (old_enable_a20 != enable_a20) MemoryMappingChanged();
 }
 
 bx_bool bx_pc_system_c::get_enable_a20(void)
 {
-#if BX_SUPPORT_A20
   if (bx_dbg.a20)
     BX_INFO(("A20: get() = %u", (unsigned) enable_a20));
 
-  if (enable_a20) return(1);
-  else return(0);
-#else
-  BX_INFO(("get_enable_a20: ignoring: SUPPORT_A20 = 0"));
-  return(1);
-#endif  // #if BX_SUPPORT_A20
+  return enable_a20;
 }
 
-int bx_pc_system_c::Reset( unsigned type )
+#else
+
+void bx_pc_system_c::set_enable_a20(bx_bool value)
+{
+  BX_DEBUG(("set_enable_a20: ignoring: SUPPORT_A20 = 0"));
+}
+
+bx_bool bx_pc_system_c::get_enable_a20(void)
+{
+  BX_DEBUG(("get_enable_a20: ignoring: SUPPORT_A20 = 0"));
+  return 1;
+}
+
+#endif  // #if BX_SUPPORT_A20
+
+void bx_pc_system_c::MemoryMappingChanged(void)
+{
+  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
+    BX_CPU(i)->TLB_flush(1);
+}
+
+int bx_pc_system_c::Reset(unsigned type)
 {
   // type is BX_RESET_HARDWARE or BX_RESET_SOFTWARE
-  BX_INFO(( "bx_pc_system_c::Reset(%s) called",type==BX_RESET_HARDWARE?"HARDWARE":"SOFTWARE" ));
+  BX_INFO(("bx_pc_system_c::Reset(%s) called",type==BX_RESET_HARDWARE?"HARDWARE":"SOFTWARE"));
+
+  set_enable_a20(1);
 
   // Always reset cpu
   for (int i=0; i<BX_SMP_PROCESSORS; i++) {
@@ -211,7 +209,7 @@ int bx_pc_system_c::Reset( unsigned type )
 
 Bit8u bx_pc_system_c::IAC(void)
 {
-  return( DEV_pic_iac() );
+  return DEV_pic_iac();
 }
 
 void bx_pc_system_c::exit(void)
@@ -226,6 +224,33 @@ void bx_pc_system_c::exit(void)
   if (bx_gui) bx_gui->exit();
 }
 
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_pc_system_c::register_state(void)
+{
+
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pc_system", "PC System State", 8);
+  BXRS_PARAM_BOOL(list, enable_a20, enable_a20);
+  BXRS_HEX_PARAM_SIMPLE(list, currCountdown);
+  BXRS_HEX_PARAM_SIMPLE(list, currCountdownPeriod);
+  BXRS_HEX_PARAM_SIMPLE(list, ticksTotal);
+  BXRS_HEX_PARAM_SIMPLE(list, lastTimeUsec);
+  BXRS_HEX_PARAM_SIMPLE(list, usecSinceLast);
+  BXRS_HEX_PARAM_SIMPLE(list, HRQ);
+
+  bx_list_c *timers = new bx_list_c(list, "timer", numTimers);
+  for (unsigned i = 0; i < numTimers; i++) {
+    char name[4];
+    sprintf(name, "%d", i);
+    bx_list_c *bxtimer = new bx_list_c(timers, name, 5);
+    BXRS_PARAM_BOOL(bxtimer, inUse, timer[i].inUse);
+    BXRS_DEC_PARAM_FIELD(bxtimer, period, timer[i].period);
+    BXRS_DEC_PARAM_FIELD(bxtimer, timeToFire, timer[i].timeToFire);
+    BXRS_PARAM_BOOL(bxtimer, active, timer[i].active);
+    BXRS_PARAM_BOOL(bxtimer, continuous, timer[i].continuous);
+  }
+}
+#endif
+
 
 // ================================================
 // Bochs internal timer delivery framework features
@@ -234,10 +259,8 @@ void bx_pc_system_c::exit(void)
 int bx_pc_system_c::register_timer( void *this_ptr, void (*funct)(void *),
   Bit32u useconds, bx_bool continuous, bx_bool active, const char *id)
 {
-  Bit64u ticks;
-
   // Convert useconds to number of ticks.
-  ticks = (Bit64u) (double(useconds) * m_ips);
+  Bit64u ticks = (Bit64u) (double(useconds) * m_ips);
 
   return register_timer_ticks(this_ptr, funct, ticks, continuous, active, id);
 }
@@ -247,16 +270,6 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
 {
   unsigned i;
 
-#if BX_TIMER_DEBUG
-  if (numTimers >= BX_MAX_TIMERS) {
-    BX_PANIC(("register_timer: too many registered timers."));
-  }
-  if (this_ptr == NULL)
-    BX_PANIC(("register_timer_ticks: this_ptr is NULL"));
-  if (funct == NULL)
-    BX_PANIC(("register_timer_ticks: funct is NULL"));
-#endif
-
   // If the timer frequency is rediculously low, make it more sane.
   // This happens when 'ips' is too low.
   if (ticks < MinAllowableTimerPeriod) {
@@ -265,10 +278,22 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
     ticks = MinAllowableTimerPeriod;
   }
 
-  for (i=0; i < numTimers; i++) {
+  // search for new timer for i=1, i=0 is reserved for NullTimer
+  for (i=1; i < numTimers; i++) {
     if (timer[i].inUse == 0)
       break;
   }
+
+#if BX_TIMER_DEBUG
+  if (i==0)
+    BX_PANIC(("register_timer: cannot register NullTimer again!"));
+  if (numTimers >= BX_MAX_TIMERS)
+    BX_PANIC(("register_timer: too many registered timers"));
+  if (this_ptr == NULL)
+    BX_PANIC(("register_timer_ticks: this_ptr is NULL!"));
+  if (funct == NULL)
+    BX_PANIC(("register_timer_ticks: funct is NULL!"));
+#endif
 
   timer[i].inUse      = 1;
   timer[i].period     = ticks;
@@ -398,23 +423,23 @@ void bx_pc_system_c::nullTimer(void* this_ptr)
 #if BX_DEBUGGER
 void bx_pc_system_c::timebp_handler(void* this_ptr)
 {
-      BX_CPU(0)->break_point = BREAK_POINT_TIME;
-      BX_DEBUG(( "Time breakpoint triggered" ));
+   BX_CPU(0)->break_point = BREAK_POINT_TIME;
+   BX_DEBUG(("Time breakpoint triggered"));
 
-      if (timebp_queue_size > 1) {
-	    Bit64s new_diff = timebp_queue[1] - bx_pc_system.time_ticks();
-	    bx_pc_system.activate_timer_ticks(timebp_timer, new_diff, 1);
-      }
-      timebp_queue_size--;
-      for (int i = 0; i < timebp_queue_size; i++)
-	    timebp_queue[i] = timebp_queue[i+1];
+   if (timebp_queue_size > 1) {
+     Bit64s new_diff = timebp_queue[1] - bx_pc_system.time_ticks();
+     bx_pc_system.activate_timer_ticks(timebp_timer, new_diff, 1);
+   }
+   timebp_queue_size--;
+   for (int i = 0; i < timebp_queue_size; i++)
+   timebp_queue[i] = timebp_queue[i+1];
 }
 #endif // BX_DEBUGGER
 
 Bit64u bx_pc_system_c::time_usec_sequential()
 {
-    Bit64u this_time_usec = time_usec();
-    if(this_time_usec != lastTimeUsec) {
+   Bit64u this_time_usec = time_usec();
+   if(this_time_usec != lastTimeUsec) {
       Bit64u diff_usec = this_time_usec-lastTimeUsec;
       lastTimeUsec = this_time_usec;
       if(diff_usec >= usecSinceLast) {
@@ -422,13 +447,14 @@ Bit64u bx_pc_system_c::time_usec_sequential()
       } else {
 	usecSinceLast -= diff_usec;
       }
-    }
-    usecSinceLast++;
-    return (this_time_usec+usecSinceLast);
+   }
+   usecSinceLast++;
+   return (this_time_usec+usecSinceLast);
 }
 
-Bit64u bx_pc_system_c::time_usec() {
-  return (Bit64u) (((double)(Bit64s)time_ticks()) / m_ips );
+Bit64u bx_pc_system_c::time_usec()
+{
+  return (Bit64u) (((double)(Bit64s)time_ticks()) / m_ips);
 }
 
 void bx_pc_system_c::start_timers(void) { }
@@ -438,6 +464,8 @@ void bx_pc_system_c::activate_timer_ticks(unsigned i, Bit64u ticks, bx_bool cont
 #if BX_TIMER_DEBUG
   if (i >= numTimers)
     BX_PANIC(("activate_timer_ticks: timer %u OOB", i));
+  if (i == 0)
+    BX_PANIC(("activate_timer_ticks: timer 0 is the NullTimer!"));
   if (timer[i].period < MinAllowableTimerPeriod)
     BX_PANIC(("activate_timer_ticks: timer[%u].period of " FMT_LL "u < min of %u",
               i, timer[i].period, MinAllowableTimerPeriod));
@@ -473,6 +501,8 @@ void bx_pc_system_c::activate_timer(unsigned i, Bit32u useconds, bx_bool continu
 #if BX_TIMER_DEBUG
   if (i >= numTimers)
     BX_PANIC(("activate_timer: timer %u OOB", i));
+  if (i == 0)
+    BX_PANIC(("activate_timer: timer 0 is the nullTimer!"));
 #endif
 
   // if useconds = 0, use default stored in period field
@@ -498,42 +528,44 @@ void bx_pc_system_c::activate_timer(unsigned i, Bit32u useconds, bx_bool continu
   activate_timer_ticks(i, ticks, continuous);
 }
 
-void bx_pc_system_c::deactivate_timer( unsigned i )
+void bx_pc_system_c::deactivate_timer(unsigned i)
 {
 #if BX_TIMER_DEBUG
   if (i >= numTimers)
     BX_PANIC(("deactivate_timer: timer %u OOB", i));
+  if (i == 0)
+    BX_PANIC(("deactivate_timer: timer 0 is the nullTimer!"));
 #endif
 
   timer[i].active = 0;
 }
 
-unsigned bx_pc_system_c::unregisterTimer(int timerIndex)
+bx_bool bx_pc_system_c::unregisterTimer(unsigned timerIndex)
 {
-  unsigned i = (unsigned) timerIndex;
-
 #if BX_TIMER_DEBUG
-  if (i >= numTimers)
-    BX_PANIC(("unregisterTimer: timer %u OOB", i));
-  if (i == 0)
+  if (timerIndex >= numTimers)
+    BX_PANIC(("unregisterTimer: timer %u OOB", timerIndex));
+  if (timerIndex == 0)
     BX_PANIC(("unregisterTimer: timer 0 is the nullTimer!"));
-  if (timer[i].inUse == 0)
-    BX_PANIC(("unregisterTimer: timer %u is not in-use!", i));
+  if (timer[timerIndex].inUse == 0)
+    BX_PANIC(("unregisterTimer: timer %u is not in-use!", timerIndex));
 #endif
 
-  if (timer[i].active) {
-    BX_PANIC(("unregisterTimer: timer '%s' is still active!", timer[i].id));
+  if (timer[timerIndex].active) {
+    BX_PANIC(("unregisterTimer: timer '%s' is still active!", timer[timerIndex].id));
     return(0); // Fail.
   }
 
   // Reset timer fields for good measure.
-  timer[i].inUse      = 0; // No longer registered.
-  timer[i].period     = BX_MAX_BIT64S; // Max value (invalid)
-  timer[i].timeToFire = BX_MAX_BIT64S; // Max value (invalid)
-  timer[i].continuous = 0;
-  timer[i].funct      = NULL;
-  timer[i].this_ptr   = NULL;
-  memset(timer[i].id, 0, BxMaxTimerIDLen);
+  timer[timerIndex].inUse      = 0; // No longer registered.
+  timer[timerIndex].period     = BX_MAX_BIT64S; // Max value (invalid)
+  timer[timerIndex].timeToFire = BX_MAX_BIT64S; // Max value (invalid)
+  timer[timerIndex].continuous = 0;
+  timer[timerIndex].funct      = NULL;
+  timer[timerIndex].this_ptr   = NULL;
+  memset(timer[timerIndex].id, 0, BxMaxTimerIDLen);
+
+  if (timerIndex == (numTimers-1)) numTimers--;
 
   return(1); // OK
 }

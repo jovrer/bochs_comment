@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer16.cc,v 1.31 2005/10/17 13:06:09 sshwarts Exp $
+// $Id: ctrl_xfer16.cc,v 1.36 2006/06/09 22:29:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,11 +25,10 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
 
 
 void BX_CPU_C::RETnear16_Iw(bxInstruction_c *i)
@@ -399,8 +398,9 @@ void BX_CPU_C::IRET16(bxInstruction_c *i)
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_iret;
-  BX_CPU_THIS_PTR show_eip = EIP;
 #endif
+
+  BX_CPU_THIS_PTR nmi_disable = 0;
 
   if (v8086_mode()) {
     // IOPL check in stack_return_from_v86()
@@ -416,7 +416,7 @@ void BX_CPU_C::IRET16(bxInstruction_c *i)
 #endif
 
   if (! can_pop(6)) {
-    BX_PANIC(("IRET: top 6 bytes of stack not within stack limits"));
+    BX_ERROR(("IRET: top 6 bytes of stack not within stack limits"));
     exception(BX_SS_EXCEPTION, 0, 0);
   }
 

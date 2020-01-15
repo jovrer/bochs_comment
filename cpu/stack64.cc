@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack64.cc,v 1.21 2005/05/20 20:06:50 sshwarts Exp $
+// $Id: stack64.cc,v 1.23 2006/03/08 18:21:16 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if BX_SUPPORT_X86_64
@@ -134,7 +135,7 @@ void BX_CPU_C::ENTER64_IwIb(bxInstruction_c *i)
 
       RBP -= 8;
       read_virtual_qword(BX_SEG_REG_SS, RBP, &temp64);
-      ESP -= 8;
+      RSP -= 8;
       write_virtual_qword(BX_SEG_REG_SS, RSP, &temp64);
     } /* while (--level) */
 

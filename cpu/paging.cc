@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paging.cc,v 1.63 2005/11/26 21:36:51 sshwarts Exp $
+// $Id: paging.cc,v 1.76 2006/06/17 12:09:55 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,7 +25,7 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-// Notes from merge of x86-64 enhancements: (KPL)
+// Notes from merge of x86-64 enhancements:
 //   Looks like for x86-64/PAE=1/PTE with PSE=1, the
 //     CR4.PSE field is not consulted by the processor?
 //   Fix the PAE case to not update the page table tree entries
@@ -33,9 +33,9 @@
 //     P6 for non-PAE anyways...
 
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if 0
@@ -336,12 +336,12 @@
 //       value, necessitating a TLB flush when CR0.WP changes.
 //
 //       The test is:
-//         OK = 1 << ( (W<<1) | U )   [W:1=write, 0=read, U:1=CPL3,0=CPL0-2]
+//         OK = 0x1 << ( (W<<1) | U )   [W:1=write, 0=read, U:1=CPL3,0=CPL0-2]
 //       
 //       Thus for reads, it is:
-//         OK = 0x10 << (          U )
+//         OK = 0x1 << (          U )
 //       And for writes:
-//         OK = 0x40 << (          U )
+//         OK = 0x4 << (          U )
 //
 //     bit 7:       a Write from User   privilege is OK
 //     bit 6:       a Write from System privilege is OK
@@ -432,21 +432,21 @@ BX_CPU_C::pagingCR0Changed(Bit32u oldCR0, Bit32u newCR0)
     TLB_flush(1); // 1 = Flush Global entries also.
 
   if (bx_dbg.paging)
-    BX_INFO(("pagingCR0Changed(0x%x -> 0x%x):", oldCR0, newCR0));
+    BX_INFO(("pagingCR0Changed: (0x%x -> 0x%x)", oldCR0, newCR0));
 }
 
   void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::pagingCR4Changed(Bit32u oldCR4, Bit32u newCR4)
 {
   // Modification of PGE,PAE,PSE flushes TLB cache according to docs.
-  if ( (oldCR4 & 0x000000b0) != (newCR4 & 0x000000b0) )
+  if ((oldCR4 & 0x000000b0) != (newCR4 & 0x000000b0))
     TLB_flush(1); // 1 = Flush Global entries also.
 
   if (bx_dbg.paging)
-    BX_INFO(("pagingCR4Changed(0x%x -> 0x%x):", oldCR4, newCR4));
+    BX_INFO(("pagingCR4Changed: (0x%x -> 0x%x)", oldCR4, newCR4));
 
 #if BX_SUPPORT_PAE
-  if ( (oldCR4 & 0x00000020) != (newCR4 & 0x00000020) ) {
+  if ((oldCR4 & 0x00000020) != (newCR4 & 0x00000020)) {
     if (BX_CPU_THIS_PTR cr4.get_PAE())
       BX_CPU_THIS_PTR cr3_masked = BX_CPU_THIS_PTR cr3 & 0xffffffe0;
     else
@@ -456,7 +456,7 @@ BX_CPU_C::pagingCR4Changed(Bit32u oldCR4, Bit32u newCR4)
 }
 
   void BX_CPP_AttrRegparmN(1)
-BX_CPU_C::CR3_change(bx_address value)
+BX_CPU_C::CR3_change(bx_phy_address value)
 {
   if (bx_dbg.paging) {
     BX_INFO(("CR3_change(): flush TLB cache"));
@@ -474,14 +474,7 @@ BX_CPU_C::CR3_change(bx_address value)
     BX_CPU_THIS_PTR cr3_masked = value & 0xfffff000;
 }
 
-  void
-BX_CPU_C::pagingA20Changed(void)
-{
-  TLB_flush(1); // 1 = Flush Global entries too.
-}
-
-  void
-BX_CPU_C::TLB_init(void)
+void BX_CPU_C::TLB_init(void)
 {
   // Called to initialize the TLB upon startup.
   // Unconditional initialization of all TLB entries.
@@ -533,8 +526,7 @@ BX_CPU_C::TLB_init(void)
 #endif  // #if BX_USE_TLB
 }
 
-  void
-BX_CPU_C::TLB_flush(bx_bool invalidateGlobal)
+void BX_CPU_C::TLB_flush(bx_bool invalidateGlobal)
 {
 #if InstrumentTLB
   if (invalidateGlobal)
@@ -550,7 +542,7 @@ BX_CPU_C::TLB_flush(bx_bool invalidateGlobal)
     bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[i];
     if (tlbEntry->lpf != BX_INVALID_TLB_ENTRY) {
 #if BX_SUPPORT_GLOBAL_PAGES
-      if ( invalidateGlobal || !(tlbEntry->accessBits & TLB_GlobalPage) )
+      if (invalidateGlobal || !(tlbEntry->accessBits & TLB_GlobalPage))
 #endif
       {
         tlbEntry->lpf = BX_INVALID_TLB_ENTRY;
@@ -561,67 +553,40 @@ BX_CPU_C::TLB_flush(bx_bool invalidateGlobal)
 #endif  // #if BX_USE_TLB
 }
 
+void BX_CPU_C::TLB_invlpg(bx_address laddr)
+{
+  Bit32u TLB_index = BX_TLB_INDEX_OF(laddr);
+  BX_CPU_THIS_PTR TLB.entry[TLB_index].lpf = BX_INVALID_TLB_ENTRY;
+  InstrTLB_Increment(tlbEntryFlushes); // A TLB entry flush occurred.
+}
+
 void BX_CPU_C::INVLPG(bxInstruction_c* i)
 {
 #if BX_CPU_LEVEL >= 4
-  bx_address laddr;
-
   invalidate_prefetch_q();
 
-  // Operand must not be a register
   if (i->modC0()) {
-
-#if BX_SUPPORT_X86_64
-
-    //
-    // Opcode 0F 01:
-    //
-
-    // ----------------------------------------------------
-    //     MOD    REG  RM  | non 64 bit mode | 64 bit mode
-    // ----------------------------------------------------
-    //  MOD <> 11  7   --- |     INVLPG      |   INVLPG
-    //  MOD == 11  7    0  |      #UD        |   SWAPGS
-    //  MOD == 11  7    1  |      #UD        |   RDTSCP
-    //  MOD == 11  7   2-7 |      #UD        |    #UD
-
-    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-      if (i->nnn() == 7) {
-        switch(i->rm()) {
-        case 0:
-          BX_CPU_THIS_PTR SWAPGS(i);
-          return;
-        case 1:
-          BX_CPU_THIS_PTR RDTSCP(i);
-          return;
-        default:
-          BX_INFO(("INVLPG: 0F 01 /7 RM=%d opcode is undefined !", i->rm()));
-          UndefinedOpcode(i);
-        }
-      }
-    }
-
-#endif
-
     BX_INFO(("INVLPG: op is a register"));
     UndefinedOpcode(i);
   }
 
   // Can not be executed in v8086 mode
-  if (v8086_mode())
+  if (v8086_mode()) {
+    BX_ERROR(("INVLPG: cannot be executed in v8086 mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
   // Protected instruction: CPL0 only
   if (BX_CPU_THIS_PTR cr0.pe) {
     if (CPL!=0) {
+      BX_ERROR(("INVLPG: #GP(0) in protected mode with CPL != 0"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
 
 #if BX_USE_TLB
-  laddr = BX_CPU_THIS_PTR get_segment_base(i->seg()) + RMAddr(i);
-  Bit32u TLB_index = BX_TLB_INDEX_OF(laddr);
-  BX_CPU_THIS_PTR TLB.entry[TLB_index].lpf = BX_INVALID_TLB_ENTRY;
+  bx_address laddr = BX_CPU_THIS_PTR get_segment_base(i->seg()) + RMAddr(i);
+  TLB_invlpg(laddr);
   InstrTLB_Increment(tlbEntryInvlpg);
 #endif // BX_USE_TLB
 
@@ -637,7 +602,7 @@ void BX_CPU_C::INVLPG(bxInstruction_c* i)
 // Translate a linear address to a physical address, for
 // a data access (D)
 
-  Bit32u BX_CPP_AttrRegparmN(3)
+  bx_phy_address BX_CPP_AttrRegparmN(3)
 BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned access_type)
 {
   bx_address lpf;
@@ -652,7 +617,8 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
 
   // note - we assume physical memory < 4gig so for brevity & speed, we'll use
   // 32 bit entries although cr3 is expanded to 64 bits.
-  Bit32u ppf, poffset, paddress;
+  Bit32u ppf, poffset;
+  bx_phy_address paddress;
 
   bx_bool isWrite = (rw >= BX_WRITE); // write or r-m-w
 
@@ -660,8 +626,8 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
   if (BX_CPU_THIS_PTR cr4.get_PAE())
   {
     bx_address pde, pdp;
-    Bit32u pde_addr;
-    Bit32u pdp_addr;
+    bx_phy_address pde_addr;
+    bx_phy_address pdp_addr;
 
     lpf     = laddr & BX_CONST64(0xfffffffffffff000); // linear page frame
     poffset = laddr & 0x00000fff; // physical offset
@@ -690,10 +656,10 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
 #if BX_SUPPORT_X86_64
     if (BX_CPU_THIS_PTR msr.lma)
     {
-      bx_address pml4;
+      Bit64u pml4;
 
       // Get PML4 entry
-      Bit32u pml4_addr = BX_CPU_THIS_PTR cr3_masked |
+      bx_phy_address pml4_addr = BX_CPU_THIS_PTR cr3_masked |
                   ((laddr & BX_CONST64(0x0000ff8000000000)) >> 36);
       BX_CPU_THIS_PTR mem->readPhysicalPage(BX_CPU_THIS, pml4_addr, 8, &pml4);
 
@@ -801,7 +767,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       bx_address pte;
 
       // Get page table entry
-      Bit32u pte_addr = (pde & 0xfffff000) | ((laddr & 0x001ff000) >> 9);
+      bx_phy_address pte_addr = (pde & 0xfffff000) | ((laddr & 0x001ff000) >> 9);
 
       BX_CPU_THIS_PTR mem->readPhysicalPage(BX_CPU_THIS, pte_addr, sizeof(bx_address), &pte);
 
@@ -882,7 +848,8 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
 
     InstrTLB_Increment(tlbMisses);
 
-    Bit32u pde, pde_addr;
+    Bit32u pde;
+    bx_phy_address pde_addr;
 
     // Get page dir entry
     pde_addr = BX_CPU_THIS_PTR cr3_masked | ((laddr & 0xffc00000) >> 20);
@@ -933,7 +900,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
     else // Else normal 4Kbyte page...
 #endif
     {
-      Bit32u pte, pte_addr;
+      Bit32u pte;
 
 #if (BX_CPU_LEVEL < 6)
       // update PDE if A bit was not set before
@@ -944,7 +911,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
 #endif
 
       // Get page table entry
-      pte_addr = (pde & 0xfffff000) | ((laddr & 0x003ff000) >> 10);
+      bx_phy_address pte_addr = (pde & 0xfffff000) | ((laddr & 0x003ff000) >> 10);
 
       BX_CPU_THIS_PTR mem->readPhysicalPage(BX_CPU_THIS, pte_addr, 4, &pte);
 
@@ -1036,7 +1003,8 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
   // pointer in the TLB cache. Note if the request is vetoed, NULL
   // will be returned, and it's OK to OR zero in anyways.
   BX_CPU_THIS_PTR TLB.entry[TLB_index].hostPageAddr =
-    (bx_hostpageaddr_t) BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(ppf), rw);
+    (bx_hostpageaddr_t) BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, 
+       A20ADDR(ppf), rw, access_type);
 
   if (BX_CPU_THIS_PTR TLB.entry[TLB_index].hostPageAddr) {
     // All access allowed also via direct pointer
@@ -1073,27 +1041,24 @@ page_fault_not_present:
 #if BX_USE_TLB
   BX_CPU_THIS_PTR TLB.entry[TLB_index].lpf = BX_INVALID_TLB_ENTRY;
 #endif
-#if BX_EXTERNAL_DEBUGGER
 #if BX_SUPPORT_X86_64
-  printf("page fault for address %08x%08x @ %08x%08x\n",
+  BX_DEBUG(("page fault for address %08x%08x @ %08x%08x",
                (Bit32u)(laddr >> 32),(Bit32u)(laddr & 0xffffffff),
-               (Bit32u)(RIP >> 32),(Bit32u)(RIP & 0xffffffff));
+               (Bit32u)(RIP   >> 32),(Bit32u)(RIP   & 0xffffffff)));
 #else
-  printf("page fault for address %08x:%08x\n",
-               (Bit32u)(laddr >> 32),(Bit32u)(laddr & 0xffffffff));
-#endif
+  BX_DEBUG(("page fault for address %08x @ %08x", laddr, EIP));
 #endif
   exception(BX_PF_EXCEPTION, error_code, 0);
   return(0); // keep compiler happy
 }
 
-  Bit32u BX_CPP_AttrRegparmN(3)
+  bx_phy_address BX_CPP_AttrRegparmN(3)
 BX_CPU_C::dtranslate_linear(bx_address laddr, unsigned pl, unsigned rw)
 {
   return translate_linear(laddr, pl, rw, DATA_ACCESS);
 }
 
-  Bit32u BX_CPP_AttrRegparmN(2)
+  bx_phy_address BX_CPP_AttrRegparmN(2)
 BX_CPU_C::itranslate_linear(bx_address laddr, unsigned pl)
 {
   return translate_linear(laddr, pl, BX_READ, CODE_ACCESS);
@@ -1101,14 +1066,13 @@ BX_CPU_C::itranslate_linear(bx_address laddr, unsigned pl)
 
 #if BX_DEBUGGER || BX_DISASM || BX_INSTRUMENTATION || BX_GDBSTUB
 
-void BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, Bit32u *phy, bx_bool *valid)
+bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy)
 {
   bx_address lpf, poffset, paddress;
 
   if (BX_CPU_THIS_PTR cr0.pg == 0) {
     *phy = laddr;
-    *valid = 1;
-    return;
+    return 1;
   }
 
   lpf       = laddr & BX_CONST64(0xfffffffffffff000); // linear page frame
@@ -1122,8 +1086,7 @@ void BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, Bit32u *phy, bx_bool *vali
   if (tlbEntry->lpf == BX_TLB_LPF_VALUE(lpf)) {
     paddress = tlbEntry->ppf | poffset;
     *phy = paddress;
-    *valid = 1;
-    return;
+    return 1;
   }
 #endif
 
@@ -1172,13 +1135,11 @@ void BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, Bit32u *phy, bx_bool *vali
   }
 
   *phy = paddress;
-  *valid = 1;
-  return;
+  return 1;
 
 page_fault:
   *phy = 0;
-  *valid = 0;
-  return;
+  return 0;
 }
 #endif
 
@@ -1188,7 +1149,7 @@ BX_CPU_C::access_linear(bx_address laddr, unsigned length, unsigned pl,
 {
 
 #if BX_X86_DEBUGGER
-  if ( BX_CPU_THIS_PTR dr7 & 0x000000ff ) {
+  if (BX_CPU_THIS_PTR dr7 & 0x000000ff) {
     // Only compare debug registers if any breakpoints are enabled
     Bit32u dr6_bits;
     unsigned opa, opb;
@@ -1323,12 +1284,12 @@ BX_CPU_C::access_linear(bx_address laddr, unsigned length, unsigned pl,
         tlbEntry->ppf = lpf;
         // Request a direct write pointer so we can do either R or W.
         tlbEntry->hostPageAddr = (bx_hostpageaddr_t)
-            BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(lpf), BX_WRITE);
+            BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(lpf), BX_WRITE, DATA_ACCESS);
 
         if (! tlbEntry->hostPageAddr) {
           // Direct write vetoed.  Try requesting only direct reads.
           tlbEntry->hostPageAddr = (bx_hostpageaddr_t)
-              BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(lpf), BX_READ);
+              BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(lpf), BX_READ, DATA_ACCESS);
           if (tlbEntry->hostPageAddr) {
             // Got direct read pointer OK.
             tlbEntry->accessBits =
@@ -1365,7 +1326,7 @@ BX_CPU_C::access_linear(bx_address laddr, unsigned length, unsigned pl,
         // TLB.entry[tlbIndex].ppf field not used for PG==0.
         // Request a direct write pointer so we can do either R or W.
         tlbEntry->hostPageAddr = (bx_hostpageaddr_t)
-            BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(lpf), BX_WRITE);
+            BX_CPU_THIS_PTR mem->getHostMemAddr(BX_CPU_THIS, A20ADDR(lpf), BX_WRITE, DATA_ACCESS);
 
         if (tlbEntry->hostPageAddr) {
           // Got direct write pointer OK.  Mark for any operation to succeed.
@@ -1461,15 +1422,13 @@ BX_CPU_C::access_linear(bx_address laddr, unsigned length, unsigned pl,
 
 // stub functions for non-support of paging
 
-  void
-BX_CPU_C::CR3_change(Bit32u value32)
+void BX_CPU_C::CR3_change(bx_phy_address value32)
 {
   BX_INFO(("CR3_change(): flush TLB cache"));
   BX_INFO(("Page Directory Base %08x", (unsigned) value32));
 }
 
-  void
-BX_CPU_C::access_linear(Bit32u laddr, unsigned length, unsigned pl,
+void BX_CPU_C::access_linear(Bit32u laddr, unsigned length, unsigned pl,
     unsigned rw, void *data)
 {
   /* perhaps put this check before all code which calls this function,
@@ -1486,8 +1445,7 @@ BX_CPU_C::access_linear(Bit32u laddr, unsigned length, unsigned pl,
   BX_PANIC(("access_linear: paging not supported"));
 }
 
-  void
-BX_CPU_C::INVLPG(bxInstruction_c* i)
+void BX_CPU_C::INVLPG(bxInstruction_c* i)
 {}
 
 #endif  // BX_SUPPORT_PAGING

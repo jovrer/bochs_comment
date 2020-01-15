@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu.cc,v 1.18 2006/01/28 21:31:20 sshwarts Exp $
+// $Id: fpu.cc,v 1.20 2006/03/06 22:03:04 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -24,9 +24,10 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
-#include "iodev/iodev.h"
+#include "cpu/cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+#include "iodev/iodev.h"
 
 #define UPDATE_LAST_OPCODE       1
 #define CHECK_PENDING_EXCEPTIONS 1
@@ -456,6 +457,10 @@ void BX_CPU_C::FNSTENV(bxInstruction_c *i)
 #if BX_SUPPORT_FPU
   BX_CPU_THIS_PTR prepareFPU(i, !CHECK_PENDING_EXCEPTIONS, !UPDATE_LAST_OPCODE);
   fpu_save_environment(i);
+  /* mask all floating point exceptions */
+  FPU_CONTROL_WORD |= FPU_CW_Exceptions_Mask;
+  /* clear the B and ES bits in the status word */
+  FPU_PARTIAL_STATUS &= ~(FPU_SW_Backward|FPU_SW_Summary);
 #else
   BX_INFO(("FNSTENV: required FPU, configure --enable-fpu"));
 #endif

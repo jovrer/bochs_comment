@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom.cc,v 1.87 2005/12/27 13:21:25 vruppert Exp $
+// $Id: cdrom.cc,v 1.89 2006/03/26 00:38:57 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -31,6 +31,8 @@
 // ioctl() calls and such.  Should be fairly easy to add support
 // for your OS if it is not supported yet.
 
+#ifndef BX_IODEV_CDROM_H
+#define BX_IODEV_CDROM_H
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE 
@@ -530,7 +532,7 @@ cdrom_interface::cdrom_interface(char *dev)
 
 void
 cdrom_interface::init(void) {
-  BX_DEBUG(("Init $Id: cdrom.cc,v 1.87 2005/12/27 13:21:25 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: cdrom.cc,v 1.89 2006/03/26 00:38:57 vruppert Exp $"));
   BX_INFO(("file = '%s'",path));
 }
 
@@ -1179,7 +1181,7 @@ cdrom_interface::capacity()
     if ((stat_buf.st_size % 2048) != 0)  {
       BX_ERROR (("expected cdrom image to be a multiple of 2048 bytes"));
     }
-    return (stat_buf.st_size / 2048) + 150;
+    return (stat_buf.st_size / 2048);
   }
 #endif
 
@@ -1317,7 +1319,7 @@ cdrom_interface::capacity()
     } else if (using_file) {
       ULARGE_INTEGER FileSize;
       FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
-      return (Bit32u)((FileSize.QuadPart / 2048) + 150);
+      return (Bit32u)(FileSize.QuadPart / 2048);
     } else {  /* direct device access */
       if (isWindowsXP) {
         LARGE_INTEGER length;
@@ -1484,3 +1486,5 @@ void cdrom_interface::seek(int lba)
 }
 
 #endif /* if BX_SUPPORT_CDROM */
+
+#endif

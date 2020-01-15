@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io_pro.cc,v 1.17 2005/06/22 18:13:45 sshwarts Exp $
+// $Id: io_pro.cc,v 1.20 2006/06/09 22:29:07 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,24 +27,26 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
-#include "iodev/iodev.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+#include "iodev/iodev.h"
 
   Bit16u BX_CPP_AttrRegparmN(1)
 BX_CPU_C::inp16(Bit16u addr)
 {
   Bit16u ret16;
 
-  if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM () || (CPL>BX_CPU_THIS_PTR get_IOPL ()))) {
-    if ( !BX_CPU_THIS_PTR allow_io(addr, 2) ) {
+  if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
+    if (! BX_CPU_THIS_PTR allow_io(addr, 2)) {
+      BX_DEBUG(("inp16(): I/O access not allowed !"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return(0);
     }
   }
 
   ret16 = BX_INP(addr, 2);
-  return( ret16 );
+  return ret16;
 }
 
   void BX_CPP_AttrRegparmN(2)
@@ -55,7 +57,8 @@ BX_CPU_C::outp16(Bit16u addr, Bit16u value)
    * On the 286, there is no IO permissions map */
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if ( !BX_CPU_THIS_PTR allow_io(addr, 2) ) {
+    if (! BX_CPU_THIS_PTR allow_io(addr, 2)) {
+      BX_DEBUG(("outp16(): I/O access not allowed !"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
     }
@@ -70,14 +73,15 @@ BX_CPU_C::inp32(Bit16u addr)
   Bit32u ret32;
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if ( !BX_CPU_THIS_PTR allow_io(addr, 4) ) {
+    if (! BX_CPU_THIS_PTR allow_io(addr, 4)) {
+      BX_DEBUG(("inp32(): I/O access not allowed !"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return(0);
     }
   }
 
   ret32 = BX_INP(addr, 4);
-  return( ret32 );
+  return ret32;
 }
 
   void BX_CPP_AttrRegparmN(2)
@@ -88,7 +92,8 @@ BX_CPU_C::outp32(Bit16u addr, Bit32u value)
    * On the 286, there is no IO permissions map */
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if ( !BX_CPU_THIS_PTR allow_io(addr, 4) ) {
+    if (! BX_CPU_THIS_PTR allow_io(addr, 4)) {
+      BX_DEBUG(("outp32(): I/O access not allowed !"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
     }
@@ -103,14 +108,15 @@ BX_CPU_C::inp8(Bit16u addr)
   Bit8u ret8;
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if ( !BX_CPU_THIS_PTR allow_io(addr, 1) ) {
+    if (! BX_CPU_THIS_PTR allow_io(addr, 1)) {
+      BX_DEBUG(("inp8(): I/O access not allowed !"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return(0);
     }
   }
 
   ret8 = BX_INP(addr, 1);
-  return( ret8 );
+  return ret8;
 }
 
 
@@ -122,7 +128,8 @@ BX_CPU_C::outp8(Bit16u addr, Bit8u value)
    * On the 286, there is no IO permissions map */
 
   if (BX_CPU_THIS_PTR cr0.pe && (BX_CPU_THIS_PTR get_VM() || (CPL>BX_CPU_THIS_PTR get_IOPL()))) {
-    if ( !BX_CPU_THIS_PTR allow_io(addr, 1) ) {
+    if (! BX_CPU_THIS_PTR allow_io(addr, 1)) {
+      BX_DEBUG(("outp8(): I/O access not allowed !"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
     }
@@ -143,12 +150,12 @@ bx_bool BX_CPU_C::allow_io(Bit16u addr, unsigned len)
     return(0);
   }
 
-  if (BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled < 103) {
+  if (BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled < 103) {
     BX_ERROR(("allow_io(): TR.limit < 103"));
     return(0);
   }
 
-  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + 102, 
+  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base + 102, 
                    2, 0, BX_READ, &io_base);
 
   if (io_base <= 103) {
@@ -156,13 +163,13 @@ bx_bool BX_CPU_C::allow_io(Bit16u addr, unsigned len)
      return(0);
   }
 
-  if ( (Bit32s) (addr/8) >= (Bit32s) (BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled - io_base)) {
+  if ( (Bit32s) (addr/8) >= (Bit32s) (BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled - io_base)) {
     BX_INFO(("allow_io(): IO addr %x (len %d) outside TSS IO permission map (base=%x, limit=%x) #GP(0)",
-      addr, len, io_base, BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled));
+      addr, len, io_base, BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled));
     return(0);
   }
 
-  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + io_base + addr/8,
+  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base + io_base + addr/8,
                    2, 0, BX_READ, &permission16);
 
   bit_index = addr & 0x07;

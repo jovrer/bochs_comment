@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.160 2006/01/25 17:51:49 vruppert Exp $
+// $Id: rombios.c,v 1.166 2006/08/11 17:34:12 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -932,7 +932,7 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.160 $ $Date: 2006/01/25 17:51:49 $";
+static char bios_cvs_version_string[] = "$Revision: 1.166 $ $Date: 2006/08/11 17:34:12 $";
 
 #define BIOS_COPYRIGHT_STRING "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
@@ -1129,7 +1129,7 @@ static struct {
       { 0x5300, 0x532e,   none,   none, 0x20 }, /* Del */
       {   none,   none,   none,   none, none },
       {   none,   none,   none,   none, none },
-      {   none,   none,   none,   none, none },
+      { 0x565c, 0x567c,   none,   none, none }, /* \| */    
       { 0x5700, 0x5700,   none,   none, none }, /* F11 */
       { 0x5800, 0x5800,   none,   none, none }  /* F12 */
       };
@@ -2207,25 +2207,26 @@ void ata_detect( )
       write_byte(ebda_seg,&EbdaData->ata.devices[device].type,ATA_TYPE_UNKNOWN);
     
       // reset the channel
-      ata_reset (device);
+      ata_reset(device);
       
       // check for ATA or ATAPI
       outb(iobase1+ATA_CB_DH, slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0);
       sc = inb(iobase1+ATA_CB_SC);
       sn = inb(iobase1+ATA_CB_SN);
-      if ( (sc==0x01) && (sn==0x01) ) {
+      if ((sc==0x01) && (sn==0x01)) {
         cl = inb(iobase1+ATA_CB_CL);
         ch = inb(iobase1+ATA_CB_CH);
         st = inb(iobase1+ATA_CB_STAT);
 
-        if ( (cl==0x14) && (ch==0xeb) ) {
+        if ((cl==0x14) && (ch==0xeb)) {
           write_byte(ebda_seg,&EbdaData->ata.devices[device].type,ATA_TYPE_ATAPI);
-          }
-        else if ( (cl==0x00) && (ch==0x00) && (st!=0x00) ) {
+        } else if ((cl==0x00) && (ch==0x00) && (st!=0x00)) {
           write_byte(ebda_seg,&EbdaData->ata.devices[device].type,ATA_TYPE_ATA);
-          }
+        } else if ((cl==0xff) && (ch==0xff)) {
+          write_byte(ebda_seg,&EbdaData->ata.devices[device].type,ATA_TYPE_NONE);
         }
       }
+    }
 
     type=read_byte(ebda_seg,&EbdaData->ata.devices[device].type);
     
@@ -3649,9 +3650,10 @@ ASM_END
       regs.u.r8.al = inb_cmos(0x30);
       regs.u.r8.ah = inb_cmos(0x31);
 
-      // limit to 15M
-      if(regs.u.r16.ax > 0x3c00)
-        regs.u.r16.ax = 0x3c00;
+      // According to Ralf Brown's interrupt the limit should be 15M,
+      // but real machines mostly return max. 63M.
+      if(regs.u.r16.ax > 0xffc0)
+        regs.u.r16.ax = 0xffc0;
 
       CLEAR_CF();
 #endif
@@ -3999,6 +4001,29 @@ BX_DEBUG_INT15("case default:\n");
 }
 #endif
 
+
+void set_e820_range(ES, DI, start, end, type)
+     Bit16u ES; 
+     Bit16u DI;
+     Bit32u start;
+     Bit32u end; 
+     Bit16u type;
+{
+    write_word(ES, DI, start);
+    write_word(ES, DI+2, start >> 16);
+    write_word(ES, DI+4, 0x00);
+    write_word(ES, DI+6, 0x00);
+    
+    end -= start;
+    write_word(ES, DI+8, end);
+    write_word(ES, DI+10, end >> 16);
+    write_word(ES, DI+12, 0x0000);
+    write_word(ES, DI+14, 0x0000);
+    
+    write_word(ES, DI+16, type);
+    write_word(ES, DI+18, 0x0);
+}
+
   void
 int15_function32(regs, ES, DS, FLAGS)
   pushad_regs_t regs; // REGS pushed via pushad
@@ -4063,19 +4088,8 @@ ASM_END
                 switch(regs.u.r16.bx)
                 {
                     case 0:
-                        write_word(ES, regs.u.r16.di, 0x00);
-                        write_word(ES, regs.u.r16.di+2, 0x00);
-                        write_word(ES, regs.u.r16.di+4, 0x00);
-                        write_word(ES, regs.u.r16.di+6, 0x00);
-
-                        write_word(ES, regs.u.r16.di+8, 0xFC00);
-                        write_word(ES, regs.u.r16.di+10, 0x0009);
-                        write_word(ES, regs.u.r16.di+12, 0x0000);
-                        write_word(ES, regs.u.r16.di+14, 0x0000);
-
-                        write_word(ES, regs.u.r16.di+16, 0x1);
-                        write_word(ES, regs.u.r16.di+18, 0x0);
-
+                        set_e820_range(ES, regs.u.r16.di, 
+                                       0x0000000L, 0x0009fc00L, 1);
                         regs.u.r32.ebx = 1;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
@@ -4083,6 +4097,24 @@ ASM_END
                         return;
                         break;
                     case 1:
+                        set_e820_range(ES, regs.u.r16.di, 
+                                       0x0009fc00L, 0x000a0000L, 2);
+                        regs.u.r32.ebx = 2;
+                        regs.u.r32.eax = 0x534D4150;
+                        regs.u.r32.ecx = 0x14;
+                        CLEAR_CF();
+                        return;
+                        break;
+                    case 2:
+                        set_e820_range(ES, regs.u.r16.di, 
+                                       0x000e8000L, 0x00100000L, 2);
+                        regs.u.r32.ebx = 3;
+                        regs.u.r32.eax = 0x534D4150;
+                        regs.u.r32.ecx = 0x14;
+                        CLEAR_CF();
+                        return;
+                        break;
+                    case 3:
                         extended_memory_size = inb_cmos(0x35);
                         extended_memory_size <<= 8;
                         extended_memory_size |= inb_cmos(0x34);
@@ -4092,9 +4124,9 @@ ASM_END
                             extended_memory_size = 0x3bc000; // everything after this is reserved memory until we get to 0x100000000
                         }
                         extended_memory_size *= 1024;
-                        extended_memory_size += 15728640; // make up for the 16mb of memory that is chopped off
+                        extended_memory_size += (16L * 1024 * 1024);
 
-                        if(extended_memory_size <= 15728640)
+                        if(extended_memory_size <= (16L * 1024 * 1024))
                         {
                             extended_memory_size = inb_cmos(0x31);
                             extended_memory_size <<= 8;
@@ -4102,28 +4134,23 @@ ASM_END
                             extended_memory_size *= 1024;
                         }
 
-                        write_word(ES, regs.u.r16.di, 0x0000);
-                        write_word(ES, regs.u.r16.di+2, 0x0010);
-                        write_word(ES, regs.u.r16.di+4, 0x0000);
-                        write_word(ES, regs.u.r16.di+6, 0x0000);
-
-                        write_word(ES, regs.u.r16.di+8, extended_memory_size);
-                        extended_memory_size >>= 16;
-                        write_word(ES, regs.u.r16.di+10, extended_memory_size);
-                        extended_memory_size >>= 16;
-                        write_word(ES, regs.u.r16.di+12, extended_memory_size);
-                        extended_memory_size >>= 16;
-                        write_word(ES, regs.u.r16.di+14, extended_memory_size);
-
-                        write_word(ES, regs.u.r16.di+16, 0x1);
-                        write_word(ES, regs.u.r16.di+18, 0x0);
-
-                        regs.u.r32.ebx = 0;
+                        set_e820_range(ES, regs.u.r16.di, 
+                                       0x00100000L, extended_memory_size, 1);
+                        regs.u.r32.ebx = 4;
                         regs.u.r32.eax = 0x534D4150;
                         regs.u.r32.ecx = 0x14;
                         CLEAR_CF();
                         return;
                         break;
+                    case 4:
+                        /* 256KB BIOS area at the end of 4 GB */
+                        set_e820_range(ES, regs.u.r16.di, 
+                                       0xfffc0000L, 0x00000000L, 2);
+                        regs.u.r32.ebx = 0;
+                        regs.u.r32.eax = 0x534D4150;
+                        regs.u.r32.ecx = 0x14;
+                        CLEAR_CF();
+                        return;
                     default:  /* AX=E820, DX=534D4150, BX unrecognized */
                         goto int15_unimplemented;
                         break;
@@ -4182,10 +4209,31 @@ ASM_END
 int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
   Bit16u DI, SI, BP, SP, BX, DX, CX, AX, FLAGS;
 {
-  Bit8u scan_code, ascii_code, shift_flags, count;
+  Bit8u scan_code, ascii_code, shift_flags, led_flags, count;
   Bit16u kbd_code, max;
 
   BX_DEBUG_INT16("int16: AX=%04x BX=%04x CX=%04x DX=%04x \n", AX, BX, CX, DX);
+
+  shift_flags = read_byte(0x0040, 0x17);
+  led_flags = read_byte(0x0040, 0x97);
+  if ((((shift_flags >> 4) & 0x07) ^ (led_flags & 0x07)) != 0) {
+ASM_START
+    cli
+ASM_END
+    outb(0x60, 0xed);
+    while ((inb(0x64) & 0x01) == 0) outb(0x80, 0x21);
+    if ((inb(0x60) == 0xfa)) {
+      led_flags &= 0xf8;
+      led_flags |= ((shift_flags >> 4) & 0x07);
+      outb(0x60, led_flags & 0x07);
+      while ((inb(0x64) & 0x01) == 0) outb(0x80, 0x21);
+      inb(0x60);
+      write_byte(0x0040, 0x97, led_flags);
+    }
+ASM_START
+    sti
+ASM_END
+  }
 
   switch (GET_AH()) {
     case 0x00: /* read keyboard input */
@@ -4438,7 +4486,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
   Bit16u DI, SI, BP, SP, BX, DX, CX, AX;
 {
   Bit8u scancode, asciicode, shift_flags;
-  Bit8u mf2_flags, mf2_state, led_flags;
+  Bit8u mf2_flags, mf2_state;
 
   //
   // DS has been set to F000 before call
@@ -4456,7 +4504,6 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
   shift_flags = read_byte(0x0040, 0x17);
   mf2_flags = read_byte(0x0040, 0x18);
   mf2_state = read_byte(0x0040, 0x96);
-  led_flags = read_byte(0x0040, 0x97);
   asciicode = 0;
 
   switch (scancode) {
@@ -4464,9 +4511,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       shift_flags ^= 0x40;
       write_byte(0x0040, 0x17, shift_flags);
       mf2_flags |= 0x40;
-      led_flags ^= 0x04;
       write_byte(0x0040, 0x18, mf2_flags);
-      write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xba: /* Caps Lock release */
       mf2_flags &= ~0x40;
@@ -4546,9 +4591,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
         mf2_flags |= 0x20;
         write_byte(0x0040, 0x18, mf2_flags);
         shift_flags ^= 0x20;
-        led_flags ^= 0x02;
         write_byte(0x0040, 0x17, shift_flags);
-        write_byte(0x0040, 0x97, led_flags);
       }
       break;
     case 0xc5: /* Num Lock release */
@@ -4562,9 +4605,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       mf2_flags |= 0x10;
       write_byte(0x0040, 0x18, mf2_flags);
       shift_flags ^= 0x10;
-      led_flags ^= 0x01;
       write_byte(0x0040, 0x17, shift_flags);
-      write_byte(0x0040, 0x97, led_flags);
       break;
 
     case 0xc6: /* Scroll Lock release */
@@ -4586,6 +4627,10 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       } else if (shift_flags & 0x04) { /* CONTROL */
         asciicode = scan_to_scanascii[scancode].control;
         scancode = scan_to_scanascii[scancode].control >> 8;
+      } else if (((mf2_state & 0x02) > 0) && ((scancode >= 0x47) && (scancode <= 0x53))) {
+        /* extended keys handling */
+        asciicode = 0xe0;
+        scancode = scan_to_scanascii[scancode].normal >> 8;
       } else if (shift_flags & 0x03) { /* LSHIFT + RSHIFT */
         /* check if lock state should be ignored 
          * because a SHIFT key are pressed */
@@ -8823,7 +8868,6 @@ pci_pro_unknown:
 pci_pro_fail:
   pop edi
   pop esi
-  sti
   popf
   stc
   retf
@@ -8831,7 +8875,6 @@ pci_pro_ok:
   xor ah, ah
   pop edi
   pop esi
-  sti
   popf
   clc
   retf
@@ -8971,7 +9014,7 @@ pci_real_f0c: ;; write configuration word
   jmp pci_real_ok
 pci_real_f0d: ;; write configuration dword
   cmp al, #0x0d
-  jne pci_real_unknown
+  jne pci_real_f0e
   call pci_real_select_reg
   push dx
   mov dx, #0x0cfc
@@ -8979,6 +9022,46 @@ pci_real_f0d: ;; write configuration dword
   out dx, eax
   pop dx
   jmp pci_real_ok
+pci_real_f0e: ;; get irq routing options
+  cmp al, #0x0e
+  jne pci_real_unknown
+  SEG ES
+  cmp word ptr [di], #pci_routing_table_structure_end - pci_routing_table_structure_start
+  jb pci_real_too_small    
+  SEG ES
+  mov word ptr [di], #pci_routing_table_structure_end - pci_routing_table_structure_start        
+  pushf
+  push ds
+  push es
+  push cx
+  push si
+  push di
+  cld
+  mov si, #pci_routing_table_structure_start
+  push cs
+  pop ds
+  SEG ES
+  mov cx, [di+2]
+  SEG ES
+  mov es, [di+4]
+  mov di, cx
+  mov cx, #pci_routing_table_structure_end - pci_routing_table_structure_start
+  rep 
+      movsb
+  pop di
+  pop si
+  pop cx
+  pop es
+  pop ds
+  popf
+  mov bx, #(1 << 9) | (1 << 11)   ;; irq 9 and 11 are used
+  jmp pci_real_ok
+pci_real_too_small:
+  SEG ES
+  mov word ptr [di], #pci_routing_table_structure_end - pci_routing_table_structure_start        
+  mov ah, #0x89
+  jmp pci_real_fail
+
 pci_real_unknown:
   mov ah, #0x81
 pci_real_fail:
@@ -9019,6 +9102,7 @@ pci_routing_table_structure:
   dw 0,0 ;; Miniport data
   db 0,0,0,0,0,0,0,0,0,0,0 ;; reserved
   db 0x07 ;; checksum
+pci_routing_table_structure_start:
   ;; first slot entry PCI-to-ISA (embedded)
   db 0 ;; pci bus number
   db 0x08 ;; pci device number (bit 7-3)
@@ -9097,6 +9181,7 @@ pci_routing_table_structure:
   dw 0xdef8 ;; IRQ bitmap INTD#
   db 5 ;; physical slot (0 = embedded)
   db 0 ;; reserved
+pci_routing_table_structure_end:
 
 pci_irq_list:
   db 11, 10, 9, 5;
@@ -9759,6 +9844,7 @@ post_default_ints:
   ;;
 #endif // BX_ELTORITO_BOOT
  
+  sti        ;; enable interrupts
   int  #0x19
 
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.h,v 1.13 2005/12/04 17:43:09 vruppert Exp $
+// $Id: cmos.h,v 1.16 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,6 +24,8 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#ifndef BX_IODEV_CMOS_H
+#define BX_IODEV_CMOS_H
 
 #if BX_USE_CMOS_SMF
 #  define BX_CMOS_SMF  static
@@ -36,13 +38,17 @@
 
 class bx_cmos_c : public bx_cmos_stub_c {
 public:
-  bx_cmos_c(void);
-  ~bx_cmos_c(void);
+  bx_cmos_c();
+  virtual ~bx_cmos_c();
 
   virtual void init(void);
   virtual void checksum_cmos(void);
   virtual void reset(unsigned type);
   virtual void save_image(void);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+  virtual void after_restore_state(void);
+#endif
 
   virtual Bit32u get_reg(unsigned reg) {
     return s.reg[reg];
@@ -87,4 +93,6 @@ private:
   BX_CMOS_SMF void update_clock(void);
   BX_CMOS_SMF void update_timeval(void);
   BX_CMOS_SMF void CRA_change(void);
-  };
+};
+
+#endif

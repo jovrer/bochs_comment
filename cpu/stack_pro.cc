@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack_pro.cc,v 1.26 2005/10/17 13:06:09 sshwarts Exp $
+// $Id: stack_pro.cc,v 1.29 2006/06/12 16:58:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -215,16 +216,17 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
     esp &= 0x0000ffff;
 
   if (descriptor->valid==0) {
-    BX_PANIC(("can_push(): SS invalidated."));
+    BX_ERROR(("can_push(): SS invalidated."));
     return(0);
   }
 
   if (descriptor->p==0) {
-    BX_PANIC(("can_push(): descriptor not present"));
+    BX_ERROR(("can_push(): descriptor not present"));
     return(0);
   }
 
-  if (descriptor->u.segment.c_ed) { /* expand down segment */
+  if (IS_DATA_SEGMENT_EXPAND_DOWN(descriptor->type)) /* expand down segment */
+  {
     Bit32u expand_down_limit;
 
     if (descriptor->u.segment.d_b)
@@ -241,11 +243,11 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
       BX_PANIC(("can_push(): expand-down: esp < N"));
       return(0);
     }
-    if ( (esp - bytes) <= descriptor->u.segment.limit_scaled ) {
+    if ((esp - bytes) <= descriptor->u.segment.limit_scaled) {
       BX_PANIC(("can_push(): expand-down: esp-N < limit"));
       return(0);
     }
-    if ( esp > expand_down_limit ) {
+    if (esp > expand_down_limit) {
       BX_PANIC(("can_push(): esp > expand-down-limit"));
       return(0);
     }
@@ -269,7 +271,7 @@ BX_CPU_C::can_push(bx_descriptor_t *descriptor, Bit32u esp, Bit32u bytes)
       return(0);
     }
 
-    if ( !descriptor->u.segment.d_b ) {
+    if (!descriptor->u.segment.d_b) {
       // Weird case for 16-bit SP.
       esp = ((esp-bytes) & 0xffff) + bytes;
     }
@@ -306,37 +308,38 @@ bx_bool BX_CPU_C::can_pop(Bit32u bytes)
   }
 
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid==0) {
-    BX_PANIC(("can_pop(): SS invalidated."));
+    BX_ERROR(("can_pop(): SS invalidated."));
     return(0); /* never gets here */
   }
 
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p==0) { /* ??? */
-    BX_PANIC(("can_pop(): SS.p = 0"));
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p==0) {
+    BX_ERROR(("can_pop(): SS.p = 0"));
     return(0);
   }
 
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.c_ed) { /* expand down segment */
-    if ( temp_ESP == expand_down_limit ) {
+  if (IS_DATA_SEGMENT_EXPAND_DOWN(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.type)) { /* expand down */
+    if (temp_ESP == expand_down_limit) {
       BX_PANIC(("can_pop(): found SP=ffff"));
       return(0);
     }
-    if ( ((expand_down_limit - temp_ESP) + 1) >= bytes )
+    if (((expand_down_limit - temp_ESP) + 1) >= bytes)
       return(1);
     return(0);
   }
   else { /* normal (expand-up) segment */
     if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled==0) {
       BX_PANIC(("can_pop(): SS.limit = 0"));
+      return(0);
     }
     if ( temp_ESP == expand_down_limit ) {
       BX_PANIC(("can_pop(): found SP=ffff"));
       return(0);
     }
-    if ( temp_ESP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled ) {
+    if (temp_ESP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled) {
       BX_PANIC(("can_pop(): eSP > SS.limit"));
       return(0);
     }
-    if ( ((BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled - temp_ESP) + 1) >= bytes )
+    if (((BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled - temp_ESP) + 1) >= bytes)
       return(1);
     return(0);
   }

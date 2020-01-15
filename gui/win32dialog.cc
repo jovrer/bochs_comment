@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc,v 1.33 2005/12/26 18:10:21 vruppert Exp $
+// $Id: win32dialog.cc,v 1.48 2006/06/08 17:02:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include "config.h"
@@ -11,6 +11,7 @@ extern "C" {
 #include <stdio.h>
 #include <windows.h>
 #include <commctrl.h>
+#include <shlobj.h>
 #include <ctype.h>
 }
 #include "win32res.h"
@@ -62,6 +63,45 @@ BOOL CreateImage(HWND hDlg, int sectors, const char *filename)
   return TRUE;
 }
 
+int CALLBACK BrowseCallbackProc(HWND hwnd, UINT uMsg, LPARAM lParam, LPARAM lpData)
+{
+  char path[MAX_PATH];
+
+  if (uMsg == BFFM_INITIALIZED) {
+    GetCurrentDirectory(MAX_PATH, path);
+    SendMessage(hwnd, BFFM_SETSELECTION, TRUE, (LPARAM)path);
+  }
+  return 0;
+}
+
+int BrowseDir(const char *Title, char *result)
+{
+  BROWSEINFO browseInfo;
+  LPITEMIDLIST ItemIDList;
+  int r = 0;
+
+  memset(&browseInfo,0,sizeof(BROWSEINFO));
+  browseInfo.hwndOwner = GetActiveWindow();
+  browseInfo.pszDisplayName = result;
+  browseInfo.lpszTitle = (LPCSTR)Title;
+  browseInfo.ulFlags = BIF_NEWDIALOGSTYLE | BIF_RETURNONLYFSDIRS;
+  browseInfo.lpfn = BrowseCallbackProc;
+  ItemIDList = SHBrowseForFolder(&browseInfo);
+  if (ItemIDList != NULL) {
+    *result = 0;
+    if (SHGetPathFromIDList(ItemIDList, result)) {
+      if (result[0]) r = 1;
+    }
+    // free memory used
+    IMalloc * imalloc = 0;
+    if (SUCCEEDED(SHGetMalloc(&imalloc))) {
+      imalloc->Free(ItemIDList);
+      imalloc->Release();
+    }
+  }
+  return r;
+}
+
 static BOOL CALLBACK LogAskProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   BxEvent *event;
@@ -104,11 +144,16 @@ static BOOL CALLBACK StringParamProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
 {
   static bx_param_string_c *param;
   char buffer[512];
+  const char *title;
 
   switch (msg) {
     case WM_INITDIALOG:
       param = (bx_param_string_c *)lParam;
-      SetWindowText(hDlg, param->get_name());
+      title = param->get_label();
+      if ((title == NULL) || (strlen(title) == 0)) {
+        title = param->get_name();
+      }
+      SetWindowText(hDlg, title);
       SetWindowText(GetDlgItem(hDlg, IDSTRING), param->getptr());
       SendMessage(GetDlgItem(hDlg, IDSTRING), EM_SETLIMITTEXT, param->get_maxsize(), 0);
       return TRUE;
@@ -140,20 +185,22 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
   static char origpath[MAX_PATH];
   char mesg[MAX_PATH];
   char path[MAX_PATH];
-  char *title;
+  char pname[80];
+  const char *title;
   int i, cap;
 
   switch (msg) {
     case WM_INITDIALOG:
       param = (bx_param_filename_c *)lParam;
-      if (param->get_id() == BXP_FLOPPYA_PATH) {
-        status = SIM->get_param_enum(BXP_FLOPPYA_STATUS);
-        devtype = SIM->get_param_enum(BXP_FLOPPYA_DEVTYPE);
-        mediatype = SIM->get_param_enum(BXP_FLOPPYA_TYPE);
+      param->get_param_path(pname, 80);
+      if (!strcmp(pname, BXPN_FLOPPYA_PATH)) {
+        status = SIM->get_param_enum(BXPN_FLOPPYA_STATUS);
+        devtype = SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE);
+        mediatype = SIM->get_param_enum(BXPN_FLOPPYA_TYPE);
       } else {
-        status = SIM->get_param_enum(BXP_FLOPPYB_STATUS);
-        devtype = SIM->get_param_enum(BXP_FLOPPYB_DEVTYPE);
-        mediatype = SIM->get_param_enum(BXP_FLOPPYB_TYPE);
+        status = SIM->get_param_enum(BXPN_FLOPPYB_STATUS);
+        devtype = SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE);
+        mediatype = SIM->get_param_enum(BXPN_FLOPPYB_TYPE);
       }
       cap = devtype->get() - (int)devtype->get_min();
       SetWindowText(GetDlgItem(hDlg, IDDEVTYPE), floppy_type_names[cap]);
@@ -246,7 +293,7 @@ static BOOL CALLBACK FloppyDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
 
 static BOOL CALLBACK Cdrom1DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-  static bx_atadevice_options cdromop;
+  static bx_list_c *cdromop;
   int device;
   static char origpath[MAX_PATH];
   char path[MAX_PATH];
@@ -254,18 +301,18 @@ static BOOL CALLBACK Cdrom1DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
   switch (msg) {
     case WM_INITDIALOG:
       SIM->get_cdrom_options(0, &cdromop, &device);
-      lstrcpy(origpath, cdromop.Opath->getptr());
+      lstrcpy(origpath, SIM->get_param_string("path", cdromop)->getptr());
       if (lstrlen(origpath) && lstrcmp(origpath, "none")) {
         SetWindowText(GetDlgItem(hDlg, IDCDROM1), origpath);
       }
-      if (cdromop.Ostatus->get() == BX_INSERTED) {
+      if (SIM->get_param_enum("status", cdromop)->get() == BX_INSERTED) {
         SendMessage(GetDlgItem(hDlg, IDSTATUS1), BM_SETCHECK, BST_CHECKED, 0);
       }
       return TRUE;
       break;
     case WM_CLOSE:
-      if (lstrcmp(cdromop.Opath->getptr(), origpath)) {
-        cdromop.Opath->set(origpath);
+      if (lstrcmp(SIM->get_param_string("path", cdromop)->getptr(), origpath)) {
+        SIM->get_param_string("path", cdromop)->set(origpath);
       }
       EndDialog(hDlg, -1);
       break;
@@ -273,9 +320,9 @@ static BOOL CALLBACK Cdrom1DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
       switch (LOWORD(wParam)) {
         case IDBROWSE1:
           GetDlgItemText(hDlg, IDCDROM1, path, MAX_PATH);
-          cdromop.Opath->set(path);
-          if (AskFilename(hDlg, (bx_param_filename_c *)cdromop.Opath, "iso") > 0) {
-            SetWindowText(GetDlgItem(hDlg, IDCDROM1), cdromop.Opath->getptr());
+          SIM->get_param_string("path", cdromop)->set(path);
+          if (AskFilename(hDlg, (bx_param_filename_c *)SIM->get_param_string("path", cdromop), "iso") > 0) {
+            SetWindowText(GetDlgItem(hDlg, IDCDROM1), SIM->get_param_string("path", cdromop)->getptr());
             SendMessage(GetDlgItem(hDlg, IDSTATUS1), BM_SETCHECK, BST_CHECKED, 0);
           }
           break;
@@ -283,21 +330,21 @@ static BOOL CALLBACK Cdrom1DlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
           if (SendMessage(GetDlgItem(hDlg, IDSTATUS1), BM_GETCHECK, 0, 0) == BST_CHECKED) {
             GetDlgItemText(hDlg, IDCDROM1, path, MAX_PATH);
             if (lstrlen(path)) {
-              cdromop.Ostatus->set(BX_INSERTED);
-              if (lstrcmp(path, cdromop.Opath->getptr())) {
-                cdromop.Opath->set(path);
+              SIM->get_param_enum("status", cdromop)->set(BX_INSERTED);
+              if (lstrcmp(path, SIM->get_param_string("path", cdromop)->getptr())) {
+                SIM->get_param_string("path", cdromop)->set(path);
               }
             } else {
-              cdromop.Ostatus->set(BX_EJECTED);
+              SIM->get_param_enum("status", cdromop)->set(BX_EJECTED);
             }
           } else {
-            cdromop.Ostatus->set(BX_EJECTED);
+            SIM->get_param_enum("status", cdromop)->set(BX_EJECTED);
           }
           EndDialog(hDlg, 1);
           break;
         case IDCANCEL:
-          if (lstrcmp(cdromop.Opath->getptr(), origpath)) {
-            cdromop.Opath->set(origpath);
+          if (lstrcmp(SIM->get_param_string("path", cdromop)->getptr(), origpath)) {
+            SIM->get_param_string("path", cdromop)->set(origpath);
           }
           EndDialog(hDlg, -1);
           break;
@@ -370,7 +417,7 @@ void RuntimeDlgSetAdvLogOpt(HWND hDlg)
 static BOOL CALLBACK RTCdromDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
 {
   static int devcount;
-  static bx_atadevice_options cdromop[4];
+  static bx_list_c *cdromop[4];
   static char origpath[4][MAX_PATH];
   static BOOL changed;
   int device;
@@ -387,17 +434,18 @@ static BOOL CALLBACK RTCdromDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
       // 4 cdroms supported at run time
       devcount = 1;
       for (cdrom=1; cdrom<4; cdrom++) {
-        if (!SIM->get_cdrom_options (cdrom, &cdromop[cdrom], &device) || !cdromop[cdrom].Opresent->get ()) {
+        if (!SIM->get_cdrom_options(cdrom, &cdromop[cdrom], &device) ||
+	    !SIM->get_param_bool("present", cdromop[cdrom])->get()) {
           EnableWindow(GetDlgItem(hDlg, IDLABEL1+cdrom), FALSE);
           EnableWindow(GetDlgItem(hDlg, IDCDROM1+cdrom), FALSE);
           EnableWindow(GetDlgItem(hDlg, IDBROWSE1+cdrom), FALSE);
           EnableWindow(GetDlgItem(hDlg, IDSTATUS1+cdrom), FALSE);
         } else {
-          lstrcpy(origpath[cdrom], cdromop[cdrom].Opath->getptr());
+          lstrcpy(origpath[cdrom], SIM->get_param_string("path", cdromop[cdrom])->getptr());
           if (lstrlen(origpath[cdrom]) && lstrcmp(origpath[cdrom], "none")) {
             SetWindowText(GetDlgItem(hDlg, IDCDROM1+cdrom), origpath[cdrom]);
           }
-          if (cdromop[cdrom].Ostatus->get() == BX_INSERTED) {
+          if (SIM->get_param_enum("status", cdromop[cdrom])->get() == BX_INSERTED) {
             SendMessage(GetDlgItem(hDlg, IDSTATUS1+cdrom), BM_SETCHECK, BST_CHECKED, 0);
           }
           devcount++;
@@ -414,23 +462,23 @@ static BOOL CALLBACK RTCdromDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
               if (SendMessage(GetDlgItem(hDlg, IDSTATUS1+device), BM_GETCHECK, 0, 0) == BST_CHECKED) {
                 GetDlgItemText(hDlg, IDCDROM1+device, path, MAX_PATH);
                 if (lstrlen(path)) {
-                  cdromop[device].Ostatus->set(BX_INSERTED);
-                  if (lstrcmp(path, cdromop[device].Opath->getptr())) {
-                    cdromop[device].Opath->set(path);
+                  SIM->get_param_enum("status", cdromop[device])->set(BX_INSERTED);
+                  if (lstrcmp(path, SIM->get_param_string("path", cdromop[device])->getptr())) {
+                    SIM->get_param_string("path", cdromop[device])->set(path);
                   }
                 } else {
-                  cdromop[device].Ostatus->set(BX_EJECTED);
+                  SIM->get_param_enum("status", cdromop[device])->set(BX_EJECTED);
                 }
               } else {
-                cdromop[device].Ostatus->set(BX_EJECTED);
+                SIM->get_param_enum("status", cdromop[device])->set(BX_EJECTED);
               }
             }
             changed = FALSE;
           } else {
             if (changed) {
               for (device=1; device<devcount; device++) {
-                if (lstrcmp(cdromop[device].Opath->getptr(), origpath[device])) {
-                  cdromop[device].Opath->set(origpath[device]);
+                if (lstrcmp(SIM->get_param_string("path", cdromop[device])->getptr(), origpath[device])) {
+                  SIM->get_param_string("path", cdromop[device])->set(origpath[device]);
                 }
               }
             }
@@ -462,9 +510,9 @@ static BOOL CALLBACK RTCdromDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM l
             case IDBROWSE4:
               device = LOWORD(wParam) - IDBROWSE1;
               GetDlgItemText(hDlg, IDCDROM1+device, path, MAX_PATH);
-              cdromop[device].Opath->set(path);
-              if (AskFilename(hDlg, (bx_param_filename_c *)cdromop[device].Opath, "iso") > 0) {
-                SetWindowText(GetDlgItem(hDlg, IDCDROM1+device), cdromop[device].Opath->getptr());
+              SIM->get_param_string("path", cdromop[device])->set(path);
+              if (AskFilename(hDlg, (bx_param_filename_c *)SIM->get_param_string("path", cdromop[device]), "iso") > 0) {
+                SetWindowText(GetDlgItem(hDlg, IDCDROM1+device), SIM->get_param_string("path", cdromop[device])->getptr());
                 SendMessage(GetDlgItem(hDlg, IDSTATUS1+device), BM_SETCHECK, BST_CHECKED, 0);
               }
               break;
@@ -490,11 +538,11 @@ static BOOL CALLBACK RTUSBdevDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
 
   switch (msg) {
     case WM_INITDIALOG:
-      if (SIM->get_param_string(BXP_USB1_PORT1)->get_enabled()) {
-        SetDlgItemText(hDlg, IDUSBDEV1, SIM->get_param_string(BXP_USB1_PORT1)->getptr());
-        SetDlgItemText(hDlg, IDUSBOPT1, SIM->get_param_string(BXP_USB1_OPTION1)->getptr());
-        SetDlgItemText(hDlg, IDUSBDEV2, SIM->get_param_string(BXP_USB1_PORT2)->getptr());
-        SetDlgItemText(hDlg, IDUSBOPT2, SIM->get_param_string(BXP_USB1_OPTION2)->getptr());
+      if (SIM->get_param_string(BXPN_USB1_PORT1)->get_enabled()) {
+        SetDlgItemText(hDlg, IDUSBDEV1, SIM->get_param_string(BXPN_USB1_PORT1)->getptr());
+        SetDlgItemText(hDlg, IDUSBOPT1, SIM->get_param_string(BXPN_USB1_OPTION1)->getptr());
+        SetDlgItemText(hDlg, IDUSBDEV2, SIM->get_param_string(BXPN_USB1_PORT2)->getptr());
+        SetDlgItemText(hDlg, IDUSBOPT2, SIM->get_param_string(BXPN_USB1_OPTION2)->getptr());
       } else {
         EnableWindow(GetDlgItem(hDlg, IDUSBLBL1), FALSE);
         EnableWindow(GetDlgItem(hDlg, IDUSBLBL2), FALSE);
@@ -513,13 +561,13 @@ static BOOL CALLBACK RTUSBdevDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
         case PSN_APPLY:
           if ((psn->lParam == FALSE) && changed) { // Apply pressed & change in this dialog
             GetDlgItemText(hDlg, IDUSBDEV1, buffer, sizeof(buffer));
-            SIM->get_param_string(BXP_USB1_PORT1)->set(buffer);
+            SIM->get_param_string(BXPN_USB1_PORT1)->set(buffer);
             GetDlgItemText(hDlg, IDUSBOPT1, buffer, sizeof(buffer));
-            SIM->get_param_string(BXP_USB1_OPTION1)->set(buffer);
+            SIM->get_param_string(BXPN_USB1_OPTION1)->set(buffer);
             GetDlgItemText(hDlg, IDUSBDEV2, buffer, sizeof(buffer));
-            SIM->get_param_string(BXP_USB1_PORT2)->set(buffer);
+            SIM->get_param_string(BXPN_USB1_PORT2)->set(buffer);
             GetDlgItemText(hDlg, IDUSBOPT2, buffer, sizeof(buffer));
-            SIM->get_param_string(BXP_USB1_OPTION2)->set(buffer);
+            SIM->get_param_string(BXPN_USB1_OPTION2)->set(buffer);
           }
           return PSNRET_NOERROR;
         case PSN_QUERYCANCEL:
@@ -663,14 +711,14 @@ static BOOL CALLBACK RTMiscDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
 
   switch (msg) {
     case WM_INITDIALOG:
-      SetDlgItemInt(hDlg, IDVGAUPDATE, SIM->get_param_num(BXP_VGA_UPDATE_INTERVAL)->get(), FALSE);
-      SetDlgItemInt(hDlg, IDKBDPASTE, SIM->get_param_num(BXP_KBD_PASTE_DELAY)->get(), FALSE);
-      if (SIM->get_param_num(BXP_MOUSE_ENABLED)->get()) {
+      SetDlgItemInt(hDlg, IDVGAUPDATE, SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL)->get(), FALSE);
+      SetDlgItemInt(hDlg, IDKBDPASTE, SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->get(), FALSE);
+      if (SIM->get_param_num(BXPN_MOUSE_ENABLED)->get()) {
         SendMessage(GetDlgItem(hDlg, IDMOUSE), BM_SETCHECK, BST_CHECKED, 0);
       }
-      SetDlgItemText(hDlg, IDUSERBTN, SIM->get_param_string(BXP_USER_SHORTCUT)->getptr());
-      SetDlgItemInt(hDlg, IDSB16TIMER, SIM->get_param_num(BXP_SB16_DMATIMER)->get(), FALSE);
-      SetDlgItemInt(hDlg, IDSBLOGLEV, SIM->get_param_num(BXP_SB16_LOGLEVEL)->get(), FALSE);
+      SetDlgItemText(hDlg, IDUSERBTN, SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr());
+      SetDlgItemInt(hDlg, IDSB16TIMER, SIM->get_param_num(BXPN_SB16_DMATIMER)->get(), FALSE);
+      SetDlgItemInt(hDlg, IDSBLOGLEV, SIM->get_param_num(BXPN_SB16_LOGLEVEL)->get(), FALSE);
       changed = FALSE;
       return TRUE;
     case WM_NOTIFY:
@@ -679,17 +727,17 @@ static BOOL CALLBACK RTMiscDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
         case PSN_APPLY:
           if ((psn->lParam == FALSE) && changed) { // Apply pressed & change in this dialog
             value = GetDlgItemInt(hDlg, IDVGAUPDATE, NULL, FALSE);
-            SIM->get_param_num(BXP_VGA_UPDATE_INTERVAL)->set(value);
+            SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL)->set(value);
             value = GetDlgItemInt(hDlg, IDKBDPASTE, NULL, FALSE);
-            SIM->get_param_num(BXP_KBD_PASTE_DELAY)->set(value);
+            SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set(value);
             value = SendMessage(GetDlgItem(hDlg, IDMOUSE), BM_GETCHECK, 0, 0);
-            SIM->get_param_num(BXP_MOUSE_ENABLED)->set(value==BST_CHECKED);
+            SIM->get_param_num(BXPN_MOUSE_ENABLED)->set(value==BST_CHECKED);
             GetDlgItemText(hDlg, IDUSERBTN, buffer, sizeof(buffer));
-            SIM->get_param_string(BXP_USER_SHORTCUT)->set(buffer);
+            SIM->get_param_string(BXPN_USER_SHORTCUT)->set(buffer);
             value = GetDlgItemInt(hDlg, IDSB16TIMER, NULL, FALSE);
-            SIM->get_param_num(BXP_SB16_DMATIMER)->set(value);
+            SIM->get_param_num(BXPN_SB16_DMATIMER)->set(value);
             value = GetDlgItemInt(hDlg, IDSBLOGLEV, NULL, FALSE);
-            SIM->get_param_num(BXP_SB16_LOGLEVEL)->set(value);
+            SIM->get_param_num(BXPN_SB16_LOGLEVEL)->set(value);
             changed = FALSE;
           }
           return PSNRET_NOERROR;
@@ -738,7 +786,7 @@ int AskFilename(HWND hwnd, bx_param_filename_c *param, const char *ext)
   int ret;
   DWORD errcode;
   char filename[MAX_PATH];
-  char *title;
+  const char *title;
   char errtext[80];
 
   param->get(filename, MAX_PATH);
@@ -843,6 +891,28 @@ int RuntimeOptionsDialog()
   return retcode;
 }
 
+#if BX_SUPPORT_SAVE_RESTORE
+bx_bool win32SaveState()
+{
+  char sr_path[MAX_PATH];
+  int ret;
+
+  sr_path[0] = 0;
+  if (BrowseDir("Select folder for save/restore data", sr_path)) {
+    if (SIM->save_state(sr_path)) {
+      ret = MessageBox(GetBochsWindow(), "The save function currently doesn't handle the state of hard drive images,\n"
+                       "so we don't recommend to continue, unless you are running a read-only\n"
+                       "guest system (e.g. Live-CD).\n\nDo you want to continue?",
+                       "WARNING", MB_YESNO | MB_ICONEXCLAMATION | MB_DEFBUTTON2);
+      if (ret == IDNO) {
+        return 0;
+      }
+    }
+  }
+  return 1;
+}
+#endif
+
 BxEvent* win32_notify_callback(void *unused, BxEvent *event)
 {
   int opts;
@@ -861,7 +931,7 @@ BxEvent* win32_notify_callback(void *unused, BxEvent *event)
         sparam = (bx_param_string_c *)param;
         opts = sparam->get_options()->get();
         if (opts & sparam->IS_FILENAME) {
-          if (param->get_id() == BXP_NULL) {
+          if (param->get_parent() == NULL) {
             event->retcode = AskFilename(GetBochsWindow(), (bx_param_filename_c *)sparam, "txt");
           } else {
             event->retcode = FloppyDialog((bx_param_filename_c *)sparam);
@@ -873,6 +943,14 @@ BxEvent* win32_notify_callback(void *unused, BxEvent *event)
         }
       } else if (param->get_type() == BXT_LIST) {
         event->retcode = Cdrom1Dialog();
+        return event;
+      } else if (param->get_type() == BXT_PARAM_BOOL) {
+        UINT flag = MB_YESNO | MB_SETFOREGROUND;
+        if (((bx_param_bool_c *)param)->get() == 0) {
+          flag |= MB_DEFBUTTON2;
+        }
+        ((bx_param_bool_c *)param)->set(MessageBox(GetActiveWindow(), param->get_description(), param->get_label(), flag) == IDYES);
+        event->retcode = 0;
         return event;
       }
     case BX_SYNC_EVT_TICK: // called periodically by siminterface.

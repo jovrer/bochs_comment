@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer8.cc,v 1.22 2005/07/21 01:59:05 sshwarts Exp $
+// $Id: data_xfer8.cc,v 1.25 2006/05/24 20:57:37 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -98,15 +99,10 @@ void BX_CPU_C::XLAT(bxInstruction_c *i)
     offset = EBX + AL;
   }
   else {
-    offset = BX  + AL;
+    offset =  BX + AL;
   }
 
-  if (!BX_NULL_SEG_REG(i->seg())) {
-    read_virtual_byte(i->seg(), offset, &AL);
-  }
-  else {
-    read_virtual_byte(BX_SEG_REG_DS, offset, &AL);
-  }
+  read_virtual_byte(i->seg(), offset, &AL);
 }
 
 void BX_CPU_C::XCHG_EbGb(bxInstruction_c *i)
@@ -123,7 +119,7 @@ void BX_CPU_C::XCHG_EbGb(bxInstruction_c *i)
   else {
     /* pointer, segment address pair */
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
-    Write_RMW_virtual_byte(op2);
+    write_RMW_virtual_byte(op2);
   }
 
   BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);

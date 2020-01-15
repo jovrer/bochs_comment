@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcivga.h,v 1.3 2003/01/27 21:11:55 vruppert Exp $
+// $Id: pcivga.h,v 1.6 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002,2003  Mike Nordell
@@ -18,31 +18,32 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#ifndef BX_IODEV_PCIVGA_H
+#define BX_IODEV_PCIVGA_H
+
 #if BX_USE_PCIVGA_SMF
 #  define BX_PCIVGA_THIS thePciVgaAdapter->
 #else
 #  define BX_PCIVGA_THIS this->
 #endif
 
-
-class bx_pcivga_c : public bx_devmodel_c
-{
+class bx_pcivga_c : public bx_devmodel_c, public bx_pci_device_stub_c {
 public:
-  bx_pcivga_c(void);
-  ~bx_pcivga_c(void);
-  virtual void   init(void);
-  virtual void   reset(unsigned type);
+  bx_pcivga_c();
+  virtual ~bx_pcivga_c();
+  virtual void init(void);
+  virtual void reset(unsigned type);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+#endif
+
+  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
+  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
 private:
-
   struct {
     Bit8u pci_conf[256];
   } s;
-
-  static Bit32u pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len);
-  static void   pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len);
-#if !BX_USE_PCIVGA_SMF
-  Bit32u pci_read(Bit8u address, unsigned io_len);
-  void   pci_write(Bit8u address, Bit32u value, unsigned io_len);
-#endif
 };
+
+#endif

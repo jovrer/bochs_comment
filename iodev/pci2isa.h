@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.h,v 1.9 2004/09/25 22:15:02 vruppert Exp $
+// $Id: pci2isa.h,v 1.14 2006/08/21 21:29:16 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,6 +25,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
+#ifndef BX_IODEV_PIC2ISA_H
+#define BX_IODEV_PIC2ISA_H
+
 #if BX_USE_P2I_SMF
 #  define BX_P2I_SMF  static
 #  define BX_P2I_THIS thePci2IsaBridge->
@@ -34,14 +37,20 @@
 #endif
 
 
-class bx_pci2isa_c : public bx_pci2isa_stub_c {
-
+class bx_piix3_c : public bx_pci2isa_stub_c {
 public:
-  bx_pci2isa_c(void);
-  ~bx_pci2isa_c(void);
-  virtual void   init(void);
-  virtual void   reset(unsigned type);
-  virtual void   pci_set_irq(Bit8u devfunc, unsigned line, bx_bool level);
+  bx_piix3_c();
+  virtual ~bx_piix3_c();
+  virtual void init(void);
+  virtual void reset(unsigned type);
+  virtual void pci_set_irq(Bit8u devfunc, unsigned line, bx_bool level);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+  virtual void after_restore_state(void);
+#endif
+
+  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
+  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
 private:
 
@@ -49,22 +58,22 @@ private:
     Bit8u pci_conf[256];
     Bit8u elcr1;
     Bit8u elcr2;
+    Bit8u apmc;
+    Bit8u apms;
     Bit8u irq_registry[16];
     Bit32u irq_level[16];
     Bit8u pci_reset;
-    } s;
+  } s;
 
   static void pci_register_irq(unsigned pirq, unsigned irq);
   static void pci_unregister_irq(unsigned pirq);
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
-  static Bit32u pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len);
-  static void   pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len);
 #if !BX_USE_P2I_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
-  Bit32u pci_read(Bit8u address, unsigned io_len);
-  void   pci_write(Bit8u address, Bit32u value, unsigned io_len);
 #endif
-  };
+};
+
+#endif

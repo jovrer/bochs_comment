@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_vde.cc,v 1.11 2005/12/10 18:37:35 vruppert Exp $
+// $Id: eth_vde.cc,v 1.13 2006/08/05 14:42:47 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  Renzo Davoli
@@ -41,18 +41,22 @@
 #include <sys/poll.h>
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <asm/types.h>
 #include <sys/socket.h>
+#if defined(__linux__)
+#include <asm/types.h>
+#include <linux/netlink.h>
+#include <linux/if.h>
+#elif BX_HAVE_NET_IF_H
+#include <net/if.h>
+#endif
 #include <sys/uio.h>
 #include <sys/wait.h>
 #include <sys/un.h>
-#include <linux/netlink.h>
-#include <linux/if.h>
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <unistd.h>
-#include <stdint.h>
+#include <inttypes.h>
 
 #define SWITCH_MAGIC 0xfeedface
 

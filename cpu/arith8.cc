@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith8.cc,v 1.37 2005/07/21 01:59:03 sshwarts Exp $
+// $Id: arith8.cc,v 1.39 2006/03/26 18:58:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -44,7 +45,7 @@ void BX_CPU_C::ADD_EbGb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
     sum = op1 + op2;
-    Write_RMW_virtual_byte(sum);
+    write_RMW_virtual_byte(sum);
   }
 
   SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_INSTR_ADD8);
@@ -97,7 +98,7 @@ void BX_CPU_C::ADC_EbGb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
     sum = op1 + op2 + temp_CF;
-    Write_RMW_virtual_byte(sum);
+    write_RMW_virtual_byte(sum);
   }
 
   SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_INSTR_ADD_ADC8(temp_CF));
@@ -152,7 +153,7 @@ void BX_CPU_C::SBB_EbGb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
     diff_8 = op1_8 - (op2_8 + temp_CF);
-    Write_RMW_virtual_byte(diff_8);
+    write_RMW_virtual_byte(diff_8);
   }
 
   SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_INSTR_SUB_SBB8(temp_CF));
@@ -207,7 +208,7 @@ void BX_CPU_C::SBB_EbIb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
     diff_8 = op1_8 - (op2_8 + temp_CF);
-    Write_RMW_virtual_byte(diff_8);
+    write_RMW_virtual_byte(diff_8);
   }
 
   SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_INSTR_SUB_SBB8(temp_CF));
@@ -227,7 +228,7 @@ void BX_CPU_C::SUB_EbGb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
     diff_8 = op1_8 - op2_8;
-    Write_RMW_virtual_byte(diff_8);
+    write_RMW_virtual_byte(diff_8);
   }
 
   SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_INSTR_SUB8);
@@ -352,7 +353,7 @@ void BX_CPU_C::XADD_EbGb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
     sum = op1 + op2;
-    Write_RMW_virtual_byte(sum);
+    write_RMW_virtual_byte(sum);
     /* and write destination into source */
     BX_WRITE_8BIT_REGx(i->nnn(), i->extend8bitL(), op1);
   }
@@ -378,7 +379,7 @@ void BX_CPU_C::ADD_EbIb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
     sum = op1 + op2;
-    Write_RMW_virtual_byte(sum);
+    write_RMW_virtual_byte(sum);
   }
 
   SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_INSTR_ADD8);
@@ -399,7 +400,7 @@ void BX_CPU_C::ADC_EbIb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
     sum = op1 + op2 + temp_CF;
-    Write_RMW_virtual_byte(sum);
+    write_RMW_virtual_byte(sum);
   }
 
   SET_FLAGS_OSZAPC_8(op1, op2, sum, BX_INSTR_ADD_ADC8(temp_CF));
@@ -419,7 +420,7 @@ void BX_CPU_C::SUB_EbIb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
     diff_8 = op1_8 - op2_8;
-    Write_RMW_virtual_byte(diff_8);
+    write_RMW_virtual_byte(diff_8);
   }
 
   SET_FLAGS_OSZAPC_8(op1_8, op2_8, diff_8, BX_INSTR_SUB8);
@@ -460,7 +461,7 @@ void BX_CPU_C::NEG_Eb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
     diff_8 = -op1_8;
-    Write_RMW_virtual_byte(diff_8);
+    write_RMW_virtual_byte(diff_8);
   }
 
   SET_FLAGS_OSZAPC_RESULT_8(diff_8, BX_INSTR_NEG8);
@@ -478,7 +479,7 @@ void BX_CPU_C::INC_Eb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1);
     op1++;
-    Write_RMW_virtual_byte(op1);
+    write_RMW_virtual_byte(op1);
   }
 
   SET_FLAGS_OSZAP_RESULT_8(op1, BX_INSTR_INC8);
@@ -496,7 +497,7 @@ void BX_CPU_C::DEC_Eb(bxInstruction_c *i)
   else {
     read_RMW_virtual_byte(i->seg(), RMAddr(i), &op1_8);
     op1_8--;
-    Write_RMW_virtual_byte(op1_8);
+    write_RMW_virtual_byte(op1_8);
   }
 
   SET_FLAGS_OSZAP_RESULT_8(op1_8, BX_INSTR_DEC8);
@@ -526,7 +527,7 @@ void BX_CPU_C::CMPXCHG_EbGb(bxInstruction_c *i)
       BX_WRITE_8BIT_REGx(i->rm(), i->extend8bitL(), op2_8);
     }
     else {
-      Write_RMW_virtual_byte(op2_8);
+      write_RMW_virtual_byte(op2_8);
     }
   }
   else {

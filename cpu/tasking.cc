@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: tasking.cc,v 1.29 2006/01/16 19:22:28 sshwarts Exp $
+// $Id: tasking.cc,v 1.36 2006/08/25 19:56:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -28,6 +28,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -134,7 +135,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   unsigned exception_no = 256; // no exception
   Bit16u error_code = 0;
 
-  BX_DEBUG(( "TASKING: ENTER" ));
+  BX_DEBUG(("TASKING: ENTER"));
 
   invalidate_prefetch_q();
 
@@ -164,27 +165,23 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   // Gather info about old TSS
   if (BX_CPU_THIS_PTR tr.cache.type <= 3) {
     // sanity check type: cannot have busy bit
-    obase32 = BX_CPU_THIS_PTR tr.cache.u.tss286.base;
-    old_TSS_max   = 43;
-    old_TSS_limit = BX_CPU_THIS_PTR tr.cache.u.tss286.limit;
+    old_TSS_max = 43;
   }
   else {
-    obase32 = BX_CPU_THIS_PTR tr.cache.u.tss386.base;
-    old_TSS_max   = 103;
-    old_TSS_limit = BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled;
+    old_TSS_max = 103;
   }
-
   // Gather info about new TSS
   if (tss_descriptor->type <= 3) { // {1,3}
-    nbase32 = tss_descriptor->u.tss286.base; // new TSS.base
-    new_TSS_max   = 43;
-    new_TSS_limit = tss_descriptor->u.tss286.limit;
+    new_TSS_max = 43;
   }
   else { // tss_descriptor->type = {9,11}
-    nbase32 = tss_descriptor->u.tss386.base; // new TSS.base
-    new_TSS_max   = 103;
-    new_TSS_limit = tss_descriptor->u.tss386.limit_scaled;
+    new_TSS_max = 103;
   }
+
+  obase32 = BX_CPU_THIS_PTR tr.cache.u.tss.base;        // old TSS.base
+  old_TSS_limit = BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled;
+  nbase32 = tss_descriptor->u.tss.base;                 // new TSS.base
+  new_TSS_limit = tss_descriptor->u.tss.limit_scaled;
 
   // TSS must have valid limit, else #TS(TSS selector)
   if (tss_selector->ti || tss_descriptor->valid==0 ||
@@ -474,6 +471,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   // with values only as they are validated.
   BX_CPU_THIS_PTR ldtr.cache.valid = 0;
   BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit = 0;
+  BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit_scaled = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].cache.valid = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid = 0;
@@ -560,7 +558,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
 
       // CS descriptor AR byte must indicate code segment else #TS(CS)
       if (cs_descriptor.valid==0 || cs_descriptor.segment==0 ||
-          cs_descriptor.u.segment.executable==0)
+          IS_DATA_SEGMENT(cs_descriptor.type))
       {
         BX_PANIC(("task_switch: CS not valid executable seg"));
         exception_no = BX_TS_EXCEPTION;
@@ -569,8 +567,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
       }
 
       // if non-conforming then DPL must equal selector RPL else #TS(CS)
-      if (cs_descriptor.u.segment.c_ed==0 &&
-          cs_descriptor.dpl!=cs_selector.rpl)
+      if (IS_CODE_SEGMENT_NON_CONFORMING(cs_descriptor.type) &&
+          cs_descriptor.dpl != cs_selector.rpl)
       {
         BX_INFO(("task_switch: non-conforming: CS.dpl!=CS.RPL"));
         exception_no = BX_TS_EXCEPTION;
@@ -579,8 +577,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
       }
 
       // if conforming then DPL must be <= selector RPL else #TS(CS)
-      if (cs_descriptor.u.segment.c_ed &&
-               cs_descriptor.dpl>cs_selector.rpl)
+      if (IS_CODE_SEGMENT_CONFORMING(cs_descriptor.type) &&
+          cs_descriptor.dpl > cs_selector.rpl)
       {
         BX_INFO(("task_switch: conforming: CS.dpl>RPL"));
         exception_no = BX_TS_EXCEPTION;
@@ -607,8 +605,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
       goto post_exception;
     }
 
-#if BX_SUPPORT_ICACHE  // update instruction cache
-    BX_CPU_THIS_PTR iCache.fetchModeMask = createFetchModeMask(BX_CPU_THIS);
+#if BX_SUPPORT_ICACHE
+    BX_CPU_THIS_PTR updateFetchModeMask();
 #endif
 
     // SS
@@ -627,8 +625,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
       // SS descriptor AR byte must must indicate writable data segment,
       // else #TS(SS)
       if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
-          ss_descriptor.u.segment.executable ||
-          ss_descriptor.u.segment.r_w==0)
+           IS_CODE_SEGMENT(ss_descriptor.type) ||
+          !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
       {
         BX_INFO(("task_switch: SS not valid"));
         exception_no = BX_TS_EXCEPTION;
@@ -709,7 +707,7 @@ void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
   Bit32u dword1, dword2;
 
   // NULL selector is OK, will leave cache invalid
-  if ( (raw_selector & 0xfffc) != 0 )
+  if ((raw_selector & 0xfffc) != 0)
   {
     bx_bool good = fetch_raw_descriptor2(selector, &dword1, &dword2);
     if (!good) {
@@ -719,19 +717,23 @@ void BX_CPU_C::task_switch_load_selector(bx_segment_reg_t *seg,
 
     parse_descriptor(dword1, dword2, &descriptor);
 
-    if (descriptor.valid==0 || descriptor.segment==0 ||
-       (descriptor.u.segment.executable &&
-        descriptor.u.segment.r_w==0))
+    /* AR byte must indicate data or readable code segment else #TS(selector) */
+    if (descriptor.segment==0 || (IS_CODE_SEGMENT(descriptor.type) && 
+        IS_CODE_SEGMENT_READABLE(descriptor.type) == 0))
     {
-      BX_ERROR(("task_switch(%s): not a writeable data segment !", strseg(seg)));
+      BX_ERROR(("task_switch(%s): not data or readable code !", strseg(seg)));
       exception(BX_TS_EXCEPTION, raw_selector & 0xfffc, 0);
     }
 
-    if (descriptor.type < 12 &&
-            (descriptor.dpl < cs_rpl || descriptor.dpl < selector->rpl))
+    /* If data or non-conforming code, then both the RPL and the CPL
+     * must be less than or equal to DPL in AR byte else #GP(selector) */
+    if (IS_DATA_SEGMENT(descriptor.type) ||
+        IS_CODE_SEGMENT_NON_CONFORMING(descriptor.type))
     {
-      BX_ERROR(("task_switch(%s): descriptor DPL check failed !", strseg(seg)));
-      exception(BX_TS_EXCEPTION, raw_selector & 0xfffc, 0);
+      if ((selector->rpl > descriptor.dpl) || (cs_rpl > descriptor.dpl)) {
+        BX_ERROR(("load_seg_reg(%s): RPL & CPL must be <= DPL", strseg(seg)));
+        exception(BX_TS_EXCEPTION, raw_selector & 0xfffc, 0);
+      }
     }
 
     if (! IS_PRESENT(descriptor)) {
@@ -752,24 +754,26 @@ void BX_CPU_C::get_SS_ESP_from_TSS(unsigned pl, Bit16u *ss, Bit32u *esp)
   if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_386_TSS) {
     // 32-bit TSS
     Bit32u TSSstackaddr = 8*pl + 4;
-    if ( (TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled )
+    if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled) {
+      BX_DEBUG(("get_SS_ESP_from_TSS(386): TSSstackaddr > TSS.LIMIT"));
       exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
-
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base +
+    }
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
       TSSstackaddr+4, 2, 0, BX_READ, ss);
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base +
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
       TSSstackaddr,   4, 0, BX_READ, esp);
   }
   else if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_286_TSS) {
     // 16-bit TSS
     Bit16u temp16;
     Bit32u TSSstackaddr = 4*pl + 2;
-    if ( (TSSstackaddr+4) > BX_CPU_THIS_PTR tr.cache.u.tss286.limit )
+    if ((TSSstackaddr+4) > BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled) {
+      BX_DEBUG(("get_SS_ESP_from_TSS(286): TSSstackaddr > TSS.LIMIT"));
       exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
-
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss286.base +
+    }
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
       TSSstackaddr+2, 2, 0, BX_READ, ss);
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss286.base +
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
       TSSstackaddr,   2, 0, BX_READ, &temp16);
     *esp = temp16; // truncate
   }
@@ -787,12 +791,13 @@ void BX_CPU_C::get_RSP_from_TSS(unsigned pl, Bit64u *rsp)
 
   // 32-bit TSS
   Bit32u TSSstackaddr = 8*pl + 4;
-  if ( (TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled )
-    exception(BX_TS_EXCEPTION,
-              BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
+  if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled) {
+    BX_DEBUG(("get_RSP_from_TSS(): TSSstackaddr > TSS.LIMIT"));
+    exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
+  }
 
-  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base +
-    TSSstackaddr,   8, 0, BX_READ, rsp);
+  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
+    TSSstackaddr, 8, 0, BX_READ, rsp);
 }
 #endif  // #if BX_SUPPORT_X86_64
 

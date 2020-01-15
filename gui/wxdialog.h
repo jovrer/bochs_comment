@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h,v 1.56 2005/11/25 16:24:47 vruppert Exp $
+// $Id: wxdialog.h,v 1.64 2006/03/26 15:52:31 vruppert Exp $
 ////////////////////////////////////////////////////////////////////
 //
 // wxWidgets dialogs for Bochs
@@ -9,20 +9,20 @@
 ////////////////////////////////////////////////////////////////////
 // text messages used in several places
 ////////////////////////////////////////////////////////////////////
-#define MSG_NO_HELP "No help is available yet."
-#define MSG_NO_HELP_CAPTION "No help"
-#define MSG_ENABLED "Enabled"
-#define BTNLABEL_HELP "Help"
-#define BTNLABEL_CANCEL "Cancel"
-#define BTNLABEL_OK "Ok"
-#define BTNLABEL_CREATE_IMG "Create Image"
-#define BTNLABEL_BROWSE "<--Browse"
-#define BTNLABEL_DEBUG_CONTINUE "Continue"
-#define BTNLABEL_DEBUG_STOP "Stop"
-#define BTNLABEL_DEBUG_STEP "Step"
-#define BTNLABEL_DEBUG_COMMIT "Commit"
-#define BTNLABEL_CLOSE "Close"
-#define BTNLABEL_EXECUTE "Execute"
+#define MSG_NO_HELP wxT("No help is available yet.")
+#define MSG_NO_HELP_CAPTION wxT("No help")
+#define MSG_ENABLED wxT("Enabled")
+#define BTNLABEL_HELP wxT("Help")
+#define BTNLABEL_CANCEL wxT("Cancel")
+#define BTNLABEL_OK wxT("Ok")
+#define BTNLABEL_CREATE_IMG wxT("Create Image")
+#define BTNLABEL_BROWSE wxT("<--Browse")
+#define BTNLABEL_DEBUG_CONTINUE wxT("Continue")
+#define BTNLABEL_DEBUG_STOP wxT("Stop")
+#define BTNLABEL_DEBUG_STEP wxT("Step")
+#define BTNLABEL_DEBUG_COMMIT wxT("Commit")
+#define BTNLABEL_CLOSE wxT("Close")
+#define BTNLABEL_EXECUTE wxT("Execute")
 
 #if defined(WIN32)
 // On win32, apparantly the spinctrl depends on a native control which only
@@ -34,14 +34,14 @@
 #endif
 
 // utility function prototype
-void ChangeStaticText (wxSizer *sizer, wxStaticText *win, wxString newtext);
-bool CreateImage (int harddisk, int sectors, const char *filename);
-void SetTextCtrl (wxTextCtrl *text, const char *format, int val);
-int GetTextCtrlInt (wxTextCtrl *text, bool *valid = NULL, bool complain=false, wxString complaint = "Invalid integer!");
-bool BrowseTextCtrl (wxTextCtrl *text,
-    wxString prompt="Choose a file",
+void ChangeStaticText(wxSizer *sizer, wxStaticText *win, wxString newtext);
+bool CreateImage(int harddisk, int sectors, const char *filename);
+void SetTextCtrl(wxTextCtrl *text, const char *format, int val);
+int GetTextCtrlInt(wxTextCtrl *text, bool *valid = NULL, bool complain=false, wxString complaint = wxT("Invalid integer!"));
+bool BrowseTextCtrl(wxTextCtrl *text,
+    wxString prompt= wxT("Choose a file"),
     long style=wxOPEN);
-wxChoice *makeLogOptionChoiceBox (wxWindow *parent, wxWindowID id, int evtype, bool includeNoChange = false);
+wxChoice *makeLogOptionChoiceBox(wxWindow *parent, wxWindowID id, int evtype, bool includeNoChange = false);
 
 ////////////////////////////////////////////////////////////////////
 // LogMsgAskDialog is a modal dialog box that shows the user a
@@ -75,27 +75,27 @@ public:
 #define LOG_MSG_ASK_IDS \
   { ID_Continue, ID_Die, ID_DumpCore, ID_Debugger, wxHELP }
 #define LOG_MSG_ASK_NAMES \
-  { "Continue", "Kill Sim", "Dump Core", "Debugger", "Help" }
+  { wxT("Continue"), wxT("Kill Sim"), wxT("Dump Core"), wxT("Debugger"), wxT("Help") }
 #define LOG_MSG_DONT_ASK_STRING \
-  "Don't ask about future messages like this"
-#define LOG_MSG_CONTEXT "Context: %s"
-#define LOG_MSG_MSG "Message: %s"
+  wxT("Don't ask about future messages like this")
+#define LOG_MSG_CONTEXT wxT("Context: %s")
+#define LOG_MSG_MSG wxT("Message: %s")
 private:
   wxStaticText *context, *message;
   wxCheckBox *dontAsk;
   bool enabled[N_BUTTONS];
   wxBoxSizer *btnSizer, *vertSizer;
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
+  void Init();  // called automatically by ShowModal()
+  void ShowHelp();
 public:
   LogMsgAskDialog(wxWindow* parent,
       wxWindowID id,
       const wxString& title);
-  void EnableButton (button_t btn, bool en) { enabled[(int)btn] = en; }
-  void SetContext (wxString s);
-  void SetMessage (wxString s);
-  bool GetDontAsk () { return dontAsk->GetValue (); }
-  void OnEvent (wxCommandEvent& event);
+  void EnableButton(button_t btn, bool en) { enabled[(int)btn] = en; }
+  void SetContext(wxString s);
+  void SetMessage(wxString s);
+  bool GetDontAsk() { return dontAsk->GetValue(); }
+  void OnEvent(wxCommandEvent& event);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
 DECLARE_EVENT_TABLE()
 };
@@ -122,7 +122,7 @@ DECLARE_EVENT_TABLE()
 // |                   [ Help ] [ Cancel ] [ Create Image ] [ Ok ] |
 // +---------------------------------------------------------------+
 // To use this dialog:
-// After constructor, use AddRadio () to add radio buttons, SetFilename()
+// After constructor, use AddRadio() to add radio buttons, SetFilename()
 // to fill in the disk image filename, SetCapacity() to set the capacity. 
 // Then call ShowModal() to display it.  Return value is wxID_OK or
 // wxID_CANCEL.  If you set a validation function, then it will be called when
@@ -168,15 +168,15 @@ DECLARE_EVENT_TABLE()
 class FloppyConfigDialog: public wxDialog
 {
 public:
-#define FLOPPY_CONFIG_TITLE "Configure %s"
-#define FLOPPY_CONFIG_INSTRS "Select the device or image to use when simulating %s."
-#define FLOPPY_CONFIG_CAP "What is the capacity of this disk?"
-#define FLOPPY_CONFIG_HINT "To create a disk image, choose the file name and capacity, then click on \"Create Image\".\n\n" \
-                           "Clicking OK signals a media change for this drive."
-#define FLOPPY_CONFIG_DISKIMG "Disk image: "
+#define FLOPPY_CONFIG_TITLE wxT("Configure %s")
+#define FLOPPY_CONFIG_INSTRS wxT("Select the device or image to use when simulating %s.")
+#define FLOPPY_CONFIG_CAP wxT("What is the capacity of this disk?")
+#define FLOPPY_CONFIG_HINT wxT("To create a disk image, choose the file name and capacity, then click on \"Create Image\".\n\n" \
+                           "Clicking OK signals a media change for this drive.")
+#define FLOPPY_CONFIG_DISKIMG wxT("Disk image: ")
 private:
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
+  void Init();  // called automatically by ShowModal()
+  void ShowHelp();
   wxStaticText *instr;
 #define FLOPPY_MAX_RBTNS 4
   wxRadioButton *rbtn[FLOPPY_MAX_RBTNS];
@@ -191,98 +191,21 @@ private:
   validateFunc_t validate;
 public:
   FloppyConfigDialog(wxWindow* parent, wxWindowID id);
-  void OnEvent (wxCommandEvent& event);
-  void OnTextEvent (wxCommandEvent& event);
+  void OnEvent(wxCommandEvent& event);
+  void OnTextEvent(wxCommandEvent& event);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void SetRadio (int val);
-  void SetFilename (wxString f);
+  void SetRadio(int val);
+  void SetFilename(wxString f);
   // Use char* instead of wxString because the array we use is already
   // expressed as a char *[].
-  void SetCapacityChoices (int n, char *choices[]);
-  void SetCapacity (int cap);
-  int GetRadio ();
-  int GetCapacity () { return capacity->GetSelection (); }
-  wxString GetFilename ();
-  void SetDriveName (wxString name);
-  void SetValidateFunc (validateFunc_t v) { validate = v; }
-  void AddRadio (const wxString& description, const wxString& filename);
-DECLARE_EVENT_TABLE()
-};
-
-
-////////////////////////////////////////////////////////////////////////////
-// LogOptionsDialog
-////////////////////////////////////////////////////////////////////////////
-// LogOptionsDialog allows the user to decide how Bochs will
-// behave for each type of log event.
-//
-// +---- Configure events -----------------------------------+
-// |                                                         |
-// | Log file is [_____________________________]  [ Browse ] |
-// |                                                         |
-// | How should Bochs respond to each type of event?         |
-// |                                                         |
-// |            Debug events: [ignore]                       |
-// |             Info events: [ignore]                       |
-// |            Error events: [report]                       |
-// |            Panic events: [ask   ]                       |
-// |                                                         |
-// | For additional control over how each device responds    |
-// | to events, use the menu option "Log ... By Device".     |
-// |                                                         |
-// | Debugger log file is [____________________]  [ Browse ] |
-// |                                                         |
-// |                [ Advanced ]  [ Help ] [ Cancel ] [ Ok ] |
-// +---------------------------------------------------------+
-// To use this dialog:
-// After constructor, call SetAction(eventtype, action) to set initial
-// value for each choice field.  The eventtype is 0 to LOG_OPTS_N_TYPES-1,
-// representing the types listed in LOG_OPTS_TYPE_NAMES.  The choice field is 0
-// to LOG_OPTS_N_CHOICES-1, representing the actions listed in
-// LOG_OPTS_CHOICES.  Then call ShowModal(), which will return wxID_OK or
-// wxID_CANCEL.  Afterward, the GetAction(eventtype) method will tell what was
-// selected in each choice box.  
-class LogOptionsDialog: public wxDialog
-{
-private:
-#define LOG_OPTS_TITLE "Configure Log Events"
-#define LOG_OPTS_LOGFILE "Log file is "
-#define LOG_OPTS_DEBUGGER_LOGFILE "Debugger log file is "
-#define LOG_OPTS_PROMPT "How should Bochs respond to each type of event?"
-#define LOG_OPTS_TYPE_NAMES { "Debug events: ", "Info events: ", "Error events: ", "Panic events: ", "Pass events: " }
-#define LOG_OPTS_N_TYPES 5
-#define LOG_OPTS_CHOICES { "ignore", "log", "ask user", "end simulation", "no change" }
-#define LOG_OPTS_N_CHOICES_NORMAL 4
-#define LOG_OPTS_N_CHOICES 5   // number of choices, including "no change"
-#define LOG_OPTS_NO_CHANGE 4   // index of "no change"
-// normally all choices are available for all event types. The exclude 
-// expression allows some choices to be eliminated if they don't make any 
-// sense.  For example, it would be stupid to ignore a panic.
-#define LOG_OPTS_EXCLUDE(type,choice)  ( \
-   /* can't die or ask, on debug or info events */   \
-   (type <= 1 && (choice==2 || choice==3)) \
-   /* can't ignore panics or errors */ \
-   || (type >= 2 && choice==0) \
-   )
-#define LOG_OPTS_ADV "For additional control over how each device responds to events, use the menu option \"Log ... By Device\"."
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
-  wxBoxSizer *vertSizer, *logfileSizer, *debuggerlogfileSizer, *buttonSizer;
-  wxFlexGridSizer *gridSizer;
-  wxButton *applyDefault;
-  wxTextCtrl *logfile;
-  wxTextCtrl *debuggerlogfile;
-  wxChoice *action[LOG_OPTS_N_TYPES];
-public:
-  LogOptionsDialog(wxWindow* parent, wxWindowID id);
-  void OnEvent (wxCommandEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  int GetAction (int evtype);
-  void SetAction (int evtype, int action);
-  void SetLogfile (wxString f) { logfile->SetValue (f); }
-  void SetDebuggerlogfile (wxString f) { debuggerlogfile->SetValue (f); }
-  wxString GetLogfile () { return logfile->GetValue (); }
-  wxString GetDebuggerlogfile () { return debuggerlogfile->GetValue (); }
+  void SetCapacityChoices(int n, char *choices[]);
+  void SetCapacity(int cap);
+  int GetRadio();
+  int GetCapacity() { return capacity->GetSelection(); }
+  wxString GetFilename();
+  void SetDriveName(wxString name);
+  void SetValidateFunc(validateFunc_t v) { validate = v; }
+  void AddRadio(const wxString& description, const wxString& filename);
 DECLARE_EVENT_TABLE()
 };
 
@@ -316,22 +239,22 @@ DECLARE_EVENT_TABLE()
 class AdvancedLogOptionsDialog: public wxDialog
 {
 private:
-#define ADVLOG_OPTS_TITLE "Configure Log Events"
-#define ADVLOG_OPTS_LOGFILE LOG_OPTS_LOGFILE
-#define ADVLOG_OPTS_PROMPT                                                    \
+#define ADVLOG_OPTS_TITLE wxT("Configure Log Events")
+#define ADVLOG_OPTS_LOGFILE wxT("Log file")
+#define ADVLOG_OPTS_PROMPT wxT(                                               \
 "This table determines how Bochs will respond to each kind of event coming\n" \
 "from a particular source.  For example if you are having problems with\n"    \
 "the keyboard, you could ask for debug and info events from the keyboard\n"   \
-"to be reported."
-#define ADVLOG_OPTS_TYPE_NAMES { "Debug", "Info", "Error", "Panic", "Pass" }
+"to be reported.")
+#define ADVLOG_OPTS_TYPE_NAMES { wxT("Debug"), wxT("Info"), wxT("Error"), wxT("Panic"), wxT("Pass") }
 #define ADVLOG_OPTS_N_TYPES 5
-#define ADVLOG_DEFAULTS "Use defaults for all devices"
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
+#define ADVLOG_DEFAULTS wxT("Use defaults for all devices")
+  void Init();  // called automatically by ShowModal()
+  void ShowHelp();
   wxBoxSizer *vertSizer, *logfileSizer, *buttonSizer;
   wxScrolledWindow *scrollWin;
   wxPanel *scrollPanel;
-  wxGridSizer *gridSizer;
+  wxGridSizer *headerSizer, *gridSizer;
   wxTextCtrl *logfile;
   wxButton *applyDefault;
   // 2d array of wxChoice pointers. Each wxChoice* is action[dev][type].
@@ -339,14 +262,14 @@ private:
 public:
   AdvancedLogOptionsDialog(wxWindow* parent, wxWindowID id);
   ~AdvancedLogOptionsDialog();
-  void OnEvent (wxCommandEvent& event);
+  void OnEvent(wxCommandEvent& event);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void SetLogfile (wxString f) { logfile->SetValue (f); }
-  wxString GetLogfile () { return logfile->GetValue (); }
-  void CopyParamToGui ();
-  void CopyGuiToParam ();
-  void SetAction (int dev, int evtype, int act);
-  int GetAction (int dev, int evtype);
+  void SetLogfile(wxString f) { logfile->SetValue(f); }
+  wxString GetLogfile() { return logfile->GetValue(); }
+  void CopyParamToGui();
+  void CopyGuiToParam();
+  void SetAction(int dev, int evtype, int act);
+  int GetAction(int dev, int evtype);
 DECLARE_EVENT_TABLE()
 };
 
@@ -378,8 +301,8 @@ DECLARE_EVENT_TABLE()
 class DebugLogDialog: public wxDialog
 {
 private:
-#define DEBUG_LOG_TITLE "Debugger log"
-#define DEBUG_CMD_PROMPT "Type a debugger command:"
+#define DEBUG_LOG_TITLE wxT("Debugger log")
+#define DEBUG_CMD_PROMPT wxT("Type a debugger command:")
   wxBoxSizer *mainSizer, *commandSizer, *buttonSizer;
   wxTextCtrl *log, *command;
   Bit32u lengthMax;
@@ -388,16 +311,16 @@ private:
 #define DEBUG_LOG_DEFAULT_TOLERANCE (200*80)
 public:
   DebugLogDialog(wxWindow* parent, wxWindowID id);
-  void Init ();  // called automatically by ShowModal()
-  void OnEvent (wxCommandEvent& event);
-  void OnEnterEvent (wxCommandEvent& event) { Execute(true); }
-  void OnKeyEvent (wxKeyEvent& event);
+  void Init();  // called automatically by ShowModal()
+  void OnEvent(wxCommandEvent& event);
+  void OnEnterEvent(wxCommandEvent& event) { Execute(true); }
+  void OnKeyEvent(wxKeyEvent& event);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void Execute (bool clearCommand);
-  void CheckLogLength ();
-  void AppendCommand (const char *);
-  void AppendText (wxString text);
-  void CopyParamToGui () { /* empty for now */ }
+  void Execute(bool clearCommand);
+  void CheckLogLength();
+  void AppendCommand(const char *);
+  void AppendText(wxString text);
+  void CopyParamToGui() { /* empty for now */ }
 DECLARE_EVENT_TABLE()
 };
 #endif
@@ -458,12 +381,12 @@ struct AddParamContext {
 class ParamDialog: public wxDialog 
 {
 private:
-  void ShowHelp ();
+  void ShowHelp();
   wxChoice *type;
   wxTextCtrl *serialDelay, *pasteDelay, *mappingFile;
   wxCheckBox *enableKeymap;
-  int genId ();
-  bool isGeneratedId (int id);
+  int genId();
+  bool isGeneratedId(int id);
   bool isShowing;
   int nbuttons;
   bool runtime;
@@ -473,21 +396,23 @@ protected:
   // wxTextCtrl) to the associated ParamStruct object.  Data in the hash table
   // is of ParamStruct*.
   wxHashTable *idHash;
-  // map parameter ID (BXP_*) onto ParamStruct.
+  // map parameter ID onto ParamStruct.
   wxHashTable *paramHash;
-  virtual void EnableChanged ();
-  void EnableParam (int param_id, bool enabled);
-  void EnumChanged (ParamStruct *pstr);
-  void EnableChangedRecursive (bx_list_c *list, bool en, ParamStruct *pstrOfCheckbox);
-  void EnableChanged (ParamStruct *pstr);
-  bool CopyGuiToParam ();
+  virtual void EnableChanged();
+  void EnableParam(int param_id, bool enabled);
+  void EnableParam(const char *pname, bool enabled);
+  void EnableParam(const char *pname, bx_list_c *base, bool enabled);
+  void EnumChanged(ParamStruct *pstr);
+  void EnableChangedRecursive(bx_list_c *list, bool en, ParamStruct *pstrOfCheckbox);
+  void EnableChanged(ParamStruct *pstr);
+  bool CopyGuiToParam();
 public:
   ParamDialog(wxWindow* parent, wxWindowID id);
   virtual ~ParamDialog();
-  void OnEvent (wxCommandEvent& event);
+  void OnEvent(wxCommandEvent& event);
   wxButton* AddButton(int id, wxString label);
-  virtual void AddDefaultButtons ();
-  virtual void Init ();  // called automatically by ShowModal()
+  virtual void AddDefaultButtons();
+  virtual void Init();  // called automatically by ShowModal()
   int ShowModal() {
     Init(); 
     isShowing = true;
@@ -495,26 +420,51 @@ public:
     isShowing = false;
     return ret;
   }
-  bool Show (bool val) { isShowing = val; return wxDialog::Show (val); }
-  void AddParam (bx_param_c *param, wxFlexGridSizer *sizer, bool plain = false);
-  void AddParam (bx_param_c *param, bool plain = false, AddParamContext *context = NULL);
-  void AddParamList (bx_id *idList, wxFlexGridSizer *sizer = NULL, bool plain = false);
-  virtual void CopyParamToGui ();
-  bool IsShowing () { return isShowing; }
+  bool Show(bool val) { isShowing = val; return wxDialog::Show(val); }
+  void AddParam(bx_param_c *param, wxFlexGridSizer *sizer, bool plain = false);
+  void AddParam(bx_param_c *param, bool plain = false, AddParamContext *context = NULL);
+  void AddParamList(char *nameList[], bx_param_c *base, wxFlexGridSizer *sizer = NULL, bool plain = false);
+  virtual void CopyParamToGui();
+  bool IsShowing() { return isShowing; }
   void SetRuntimeFlag(bool val) { runtime = val; }
 DECLARE_EVENT_TABLE()
 };
 
-class ConfigMemoryDialog : public ParamDialog
+////////////////////////////////////////////////////////////////////////////
+// LogOptionsDialog
+////////////////////////////////////////////////////////////////////////////
+//
+// the new LogOptionsDialog is based on ParamDialog. It allows the user to
+// configure the log file settings and to decide how Bochs will behave for
+// each type of log event.
+class LogOptionsDialog : public ParamDialog
 {
-#define CONFIG_MEMORY_TITLE "Configure Memory"
-#define CONFIG_MEMORY_BOX1_TITLE "Standard Options"
-#define CONFIG_MEMORY_BOX2_TITLE "Optional ROM Images"
 private:
-  wxFlexGridSizer *box1gridSizer, *box2gridSizer;
+#define LOG_OPTS_TITLE wxT("Configure Log Events")
+#define LOG_OPTS_PROMPT wxT("How should Bochs respond to each type of event?")
+#define LOG_OPTS_TYPE_NAMES { wxT("Debug events: "), wxT("Info events: "), wxT("Error events: "), wxT("Panic events: "), wxT("Pass events: ") }
+#define LOG_OPTS_N_TYPES 5
+#define LOG_OPTS_CHOICES { wxT("ignore"), wxT("log"), wxT("ask user"), wxT("end simulation"), wxT("no change") }
+#define LOG_OPTS_N_CHOICES_NORMAL 4
+#define LOG_OPTS_N_CHOICES 5   // number of choices, including "no change"
+#define LOG_OPTS_NO_CHANGE 4   // index of "no change"
+// normally all choices are available for all event types. The exclude 
+// expression allows some choices to be eliminated if they don't make any 
+// sense.  For example, it would be stupid to ignore a panic.
+#define LOG_OPTS_EXCLUDE(type,choice)  ( \
+   /* can't die or ask, on debug or info events */   \
+   (type <= 1 && (choice==2 || choice==3)) \
+   /* can't ignore panics or errors */ \
+   || (type >= 2 && choice==0) \
+   )
+#define LOG_OPTS_ADV wxT("For additional control over how each device responds to events, use the menu option \"Log ... By Device\".")
+  wxFlexGridSizer *gridSizer;
+  wxChoice *action[LOG_OPTS_N_TYPES];
 public:
-  ConfigMemoryDialog(wxWindow* parent, wxWindowID id);
-DECLARE_EVENT_TABLE()
+  LogOptionsDialog(wxWindow* parent, wxWindowID id);
+  int GetAction(int evtype);
+  void SetAction(int evtype, int action);
+  DECLARE_EVENT_TABLE()
 };
 
 ////////////////////////////////////////////////////////////////////////////
@@ -562,56 +512,55 @@ DECLARE_EVENT_TABLE()
 class CpuRegistersDialog : public ParamDialog
 {
 
-#define CPU_REGS_MAIN_REGS1                                             \
-  { BXP_CPU_EAX, BXP_CPU_EBX, BXP_CPU_ECX, BXP_CPU_EDX,                 \
-    BXP_CPU_EBP, BXP_CPU_ESI, BXP_CPU_EDI, BXP_CPU_ESP,                 \
-    BXP_NULL }
-#define CPU_REGS_MAIN_REGS2                                             \
-  { BXP_CPU_EIP, BXP_CPU_SEG_CS, BXP_CPU_SEG_SS, BXP_CPU_SEG_DS,        \
-    BXP_CPU_SEG_ES, BXP_CPU_SEG_FS, BXP_CPU_SEG_GS, BXP_CPU_EFLAGS,     \
-    BXP_NULL }
-#define CPU_REGS_MAIN_REGS3                                             \
-  { BXP_CPU_SEG_LDTR, BXP_CPU_SEG_TR,                                   \
-    BXP_CPU_GDTR_BASE, BXP_CPU_IDTR_LIMIT,                              \
-    BXP_CPU_IDTR_BASE, BXP_CPU_GDTR_LIMIT,                              \
-    BXP_NULL }
-#define CPU_REGS_FLAGS                                                  \
-  { BXP_CPU_EFLAGS_ID, BXP_CPU_EFLAGS_VIP, BXP_CPU_EFLAGS_VIF,          \
-    BXP_CPU_EFLAGS_AC, BXP_CPU_EFLAGS_VM, BXP_CPU_EFLAGS_RF,            \
-    BXP_CPU_EFLAGS_NT, BXP_CPU_EFLAGS_IOPL, BXP_CPU_EFLAGS_OF,          \
-    BXP_CPU_EFLAGS_DF, BXP_CPU_EFLAGS_IF, BXP_CPU_EFLAGS_TF,            \
-    BXP_CPU_EFLAGS_SF, BXP_CPU_EFLAGS_ZF, BXP_CPU_EFLAGS_AF,            \
-    BXP_CPU_EFLAGS_PF, BXP_CPU_EFLAGS_CF, \
-    BXP_NULL }
-#define CPU_REGS_DEBUG_REGS                                             \
-  { BXP_CPU_DR0, BXP_CPU_DR1, BXP_CPU_DR2,                              \
-    BXP_CPU_DR3, BXP_CPU_DR6, BXP_CPU_DR7,                              \
-    BXP_NULL }
-#define CPU_REGS_TEST_REGS                                              \
-  { BXP_CPU_TR3, BXP_CPU_TR4, BXP_CPU_TR5, BXP_CPU_TR6, BXP_CPU_TR7,    \
-    BXP_NULL }
-#define CPU_REGS_CONTROL_REGS                                           \
-  { BXP_CPU_CR0, BXP_CPU_CR1, BXP_CPU_CR2, BXP_CPU_CR3, BXP_CPU_CR4,    \
-    BXP_NULL  }
+#define CPU_REGS_MAIN_REGS1     \
+  { "EAX", "EBX", "ECX", "EDX", \
+    "EBP", "ESI", "EDI", "ESP", \
+    NULL }
+#define CPU_REGS_MAIN_REGS2     \
+  { "EIP", "CS", "SS", "DS"     \
+    "ES", "FS", "GS", "EFLAGS", \
+    NULL }
+#define CPU_REGS_MAIN_REGS3     \
+  { "LDTR", "TR",               \
+    "GDTR_base", "IDTR_limit",  \
+    "IDTR_base", "GDTR_limit",  \
+    NULL }
+#define CPU_REGS_FLAGS          \
+  { "ID", "VIP", "VIF",         \
+    "AC", "VM", "RF",           \
+    "NT", "IOPL", "OF",         \
+    "DF", "IF", "TF",           \
+    "SF", "ZF", "AF",           \
+    "PF", "CF", \
+    NULL }
+#define CPU_REGS_DEBUG_REGS     \
+  { "DR0", "DR1", "DR2",        \
+    "DR3", "DR6", "DR7",        \
+    NULL }
+#define CPU_REGS_TEST_REGS             \
+  { "TR3", "TR4", "TR5", "TR6", "TR7", \
+    NULL }
+#define CPU_REGS_CONTROL_REGS          \
+  { "CR0", "CR1", "CR2", "CR3", "CR4", \
+    NULL  }
 
-  void Init ();  // called automatically by ShowModal()
+  void Init();  // called automatically by ShowModal()
   wxFlexGridSizer *mainRegsSizer, *flagsSizer, *extRegsSizer;
 #define CPU_REGS_MAX_FLAGS 17
-  bx_id flagid[CPU_REGS_MAX_FLAGS];
+  bx_param_c *flagptr[CPU_REGS_MAX_FLAGS];
   int nflags;
 #if BX_DEBUGGER
   wxButton *contButton, *stopButton, *stepButton, *commitButton;
 #endif
-  void stateChanged (bool simRunning);
+  void stateChanged(bool simRunning);
 public:
   CpuRegistersDialog(wxWindow* parent, wxWindowID id);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void AddFlag (bx_id paramId);
-  void OnEvent (wxCommandEvent& event);
-  virtual void CopyParamToGui ();
+  void AddFlag(bx_param_c *param);
+  void OnEvent(wxCommandEvent& event);
+  virtual void CopyParamToGui();
   DECLARE_EVENT_TABLE()
 };
-
 
 
 /**************************************************************************

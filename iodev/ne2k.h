@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.h,v 1.16 2004/09/05 10:30:19 vruppert Exp $
+// $Id: ne2k.h,v 1.21 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -33,6 +33,8 @@
 // to provide a windowed memory region for the chip and a MAC address.
 //
 
+#ifndef BX_IODEV_NE2K
+#define BX_IODEV_NE2K
 
 #if BX_USE_NE2K_SMF
 #  define BX_NE2K_SMF  static
@@ -188,10 +190,10 @@ typedef struct {
     Bit8u  mem[BX_NE2K_MEMSIZ];  // on-chip packet memory
 
     // ne2k internal state
-    Bit32u base_address;
-    int    base_irq;
-    int    tx_timer_index;
-    int    tx_timer_active;
+    Bit32u  base_address;
+    int     base_irq;
+    int     tx_timer_index;
+    bx_bool tx_timer_active;
 
     // pci stuff
     bx_bool pci_enabled;
@@ -201,15 +203,28 @@ typedef struct {
 #endif
 } bx_ne2k_t;
 
-
-
-class bx_ne2k_c : public bx_ne2k_stub_c {
+class bx_ne2k_c : public bx_ne2k_stub_c
+#if BX_SUPPORT_PCI
+  , public bx_pci_device_stub_c
+#endif
+{
 public:
-  bx_ne2k_c(void);
-  ~bx_ne2k_c(void);
+  bx_ne2k_c();
+  virtual ~bx_ne2k_c();
   virtual void init(void);
   virtual void reset(unsigned type);
   virtual void print_info (FILE *file, int page, int reg, int nodups);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+#if BX_SUPPORT_PCI
+  virtual void after_restore_state(void);
+#endif
+#endif
+
+#if BX_SUPPORT_PCI
+  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
+  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+#endif
 
 private:
   bx_ne2k_t s;
@@ -243,16 +258,10 @@ private:
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
-#if BX_SUPPORT_PCI
-  static Bit32u pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len);
-  static void   pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len);
-#endif
 #if !BX_USE_NE2K_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
-#if BX_SUPPORT_PCI
-  Bit32u pci_read(Bit8u address, unsigned io_len);
-  void   pci_write(Bit8u address, Bit32u value, unsigned io_len);
-#endif
 #endif
 };
+
+#endif

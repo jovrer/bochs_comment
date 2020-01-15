@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.cc,v 1.19 2005/11/15 17:19:28 vruppert Exp $
+// $Id: pci_ide.cc,v 1.26 2006/06/14 16:44:33 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -51,12 +51,11 @@ libpci_ide_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
   return(0); // Success
 }
 
-  void
-libpci_ide_LTX_plugin_fini(void)
+void libpci_ide_LTX_plugin_fini(void)
 {
 }
 
-bx_pci_ide_c::bx_pci_ide_c(void)
+bx_pci_ide_c::bx_pci_ide_c()
 {
   put("PIDE");
   settype(PCIIDELOG);
@@ -66,7 +65,7 @@ bx_pci_ide_c::bx_pci_ide_c(void)
   s.bmdma[1].buffer = NULL;
 }
 
-bx_pci_ide_c::~bx_pci_ide_c(void)
+bx_pci_ide_c::~bx_pci_ide_c()
 {
   if (s.bmdma[0].buffer != NULL) {
     delete [] s.bmdma[0].buffer;
@@ -77,15 +76,13 @@ bx_pci_ide_c::~bx_pci_ide_c(void)
   BX_DEBUG(("Exit."));
 }
 
-
-  void
-bx_pci_ide_c::init(void)
+void bx_pci_ide_c::init(void)
 {
   unsigned i;
 
   Bit8u devfunc = BX_PCI_DEVICE(1,1);
-  DEV_register_pci_handlers(this, pci_read_handler, pci_write_handler,
-                            &devfunc, BX_PLUGIN_PCI_IDE, "PIIX3 PCI IDE controller");
+  DEV_register_pci_handlers(this, &devfunc, 
+      BX_PLUGIN_PCI_IDE, "PIIX3 PCI IDE controller");
 
   // register BM-DMA timer
   for (i=0; i<2; i++) {
@@ -113,17 +110,16 @@ bx_pci_ide_c::init(void)
   BX_PIDE_THIS s.bmdma_addr = 0;
 }
 
-  void
-bx_pci_ide_c::reset(unsigned type)
+void bx_pci_ide_c::reset(unsigned type)
 {
   BX_PIDE_THIS s.pci_conf[0x04] = 0x01;
   BX_PIDE_THIS s.pci_conf[0x06] = 0x80;
   BX_PIDE_THIS s.pci_conf[0x07] = 0x02;
-  if (bx_options.ata[0].Opresent->get ()) {
+  if (SIM->get_param_bool(BXPN_ATA0_ENABLED)->get()) {
     BX_PIDE_THIS s.pci_conf[0x40] = 0x00;
     BX_PIDE_THIS s.pci_conf[0x41] = 0x80;
   }
-  if (bx_options.ata[1].Opresent->get ()) {
+  if (SIM->get_param_bool(BXPN_ATA1_ENABLED)->get()) {
     BX_PIDE_THIS s.pci_conf[0x42] = 0x00;
     BX_PIDE_THIS s.pci_conf[0x43] = 0x80;
   }
@@ -139,30 +135,110 @@ bx_pci_ide_c::reset(unsigned type)
   }
 }
 
-  bx_bool
-bx_pci_ide_c::bmdma_present(void)
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_pci_ide_c::register_state(void)
+{
+  char name[6];
+  unsigned i;
+
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pci_ide", "PCI IDE Controller State");
+
+  bx_list_c *pci_conf = new bx_list_c(list, "pci_conf", 256);
+  for (i=0; i<256; i++) {
+    sprintf(name, "0x%02x", i);
+    new bx_shadow_num_c(pci_conf, name, &BX_PIDE_THIS s.pci_conf[i], BASE_HEX);
+  }
+
+  new bx_shadow_data_c(list, "buffer0", BX_PIDE_THIS s.bmdma[0].buffer, 0x20000);
+  new bx_shadow_data_c(list, "buffer1", BX_PIDE_THIS s.bmdma[1].buffer, 0x20000);
+
+  for (i=0; i<2; i++) {
+    sprintf(name, "%d", i);
+    bx_list_c *ctrl = new bx_list_c(list, name, 7);
+    BXRS_PARAM_BOOL(ctrl, cmd_ssbm, BX_PIDE_THIS s.bmdma[i].cmd_ssbm);
+    BXRS_PARAM_BOOL(ctrl, cmd_rwcon, BX_PIDE_THIS s.bmdma[i].cmd_rwcon);
+    BXRS_HEX_PARAM_FIELD(ctrl, status, BX_PIDE_THIS s.bmdma[i].status);
+    BXRS_HEX_PARAM_FIELD(ctrl, dtpr, BX_PIDE_THIS s.bmdma[i].dtpr);
+    BXRS_HEX_PARAM_FIELD(ctrl, prd_current, BX_PIDE_THIS s.bmdma[i].prd_current);
+    BXRS_PARAM_SPECIAL32(ctrl, buffer_top,  
+       BX_PIDE_THIS param_save_handler, BX_PIDE_THIS param_restore_handler);
+    BXRS_PARAM_SPECIAL32(ctrl, buffer_idx,  
+       BX_PIDE_THIS param_save_handler, BX_PIDE_THIS param_restore_handler);
+  }
+}
+
+void bx_pci_ide_c::after_restore_state(void)
+{
+  if (DEV_pci_set_base_io(BX_PIDE_THIS_PTR, read_handler, write_handler,
+                          &BX_PIDE_THIS s.bmdma_addr, &BX_PIDE_THIS s.pci_conf[0x20],
+                          16, &bmdma_iomask[0], "PIIX3 PCI IDE controller"))
+  {
+    BX_INFO(("new BM-DMA address: 0x%04x", BX_PIDE_THIS s.bmdma_addr));
+  }
+}
+
+Bit64s bx_pci_ide_c::param_save_handler(void *devptr, bx_param_c *param, Bit64s val)
+{
+#if !BX_USE_PIDE_SMF
+  bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) devptr;
+  return class_ptr->param_save(param, val);
+}
+
+Bit64s bx_pci_ide_c::param_save(bx_param_c *param, Bit64s val)
+{
+#else
+  UNUSED(devptr);
+#endif // !BX_USE_PIDE_SMF
+  int chan = atoi(param->get_parent()->get_name());
+  if (!strcmp(param->get_name(), "buffer_top")) {
+    val = (Bit32u)(BX_PIDE_THIS s.bmdma[chan].buffer_top - BX_PIDE_THIS s.bmdma[chan].buffer);
+  } else if (!strcmp(param->get_name(), "buffer_idx")) {
+    val = (Bit32u)(BX_PIDE_THIS s.bmdma[chan].buffer_idx - BX_PIDE_THIS s.bmdma[chan].buffer);
+  }
+  return val;
+}
+
+Bit64s bx_pci_ide_c::param_restore_handler(void *devptr, bx_param_c *param, Bit64s val)
+{
+#if !BX_USE_PIDE_SMF
+  bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) devptr;
+  return class_ptr->param_restore(param, val);
+}
+
+Bit64s bx_pci_ide_c::param_restore(bx_param_c *param, Bit64s val)
+{
+#else
+  UNUSED(devptr);
+#endif // !BX_USE_PIDE_SMF
+  int chan = atoi(param->get_parent()->get_name());
+  if (!strcmp(param->get_name(), "buffer_top")) {
+    BX_PIDE_THIS s.bmdma[chan].buffer_top = BX_PIDE_THIS s.bmdma[chan].buffer + val;
+  } else if (!strcmp(param->get_name(), "buffer_idx")) {
+    BX_PIDE_THIS s.bmdma[chan].buffer_idx = BX_PIDE_THIS s.bmdma[chan].buffer + val;
+  }
+  return val;
+}
+#endif
+
+bx_bool bx_pci_ide_c::bmdma_present(void)
 {
   return (BX_PIDE_THIS s.bmdma_addr > 0);
 }
 
-  void
-bx_pci_ide_c::bmdma_set_irq(Bit8u channel)
+void bx_pci_ide_c::bmdma_set_irq(Bit8u channel)
 {
   if (channel < 2) {
     BX_PIDE_THIS s.bmdma[channel].status |= 0x04;
   }
 }
 
-  void
-bx_pci_ide_c::timer_handler(void *this_ptr)
+void bx_pci_ide_c::timer_handler(void *this_ptr)
 {
   bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) this_ptr;
-
   class_ptr->timer();
 }
 
-  void
-bx_pci_ide_c::timer()
+void bx_pci_ide_c::timer()
 {
   int timer_id, count;
   Bit8u channel;
@@ -182,7 +258,7 @@ bx_pci_ide_c::timer()
       (BX_PIDE_THIS s.bmdma[channel].prd_current == 0)) {
     return;
   }
-  BX_MEM_READ_PHYSICAL(BX_PIDE_THIS s.bmdma[channel].prd_current, 8, (Bit8u *)&prd);
+  DEV_MEM_READ_PHYSICAL(BX_PIDE_THIS s.bmdma[channel].prd_current, 8, (Bit8u *)&prd);
   size = prd.size & 0xfffe;
   if (size == 0) {
     size = 0x10000;
@@ -203,12 +279,12 @@ bx_pci_ide_c::timer()
       BX_PIDE_THIS s.bmdma[channel].status |= 0x06;
       return;
     } else {
-      BX_MEM_WRITE_PHYSICAL(prd.addr, size, BX_PIDE_THIS s.bmdma[channel].buffer_idx);
+      DEV_MEM_WRITE_PHYSICAL(prd.addr, size, BX_PIDE_THIS s.bmdma[channel].buffer_idx);
       BX_PIDE_THIS s.bmdma[channel].buffer_idx += size;
     }
   } else {
     BX_DEBUG(("WRITE DMA from addr=0x%08x, size=0x%08x", prd.addr, size));
-    BX_MEM_READ_PHYSICAL(prd.addr, size, BX_PIDE_THIS s.bmdma[channel].buffer_top);
+    DEV_MEM_READ_PHYSICAL(prd.addr, size, BX_PIDE_THIS s.bmdma[channel].buffer_top);
     BX_PIDE_THIS s.bmdma[channel].buffer_top += size;
     count = BX_PIDE_THIS s.bmdma[channel].buffer_top - BX_PIDE_THIS s.bmdma[channel].buffer_idx;
     while (count > 511) {
@@ -232,7 +308,7 @@ bx_pci_ide_c::timer()
     DEV_hd_bmdma_complete(channel);
   } else {
     BX_PIDE_THIS s.bmdma[channel].prd_current += 8;
-    BX_MEM_READ_PHYSICAL(BX_PIDE_THIS s.bmdma[channel].prd_current, 8, (Bit8u *)&prd);
+    DEV_MEM_READ_PHYSICAL(BX_PIDE_THIS s.bmdma[channel].prd_current, 8, (Bit8u *)&prd);
     size = prd.size & 0xfffe;
     if (size == 0) {
       size = 0x10000;
@@ -242,21 +318,17 @@ bx_pci_ide_c::timer()
 }
 
 
-  // static IO port read callback handler
-  // redirects to non-static class handler to avoid virtual functions
+// static IO port read callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  Bit32u
-bx_pci_ide_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+Bit32u bx_pci_ide_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
 #if !BX_USE_PIDE_SMF
   bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) this_ptr;
-
-  return( class_ptr->read(address, io_len) );
+  return class_ptr->read(address, io_len);
 }
 
-
-  Bit32u
-bx_pci_ide_c::read(Bit32u address, unsigned io_len)
+Bit32u bx_pci_ide_c::read(Bit32u address, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -287,11 +359,10 @@ bx_pci_ide_c::read(Bit32u address, unsigned io_len)
 }
 
 
-  // static IO port write callback handler
-  // redirects to non-static class handler to avoid virtual functions
+// static IO port write callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  void
-bx_pci_ide_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
+void bx_pci_ide_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
 #if !BX_USE_PIDE_SMF
   bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) this_ptr;
@@ -299,8 +370,7 @@ bx_pci_ide_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsign
   class_ptr->write(address, value, io_len);
 }
 
-  void
-bx_pci_ide_c::write(Bit32u address, Bit32u value, unsigned io_len)
+void bx_pci_ide_c::write(Bit32u address, Bit32u value, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -340,26 +410,9 @@ bx_pci_ide_c::write(Bit32u address, Bit32u value, unsigned io_len)
 }
 
 
-  // static pci configuration space read callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  Bit32u
-bx_pci_ide_c::pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len)
+// pci configuration space read callback handler
+Bit32u bx_pci_ide_c::pci_read_handler(Bit8u address, unsigned io_len)
 {
-#if !BX_USE_PIDE_SMF
-  bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) this_ptr;
-
-  return( class_ptr->pci_read(address, io_len) );
-}
-
-
-  Bit32u
-bx_pci_ide_c::pci_read(Bit8u address, unsigned io_len)
-{
-#else
-  UNUSED(this_ptr);
-#endif // !BX_USE_PIDE_SMF
-
   Bit32u value = 0;
 
   if (io_len <= 4) {
@@ -373,26 +426,9 @@ bx_pci_ide_c::pci_read(Bit8u address, unsigned io_len)
   }
 }
 
-
-  // static pci configuration space write callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  void
-bx_pci_ide_c::pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len)
+// pci configuration space write callback handler
+void bx_pci_ide_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
-#if !BX_USE_PIDE_SMF
-  bx_pci_ide_c *class_ptr = (bx_pci_ide_c *) this_ptr;
-
-  class_ptr->pci_write(address, value, io_len);
-}
-
-  void
-bx_pci_ide_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
-{
-#else
-  UNUSED(this_ptr);
-#endif // !BX_USE_PIDE_SMF
-
   Bit8u value8, oldval;
   bx_bool bmdma_change = 0;
 

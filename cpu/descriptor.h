@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: descriptor.h,v 1.9 2005/08/01 21:40:14 sshwarts Exp $
+// $Id: descriptor.h,v 1.16 2006/08/25 19:56:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -44,17 +44,18 @@ typedef struct { /* bx_selector_t */
 
 typedef struct
 {
-  bx_bool valid;         // Holds above values, Or'd together.  Used to
-                         // hold only 0 or 1.
 
 #define SegValidCache (0x1)
 #define SegAccessROK  (0x2)
 #define SegAccessWOK  (0x4)
 
+  unsigned valid;        // Holds above values, Or'd together.  Used to
+                         // hold only 0 or 1.
+
   bx_bool p;             /* present */
   Bit8u   dpl;           /* descriptor privilege level 0..3 */
   bx_bool segment;       /* 0 = system/gate, 1 = data/code segment */
-  Bit8u   type;          /* For system & gate descriptors, only
+  Bit8u   type;          /* For system & gate descriptors:
                           *  0 = invalid descriptor (reserved)
                           *  1 = 286 available Task State Segment (TSS)
                           *  2 = LDT descriptor
@@ -72,31 +73,47 @@ typedef struct
                           * 14 = 386 interrupt gate
                           * 15 = 386 trap gate */
 
-#define BX_GATE_TYPE_NONE              (0x0)
-#define BX_SYS_SEGMENT_AVAIL_286_TSS   (0x1)
-#define BX_SYS_SEGMENT_LDT             (0x2)
-#define BX_SYS_SEGMENT_BUSY_286_TSS    (0x3)
-#define BX_286_CALL_GATE               (0x4)
-#define BX_TASK_GATE                   (0x5)
-#define BX_286_INTERRUPT_GATE          (0x6)
-#define BX_286_TRAP_GATE               (0x7)
-                                     /* 0x8 reserved */
-#define BX_SYS_SEGMENT_AVAIL_386_TSS   (0x9)
-                                     /* 0xa reserved */
-#define BX_SYS_SEGMENT_BUSY_386_TSS    (0xb)
-#define BX_386_CALL_GATE               (0xc)
-                                     /* 0xd reserved */
-#define BX_386_INTERRUPT_GATE          (0xe)
-#define BX_386_TRAP_GATE               (0xf)
+// For system & gate descriptors:
+
+#define BX_GATE_TYPE_NONE                       (0x0)
+#define BX_SYS_SEGMENT_AVAIL_286_TSS            (0x1)
+#define BX_SYS_SEGMENT_LDT                      (0x2)
+#define BX_SYS_SEGMENT_BUSY_286_TSS             (0x3)
+#define BX_286_CALL_GATE                        (0x4)
+#define BX_TASK_GATE                            (0x5)
+#define BX_286_INTERRUPT_GATE                   (0x6)
+#define BX_286_TRAP_GATE                        (0x7)
+                                              /* 0x8 reserved */
+#define BX_SYS_SEGMENT_AVAIL_386_TSS            (0x9)
+                                              /* 0xa reserved */
+#define BX_SYS_SEGMENT_BUSY_386_TSS             (0xb)
+#define BX_386_CALL_GATE                        (0xc)
+                                              /* 0xd reserved */
+#define BX_386_INTERRUPT_GATE                   (0xe)
+#define BX_386_TRAP_GATE                        (0xf)
+
+// For data/code descriptors:
+
+#define BX_DATA_READ_ONLY                       (0x0)
+#define BX_DATA_READ_ONLY_ACCESSED              (0x1)
+#define BX_DATA_READ_WRITE                      (0x2)
+#define BX_DATA_READ_WRITE_ACCESSED             (0x3)
+#define BX_DATA_READ_ONLY_EXPAND_DOWN           (0x4)
+#define BX_DATA_READ_ONLY_EXPAND_DOWN_ACCESSED  (0x5)
+#define BX_DATA_READ_WRITE_EXPAND_DOWN          (0x6)
+#define BX_DATA_READ_WRITE_EXPAND_DOWN_ACCESSED (0x7)
+#define BX_CODE_EXEC_ONLY                       (0x8)
+#define BX_CODE_EXEC_ONLY_ACCESSED              (0x9)
+#define BX_CODE_EXEC_READ                       (0xa)
+#define BX_CODE_EXEC_READ_ACCESSED              (0xb)
+#define BX_CODE_EXEC_ONLY_CONFORMING            (0xc)
+#define BX_CODE_EXEC_ONLY_CONFORMING_ACCESSED   (0xd)
+#define BX_CODE_EXEC_READ_CONFORMING            (0xe)
+#define BX_CODE_EXEC_READ_CONFORMING_ACCESSED   (0xf)
 
 union {
   struct {
-    bx_bool executable;    /* 1=code, 0=data or stack segment */
-    bx_bool c_ed;          /* for code: 1=conforming,
-                              for data/stack: 1=expand down */
-    bx_bool r_w;           /* for code: readable?, for data/stack: writeable? */
-    bx_bool a;             /* accessed? */
-    bx_address  base;      /* base address: 286=24bits, 386=32bits, long=64 */
+    bx_address base;       /* base address: 286=24bits, 386=32bits, long=64 */
     Bit32u  limit;         /* limit: 286=16bits, 386=20bits */
     Bit32u  limit_scaled;  /* for efficiency, this contrived field is set to
                             * limit for byte granular, and
@@ -117,9 +134,6 @@ union {
     Bit16u  dest_selector;
     Bit16u  dest_offset;
   } gate286;
-  struct {                 /* type 5: Task Gate Descriptor */
-    Bit16u  tss_selector;  /* TSS segment selector */
-  } taskgate;
 #if BX_CPU_LEVEL >= 3
   struct {
     Bit8u   dword_count;   /* 5bits (0..31) #dwords to copy from caller's stack
@@ -128,22 +142,26 @@ union {
     Bit32u  dest_offset;
   } gate386;
 #endif
+  struct {                 /* type 5: Task Gate Descriptor */
+    Bit16u  tss_selector;  /* TSS segment selector */
+  } taskgate;
   struct {
-    Bit32u  base;          /* 24 bit 286 TSS base  */
-    Bit16u  limit;         /* 16 bit 286 TSS limit */
-  } tss286;
+    bx_address base;       /* 24 (tss286) or 32/64 (tss386) bit TSS base */
+    Bit32u  limit;         /* 16/32 bit TSS limit */
 #if BX_CPU_LEVEL >= 3
-  struct {
-    bx_address  base;      /* 32/64 bit 386 TSS base */
-    Bit32u  limit;         /* 20 bit 386 TSS limit */
     Bit32u  limit_scaled;  // Same notes as for 'segment' field
     bx_bool g;             /* granularity: 0=byte, 1=4K (page) */
     bx_bool avl;           /* available for use by system */
-  } tss386;
 #endif
+  } tss;
   struct {
-    bx_address  base;      /* 286=24 386+ =32/64 bit LDT base */
-    Bit16u  limit;         /* 286+ =16 bit LDT limit */
+    bx_address base;       /* 286=24 386+ = 32/64 bit LDT base */
+    Bit32u  limit;         /* 286+ = 16/32 bit LDT limit */
+#if BX_CPU_LEVEL >= 3
+    Bit32u  limit_scaled;  // Same notes as for 'segment' field
+    bx_bool g;             /* granularity: 0=byte, 1=4K (page) */
+    bx_bool avl;           /* available for use by system */
+#endif
   } ldt;
 } u;
 
@@ -152,10 +170,28 @@ union {
 #define IS_PRESENT(descriptor) (descriptor.p)
 
 #if BX_SUPPORT_X86_64
-  #define IS_LONG64_SEGMENT(descriptor)  (descriptor.u.segment.l)
+  #define IS_LONG64_SEGMENT(descriptor)   (descriptor.u.segment.l)
 #else
-  #define IS_LONG64_SEGMENT(descriptor)  (0)
+  #define IS_LONG64_SEGMENT(descriptor)   (0)
 #endif
+
+#define IS_CODE_SEGMENT(type)             (((type) >> 3) & 0x1)
+#define IS_CODE_SEGMENT_CONFORMING(type)  (((type) >> 2) & 0x1)
+#define IS_DATA_SEGMENT_EXPAND_DOWN(type) (((type) >> 2) & 0x1)
+#define IS_CODE_SEGMENT_READABLE(type)    (((type) >> 1) & 0x1)
+#define IS_DATA_SEGMENT_WRITEABLE(type)   (((type) >> 1) & 0x1)
+#define IS_SEGMENT_ACCESSED(type)         ( (type)       & 0x1)
+
+#define BX_SEGMENT_CODE                   (0x8)
+#define BX_SEGMENT_DATA_EXPAND_DOWN       (0x4)
+#define BX_SEGMENT_CODE_CONFORMING        (0x4)
+#define BX_SEGMENT_DATA_WRITE             (0x2)
+#define BX_SEGMENT_CODE_READ              (0x2)
+#define BX_SEGMENT_ACCESSED               (0x1)
+
+#define IS_DATA_SEGMENT(type) (! IS_CODE_SEGMENT(type))
+#define IS_CODE_SEGMENT_NON_CONFORMING(type) \
+            (! IS_CODE_SEGMENT_CONFORMING(type))
 
 typedef struct {
   bx_selector_t    selector;

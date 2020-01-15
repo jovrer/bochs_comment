@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.h,v 1.8 2006/01/18 18:35:38 sshwarts Exp $
+// $Id: virt_timer.h,v 1.11 2006/05/27 15:54:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -108,8 +108,8 @@ private:
 
 public:
 
-  bx_virt_timer_c(void);
- ~bx_virt_timer_c(void);
+  bx_virt_timer_c();
+  virtual ~bx_virt_timer_c() {}
 
   //Get the current virtual time.
   //  This may return the same value on subsequent calls.
@@ -127,7 +127,7 @@ public:
                          bx_bool continuous, bx_bool active, const char *id);
 
   //unregister a previously registered timer.
-  unsigned unregisterTimer(int timerID);
+  bx_bool unregisterTimer(unsigned timerID);
 
   void   start_timers(void);
 
@@ -147,6 +147,10 @@ public:
 
   //Initialization
   void init(void);
+
+#if BX_SUPPORT_SAVE_RESTORE
+  void register_state(void);
+#endif
 };
 
 extern bx_virt_timer_c bx_virt_timer;

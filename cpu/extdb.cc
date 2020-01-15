@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: extdb.cc,v 1.21 2006/06/25 21:44:46 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
+
 #include "bochs.h"
 #ifdef WIN32
 // windows.h included in bochs.h
@@ -5,6 +9,7 @@
 #  error "extdb.cc only supported in win32 environment"
 #endif
 
+#include "cpu.h"
 #include "iodev/iodev.h"
 #include "extdb.h"
 
@@ -88,20 +93,16 @@ void bx_external_debugger(BX_CPU_C *cpu)
 #if BX_CPU_LEVEL >= 4
      regs.cr4 = cpu->cr4.getRegister();
 #endif
-     //regs.cr5 = cpu->cr5;
-     //regs.cr6 = cpu->cr6;
-     //regs.cr7 = cpu->cr7;
      regs.fsbase = cpu->sregs[BX_SEG_REG_FS].cache.u.segment.base;
      regs.gsbase = cpu->sregs[BX_SEG_REG_GS].cache.u.segment.base;
 #if BX_SUPPORT_X86_64
-    regs.efer = cpu->get_EFER();
+     regs.efer = cpu->get_EFER();
 #else
-    regs.efer = 0;
+     regs.efer = 0;
 #endif
 
      if (debug_loaded == 0) {
        HINSTANCE hdbg;
-
        debug_loaded = 1;
        hdbg = LoadLibrary("debug.dll");
        call_debugger = (void (*)(TRegs *,Bit8u *, Bit32u)) GetProcAddress(hdbg,"call_debugger");
@@ -112,4 +113,12 @@ void bx_external_debugger(BX_CPU_C *cpu)
        DEV_vga_refresh();
        call_debugger(&regs,cpu->mem->vector,cpu->mem->len);
      }
+}
+
+void trap_debugger(bx_bool callnow)
+{
+  regs.debug_state = debug_step;
+  if (callnow) {
+    bx_external_debugger(BX_CPU_THIS);
+  }
 }

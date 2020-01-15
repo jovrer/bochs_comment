@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: call_far.cc,v 1.7 2005/12/12 19:44:06 sshwarts Exp $
+// $Id: call_far.cc,v 1.12 2006/06/12 16:58:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -28,6 +28,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if BX_SUPPORT_X86_64==0
@@ -126,7 +127,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
         exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
       }
       else {
-        call_gate64(&gate_descriptor);
+        call_gate64(&gate_selector);
         return;
       }
     }
@@ -233,7 +234,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
         // DPL of selected descriptor must be <= CPL,
         // else #GP(code segment selector)
         if (cs_descriptor.valid==0 || cs_descriptor.segment==0 ||
-            cs_descriptor.u.segment.executable==0 ||
+            IS_DATA_SEGMENT(cs_descriptor.type) ||
             cs_descriptor.dpl > CPL)
         {
           BX_ERROR(("call_protected: selected descriptor is not code"));
@@ -248,8 +249,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 
         // CALL GATE TO MORE PRIVILEGE
         // if non-conforming code segment and DPL < CPL then
-        if ( (cs_descriptor.u.segment.c_ed==0) &&
-             (cs_descriptor.dpl < CPL) )
+        if (IS_CODE_SEGMENT_NON_CONFORMING(cs_descriptor.type) && (cs_descriptor.dpl < CPL))
         {
           Bit16u SS_for_cpl_x;
           Bit32u ESP_for_cpl_x;
@@ -265,11 +265,6 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 
           BX_DEBUG(("CALL GATE TO MORE PRIVILEGE LEVEL"));
 
-          // Help for OS/2
-          BX_CPU_THIS_PTR except_chk = 1;  
-          BX_CPU_THIS_PTR except_cs = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
-          BX_CPU_THIS_PTR except_ss = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
-          
           // get new SS selector for new privilege level from TSS
           get_SS_ESP_from_TSS(cs_descriptor.dpl, &SS_for_cpl_x, &ESP_for_cpl_x);
 
@@ -289,7 +284,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
           // selector's RPL must equal DPL of code segment,
           //   else #TS(SS selector)
           if (ss_selector.rpl != cs_descriptor.dpl) {
-            BX_DEBUG(("call_protected: SS selector.rpl != CS descr.dpl"));
+            BX_ERROR(("call_protected: SS selector.rpl != CS descr.dpl"));
             exception(BX_TS_EXCEPTION, SS_for_cpl_x & 0xfffc, 0);
           }
 
@@ -302,11 +297,11 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 
           // descriptor must indicate writable data segment,
           //   else #TS(SS selector)
-          if (ss_descriptor.valid==0 || ss_descriptor.segment==0  ||
-              ss_descriptor.u.segment.executable ||
-              ss_descriptor.u.segment.r_w==0)
+          if (ss_descriptor.valid==0 || ss_descriptor.segment==0 ||
+               IS_CODE_SEGMENT(ss_descriptor.type) ||
+              !IS_DATA_SEGMENT_WRITEABLE(ss_descriptor.type))
           {
-            BX_ERROR(("call_protected: ss descriptor not writable data seg"));
+            BX_ERROR(("call_protected: ss descriptor is not writable data seg"));
             exception(BX_TS_EXCEPTION, SS_for_cpl_x & 0xfffc, 0);
           }
 
@@ -316,7 +311,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
             exception(BX_SS_EXCEPTION, SS_for_cpl_x & 0xfffc, 0);
           }
 
-          if ( cs_descriptor.u.segment.d_b )
+          if (cs_descriptor.u.segment.d_b)
             // new stack must have room for parameters plus 16 bytes
             room_needed = 16;
           else
@@ -336,13 +331,13 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 
           // new stack must have room for parameters plus return info
           //   else #SS(SS selector)
-          if ( !can_push(&ss_descriptor, ESP_for_cpl_x, room_needed) ) {
-            BX_INFO(("call_protected: stack doesn't have room"));
+          if (!can_push(&ss_descriptor, ESP_for_cpl_x, room_needed)) {
+            BX_ERROR(("call_protected: stack doesn't have room"));
             exception(BX_SS_EXCEPTION, SS_for_cpl_x & 0xfffc, 0);
           }
 
           // new eIP must be in code segment limit else #GP(0)
-          if ( new_EIP > cs_descriptor.u.segment.limit_scaled ) {
+          if (new_EIP > cs_descriptor.u.segment.limit_scaled) {
             BX_ERROR(("call_protected: EIP not within CS limits"));
             exception(BX_GP_EXCEPTION, 0, 0);
           }
@@ -357,7 +352,7 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 
           // save return CS:eIP to be pushed on new stack
           return_CS = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
-          if ( cs_descriptor.u.segment.d_b )
+          if (cs_descriptor.u.segment.d_b)
             return_EIP = EIP;
           else
             return_EIP = IP;
@@ -374,6 +369,11 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
                 4, 0, BX_READ, &parameter_dword[i]);
             }
           }
+
+          // Help for OS/2
+          BX_CPU_THIS_PTR except_chk = 1;  
+          BX_CPU_THIS_PTR except_cs = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS];
+          BX_CPU_THIS_PTR except_ss = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS];
 
           /* load new SS:SP value from TSS */
           /* load SS descriptor */
@@ -457,18 +457,21 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
 }
 
 #if BX_SUPPORT_X86_64
-  void BX_CPP_AttrRegparmN(1)
-BX_CPU_C::call_gate64(bx_descriptor_t *gate_descriptor)
+  void BX_CPP_AttrRegparmN(3)
+BX_CPU_C::call_gate64(bx_selector_t *gate_selector)
 {
   bx_selector_t cs_selector;
   Bit32u dword1, dword2, dword3;
   bx_descriptor_t cs_descriptor;
+  bx_descriptor_t gate_descriptor;
 
   // examine code segment selector in call gate descriptor
   BX_DEBUG(("call_gate64: CALL 64bit call gate"));
 
-  Bit16u dest_selector = gate_descriptor->u.gate386.dest_selector;
+  fetch_raw_descriptor64(gate_selector, &dword1, &dword2, &dword3, BX_GP_EXCEPTION);
+  parse_descriptor(dword1, dword2, &gate_descriptor);
 
+  Bit16u dest_selector = gate_descriptor.u.gate386.dest_selector;
   // selector must not be null else #GP(0)
   if ( (dest_selector & 0xfffc) == 0 ) {
     BX_ERROR(("call_gate64: selector in gate null"));
@@ -478,10 +481,11 @@ BX_CPU_C::call_gate64(bx_descriptor_t *gate_descriptor)
   parse_selector(dest_selector, &cs_selector);
   // selector must be within its descriptor table limits,
   //   else #GP(code segment selector)
-  fetch_raw_descriptor64(&cs_selector, &dword1, &dword2, &dword3, BX_GP_EXCEPTION);
+  fetch_raw_descriptor(&cs_selector, &dword1, &dword2, BX_GP_EXCEPTION);
   parse_descriptor(dword1, dword2, &cs_descriptor);
 
-  Bit64u new_RIP = gate_descriptor->u.gate386.dest_offset;
+  // find the RIP in the gate_descriptor
+  Bit64u new_RIP = gate_descriptor.u.gate386.dest_offset;
   new_RIP |= ((Bit64u)dword3 << 32);
 
   // AR byte of selected descriptor must indicate code segment,
@@ -489,7 +493,7 @@ BX_CPU_C::call_gate64(bx_descriptor_t *gate_descriptor)
   // DPL of selected descriptor must be <= CPL,
   // else #GP(code segment selector)
   if (cs_descriptor.valid==0 || cs_descriptor.segment==0 ||
-      cs_descriptor.u.segment.executable==0 ||
+      IS_DATA_SEGMENT(cs_descriptor.type) ||
       cs_descriptor.dpl > CPL)
   {
     BX_ERROR(("call_gate64: selected descriptor is not code"));
@@ -515,8 +519,7 @@ BX_CPU_C::call_gate64(bx_descriptor_t *gate_descriptor)
 
   // CALL GATE TO MORE PRIVILEGE
   // if non-conforming code segment and DPL < CPL then
-  if ( (cs_descriptor.u.segment.c_ed==0) &&
-       (cs_descriptor.dpl < CPL) )
+  if (IS_CODE_SEGMENT_NON_CONFORMING(cs_descriptor.type) && (cs_descriptor.dpl < CPL))
   {
     Bit64u RSP_for_cpl_x;
 

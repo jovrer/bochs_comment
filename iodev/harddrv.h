@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h,v 1.37 2005/11/06 11:07:01 vruppert Exp $
+// $Id: harddrv.h,v 1.44 2006/08/05 07:49:31 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -23,6 +23,11 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+
+#ifndef BX_IODEV_HDDRIVE_H
+#define BX_IODEV_HDDRIVE_H
+
+#define MAX_MULTIPLE_SECTORS 16
 
 typedef enum _sense {
       SENSE_NONE = 0, SENSE_NOT_READY = 2, SENSE_ILLEGAL_REQUEST = 5,
@@ -75,14 +80,15 @@ typedef struct {
     Bit16u   cylinder_no;
     Bit16u   byte_count;
   };
-  Bit8u    buffer[2352];
+  Bit8u    buffer[MAX_MULTIPLE_SECTORS*512 + 4];
   Bit32u   buffer_size;
   Bit32u   buffer_index;
   Bit32u   drq_index;
   Bit8u    current_command;
-  Bit8u    sectors_per_block;
+  Bit8u    multiple_sectors;
   Bit8u    lba_mode;
   bx_bool  packet_dma;
+  Bit8u    mdma_mode;
   struct {
     bx_bool reset;       // 0=normal, 1=reset controller
     bx_bool disable_irq; // 0=allow irq, 1=disable irq
@@ -153,9 +159,8 @@ typedef enum {
 
 class bx_hard_drive_c : public bx_hard_drive_stub_c {
 public:
-
-  bx_hard_drive_c(void);
-  virtual ~bx_hard_drive_c(void);
+  bx_hard_drive_c();
+  virtual ~bx_hard_drive_c();
   virtual void   close_harddrive(void);
   virtual void   init();
   virtual void   reset(unsigned type);
@@ -167,6 +172,9 @@ public:
   virtual bx_bool  bmdma_read_sector(Bit8u channel, Bit8u *buffer, Bit32u *sector_size);
   virtual bx_bool  bmdma_write_sector(Bit8u channel, Bit8u *buffer);
   virtual void     bmdma_complete(Bit8u channel);
+#endif
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void     register_state(void);
 #endif
 
   virtual Bit32u virt_read_handler(Bit32u address, unsigned io_len) {
@@ -203,7 +211,9 @@ private:
   BX_HD_SMF void init_mode_sense_single(Bit8u channel, const void* src, int size);
   BX_HD_SMF void atapi_cmd_nop(Bit8u channel) BX_CPP_AttrRegparmN(1);
   BX_HD_SMF bx_bool bmdma_present(void);
-  BX_HD_SMF void set_signature(Bit8u channel);
+  BX_HD_SMF void set_signature(Bit8u channel, Bit8u id);
+  BX_HD_SMF bx_bool ide_read_sector(Bit8u channel, Bit8u *buffer, Bit32u buffer_size);
+  BX_HD_SMF bx_bool ide_write_sector(Bit8u channel, Bit8u *buffer, Bit32u buffer_size);
 
   // FIXME:
   // For each ATA channel we should have one controller struct
@@ -226,15 +236,18 @@ private:
       Bit8u model_no[41];
       int statusbar_id;
       int iolight_counter;
-      } drives[2];
+      Bit8u device_num; // for ATAPI identify & inquiry
+    } drives[2];
     unsigned drive_select;
 
     Bit16u ioaddr1;
     Bit16u ioaddr2;
     Bit8u  irq;
 
-    } channels[BX_MAX_ATA_CHANNEL];
+  } channels[BX_MAX_ATA_CHANNEL];
 
   int iolight_timer_index;
+  Bit8u cdrom_count;
+};
 
-  };
+#endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc,v 1.26 2005/10/13 16:22:21 sshwarts Exp $
+// $Id: soft_int.cc,v 1.31 2006/06/25 21:44:46 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,7 +27,12 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
+
+#if BX_EXTERNAL_DEBUGGER
+#include "extdb.h"
+#endif
 
 void BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 {
@@ -73,7 +78,7 @@ void BX_CPU_C::INT1(bxInstruction_c *i)
   // which is useful for an ICE system.
 
 #if BX_DEBUGGER
-  BX_CPU_THIS_PTR show_flag |= Flag_int;
+  BX_CPU_THIS_PTR show_flag |= Flag_softint;
 #endif
 
 #if BX_EXTERNAL_DEBUGGER
@@ -91,7 +96,7 @@ void BX_CPU_C::INT3(bxInstruction_c *i)
   // INT 3 is not IOPL sensitive
 
 #if BX_DEBUGGER
-  BX_CPU_THIS_PTR show_flag |= Flag_int;
+  BX_CPU_THIS_PTR show_flag |= Flag_softint;
 #endif
 
   interrupt(3, 1, 0, 0);
@@ -104,7 +109,7 @@ void BX_CPU_C::INT3(bxInstruction_c *i)
 void BX_CPU_C::INT_Ib(bxInstruction_c *i)
 {
 #if BX_DEBUGGER
-  BX_CPU_THIS_PTR show_flag |= Flag_int;
+  BX_CPU_THIS_PTR show_flag |= Flag_softint;
 #endif
 
   Bit8u vector = i->Ib();
@@ -116,9 +121,9 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
       Bit8u vme_redirection_bitmap;
       Bit16u io_base;
 
-      access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + 102, 
+      access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base + 102, 
             2, 0, BX_READ, &io_base);
-      access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + io_base - 32 + (vector >> 3),
+      access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base + io_base - 32 + (vector >> 3),
             1, 0, BX_READ, &vme_redirection_bitmap);
 
       if (! (vme_redirection_bitmap & (1 << (vector & 7))))
@@ -132,6 +137,7 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
     // interrupt is not redirected or VME is OFF
     if (BX_CPU_THIS_PTR get_IOPL() < 3)
     {
+      BX_DEBUG(("INT_Ib(): Interrupt cannot be redirected, generate #GP(0)"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
@@ -151,7 +157,7 @@ void BX_CPU_C::INT_Ib(bxInstruction_c *i)
 void BX_CPU_C::INTO(bxInstruction_c *i)
 {
 #if BX_DEBUGGER
-  BX_CPU_THIS_PTR show_flag |= Flag_int;
+  BX_CPU_THIS_PTR show_flag |= Flag_softint;
 #endif
 
   if (get_OF()) {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h,v 1.29 2006/01/28 16:16:03 sshwarts Exp $
+// $Id: memory.h,v 1.38 2006/05/31 17:20:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -40,6 +40,8 @@
 #  define BX_MEM_THIS this->
 #endif
 
+class BX_CPU_C;
+
 // alignment of memory vector, must be a power of 2
 #define BX_MEM_VECTOR_ALIGN 4096
 #define BIOSROMSZ (1 << 19)  // 512KB BIOS ROM @0xfff80000, must be a power of 2
@@ -51,18 +53,24 @@ typedef bx_bool (*memory_handler_t)(unsigned long addr, unsigned long len, void 
 
 struct memory_handler_struct {
 	struct memory_handler_struct *next;
-	unsigned long begin;
-	unsigned long end;
+	void *param;
+	bx_phy_address begin;
+	bx_phy_address end;
 	memory_handler_t read_handler;
 	memory_handler_t write_handler;
-	void *read_param;
-	void *write_param;
 };
+
+#define SMRAM_CODE  1
+#define SMRAM_DATA  2
 
 class BOCHSAPI BX_MEM_C : public logfunctions {
 private:
   struct memory_handler_struct **memory_handlers;
   bx_bool rom_present[65];
+  bx_bool pci_enabled;
+  bx_bool smram_available;
+  bx_bool smram_enable;
+  bx_bool smram_restricted;
   
 public:
   Bit8u   *actual_vector;
@@ -72,33 +80,33 @@ public:
   Bit8u   *rom;      // 512k BIOS rom space + 128k expansion rom space
   Bit8u   *bogus;    // 4k for unexisting memory
 #if BX_DEBUGGER
-  unsigned char dbg_dirty_pages[(BX_MAX_DIRTY_PAGE_TABLE_MEGS * 1024 * 1024) / 4096];
-  Bit32u dbg_count_dirty_pages () {
-    return (BX_MAX_DIRTY_PAGE_TABLE_MEGS * 1024 * 1024) / 4096;
-  }
+  Bit8u   *dbg_dirty_pages;
 #endif
 
-  BX_MEM_C(void);
-  ~BX_MEM_C(void);
+  BX_MEM_C();
+ ~BX_MEM_C();
   BX_MEM_SMF void    alloc_vector_aligned (size_t bytes, size_t alignment) BX_CPP_AttrRegparmN(2);
   BX_MEM_SMF void    init_memory(int memsize);
-  BX_MEM_SMF void    readPhysicalPage(BX_CPU_C *cpu, Bit32u addr,
+  BX_MEM_SMF void    enable_smram(bx_bool enable, bx_bool restricted);
+  BX_MEM_SMF void    disable_smram(void);
+  BX_MEM_SMF bx_bool is_smram_accessible(void);
+  BX_MEM_SMF void    readPhysicalPage(BX_CPU_C *cpu, bx_phy_address addr,
                                       unsigned len, void *data) BX_CPP_AttrRegparmN(3);
-  BX_MEM_SMF void    writePhysicalPage(BX_CPU_C *cpu, Bit32u addr,
+  BX_MEM_SMF void    writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr,
                                        unsigned len, void *data) BX_CPP_AttrRegparmN(3);
-  BX_MEM_SMF void    load_ROM(const char *path, Bit32u romaddress, Bit8u type);
-  BX_MEM_SMF void    load_RAM(const char *path, Bit32u romaddress, Bit8u type);
+  BX_MEM_SMF void    load_ROM(const char *path, bx_phy_address romaddress, Bit8u type);
+  BX_MEM_SMF void    load_RAM(const char *path, bx_phy_address romaddress, Bit8u type);
   BX_MEM_SMF Bit32u  get_memory_in_k(void);
-  BX_MEM_SMF bx_bool dbg_fetch_mem(Bit32u addr, unsigned len, Bit8u *buf);
-  BX_MEM_SMF bx_bool dbg_set_mem(Bit32u addr, unsigned len, Bit8u *buf);
-  BX_MEM_SMF bx_bool dbg_crc32(Bit32u addr1, Bit32u addr2, Bit32u *crc);
-  BX_MEM_SMF Bit8u* getHostMemAddr(BX_CPU_C *cpu, Bit32u a20Addr, unsigned op) BX_CPP_AttrRegparmN(3);
-  BX_MEM_SMF bx_bool registerMemoryHandlers(memory_handler_t read_handler, void *read_param, 
-		  memory_handler_t write_handler, void *write_param, 
-		  Bit32u begin_addr, Bit32u end_addr);
-  BX_MEM_SMF bx_bool unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler, 
-		  Bit32u begin_addr, Bit32u end_addr);
-  };
+  BX_MEM_SMF bx_bool dbg_fetch_mem(bx_phy_address addr, unsigned len, Bit8u *buf);
+  BX_MEM_SMF bx_bool dbg_set_mem(bx_phy_address addr, unsigned len, Bit8u *buf);
+  BX_MEM_SMF bx_bool dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *crc);
+  BX_MEM_SMF Bit8u* getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned op, unsigned access_type);
+  BX_MEM_SMF bx_bool registerMemoryHandlers(void *param, memory_handler_t read_handler,
+		  memory_handler_t write_handler, bx_phy_address begin_addr, bx_phy_address end_addr);
+  BX_MEM_SMF bx_bool unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler_t write_handler,
+		  bx_phy_address begin_addr, bx_phy_address end_addr);
+  BX_MEM_SMF Bit32u get_num_allocated_pages(void);
+};
 
 #if BX_PROVIDE_CPU_MEMORY==1
 

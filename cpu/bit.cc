@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit.cc,v 1.25 2005/09/29 17:32:32 sshwarts Exp $
+// $Id: bit.cc,v 1.30 2006/06/26 20:28:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,22 +27,11 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
 #if BX_CPU_LEVEL >= 3
-
-#if BX_SUPPORT_X86_64==0
-// Make life easier merging cpu64 and cpu code.
-#define RAX EAX
-#define RBX EBX
-#define RCX ECX
-#define RDX EDX
-#define RSP ESP
-#define RSI ESI
-#define RDI EDI
-#define RBP EBP
-#endif
 
 void BX_CPU_C::SETO_Eb(bxInstruction_c *i)
 {
@@ -520,289 +509,47 @@ void BX_CPU_C::BSR_GqEq(bxInstruction_c *i)
 }
 #endif
 
-void BX_CPU_C::BSWAP_EAX(bxInstruction_c *i)
+void BX_CPU_C::BSWAP_ERX(bxInstruction_c *i)
 {
 #if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-  Bit32u eax, b0, b1, b2, b3;
+  Bit32u val32, b0, b1, b2, b3;
 
-  eax = EAX;
-  b0  = eax & 0xff; eax >>= 8;
-  b1  = eax & 0xff; eax >>= 8;
-  b2  = eax & 0xff; eax >>= 8;
-  b3  = eax;
+  if (i->os32L() == 0) {
+    BX_ERROR(("BSWAP with 16-bit opsize: undefined behavior !"));
+  }
 
-  RAX = (b0<<24) | (b1<<16) | (b2<<8) | b3;  // zero extended
+  val32 = BX_READ_32BIT_REG(i->opcodeReg());
+  b0  = val32 & 0xff; val32 >>= 8;
+  b1  = val32 & 0xff; val32 >>= 8;
+  b2  = val32 & 0xff; val32 >>= 8;
+  b3  = val32;
+  val32 = (b0<<24) | (b1<<16) | (b2<<8) | b3;  // zero extended
+
+  // in 64-bit mode, hi-order 32 bits are not modified
+  BX_WRITE_32BIT_REG(i->opcodeReg(), val32);
 #else
-  BX_INFO(("BSWAP_EAX: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_ECX(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-  Bit32u ecx, b0, b1, b2, b3;
-
-  ecx = ECX;
-  b0  = ecx & 0xff; ecx >>= 8;
-  b1  = ecx & 0xff; ecx >>= 8;
-  b2  = ecx & 0xff; ecx >>= 8;
-  b3  = ecx;
-
-  RCX = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_ECX: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_EDX(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-  Bit32u edx, b0, b1, b2, b3;
-
-  edx = EDX;
-  b0  = edx & 0xff; edx >>= 8;
-  b1  = edx & 0xff; edx >>= 8;
-  b2  = edx & 0xff; edx >>= 8;
-  b3  = edx;
-
-  RDX = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_EDX: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_EBX(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-  Bit32u ebx, b0, b1, b2, b3;
-
-  ebx = EBX;
-  b0  = ebx & 0xff; ebx >>= 8;
-  b1  = ebx & 0xff; ebx >>= 8;
-  b2  = ebx & 0xff; ebx >>= 8;
-  b3  = ebx;
-
-  RBX = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_EBX: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_ESP(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-
-  Bit32u esp, b0, b1, b2, b3;
-
-  esp = ESP;
-  b0  = esp & 0xff; esp >>= 8;
-  b1  = esp & 0xff; esp >>= 8;
-  b2  = esp & 0xff; esp >>= 8;
-  b3  = esp;
-
-  RSP = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_ESP: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_EBP(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-
-  Bit32u ebp, b0, b1, b2, b3;
-
-  ebp = EBP;
-  b0  = ebp & 0xff; ebp >>= 8;
-  b1  = ebp & 0xff; ebp >>= 8;
-  b2  = ebp & 0xff; ebp >>= 8;
-  b3  = ebp;
-
-  RBP = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_EBP: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_ESI(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-
-  Bit32u esi, b0, b1, b2, b3;
-
-  esi = ESI;
-  b0  = esi & 0xff; esi >>= 8;
-  b1  = esi & 0xff; esi >>= 8;
-  b2  = esi & 0xff; esi >>= 8;
-  b3  = esi;
-
-  RSI = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_ESI: not implemented CPU <= 3"));
-  UndefinedOpcode(i);
-#endif
-}
-
-void BX_CPU_C::BSWAP_EDI(bxInstruction_c *i)
-{
-#if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
-
-  Bit32u edi, b0, b1, b2, b3;
-
-  edi = EDI;
-  b0  = edi & 0xff; edi >>= 8;
-  b1  = edi & 0xff; edi >>= 8;
-  b2  = edi & 0xff; edi >>= 8;
-  b3  = edi;
-
-  RDI = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-#else
-  BX_INFO(("BSWAP_EDI: not implemented CPU <= 3"));
+  BX_INFO(("BSWAP_ERX: required CPU >= 4, use --enable-cpu-level=4 option"));
   UndefinedOpcode(i);
 #endif
 }
 
 #if BX_SUPPORT_X86_64
-void BX_CPU_C::BSWAP_RAX(bxInstruction_c *i)
+void BX_CPU_C::BSWAP_RRX(bxInstruction_c *i)
 {
-  Bit64u rax, b0, b1, b2, b3, b4, b5, b6, b7;
+  Bit64u val64, b0, b1, b2, b3, b4, b5, b6, b7;
 
-  rax = RAX;
-  b0  = rax & 0xff; rax >>= 8;
-  b1  = rax & 0xff; rax >>= 8;
-  b2  = rax & 0xff; rax >>= 8;
-  b3  = rax & 0xff; rax >>= 8;
-  b4  = rax & 0xff; rax >>= 8;
-  b5  = rax & 0xff; rax >>= 8;
-  b6  = rax & 0xff; rax >>= 8;
-  b7  = rax;
+  val64 = BX_READ_64BIT_REG(i->opcodeReg());
+  b0  = val64 & 0xff; val64 >>= 8;
+  b1  = val64 & 0xff; val64 >>= 8;
+  b2  = val64 & 0xff; val64 >>= 8;
+  b3  = val64 & 0xff; val64 >>= 8;
+  b4  = val64 & 0xff; val64 >>= 8;
+  b5  = val64 & 0xff; val64 >>= 8;
+  b6  = val64 & 0xff; val64 >>= 8;
+  b7  = val64;
+  val64 = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b4<<16) | (b4<<8) | b7;
 
-  RAX = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b4<<16) | (b4<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RCX(bxInstruction_c *i)
-{
-  Bit64u rcx, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rcx = RCX;
-  b0  = rcx & 0xff; rcx >>= 8;
-  b1  = rcx & 0xff; rcx >>= 8;
-  b2  = rcx & 0xff; rcx >>= 8;
-  b3  = rcx & 0xff; rcx >>= 8;
-  b4  = rcx & 0xff; rcx >>= 8;
-  b5  = rcx & 0xff; rcx >>= 8;
-  b6  = rcx & 0xff; rcx >>= 8;
-  b7  = rcx;
-
-  RCX = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RDX(bxInstruction_c *i)
-{
-  Bit64u rdx, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rdx = RDX;
-  b0  = rdx & 0xff; rdx >>= 8;
-  b1  = rdx & 0xff; rdx >>= 8;
-  b2  = rdx & 0xff; rdx >>= 8;
-  b3  = rdx & 0xff; rdx >>= 8;
-  b4  = rdx & 0xff; rdx >>= 8;
-  b5  = rdx & 0xff; rdx >>= 8;
-  b6  = rdx & 0xff; rdx >>= 8;
-  b7  = rdx;
-
-  RDX = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RBX(bxInstruction_c *i)
-{
-  Bit64u rbx, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rbx = RBX;
-  b0  = rbx & 0xff; rbx >>= 8;
-  b1  = rbx & 0xff; rbx >>= 8;
-  b2  = rbx & 0xff; rbx >>= 8;
-  b3  = rbx & 0xff; rbx >>= 8;
-  b4  = rbx & 0xff; rbx >>= 8;
-  b5  = rbx & 0xff; rbx >>= 8;
-  b6  = rbx & 0xff; rbx >>= 8;
-  b7  = rbx;
-
-  RBX = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RSP(bxInstruction_c *i)
-{
-  Bit64u rsp, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rsp = RSP;
-  b0  = rsp & 0xff; rsp >>= 8;
-  b1  = rsp & 0xff; rsp >>= 8;
-  b2  = rsp & 0xff; rsp >>= 8;
-  b3  = rsp & 0xff; rsp >>= 8;
-  b4  = rsp & 0xff; rsp >>= 8;
-  b5  = rsp & 0xff; rsp >>= 8;
-  b6  = rsp & 0xff; rsp >>= 8;
-  b7  = rsp;
-
-  RSP = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RBP(bxInstruction_c *i)
-{
-  Bit64u rbp, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rbp = RBP;
-  b0  = rbp & 0xff; rbp >>= 8;
-  b1  = rbp & 0xff; rbp >>= 8;
-  b2  = rbp & 0xff; rbp >>= 8;
-  b3  = rbp & 0xff; rbp >>= 8;
-  b4  = rbp & 0xff; rbp >>= 8;
-  b5  = rbp & 0xff; rbp >>= 8;
-  b6  = rbp & 0xff; rbp >>= 8;
-  b7  = rbp;
-
-  RBP = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RSI(bxInstruction_c *i)
-{
-  Bit64u rsi, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rsi = RSI;
-  b0  = rsi & 0xff; rsi >>= 8;
-  b1  = rsi & 0xff; rsi >>= 8;
-  b2  = rsi & 0xff; rsi >>= 8;
-  b3  = rsi & 0xff; rsi >>= 8;
-  b4  = rsi & 0xff; rsi >>= 8;
-  b5  = rsi & 0xff; rsi >>= 8;
-  b6  = rsi & 0xff; rsi >>= 8;
-  b7  = rsi;
-
-  RSI = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-}
-
-void BX_CPU_C::BSWAP_RDI(bxInstruction_c *i)
-{
-  Bit64u rdi, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  rdi = RDI;
-  b0  = rdi & 0xff; rdi >>= 8;
-  b1  = rdi & 0xff; rdi >>= 8;
-  b2  = rdi & 0xff; rdi >>= 8;
-  b3  = rdi & 0xff; rdi >>= 8;
-  b4  = rdi & 0xff; rdi >>= 8;
-  b5  = rdi & 0xff; rdi >>= 8;
-  b6  = rdi & 0xff; rdi >>= 8;
-  b7  = rdi;
-
-  RDI = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
+  BX_WRITE_64BIT_REG(i->opcodeReg(), val64);
 }
 #endif  // #if BX_SUPPORT_X86_64
 
@@ -917,7 +664,7 @@ void BX_CPU_C::BTS_EwGw(bxInstruction_c *i)
   bit_i = (op1_16 >> index) & 0x01;
   op1_16 |= (((Bit16u) 1) << index);
 
-  Write_RMW_virtual_word(op1_16);
+  write_RMW_virtual_word(op1_16);
 
   set_CF(bit_i);
 }
@@ -952,7 +699,7 @@ void BX_CPU_C::BTS_EdGd(bxInstruction_c *i)
   bit_i = (op1_32 >> index) & 0x01;
   op1_32 |= (((Bit32u) 1) << index);
 
-  Write_RMW_virtual_dword(op1_32);
+  write_RMW_virtual_dword(op1_32);
 
   set_CF(bit_i);
 }
@@ -989,7 +736,7 @@ void BX_CPU_C::BTS_EqGq(bxInstruction_c *i)
   bit_i = (op1_64 >> index) & 0x01;
   op1_64 |= (((Bit64u) 1) << index);
 
-  Write_RMW_virtual_qword(op1_64);
+  write_RMW_virtual_qword(op1_64);
 
   set_CF(bit_i);
 }
@@ -1026,7 +773,7 @@ void BX_CPU_C::BTR_EwGw(bxInstruction_c *i)
   op1_16 &= ~(((Bit16u) 1) << index);
 
   /* now write back to destination */
-  Write_RMW_virtual_word(op1_16);
+  write_RMW_virtual_word(op1_16);
 
   set_CF(temp_cf);
 }
@@ -1062,7 +809,7 @@ void BX_CPU_C::BTR_EdGd(bxInstruction_c *i)
   op1_32 &= ~(((Bit32u) 1) << index);
 
   /* now write back to destination */
-  Write_RMW_virtual_dword(op1_32);
+  write_RMW_virtual_dword(op1_32);
 
   set_CF(temp_cf);
 }
@@ -1099,7 +846,7 @@ void BX_CPU_C::BTR_EqGq(bxInstruction_c *i)
   op1_64 &= ~(((Bit64u) 1) << index);
 
   /* now write back to destination */
-  Write_RMW_virtual_qword(op1_64);
+  write_RMW_virtual_qword(op1_64);
 
   set_CF(temp_cf);
 }
@@ -1134,7 +881,7 @@ void BX_CPU_C::BTC_EwGw(bxInstruction_c *i)
     BX_WRITE_16BIT_REG(i->rm(), op1_16);
   }
   else {
-    Write_RMW_virtual_word(op1_16);
+    write_RMW_virtual_word(op1_16);
   }
 
   set_CF(temp_CF);
@@ -1169,7 +916,7 @@ void BX_CPU_C::BTC_EdGd(bxInstruction_c *i)
     BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
   }
   else {
-    Write_RMW_virtual_dword(op1_32);
+    write_RMW_virtual_dword(op1_32);
   }
 }
 
@@ -1204,7 +951,7 @@ void BX_CPU_C::BTC_EqGq(bxInstruction_c *i)
     BX_WRITE_64BIT_REG(i->rm(), op1_64);
   }
   else {
-    Write_RMW_virtual_qword(op1_64);
+    write_RMW_virtual_qword(op1_64);
   }
 }
 #endif
@@ -1288,7 +1035,7 @@ void BX_CPU_C::BTS_EwIb(bxInstruction_c *i)
     BX_WRITE_16BIT_REG(i->rm(), op1_16);
   }
   else {
-    Write_RMW_virtual_word(op1_16);
+    write_RMW_virtual_word(op1_16);
   }
 
   set_CF(temp_CF);
@@ -1317,7 +1064,7 @@ void BX_CPU_C::BTS_EdIb(bxInstruction_c *i)
     BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
   }
   else {
-    Write_RMW_virtual_dword(op1_32);
+    write_RMW_virtual_dword(op1_32);
   }
 
   set_CF(temp_CF);
@@ -1347,7 +1094,7 @@ void BX_CPU_C::BTS_EqIb(bxInstruction_c *i)
     BX_WRITE_64BIT_REG(i->rm(), op1_64);
   }
   else {
-    Write_RMW_virtual_qword(op1_64);
+    write_RMW_virtual_qword(op1_64);
   }
 
   set_CF(temp_CF);
@@ -1378,7 +1125,7 @@ void BX_CPU_C::BTC_EwIb(bxInstruction_c *i)
     BX_WRITE_16BIT_REG(i->rm(), op1_16);
   }
   else {
-    Write_RMW_virtual_word(op1_16);
+    write_RMW_virtual_word(op1_16);
   }
 }
 
@@ -1406,7 +1153,7 @@ void BX_CPU_C::BTC_EdIb(bxInstruction_c *i)
     BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
   }
   else {
-    Write_RMW_virtual_dword(op1_32);
+    write_RMW_virtual_dword(op1_32);
   }
 }
 
@@ -1435,7 +1182,7 @@ void BX_CPU_C::BTC_EqIb(bxInstruction_c *i)
     BX_WRITE_64BIT_REG(i->rm(), op1_64);
   }
   else {
-    Write_RMW_virtual_qword(op1_64);
+    write_RMW_virtual_qword(op1_64);
   }
 }
 #endif
@@ -1463,7 +1210,7 @@ void BX_CPU_C::BTR_EwIb(bxInstruction_c *i)
     BX_WRITE_16BIT_REG(i->rm(), op1_16);
   }
   else {
-    Write_RMW_virtual_word(op1_16);
+    write_RMW_virtual_word(op1_16);
   }
 
   set_CF(temp_CF);
@@ -1492,7 +1239,7 @@ void BX_CPU_C::BTR_EdIb(bxInstruction_c *i)
     BX_WRITE_32BIT_REGZ(i->rm(), op1_32);
   }
   else {
-    Write_RMW_virtual_dword(op1_32);
+    write_RMW_virtual_dword(op1_32);
   }
 
   set_CF(temp_CF);
@@ -1522,7 +1269,7 @@ void BX_CPU_C::BTR_EqIb(bxInstruction_c *i)
     BX_WRITE_64BIT_REG(i->rm(), op1_64);
   }
   else {
-    Write_RMW_virtual_qword(op1_64);
+    write_RMW_virtual_qword(op1_64);
   }
 
   set_CF(temp_CF);

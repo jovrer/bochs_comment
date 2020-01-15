@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logical32.cc,v 1.24 2005/05/20 20:06:50 sshwarts Exp $
+// $Id: logical32.cc,v 1.26 2006/03/26 18:58:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -44,7 +45,7 @@ void BX_CPU_C::XOR_EdGd(bxInstruction_c *i)
   else {
     read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = op1_32 ^ op2_32;
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 
   SET_FLAGS_OSZAPC_RESULT_32(result_32, BX_INSTR_LOGIC32);
@@ -103,7 +104,7 @@ void BX_CPU_C::XOR_EdId(bxInstruction_c *i)
   else {
     read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = op1_32 ^ op2_32;
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 
   SET_FLAGS_OSZAPC_RESULT_32(result_32, BX_INSTR_LOGIC32);
@@ -123,7 +124,7 @@ void BX_CPU_C::OR_EdId(bxInstruction_c *i)
   else {
     read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = op1_32 | op2_32;
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 
   SET_FLAGS_OSZAPC_RESULT_32(result_32, BX_INSTR_LOGIC32);
@@ -141,7 +142,7 @@ void BX_CPU_C::NOT_Ed(bxInstruction_c *i)
   else {
     read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = ~op1_32;
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 }
 
@@ -159,7 +160,7 @@ void BX_CPU_C::OR_EdGd(bxInstruction_c *i)
   else {
     read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = op1_32 | op2_32;
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 
   SET_FLAGS_OSZAPC_RESULT_32(result_32, BX_INSTR_LOGIC32);
@@ -237,7 +238,7 @@ void BX_CPU_C::AND_EdGd(bxInstruction_c *i)
     result_32 = op1_32 & op2_32;
 #endif
 
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 
 #if !defined(BX_HostAsm_And32)
@@ -323,7 +324,7 @@ void BX_CPU_C::AND_EdId(bxInstruction_c *i)
     result_32 = op1_32 & op2_32;
 #endif
 
-    Write_RMW_virtual_dword(result_32);
+    write_RMW_virtual_dword(result_32);
   }
 
 #if !defined(BX_HostAsm_And32)

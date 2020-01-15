@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.cc,v 1.60 2006/01/08 20:39:08 vruppert Exp $
+// $Id: pit_wrap.cc,v 1.62 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -80,8 +80,7 @@ bx_pit_c bx_pit;
 #define TICKS_TO_USEC(a) ( ((a)*USEC_PER_SECOND)/TICKS_PER_SECOND )
 #define USEC_TO_TICKS(a) ( ((a)*TICKS_PER_SECOND)/USEC_PER_SECOND )
 
-
-bx_pit_c::bx_pit_c( void )
+bx_pit_c::bx_pit_c()
 {
   put("PIT");
   settype(PITLOG);
@@ -94,12 +93,7 @@ bx_pit_c::bx_pit_c( void )
   BX_PIT_THIS s.timer_handle[0] = BX_NULL_TIMER_HANDLE;
 }
 
-bx_pit_c::~bx_pit_c( void )
-{
-}
-
-  int
-bx_pit_c::init( void )
+int bx_pit_c::init(void)
 {
   DEV_register_irq(0, "8254 PIT");
   DEV_register_ioread_handler(this, read_handler, 0x0040, "8254 PIT", 1);
@@ -152,21 +146,34 @@ bx_pit_c::init( void )
   return(1);
 }
 
-  void
-bx_pit_c::reset(unsigned type)
+void bx_pit_c::reset(unsigned type)
 {
   BX_PIT_THIS s.timer.reset(type);
 }
 
-void
-bx_pit_c::timer_handler(void *this_ptr) {
-  bx_pit_c * class_ptr = (bx_pit_c *) this_ptr;
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_pit_c::register_state(void)
+{
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pit", "8254 PIT State", 7);
+  new bx_shadow_num_c(list, "speaker_data_on", &BX_PIT_THIS s.speaker_data_on, BASE_HEX);
+  new bx_shadow_bool_c(list, "refresh_clock_div2", &BX_PIT_THIS s.refresh_clock_div2);
+  new bx_shadow_num_c(list, "last_usec", &BX_PIT_THIS s.last_usec);
+  new bx_shadow_num_c(list, "last_next_event_time", &BX_PIT_THIS s.last_next_event_time);
+  new bx_shadow_num_c(list, "total_ticks", &BX_PIT_THIS s.total_ticks);
+  new bx_shadow_num_c(list, "total_usec", &BX_PIT_THIS s.total_usec);
+  bx_list_c *counter = new bx_list_c(list, "counter");
+  BX_PIT_THIS s.timer.register_state(counter);
+}
+#endif
 
+void bx_pit_c::timer_handler(void *this_ptr)
+{
+  bx_pit_c * class_ptr = (bx_pit_c *) this_ptr;
   class_ptr->handle_timer();
 }
 
-void
-bx_pit_c::handle_timer() {
+void bx_pit_c::handle_timer()
+{
   Bit64u my_time_usec = bx_virt_timer.time_usec();
   Bit64u time_passed = my_time_usec-BX_PIT_THIS s.last_usec;
   Bit32u time_passed32 = (Bit32u)time_passed;
@@ -198,22 +205,17 @@ bx_pit_c::handle_timer() {
   BX_DEBUG(("s.last_next_event_time=%d",BX_PIT_THIS s.last_next_event_time));
 }
 
+// static IO port read callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  // static IO port read callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  Bit32u
-bx_pit_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+Bit32u bx_pit_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
 #if !BX_USE_PIT_SMF
   bx_pit_c *class_ptr = (bx_pit_c *) this_ptr;
-
-  return( class_ptr->read(address, io_len) );
+  return class_ptr->read(address, io_len);
 }
 
-
-  Bit32u
-bx_pit_c::read( Bit32u   address, unsigned int io_len )
+Bit32u bx_pit_c::read(Bit32u address, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -257,22 +259,17 @@ bx_pit_c::read( Bit32u   address, unsigned int io_len )
   return(0); /* keep compiler happy */
 }
 
+// static IO port write callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  // static IO port write callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  void
-bx_pit_c::write_handler(void *this_ptr, Bit32u address, Bit32u dvalue, unsigned io_len)
+void bx_pit_c::write_handler(void *this_ptr, Bit32u address, Bit32u dvalue, unsigned io_len)
 {
 #if !BX_USE_PIT_SMF
   bx_pit_c *class_ptr = (bx_pit_c *) this_ptr;
-
   class_ptr->write(address, dvalue, io_len);
 }
 
-  void
-bx_pit_c::write( Bit32u   address, Bit32u   dvalue,
-                unsigned int io_len )
+void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -349,7 +346,6 @@ bx_pit_c::write( Bit32u   address, Bit32u   dvalue,
   BX_DEBUG(("s.last_next_event_time=%d",BX_PIT_THIS s.last_next_event_time));
 
 }
-
 
 bx_bool bx_pit_c::periodic(Bit32u usec_delta)
 {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h,v 1.47 2005/11/24 18:51:55 vruppert Exp $
+// $Id: wxmain.h,v 1.56 2006/06/06 22:11:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////
 // This file defines variables and classes that the wxWidgets .cc files 
 // share.  It should be included only by wx.cc and wxmain.cc.  
@@ -32,6 +32,8 @@ enum
   ID_Config_New,
   ID_Config_Read,
   ID_Config_Save,
+  ID_State_Save,
+  ID_State_Restore,
   ID_Edit_FD_0,
   ID_Edit_FD_1,
   ID_Edit_ATA0,
@@ -39,16 +41,16 @@ enum
   ID_Edit_ATA2,
   ID_Edit_ATA3,
   ID_Edit_Cdrom,  // for toolbar. FIXME: toolbar can't handle >1 cdrom
-  ID_Edit_Boot,
+  ID_Edit_CPU,
   ID_Edit_Memory,
+  ID_Edit_Clock_Cmos,
   ID_Edit_PCI,
-  ID_Edit_Sound,
-  ID_Edit_Timing,
-  ID_Edit_Network,
+  ID_Edit_Display,
   ID_Edit_Keyboard,
+  ID_Edit_Boot,
   ID_Edit_Serial_Parallel,
-  ID_Edit_Parallel,
-  ID_Edit_LoadHack,
+  ID_Edit_Network,
+  ID_Edit_Sound,
   ID_Edit_Other,
   ID_Simulate_Start,
   ID_Simulate_PauseResume,
@@ -74,6 +76,7 @@ enum
   ID_Toolbar_Config,
   ID_Toolbar_Mouse_en,
   ID_Toolbar_User,
+  ID_Toolbar_SaveRestore,
   // dialog box: LogMsgAskDialog
   ID_Continue,
   ID_Die,
@@ -126,25 +129,25 @@ enum
 
 
 // defined in wxmain.cc
-void safeWxStrcpy (char *dest, wxString src, int destlen);
+void safeWxStrcpy(char *dest, wxString src, int destlen);
 
 /// the MyPanel methods are defined in wx.cc
 class MyPanel: public wxPanel
 {
-  bx_bool fillBxKeyEvent (wxKeyEvent& event, BxKeyEvent& bxev, bx_bool release);  // for all platforms
-  bx_bool fillBxKeyEvent_MSW (wxKeyEvent& event, BxKeyEvent& bxev, bx_bool release);
-  bx_bool fillBxKeyEvent_GTK (wxKeyEvent& event, BxKeyEvent& bxev, bx_bool release);
+  bx_bool fillBxKeyEvent(wxKeyEvent& event, BxKeyEvent& bxev, bx_bool release);  // for all platforms
+  bx_bool fillBxKeyEvent_MSW(wxKeyEvent& event, BxKeyEvent& bxev, bx_bool release);
+  bx_bool fillBxKeyEvent_GTK(wxKeyEvent& event, BxKeyEvent& bxev, bx_bool release);
 public:
-  MyPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos = wxDefaultPosition, const wxSize& size = wxDefaultSize, long style = wxTAB_TRAVERSAL, const wxString& name = "panel");
+  MyPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos = wxDefaultPosition, const wxSize& size = wxDefaultSize, long style = wxTAB_TRAVERSAL, const wxString& name = wxT("panel"));
   ~MyPanel();
   void OnKeyDown(wxKeyEvent& event);
   void OnKeyUp(wxKeyEvent& event);
   void OnTimer(wxTimerEvent& event);
   void OnPaint(wxPaintEvent& event);
   void OnMouse(wxMouseEvent& event);
-  void MyRefresh ();
-  static void OnPluginInit ();
-  void ToggleMouse (bool fromToolbar);
+  void MyRefresh();
+  static void OnPluginInit();
+  void ToggleMouse(bool fromToolbar);
 private:
   wxCursor *blankCursor;
   bool needRefresh;
@@ -162,10 +165,12 @@ public:
   MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, const long style);
   ~MyFrame();
   enum StatusChange { Start, Stop, Pause, Resume };
-  void simStatusChanged (StatusChange change, bx_bool popupNotify=false);
+  void simStatusChanged(StatusChange change, bx_bool popupNotify=false);
   void OnConfigNew(wxCommandEvent& event);
   void OnConfigRead(wxCommandEvent& event);
   void OnConfigSave(wxCommandEvent& event);
+  void OnStateSave(wxCommandEvent& event);
+  void OnStateRestore(wxCommandEvent& event);
   void OnQuit(wxCommandEvent& event);
   void OnAbout(wxCommandEvent& event);
   void OnStartSim(wxCommandEvent& event);
@@ -173,15 +178,16 @@ public:
   void OnKillSim(wxCommandEvent& event);
   void OnSim2CIEvent(wxCommandEvent& event);
   void OnLogMsg(BxEvent *logMsgEvent);
-  void OnEditBoot(wxCommandEvent& event);
+  void OnEditCPU(wxCommandEvent& event);
   void OnEditMemory(wxCommandEvent& event);
+  void OnEditClockCmos(wxCommandEvent& event);
   void OnEditPCI(wxCommandEvent& event);
-  void OnEditSound(wxCommandEvent& event);
-  void OnEditTiming(wxCommandEvent& event);
-  void OnEditNet(wxCommandEvent& event);
+  void OnEditDisplay(wxCommandEvent& event);
   void OnEditKeyboard(wxCommandEvent& event);
+  void OnEditBoot(wxCommandEvent& event);
   void OnEditSerialParallel(wxCommandEvent& event);
-  void OnEditLoadHack(wxCommandEvent& event);
+  void OnEditNet(wxCommandEvent& event);
+  void OnEditSound(wxCommandEvent& event);
   void OnEditOther(wxCommandEvent& event);
   void OnLogPrefs(wxCommandEvent& event);
   void OnLogPrefsDevice(wxCommandEvent& event);
@@ -190,20 +196,20 @@ public:
   void OnShowKeyboard(wxCommandEvent& event);
 #if BX_DEBUGGER
   void OnDebugLog(wxCommandEvent& event);
-  void DebugBreak ();
-  void DebugCommand (wxString string);
-  void DebugCommand (const char *cmd);
+  void DebugBreak();
+  void DebugCommand(wxString string);
+  void DebugCommand(const char *cmd);
 #endif
-  static bool editFloppyValidate (FloppyConfigDialog *dialog);
-  void editFloppyConfig (int drive);
-  void editFirstCdrom ();
+  static bool editFloppyValidate(FloppyConfigDialog *dialog);
+  void editFloppyConfig(int drive);
+  void editFirstCdrom();
   void OnToolbarClick(wxCommandEvent& event);
-  int HandleAskParam (BxEvent *event);
-  int HandleAskParamString (bx_param_string_c *param);
+  int HandleAskParam(BxEvent *event);
+  int HandleAskParamString(bx_param_string_c *param);
 
   // called from the sim thread's OnExit() method.
-  void OnSimThreadExit ();
-  SimThread *GetSimThread () { return sim_thread; }
+  void OnSimThreadExit();
+  SimThread *GetSimThread() { return sim_thread; }
 
 private:
   wxCriticalSection sim_thread_lock;
@@ -219,11 +225,11 @@ private:
 #if BX_DEBUGGER
   DebugLogDialog *showDebugLog;
 #endif
-  void RefreshDialogs ();
+  void RefreshDialogs();
   char *debugCommand; // maybe need lock on this
   BxEvent *debugCommandEvent;  // maybe need lock on this
 public:
-  bool WantRefresh ();
+  bool WantRefresh();
 
 DECLARE_EVENT_TABLE()
 };

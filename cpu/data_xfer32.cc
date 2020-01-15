@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer32.cc,v 1.35 2005/06/21 17:01:18 sshwarts Exp $
+// $Id: data_xfer32.cc,v 1.39 2006/06/26 20:28:00 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,20 +27,19 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+#if BX_SUPPORT_X86_64==0
+// Make life easier for merging cpu64 and cpu32 code.
+#define RAX EAX
+#endif
 
 void BX_CPU_C::XCHG_ERXEAX(bxInstruction_c *i)
 {
   Bit32u temp32 = EAX;
-
-#if BX_SUPPORT_X86_64
-  RAX = BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].dword.erx;
-  BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].dword.erx = temp32;
-#else
-  EAX = BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].dword.erx;
-  BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].dword.erx = temp32;
-#endif
+  RAX = BX_READ_32BIT_REG(i->opcodeReg());
+  BX_WRITE_32BIT_REGZ(i->opcodeReg(), temp32);
 }
 
 void BX_CPU_C::MOV_ERXId(bxInstruction_c *i)
@@ -188,7 +187,7 @@ void BX_CPU_C::XCHG_EdGd(bxInstruction_c *i)
   else {
     /* pointer, segment address pair */
     read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
-    Write_RMW_virtual_dword(op2_32);
+    write_RMW_virtual_dword(op2_32);
   }
 
   BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);

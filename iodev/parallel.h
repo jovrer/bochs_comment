@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parallel.h,v 1.12 2004/01/27 21:38:51 vruppert Exp $
+// $Id: parallel.h,v 1.15 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -24,6 +24,8 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#ifndef BX_IODEV_PARPORT_H
+#define BX_IODEV_PARPORT_H
 
 #if BX_USE_PAR_SMF
 #  define BX_PAR_SMF  static
@@ -61,15 +63,15 @@ typedef struct {
   bx_bool initmode;
 } bx_par_t;
 
-
-
 class bx_parallel_c : public bx_devmodel_c {
 public:
-
-  bx_parallel_c(void);
-  ~bx_parallel_c(void);
-  virtual void   init(void);
-  virtual void   reset(unsigned type);
+  bx_parallel_c();
+  virtual ~bx_parallel_c();
+  virtual void init(void);
+  virtual void reset(unsigned type);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+#endif
 
 private:
   bx_par_t s[BX_PARPORT_MAXDEV];
@@ -82,4 +84,6 @@ private:
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
-  };
+};
+
+#endif

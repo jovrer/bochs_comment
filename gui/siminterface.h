@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.150 2006/01/18 18:35:37 sshwarts Exp $
+// $Id: siminterface.h,v 1.199 2006/06/21 20:42:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Intro to siminterface by Bryce Denney:
@@ -75,11 +75,10 @@
 //
 // An important part of the siminterface implementation is the use of parameter
 // classes, or bx_param_*.  The parameter classes are described below, where
-// they are declared.  Search for "parameter classes" below for detals.
+// they are declared.  Search for "parameter classes" below for details.
 //
 // Also this header file declares data structures for certain events that pass
 // between the siminterface and the CI.  Search for "event structures" below.
-
 
 
 //////////////////////////////////////////////////////
@@ -114,434 +113,129 @@ typedef enum {
   BXT_PARAM_BOOL,
   BXT_PARAM_ENUM,
   BXT_PARAM_STRING,
+  BXT_PARAM_DATA,
   BXT_LIST
 } bx_objtype;
 
-// list if parameter id values.  The actual values are not important;
-// it's only important that they all be different from each other.
-typedef enum {
-  BXP_NULL = 301,
-  BXP_CPU_COUNT,
-  BXP_IPS,
-  BXP_REALTIME_PIT,
-  BXP_TEXT_SNAPSHOT_CHECK,
-  BXP_VGA_EXTENSION,
-  BXP_VGA_UPDATE_INTERVAL,
-  BXP_MOUSE_ENABLED,
-  BXP_MOUSE_TYPE,
-  BXP_MEM_SIZE,
-  BXP_ROM_PATH,
-  BXP_ROM_ADDRESS,
-  BXP_VGA_ROM_PATH,
-  BXP_OPTROM1_PATH,
-  BXP_OPTROM2_PATH,
-  BXP_OPTROM3_PATH,
-  BXP_OPTROM4_PATH,
-  BXP_OPTROM1_ADDRESS,
-  BXP_OPTROM2_ADDRESS,
-  BXP_OPTROM3_ADDRESS,
-  BXP_OPTROM4_ADDRESS,
-  BXP_OPTROM_LIST,
-  BXP_OPTRAM1_PATH,
-  BXP_OPTRAM2_PATH,
-  BXP_OPTRAM3_PATH,
-  BXP_OPTRAM4_PATH,
-  BXP_OPTRAM1_ADDRESS,
-  BXP_OPTRAM2_ADDRESS,
-  BXP_OPTRAM3_ADDRESS,
-  BXP_OPTRAM4_ADDRESS,
-  BXP_KBD_SERIAL_DELAY,
-  BXP_KBD_PASTE_DELAY,
-  BXP_KBD_TYPE,
-  BXP_FLOPPYA_DEVTYPE,
-  BXP_FLOPPYA_PATH,
-  BXP_FLOPPYA_TYPE,
-  BXP_FLOPPYA_STATUS,
-  BXP_FLOPPYA,
-  BXP_FLOPPYB_DEVTYPE,
-  BXP_FLOPPYB_PATH,
-  BXP_FLOPPYB_TYPE,
-  BXP_FLOPPYB_STATUS,
-  BXP_FLOPPYB,
+// define parameter path names.  These names give the location in the
+// parameter tree where each can be found.  The names correspond to
+// the old BXP_* enum values, which have been eliminated.
+#define BXPN_CPU_NPROCESSORS             "cpu.n_processors"
+#define BXPN_CPU_NCORES                  "cpu.n_cores"
+#define BXPN_CPU_NTHREADS                "cpu.n_threads"
+#define BXPN_IPS                         "cpu.ips"
+#define BXPN_SMP_QUANTUM                 "cpu.quantum"
+#define BXPN_RESET_ON_TRIPLE_FAULT       "cpu.reset_on_triple_fault"
+#define BXPN_MEM_SIZE                    "memory.standard.ram.size"
+#define BXPN_ROM_PATH                    "memory.standard.rom.path"
+#define BXPN_ROM_ADDRESS                 "memory.standard.rom.addr"
+#define BXPN_VGA_ROM_PATH                "memory.standard.vgarom.path"
+#define BXPN_OPTROM1_PATH                "memory.optrom.1.path"
+#define BXPN_OPTROM1_ADDRESS             "memory.optrom.1.addr"
+#define BXPN_OPTROM2_PATH                "memory.optrom.2.path"
+#define BXPN_OPTROM2_ADDRESS             "memory.optrom.2.addr"
+#define BXPN_OPTROM3_PATH                "memory.optrom.3.path"
+#define BXPN_OPTROM3_ADDRESS             "memory.optrom.3.addr"
+#define BXPN_OPTROM4_PATH                "memory.optrom.4.path"
+#define BXPN_OPTROM4_ADDRESS             "memory.optrom.4.addr"
+#define BXPN_OPTRAM1_PATH                "memory.optram.1.path"
+#define BXPN_OPTRAM1_ADDRESS             "memory.optram.1.addr"
+#define BXPN_OPTRAM2_PATH                "memory.optram.2.path"
+#define BXPN_OPTRAM2_ADDRESS             "memory.optram.2.addr"
+#define BXPN_OPTRAM3_PATH                "memory.optram.3.path"
+#define BXPN_OPTRAM3_ADDRESS             "memory.optram.3.addr"
+#define BXPN_OPTRAM4_PATH                "memory.optram.4.path"
+#define BXPN_OPTRAM4_ADDRESS             "memory.optram.4.addr"
+#define BXPN_CLOCK_SYNC                  "clock_cmos.clock_sync"
+#define BXPN_CLOCK_TIME0                 "clock_cmos.time0"
+#define BXPN_CMOSIMAGE_ENABLED           "clock_cmos.cmosimage.enabled"
+#define BXPN_CMOSIMAGE_PATH              "clock_cmos.cmosimage.path"
+#define BXPN_CMOSIMAGE_RTC_INIT          "clock_cmos.cmosimage.rtc_init"
+#define BXPN_I440FX_SUPPORT              "pci.i440fx_support"
+#define BXPN_PCIDEV_VENDOR               "pci.pcidev.vendor"
+#define BXPN_PCIDEV_DEVICE               "pci.pcidev.device"
+#define BXPN_SEL_CONFIG_INTERFACE        "display.config_interface"
+#define BXPN_SEL_DISPLAY_LIBRARY         "display.display_library"
+#define BXPN_DISPLAYLIB_OPTIONS          "display.displaylib_options"
+#define BXPN_PRIVATE_COLORMAP            "display.private_colormap"
+#define BXPN_FULLSCREEN                  "display.fullscreen"
+#define BXPN_SCREENMODE                  "display.screenmode"
+#define BXPN_VGA_EXTENSION               "display.vga_extension"
+#define BXPN_VGA_UPDATE_INTERVAL         "display.vga_update_interval"
+#define BXPN_KBD_TYPE                    "keyboard_mouse.keyboard.type"
+#define BXPN_KBD_SERIAL_DELAY            "keyboard_mouse.keyboard.serial_delay"
+#define BXPN_KBD_PASTE_DELAY             "keyboard_mouse.keyboard.paste_delay"
+#define BXPN_KBD_USEMAPPING              "keyboard_mouse.keyboard.use_mapping"
+#define BXPN_KBD_KEYMAP                  "keyboard_mouse.keyboard.keymap"
+#define BXPN_USER_SHORTCUT               "keyboard_mouse.keyboard.user_shortcut"
+#define BXPN_MOUSE_TYPE                  "keyboard_mouse.mouse.type"
+#define BXPN_MOUSE_ENABLED               "keyboard_mouse.mouse.enabled"
+#define BXPN_BOOTDRIVE1                  "boot_params.boot_drive1"
+#define BXPN_BOOTDRIVE2                  "boot_params.boot_drive2"
+#define BXPN_BOOTDRIVE3                  "boot_params.boot_drive3"
+#define BXPN_FLOPPYSIGCHECK              "boot_params.floppy_sig_check"
+#define BXPN_LOAD32BITOS_WHICH           "boot_params.load32bitos.which"
+#define BXPN_LOAD32BITOS_PATH            "boot_params.load32bitos.path"
+#define BXPN_LOAD32BITOS_IOLOG           "boot_params.load32bitos.iolog"
+#define BXPN_LOAD32BITOS_INITRD          "boot_params.load32bitos.initrd"
+#define BXPN_FLOPPYA                     "floppy.0"
+#define BXPN_FLOPPYA_DEVTYPE             "floppy.0.devtype"
+#define BXPN_FLOPPYA_PATH                "floppy.0.path"
+#define BXPN_FLOPPYA_TYPE                "floppy.0.type"
+#define BXPN_FLOPPYA_STATUS              "floppy.0.status"
+#define BXPN_FLOPPYB                     "floppy.1"
+#define BXPN_FLOPPYB_DEVTYPE             "floppy.1.devtype"
+#define BXPN_FLOPPYB_PATH                "floppy.1.path"
+#define BXPN_FLOPPYB_TYPE                "floppy.1.type"
+#define BXPN_FLOPPYB_STATUS              "floppy.1.status"
+#define BXPN_ATA0_RES                    "ata.0.resources"
+#define BXPN_ATA1_RES                    "ata.1.resources"
+#define BXPN_ATA2_RES                    "ata.2.resources"
+#define BXPN_ATA3_RES                    "ata.3.resources"
+#define BXPN_ATA0_ENABLED                "ata.0.resources.enabled"
+#define BXPN_ATA1_ENABLED                "ata.1.resources.enabled"
+#define BXPN_ATA0_MASTER                 "ata.0.master"
+#define BXPN_ATA1_MASTER                 "ata.1.master"
+#define BXPN_ATA2_MASTER                 "ata.2.master"
+#define BXPN_ATA3_MASTER                 "ata.3.master"
+#define BXPN_ATA0_SLAVE                  "ata.0.slave"
+#define BXPN_ATA1_SLAVE                  "ata.1.slave"
+#define BXPN_ATA2_SLAVE                  "ata.2.slave"
+#define BXPN_ATA3_SLAVE                  "ata.3.slave"
+#define BXPN_USB1_ENABLED                "ports.usb.1.enabled"
+#define BXPN_USB1_PORT1                  "ports.usb.1.port1"
+#define BXPN_USB1_OPTION1                "ports.usb.1.option1"
+#define BXPN_USB1_PORT2                  "ports.usb.1.port2"
+#define BXPN_USB1_OPTION2                "ports.usb.1.option2"
+#define BXPN_NE2K                        "network.ne2k"
+#define BXPN_NE2K_ENABLED                "network.ne2k.enabled"
+#define BXPN_PNIC                        "network.pnic"
+#define BXPN_PNIC_ENABLED                "network.pnic.enabled"
+#define BXPN_SB16                        "sound.sb16"
+#define BXPN_SB16_ENABLED                "sound.sb16.enabled"
+#define BXPN_SB16_MIDIFILE               "sound.sb16.midifile"
+#define BXPN_SB16_WAVEFILE               "sound.sb16.wavefile"
+#define BXPN_SB16_DMATIMER               "sound.sb16.dmatimer"
+#define BXPN_SB16_LOGLEVEL               "sound.sb16.loglevel"
+#define BXPN_TEXT_SNAPSHOT_CHECK         "misc.text_snapshot_check"
+#define BXPN_GDBSTUB                     "misc.gdbstub"
+#define BXPN_LOG_FILENAME                "log.filename"
+#define BXPN_LOG_PREFIX                  "log.prefix"
+#define BXPN_DEBUGGER_LOG_FILENAME       "log.debugger_filename"
+#define BXPN_BOCHS_START                 "general.start_mode"
+#define BXPN_DEBUG_RUNNING               "general.debug_running"
+#define BXPN_RESTORE_FLAG                "general.restore"
+#define BXPN_RESTORE_PATH                "general.restore_path"
+#define BXPN_MENU_DISK                   "menu.disk"
+#define BXPN_MENU_MEMORY                 "menu.memory"
+#define BXPN_MENU_RUNTIME                "menu.runtime"
+#define BXPN_WX_KBD_STATE                "wxdebug.keyboard"
+#define BXPN_WX_CPU_STATE                "wxdebug.cpu"
+#define BXPN_WX_CPU0_STATE               "wxdebug.cpu.0"
+#define BXPN_WX_CPU0_EFLAGS_IOPL         "wxdebug.cpu.0.IOPL"
 
-  BXP_ATA0_MENU,
-  BXP_ATA1_MENU,
-  BXP_ATA2_MENU,
-  BXP_ATA3_MENU,
-#define BXP_ATAx_MENU(i) (BXP_ATA0_MENU + (i))
-  BXP_ATA0,
-  BXP_ATA1,
-  BXP_ATA2,
-  BXP_ATA3,
-#define BXP_ATAx(i) (BXP_ATA0 + (i))
-  BXP_ATA0_PRESENT,
-  BXP_ATA1_PRESENT,
-  BXP_ATA2_PRESENT,
-  BXP_ATA3_PRESENT,
-#define BXP_ATAx_PRESENT(i) (BXP_ATA0_PRESENT + (i))
-  BXP_ATA0_IOADDR1,
-  BXP_ATA1_IOADDR1,
-  BXP_ATA2_IOADDR1,
-  BXP_ATA3_IOADDR1,
-#define BXP_ATAx_IOADDR1(i) (BXP_ATA0_IOADDR1 + (i))
-  BXP_ATA0_IOADDR2,
-  BXP_ATA1_IOADDR2,
-  BXP_ATA2_IOADDR2,
-  BXP_ATA3_IOADDR2,
-#define BXP_ATAx_IOADDR2(i) (BXP_ATA0_IOADDR2 + (i))
-  BXP_ATA0_IRQ,
-  BXP_ATA1_IRQ,
-  BXP_ATA2_IRQ,
-  BXP_ATA3_IRQ,
-#define BXP_ATAx_IRQ(i) (BXP_ATA0_IRQ + (i))
-
-  BXP_ATA0_MASTER,
-  BXP_ATA0_SLAVE,
-  BXP_ATA1_MASTER,
-  BXP_ATA1_SLAVE,
-  BXP_ATA2_MASTER,
-  BXP_ATA2_SLAVE,
-  BXP_ATA3_MASTER,
-  BXP_ATA3_SLAVE,
-#define BXP_ATAx_DEVICE(i, s) (BXP_ATA0_MASTER + (2*(i)) + (s))
-
-#define BXP_PARAMS_PER_ATA_DEVICE 12
-
-  BXP_ATA0_MASTER_PRESENT,
-  BXP_ATA0_SLAVE_PRESENT,
-  BXP_ATA1_MASTER_PRESENT,
-  BXP_ATA1_SLAVE_PRESENT,
-  BXP_ATA2_MASTER_PRESENT,
-  BXP_ATA2_SLAVE_PRESENT,
-  BXP_ATA3_MASTER_PRESENT,
-  BXP_ATA3_SLAVE_PRESENT,
-#define BXP_ATAx_DEVICE_PRESENT(i, s) (BXP_ATA0_MASTER_PRESENT + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_TYPE,
-  BXP_ATA0_SLAVE_TYPE,
-  BXP_ATA1_MASTER_TYPE,
-  BXP_ATA1_SLAVE_TYPE,
-  BXP_ATA2_MASTER_TYPE,
-  BXP_ATA2_SLAVE_TYPE,
-  BXP_ATA3_MASTER_TYPE,
-  BXP_ATA3_SLAVE_TYPE,
-#define BXP_ATAx_DEVICE_TYPE(i, s) (BXP_ATA0_MASTER_TYPE + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_MODE,
-  BXP_ATA0_SLAVE_MODE,
-  BXP_ATA1_MASTER_MODE,
-  BXP_ATA1_SLAVE_MODE,
-  BXP_ATA2_MASTER_MODE,
-  BXP_ATA2_SLAVE_MODE,
-  BXP_ATA3_MASTER_MODE,
-  BXP_ATA3_SLAVE_MODE,
-#define BXP_ATAx_DEVICE_MODE(i, s) (BXP_ATA0_MASTER_MODE + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_PATH,
-  BXP_ATA0_SLAVE_PATH,
-  BXP_ATA1_MASTER_PATH,
-  BXP_ATA1_SLAVE_PATH,
-  BXP_ATA2_MASTER_PATH,
-  BXP_ATA2_SLAVE_PATH,
-  BXP_ATA3_MASTER_PATH,
-  BXP_ATA3_SLAVE_PATH,
-#define BXP_ATAx_DEVICE_PATH(i, s) (BXP_ATA0_MASTER_PATH + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_CYLINDERS,
-  BXP_ATA0_SLAVE_CYLINDERS,
-  BXP_ATA1_MASTER_CYLINDERS,
-  BXP_ATA1_SLAVE_CYLINDERS,
-  BXP_ATA2_MASTER_CYLINDERS,
-  BXP_ATA2_SLAVE_CYLINDERS,
-  BXP_ATA3_MASTER_CYLINDERS,
-  BXP_ATA3_SLAVE_CYLINDERS,
-#define BXP_ATAx_DEVICE_CYLINDERS(i, s) (BXP_ATA0_MASTER_CYLINDERS + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_HEADS,
-  BXP_ATA0_SLAVE_HEADS,
-  BXP_ATA1_MASTER_HEADS,
-  BXP_ATA1_SLAVE_HEADS,
-  BXP_ATA2_MASTER_HEADS,
-  BXP_ATA2_SLAVE_HEADS,
-  BXP_ATA3_MASTER_HEADS,
-  BXP_ATA3_SLAVE_HEADS,
-#define BXP_ATAx_DEVICE_HEADS(i, s) (BXP_ATA0_MASTER_HEADS + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_SPT,
-  BXP_ATA0_SLAVE_SPT,
-  BXP_ATA1_MASTER_SPT,
-  BXP_ATA1_SLAVE_SPT,
-  BXP_ATA2_MASTER_SPT,
-  BXP_ATA2_SLAVE_SPT,
-  BXP_ATA3_MASTER_SPT,
-  BXP_ATA3_SLAVE_SPT,
-#define BXP_ATAx_DEVICE_SPT(i, s) (BXP_ATA0_MASTER_SPT + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_STATUS,
-  BXP_ATA0_SLAVE_STATUS,
-  BXP_ATA1_MASTER_STATUS,
-  BXP_ATA1_SLAVE_STATUS,
-  BXP_ATA2_MASTER_STATUS,
-  BXP_ATA2_SLAVE_STATUS,
-  BXP_ATA3_MASTER_STATUS,
-  BXP_ATA3_SLAVE_STATUS,
-#define BXP_ATAx_DEVICE_STATUS(i, s) (BXP_ATA0_MASTER_STATUS + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_MODEL,
-  BXP_ATA0_SLAVE_MODEL,
-  BXP_ATA1_MASTER_MODEL,
-  BXP_ATA1_SLAVE_MODEL,
-  BXP_ATA2_MASTER_MODEL,
-  BXP_ATA2_SLAVE_MODEL,
-  BXP_ATA3_MASTER_MODEL,
-  BXP_ATA3_SLAVE_MODEL,
-#define BXP_ATAx_DEVICE_MODEL(i, s) (BXP_ATA0_MASTER_MODEL + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_BIOSDETECT,
-  BXP_ATA0_SLAVE_BIOSDETECT,
-  BXP_ATA1_MASTER_BIOSDETECT,
-  BXP_ATA1_SLAVE_BIOSDETECT,
-  BXP_ATA2_MASTER_BIOSDETECT,
-  BXP_ATA2_SLAVE_BIOSDETECT,
-  BXP_ATA3_MASTER_BIOSDETECT,
-  BXP_ATA3_SLAVE_BIOSDETECT,
-#define BXP_ATAx_DEVICE_BIOSDETECT(i, s) (BXP_ATA0_MASTER_BIOSDETECT + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_TRANSLATION,
-  BXP_ATA0_SLAVE_TRANSLATION,
-  BXP_ATA1_MASTER_TRANSLATION,
-  BXP_ATA1_SLAVE_TRANSLATION,
-  BXP_ATA2_MASTER_TRANSLATION,
-  BXP_ATA2_SLAVE_TRANSLATION,
-  BXP_ATA3_MASTER_TRANSLATION,
-  BXP_ATA3_SLAVE_TRANSLATION,
-#define BXP_ATAx_DEVICE_TRANSLATION(i, s) (BXP_ATA0_MASTER_TRANSLATION + (2*(i)) + (s))
-
-  BXP_ATA0_MASTER_JOURNAL,
-  BXP_ATA0_SLAVE_JOURNAL,
-  BXP_ATA1_MASTER_JOURNAL,
-  BXP_ATA1_SLAVE_JOURNAL,
-  BXP_ATA2_MASTER_JOURNAL,
-  BXP_ATA2_SLAVE_JOURNAL,
-  BXP_ATA3_MASTER_JOURNAL,
-  BXP_ATA3_SLAVE_JOURNAL,
-#define BXP_ATAx_DEVICE_JOURNAL(i, s) (BXP_ATA0_MASTER_JOURNAL + (2*(i)) + (s))
-
-#define BXP_PARAMS_PER_SERIAL_PORT 3
-  BXP_COM1_ENABLED,
-  BXP_COM1_MODE,
-  BXP_COM1_PATH,
-  BXP_COM2_ENABLED,
-  BXP_COM2_MODE,
-  BXP_COM2_PATH,
-  BXP_COM3_ENABLED,
-  BXP_COM3_MODE,
-  BXP_COM3_PATH,
-  BXP_COM4_ENABLED,
-  BXP_COM4_MODE,
-  BXP_COM4_PATH,
-#define BXP_PARAMS_PER_USB_HUB 5
-  BXP_USB1_ENABLED,
-  BXP_USB1_PORT1,
-  BXP_USB1_OPTION1,
-  BXP_USB1_PORT2,
-  BXP_USB1_OPTION2,
-  BXP_PRIVATE_COLORMAP,
-  BXP_FULLSCREEN,
-  BXP_SCREENMODE,
-  BXP_I440FX_SUPPORT,
-  BXP_PCI,
-  BXP_LOG_FILENAME,
-  BXP_LOG_PREFIX,
-  BXP_DEBUGGER_LOG_FILENAME,
-  BXP_CMOSIMAGE_ENABLED,
-  BXP_CMOSIMAGE_PATH,
-  BXP_CMOSIMAGE_RTC_INIT,
-  BXP_CLOCK,
-  BXP_CLOCK_TIME0,
-  BXP_CLOCK_SYNC,
-  BXP_LOAD32BITOS_WHICH,
-  BXP_LOAD32BITOS_PATH,
-  BXP_LOAD32BITOS_IOLOG,
-  BXP_LOAD32BITOS_INITRD,
-  BXP_LOAD32BITOS,
-  BXP_BOOTDRIVE1,
-  BXP_BOOTDRIVE2,
-  BXP_BOOTDRIVE3,
-  BXP_FLOPPYSIGCHECK,
-  BXP_BOOT,
-  BXP_MENU_MAIN,
-  BXP_MENU_MEMORY,
-  BXP_MENU_INTERFACE,
-  BXP_MENU_DISK,
-  BXP_MENU_SERIAL_PARALLEL,
-  BXP_MENU_SOUND,
-  BXP_MENU_KEYBOARD,
-  BXP_MENU_MISC,
-  BXP_MENU_MISC_2,
-  BXP_MENU_RUNTIME,
-  BXP_MAX_IPS,
-  BXP_NE2K_ENABLED,
-  BXP_NE2K_IOADDR,
-  BXP_NE2K_IRQ,
-  BXP_NE2K_MACADDR,
-  BXP_NE2K_ETHMOD,
-  BXP_NE2K_ETHDEV,
-  BXP_NE2K_SCRIPT,
-  BXP_NE2K,
-  BXP_PNIC_ENABLED,
-  BXP_PNIC_MACADDR,
-  BXP_PNIC_ETHMOD,
-  BXP_PNIC_ETHDEV,
-  BXP_PNIC_SCRIPT,
-  BXP_PNIC,
-  BXP_NETWORK,
-  BXP_PCIDEV_VENDOR,
-  BXP_PCIDEV_DEVICE,
-  BXP_PCIDEV,
-  BXP_SB16_ENABLED,
-  BXP_SB16_MIDIFILE,
-  BXP_SB16_WAVEFILE,
-  BXP_SB16_LOGFILE,
-  BXP_SB16_MIDIMODE,
-  BXP_SB16_WAVEMODE,
-  BXP_SB16_LOGLEVEL,
-  BXP_SB16_DMATIMER,
-  BXP_SB16,
-#define BXP_PARAMS_PER_PARALLEL_PORT 2
-  BXP_PARPORT1_ENABLED,
-  BXP_PARPORT1_OUTFILE,
-  BXP_PARPORT2_ENABLED,
-  BXP_PARPORT2_OUTFILE,
-#define BXP_PARAMS_PER_PCI_SLOT 2
-  BXP_PCI_SLOT1_USED,
-  BXP_PCI_SLOT1_DEVNAME,
-  BXP_PCI_SLOT2_USED,
-  BXP_PCI_SLOT2_DEVNAME,
-  BXP_PCI_SLOT3_USED,
-  BXP_PCI_SLOT3_DEVNAME,
-  BXP_PCI_SLOT4_USED,
-  BXP_PCI_SLOT4_DEVNAME,
-  BXP_PCI_SLOT5_USED,
-  BXP_PCI_SLOT5_DEVNAME,
-  BXP_KEYBOARD_USEMAPPING,
-  BXP_KEYBOARD_MAP,
-  BXP_KEYBOARD,
-  BXP_USER_SHORTCUT,
-  BXP_ASK_FOR_PATHNAME,   // for general file selection dialog
-  BXP_BOCHS_START,        // How Bochs starts
-  // experiment: add params for CPU registers
-  BXP_CPU_PARAMETERS,
-  BXP_CPU_EAX,
-  BXP_CPU_EBX,
-  BXP_CPU_ECX,
-  BXP_CPU_EDX,
-  BXP_CPU_EBP,
-  BXP_CPU_ESI,
-  BXP_CPU_EDI,
-  BXP_CPU_ESP,
-  BXP_CPU_EIP,
-  BXP_CPU_SEG_CS,
-  BXP_CPU_SEG_DS,
-  BXP_CPU_SEG_SS,
-  BXP_CPU_SEG_ES,
-  BXP_CPU_SEG_FS,
-  BXP_CPU_SEG_GS,
-  BXP_CPU_SEG_LDTR,
-  BXP_CPU_SEG_TR,
-  BXP_CPU_GDTR_BASE,
-  BXP_CPU_GDTR_LIMIT,
-  BXP_CPU_IDTR_BASE,
-  BXP_CPU_IDTR_LIMIT,
-  BXP_CPU_EFLAGS,
-  BXP_CPU_EFLAGS_ID,
-  BXP_CPU_EFLAGS_VIP,
-  BXP_CPU_EFLAGS_VIF,
-  BXP_CPU_EFLAGS_AC,
-  BXP_CPU_EFLAGS_VM,
-  BXP_CPU_EFLAGS_RF,
-  BXP_CPU_EFLAGS_NT,
-  BXP_CPU_EFLAGS_IOPL,
-  BXP_CPU_EFLAGS_OF,
-  BXP_CPU_EFLAGS_DF,
-  BXP_CPU_EFLAGS_IF,
-  BXP_CPU_EFLAGS_TF,
-  BXP_CPU_EFLAGS_SF,
-  BXP_CPU_EFLAGS_ZF,
-  BXP_CPU_EFLAGS_AF,
-  BXP_CPU_EFLAGS_PF,
-  BXP_CPU_EFLAGS_CF,
-  BXP_CPU_DR0,
-  BXP_CPU_DR1,
-  BXP_CPU_DR2,
-  BXP_CPU_DR3,
-  BXP_CPU_DR6,
-  BXP_CPU_DR7,
-  BXP_CPU_TR3,
-  BXP_CPU_TR4,
-  BXP_CPU_TR5,
-  BXP_CPU_TR6,
-  BXP_CPU_TR7,
-  BXP_CPU_CR0,
-  BXP_CPU_CR1,
-  BXP_CPU_CR2,
-  BXP_CPU_CR3,
-  BXP_CPU_CR4,
-  // a few parameters for the keyboard
-  BXP_KBD_PARAMETERS,
-  BXP_KBD_PARE,
-  BXP_KBD_TIM ,
-  BXP_KBD_AUXB,
-  BXP_KBD_KEYL,
-  BXP_KBD_C_D,
-  BXP_KBD_SYSF,
-  BXP_KBD_INPB,
-  BXP_KBD_OUTB,
-  BXP_KBD_TIMER_PENDING,
-  BXP_KBD_IRQ1_REQ,
-  BXP_KBD_IRQ12_REQ,
-#if BX_DEBUGGER
-  // in debugger, is the simulation running (continue command) or waiting.
-  // This is only modified by debugger code, not by the user.
-  BXP_DEBUG_RUNNING,
-#endif
-  BXP_SEL_CONFIG_INTERFACE,
-  BXP_SEL_DISPLAY_LIBRARY,
-  BXP_DISPLAYLIB_OPTIONS,
-  BXP_THIS_IS_THE_LAST    // used to determine length of list
-} bx_id;
-
-// use x=1,2,3,4
-#define BXP_COMx_ENABLED(x) \
-   (bx_id)(BXP_COM1_ENABLED + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
-#define BXP_COMx_MODE(x) \
-   (bx_id)(BXP_COM1_MODE + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
-#define BXP_COMx_PATH(x) \
-  (bx_id)(BXP_COM1_PATH + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
-
-// use x=1
-#define BXP_USBx_ENABLED(x) \
-   (bx_id)(BXP_USB1_ENABLED + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-#define BXP_USBx_PORT1(x) \
-   (bx_id)(BXP_USB1_PORT1 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-#define BXP_USBx_OPTION1(x) \
-   (bx_id)(BXP_USB1_OPTION1 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-#define BXP_USBx_PORT2(x) \
-   (bx_id)(BXP_USB1_PORT2 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-#define BXP_USBx_OPTION2(x) \
-   (bx_id)(BXP_USB1_OPTION2 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-
-// use x=1,2
-#define BXP_PARPORTx_ENABLED(x) \
-  (bx_id)(BXP_PARPORT1_ENABLED + (((x)-1)*BXP_PARAMS_PER_PARALLEL_PORT))
-#define BXP_PARPORTx_OUTFILE(x) \
-  (bx_id)(BXP_PARPORT1_OUTFILE + (((x)-1)*BXP_PARAMS_PER_PARALLEL_PORT))
-
-// use x=1,2,3,4,5
-#define BXP_PCISLOTx_USED(x) \
-   (bx_id)(BXP_PCI_SLOT1_USED + (((x)-1)*BXP_PARAMS_PER_PCI_SLOT))
-#define BXP_PCISLOTx_DEVNAME(x) \
-   (bx_id)(BXP_PCI_SLOT1_DEVNAME + (((x)-1)*BXP_PARAMS_PER_PCI_SLOT))
+// base value for generated new parameter id
+#define BXP_NEW_PARAM_ID 1001
 
 typedef enum {
   BX_TOOLBAR_UNDEFINED,
@@ -550,6 +244,9 @@ typedef enum {
   BX_TOOLBAR_CDROMD,
   BX_TOOLBAR_RESET,
   BX_TOOLBAR_POWER,
+#if BX_SUPPORT_SAVE_RESTORE
+  BX_TOOLBAR_SAVE_RESTORE,
+#endif
   BX_TOOLBAR_COPY,
   BX_TOOLBAR_PASTE,
   BX_TOOLBAR_SNAPSHOT,
@@ -798,7 +495,8 @@ enum {
   BX_LOG_ASK_CHOICE_DIE,
   BX_LOG_ASK_CHOICE_DUMP_CORE,
   BX_LOG_ASK_CHOICE_ENTER_DEBUG,
-  BX_LOG_ASK_N_CHOICES
+  BX_LOG_ASK_N_CHOICES,
+  BX_LOG_NOTIFY_FAILED
 };
 
 // Event type: BX_SYNC_EVT_GET_DBG_COMMAND
@@ -881,55 +579,71 @@ class bx_list_c;
 
 class BOCHSAPI bx_object_c {
 private:
-  bx_id id;
+  Bit32u id;
   bx_objtype type;
 protected:
-  void set_type (bx_objtype type);
+  void set_type(bx_objtype _type) { type = _type; }
 public:
-  bx_object_c (bx_id id);
-  bx_id get_id () { return id; }
-  Bit8u get_type () { return type; }
+  bx_object_c(Bit32u _id): id(_id), type(BXT_OBJECT) {}
+  virtual ~bx_object_c() {}
+  Bit32u get_id() const { return id; }
+  Bit8u get_type() const { return type; }
 };
+
+#define BASE_DEC 10
+#define BASE_HEX 16
 
 class BOCHSAPI bx_param_c : public bx_object_c {
   BOCHSAPI_CYGONLY static const char *default_text_format;
 protected:
+  bx_list_c *parent;
   char *name;
   char *description;
   char *label; // label string for text menus and gui dialogs
   const char *text_format;  // printf format string. %d for ints, %s for strings, etc.
+  const char *long_text_format;  // printf format string. %d for ints, %s for strings, etc.
   char *ask_format;  // format string for asking for a new value
   char *group_name;  // name of the group the param belongs to
   int runtime_param;
   int enabled;
 public:
-  bx_param_c (bx_id id, char *name, char *description);
-  void set_format (const char *format) {text_format = format;}
-  const char *get_format () {return text_format;}
-  void set_ask_format (char *format) {ask_format = format; }
-  char *get_ask_format () {return ask_format;}
-  void set_label (char *text) {label = text;}
-  char *get_label () {return label;}
-  void set_runtime_param (int val) { runtime_param = val; }
-  int get_runtime_param () { return runtime_param; }
-  void set_group (char *group) {group_name = group;}
-  char *get_group () {return group_name;}
-  char *get_name () { return name; }
-  char *get_description () { return description; }
-  int get_enabled () { return enabled; }
-  virtual void set_enabled (int enabled) { this->enabled = enabled; }
-  void reset () {}
-  int getint () {return -1;}
-  static const char* set_default_format (const char *f);
-  static const char *get_default_format () { return default_text_format; }
-  virtual bx_list_c *get_dependent_list () { return NULL; }
+  bx_param_c(Bit32u id, const char *name, const char *description);
+  bx_param_c(Bit32u id, const char *name, const char *label, const char *description);
+  virtual ~bx_param_c();
+  bx_param_c *get_parent() { return (bx_param_c *) parent; }
+  int get_param_path(char *path_out, int maxlen);
+  void set_format(const char *format) {text_format = format;}
+  const char *get_format() const {return text_format;}
+  void set_long_format(const char *format) {long_text_format = format;}
+  const char *get_long_format() const {return long_text_format;}
+  void set_ask_format(const char *format);
+  const char *get_ask_format() const {return ask_format;}
+  void set_label(const char *text);
+  void set_description(const char *text);
+  const char *get_label() const {return label;}
+  void set_runtime_param(int val) { runtime_param = val; }
+  int get_runtime_param() { return runtime_param; }
+  void set_group(const char *group);
+  const char *get_group() const {return group_name;}
+  const char *get_name() const { return name; }
+  const char *get_description() const { return description; }
+  int get_enabled() const { return enabled; }
+  virtual void set_enabled(int enabled) { this->enabled = enabled; }
+  virtual void reset() {}
+  int getint() const {return -1;}
+  static const char* set_default_format(const char *f);
+  static const char *get_default_format() { return default_text_format; }
+  virtual bx_list_c *get_dependent_list() { return NULL; }
 #if BX_USE_TEXTCONFIG
-  virtual void text_print (FILE *fp) {}
-  virtual int text_ask (FILE *fpin, FILE *fpout) {return -1;}
+  virtual void text_print(FILE *fp) {}
+  virtual int text_ask(FILE *fpin, FILE *fpout) {return -1;}
 #endif
 };
 
 typedef Bit64s (*param_event_handler)(class bx_param_c *, int set, Bit64s val);
+#if BX_SUPPORT_SAVE_RESTORE
+typedef Bit64s (*param_sr_handler)(void *devptr, class bx_param_c *, Bit64s val);
+#endif
 typedef int (*param_enable_handler)(class bx_param_c *, int en);
 
 class BOCHSAPI bx_param_num_c : public bx_param_c {
@@ -939,7 +653,7 @@ class BOCHSAPI bx_param_num_c : public bx_param_c {
   // bx_param_bool_c will enable those parameters when this bool is true, and
   // disable them when this bool is false.
   bx_list_c *dependent_list;
-  void update_dependents ();
+  void update_dependents();
 protected:
   Bit64s min, max, initial_val;
   union _uval_ {
@@ -951,41 +665,52 @@ protected:
     bx_bool *pbool;  // used by bx_shadow_bool_c
   } val;
   param_event_handler handler;
+#if BX_SUPPORT_SAVE_RESTORE
+  void *sr_devptr;
+  param_sr_handler save_handler;
+  param_sr_handler restore_handler;
+#endif
   param_enable_handler enable_handler;
   int base;
   Bit32u options;
+  bx_bool is_shadow;
 public:
   enum {
     // When a bx_param_num_c is displayed in dialog, USE_SPIN_CONTROL controls
     // whether a spin control should be used instead of a simple text control.
     USE_SPIN_CONTROL = (1<<0)
   } bx_numopt_bits;
-  bx_param_num_c (bx_id id,
-      char *name,
-      char *description,
-      Bit64s min, Bit64s max, Bit64s initial_val);
-  void reset ();
-  void set_handler (param_event_handler handler);
-  void set_enable_handler (param_enable_handler handler);
-  virtual bx_list_c *get_dependent_list () { return dependent_list; }
-  void set_dependent_list (bx_list_c *l);
-  virtual void set_enabled (int enabled);
-  virtual Bit32s get () { return (Bit32s) get64(); }
-  virtual Bit64s get64 ();
-  virtual void set (Bit64s val);
-  void set_base (int base) { this->base = base; }
-  void set_initial_val (Bit64s initial_val);
-  int get_base () { return base; }
-  void set_range (Bit64u min, Bit64u max);
-  Bit64s get_min () { return min; }
-  Bit64s get_max () { return max; }
-  static Bit32u set_default_base (Bit32u val);
-  static Bit32u get_default_base () { return default_base; }
-  void set_options (Bit32u options) { this->options = options; }
-  Bit32u get_options () { return options; }
+  bx_param_num_c(bx_param_c *parent,
+      const char *name,
+      const char *label,
+      const char *description,
+      Bit64s min, Bit64s max, Bit64s initial_val,
+      bx_bool is_shadow = 0);
+  virtual void reset();
+  void set_handler(param_event_handler handler);
+#if BX_SUPPORT_SAVE_RESTORE
+  void set_sr_handlers(void *devptr, param_sr_handler save, param_sr_handler restore);
+#endif
+  void set_enable_handler(param_enable_handler handler);
+  virtual bx_list_c *get_dependent_list() { return dependent_list; }
+  void set_dependent_list(bx_list_c *l);
+  virtual void set_enabled(int enabled);
+  virtual Bit32s get() { return (Bit32s) get64(); }
+  virtual Bit64s get64();
+  virtual void set(Bit64s val);
+  void set_base(int base) { this->base = base; }
+  void set_initial_val(Bit64s initial_val);
+  int get_base() const { return base; }
+  void set_range(Bit64u min, Bit64u max);
+  Bit64s get_min() { return min; }
+  Bit64s get_max() { return max; }
+  static Bit32u set_default_base(Bit32u val);
+  static Bit32u get_default_base() { return default_base; }
+  void set_options(Bit32u options) { this->options = options; }
+  Bit32u get_options() const { return options; }
 #if BX_USE_TEXTCONFIG
-  virtual void text_print (FILE *fp);
-  virtual int text_ask (FILE *fpin, FILE *fpout);
+  virtual void text_print(FILE *fp);
+  virtual int text_ask(FILE *fpin, FILE *fpout);
 #endif
 };
 
@@ -999,56 +724,57 @@ class BOCHSAPI bx_shadow_num_c : public bx_param_num_c {
   Bit8u lowbit;   // range of bits associated with this param
   Bit64u mask;     // mask is ANDed with value before it is returned from get
 public:
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit64s *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 63,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit64u *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 63,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit32s *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 31,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit32u *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 31,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit16s *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 15,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit16u *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 15,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit8s *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 7,
       Bit8u lowbit = 0);
-  bx_shadow_num_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_num_c(bx_param_c *parent,
+      const char *name,
       Bit8u *ptr_to_real_val,
+      int base = BASE_DEC,
       Bit8u highbit = 7,
       Bit8u lowbit = 0);
-  virtual Bit64s get64 ();
-  virtual void set (Bit64s val);
+  virtual Bit64s get64();
+  virtual void set(Bit64s val);
+  virtual void reset();
 };
 
 class BOCHSAPI bx_param_bool_c : public bx_param_num_c {
@@ -1056,13 +782,15 @@ class BOCHSAPI bx_param_bool_c : public bx_param_num_c {
   // user interface, the enable variable should enable/disable all the
   // other parameters associated with that module.
 public:
-  bx_param_bool_c (bx_id id, 
-      char *name,
-      char *description,
-      Bit64s initial_val);
+  bx_param_bool_c(bx_param_c *parent,
+      const char *name,
+      const char *label,
+      const char *description,
+      Bit64s initial_val,
+      bx_bool is_shadow = 0);
 #if BX_USE_TEXTCONFIG
-  virtual void text_print (FILE *fp);
-  virtual int text_ask (FILE *fpin, FILE *fpout);
+  virtual void text_print(FILE *fp);
+  virtual int text_ask(FILE *fpin, FILE *fpout);
 #endif
 };
 
@@ -1072,35 +800,41 @@ class BOCHSAPI bx_shadow_bool_c : public bx_param_bool_c {
   // bit is used.  get/set will only modify that bit.
   Bit8u bitnum;
 public:
-  bx_shadow_bool_c (bx_id id,
-      char *name,
-      char *description,
+  bx_shadow_bool_c(bx_param_c *parent,
+      const char *name,
+      const char *label,
       bx_bool *ptr_to_real_val,
       Bit8u bitnum = 0);
-  virtual Bit64s get64 ();
-  virtual void set (Bit64s val);
+  bx_shadow_bool_c(bx_param_c *parent,
+      const char *name,
+      bx_bool *ptr_to_real_val,
+      Bit8u bitnum = 0);
+  virtual Bit64s get64();
+  virtual void set(Bit64s val);
 };
 
 
 class BOCHSAPI bx_param_enum_c : public bx_param_num_c {
   char **choices;
 public:
-  bx_param_enum_c (bx_id id, 
-      char *name,
-      char *description,
+  bx_param_enum_c(bx_param_c *parent,
+      const char *name,
+      const char *label,
+      const char *description,
       char **choices,
       Bit64s initial_val,
       Bit64s value_base = 0);
-  char *get_choice (int n) { return choices[n]; }
-  int find_by_name (const char *string);
-  bool set_by_name (const char *string);
+  char *get_choice(int n) { return choices[n]; }
+  char *get_selected() { return choices[val.number - min]; }
+  int find_by_name(const char *string);
+  bx_bool set_by_name(const char *string);
 #if BX_USE_TEXTCONFIG
-  virtual void text_print (FILE *fp);
-  virtual int text_ask (FILE *fpin, FILE *fpout);
+  virtual void text_print(FILE *fp);
+  virtual int text_ask(FILE *fpin, FILE *fpout);
 #endif
 };
 
-typedef char* (*param_string_event_handler)(class bx_param_string_c *, int set, char *val, int maxlen);
+typedef const char* (*param_string_event_handler)(class bx_param_string_c *, int set, const char *val, int maxlen);
 
 class BOCHSAPI bx_param_string_c : public bx_param_c {
   int maxsize;
@@ -1117,28 +851,29 @@ public:
                            // bit suggests that they use it.
     SAVE_FILE_DIALOG = 4   // Use save dialog opposed to open file dialog
   } bx_string_opt_bits;
-  bx_param_string_c (bx_id id,
-      char *name,
-      char *description,
-      char *initial_val,
+  bx_param_string_c(bx_param_c *parent,
+      const char *name,
+      const char *label,
+      const char *description,
+      const char *initial_val,
       int maxsize=-1);
-  virtual ~bx_param_string_c ();
-  void reset ();
-  void set_handler (param_string_event_handler handler);
-  void set_enable_handler (param_enable_handler handler);
-  virtual void set_enabled (int enabled);
-  Bit32s get (char *buf, int len);
-  char *getptr () {return val; }
-  void set (char *buf);
-  bx_bool equals (const char *buf);
-  bx_param_num_c *get_options () { return options; }
-  void set_separator (char sep) {separator = sep; }
-  char get_separator () {return separator; }
-  int get_maxsize () {return maxsize; }
-  void set_initial_val (char *buf);
+  virtual ~bx_param_string_c();
+  virtual void reset();
+  void set_handler(param_string_event_handler handler);
+  void set_enable_handler(param_enable_handler handler);
+  virtual void set_enabled(int enabled);
+  Bit32s get(char *buf, int len);
+  char *getptr() {return val; }
+  void set(const char *buf);
+  bx_bool equals(const char *buf);
+  bx_param_num_c *get_options() { return options; }
+  void set_separator(char sep) {separator = sep; }
+  char get_separator() const {return separator; }
+  int get_maxsize() const {return maxsize; }
+  void set_initial_val(const char *buf);
 #if BX_USE_TEXTCONFIG
-  virtual void text_print (FILE *fp);
-  virtual int text_ask (FILE *fpin, FILE *fpout);
+  virtual void text_print(FILE *fp);
+  virtual int text_ask(FILE *fpin, FILE *fpout);
 #endif
 };
 
@@ -1147,15 +882,32 @@ public:
 // for declaring a string param and setting the options with IS_FILENAME.
 class BOCHSAPI bx_param_filename_c : public bx_param_string_c {
 public:
-  bx_param_filename_c (bx_id id,
-      char *name,
-      char *description,
-      char *initial_val,
+  bx_param_filename_c(bx_param_c *parent,
+      const char *name,
+      const char *label,
+      const char *description,
+      const char *initial_val,
       int maxsize=-1);
 };
 
+#if BX_SUPPORT_SAVE_RESTORE
+class BOCHSAPI bx_shadow_data_c : public bx_param_c {
+  Bit32u data_size;
+  Bit8u *data_ptr;
+public:
+  bx_shadow_data_c(bx_param_c *parent,
+      const char *name,
+      Bit8u *ptr_to_data,
+      Bit32u data_size);
+  Bit8u *getptr() {return data_ptr;}
+  Bit32u get_size() const {return data_size;}
+};
+#endif
+
+#define BX_DEFAULT_LIST_SIZE 6
+
 class BOCHSAPI bx_list_c : public bx_param_c {
-private:
+protected:
   // just a list of bx_param_c objects.  size tells current number of
   // objects in the list, and maxsize tells how many list items are
   // allocated in the constructor.
@@ -1171,10 +923,7 @@ private:
   bx_param_num_c *choice;
   // title of the menu or series
   bx_param_string_c *title;
-  // if the menu shows a "return to previous menu" type of choice,
-  // this controls where that choice will go.
-  bx_param_c *parent;
-  void init ();
+  void init(const char *list_title);
 public:
   enum {
     // When a bx_list_c is displayed as a menu, SHOW_PARENT controls whether or
@@ -1198,23 +947,25 @@ public:
     // item (used in the runtime menu).
     SHOW_GROUP_NAME = (1<<4)
   } bx_listopt_bits;
-  bx_list_c (bx_id id, int maxsize);
-  bx_list_c (bx_id id, char *name, char *description, bx_param_c **init_list);
-  bx_list_c (bx_id id, char *name, char *description, int maxsize);
+  bx_list_c(bx_param_c *parent, int maxsize = BX_DEFAULT_LIST_SIZE);
+  bx_list_c(bx_param_c *parent, const char *name, int maxsize = BX_DEFAULT_LIST_SIZE);
+  bx_list_c(bx_param_c *parent, const char *name, char *title, int maxsize = BX_DEFAULT_LIST_SIZE);
+  bx_list_c(bx_param_c *parent, const char *name, char *title, bx_param_c **init_list);
   virtual ~bx_list_c();
-  bx_list_c *clone ();
-  void add (bx_param_c *param);
-  bx_param_c *get (int index);
-  int get_size () { return size; }
-  bx_param_num_c *get_options () { return options; }
-  void set_options (bx_param_num_c *newopt) { options = newopt; }
-  bx_param_num_c *get_choice () { return choice; }
-  bx_param_string_c *get_title () { return title; }
-  void set_parent (bx_param_c *newparent) { parent = newparent; }
-  bx_param_c *get_parent () { return parent; }
+  bx_list_c *clone();
+  void add(bx_param_c *param);
+  bx_param_c *get(int index);
+  bx_param_c *get_by_name(const char *name);
+  int get_size() const { return size; }
+  bx_param_num_c *get_options() { return options; }
+  bx_param_num_c *get_choice() { return choice; }
+  bx_param_string_c *get_title() { return title; }
+  void set_parent(bx_param_c *newparent);
+  bx_param_c *get_parent() { return parent; }
+  virtual void reset();
 #if BX_USE_TEXTCONFIG
-  virtual void text_print (FILE *);
-  virtual int text_ask (FILE *fpin, FILE *fpout);
+  virtual void text_print(FILE *);
+  virtual int text_ask(FILE *fpin, FILE *fpout);
 #endif
 };
 
@@ -1329,56 +1080,6 @@ BOCHSAPI extern int n_atadevice_translation_names;
 BOCHSAPI extern char *clock_sync_names[];
 BOCHSAPI extern int clock_sync_n_names;
 
-typedef struct {
-  bx_param_enum_c *Odevtype;
-  bx_param_string_c *Opath;
-  bx_param_enum_c *Otype;
-  bx_param_enum_c *Ostatus;
-} bx_floppy_options;
-
-typedef struct {
-  bx_list_c *Omenu;
-  bx_param_bool_c *Opresent;
-  bx_param_enum_c *Otype;
-  bx_param_enum_c *Omode;
-  bx_param_string_c *Opath;
-  bx_param_string_c *Ojournal;
-  bx_param_num_c *Ocylinders;
-  bx_param_num_c *Oheads;
-  bx_param_num_c *Ospt;
-  bx_param_enum_c *Ostatus;
-  bx_param_string_c *Omodel;
-  bx_param_enum_c *Obiosdetect;
-  bx_param_enum_c *Otranslation;
-} bx_atadevice_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_enum_c *Omode;
-  bx_param_string_c *Odev;
-} bx_serial_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_string_c *Oport1;
-  bx_param_string_c *Ooption1;
-  bx_param_string_c *Oport2;
-  bx_param_string_c *Ooption2;
-} bx_usb_options;
-
-typedef struct {
-  bx_param_bool_c *Oenabled;
-  bx_param_string_c *Omacaddr;
-  bx_param_enum_c *Oethmod;
-  bx_param_string_c *Oethdev;
-  bx_param_string_c *Oscript;
-} bx_pnic_options;
-
-typedef struct {
-  bx_param_bool_c *Oused;
-  bx_param_string_c *Odevname;
-} bx_pcislot_options;
-
 ////////////////////////////////////////////////////////////////////
 // base class simulator interface, contains just virtual functions.
 // I'm not longer sure that having a base class is going to be of any
@@ -1386,13 +1087,15 @@ typedef struct {
 
 #include <setjmp.h>
 
-enum ci_command_t { CI_START, CI_RUNTIME_CONFIG, CI_SHUTDOWN };
+enum ci_command_t { CI_START, CI_RUNTIME_CONFIG, CI_SAVE_RESTORE, CI_SHUTDOWN };
 enum ci_return_t { 
   CI_OK,                  // normal return value 
   CI_ERR_NO_TEXT_CONSOLE  // err: can't work because there's no text console
   };
 typedef int (*config_interface_callback_t)(void *userdata, ci_command_t command);
 typedef BxEvent* (*bxevent_handler)(void *theclass, BxEvent *event);
+typedef Bit32s (*user_option_parser_t)(const char *context, int num_params, char *params[]);
+typedef Bit32s (*user_option_save_t)(FILE *fp);
 
 // bx_gui->set_display_mode() changes the mode between the configuration
 // interface and the simulation.  This is primarily intended for display
@@ -1406,27 +1109,27 @@ enum disp_mode_t { DISP_MODE_CONFIG=100, DISP_MODE_SIM };
 
 class BOCHSAPI bx_simulator_interface_c {
 public:
-  bx_simulator_interface_c ();
-  virtual void set_quit_context (jmp_buf *context) {}
-  virtual int get_init_done () { return -1; }
-  virtual int set_init_done (int n) {return -1;}
-  virtual void get_param_id_range (int *min, int *max) {}
-  virtual int register_param (bx_id id, bx_param_c *it) {return -1;}
-  virtual void reset_all_param () {}
-  virtual bx_param_c *get_param (bx_id id) {return NULL;}
-  virtual bx_param_num_c *get_param_num (bx_id id) {return NULL;}
-  virtual bx_param_string_c *get_param_string (bx_id id) {return NULL;}
-  virtual bx_param_bool_c *get_param_bool (bx_id id) {return NULL;}
-  virtual bx_param_enum_c *get_param_enum (bx_id id) {return NULL;}
-  virtual int get_n_log_modules () {return -1;}
-  virtual char *get_prefix (int mod) {return 0;}
-  virtual int get_log_action (int mod, int level) {return -1;}
-  virtual void set_log_action (int mod, int level, int action) {}
-  virtual int get_default_log_action (int level) {return -1;}
-  virtual void set_default_log_action (int level, int action) {}
-  virtual char *get_action_name (int action) {return 0;}
-  virtual const char *get_log_level_name (int level) {return 0;}
-  virtual int get_max_log_level () {return -1;}
+  bx_simulator_interface_c() {}
+  virtual void set_quit_context(jmp_buf *context) {}
+  virtual int get_init_done() { return -1; }
+  virtual int set_init_done(int n) {return -1;}
+  virtual void reset_all_param() {}
+  // new param methods
+  virtual bx_param_c *get_param(const char *pname, bx_param_c *base=NULL) {return NULL;}
+  virtual bx_param_num_c *get_param_num(const char *pname, bx_param_c *base=NULL) {return NULL;}
+  virtual bx_param_string_c *get_param_string(const char *pname, bx_param_c *base=NULL) {return NULL;}
+  virtual bx_param_bool_c *get_param_bool(const char *pname, bx_param_c *base=NULL) {return NULL;}
+  virtual bx_param_enum_c *get_param_enum(const char *pname, bx_param_c *base=NULL) {return NULL;}
+  virtual unsigned gen_param_id() {return 0;}
+  virtual int get_n_log_modules() {return -1;}
+  virtual char *get_prefix(int mod) {return 0;}
+  virtual int get_log_action(int mod, int level) {return -1;}
+  virtual void set_log_action(int mod, int level, int action) {}
+  virtual int get_default_log_action(int level) {return -1;}
+  virtual void set_default_log_action(int level, int action) {}
+  virtual char *get_action_name(int action) {return 0;}
+  virtual const char *get_log_level_name(int level) {return 0;}
+  virtual int get_max_log_level() {return -1;}
 
   // exiting is somewhat complicated!  The preferred way to exit bochs is
   // to call BX_EXIT(exitcode).  That is defined to call 
@@ -1434,22 +1137,20 @@ public:
   // the cleanup functions in bochs so that it can destroy windows
   // and free up memory, then sends a notify message to the CI 
   // telling it that bochs has stopped.
-  virtual void quit_sim (int code) {}
+  virtual void quit_sim(int code) {}
 
-  virtual int get_exit_code () { return 0; }
+  virtual int get_exit_code() { return 0; }
 
-  virtual int get_default_rc (char *path, int len) {return -1;}
-  virtual int read_rc (char *path) {return -1;}
-  virtual int write_rc (char *rc, int overwrite) {return -1;}
-  virtual int get_log_file (char *path, int len) {return -1;}
-  virtual int set_log_file (char *path) {return -1;}
-  virtual int get_log_prefix (char *prefix, int len) {return -1;}
-  virtual int set_log_prefix (char *prefix) {return -1;}
-  virtual int get_debugger_log_file (char *path, int len) {return -1;}
-  virtual int set_debugger_log_file (char *path) {return -1;}
-  virtual int get_floppy_options (int drive, bx_floppy_options *out) {return -1;}
-  virtual int get_cdrom_options (int drive, bx_atadevice_options *out, int *where = NULL) {return -1;}
-  virtual char *get_floppy_type_name (int type) {return NULL;}
+  virtual int get_default_rc(char *path, int len) {return -1;}
+  virtual int read_rc(const char *path) {return -1;}
+  virtual int write_rc(const char *rc, int overwrite) {return -1;}
+  virtual int get_log_file(char *path, int len) {return -1;}
+  virtual int set_log_file(char *path) {return -1;}
+  virtual int get_log_prefix(char *prefix, int len) {return -1;}
+  virtual int set_log_prefix(char *prefix) {return -1;}
+  virtual int get_debugger_log_file(char *path, int len) {return -1;}
+  virtual int set_debugger_log_file(char *path) {return -1;}
+  virtual int get_cdrom_options(int drive, bx_list_c **out, int *where = NULL) {return -1;}
 
   // The CI calls set_notify_callback to register its event handler function.
   // This event handler function is called whenever the simulator needs to
@@ -1461,70 +1162,86 @@ public:
   // etc.) are displayed and handled by gui.cc, not by the CI or siminterface.
   // gui.cc uses its own callback functions to implement the behavior of
   // the buttons.  Some of these implementations call the siminterface.
-  virtual void set_notify_callback (bxevent_handler func, void *arg) {}
-  virtual void get_notify_callback (bxevent_handler *func, void **arg) {}
+  virtual void set_notify_callback(bxevent_handler func, void *arg) {}
+  virtual void get_notify_callback(bxevent_handler *func, void **arg) {}
 
   // send an event from the simulator to the CI.
-  virtual BxEvent* sim_to_ci_event (BxEvent *event) {return NULL;}
+  virtual BxEvent* sim_to_ci_event(BxEvent *event) {return NULL;}
 
   // called from simulator when it hits serious errors, to ask if the user
   // wants to continue or not
-  virtual int log_msg (const char *prefix, int level, const char *msg) {return -1;}
+  virtual int log_msg(const char *prefix, int level, const char *msg) {return -1;}
 
   // tell the CI to ask the user for the value of a parameter.
-  virtual int ask_param (bx_id param) {return -1;}
+  virtual int ask_param(bx_param_c *param) {return -1;}
+  virtual int ask_param(const char *pname) {return -1;}
 
   // ask the user for a pathname
-  virtual int ask_filename (char *filename, int maxlen, char *prompt, char *the_default, int flags) {return -1;}
+  virtual int ask_filename(char *filename, int maxlen, char *prompt, char *the_default, int flags) {return -1;}
+  // yes/no dialog
+  virtual int ask_yes_no(char *title, char *prompt, bx_bool the_default) {return -1;}
   // called at a regular interval, currently by the keyboard handler.
-  virtual void periodic () {}
-  virtual int create_disk_image (const char *filename, int sectors, bx_bool overwrite) {return -3;}
+  virtual void periodic() {}
+  virtual int create_disk_image(const char *filename, int sectors, bx_bool overwrite) {return -3;}
   // Tell the configuration interface (CI) that some parameter values have
   // changed.  The CI will reread the parameters and change its display if it's
   // appropriate.  Maybe later: mention which params have changed to save time.
-  virtual void refresh_ci () {}
+  virtual void refresh_ci() {}
   // forces a vga update.  This was added so that a debugger can force
   // a vga update when single stepping, without having to wait thousands
   // of cycles for the normal vga refresh triggered by iodev/keyboard.cc.
-  virtual void refresh_vga () {}
+  virtual void refresh_vga() {}
   // forces a call to bx_gui.handle_events.  This was added so that a debugger
   // can force the gui events to be handled, so that interactive things such
   // as a toolbar click will be processed.
-  virtual void handle_events () {}
+  virtual void handle_events() {}
   // return first hard disk in ATA interface
-  virtual bx_param_c *get_first_cdrom () {return NULL;}
+  virtual bx_param_c *get_first_cdrom() {return NULL;}
   // return first cdrom in ATA interface
-  virtual bx_param_c *get_first_hd () {return NULL;}
+  virtual bx_param_c *get_first_hd() {return NULL;}
 #if BX_DEBUGGER
   // for debugger: same behavior as pressing control-C
-  virtual void debug_break () {}
-  virtual void debug_interpret_cmd (char *cmd) {}
-  virtual char *debug_get_next_command () {return NULL;}
-  virtual void debug_puts (const char *text) {}
+  virtual void debug_break() {}
+  virtual void debug_interpret_cmd(char *cmd) {}
+  virtual char *debug_get_next_command() {return NULL;}
+  virtual void debug_puts(const char *text) {}
 #endif
-  virtual void register_configuration_interface (
+  virtual void register_configuration_interface(
     const char* name, 
     config_interface_callback_t callback,
     void *userdata) {}
   virtual int configuration_interface(const char* name, ci_command_t command) {return -1; }
-  virtual int begin_simulation (int argc, char *argv[]) {return -1;}
-  typedef bool (*is_sim_thread_func_t)();
+  virtual int begin_simulation(int argc, char *argv[]) {return -1;}
+  typedef bx_bool (*is_sim_thread_func_t)();
   is_sim_thread_func_t is_sim_thread_func;
-  virtual void set_sim_thread_func (is_sim_thread_func_t func) {
+  virtual void set_sim_thread_func(is_sim_thread_func_t func) {
     is_sim_thread_func = func;
   }
-  virtual bool is_sim_thread () {return true;}
-  virtual bool is_wx_selected () {return false;}
+  virtual bx_bool is_sim_thread() {return 1;}
+  virtual bx_bool is_wx_selected() {return 0;}
   // provide interface to bx_gui->set_display_mode() method for config
   // interfaces to use.
-  virtual void set_display_mode (disp_mode_t newmode) {}
-  virtual bool test_for_text_console () { return true; }
+  virtual void set_display_mode(disp_mode_t newmode) {}
+  virtual bx_bool test_for_text_console() {return 1;}
+  // user-defined option support
+  virtual int find_user_option(const char *keyword) {return -1;}
+  virtual bx_bool register_user_option(const char *keyword, user_option_parser_t parser, user_option_save_t save_func) {return 0;}
+  virtual Bit32s parse_user_option(int idx, const char *context, int num_params, char *params []) {return -1;}
+  virtual Bit32s save_user_options(FILE *fp) {return -1;}
+#if BX_SUPPORT_SAVE_RESTORE
+  // save/restore support
+  virtual bx_bool save_state(const char *checkpoint_path) {return 0;}
+  virtual bx_bool restore_config() {return 0;}
+  virtual bx_bool restore_logopts() {return 0;}
+  virtual bx_bool restore_hardware() {return 0;}
+  virtual bx_list_c *get_sr_root() {return NULL;}
+#endif 
 };
 
 BOCHSAPI extern bx_simulator_interface_c *SIM;
 
-BOCHSAPI extern void bx_init_siminterface ();
-BOCHSAPI extern int bx_init_main (int argc, char *argv[]);
+BOCHSAPI extern void bx_init_siminterface();
+BOCHSAPI extern int bx_init_main(int argc, char *argv[]);
 
 #if defined(__WXMSW__) || defined(WIN32)
 // Just to provide HINSTANCE, etc. in files that have not included bochs.h.

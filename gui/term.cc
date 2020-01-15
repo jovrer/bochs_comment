@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc,v 1.33 2005/06/17 18:37:51 vruppert Exp $
+// $Id: term.cc,v 1.35 2006/03/05 10:24:29 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -197,8 +197,8 @@ bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned
 	io->set_log_action(LOGLEV_PANIC, ACT_FATAL);
 	// logfile should be different from stderr, otherwise terminal mode
 	// really ends up having fun
-	if (!strcmp(bx_options.log.Ofilename->getptr(), "-"))
-		BX_PANIC(("cannot log to stderr in term mode"));
+	if (!strcmp(SIM->get_param_string(BXPN_LOG_FILENAME)->getptr(), "-"))
+	  BX_PANIC(("cannot log to stderr in term mode"));
 
 	initscr();
 	start_color();
@@ -218,9 +218,9 @@ bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned
 	}
 #endif
 
-	if (bx_options.Oprivate_colormap->get ())
-		BX_ERROR(("WARNING: private_colormap option ignored."));
-	initialized = 1;
+  if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
+    BX_ERROR(("WARNING: private_colormap option ignored."));
+  initialized = 1;
 }
 
 

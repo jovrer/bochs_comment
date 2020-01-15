@@ -54,6 +54,7 @@
 //  * processors=4, bootstrap=0, ioapic_id=4
 #define BX_SUPPORT_SMP 0
 #define BX_BOOTSTRAP_PROCESSOR 0
+#define BX_MAX_SMP_THREADS_SUPPORTED 8
 
 // Controls how many instances of BX_MEM_C are created. For
 // SMP, use several processors with one shared memory space.
@@ -175,10 +176,6 @@
 //   0 = don't compile in support for v8086 mode.
 #define BX_SUPPORT_V8086_MODE 1
 
-// Defines if the simulation should reset on triple fault
-// if set to 0, the simulation will panic.
-#define BX_RESET_ON_TRIPLE_FAULT 1
-
 // Use Greg Alexander's new PIT model (summer 2001) instead of the original.
 #define BX_USE_NEW_PIT 0
 
@@ -213,6 +210,12 @@
 // IPS value set in the config file.
 #define BX_MIN_IPS 200000
 
+// Minimum and maximum values for SMP quantum variable. Defines
+// how many instructions each CPU could execute execute in one 
+// shot (one cpu_loop call)
+#define BX_SMP_QUANTUM_MIN  1
+#define BX_SMP_QUANTUM_MAX 16
+
 // Use Static Member Funtions to eliminate 'this' pointer passing
 // If you want the efficiency of 'C', you can make all the
 // members of the C++ CPU class to be static.
@@ -230,32 +233,32 @@
 //   0 = Use nonstatic member functions (use only if you need
 //       multiple instances of a device class
 
-#define BX_USE_HD_SMF      1  // Hard drive
-#define BX_USE_BIOS_SMF    1  // BIOS
-#define BX_USE_CMOS_SMF    1  // CMOS
-#define BX_USE_DMA_SMF     1  // DMA
-#define BX_USE_FD_SMF      1  // Floppy
-#define BX_USE_KEY_SMF     1  // Keyboard
-#define BX_USE_PAR_SMF     1  // Parallel
-#define BX_USE_PIC_SMF     1  // PIC
-#define BX_USE_PIT_SMF     1  // PIT
-#define BX_USE_SER_SMF     1  // Serial
-#define BX_USE_UM_SMF      1  // Unmapped
-#define BX_USE_VGA_SMF     1  // VGA
-#define BX_USE_SB16_SMF    1  // Sound (SB 16)
-#define BX_USE_DEV_SMF     1  // System Devices (port92)
-#define BX_USE_PCI_SMF     1  // PCI
-#define BX_USE_P2I_SMF     1  // PCI-to-ISA bridge
-#define BX_USE_PIDE_SMF    1  // PCI-IDE
-#define BX_USE_PCIVGA_SMF  1  // PCI-VGA
-#define BX_USE_PCIDEV_SMF  1  // PCI-DEV
-#define BX_USE_PCIUSB_SMF  1  // USB hub
-#define BX_USE_PCIPNIC_SMF 1  // PCI pseudo NIC
-#define BX_USE_NE2K_SMF    1  // NE2K
-#define BX_USE_EFI_SMF     1  // External FPU IRQ
-#define BX_USE_GAME_SMF    1  // Gameport
-#define BX_USE_CIRRUS_SMF  1  // SVGA Cirrus
-#define BX_USE_BUSM_SMF    1  // Bus Mouse
+#define BX_USE_HD_SMF       1  // Hard drive
+#define BX_USE_BIOS_SMF     1  // BIOS
+#define BX_USE_CMOS_SMF     1  // CMOS
+#define BX_USE_DMA_SMF      1  // DMA
+#define BX_USE_FD_SMF       1  // Floppy
+#define BX_USE_KEY_SMF      1  // Keyboard
+#define BX_USE_PAR_SMF      1  // Parallel
+#define BX_USE_PIC_SMF      1  // PIC
+#define BX_USE_PIT_SMF      1  // PIT
+#define BX_USE_SER_SMF      1  // Serial
+#define BX_USE_UM_SMF       1  // Unmapped
+#define BX_USE_VGA_SMF      1  // VGA
+#define BX_USE_SB16_SMF     1  // Sound (SB 16)
+#define BX_USE_DEV_SMF      1  // System Devices (port92)
+#define BX_USE_PCI_SMF      1  // PCI
+#define BX_USE_P2I_SMF      1  // PCI-to-ISA bridge
+#define BX_USE_PIDE_SMF     1  // PCI-IDE
+#define BX_USE_PCIVGA_SMF   1  // PCI-VGA
+#define BX_USE_PCIDEV_SMF   1  // PCI-DEV
+#define BX_USE_PCIUSB_SMF   1  // USB hub
+#define BX_USE_PCIPNIC_SMF  1  // PCI pseudo NIC
+#define BX_USE_NE2K_SMF     1  // NE2K
+#define BX_USE_EFI_SMF      1  // External FPU IRQ
+#define BX_USE_GAMEPORT_SMF 1  // Gameport
+#define BX_USE_CIRRUS_SMF   1  // SVGA Cirrus
+#define BX_USE_BUSM_SMF     1  // Bus Mouse
 
 #define BX_PLUGINS  0
 #define BX_HAVE_DLFCN_H 0
@@ -268,13 +271,13 @@
    || !BX_USE_SB16_SMF || !BX_USE_DEV_SMF || !BX_USE_PCI_SMF \
    || !BX_USE_P2I_SMF || !BX_USE_PCIVGA_SMF || !BX_USE_PCIUSB_SMF \
    || !BX_USE_PCIPNIC_SMF || !BX_USE_PIDE_SMF \
-   || !BX_USE_NE2K_SMF || !BX_USE_EFI_SMF || !BX_USE_GAME_SMF \
+   || !BX_USE_NE2K_SMF || !BX_USE_EFI_SMF || !BX_USE_GAMEPORT_SMF \
    || !BX_USE_PCIDEV_SMF || !BX_USE_CIRRUS_SMF)
 #error You must use SMF to have plugins
 #endif
 
-#define BX_SUPPORT_SB16 0
-#define BX_SUPPORT_GAME 0
+#define BX_SUPPORT_SB16     0
+#define BX_SUPPORT_GAMEPORT 0
 
 #if BX_SUPPORT_SB16
 // Use virtual methods for the sound output functions
@@ -321,8 +324,6 @@
 // is not used, and this section can be ignored.
 // =================================================================
 
-#define BX_MAX_DIRTY_PAGE_TABLE_MEGS 1024
-
 // Compile in support for virtual/linear/physical breakpoints.
 // Set to 1, only those you need.  Recommend using only linear
 // breakpoints, unless you need others.  Less supported means
@@ -330,15 +331,6 @@
 #define BX_DBG_SUPPORT_VIR_BPOINT 1
 #define BX_DBG_SUPPORT_LIN_BPOINT 1
 #define BX_DBG_SUPPORT_PHY_BPOINT 1
-
-// You need only define one initial breakpoint into each
-// cpu simulator (emulator) here.  Each simulator sets callbacks
-// and variables which the debugger uses from then on.
-#define BX_SIM1_INIT bx_dbg_init_cpu_mem_env0
-#ifndef BX_SIM2_INIT
-#define BX_SIM2_INIT bx_dbg_init_cpu_mem_env1
-#endif
-//#define BX_SIM2_INIT sim2_init
 
 // max number of virtual/linear/physical breakpoints handled
 #define BX_DBG_MAX_VIR_BPOINTS 10
@@ -351,11 +343,6 @@
 #define BX_INFILE_DEPTH  10
 // use this command to include (nest) debug scripts
 #define BX_INCLUDE_CMD   "source"
-
-// Use either 32 or 64 bit instruction counter for
-// debugger purposes.  Uncomment one of these.
-//#define BX_DBG_ICOUNT_SIZE   32
-#define BX_DBG_ICOUNT_SIZE   64
 
 // Make a call to command line debugger extensions.  If set to 1,
 // a call is made.  An external routine has a chance to process
@@ -525,6 +512,9 @@ typedef Bit64u bx_address;
 typedef Bit32u bx_address;
 #endif
 
+// define physical and linear address types
+typedef Bit32u     bx_phy_address;
+typedef bx_address bx_lin_address;
 
 // technically, in an 8 bit signed the real minimum is -128, not -127.
 // But if you decide to negate -128 you tend to get -128 again, so it's
@@ -532,19 +522,19 @@ typedef Bit32u bx_address;
 #define BX_MAX_BIT64U ( (Bit64u) -1           )
 #define BX_MIN_BIT64U ( 0                     )
 #define BX_MAX_BIT64S ( ((Bit64u) -1) >> 1    )
-#define BX_MIN_BIT64S ( -(((Bit64u) -1) >> 1) )
+#define BX_MIN_BIT64S ( (Bit64s)-(((Bit64u) -1) >> 1) )
 #define BX_MAX_BIT32U ( (Bit32u) -1           )
 #define BX_MIN_BIT32U ( 0                     )
 #define BX_MAX_BIT32S ( ((Bit32u) -1) >> 1    )
-#define BX_MIN_BIT32S ( -(((Bit32u) -1) >> 1) )
+#define BX_MIN_BIT32S ( (Bit32s)-(((Bit32u) -1) >> 1) )
 #define BX_MAX_BIT16U ( (Bit16u) -1           )
 #define BX_MIN_BIT16U ( 0                     )
 #define BX_MAX_BIT16S ( ((Bit16u) -1) >> 1    )
-#define BX_MIN_BIT16S ( -(((Bit16u) -1) >> 1) )
+#define BX_MIN_BIT16S ( (Bit16s)-(((Bit16u) -1) >> 1) )
 #define BX_MAX_BIT8U  ( (Bit8u) -1            )
 #define BX_MIN_BIT8U  ( 0                     )
 #define BX_MAX_BIT8S  ( ((Bit8u) -1) >> 1     )
-#define BX_MIN_BIT8S  ( -(((Bit8u) -1) >> 1)  )
+#define BX_MIN_BIT8S  ( (Bit8s)-(((Bit8u) -1) >> 1)  )
 
 
 // create an unsigned integer type that is the same size as a pointer.
@@ -725,7 +715,6 @@ typedef
 #define BX_SUPPORT_3DNOW 0
 #define BX_SUPPORT_SSE 0
 #define BX_SUPPORT_DAZ 0
-#define BX_SUPPORT_PNI 0
 #define BX_SUPPORT_SEP 0
 #define BX_SUPPORT_VME 0
 
@@ -739,6 +728,9 @@ typedef
 #define BX_SupportHostAsmsFpu 0
 
 #define BX_SUPPORT_ICACHE 0
+
+// save/restore support
+#define BX_SUPPORT_SAVE_RESTORE 0
 
 // if 1, don't do gpf on MSRs that we don't implement
 #define BX_IGNORE_BAD_MSR 0
@@ -777,10 +769,6 @@ typedef
 
 #if (BX_CPU_LEVEL<6 && BX_SUPPORT_SSE)
 #error "SSE is only supported with CPU_LEVEL >= 6 !"
-#endif
-
-#if (BX_SUPPORT_PNI && BX_SUPPORT_SSE < 2)
-#error "PNI cannot be compiled without SSE/SSE2 support !"
 #endif
 
 #if (BX_CPU_LEVEL<6 && BX_SUPPORT_SEP)

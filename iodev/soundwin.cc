@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundwin.cc,v 1.16 2005/12/10 18:37:35 vruppert Exp $
+// $Id: soundwin.cc,v 1.18 2006/03/03 20:29:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -33,6 +33,7 @@
 
 #define NO_DEVICE_INCLUDES
 #include "iodev.h"
+#define BX_SOUNDLOW
 #include "sb16.h"
 
 #if defined(WIN32) && BX_SUPPORT_SB16
@@ -78,7 +79,7 @@ bx_sound_windows_c::bx_sound_windows_c(bx_sb16_c *sb16)
   for (int bufnum=0; bufnum<BX_SOUND_WINDOWS_NBUF; bufnum++)
     {
       WaveHeader[bufnum] = (LPWAVEHDR) NEWBUFFER(sizeof(WAVEHDR));
-      WaveData[bufnum] = (LPSTR) NEWBUFFER(BX_SOUND_OUTPUT_WAVEPACKETSIZE);
+      WaveData[bufnum] = (LPSTR) NEWBUFFER(BX_SOUND_OUTPUT_WAVEPACKETSIZE+64);
     }
 
   if (offset > size)
@@ -364,7 +365,7 @@ int bx_sound_windows_c::startwaveplayback(int frequency, int bits, int stereo, i
 
 #ifdef usesndPlaySnd
   int bps = (bits / 8) * (stereo + 1);
-  LPWAVEFILEHEADER header = (LPWAVEFILEHEADER) WaveData;
+  LPWAVEFILEHEADER header = (LPWAVEFILEHEADER) WaveData[0];
 
   memcpy(header->RIFF, "RIFF", 4);
   memcpy(header->TYPE, "WAVE", 4);
@@ -384,8 +385,12 @@ int bx_sound_windows_c::startwaveplayback(int frequency, int bits, int stereo, i
 
 int bx_sound_windows_c::sendwavepacket(int length, Bit8u data[])
 {
-//  UINT ret;
+#ifdef usewaveOut
   int bufnum;
+#endif
+#ifdef usesndPlaySnd
+  UINT ret;
+#endif
 
   WRITELOG( WAVELOG(4), "sendwavepacket(%d, %p)", length, data);
 
@@ -421,16 +426,12 @@ int bx_sound_windows_c::sendwavepacket(int length, Bit8u data[])
 #endif
 
 #ifdef usesndPlaySnd
-  LPWAVEFILEHEADER header = (LPWAVEFILEHEADER) WaveData;
+  LPWAVEFILEHEADER header = (LPWAVEFILEHEADER) WaveData[0];
 
   header->length = length + 36;
   header->chnk2len = length;
 
   memcpy( &(header->data), data, length);
-
-  FILE *test = fopen("test", "a");
-  fwrite(WaveData, 1, length + 44, test);
-  fclose(test);
 
   ret = sndPlaySoundA( (LPCSTR) header, SND_SYNC | SND_MEMORY );
   if (ret != 0)

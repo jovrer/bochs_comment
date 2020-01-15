@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: carbon.cc,v 1.28 2005/07/24 07:25:02 vruppert Exp $
+// $Id: carbon.cc,v 1.33 2006/08/08 17:10:30 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -186,7 +186,9 @@ pascal OSStatus CEvtHandleApplicationMenus      (EventHandlerCallRef nextHandler
 
 // Event handlers
 OSStatus HandleKey(EventRef theEvent, Bit32u keyState);
-static BxEvent * CarbonSiminterfaceCallback (void *theClass, BxEvent *event);
+static BxEvent * CarbonSiminterfaceCallback(void *theClass, BxEvent *event);
+static bxevent_handler old_callback = NULL;
+static void *old_callback_arg = NULL;
 
 // Show/hide UI elements
 void HidePointer(void);
@@ -218,6 +220,8 @@ class bx_carbon_gui_c : public bx_gui_c {
 public:
   bx_carbon_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS()
+  virtual void beep_on(float frequency);
+  virtual void beep_off();
 };
 
 // declare one instance of the gui object and call macro to insert the
@@ -571,7 +575,7 @@ void CreateTile(void)
   unsigned  long p_f;
   long      theRowBytes = ((((long) ( vga_bpp==24?32:(((vga_bpp+1)>>1)<<1) ) * ((long) (srcTileRect.right-srcTileRect.left)) + 31) >> 5) << 2);
   
-//  if (bx_options.Oprivate_colormap->get ())
+//  if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
 //  {
     GetGWorld(&savePort, &saveDevice);
     switch(vga_bpp)
@@ -836,13 +840,15 @@ void bx_carbon_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, u
   
   GetMouse(&prevPt);
 
+  // redirect notify callback to X11 specific code
+  SIM->get_notify_callback(&old_callback, &old_callback_arg);
   SIM->set_notify_callback(CarbonSiminterfaceCallback, NULL);
   
   UNUSED(argc);
   UNUSED(argv);
 
   // loads keymap for x11
-  if(bx_options.keyboard.OuseMapping->get()) {
+  if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
     bx_keymap.loadKeymap(NULL); // I have no function to convert X windows symbols
   }
 }
@@ -1156,7 +1162,7 @@ void bx_carbon_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   
   screen_state = TEXT_MODE;
   
-/*  if (gOffWorld != NULL) //(bx_options.Oprivate_colormap->get ())
+/*  if (gOffWorld != NULL) //(SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get ())
   {
     GetGWorld(&savePort, &saveDevice);
 
@@ -1186,7 +1192,7 @@ void bx_carbon_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 //      RGBForeColor(&fgColor);
 //      RGBBackColor(&bgColor);
       
-      if (bx_options.Oprivate_colormap->get ())
+      if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
       {
         PmForeColor(new_text[i+1] & 0x0F);
         PmBackColor((new_text[i+1] & 0xF0) >> 4);
@@ -1223,7 +1229,7 @@ void bx_carbon_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   previ = cursori;
   
   SetPort(oldPort);
-/*  if (gOffWorld != NULL) //(bx_options.Oprivate_colormap->get ())
+/*  if (gOffWorld != NULL) //(SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
     SetGWorld(savePort, saveDevice);
 */
   windowUpdatesPending = true;
@@ -1285,7 +1291,7 @@ bx_bool bx_carbon_gui_c::palette_change(unsigned index, unsigned red, unsigned g
   CGrafPtr  savePort;
   GrafPtr   oldPort;
   
-/*  if (gOffWorld != NULL) //(bx_options.Oprivate_colormap->get ())
+/*  if (gOffWorld != NULL) //(SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
   {
     GetGWorld(&savePort, &saveDevice);
 
@@ -1307,9 +1313,9 @@ bx_bool bx_carbon_gui_c::palette_change(unsigned index, unsigned red, unsigned g
 
     SetPort(oldPort);
   }
-/*  if (gOffWorld != NULL) //(bx_options.Oprivate_colormap->get ())
+/*  if (gOffWorld != NULL) //(SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
     SetGWorld(savePort, saveDevice);*/
-  if (bx_options.Oprivate_colormap->get ())
+  if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
   {
   
     thePal = NewPalette(index, gCTable, pmTolerant, 0x5000);
@@ -1671,7 +1677,7 @@ void UpdateTools()
   GetCurrentScrap( &theScrap );
 
   // If keyboard mapping is on AND there is text on the clipboard enable pasting
-  if(bx_options.keyboard.OuseMapping->get() &&
+  if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get() &&
     (GetScrapFlavorFlags( theScrap, kScrapFlavorTypeText, &theScrapFlags) == noErr))
   {
     EnableMenuItem(GetMenuRef(mEdit), iPaste);
@@ -1699,7 +1705,7 @@ void UpdateTools()
   
   // User control active if keys defined
   char *user_shortcut;
-  user_shortcut = bx_options.Ouser_shortcut->getptr();
+  user_shortcut = SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr();
   if (user_shortcut[0] && (strcmp(user_shortcut, "none"))) {
     EnableControl(bx_tool_pixmap[USER_TOOL_BUTTON].control);
   }
@@ -2054,9 +2060,19 @@ unsigned char reverse_bitorder(unsigned char b)
   return(ret);
 }
 
-  void
-bx_carbon_gui_c::mouse_enabled_changed_specific (bx_bool val)
+void bx_carbon_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
+}
+
+void bx_carbon_gui_c::beep_on(float frequency)
+{
+  AlertSoundPlay();
+  BX_INFO(( "Carbon Beep ON (frequency=%.2f)",frequency));
+}
+
+void bx_carbon_gui_c::beep_off()
+{
+  BX_INFO(( "Carbon Beep OFF"));
 }
 
 // we need to handle "ask" events so that PANICs are properly reported
@@ -2066,59 +2082,67 @@ static BxEvent * CarbonSiminterfaceCallback (void *theClass, BxEvent *event)
   
   if( event->type == BX_ASYNC_EVT_LOG_MSG || event->type == BX_SYNC_EVT_LOG_ASK)
   {
-  DialogRef                     alertDialog;
-  CFStringRef                   title;
-  CFStringRef                   exposition;
-  DialogItemIndex               index;
-  AlertStdCFStringAlertParamRec alertParam = {0};
+    DialogRef                     alertDialog;
+    CFStringRef                   title;
+    CFStringRef                   exposition;
+    DialogItemIndex               index;
+    AlertStdCFStringAlertParamRec alertParam = {0};
 
-  if( event->u.logmsg.prefix != NULL )
-  {
-    title      = CFStringCreateWithCString(NULL, event->u.logmsg.prefix, kCFStringEncodingASCII);
-    exposition = CFStringCreateWithCString(NULL, event->u.logmsg.msg, kCFStringEncodingASCII);
-  }
-  else
-  {
-    title      = CFStringCreateWithCString(NULL, event->u.logmsg.msg, kCFStringEncodingASCII);
-    exposition = NULL;
-  }
-  
-  alertParam.version       = kStdCFStringAlertVersionOne;
-  alertParam.defaultText   = CFSTR("Continue");
-  alertParam.cancelText    = CFSTR("Quit");
-  alertParam.position      = kWindowDefaultPosition;
-  alertParam.defaultButton = kAlertStdAlertOKButton;
-  alertParam.cancelButton  = kAlertStdAlertCancelButton;
+    if( event->u.logmsg.prefix != NULL )
+    {
+      title      = CFStringCreateWithCString(NULL, event->u.logmsg.prefix, kCFStringEncodingASCII);
+      exposition = CFStringCreateWithCString(NULL, event->u.logmsg.msg, kCFStringEncodingASCII);
+    }
+    else
+    {
+      title      = CFStringCreateWithCString(NULL, event->u.logmsg.msg, kCFStringEncodingASCII);
+      exposition = NULL;
+    }
 
-  CreateStandardAlert(
-    kAlertCautionAlert,
-    title,
-    exposition,       /* can be NULL */
-    &alertParam,             /* can be NULL */
-    &alertDialog);
-  
-  RunStandardAlert(
-   alertDialog,
-   NULL,       /* can be NULL */
-   &index);
+    alertParam.version       = kStdCFStringAlertVersionOne;
+    alertParam.defaultText   = CFSTR("Continue");
+    alertParam.cancelText    = CFSTR("Quit");
+    alertParam.position      = kWindowDefaultPosition;
+    alertParam.defaultButton = kAlertStdAlertOKButton;
+    alertParam.cancelButton  = kAlertStdAlertCancelButton;
 
-  CFRelease( title );
+    CreateStandardAlert(
+      kAlertCautionAlert,
+      title,
+      exposition,       /* can be NULL */
+      &alertParam,             /* can be NULL */
+      &alertDialog);
 
-  if( exposition != NULL )
-  {
-    CFRelease( exposition );
-  }
-  
-  // continue
-  if( index == kAlertStdAlertOKButton )
-  {
-    event->retcode = 0;
-  }
-  // quit
-  else if( index == kAlertStdAlertCancelButton )
-  {
-    event->retcode = 2;
-  }
+    RunStandardAlert(
+      alertDialog,
+      NULL,       /* can be NULL */
+      &index);
+
+    CFRelease( title );
+
+    if( exposition != NULL )
+    {
+      CFRelease( exposition );
+    }
+
+    // continue
+    if( index == kAlertStdAlertOKButton )
+    {
+      event->retcode = 0;
+    }
+    // quit
+    else if( index == kAlertStdAlertCancelButton )
+    {
+      event->retcode = 2;
+    }
+#if 0
+    if( event->u.logmsg.prefix != NULL )
+    {
+      BX_INFO(("Callback log:     Prefix: %s", event->u.logmsg.prefix));
+    }
+    BX_INFO(("Callback log:     Message: %s", event->u.logmsg.msg));
+#endif
+    return event;
   }
 
 #if 0
@@ -2131,16 +2155,12 @@ static BxEvent * CarbonSiminterfaceCallback (void *theClass, BxEvent *event)
     default:
       BX_INFO(("Callback tracing: Evt: %d (%s)", event->type,
         ((BX_EVT_IS_ASYNC(event->type))?"async":"sync")));
-      if(event->type == BX_ASYNC_EVT_LOG_MSG || event->type == BX_SYNC_EVT_LOG_ASK)
-      {
-        if( event->u.logmsg.prefix != NULL )
-        {
-        BX_INFO(("Callback log:     Prefix: %s", event->u.logmsg.prefix));
-        }
-        BX_INFO(("Callback log:     Message: %s", event->u.logmsg.msg));
-      }
   }
 #endif
-  return event;
+  if (old_callback != NULL) {
+    return (*old_callback)(old_callback_arg, event);
+  } else {
+    return event;
+  }
 }
 #endif /* if BX_WITH_CARBON */

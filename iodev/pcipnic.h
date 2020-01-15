@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcipnic.h,v 1.3 2004/07/13 17:45:34 vruppert Exp $
+// $Id: pcipnic.h,v 1.7 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  Fen Systems Ltd.
@@ -18,6 +18,9 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+
+#ifndef BX_IODEV_PCIPNIC_H
+#define BX_IODEV_PCIPNIC_H
 
 #include "pnic_api.h"
 
@@ -57,16 +60,21 @@ typedef struct {
 } bx_pnic_t;
 
 
-class bx_pcipnic_c : public bx_devmodel_c
-{
+class bx_pcipnic_c : public bx_ne2k_stub_c, bx_pci_device_stub_c {
 public:
-  bx_pcipnic_c(void);
-  ~bx_pcipnic_c(void);
-  virtual void   init(void);
-  virtual void   reset(unsigned type);
+  bx_pcipnic_c();
+  virtual ~bx_pcipnic_c();
+  virtual void init(void);
+  virtual void reset(unsigned type);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+  virtual void after_restore_state(void);
+#endif
+
+  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
+  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
 private:
-
   bx_pnic_t s;
 
   static void set_irq_level(bx_bool level);
@@ -76,18 +84,15 @@ private:
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
-  static Bit32u pci_read_handler(void *this_ptr, Bit8u address, unsigned io_len);
-  static void   pci_write_handler(void *this_ptr, Bit8u address, Bit32u value, unsigned io_len);
 #if !BX_USE_PCIPNIC_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
-  Bit32u pci_read(Bit8u address, unsigned io_len);
-  void   pci_write(Bit8u address, Bit32u value, unsigned io_len);
 #endif
 
   eth_pktmover_c *ethdev;
   static void exec_command(void);
   static void rx_handler(void *arg, const void *buf, unsigned len);
   BX_PNIC_SMF void rx_frame(const void *buf, unsigned io_len);
-
 };
+
+#endif

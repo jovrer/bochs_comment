@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.69 2006/01/17 20:16:59 vruppert Exp $
+// $Id: iodev.h,v 1.75 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -81,24 +81,45 @@ typedef void   (*bx_write_handler_t)(void *, Bit32u, Bit32u, unsigned);
 // virtual (= 0).
 class BOCHSAPI bx_devmodel_c : public logfunctions {
   public:
-  virtual ~bx_devmodel_c () {}
+  virtual ~bx_devmodel_c() {}
   virtual void init_mem(BX_MEM_C *) {}
   virtual void init(void) {}
   virtual void reset(unsigned type) {}
-  virtual void device_load_state () {}
-  virtual void device_save_state () {}
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void) {}
+  virtual void after_restore_state(void) {}
+#endif
+};
+
+//////////////////////////////////////////////////////////////////////
+// declare stubs for PCI devices
+//////////////////////////////////////////////////////////////////////
+
+// the best should be deriving of bx_pci_device_stub_c from bx_devmodel_c
+// but it make serious problems for cirrus_svga device
+class BOCHSAPI bx_pci_device_stub_c {
+public:
+  virtual ~bx_pci_device_stub_c() {}
+  
+  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len) {
+    return 0;
+  }
+
+  virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len) {}
 };
 
 //////////////////////////////////////////////////////////////////////
 // declare stubs for devices
 //////////////////////////////////////////////////////////////////////
 
+//////////////////////////////////////////////////////////////////////
 #define STUBFUNC(dev,method) \
    pluginlog->panic("%s called in %s stub. you must not have loaded the %s plugin", #dev, #method, #dev )
+//////////////////////////////////////////////////////////////////////
 
 class BOCHSAPI bx_keyb_stub_c : public bx_devmodel_c {
-  public:
-  virtual ~bx_keyb_stub_c () {}
+public:
+  virtual ~bx_keyb_stub_c() {}
   // stubs for bx_keyb_c methods
   virtual void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state) {
     STUBFUNC(keyboard, mouse_motion);
@@ -112,7 +133,7 @@ class BOCHSAPI bx_keyb_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_hard_drive_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void   close_harddrive(void) {
     STUBFUNC(HD, close_harddrive);
   }
@@ -155,7 +176,7 @@ class BOCHSAPI bx_hard_drive_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_floppy_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual unsigned get_media_status(unsigned drive) {
     STUBFUNC(floppy,  get_media_status); return 0;
   }
@@ -165,7 +186,7 @@ class BOCHSAPI bx_floppy_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_cmos_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual Bit32u get_reg(unsigned reg) {
     STUBFUNC(cmos, get_reg); return 0;
   }
@@ -184,21 +205,21 @@ class BOCHSAPI bx_cmos_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_dma_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual unsigned registerDMA8Channel(
     unsigned channel,
     void (* dmaRead)(Bit8u *data_byte),
     void (* dmaWrite)(Bit8u *data_byte),
-    const char *name
-    ) {
+    const char *name)
+  {
     STUBFUNC(dma, registerDMA8Channel); return 0;
   }
   virtual unsigned registerDMA16Channel(
     unsigned channel,
     void (* dmaRead)(Bit16u *data_word),
     void (* dmaWrite)(Bit16u *data_word),   
-    const char *name
-    ) {
+    const char *name)
+  {
     STUBFUNC(dma, registerDMA16Channel); return 0;
   }
   virtual unsigned unregisterDMAChannel(unsigned channel) {
@@ -216,7 +237,7 @@ class BOCHSAPI bx_dma_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_pic_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void raise_irq(unsigned irq_no) {
     STUBFUNC(pic, raise_irq); 
   }
@@ -235,7 +256,7 @@ class BOCHSAPI bx_pic_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_vga_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void redraw_area(unsigned x0, unsigned y0, 
                            unsigned width, unsigned height) {
     STUBFUNC(vga, redraw_area);  
@@ -259,13 +280,12 @@ class BOCHSAPI bx_vga_stub_c : public bx_devmodel_c {
   virtual void dump_status(void) {}
 };
 
-class BOCHSAPI bx_pci_stub_c : public bx_devmodel_c {
-  public:
-  virtual bx_bool register_pci_handlers(void *this_ptr,
-                                        Bit32u (*bx_pci_read_handler)(void *, Bit8u, unsigned),
-                                        void(*bx_pci_write_handler)(void *, Bit8u, Bit32u, unsigned),
+class BOCHSAPI bx_pci_bridge_stub_c : public bx_devmodel_c, public bx_pci_device_stub_c {
+public:
+  virtual bx_bool register_pci_handlers(bx_pci_device_stub_c *device,
                                         Bit8u *devfunc, const char *name,
-                                        const char *descr) {
+                                        const char *descr)
+  {
     STUBFUNC(pci, register_pci_handlers); return 0;
   }
   virtual bx_bool is_pci_device (const char *name) {
@@ -293,15 +313,15 @@ class BOCHSAPI bx_pci_stub_c : public bx_devmodel_c {
   virtual void print_i440fx_state(void) {}
 };
 
-class BOCHSAPI bx_pci2isa_stub_c : public bx_devmodel_c {
-  public:
+class BOCHSAPI bx_pci2isa_stub_c : public bx_devmodel_c, public bx_pci_device_stub_c {
+public:
   virtual void pci_set_irq (Bit8u devfunc, unsigned line, bx_bool level) {
     STUBFUNC(pci2isa, pci_set_irq);
   }
 };
 
-class BOCHSAPI bx_pci_ide_stub_c : public bx_devmodel_c {
-  public:
+class BOCHSAPI bx_pci_ide_stub_c : public bx_devmodel_c, public bx_pci_device_stub_c {
+public:
   virtual bx_bool bmdma_present(void) {
     return 0;
   }
@@ -309,26 +329,26 @@ class BOCHSAPI bx_pci_ide_stub_c : public bx_devmodel_c {
 };
 
 class BOCHSAPI bx_ne2k_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void print_info(FILE *file, int page, int reg, int nodups) {}
 };
 
 class BOCHSAPI bx_speaker_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void beep_on(float frequency) {}
   virtual void beep_off() {}
 };
 
 class BOCHSAPI bx_serial_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void serial_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state) {
     STUBFUNC(serial, serial_mouse_enq);
   }
 };
 
 #if BX_SUPPORT_PCIUSB
-class BOCHSAPI bx_usb_stub_c : public bx_devmodel_c {
-  public:
+class BOCHSAPI bx_pci_usb_stub_c : public bx_devmodel_c, public bx_pci_device_stub_c {
+public:
   virtual void usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state) {
     STUBFUNC(pciusb, usb_mouse_enq);
   }
@@ -350,7 +370,7 @@ class BOCHSAPI bx_usb_stub_c : public bx_devmodel_c {
 
 #if BX_SUPPORT_BUSMOUSE
 class BOCHSAPI bx_busm_stub_c : public bx_devmodel_c {
-  public:
+public:
   virtual void bus_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state) {
     STUBFUNC(busmouse, bus_mouse_enq);
   }
@@ -360,7 +380,7 @@ class BOCHSAPI bx_busm_stub_c : public bx_devmodel_c {
 class BOCHSAPI bx_devices_c : public logfunctions {
 public:
   bx_devices_c(void);
-  ~bx_devices_c(void);
+ ~bx_devices_c(void);
   // Register I/O addresses and IRQ lines. Initialize any internal
   // structures.  init() is called only once, even if the simulator
   // reboots or is restarted.
@@ -369,6 +389,10 @@ public:
   // The types of reset conditions are defined in bochs.h:
   // power-on, hardware, or software.
   void reset(unsigned type);
+#if BX_SUPPORT_SAVE_RESTORE
+  void register_state(void);
+  void after_restore_state(void);
+#endif
   BX_MEM_C *mem;  // address space associated with these devices
   bx_bool register_io_read_handler(void *this_ptr, bx_read_handler_t f, 
 		  Bit32u addr, const char *name, Bit8u mask );
@@ -402,7 +426,7 @@ public:
 #if BX_SUPPORT_APIC
   bx_ioapic_c       *ioapic;
 #endif
-  bx_pci_stub_c     *pluginPciBridge;
+  bx_pci_bridge_stub_c *pluginPciBridge;
   bx_pci2isa_stub_c *pluginPci2IsaBridge;
   bx_pci_ide_stub_c *pluginPciIdeController;
   bx_devmodel_c     *pluginPciVgaAdapter;
@@ -415,7 +439,7 @@ public:
   bx_cmos_stub_c    *pluginCmosDevice;
   bx_serial_stub_c  *pluginSerialDevice;
 #if BX_SUPPORT_PCIUSB
-  bx_usb_stub_c     *pluginPciUSBAdapter;
+  bx_pci_usb_stub_c     *pluginPciUSBAdapter;
 #endif
   bx_devmodel_c     *pluginParallelDevice;
   bx_devmodel_c     *pluginUnmapped;
@@ -449,14 +473,14 @@ public:
   bx_pic_stub_c  stubPic;
   bx_floppy_stub_c  stubFloppy;
   bx_vga_stub_c  stubVga;
-  bx_pci_stub_c  stubPci;
+  bx_pci_bridge_stub_c  stubPci;
   bx_pci2isa_stub_c stubPci2Isa;
   bx_pci_ide_stub_c stubPciIde;
   bx_ne2k_stub_c    stubNE2k;
   bx_speaker_stub_c stubSpeaker;
   bx_serial_stub_c  stubSerial;
 #if BX_SUPPORT_PCIUSB
-  bx_usb_stub_c     stubUsbAdapter;
+  bx_pci_usb_stub_c     stubUsbAdapter;
 #endif
 
   // Some info to pass to devices which can handled bulk IO.  This allows
@@ -502,7 +526,12 @@ private:
   bx_bool is_serial_enabled ();
   bx_bool is_usb_enabled ();
   bx_bool is_parallel_enabled ();
-  };
+};
+
+#define DEV_MEM_READ_PHYSICAL(phy_addr, len, ptr) \
+  BX_MEM(0)->readPhysicalPage(NULL, phy_addr, len, ptr)
+#define DEV_MEM_WRITE_PHYSICAL(phy_addr, len, ptr) \
+  BX_MEM(0)->writePhysicalPage(NULL, phy_addr, len, ptr)
 
 #ifndef NO_DEVICE_INCLUDES
 

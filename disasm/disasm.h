@@ -16,30 +16,22 @@
 }
 
 // will be used in future
-#define IA_8086       0x00000000        /* 8086 instruction */
-#define IA_286        0x00000000        /* 286+ instruction */
-#define IA_386        0x00000000        /* 386+ instruction */
-#define IA_FPU        0x00000000
-#define IA_486        0x00000000        /* 486+ instruction */
-#define IA_PENTIUM    0x00000000        /* Pentium instruction */
-#define IA_P6         0x00000000        /* P6 instruction */
-#define IA_KATMAI     0x00000000        /* Katmai instruction */
-#define IA_WILLAMETTE 0x00000000        /* Willamette instruction */
-#define IA_PRESCOTT   0x00000000        /* Prescott instruction */
-#define IA_X86_64     0x00000000        /* x86-64 specific instruction */
-
-#define IF_ARITHMETIC 0x00000000        /* arithmetic instruction */
-#define IF_LOGIC      0x00000000        /* logic instruction */
-#define IF_SYSTEM     0x00000000        /* system instruction (require CPL=0) */
-#define IF_BRANCH     0x00000000        /* branch instruction */
-#define IF_FPU        0x00000000        /* FPU instruction */
-#define IF_MMX        0x00000000        /* MMX instruction */
-#define IF_3DNOW      0x00000000        /* 3DNow! instruction */
-#define IF_KNI        0x00000000        /* Katmai new instruction */
-#define IF_PREFETCH   0x00000000        /* Prefetch instruction */
-#define IF_SSE        0x00000000        /* SSE instruction */
-#define IF_SSE2       0x00000000        /* SSE2 instruction */
-#define IF_PNI        0x00000000        /* Prescott new instruction */
+#define IA_286        0x00000001        /* 286+ instruction */
+#define IA_386        0x00000002        /* 386+ instruction */
+#define IA_486        0x00000004        /* 486+ instruction */
+#define IA_PENTIUM    0x00000008        /* Pentium+ instruction */
+#define IA_P6         0x00000010        /* P6 new instruction */
+#define IA_SYSTEM     0x00000020        /* system instruction (require CPL=0) */
+#define IA_LEGACY     0x00000040        /* legacy instruction */
+#define IA_X87        0x00000080        /* FPU (X87) instruction */
+#define IA_MMX        0x00000100        /* MMX instruction */
+#define IA_3DNOW      0x00000200        /* 3DNow! instruction */
+#define IA_PREFETCH   0x00000400        /* Prefetch instruction */
+#define IA_SSE        0x00000800        /* SSE  instruction */
+#define IA_SSE2       0x00001000        /* SSE2 instruction */
+#define IA_SSE3       0x00002000        /* SSE3 instruction */
+#define IA_SSE4       0x00004000        /* SSE4 instruction */
+#define IA_X86_64     0x00008000        /* x86-64 instruction */
 
 /* general purpose bit register */
 enum {
@@ -86,6 +78,9 @@ struct BxDisasmOpcodeTable_t
     const void *OpcodeInfo;
 };
 
+// segment override not used
+#define NO_SEG_OVERRIDE 0xFF
+
 // datasize attributes
 #define X_SIZE      0x0000
 #define B_SIZE      0x0100
@@ -106,6 +101,10 @@ struct x86_insn
 public:
   x86_insn(bx_bool is32, bx_bool is64);
 
+  bx_bool is_seg_override() const { 
+     return (seg_override != NO_SEG_OVERRIDE);
+ }
+
 public:
   bx_bool is_32, is_64;
   bx_bool as_32, as_64;
@@ -114,7 +113,8 @@ public:
   Bit8u extend8b;
   Bit8u rex_r, rex_x, rex_b;
   Bit8u seg_override;
-  unsigned b1;
+  unsigned b1, prefixes;
+  unsigned ilen;
 
   Bit8u modrm, mod, nnn, rm;
   Bit8u sib, scale, index, base;
@@ -144,7 +144,9 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
 
   extend8b = 0;
   rex_r = rex_b = rex_x = 0;
-  seg_override = 0;
+  seg_override = NO_SEG_OVERRIDE;
+  prefixes = 0;
+  ilen = 0;
   b1 = 0;
 
   modrm = mod = nnn = rm = 0;
@@ -155,11 +157,28 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
 class disassembler {
 public:
   disassembler() { set_syntax_intel(); }
-  unsigned disasm16(bx_address base, bx_address ip, Bit8u *instr, char *disbuf);
-  unsigned disasm32(bx_address base, bx_address ip, Bit8u *instr, char *disbuf);
-  unsigned disasm64(bx_address base, bx_address ip, Bit8u *instr, char *disbuf);
 
-  unsigned disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, Bit8u *instr, char *disbuf);
+  unsigned disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf);
+
+  unsigned disasm16(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(0, 0, base, ip, instr, disbuf); }
+
+  unsigned disasm32(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(1, 0, base, ip, instr, disbuf); }
+
+  unsigned disasm64(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(1, 1, base, ip, instr, disbuf); }
+
+  x86_insn decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf);
+
+  x86_insn decode16(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(0, 0, base, ip, instr, disbuf); }
+
+  x86_insn decode32(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(1, 0, base, ip, instr, disbuf); }
+
+  x86_insn decode64(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(1, 1, base, ip, instr, disbuf); }
 
   void set_syntax_intel();
   void set_syntax_att  ();
@@ -188,7 +207,7 @@ private:
 
   bx_address db_eip, db_base;
 
-  Bit8u *instruction;        // for fetching of next byte of instruction
+  const Bit8u *instruction;        // for fetching of next byte of instruction
 
   char *disbufptr;
 
@@ -281,6 +300,8 @@ public:
  * J  - The instruction contains a relative offset to be added to the 
  *      instruction pointer register.
  * M  - The ModR/M byte may refer only to memory.
+ * N  - The R/M field of the ModR/M byte selects a packed-quadword  MMX 
+        technology register.
  * O  - The instruction has no ModR/M byte; the offset of the operand is 
  *      coded as a word or double word (depending on address size attribute) 
  *      in the instruction. No base register, index register, or scaling 
@@ -294,6 +315,7 @@ public:
  *      index register, a scaling factor, and a displacement.
  * R  - The mod field of the ModR/M byte may refer only to a general register.
  * S  - The reg field of the ModR/M byte selects a segment register.
+ * U  - The R/M field of the ModR/M byte selects a 128-bit XMM register.
  * T  - The reg field of the ModR/M byte selects a test register.
  * V  - The reg field of the ModR/M byte selects a 128-bit XMM register.
  * W  - A ModR/M byte follows the opcode and specifies the operand. The 
@@ -398,6 +420,9 @@ public:
   void Id(const x86_insn *insn);
   void Iq(const x86_insn *insn);
 
+  // two immediates Iw/Ib
+  void IwIb(const x86_insn *insn);
+
   // sign extended immediate
   void sIbw(const x86_insn *insn);
   void sIbd(const x86_insn *insn);
@@ -420,8 +445,10 @@ public:
   void Qd(const x86_insn *insn);
   void Qq(const x86_insn *insn);
   void Vq(const x86_insn *insn);
+  void Nq(const x86_insn *insn);
 
   // xmm register
+  void Udq(const x86_insn *insn);
   void Vdq(const x86_insn *insn);
   void Vss(const x86_insn *insn);
   void Vsd(const x86_insn *insn);

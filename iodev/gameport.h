@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gameport.h,v 1.1 2003/06/21 12:55:19 vruppert Exp $
+// $Id: gameport.h,v 1.5 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  MandrakeSoft S.A.
@@ -24,8 +24,10 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#ifndef BX_IODEV_GAMEPORT_H
+#define BX_IODEV_GAMEPORT_H
 
-#if BX_USE_GAME_SMF
+#if BX_USE_GAMEPORT_SMF
 #  define BX_GAMEPORT_SMF  static
 #  define BX_GAMEPORT_THIS theGameport->
 #else
@@ -35,12 +37,14 @@
 
 
 class bx_gameport_c : public bx_devmodel_c {
-
 public:
-  bx_gameport_c(void);
-  ~bx_gameport_c(void);
-  virtual void   init(void);
-  virtual void   reset(unsigned type);
+  bx_gameport_c();
+  virtual ~bx_gameport_c();
+  virtual void init(void);
+  virtual void reset(unsigned type);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+#endif
 
 private:
 
@@ -56,8 +60,10 @@ private:
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
-#if !BX_USE_GAME_SMF
+#if !BX_USE_GAMEPORT_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
-  };
+};
+
+#endif

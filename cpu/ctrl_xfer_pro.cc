@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer_pro.cc,v 1.50 2005/08/02 18:44:16 sshwarts Exp $
+// $Id: ctrl_xfer_pro.cc,v 1.55 2006/06/12 16:58:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,9 +25,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if BX_SUPPORT_X86_64==0
@@ -41,8 +41,8 @@
 void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_rpl, Bit8u check_cpl)
 {
   // descriptor AR byte must indicate code segment else #GP(selector)
-  if ((descriptor->valid==0) || (descriptor->segment==0) ||
-      (descriptor->u.segment.executable==0))
+  if (descriptor->valid==0 || descriptor->segment==0 ||
+          IS_DATA_SEGMENT(descriptor->type))
   {
     BX_ERROR(("check_cs: not a valid code segment !"));
     exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
@@ -63,7 +63,7 @@ void BX_CPU_C::check_cs(bx_descriptor_t *descriptor, Bit16u cs_raw, Bit8u check_
 #endif
 
   // if non-conforming, code segment descriptor DPL must = CPL else #GP(selector)
-  if (descriptor->u.segment.c_ed==0) {
+  if (IS_CODE_SEGMENT_NON_CONFORMING(descriptor->type)) {
     if (descriptor->dpl != check_cpl) {
       BX_ERROR(("check_cs: non-conforming code seg descriptor dpl != cpl"));
       exception(BX_GP_EXCEPTION, cs_raw & 0xfffc, 0);
@@ -118,7 +118,7 @@ BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
 #endif
 
 #if BX_SUPPORT_ICACHE
-  BX_CPU_THIS_PTR iCache.fetchModeMask = createFetchModeMask(BX_CPU_THIS);
+  BX_CPU_THIS_PTR updateFetchModeMask();
 #endif
 
   // Loading CS will invalidate the EIP fetch window.
@@ -135,7 +135,6 @@ BX_CPU_C::branch_near32(Bit32u new_EIP)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
   EIP = new_EIP;
-  revalidate_prefetch_q();
 }
 
 void BX_CPU_C::branch_far32(bx_selector_t *selector, 
@@ -172,7 +171,6 @@ BX_CPU_C::branch_near64(bxInstruction_c *i)
   }
 
   RIP = new_RIP;
-  revalidate_prefetch_q();
 }
 #endif
 

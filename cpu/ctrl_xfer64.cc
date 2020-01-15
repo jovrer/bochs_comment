@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc,v 1.40 2005/11/11 22:02:42 sshwarts Exp $
+// $Id: ctrl_xfer64.cc,v 1.47 2006/06/09 22:29:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -23,11 +23,12 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
+/////////////////////////////////////////////////////////////////////////
 
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -37,26 +38,21 @@ void BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
 {
   Bit64u return_RIP;
 
-  //invalidate_prefetch_q();
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  Bit64u temp_RSP = RSP;
   Bit16u imm16 = i->Iw();
 
-  access_linear(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + temp_RSP,
-    8, CPL==3, BX_READ, &return_RIP);
+  pop_64(&return_RIP);
 
-  if (! IsCanonical(return_RIP))
-  {
-    BX_INFO(("RETnear64_Iw: canonical RIP violation"));
+  if (! IsCanonical(return_RIP)) {
+    BX_ERROR(("RETnear64_Iw: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   RIP = return_RIP;
-  RSP += 8 + imm16;
+  RSP += imm16;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, RIP);
 }
@@ -65,25 +61,18 @@ void BX_CPU_C::RETnear64(bxInstruction_c *i)
 {
   Bit64u return_RIP;
 
-  //invalidate_prefetch_q();
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  Bit64u temp_RSP = RSP;
+  pop_64(&return_RIP);
 
-  access_linear(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + temp_RSP,
-      8, CPL==3, BX_READ, &return_RIP);
-
-  if (! IsCanonical(return_RIP))
-  {
-    BX_INFO(("RETnear64: canonical RIP violation"));
+  if (! IsCanonical(return_RIP)) {
+    BX_ERROR(("RETnear64: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   RIP = return_RIP;
-  RSP += 8;
 
   BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, RIP);
 }
@@ -128,15 +117,12 @@ void BX_CPU_C::CALL_Aq(bxInstruction_c *i)
 {
   Bit64u new_RIP = RIP + (Bit32s) i->Id();
 
-  //invalidate_prefetch_q();
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
 
-  if (! IsCanonical(new_RIP))
-  {
-    BX_INFO(("CALL_Aq: canonical RIP violation"));
+  if (! IsCanonical(new_RIP)) {
+    BX_ERROR(("CALL_Aq: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -151,8 +137,6 @@ void BX_CPU_C::CALL_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64;
 
-  //invalidate_prefetch_q();
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
@@ -166,7 +150,7 @@ void BX_CPU_C::CALL_Eq(bxInstruction_c *i)
 
   if (! IsCanonical(op1_64))
   {
-    BX_INFO(("CALL_Eq: canonical RIP violation"));
+    BX_ERROR(("CALL_Eq: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -189,7 +173,7 @@ void BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
 
   /* op1_64 is a register or memory reference */
   if (i->modC0()) {
-    BX_INFO(("CALL_Ep: op1 is a register"));
+    BX_ERROR(("CALL64_Ep: op1 is a register"));
     exception(BX_UD_EXCEPTION, 0, 0);
   }
 
@@ -199,7 +183,8 @@ void BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
 
   BX_ASSERT(protected_mode());
 
-  BX_INFO(("call far instruction executed ..."));
+  BX_INFO(("CallFar64 instruction executed ..."));
+
   BX_CPU_THIS_PTR call_protected(i, cs_raw, op1_32);
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
@@ -256,8 +241,6 @@ void BX_CPU_C::JMP_Eq(bxInstruction_c *i)
 {
   Bit64u op1_64;
 
-  //invalidate_prefetch_q();
-
   if (i->modC0()) {
     op1_64 = BX_READ_64BIT_REG(i->rm());
   }
@@ -266,7 +249,7 @@ void BX_CPU_C::JMP_Eq(bxInstruction_c *i)
   }
 
   if (! IsCanonical(op1_64)) {
-    BX_INFO(("JMP_Eq: canonical RIP violation"));
+    BX_ERROR(("JMP_Eq: canonical RIP violation"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -284,14 +267,14 @@ void BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
   invalidate_prefetch_q();
 
   if (i->modC0()) {
-    BX_INFO(("JMP_Ep(): op1 is a register"));
+    BX_ERROR(("JMP64_Ep(): op1 is a register"));
     exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
   read_virtual_word(i->seg(), RMAddr(i)+4, &cs_raw);
 
-  BX_INFO(("JMPF64 instruction executed ..."));
+  BX_INFO(("JmpFar64 instruction executed ..."));
 
   BX_ASSERT(protected_mode());
   BX_CPU_THIS_PTR jump_protected(i, cs_raw, op1_32);
@@ -306,8 +289,9 @@ void BX_CPU_C::IRET64(bxInstruction_c *i)
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_iret;
-  BX_CPU_THIS_PTR show_eip = RIP;
 #endif
+
+  BX_CPU_THIS_PTR nmi_disable = 0;
 
   BX_ASSERT(protected_mode());
   iret_protected(i);
@@ -319,14 +303,14 @@ void BX_CPU_C::IRET64(bxInstruction_c *i)
 void BX_CPU_C::JCXZ64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-    if ( RCX == 0 ) {
+    if (RCX == 0) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       return;
     }
   }
   else {
-    if ( ECX == 0 ) {
+    if (ECX == 0) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       return;
@@ -339,14 +323,14 @@ void BX_CPU_C::JCXZ64_Jb(bxInstruction_c *i)
 void BX_CPU_C::LOOPNE64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-    if ( ((--RCX) != 0) && (get_ZF()==0) ) {
+    if (((--RCX) != 0) && (get_ZF()==0)) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       return;
     }
   }
   else {
-    if ( ((--ECX) != 0) && (get_ZF()==0) ) {
+    if (((--ECX) != 0) && (get_ZF()==0)) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       return;
@@ -359,7 +343,7 @@ void BX_CPU_C::LOOPNE64_Jb(bxInstruction_c *i)
 void BX_CPU_C::LOOPE64_Jb(bxInstruction_c *i)
 {
   if (i->as64L()) {
-    if ( ((--RCX)!=0) && (get_ZF()) ) {
+    if (((--RCX)!=0) && (get_ZF())) {
       branch_near64(i);
       BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, RIP);
       return;

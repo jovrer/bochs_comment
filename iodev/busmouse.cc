@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: busmouse.cc,v 1.2 2004/12/25 09:29:31 vruppert Exp $
+// $Id: busmouse.cc,v 1.5 2006/05/28 17:07:57 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -53,29 +53,25 @@ libbusmouse_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
   return(0); // Success
 }
 
-  void
-libbusmouse_LTX_plugin_fini(void)
+void libbusmouse_LTX_plugin_fini(void)
 {
-  BX_INFO (("busmouse plugin_fini"));
+  BX_INFO(("busmouse plugin_fini"));
 }
 
-bx_busm_c::bx_busm_c(void)
+bx_busm_c::bx_busm_c()
 {
-  // constructor
   put("BUSM");
   settype(BUSMLOG);
 }
 
-bx_busm_c::~bx_busm_c(void)
+bx_busm_c::~bx_busm_c()
 {
-  // destructor
   BX_DEBUG(("Exit."));
 }
 
-  void
-bx_busm_c::init(void)
+void bx_busm_c::init(void)
 {
-  BX_DEBUG(("Init $Id: busmouse.cc,v 1.2 2004/12/25 09:29:31 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: busmouse.cc,v 1.5 2006/05/28 17:07:57 sshwarts Exp $"));
 
   DEV_register_irq(BUS_MOUSE_IRQ, "Bus Mouse");
 
@@ -113,25 +109,48 @@ bx_busm_c::init(void)
   BX_INFO(("Initialized BusMouse"));
 }
 
-  void
-bx_busm_c::reset(unsigned type)
+void bx_busm_c::reset(unsigned type)
 {
 }
 
-  // static IO port read callback handler
-  // redirects to non-static class handler to avoid virtual functions
-  Bit32u
-bx_busm_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_busm_c::register_state(void)
+{
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "busmouse", "Busmouse State", 12);
+  BXRS_HEX_PARAM_FIELD(list, mouse_delayed_dx, BX_BUSM_THIS mouse_delayed_dx);
+  BXRS_HEX_PARAM_FIELD(list, mouse_delayed_dx, BX_BUSM_THIS mouse_delayed_dy);
+  BXRS_HEX_PARAM_FIELD(list, current_x, BX_BUSM_THIS current_x);
+  BXRS_HEX_PARAM_FIELD(list, current_y, BX_BUSM_THIS current_y);
+  BXRS_HEX_PARAM_FIELD(list, current_b, BX_BUSM_THIS current_b);
+  BXRS_HEX_PARAM_FIELD(list, sig_port_sequ, BX_BUSM_THIS sig_port_sequ);
+  BXRS_HEX_PARAM_FILED(list, control_val, BX_BUSM_THIS control_val);
+
+  bx_list_c *ctrl = new bx_list_c(list, "control", 7);
+  BXRS_PARAM_BOOL(ctrl, mode_set, BX_BUSM_THIS control.mode_set);
+  BXRS_HEX_PARAM_FILED(ctrl, modeA_select, BX_BUSM_THIS control.modeA_select);
+  BXRS_PARAM_BOOL(ctrl, portA_dir, BX_BUSM_THIS control.portA_dir);
+  BXRS_PARAM_BOOL(ctrl, portC_upper_dir, BX_BUSM_THIS control.portC_upper_dir);
+  BXRS_PARAM_BOOL(ctrl, modeBC_select, BX_BUSM_THIS control.modeBC_select);
+  BXRS_PARAM_BOOL(ctrl, portB_dir, BX_BUSM_THIS control.portB_dir);
+  BXRS_PARAM_BOOL(ctrl, portC_lower_dir, BX_BUSM_THIS control.portC_lower_dir);
+
+  BXRS_PARAM_BOOL(list, interrupts, BX_BUSM_THIS control.interrupts);
+  BXRS_PARAM_BOOL(list, packet_update, BX_BUSM_THIS control.packet_update);
+  BXRS_HEX_PARAM_FILED(list, cur_command, BX_BUSM_THIS cur_command);
+  BXRS_HEX_PARAM_FILED(list, command_val, BX_BUSM_THIS command_val);
+}
+#endif
+
+// static IO port read callback handler
+// redirects to non-static class handler to avoid virtual functions
+Bit32u bx_busm_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
 #if !BX_USE_BUSM_SMF
   bx_busm_c *class_ptr = (bx_busm_c *) this_ptr;
-
-  return( class_ptr->read(address, io_len) );
+  return class_ptr->read(address, io_len);
 }
 
-
-  Bit32u
-bx_busm_c::read(Bit32u address, unsigned io_len)
+Bit32u bx_busm_c::read(Bit32u address, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -185,21 +204,17 @@ bx_busm_c::read(Bit32u address, unsigned io_len)
   return value;
 }
 
+// static IO port write callback handler
+// redirects to non-static class handler to avoid virtual functions
 
-  // static IO port write callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  void
-bx_busm_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
+void bx_busm_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
 #if !BX_USE_BUSM_SMF
   bx_busm_c *class_ptr = (bx_busm_c *) this_ptr;
-
   class_ptr->write(address, value, io_len);
 }
 
-  void
-bx_busm_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
+void bx_busm_c::write(Bit32u address, Bit32u value, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -264,8 +279,7 @@ bx_busm_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
   }
 }
 
-  void
-bx_busm_c::bus_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_busm_c::bus_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
 {
   // scale down the motion
   if ( (delta_x < -1) || (delta_x > 1) )
@@ -309,16 +323,14 @@ bx_busm_c::bus_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_
   }
 }
 
-  void 
-bx_busm_c::timer_handler(void *this_ptr)
+void bx_busm_c::timer_handler(void *this_ptr)
 {
   bx_busm_c *class_ptr = (bx_busm_c *) this_ptr;
   class_ptr->busm_timer();
 }
 
 // Called at 30hz
-  void 
-bx_busm_c::busm_timer(void)
+void bx_busm_c::busm_timer(void)
 {
   // if interrupts are on, fire the interrupt
   if (BX_BUSM_THIS interrupts) {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.h,v 1.21 2006/01/08 20:39:08 vruppert Exp $
+// $Id: pit_wrap.h,v 1.24 2006/05/27 15:54:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -47,11 +47,14 @@
 
 class bx_pit_c : public logfunctions {
 public:
-  bx_pit_c( void );
-  ~bx_pit_c( void );
-  BX_PIT_SMF int init( void );
-  BX_PIT_SMF void reset( unsigned type);
-  BX_PIT_SMF bx_bool periodic( Bit32u   usec_delta );
+  bx_pit_c();
+  virtual ~bx_pit_c() {}
+  BX_PIT_SMF int init(void);
+  BX_PIT_SMF void reset(unsigned type);
+  BX_PIT_SMF bx_bool periodic(Bit32u usec_delta);
+#if BX_SUPPORT_SAVE_RESTORE
+  BX_PIT_SMF void register_state(void);
+#endif
 
   Bit16u get_timer(int Timer) {
       return s.timer.get_inlatch(Timer);
@@ -61,30 +64,20 @@ private:
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
 #if !BX_USE_PIT_SMF
-  Bit32u   read( Bit32u   addr, unsigned int len );
-  void write( Bit32u   addr, Bit32u   Value, unsigned int len );
+  Bit32u   read(Bit32u addr, unsigned len);
+  void write(Bit32u addr, Bit32u Value, unsigned len);
 #endif
 
   struct s_type {
     pit_82C54 timer;
     Bit8u   speaker_data_on;
     bx_bool refresh_clock_div2;
-    int  timer_handle[3];
     Bit64u last_usec;
     Bit32u last_next_event_time;
     Bit64u total_ticks;
-    Bit64u usec_per_second;
-    Bit64u ticks_per_second;
-    Bit64u total_sec;
-    Bit64u last_time;
-    Bit64u last_sec_usec;
-    Bit64u max_ticks;
-    Bit64u stored_delta;
     Bit64u total_usec;
-    Bit64u em_last_realtime;
-    Bit64u last_realtime_delta;
-    Bit64u last_realtime_ticks;
-    } s;
+    int  timer_handle[3];
+  } s;
 
   static void timer_handler(void *this_ptr);
   BX_PIT_SMF void handle_timer();

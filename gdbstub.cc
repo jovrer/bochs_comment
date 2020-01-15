@@ -16,6 +16,7 @@
 #define NEED_CPU_REG_SHORTCUTS 1
 
 #include "bochs.h"
+#include "cpu/cpu.h"
 #include "iodev/iodev.h"
 
 #define LOG_THIS genlog->
@@ -27,6 +28,7 @@ static int last_stop_reason = GDBSTUB_STOP_NO_REASON;
 #define GDBSTUB_TRACE                   (0xac2)
 #define GDBSTUB_USER_BREAK              (0xac3)
 
+static bx_list_c *gdbstub_list;
 static int listen_socket_fd;
 static int socket_fd;
 
@@ -61,24 +63,23 @@ static void put_reply(char* buffer)
    
    BX_DEBUG (("put_buffer %s", buffer));
    
-   do
-     { 
+   do { 
        put_debug_char('$');
        
        csum = 0;
        
        i = 0;
        while (buffer[i] != 0)
-         {
+       {
             put_debug_char(buffer[i]);
             csum = csum + buffer[i];
             i++;
-         }
+       }
        
        put_debug_char('#');
        put_debug_char(hexchars[csum >> 4]);
        put_debug_char(hexchars[csum % 16]);
-     } while (get_debug_char() != '+');
+   } while (get_debug_char() != '+');
 }
 
 static void get_command(char* buffer)
@@ -89,8 +90,7 @@ static void get_command(char* buffer)
    unsigned int count;
    unsigned int i;
    
-   do
-     {
+   do{
        while ((ch = get_debug_char()) != '$');
        
        checksum = 0;
@@ -98,44 +98,44 @@ static void get_command(char* buffer)
        count = 0;
    
        while (1)
-         {
+       {
             ch = get_debug_char();
             if (ch == '#') break;
             checksum = checksum + ch;
             buffer[count] = ch;
             count++;
-         }
+       }
        buffer[count] = 0;
        
        if (ch == '#')
-         {
+       {
             xmitcsum = hex(get_debug_char()) << 4;
             xmitcsum += hex(get_debug_char());
             if (checksum != xmitcsum)
-              {
-                 BX_INFO (("Bad checksum"));
-              }
-         }
+            {
+                 BX_INFO(("Bad checksum"));
+            }
+       }
        
        if (checksum != xmitcsum)
-         {
+       {
             put_debug_char('-');
-         }
+       }
        else
-         {
+       {
             put_debug_char('+');
             if (buffer[2] == ':')
-              {
+            {
                  put_debug_char(buffer[0]);
                  put_debug_char(buffer[1]);
                  count = strlen(buffer);
                  for (i = 3; i <= count; i++)
-                   {
+                 {
                       buffer[i - 3] = buffer[i];
-                   }
-              }
-         }
-     } while (checksum != xmitcsum);   
+                 }
+            }
+       }
+   } while (checksum != xmitcsum);   
 }
 
 void hex2mem(char* buf, unsigned char* mem, int count)
@@ -144,12 +144,12 @@ void hex2mem(char* buf, unsigned char* mem, int count)
    unsigned char ch;
    
    for (i = 0; i<count; i++)
-     {
+   {
        ch = hex(*buf++) << 4;
        ch = ch + hex(*buf++);
        *mem = ch;
        mem++;
-     }
+   }
 }
 
 char* mem2hex(char* mem, char* buf, int count)
@@ -158,14 +158,14 @@ char* mem2hex(char* mem, char* buf, int count)
    unsigned char ch;
    
    for (i = 0; i<count; i++)
-     {
+   {
        ch = *mem;
        mem++;
        *buf = hexchars[ch >> 4];
        buf++;
        *buf = hexchars[ch % 16];
        buf++;  
-     }
+   }
    *buf = 0;
    return(buf);
 }
@@ -209,9 +209,7 @@ static unsigned int breakpoints[MAX_BREAKPOINTS] = {0,};
 static unsigned int nr_breakpoints = 0;
 
 static int stub_trace_flag = 0;
-
 static int instr_count = 0;
-
 static int saved_eip = 0;
 
 int bx_gdbstub_check(unsigned int eip)
@@ -228,7 +226,7 @@ int bx_gdbstub_check(unsigned int eip)
    instr_count++;
    
    if ((instr_count % 500) == 0)
-     {
+   {
 #if !defined(__CYGWIN__) && !defined(__MINGW32__)
        arg = fcntl(socket_fd, F_GETFL);
        fcntl(socket_fd, F_SETFL, arg | O_NONBLOCK);
@@ -237,36 +235,36 @@ int bx_gdbstub_check(unsigned int eip)
 #else
        FD_ZERO(&fds);
        FD_SET(socket_fd, &fds);
-        r = select(socket_fd + 1, &fds, NULL, NULL, &tv);
+       r = select(socket_fd + 1, &fds, NULL, NULL, &tv);
        if (r == 1)
-         {
+       {
            r = recv(socket_fd, (char *)&ch, 1, 0);
-         }
+       }
 #endif   
        if (r == 1)
-         {
-            BX_INFO (("Got byte %x", (unsigned int)ch));
+       {
+            BX_INFO(("Got byte %x", (unsigned int)ch));
             last_stop_reason = GDBSTUB_USER_BREAK;
             return(GDBSTUB_USER_BREAK);
-         }
-     }
+       }
+   }
    
    // why is trace before breakpoints? does that mean it would never
    // hit a breakpoint during tracing?
    if (stub_trace_flag == 1)
-     {
+   {
        last_stop_reason = GDBSTUB_TRACE;
        return(GDBSTUB_TRACE);
-     }
+   }
    for (i = 0; i < nr_breakpoints; i++)
-     {
+   {
        if (eip == breakpoints[i])
-         {
-            BX_INFO (("found breakpoint at %x", eip));
+       {
+            BX_INFO(("found breakpoint at %x", eip));
             last_stop_reason = GDBSTUB_EXECUTION_BREAKPOINT;
             return(GDBSTUB_EXECUTION_BREAKPOINT);
-         }
-     }
+       }
+   }
    last_stop_reason = GDBSTUB_STOP_NO_REASON;
    return(GDBSTUB_STOP_NO_REASON);
 }
@@ -276,19 +274,19 @@ static int remove_breakpoint(unsigned int addr, int len)
    unsigned int i;
    
    if (len != 1)
-     {
+   {
        return(0);
-     }
+   }
    
    for (i = 0; i < MAX_BREAKPOINTS; i++)
-     {
+   {
        if (breakpoints[i] == addr)
-         {
-            BX_INFO (("Removing breakpoint at %x", addr));
+       {
+            BX_INFO(("Removing breakpoint at %x", addr));
             breakpoints[i] = 0;
             return(1);
-         }
-     }
+       }
+   }
    return(0);
 }
 
@@ -296,21 +294,21 @@ static void insert_breakpoint(unsigned int addr)
 {
    unsigned int i;
    
-   BX_INFO (("setting breakpoint at %x", addr));
+   BX_INFO(("setting breakpoint at %x", addr));
    
    for (i = 0; i < (unsigned)MAX_BREAKPOINTS; i++)
-     {
+   {
        if (breakpoints[i] == 0)
-         {
+       {
             breakpoints[i] = addr;
             if (i >= nr_breakpoints)
-              {
+            {
                  nr_breakpoints = i + 1;
-              }
+            }
             return;
-         }
-     }
-   BX_INFO (("No slot for breakpoint"));
+       }
+   }
+   BX_INFO(("No slot for breakpoint"));
 }
 
 static void do_pc_breakpoint(int insert, unsigned long long addr, int len)
@@ -352,43 +350,35 @@ static int access_linear(Bit64u laddress,
                         unsigned int rw,
                         Bit8u* data)
 {
-  Bit32u phys;
-  bx_bool valid;
-   
+   bx_phy_address phys;
+   bx_bool valid;
+    
    if (((laddress & 0xfff) + len) > 4096)
-     {
+   {
        valid = access_linear(laddress,
                              4096 - (laddress & 0xfff),
                              rw,
                              data);
-       if (!valid)
-         {
-            return(valid);
-         }
+       if (!valid) return(0);
+
        valid = access_linear(laddress,
                              len + (laddress & 0xfff) - 4096,
                              rw,
                              (Bit8u *)((unsigned long)data + 
                                       4096 - (laddress & 0xfff)));
        return(valid);
-     }
+   }
    
-   BX_CPU(0)->dbg_xlate_linear2phy(laddress, 
-                                       (Bit32u*)&phys, 
-                                       (bx_bool*)&valid);
-   if (!valid)
-     {
-       return(0);
-     }
+   valid = BX_CPU(0)->dbg_xlate_linear2phy(laddress, (bx_phy_address*)&phys);
+   if (!valid) return(0);
    
-   if (rw == BX_READ)
-     {
+   if (rw == BX_READ) {
        valid = BX_MEM(0)->dbg_fetch_mem(phys, len, data);
-     }
-   else
-     {
+   }
+   else {
        valid = BX_MEM(0)->dbg_set_mem(phys, len, data);
-     }
+   }
+
    return(valid);
 }
 
@@ -402,22 +392,22 @@ static void debug_loop(void)
    ne = 0;
    
    while (ne == 0)
-     {
+   {
        get_command(buffer);
        BX_DEBUG (("get_buffer %s", buffer));
        
        switch (buffer[0])
-         {
+       {
           case 'c':
               {
                  char buf[255];
                  int new_eip;
                  
                  if (buffer[1] != 0)
-                   {
+                 {
                       new_eip = atoi(buffer + 1);
                       
-                      BX_INFO (("continuing at %x", new_eip));
+                      BX_INFO(("continuing at %x", new_eip));
                       
 		      for (int i=0; i<BX_SMP_PROCESSORS; i++) {
                         BX_CPU(i)->invalidate_prefetch_q();
@@ -426,11 +416,11 @@ static void debug_loop(void)
                       saved_eip = EIP;
                       
                       BX_CPU(0)->dword.eip = new_eip;
-                   }
+                 }
                  
                  stub_trace_flag = 0;
                  bx_cpu.ispanic = 0;
-                 bx_cpu.cpu_loop(-1);              
+                 bx_cpu.cpu_loop(0);              
                  if (bx_cpu.ispanic)
                  {
                     last_stop_reason = GDBSTUB_EXECUTION_BREAKPOINT;
@@ -439,23 +429,22 @@ static void debug_loop(void)
                  DEV_vga_refresh();
                  
                  if (buffer[1] != 0)
-                   {
+                 {
                       bx_cpu.invalidate_prefetch_q();
-                      
                       BX_CPU_THIS_PTR dword.eip = saved_eip;
-                   }
+                 }
                  
-                 BX_INFO (("stopped with %x", last_stop_reason));                               
+                 BX_INFO(("stopped with %x", last_stop_reason));                               
                  buf[0] = 'S';
                  if (last_stop_reason == GDBSTUB_EXECUTION_BREAKPOINT ||
                      last_stop_reason == GDBSTUB_TRACE)
-                   {
+                 {
                       write_signal(&buf[1], SIGTRAP);
-                   }
+                 }
                  else
-                   {
+                 {
                       write_signal(&buf[1], 0);
-                   }
+                 }
                  put_reply(buf);
                  break;
               }
@@ -464,22 +453,22 @@ static void debug_loop(void)
               {
                  char buf[255];
                  
-                 BX_INFO (("stepping"));
+                 BX_INFO(("stepping"));
                  stub_trace_flag = 1;
-                 bx_cpu.cpu_loop(-1);
+                 bx_cpu.cpu_loop(0);
                  DEV_vga_refresh();
                  stub_trace_flag = 0;
-                 BX_INFO (("stopped with %x", last_stop_reason));
+                 BX_INFO(("stopped with %x", last_stop_reason));
                  buf[0] = 'S';
                  if (last_stop_reason == GDBSTUB_EXECUTION_BREAKPOINT ||
                      last_stop_reason == GDBSTUB_TRACE)
-                   {
+                 {
                       write_signal(&buf[1], SIGTRAP);
-                   }
+                 }
                  else
-                   {
+                 {
                       write_signal(&buf[1], SIGTRAP);
-                   }
+                 }
                  put_reply(buf);
                  break;
               }
@@ -496,28 +485,28 @@ static void debug_loop(void)
                  hex2mem(ebuf + 1, mem, len);          
                  
                  if (len == 1 && mem[0] == 0xcc)
-                   {
+                 {
                       insert_breakpoint(addr);
                       put_reply("OK");
-                   }
+                 }
                  else if (remove_breakpoint(addr, len))
-                   {
+                 {
                       put_reply("OK");
-                   }
+                 }
                  else
-                   {
+                 {
                       if (access_linear(addr,
                                         len,
                                         BX_WRITE,
                                         mem))
-                        {
+                      {
                            put_reply("OK");
-                        }
+                      }
                       else
-                        {
+                      {
                            put_reply("ENN");
-                        }
-                   }
+                      }
+                 }
                  break;                    
               }
             
@@ -529,7 +518,7 @@ static void debug_loop(void)
                  
                  addr = strtoull(&buffer[1], &ebuf, 16);
                  len = strtoul(ebuf + 1, NULL, 16);
-                 BX_INFO (("addr %x len %x", addr, len));
+                 BX_INFO(("addr %x len %x", addr, len));
                  
                  access_linear(addr,
                                len,
@@ -549,10 +538,10 @@ static void debug_loop(void)
 		 ++ebuf;
                  value = read_little_endian_hex(ebuf);
                  
-                 BX_INFO (("reg %d set to %llx", reg, value));
+                 BX_INFO(("reg %d set to %llx", reg, value));
 #if !BX_SUPPORT_X86_64                 
                  switch (reg)
-                   {
+                 {
                     case 1:
                       EAX = value;
                       break;
@@ -588,10 +577,10 @@ static void debug_loop(void)
                       
                     default:
                       break;
-                   }
+                 }
 #else
                  switch (reg)
-                   {
+                 {
                     case 0:
                       RAX = value;
                       break;
@@ -663,7 +652,7 @@ static void debug_loop(void)
                       
                     default:
                       break;
-                   }
+                 }
 #endif                 
                  put_reply("OK");
                  
@@ -681,13 +670,13 @@ static void debug_loop(void)
             registers[6] = ESI;
             registers[7] = EDI;
             if (last_stop_reason == GDBSTUB_EXECUTION_BREAKPOINT)
-              {
+            {
                  registers[8] = EIP + 1;
-              }
+            }
             else
-              {
+            {
                  registers[8] = EIP;
-              }
+            }
             registers[9] = BX_CPU_THIS_PTR read_eflags();
             registers[10] = 
               BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
@@ -728,9 +717,9 @@ static void debug_loop(void)
 	    Bit64u rip;
 	    rip = RIP;
             if (last_stop_reason == GDBSTUB_EXECUTION_BREAKPOINT)
-              {
+            {
 		++rip;
-              }
+            }
             PUTREG(buf, rip, 8);
 	    PUTREG(buf, BX_CPU_THIS_PTR read_eflags(), 4);
             PUTREG(buf, BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, 4);
@@ -750,40 +739,39 @@ static void debug_loop(void)
             
           case 'H':
             if (buffer[1] == 'c')
-              {
+            {
                  continue_thread = strtol(&buffer[2], NULL, 16);
                  put_reply("OK");
-              }
+            }
             else if (buffer[1] == 'g')
-              {
+            {
                  other_thread = strtol(&buffer[2], NULL, 16);
                  put_reply("OK");
-              }
+            }
             else
-              {
+            {
                  put_reply("ENN");
-              }
+            }
             break;
             
           case 'q':
             if (buffer[1] == 'C')
-              {
+            {
                  sprintf(obuf,"%Lx", 1);
                  put_reply(obuf);
-              }
+            }
             else if (strncmp(&buffer[1], "Offsets", strlen("Offsets")) == 0)
-              {
+            {
                  sprintf(obuf,
                          "Text=%x;Data=%x;Bss=%x",
-                         bx_options.gdbstub.text_base, 
-                         bx_options.gdbstub.data_base, 
-                         bx_options.gdbstub.bss_base);
+                         SIM->get_param_num("text_base", gdbstub_list)->get(),
+                         SIM->get_param_num("data_base", gdbstub_list)->get(),
+                         SIM->get_param_num("bss_base", gdbstub_list)->get());
                  put_reply(obuf);
-              }
-            else
-              {
+            }
+            else {
                  put_reply("ENN");
-              }          
+            }          
             break;
 
 	  case 'Z':
@@ -793,14 +781,14 @@ static void debug_loop(void)
 	    do_breakpoint(0, buffer+1);
 	    break;
           case 'k':
-            BX_PANIC (("Debugger asked us to quit\n"));
+            BX_PANIC(("Debugger asked us to quit\n"));
             break;
             
           default:
             put_reply("");
             break;
-         }
-     }
+       }
+   }
 }
 
 static void wait_for_connect(int portn)
@@ -813,10 +801,10 @@ static void wait_for_connect(int portn)
    
    listen_socket_fd = socket(PF_INET, SOCK_STREAM, 0);
    if (listen_socket_fd == -1)
-     {
-       BX_PANIC (("Failed to create socket\n"));
+   {
+       BX_PANIC(("Failed to create socket\n"));
        exit(1);
-     }
+   }
    
    /* Allow rapid reuse of this port */
    opt = 1;
@@ -826,9 +814,9 @@ static void wait_for_connect(int portn)
    r = setsockopt(listen_socket_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
    if (r == -1)
-     {
-       BX_INFO (("setsockopt(SO_REUSEADDR) failed\n"));
-     }
+   {
+       BX_INFO(("setsockopt(SO_REUSEADDR) failed\n"));
+   }
    
    memset (&sockaddr, '\000', sizeof sockaddr);
 #if BX_HAVE_SOCKADDR_IN_SIN_LEN
@@ -842,30 +830,30 @@ static void wait_for_connect(int portn)
 
    r = bind(listen_socket_fd, (struct sockaddr *)&sockaddr, sizeof(sockaddr));
    if (r == -1)
-     {
-       BX_PANIC (("Failed to bind socket\n"));
-     }
+   {
+       BX_PANIC(("Failed to bind socket\n"));
+   }
 
    r = listen(listen_socket_fd, 0);
    if (r == -1)
-     {
-       BX_PANIC (("Failed to listen on socket\n"));
-     }
+   {
+       BX_PANIC(("Failed to listen on socket\n"));
+   }
    
    sockaddr_len = sizeof sockaddr;
    socket_fd = accept(listen_socket_fd, (struct sockaddr *)&sockaddr, &sockaddr_len);
    if (socket_fd == -1)
-     {
-       BX_PANIC (("Failed to accept on socket\n"));
-     }
+   {
+       BX_PANIC(("Failed to accept on socket\n"));
+   }
    close(listen_socket_fd);
    
    protoent = getprotobyname ("tcp");
    if (!protoent)
-     {
-       BX_INFO (("getprotobyname (\"tcp\") failed\n"));
+   {
+       BX_INFO(("getprotobyname (\"tcp\") failed\n"));
        return;
-     }
+   }
 
    /* Disable Nagle - allow small packets to be sent without delay. */
    opt = 1;
@@ -875,24 +863,22 @@ static void wait_for_connect(int portn)
    r = setsockopt (socket_fd, protoent->p_proto, TCP_NODELAY, &opt, sizeof(opt));
 #endif
    if (r == -1)
-     {
-       BX_INFO (("setsockopt(TCP_NODELAY) failed\n"));
-     }
+   {
+       BX_INFO(("setsockopt(TCP_NODELAY) failed\n"));
+   }
 }
 
 void bx_gdbstub_init(int argc, char* argv[])
 {
-   int portn = bx_options.gdbstub.port;
+   gdbstub_list = (bx_list_c*) SIM->get_param(BXPN_GDBSTUB);
+   int portn = SIM->get_param_num("port", gdbstub_list)->get();
 
 #ifdef __MINGW32__
    WSADATA wsaData;
    WSAStartup(2, &wsaData);
 #endif
 
-   bx_init_hardware();
-
    /* Wait for connect */
-
    printf("Waiting for gdb connection on localhost:%d\n", portn);
    wait_for_connect(portn);
    
@@ -900,5 +886,5 @@ void bx_gdbstub_init(int argc, char* argv[])
    debug_loop();
 
    /* CPU loop */
-   bx_cpu.cpu_loop(-1);
+   bx_cpu.cpu_loop(0);
 }

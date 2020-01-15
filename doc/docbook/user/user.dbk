@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.202 2006/01/29 08:44:12 vruppert Exp $
+$Id: user.dbk,v 1.218 2006/08/27 07:06:01 vruppert Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -25,6 +25,7 @@ This is the top level file for the Bochs Users Manual.
    <author><firstname>Volker</firstname><surname>Ruppert</surname></author>
    <author><firstname>Christophe</firstname><surname>Bothamy</surname></author>
    <editor><firstname>Michael</firstname><surname>Calabrese</surname></editor>
+   <editor><firstname>Stanislav</firstname><surname>Shwartsman</surname></editor>
    </authorgroup>
 </bookinfo>
 
@@ -34,7 +35,7 @@ This is the top level file for the Bochs Users Manual.
 <para>
 Bochs is a program that simulates a complete Intel x86 computer.  It 
 can be configured to act like a <!--286,--> 386, 486, Pentium, Pentium Pro, or
-AMD64 CPU, including optional MMX, SSE, SSE2 and 3DNow! instructions.
+x86-64 CPU, including optional MMX, SSE/SSE2/SSE3 and 3DNow! instructions.
 Bochs interprets every instruction from power-up to reboot, and has
 device models for all of the standard PC peripherals: keyboard, mouse,
 VGA card/monitor, disks, timer chips, network card, etc.  Because Bochs
@@ -985,10 +986,10 @@ available at <ulink url="http://www.cygwin.com">www.cygwin.com</ulink>.
 
 <figure><title>Checking out Bochs in CVS</title>
 <screen>
-  user$ <command>cvs -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/bochs login</command>
-  (Logging in to anonymous@cvs.sourceforge.net)
+  user$ <command>cvs -d:pserver:anonymous@bochs.cvs.sourceforge.net:/cvsroot/bochs login</command>
+  (Logging in to anonymous@bochs.cvs.sourceforge.net)
   CVS password:    <replaceable>(there is no password, just press Enter)</replaceable>
-  user$ <command>cvs -z3 -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/bochs checkout bochs</command>
+  user$ <command>cvs -z3 -d:pserver:anonymous@bochs.cvs.sourceforge.net:/cvsroot/bochs checkout bochs</command>
   cvs server: Updating bochs
   U bochs/.bochsrc
   U bochs/.conf.AIX.4.3.1
@@ -1166,6 +1167,10 @@ The tag tells which release you want, and it can be one of the following:
       </row>
     </thead>
     <tbody>
+      <row>
+        <entry>2.3</entry>
+        <entry>REL_2_3_FINAL</entry>
+      </row>
       <row>
         <entry>2.2.6 (intermediate2)</entry>
         <entry>REL_2_2_6_FINAL</entry>
@@ -2063,18 +2068,6 @@ turn it off.
       </entry>
     </row>
     <row>
-      <entry>--enable-config-interface</entry>
-      <entry>yes</entry>
-      <entry>
-      Enable configuration menus when you first start Bochs. The menus let you
-      read in a <filename>bochsrc</filename> file, edit some options, and save
-      the new <filename>bochsrc</filename> before starting the simulation. Also
-      enables a runtime menu which lets you change certain settings during
-      simulation. See the <link linkend="bochsopt-configinterface">config_interface option</link>
-      for how to select between the text interface and wxWidgets.
-      </entry>
-    </row>
-    <row>
       <entry>--enable-new-pit</entry>
       <entry>yes</entry>
       <entry>
@@ -2209,18 +2202,18 @@ turn it off.
       <entry>no</entry>
       <entry>
       Add support for SSE instructions, written by Stanislav Shwartsman.
-      For SSE only, use --enable-sse=1.  For SSE and SSE2, use --enable-sse=2.
+      Any of SSE/SSE2/SSE3 instruction sets are supported.
       </entry>
-    </row>
-    <row>
-      <entry>--enable-pni</entry>
-      <entry>no</entry>
-      <entry>PNI support</entry>
     </row>
     <row>
       <entry>--enable-sep</entry>
       <entry>no</entry>
       <entry>SYSENTER/SYSEXIT support</entry>
+    </row>
+    <row>
+      <entry>--enable-vme</entry>
+      <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> >= 5)</entry>
+      <entry>Add support for VME (v8086 mode extensions)</entry>
     </row>
     <row>
       <entry>--enable-compressed-hd</entry>
@@ -2253,12 +2246,12 @@ turn it off.
     </row>
     <row>
       <entry>--enable-disasm</entry>
-      <entry>no</entry>
+      <entry>yes</entry>
       <entry>Compile in support for built-in disassembler.  Bochs has
           a built-in disassembler, which is useful if you either
           run the built-in debugger (--enable-debugger), or want
           disassembly of the current instruction when there is a
-          panic in bochs.  You don't need this option.</entry>
+          panic in bochs.</entry>
     </row>
     <row>
       <entry>--enable-cpp</entry>
@@ -2427,9 +2420,14 @@ turn it off.
       </entry>
     </row>
     <row>
-      <entry>--enable-reset-on-triple-fault</entry>
-      <entry>yes</entry>
-      <entry>reset when cpu detects a triple fault</entry>
+      <entry>--enable-save-restore</entry>
+      <entry>no</entry>
+      <entry>
+      Enables limited save/restore support. The state of CPU, memory and all
+      devices can be saved now (state of harddisk images not handled yet).
+      See <link linkend="using-save-restore">Save and restore simulation</link>
+      for more information.
+      </entry>
     </row>
   </tbody>
 </tgroup>
@@ -3059,10 +3057,22 @@ This defines the parameters of the cpu inside Bochs:
 </para>
 <para><command>count</command></para>
 <para>
-Set the number of processors when Bochs is compiled for SMP emulation.
-Bochs currently supports up to 8 processors. If Bochs is compiled
-without SMP support, it won't accept values different from 1.
+Set the number of processors:cores per processor:threads per core when Bochs
+is compiled for SMP emulation. Bochs currently supports up to 8 processors.
+If Bochs is compiled without SMP support, it won't accept values different from 1.
 For more information on SMP see <xref linkend="SMP">.
+</para>
+<para><command>quantum</command></para>
+<para>
+Maximum amount of instructions allowed to execute by processor before
+returning control to another cpu. This option exists only in Bochs 
+binary compiled with SMP support.
+</para>
+<para><command>reset-on-triple-fault</command></para>
+<para>
+Reset the CPU when triple fault occur (highly recommended) rather than PANIC.
+Remember that if you are trying to continue after triple fault the simulation 
+will be completely bogus !
 </para>
 <para><command>ips</command></para>
 <para>
@@ -3087,18 +3097,18 @@ speed.</para></footnote>.
   <tgroup cols="3" align="left" colsep="1" rowsep="1">
 <thead>
   <row>
+    <entry>Bochs</entry>
     <entry>Speed</entry>
-    <entry>Machine</entry>
+    <entry>Machine/Compiler</entry>
     <entry>Typical IPS</entry>
   </row>
 </thead>
   <tbody>
-<row><entry>2.1Ghz</entry><entry>Athlon XP with Linux 2.6/g++ 3.4 </entry><entry> 12 to 15 million</entry></row>
-<row><entry>1.6Ghz</entry><entry>Intel P4 with Win2000/g++ 3.3 </entry><entry> 5 to  7 million</entry></row>
-<row><entry>650MHz</entry><entry>Athlon K-7 with Linux 2.4.x  </entry><entry> 2 to 2.5 million</entry></row>
-<row><entry>400MHz</entry><entry>Pentium II with Linux 2.0.x  </entry><entry> 1 to 1.8 million</entry></row>
-<row><entry>166MHz</entry><entry>64bit Sparc with Solaris 2.x  </entry><entry>    0.75 million</entry></row>
-<row><entry>200MHz</entry><entry>Pentium with Linux 2.x        </entry><entry>          0.5 million</entry></row>
+<row><entry>2.2.6</entry><entry>2.6Ghz</entry><entry>Intel Core 2 Duo with WinXP/g++ 3.4 </entry><entry> 21 to 25 million</entry></row>
+<row><entry>2.2.6</entry><entry>2.1Ghz</entry><entry>Athlon XP with Linux 2.6/g++ 3.4 </entry><entry> 12 to 15 million</entry></row>
+<row><entry>2.0.1</entry><entry>1.6Ghz</entry><entry>Intel P4 with Win2000/g++ 3.3 </entry><entry> 5 to  7 million</entry></row>
+<row><entry>1.4  </entry><entry>650MHz</entry><entry>Athlon K-7 with Linux 2.4.x  </entry><entry> 2 to 2.5 million</entry></row>
+<row><entry>1.4  </entry><entry>400MHz</entry><entry>Pentium II with Linux 2.0.x  </entry><entry> 1 to 1.8 million</entry></row>
 </tbody>
 </tgroup>
 </table>
@@ -3299,12 +3309,9 @@ but <emphasis>we don't recommend it</emphasis> for safety reasons. In Windows, t
 </para>
 
 <para>
-The path is always mandatory.
-</para>
-<para>
-For flat hard disk images created with bximage geometry autodetection can
-be used (cylinders are calculated using heads=16 and spt=63). For other
-hard disk images and modes the cylinders, heads, and spt are mandatory.
+Disk geometry autodetection works with images created by bximage if CHS is set
+to 0/0/0 (cylinders are calculated using heads=16 and spt=63). For other hard
+disk images and modes the cylinders, heads, and spt are mandatory.
 </para>
 
 <para>
@@ -3561,7 +3568,7 @@ This handles the format of the string prepended to each log line.
 You may use those special tokens :
   <screen>
   %t : 11 decimal digits timer tick
-  %i : 8 hexadecimal digits of cpu0 current eip
+  %i : 8 hexadecimal digits of current cpu eip (ignored in SMP configuration)
   %e : 1 character event type ('i'nfo, 'd'ebug, 'p'anic, 'e'rror)
   %d : 5 characters string of the device, between brackets
   </screen>
@@ -4672,6 +4679,10 @@ For other arguments, see section <link linkend="bochsrc">bochsrc</link>.
   <entry>don't try to load a configuration file</entry>
 </row>
 <row>
+  <entry>-r <replaceable>path</replaceable></entry>
+  <entry>specify path for restoring state (if save/restore support is compiled in)</entry>
+</row>
+<row>
   <entry>--help</entry>
   <entry>display help message and exit</entry>
 </row>
@@ -4891,6 +4902,34 @@ more information (e.g. report debug messages). This cannot be done in the config
 file yet.
 </para>
 </section>
+</section>
+<section id="using-save-restore"><title>Save and restore simulation</title>
+<para>
+Starting with version 2.3, Bochs has limited save/restore support. The state of
+cpu(s), memory and all devices can be saved now. To enable this feature, Bochs
+must be compiled with the <option>--enable-save-restore</option> option. When running
+Bochs with save/restore support there will be a new button in the header bar called
+"Suspend". Depending on config interface and gui there will be a prompt where you
+can enter a path or a gui folder selection dialog box. It is possible to save the
+state at any time, but we recommend to do it when the simulation is idle. After
+pressing OK/Enter, Bochs will save a set of files into the selected folder.
+The state of hard disk images is not handled yet, so Bochs will ask you if you
+want to continue after saving state. We don't recommend to continue unless you
+are running a read-only guest system (e.g. Live-CD).
+</para>
+<para>
+To restore the saved simulation state you can select the restore function in the
+text mode start menu or specify the restore path at the command line:
+<screen>
+bochs -r /path/to/save-restore-data
+</screen>
+</para>
+<para>
+Then Bochs will start up using the saved configuration and log options, restores
+the state of the hardware and begins the simulation. In the restore mode Bochs
+will ignore bochsrc options from the command line and does not load a normal
+config file.
+</para>
 </section>
 </chapter>
 
@@ -5701,20 +5740,24 @@ application.
 </para>
 
 <para>
-What was required to make SMP work in Bochs?  (Note that only Linux 2.2
-has been tested so far.)
+What was required to make SMP work in Bochs?
+
 <itemizedlist>
 <listitem><para> local APIC on each processor with timer
 </para></listitem>
 <listitem><para> one I/O APIC model
 </para></listitem>
-<listitem><para> implement RDTSC feature (read time stamp counter)
+<listitem><para> implement RDTSC (read time stamp counter)
 </para></listitem>
 <listitem><para> a data structure called the Intel Multiprocessor Configuration
 must be present in BIOS memory space. An SMP-aware operating system probes BIOS
 memory to find the structure, which contains information about how many
 processors, their IDs, interrupt sources, etc. Starting with Bochs 2.2.5 these
 structures are dynamicly created by Bochs.
+</para></listitem>
+<listitem><para> ACPI support is required to boot SMP system in most of modern
+operating systems. For example WinXP 64 bit require ACPI support even for 
+single processor configuration. Still not supported by Bochs.
 </para></listitem>
 </itemizedlist>
 </para>
@@ -5729,15 +5772,14 @@ but you can't specify which processor you want to set the breakpoint for.
 </para></listitem>
 
 <listitem><para>
-test on SMP systems other than linux 2.2.14
+test on any possible SMP operating systems. Currently success reported for
+Knoppix 4.0.2 and WinNT 4.0 SMP.
 </para></listitem>
 
 <listitem><para>
-several parts of the APIC model which weren't needed for linux 2.2.14
-are not implemented yet and cause a panic.  If you boot linux 2.4.3 for 
-example, it says "panic: cluster model addressing not implemented".   See
-<ulink url="http://sourceforge.net/tracker/index.php?func=detail&amp;aid=421938&amp;group_id=12580&amp;atid=362580">bug report #421938</ulink> for tips on getting linux 2.4 to boot.
-(The apic is not the only problem!)
+several parts of the APIC model which weren't needed before are not 
+implemented yet and cause a panic.  If you boot linux 2.4.3 for 
+example, it says "panic: cluster model addressing not implemented".
 </para></listitem>
 
 <listitem><para>
@@ -6186,6 +6228,7 @@ From here, you may use the following commands:
   info cr                      Show CR0-4 registers and their contents
   info eflags                  Show decoded EFLAGS register
   info break                   Information about current breakpoint status
+  info tab                     Show paging address translation
 </screen>
 </para>
 </section>
@@ -6239,11 +6282,6 @@ From here, you may use the following commands:
     "dr5:0x%x\n"
     "dr6:0x%x\n"
     "dr7:0x%x\n"
-    "tr3:0x%x\n"
-    "tr4:0x%x\n"
-    "tr5:0x%x\n"
-    "tr6:0x%x\n"
-    "tr7:0x%x\n"
     "cr0:0x%x\n"
     "cr1:0x%x\n"
     "cr2:0x%x\n"
@@ -6301,6 +6339,19 @@ From here, you may use the following commands:
 </section>
 
 <section>
+<title>Instruction tracing</title>
+<para>
+<screen>
+  trace on                    Disassemble every executed instruction. Note
+                              that instructions which caused exceptions are
+                              not really executed, and therefore not traced.
+
+  trace off                   Disable instruction tracing.
+</screen>
+</para>
+</section>
+
+<section>
 <title>Instrumentation</title>
 <para>
 
@@ -6339,19 +6390,9 @@ the "instrument/stubs" directory to it, then customize it.  Use:
 </para>
 </section>
 
-
 <section>
-<title>New Commands</title>
+<title>Other Commands</title>
 <para>
-
-<screen>trace-on</screen>
-
-Disassemble every executed instruction. Note that instructions that
-cause exceptions are not really executed, and therefore not traced.
-
-<screen>trace-off</screen>
-
-Disable tracing.
 
 <screen>ptime</screen>
 
@@ -6440,13 +6481,13 @@ The symbol file consists of zero or more lines of the format <screen>"%x %s"</sc
 <screen>
   Toggles show symbolic info (calls to begin with).
   show - shows current show mode
-  show "mode" - show, when processor switch mode
-  show "int" - show, when interrupt is happens
-  show "call" - show, when call is happens
-  show "ret" - show, when iret is happens
-  show "off" - toggles off symbolic info
-  show "dbg-all" - turn on all show flags
-  show "none" - turn off all show flags
+  show mode     - show, when processor switch mode
+  show int      - show, when interrupt is happens
+  show call     - show, when call is happens
+  show ret      - show, when iret is happens
+  show off      - toggles off symbolic info
+  show dbg-all  - turn on all show flags
+  show dbg-none - turn off all show flags
 </screen>
 </para>
 </section>
@@ -7228,30 +7269,7 @@ On some host OSes, Bochs flat disk images are limited to 2GiB.
 
 <section><title>concat</title>
 <para>
-&FIXME; text from old enable-split-hd option, to be completed
-<screen>
-      When enabled, this allows a series of partial hard disk image files to be
-      treated as if it was one large file.  The .bochsrc specifies the first
-      partial HD image (example win95-1) and then bochs searches for the other
-      partial images in as a sequence (win95-2, win95-3, etc.) and opens them
-      all.  Then, it treats the series as if there was a single large file
-      created by "cat win95-1 win95-2 win95-3".  
-      All files must be a multiple of 512 bytes.
-</screen>
-
-<screen>
-// This option enables "split hard drive" support, which means
-// that a series of partial hard disk images can be treated
-// as a single large image.  If you set up the partition sizes and
-// file sizes correctly, this allows you to store each partition
-// in a separate file, which is very convenient if you want to operate
-// on a single partition (e.g. mount with loopback, create filesystem,
-// fsck, etc.).
-// [[Provide example of partitioning]]
-</screen>
-
 </para>
-
 <section><title>description</title>
 <para>
 In concat mode, all sectors of the harddisk are stored in several flat files,
@@ -7260,29 +7278,34 @@ in lba order.
 </section>
 <section><title>image creation</title>
 <para>
-&FIXME; to be completed
+Disk images for the usage in 'concat' mode can be created with the bximage
+utility (see <xref linkend="using-bximage"> for more information).
 </para>
 </section>
 <section><title>path</title>
 <para>
 The "path" option of the ataX-xxx directive in the configuration file
-must point to the first file. The lower layer files names are found by
-adding 1 to the last character.
+must point to the first file (e.g. win95-1). The lower layer files names are
+found by adding 1 to the last character (e.g. win95-2, win95-3, etc.).
 </para>
 </section>
 <section><title>external tools</title>
 <para>
-&FIXME; to be completed
+If every single file contains a complete partition, they can be accessed
+with same tools as the 'flat' mode images.
 </para>
 </section>
 <section><title>typical use</title>
 <para>
-&FIXME; to be completed
+If the partition sizes and file sizes are set up correctly, this allows you to
+store each partition in a separate file, which is very convenient if you want
+to operate on a single partition (e.g. mount with loopback, create filesystem,
+fsck, etc.).
 </para>
 </section>
 <section><title>limitations</title>
 <para>
-&FIXME; to be completed
+On some host OSes, there is a limit of 2GiB per file.
 </para>
 </section>
 </section>

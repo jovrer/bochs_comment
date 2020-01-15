@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amigaos.cc,v 1.20 2004/06/19 15:20:08 sshwarts Exp $
+// $Id: amigaos.cc,v 1.23 2006/02/22 19:43:55 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -71,7 +71,7 @@ MyInputHandler(void)
 {
 	struct InputEvent *event = (struct InputEvent *)REG_A0;
 
-	if(bx_options.Omouse_enabled->get ())
+	if (SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get())
 	{
 		switch(event->ie_Code)
 		{
@@ -179,9 +179,9 @@ open_screen(void)
 	sprintf (verstr, "Bochs x86 Emulator %s", VER_STRING);
 
 
-	if(bx_options.Ofullscreen->get ())
+	if (SIM->get_param_bool(BXPN_FULLSCREEN)->get())
 	{
-		if((scrmode = bx_options.Oscreenmode->getptr ()))
+		if((scrmode = SIM->get_param_string(BXPN_SCREENMODE)->getptr()))
 		{
 			id = strtoul(scrmode, NULL, 0);
 			if (!IsCyberModeID(id)) id = INVALID_ID;
@@ -288,7 +288,7 @@ open_screen(void)
 
 	vgafont = OpenDiskFont(&vgata);
 
-	if (bx_options.Omouse_enabled->get ())
+	if (SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get())
 		hide_pointer();
 
 	if(!vgafont)
@@ -361,10 +361,10 @@ bx_amigaos_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsig
 
 	open_screen();
 	setup_inputhandler();
-	/*
-	if (bx_options.private_colormap) {
-	fprintf(stderr, "# WARNING: Amiga: private_colormap option ignored.\n");
-	}*/
+
+	if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
+	  BX_ERROR(("Amiga: private_colormap option ignored."));
+	}
 }
 
 
@@ -410,7 +410,7 @@ bx_amigaos_gui_c::handle_events(void)
 			break;
 
 		case IDCMP_INACTIVEWINDOW:
-			if(bx_options.Omouse_enabled->get ())
+			if (SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get())
 				toggle_mouse_enable();
 			break;
 
@@ -434,7 +434,7 @@ bx_amigaos_gui_c::flush(void)
   void
 bx_amigaos_gui_c::clear_screen(void)
 {
-	if(d > 8 || !bx_options.Ofullscreen->get ())
+	if (d > 8 || !SIM->get_param_bool(BXPN_FULLSCREEN)->get())
 		SetAPen(window->RPort, black);
 	else
 		SetAPen(window->RPort, 0); /*should be ok to clear with the first pen in the map*/
@@ -634,7 +634,7 @@ bx_amigaos_gui_c::palette_change(unsigned index, unsigned red, unsigned green, u
   	*ptr = green; ptr++;
   	*ptr = blue;
 
-  if(d > 8 || !bx_options.Ofullscreen->get ())
+  if (d > 8 || !SIM->get_param_bool(BXPN_FULLSCREEN)->get())
   {
   	if(pmap[index] != -1)
   		ReleasePen(window->WScreen->ViewPort.ColorMap, pmap[index]);
@@ -682,7 +682,7 @@ bx_amigaos_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, uns
 	  }
 	}
 
-	if(!bx_options.Ofullscreen->get () && (x != w || y != h))
+	if (!SIM->get_param_bool(BXPN_FULLSCREEN)->get() && (x != w || y != h))
 	{
 		ChangeWindowBox(window, window->LeftEdge, window->TopEdge, x + bx_borderleft + bx_borderright, y + bx_bordertop + bx_borderbottom + bx_headerbar_y);
 		w = x;
@@ -727,7 +727,7 @@ bx_amigaos_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsign
 	bx_header_image[bx_image_entries].ImageData   = (UWORD *)bmap;
 	bx_header_image[bx_image_entries].NextImage	   = NULL;
 	bx_header_image[bx_image_entries].PlanePick   = 0x1;
-	if(d > 8 || !bx_options.Ofullscreen->get ())
+	if (d > 8 || !SIM->get_param_bool(BXPN_FULLSCREEN)->get())
 		bx_header_image[bx_image_entries].PlaneOnOff  = 0x2;
 
 	/*we need to reverse the bitorder for this to work*/
@@ -795,7 +795,7 @@ bx_amigaos_gui_c::show_headerbar(void)
 {
 	RemoveGList(window, bx_glistptr, bx_headerbar_entries);
 	
-	if(d > 8 || !bx_options.Ofullscreen->get ())
+	if (d > 8 || !SIM->get_param_bool(BXPN_FULLSCREEN)->get())
 		SetAPen(window->RPort, white);
 	else
 		SetAPen(window->RPort, 0);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_load_store.cc,v 1.8 2005/05/12 18:07:46 sshwarts Exp $
+// $Id: fpu_load_store.cc,v 1.11 2006/04/05 17:31:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -23,6 +23,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu/cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 extern float_status_t FPU_pre_exception_handling(Bit16u control_word);
@@ -571,7 +572,7 @@ void BX_CPU_C::FBSTP_PACKED_BCD(bxInstruction_c *i)
 /* DF /1 */
 void BX_CPU_C::FISTTP16(bxInstruction_c *i)
 {
-#if BX_SUPPORT_PNI
+#if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
 
   Bit16s save_reg = int16_indefinite; /* The masked response */
@@ -599,7 +600,7 @@ void BX_CPU_C::FISTTP16(bxInstruction_c *i)
   write_virtual_word(i->seg(), RMAddr(i), (Bit16u*)(&save_reg));
   BX_CPU_THIS_PTR the_i387.FPU_pop();
 #else
-  BX_INFO(("FISTTP16: required PNI, configure --enable-pni"));
+  BX_INFO(("FISTTP16: required SSE3, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -607,7 +608,7 @@ void BX_CPU_C::FISTTP16(bxInstruction_c *i)
 /* DB /1 */
 void BX_CPU_C::FISTTP32(bxInstruction_c *i)
 {
-#if BX_SUPPORT_PNI
+#if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
 
   Bit32s save_reg = int32_indefinite; /* The masked response */
@@ -635,7 +636,7 @@ void BX_CPU_C::FISTTP32(bxInstruction_c *i)
   write_virtual_dword(i->seg(), RMAddr(i), (Bit32u*)(&save_reg));
   BX_CPU_THIS_PTR the_i387.FPU_pop();
 #else
-  BX_INFO(("FISTTP32: required PNI, configure --enable-pni"));
+  BX_INFO(("FISTTP32: required SSE3, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -643,7 +644,7 @@ void BX_CPU_C::FISTTP32(bxInstruction_c *i)
 /* DD /1 */
 void BX_CPU_C::FISTTP64(bxInstruction_c *i)
 {
-#if BX_SUPPORT_PNI
+#if BX_SUPPORT_SSE >= 3
   BX_CPU_THIS_PTR prepareFPU(i);
 
   Bit64s save_reg = int64_indefinite; /* The masked response */
@@ -671,7 +672,7 @@ void BX_CPU_C::FISTTP64(bxInstruction_c *i)
   write_virtual_qword(i->seg(), RMAddr(i), (Bit64u*)(&save_reg));
   BX_CPU_THIS_PTR the_i387.FPU_pop();
 #else
-  BX_INFO(("FISTTP64: required PNI, configure --enable-pni"));
+  BX_INFO(("FISTTP64: required SSE3, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }

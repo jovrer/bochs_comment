@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc,v 1.51 2005/12/04 17:43:09 vruppert Exp $
+// $Id: cmos.cc,v 1.56 2006/05/29 22:33:38 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -23,9 +23,6 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
-
-
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -102,9 +99,7 @@ Bit8u bin_to_bcd(Bit8u value, bx_bool is_binary)
     return ((value  / 10) << 4) | (value % 10);
 }
 
-
-  int
-libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theCmosDevice = new bx_cmos_c ();
   bx_devices.pluginCmosDevice = theCmosDevice;
@@ -112,8 +107,7 @@ libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *arg
   return(0); // Success
 }
 
-  void
-libcmos_LTX_plugin_fini(void)
+void libcmos_LTX_plugin_fini(void)
 {
 }
 
@@ -122,24 +116,18 @@ bx_cmos_c::bx_cmos_c(void)
   put("CMOS");
   settype(CMOSLOG);
 
-  unsigned i;
-  for (i=0; i<128; i++)
-    s.reg[i] = 0;
+  for (unsigned i=0; i<128; i++) s.reg[i] = 0;
+
   s.periodic_timer_index = BX_NULL_TIMER_HANDLE;
   s.one_second_timer_index = BX_NULL_TIMER_HANDLE;
   s.uip_timer_index = BX_NULL_TIMER_HANDLE;
 }
 
-bx_cmos_c::~bx_cmos_c(void)
-{
-  BX_DEBUG(("Exit."));
-}
+bx_cmos_c::~bx_cmos_c() {}
 
-
-  void
-bx_cmos_c::init(void)
+void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc,v 1.51 2005/12/04 17:43:09 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: cmos.cc,v 1.56 2006/05/29 22:33:38 sshwarts Exp $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);
@@ -163,10 +151,10 @@ bx_cmos_c::init(void)
         244, 0, 0, "cmos"); // one-shot, not-active
   }
 
-  if (bx_options.clock.Otime0->get () == BX_CLOCK_TIME0_LOCAL) {
+  if (SIM->get_param_num(BXPN_CLOCK_TIME0)->get() == BX_CLOCK_TIME0_LOCAL) {
     BX_INFO(("Using local time for initial clock"));
     BX_CMOS_THIS s.timeval = time(NULL);
-  } else if (bx_options.clock.Otime0->get () == BX_CLOCK_TIME0_UTC) {
+  } else if (SIM->get_param_num(BXPN_CLOCK_TIME0)->get() == BX_CLOCK_TIME0_UTC) {
     bx_bool utc_ok = 0;
 
     BX_INFO(("Using utc time for initial clock"));
@@ -192,22 +180,22 @@ bx_cmos_c::init(void)
     }
   } else {
     BX_INFO(("Using specified time for initial clock"));
-    BX_CMOS_THIS s.timeval = bx_options.clock.Otime0->get ();
+    BX_CMOS_THIS s.timeval = SIM->get_param_num(BXPN_CLOCK_TIME0)->get();
   }
 
   // load CMOS from image file if requested.
-  if (bx_options.cmosimage.Oenabled->get ()) {
+  if (SIM->get_param_bool(BXPN_CMOSIMAGE_ENABLED)->get()) {
     int fd, ret;
     struct stat stat_buf;
 
-    fd = open(bx_options.cmosimage.Opath->getptr (), O_RDONLY
+    fd = open(SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr(), O_RDONLY
 #ifdef O_BINARY
        | O_BINARY
 #endif
         );
     if (fd < 0) {
       BX_PANIC(("trying to open cmos image file '%s'",
-        bx_options.cmosimage.Opath->getptr ()));
+        SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr()));
     }
     ret = fstat(fd, &stat_buf);
     if (ret) {
@@ -223,10 +211,10 @@ bx_cmos_c::init(void)
     }
     close(fd);
     BX_INFO(("successfuly read from image file '%s'.",
-      bx_options.cmosimage.Opath->getptr ()));
+      SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr()));
     BX_CMOS_THIS s.rtc_mode_12hour = ((BX_CMOS_THIS s.reg[REG_STAT_B] & 0x02) == 0);
     BX_CMOS_THIS s.rtc_mode_binary = ((BX_CMOS_THIS s.reg[REG_STAT_B] & 0x04) != 0);
-    if (bx_options.cmosimage.Ortc_init->get ()) {
+    if (SIM->get_param_bool(BXPN_CMOSIMAGE_RTC_INIT)->get()) {
       update_timeval();
     } else {
       update_clock();
@@ -246,12 +234,12 @@ bx_cmos_c::init(void)
   }
 
   char *tmptime;
-  while( (tmptime =  strdup(ctime(&(BX_CMOS_THIS s.timeval)))) == NULL) {
+  while((tmptime = strdup(ctime(&(BX_CMOS_THIS s.timeval)))) == NULL) {
     BX_PANIC(("Out of memory."));
   }
   tmptime[strlen(tmptime)-1]='\0';
-
   BX_INFO(("Setting initial clock to: %s (time0=%u)", tmptime, (Bit32u)BX_CMOS_THIS s.timeval));
+  free(tmptime);
 
   BX_CMOS_THIS s.timeval_change = 0;
 }
@@ -281,8 +269,8 @@ void bx_cmos_c::save_image(void)
   int fd, ret;
 
   // save CMOS to image file if requested.
-  if (bx_options.cmosimage.Oenabled->get ()) {
-    fd = open(bx_options.cmosimage.Opath->getptr (), O_WRONLY
+  if (SIM->get_param_bool(BXPN_CMOSIMAGE_ENABLED)->get()) {
+    fd = open(SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr(), O_WRONLY
 #ifdef O_BINARY
        | O_BINARY
 #endif
@@ -294,6 +282,28 @@ void bx_cmos_c::save_image(void)
     close(fd);
   }
 }
+
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_cmos_c::register_state(void)
+{
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "cmos", "CMOS State");
+  BXRS_HEX_PARAM_FIELD(list, mem_address, BX_CMOS_THIS s.cmos_mem_address);
+  bx_list_c *ram = new bx_list_c(list, "ram", 128);
+  for (unsigned i=0; i<128; i++) {
+    char name[6];
+    sprintf(name, "0x%02x", i);
+    new bx_shadow_num_c(ram, name, &BX_CMOS_THIS s.reg[i], BASE_HEX);
+  }
+}
+
+void bx_cmos_c::after_restore_state(void)
+{
+  BX_CMOS_THIS s.rtc_mode_12hour = ((BX_CMOS_THIS s.reg[REG_STAT_B] & 0x02) == 0);
+  BX_CMOS_THIS s.rtc_mode_binary = ((BX_CMOS_THIS s.reg[REG_STAT_B] & 0x04) != 0);
+  BX_CMOS_THIS update_timeval();
+  BX_CMOS_THIS CRA_change();
+}
+#endif
 
 void bx_cmos_c::CRA_change(void)
 {
@@ -326,17 +336,14 @@ void bx_cmos_c::CRA_change(void)
   // static IO port read callback handler
   // redirects to non-static class handler to avoid virtual functions
 
-  Bit32u
-bx_cmos_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+Bit32u bx_cmos_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
 #if !BX_USE_CMOS_SMF
   bx_cmos_c *class_ptr = (bx_cmos_c *) this_ptr;
-
-  return( class_ptr->read(address, io_len) );
+  return class_ptr->read(address, io_len);
 }
 
-  Bit32u
-bx_cmos_c::read(Bit32u address, unsigned io_len)
+Bit32u bx_cmos_c::read(Bit32u address, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -347,13 +354,11 @@ bx_cmos_c::read(Bit32u address, unsigned io_len)
     BX_INFO(("CMOS read of CMOS register 0x%02x",
       (unsigned) BX_CMOS_THIS s.cmos_mem_address));
 
-
   switch (address) {
     case 0x0070:
       // this register is write-only on most machines
       BX_INFO(("read of index port 0x70. returning 0xff"));
       return(0xff);
-      break;
     case 0x0071:
       ret8 = BX_CMOS_THIS s.reg[BX_CMOS_THIS s.cmos_mem_address];
       // all bits of Register C are cleared after a read occurs.
@@ -362,31 +367,24 @@ bx_cmos_c::read(Bit32u address, unsigned io_len)
         DEV_pic_lower_irq(8);
       }
       return(ret8);
-      break;
 
     default:
-      BX_PANIC(("unsupported cmos read, address=0x%04x!",
-     (unsigned) address));
+      BX_PANIC(("unsupported cmos read, address=0x%04x!", (unsigned) address));
       return(0);
-      break;
-    }
+  }
 }
 
 
-  // static IO port write callback handler
-  // redirects to non-static class handler to avoid virtual functions
-
-  void
-bx_cmos_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
+// static IO port write callback handler
+// redirects to non-static class handler to avoid virtual functions
+void bx_cmos_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
 #if !BX_USE_CMOS_SMF
   bx_cmos_c *class_ptr = (bx_cmos_c *) this_ptr;
-
   class_ptr->write(address, value, io_len);
 }
 
-  void
-bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
+void bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -618,50 +616,38 @@ bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
   }
 }
 
-
-  void
-bx_cmos_c::checksum_cmos(void)
+void bx_cmos_c::checksum_cmos(void)
 {
-  unsigned i;
-  Bit16u sum;
-
-  sum = 0;
-  for (i=0x10; i<=0x2d; i++) {
+  Bit16u sum = 0;
+  for (unsigned i=0x10; i<=0x2d; i++)
     sum += BX_CMOS_THIS s.reg[i];
-    }
   BX_CMOS_THIS s.reg[REG_CSUM_HIGH] = (sum >> 8) & 0xff; /* checksum high */
   BX_CMOS_THIS s.reg[REG_CSUM_LOW] = (sum & 0xff);      /* checksum low */
 }
 
-  void
-bx_cmos_c::periodic_timer_handler(void *this_ptr)
+void bx_cmos_c::periodic_timer_handler(void *this_ptr)
 {
   bx_cmos_c *class_ptr = (bx_cmos_c *) this_ptr;
-
   class_ptr->periodic_timer();
 }
 
-  void
-bx_cmos_c::periodic_timer()
+void bx_cmos_c::periodic_timer()
 {
   // if periodic interrupts are enabled, trip IRQ 8, and
   // update status register C
   if (BX_CMOS_THIS s.reg[REG_STAT_B] & 0x40) {
     BX_CMOS_THIS s.reg[REG_STAT_C] |= 0xc0; // Interrupt Request, Periodic Int
     DEV_pic_raise_irq(8);
-    }
+  }
 }
 
-  void
-bx_cmos_c::one_second_timer_handler(void *this_ptr)
+void bx_cmos_c::one_second_timer_handler(void *this_ptr)
 {
   bx_cmos_c *class_ptr = (bx_cmos_c *) this_ptr;
-
   class_ptr->one_second_timer();
 }
 
-  void
-bx_cmos_c::one_second_timer()
+void bx_cmos_c::one_second_timer()
 {
   // divider chain reset - RTC stopped
   if ((BX_CMOS_THIS s.reg[REG_STAT_A] & 0x60) == 0x60)
@@ -678,20 +664,16 @@ bx_cmos_c::one_second_timer()
   BX_CMOS_THIS s.reg[REG_STAT_A] |= 0x80; // set UIP bit
 
   // UIP timer for updating clock & alarm functions
-  bx_pc_system.activate_timer(BX_CMOS_THIS s.uip_timer_index,
-                         244, 0);
+  bx_pc_system.activate_timer(BX_CMOS_THIS s.uip_timer_index, 244, 0);
 }
 
-  void
-bx_cmos_c::uip_timer_handler(void *this_ptr)
+void bx_cmos_c::uip_timer_handler(void *this_ptr)
 {
   bx_cmos_c *class_ptr = (bx_cmos_c *) this_ptr;
-
   class_ptr->uip_timer();
 }
 
-  void
-bx_cmos_c::uip_timer()
+void bx_cmos_c::uip_timer()
 {
   update_clock();
 
@@ -700,38 +682,36 @@ bx_cmos_c::uip_timer()
   if (BX_CMOS_THIS s.reg[REG_STAT_B] & 0x10) {
     BX_CMOS_THIS s.reg[REG_STAT_C] |= 0x90; // Interrupt Request, Update Ended
     DEV_pic_raise_irq(8);
-    }
+  }
 
   // compare CMOS user copy of time/date to alarm time/date here
   if (BX_CMOS_THIS s.reg[REG_STAT_B] & 0x20) {
     // Alarm interrupts enabled
     bx_bool alarm_match = 1;
-    if ( (BX_CMOS_THIS s.reg[REG_SEC_ALARM] & 0xc0) != 0xc0 ) {
+    if ((BX_CMOS_THIS s.reg[REG_SEC_ALARM] & 0xc0) != 0xc0) {
       // seconds alarm not in dont care mode
       if (BX_CMOS_THIS s.reg[REG_SEC] != BX_CMOS_THIS s.reg[REG_SEC_ALARM])
-     alarm_match = 0;
-      }
-    if ( (BX_CMOS_THIS s.reg[REG_MIN_ALARM] & 0xc0) != 0xc0 ) {
+        alarm_match = 0;
+    }
+    if ((BX_CMOS_THIS s.reg[REG_MIN_ALARM] & 0xc0) != 0xc0) {
       // minutes alarm not in dont care mode
       if (BX_CMOS_THIS s.reg[REG_MIN] != BX_CMOS_THIS s.reg[REG_MIN_ALARM])
-     alarm_match = 0;
-      }
-    if ( (BX_CMOS_THIS s.reg[REG_HOUR_ALARM] & 0xc0) != 0xc0 ) {
+        alarm_match = 0;
+    }
+    if ((BX_CMOS_THIS s.reg[REG_HOUR_ALARM] & 0xc0) != 0xc0) {
       // hours alarm not in dont care mode
       if (BX_CMOS_THIS s.reg[REG_HOUR] != BX_CMOS_THIS s.reg[REG_HOUR_ALARM])
-     alarm_match = 0;
-      }
+        alarm_match = 0;
+    }
     if (alarm_match) {
       BX_CMOS_THIS s.reg[REG_STAT_C] |= 0xa0; // Interrupt Request, Alarm Int
       DEV_pic_raise_irq(8);
-      }
     }
+  }
   BX_CMOS_THIS s.reg[REG_STAT_A] &= 0x7f; // clear UIP bit
 }
 
-
-  void
-bx_cmos_c::update_clock()
+void bx_cmos_c::update_clock()
 {
   struct tm *time_calendar;
   unsigned year, month, day, century;
@@ -791,8 +771,7 @@ bx_cmos_c::update_clock()
     BX_CMOS_THIS s.reg[REG_IBM_CENTURY_BYTE];
 }
 
-  void
-bx_cmos_c::update_timeval()
+void bx_cmos_c::update_timeval()
 {
   struct tm time_calendar;
   Bit8u val_bin, pm_flag;

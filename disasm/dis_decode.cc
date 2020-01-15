@@ -1,3 +1,7 @@
+/////////////////////////////////////////////////////////////////////////
+// $Id: dis_decode.cc,v 1.32 2006/05/12 17:04:19 sshwarts Exp $
+/////////////////////////////////////////////////////////////////////////
+
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -30,9 +34,9 @@ static const unsigned char instruction_has_modrm[512] = {
   /*       0 1 2 3 4 5 6 7 8 9 a b c d e f           */
   /*       -------------------------------           */
            1,1,1,1,0,0,0,0,0,0,0,0,0,1,0,1, /* 0F 00 */
-           1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,0, /* 0F 10 */
+           1,1,1,1,1,1,1,1,1,0,0,0,0,0,0,1, /* 0F 10 */
            1,1,1,1,1,0,1,0,1,1,1,1,1,1,1,1, /* 0F 20 */
-           0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0, /* 0F 30 */
+           0,0,0,0,0,0,0,0,1,0,1,0,0,0,0,0, /* 0F 30 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F 40 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F 50 */
            1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, /* 0F 60 */
@@ -49,27 +53,18 @@ static const unsigned char instruction_has_modrm[512] = {
   /*       0 1 2 3 4 5 6 7 8 9 a b c d e f           */
 };
 
-unsigned disassembler::disasm16(bx_address base, bx_address ip, Bit8u *instr, char *disbuf)
+unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
 {
-  return disasm(0, 0, base, ip, instr, disbuf);
+  x86_insn insn = decode(is_32, is_64, base, ip, instr, disbuf);
+  return insn.ilen;
 }
 
-unsigned disassembler::disasm32(bx_address base, bx_address ip, Bit8u *instr, char *disbuf)
-{
-  return disasm(1, 0, base, ip, instr, disbuf);
-}
-
-unsigned disassembler::disasm64(bx_address base, bx_address ip, Bit8u *instr, char *disbuf)
-{
-  return disasm(1, 1, base, ip, instr, disbuf);
-}
-
-unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, Bit8u *instr, char *disbuf)
+x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
 {
   x86_insn insn(is_32, is_64);
-  Bit8u *instruction_begin = instruction = instr;
+  const Bit8u *instruction_begin = instruction = instr;
   resolve_modrm = NULL;
-  unsigned n_prefixes = 0;
+  unsigned b3 = 0;
 
   db_eip = ip;
   db_base = base; // cs linear base (base for PM & cs<<4 for RM & VM)
@@ -79,24 +74,15 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 #define SSE_PREFIX_NONE 0
 #define SSE_PREFIX_66   1
 #define SSE_PREFIX_F2   2
-#define SSE_PREFIX_F3   4      /* only one SSE prefix could be used */
-  static int sse_prefix_index[8] = { 0, 1, 2, -1, 3, -1, -1, -1 };
+#define SSE_PREFIX_F3   3      /* only one SSE prefix could be used */
   unsigned sse_prefix = SSE_PREFIX_NONE;
 
   for(;;)
   {
     insn.b1 = fetch_byte();
-    n_prefixes++;
+    insn.prefixes++;
 
     switch(insn.b1) {
-      case 0xf3:     // rep
-        sse_prefix |= SSE_PREFIX_F3;
-        continue;
-
-      case 0xf2:     // repne
-        sse_prefix |= SSE_PREFIX_F2;
-        continue;
-
       case 0x40:     // rex
       case 0x41:
       case 0x42:
@@ -150,7 +136,7 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
       case 0x66:     // operand size override
         if (!insn.os_64) insn.os_32 = !is_32;
-        sse_prefix |= SSE_PREFIX_66;
+        if (!sse_prefix) sse_prefix = SSE_PREFIX_66;
         continue;
 
       case 0x67:     // address size override
@@ -161,12 +147,20 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
       case 0xf0:     // lock
         continue;
 
+      case 0xf2:     // repne
+        if (!sse_prefix) sse_prefix = SSE_PREFIX_F2;
+        continue;
+
+      case 0xf3:     // rep
+        if (!sse_prefix) sse_prefix = SSE_PREFIX_F3;
+        continue;
+
       // no more prefixes
       default:
         break;
     }
 
-    n_prefixes--;
+    insn.prefixes--;
     break;
   }
 
@@ -193,6 +187,9 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
   entry = opcode_table + insn.b1;
 
+  // will require 3rd byte for 3-byte opcode
+  if (entry->Attr & _GRP3BTAB) b3 = fetch_byte();
+
   if (instruction_has_modrm[insn.b1])
   {
     decode_modrm(&insn);
@@ -207,14 +204,10 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
          break;
 
        case _GRPSSE:
-         {
-            if(sse_prefix) n_prefixes--;
-            /* For SSE opcodes, look into another 4 entries table 
-                  with the opcode prefixes (NONE, 0x66, 0xF2, 0xF3) */
-            int op = sse_prefix_index[sse_prefix];
-            if (op < 0) return 0;
-            entry = &(OPCODE_TABLE(entry)[op]);
-         }
+         if(sse_prefix) insn.prefixes--;
+         /* For SSE opcodes, look into another 4 entries table 
+            with the opcode prefixes (NONE, 0x66, 0xF2, 0xF3) */
+         entry = &(OPCODE_TABLE(entry)[sse_prefix]);
          break;
 
        case _SPLIT11B:
@@ -239,9 +232,17 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
          entry = &(BxDisasm3DNowGroup[peek_byte()]);
          break;
 
+       case _GRP3BTAB:
+         entry = &(OPCODE_TABLE(entry)[b3 >> 4]);
+         break;
+
+       case _GRP3BOP:
+         entry = &(OPCODE_TABLE(entry)[b3 & 15]);
+         break;
+
        default:
          printf("Internal disassembler error - unknown attribute !\n");
-         return 0;
+         return x86_insn(is_32, is_64);
     }
 
     /* get additional attributes from group table */
@@ -254,7 +255,7 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
   unsigned branch_hint = 0;
 
   // print prefixes
-  for(unsigned i=0;i<n_prefixes;i++)
+  for(unsigned i=0;i<insn.prefixes;i++)
   {
     Bit8u prefix_byte = *(instr+i);
 
@@ -279,6 +280,11 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
   if (insn.b1 == 0xE3 && insn.as_32 && !insn.as_64)
     opcode = &Ia_jecxz_Jb;
 
+  // fix nop opcode
+  if (insn.b1 == 0x90 && !insn.rex_b) {
+    opcode = &Ia_nop;
+  }
+
   // print instruction disassembly
   if (intel_mode)
     print_disassembly_intel(&insn, opcode);
@@ -294,7 +300,9 @@ unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_
     dis_sprintf(", taken");
   }
  
-  return(instruction - instruction_begin);
+  insn.ilen = (unsigned)(instruction - instruction_begin);
+
+  return insn;
 }
 
 void disassembler::dis_sprintf(char *fmt, ...)

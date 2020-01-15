@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer16.cc,v 1.35 2005/09/23 16:45:41 sshwarts Exp $
+// $Id: data_xfer16.cc,v 1.39 2006/05/12 17:04:19 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -74,7 +75,7 @@ void BX_CPU_C::MOV_EwSw(bxInstruction_c *i)
 
   /* Illegal to use nonexisting segments */
   if (i->nnn() >= 6) {
-    BX_INFO(("MOV_EwSw: using of nonexisting segment register"));
+    BX_INFO(("MOV_EwSw: using of nonexisting segment register %d", i->nnn()));
     UndefinedOpcode(i);
   }
 
@@ -108,7 +109,7 @@ void BX_CPU_C::MOV_SwEw(bxInstruction_c *i)
 
   /* Illegal to use nonexisting segments */
   if (i->nnn() >= 6) {
-    BX_INFO(("MOV_EwSw: using of nonexisting segment register"));
+    BX_INFO(("MOV_EwSw: using of nonexisting segment register %d", i->nnn()));
     UndefinedOpcode(i);
   }
 
@@ -201,14 +202,14 @@ void BX_CPU_C::MOVSX_GwEb(bxInstruction_c *i)
 
 void BX_CPU_C::XCHG_EwGw(bxInstruction_c *i)
 {
-    Bit16u op2_16, op1_16;
+  Bit16u op2_16, op1_16;
 
 #if BX_DEBUGGER && BX_MAGIC_BREAKPOINT
   // (mch) Magic break point
   // Note for mortals: the instruction to trigger this is "xchgw %bx,%bx"
   if (i->nnn() == 3 && i->modC0() && i->rm() == 3)
   {
-     BX_CPU_THIS_PTR magic_break = 1;
+    if (bx_dbg.magic_break_enabled) BX_CPU_THIS_PTR magic_break = 1;
   }
 #endif
 
@@ -222,7 +223,7 @@ void BX_CPU_C::XCHG_EwGw(bxInstruction_c *i)
   else {
     /* pointer, segment address pair */
     read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
-    Write_RMW_virtual_word(op2_16);
+    write_RMW_virtual_word(op2_16);
   }
 
   BX_WRITE_16BIT_REG(i->nnn(), op1_16);

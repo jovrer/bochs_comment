@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.48 2006/01/21 09:28:49 vruppert Exp $
+// $Id: plugin.h,v 1.52 2006/05/27 15:54:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file provides macros and types needed for plugins.  It is based on
@@ -53,6 +53,8 @@ extern "C" {
 
 #define DEV_init_devices() {bx_devices.init(BX_MEM(0)); }
 #define DEV_reset_devices(type) {bx_devices.reset(type); }
+#define DEV_register_state() {bx_devices.register_state(); }
+#define DEV_after_restore_state() {bx_devices.after_restore_state(); }
 #define PLUG_load_plugin(name,type) {bx_load_plugin(#name,type);}
 
 #define DEV_register_ioread_handler(b,c,d,e,f)  pluginRegisterIOReadHandler(b,c,d,e,f)
@@ -73,6 +75,8 @@ extern "C" {
 
 #define DEV_init_devices() {bx_devices.init(BX_MEM(0)); }
 #define DEV_reset_devices(type) {bx_devices.reset(type); }
+#define DEV_register_state() {bx_devices.register_state(); }
+#define DEV_after_restore_state() {bx_devices.after_restore_state(); }
 // When plugins are off, PLUG_load_plugin will call the plugin_init function
 // directly.
 #define PLUG_load_plugin(name,type) {lib##name##_LTX_plugin_init(NULL,type,0,NULL);}
@@ -176,8 +180,8 @@ extern "C" {
 #define DEV_vga_dump_status() (bx_devices.pluginVgaDevice->dump_status())
 
 ///////// PCI macros
-#define DEV_register_pci_handlers(b,c,d,e,f,g) \
-  (bx_devices.pluginPciBridge->register_pci_handlers(b,c,d,e,f,g))
+#define DEV_register_pci_handlers(a,b,c,d) \
+  (bx_devices.pluginPciBridge->register_pci_handlers(a,b,c,d))
 #define DEV_is_pci_device(name) bx_devices.pluginPciBridge->is_pci_device(name)
 #define DEV_pci_set_irq(a,b,c) bx_devices.pluginPci2IsaBridge->pci_set_irq(a,b,c)
 #define DEV_pci_set_base_mem(a,b,c,d,e,f) \
@@ -221,8 +225,8 @@ extern "C" {
 #endif
 
 //////// Memory macros
-#define DEV_register_memory_handlers(rh,rp,wh,wp,b,e) \
-    bx_devices.mem->registerMemoryHandlers(rh,rp,wh,wp,b,e)
+#define DEV_register_memory_handlers(param,rh,wh,b,e) \
+    bx_devices.mem->registerMemoryHandlers(param,rh,wh,b,e)
 #define DEV_unregister_memory_handlers(rh,wh,b,e) \
     bx_devices.mem->unregisterMemoryHandlers(rh,wh,b,e)
 
@@ -259,8 +263,6 @@ void plugin_fini_all (void);
 typedef void (*deviceInitMem_t)(BX_MEM_C *);
 typedef void (*deviceInitDev_t)(void);
 typedef void (*deviceReset_t)(unsigned);
-typedef void (*deviceLoad_t)(void);
-typedef void (*deviceSave_t)(void);
 
 BOCHSAPI void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmodel_c *dev, char *name);
 BOCHSAPI bx_bool pluginDevicePresent(char *name);
@@ -330,11 +332,15 @@ BOCHSAPI extern bx_bool  (*pluginRegisterPCIDevice)(void *this_ptr,
 BOCHSAPI extern Bit8u    (*pluginRd_memType)(Bit32u addr);
 BOCHSAPI extern Bit8u    (*pluginWr_memType)(Bit32u addr);
 
-void plugin_abort (void);
+void plugin_abort(void);
 
-int bx_load_plugin (const char *name, plugintype_t type);
-extern void bx_init_plugins (void);
-extern void bx_reset_plugins (unsigned);
+int bx_load_plugin(const char *name, plugintype_t type);
+extern void bx_init_plugins(void);
+extern void bx_reset_plugins(unsigned);
+#if BX_SUPPORT_SAVE_RESTORE
+extern void bx_plugins_register_state();
+extern void bx_plugins_after_restore_state();
+#endif
 
 // every plugin must define these, within the extern"C" block, so that
 // a non-mangled function symbol is available in the shared library.

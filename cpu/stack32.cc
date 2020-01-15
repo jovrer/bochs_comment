@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack32.cc,v 1.30 2005/08/10 18:40:38 sshwarts Exp $
+// $Id: stack32.cc,v 1.33 2006/06/12 16:58:27 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,13 +27,8 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
-#if BX_SUPPORT_X86_64==0
-// Make life easier for merging 64&32-bit code.
-#define RBP EBP
-#endif
-
 
 void BX_CPU_C::POP_Ed(bxInstruction_c *i)
 {
@@ -315,7 +310,7 @@ void BX_CPU_C::ENTER_IwIb(bxInstruction_c *i)
   } /* if (level > 0) ... */
 
   if (ss32) {
-    RBP = frame_ptr32;
+    EBP = frame_ptr32;
     ESP -= imm16;
   }
   else {
@@ -335,8 +330,8 @@ void BX_CPU_C::LEAVE(bxInstruction_c *i)
 #endif
     temp_EBP = BP;
 
-  if ( protected_mode() ) {
-    if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.c_ed) { /* expand up */
+  if (protected_mode()) {
+    if (IS_DATA_SEGMENT_EXPAND_DOWN(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.type)) {
       if (temp_EBP <= BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.limit_scaled) {
         BX_PANIC(("LEAVE: BP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].limit"));
         exception(BX_SS_EXCEPTION, 0, 0);
@@ -363,7 +358,7 @@ void BX_CPU_C::LEAVE(bxInstruction_c *i)
   if (i->os32L()) {
     Bit32u temp32;
     pop_32(&temp32);
-    RBP = temp32;
+    EBP = temp32;
   }
   else
 #endif

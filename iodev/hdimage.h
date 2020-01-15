@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.h,v 1.1 2005/11/06 11:07:01 vruppert Exp $
+// $Id: hdimage.h,v 1.6 2006/06/16 07:29:33 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2005  MandrakeSoft S.A.
@@ -24,9 +24,13 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+#ifndef BX_HDIMAGE_H
+#define BX_HDIMAGE_H
+
 // SPARSE IMAGES HEADER
 #define SPARSE_HEADER_MAGIC  (0x02468ace)
-#define SPARSE_HEADER_VERSION  1
+#define SPARSE_HEADER_VERSION  2
+#define SPARSE_HEADER_V1       1
 #define SPARSE_HEADER_SIZE        (256) // Plenty of room for later
 #define SPARSE_PAGE_NOT_ALLOCATED (0xffffffff)
 
@@ -36,12 +40,14 @@
    Bit32u  version;
    Bit32u  pagesize;
    Bit32u  numpages;
+   Bit64u  disk;
 
-   Bit32u  padding[60];
+   Bit32u  padding[58];
  } sparse_header_t;
 
 #define STANDARD_HEADER_MAGIC     "Bochs Virtual HD Image"
-#define STANDARD_HEADER_VERSION   (0x00010000)
+#define STANDARD_HEADER_V1        (0x00010000)
+#define STANDARD_HEADER_VERSION   (0x00020000)
 #define STANDARD_HEADER_SIZE      (512)
 
 
@@ -75,8 +81,18 @@
    Bit32u  catalog;    // #entries in the catalog
    Bit32u  bitmap;     // bitmap size in bytes
    Bit32u  extent;     // extent size in bytes
+   Bit32u  reserved;   // for data alignment
    Bit64u  disk;       // disk size in bytes
  } redolog_specific_header_t;
+
+ typedef struct
+ {
+   // the fields in the header are kept in little endian
+   Bit32u  catalog;    // #entries in the catalog
+   Bit32u  bitmap;     // bitmap size in bytes
+   Bit32u  extent;     // extent size in bytes
+   Bit64u  disk;       // disk size in bytes
+ } redolog_specific_header_v1_t;
 
  typedef struct
  {
@@ -85,6 +101,14 @@
 
    Bit8u padding[STANDARD_HEADER_SIZE - (sizeof (standard_header_t) + sizeof (redolog_specific_header_t))];
  } redolog_header_t;
+
+ typedef struct
+ {
+   standard_header_t standard;
+   redolog_specific_header_v1_t specific;
+
+   Bit8u padding[STANDARD_HEADER_SIZE - (sizeof (standard_header_t) + sizeof (redolog_specific_header_v1_t))];
+ } redolog_header_v1_t;
 
 // htod : convert host to disk (little) endianness
 // dtoh : convert disk (little) to host endianness
@@ -105,6 +129,9 @@
 class device_image_t
 {
   public:
+      // Default constructor
+      device_image_t();
+
       // Open a image. Returns non-negative if successful.
       virtual int open (const char* pathname) = 0;
 
@@ -126,7 +153,7 @@ class device_image_t
       unsigned cylinders;
       unsigned heads;
       unsigned sectors;
-      off_t    hd_size;
+      Bit64u   hd_size;
 };
 
 // FLAT MODE
@@ -167,29 +194,29 @@ class concat_image_t : public device_image_t
       concat_image_t();
       
       // Open a image. Returns non-negative if successful.
-      int open (const char* pathname);
+      int open(const char* pathname);
 
       // Close the image.
-      void close ();
+      void close();
 
       // Position ourselves. Return the resulting offset from the
       // beginning of the file.
-      off_t lseek (off_t offset, int whence);
+      Bit64s lseek(Bit64s offset, int whence);
 
       // Read count bytes to the buffer buf. Return the number of
       // bytes read (count).
-      ssize_t read (void* buf, size_t count);
+      ssize_t read(void* buf, size_t count);
 
       // Write count bytes from buf. Return the number of bytes
       // written (count).
-      ssize_t write (const void* buf, size_t count);
+      ssize_t write(const void* buf, size_t count);
 
   private:
 #define BX_CONCAT_MAX_IMAGES 8
       int fd_table[BX_CONCAT_MAX_IMAGES];
-      off_t start_offset_table[BX_CONCAT_MAX_IMAGES];
-      off_t length_table[BX_CONCAT_MAX_IMAGES];
-      void increment_string (char *str);
+      Bit64s start_offset_table[BX_CONCAT_MAX_IMAGES];
+      Bit64s length_table[BX_CONCAT_MAX_IMAGES];
+      void increment_string(char *str);
       int maxfd;  // number of entries in tables that are valid
 
       // notice if anyone does sequential read or write without seek in between.
@@ -202,7 +229,7 @@ class concat_image_t : public device_image_t
       // the next read and write.
       int index;  // index into table
       int fd;     // fd to use for reads and writes
-      off_t thismin, thismax; // byte offset boundary of this image
+      Bit64s thismin, thismax; // byte offset boundary of this image
 };
 
 // SPARSE MODE
@@ -272,16 +299,8 @@ class sparse_image_t : public device_image_t
  off_t total_size;
 
  void panic(const char * message);
- off_t
-#ifndef PARANOID
-       sparse_image_t::
-#endif
-                       get_physical_offset();
- void
-#ifndef PARANOID
-       sparse_image_t::
-#endif
-                       set_virtual_page(Bit32u new_virtual_page);
+ off_t get_physical_offset();
+ void set_virtual_page(Bit32u new_virtual_page);
  void read_header();
  ssize_t read_page_fragment(Bit32u read_virtual_page, Bit32u read_page_offset, size_t read_size, void * buf);
 
@@ -325,15 +344,16 @@ class redolog_t
 {
   public:
       redolog_t();
-      int make_header (const char* type, Bit64u size);
-      int create (const char* filename, const char* type, Bit64u size);
-      int create (int filedes, const char* type, Bit64u size);
-      int open (const char* filename, const char* type, Bit64u size);
-      void close ();
+      int make_header(const char* type, Bit64u size);
+      int create(const char* filename, const char* type, Bit64u size);
+      int create(int filedes, const char* type, Bit64u size);
+      int open(const char* filename, const char* type);
+      void close();
+      Bit64u get_size();
 
-      off_t lseek (off_t offset, int whence);
-      ssize_t read (void* buf, size_t count);
-      ssize_t write (const void* buf, size_t count);
+      Bit64s lseek(Bit64s offset, int whence);
+      ssize_t read(void* buf, size_t count);
+      ssize_t write(const void* buf, size_t count);
 
   private:
       void             print_header();
@@ -354,29 +374,28 @@ class growing_image_t : public device_image_t
 {
   public:
       // Contructor
-      growing_image_t(Bit64u size);
+      growing_image_t();
 
       // Open a image. Returns non-negative if successful.
-      int open (const char* pathname);
+      int open(const char* pathname);
 
       // Close the image.
-      void close ();
+      void close();
 
       // Position ourselves. Return the resulting offset from the
       // beginning of the file.
-      off_t lseek (off_t offset, int whence);
+      Bit64s lseek(Bit64s offset, int whence);
 
       // Read count bytes to the buffer buf. Return the number of
       // bytes read (count).
-      ssize_t read (void* buf, size_t count);
+      ssize_t read(void* buf, size_t count);
 
       // Write count bytes from buf. Return the number of bytes
       // written (count).
-      ssize_t write (const void* buf, size_t count);
+      ssize_t write(const void* buf, size_t count);
 
   private:
       redolog_t *redolog;
-      Bit64u    size;
 };
 
 // UNDOABLE MODE
@@ -384,30 +403,29 @@ class undoable_image_t : public device_image_t
 {
   public:
       // Contructor
-      undoable_image_t(Bit64u size, const char* redolog_name);
+      undoable_image_t(const char* redolog_name);
 
       // Open a image. Returns non-negative if successful.
-      int open (const char* pathname);
+      int open(const char* pathname);
 
       // Close the image.
-      void close ();
+      void close();
 
       // Position ourselves. Return the resulting offset from the
       // beginning of the file.
-      off_t lseek (off_t offset, int whence);
+      Bit64s lseek(Bit64s offset, int whence);
 
       // Read count bytes to the buffer buf. Return the number of
       // bytes read (count).
-      ssize_t read (void* buf, size_t count);
+      ssize_t read(void* buf, size_t count);
 
       // Write count bytes from buf. Return the number of bytes
       // written (count).
-      ssize_t write (const void* buf, size_t count);
+      ssize_t write(const void* buf, size_t count);
 
   private:
       redolog_t       *redolog;       // Redolog instance
       default_image_t *ro_disk;       // Read-only flat disk instance
-      Bit64u          size;           
       char            *redolog_name;  // Redolog name
 };
 
@@ -417,30 +435,29 @@ class volatile_image_t : public device_image_t
 {
   public:
       // Contructor
-      volatile_image_t(Bit64u size, const char* redolog_name);
+      volatile_image_t(const char* redolog_name);
 
       // Open a image. Returns non-negative if successful.
-      int open (const char* pathname);
+      int open(const char* pathname);
 
       // Close the image.
-      void close ();
+      void close();
 
       // Position ourselves. Return the resulting offset from the
       // beginning of the file.
-      off_t lseek (off_t offset, int whence);
+      Bit64s lseek(Bit64s offset, int whence);
 
       // Read count bytes to the buffer buf. Return the number of
       // bytes read (count).
-      ssize_t read (void* buf, size_t count);
+      ssize_t read(void* buf, size_t count);
 
       // Write count bytes from buf. Return the number of bytes
       // written (count).
-      ssize_t write (const void* buf, size_t count);
+      ssize_t write(const void* buf, size_t count);
 
   private:
       redolog_t       *redolog;       // Redolog instance
       default_image_t *ro_disk;       // Read-only flat disk instance
-      Bit64u          size;           
       char            *redolog_name;  // Redolog name
       char            *redolog_temp;  // Redolog temporary file name
 };
@@ -551,3 +568,5 @@ class z_volatile_image_t : public device_image_t
 #endif
 
 #endif // HDIMAGE_HEADERS_ONLY
+
+#endif

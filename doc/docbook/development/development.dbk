@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/development/development.dbk
-$Id: development.dbk,v 1.21 2006/01/21 12:51:54 vruppert Exp $
+$Id: development.dbk,v 1.24 2006/07/11 22:17:28 vruppert Exp $
 
 This is the top level file for the Bochs Developers Manual.
 ================================================================
@@ -68,7 +68,7 @@ anything here."   At this point, you've succeeded and you never have to do
 this step again, ever.
 
 <screen>
-  ssh <replaceable>sfusername</replaceable>@cvs.sf.net
+  ssh <replaceable>sfusername</replaceable>@bochs.cvs.sf.net
 </screen>
 </para>
 
@@ -109,9 +109,9 @@ overwrite it.
 </para>
 
 <screen>
-  export CVSROOT=":ext:<replaceable>sfusername</replaceable>@cvs.sourceforge.net:/cvsroot/bochs"
+  export CVSROOT=":ext:<replaceable>sfusername</replaceable>@bochs.cvs.sourceforge.net:/cvsroot/bochs"
   cvs -z3 checkout bochs
-  <replaceable>sfusername</replaceable>@cvs.sourceforge.net's password:        <replaceable><--type your password</replaceable>
+  <replaceable>sfusername</replaceable>@bochs.cvs.sourceforge.net's password:        <replaceable><--type your password</replaceable>
 </screen>
 
 <para>
@@ -141,9 +141,9 @@ since you downloaded it last.
 
 <screen>
   $ cvs update file.cc
-  <replaceable>sfusername</replaceable>@cvs.sf.net's password:        <replaceable><--type your password</replaceable>
+  <replaceable>sfusername</replaceable>@bochs.cvs.sf.net's password:        <replaceable><--type your password</replaceable>
   $ cvs commit file.cc
-  <replaceable>sfusername</replaceable>@cvs.sf.net's password:        <replaceable><--type your password</replaceable>
+  <replaceable>sfusername</replaceable>@bochs.cvs.sf.net's password:        <replaceable><--type your password</replaceable>
   [editor opens. type log message, save, and exit.]
 </screen>
 
@@ -163,7 +163,7 @@ Here is an example of a successful checkin:
 
 <screen>
   $ cvs commit misc.txt
-  <replaceable>sfusername</replaceable>@cvs.sf.net's password:        <replaceable><--type your password</replaceable>
+  <replaceable>sfusername</replaceable>@bochs.cvs.sf.net's password:        <replaceable><--type your password</replaceable>
   [edit log msg]
   Checking in misc.txt;
   /cvsroot/bochs/bochs/doc/docbook/misc.txt,v  <--  misc.txt
@@ -175,7 +175,7 @@ And here is an aborted one:
 
 <screen>
   $ cvs commit misc.txt
-  <replaceable>sfusername</replaceable>@cvs.sf.net's password:        <replaceable><--type your password</replaceable>
+  <replaceable>sfusername</replaceable>@bochs.cvs.sf.net's password:        <replaceable><--type your password</replaceable>
   [quit editor without saving]
   Log message unchanged or not specified
   a)bort, c)ontinue, e)dit, !)reuse this message unchanged for remaining dirs
@@ -413,6 +413,136 @@ ignores the parameter and evaluates to &amp;bx_cpu, or evaluates to bx_cpu_array
 [n], so the result will always be a pointer. The same goes for BX_MEM(x).
 If static methods are used then BX_CPU_THIS_PTR evaluates to BX_CPU(0)->. Ugly,
 isn't it?
+</para>
+</section>
+<section id="config-parameter-tree"><title>The configuration parameter tree</title>
+<para>
+Starting with version 1.3, the Bochs configuration parameters are stored in parameter
+objects. These objects have get/set methods with min/max checks and it is possible
+to define parameter handlers to perform side effects and to override settings.
+Each parameter type has it's own object type with specific features (numeric,
+boolean, enum, string and file name). A special object type containing a list of
+parameters is designed for building and managing configuration menus or dialogs
+automatically. In the original implementation the parameters could be accessed
+only with their unique id from a static list or a special structure containing
+pointers to all parameters.
+</para>
+<para>
+Starting with version 2.3, the Bochs parameter object handling has been rewritten
+to a parameter tree. There is now a root list containing child lists, and these
+lists can contain lists or parameters and so on. The parameters are now accessed
+by a name build from all the list names in the path and finally the parameter
+name separated by periods.
+<screen>
+Bit32u megs = SIM->get_param_num("memory.standard.ram.size")->get();
+</screen>
+</para>
+<para>
+The example above shows how to get the memory size in megabytes from the simulator
+interface. In the root list (".") there is child list named "memory" containing
+a child list "standard". It's child list "ram" contains the numeric parameter type
+"size". The SIM->get_param_num() methods returns the object pointer and the get()
+method returns the parameter value.
+</para>
+<para>
+The table below shows all parameter types used by the Bochs configuration interface.
+<table>   
+<title>Parameter types</title>
+<tgroup cols="2">
+<thead>
+<row>
+<entry>Type</entry>
+<entry>Description</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry>bx_object_c</entry>
+<entry>Base class for all the other parameter types. It contains the unique parameter id and the object type value.</entry>
+</row>
+<row>
+<entry>bx_param_c</entry>
+<entry>Generic parameter class. It contains the name, label, description and the input/output formats.</entry>
+</row>
+<row>
+<entry>bx_param_num_c</entry>
+<entry>Numerical (decimal/hex) config settings are stored in this parameter type.</entry>
+</row>
+<row>
+<entry>bx_param_bool_c</entry>
+<entry>This parameter type is based on bx_param_num_c, but it is designed for boolean values. A dependency
+list can be defined to enable/disable other parameters depending on the value change.</entry>
+</row>
+<row>
+<entry>bx_param_enum_c</entry>
+<entry>Based on bx_param_num_c this parameter type contains a list of valid values.</entry>
+</row>
+<row>
+<entry>bx_param_string_c</entry>
+<entry>Configuration strings are stored in this type of parameter.</entry>
+</row>
+<row>
+<entry>bx_param_filename_c</entry>
+<entry>Based on bx_param_string_c this parameter type is used for file names.</entry>
+</row>
+<row>
+<entry>bx_list_c</entry>
+<entry>Contains a list of pointers to parameters (bx_param_*_c and bx_list_c).
+In the config interface it is used for menus/dialogs.</entry>
+</row>
+</tbody>
+</tgroup>
+</table>
+</para>
+</section>
+<section id="save-restore"><title>The save/restore feature</title>
+<para>
+The save/restore feature is based on an extension to the parameter tree concept.
+A subtree (list) called "save_restore" appears in the root of the parameter tree
+and some new "shadow" parameter types store pointers to values instead of the values
+itself. All the hardware objects have register_state() methods to register pointers
+to the device registers and switches that need to be saved. The simulator interface
+saves the registered data in text format to the specified folder (usually one file
+per item in the save/restore list). Large binary arrays are registered with a
+special parameter type, so they are saved as separate files.
+</para>
+<para>
+The table below shows the additional parameter types for save/restore.
+<table>   
+<title>Save/restore parameter types</title>
+<tgroup cols="2">
+<thead>
+<row>
+<entry>Type</entry>
+<entry>Description</entry>
+</row>
+</thead>
+<tbody>
+<row>
+<entry>bx_shadow_num_c</entry>
+<entry>Based on bx_param_num_c this type stores a pointer to a numerical variable.</entry>
+</row>
+<row>
+<entry>bx_shadow_bool_c</entry>
+<entry>This parameter type stores a pointer to a boolean variable.</entry>
+</row>
+<row>
+<entry>bx_shadow_data_c</entry>
+<entry>This special parameter type stores pointer size of a binary array.</entry>
+</row>
+</tbody>
+</tgroup>
+</table>
+It is also possible to use the bx_param_num_c object with parameter save/restore
+handlers. With this special way several device settings can be save to and restored
+from one single parameter.
+</para>
+<para>
+All devices can uses these two save/restore specific methods:
+<itemizedlist>
+<listitem><para>register_state() is called after the device init() to register the device members for save/restore</para></listitem>
+<listitem><para>after_restore_state() is an optional method to do things directly after restore</para></listitem>
+</itemizedlist>
 </para>
 </section>
 </section>
@@ -2075,8 +2205,8 @@ Do a clean checkout using anonymous cvs, so that the source tarball
 will be all set up for anonymous cvs.  First I'll create a clean
 directory called "clean-anon".
 <screen>
-cvs -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/bochs login
-cvs -z3 -d:pserver:anonymous@cvs.sourceforge.net:/cvsroot/bochs \
+cvs -d:pserver:anonymous@bochs.cvs.sourceforge.net:/cvsroot/bochs login
+cvs -z3 -d:pserver:anonymous@bochs.cvs.sourceforge.net:/cvsroot/bochs \
   checkout -d clean-anon bochs
 </screen>
 Start with clean-anon which tracks the CVS head.  Change its sticky tag

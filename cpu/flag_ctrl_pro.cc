@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl_pro.cc,v 1.22 2005/11/21 21:10:59 sshwarts Exp $
+// $Id: flag_ctrl_pro.cc,v 1.24 2006/04/05 17:31:31 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
@@ -35,14 +36,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::setEFlags(Bit32u val)
   // VM flag could not be set from long mode
 #if BX_SUPPORT_X86_64
   if (IsLongMode()) {
-    if (get_VM()) BX_PANIC(("VM is set in long mode !"));
+    if (BX_CPU_THIS_PTR get_VM()) BX_PANIC(("VM is set in long mode !"));
     val &= ~EFlagsVMMask;
   }
 #endif
 
   BX_CPU_THIS_PTR eflags.val32 = val;
   BX_CPU_THIS_PTR lf_flags_status = 0; // OSZAPC flags are known.
-  set_VM(val & EFlagsVMMask);
+  BX_CPU_THIS_PTR set_VM(val & EFlagsVMMask);
 }
 
   void BX_CPP_AttrRegparmN(2)
@@ -65,7 +66,7 @@ BX_CPU_C::writeEFlags(Bit32u flags, Bit32u changeMask)
 
   newEFlags = (BX_CPU_THIS_PTR eflags.val32 & ~changeMask) |
               (flags & changeMask);
-  BX_CPU_THIS_PTR setEFlags(newEFlags);
+  setEFlags(newEFlags);
   // OSZAPC flags are known - done in setEFlags(newEFlags)
 
   if (newEFlags & EFlagsTFMask) {

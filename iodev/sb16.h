@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.h,v 1.20 2005/02/04 19:50:50 vruppert Exp $
+// $Id: sb16.h,v 1.27 2006/05/27 15:54:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,6 +26,8 @@
 
 // This file (SB16.H) written and donated by Josef Drexler
 
+#ifndef BX_IODEV_SB16_H
+#define BX_IODEV_SB16_H
 
 #if BX_USE_SB16_SMF
 #  define BX_SB16_SMF   static
@@ -86,10 +88,11 @@
 /* Definitions for the output functions */
 #define BX_SOUND_OUTPUT_OK   0
 #define BX_SOUND_OUTPUT_ERR  1
-#define BX_SOUND_OUTPUT_WAVEPACKETSIZE  4096
-             // the is the size of a DMA chunk sent to output
-             // it should not be too large to avoid lag, and not too
-             // small to avoid unnecessary overhead.
+
+// this is the size of a DMA chunk sent to output
+// it should not be too large to avoid lag, and not too
+// small to avoid unnecessary overhead.
+#define BX_SOUND_OUTPUT_WAVEPACKETSIZE  8192
 
 #define BX_SB16_MIX_REG  0x100        // total number of mixer registers
 
@@ -149,8 +152,8 @@ typedef struct {
 class bx_sb16_buffer {
 public:
 
-  BX_SB16_BUFINL bx_sb16_buffer(void);
-  BX_SB16_BUFINL ~bx_sb16_buffer(void);
+  BX_SB16_BUFINL  bx_sb16_buffer(void);
+  BX_SB16_BUFINL ~bx_sb16_buffer();
   BX_SB16_BUFINL void init(int bufferlen);
   BX_SB16_BUFINL void reset();
 
@@ -191,19 +194,28 @@ class BX_SOUND_OUTPUT_C_DEF;
 // The actual emulator class, emulating the sound blaster ports
 class bx_sb16_c : public bx_devmodel_c {
 public:
-
-  bx_sb16_c(void);
-  ~bx_sb16_c(void);
+  bx_sb16_c();
+  virtual ~bx_sb16_c();
   virtual void init(void);
   virtual void reset(unsigned type);
+#if BX_SUPPORT_SAVE_RESTORE
+  virtual void register_state(void);
+  virtual void after_restore_state(void);
+#endif
 
-      /* Make writelog available to output functions */
-  BX_SB16_SMF void   writelog(int loglevel, const char *str, ...);
+  /* Make writelog available to output functions */
+  BX_SB16_SMF void writelog(int loglev, const char *str, ...);
+  // return midimode and wavemode setting (for lowlevel output class)
+  int get_midimode() const {return midimode;}
+  int get_wavemode() const {return wavemode;}
+  // runtimer parameter handler
+  static Bit64s sb16_param_handler(bx_param_c *param, int set, Bit64s val);
 
 private:
 
-  FILE *logfile;
-  FILE *midifile,*wavefile;     // the output files or devices
+  int midimode, wavemode, loglevel;
+  Bit32u dmatimer;
+  FILE *logfile, *midifile, *wavefile; // the output files or devices
   BX_SOUND_OUTPUT_C_DEF *output;// the output class
   int currentirq;
   int currentdma8;
@@ -218,9 +230,9 @@ private:
     int bankmsb[BX_SB16_PATCHTABLESIZE];   // current patch lists
     int program[BX_SB16_PATCHTABLESIZE];
 
-    int outputinit, timer_handle;
-    int current_timer;                         // no. of delta times passed
+    int timer_handle, current_timer;           // no. of delta times passed
     Bit32u last_delta_time;                    // timer value at last command
+    bx_bool outputinit;
   } mpu401;
 
   // the DSP variables
@@ -242,17 +254,17 @@ private:
       // issigned= 0: unsigned data, 1: signed data
       // highspeed= 0: normal mode, 1: highspeed mode (only SBPro)
       // timer= so many us between data bytes
-      int mode, bits, fifo, output, bps;
-      int stereo, issigned, highspeed, format, timer;
+      int mode, bits, bps, format, timer;
+      bx_bool fifo, output, stereo, issigned, highspeed;
       Bit16u count;     // bytes remaining in this transfer
-      Bit8u *chunk;	// buffers up to BX_SB16_WAVEPACKETSIZE bytes
+      Bit8u *chunk;	// buffers up to BX_SOUND_OUTPUT_WAVEPACKETSIZE bytes
       int chunkindex;	// index into the buffer
       int chunkcount;   // for input: size of the recorded input
       Bit16u timeconstant;
       Bit16u blocklength, samplerate;
     } dma;
     int timer_handle;   // handle for the DMA timer
-    int outputinit;	// have the output functions been initialized
+    bx_bool outputinit; // have the output functions been initialized
   } dsp;
 
   // the ASP/CSP registers
@@ -295,7 +307,7 @@ private:
   struct bx_sb16_emul_struct {
     bx_sb16_buffer datain, dataout;
     bx_sb16_ins_map remaplist[256];
-    int remaps;
+    Bit16u remaps;
   } emuldata;
 
       /* DMA input and output, 8 and 16 bit */
@@ -396,21 +408,28 @@ public:
   bx_sound_output_c(bx_sb16_c *sb16);
   BX_SOUND_VIRTUAL ~bx_sound_output_c();
 
-  BX_SOUND_VIRTUAL int    waveready();
-  BX_SOUND_VIRTUAL int    midiready();
+  BX_SOUND_VIRTUAL int waveready();
+  BX_SOUND_VIRTUAL int midiready();
 
-  BX_SOUND_VIRTUAL int    openmidioutput(char *device);
-  BX_SOUND_VIRTUAL int    sendmidicommand(int delta, int command, int length, Bit8u data[]);
-  BX_SOUND_VIRTUAL int    closemidioutput();
+  BX_SOUND_VIRTUAL int openmidioutput(char *device);
+  BX_SOUND_VIRTUAL int sendmidicommand(int delta, int command, int length, Bit8u data[]);
+  BX_SOUND_VIRTUAL int closemidioutput();
 
-  BX_SOUND_VIRTUAL int    openwaveoutput(char *device);
-  BX_SOUND_VIRTUAL int    startwaveplayback(int frequency, int bits, int stereo, int format);
-  BX_SOUND_VIRTUAL int    sendwavepacket(int length, Bit8u data[]);
-  BX_SOUND_VIRTUAL int    stopwaveplayback();
-  BX_SOUND_VIRTUAL int    closewaveoutput();
+  BX_SOUND_VIRTUAL int openwaveoutput(char *device);
+  BX_SOUND_VIRTUAL int startwaveplayback(int frequency, int bits, int stereo, int format);
+  BX_SOUND_VIRTUAL int sendwavepacket(int length, Bit8u data[]);
+  BX_SOUND_VIRTUAL int stopwaveplayback();
+  BX_SOUND_VIRTUAL int closewaveoutput();
 };
 
 #define WRITELOG        sb16->writelog
 #define BOTHLOG(x)      (x)
-#define MIDILOG(x)      ((bx_options.sb16.Omidimode->get ()>0?x:0x7f))
-#define WAVELOG(x)      ((bx_options.sb16.Owavemode->get ()>0?x:0x7f))
+#ifndef BX_SOUNDLOW
+#define MIDILOG(x)      ((BX_SB16_THIS midimode>0?x:0x7f))
+#define WAVELOG(x)      ((BX_SB16_THIS wavemode>0?x:0x7f))
+#else
+#define MIDILOG(x)      ((sb16->get_midimode()>0?x:0x7f))
+#define WAVELOG(x)      ((sb16->get_wavemode()>0?x:0x7f))
+#endif
+
+#endif

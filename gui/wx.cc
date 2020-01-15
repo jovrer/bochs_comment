@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc,v 1.80 2006/01/23 18:34:47 vruppert Exp $
+// $Id: wx.cc,v 1.84 2006/05/07 09:49:16 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
@@ -181,20 +181,20 @@ void MyPanel::OnPaint(wxPaintEvent& WXUNUSED(event))
 void MyPanel::ToggleMouse (bool fromToolbar)
 {
   static bool first_enable = true;
-  bx_param_bool_c *enable = SIM->get_param_bool (BXP_MOUSE_ENABLED);
-  bool en = ! enable->get ();
+  bx_param_bool_c *enable = SIM->get_param_bool(BXPN_MOUSE_ENABLED);
+  bool en = ! enable->get();
   bool is_main_thread = wxThread::IsMain ();
   bool needmutex = !is_main_thread && SIM->is_sim_thread ();
   if (needmutex) wxMutexGuiEnter();
   if (fromToolbar && first_enable && en) {
     // only show this help if you click on the toolbar.  If they already
     // know the shortcut, don't annoy them with the message.
-    wxString msg = 
+    wxString msg = wxT(
       "You have enabled the mouse in Bochs, so now your mouse actions will\n"
       "be sent into the simulator.  The usual mouse cursor will be trapped\n"
       "inside the Bochs window until you press a CTRL key + the middle button\n"
-      "to turn mouse capture off.";
-    wxMessageBox(msg, "Mouse Capture Enabled", wxOK | wxICON_INFORMATION);
+      "to turn mouse capture off.");
+    wxMessageBox(msg, wxT("Mouse Capture Enabled"), wxOK | wxICON_INFORMATION);
     first_enable = false;
   }
   enable->set (en);
@@ -233,7 +233,7 @@ void MyPanel::OnMouse(wxMouseEvent& event)
     return;
   }
 
-  if (!SIM->get_param_bool(BXP_MOUSE_ENABLED)->get ()) 
+  if (!SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get()) 
     return;  // mouse disabled, ignore the event
 
   // process buttons and motion together
@@ -571,7 +571,7 @@ MyPanel::fillBxKeyEvent_GTK (wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool release
   Bit32u key_event = 0;
   // since the GDK_* symbols are very much like the X11 symbols (possibly
   // identical), I'm using code that is copied from gui/x.cc.
-  if(!bx_options.keyboard.OuseMapping->get()) {
+  if(!SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
     if (keysym >= GDK_space && keysym < GDK_asciitilde) {
       // use nice ASCII conversion table, based on x.cc
       key_event = wxAsciiKey[keysym - GDK_space];
@@ -875,7 +875,7 @@ bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned t
   unsigned char fc, vc;
 
   put("WX  ");
-  if (bx_options.Oprivate_colormap->get ()) {
+  if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
     BX_INFO(("private_colormap option ignored."));
   }
 
@@ -909,7 +909,7 @@ bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned t
   wxTileY = tileheight;
 
   // load keymap tables
-  if(bx_options.keyboard.OuseMapping->get())
+  if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get())
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXGTK__)
     bx_keymap.loadKeymap(convertStringToGDKKey);
 #else
@@ -1050,10 +1050,10 @@ bx_wx_gui_c::statusbar_setitem(int element, bx_bool active)
         strcpy(status_text+1, statusitem_text[i]);
         theFrame->SetStatusText(status_text, i+1);
 #else
-        theFrame->SetStatusText(statusitem_text[i], i+1);
+        theFrame->SetStatusText(wxString(statusitem_text[i], wxConvUTF8), i+1);
 #endif
       } else {
-        theFrame->SetStatusText("", i+1);
+        theFrame->SetStatusText(wxT(""), i+1);
       }
     }
   } else if ((unsigned)element < statusitem_count) {
@@ -1063,10 +1063,11 @@ bx_wx_gui_c::statusbar_setitem(int element, bx_bool active)
         strcpy(status_text+1, statusitem_text[element]);
         theFrame->SetStatusText(status_text, element+1);
 #else
-      theFrame->SetStatusText(statusitem_text[element], element+1);
+      theFrame->SetStatusText(wxString(statusitem_text[element], wxConvUTF8),
+        element+1);
 #endif
     } else {
-      theFrame->SetStatusText("", element+1);
+      theFrame->SetStatusText(wxT(""), element+1);
     }
   }
 }
@@ -1591,15 +1592,15 @@ bx_wx_gui_c::mouse_enabled_changed_specific (bx_bool val)
 bx_wx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
 {
   int ret = 0;
-  wxMutexGuiEnter ();
-  if (wxTheClipboard->Open ()) {
-    if (wxTheClipboard->IsSupported (wxDF_TEXT)) {
+  wxMutexGuiEnter();
+  if (wxTheClipboard->Open()) {
+    if (wxTheClipboard->IsSupported(wxDF_TEXT)) {
       wxTextDataObject data;
-      wxTheClipboard->GetData (data);
-      wxString str = data.GetText ();
-      int len = str.Len ();
+      wxTheClipboard->GetData(data);
+      wxString str = data.GetText();
+      int len = str.Len();
       Bit8u *buf = new Bit8u[len];
-      memcpy (buf, str.c_str (), len);
+      memcpy(buf, str.mb_str(wxConvUTF8), len);
       *bytes = buf;
       *nbytes = len;
       ret = 1;
@@ -1608,24 +1609,24 @@ bx_wx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
     } else {
       BX_ERROR (("paste: could not open wxWidgets clipboard"));
     }
-    wxTheClipboard->Close ();
+    wxTheClipboard->Close();
   }
-  wxMutexGuiLeave ();
+  wxMutexGuiLeave();
   return ret;
 }
 
   int
 bx_wx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 {
-  wxMutexGuiEnter ();
+  wxMutexGuiEnter();
   int ret = 0;
-  if (wxTheClipboard->Open ()) {
-    wxString string (text_snapshot, len);
-    wxTheClipboard->SetData (new wxTextDataObject (string));
-    wxTheClipboard->Close ();
+  if (wxTheClipboard->Open()) {
+    wxString string(text_snapshot, wxConvUTF8, len);
+    wxTheClipboard->SetData(new wxTextDataObject (string));
+    wxTheClipboard->Close();
     ret = 1;
   }
-  wxMutexGuiLeave ();
+  wxMutexGuiLeave();
   return ret;
 }
 
@@ -1634,7 +1635,7 @@ void bx_wx_gui_c::show_ips(Bit32u ips_count)
 {
   char ips_text[40];
   sprintf(ips_text, "IPS: %9u", ips_count);
-  theFrame->SetStatusText(ips_text, 0);
+  theFrame->SetStatusText(wxString(ips_text, wxConvUTF8), 0);
 }
 #endif
 

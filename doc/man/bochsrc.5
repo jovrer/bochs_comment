@@ -1,5 +1,5 @@
 .\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
-.TH bochsrc 5 "29 Jan 2006" "bochsrc" "The Bochs Project"
+.TH bochsrc 5 "22 Jun 2006" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -111,9 +111,22 @@ This defines cpu-related parameters inside Bochs:
 
 count:
 
-Set the number of processors when Bochs is compiled for SMP emulation.
-Bochs currently supports up to 8 processors. If Bochs is compiled
-without SMP support, it won't accept values different from 1.
+Set the number of processors:cores per processor:threads per core when
+Bochs is compiled for SMP emulation. Bochs currently supports up to
+8 processors. If Bochs is compiled without SMP support, it won't accept
+values different from 1.
+
+quantum:
+
+Maximum amount of instructions allowed to execute by processor before
+returning control to another cpu. This option exists only in Bochs 
+binary compiled with SMP support.
+
+reset_on_triple_fault:
+
+Reset the CPU when triple fault occur (highly recommended) rather than
+PANIC. Remember that if you trying to continue after triple fault the 
+simulation will be completely bogus !
 
 ips:
 
@@ -133,12 +146,13 @@ starts to autorepeat,  and the measurement  of
 BogoMips and other benchmarks.
 
 Example Specifications[1]
-  Machine                                Mips
- ---------------------------------------------------
- 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4 12 to 15
- 1.6Ghz Intel P4 with Win2000/g++ 3.3     5 to  7
- 650Mhz Athlon K-7 with Linux 2.4.x       2 to  2.5
- 400Mhz Pentium II with Linux 2.0.x       1 to 1.8
+ Bochs Machine/Compiler                                Mips
+ -------------------------------------------------------------------
+ 2.2.6 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4      21 to 25 Mips
+ 2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4         12 to 15 Mips
+ 2.0.1 1.6Ghz Intel P4 with Win2000/g++ 3.3             5 to  7 Mips
+ 1.4   650Mhz Athlon K-7 with Linux 2.4.4/egcs-2.91.66  2 to  2.5 Mips
+ 1.4   400Mhz Pentium II with Linux 2.0.36/egcs-1.0.3   1 to  1.8 Mips
 
  [1]  IPS measurements depend on OS and compiler
 configuration  in addition  to processor clock
@@ -260,9 +274,9 @@ works with it.
 In UNIX it is possible to use a raw device as a Bochs hard disk, 
 but WE DON'T RECOMMEND IT.
 
-The path is always mandatory. For flat hard disk images created with bximage
-geometry autodetection can be used (cylinders=0 -> cylinders are calculated
-using heads=16 and spt=63). For other hard disk images and modes the cylinders,
+The path is always mandatory. Disk geometry autodetection works with images
+created by bximage if CHS is set to 0/0/0 (cylinders are calculated using
+heads=16 and spt=63). For other hard disk images and modes the cylinders,
 heads, and spt are mandatory.
 
 The mode option defines how the disk image is handled. Disks can be defined as:

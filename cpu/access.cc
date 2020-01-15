@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: access.cc,v 1.62 2005/11/19 19:38:45 sshwarts Exp $
+// $Id: access.cc,v 1.66 2006/06/09 22:29:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,6 +26,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if BX_SUPPORT_X86_64
@@ -53,12 +54,13 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
 #endif
   if (protected_mode()) {
     if (seg->cache.valid==0) {
+      BX_DEBUG(("write_virtual_checks(): segment descriptor not valid"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
     }
 
     if (seg->cache.p == 0) { /* not present */
-      BX_INFO(("write_virtual_checks(): segment not present"));
+      BX_ERROR(("write_virtual_checks(): segment not present"));
       exception(int_number(seg), 0, 0);
       return;
     }
@@ -70,15 +72,15 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
       case 10: case 11: // execute/read
       case 12: case 13: // execute only, conforming
       case 14: case 15: // execute/read-only, conforming
-        BX_INFO(("write_virtual_checks(): no write access to seg"));
-        exception(int_number(seg), 0, 0);
+        BX_ERROR(("write_virtual_checks(): no write access to seg"));
+        exception(BX_GP_EXCEPTION, 0, 0);
         return;
 
       case 2: case 3: /* read/write */
         if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
             || (length-1 > seg->cache.u.segment.limit_scaled))
         {
-          BX_INFO(("write_virtual_checks(): write beyond limit, r/w"));
+          BX_ERROR(("write_virtual_checks(): write beyond limit, r/w"));
           exception(int_number(seg), 0, 0);
           return;
         }
@@ -103,7 +105,7 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
              (offset > upper_limit) ||
              ((upper_limit - offset) < (length - 1)))
         {
-          BX_INFO(("write_virtual_checks(): write beyond limit, r/w ED"));
+          BX_ERROR(("write_virtual_checks(): write beyond limit, r/w ED"));
           exception(int_number(seg), 0, 0);
           return;
         }
@@ -116,6 +118,7 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
     if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
           || (length-1 > seg->cache.u.segment.limit_scaled))
     {
+      BX_DEBUG(("write_virtual_checks(): write beyond limit (real mode)"));
       exception(int_number(seg), 0, 0);
     }
     if (seg->cache.u.segment.limit_scaled >= 7) {
@@ -144,14 +147,13 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
 #endif
   if (protected_mode()) {
     if (seg->cache.valid==0) {
-      BX_ERROR(("seg[%s]->selector.value = %04x", 
-         BX_CPU_THIS_PTR strseg(seg), (unsigned) seg->selector.value));
+      BX_DEBUG(("read_virtual_checks(): segment descriptor not valid"));
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
     }
 
     if (seg->cache.p == 0) { /* not present */
-      BX_INFO(("read_virtual_checks(): segment not present"));
+      BX_ERROR(("read_virtual_checks(): segment not present"));
       exception(int_number(seg), 0, 0);
       return;
     }
@@ -163,7 +165,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
         if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
             || (length-1 > seg->cache.u.segment.limit_scaled))
         {
-          BX_INFO(("read_virtual_checks(): read beyond limit"));
+          BX_ERROR(("read_virtual_checks(): read beyond limit"));
           exception(int_number(seg), 0, 0);
           return;
         }
@@ -178,7 +180,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
         if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
             || (length-1 > seg->cache.u.segment.limit_scaled)) 
         {
-          BX_INFO(("read_virtual_checks(): read beyond limit"));
+          BX_ERROR(("read_virtual_checks(): read beyond limit"));
           exception(int_number(seg), 0, 0);
           return;
         }
@@ -198,7 +200,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
         if ((offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) || ((upper_limit - offset) < (length - 1)))
         {
-          BX_INFO(("read_virtual_checks(): read beyond limit"));
+          BX_ERROR(("read_virtual_checks(): read beyond limit"));
           exception(int_number(seg), 0, 0);
           return;
         }
@@ -212,7 +214,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
         if ((offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) || ((upper_limit - offset) < (length - 1)))
         {
-          BX_INFO(("read_virtual_checks(): read beyond limit"));
+          BX_ERROR(("read_virtual_checks(): read beyond limit"));
           exception(int_number(seg), 0, 0);
           return;
         }
@@ -221,8 +223,8 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
       case 8: case 9: /* execute only */
       case 12: case 13: /* execute only, conforming */
         /* can't read or write an execute-only segment */
-        BX_INFO(("read_virtual_checks(): execute only"));
-        exception(int_number(seg), 0, 0);
+        BX_ERROR(("read_virtual_checks(): execute only"));
+        exception(BX_GP_EXCEPTION, 0, 0);
         return;
     }
     return;
@@ -231,6 +233,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
     if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
         || (length-1 > seg->cache.u.segment.limit_scaled))
     {
+      BX_DEBUG(("read_virtual_checks(): read beyond limit (real mode)"));
       exception(int_number(seg), 0, 0);
     }
     if (seg->cache.u.segment.limit_scaled >= 7) {
@@ -245,13 +248,13 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
 BX_CPU_C::strseg(bx_segment_reg_t *seg)
 {
   if (seg == &BX_CPU_THIS_PTR sregs[0]) return("ES");
-  else if (seg == & BX_CPU_THIS_PTR sregs[1]) return("CS");
-  else if (seg == & BX_CPU_THIS_PTR sregs[2]) return("SS");
+  else if (seg == &BX_CPU_THIS_PTR sregs[1]) return("CS");
+  else if (seg == &BX_CPU_THIS_PTR sregs[2]) return("SS");
   else if (seg == &BX_CPU_THIS_PTR sregs[3]) return("DS");
   else if (seg == &BX_CPU_THIS_PTR sregs[4]) return("FS");
   else if (seg == &BX_CPU_THIS_PTR sregs[5]) return("GS");
   else {
-    BX_ERROR(("undefined segment passed to strseg()!"));
+    BX_PANIC(("undefined segment passed to strseg()!"));
     return("??");
   }
 }
@@ -994,6 +997,7 @@ BX_CPU_C::read_virtual_dqword_aligned(unsigned s, bx_address offset, Bit8u *data
 {
   // If double quadword access is unaligned, #GP(0).
   if (offset & 0xf) {
+    BX_DEBUG(("read_virtual_dqword_aligned: access not aligned to 16-byte"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -1015,6 +1019,7 @@ BX_CPU_C::write_virtual_dqword_aligned(unsigned s, bx_address offset, Bit8u *dat
 {
   // If double quadword access is unaligned, #GP(0).
   if (offset & 0xf) {
+    BX_DEBUG(("write_virtual_dqword_aligned: access not aligned to 16-byte"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 

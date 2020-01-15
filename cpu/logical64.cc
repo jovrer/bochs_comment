@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logical64.cc,v 1.14 2005/06/21 17:01:21 sshwarts Exp $
+// $Id: logical64.cc,v 1.16 2006/03/26 18:58:01 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,6 +27,7 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
+#include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #if BX_SUPPORT_X86_64
@@ -48,7 +49,7 @@ void BX_CPU_C::XOR_EqGq(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = op1_64 ^ op2_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 
   SET_FLAGS_OSZAPC_RESULT_64(result_64, BX_INSTR_LOGIC64);
@@ -109,7 +110,7 @@ void BX_CPU_C::XOR_EqId(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = op1_64 ^ op2_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 
   SET_FLAGS_OSZAPC_RESULT_64(result_64, BX_INSTR_LOGIC64);
@@ -131,7 +132,7 @@ void BX_CPU_C::OR_EqId(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = op1_64 | op2_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 
   SET_FLAGS_OSZAPC_RESULT_64(result_64, BX_INSTR_LOGIC64);
@@ -151,7 +152,7 @@ void BX_CPU_C::NOT_Eq(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = ~op1_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 }
 
@@ -171,7 +172,7 @@ void BX_CPU_C::OR_EqGq(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = op1_64 | op2_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 
   SET_FLAGS_OSZAPC_RESULT_64(result_64, BX_INSTR_LOGIC64);
@@ -230,7 +231,7 @@ void BX_CPU_C::AND_EqGq(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = op1_64 & op2_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 
   SET_FLAGS_OSZAPC_RESULT_64(result_64, BX_INSTR_LOGIC64);
@@ -289,7 +290,7 @@ void BX_CPU_C::AND_EqId(bxInstruction_c *i)
     /* pointer, segment address pair */
     read_RMW_virtual_qword(i->seg(), RMAddr(i), &op1_64);
     result_64 = op1_64 & op2_64;
-    Write_RMW_virtual_qword(result_64);
+    write_RMW_virtual_qword(result_64);
   }
 
   SET_FLAGS_OSZAPC_RESULT_64(result_64, BX_INSTR_LOGIC64);

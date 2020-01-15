@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.cc,v 1.86 2006/01/17 20:16:59 vruppert Exp $
+// $Id: devices.cc,v 1.101 2006/05/27 15:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -27,9 +27,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
+#include "bochs.h"
 #include "iodev.h"
 #define LOG_THIS bx_devices.
-
 
 
 /* main memory size (in Kbytes)
@@ -42,10 +42,8 @@
 bx_devices_c bx_devices;
 
 
-
-
 // constructor for bx_devices_c
-bx_devices_c::bx_devices_c(void)
+bx_devices_c::bx_devices_c()
 {
   put("DEV");
   settype(DEVLOG);
@@ -97,21 +95,17 @@ bx_devices_c::bx_devices_c(void)
 #endif
 }
 
-
-bx_devices_c::~bx_devices_c(void)
+bx_devices_c::~bx_devices_c()
 {
   // nothing needed for now
-  BX_DEBUG(("Exit."));
   timer_handle = BX_NULL_TIMER_HANDLE;
 }
 
-
-  void
-bx_devices_c::init(BX_MEM_C *newmem)
+void bx_devices_c::init(BX_MEM_C *newmem)
 {
   unsigned i;
 
-  BX_DEBUG(("Init $Id: devices.cc,v 1.86 2006/01/17 20:16:59 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: devices.cc,v 1.101 2006/05/27 15:54:48 sshwarts Exp $"));
   mem = newmem;
 
   /* set no-default handlers, will be overwritten by the real default handler */
@@ -146,7 +140,11 @@ bx_devices_c::init(BX_MEM_C *newmem)
 
   for (i=0; i < BX_MAX_IRQS; i++) {
     irq_handler_name[i] = NULL;
-    }
+  }
+
+  // register as soon as possible - the devices want to have their timers !
+  bx_virt_timer.init();
+  bx_slowdown_timer.init();
 
   // BBD: At present, the only difference between "core" and "optional"
   // plugins is that initialization and reset of optional plugins is handled
@@ -165,16 +163,16 @@ bx_devices_c::init(BX_MEM_C *newmem)
   PLUG_load_plugin(harddrv, PLUGTYPE_OPTIONAL);
   PLUG_load_plugin(keyboard, PLUGTYPE_OPTIONAL);
 #if BX_SUPPORT_BUSMOUSE
-  if (bx_options.Omouse_type->get () == BX_MOUSE_TYPE_BUS) {
+  if (SIM->get_param_enum(BXPN_MOUSE_TYPE)->get() == BX_MOUSE_TYPE_BUS) {
     PLUG_load_plugin(busmouse, PLUGTYPE_OPTIONAL);
   }
 #endif
-  if (is_serial_enabled ())
+  if (is_serial_enabled())
     PLUG_load_plugin(serial, PLUGTYPE_OPTIONAL);
-  if (is_parallel_enabled ()) 
+  if (is_parallel_enabled()) 
     PLUG_load_plugin(parallel, PLUGTYPE_OPTIONAL);
   PLUG_load_plugin(extfpuirq, PLUGTYPE_OPTIONAL);
-#if BX_SUPPORT_GAME
+#if BX_SUPPORT_GAMEPORT
   PLUG_load_plugin(gameport, PLUGTYPE_OPTIONAL);
 #endif
   PLUG_load_plugin(speaker, PLUGTYPE_OPTIONAL);
@@ -183,25 +181,29 @@ bx_devices_c::init(BX_MEM_C *newmem)
   pluginUnmapped->init ();
 
   // PCI logic (i440FX)
-  if (bx_options.Oi440FXSupport->get ()) {
+  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
 #if BX_SUPPORT_PCI
     PLUG_load_plugin(pci, PLUGTYPE_CORE);
     PLUG_load_plugin(pci2isa, PLUGTYPE_CORE);
     PLUG_load_plugin(pci_ide, PLUGTYPE_OPTIONAL);
 #if BX_SUPPORT_PCIVGA
     if ((DEV_is_pci_device("pcivga")) &&
-        (!strcmp(bx_options.Ovga_extension->getptr (), "vbe"))) {
+        (!strcmp(SIM->get_param_string(BXPN_VGA_EXTENSION)->getptr(), "vbe"))) {
       PLUG_load_plugin(pcivga, PLUGTYPE_OPTIONAL);
     }
 #endif
 #if BX_SUPPORT_PCIUSB
-    PLUG_load_plugin(pciusb, PLUGTYPE_OPTIONAL);
+    if (is_usb_enabled()) {
+      PLUG_load_plugin(pciusb, PLUGTYPE_OPTIONAL);
+    }
 #endif
 #if BX_SUPPORT_PCIDEV
-    PLUG_load_plugin(pcidev, PLUGTYPE_OPTIONAL);
+    if (SIM->get_param_num(BXPN_PCIDEV_VENDOR)->get() != 0xffff) {
+      PLUG_load_plugin(pcidev, PLUGTYPE_OPTIONAL);
+    }
 #endif
 #if BX_SUPPORT_PCIPNIC
-  if (bx_options.pnic.Oenabled->get ()) {
+  if (SIM->get_param_bool(BXPN_PNIC_ENABLED)->get()) {
     PLUG_load_plugin(pcipnic, PLUGTYPE_OPTIONAL);
   }
 #endif
@@ -211,7 +213,7 @@ bx_devices_c::init(BX_MEM_C *newmem)
   }
 
   // NE2000 NIC
-  if (bx_options.ne2k.Oenabled->get ()) {
+  if (SIM->get_param_bool(BXPN_NE2K_ENABLED)->get()) {
 #if BX_SUPPORT_NE2K
     PLUG_load_plugin(ne2k, PLUGTYPE_OPTIONAL);
 #else
@@ -220,9 +222,9 @@ bx_devices_c::init(BX_MEM_C *newmem)
   }
 
 #if BX_SUPPORT_APIC
-    // I/O APIC 82093AA
-    ioapic = & bx_ioapic;
-    ioapic->init ();
+  // I/O APIC 82093AA
+  ioapic = & bx_ioapic;
+  ioapic->init ();
 #endif
 
   // BIOS log 
@@ -238,7 +240,7 @@ bx_devices_c::init(BX_MEM_C *newmem)
   pluginFloppyDevice->init();
 
   //--- SOUND ---
-  if (bx_options.sb16.Oenabled->get ()) {
+  if (SIM->get_param_bool(BXPN_SB16_ENABLED)->get()) {
 #if BX_SUPPORT_SB16
     PLUG_load_plugin(sb16, PLUGTYPE_OPTIONAL);
 #else
@@ -260,10 +262,6 @@ bx_devices_c::init(BX_MEM_C *newmem)
   /*--- 8254 PIT ---*/
   pit = & bx_pit;
   pit->init();
-
-  bx_virt_timer.init();
-
-  bx_slowdown_timer.init();
 
 #if BX_SUPPORT_IODEBUG
   iodebug = &bx_iodebug;
@@ -301,7 +299,7 @@ bx_devices_c::init(BX_MEM_C *newmem)
   DEV_cmos_set_reg(0x35, (Bit8u) ((extended_memory_in_64k >> 8) & 0xff) );
 
   if (timer_handle != BX_NULL_TIMER_HANDLE) {
-    timer_handle = bx_pc_system.register_timer( this, timer_handler,
+    timer_handle = bx_pc_system.register_timer(this, timer_handler,
       (unsigned) BX_IODEV_HANDLER_PERIOD, 1, 1, "devices.cc");
   }
 
@@ -316,19 +314,18 @@ bx_devices_c::init(BX_MEM_C *newmem)
   DEV_cmos_checksum();
 }
 
-
-  void
-bx_devices_c::reset(unsigned type)
+void bx_devices_c::reset(unsigned type)
 {
+  mem->disable_smram();
   pluginUnmapped->reset(type);
 #if BX_SUPPORT_PCI
-  if (bx_options.Oi440FXSupport->get ()) {
+  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
     pluginPciBridge->reset(type);
     pluginPci2IsaBridge->reset(type);
   }
 #endif
-#if BX_SUPPORT_IOAPIC
-  ioapic->reset (type);
+#if BX_SUPPORT_APIC
+  ioapic->reset(type);
 #endif
   pluginBiosDevice->reset(type);
   pluginCmosDevice->reset(type);
@@ -344,19 +341,52 @@ bx_devices_c::reset(unsigned type)
   bx_reset_plugins(type);
 }
 
+#if BX_SUPPORT_SAVE_RESTORE
+void bx_devices_c::register_state()
+{
+  bx_virt_timer.register_state();
+#if BX_SUPPORT_PCI
+  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
+    pluginPciBridge->register_state();
+    pluginPci2IsaBridge->register_state();
+  }
+#endif
+#if BX_SUPPORT_APIC
+  ioapic->register_state();
+#endif
+  pluginCmosDevice->register_state();
+  pluginDmaDevice->register_state();
+  pluginFloppyDevice->register_state();
+  pluginVgaDevice->register_state();
+  pluginPicDevice->register_state();
+  pit->register_state();
+  // now register state of optional plugins
+  bx_plugins_register_state();
+}
 
-  Bit32u
-bx_devices_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+void bx_devices_c::after_restore_state()
+{
+  bx_slowdown_timer.after_restore_state();
+#if BX_SUPPORT_PCI
+  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
+    pluginPciBridge->after_restore_state();
+    pluginPci2IsaBridge->after_restore_state();
+  }
+#endif
+  pluginCmosDevice->after_restore_state();
+  pluginVgaDevice->after_restore_state();
+  bx_plugins_after_restore_state();
+}
+#endif
+
+Bit32u bx_devices_c::read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
 #if !BX_USE_DEV_SMF
   bx_devices_c *class_ptr = (bx_devices_c *) this_ptr;
-
-  return( class_ptr->port92_read(address, io_len) );
+  return class_ptr->port92_read(address, io_len);
 }
 
-
-  Bit32u
-bx_devices_c::port92_read(Bit32u address, unsigned io_len)
+Bit32u bx_devices_c::port92_read(Bit32u address, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -367,18 +397,14 @@ bx_devices_c::port92_read(Bit32u address, unsigned io_len)
   return(BX_GET_ENABLE_A20() << 1);
 }
 
-
-  void
-bx_devices_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
+void bx_devices_c::write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
 #if !BX_USE_DEV_SMF
   bx_devices_c *class_ptr = (bx_devices_c *) this_ptr;
-
   class_ptr->port92_write(address, value, io_len);
 }
 
-  void
-bx_devices_c::port92_write(Bit32u address, Bit32u value, unsigned io_len)
+void bx_devices_c::port92_write(Bit32u address, Bit32u value, unsigned io_len)
 {
 #else
   UNUSED(this_ptr);
@@ -394,11 +420,9 @@ bx_devices_c::port92_write(Bit32u address, Bit32u value, unsigned io_len)
   }
 }
 
-
 // This defines a no-default read handler, 
 // so Bochs does not segfault if unmapped is not loaded
-  Bit32u
-bx_devices_c::default_read_handler(void *this_ptr, Bit32u address, unsigned io_len)
+Bit32u bx_devices_c::default_read_handler(void *this_ptr, Bit32u address, unsigned io_len)
 {
   UNUSED(this_ptr);
   BX_PANIC(("No default io-read handler found for 0x%04x/%d. Unmapped io-device not loaded ?", address, io_len));
@@ -407,32 +431,27 @@ bx_devices_c::default_read_handler(void *this_ptr, Bit32u address, unsigned io_l
 
 // This defines a no-default write handler, 
 // so Bochs does not segfault if unmapped is not loaded
-  void
-bx_devices_c::default_write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
+void bx_devices_c::default_write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len)
 {
   UNUSED(this_ptr);
   BX_PANIC(("No default io-write handler found for 0x%04x/%d. Unmapped io-device not loaded ?", address, io_len));
 }
 
-  void
-bx_devices_c::timer_handler(void *this_ptr)
+void bx_devices_c::timer_handler(void *this_ptr)
 {
   bx_devices_c *class_ptr = (bx_devices_c *) this_ptr;
-
   class_ptr->timer();
 }
 
-  void
-bx_devices_c::timer()
+void bx_devices_c::timer()
 {
 #if (BX_USE_NEW_PIT==0)
-  if ( pit->periodic( BX_IODEV_HANDLER_PERIOD ) ) {
+  if (pit->periodic(BX_IODEV_HANDLER_PERIOD)) {
     // This is a hack to make the IRQ0 work
     DEV_pic_lower_irq(0);
     DEV_pic_raise_irq(0);
-    }
+  }
 #endif
-
 
   // separate calls to bx_gui->handle_events from the keyboard code.
   {
@@ -440,41 +459,36 @@ bx_devices_c::timer()
     if ( ++multiple==10)
     {
       multiple=0;
-      SIM->periodic ();
-      if (!BX_CPU(0)->kill_bochs_request)
+      SIM->periodic();
+      if (! bx_pc_system.kill_bochs_request)
 	bx_gui->handle_events();
     }
   }
-
-// KPL Removed lapic periodic timer registration here.
 }
 
-
-  bx_bool
-bx_devices_c::register_irq(unsigned irq, const char *name)
+bx_bool bx_devices_c::register_irq(unsigned irq, const char *name)
 {
   if (irq >= BX_MAX_IRQS) {
     BX_PANIC(("IO device %s registered with IRQ=%d above %u",
              name, irq, (unsigned) BX_MAX_IRQS-1));
     return false;
-    }
+  }
   if (irq_handler_name[irq]) {
     BX_PANIC(("IRQ %u conflict, %s with %s", irq,
       irq_handler_name[irq], name));
     return false;
-    }
+  }
   irq_handler_name[irq] = name;
   return true;
 }
 
-  bx_bool
-bx_devices_c::unregister_irq(unsigned irq, const char *name)
+bx_bool bx_devices_c::unregister_irq(unsigned irq, const char *name)
 {
   if (irq >= BX_MAX_IRQS) {
     BX_PANIC(("IO device %s tried to unregister IRQ %d above %u",
              name, irq, (unsigned) BX_MAX_IRQS-1));
     return false;
-    }
+  }
 
   if (!irq_handler_name[irq]) {
     BX_INFO(("IO device %s tried to unregister IRQ %d, not registered",
@@ -486,13 +500,12 @@ bx_devices_c::unregister_irq(unsigned irq, const char *name)
     BX_INFO(("IRQ %u not registered to %s but to %s", irq,
       name, irq_handler_name[irq]));
     return false;
-    }
+  }
   irq_handler_name[irq] = NULL;
   return true;
 }
 
-  bx_bool
-bx_devices_c::register_io_read_handler(void *this_ptr, bx_read_handler_t f,
+bx_bool bx_devices_c::register_io_read_handler(void *this_ptr, bx_read_handler_t f,
                                        Bit32u addr, const char *name, Bit8u mask)
 {
   addr &= 0x0000ffff;
@@ -543,10 +556,7 @@ bx_devices_c::register_io_read_handler(void *this_ptr, bx_read_handler_t f,
   return true; // address mapped successfully
 }
 
-
-
-  bx_bool
-bx_devices_c::register_io_write_handler(void *this_ptr, bx_write_handler_t f,
+bx_bool bx_devices_c::register_io_write_handler(void *this_ptr, bx_write_handler_t f,
                                         Bit32u addr, const char *name, Bit8u mask)
 {
   addr &= 0x0000ffff;
@@ -597,9 +607,7 @@ bx_devices_c::register_io_write_handler(void *this_ptr, bx_write_handler_t f,
   return true; // address mapped successfully
 }
 
-
-  bx_bool
-bx_devices_c::register_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
+bx_bool bx_devices_c::register_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
                                              Bit32u begin_addr, Bit32u end_addr,
                                              const char *name, Bit8u mask)
 {
@@ -662,9 +670,7 @@ bx_devices_c::register_io_read_handler_range(void *this_ptr, bx_read_handler_t f
   return true; // address mapped successfully
 }
 
-
-  bx_bool
-bx_devices_c::register_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
+bx_bool bx_devices_c::register_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
                                               Bit32u begin_addr, Bit32u end_addr,
                                               const char *name, Bit8u mask)
 {
@@ -729,8 +735,7 @@ bx_devices_c::register_io_write_handler_range(void *this_ptr, bx_write_handler_t
 
 
 // Registration of default handlers (mainly be the unmapped device)
-  bx_bool
-bx_devices_c::register_default_io_read_handler(void *this_ptr, bx_read_handler_t f,
+bx_bool bx_devices_c::register_default_io_read_handler(void *this_ptr, bx_read_handler_t f,
                                                const char *name, Bit8u mask)
 {
   io_read_handlers.funct = (void *)f;
@@ -740,10 +745,7 @@ bx_devices_c::register_default_io_read_handler(void *this_ptr, bx_read_handler_t
   return true; 
 }
 
-
-
-  bx_bool
-bx_devices_c::register_default_io_write_handler(void *this_ptr, bx_write_handler_t f,
+bx_bool bx_devices_c::register_default_io_write_handler(void *this_ptr, bx_write_handler_t f,
                                                 const char *name, Bit8u mask)
 {
   io_write_handlers.funct = (void *)f;
@@ -753,9 +755,7 @@ bx_devices_c::register_default_io_write_handler(void *this_ptr, bx_write_handler
   return true; 
 }
 
-
-  bx_bool
-bx_devices_c::unregister_io_read_handler(void *this_ptr, bx_read_handler_t f,
+bx_bool bx_devices_c::unregister_io_read_handler(void *this_ptr, bx_read_handler_t f,
                                          Bit32u addr, Bit8u mask)
 {
   addr &= 0x0000ffff;
@@ -800,9 +800,7 @@ bx_devices_c::unregister_io_read_handler(void *this_ptr, bx_read_handler_t f,
   return true;
 }
 
-
-  bx_bool
-bx_devices_c::unregister_io_write_handler(void *this_ptr, bx_write_handler_t f,
+bx_bool bx_devices_c::unregister_io_write_handler(void *this_ptr, bx_write_handler_t f,
                                           Bit32u addr, Bit8u mask)
 {
   addr &= 0x0000ffff;
@@ -835,9 +833,7 @@ bx_devices_c::unregister_io_write_handler(void *this_ptr, bx_write_handler_t f,
   return true;
 }
 
-
-  bx_bool
-bx_devices_c::unregister_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
+bx_bool bx_devices_c::unregister_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
                                                Bit32u begin, Bit32u end, Bit8u mask)
 {
   begin &= 0x0000ffff;
@@ -855,9 +851,7 @@ bx_devices_c::unregister_io_read_handler_range(void *this_ptr, bx_read_handler_t
   return ret;
 }
 
-
-  bx_bool
-bx_devices_c::unregister_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
+bx_bool bx_devices_c::unregister_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
                                                 Bit32u begin, Bit32u end, Bit8u mask)
 {
   begin &= 0x0000ffff;
@@ -929,28 +923,37 @@ bx_devices_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
   }
 }
 
-bx_bool bx_devices_c::is_serial_enabled ()
+bx_bool bx_devices_c::is_serial_enabled()
 {
+  char pname[24];
+
   for (int i=0; i<BX_N_SERIAL_PORTS; i++) {
-    if (SIM->get_param_bool (BXP_COMx_ENABLED(i+1))->get())
+    sprintf(pname, "ports.serial.%d.enabled", i+1);
+    if (SIM->get_param_bool(pname)->get())
       return true;
   }
   return false;
 }
 
-bx_bool bx_devices_c::is_usb_enabled ()
+bx_bool bx_devices_c::is_usb_enabled()
 {
+  char pname[20];
+
   for (int i=0; i<BX_N_USB_HUBS; i++) {
-    if (SIM->get_param_bool (BXP_USBx_ENABLED(i+1))->get())
+    sprintf(pname, "ports.usb.%d.enabled", i+1);
+    if (SIM->get_param_bool(pname)->get())
        return true;
   }
   return false;
 }
 
-bx_bool bx_devices_c::is_parallel_enabled ()
+bx_bool bx_devices_c::is_parallel_enabled()
 {
+  char pname[26];
+
   for (int i=0; i<BX_N_PARALLEL_PORTS; i++) {
-    if (SIM->get_param_bool (BXP_PARPORTx_ENABLED(i+1))->get())
+    sprintf(pname, "ports.parallel.%d.enabled", i+1);
+    if (SIM->get_param_bool(pname)->get())
       return true;
   }
   return false;
