@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer8.cc 11831 2013-09-24 05:21:00Z sshwarts $
+// $Id: data_xfer8.cc 12516 2014-10-20 21:10:52Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -85,7 +85,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XLAT(bxInstruction_c *i)
 {
 #if BX_SUPPORT_X86_64
   if (i->as64L()) {
-    AL = read_virtual_byte_64(i->seg(), RBX + AL);
+    AL = read_linear_byte(i->seg(), get_laddr64(i->seg(), RBX + AL));
   }
   else
 #endif

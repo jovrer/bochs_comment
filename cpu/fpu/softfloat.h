@@ -266,6 +266,7 @@ float32 float32_sqrt(float32, float_status_t &status);
 float32 float32_frc(float32, float_status_t &status);
 float32 float32_muladd(float32, float32, float32, int flags, float_status_t &status);
 float32 float32_scalef(float32, float32, float_status_t &status);
+int float32_compare(float32, float32, int quiet, float_status_t &status);
 
 BX_CPP_INLINE float32 float32_round_to_int(float32 a, float_status_t &status)
 {
@@ -292,8 +293,15 @@ BX_CPP_INLINE float32 float32_fnmsub(float32 a, float32 b, float32 c, float_stat
   return float32_muladd(a, b, c, float_muladd_negate_result, status);
 }
 
-int float32_compare(float32, float32, float_status_t &status);
-int float32_compare_quiet(float32, float32, float_status_t &status);
+BX_CPP_INLINE int float32_compare(float32 a, float32 b, float_status_t &status)
+{
+  return float32_compare(a, b, 0, status);
+}
+
+BX_CPP_INLINE int float32_compare_quiet(float32 a, float32 b, float_status_t &status)
+{
+  return float32_compare(a, b, 1, status);
+}
 
 float_class_t float32_class(float32);
 int float32_is_signaling_nan(float32);
@@ -303,6 +311,7 @@ int float32_is_denormal(float32);
 float32 float32_min(float32 a, float32 b, float_status_t &status);
 float32 float32_max(float32 a, float32 b, float_status_t &status);
 
+float32 float32_minmax(float32 a, float32 b, int is_max, int is_abs, float_status_t &status);
 float32 float32_getexp(float32 a, float_status_t &status);
 float32 float32_getmant(float32 a, float_status_t &status, int sign_ctrl, int interv);
 
@@ -332,6 +341,7 @@ float64 float64_sqrt(float64, float_status_t &status);
 float64 float64_frc(float64, float_status_t &status);
 float64 float64_muladd(float64, float64, float64, int flags, float_status_t &status);
 float64 float64_scalef(float64, float64, float_status_t &status);
+int float64_compare(float64, float64, int quiet, float_status_t &status);
 
 BX_CPP_INLINE float64 float64_round_to_int(float64 a, float_status_t &status)
 {
@@ -358,8 +368,15 @@ BX_CPP_INLINE float64 float64_fnmsub(float64 a, float64 b, float64 c, float_stat
   return float64_muladd(a, b, c, float_muladd_negate_result, status);
 }
 
-int float64_compare(float64, float64, float_status_t &status);
-int float64_compare_quiet(float64, float64, float_status_t &status);
+BX_CPP_INLINE int float64_compare(float64 a, float64 b, float_status_t &status)
+{
+  return float64_compare(a, b, 0, status);
+}
+
+BX_CPP_INLINE int float64_compare_quiet(float64 a, float64 b, float_status_t &status)
+{
+  return float64_compare(a, b, 1, status);
+}
 
 float_class_t float64_class(float64);
 int float64_is_signaling_nan(float64);
@@ -369,6 +386,7 @@ int float64_is_denormal(float64);
 float64 float64_min(float64 a, float64 b, float_status_t &status);
 float64 float64_max(float64 a, float64 b, float_status_t &status);
 
+float64 float64_minmax(float64 a, float64 b, int is_max, int is_abs, float_status_t &status);
 float64 float64_getexp(float64 a, float_status_t &status);
 float64 float64_getmant(float64 a, float_status_t &status, int sign_ctrl, int interv);
 

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc 12079 2013-12-29 08:45:28Z vruppert $
+// $Id: main.cc 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,7 +22,7 @@
 #include "bxversion.h"
 #include "param_names.h"
 #include "gui/textconfig.h"
-#if BX_USE_TEXTCONFIG && defined(WIN32) && (BX_WITH_WIN32 || BX_WITH_SDL)
+#if BX_USE_WIN32CONFIG
 #include "gui/win32dialog.h"
 #endif
 #include "cpu/cpu.h"
@@ -32,7 +32,7 @@
 #include <locale.h>
 #endif
 
-#if BX_WITH_SDL
+#if BX_WITH_SDL || BX_WITH_SDL2
 // since SDL redefines main() to SDL_main(), we must include SDL.h so that the
 // C language prototype is found.  Otherwise SDL_main() will get its name
 // mangled and not match what the SDL library is expecting.
@@ -234,6 +234,53 @@ void print_tree(bx_param_c *node, int level)
 }
 #endif
 
+#if BX_ENABLE_STATISTICS
+void print_statistics_tree(bx_param_c *node, int level)
+{
+  for (int i=0; i<level; i++)
+    printf("  ");
+  if (node == NULL) {
+      printf("NULL pointer\n");
+      return;
+  }
+  switch (node->get_type()) {
+    case BXT_PARAM_NUM:
+      {
+        bx_param_num_c* param = (bx_param_num_c*) node;
+        printf("%s = " FMT_LL "d\n", node->get_name(), param->get64());
+        param->set(0); // clear the statistic
+      }
+      break;
+    case BXT_PARAM_BOOL:
+      BX_PANIC(("boolean statistics are not supported !"));
+      break;
+    case BXT_PARAM_ENUM:
+      BX_PANIC(("enum statistics are not supported !"));
+      break;
+    case BXT_PARAM_STRING:
+      BX_PANIC(("string statistics are not supported !"));
+      break;
+    case BXT_LIST:
+      {
+        bx_list_c *list = (bx_list_c*)node;
+        if (list->get_size() > 0) {
+          printf("%s = \n", node->get_name());
+          for (int i=0; i < list->get_size(); i++) {
+            print_statistics_tree(list->get(i), level+1);
+          }
+        }
+        break;
+      }
+    case BXT_PARAM_DATA:
+      BX_PANIC(("binary data statistics are not supported !"));
+      break;
+    default:
+      BX_PANIC(("%s (unknown parameter type)\n", node->get_name()));
+      break;
+  }
+}
+#endif
+
 int bxmain(void)
 {
 #ifdef HAVE_LOCALE_H
@@ -261,7 +308,7 @@ int bxmain(void)
 #endif
     }
     else if (!strcmp(ci_name, "win32config")) {
-#if BX_USE_TEXTCONFIG && defined(WIN32) && (BX_WITH_WIN32 || BX_WITH_SDL)
+#if BX_USE_WIN32CONFIG
       init_win32_config_interface();
 #else
       BX_PANIC(("configuration interface 'win32config' not present"));
@@ -385,7 +432,7 @@ int split_string_into_argv(char *string, int *argc_out, char **argv, int max_arg
 }
 #endif /* if defined(__WXMSW__) */
 
-#if defined(__WXMSW__) || (BX_WITH_SDL && defined(WIN32))
+#if defined(__WXMSW__) || ((BX_WITH_SDL || BX_WITH_SDL2) && defined(WIN32))
 // The RedirectIOToConsole() function is copied from an article called "Adding
 // Console I/O to a Win32 GUI App" in Windows Developer Journal, December 1997.
 // It creates a console window.
@@ -423,7 +470,7 @@ int RedirectIOToConsole()
   setvbuf(stderr, NULL, _IONBF, 0);
   return 1;
 }
-#endif  /* if defined(__WXMSW__) || (BX_WITH_SDL && defined(WIN32)) */
+#endif  /* if defined(__WXMSW__) || ((BX_WITH_SDL || BX_WITH_SDL2) && defined(WIN32)) */
 
 #if defined(__WXMSW__)
 // only used for wxWidgets/win32.
@@ -482,7 +529,7 @@ int CDECL main(int argc, char *argv[])
   if (bx_noconsole) {
     FreeConsole();
   } else {
-#if BX_WITH_SDL
+#if BX_WITH_SDL || BX_WITH_SDL2
     // if SDL/win32, try to create a console window.
     if (!RedirectIOToConsole()) {
       return 1;
@@ -502,7 +549,10 @@ void print_usage(void)
     "  -n               no configuration file\n"
     "  -f configfile    specify configuration file\n"
     "  -q               quick start (skip configuration interface)\n"
-    "  -benchmark n     run bochs in benchmark mode for millions of emulated ticks\n"
+    "  -benchmark N     run bochs in benchmark mode for N millions of emulated ticks\n"
+#if BX_ENABLE_STATISTICS
+    "  -dumpstats N     dump bochs stats every N millions of emulated ticks\n"
+#endif
     "  -r path          restore the Bochs state from path\n"
     "  -log filename    specify Bochs log file name\n"
 #if BX_DEBUGGER
@@ -647,6 +697,12 @@ int bx_init_main(int argc, char *argv[])
       if (++arg >= argc) BX_PANIC(("-benchmark must be followed by a number"));
       else SIM->get_param_num(BXPN_BOCHS_BENCHMARK)->set(atoi(argv[arg]));
     }
+#if BX_ENABLE_STATISTICS
+    else if (!strcmp("-dumpstats", argv[arg])) {
+      if (++arg >= argc) BX_PANIC(("-dumpstats must be followed by a number"));
+      else SIM->get_param_num(BXPN_DUMP_STATS)->set(atoi(argv[arg]));
+    }
+#endif
     else if (!strcmp("-r", argv[arg])) {
       if (++arg >= argc) BX_PANIC(("-r must be followed by a path"));
       else {
@@ -796,6 +852,7 @@ int bx_init_main(int argc, char *argv[])
   // load pre-defined optional plugins before parsing configuration
   SIM->opt_plugin_ctrl("*", 1);
   SIM->init_save_restore();
+  SIM->init_statistics();
   if (load_rcfile) {
     // parse configuration file and command line arguments
 #ifdef WIN32
@@ -897,6 +954,10 @@ bx_bool load_and_init_display_lib(void)
 #if BX_WITH_SDL
   if (!strcmp(gui_name, "sdl"))
     PLUG_load_plugin (sdl, PLUGTYPE_OPTIONAL);
+#endif
+#if BX_WITH_SDL2
+  if (!strcmp(gui_name, "sdl2"))
+    PLUG_load_plugin (sdl2, PLUGTYPE_OPTIONAL);
 #endif
 #if BX_WITH_SVGA
   if (!strcmp(gui_name, "svga"))
@@ -1238,8 +1299,18 @@ void bx_init_hardware()
   if (benchmark_mode) {
     BX_INFO(("Bochs benchmark mode is ON (~%d millions of ticks)", benchmark_mode));
     bx_pc_system.register_timer_ticks(&bx_pc_system, bx_pc_system_c::benchmarkTimer,
-        (Bit64u) benchmark_mode * 1000000, 0, 1, "benchmark.timer");
+        (Bit64u) benchmark_mode * 1000000, 0 /* one shot */, 1, "benchmark.timer");
   }
+
+#if BX_ENABLE_STATISTICS
+  // set periodic timer for dumping statistics collected during Bochs run
+  int dumpstats = SIM->get_param_num(BXPN_DUMP_STATS)->get();
+  if (dumpstats) {
+    BX_INFO(("Dump statistics every %d millions of ticks", dumpstats));
+    bx_pc_system.register_timer_ticks(&bx_pc_system, bx_pc_system_c::dumpStatsTimer,
+        (Bit64u) dumpstats * 1000000, 1 /* continuous */, 1, "dumpstats.timer");
+  }
+#endif
 
   // set up memory and CPU objects
   bx_param_num_c *bxp_memsize = SIM->get_param_num(BXPN_MEM_SIZE);
@@ -1385,6 +1456,7 @@ int bx_atexit(void)
 #endif
 
   SIM->cleanup_save_restore();
+  SIM->cleanup_statistics();
   SIM->set_init_done(0);
 
   return 0;

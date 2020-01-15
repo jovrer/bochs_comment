@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmcs.cc 11641 2013-02-24 20:22:22Z sshwarts $
+// $Id: vmcs.cc 12481 2014-08-31 20:05:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2013 Stanislav Shwartsman
+//   Copyright (c) 2009-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -149,7 +149,7 @@ bx_bool BX_CPU_C::vmcs_field_supported(Bit32u encoding)
 
 #if BX_SUPPORT_X86_64
     case VMCS_32BIT_CONTROL_TPR_THRESHOLD:
-      if (bx_cpuid_support_x86_64())
+      if (is_cpu_extension_supported(BX_ISA_LONG_MODE))
         return BX_SUPPORT_VMX_EXTENSION(BX_VMX_TPR_SHADOW);
       else
         return 0;
@@ -235,7 +235,7 @@ bx_bool BX_CPU_C::vmcs_field_supported(Bit32u encoding)
 #if BX_SUPPORT_X86_64
     case VMCS_64BIT_CONTROL_VIRTUAL_APIC_PAGE_ADDR:
     case VMCS_64BIT_CONTROL_VIRTUAL_APIC_PAGE_ADDR_HI:
-      if (bx_cpuid_support_x86_64())
+      if (is_cpu_extension_supported(BX_ISA_LONG_MODE))
         return BX_SUPPORT_VMX_EXTENSION(BX_VMX_TPR_SHADOW);
       else
         return 0;
@@ -483,7 +483,7 @@ void BX_CPU_C::init_vmx_capabilities(void)
 #if BX_SUPPORT_X86_64
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_TPR_SHADOW)) {
     cap->vmx_proc_vmexec_ctrl_supported_bits |= VMX_VM_EXEC_CTRL2_TPR_SHADOW;
-    if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_LONG_MODE))
+    if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_LONG_MODE))
       cap->vmx_proc_vmexec_ctrl_supported_bits |=
           VMX_VM_EXEC_CTRL2_CR8_WRITE_VMEXIT | VMX_VM_EXEC_CTRL2_CR8_READ_VMEXIT;
   }
@@ -594,7 +594,7 @@ void BX_CPU_C::init_vmx_capabilities(void)
       VMX_VMEXIT_CTRL1_INTA_ON_VMEXIT | VMX_VMEXIT_CTRL1_SAVE_DBG_CTRLS;
 
 #if BX_SUPPORT_X86_64
-  if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_LONG_MODE))
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_LONG_MODE))
     cap->vmx_vmexit_ctrl_supported_bits |= VMX_VMEXIT_CTRL1_HOST_ADDR_SPACE_SIZE;
 #endif
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_PERF_GLOBAL_CTRL))
@@ -630,7 +630,7 @@ void BX_CPU_C::init_vmx_capabilities(void)
                                          VMX_VMENTRY_CTRL1_DEACTIVATE_DUAL_MONITOR_TREATMENT;
 
 #if BX_SUPPORT_X86_64
-  if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_LONG_MODE))
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_LONG_MODE))
     cap->vmx_vmentry_ctrl_supported_bits |= VMX_VMENTRY_CTRL1_X86_64_GUEST;
 #endif
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_PERF_GLOBAL_CTRL))
@@ -664,7 +664,7 @@ void BX_CPU_C::init_vmx_capabilities(void)
 
   if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT)) {
     cap->vmx_ept_vpid_cap_supported_bits = BX_CONST64(0x06114141);
-    if (bx_cpuid_support_1g_paging())
+    if (is_cpu_extension_supported(BX_ISA_1G_PAGES))
       cap->vmx_ept_vpid_cap_supported_bits |= (1 << 17);
     if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT_ACCESS_DIRTY))
       cap->vmx_ept_vpid_cap_supported_bits |= (1 << 21);

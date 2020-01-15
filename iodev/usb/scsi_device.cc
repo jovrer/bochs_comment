@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: scsi_device.cc 12159 2014-01-31 18:49:10Z vruppert $
+// $Id: scsi_device.cc 12409 2014-07-09 15:39:47Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  SCSI emulation layer (ported from QEMU)
@@ -228,7 +228,7 @@ bx_bool scsi_device_t::save_requests(const char *path)
       while (r != NULL) {
         fprintf(fp, "%u = {\n", i);
         fprintf(fp, "  tag = %u\n", r->tag);
-        fprintf(fp, "  sector = "FMT_LL"u\n", r->sector);
+        fprintf(fp, "  sector = " FMT_LL "u\n", r->sector);
         fprintf(fp, "  sector_count = %u\n", r->sector_count);
         fprintf(fp, "  buf_len = %d\n", r->buf_len);
         fprintf(fp, "  status = %u\n", r->status);

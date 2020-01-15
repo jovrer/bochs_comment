@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei5_lynnfield_750.cc 12241 2014-03-15 19:24:42Z sshwarts $
+// $Id: corei5_lynnfield_750.cc 12506 2014-10-15 14:25:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -40,6 +40,49 @@ corei5_lynnfield_750_t::corei5_lynnfield_750_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
   if (! BX_SUPPORT_MONITOR_MWAIT)
     BX_INFO(("WARNING: MONITOR/MWAIT support is not compiled in !"));
+
+  static Bit8u supported_extensions[] = {
+      BX_ISA_X87,
+      BX_ISA_486,
+      BX_ISA_PENTIUM,
+      BX_ISA_MMX,
+      BX_ISA_P6,
+      BX_ISA_SYSENTER_SYSEXIT,
+      BX_ISA_SSE,
+      BX_ISA_SSE2,
+      BX_ISA_SSE3,
+      BX_ISA_SSSE3,
+      BX_ISA_SSE4_1,
+      BX_ISA_SSE4_2,
+      BX_ISA_POPCNT,
+#if BX_SUPPORT_MONITOR_MWAIT
+      BX_ISA_MONITOR_MWAIT,
+#endif
+#if BX_SUPPORT_VMX >= 2
+      BX_ISA_VMX,
+#endif
+      BX_ISA_SMX,
+      BX_ISA_CLFLUSH,
+      BX_ISA_DEBUG_EXTENSIONS,
+      BX_ISA_VME,
+      BX_ISA_PSE,
+      BX_ISA_PAE,
+      BX_ISA_PGE,
+#if BX_PHY_ADDRESS_LONG
+      BX_ISA_PSE36,
+#endif
+      BX_ISA_MTRR,
+      BX_ISA_PAT,
+      BX_ISA_XAPIC,
+      BX_ISA_LONG_MODE,
+      BX_ISA_LM_LAHF_SAHF,
+      BX_ISA_NX,
+      BX_ISA_CMPXCHG16B,
+      BX_ISA_RDTSCP,
+      BX_ISA_EXTENSION_LAST
+  };
+
+  register_cpu_extensions(supported_extensions);
 }
 
 void corei5_lynnfield_750_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -108,49 +151,6 @@ void corei5_lynnfield_750_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction,
     get_std_cpuid_extended_topology_leaf(subfunction, leaf);
     return;
   }
-}
-
-Bit64u corei5_lynnfield_750_t::get_isa_extensions_bitmask(void) const
-{
-  return BX_ISA_X87 |
-         BX_ISA_486 |
-         BX_ISA_PENTIUM |
-         BX_ISA_P6 |
-         BX_ISA_MMX |
-         BX_ISA_SYSENTER_SYSEXIT |
-         BX_ISA_CLFLUSH |
-         BX_ISA_SSE |
-         BX_ISA_SSE2 |
-         BX_ISA_SSE3 |
-         BX_ISA_SSSE3 |
-         BX_ISA_SSE4_1 |
-         BX_ISA_SSE4_2 |
-         BX_ISA_POPCNT |
-#if BX_SUPPORT_MONITOR_MWAIT
-         BX_ISA_MONITOR_MWAIT |
-#endif
-#if BX_SUPPORT_VMX >= 2
-         BX_ISA_VMX |
-#endif
-         BX_ISA_SMX |
-         BX_ISA_RDTSCP |
-         BX_ISA_CMPXCHG16B |
-         BX_ISA_LM_LAHF_SAHF;
-}
-
-Bit32u corei5_lynnfield_750_t::get_cpu_extensions_bitmask(void) const
-{
-  return BX_CPU_DEBUG_EXTENSIONS |
-         BX_CPU_VME |
-         BX_CPU_PSE |
-         BX_CPU_PAE |
-         BX_CPU_PGE |
-         BX_CPU_PSE36 |
-         BX_CPU_MTRR |
-         BX_CPU_PAT |
-         BX_CPU_XAPIC |
-         BX_CPU_LONG_MODE |
-         BX_CPU_NX;
 }
 
 #if BX_SUPPORT_VMX >= 2
@@ -470,92 +470,42 @@ void corei5_lynnfield_750_t::get_std_cpuid_leaf_6(cpuid_function_t *leaf) const
 void corei5_lynnfield_750_t::get_std_cpuid_leaf_A(cpuid_function_t *leaf) const
 {
   // CPUID function 0x0000000A - Architectural Performance Monitoring Leaf
-/*
+
+  // EAX:
+  //   [7:0] Version ID of architectural performance monitoring
+  //  [15:8] Number of general-purpose performance monitoring counters per logical processor
+  // [23:16] Bit width of general-purpose, performance monitoring counter
+  // [31:24] Length of EBX bit vector to enumerate architectural performance
+  //         monitoring events.
+
+  // EBX:
+  //     [0] Core cycle event not available if 1
+  //     [1] Instruction retired event not available if 1
+  //     [2] Reference cycles event not available if 1
+  //     [3] Last-level cache reference event not available if 1
+  //     [4] Last-level cache misses event not available if 1
+  //     [5] Branch instruction retired event not available if 1
+  //     [6] Branch mispredict retired event not available if 1
+  //  [31:7] reserved
+
+  // ECX: reserved
+
+  // EDX:
+  //   [4:0] Number of fixed performance counters (if Version ID > 1)
+  //  [12:5] Bit width of fixed-function performance counters (if Version ID > 1)
+  // [31:13] reserved
+
   leaf->eax = 0x07300403;
   leaf->ebx = 0x00000044;
   leaf->ecx = 0x00000000;
   leaf->edx = 0x00000603;
-*/
-  leaf->eax = 0; // reporting true capabilities breaks Win7 x64 installation
+/*
+  leaf->eax = 0; // reporting true capabilities without supporting it breaks Win7 x64 installation
   leaf->ebx = 0;
   leaf->ecx = 0;
   leaf->edx = 0;
-
+*/
   BX_INFO(("WARNING: Architectural Performance Monitoring is not implemented"));
-}
-
-BX_CPP_INLINE static Bit32u ilog2(Bit32u x)
-{
-  Bit32u count = 0;
-  while(x>>=1) count++;
-  return count;
-}
-
-// leaf 0x0000000B //
-void corei5_lynnfield_750_t::get_std_cpuid_extended_topology_leaf(Bit32u subfunction, cpuid_function_t *leaf) const
-{
-  // CPUID function 0x0000000B - Extended Topology Leaf
-  leaf->eax = 0;
-  leaf->ebx = 0;
-  leaf->ecx = subfunction;
-  leaf->edx = cpu->get_apic_id();
-
-#if BX_SUPPORT_SMP
-  switch(subfunction) {
-  case 0:
-     if (nthreads > 1) {
-        leaf->eax = ilog2(nthreads-1)+1;
-        leaf->ebx = nthreads;
-        leaf->ecx |= (1<<8);
-     }
-     else if (ncores > 1) {
-        leaf->eax = ilog2(ncores-1)+1;
-        leaf->ebx = ncores;
-        leaf->ecx |= (2<<8);
-     }
-     else if (nprocessors > 1) {
-        leaf->eax = ilog2(nprocessors-1)+1;
-        leaf->ebx = nprocessors;
-     }
-     else {
-        leaf->eax = 1;
-        leaf->ebx = 1; // number of logical CPUs at this level
-     }
-     break;
-
-  case 1:
-     if (nthreads > 1) {
-        if (ncores > 1) {
-           leaf->eax = ilog2(ncores-1)+1;
-           leaf->ebx = ncores;
-           leaf->ecx |= (2<<8);
-        }
-        else if (nprocessors > 1) {
-           leaf->eax = ilog2(nprocessors-1)+1;
-           leaf->ebx = nprocessors;
-        }
-     }
-     else if (ncores > 1) {
-        if (nprocessors > 1) {
-           leaf->eax = ilog2(nprocessors-1)+1;
-           leaf->ebx = nprocessors;
-        }
-     }
-     break;
-
-  case 2:
-     if (nthreads > 1) {
-        if (nprocessors > 1) {
-           leaf->eax = ilog2(nprocessors-1)+1;
-           leaf->ebx = nprocessors;
-        }
-     }
-     break;
-
-  default:
-     break;
-  }
-#endif
 }
 
 // leaf 0x80000000 //
@@ -657,18 +607,7 @@ void corei5_lynnfield_750_t::get_ext_cpuid_leaf_8(cpuid_function_t *leaf) const
 
 void corei5_lynnfield_750_t::dump_cpuid(void) const
 {
-  struct cpuid_function_t leaf;
-  unsigned n;
-
-  for (n=0; n<=0xb; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
-
-  for (n=0x80000000; n<=0x80000008; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
+  bx_cpuid_t::dump_cpuid(0xB, 0x8);
 }
 
 bx_cpuid_t *create_corei5_lynnfield_750_cpuid(BX_CPU_C *cpu) { return new corei5_lynnfield_750_t(cpu); }

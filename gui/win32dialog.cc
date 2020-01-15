@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc 12010 2013-12-08 21:22:50Z vruppert $
+// $Id: win32dialog.cc 12381 2014-06-20 09:31:56Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2003-2013  The Bochs Project
+//  Copyright (C) 2003-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -20,7 +20,7 @@
 
 #include "win32dialog.h"
 
-#if BX_USE_TEXTCONFIG && defined(WIN32) && (BX_WITH_WIN32 || BX_WITH_SDL)
+#if BX_USE_WIN32CONFIG
 
 #include "bochs.h"
 #include "param_names.h"
@@ -698,4 +698,4 @@ int init_win32_config_interface()
   return 0;  // success
 }
 
-#endif // BX_USE_TEXTCONFIG && defined(WIN32)
+#endif // BX_USE_WIN32CONFIG

@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c 11761 2013-08-02 15:59:49Z vruppert $
+// $Id: rombios.c 12412 2014-07-10 07:28:59Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -927,9 +921,9 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 11761 $ $Date: 2013-08-02 17:59:49 +0200 (Fr, 02. Aug 2013) $";
+static char bios_cvs_version_string[] = "$Revision: 12412 $ $Date: 2014-07-10 09:28:59 +0200 (Do, 10. Jul 2014) $";
 
-#define BIOS_COPYRIGHT_STRING "(c) 2002-2010 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
+#define BIOS_COPYRIGHT_STRING "(c) 2001-2014  The Bochs Project"
 
 #if DEBUG_ATA
 #  define BX_DEBUG_ATA(a...) BX_DEBUG(a)
@@ -5351,16 +5345,22 @@ BX_DEBUG_INT74("int74: read byte %02x\n", in_byte);
 
   if (index >= package_count) {
 BX_DEBUG_INT74("int74_function: make_farcall=1\n");
-    status = read_byte_DS(&EbdaData->mouse_data[0]);
-    X      = read_byte_DS(&EbdaData->mouse_data[1]);
-    Y      = read_byte_DS(&EbdaData->mouse_data[2]);
-    Z      = 0;
+    if (package_count == 3) {
+      status = read_byte_DS(&EbdaData->mouse_data[0]);
+      status |= ((Bit16u)read_byte_DS(&EbdaData->mouse_data[1])) << 8;
+      X      = read_byte_DS(&EbdaData->mouse_data[2]);
+      Y      = read_byte_DS(&EbdaData->mouse_data[3]);
+    } else {
+      status = read_byte_DS(&EbdaData->mouse_data[0]);
+      X      = read_byte_DS(&EbdaData->mouse_data[1]);
+      Y      = read_byte_DS(&EbdaData->mouse_data[2]);
+    }
+    Z = 0;
     mouse_flags_1 = 0;
     // check if far call handler installed
     if (mouse_flags_2 & 0x80)
       make_farcall = 1;
-    }
-  else {
+  } else {
     mouse_flags_1++;
   }
   write_byte_DS(&EbdaData->mouse_flag1, mouse_flags_1);

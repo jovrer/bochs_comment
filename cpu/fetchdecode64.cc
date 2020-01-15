@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode64.cc 12352 2014-06-01 10:46:17Z sshwarts $
+// $Id: fetchdecode64.cc 12476 2014-08-31 18:39:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -2164,7 +2164,7 @@ modrm_done:
   if (lock) { // lock prefix invalid opcode
     // lock prefix not allowed or destination operand is not memory
     if (!mod_mem || !(attr & BxLockable)) {
-      if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_ALT_MOV_CR8) && 
+      if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_ALT_MOV_CR8) && 
          (ia_opcode == BX_IA_MOV_CR0Rq || ia_opcode == BX_IA_MOV_RqCR0)) {
         nnn = 8; // extend CR0 -> CR8
       }
@@ -2325,7 +2325,8 @@ modrm_done:
         i->setSrcReg(n, (type == BX_VMM_REG) ? BX_VECTOR_TMP_REGISTER : BX_TMP_REGISTER);
 #if BX_SUPPORT_EVEX
         if (b1 == 0x62 && displ8) {
-          if (type == BX_GPR32) i->modRMForm.displ32u *= 4;
+          if (type == BX_GPR16) i->modRMForm.displ32u *= 2;
+          else if (type == BX_GPR32) i->modRMForm.displ32u *= 4;
           else if (type == BX_GPR64) i->modRMForm.displ32u *= 8;
         }
 #endif

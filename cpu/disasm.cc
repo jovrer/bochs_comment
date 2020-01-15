@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: disasm.cc 12300 2014-04-29 18:49:38Z sshwarts $
+// $Id: disasm.cc 12410 2014-07-09 16:08:16Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2013-2014 Stanislav Shwartsman
@@ -353,7 +353,7 @@ char* disasm(char *disbufptr, const bxInstruction_c *i, bx_address cs_base, bx_a
         case BX_IMM_BrOff32:
           disbufptr = dis_sprintf(disbufptr, ".%+d", (Bit32s) i->Id());
           if (cs_base != BX_JUMP_TARGET_NOT_REQ) {
-            Bit32u target = rip + i->ilen() + (Bit32s) i->Id();
+            Bit32u target = (Bit32u)(rip + i->ilen() + (Bit32s) i->Id());
             disbufptr = dis_sprintf(disbufptr, " (0x%08x)", (Bit32u) (cs_base + target));
           }
           break;

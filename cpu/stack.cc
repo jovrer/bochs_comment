@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack.cc 11751 2013-07-24 18:56:37Z sshwarts $
+// $Id: stack.cc 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2012-2013 Stanislav Shwartsman
+//   Copyright (c) 2012-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -26,10 +26,14 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+#include "cpustats.h"
+
 void BX_CPP_AttrRegparmN(2) BX_CPU_C::stackPrefetch(bx_address offset, unsigned len)
 {
   bx_address laddr;
   unsigned pageOffset;
+
+  INC_STACK_PREFETCH_STAT(stackPrefetch);
 
   BX_CPU_THIS_PTR espHostPtr = 0; // initialize with NULL pointer
   BX_CPU_THIS_PTR espPageWindowSize = 0;
@@ -51,7 +55,7 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::stackPrefetch(bx_address offset, unsigned 
   else
 #endif
   {
-    laddr = get_laddr32(BX_SEG_REG_SS, offset);
+    laddr = get_laddr32(BX_SEG_REG_SS, (Bit32u) offset);
     pageOffset = PAGE_OFFSET(laddr);
     if (pageOffset + len >= 4096) // don't care for page split accesses
       return;

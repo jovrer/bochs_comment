@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer16.cc 11831 2013-09-24 05:21:00Z sshwarts $
+// $Id: data_xfer16.cc 12498 2014-10-12 19:31:14Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -35,15 +35,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EwIwM(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EwIwR(bxInstruction_c *i)
 {
   BX_WRITE_16BIT_REG(i->dst(), i->Iw());
-
-  BX_NEXT_INSTR(i);
-}
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XCHG_RXAX(bxInstruction_c *i)
-{
-  Bit16u temp16 = AX;
-  AX = BX_READ_16BIT_REG(i->dst());
-  BX_WRITE_16BIT_REG(i->dst(), temp16);
 
   BX_NEXT_INSTR(i);
 }

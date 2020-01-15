@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: trinity_apu.cc 12242 2014-03-15 20:19:30Z sshwarts $
+// $Id: trinity_apu.cc 12505 2014-10-15 08:04:38Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2014 Stanislav Shwartsman
@@ -42,6 +42,65 @@ trinity_apu_t::trinity_apu_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
   if (! BX_SUPPORT_MONITOR_MWAIT)
     BX_INFO(("WARNING: MONITOR/MWAIT support is not compiled in !"));
+
+  static Bit8u supported_extensions[] = {
+      BX_ISA_X87,
+      BX_ISA_486,
+      BX_ISA_PENTIUM,
+      BX_ISA_P6,
+      BX_ISA_MMX,
+      BX_ISA_SYSCALL_SYSRET_LEGACY,
+      BX_ISA_SYSENTER_SYSEXIT,
+      BX_ISA_CLFLUSH,
+      BX_ISA_DEBUG_EXTENSIONS,
+      BX_ISA_VME,
+      BX_ISA_PSE,
+      BX_ISA_PAE,
+      BX_ISA_PGE,
+#if BX_PHY_ADDRESS_LONG
+      BX_ISA_PSE36,
+#endif
+      BX_ISA_MTRR,
+      BX_ISA_PAT,
+      BX_ISA_XAPIC,
+      BX_ISA_LONG_MODE,
+      BX_ISA_LM_LAHF_SAHF,
+      BX_ISA_CMPXCHG16B,
+      BX_ISA_NX,
+      BX_ISA_SSE,
+      BX_ISA_SSE2,
+      BX_ISA_SSE3,
+      BX_ISA_SSSE3,
+      BX_ISA_SSE4_1,
+      BX_ISA_SSE4_2,
+      BX_ISA_LZCNT,
+      BX_ISA_POPCNT,
+      BX_ISA_SSE4A,
+#if BX_SUPPORT_MONITOR_MWAIT
+      BX_ISA_MONITOR_MWAIT,
+#endif
+      BX_ISA_RDTSCP,
+      BX_ISA_XSAVE,
+      BX_ISA_AES_PCLMULQDQ,
+      BX_ISA_AVX,
+      BX_ISA_AVX_F16C,
+      BX_ISA_AVX_FMA,
+      BX_ISA_FMA4,
+      BX_ISA_XOP,
+      BX_ISA_TBM,
+      BX_ISA_BMI1,
+#if BX_SUPPORT_SVM
+      BX_ISA_SVM,
+#endif
+      BX_ISA_FFXSR,
+      BX_ISA_1G_PAGES,
+      BX_ISA_MISALIGNED_SSE,
+      BX_ISA_ALT_MOV_CR8,
+      BX_ISA_XAPIC_EXT,
+      BX_ISA_EXTENSION_LAST
+  };
+
+  register_cpu_extensions(supported_extensions);
 }
 
 void trinity_apu_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -123,65 +182,6 @@ void trinity_apu_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_fu
     get_reserved_leaf(leaf);
     return;
   }
-}
-
-Bit64u trinity_apu_t::get_isa_extensions_bitmask(void) const
-{
-  return BX_ISA_X87 |
-         BX_ISA_486 |
-         BX_ISA_PENTIUM |
-         BX_ISA_P6 |
-         BX_ISA_MMX |
-         BX_ISA_SYSCALL_SYSRET_LEGACY |
-         BX_ISA_SYSENTER_SYSEXIT |
-         BX_ISA_CLFLUSH |
-         BX_ISA_SSE |
-         BX_ISA_SSE2 |
-         BX_ISA_SSE3 |
-         BX_ISA_SSSE3 |
-         BX_ISA_SSE4_1 |
-         BX_ISA_SSE4_2 |
-         BX_ISA_POPCNT |
-#if BX_SUPPORT_MONITOR_MWAIT
-         BX_ISA_MONITOR_MWAIT |
-#endif
-         BX_ISA_LM_LAHF_SAHF |
-         BX_ISA_CMPXCHG16B |
-         BX_ISA_RDTSCP |
-         BX_ISA_XSAVE |
-         BX_ISA_AES_PCLMULQDQ |
-         BX_ISA_AVX |
-         BX_ISA_AVX_F16C |
-         BX_ISA_AVX_FMA |
-         BX_ISA_SSE4A |
-         BX_ISA_LZCNT |
-         BX_ISA_FMA4 |
-#if BX_SUPPORT_SVM
-         BX_ISA_SVM |
-#endif
-         BX_ISA_XOP |
-         BX_ISA_TBM |
-         BX_ISA_BMI1;
-}
-
-Bit32u trinity_apu_t::get_cpu_extensions_bitmask(void) const
-{
-  return BX_CPU_DEBUG_EXTENSIONS |
-         BX_CPU_VME |
-         BX_CPU_PSE |
-         BX_CPU_PAE |
-         BX_CPU_PGE |
-         BX_CPU_PSE36 |
-         BX_CPU_MTRR |
-         BX_CPU_PAT |
-         BX_CPU_XAPIC |
-         BX_CPU_LONG_MODE |
-         BX_CPU_NX |
-         BX_CPU_FFXSR |
-         BX_CPU_1G_PAGES |
-         BX_CPU_MISALIGNED_SSE |
-         BX_CPU_ALT_MOV_CR8 |
-         BX_CPU_XAPIC_EXT;
 }
 
 #if BX_SUPPORT_SVM
@@ -795,18 +795,7 @@ void trinity_apu_t::get_ext_cpuid_leaf_1E(cpuid_function_t *leaf) const
 
 void trinity_apu_t::dump_cpuid(void) const
 {
-  struct cpuid_function_t leaf;
-  unsigned n;
-
-  for (n=0; n <= 0xd; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
-
-  for (n=0x80000000; n<=0x8000001E; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
+  bx_cpuid_t::dump_cpuid(0xD, 0x1E);
 }
 
 bx_cpuid_t *create_trinity_apu_cpuid(BX_CPU_C *cpu) { return new trinity_apu_t(cpu); }

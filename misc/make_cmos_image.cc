@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: make_cmos_image.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: make_cmos_image.cc 12415 2014-07-10 11:14:49Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc 12325 2014-05-13 21:10:31Z vruppert $
+// $Id: siminterface.cc 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -184,6 +184,13 @@ public:
   virtual bx_bool is_addon_option(const char *keyword);
   virtual Bit32s  parse_addon_option(const char *context, int num_params, char *params []);
   virtual Bit32s  save_addon_options(FILE *fp);
+
+  // statistics
+  virtual void init_statistics();
+  virtual void cleanup_statistics();
+  virtual bx_list_c *get_statistics_root() {
+    return (bx_list_c*)get_param("statistics", NULL);
+  }
 
   // save/restore support
   virtual void init_save_restore();
@@ -995,6 +1002,22 @@ Bit32s bx_real_sim_c::save_addon_options(FILE *fp)
   return 0;
 }
 
+void bx_real_sim_c::init_statistics()
+{
+  if (get_statistics_root() == NULL) {
+    new bx_list_c(root_param, "statistics", "statistics");
+  }
+}
+
+void bx_real_sim_c::cleanup_statistics()
+{
+  bx_list_c *list;
+
+  if ((list = get_statistics_root()) != NULL) {
+    list->clear();
+  }
+}
+
 void bx_real_sim_c::init_save_restore()
 {
   if (get_bochs_root() == NULL) {
@@ -1302,7 +1325,7 @@ bx_bool bx_real_sim_c::save_sr_param(FILE *fp, bx_param_c *node, const char *sr_
           fprintf(fp, node->get_format(), value);
         } else {
           if ((Bit64u)((bx_param_num_c*)node)->get_max() > BX_MAX_BIT32U) {
-            fprintf(fp, "0x"FMT_LL"x", (Bit64u) value);
+            fprintf(fp, "0x" FMT_LL "x", (Bit64u) value);
           } else {
             fprintf(fp, "0x%x", (Bit32u) value);
           }

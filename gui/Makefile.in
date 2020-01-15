@@ -53,6 +53,7 @@ BX_INCDIRS = -I.. -I$(srcdir)/.. -I../iodev -I$(srcdir)/../iodev -I../@INSTRUMEN
 
 GUI_OBJS_X11  = x.o
 GUI_OBJS_SDL = sdl.o
+GUI_OBJS_SDL2 = sdl2.o
 GUI_OBJS_SVGA = svga.o
 GUI_OBJS_WIN32 = win32.o
 GUI_OBJS_MACOS = macintosh.o
@@ -64,13 +65,14 @@ GUI_OBJS_VNCSRV = vncsrv.o
 GUI_OBJS_AMIGAOS = amigaos.o
 GUI_OBJS_WX = wx.o
 GUI_OBJS_WX_SUPPORT = wxmain.o wxdialog.o
-OBJS_THAT_CANNOT_BE_PLUGINS = keymap.o gui.o siminterface.o paramtree.o textconfig.o enh_dbg.o @ENH_DBG_OBJS@ @DIALOG_OBJS@
+OBJS_THAT_CANNOT_BE_PLUGINS = keymap.o gui.o siminterface.o paramtree.o textconfig.o @ENH_DBG_OBJS@ @DIALOG_OBJS@
 OBJS_THAT_CAN_BE_PLUGINS = @GUI_OBJS@
 
 X_LIBS = @X_LIBS@
 X_PRE_LIBS = @X_PRE_LIBS@
 GUI_LINK_OPTS_X = $(X_LIBS) $(X_PRE_LIBS)
-GUI_LINK_OPTS_SDL = `sdl-config --cflags --libs`
+GUI_LINK_OPTS_SDL = @GUI_LINK_OPTS_SDL@
+GUI_LINK_OPTS_SDL2 = @GUI_LINK_OPTS_SDL2@
 GUI_LINK_OPTS_SVGA =  -lvga -lvgagl
 GUI_LINK_OPTS_RFB = @RFB_LIBS@
 GUI_LINK_OPTS_RFB_VCPP = user32.lib @RFB_LIBS@
@@ -122,6 +124,9 @@ libbx_x.la: x.lo
 libbx_sdl.la: sdl.lo
 	$(LIBTOOL) --mode=link --tag CXX $(CXX) -module $< -o $@ -rpath $(PLUGIN_PATH) $(GUI_LINK_OPTS_SDL)
 
+libbx_sdl2.la: sdl2.lo
+	$(LIBTOOL) --mode=link --tag CXX $(CXX) -module $< -o $@ -rpath $(PLUGIN_PATH) $(GUI_LINK_OPTS_SDL2)
+
 libbx_svga.la: svga.lo
 	$(LIBTOOL) --mode=link --tag CXX $(CXX) -module $< -o $@ -rpath $(PLUGIN_PATH) $(GUI_LINK_OPTS_SVGA)
 
@@ -163,6 +168,9 @@ bx_wx.dll: $(GUI_OBJS_WX) $(GUI_OBJS_WX_SUPPORT)
 bx_sdl.dll: $(GUI_OBJS_SDL)
 	$(CXX) $(CXXFLAGS) -shared -o bx_sdl.dll $(GUI_OBJS_SDL) $(WIN32_DLL_IMPORT_LIBRARY) $(GUI_LINK_OPTS_SDL)
 
+bx_sdl2.dll: $(GUI_OBJS_SDL2)
+	$(CXX) $(CXXFLAGS) -shared -o bx_sdl2.dll $(GUI_OBJS_SDL2) $(WIN32_DLL_IMPORT_LIBRARY) $(GUI_LINK_OPTS_SDL2)
+
 bx_vncsrv.dll: $(GUI_OBJS_VNCSRV)
 	$(CXX) $(CXXFLAGS) -shared -o bx_vncsrv.dll $(GUI_OBJS_VNCSRV) $(WIN32_DLL_IMPORT_LIBRARY) $(GUI_LINK_OPTS_VNCSRV)
 
@@ -179,7 +187,7 @@ bx_win32.dll: $(GUI_OBJS_WIN32)
 ##### end DLL section
 
 clean:
-	@RMCOMMAND@ -rf .libs *.la *.a *.lo *.o *.dll *.exp *.lib *.dll.manifest
+	@RMCOMMAND@ -rf .libs *.la *.a *.lo *.o *.dll *.exp *.lib
 
 dist-clean: clean
 	@RMCOMMAND@ Makefile
@@ -211,7 +219,7 @@ gui.o: gui.@CPP_SUFFIX@ ../iodev/iodev.h ../bochs.h ../config.h ../osdep.h \
  ../bx_debug/debug.h ../config.h ../osdep.h ../gui/siminterface.h \
  ../cpudb.h ../gui/paramtree.h ../memory/memory.h ../pc_system.h \
  ../gui/gui.h ../instrument/stubs/instrument.h ../plugin.h ../extplugin.h \
- ../param_names.h keymap.h ../gui/bitmaps/floppya.h \
+ ../param_names.h ../iodev/virt_timer.h keymap.h ../gui/bitmaps/floppya.h \
  ../gui/bitmaps/floppyb.h ../gui/bitmaps/mouse.h ../gui/bitmaps/reset.h \
  ../gui/bitmaps/power.h ../gui/bitmaps/snapshot.h ../gui/bitmaps/copy.h \
  ../gui/bitmaps/paste.h ../gui/bitmaps/configbutton.h \
@@ -241,7 +249,12 @@ rfb.o: rfb.@CPP_SUFFIX@ ../param_names.h ../iodev/iodev.h ../bochs.h ../config.h
  ../pc_system.h ../gui/gui.h ../instrument/stubs/instrument.h ../plugin.h \
  ../extplugin.h keymap.h icon_bochs.h font/vga.bitmap.h sdl.h rfb.h \
  rfbkeys.h
-scrollwin.o: scrollwin.@CPP_SUFFIX@
+scrollwin.o: scrollwin.@CPP_SUFFIX@ ../config.h
+sdl2.o: sdl2.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h \
+ ../config.h ../osdep.h ../gui/siminterface.h ../cpudb.h \
+ ../gui/paramtree.h ../memory/memory.h ../pc_system.h ../gui/gui.h \
+ ../instrument/stubs/instrument.h ../param_names.h keymap.h \
+ ../iodev/iodev.h ../plugin.h ../extplugin.h
 sdl.o: sdl.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h \
  ../config.h ../osdep.h ../gui/siminterface.h ../cpudb.h \
  ../gui/paramtree.h ../memory/memory.h ../pc_system.h ../gui/gui.h \
@@ -315,7 +328,7 @@ gui.lo: gui.@CPP_SUFFIX@ ../iodev/iodev.h ../bochs.h ../config.h ../osdep.h \
  ../bx_debug/debug.h ../config.h ../osdep.h ../gui/siminterface.h \
  ../cpudb.h ../gui/paramtree.h ../memory/memory.h ../pc_system.h \
  ../gui/gui.h ../instrument/stubs/instrument.h ../plugin.h ../extplugin.h \
- ../param_names.h keymap.h ../gui/bitmaps/floppya.h \
+ ../param_names.h ../iodev/virt_timer.h keymap.h ../gui/bitmaps/floppya.h \
  ../gui/bitmaps/floppyb.h ../gui/bitmaps/mouse.h ../gui/bitmaps/reset.h \
  ../gui/bitmaps/power.h ../gui/bitmaps/snapshot.h ../gui/bitmaps/copy.h \
  ../gui/bitmaps/paste.h ../gui/bitmaps/configbutton.h \
@@ -345,7 +358,12 @@ rfb.lo: rfb.@CPP_SUFFIX@ ../param_names.h ../iodev/iodev.h ../bochs.h ../config.
  ../pc_system.h ../gui/gui.h ../instrument/stubs/instrument.h ../plugin.h \
  ../extplugin.h keymap.h icon_bochs.h font/vga.bitmap.h sdl.h rfb.h \
  rfbkeys.h
-scrollwin.lo: scrollwin.@CPP_SUFFIX@
+scrollwin.lo: scrollwin.@CPP_SUFFIX@ ../config.h
+sdl2.lo: sdl2.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h \
+ ../config.h ../osdep.h ../gui/siminterface.h ../cpudb.h \
+ ../gui/paramtree.h ../memory/memory.h ../pc_system.h ../gui/gui.h \
+ ../instrument/stubs/instrument.h ../param_names.h keymap.h \
+ ../iodev/iodev.h ../plugin.h ../extplugin.h
 sdl.lo: sdl.@CPP_SUFFIX@ ../bochs.h ../config.h ../osdep.h ../bx_debug/debug.h \
  ../config.h ../osdep.h ../gui/siminterface.h ../cpudb.h \
  ../gui/paramtree.h ../memory/memory.h ../pc_system.h ../gui/gui.h \

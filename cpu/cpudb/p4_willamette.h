@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: p4_willamette.h 12241 2014-03-15 19:24:42Z sshwarts $
+// $Id: p4_willamette.h 12476 2014-08-31 18:39:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -30,14 +30,11 @@
 
 class p4_willamette_t : public bx_cpuid_t {
 public:
-  p4_willamette_t(BX_CPU_C *cpu): bx_cpuid_t(cpu) {}
+  p4_willamette_t(BX_CPU_C *cpu);
   virtual ~p4_willamette_t() {}
 
   // return CPU name
   virtual const char *get_name(void) const { return "p4_willamette"; }
-
-  virtual Bit64u get_isa_extensions_bitmask(void) const;
-  virtual Bit32u get_cpu_extensions_bitmask(void) const;
 
   virtual void get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const;
 

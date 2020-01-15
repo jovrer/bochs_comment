@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h 12187 2014-02-15 00:23:36Z vruppert $
+// $Id: bochs.h 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -129,9 +129,19 @@ int  bx_parse_usb_port_params(const char *context, bx_bool devopt,
                               const char *param, int maxports, bx_list_c *base);
 int  bx_write_param_list(FILE *fp, bx_list_c *base, const char *optname, bx_bool multiline);
 int  bx_write_usb_options(FILE *fp, int maxports, bx_list_c *base);
+
 Bit32u crc32(const Bit8u *buf, int len);
-// for param-tree testing only
+
+// used to print param tree from debugger
 void print_tree(bx_param_c *node, int level = 0);
+
+#if BX_ENABLE_STATISTICS
+// print statistics
+void print_statistics_tree(bx_param_c *node, int level = 0);
+#define INC_STAT(stat) (++(stat))
+#else
+#define INC_STAT(stat)
+#endif
 
 //
 // some macros to interface the CPU and memory to external environment

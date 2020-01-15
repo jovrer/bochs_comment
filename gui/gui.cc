@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc 12339 2014-05-26 17:04:02Z vruppert $
+// $Id: gui.cc 12514 2014-10-19 08:54:16Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -46,7 +46,7 @@ bx_gui_c *bx_gui = NULL;
 #define LOG_THIS BX_GUI_THIS
 
 #define BX_KEY_UNKNOWN 0x7fffffff
-#define N_USER_KEYS 37
+#define N_USER_KEYS 38
 
 typedef struct {
   const char *key;
@@ -91,7 +91,8 @@ static user_key_t user_keys[N_USER_KEYS] =
   { "up",    BX_KEY_UP },
   { "win",   BX_KEY_WIN_L },
   { "print", BX_KEY_PRINT },
-  { "power", BX_KEY_POWER_POWER }
+  { "power", BX_KEY_POWER_POWER },
+  { "scrlck", BX_KEY_SCRL_LOCK }
 };
 
 bx_gui_c::bx_gui_c(void): disp_mode(DISP_MODE_SIM)
@@ -240,6 +241,10 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
                           BX_GRAVITY_RIGHT, userbutton_handler);
   BX_GUI_THIS set_tooltip(BX_GUI_THIS user_hbar_id, "Send keyboard shortcut");
 
+  if (!parse_user_shortcut(SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr())) {
+    SIM->get_param_string(BXPN_USER_SHORTCUT)->set("none");
+  }
+
   BX_GUI_THIS charmap_updated = 0;
 
   if (!BX_GUI_THIS new_gfx_api && (BX_GUI_THIS framebuffer == NULL)) {
@@ -250,7 +255,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
   // register timer for status bar LEDs
   if (BX_GUI_THIS led_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_GUI_THIS led_timer_index =
-      bx_virt_timer.register_timer(this, led_timer_handler, 100000, 1, 1,
+      bx_virt_timer.register_timer(this, led_timer_handler, 100000, 1, 1, 1,
                                    "status bar LEDs");
   }
 }
@@ -656,42 +661,50 @@ Bit32u get_user_key(char *key)
   return BX_KEY_UNKNOWN;
 }
 
+bx_bool bx_gui_c::parse_user_shortcut(const char *val)
+{
+  char *ptr, shortcut_tmp[512];
+  Bit32u symbol;
+
+  user_shortcut_len = 0;
+  if ((strlen(val) == 0) || !strcmp(val, "none")) {
+    return 1;
+  } else {
+    strcpy(shortcut_tmp, val);
+    ptr = strtok(shortcut_tmp, "-");
+    while (ptr) {
+      symbol = get_user_key(ptr);
+      if (symbol == BX_KEY_UNKNOWN) {
+        BX_ERROR(("Unknown key symbol '%s' ignored", ptr));
+        return 0;
+      }
+      if (user_shortcut_len < 3) {
+        user_shortcut[user_shortcut_len++] = symbol;
+        ptr = strtok(NULL, "-");
+      } else {
+        BX_ERROR(("Ignoring extra key symbol '%s'", ptr));
+        break;
+      }
+    }
+    return 1;
+  }
+}
+
 void bx_gui_c::userbutton_handler(void)
 {
-  Bit32u shortcut[4];
-  Bit32u symbol;
-  char user_shortcut[512];
-  char *ptr;
-  int i, len = 0, ret = 1;
+  int i, ret = 1;
 
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_USER) {
     ret = SIM->ask_param(BXPN_USER_SHORTCUT);
   }
-  strcpy(user_shortcut, SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr());
-  if ((ret > 0) && user_shortcut[0] && (strcmp(user_shortcut, "none"))) {
-    ptr = strtok(user_shortcut, "-");
-    if ((strcmp(ptr, SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr())) ||
-        (strlen(SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr()) < 6)) {
-      while (ptr) {
-        symbol = get_user_key(ptr);
-        if (symbol == BX_KEY_UNKNOWN) {
-          BX_ERROR(("Unknown shortcut %s ignored", ptr));
-          return;
-        }
-        shortcut[len++] = symbol;
-        ptr = strtok(NULL, "-");
-      }
-    } else {
-      BX_ERROR(("Unknown shortcut %s ignored", user_shortcut));
-      return;
-    }
+  if ((ret > 0) && (BX_GUI_THIS user_shortcut_len > 0)) {
     i = 0;
-    while (i < len) {
-      DEV_kbd_gen_scancode(shortcut[i++]);
+    while (i < BX_GUI_THIS user_shortcut_len) {
+      DEV_kbd_gen_scancode(BX_GUI_THIS user_shortcut[i++]);
     }
     i--;
     while (i >= 0) {
-      DEV_kbd_gen_scancode(shortcut[i--] | BX_KEY_RELEASED);
+      DEV_kbd_gen_scancode(BX_GUI_THIS user_shortcut[i--] | BX_KEY_RELEASED);
     }
   }
 }

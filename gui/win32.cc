@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc 12359 2014-06-05 20:12:44Z vruppert $
+// $Id: win32.cc 12469 2014-08-17 12:48:05Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -44,7 +44,7 @@
 
 class bx_win32_gui_c : public bx_gui_c {
 public:
-  bx_win32_gui_c(void) {}
+  bx_win32_gui_c(void);
   DECLARE_GUI_VIRTUAL_METHODS();
   virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
@@ -157,7 +157,7 @@ static char ipsText[20];
 #define SIZE_OF_SB_ELEMENT        40
 #define SIZE_OF_SB_MOUSE_MESSAGE 170
 #define SIZE_OF_SB_IPS_MESSAGE    90
-long SB_Edges[BX_MAX_STATUSITEMS+BX_SB_MAX_TEXT_ELEMENTS+1];
+Bit32s SB_Edges[BX_MAX_STATUSITEMS+BX_SB_MAX_TEXT_ELEMENTS+1];
 char SB_Text[BX_MAX_STATUSITEMS][10];
 unsigned SB_Text_Elements;
 bx_bool SB_Active[BX_MAX_STATUSITEMS];
@@ -576,6 +576,16 @@ void terminateEmul(int reason)
 }
 
 
+bx_win32_gui_c::bx_win32_gui_c()
+{
+  // prepare for possible fullscreen mode
+  desktopWindow = GetDesktopWindow();
+  GetWindowRect(desktopWindow, &desktop);
+  desktop_x = desktop.right - desktop.left;
+  desktop_y = desktop.bottom - desktop.top;
+}
+
+
 // ::SPECIFIC_INIT()
 //
 // Called from gui.cc, once upon program startup, to allow for the
@@ -597,11 +607,6 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   gui_ci = !strcmp(SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected(), "win32config");
   put("WINGUI");
 
-  // prepare for possible fullscreen mode
-  desktopWindow = GetDesktopWindow();
-  GetWindowRect(desktopWindow, &desktop);
-  desktop_x = desktop.right - desktop.left;
-  desktop_y = desktop.bottom - desktop.top;
   hotKeyReceiver = stInfo.simWnd;
   fullscreenMode = FALSE;
   BX_INFO(("Desktop Window dimensions: %d x %d", desktop_x, desktop_y));
@@ -2108,6 +2113,12 @@ void bx_win32_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 // exit from the native GUI mechanism.
 void bx_win32_gui_c::exit(void)
 {
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+  if (SIM->has_debug_gui()) {
+    close_debug_dialog();
+  }
+#endif
+
   // kill thread first...
   PostMessage(stInfo.mainWnd, WM_CLOSE, 0, 0);
 

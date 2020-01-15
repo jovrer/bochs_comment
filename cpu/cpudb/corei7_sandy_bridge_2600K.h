@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei7_sandy_bridge_2600K.h 12360 2014-06-06 18:29:28Z sshwarts $
+// $Id: corei7_sandy_bridge_2600K.h 12506 2014-10-15 14:25:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -36,8 +36,6 @@ public:
   // return CPU name
   virtual const char *get_name(void) const { return "corei7_sandy_bridge_2600k"; }
 
-  virtual Bit64u get_isa_extensions_bitmask(void) const;
-  virtual Bit32u get_cpu_extensions_bitmask(void) const;
 #if BX_SUPPORT_VMX >= 2
   virtual Bit32u get_vmx_extensions_bitmask(void) const;
 #endif
@@ -54,7 +52,6 @@ private:
   void get_std_cpuid_leaf_5(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_6(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_A(cpuid_function_t *leaf) const;
-  void get_std_cpuid_extended_topology_leaf(Bit32u subfunction, cpuid_function_t *leaf) const;
   void get_std_cpuid_xsave_leaf(Bit32u subfunction, cpuid_function_t *leaf) const;
 
   void get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const;

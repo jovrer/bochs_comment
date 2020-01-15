@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc 12137 2014-01-24 17:22:34Z vruppert $
+// $Id: pc_system.cc 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -416,6 +416,15 @@ void bx_pc_system_c::benchmarkTimer(void* this_ptr)
   class_ptr->kill_bochs_request = 1;
   bx_user_quit = 1;
 }
+
+#if BX_ENABLE_STATISTICS
+void bx_pc_system_c::dumpStatsTimer(void* this_ptr)
+{
+  printf("=== statistics dump " FMT_LL "u ===\n", bx_pc_system.time_ticks());
+  print_statistics_tree(SIM->get_statistics_root());
+  fflush(stdout);
+}
+#endif
 
 #if BX_DEBUGGER
 void bx_pc_system_c::timebp_handler(void* this_ptr)

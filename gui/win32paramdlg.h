@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32paramdlg.h 12010 2013-12-08 21:22:50Z vruppert $
+// $Id: win32paramdlg.h 12381 2014-06-20 09:31:56Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  Volker Ruppert
+//  Copyright (C) 2009-2014  Volker Ruppert
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -23,7 +23,7 @@
 
 #include "config.h"
 
-#if BX_USE_TEXTCONFIG && defined(WIN32)
+#if BX_USE_WIN32CONFIG
 
 int AskFilename(HWND hwnd, bx_param_filename_c *param, char *buffer);
 INT_PTR win32ParamDialog(HWND parent, const char *menu);

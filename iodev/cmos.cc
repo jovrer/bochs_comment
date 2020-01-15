@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc 12366 2014-06-08 08:40:08Z vruppert $
+// $Id: cmos.cc 12514 2014-10-19 08:54:16Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -144,7 +144,7 @@ bx_cmos_c::~bx_cmos_c(void)
 
 void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc 12366 2014-06-08 08:40:08Z vruppert $"));
+  BX_DEBUG(("Init $Id: cmos.cc 12514 2014-10-19 08:54:16Z vruppert $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);
@@ -164,15 +164,12 @@ void bx_cmos_c::init(void)
         1000000, 1,0, "cmos"); // continuous, not-active
   }
   if (BX_CMOS_THIS s.one_second_timer_index == BX_NULL_TIMER_HANDLE) {
-    if (BX_CMOS_THIS s.rtc_sync) {
-      BX_CMOS_THIS s.one_second_timer_index =
-        bx_virt_timer.register_timer(this, one_second_timer_handler,
-          1000000, 1, 0, "cmos"); // continuous, not-active
-    } else {
-      BX_CMOS_THIS s.one_second_timer_index =
-        DEV_register_timer(this, one_second_timer_handler,
-          1000000, 1,0, "cmos"); // continuous, not-active
-    }
+    BX_CMOS_THIS s.one_second_timer_index =
+      bx_virt_timer.register_timer(this, one_second_timer_handler,
+      1000000, 1, 0, BX_CMOS_THIS s.rtc_sync, "cmos"); // continuous, not-active
+      if (BX_CMOS_THIS s.rtc_sync) {
+        BX_INFO(("CMOS RTC using realtime synchronisation method"));
+      }
   }
   if (BX_CMOS_THIS s.uip_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_CMOS_THIS s.uip_timer_index =
@@ -291,13 +288,8 @@ void bx_cmos_c::reset(unsigned type)
   BX_CMOS_THIS s.reg[REG_STAT_C] = 0;
 
   // One second timer for updating clock & alarm functions
-  if (BX_CMOS_THIS s.rtc_sync) {
-    bx_virt_timer.activate_timer(BX_CMOS_THIS s.one_second_timer_index,
-                                1000000, 1);
-  } else {
-    bx_pc_system.activate_timer(BX_CMOS_THIS s.one_second_timer_index,
-                                1000000, 1);
-  }
+  bx_virt_timer.activate_timer(BX_CMOS_THIS s.one_second_timer_index,
+                               1000000, 1);
 
   // handle periodic interrupt rate select
   BX_CMOS_THIS CRA_change();

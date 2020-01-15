@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.h 12137 2014-01-24 17:22:34Z vruppert $
+// $Id: pc_system.h 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -137,6 +137,9 @@ public:
   static void timebp_handler(void* this_ptr);
 #endif
   static void benchmarkTimer(void* this_ptr);
+#if BX_ENABLE_STATISTICS
+  static void dumpStatsTimer(void* this_ptr);
+#endif
 
   // ===========================
   // Non-timer oriented features

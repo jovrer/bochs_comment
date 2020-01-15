@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/development/development.dbk
-$Id: development.dbk 12373 2014-06-15 06:01:20Z vruppert $
+$Id: development.dbk 12379 2014-06-19 07:54:56Z vruppert $
 
 This is the top level file for the Bochs Developers Manual.
 ================================================================
@@ -262,7 +262,7 @@ For the configuration interface there are also some different implementations: t
 <row><entry>iodev/sound</entry><entry>sound devices and lowlevel modules</entry></row>
 <row><entry>iodev/usb</entry><entry>USB HCs and pluggable devices</entry></row>
 <row><entry>memory</entry><entry>memory management and ROM loader</entry></row>
-<row><entry>misc</entry><entry>useful utilities (e.g. bximage, bxcommit, niclist)</entry></row>
+<row><entry>misc</entry><entry>useful utilities (e.g. bximage, niclist)</entry></row>
 <row><entry>misc/sb16</entry><entry>tool to control the SB16 emulation from the guest side</entry></row>
 <row><entry>patches</entry><entry>pending patches</entry></row>
 </tbody>

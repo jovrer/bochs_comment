@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl_pro.cc 11107 2012-03-25 19:07:17Z sshwarts $
+// $Id: segment_ctrl_pro.cc 12431 2014-07-19 20:01:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -512,10 +512,10 @@ BX_CPU_C::touch_segment(bx_selector_t *selector, bx_descriptor_t *descriptor)
     descriptor->type |= 1;
 
     if (selector->ti == 0) { /* GDT */
-       access_write_linear(BX_CPU_THIS_PTR gdtr.base + selector->index*8 + 5, 1, 0, &AR_byte);
+      system_write_byte(BX_CPU_THIS_PTR gdtr.base + selector->index*8 + 5, AR_byte);
     }
     else { /* LDT */
-       access_write_linear(BX_CPU_THIS_PTR ldtr.cache.u.segment.base + selector->index*8 + 5, 1, 0, &AR_byte);
+      system_write_byte(BX_CPU_THIS_PTR ldtr.cache.u.segment.base + selector->index*8 + 5, AR_byte);
     }
   }
 }

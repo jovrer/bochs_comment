@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pentium_mmx.h 11679 2013-04-17 19:46:11Z sshwarts $
+// $Id: pentium_mmx.h 12476 2014-08-31 18:39:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -35,9 +35,6 @@ public:
 
   // return CPU name
   virtual const char *get_name(void) const { return "pentium_mmx"; }
-
-  virtual Bit64u get_isa_extensions_bitmask(void) const;
-  virtual Bit32u get_cpu_extensions_bitmask(void) const;
 
   virtual void get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const;
 

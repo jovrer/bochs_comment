@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h 12304 2014-05-01 18:30:23Z sshwarts $
+// $Id: cpu.h 12528 2014-11-01 13:12:24Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -433,10 +433,31 @@ struct BxExceptionInfo {
   #define BX_MSR_MTRR_DEFTYPE      0x2ff
 #endif
 
-#define BX_MSR_TSC_DEADLINE        0x6E0
+#if BX_SUPPORT_PERFMON
+  #define BX_MSR_PMC0              0x0c1  /* PERFCTR0 */
+  #define BX_MSR_PMC1              0x0c2  /* PERFCTR1 */
+  #define BX_MSR_PMC2              0x0c3
+  #define BX_MSR_PMC3              0x0c4
+  #define BX_MSR_PMC4              0x0c5
+  #define BX_MSR_PMC5              0x0c6
+  #define BX_MSR_PMC6              0x0c7
+  #define BX_MSR_PMC7              0x0c8
+  #define BX_MSR_PERFEVTSEL0       0x186
+  #define BX_MSR_PERFEVTSEL1       0x187
+  #define BX_MSR_PERFEVTSEL2       0x188
+  #define BX_MSR_PERFEVTSEL3       0x189
+  #define BX_MSR_PERFEVTSEL4       0x18a
+  #define BX_MSR_PERFEVTSEL5       0x18b 
+  #define BX_MSR_PERFEVTSEL6       0x18c
+  #define BX_MSR_PERFEVTSEL7       0x18d
+  #define BX_MSR_PERF_FIXED_CTR0   0x309  /* Fixed Performance Counter 0 (R/W): Counts Instr_Retired.Any */
+  #define BX_MSR_PERF_FIXED_CTR1   0x30a  /* Fixed Performance Counter 1 (R/W): Counts CPU_CLK_Unhalted.Core */
+  #define BX_MSR_PERF_FIXED_CTR2   0x30b  /* Fixed Performance Counter 2 (R/W): Counts CPU_CLK_Unhalted.Ref */
+  #define BX_MSR_FIXED_CTR_CTRL    0x38d  /* Fixed Performance Counter Control (R/W) */
+  #define BX_MSR_PERF_GLOBAL_CTRL  0x38f  /* Global Performance Counter Control */
+#endif
 
-/* Intel MPX supervisor bound configuration register */
-#define BX_MSR_BNDCFGS             0xd90
+#define BX_MSR_TSC_DEADLINE        0x6E0
 
 #define BX_MSR_MAX_INDEX          0x1000
 
@@ -927,6 +948,7 @@ struct monitor_addr_t {
 
 struct BX_SMM_State;
 struct BxOpcodeInfo_t;
+struct bx_cpu_statistics;
 
 class BOCHSAPI BX_CPU_C : public logfunctions {
 
@@ -938,8 +960,11 @@ public: // for now...
   bx_cpuid_t *cpuid;
 #endif
 
-  Bit64u isa_extensions_bitmask;
-  Bit32u cpu_extensions_bitmask;
+  Bit32u ia_extensions_bitmask[BX_ISA_EXTENSIONS_ARRAY_SIZE];
+
+#define BX_CPUID_SUPPORT_ISA_EXTENSION(feature) \
+   (BX_CPU_THIS_PTR ia_extensions_bitmask[feature/32] & (1<<(feature%32)))
+
 #if BX_SUPPORT_VMX
   Bit32u vmx_extensions_bitmask;
 #endif
@@ -947,17 +972,11 @@ public: // for now...
   Bit32u svm_extensions_bitmask;
 #endif
 
-#define BX_CPUID_SUPPORT_ISA_EXTENSION(feature) \
-   (BX_CPU_THIS_PTR isa_extensions_bitmask & (feature))
+#define BX_SUPPORT_VMX_EXTENSION(feature_mask) \
+   (BX_CPU_THIS_PTR vmx_extensions_bitmask & (feature_mask))
 
-#define BX_CPUID_SUPPORT_CPU_EXTENSION(feature) \
-   (BX_CPU_THIS_PTR cpu_extensions_bitmask & (feature))
-
-#define BX_SUPPORT_VMX_EXTENSION(feature) \
-   (BX_CPU_THIS_PTR vmx_extensions_bitmask & (feature))
-
-#define BX_SUPPORT_SVM_EXTENSION(feature) \
-   (BX_CPU_THIS_PTR svm_extensions_bitmask & (feature))
+#define BX_SUPPORT_SVM_EXTENSION(feature_mask) \
+   (BX_CPU_THIS_PTR svm_extensions_bitmask & (feature_mask))
 
   // General register set
   // rax: accumulator
@@ -1063,12 +1082,12 @@ public: // for now...
   // vmm0-vmmN: up to 32 vector registers
   // vtmp: temp register
 #if BX_SUPPORT_EVEX
-  bx_zmm_reg_t vmm[BX_XMM_REGISTERS+1];
+  bx_zmm_reg_t vmm[BX_XMM_REGISTERS+1] BX_CPP_AlignN(64);
 #else
 #if BX_SUPPORT_AVX
-  bx_ymm_reg_t vmm[BX_XMM_REGISTERS+1];
+  bx_ymm_reg_t vmm[BX_XMM_REGISTERS+1] BX_CPP_AlignN(32);
 #else
-  bx_xmm_reg_t vmm[BX_XMM_REGISTERS+1];
+  bx_xmm_reg_t vmm[BX_XMM_REGISTERS+1] BX_CPP_AlignN(16);
 #endif
 #endif
 
@@ -1247,6 +1266,9 @@ public: // for now...
   unsigned alignment_check_mask;
 #endif
 
+  // statistics
+  bx_cpu_statistics *stats;
+
 #if BX_DEBUGGER
   bx_phy_address watchpoint;
   Bit8u break_point;
@@ -1311,6 +1333,10 @@ public: // for now...
     set_PF(1 & ((flags32) >> 2));
     set_CF(1 & ((flags32) >> 0));
   }
+
+  BX_SMF BX_CPP_INLINE void clearEFlagsOSZAPC(void) {
+    SET_FLAGS_OSZAPC_LOGIC_32(1);
+  }
  
   BX_SMF BX_CPP_INLINE void SET_FLAGS_OxxxxC(Bit32u new_of, Bit32u new_cf) {
     Bit32u temp_po = new_of ^ new_cf;
@@ -1341,17 +1367,14 @@ public: // for now...
 
   BX_SMF BX_CPP_INLINE void assert_ZF(void) {
     // merge the sign bit into the Sign Delta
-
     BX_CPU_THIS_PTR oszapc.auxbits ^=
       (((BX_CPU_THIS_PTR oszapc.result >> BX_LF_SIGN_BIT) & 1) << LF_BIT_SD);
 
     // merge the parity bits into the Parity Delta Byte
-
     Bit32u temp_pdb = (255 & BX_CPU_THIS_PTR oszapc.result);
     BX_CPU_THIS_PTR oszapc.auxbits ^= (temp_pdb << LF_BIT_PDB);
 
     // now zero the .result value
-
     BX_CPU_THIS_PTR oszapc.result = 0;
   }
 
@@ -1407,7 +1430,9 @@ public: // for now...
     return ((BX_CPU_THIS_PTR oszapc.auxbits >> LF_BIT_AF) & 1);
   }
 
-  BX_SMF BX_CPP_INLINE bx_bool get_AF(void) { return getB_AF(); }
+  BX_SMF BX_CPP_INLINE bx_bool get_AF(void) {
+    return (BX_CPU_THIS_PTR oszapc.auxbits & LF_MASK_AF);
+  }
 
   BX_SMF BX_CPP_INLINE void set_AF(bx_bool val) {
     BX_CPU_THIS_PTR oszapc.auxbits &= ~(LF_MASK_AF);
@@ -1428,7 +1453,7 @@ public: // for now...
   }
 
   BX_SMF BX_CPP_INLINE bx_bool get_CF(void) {
-    return BX_CPU_THIS_PTR oszapc.auxbits & (1U << LF_BIT_CF);
+    return (BX_CPU_THIS_PTR oszapc.auxbits & LF_MASK_CF);
   }
 
   BX_SMF BX_CPP_INLINE void set_CF(bx_bool val) {
@@ -1475,6 +1500,7 @@ public: // for now...
  ~BX_CPU_C();
 
   void initialize(void);
+  void init_statistics(void);
   void after_restore_state(void);
   void register_state(void);
   static Bit64s param_save_handler(void *devptr, bx_param_c *param);
@@ -2137,6 +2163,7 @@ public: // for now...
   BX_SMF BX_INSF_TYPE LOAD_Oct_Vector(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif
 #if BX_SUPPORT_EVEX
+  BX_SMF BX_INSF_TYPE LOAD_MASK_VectorW(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE LOAD_BROADCAST_VectorD(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE LOAD_BROADCAST_MASK_VectorD(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE LOAD_BROADCAST_VectorQ(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -2968,6 +2995,7 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPUNPCKHBW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPUNPCKLWD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPUNPCKHWD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULLQ_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMULLD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMULLW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMULHW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3024,10 +3052,13 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPERMD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPERMQ_VdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPSRAVW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAVD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAVQ_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSLLVW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLVD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLVQ_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSRLVW_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRLVD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRLVQ_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPROLVD_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3199,6 +3230,24 @@ public: // for now...
 
 #if BX_SUPPORT_AVX
   // AVX512 OPMASK instructions (VEX encoded)
+  BX_SMF BX_INSF_TYPE KADDB_KGbKHbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KANDB_KGbKHbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KANDNB_KGbKHbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVB_KGbKEbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVB_KGbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVB_KEbKGbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVB_KGbEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVB_GdKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KNOTB_KGbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KORB_KGbKHbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KORTESTB_KGbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KSHIFTLB_KGbKEbIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KSHIFTRB_KGbKEbIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KXNORB_KGbKHbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KXORB_KGbKHbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KTESTB_KGbKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE KADDW_KGwKHwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE KANDW_KGwKHwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE KANDNW_KGwKHwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE KMOVW_KGwKEwM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3214,6 +3263,43 @@ public: // for now...
   BX_SMF BX_INSF_TYPE KSHIFTRW_KGwKEwIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE KXNORW_KGwKHwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE KXORW_KGwKHwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KTESTW_KGwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE KADDD_KGdKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KANDD_KGdKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KANDND_KGdKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVD_KGdKEdM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVD_KGdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVD_KEdKGdM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVD_KGdEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVD_GdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KUNPCKWD_KGdKHwKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KNOTD_KGdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KORD_KGdKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KORTESTD_KGdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KSHIFTLD_KGdKEdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KSHIFTRD_KGdKEdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KXNORD_KGdKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KXORD_KGdKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KTESTD_KGdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE KADDQ_KGqKHqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KANDQ_KGqKHqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KANDNQ_KGqKHqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVQ_KGqKEqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVQ_KGqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVQ_KEqKGqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVQ_KGqEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KMOVQ_GqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KUNPCKDQ_KGqKHdKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KNOTQ_KGqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KORQ_KGqKHqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KORTESTQ_KGqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KSHIFTLQ_KGqKEqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KSHIFTRQ_KGqKEqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KXNORQ_KGqKHqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KXORQ_KGqKHqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE KTESTQ_KGqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   // AVX512 OPMASK instructions (VEX encoded)
 #endif
 
@@ -3247,6 +3333,11 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VSQRTSS_MASK_VssHpsWssR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSQRTSD_MASK_VsdHpdWsdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VFPCLASSPS_MASK_KGwWpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VFPCLASSPD_MASK_KGbWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VFPCLASSSS_MASK_KGbWssIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VFPCLASSSD_MASK_KGbWsdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VGETEXPPS_MASK_VpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VGETEXPPD_MASK_VpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VGETEXPSS_MASK_VssHpsWssR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3262,6 +3353,11 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VRNDSCALESS_MASK_VssHpsWssIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VRNDSCALESD_MASK_VsdHpdWsdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VREDUCEPS_MASK_VpsWpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VREDUCEPD_MASK_VpdWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VREDUCESS_MASK_VssHpsWssIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VREDUCESD_MASK_VsdHpdWsdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VSCALEFPS_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSCALEFPD_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSCALEFSS_VssHpsWssR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3271,6 +3367,11 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VSCALEFPD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSCALEFSS_MASK_VssHpsWssR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSCALEFSD_MASK_VsdHpdWsdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VRANGEPS_MASK_VpsHpsWpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VRANGEPD_MASK_VpdHpdWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VRANGESS_MASK_VssHpsWssIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VRANGESD_MASK_VsdHpdWsdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VRCP14PS_MASK_VpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VRCP14PD_MASK_VpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3312,6 +3413,34 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VCVTUDQ2PD_VpdWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VCVTUDQ2PD_MASK_VpdWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VCVTQQ2PS_VpsWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTQQ2PS_MASK_VpsWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTUQQ2PS_VpsWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTUQQ2PS_MASK_VpsWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VCVTQQ2PD_VpdWdqR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTQQ2PD_MASK_VpdWdqR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTUQQ2PD_VpdWdqR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTUQQ2PD_MASK_VpdWdqR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VCVTPS2QQ_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTPS2QQ_MASK_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPS2QQ_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPS2QQ_MASK_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTPS2UQQ_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTPS2UQQ_MASK_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPS2UQQ_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPS2UQQ_MASK_VdqWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VCVTPD2QQ_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTPD2QQ_MASK_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPD2QQ_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPD2QQ_MASK_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTPD2UQQ_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTPD2UQQ_MASK_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPD2UQQ_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VCVTTPD2UQQ_MASK_VdqWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VCVTPD2PS_MASK_VpsWpdR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VCVTPS2PD_MASK_VpdWpsR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VCVTSS2SD_MASK_VsdWssR(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
@@ -3329,6 +3458,11 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VCVTPS2PH_MASK_WpsVpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VCVTPS2PH_MASK_WpsVpsIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPABSB_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPABSW_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPABSD_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPABSQ_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VPADDD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSUBD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPANDD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3342,7 +3476,6 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPMULLD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VUNPCKLPS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VUNPCKHPS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE VPABSD_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAVD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRLVD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLVD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3351,6 +3484,7 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPSRLD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMADDWD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPADDQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSUBQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3362,11 +3496,11 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPMAXUQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMINSQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMINUQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULLQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VUNPCKLPD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VUNPCKHPD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMULDQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMULUDQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE VPABSQ_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAVQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRLVQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLVQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3380,12 +3514,63 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VPROLQ_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPRORD_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPRORQ_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSRLW_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRLD_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRLQ_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSRAW_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAD_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSRAQ_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSLLW_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLD_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPSLLQ_MASK_UdqIb(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPSUBB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSUBSB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSUBUSB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSUBW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSUBSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSUBUSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPADDB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPADDSB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPADDUSB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPADDW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPADDSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPADDUSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPMINSB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMINUB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMAXUB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMAXSB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMINSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMINUW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMAXSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMAXUW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPSRLW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSRAW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSLLW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPSRAVW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSRLVW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSLLVW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPAVGB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPAVGW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMADDUBSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULLW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULHW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULHUW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULHRSW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPACKSSWB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPACKUSWB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPACKSSDW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPACKUSDW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPUNPCKLBW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPUNPCKHBW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPUNPCKLWD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPUNPCKHWD_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VMOVAPS_MASK_VpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VMOVAPS_MASK_VpsWpsM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3400,6 +3585,14 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VMOVUPD_MASK_VpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VMOVUPD_MASK_VpdWpdM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VMOVUPD_MASK_WpdVpdM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VMOVDQU8_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VMOVDQU8_MASK_VdqWdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VMOVDQU8_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VMOVDQU16_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VMOVDQU16_MASK_VdqWdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VMOVDQU16_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VMOVSD_MASK_VsdWsdM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VMOVSS_MASK_VssWssM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3443,16 +3636,31 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VBLENDMPS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VBLENDMPD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPBLENDMB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPBLENDMW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPCMPB_MASK_KGqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPCMPUB_MASK_KGqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPCMPW_MASK_KGdHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPCMPUW_MASK_KGdHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPD_MASK_KGwHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPUD_MASK_KGwHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPQ_MASK_KGbHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPUQ_MASK_KGbHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPCMPEQB_MASK_KGqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPCMPGTB_MASK_KGqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPCMPEQW_MASK_KGdHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPCMPGTW_MASK_KGdHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPEQD_MASK_KGwHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPGTD_MASK_KGwHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPEQQ_MASK_KGbHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPCMPGTQ_MASK_KGbHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPTESTMB_MASK_KGqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPTESTNMB_MASK_KGqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPTESTMW_MASK_KGdHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPTESTNMW_MASK_KGdHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPTESTMD_MASK_KGwHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPTESTNMD_MASK_KGwHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPTESTMQ_MASK_KGbHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3463,10 +3671,13 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VCMPSS_MASK_KGbHssWssIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VCMPSD_MASK_KGbHsdWsdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
-  BX_SMF BX_INSF_TYPE VPERMQ_MASK_VdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSHUFB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPERMQ_MASK_VdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSHUFPS_MASK_VpsHpsWpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VSHUFPD_MASK_VpdHpdWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSHUFLW_MASK_VdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPSHUFHW_MASK_VdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPERMILPS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPERMILPD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3479,37 +3690,64 @@ public: // for now...
   BX_SMF BX_INSF_TYPE VALIGND_MASK_VdqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VALIGNQ_MASK_VdqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPALIGNR_MASK_VdqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VDBPSADBW_MASK_VdqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPERMI2B_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPERMI2W_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPERMT2B_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPERMT2W_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VPERMI2PS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPERMI2PD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPERMT2PS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPERMT2PD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPERMB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPERMW_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
   BX_SMF BX_INSF_TYPE VPERMPS_MASK_VpsHpsWpsR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPERMPD_MASK_VpdHpdWpdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VINSERTF32x4_MASK_VpsHpsWpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VINSERTF64x2_MASK_VpdHpdWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VINSERTF64x4_VpdHpdWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VINSERTF64x4_MASK_VpdHpdWpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VINSERTF32x8_MASK_VpsHpsWpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
-  BX_SMF BX_INSF_TYPE VEXTRACTF32x4_WpsVpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VEXTRACTF32x4_MASK_WpsVpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE VEXTRACTF64x4_WpdVpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE VEXTRACTF64x4_MASK_WpdVpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-
-  BX_SMF BX_INSF_TYPE VEXTRACTF32x4_WpsVpsIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VEXTRACTF32x4_MASK_WpsVpsIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VEXTRACTF64x4_WpdVpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VEXTRACTF64x4_WpdVpdIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VEXTRACTF64x4_MASK_WpdVpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VEXTRACTF64x4_MASK_WpdVpdIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VEXTRACTF32x8_MASK_WpsVpsIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VEXTRACTF32x8_MASK_WpsVpsIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VEXTRACTF64x2_MASK_WpdVpdIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VEXTRACTF64x2_MASK_WpdVpdIbM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPBROADCASTB_MASK_VdqWbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPBROADCASTW_MASK_VdqWwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTD_MASK_VdqWdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTQ_MASK_VdqWqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPBROADCASTB_VdqEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPBROADCASTW_VdqEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTD_VdqEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTQ_VdqEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPBROADCASTB_MASK_VdqEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPBROADCASTW_MASK_VdqEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTD_MASK_VdqEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTQ_MASK_VdqEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VBROADCASTF32x2_MASK_VpsWqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VBROADCASTF64x2_MASK_VpdMpd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VBROADCASTF32x4_MASK_VpsMps(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VBROADCASTF64x4_VpdMpd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VBROADCASTF32x8_MASK_VpsMps(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VBROADCASTF64x4_MASK_VpdMpd(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPTERNLOGD_VdqHdqWdqIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3534,64 +3772,75 @@ public: // for now...
 
   BX_SMF BX_INSF_TYPE VPMOVQB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVDB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVWB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVDW_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVQW_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVQD_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVQB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVDB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVWB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVDW_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVQW_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVQD_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVQB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVDB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVWB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVDW_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVQW_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVQD_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVUSQB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSDB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVUSWB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSDW_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSQW_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSQD_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVUSQB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSDB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVUSWB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSDW_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSQW_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSQD_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVUSQB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSDB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVUSWB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSDW_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSQW_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVUSQD_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVSQB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSDB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVSWB_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSDW_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSQW_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSQD_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVSQB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSDB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVSWB_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSDW_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSQW_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSQD_MASK_WdqVdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE VPMOVSQB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSDB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVSWB_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSDW_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSQW_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSQD_MASK_WdqVdqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPMOVSXBW_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSXBD_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSXBQ_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSXWD_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSXWQ_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVSXDQ_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
+  BX_SMF BX_INSF_TYPE VPMOVZXBW_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVZXBD_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVZXBQ_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPMOVZXWD_MASK_VdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3606,6 +3855,24 @@ public: // for now...
 
   BX_SMF BX_INSF_TYPE VPBROADCASTMB2Q_VdqKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE VPBROADCASTMW2D_VdqKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPMOVM2B_VdqKEqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVM2W_VdqKEdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVM2D_VdqKEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVM2Q_VdqKEbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPMOVB2M_KGqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVW2M_KGdWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVD2M_KGwWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMOVQ2M_KGbWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPMADD52LUQ_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMADD52LUQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMADD52HUQ_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMADD52HUQ_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+
+  BX_SMF BX_INSF_TYPE VPMULTISHIFTQB_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF BX_INSF_TYPE VPMULTISHIFTQB_MASK_VdqHdqWdqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 #endif
 
   BX_SMF BX_INSF_TYPE LZCNT_GwEwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -3702,8 +3969,6 @@ public: // for now...
   BX_SMF BX_INSF_TYPE MOV_EbIbR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE MOV_EwIwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE MOV_EdIdR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE XCHG_RXAX(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE XCHG_ERXEAX(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE PUSH_EwR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE PUSH_EwM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -4020,7 +4285,6 @@ public: // for now...
   BX_SMF BX_INSF_TYPE PUSH_EqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE POP_EqM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE POP_EqR(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF BX_INSF_TYPE XCHG_RRXRAX(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF BX_INSF_TYPE PUSH64_Id(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF BX_INSF_TYPE PUSH64_Sw(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
@@ -4226,98 +4490,97 @@ public: // for now...
   BX_SMF void write_RMW_virtual_qword(Bit64u val64) BX_CPP_AttrRegparmN(1);
 
 #if BX_SUPPORT_X86_64
-  BX_SMF void write_virtual_byte_64(unsigned seg, Bit64u offset, Bit8u data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_word_64(unsigned seg, Bit64u offset, Bit16u data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_dword_64(unsigned seg, Bit64u offset, Bit32u data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_qword_64(unsigned seg, Bit64u offset, Bit64u data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_xmmword_64(unsigned seg, Bit64u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void write_virtual_xmmword_aligned_64(unsigned seg, Bit64u offset, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_linear_byte(unsigned seg, Bit64u laddr, Bit8u data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_linear_word(unsigned seg, Bit64u laddr, Bit16u data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_linear_dword(unsigned seg, Bit64u laddr, Bit32u data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_linear_qword(unsigned seg, Bit64u laddr, Bit64u data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_linear_xmmword(unsigned seg, Bit64u laddr, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void write_linear_xmmword_aligned(unsigned seg, Bit64u laddr, const BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
 #if BX_SUPPORT_AVX
-  BX_SMF void write_virtual_ymmword_64(unsigned seg, Bit64u offset, const BxPackedYmmRegister *data);
-  BX_SMF void write_virtual_ymmword_aligned_64(unsigned seg, Bit64u offset, const BxPackedYmmRegister *data);
+  BX_SMF void write_linear_ymmword(unsigned seg, Bit64u laddr, const BxPackedYmmRegister *data);
+  BX_SMF void write_linear_ymmword_aligned(unsigned seg, Bit64u laddr, const BxPackedYmmRegister *data);
 #endif
 #if BX_SUPPORT_EVEX
-  BX_SMF void write_virtual_zmmword_64(unsigned seg, Bit64u offset, const BxPackedZmmRegister *data);
-  BX_SMF void write_virtual_zmmword_aligned_64(unsigned seg, Bit64u offset, const BxPackedZmmRegister *data);
+  BX_SMF void write_linear_zmmword(unsigned seg, Bit64u laddr, const BxPackedZmmRegister *data);
+  BX_SMF void write_linear_zmmword_aligned(unsigned seg, Bit64u laddr, const BxPackedZmmRegister *data);
 #endif
 
-  BX_SMF Bit8u read_virtual_byte_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF Bit16u read_virtual_word_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF Bit32u read_virtual_dword_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF Bit64u read_virtual_qword_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF void read_virtual_xmmword_64(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF void read_virtual_xmmword_aligned_64(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF Bit8u read_linear_byte(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit16u read_linear_word(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit32u read_linear_dword(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit64u read_linear_qword(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF void read_linear_xmmword(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
+  BX_SMF void read_linear_xmmword_aligned(unsigned seg, Bit64u off, BxPackedXmmRegister *data) BX_CPP_AttrRegparmN(3);
 #if BX_SUPPORT_AVX
-  BX_SMF void read_virtual_ymmword_64(unsigned seg, Bit64u offset, BxPackedYmmRegister *data);
-  BX_SMF void read_virtual_ymmword_aligned_64(unsigned seg, Bit64u offset, BxPackedYmmRegister *data);
+  BX_SMF void read_linear_ymmword(unsigned seg, Bit64u laddr, BxPackedYmmRegister *data);
+  BX_SMF void read_linear_ymmword_aligned(unsigned seg, Bit64u laddr, BxPackedYmmRegister *data);
 #endif
 #if BX_SUPPORT_EVEX
-  BX_SMF void read_virtual_zmmword_64(unsigned seg, Bit64u offset, BxPackedZmmRegister *data);
-  BX_SMF void read_virtual_zmmword_aligned_64(unsigned seg, Bit64u offset, BxPackedZmmRegister *data);
+  BX_SMF void read_linear_zmmword(unsigned seg, Bit64u laddr, BxPackedZmmRegister *data);
+  BX_SMF void read_linear_zmmword_aligned(unsigned seg, Bit64u laddr, BxPackedZmmRegister *data);
 #endif
 
-  BX_SMF Bit8u read_RMW_virtual_byte_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF Bit16u read_RMW_virtual_word_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF Bit32u read_RMW_virtual_dword_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
-  BX_SMF Bit64u read_RMW_virtual_qword_64(unsigned seg, Bit64u offset) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit8u read_RMW_virtual_byte_64(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit16u read_RMW_virtual_word_64(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit32u read_RMW_virtual_dword_64(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
+  BX_SMF Bit64u read_RMW_virtual_qword_64(unsigned seg, Bit64u laddr) BX_CPP_AttrRegparmN(2);
 
-  BX_SMF void read_RMW_virtual_dqword_aligned_64(unsigned seg, Bit64u offset, Bit64u *hi, Bit64u *lo);
-  BX_SMF void write_RMW_virtual_dqword(Bit64u hi, Bit64u lo);
+  BX_SMF void read_RMW_linear_dqword_aligned_64(unsigned seg, Bit64u laddr, Bit64u *hi, Bit64u *lo);
+  BX_SMF void write_RMW_linear_dqword(Bit64u hi, Bit64u lo);
 #endif
 
   // write of word/dword to new stack could happen only in legacy mode
-  BX_SMF void write_new_stack_word_32(bx_segment_reg_t *seg, Bit32u offset, unsigned curr_pl, Bit16u data);
-  BX_SMF void write_new_stack_dword_32(bx_segment_reg_t *seg, Bit32u offset, unsigned curr_pl, Bit32u data);
-  BX_SMF void write_new_stack_qword_32(bx_segment_reg_t *seg, Bit32u offset, unsigned curr_pl, Bit64u data);
-#if BX_SUPPORT_X86_64
-  BX_SMF void write_new_stack_word_64(Bit64u offset, unsigned curr_pl, Bit16u data);
-  BX_SMF void write_new_stack_dword_64(Bit64u offset, unsigned curr_pl, Bit32u data);
-  BX_SMF void write_new_stack_qword_64(Bit64u offset, unsigned curr_pl, Bit64u data);
-#endif
+  BX_SMF void write_new_stack_word(bx_segment_reg_t *seg, Bit32u offset, unsigned curr_pl, Bit16u data);
+  BX_SMF void write_new_stack_dword(bx_segment_reg_t *seg, Bit32u offset, unsigned curr_pl, Bit32u data);
+  BX_SMF void write_new_stack_qword(bx_segment_reg_t *seg, Bit32u offset, unsigned curr_pl, Bit64u data);
+
+  BX_SMF void write_new_stack_word(bx_address laddr, unsigned curr_pl, Bit16u data);
+  BX_SMF void write_new_stack_dword(bx_address laddr, unsigned curr_pl, Bit32u data);
+  BX_SMF void write_new_stack_qword(bx_address laddr, unsigned curr_pl, Bit64u data);
 
 #if BX_SUPPORT_X86_64
 
 // write
 #define write_virtual_byte(seg, offset, data)     \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_byte_64(seg, (Bit64u) offset, data) : \
+      write_linear_byte(seg, get_laddr64(seg, offset), data) : \
       write_virtual_byte_32(seg, (Bit32u) offset, data)
 
 #define write_virtual_word(seg, offset, data)     \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_word_64(seg, (Bit64u) offset, data) : \
+      write_linear_word(seg, get_laddr64(seg, offset), data) : \
       write_virtual_word_32(seg, (Bit32u) offset, data)
 
 #define write_virtual_dword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_dword_64(seg, (Bit64u) offset, data) : \
+      write_linear_dword(seg, get_laddr64(seg, offset), data) : \
       write_virtual_dword_32(seg, (Bit32u) offset, data)
 
 #define write_virtual_qword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_qword_64(seg, (Bit64u) offset, data) : \
+      write_linear_qword(seg, get_laddr64(seg, offset), data) : \
       write_virtual_qword_32(seg, (Bit32u) offset, data)
 
 #define write_virtual_xmmword(seg, offset, data)   \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_xmmword_64(seg, (Bit64u) offset, (const BxPackedXmmRegister*)(data)) : \
+      write_linear_xmmword(seg, get_laddr64(seg, offset), (const BxPackedXmmRegister*)(data)) : \
       write_virtual_xmmword_32(seg, (Bit32u) offset, (const BxPackedXmmRegister*)(data))
 
 #define write_virtual_xmmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_xmmword_aligned_64(seg, (Bit64u) offset, (const BxPackedXmmRegister*)(data)) : \
+      write_linear_xmmword_aligned(seg, get_laddr64(seg, offset), (const BxPackedXmmRegister*)(data)) : \
       write_virtual_xmmword_aligned_32(seg, (Bit32u) offset, (const BxPackedXmmRegister*)(data))
 
 #if BX_SUPPORT_AVX
 
 #define write_virtual_ymmword(seg, offset, data)   \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_ymmword_64(seg, (Bit64u) offset, (const BxPackedYmmRegister*)(data)) : \
+      write_linear_ymmword(seg, get_laddr64(seg, offset), (const BxPackedYmmRegister*)(data)) : \
       write_virtual_ymmword_32(seg, (Bit32u) offset, (const BxPackedYmmRegister*)(data))
 
 #define write_virtual_ymmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_ymmword_aligned_64(seg, (Bit64u) offset, (const BxPackedYmmRegister*)(data)) : \
+      write_linear_ymmword_aligned(seg, get_laddr64(seg, offset), (const BxPackedYmmRegister*)(data)) : \
       write_virtual_ymmword_aligned_32(seg, (Bit32u) offset, (const BxPackedYmmRegister*)(data))
 
 #endif
@@ -4326,12 +4589,12 @@ public: // for now...
 
 #define write_virtual_zmmword(seg, offset, data)   \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_zmmword_64(seg, (Bit64u) offset, (const BxPackedZmmRegister*)(data)) : \
+      write_linear_zmmword(seg, get_laddr64(seg, offset), (const BxPackedZmmRegister*)(data)) : \
       write_virtual_zmmword_32(seg, (Bit32u) offset, (const BxPackedZmmRegister*)(data))
 
 #define write_virtual_zmmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      write_virtual_zmmword_aligned_64(seg, (Bit64u) offset, (const BxPackedZmmRegister*)(data)) : \
+      write_linear_zmmword_aligned(seg, get_laddr64(seg, offset), (const BxPackedZmmRegister*)(data)) : \
       write_virtual_zmmword_aligned_32(seg, (Bit32u) offset, (const BxPackedZmmRegister*)(data))
 
 #endif
@@ -4339,44 +4602,44 @@ public: // for now...
 // read
 #define read_virtual_byte(seg, offset)             \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ?  \
-      read_virtual_byte_64(seg, (Bit64u) offset) : \
+      read_linear_byte(seg, get_laddr64(seg, offset)) : \
       read_virtual_byte_32(seg, (Bit32u) offset)
 
 #define read_virtual_word(seg, offset)             \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ?  \
-      read_virtual_word_64(seg, (Bit64u) offset) : \
+      read_linear_word(seg, get_laddr64(seg, offset)) : \
       read_virtual_word_32(seg, (Bit32u) offset)
 
 #define read_virtual_dword(seg, offset)             \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ?   \
-      read_virtual_dword_64(seg, (Bit64u) offset) : \
+      read_linear_dword(seg, get_laddr64(seg, offset)) : \
       read_virtual_dword_32(seg, (Bit32u) offset)
 
 #define read_virtual_qword(seg, offset)             \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ?   \
-      read_virtual_qword_64(seg, (Bit64u) offset) : \
+      read_linear_qword(seg, get_laddr64(seg, offset)) : \
       read_virtual_qword_32(seg, (Bit32u) offset)
 
 #define read_virtual_xmmword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_xmmword_64(seg, (Bit64u) offset, (BxPackedXmmRegister*)(data)) : \
+      read_linear_xmmword(seg, get_laddr64(seg, offset), (BxPackedXmmRegister*)(data)) : \
       read_virtual_xmmword_32(seg, (Bit32u) offset, (BxPackedXmmRegister*)(data))
 
 #define read_virtual_xmmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_xmmword_aligned_64(seg, (Bit64u) offset, (BxPackedXmmRegister*)(data)) : \
+      read_linear_xmmword_aligned(seg, get_laddr64(seg, offset), (BxPackedXmmRegister*)(data)) : \
       read_virtual_xmmword_aligned_32(seg, (Bit32u) offset, (BxPackedXmmRegister*)(data))
 
 #if BX_SUPPORT_AVX
 
 #define read_virtual_ymmword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_ymmword_64(seg, (Bit64u) offset, (BxPackedYmmRegister*)(data)) : \
+      read_linear_ymmword(seg, get_laddr64(seg, offset), (BxPackedYmmRegister*)(data)) : \
       read_virtual_ymmword_32(seg, (Bit32u) offset, (BxPackedYmmRegister*)(data))
 
 #define read_virtual_ymmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_ymmword_aligned_64(seg, (Bit64u) offset, (BxPackedYmmRegister*)(data)) : \
+      read_linear_ymmword_aligned(seg, get_laddr64(seg, offset), (BxPackedYmmRegister*)(data)) : \
       read_virtual_ymmword_aligned_32(seg, (Bit32u) offset, (BxPackedYmmRegister*)(data))
 
 #endif
@@ -4385,12 +4648,12 @@ public: // for now...
 
 #define read_virtual_zmmword(seg, offset, data)    \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_zmmword_64(seg, (Bit64u) offset, (BxPackedZmmRegister*)(data)) : \
+      read_linear_zmmword(seg, get_laddr64(seg, offset), (BxPackedZmmRegister*)(data)) : \
       read_virtual_zmmword_32(seg, (Bit32u) offset, (BxPackedZmmRegister*)(data))
 
 #define read_virtual_zmmword_aligned(seg, offset, data) \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_virtual_zmmword_aligned_64(seg, (Bit64u) offset, (BxPackedZmmRegister*)(data)) : \
+      read_linear_zmmword_aligned(seg, get_laddr64(seg, offset), (BxPackedZmmRegister*)(data)) : \
       read_virtual_zmmword_aligned_32(seg, (Bit32u) offset, (BxPackedZmmRegister*)(data))
 
 #endif
@@ -4398,22 +4661,22 @@ public: // for now...
 // RMW
 #define read_RMW_virtual_byte(seg, offset)        \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_RMW_virtual_byte_64(seg, (Bit64u) offset) : \
+      read_RMW_virtual_byte_64(seg, get_laddr64(seg, offset)) : \
       read_RMW_virtual_byte_32(seg, (Bit32u) offset)
 
 #define read_RMW_virtual_word(seg, offset)        \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_RMW_virtual_word_64(seg, (Bit64u) offset) : \
+      read_RMW_virtual_word_64(seg, get_laddr64(seg, offset)) : \
       read_RMW_virtual_word_32(seg, (Bit32u) offset)
 
 #define read_RMW_virtual_dword(seg, offset)       \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_RMW_virtual_dword_64(seg, (Bit64u) offset) : \
+      read_RMW_virtual_dword_64(seg, get_laddr64(seg, offset)) : \
       read_RMW_virtual_dword_32(seg, (Bit32u) offset)
 
 #define read_RMW_virtual_qword(seg, offset)       \
   (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) ? \
-      read_RMW_virtual_qword_64(seg, (Bit64u) offset) : \
+      read_RMW_virtual_qword_64(seg, get_laddr64(seg, offset)) : \
       read_RMW_virtual_qword_32(seg, (Bit32u) offset)
 
 #else
@@ -4529,23 +4792,23 @@ public: // for now...
        bx_descriptor_t *descriptor, bx_address rip, Bit8u cpl);
 
 #if BX_SUPPORT_REPEAT_SPEEDUPS
-  BX_SMF Bit32u FastRepMOVSB(bxInstruction_c *i, unsigned srcSeg, bx_address srcOff,
-       unsigned dstSeg, bx_address dstOff, Bit32u  byteCount);
-  BX_SMF Bit32u FastRepMOVSW(bxInstruction_c *i, unsigned srcSeg, bx_address srcOff,
-       unsigned dstSeg, bx_address dstOff, Bit32u  wordCount);
-  BX_SMF Bit32u FastRepMOVSD(bxInstruction_c *i, unsigned srcSeg, bx_address srcOff,
-       unsigned dstSeg, bx_address dstOff, Bit32u dwordCount);
+  BX_SMF Bit32u FastRepMOVSB(bxInstruction_c *i, unsigned srcSeg, Bit32u srcOff,
+       unsigned dstSeg, Bit32u dstOff, Bit32u  byteCount);
+  BX_SMF Bit32u FastRepMOVSW(bxInstruction_c *i, unsigned srcSeg, Bit32u srcOff,
+       unsigned dstSeg, Bit32u dstOff, Bit32u  wordCount);
+  BX_SMF Bit32u FastRepMOVSD(bxInstruction_c *i, unsigned srcSeg, Bit32u srcOff,
+       unsigned dstSeg, Bit32u dstOff, Bit32u dwordCount);
 
-  BX_SMF Bit32u FastRepSTOSB(bxInstruction_c *i, unsigned dstSeg, bx_address dstOff,
+  BX_SMF Bit32u FastRepSTOSB(bxInstruction_c *i, unsigned dstSeg, Bit32u dstOff,
        Bit8u  val, Bit32u  byteCount);
-  BX_SMF Bit32u FastRepSTOSW(bxInstruction_c *i, unsigned dstSeg, bx_address dstOff,
+  BX_SMF Bit32u FastRepSTOSW(bxInstruction_c *i, unsigned dstSeg, Bit32u dstOff,
        Bit16u val, Bit32u  wordCount);
-  BX_SMF Bit32u FastRepSTOSD(bxInstruction_c *i, unsigned dstSeg, bx_address dstOff,
+  BX_SMF Bit32u FastRepSTOSD(bxInstruction_c *i, unsigned dstSeg, Bit32u dstOff,
        Bit32u val, Bit32u dwordCount);
 
-  BX_SMF Bit32u FastRepINSW(bxInstruction_c *i, bx_address dstOff,
+  BX_SMF Bit32u FastRepINSW(bxInstruction_c *i, Bit32u dstOff,
        Bit16u port, Bit32u wordCount);
-  BX_SMF Bit32u FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address srcOff,
+  BX_SMF Bit32u FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, Bit32u srcOff,
        Bit16u port, Bit32u wordCount);
 #endif
 
@@ -4554,9 +4817,9 @@ public: // for now...
 
   // linear address for access_linear expected to be canonical !
   BX_SMF int access_read_linear(bx_address laddr, unsigned len, unsigned curr_pl,
-       unsigned rw, void *data);
+       unsigned rw, Bit32u ac_mask, void *data);
   BX_SMF int access_write_linear(bx_address laddr, unsigned len, unsigned curr_pl,
-       void *data);
+       Bit32u ac_mask, void *data);
   BX_SMF void page_fault(unsigned fault, bx_address laddr, unsigned user, unsigned rw);
 
   BX_SMF void access_read_physical(bx_phy_address paddr, unsigned len, void *data);
@@ -4654,6 +4917,8 @@ public: // for now...
 #endif
 
 #if BX_SUPPORT_AVX
+  BX_SMF void avx_masked_load8(bxInstruction_c *i, bx_address eaddr, BxPackedAvxRegister *dst, Bit64u mask);
+  BX_SMF void avx_masked_load16(bxInstruction_c *i, bx_address eaddr, BxPackedAvxRegister *dst, Bit32u mask);
   BX_SMF void avx_masked_load32(bxInstruction_c *i, bx_address eaddr, BxPackedAvxRegister *dst, Bit32u mask);
   BX_SMF void avx_masked_load64(bxInstruction_c *i, bx_address eaddr, BxPackedAvxRegister *dst, Bit32u mask);
   BX_SMF void avx_masked_store8(bxInstruction_c *i, bx_address eaddr, const BxPackedAvxRegister *op, Bit64u mask);
@@ -4663,6 +4928,8 @@ public: // for now...
 #endif
 
 #if BX_SUPPORT_EVEX
+  BX_SMF void avx512_write_regb_masked(bxInstruction_c *i, const BxPackedAvxRegister *op, unsigned vlen, Bit64u mask);
+  BX_SMF void avx512_write_regw_masked(bxInstruction_c *i, const BxPackedAvxRegister *op, unsigned vlen, Bit32u mask);
   BX_SMF void avx512_write_regd_masked(bxInstruction_c *i, const BxPackedAvxRegister *op, unsigned vlen, Bit32u mask);
   BX_SMF void avx512_write_regq_masked(bxInstruction_c *i, const BxPackedAvxRegister *op, unsigned vlen, Bit32u mask);
 #endif
@@ -4782,33 +5049,10 @@ public: // for now...
   BX_SMF BX_CPP_INLINE Bit8u get_apic_id(void) { return BX_CPU_THIS_PTR bx_cpuid; }
 #endif
 
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_x86_64(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_debug_extensions(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_1g_paging(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_vme(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_tsc(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_pae(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_pge(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_pse(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_pat(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_mtrr(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_mmx(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_sse(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_sep(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_fxsave_fxrstor(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_pcid(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_xsave(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_fsgsbase(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_smep(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_x2apic(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_smx(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_vmx(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_svm(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_rdtscp(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_tsc_deadline(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_xapic_extensions(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_smap(void);
-  BX_SMF BX_CPP_INLINE int bx_cpuid_support_fcs_fds_deprecation(void);
+  BX_SMF BX_CPP_INLINE bx_bool is_cpu_extension_supported(unsigned extension) {
+    assert(extension < BX_ISA_EXTENSION_LAST);
+    return BX_CPU_THIS_PTR ia_extensions_bitmask[extension / 32] & (1 << (extension % 32));
+  }
 
   BX_SMF BX_CPP_INLINE unsigned which_cpu(void) { return BX_CPU_THIS_PTR bx_cpuid; }
   BX_SMF BX_CPP_INLINE const bx_gen_reg_t *get_gen_regfile() { return BX_CPU_THIS_PTR gen_reg; }
@@ -4990,7 +5234,7 @@ public: // for now...
   BX_SMF void vmwrite_shadow(unsigned encoding, Bit64u val_64) BX_CPP_AttrRegparmN(2);
 #endif
 
-  BX_SMF BX_CPP_INLINE void VMsucceed(void) { setEFlagsOSZAPC(0); }
+  BX_SMF BX_CPP_INLINE void VMsucceed(void) { clearEFlagsOSZAPC(); }
   BX_SMF BX_CPP_INLINE void VMfailInvalid(void) { setEFlagsOSZAPC(EFlagsCFMask); }
   BX_SMF void VMfail(Bit32u error_code);
   BX_SMF void VMabort(VMX_vmabort_code error_code);
@@ -5383,161 +5627,6 @@ BX_CPP_INLINE bx_bool BX_CPU_C::alignment_check(void)
   return BX_CPU_THIS_PTR alignment_check_mask;
 }
 #endif
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_svm(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SVM) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_smx(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SMX) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_vmx(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_VMX) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_xsave(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_XSAVE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_x2apic(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_X2APIC) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pcid(void)
-{
-#if BX_SUPPORT_X86_64
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PCID) != 0;
-#else
-  return 0;
-#endif
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_fsgsbase(void)
-{
-#if BX_SUPPORT_X86_64
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_FSGSBASE) != 0;
-#else
-  return 0;
-#endif
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_fcs_fds_deprecation(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_FCS_FDS_DEPRECATION) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_smap(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SMAP) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_smep(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_SMEP) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_vme(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_VME) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_tsc(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_PENTIUM) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_debug_extensions(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_DEBUG_EXTENSIONS) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pse(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PSE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pat(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PAT) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_mtrr(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_MTRR) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pae(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PAE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pge(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PGE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_mmx(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_MMX) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_sse(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SSE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_sep(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SYSENTER_SYSEXIT) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_fxsave_fxrstor(void)
-{
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_SSE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_x86_64(void)
-{
-#if BX_SUPPORT_X86_64
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_LONG_MODE) != 0;
-#else
-  return 0;
-#endif
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_1g_paging(void)
-{
-#if BX_SUPPORT_X86_64
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_1G_PAGES) != 0;
-#else
-  return 0;
-#endif
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_rdtscp(void)
-{
-#if BX_SUPPORT_X86_64
-  return (BX_CPU_THIS_PTR isa_extensions_bitmask & BX_ISA_RDTSCP) != 0;
-#else
-  return 0;
-#endif
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_tsc_deadline(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_TSC_DEADLINE) != 0;
-}
-
-BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_xapic_extensions(void)
-{
-  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_XAPIC_EXT) != 0;
-}
 
 IMPLEMENT_EFLAG_ACCESSOR   (ID,  21)
 IMPLEMENT_EFLAG_ACCESSOR   (VIP, 20)

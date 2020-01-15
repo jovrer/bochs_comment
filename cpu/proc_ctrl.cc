@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc 11988 2013-12-02 20:06:59Z sshwarts $
+// $Id: proc_ctrl.cc 12508 2014-10-15 15:28:13Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -531,7 +531,8 @@ void BX_CPU_C::handleCpuContextChange(void)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
-  if (! BX_CPU_THIS_PTR cr4.get_PCE() && CPL != 0 ) {
+  // in real mode CPL=0
+  if (! BX_CPU_THIS_PTR cr4.get_PCE() && CPL != 0 /* && protected_mode() */) {
     BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack64.cc 11831 2013-09-24 05:21:00Z sshwarts $
+// $Id: stack64.cc 12516 2014-10-20 21:10:52Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -37,7 +37,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EqM(bxInstruction_c *i)
   // pop is used to calculate the address.
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  write_virtual_qword_64(i->seg(), eaddr, val64);
+  write_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr), val64);
 
   RSP_COMMIT;
 
@@ -86,7 +86,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_EqM(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit64u op1_64 = read_virtual_qword_64(i->seg(), eaddr);
+  Bit64u op1_64 = read_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr));
 
   push_64(op1_64);
 

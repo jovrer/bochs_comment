@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dbg_main.cc 12300 2014-04-29 18:49:38Z sshwarts $
+// $Id: dbg_main.cc 12481 2014-08-31 20:05:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -835,9 +835,7 @@ void bx_dbg_print_mxcsr_state(void)
 void bx_dbg_print_sse_state(void)
 {
 #if BX_CPU_LEVEL >= 6
-  Bit64u isa_extensions_bitmask = SIM->get_param_num("isa_extensions_bitmask", dbg_cpu_list)->get64();
-
-  if ((isa_extensions_bitmask & BX_ISA_SSE) != 0) {
+  if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_SSE)) {
     bx_dbg_print_mxcsr_state();
 
     char param_name[20];
@@ -860,15 +858,14 @@ void bx_dbg_print_sse_state(void)
 void bx_dbg_print_avx_state(unsigned vlen)
 {
 #if BX_SUPPORT_AVX
-  Bit64u isa_extensions_bitmask = SIM->get_param_num("isa_extensions_bitmask", dbg_cpu_list)->get64();
   char param_name[20];
 
-  if ((isa_extensions_bitmask & BX_ISA_AVX) != 0) {
+  if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_AVX)) {
     bx_dbg_print_mxcsr_state();
 
     unsigned num_regs = 16;
 #if BX_SUPPORT_EVEX
-    if ((isa_extensions_bitmask & BX_ISA_AVX512) != 0)
+    if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_AVX512))
       num_regs = BX_XMM_REGISTERS;
     else
       vlen = BX_VL256;
@@ -894,7 +891,7 @@ void bx_dbg_print_avx_state(unsigned vlen)
   }
 
 #if BX_SUPPORT_EVEX
-  if ((isa_extensions_bitmask & BX_ISA_AVX512) != 0) {
+  if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_AVX512)) {
     for(unsigned i=0;i<8;i++) {
       sprintf(param_name, "OPMASK.k%d", i);
       Bit64u opmask = SIM->get_param_num(param_name, dbg_cpu_list)->get64();
@@ -907,9 +904,7 @@ void bx_dbg_print_avx_state(unsigned vlen)
 void bx_dbg_print_mmx_state(void)
 {
 #if BX_CPU_LEVEL >= 5
-  Bit64u isa_extensions_bitmask = SIM->get_param_num("isa_extensions_bitmask", dbg_cpu_list)->get64();
-
-  if ((isa_extensions_bitmask & BX_ISA_MMX) != 0) {
+  if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_MMX)) {
     char param_name[20];
     for(unsigned i=0;i<8;i++) {
       sprintf(param_name, "FPU.st%d.fraction", i);
@@ -1042,8 +1037,7 @@ void bx_dbg_info_control_regs_command(void)
     (cr4 & (1<<1))  ? "PVI" : "pvi",
     (cr4 & (1<<0))  ? "VME" : "vme");
 #if BX_SUPPORT_X86_64
-  Bit64u cpu_extensions_bitmask = SIM->get_param_num("cpu_extensions_bitmask", dbg_cpu_list)->get();
-  if ((cpu_extensions_bitmask & BX_CPU_LONG_MODE) != 0) {
+  if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_LONG_MODE)) {
     dbg_printf("CR8: 0x%x\n", BX_CPU(dbg_cpu)->get_cr8());
   }
 #endif
@@ -1056,8 +1050,7 @@ void bx_dbg_info_control_regs_command(void)
     (efer & (1<<0))  ? "SCE" : "sce");
 #endif
 #if BX_CPU_LEVEL >= 6
-  Bit64u isa_extensions_bitmask = SIM->get_param_num("isa_extensions_bitmask", dbg_cpu_list)->get64();
-  if ((isa_extensions_bitmask & BX_ISA_XSAVE) != 0) {
+  if (BX_CPU(dbg_cpu)->is_cpu_extension_supported(BX_ISA_XSAVE)) {
     Bit32u xcr0 = SIM->get_param_num("XCR0", dbg_cpu_list)->get();
     dbg_printf("XCR0=0x%08x: %s %s %s %s %s %s %s %s\n", xcr0,
       (xcr0 & (1<<7)) ? "HI_ZMM" : "hi_zmm",
@@ -1538,15 +1531,18 @@ void bx_dbg_show_command(const char* arg)
         dbg_show_mask |= BX_DBG_SHOW_CALLRET;
         dbg_printf("show calls/returns: ON\n");
       }
+    } else if(!strcmp(arg,"all")) {
+      dbg_show_mask = ~0x0;
+      dbg_printf("Enable all show flags\n");
     } else if(!strcmp(arg,"off")) {
       dbg_show_mask = 0x0;
       dbg_printf("Disable all show flags\n");
-    } else if(!strcmp(arg,"dbg-all")) {
+    } else if(!strcmp(arg,"dbg_all")) {
       bx_dbg.interrupts = 1;
       bx_dbg.exceptions = 1;
       dbg_printf("Turned ON all bx_dbg flags\n");
       return;
-    } else if(!strcmp(arg,"dbg-none")) {
+    } else if(!strcmp(arg,"dbg_none")) {
       bx_dbg.interrupts = 0;
       bx_dbg.exceptions = 0;
       dbg_printf("Turned OFF all bx_dbg flags\n");
@@ -1555,7 +1551,7 @@ void bx_dbg_show_command(const char* arg)
       SIM->refresh_vga();
       return;
     } else {
-      dbg_printf("Unrecognized arg: %s (only 'mode', 'int', 'softint', 'extint', 'iret', 'call', 'off', 'dbg-all' and 'dbg-none' are valid)\n", arg);
+      dbg_printf("Unrecognized arg: %s (only 'mode', 'int', 'softint', 'extint', 'iret', 'call', 'all', 'off', 'dbg_all' and 'dbg_none' are valid)\n", arg);
       return;
     }
   }

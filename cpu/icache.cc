@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.cc 11845 2013-10-02 19:23:34Z sshwarts $
+// $Id: icache.cc 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -27,6 +27,7 @@
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #include "param_names.h"
+#include "cpustats.h"
 
 bxPageWriteStampTable pageWriteStampTable;
 
@@ -42,6 +43,8 @@ void flushICaches(void)
 
 void handleSMC(bx_phy_address pAddr, Bit32u mask)
 {
+  INC_SMC_STAT(smc);
+
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++) {
     BX_CPU(i)->async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_CPU(i)->iCache.handleSMC(pAddr, mask);

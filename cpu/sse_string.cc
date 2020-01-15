@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_string.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: sse_string.cc 12420 2014-07-18 11:14:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2007-2012 Stanislav Shwartsman
+//   Copyright (c) 2007-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -29,7 +29,7 @@
 #if BX_CPU_LEVEL >= 6
 
 // Compare all pairs of Ai, Bj according to imm8 control
-static void compare_strings(Bit8u BoolRes[16][16], BxPackedXmmRegister op1, BxPackedXmmRegister op2, Bit8u imm)
+static void compare_strings(Bit8u BoolRes[16][16], const BxPackedXmmRegister &op1, const BxPackedXmmRegister &op2, Bit8u imm)
 {
   unsigned i, j;
   unsigned aggregation_operation = (imm >> 2) & 3;
@@ -147,7 +147,7 @@ static unsigned find_eos64(Bit64s reg64, Bit8u imm)
 }
 #endif
 
-static unsigned find_eos(BxPackedXmmRegister op, Bit8u imm)
+static unsigned find_eos(const BxPackedXmmRegister &op, Bit8u imm)
 {
   unsigned i = 0;
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h 12103 2014-01-12 08:26:04Z vruppert $
+// $Id: siminterface.h 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -633,8 +633,8 @@ public:
   bx_simulator_interface_c() {}
   virtual ~bx_simulator_interface_c() {}
   virtual void set_quit_context(jmp_buf *context) {}
-  virtual int get_init_done() { return -1; }
-  virtual int set_init_done(int n) {return -1;}
+  virtual int get_init_done() { return 0; }
+  virtual int set_init_done(int n) {return 0;}
   virtual void reset_all_param() {}
   // new param methods
   virtual bx_param_c *get_param(const char *pname, bx_param_c *base=NULL) {return NULL;}
@@ -644,15 +644,15 @@ public:
   virtual bx_param_enum_c *get_param_enum(const char *pname, bx_param_c *base=NULL) {return NULL;}
   virtual unsigned gen_param_id() {return 0;}
   virtual int get_n_log_modules() {return -1;}
-  virtual const char *get_logfn_name(int mod) {return 0;}
+  virtual const char *get_logfn_name(int mod) {return NULL;}
   virtual int get_logfn_id(const char *name) {return -1;}
-  virtual const char *get_prefix(int mod) {return 0;}
+  virtual const char *get_prefix(int mod) {return NULL;}
   virtual int get_log_action(int mod, int level) {return -1;}
   virtual void set_log_action(int mod, int level, int action) {}
   virtual int get_default_log_action(int level) {return -1;}
   virtual void set_default_log_action(int level, int action) {}
-  virtual const char *get_action_name(int action) {return 0;}
-  virtual const char *get_log_level_name(int level) {return 0;}
+  virtual const char *get_action_name(int action) {return NULL;}
+  virtual const char *get_log_level_name(int level) {return NULL;}
   virtual int get_max_log_level() {return -1;}
 
   // exiting is somewhat complicated!  The preferred way to exit bochs is
@@ -758,12 +758,19 @@ public:
   // interfaces to use.
   virtual void set_display_mode(disp_mode_t newmode) {}
   virtual bx_bool test_for_text_console() {return 1;}
+
   // add-on config option support
   virtual bx_bool register_addon_option(const char *keyword, addon_option_parser_t parser, addon_option_save_t save_func) {return 0;}
   virtual bx_bool unregister_addon_option(const char *keyword) {return 0;}
   virtual bx_bool is_addon_option(const char *keyword) {return 0;}
   virtual Bit32s parse_addon_option(const char *context, int num_params, char *params []) {return -1;}
   virtual Bit32s save_addon_options(FILE *fp) {return -1;}
+
+  // statistics
+  virtual void init_statistics() {}
+  virtual void cleanup_statistics() {}
+  virtual bx_list_c *get_statistics_root() {return NULL;}
+ 
   // save/restore support
   virtual void init_save_restore() {}
   virtual void cleanup_save_restore() {}
@@ -773,6 +780,7 @@ public:
   virtual bx_bool restore_hardware() {return 0;}
   virtual bx_list_c *get_bochs_root() {return NULL;}
   virtual bx_bool restore_bochs_param(bx_list_c *root, const char *sr_path, const char *restore_name) { return 0; }
+
   // special config parameter and options functions for plugins
   virtual bx_bool opt_plugin_ctrl(const char *plugname, bx_bool load) {return 0;}
   virtual void init_std_nic_options(const char *name, bx_list_c *menu) {}

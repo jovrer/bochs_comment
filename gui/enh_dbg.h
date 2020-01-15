@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.h 12110 2014-01-13 21:31:14Z vruppert $
+// $Id: enh_dbg.h 12486 2014-09-14 19:36:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -67,6 +67,8 @@ int GetNextSelectedLI(int listnum, int StartPt);
 bx_bool OSInit();
 void SpecialInit();
 void CloseDialog();
+bx_bool ParseOSSettings(const char *param, const char *value);
+void WriteOSSettings(FILE *fd);
 
 void HitBreak();
 void ParseIDText(const char *x);
@@ -168,6 +170,7 @@ extern bx_bool ignoreNxtT;      // Do not show "Next at t=" output lines
 extern bx_bool ignSSDisasm;     // Do not show extra disassembly line at each break
 extern int UprCase;             // 1 = convert all Asm, Register names, Register values to uppercase
 extern int DumpInAsciiMode;     // bit 1 = show ASCII in dumps, bit 2 = show hex, value=0 is illegal
+extern int DumpWSIndex;         // word size index for memory dump
 extern bx_bool LogView;         // Send log to output window
 
 extern bx_bool isLittleEndian;

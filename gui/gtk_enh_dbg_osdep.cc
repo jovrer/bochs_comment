@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gtk_enh_dbg_osdep.cc 12110 2014-01-13 21:31:14Z vruppert $
+// $Id: gtk_enh_dbg_osdep.cc 12486 2014-09-14 19:36:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -438,7 +438,7 @@ void InitMenus()
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(ChkMIs[IGN_NT]), ignoreNxtT);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(ChkMIs[R_CLR]), SeeRegColors);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(ChkMIs[LOG_VIEW]), LogView);
-    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(ChkMIs[WSChkIdx]), TRUE);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(ChkMIs[WSChkIdx+DumpWSIndex]), TRUE);
     if (DumpInAsciiMode == 0)       // prevent an illegal value
         DumpInAsciiMode = 3;
     // I don't know why, but the next 2 "set_active" commands blow up if moved into SpecialInit
@@ -2398,6 +2398,17 @@ void MakeBL(TreeParent *h_P, bx_param_c *p)
         for (int i=0; i<n; i++)
             MakeBL(&h_new, as_list->get(i));    // recurse for all children that are lists
     }
+}
+
+bx_bool ParseOSSettings(const char *param, const char *value)
+{
+  // TODO: handle GTK-specific settings here
+  return 0;
+}
+
+void WriteOSSettings(FILE *fd)
+{
+  // TODO: handle GTK-specific settings here
 }
 
 #endif

@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt 12065 2013-12-24 08:55:07Z vruppert $
+$Id: PARAM_TREE.txt 12501 2014-10-14 15:59:10Z sshwarts $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -12,6 +12,7 @@ general
   config_interface
   start_mode
   benchmark
+  dumpstats
   restore
   restore_path
   debug_running

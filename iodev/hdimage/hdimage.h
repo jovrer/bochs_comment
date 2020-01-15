@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.h 12272 2014-04-04 19:14:32Z vruppert $
+// $Id: hdimage.h 12380 2014-06-19 08:57:28Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2005-2014  The Bochs Project
@@ -137,8 +137,6 @@
 #define htod64(val) bx_bswap64(val)
 #define dtoh64(val) htod64(val)
 #endif
-
-#ifndef HDIMAGE_HEADERS_ONLY
 
 class device_image_t;
 class redolog_t;
@@ -600,7 +598,5 @@ public:
   virtual cdrom_base_c *init_cdrom(const char *dev);
 };
 #endif // BXIMAGE
-
-#endif // HDIMAGE_HEADERS_ONLY
 
 #endif

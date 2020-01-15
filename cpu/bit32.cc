@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit32.cc 12222 2014-03-02 16:40:13Z sshwarts $
+// $Id: bit32.cc 12518 2014-10-22 17:49:12Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -347,8 +347,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::POPCNT_GdEdR(bxInstruction_c *i)
 {
   Bit32u op_32 = popcntd(BX_READ_32BIT_REG(i->src()));
 
-  Bit32u flags = op_32 ? 0 : EFlagsZFMask;
-  setEFlagsOSZAPC(flags);
+  clearEFlagsOSZAPC();
+  if (! op_32) assert_ZF();
 
   BX_WRITE_32BIT_REGZ(i->dst(), op_32);
 

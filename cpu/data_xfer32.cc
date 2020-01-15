@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer32.cc 11831 2013-09-24 05:21:00Z sshwarts $
+// $Id: data_xfer32.cc 12498 2014-10-12 19:31:14Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -23,21 +23,6 @@
 #include "bochs.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::XCHG_ERXEAX(bxInstruction_c *i)
-{
-#if BX_SUPPORT_X86_64
-  if (i->dst() == 0) { // 'xchg eax, eax' is NOP even in 64-bit mode
-    BX_NEXT_INSTR(i);
-  }
-#endif
-
-  Bit32u temp32 = EAX;
-  RAX = BX_READ_32BIT_REG(i->dst());
-  BX_WRITE_32BIT_REGZ(i->dst(), temp32);
-
-  BX_NEXT_INSTR(i);
-}
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EdIdM(bxInstruction_c *i)
 {

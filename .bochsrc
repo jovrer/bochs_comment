@@ -54,7 +54,8 @@
 #   carbon         use Carbon library (for MacOS X)
 #   macintosh      use MacOS pre-10
 #   amigaos        use native AmigaOS libraries
-#   sdl            use SDL library, cross platform
+#   sdl            use SDL 1.2.x library, cross platform
+#   sdl2           use SDL 2.x library, cross platform
 #   svga           use SVGALIB library for Linux, allows graphics without X11
 #   term           text only, uses curses/ncurses library, cross platform
 #   rfb            provides an interface to AT&T's VNC viewer, cross platform
@@ -69,9 +70,11 @@
 # Some display libraries now support specific options to control their
 # behaviour. These options are supported by more than one display library:
 #
-# "gui_debug"   - use GTK debugger gui (sdl, x) / Win32 debugger gui (sdl, win32)
-# "hideIPS"     - disable IPS output in status bar (rfb, sdl, vncsrv, win32, wx, x)
-# "nokeyrepeat" - turn off host keyboard repeat (sdl, win32, x)
+# "gui_debug"   - use GTK debugger gui (sdl, sdl2, x) / Win32 debugger gui (sdl,
+#                 sdl2, win32)
+# "hideIPS"     - disable IPS output in status bar (rfb, sdl, sdl2, vncsrv,
+#                 win32, wx, x)
+# "nokeyrepeat" - turn off host keyboard repeat (sdl, sdl2, win32, x)
 # "timeout"     - time (in seconds) to wait for client (rfb, vncsrv)
 #
 # See the examples below for other currently supported options.
@@ -82,6 +85,7 @@
 #display_library: nogui
 #display_library: rfb
 #display_library: sdl, options="fullscreen" # startup in fullscreen mode
+#display_library: sdl2, options="fullscreen" # startup in fullscreen mode
 #display_library: term
 #display_library: vncsrv
 #display_library: win32
@@ -401,12 +405,9 @@ vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest
 #     values are 'vbe' for Bochs VBE and 'cirrus' for Cirrus SVGA support.
 #
 #   UPDATE_FREQ
-#     The VGA update frequency is based on the emulated clock and the default
-#     value is 5. Keep in mind that you must tweak the 'cpu: ips=N' directive
-#     to be as close to the number of emulated instructions-per-second your
-#     workstation can do, for this to be accurate. If the realtime sync is
-#     enabled with the 'clock' option, the value is based on the real time.
-#     This parameter can be changed at runtime.
+#     This parameter specifies the number of display updates per second.
+#     The VGA update timer now uses the realtime engine and the default
+#     value is 5. This parameter can be changed at runtime.
 #
 # Examples:
 #   vga: extension=cirrus, update_freq=10
@@ -459,7 +460,8 @@ vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest
 #     Valid key names:
 #     "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
 #     "f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup",
-#     "plus", "right", "shift", "space", "tab", "up", "win", "print" and "power".
+#     "plus", "power", "print", "right", "scrlck", "shift", "space", "tab", "up"
+#     and "win".
 
 # Examples:
 #   keyboard: type=mf, serial_delay=200, paste_delay=100000
@@ -1022,11 +1024,6 @@ speaker: enabled=1, mode=sound
 # to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom'
 # 'hub' and 'printer').
 #
-# The optionsX parameter can be used to assign specific options to the device
-# connected to the corresponding USB port. Currently this feature is only used
-# to set the speed reported by device and by the 'disk' device to specify
-# an alternative redolog file of some image modes.
-#
 # If you connect the mouse or tablet to one of the ports, Bochs forwards the
 # mouse movement data to the USB device instead of the selected mouse type.
 # When connecting the keypad to one of the ports, Bochs forwards the input of
@@ -1049,18 +1046,29 @@ speaker: enabled=1, mode=sound
 # sent to a file specified in bochsrc.txt. The current code appends the PCL
 # code to the file if the file already existed. It would probably be nice to
 # overwrite the file instead, asking user first.
+#
+# The optionsX parameter can be used to assign specific options to the device
+# connected to the corresponding USB port. Currently this feature is used to
+# set the speed reported by device ('low', 'full', 'high' or 'super'). The
+# availabe speed choices depend on both HC and device. For the USB 'disk' device
+# the optionsX parameter can be used to specify an alternative redolog file
+# (journal) of some image modes. For 'vvfat' mode USB disks the optionsX
+# parameter can be used to specify the disk size (range 128M ... 128G). If the
+# size is not specified, it defaults to 504M.
 #=======================================================================
 #usb_uhci: enabled=1
 #usb_uhci: enabled=1, port1=mouse, port2=disk:usbstick.img
 #usb_uhci: enabled=1, port1=hub:7, port2=disk:growing:usbdisk.img
-#usb_uhci: enabled=1, port2=disk:undoable:usbdisk.img, options1=journal:redo.log
+#usb_uhci: enabled=1, port2=disk:undoable:usbdisk.img, options2=journal:redo.log
+#usb_uhci: enabled=1, port2=disk:vvfat:vvfat, options2=speed:full
 #usb_uhci: enabled=1, port1=printer:printdata.bin, port2=cdrom:image.iso
 
 #=======================================================================
 # USB_OHCI:
 # This option controls the presence of the USB OHCI host controller with a
-# 2-port hub. The portX option accepts the same device types with the same
-# syntax as the UHCI controller (see above).
+# 2-port hub. The portX parameter accepts the same device types with the same
+# syntax as the UHCI controller (see above). The optionsX parameter is also
+# available on OHCI.
 #=======================================================================
 #usb_ohci: enabled=1
 #usb_ohci: enabled=1, port1=printer:usbprinter.bin
@@ -1068,8 +1076,11 @@ speaker: enabled=1, mode=sound
 #=======================================================================
 # USB_XHCI:
 # This option controls the presence of the experimental USB xHCI host controller
-# with a 4-port hub. The portX option accepts the same device types with the
-# same syntax as the UHCI controller (see above).
+# with a 4-port hub. The portX paramter accepts the same device types with the
+# same syntax as the UHCI controller (see above). The optionsX parameter is
+# also available on xHCI. NOTE: port 1 and 2 are USB3 and only support
+# super-speed devices, but port 3 and 4 are USB2 and support speed settings
+# low, full and high.
 #=======================================================================
 #usb_xhci: enabled=1
 

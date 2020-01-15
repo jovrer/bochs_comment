@@ -2,19 +2,19 @@ dnl // Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.50)
 AC_INIT(bochs.h)
-AC_REVISION([[$Id: configure.in 12373 2014-06-15 06:01:20Z vruppert $]])
+AC_REVISION([[$Id: configure.in 12529 2014-11-02 07:45:40Z vruppert $]])
 AC_CONFIG_HEADER(config.h)
 AC_CONFIG_HEADER(ltdlconf.h)
 
 dnl // Put Bochs version information right here so that it gets substituted
 dnl // into all the right places.
-VERSION="2.6.6"
-VER_STRING="2.6.6"
+VERSION="2.6.7"
+VER_STRING="2.6.7"
 dnl // WIN_VER_STRING format is "a, b, c, d"
 dnl // c should be > 90 for pre-release of next version otherwise patch level
 dnl // d should be 0 for release and 1 for svn version
-WIN_VER_STRING="2, 6, 6, 0"
-REL_STRING="Built from SVN snapshot on June 15, 2014"
+WIN_VER_STRING="2, 6, 7, 0"
+REL_STRING="Built from SVN snapshot on November 2, 2014"
 
 changequote(<<, >>)
 changequote([, ])
@@ -87,8 +87,9 @@ fi
 AC_MSG_CHECKING(for standard CFLAGS on this platform)
 AC_MSG_RESULT($ADD_FLAGS)
 
-dnl // make sure X Windows is default if no other chosen
+dnl // make sure the default gui is enabled if no other chosen
 if (test "$with_sdl" != yes) && \
+   (test "$with_sdl2" != yes) && \
    (test "$with_svga" != yes) && \
    (test "$with_x11" != yes) && \
    (test "$with_win32" != yes) && \
@@ -316,12 +317,19 @@ if test "$with_all_libs" = yes; then
     fi
   fi
 
-  if test "$with_sdl" != yes; then
-    can_compile_sdl=1
-    AC_CHECK_HEADER([SDL/SDL.h], [], [ can_compile_sdl=0 ])
-    AC_CHECK_HEADER([SDL/SDL_main.h], [], [ can_compile_sdl=0 ])
-    if test $can_compile_sdl = 1; then
-      with_sdl=yes
+  if test "$with_sdl" != yes -a "$with_sdl2" != yes; then
+    can_compile_sdl=2
+    AC_CHECK_HEADER([SDL2/SDL.h], [], [ can_compile_sdl=0 ])
+    AC_CHECK_HEADER([SDL2/SDL_main.h], [], [ can_compile_sdl=0 ])
+    if test $can_compile_sdl != 2; then
+      can_compile_sdl=1
+      AC_CHECK_HEADER([SDL/SDL.h], [], [ can_compile_sdl=0 ])
+      AC_CHECK_HEADER([SDL/SDL_main.h], [], [ can_compile_sdl=0 ])
+      if test $can_compile_sdl = 1; then
+        with_sdl=yes
+      fi
+    else
+      with_sdl2=yes
     fi
   fi
 
@@ -393,6 +401,10 @@ if test "$with_all_libs" = yes; then
     with_nogui=yes
   fi
 fi    # end of if $with_all_libs = yes
+
+if test "$with_sdl" = yes -a "$with_sdl2" = yes; then
+  AC_MSG_ERROR([[--with-sdl and --with-sdl2 are mutually exclusive]])
+fi
 
 AC_MSG_CHECKING(for idle hack)
 AC_ARG_ENABLE(idle-hack,
@@ -835,7 +847,6 @@ AC_ARG_ENABLE(debugger-gui,
   AS_HELP_STRING([--enable-debugger-gui], [compile in support for Bochs internal debugger GUI (yes, if debugger is on)]),
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
-    AC_DEFINE(BX_DEBUGGER_GUI, 1)
     gui_debugger=1
    else
     AC_MSG_RESULT(no)
@@ -845,7 +856,6 @@ AC_ARG_ENABLE(debugger-gui,
   [
     if test "$bx_debugger" = 1; then
       AC_MSG_RESULT(yes)
-      AC_DEFINE(BX_DEBUGGER_GUI, 1)
       gui_debugger=1
     else
       AC_MSG_RESULT(no)
@@ -1092,6 +1102,22 @@ AC_ARG_ENABLE(logging,
     ]
   )
 
+AC_MSG_CHECKING(enable statistics collection)
+AC_ARG_ENABLE(stats,
+  AS_HELP_STRING([--enable-stats], [enable statistics collection (yes)]),
+  [if test "$enableval" = yes; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_ENABLE_STATISTICS, 1)
+   else
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_ENABLE_STATISTICS, 0)
+   fi],
+  [
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_ENABLE_STATISTICS, 1)
+    ]
+  )
+
 AC_MSG_CHECKING(enable assert checks)
 AC_ARG_ENABLE(assert-checks,
   AS_HELP_STRING([--enable-assert-checks], [enable BX_ASSERT checks (yes, if debugger is on)]),
@@ -1268,13 +1294,36 @@ AC_ARG_ENABLE(monitor_mwait,
   ]
   )
 
+AC_MSG_CHECKING(for limited hardware performance monitoring emulation support (experimental))
+AC_ARG_ENABLE(perfmon,
+  AS_HELP_STRING([--enable-perfmon], [support for limiteed hardware performance monitoring emulation (yes, if cpu level > 5 - experimental)]),
+  [if test "$enableval" = yes; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_SUPPORT_PERFMON, 1)
+   elif test "$enableval" = no; then
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_PERFMON, 0)
+   fi
+   ],
+  [
+    if test "$bx_cpu_level" -gt 5; then
+      AC_MSG_RESULT(yes)
+      AC_DEFINE(BX_SUPPORT_PERFMON, 1)
+    else
+      AC_MSG_RESULT(no)
+      AC_DEFINE(BX_SUPPORT_PERFMON, 0)
+    fi
+  ]
+  )
+
 support_avx=0
+AVX_LIB_VAR=''
 AC_MSG_CHECKING(for AVX instructions support)
 AC_ARG_ENABLE(avx,
   AS_HELP_STRING([--enable-avx], [support for AVX instructions (no)]),
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
-    AVX_OBJS='$(AVX_OBJS)'
+    AVX_LIB_VAR='$(AVX_LIB)'
     AC_DEFINE(BX_SUPPORT_AVX, 1)
     support_avx=1
    elif test "$enableval" = no; then
@@ -1287,7 +1336,7 @@ AC_ARG_ENABLE(avx,
     AC_DEFINE(BX_SUPPORT_AVX, 0)
   ]
   )
-AC_SUBST(AVX_OBJS)
+AC_SUBST(AVX_LIB_VAR)
 
 if test "$support_avx" -gt 0 -a "$use_x86_64" = 0; then
   AC_MSG_ERROR([for AVX support x86-64 emulation must be compiled in!])
@@ -1882,6 +1931,15 @@ if test "$soundcard_present" = 1; then
     if test "$soundlow_default" = "dummy"; then
       soundlow_default="sdl"
     fi
+  elif test "$with_sdl2" = yes; then
+    SOUNDLOW_OBJS="$SOUNDLOW_OBJS soundsdl.o"
+    if test "$bx_plugins" = 1; then
+      SOUND_LINK_OPTS="$SOUND_LINK_OPTS `sdl2-config --libs`"
+    fi
+    soundlow_drivers="$soundlow_drivers sdl"
+    if test "$soundlow_default" = "dummy"; then
+      soundlow_default="sdl"
+    fi
   fi
   if test "$bx_plugins" = 0; then
     SOUND_LIB_VAR='iodev/sound/libsound.a'
@@ -2039,6 +2097,10 @@ AC_ARG_WITH(amigaos,
 
 AC_ARG_WITH(sdl,
   [  --with-sdl                        use SDL libraries],
+  )
+
+AC_ARG_WITH(sdl2,
+  [  --with-sdl2                       use SDL2 libraries],
   )
 
 AC_ARG_WITH(svga,
@@ -2206,7 +2268,37 @@ if test "$with_sdl" = yes; then
   SDL_CFLAGS=`sdl-config --cflags`
   GUI_CFLAGS="$GUI_CFLAGS $SDL_CFLAGS"
   GUI_CXXFLAGS="$GUI_CXXFLAGS $SDL_CFLAGS"
+  GUI_LINK_OPTS_SDL="`sdl-config --libs`"
   GUI_LINK_OPTS="$GUI_LINK_OPTS \$(GUI_LINK_OPTS_SDL)"
+  # The enhanced X debugger depends on GTK2
+  if test "$gui_debugger" = 1 -a "$DEFAULT_GUI" != win32; then
+    needs_gtk2=1
+  fi
+  if test "$with_win32" != yes -a "$with_wx" != yes; then
+    case $target in
+      *-pc-windows*)
+         RC_CMD="rc /fo"
+         EXTRA_BX_OBJS="$EXTRA_BX_OBJS win32res.o"
+         ;;
+      *-cygwin* | *-mingw32*)
+         RC_CMD="windres -I. -o "
+         EXTRA_BX_OBJS="$EXTRA_BX_OBJS win32res.o"
+         ;;
+    esac
+  fi
+fi
+
+if test "$with_sdl2" = yes; then
+  display_libs="$display_libs sdl2"
+  AC_DEFINE(BX_WITH_SDL2, 1)
+  SPECIFIC_GUI_OBJS="$SPECIFIC_GUI_OBJS \$(GUI_OBJS_SDL2)"
+  # GUI_*FLAGS are added to the compilation of every bochs file, not just
+  # the files in gui/*.cc.
+  SDL2_CFLAGS=`sdl2-config --cflags`
+  GUI_CFLAGS="$GUI_CFLAGS $SDL2_CFLAGS"
+  GUI_CXXFLAGS="$GUI_CXXFLAGS $SDL2_CFLAGS"
+  GUI_LINK_OPTS_SDL2="`sdl2-config --libs`"
+  GUI_LINK_OPTS="$GUI_LINK_OPTS \$(GUI_LINK_OPTS_SDL2)"
   # The enhanced X debugger depends on GTK2
   if test "$gui_debugger" = 1 -a "$DEFAULT_GUI" != win32; then
     needs_gtk2=1
@@ -2366,7 +2458,7 @@ if test "$with_wx" = yes; then
       fi
       ;;
   esac
-  # The enhanced X debugger depends on GTK2 (unused yet, but fixes link failure)
+  # The enhanced X debugger depends on GTK2
   if test "$gui_debugger" = 1 -a "$DEFAULT_GUI" != win32; then
     needs_gtk2=1
   fi
@@ -2540,9 +2632,13 @@ AC_SUBST(CXXFLAGS_CONSOLE)
 ENH_DBG_OBJS=""
 if test "$gui_debugger" = 1; then
   if test "$needs_gtk2" = 1; then
-     ENH_DBG_OBJS="gtk_enh_dbg_osdep.o"
+    ENH_DBG_OBJS="enh_dbg.o gtk_enh_dbg_osdep.o"
+    AC_DEFINE(BX_DEBUGGER_GUI, 1)
   elif test "$DEFAULT_GUI" = win32 -o "$with_win32" = yes; then
-     ENH_DBG_OBJS="win32_enh_dbg_osdep.o"
+    ENH_DBG_OBJS="enh_dbg.o win32_enh_dbg_osdep.o"
+    AC_DEFINE(BX_DEBUGGER_GUI, 1)
+  else
+    AC_MSG_WARN([The Bochs debugger gui cannot be compiled here, disabling it])
   fi
 fi
 AC_SUBST(ENH_DBG_OBJS)
@@ -2577,7 +2673,6 @@ case $target in
         echo -e "\tlink /dll /nologo /subsystem:console /incremental:no /out:\$@ $i.o \$(WIN32_DLL_IMPORT_LIBRARY)\n" >> iodev/makeincl.vc
         IODEV_DLL_TARGETS="$IODEV_DLL_TARGETS bx_$i.dll"
       done
-      MANIFEST_LINE="mt -manifest bochs.exe.manifest build\win32\bochs.manifest -outputresource:bochs.exe;1"
     else
       if test "$with_win32" != yes; then
         LIBS="$LIBS comctl32.lib"
@@ -2926,6 +3021,8 @@ AC_SUBST(INSTALL_TARGET)
 AC_SUBST(INSTALL_LIST_FOR_PLATFORM)
 AC_SUBST(RFB_LIBS)
 AC_SUBST(GUI_LINK_OPTS_VNCSRV)
+AC_SUBST(GUI_LINK_OPTS_SDL)
+AC_SUBST(GUI_LINK_OPTS_SDL2)
 AC_SUBST(GUI_OBJS)
 AC_SUBST(DEVICE_LINK_OPTS)
 AC_SUBST(GUI_LINK_OPTS)
@@ -2968,7 +3065,6 @@ AC_SUBST(PLUGIN_TARGET_2)
 AC_SUBST(IODEV_DLL_TARGETS)
 AC_SUBST(EXT_IODEV_DLL_RULES)
 AC_SUBST(WIN32_DLL_IMPORT_LIB)
-AC_SUBST(MANIFEST_LINE)
 AC_SUBST(INSTALL_PLUGINS_VAR)
 
 AC_PATH_PROG(GZIP, gzip)
@@ -2976,9 +3072,9 @@ AC_PATH_PROG(TAR, tar)
 
 AC_OUTPUT(Makefile iodev/Makefile iodev/display/Makefile iodev/hdimage/Makefile \
 	 iodev/usb/Makefile iodev/network/Makefile iodev/sound/Makefile \
-	 bx_debug/Makefile bios/Makefile cpu/Makefile cpu/cpudb/Makefile \
-	 cpu/fpu/Makefile memory/Makefile gui/Makefile disasm/Makefile \
-	 ${INSTRUMENT_DIR}/Makefile misc/Makefile doc/docbook/Makefile \
-	 build/linux/bochs-dlx bxversion.h bxversion.rc build/macosx/Info.plist \
-	 build/win32/nsis/Makefile build/win32/nsis/bochs.nsi \
-	 host/linux/pcidev/Makefile)
+	 bx_debug/Makefile bios/Makefile cpu/Makefile cpu/avx/Makefile \
+	 cpu/cpudb/Makefile cpu/fpu/Makefile memory/Makefile gui/Makefile \
+	 disasm/Makefile ${INSTRUMENT_DIR}/Makefile misc/Makefile \
+	 doc/docbook/Makefile build/linux/bochs-dlx bxversion.h bxversion.rc \
+	 build/macosx/Info.plist build/win32/nsis/Makefile \
+	 build/win32/nsis/bochs.nsi host/linux/pcidev/Makefile)

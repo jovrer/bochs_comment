@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vgacore.cc 11956 2013-11-25 21:07:39Z vruppert $
+// $Id: vgacore.cc 12514 2014-10-19 08:54:16Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -264,7 +264,7 @@ void bx_vgacore_c::init_systemtimer(bx_timer_handler_t f_timer, param_event_hand
   BX_INFO(("interval=%u", BX_VGA_THIS update_interval));
   if (BX_VGA_THIS timer_id == BX_NULL_TIMER_HANDLE) {
     BX_VGA_THIS timer_id = bx_virt_timer.register_timer(this, f_timer,
-       BX_VGA_THIS update_interval, 1, 1, "vga");
+       BX_VGA_THIS update_interval, 1, 1, 1, "vga");
     vga_update_freq->set_handler(f_param);
   }
   // VGA text mode cursor blink frequency 1.875 Hz

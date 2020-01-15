@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc 12304 2014-05-01 18:30:23Z sshwarts $
+// $Id: cpu.cc 12509 2014-10-15 18:00:04Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -24,28 +24,7 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#define InstrumentICACHE 0
-
-#if InstrumentICACHE
-static unsigned iCacheLookups=0;
-static unsigned iCacheMisses=0;
-
-#define InstrICache_StatsMask 0xffffff
-
-#define InstrICache_Stats() {\
-  if ((iCacheLookups & InstrICache_StatsMask) == 0) { \
-    BX_INFO(("ICACHE lookups: %u, misses: %u, hit rate = %6.2f%% ", \
-          iCacheLookups, \
-          iCacheMisses,  \
-          (iCacheLookups-iCacheMisses) * 100.0f / iCacheLookups)); \
-    iCacheLookups = iCacheMisses = 0; \
-  } \
-}
-#define InstrICache_Increment(v) (v)++
-#else
-#define InstrICache_Stats()
-#define InstrICache_Increment(v)
-#endif
+#include "cpustats.h"
 
 void BX_CPU_C::cpu_loop(void)
 {
@@ -97,7 +76,6 @@ void BX_CPU_C::cpu_loop(void)
 
 #if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
     for(;;) {
-
       // want to allow changing of the instruction inside instrumentation callback
       BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
       RIP += i->ilen();
@@ -219,8 +197,7 @@ bxICacheEntry_c* BX_CPU_C::getICacheEntry(void)
     eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
   }
 
-  InstrICache_Increment(iCacheLookups);
-  InstrICache_Stats();
+  INC_ICACHE_STAT(iCacheLookups);
 
   bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrFetchPage + eipBiased;
   bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.find_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
@@ -229,7 +206,7 @@ bxICacheEntry_c* BX_CPU_C::getICacheEntry(void)
   {
     // iCache miss. No validated instruction with matching fetch parameters
     // is in the iCache.
-    InstrICache_Increment(iCacheMisses);
+    INC_ICACHE_STAT(iCacheMisses);
     entry = serveICacheMiss(entry, (Bit32u) eipBiased, pAddr);
   }
 
@@ -246,11 +223,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
     return;
 #endif
 
-  if (BX_CPU_THIS_PTR async_event) return;
+#define BX_HANDLERS_CHAINING_MAX_DEPTH 1000
+
+  // do not allow extreme trace link depth / avoid host stack overflow
+  // (could happen with badly compiled instruction handlers)
+  static Bit32u linkDepth = 0;
+
+  if (BX_CPU_THIS_PTR async_event || ++linkDepth > BX_HANDLERS_CHAINING_MAX_DEPTH) {
+    linkDepth = 0;
+    return;
+  }
 
   Bit32u delta = (Bit32u) (BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync);
-  if(delta >= bx_pc_system.getNumCpuTicksLeftNextEvent())
+  if(delta >= bx_pc_system.getNumCpuTicksLeftNextEvent()) {
+    linkDepth = 0;
     return;
+  }
 
   bxInstruction_c *next = i->getNextTrace(BX_CPU_THIS_PTR iCache.traceLinkTimeStamp);
   if (next) {
@@ -269,8 +257,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::linkTrace(bxInstruction_c *i)
     eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
   }
 
-  InstrICache_Increment(iCacheLookups);
-  InstrICache_Stats();
+  INC_ICACHE_STAT(iCacheLookups);
 
   bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrFetchPage + eipBiased;
   bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.find_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
@@ -534,6 +521,8 @@ void BX_CPU_C::prefetch(void)
 {
   bx_address laddr;
   unsigned pageOffset;
+
+  INC_ICACHE_STAT(iCachePrefetch);
 
 #if BX_SUPPORT_X86_64
   if (long64_mode()) {

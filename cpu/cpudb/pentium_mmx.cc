@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pentium_mmx.cc 11679 2013-04-17 19:46:11Z sshwarts $
+// $Id: pentium_mmx.cc 12505 2014-10-15 08:04:38Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -33,6 +33,22 @@ pentium_mmx_t::pentium_mmx_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 {
   if (BX_CPU_LEVEL < 5)
     BX_PANIC(("Pentium MMX should be compiled with BX_CPU_LEVEL=5 or higher"));
+
+  static Bit8u supported_extensions[] = {
+      BX_ISA_X87,
+      BX_ISA_486,
+      BX_ISA_PENTIUM,
+      BX_ISA_MMX,
+      BX_ISA_DEBUG_EXTENSIONS,
+      BX_ISA_VME,
+#if BX_PHY_ADDRESS_LONG
+      BX_ISA_PSE36,
+#endif
+      BX_ISA_PSE,
+      BX_ISA_EXTENSION_LAST
+  };
+
+  register_cpu_extensions(supported_extensions);
 }
 
 void pentium_mmx_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -46,24 +62,6 @@ void pentium_mmx_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_fu
     get_std_cpuid_leaf_1(leaf);
     return;
   }
-}
-
-Bit64u pentium_mmx_t::get_isa_extensions_bitmask(void) const
-{
-  return BX_ISA_X87 |
-         BX_ISA_486 |
-         BX_ISA_PENTIUM |
-         BX_ISA_MMX;
-}
-
-Bit32u pentium_mmx_t::get_cpu_extensions_bitmask(void) const
-{
-  return BX_CPU_DEBUG_EXTENSIONS |
-         BX_CPU_VME |
-#if BX_PHY_ADDRESS_LONG
-         BX_CPU_PSE36 |
-#endif
-         BX_CPU_PSE;
 }
 
 // leaf 0x00000000 //
@@ -159,12 +157,7 @@ void pentium_mmx_t::get_std_cpuid_leaf_1(cpuid_function_t *leaf) const
 
 void pentium_mmx_t::dump_cpuid(void) const
 {
-  struct cpuid_function_t leaf;
-
-  for (unsigned n=0; n<=0x1; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
+  bx_cpuid_t::dump_cpuid(0x1, 0);
 }
 
 bx_cpuid_t *create_pentium_mmx_cpuid(BX_CPU_C *cpu) { return new pentium_mmx_t(cpu); }

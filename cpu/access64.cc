@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: access64.cc 12062 2013-12-22 21:16:10Z sshwarts $
+// $Id: access64.cc 12517 2014-10-21 19:11:21Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008-2013 Stanislav Shwartsman
+//   Copyright (c) 2008-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -29,11 +29,10 @@
 #if BX_SUPPORT_X86_64
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::write_virtual_byte_64(unsigned s, Bit64u offset, Bit8u data)
+BX_CPU_C::write_linear_byte(unsigned s, Bit64u laddr, Bit8u data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -52,20 +51,15 @@ BX_CPU_C::write_virtual_byte_64(unsigned s, Bit64u offset, Bit8u data)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_byte_64(): canonical failure"));
+  if (access_write_linear(laddr, 1, CPL, 0x0, (void *) &data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_write_linear(laddr, 1, CPL, (void *) &data);
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::write_virtual_word_64(unsigned s, Bit64u offset, Bit16u data)
+BX_CPU_C::write_linear_word(unsigned s, Bit64u laddr, Bit16u data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 1);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (1 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -88,30 +82,15 @@ BX_CPU_C::write_virtual_word_64(unsigned s, Bit64u offset, Bit16u data)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_word_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 1) {
-      BX_ERROR(("write_virtual_word_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_write_linear(laddr, 2, CPL, (void *) &data) < 0)
+  if (access_write_linear(laddr, 2, CPL, 0x1, (void *) &data) < 0)
     exception(int_number(s), 0);
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::write_virtual_dword_64(unsigned s, Bit64u offset, Bit32u data)
+BX_CPU_C::write_linear_dword(unsigned s, Bit64u laddr, Bit32u data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 3);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (3 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -135,29 +114,19 @@ BX_CPU_C::write_virtual_dword_64(unsigned s, Bit64u offset, Bit32u data)
   }
 
   if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_dword_64(): canonical failure"));
+    BX_ERROR(("write_linear_dword(): canonical failure"));
     exception(int_number(s), 0);
   }
 
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 3) {
-      BX_ERROR(("write_virtual_dword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_write_linear(laddr, 4, CPL, (void *) &data) < 0)
+  if (access_write_linear(laddr, 4, CPL, 0x3, (void *) &data) < 0)
     exception(int_number(s), 0);
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::write_virtual_qword_64(unsigned s, Bit64u offset, Bit64u data)
+BX_CPU_C::write_linear_qword(unsigned s, Bit64u laddr, Bit64u data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 7);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (7 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -181,29 +150,19 @@ BX_CPU_C::write_virtual_qword_64(unsigned s, Bit64u offset, Bit64u data)
   }
 
   if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_qword_64(): canonical failure"));
+    BX_ERROR(("write_linear_qword(): canonical failure"));
     exception(int_number(s), 0);
   }
 
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 7) {
-      BX_ERROR(("write_virtual_qword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_write_linear(laddr, 8, CPL, (void *) &data) < 0)
+  if (access_write_linear(laddr, 8, CPL, 0x7, (void *) &data) < 0)
     exception(int_number(s), 0);
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::write_virtual_xmmword_64(unsigned s, Bit64u offset, const BxPackedXmmRegister *data)
+BX_CPU_C::write_linear_xmmword(unsigned s, Bit64u laddr, const BxPackedXmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 15);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -223,21 +182,15 @@ BX_CPU_C::write_virtual_xmmword_64(unsigned s, Bit64u offset, const BxPackedXmmR
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_xmmword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-  if (access_write_linear(laddr, 16, CPL, (void *) data) < 0)
+  if (access_write_linear(laddr, 16, CPL, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::write_virtual_xmmword_aligned_64(unsigned s, Bit64u offset, const BxPackedXmmRegister *data)
+BX_CPU_C::write_linear_xmmword_aligned(unsigned s, Bit64u laddr, const BxPackedXmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 15);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -258,25 +211,20 @@ BX_CPU_C::write_virtual_xmmword_aligned_64(unsigned s, Bit64u offset, const BxPa
   }
 
   if (laddr & 15) {
-    BX_ERROR(("write_virtual_xmmword_aligned_64(): #GP misaligned access"));
+    BX_ERROR(("write_linear_xmmword_aligned(): #GP misaligned access"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_xmmword_aligned_64(): canonical failure"));
+  if (access_write_linear(laddr, 16, CPL, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_write_linear(laddr, 16, CPL, (void *) data);
 }
 
 #if BX_SUPPORT_AVX
 
-void BX_CPU_C::write_virtual_ymmword_64(unsigned s, Bit64u offset, const BxPackedYmmRegister *data)
+void BX_CPU_C::write_linear_ymmword(unsigned s, Bit64u laddr, const BxPackedYmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 31);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -297,20 +245,14 @@ void BX_CPU_C::write_virtual_ymmword_64(unsigned s, Bit64u offset, const BxPacke
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_ymmword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-  if (access_write_linear(laddr, 32, CPL, (void *) data) < 0)
+  if (access_write_linear(laddr, 32, CPL, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
 }
 
-void BX_CPU_C::write_virtual_ymmword_aligned_64(unsigned s, Bit64u offset, const BxPackedYmmRegister *data)
+void BX_CPU_C::write_linear_ymmword_aligned(unsigned s, Bit64u laddr, const BxPackedYmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 31);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -332,27 +274,22 @@ void BX_CPU_C::write_virtual_ymmword_aligned_64(unsigned s, Bit64u offset, const
   }
 
   if (laddr & 31) {
-    BX_ERROR(("write_virtual_ymmword_aligned_64(): #GP misaligned access"));
+    BX_ERROR(("write_linear_ymmword_aligned(): #GP misaligned access"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_ymmword_aligned_64(): canonical failure"));
+  if (access_write_linear(laddr, 32, CPL, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_write_linear(laddr, 32, CPL, (void *) data);
 }
 
 #endif
 
 #if BX_SUPPORT_EVEX
 
-void BX_CPU_C::write_virtual_zmmword_64(unsigned s, Bit64u offset, const BxPackedZmmRegister *data)
+void BX_CPU_C::write_linear_zmmword(unsigned s, Bit64u laddr, const BxPackedZmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 63);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -373,20 +310,14 @@ void BX_CPU_C::write_virtual_zmmword_64(unsigned s, Bit64u offset, const BxPacke
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_zmmword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-  if (access_write_linear(laddr, 64, CPL, (void *) data) < 0)
+  if (access_write_linear(laddr, 64, CPL, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
 }
 
-void BX_CPU_C::write_virtual_zmmword_aligned_64(unsigned s, Bit64u offset, const BxPackedZmmRegister *data)
+void BX_CPU_C::write_linear_zmmword_aligned(unsigned s, Bit64u laddr, const BxPackedZmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 63);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -408,27 +339,22 @@ void BX_CPU_C::write_virtual_zmmword_aligned_64(unsigned s, Bit64u offset, const
   }
 
   if (laddr & 63) {
-    BX_ERROR(("write_virtual_zmmword_aligned_64(): #GP misaligned access"));
+    BX_ERROR(("write_linear_zmmword_aligned(): #GP misaligned access"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_virtual_zmmword_aligned_64(): canonical failure"));
+  if (access_write_linear(laddr, 64, CPL, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_write_linear(laddr, 64, CPL, (void *) data);
 }
 
 #endif
 
   Bit8u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_virtual_byte_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_linear_byte(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit8u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -445,22 +371,18 @@ BX_CPU_C::read_virtual_byte_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_byte_64(): canonical failure"));
+  if (access_read_linear(laddr, 1, CPL, BX_READ, 0x0, (void *) &data) < 0)
     exception(int_number(s), 0);
-  }
 
-  access_read_linear(laddr, 1, CPL, BX_READ, (void *) &data);
   return data;
 }
 
   Bit16u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_virtual_word_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_linear_word(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit16u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 1);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (1 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -481,33 +403,18 @@ BX_CPU_C::read_virtual_word_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_word_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 1) {
-      BX_ERROR(("read_virtual_word_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_read_linear(laddr, 2, CPL, BX_READ, (void *) &data) < 0)
+  if (access_read_linear(laddr, 2, CPL, BX_READ, 0x1, (void *) &data) < 0)
     exception(int_number(s), 0);
 
   return data;
 }
 
   Bit32u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_virtual_dword_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_linear_dword(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit32u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 3);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (3 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -528,33 +435,18 @@ BX_CPU_C::read_virtual_dword_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_dword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 3) {
-      BX_ERROR(("read_virtual_dword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_read_linear(laddr, 4, CPL, BX_READ, (void *) &data) < 0)
+  if (access_read_linear(laddr, 4, CPL, BX_READ, 0x3, (void *) &data) < 0)
     exception(int_number(s), 0);
 
   return data;
 }
 
   Bit64u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_virtual_qword_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_linear_qword(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit64u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 7);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (7 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -575,32 +467,17 @@ BX_CPU_C::read_virtual_qword_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_qword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 7) {
-      BX_ERROR(("read_virtual_qword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_read_linear(laddr, 8, CPL, BX_READ, (void *) &data) < 0)
+  if (access_read_linear(laddr, 8, CPL, BX_READ, 0x7, (void *) &data) < 0)
     exception(int_number(s), 0);
 
   return data;
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::read_virtual_xmmword_64(unsigned s, Bit64u offset, BxPackedXmmRegister *data)
+BX_CPU_C::read_linear_xmmword(unsigned s, Bit64u laddr, BxPackedXmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 15);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -618,21 +495,15 @@ BX_CPU_C::read_virtual_xmmword_64(unsigned s, Bit64u offset, BxPackedXmmRegister
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_xmmword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-  if (access_read_linear(laddr, 16, CPL, BX_READ, (void *) data) < 0)
+  if (access_read_linear(laddr, 16, CPL, BX_READ, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
 }
 
   void BX_CPP_AttrRegparmN(3)
-BX_CPU_C::read_virtual_xmmword_aligned_64(unsigned s, Bit64u offset, BxPackedXmmRegister *data)
+BX_CPU_C::read_linear_xmmword_aligned(unsigned s, Bit64u laddr, BxPackedXmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 15);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -651,25 +522,20 @@ BX_CPU_C::read_virtual_xmmword_aligned_64(unsigned s, Bit64u offset, BxPackedXmm
   }
 
   if (laddr & 15) {
-    BX_ERROR(("read_virtual_xmmword_aligned_64(): #GP misaligned access"));
+    BX_ERROR(("read_linear_xmmword_aligned(): #GP misaligned access"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_xmmword_aligned_64(): canonical failure"));
+  if (access_read_linear(laddr, 16, CPL, BX_READ, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_read_linear(laddr, 16, CPL, BX_READ, (void *) data);
 }
 
 #if BX_SUPPORT_AVX
 
-void BX_CPU_C::read_virtual_ymmword_64(unsigned s, Bit64u offset, BxPackedYmmRegister *data)
+void BX_CPU_C::read_linear_ymmword(unsigned s, Bit64u laddr, BxPackedYmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 31);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -688,20 +554,14 @@ void BX_CPU_C::read_virtual_ymmword_64(unsigned s, Bit64u offset, BxPackedYmmReg
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_ymmword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-  if (access_read_linear(laddr, 32, CPL, BX_READ, (void *) data) < 0)
+  if (access_read_linear(laddr, 32, CPL, BX_READ, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
 }
 
-void BX_CPU_C::read_virtual_ymmword_aligned_64(unsigned s, Bit64u offset, BxPackedYmmRegister *data)
+void BX_CPU_C::read_linear_ymmword_aligned(unsigned s, Bit64u laddr, BxPackedYmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 31);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -721,27 +581,22 @@ void BX_CPU_C::read_virtual_ymmword_aligned_64(unsigned s, Bit64u offset, BxPack
   }
 
   if (laddr & 31) {
-    BX_ERROR(("read_virtual_ymmword_aligned_64(): #GP misaligned access"));
+    BX_ERROR(("read_linear_ymmword_aligned(): #GP misaligned access"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_ymmword_aligned_64(): canonical failure"));
+  if (access_read_linear(laddr, 32, CPL, BX_READ, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_read_linear(laddr, 32, CPL, BX_READ, (void *) data);
 }
 
 #endif
 
 #if BX_SUPPORT_EVEX
 
-void BX_CPU_C::read_virtual_zmmword_64(unsigned s, Bit64u offset, BxPackedZmmRegister *data)
+void BX_CPU_C::read_linear_zmmword(unsigned s, Bit64u laddr, BxPackedZmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 63);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -760,20 +615,14 @@ void BX_CPU_C::read_virtual_zmmword_64(unsigned s, Bit64u offset, BxPackedZmmReg
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_ymmword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-  if (access_read_linear(laddr, 64, CPL, BX_READ, (void *) data) < 0)
+  if (access_read_linear(laddr, 64, CPL, BX_READ, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
 }
 
-void BX_CPU_C::read_virtual_zmmword_aligned_64(unsigned s, Bit64u offset, BxPackedZmmRegister *data)
+void BX_CPU_C::read_linear_zmmword_aligned(unsigned s, Bit64u laddr, BxPackedZmmRegister *data)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 63);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -793,16 +642,12 @@ void BX_CPU_C::read_virtual_zmmword_aligned_64(unsigned s, Bit64u offset, BxPack
   }
 
   if (laddr & 63) {
-    BX_ERROR(("read_virtual_zmmword_aligned_64(): #GP misaligned access"));
+    BX_ERROR(("read_linear_zmmword_aligned(): #GP misaligned access"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_virtual_zmmword_aligned_64(): canonical failure"));
+  if (access_read_linear(laddr, 64, CPL, BX_READ, 0x0, (void *) data) < 0)
     exception(int_number(s), 0);
-  }
-
-  access_read_linear(laddr, 64, CPL, BX_READ, (void *) data);
 }
 
 #endif
@@ -813,12 +658,11 @@ void BX_CPU_C::read_virtual_zmmword_aligned_64(unsigned s, Bit64u offset, BxPack
 //////////////////////////////////////////////////////////////
 
   Bit8u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_RMW_virtual_byte_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_RMW_virtual_byte_64(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit8u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = LPFOf(laddr);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -839,22 +683,18 @@ BX_CPU_C::read_RMW_virtual_byte_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_RMW_virtual_byte_64(): canonical failure"));
+  if (access_read_linear(laddr, 1, CPL, BX_RW, 0x0, (void *) &data) < 0)
     exception(int_number(s), 0);
-  }
 
-  access_read_linear(laddr, 1, CPL, BX_RW, (void *) &data);
   return data;
 }
 
   Bit16u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_RMW_virtual_word_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_RMW_virtual_word_64(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit16u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 1);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (1 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -879,33 +719,18 @@ BX_CPU_C::read_RMW_virtual_word_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_RMW_virtual_word_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 1) {
-      BX_ERROR(("read_RMW_virtual_word_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_read_linear(laddr, 2, CPL, BX_RW, (void *) &data) < 0)
+  if (access_read_linear(laddr, 2, CPL, BX_RW, 0x1, (void *) &data) < 0)
     exception(int_number(s), 0);
 
   return data;
 }
 
   Bit32u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_RMW_virtual_dword_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_RMW_virtual_dword_64(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit32u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 3);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (3 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -930,33 +755,18 @@ BX_CPU_C::read_RMW_virtual_dword_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_RMW_virtual_dword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 3) {
-      BX_ERROR(("read_RMW_virtual_dword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_read_linear(laddr, 4, CPL, BX_RW, (void *) &data) < 0)
+  if (access_read_linear(laddr, 4, CPL, BX_RW, 0x3, (void *) &data) < 0)
     exception(int_number(s), 0);
 
   return data;
 }
 
   Bit64u BX_CPP_AttrRegparmN(2)
-BX_CPU_C::read_RMW_virtual_qword_64(unsigned s, Bit64u offset)
+BX_CPU_C::read_RMW_virtual_qword_64(unsigned s, Bit64u laddr)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
   Bit64u data;
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 7);
 #if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
   Bit64u lpf = AlignedAccessLPFOf(laddr, (7 & BX_CPU_THIS_PTR alignment_check_mask));
@@ -981,31 +791,16 @@ BX_CPU_C::read_RMW_virtual_qword_64(unsigned s, Bit64u offset)
     }
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_RMW_virtual_qword_64(): canonical failure"));
-    exception(int_number(s), 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check()) {
-    if (laddr & 7) {
-      BX_ERROR(("read_RMW_virtual_qword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_read_linear(laddr, 8, CPL, BX_RW, (void *) &data) < 0)
+  if (access_read_linear(laddr, 8, CPL, BX_RW, 0x7, (void *) &data) < 0)
     exception(int_number(s), 0);
 
   return data;
 }
 
-void BX_CPU_C::read_RMW_virtual_dqword_aligned_64(unsigned s, Bit64u offset, Bit64u *hi, Bit64u *lo)
+void BX_CPU_C::read_RMW_linear_dqword_aligned_64(unsigned s, Bit64u laddr, Bit64u *hi, Bit64u *lo)
 {
   BX_ASSERT(BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64);
 
-  Bit64u laddr = get_laddr64(s, offset);
   unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 0);
   Bit64u lpf = AlignedAccessLPFOf(laddr, 15);
   bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
@@ -1033,16 +828,15 @@ void BX_CPU_C::read_RMW_virtual_dqword_aligned_64(unsigned s, Bit64u offset, Bit
     exception(BX_GP_EXCEPTION, 0);
   }
 
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("read_RMW_virtual_dqword_aligned_64(): canonical failure"));
+  BxPackedXmmRegister data;
+  if (access_read_linear(laddr, 16, CPL, BX_RW, 0x0, (void *) &data) < 0)
     exception(int_number(s), 0);
-  }
 
-  access_read_linear(laddr,     8, CPL, BX_RW, (void *) lo);
-  access_read_linear(laddr + 8, 8, CPL, BX_RW, (void *) hi);
+  *lo = data.xmm64u(0);
+  *hi = data.xmm64u(1);
 }
 
-void BX_CPU_C::write_RMW_virtual_dqword(Bit64u hi, Bit64u lo)
+void BX_CPU_C::write_RMW_linear_dqword(Bit64u hi, Bit64u lo)
 {
   write_RMW_virtual_qword(lo);
 
@@ -1056,135 +850,6 @@ void BX_CPU_C::write_RMW_virtual_dqword(Bit64u hi, Bit64u lo)
   }
   
   write_RMW_virtual_qword(hi);
-}
-
-void BX_CPU_C::write_new_stack_word_64(Bit64u laddr, unsigned curr_pl, Bit16u data)
-{
-  bx_bool user = (curr_pl == 3);
-  unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 1);
-#if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
-  Bit64u lpf = AlignedAccessLPFOf(laddr, (1 & BX_CPU_THIS_PTR alignment_check_mask));
-#else
-  Bit64u lpf = LPFOf(laddr);
-#endif    
-  bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
-  if (tlbEntry->lpf == lpf) {
-    // See if the TLB entry privilege level allows us write access
-    // from this CPL.
-    if (tlbEntry->accessBits & (0x04 << user)) {
-      bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
-      Bit32u pageOffset = PAGE_OFFSET(laddr);
-      bx_phy_address pAddr = tlbEntry->ppf | pageOffset;
-      BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 2, curr_pl, BX_WRITE, (Bit8u*) &data);
-      Bit16u *hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
-      pageWriteStampTable.decWriteStamp(pAddr, 2);
-      WriteHostWordToLittleEndian(hostAddr, data);
-      return;
-    }
-  }
-
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_new_stack_word_64(): canonical failure"));
-    exception(BX_SS_EXCEPTION, 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check() && user) {
-    if (laddr & 1) {
-      BX_ERROR(("write_new_stack_word_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_write_linear(laddr, 2, curr_pl, (void *) &data) < 0)
-    exception(BX_SS_EXCEPTION, 0);
-}
-
-void BX_CPU_C::write_new_stack_dword_64(Bit64u laddr, unsigned curr_pl, Bit32u data)
-{
-  bx_bool user = (curr_pl == 3);
-  unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 3);
-#if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
-  Bit64u lpf = AlignedAccessLPFOf(laddr, (3 & BX_CPU_THIS_PTR alignment_check_mask));
-#else
-  Bit64u lpf = LPFOf(laddr);
-#endif    
-  bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
-  if (tlbEntry->lpf == lpf) {
-    // See if the TLB entry privilege level allows us write access
-    // from this CPL.
-    if (tlbEntry->accessBits & (0x04 << user)) {
-      bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
-      Bit32u pageOffset = PAGE_OFFSET(laddr);
-      bx_phy_address pAddr = tlbEntry->ppf | pageOffset;
-      BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 4, curr_pl, BX_WRITE, (Bit8u*) &data);
-      Bit32u *hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
-      pageWriteStampTable.decWriteStamp(pAddr, 4);
-      WriteHostDWordToLittleEndian(hostAddr, data);
-      return;
-    }
-  }
-
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_new_stack_dword_64(): canonical failure"));
-    exception(BX_SS_EXCEPTION, 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check() && user) {
-    if (laddr & 3) {
-      BX_ERROR(("write_new_stack_dword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_write_linear(laddr, 4, curr_pl, (void *) &data) < 0)
-    exception(BX_SS_EXCEPTION, 0);
-}
-
-void BX_CPU_C::write_new_stack_qword_64(Bit64u laddr, unsigned curr_pl, Bit64u data)
-{
-  bx_bool user = (curr_pl == 3);
-  unsigned tlbIndex = BX_TLB_INDEX_OF(laddr, 7);
-#if BX_SUPPORT_ALIGNMENT_CHECK && BX_CPU_LEVEL >= 4
-  Bit64u lpf = AlignedAccessLPFOf(laddr, (7 & BX_CPU_THIS_PTR alignment_check_mask));
-#else
-  Bit64u lpf = LPFOf(laddr);
-#endif    
-  bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[tlbIndex];
-  if (tlbEntry->lpf == lpf) {
-    // See if the TLB entry privilege level allows us write access
-    // from this CPL.
-    if (tlbEntry->accessBits & (0x04 << user)) {
-      bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
-      Bit32u pageOffset = PAGE_OFFSET(laddr);
-      bx_phy_address pAddr = tlbEntry->ppf | pageOffset;
-      BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 8, curr_pl, BX_WRITE, (Bit8u*) &data);
-      Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
-      pageWriteStampTable.decWriteStamp(pAddr, 8);
-      WriteHostQWordToLittleEndian(hostAddr, data);
-      return;
-    }
-  }
-
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("write_new_stack_qword_64(): canonical failure"));
-    exception(BX_SS_EXCEPTION, 0);
-  }
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  if (BX_CPU_THIS_PTR alignment_check() && user) {
-    if (laddr & 7) {
-      BX_ERROR(("write_new_stack_qword_64(): #AC misaligned access"));
-      exception(BX_AC_EXCEPTION, 0);
-    }
-  }
-#endif
-
-  if (access_write_linear(laddr, 8, curr_pl, (void *) &data) < 0)
-    exception(BX_SS_EXCEPTION, 0);
 }
 
 #endif

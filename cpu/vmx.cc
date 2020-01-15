@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.cc 12294 2014-04-24 18:02:40Z sshwarts $
+// $Id: vmx.cc 12518 2014-10-22 17:49:12Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009-2013 Stanislav Shwartsman
+//   Copyright (c) 2009-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -379,12 +379,14 @@ void BX_CPP_AttrRegparmN(2) BX_CPU_C::VMwrite64_Shadow(unsigned encoding, Bit64u
 
 BX_CPP_INLINE void BX_CPU_C::VMfail(Bit32u error_code)
 {
+  clearEFlagsOSZAPC();
+
   if ((BX_CPU_THIS_PTR vmcsptr != BX_INVALID_VMCSPTR)) { // executed only if there is a current VMCS
-     setEFlagsOSZAPC(EFlagsZFMask);
+     assert_ZF();
      VMwrite32(VMCS_32BIT_INSTRUCTION_ERROR, error_code);
   }
   else {
-     setEFlagsOSZAPC(EFlagsCFMask);
+     assert_CF();
   }
 }
 
@@ -2029,7 +2031,7 @@ Bit32u BX_CPU_C::LoadMSRs(Bit32u msr_cnt, bx_phy_address pAddr)
       return msr;
 #endif
 
-    if (bx_cpuid_support_x2apic()) {
+    if (is_cpu_extension_supported(BX_ISA_X2APIC)) {
       if ((index & 0xfffff800) == 0x800) // X2APIC range
         return msr;
     }
@@ -2056,7 +2058,7 @@ Bit32u BX_CPU_C::StoreMSRs(Bit32u msr_cnt, bx_phy_address pAddr)
 
     Bit32u index = GET32L(msr_lo);
 
-    if (bx_cpuid_support_x2apic()) {
+    if (is_cpu_extension_supported(BX_ISA_X2APIC)) {
       if ((index & 0xfffff800) == 0x800) // X2APIC range
         return msr;
     }
@@ -2390,7 +2392,7 @@ void BX_CPU_C::VMexitLoadHostState(void)
   // set flags directly, avoid setEFlags side effects
   BX_CPU_THIS_PTR eflags = 0x2; // Bit1 is always set
   // Update lazy flags state
-  setEFlagsOSZAPC(0);
+  clearEFlagsOSZAPC();
 
   BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
 
@@ -3189,7 +3191,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMREAD_EqGq(bxInstruction_c *i)
   }
   else {
      Bit64u eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-     write_virtual_qword_64(i->seg(), eaddr, field_64);
+     write_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr), field_64);
   }
  
   VMsucceed();
@@ -3305,7 +3307,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMWRITE_GqEq(bxInstruction_c *i)
   }
   else {
      Bit64u eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-     val_64 = read_virtual_qword_64(i->seg(), eaddr);
+     val_64 = read_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr));
   }
 
   if (BX_READ_64BIT_REG_HIGH(i->dst())) {
@@ -3650,7 +3652,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::GETSEC(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
 void BX_CPU_C::register_vmx_state(bx_param_c *parent)
 {
-  if (! bx_cpuid_support_vmx()) return;
+  if (! is_cpu_extension_supported(BX_ISA_VMX)) return;
 
   // register VMX state for save/restore param tree
   bx_list_c *vmx = new bx_list_c(parent, "VMX");

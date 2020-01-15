@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc 12305 2014-05-01 20:26:54Z vruppert $
+// $Id: logio.cc 12451 2014-08-03 15:15:36Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -277,7 +277,7 @@ int logfunctions::default_onoff[N_LOGLEV] =
   ACT_IGNORE,  // ignore debug
   ACT_REPORT,  // report info
   ACT_REPORT,  // report error
-#if BX_WITH_WX || BX_WITH_WIN32 || BX_WITH_X11
+#if BX_WITH_SDL2 || BX_WITH_WX || BX_WITH_WIN32 || BX_WITH_X11
   ACT_ASK      // on panic, ask user what to do
 #else
   ACT_FATAL    // on panic, quit

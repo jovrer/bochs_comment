@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////6////////////////////////
-// $Id: sse.cc 11984 2013-12-01 22:21:55Z sshwarts $
+// $Id: sse.cc 12519 2014-10-22 18:24:33Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003-2013 Stanislav Shwartsman
+//   Copyright (c) 2003-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -208,15 +208,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BLENDVPD_VpdWpdR(bxInstruction_c *
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PTEST_VdqWdqR(bxInstruction_c *i)
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->dst()), op2 = BX_READ_XMM_REG(i->src());
-  unsigned result = 0;
+
+  clearEFlagsOSZAPC();
 
   if ((op2.xmm64u(0) &  op1.xmm64u(0)) == 0 &&
-      (op2.xmm64u(1) &  op1.xmm64u(1)) == 0) result |= EFlagsZFMask;
+      (op2.xmm64u(1) &  op1.xmm64u(1)) == 0) assert_ZF();
 
   if ((op2.xmm64u(0) & ~op1.xmm64u(0)) == 0 &&
-      (op2.xmm64u(1) & ~op1.xmm64u(1)) == 0) result |= EFlagsCFMask;
-
-  setEFlagsOSZAPC(result);
+      (op2.xmm64u(1) & ~op1.xmm64u(1)) == 0) assert_CF();
 
   BX_NEXT_INSTR(i);
 }
@@ -344,7 +343,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PEXTRD_EdVdqIbM(bxInstruction_c *i
   if (i->os64L())  /* 64 bit operand size mode */
   {
      Bit64u result = op.xmm64u(i->Ib() & 1);
-     write_virtual_qword_64(i->seg(), eaddr, result);
+     write_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr), result);
   }
   else
 #endif
@@ -363,7 +362,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PEXTRQ_EqVdqIbM(bxInstruction_c *i
 
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->src());
   Bit64u result = op.xmm64u(i->Ib() & 1);
-  write_virtual_qword_64(i->seg(), eaddr, result);
+  write_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr), result);
 
   BX_NEXT_INSTR(i);
 }
@@ -468,7 +467,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PINSRD_VdqHdqEdIbM(bxInstruction_c
 
 #if BX_SUPPORT_X86_64
   if (i->os64L()) {  /* 64 bit operand size mode */
-    Bit64u op2 = read_virtual_qword_64(i->seg(), eaddr);
+    Bit64u op2 = read_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr));
     op1.xmm64u(i->Ib() & 1) = op2;
   }
   else

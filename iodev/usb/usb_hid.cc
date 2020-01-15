@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_hid.cc 12081 2013-12-29 12:56:52Z vruppert $
+// $Id: usb_hid.cc 12488 2014-09-22 19:49:39Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // USB HID emulation support (mouse and tablet) ported from QEMU
@@ -7,7 +7,7 @@
 //
 // Copyright (c) 2005       Fabrice Bellard
 // Copyright (c) 2007       OpenMoko, Inc.  (andrew@openedhand.com)
-// Copyright (C) 2009-2012  The Bochs Project
+// Copyright (C) 2009-2014  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -414,7 +414,6 @@ usb_hid_device_c::usb_hid_device_c(usbdev_type type)
   d.type = type;
   d.maxspeed = USB_SPEED_LOW;
   d.speed = d.maxspeed;
-  // TODO: d.max_packet_size = ???
   if (d.type == USB_DEV_TYPE_MOUSE) {
     strcpy(d.devname, "USB Mouse");
     DEV_register_removable_mouse((void*)this, mouse_enq_static, mouse_enabled_changed);

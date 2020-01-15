@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_compare.cc 12234 2014-03-09 21:42:11Z sshwarts $
+// $Id: fpu_compare.cc 12519 2014-10-22 18:24:33Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2012 Stanislav Shwartsman
@@ -59,15 +59,17 @@ void BX_CPU_C::write_eflags_fpu_compare(int float_relation)
       break;
 
    case float_relation_greater:
-      setEFlagsOSZAPC(0);
+      clearEFlagsOSZAPC();
       break;
 
    case float_relation_less:
-      setEFlagsOSZAPC(EFlagsCFMask);
+      clearEFlagsOSZAPC();
+      assert_CF();
       break;
 
    case float_relation_equal:
-      setEFlagsOSZAPC(EFlagsZFMask);
+      clearEFlagsOSZAPC();
+      assert_ZF();
       break;
 
    default:

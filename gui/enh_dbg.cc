@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.cc 12184 2014-02-11 20:51:18Z sshwarts $
+// $Id: enh_dbg.cc 12486 2014-09-14 19:36:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -76,6 +76,7 @@ bx_bool ignoreNxtT = TRUE;      // Do not show "Next at t=" output lines
 bx_bool ignSSDisasm = TRUE;     // Do not show extra disassembly line at each break
 int UprCase = 0;                // 1 = convert all Asm, Register names, Register values to uppercase
 int DumpInAsciiMode = 3;        // bit 1 = show ASCII in dumps, bit 2 = show hex, value=0 is illegal
+int DumpWSIndex = 0;            // word size index for memory dump
 bx_bool LogView = 0;            // Send log to output window
 
 bx_bool isLittleEndian = TRUE;
@@ -2375,6 +2376,7 @@ void doNewWSize(int i)
     if (j != i)
     {
         ToggleWSchecks(i, j);
+        DumpWSIndex = i;
         DumpAlign = 1<<i;
         if (DViewMode == VIEW_MEMDUMP && DumpInitted != FALSE)
         {
@@ -3438,18 +3440,146 @@ BxEvent *enh_dbg_notify_callback(void *unused, BxEvent *event)
   }
 }
 
+static size_t strip_whitespace(char *s)
+{
+  size_t ptr = 0;
+  char *tmp = (char*)malloc(strlen(s)+1);
+  strcpy(tmp, s);
+  while (s[ptr] == ' ') ptr++;
+  if (ptr > 0) strcpy(s, tmp+ptr);
+  free(tmp);
+  ptr = strlen(s);
+  while ((ptr > 0) && (s[ptr-1] == ' ')) {
+    s[--ptr] = 0;
+  }
+  return ptr;
+}
+
+void ReadSettings()
+{
+  FILE *fd = NULL;
+  char line[512];
+  char *ret, *param, *val;
+  bx_bool format_checked = 0;
+  size_t len1 = 0, len2;
+  int i;
+
+  fd = fopen("bx_enh_dbg.ini", "r");
+  if (fd == NULL) return;
+  do {
+    ret = fgets(line, sizeof(line)-1, fd);
+    line[sizeof(line) - 1] = '\0';
+    size_t len = strlen(line);
+    if ((len>0) && (line[len-1] < ' '))
+      line[len-1] = '\0';
+    if ((ret != NULL) && (strlen(line) > 0)) {
+      if (!format_checked) {
+        if (!strncmp(line, "# bx_enh_dbg_ini", 16)) {
+          format_checked = 1;
+        } else {
+          fprintf(stderr, "bx_enh_dbg.ini: wrong file format\n");
+          fclose(fd);
+          return;
+        }
+      } else {
+        if (line[0] == '#') continue;
+        param = strtok(line, "=");
+        if (param != NULL) {
+          len1 = strip_whitespace(param);
+          val = strtok(NULL, "");
+          if (val == NULL) {
+            fprintf(stderr, "bx_enh_dbg.ini: missing value for parameter '%s'\n", param);
+            continue;
+          }
+        } else {
+          continue;
+        }
+        len2 = strip_whitespace(val);
+        if ((len1 == 0) || (len2 == 0)) continue;
+        if ((len1 == 9) && !strncmp(param, "SeeReg[", 7) && (param[8] == ']')) {
+          if ((param[7] < '0') || (param[7] > '7')) {
+            fprintf(stderr, "bx_enh_dbg.ini: invalid index for option SeeReg[x]\n");
+            continue;
+          }
+          i = atoi(&param[7]);
+          SeeReg[i] = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "SingleCPU")) {
+          SingleCPU = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ShowIOWindows")) {
+          ShowIOWindows = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ShowButtons")) {
+          ShowButtons = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "SeeRegColors")) {
+          SeeRegColors = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ignoreNxtT")) {
+          ignoreNxtT = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ignSSDisasm")) {
+          ignSSDisasm = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "UprCase")) {
+          UprCase = atoi(val);
+        } else if (!strcmp(param, "DumpInAsciiMode")) {
+          DumpInAsciiMode = atoi(val);
+        } else if (!strcmp(param, "isLittleEndian")) {
+          isLittleEndian = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "DefaultAsmLines")) {
+          DefaultAsmLines = atoi(val);
+        } else if (!strcmp(param, "DumpWSIndex")) {
+          DumpWSIndex = atoi(val);
+          DumpAlign = (1 << DumpWSIndex);
+          PrevDAD = 0;
+        } else if (!strcmp(param, "DockOrder")) {
+          DockOrder = strtoul(val, NULL, 16);
+        } else if (!ParseOSSettings(param, val)) {
+          fprintf(stderr, "bx_enh_dbg.ini: unknown option '%s'\n", line);
+        }
+      }
+    }
+  } while (!feof(fd));
+  fclose(fd);
+}
+
+void WriteSettings()
+{
+  FILE *fd = NULL;
+  int i;
+
+  fd = fopen("bx_enh_dbg.ini", "w");
+  if (fd == NULL) return;
+  fprintf(fd, "# bx_enh_dbg_ini\n");
+  for (i = 0; i < 8; i++) {
+    fprintf(fd, "SeeReg[%d] = %s\n", i, SeeReg[i] ? "TRUE" : "FALSE");
+  }
+  fprintf(fd, "SingleCPU = %s\n", SingleCPU ? "TRUE" : "FALSE");
+  fprintf(fd, "ShowIOWindows = %s\n", ShowIOWindows ? "TRUE" : "FALSE");
+  fprintf(fd, "ShowButtons = %s\n", ShowButtons ? "TRUE" : "FALSE");
+  fprintf(fd, "SeeRegColors = %s\n", SeeRegColors ? "TRUE" : "FALSE");
+  fprintf(fd, "ignoreNxtT = %s\n", ignoreNxtT ? "TRUE" : "FALSE");
+  fprintf(fd, "ignSSDisasm = %s\n", ignSSDisasm ? "TRUE" : "FALSE");
+  fprintf(fd, "UprCase = %d\n", UprCase);
+  fprintf(fd, "DumpInAsciiMode = %d\n", DumpInAsciiMode);
+  fprintf(fd, "isLittleEndian = %s\n", isLittleEndian ? "TRUE" : "FALSE");
+  fprintf(fd, "DefaultAsmLines = %d\n", DefaultAsmLines);
+  fprintf(fd, "DumpWSIndex = %d\n", DumpWSIndex);
+  fprintf(fd, "DockOrder = 0x%03x\n", DockOrder);
+  WriteOSSettings(fd);
+  fclose(fd);
+}
+
 void InitDebugDialog()
 {
   // redirect notify callback to the debugger specific code
   SIM->get_notify_callback(&old_callback, &old_callback_arg);
   assert (old_callback != NULL);
   SIM->set_notify_callback(enh_dbg_notify_callback, NULL);
+  ReadSettings();
   DoAllInit();    // non-os-specific init stuff
   OSInit();
 }
 
 void CloseDebugDialog()
 {
+  WriteSettings();
+  SIM->set_log_viewer(0);
   SIM->set_notify_callback(old_callback, old_callback_arg);
   CloseDialog();
 }

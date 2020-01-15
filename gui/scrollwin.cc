@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: scrollwin.cc 11661 2013-03-19 19:26:04Z vruppert $
+// $Id: scrollwin.cc 12381 2014-06-20 09:31:56Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2013  Volker Ruppert
+//  Copyright (C) 2013-2014  Volker Ruppert
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -17,6 +17,10 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+
+#include "config.h"
+
+#if BX_USE_WIN32CONFIG
 
 #include <windows.h>
 #include <commctrl.h>
@@ -160,3 +164,5 @@ BOOL RegisterScrollWindow(HINSTANCE hinst)
 
   return (RegisterClass(&wc) != 0);
 }
+
+#endif

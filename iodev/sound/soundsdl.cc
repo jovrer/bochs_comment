@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundsdl.cc 11753 2013-07-25 18:47:11Z vruppert $
+// $Id: soundsdl.cc 12383 2014-06-23 19:37:58Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2012-2013  The Bochs Project
@@ -24,13 +24,11 @@
 #include "soundmod.h"
 #include "soundsdl.h"
 
-#if BX_WITH_SDL && BX_SUPPORT_SOUNDLOW
+#if (BX_WITH_SDL || BX_WITH_SDL2) && BX_SUPPORT_SOUNDLOW
 
 #define LOG_THIS
 
-#if BX_WITH_SDL
 #include <SDL.h>
-#endif
 
 #define BX_SOUND_SDL_BUFSIZE  BX_SOUNDLOW_WAVEPACKETSIZE * 8
 
@@ -174,4 +172,4 @@ int bx_sound_sdl_c::closewaveoutput()
   return BX_SOUNDLOW_OK;
 }
 
-#endif  // BX_WITH_SDL
+#endif  // BX_WITH_SDL || BX_WITH_SDL2

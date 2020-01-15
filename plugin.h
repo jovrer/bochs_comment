@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h 12366 2014-06-08 08:40:08Z vruppert $
+// $Id: plugin.h 12383 2014-06-23 19:37:58Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2014  The Bochs Project
@@ -423,6 +423,7 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(macintosh)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(nogui)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(rfb)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(sdl)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(sdl2)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(svga)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(term)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(vncsrv)

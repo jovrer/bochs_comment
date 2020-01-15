@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paging.cc 12054 2013-12-21 21:56:55Z sshwarts $
+// $Id: paging.cc 12501 2014-10-14 15:59:10Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2013  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -340,46 +340,13 @@ static const Bit8u priv_check[BX_PRIV_CHECK_SIZE] =
 #define TLB_SysExecuteOK  (0x10)
 #define TLB_UserExecuteOK (0x20)
 
-// === TLB Instrumentation section ==============================
-
-// Note: this is an approximation of what Peter Tattam had.
-
-#define InstrumentTLB 0
-
-#if InstrumentTLB
-static unsigned tlbLookups=0;
-static unsigned tlbMisses=0;
-static unsigned tlbGlobalFlushes=0;
-static unsigned tlbNonGlobalFlushes=0;
-
-#define InstrTLB_StatsMask 0xfffff
-
-#define InstrTLB_Stats() {\
-  if ((tlbLookups & InstrTLB_StatsMask) == 0) { \
-    BX_INFO(("TLB lookup:%8d miss:%8d %6.2f%% flush:%8d %6.2f%%", \
-          tlbLookups, \
-          tlbMisses, \
-          tlbMisses * 100.0 / tlbLookups, \
-          (tlbGlobalFlushes+tlbNonGlobalFlushes), \
-          (tlbGlobalFlushes+tlbNonGlobalFlushes) * 100.0 / tlbLookups \
-          )); \
-    tlbLookups = tlbMisses = tlbGlobalFlushes = tlbNonGlobalFlushes = 0; \
-    } \
-  }
-#define InstrTLB_Increment(v) (v)++
-
-#else
-#define InstrTLB_Stats()
-#define InstrTLB_Increment(v)
-#endif
+#include "cpustats.h"
 
 // ==============================================================
 
 void BX_CPU_C::TLB_flush(void)
 {
-#if InstrumentTLB
-  InstrTLB_Increment(tlbGlobalFlushes);
-#endif
+  INC_TLBFLUSH_STAT(tlbGlobalFlushes);
 
   invalidate_prefetch_q();
 
@@ -404,9 +371,7 @@ void BX_CPU_C::TLB_flush(void)
 #if BX_CPU_LEVEL >= 6
 void BX_CPU_C::TLB_flushNonGlobal(void)
 {
-#if InstrumentTLB
-  InstrTLB_Increment(tlbNonGlobalFlushes);
-#endif
+  INC_TLBFLUSH_STAT(tlbNonGlobalFlushes);
 
   invalidate_prefetch_q();
 
@@ -727,7 +692,7 @@ bx_phy_address BX_CPU_C::translate_linear_long_mode(bx_address laddr, Bit32u &lp
     if (leaf == BX_LEVEL_PTE) break;
 
     if (curr_entry & 0x80) {
-      if (leaf > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging())) {
+      if (leaf > (BX_LEVEL_PDE + !!is_cpu_extension_supported(BX_ISA_1G_PAGES))) {
         BX_DEBUG(("PAE %s: PS bit set !", bx_paging_level[leaf]));
         page_fault(ERROR_RESERVED | ERROR_PROTECTION, laddr, user, rw);
       }
@@ -1129,8 +1094,7 @@ bx_phy_address BX_CPU_C::translate_linear(bx_TLB_entry *tlbEntry, bx_address lad
   unsigned isWrite = rw & 1; // write or r-m-w
   unsigned isExecute = (rw == BX_EXECUTE);
 
-  InstrTLB_Increment(tlbLookups);
-  InstrTLB_Stats();
+  INC_TLB_STAT(tlbLookups);
 
   bx_address lpf = LPFOf(laddr);
 
@@ -1148,7 +1112,7 @@ bx_phy_address BX_CPU_C::translate_linear(bx_TLB_entry *tlbEntry, bx_address lad
     // generate an exception if one is warranted.
   }
 
-  InstrTLB_Increment(tlbMisses);
+  INC_TLB_STAT(tlbMisses);
 
   if(BX_CPU_THIS_PTR cr0.get_PG())
   {
@@ -1310,7 +1274,7 @@ bx_phy_address BX_CPU_C::nested_walk_long_mode(bx_phy_address guest_paddr, unsig
     if (leaf == BX_LEVEL_PTE) break;
 
     if (curr_entry & 0x80) {
-      if (leaf > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging())) {
+      if (leaf > (BX_LEVEL_PDE + !!is_cpu_extension_supported(BX_ISA_1G_PAGES))) {
         BX_DEBUG(("Nested PAE Walk %s: PS bit set !", bx_paging_level[leaf]));
         nested_page_fault(ERROR_RESERVED | ERROR_PROTECTION, guest_paddr, rw, is_page_walk);
       }
@@ -1587,7 +1551,7 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
     if (leaf == BX_LEVEL_PTE) break;
 
     if (curr_entry & 0x80) {
-      if (leaf > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging())) {
+      if (leaf > (BX_LEVEL_PDE + !!is_cpu_extension_supported(BX_ISA_1G_PAGES))) {
         BX_DEBUG(("EPT %s: PS bit set !", bx_paging_level[leaf]));
         vmexit_reason = VMX_VMEXIT_EPT_MISCONFIGURATION;
         break;
@@ -1756,7 +1720,7 @@ bx_bool BX_CPU_C::dbg_translate_guest_physical(bx_phy_address guest_paddr, bx_ph
     if (level == BX_LEVEL_PTE) break;
 
     if (pte & 0x80) {
-       if (level > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging()))
+       if (level > (BX_LEVEL_PDE + !!is_cpu_extension_supported(BX_ISA_1G_PAGES)))
          return 0;
 
         pt_address &= BX_CONST64(0x000fffffffffe000);
@@ -1839,7 +1803,7 @@ bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy, bx
           pt_address &= BX_CONST64(0x000fffffffffe000);
           if (pt_address & offset_mask)
             goto page_fault;
-          if (bx_cpuid_support_1g_paging() && level == BX_LEVEL_PDPTE) break;
+          if (is_cpu_extension_supported(BX_ISA_1G_PAGES) && level == BX_LEVEL_PDPTE) break;
           if (level == BX_LEVEL_PDE) break;
           goto page_fault;
         }
@@ -1901,11 +1865,27 @@ page_fault:
 }
 #endif
 
-int BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr_pl, void *data)
+int BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr_pl, Bit32u ac_mask, void *data)
 {
   Bit32u pageOffset = PAGE_OFFSET(laddr);
 
   bx_TLB_entry *tlbEntry = BX_TLB_ENTRY_OF(laddr);
+
+#if BX_SUPPORT_X86_64
+  if (! IsCanonical(laddr)) {
+    BX_ERROR(("access_write_linear(): canonical failure"));
+    return -1;
+  }
+#endif
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  if (BX_CPU_THIS_PTR alignment_check() && (curr_pl == 3)) {
+    if (pageOffset & ac_mask) {
+      BX_ERROR(("access_write_linear(): #AC misaligned access"));
+      exception(BX_AC_EXCEPTION, 0);
+    }
+  }
+#endif
 
   /* check for reference across multiple pages */
   if ((pageOffset + len) <= 4096) {
@@ -1976,11 +1956,27 @@ int BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr_
   return 0;
 }
 
-int BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_pl, unsigned xlate_rw, void *data)
+int BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_pl, unsigned xlate_rw, Bit32u ac_mask, void *data)
 {
   BX_ASSERT(xlate_rw == BX_READ || xlate_rw == BX_RW);
 
   Bit32u pageOffset = PAGE_OFFSET(laddr);
+
+#if BX_SUPPORT_X86_64
+  if (! IsCanonical(laddr)) {
+    BX_ERROR(("access_read_linear(): canonical failure"));
+    return -1;
+  }
+#endif
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  if (BX_CPU_THIS_PTR alignment_check() && (curr_pl == 3)) {
+    if (pageOffset & ac_mask) {
+      BX_ERROR(("access_read_linear(): #AC misaligned access"));
+      exception(BX_AC_EXCEPTION, 0);
+    }
+  }
+#endif
 
   bx_TLB_entry *tlbEntry = BX_TLB_ENTRY_OF(laddr);
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: generic_cpuid.h 12242 2014-03-15 20:19:30Z sshwarts $
+// $Id: generic_cpuid.h 12527 2014-11-01 11:51:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -26,7 +26,7 @@
 
 #if BX_CPU_LEVEL >= 4
 
-#include "cpu/cpuid.h"
+#include "cpuid.h"
 
 class bx_generic_cpuid_t : public bx_cpuid_t {
 public:
@@ -36,8 +36,6 @@ public:
   // return CPU name
   virtual const char *get_name(void) const { return "bochs"; }
 
-  virtual Bit64u get_isa_extensions_bitmask(void) const { return isa_extensions_bitmask; }
-  virtual Bit32u get_cpu_extensions_bitmask(void) const { return cpu_extensions_bitmask; }
 #if BX_SUPPORT_VMX
   virtual Bit32u get_vmx_extensions_bitmask(void) const { return vmx_extensions_bitmask; }
 #endif
@@ -50,7 +48,6 @@ public:
   virtual void dump_cpuid(void) const;
 
 private:
-  void init_isa_extensions_bitmask(void);
   void init_cpu_extensions_bitmask(void);
 #if BX_SUPPORT_VMX
   void init_vmx_extensions_bitmask(void);
@@ -59,8 +56,6 @@ private:
   void init_svm_extensions_bitmask(void);
 #endif
 
-  Bit64u isa_extensions_bitmask;
-  Bit32u cpu_extensions_bitmask;
 #if BX_SUPPORT_VMX
   Bit32u vmx_extensions_bitmask;
 #endif
@@ -80,7 +75,6 @@ private:
   void get_std_cpuid_leaf_6(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_7(Bit32u subfunction, cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_A(cpuid_function_t *leaf) const;
-  void get_std_cpuid_extended_topology_leaf(Bit32u subfunction, cpuid_function_t *leaf) const;
   void get_std_cpuid_xsave_leaf(Bit32u subfunction, cpuid_function_t *leaf) const;
 
   void get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const;

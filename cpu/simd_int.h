@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: simd_int.h 12216 2014-02-27 21:12:02Z sshwarts $
+// $Id: simd_int.h 12461 2014-08-05 20:18:42Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -454,7 +454,7 @@ BX_CPP_INLINE void xmm_psignd(BxPackedXmmRegister *op1, const BxPackedXmmRegiste
 
 BX_CPP_INLINE Bit32u xmm_pmovmskb(const BxPackedXmmRegister *op)
 {
-  unsigned mask = 0;
+  Bit32u mask = 0;
 
   if(op->xmmsbyte(0x0) < 0) mask |= 0x0001;
   if(op->xmmsbyte(0x1) < 0) mask |= 0x0002;
@@ -476,9 +476,25 @@ BX_CPP_INLINE Bit32u xmm_pmovmskb(const BxPackedXmmRegister *op)
   return mask;
 }
 
+BX_CPP_INLINE Bit32u xmm_pmovmskw(const BxPackedXmmRegister *op)
+{
+  Bit32u mask = 0;
+
+  if(op->xmm16s(0) < 0) mask |= 0x01;
+  if(op->xmm16s(1) < 0) mask |= 0x02;
+  if(op->xmm16s(2) < 0) mask |= 0x04;
+  if(op->xmm16s(3) < 0) mask |= 0x08;
+  if(op->xmm16s(4) < 0) mask |= 0x10;
+  if(op->xmm16s(5) < 0) mask |= 0x20;
+  if(op->xmm16s(6) < 0) mask |= 0x40;
+  if(op->xmm16s(7) < 0) mask |= 0x80;
+
+  return mask;
+}
+
 BX_CPP_INLINE Bit32u xmm_pmovmskd(const BxPackedXmmRegister *op)
 {
-  unsigned mask = 0;
+  Bit32u mask = 0;
 
   if(op->xmm32s(0) < 0) mask |= 0x1;
   if(op->xmm32s(1) < 0) mask |= 0x2;
@@ -490,12 +506,39 @@ BX_CPP_INLINE Bit32u xmm_pmovmskd(const BxPackedXmmRegister *op)
 
 BX_CPP_INLINE Bit32u xmm_pmovmskq(const BxPackedXmmRegister *op)
 {
-  unsigned mask = 0;
+  Bit32u mask = 0;
 
   if(op->xmm32s(1) < 0) mask |= 0x1;
   if(op->xmm32s(3) < 0) mask |= 0x2;
 
   return mask;
+}
+
+BX_CPP_INLINE void xmm_pmovm2b(BxPackedXmmRegister *dst, Bit32u mask)
+{
+  for (unsigned n=0; n < 16; n++, mask >>= 1) {
+    dst->xmmsbyte(n) = - (mask & 0x1);
+  }
+}
+
+BX_CPP_INLINE void xmm_pmovm2w(BxPackedXmmRegister *dst, Bit32u mask)
+{
+  for (unsigned n=0; n < 8; n++, mask >>= 1) {
+    dst->xmm16s(n) = - (mask & 0x1);
+  }
+}
+
+BX_CPP_INLINE void xmm_pmovm2d(BxPackedXmmRegister *dst, Bit32u mask)
+{
+  for (unsigned n=0; n < 4; n++, mask >>= 1) {
+    dst->xmm32s(n) = - (mask & 0x1);
+  }
+}
+
+BX_CPP_INLINE void xmm_pmovm2q(BxPackedXmmRegister *dst, Bit32u mask)
+{
+  dst->xmm64s(0) = (mask & 0x1) ? (Bit64s) -1 : 0;
+  dst->xmm64s(1) = (mask & 0x2) ? (Bit64s) -1 : 0;
 }
 
 // blend
@@ -896,8 +939,7 @@ BX_CPP_INLINE void xmm_pavgw(BxPackedXmmRegister *op1, const BxPackedXmmRegister
 BX_CPP_INLINE void xmm_pmullw(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
 {
   for(unsigned n=0; n<8; n++) {
-    Bit32u product = Bit32u(op1->xmm16u(n)) * Bit32u(op2->xmm16u(n));
-    op1->xmm16u(n) = product & 0xffff;
+    op1->xmm16s(n) *= op2->xmm16s(n);
   }
 }
 
@@ -920,8 +962,14 @@ BX_CPP_INLINE void xmm_pmulhuw(BxPackedXmmRegister *op1, const BxPackedXmmRegist
 BX_CPP_INLINE void xmm_pmulld(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
 {
   for(unsigned n=0; n<4; n++) {
-    Bit64s product = Bit64s(op1->xmm32s(n)) * Bit64s(op2->xmm32s(n));
-    op1->xmm32u(n) = (Bit32u)(product & 0xffffffff);
+    op1->xmm32s(n) *= op2->xmm32s(n);
+  }
+}
+
+BX_CPP_INLINE void xmm_pmullq(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
+{
+  for(unsigned n=0; n<2; n++) {
+    op1->xmm64s(n) *= op2->xmm64s(n);
   }
 }
 
@@ -940,7 +988,7 @@ BX_CPP_INLINE void xmm_pmuludq(BxPackedXmmRegister *op1, const BxPackedXmmRegist
 BX_CPP_INLINE void xmm_pmulhrsw(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
 {
   for(unsigned n=0; n<8; n++) {
-    op1->xmm16u(n) = (((op1->xmm16s(n) * op2->xmm16s(n)) >> 14) + 1) >> 1;
+    op1->xmm16u(n) = (((Bit32s(op1->xmm16s(n)) * Bit32s(op2->xmm16s(n))) >> 14) + 1) >> 1;
   }
 }
 
@@ -1035,38 +1083,56 @@ BX_CPP_INLINE void simd_pbroadcastq(BxPackedAvxRegister *op, Bit64u val_64, unsi
 
 BX_CPP_INLINE void xmm_psadbw(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
 {
-  unsigned temp1 = 0, temp2 = 0, n;
+  unsigned temp = 0;
+  for (unsigned n=0; n < 8; n++)
+    temp += abs(op1->xmmubyte(n) - op2->xmmubyte(n));
 
-  for (n=0; n < 8; n++)
-    temp1 += abs(op1->xmmubyte(n) - op2->xmmubyte(n));
+  op1->xmm64u(0) = Bit64u(temp);
 
-  for (; n < 16; n++)
-    temp2 += abs(op1->xmmubyte(n) - op2->xmmubyte(n));
+  temp = 0;
+  for (unsigned n=8; n < 16; n++)
+    temp += abs(op1->xmmubyte(n) - op2->xmmubyte(n));
 
-  op1->xmm64u(0) = Bit64u(temp1);
-  op1->xmm64u(1) = Bit64u(temp2);
+  op1->xmm64u(1) = Bit64u(temp);
 }
 
 // multiple sum of absolute differences (MSAD)
 
-BX_CPP_INLINE void xmm_mpsadbw(BxPackedXmmRegister *r, const BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2, Bit8u offset)
+BX_CPP_INLINE Bit16u sad_quadruple(const BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2, int op1_offset, int op2_offset)
 {
-  unsigned src_offset = (offset & 0x3) * 4;
-  unsigned dst_offset = ((offset >> 2) & 1) * 4;
+  Bit32u r = 0;
 
-  for (unsigned j=0; j < 8; j++)
-  {
-    r->xmm16u(j) = 0;
+  for (unsigned n=0; n < 4; n++) {
+    Bit8u temp1 = op1->xmmubyte(n + op1_offset);
+    Bit8u temp2 = op2->xmmubyte(n + op2_offset);
 
-    for (unsigned k=0; k < 4; k++) {
-      Bit8u temp1 = op1->xmmubyte(j + k + dst_offset);
-      Bit8u temp2 = op2->xmmubyte(    k + src_offset);
-      if (temp1 > temp2)
-        r->xmm16u(j) += (temp1 - temp2);
-      else
-        r->xmm16u(j) += (temp2 - temp1);
-    }
+    r += abs(temp1 - temp2);
   }
+
+  return r;
+}
+
+BX_CPP_INLINE void xmm_mpsadbw(BxPackedXmmRegister *r, const BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2, Bit8u control)
+{
+  unsigned src_offset = (control & 0x3) * 4;
+  unsigned dst_offset = ((control >> 2) & 0x1) * 4;
+
+  for (unsigned j=0; j < 8; j++) {
+    r->xmm16u(j) = sad_quadruple(op1, op2, dst_offset + j, src_offset);
+  }
+}
+
+BX_CPP_INLINE void xmm_dbpsadbw(BxPackedXmmRegister *r, const BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
+{
+  // assuming shuffle of op2 was done outside
+  r->xmm16u(0) = sad_quadruple(op1, op2,  0,  0);
+  r->xmm16u(1) = sad_quadruple(op1, op2,  0,  1);
+  r->xmm16u(2) = sad_quadruple(op1, op2,  4,  2);
+  r->xmm16u(3) = sad_quadruple(op1, op2,  4,  3);
+  r->xmm16u(4) = sad_quadruple(op1, op2,  8,  8);
+  r->xmm16u(5) = sad_quadruple(op1, op2,  8,  9);
+  r->xmm16u(6) = sad_quadruple(op1, op2, 12, 10);
+  r->xmm16u(7) = sad_quadruple(op1, op2, 12, 11);
 }
 
 // conflict
@@ -1106,6 +1172,17 @@ BX_CPP_INLINE void xmm_pselect(BxPackedXmmRegister *op1, const BxPackedXmmRegist
 
 // shift
 
+BX_CPP_INLINE void xmm_psravw(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
+{
+  for (unsigned n=0; n < 8; n++) {
+    unsigned shift = op2->xmm16u(n);
+    if(shift > 15)
+      op1->xmm16u(n) = (op1->xmm16s(n) < 0) ? 0xffff : 0;
+    else    
+      op1->xmm16u(n) = (Bit16u)(op1->xmm16s(n) >> shift);
+  }
+}
+
 BX_CPP_INLINE void xmm_psravd(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
 {
   for (unsigned n=0; n < 4; n++) {
@@ -1128,6 +1205,17 @@ BX_CPP_INLINE void xmm_psravq(BxPackedXmmRegister *op1, const BxPackedXmmRegiste
   }
 }
 
+BX_CPP_INLINE void xmm_psllvw(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
+{
+  for (unsigned n=0; n < 8; n++) {
+    unsigned shift = op2->xmm16u(n);
+    if(shift > 15)
+      op1->xmm16u(n) = 0;
+    else    
+      op1->xmm16u(n) <<= shift;
+  }
+}
+
 BX_CPP_INLINE void xmm_psllvd(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
 {
   for (unsigned n=0; n < 4; n++) {
@@ -1147,6 +1235,17 @@ BX_CPP_INLINE void xmm_psllvq(BxPackedXmmRegister *op1, const BxPackedXmmRegiste
       op1->xmm64u(n) = 0;
     else    
       op1->xmm64u(n) <<= shift;
+  }
+}
+
+BX_CPP_INLINE void xmm_psrlvw(BxPackedXmmRegister *op1, const BxPackedXmmRegister *op2)
+{
+  for (unsigned n=0; n < 8; n++) {
+    unsigned shift = op2->xmm16u(n);
+    if(shift > 15)
+      op1->xmm16u(n) = 0;
+    else    
+      op1->xmm16u(n) >>= shift;
   }
 }
 

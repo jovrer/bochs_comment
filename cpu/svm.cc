@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svm.cc 11988 2013-12-02 20:06:59Z sshwarts $
+// $Id: svm.cc 12481 2014-08-31 20:05:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2013 Stanislav Shwartsman
+//   Copyright (c) 2011-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -1204,7 +1204,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVLPGA(bxInstruction_c *i)
 #if BX_SUPPORT_SVM
 void BX_CPU_C::register_svm_state(bx_param_c *parent)
 {
-  if (! bx_cpuid_support_svm()) return;
+  if (! is_cpu_extension_supported(BX_ISA_SVM)) return;
 
   // register SVM state for save/restore param tree
   bx_list_c *svm = new bx_list_c(parent, "SVM");

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.h 12170 2014-02-06 17:06:25Z sshwarts $
+// $Id: vmx.h 12528 2014-11-01 13:12:24Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009-2014 Stanislav Shwartsman
@@ -135,6 +135,7 @@ enum VMX_vmexit_reason {
    VMX_VMEXIT_RESERVED62 = 62,
    VMX_VMEXIT_XSAVES = 63,
    VMX_VMEXIT_XRSTORS = 64,
+   VMX_VMEXIT_PCOMMIT = 65,
    VMX_VMEXIT_LAST_REASON
 };
 
@@ -634,6 +635,7 @@ typedef struct bx_VMCS
 #define VMX_VM_EXEC_CTRL3_RDSEED_VMEXIT             (1 << 16)
 #define VMX_VM_EXEC_CTRL3_EPT_VIOLATION_EXCEPTION   (1 << 18) /* #VE Exception */
 #define VMX_VM_EXEC_CTRL3_XSAVES_XRSTORS            (1 << 20) /* XSAVES */
+#define VMX_VM_EXEC_CTRL3_PCOMMIT_EXITING           (1 << 21) /* PCOMMIT */
 
 #define VMX_VM_EXEC_CTRL3_SUPPORTED_BITS \
     (BX_CPU_THIS_PTR vmx_cap.vmx_vmexec_ctrl2_supported_bits)
@@ -810,7 +812,7 @@ typedef struct bx_VMCS
 
 #define VMX_MSR_VMX_BASIC_LO (BX_CPU_THIS_PTR cpuid->get_vmcs_revision_id())
 #define VMX_MSR_VMX_BASIC_HI \
-     (VMX_VMCS_AREA_SIZE | ((!bx_cpuid_support_x86_64()) << 16) | \
+     (VMX_VMCS_AREA_SIZE | ((!is_cpu_extension_supported(BX_ISA_LONG_MODE)) << 16) | \
      (BX_MEMTYPE_WB << 18) | (1<<22)) | ((BX_SUPPORT_VMX >= 2) ? (1<<23) : 0)
 
 #define VMX_MSR_VMX_BASIC \

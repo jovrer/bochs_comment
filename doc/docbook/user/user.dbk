@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk 12363 2014-06-07 06:37:07Z vruppert $
+$Id: user.dbk 12524 2014-11-01 09:39:47Z vruppert $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -374,7 +374,7 @@ currently work with.
     <entry>GUI Debugger</entry>
     <entry>Yes</entry>
     <entry>Chourdakis Michael and Bruce Ewing contributed very powerful GUI frontend for Bochs internal debugger.
-    GUI debugger frontend is supported for Win32 and GTK hosts.
+    GUI debugger frontend is supported for Win32 and GTK2 hosts.
     </entry>
   </row>
   <row>
@@ -610,7 +610,7 @@ code that displays the Bochs VGA screen and handles keyboard and mouse events.
         tried first in Unix and then ported to the others; see
         <xref linkend="compiling"> for compile instructions.
       </entry>
-      <entry>x, sdl, wx, term, rfb, vncsrv</entry>
+      <entry>x, sdl, sdl2, wx, term, rfb, vncsrv</entry>
     </row>
 
     <row>
@@ -621,7 +621,7 @@ code that displays the Bochs VGA screen and handles keyboard and mouse events.
         see <xref linkend="compiling-win32"> for compile instructions,
         or Cygwin, see <xref linkend="compile-cygwin">.
       </entry>
-      <entry>win32, sdl, wx, rfb</entry>
+      <entry>win32, sdl, sdl2, wx, rfb</entry>
     </row>
 
     <row>
@@ -631,7 +631,7 @@ code that displays the Bochs VGA screen and handles keyboard and mouse events.
         Jeremy Parsons (Br'fin) has been maintaining the MacOS X port since
         March 2002; see <xref linkend="compile-macosx"> for compile instructions.
       </entry>
-      <entry>carbon, x, rfb, sdl</entry>
+      <entry>carbon, x, rfb, sdl, sdl2</entry>
     </row>
 
     <row>
@@ -1130,6 +1130,11 @@ The <replaceable>tagname</replaceable> tells which release you want, and it can 
     </thead>
     <tbody>
       <row>
+        <entry>2.6.6 (bugfix)</entry>
+        <entry>REL_2_6_6_FINAL</entry>
+        <entry>12375</entry>
+      </row>
+      <row>
         <entry>2.6.5 (intermediate)</entry>
         <entry>REL_2_6_5_FINAL</entry>
         <entry>12349</entry>
@@ -1367,9 +1372,7 @@ DLX Linux screenshot.
 <row><entry>bochs.ico </entry> <entry> the Bochs icon (used for links in start menu and on the desktop) </entry> </row>
 <row><entry>bochsdbg.exe </entry> <entry> the main Bochs executable with debugger enabled </entry> </row>
 <row><entry>bochsrc-sample.txt </entry> <entry> sample Bochs configuration file </entry> </row>
-<row><entry>bxcommit.exe </entry> <entry> legacy tool for committing redologs to flat disk images </entry> </row>
 <row><entry>bximage.exe </entry> <entry> tool for manipulating disk images </entry> </row>
-<row><entry>bximage_old.exe </entry> <entry> legacy tool for creating disk images </entry> </row>
 <row><entry>CHANGES.txt </entry> <entry> what has changed between versions </entry> </row>
 <row><entry>COPYING.txt </entry> <entry> copy of the LGPL license </entry> </row>
 <row><entry>LICENSE.txt </entry> <entry> Bochs license information </entry> </row>
@@ -1458,7 +1461,7 @@ anyway, but if it is missing important pieces it may not run properly.
 
 <para>
 The Bochs RPM installs five new commands and associated manual pages: bochs,
-bochs-dlx, bximage, bximage_old and bxcommit.  First, let's try out the
+bochs-dlx and bximage.  First, let's try out the
 DLX Linux demo by typing <command>bochs-dlx</command>.
 
 <screen>
@@ -1553,11 +1556,9 @@ description of each one.
 <row><entry>/usr/share/doc/bochs/TODO</entry> <entry> the TODO file from the source distribution. </entry> </row>
 <row><entry>/usr/bin/bochs </entry> <entry> the main Bochs executable </entry> </row>
 <row><entry>/usr/bin/bximage </entry> <entry> tool for manipulating disk images </entry> </row>
-<row><entry>/usr/bin/bximage_old </entry> <entry> legacy tool for making new disk images </entry> </row>
-<row><entry>/usr/bin/bxcommit </entry> <entry> legacy tool for committing redologs to flat disk images </entry> </row>
 <row><entry>/usr/lib/bochs/plugins/* </entry> <entry> device and gui plugins for Bochs (plugin version only) </entry> </row>
 <row><entry>/usr/share/doc/bochs/bochsrc-sample.txt</entry> <entry> sample Bochs configuration file </entry> </row>
-<row><entry>/usr/share/man/man1/* </entry> <entry> man pages for bochs, bochs-dlx, bximage, bximage_old and bxcommit</entry> </row>
+<row><entry>/usr/share/man/man1/* </entry> <entry> man pages for bochs, bochs-dlx and bximage</entry> </row>
 <row><entry>/usr/share/man/man5/* </entry> <entry> man page for bochsrc </entry> </row>
 <row><entry>/usr/share/doc/bochs/index.html</entry> <entry> a local copy of all Bochs documentation ( <ulink url="http://bochs.sourceforge.net/doc/docbook/index.html">Online copy</ulink> )</entry> </row>
 <row><entry>/usr/share/bochs/BIOS-bochs-latest </entry> <entry> default ROM BIOS image for Bochs </entry> </row>
@@ -1574,7 +1575,7 @@ description of each one.
 <row><entry>/usr/bin/bochs-dlx </entry> <entry> run this script to try out DLX Linux inside Bochs!</entry> </row>
 <row><entry>/usr/share/bochs/dlxlinux/ </entry> <entry> directory containing DLX linux sample disk image and configuration files</entry> </row>
 <row><entry>/usr/share/bochs/dlxlinux/readme.txt</entry> <entry> description of DLX linux</entry> </row>
-<row><entry>/usr/share/bochs/keymaps/*.map </entry> <entry>keymap tables for X11 and SDL </entry> </row>
+<row><entry>/usr/share/bochs/keymaps/*.map </entry> <entry>keymap tables for X11, SDL and SDL2 </entry> </row>
 </tbody>
 </tgroup>
 </table>
@@ -1827,7 +1828,7 @@ tables shows the directories and their contents.
   <tbody>
     <row>
       <entry>bin</entry>
-      <entry>binary executables (bochs, bxcommit, bximage, bximage_old)</entry>
+      <entry>binary executables (bochs, bximage)</entry>
     </row>
     <row>
       <entry>lib/bochs/plugins</entry>
@@ -1988,7 +1989,11 @@ In Bochs 1.3 and before, the X11 GUI was always the default.
     </row>
     <row>
       <entry>--with-sdl</entry>
-      <entry>Enable support for the SDL GUI interface; see <xref linkend="compile-sdl">.</entry>
+      <entry>Enable support for the SDL 1.2.x GUI interface; see <xref linkend="compile-sdl">.</entry>
+    </row>
+    <row>
+      <entry>--with-sdl2</entry>
+      <entry>Enable support for the SDL 2.x GUI interface; see <xref linkend="compile-sdl2">.</entry>
     </row>
     <row>
       <entry>--with-term</entry>
@@ -2588,8 +2593,7 @@ find the workspace file called <filename>bochs.sln</filename> in the folder
 "vs2008" and load it in VC++. Choose <command>Project:Set Active Project</command>
 and be sure that "bochs" is selected. Then choose <command>Build:Build bochs.exe</command>.
 This will build all the required libraries (iodev, cpu, etc.) and the auxiliary
-programs <filename>bximage.exe</filename>, <filename>bximage_old.exe</filename>,
-<filename>bxcommit.exe</filename> and <filename>niclist.exe</filename>.
+programs <filename>bximage.exe</filename> and <filename>niclist.exe</filename>.
 </para>
 
 <para>
@@ -2832,6 +2836,18 @@ Compiling with MSVC <command>nmake</command> is not supported yet.
 </para>
 </section><!-- end compile-sdl -->
 
+<section id="compile-sdl2"><title>Compiling with the SDL version 2 interface</title>
+<para>
+The SDL library version 2 is now also supported by Bochs. For some basic information
+about SDL, see <xref linkend="compile-sdl">. The configure option to enable SDL2
+support is <option>--with-sdl</option> and the configuration script is called
+<command>sdl2-config</command>. Note that the Bochs guis for SDL version 1.2.x
+and 2.x are mutually exclusive. The legacy SDL gui support will be removed someday.
+When using the gui library autodetection (<option>--with-all-libs</option>) the
+configure script probes for SDL version 2 first.
+</para>
+</section><!-- end compile-sdl2 -->
+
 <section id="compile-wx">
 <title>Compiling with the wxWidgets interface</title>
 <para>
@@ -2897,7 +2913,7 @@ happened. The following issues can be fixed by modifying the configure options u
 <itemizedlist>
   <listitem><para>deprecated option (option from previous Bochs version not needed /
   supported anymore)</para></listitem>
-  <listitem><para>mutually exclusive option (e.g <option>--enable-debugger</option> and <option>--enable-gdbstub</option>)</para></listitem>
+  <listitem><para>mutually exclusive option (e.g. <option>--enable-debugger</option> and <option>--enable-gdb-stub</option>)</para></listitem>
   <listitem><para>dependent option (e.g. USB support requires PCI support)</para></listitem>
   <listitem><para>incomplete option (e.g. <option>--enable-cpu-level</option> requires an argument)</para></listitem>
   <listitem><para>development package for library not installed (e.g. for <option>--with-wx</option>)</para></listitem>
@@ -3040,7 +3056,7 @@ system BIOS and VGA BIOS images.
 </thead>
 <tbody>
 <row><entry>BIOS-bochs-latest </entry> <entry> default ROM BIOS image for Bochs </entry> </row>
-<row><entry>BIOS-bochs-legacy </entry> <entry> ROM BIOS image without 32-bit init code </entry> </row>
+<row><entry>BIOS-bochs-legacy </entry> <entry> ROM BIOS image without 32-bit init code (for i386 and ISA graphics card emulation) </entry> </row>
 <row><entry>bios.bin-1.7.5 </entry> <entry> SeaBIOS ROM image </entry> </row>
 <row><entry>VGABIOS-elpin-2.40 </entry> <entry> legacy VGA BIOS image for Bochs </entry> </row>
 <row><entry>VGABIOS-lgpl-latest </entry> <entry> LGPL'd VGA BIOS image for Bochs </entry> </row>
@@ -3230,14 +3246,15 @@ Examples:
 Some display libraries now support specific options to control their
 behaviour. These options are supported by more than one display library:
 <screen>
-  "gui_debug"   - use GTK debugger gui (sdl, x) / Win32 debugger gui (sdl, win32)
-  "hideIPS"     - disable IPS output in status bar (rfb, sdl, vncsrv, win32, wx, x)
-  "nokeyrepeat" - turn off host keyboard repeat (sdl, win32, x)
+  "gui_debug"   - use GTK debugger gui (sdl, x) / Win32 debugger gui (sdl, sdl2, win32)
+  "hideIPS"     - disable IPS output in status bar (rfb, sdl, sdl2, vncsrv, win32, wx, x)
+  "nokeyrepeat" - turn off host keyboard repeat (sdl, sdl2, win32, x)
   "timeout"     - time (in seconds) to wait for client (rfb, vncsrv)
 </screen>
 See the examples below for other currently supported options.
 <screen>
   display_library: sdl, options="fullscreen"  # startup in fullscreen mode
+  display_library: sdl2, options="fullscreen"  # startup in fullscreen mode
 </screen>
 </para>
 
@@ -3273,8 +3290,13 @@ See the examples below for other currently supported options.
 </row>
 <row>
   <entry>sdl</entry>
-  <entry>use SDL library, cross platform,
+  <entry>use SDL 1.2.x library, cross platform,
     details in <xref linkend="compile-sdl"></entry>
+</row>
+<row>
+  <entry>sdl2</entry>
+  <entry>use SDL 2.x library, cross platform,
+    details in <xref linkend="compile-sdl2"></entry>
 </row>
 <row>
   <entry>svga</entry>
@@ -3704,12 +3726,9 @@ and 'cirrus' for Cirrus SVGA support (needs
 <filename>VGABIOS-lgpl-latest-cirrus</filename> as VGA BIOS).
 </para>
 <para>
-The VGA update frequency is based on the emulated clock and the default
-value is 5. Keep in mind that you must tweak the 'cpu: ips=N' directive
-to be as close to the number of emulated instructions-per-second your
-workstation can do, for this to be accurate. If the realtime sync is
-enabled with the <link linkend="bochsopt-clock">clock option</link>, the value
-is based on the real time. This parameter can be changed at runtime.
+The VGA update frequency specifies the number of display updates per second.
+The update timer now uses the realtime engine and the default value is 5.
+This parameter can be changed at runtime.
 </para>
 </section>
 
@@ -3782,8 +3801,9 @@ Valid key names:
 </para>
 <para>
 "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
-"f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
-"right", "shift", "space", "tab", "up", "win", "print" and "power".
+"f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup",
+"plus", "power", "print", "right", "scrlck", "shift", "space", "tab", "up"
+and "win".
 </para>
 </section>
 
@@ -4654,7 +4674,8 @@ Examples:
 <screen>
   usb_uhci: enabled=1, port1=mouse, port2=disk:usbstick.img
   usb_uhci: enabled=1, port1=hub:7, port2=disk:growing:usbdisk.img
-  usb_uhci: enabled=1, port2=disk:undoable:usbdisk.img, options1=journal:redo.log
+  usb_uhci: enabled=1, port2=disk:undoable:usbdisk.img, options2=journal:redo.log
+  usb_uhci: enabled=1, port2=disk:vvfat:vvfat, options2=speed:full
   usb_uhci: enabled=1, port1=printer:printdata.bin, port2=cdrom:image.iso
 </screen>
 This option controls the presence of the USB root hub which is a part of the
@@ -4664,12 +4685,6 @@ i440FX PCI chipset.
 With the port<replaceable>X</replaceable> option you can connect devices
 to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom',
 'hub' and 'printer').
-</para>
-<para>
-The options<replaceable>X</replaceable> parameter can be used to assign specific
-options to the device connected to the corresponding USB port. Currently this
-feature is only used to set the speed reported by device and by the 'disk'
-device to specify an alternative redolog file of some image modes.
 </para>
 <para>
 If you connect the mouse or tablet to one of the ports, Bochs forwards the
@@ -4699,6 +4714,16 @@ sent to a file specified in bochsrc.txt. The current code appends the PCL
 code to the file if the file already existed. It would probably be nice to
 overwrite the file instead, asking user first.
 </para>
+<para>
+The options<replaceable>X</replaceable> parameter can be used to assign specific
+options to the device connected to the corresponding USB port. Currently this
+feature is used to set the speed reported by device ('low', 'full', 'high' or
+'super'). The availabe speed choices depend on both HC and device. For the USB
+'disk' device the optionsX parameter can be used to specify an alternative
+redolog file (journal) of some image modes. For 'vvfat' mode USB disks the optionsX
+parameter can be used to specify the disk size (range 128M ... 128G). If the
+size is not specified, it defaults to 504M.
+</para>
 <note><para>
 PCI support must be enabled to use USB UHCI.
 </para></note>
@@ -4711,9 +4736,9 @@ Example:
   usb_ohci: enabled=1, port1=printer:printdata.bin
 </screen>
 This option controls the presence of the USB OHCI host controller with a
-2-port hub. The portX option accepts the same device types with the same
+2-port hub. The portX parameter accepts the same device types with the same
 syntax as the UHCI controller (see the <link linkend="bochsopt-usb-uhci">usb_uhci option</link>).
-</para>
+The optionsX parameter is also available on OHCI.</para>
 </section>
 
 <section id="bochsopt-usb-xhci"><title>usb_xhci</title>
@@ -4723,9 +4748,11 @@ Example:
   usb_xhci: enabled=1
 </screen>
 This option controls the presence of the experimental USB xHCI host controller
-with a 4-port hub. The portX option accepts the same device types with the same
+with a 4-port hub. The portX parameter accepts the same device types with the same
 syntax as the UHCI controller (see the <link linkend="bochsopt-usb-uhci">usb_uhci option</link>).
-</para>
+The optionsX parameter is also available on xHCI. NOTE: port 1 and 2 are USB3 and
+only support super-speed devices, but port 3 and 4 are USB2 and support speed
+settings low, full and high.</para>
 </section>
 
 <section><title>pcidev</title>
@@ -5283,7 +5310,7 @@ behavoiur of Bochs at runtime if you click on one of these buttons:
 </para>
 <note><para>
   Changing the mouse capture at runtime is not supported by all display libraries,
-  but it is already present on RFB, SDL, VNCSRV, Win32, wxWidgets and X11.
+  but it is already present on RFB, SDL, SDL2, VNCSRV, Win32, wxWidgets and X11.
 </para></note>
 <note><para>
   Support for 2 button mouse to toggle the capture mode not yet complete - using
@@ -5578,7 +5605,7 @@ drivers and their features.
   </row>
   <row>
     <entry>sdl</entry>
-    <entry>for wave output on platforms supported by SDL</entry>
+    <entry>for wave output on platforms supported by SDL (1.2.x or 2.x)</entry>
     <entry>No</entry>
     <entry>No</entry>
   </row>
@@ -6295,7 +6322,12 @@ simulation is starting.
     <row>
       <entry>SDL</entry>
       <entry>SDL</entry>
-      <entry>SDL gui</entry>
+      <entry>SDL 1.2.x gui</entry>
+    </row>
+    <row>
+      <entry>SDL2</entry>
+      <entry>SDL2</entry>
+      <entry>SDL 2.x gui</entry>
     </row>
     <row>
       <entry>serial</entry>
@@ -7411,21 +7443,18 @@ Up to 5 port redirection rules are supported per slirp instance.</para>
 <title>Using Bochs internal debugger</title>
 
 <para>
-Note, if you are looking for a graphical front-end for the
-bochs debugger, you may want to check out
-<ulink url="http://bfe.sourceforge.net/">BFE</ulink>. This is a
-package written by a Bochs user which can interface with
-the text based Bochs debugger.  No linking is necessary.
-It's not part of Bochs, but you may find it useful.
-</para>
-
-<para>
 You can now conditionally compile in a GDB like command line debugger, that
 allows you to set breakpoints, step through instructions, and other
 useful functions.  If there isn't a command for something you believe
 is generally useful for the debugger, let me know and I'll implement
 it if possible.
 </para>
+
+<note><para>
+This section describes how to enable and use the Bochs command line debugger.
+For it's builtin graphical front-end please see the <link linkend="debugger-gui">debugger gui</link>
+section how to enable it.
+</para></note>
 
 <para>
 To use the debugger, you must configure Bochs with the
@@ -7750,6 +7779,46 @@ The symbol file consists of zero or more lines of the format <screen>"%x %s"</sc
   show dbg-all  - turn on all show flags
   show dbg-none - turn off all show flags
 </screen>
+</para>
+</section>
+
+<section id="debugger-gui">
+<title>
+The Bochs debugger gui
+</title>
+<para>
+The graphical front-end for the Bochs command line debugger
+is available for Windows and GTK2 hosts.
+</para>
+<para>
+To use the gui debugger, you must configure Bochs with the
+default debugger switches and the <option>--enable-debugger-gui</option> flag.
+For example:
+<screen>
+  ./configure --enable-debugger --enable-disasm --enable-debugger-gui
+</screen>
+</para>
+<para>
+At runtime you need to add the value <option>gui_debug</option> to the
+<link linkend="bochsopt-displaylibrary">display_library</link> options parameter
+in order to use the gui instead of the command line debugger. This example shows how to
+use it with the 'x' gui:
+<screen>
+display_library: x, options="gui_debug"
+</screen>
+</para>
+<para>
+The gui debugger consists of a gui window with a menu bar, a button bar and some
+child windows that show the cpu registers, disassembler output, memory dump and
+the internal debugger output. A command prompt for entering debugger commands is
+also available.
+</para>
+<para>
+&FIXME; List the features here.
+</para>
+<para>
+Most of the gui debugger settings are now saved to an INI file on exit and
+restored at the next run.
 </para>
 </section>
 
@@ -9294,9 +9363,7 @@ The type of the base image is auto-detected. The name of the redolog
 file only needs to be specified if it is not based on the base image.
 If you have enabled the backup switch, backups of the original base and
 redolog files will still be created with their original name plus the
-suffix ".orig". The legacy tool to commit redologs into flat files is
-still supported, so please see <xref linkend="using-bxcommit"> for
-details.
+suffix ".orig".
 </para>
 </section>
 <section><title>Disk image info</title>
@@ -9309,65 +9376,6 @@ returning the geometry, the cylinders are calculated based on 16 heads
 and 63 sectors per track.
 </para>
 </section>
-</section>
-
-<section id="using-bxcommit"><title>Using the bxcommit tool</title>
-<para>
-This legacy tool has been designed to commit redologs into flat images.
-</para>
-<para>
-It supports committing 'undoable' redologs to 'flat' or 'growing' base images
-and 'growing' to 'flat' image conversion (and vice versa). Committing / converting
-other disk image types is supported by the new bximage utility (<xref linkend="using-bximage">).
-</para>
-<para>
-This tool is completely interactive if no command line arguments are used.
-Then bxcommit asks for the operation mode, the flat image name, the redolog name,
-and whether to remove the source file after the commit or conversion is done.
-It can be switched to a non-interactive mode if all required parameters are
-given in the command line.
-<screen>
-bxcommit [options] [flat filename] [redolog filename]
-
-Supported options:
-  -mode=commit-undoable  commit undoable redolog to flat file
-  -mode=growing-to-flat  create flat disk image from growing disk image
-  -mode=flat-to-growing  create growing disk image from flat disk image
-  -d               delete redolog file after commit
-  -q               quiet mode (don't prompt for user input)
-  --help           display this help and exit
-
-The first filename parameter specifies the name of the base image that will be
-created or modified. The second one specifies the name of the redolog.
-</screen>
-</para>
-<para>
-Session example :
-<screen>
-$ ./bxcommit
-========================================================================
-                               bxcommit
-           Growing / Undoable Disk Image Commit Tool for Bochs
-========================================================================
-
-1. Commit 'undoable' redolog to 'flat' or 'growing' mode base image
-2. Create 'flat' disk image from 'growing' disk image
-3. Create 'growing' disk image from 'flat' disk image
-
-0. Quit
-
-Please choose one [0] 1
-
-What is the flat image name?
-[c.img] myfile.img
-
-What is the redolog name?
-[myfile.img.redolog] toapply.redolog
-
-Should the redolog been removed afterwards?
-[yes]
-</screen>
-</para>
 </section>
 
 </chapter>

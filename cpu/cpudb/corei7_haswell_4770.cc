@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei7_haswell_4770.cc 12242 2014-03-15 20:19:30Z sshwarts $
+// $Id: corei7_haswell_4770.cc 12506 2014-10-15 14:25:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2013-2014 Stanislav Shwartsman
@@ -43,7 +43,69 @@ corei7_haswell_4770_t::corei7_haswell_4770_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
   BX_INFO(("WARNING: RDRAND would not produce true random numbers !"));
 
-  BX_INFO(("NOTE: HLE/RTM is not supported by Bochs yet !"));
+  static Bit8u supported_extensions[] = {
+      BX_ISA_X87,
+      BX_ISA_486,
+      BX_ISA_PENTIUM,
+      BX_ISA_P6,
+      BX_ISA_MMX,
+      BX_ISA_SYSENTER_SYSEXIT,
+      BX_ISA_CLFLUSH,
+      BX_ISA_DEBUG_EXTENSIONS,
+      BX_ISA_VME,
+      BX_ISA_PSE,
+      BX_ISA_PAE,
+      BX_ISA_PGE,
+#if BX_PHY_ADDRESS_LONG
+      BX_ISA_PSE36,
+#endif
+      BX_ISA_MTRR,
+      BX_ISA_PAT,
+      BX_ISA_XAPIC,
+      BX_ISA_X2APIC,
+      BX_ISA_LONG_MODE,
+      BX_ISA_LM_LAHF_SAHF,
+      BX_ISA_CMPXCHG16B,
+      BX_ISA_NX,
+      BX_ISA_1G_PAGES,
+      BX_ISA_PCID,
+      BX_ISA_TSC_DEADLINE,
+      BX_ISA_SSE,
+      BX_ISA_SSE2,
+      BX_ISA_SSE3,
+      BX_ISA_SSSE3,
+      BX_ISA_SSE4_1,
+      BX_ISA_SSE4_2,
+      BX_ISA_POPCNT,
+#if BX_SUPPORT_MONITOR_MWAIT
+      BX_ISA_MONITOR_MWAIT,
+#endif
+#if BX_SUPPORT_VMX >= 2
+      BX_ISA_VMX,
+#endif
+   /* BX_ISA_SMX, */
+      BX_ISA_RDTSCP,
+      BX_ISA_XSAVE,
+      BX_ISA_XSAVEOPT,
+      BX_ISA_AES_PCLMULQDQ,
+      BX_ISA_MOVBE,
+      BX_ISA_AVX,
+      BX_ISA_AVX_F16C,
+      BX_ISA_AVX2,
+      BX_ISA_AVX_FMA,
+      BX_ISA_LZCNT,
+      BX_ISA_BMI1,
+      BX_ISA_BMI2,
+      BX_ISA_FSGSBASE,
+      BX_ISA_INVPCID,
+      BX_ISA_SMEP,
+      BX_ISA_RDRAND,
+      BX_ISA_TSC_DEADLINE,
+      BX_ISA_FCS_FDS_DEPRECATION,
+      BX_ISA_EXTENSION_LAST
+  };
+
+  register_cpu_extensions(supported_extensions);
 }
 
 void corei7_haswell_4770_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -120,69 +182,6 @@ void corei7_haswell_4770_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, 
     get_std_cpuid_xsave_leaf(subfunction, leaf);
     return;
   }
-}
-
-Bit64u corei7_haswell_4770_t::get_isa_extensions_bitmask(void) const
-{
-  return BX_ISA_X87 |
-         BX_ISA_486 |
-         BX_ISA_PENTIUM |
-         BX_ISA_P6 |
-         BX_ISA_MMX |
-         BX_ISA_SYSENTER_SYSEXIT |
-         BX_ISA_CLFLUSH |
-         BX_ISA_SSE |
-         BX_ISA_SSE2 |
-         BX_ISA_SSE3 |
-         BX_ISA_SSSE3 |
-         BX_ISA_SSE4_1 |
-         BX_ISA_SSE4_2 |
-         BX_ISA_POPCNT |
-#if BX_SUPPORT_MONITOR_MWAIT
-         BX_ISA_MONITOR_MWAIT |
-#endif
-#if BX_SUPPORT_VMX >= 2
-         BX_ISA_VMX |
-#endif
-      /* BX_ISA_SMX | */
-         BX_ISA_RDTSCP |
-         BX_ISA_XSAVE |
-         BX_ISA_XSAVEOPT |
-         BX_ISA_AES_PCLMULQDQ |
-         BX_ISA_MOVBE |
-         BX_ISA_FSGSBASE |
-         BX_ISA_INVPCID |
-         BX_ISA_AVX |
-         BX_ISA_AVX_F16C |
-         BX_ISA_AVX2 |
-         BX_ISA_AVX_FMA |
-         BX_ISA_LZCNT |
-         BX_ISA_BMI1 |
-         BX_ISA_BMI2 |
-         BX_ISA_RDRAND |
-         BX_ISA_CMPXCHG16B |
-         BX_ISA_LM_LAHF_SAHF;
-}
-
-Bit32u corei7_haswell_4770_t::get_cpu_extensions_bitmask(void) const
-{
-  return BX_CPU_DEBUG_EXTENSIONS |
-         BX_CPU_VME |
-         BX_CPU_PSE |
-         BX_CPU_PAE |
-         BX_CPU_PGE |
-         BX_CPU_PSE36 |
-         BX_CPU_MTRR |
-         BX_CPU_PAT |
-         BX_CPU_XAPIC |
-         BX_CPU_X2APIC |
-         BX_CPU_LONG_MODE |
-         BX_CPU_NX |
-         BX_CPU_1G_PAGES |
-         BX_CPU_PCID |
-         BX_CPU_SMEP |
-         BX_CPU_TSC_DEADLINE |
-         BX_CPU_FCS_FDS_DEPRECATION;
 }
 
 #if BX_SUPPORT_VMX >= 2
@@ -569,92 +568,43 @@ void corei7_haswell_4770_t::get_std_cpuid_leaf_7(Bit32u subfunction, cpuid_funct
 void corei7_haswell_4770_t::get_std_cpuid_leaf_A(cpuid_function_t *leaf) const
 {
   // CPUID function 0x0000000A - Architectural Performance Monitoring Leaf
-/*
+
+  // EAX:
+  //   [7:0] Version ID of architectural performance monitoring
+  //  [15:8] Number of general-purpose performance monitoring counters per logical processor
+  // [23:16] Bit width of general-purpose, performance monitoring counter
+  // [31:24] Length of EBX bit vector to enumerate architectural performance
+  //         monitoring events.
+
+  // EBX:
+  //     [0] Core cycle event not available if 1
+  //     [1] Instruction retired event not available if 1
+  //     [2] Reference cycles event not available if 1
+  //     [3] Last-level cache reference event not available if 1
+  //     [4] Last-level cache misses event not available if 1
+  //     [5] Branch instruction retired event not available if 1
+  //     [6] Branch mispredict retired event not available if 1
+  //  [31:7] reserved
+
+  // ECX: reserved
+
+  // EDX:
+  //   [4:0] Number of fixed performance counters (if Version ID > 1)
+  //  [12:5] Bit width of fixed-function performance counters (if Version ID > 1)
+  // [31:13] reserved
+
   leaf->eax = 0x07300403;
   leaf->ebx = 0x00000000;
   leaf->ecx = 0x00000000;
   leaf->edx = 0x00000603;
-*/
-  leaf->eax = 0; // reporting true capabilities breaks Win7 x64 installation
+/*
+  leaf->eax = 0; // reporting true capabilities without supporting it breaks Win7 x64 installation
   leaf->ebx = 0;
   leaf->ecx = 0;
   leaf->edx = 0;
+*/
 
   BX_INFO(("WARNING: Architectural Performance Monitoring is not implemented"));
-}
-
-BX_CPP_INLINE static Bit32u ilog2(Bit32u x)
-{
-  Bit32u count = 0;
-  while(x>>=1) count++;
-  return count;
-}
-
-// leaf 0x0000000B //
-void corei7_haswell_4770_t::get_std_cpuid_extended_topology_leaf(Bit32u subfunction, cpuid_function_t *leaf) const
-{
-  // CPUID function 0x0000000B - Extended Topology Leaf
-  leaf->eax = 0;
-  leaf->ebx = 0;
-  leaf->ecx = subfunction;
-  leaf->edx = cpu->get_apic_id();
-
-#if BX_SUPPORT_SMP
-  switch(subfunction) {
-  case 0:
-     if (nthreads > 1) {
-        leaf->eax = ilog2(nthreads-1)+1;
-        leaf->ebx = nthreads;
-        leaf->ecx |= (1<<8);
-     }
-     else if (ncores > 1) {
-        leaf->eax = ilog2(ncores-1)+1;
-        leaf->ebx = ncores;
-        leaf->ecx |= (2<<8);
-     }
-     else if (nprocessors > 1) {
-        leaf->eax = ilog2(nprocessors-1)+1;
-        leaf->ebx = nprocessors;
-     }
-     else {
-        leaf->eax = 1;
-        leaf->ebx = 1; // number of logical CPUs at this level
-     }
-     break;
-
-  case 1:
-     if (nthreads > 1) {
-        if (ncores > 1) {
-           leaf->eax = ilog2(ncores-1)+1;
-           leaf->ebx = ncores;
-           leaf->ecx |= (2<<8);
-        }
-        else if (nprocessors > 1) {
-           leaf->eax = ilog2(nprocessors-1)+1;
-           leaf->ebx = nprocessors;
-        }
-     }
-     else if (ncores > 1) {
-        if (nprocessors > 1) {
-           leaf->eax = ilog2(nprocessors-1)+1;
-           leaf->ebx = nprocessors;
-        }
-     }
-     break;
-
-  case 2:
-     if (nthreads > 1) {
-        if (nprocessors > 1) {
-           leaf->eax = ilog2(nprocessors-1)+1;
-           leaf->ebx = nprocessors;
-        }
-     }
-     break;
-
-  default:
-     break;
-  }
-#endif
 }
 
 // leaf 0x0000000C reserved //
@@ -813,18 +763,7 @@ void corei7_haswell_4770_t::get_ext_cpuid_leaf_8(cpuid_function_t *leaf) const
 
 void corei7_haswell_4770_t::dump_cpuid(void) const
 {
-  struct cpuid_function_t leaf;
-  unsigned n;
-
-  for (n=0; n<=0xd; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
-
-  for (n=0x80000000; n<=0x80000008; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
+  bx_cpuid_t::dump_cpuid(0xD, 0x8);
 }
 
 bx_cpuid_t *create_corei7_haswell_4770_cpuid(BX_CPU_C *cpu) { return new corei7_haswell_4770_t(cpu); }

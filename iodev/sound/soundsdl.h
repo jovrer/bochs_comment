@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundsdl.h 11726 2013-06-24 19:19:12Z vruppert $
+// $Id: soundsdl.h 12383 2014-06-23 19:37:58Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2012  The Bochs Project
@@ -21,7 +21,7 @@
 // Lowlevel sound output support for SDL written by Volker Ruppert
 
 
-#if BX_WITH_SDL
+#if BX_WITH_SDL || BX_WITH_SDL2
 
 #include "bochs.h"
 
@@ -43,4 +43,4 @@ private:
   bx_bool WaveOpen;
 };
 
-#endif  // BX_WITH_SDL
+#endif  // BX_WITH_SDL || BX_WITH_SDL2

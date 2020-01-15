@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc 12188 2014-02-15 12:18:15Z vruppert $
+// $Id: rfb.cc 12391 2014-07-02 21:08:54Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -41,7 +41,7 @@
 
 #include "icon_bochs.h"
 #include "font/vga.bitmap.h"
-#if BX_WITH_SDL && !BX_PLUGINS
+#if (BX_WITH_SDL || BX_WITH_SDL2) && !BX_PLUGINS
 extern unsigned char sdl_font8x8[256][8];
 #else
 #include "sdl.h" // 8x8 font for status text

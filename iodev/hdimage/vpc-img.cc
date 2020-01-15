@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vpc-img.cc 11896 2013-10-19 21:16:10Z vruppert $
+// $Id: vpc-img.cc 12503 2014-10-14 21:39:05Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Block driver for Connectix / Microsoft Virtual PC images (ported from QEMU)
@@ -91,7 +91,7 @@ int vpc_image_t::open(const char* _pathname, int flags)
   vhd_dyndisk_header_t *dyndisk_header;
   Bit8u buf[HEADER_SIZE];
   Bit32u checksum;
-  Bit64u imgsize = 0;
+  Bit64u offset = 0, imgsize = 0;
   int disk_type;
 
   pathname = _pathname;
@@ -110,16 +110,20 @@ int vpc_image_t::open(const char* _pathname, int flags)
         BX_ERROR(("VPC: signature missed in file '%s'", _pathname));
         return -1;
     }
+  } else if (disk_type == VHD_FIXED) {
+    offset = imgsize - HEADER_SIZE;
   }
-  if (bx_read_image(fd, 0, (char*)footer_buf, HEADER_SIZE) != HEADER_SIZE) {
+  if (bx_read_image(fd, offset, (char*)footer_buf, HEADER_SIZE) != HEADER_SIZE) {
     return -1;
   }
   footer = (vhd_footer_t*)footer_buf;
 
   checksum = be32_to_cpu(footer->checksum);
   footer->checksum = 0;
-  if (vpc_checksum(footer_buf, HEADER_SIZE) != checksum)
+  if (vpc_checksum(footer_buf, HEADER_SIZE) != checksum) {
     BX_ERROR(("The header checksum of '%s' is incorrect", pathname));
+    return -1;
+  }
 
   // Write 'checksum' back to footer, or else will leave it with zero.
   footer->checksum = be32_to_cpu(checksum);

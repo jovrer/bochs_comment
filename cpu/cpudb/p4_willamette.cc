@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: p4_willamette.cc 12241 2014-03-15 19:24:42Z sshwarts $
+// $Id: p4_willamette.cc 12505 2014-10-15 08:04:38Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -29,6 +29,35 @@
 
 #if BX_CPU_LEVEL >= 6
 
+p4_willamette_t::p4_willamette_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
+{
+  static Bit8u supported_extensions[] = {
+      BX_ISA_X87,
+      BX_ISA_486,
+      BX_ISA_PENTIUM,
+      BX_ISA_MMX,
+      BX_ISA_P6,
+      BX_ISA_SYSENTER_SYSEXIT,
+      BX_ISA_SSE,
+      BX_ISA_SSE2,
+      BX_ISA_CLFLUSH,
+      BX_ISA_DEBUG_EXTENSIONS,
+      BX_ISA_VME,
+      BX_ISA_PSE,
+      BX_ISA_PAE,
+      BX_ISA_PGE,
+#if BX_PHY_ADDRESS_LONG
+      BX_ISA_PSE36,
+#endif
+      BX_ISA_MTRR,
+      BX_ISA_PAT,
+      BX_ISA_XAPIC,
+      BX_ISA_EXTENSION_LAST
+  };
+
+  register_cpu_extensions(supported_extensions);
+}
+
 void p4_willamette_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
 {
   // CPUID function 0x80000002-0x80000004 - Processor Name String Identifier
@@ -57,34 +86,6 @@ void p4_willamette_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_
     get_std_cpuid_leaf_2(leaf);
     return;
   }
-}
-
-Bit64u p4_willamette_t::get_isa_extensions_bitmask(void) const
-{
-  return BX_ISA_X87 |
-         BX_ISA_486 |
-         BX_ISA_PENTIUM |
-         BX_ISA_P6 |
-         BX_ISA_MMX |
-         BX_ISA_SYSENTER_SYSEXIT |
-         BX_ISA_CLFLUSH |
-         BX_ISA_SSE |
-         BX_ISA_SSE2;
-}
-
-Bit32u p4_willamette_t::get_cpu_extensions_bitmask(void) const
-{
-  return BX_CPU_DEBUG_EXTENSIONS |
-         BX_CPU_VME |
-         BX_CPU_PSE |
-         BX_CPU_PAE |
-         BX_CPU_PGE |
-#if BX_PHY_ADDRESS_LONG
-         BX_CPU_PSE36 |
-#endif
-         BX_CPU_MTRR |
-         BX_CPU_PAT |
-         BX_CPU_XAPIC;
 }
 
 // leaf 0x00000000 //
@@ -276,18 +277,7 @@ void p4_willamette_t::get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const
 
 void p4_willamette_t::dump_cpuid(void) const
 {
-  struct cpuid_function_t leaf;
-  unsigned n;
-
-  for (n=0; n<=0x2; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
-
-  for (n=0x80000000; n<=0x80000004; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
+  bx_cpuid_t::dump_cpuid(0x2, 0x4);
 }
 
 bx_cpuid_t *create_p4_willamette_cpuid(BX_CPU_C *cpu) { return new p4_willamette_t(cpu); }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_slirp.cc 12282 2014-04-18 17:14:32Z vruppert $
+// $Id: eth_slirp.cc 12472 2014-08-30 07:14:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2014  The Bochs Project
@@ -139,6 +139,7 @@ bx_bool bx_slirp_pktmover_c::parse_slirp_conf(const char *conf)
   char line[512];
   char *ret, *param, *val, *tmp;
   bx_bool format_checked = 0;
+  size_t len1 = 0, len2;
   unsigned i, count;
 
   fd = fopen(conf, "r");
@@ -163,12 +164,16 @@ bx_bool bx_slirp_pktmover_c::parse_slirp_conf(const char *conf)
         if (line[0] == '#') continue;
         param = strtok(line, "=");
         if (param != NULL) {
+          len1 = strip_whitespace(param);
           val = strtok(NULL, "");
+          if (val == NULL) {
+            BX_ERROR(("slirp config: missing value for parameter '%s'", param));
+            continue;
+          }
         } else {
           continue;
         }
-        size_t len1 = strip_whitespace(param);
-        size_t len2 = strip_whitespace(val);
+        len2 = strip_whitespace(val);
         if ((len1 == 0) || (len2 == 0)) continue;
         if (!stricmp(param, "restricted")) {
           restricted = atoi(val);

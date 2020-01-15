@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.h 12128 2014-01-21 20:56:50Z vruppert $
+// $Id: usb_msd.h 12494 2014-09-29 17:48:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  USB mass storage device support (ported from QEMU)
@@ -73,7 +73,8 @@ private:
     const char *fname;
     bx_list_c *config;
     char info_txt[BX_PATHNAME_LEN];
-    char journal[BX_PATHNAME_LEN];
+    char journal[BX_PATHNAME_LEN]; // undoable / volatile disk only
+    int size; // VVFAT disk only
   } s;
 
   static const char *cd_param_string_handler(bx_param_string_c *param, int set,

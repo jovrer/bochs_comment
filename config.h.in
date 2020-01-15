@@ -287,12 +287,21 @@
 #define BX_WITH_VNCSRV 0
 #define BX_WITH_AMIGAOS 0
 #define BX_WITH_SDL 0
+#define BX_WITH_SDL2 0
 #define BX_WITH_SVGA 0
 #define BX_WITH_WX 0
 
 // BX_USE_TEXTCONFIG should be set to 1 unless Bochs is compiled
 // for wxWidgets only.
 #define BX_USE_TEXTCONFIG 1
+
+// BX_USE_WIN32CONFIG should be set to 1 on WIN32 for the guis
+// "win32" and "sdl" only.
+#if BX_USE_TEXTCONFIG && defined(WIN32) && (BX_WITH_WIN32 || BX_WITH_SDL || BX_WITH_SDL2)
+  #define BX_USE_WIN32CONFIG 1
+#else
+  #define BX_USE_WIN32CONFIG 0
+#endif
 
 // A certain functions must NOT be fastcall even if compiled with fastcall
 // option, and those are callbacks from Windows which are defined either 
@@ -648,10 +657,14 @@ typedef
 // enable BX_ASSERT checks
 #define BX_ASSERT_ENABLE 0
 
+// enable statistics collection
+#define BX_ENABLE_STATISTICS 0
+
 #define BX_SUPPORT_ALIGNMENT_CHECK 0
 #define BX_SUPPORT_FPU 0
 #define BX_SUPPORT_3DNOW 0
 #define BX_SUPPORT_MONITOR_MWAIT 0
+#define BX_SUPPORT_PERFMON 0
 #define BX_SUPPORT_SVM 0
 #define BX_SUPPORT_VMX 0
 #define BX_SUPPORT_AVX 0
@@ -662,7 +675,7 @@ typedef
 #endif
 
 #if BX_SUPPORT_VMX >= 2 && BX_SUPPORT_X86_64 == 0
-  #error "VMXx2 require x86-64 support"
+  #error "VMX=2 require x86-64 support"
 #endif
 
 #if BX_SUPPORT_AVX && BX_SUPPORT_X86_64 == 0

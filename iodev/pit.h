@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit.h 12321 2014-05-10 06:50:06Z vruppert $
+// $Id: pit.h 12514 2014-10-19 08:54:16Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2014  The Bochs Project
@@ -62,6 +62,8 @@ private:
     Bit64u  total_usec;
     int     timer_handle[3];
   } s;
+
+  bx_bool is_realtime;
 
   static void timer_handler(void *this_ptr);
   BX_PIT_SMF void handle_timer();

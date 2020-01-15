@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu.cc 12234 2014-03-09 21:42:11Z sshwarts $
+// $Id: fpu.cc 12481 2014-08-31 20:05:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003-2013 Stanislav Shwartsman
+//   Copyright (c) 2003-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -77,7 +77,7 @@ void BX_CPU_C::FPU_check_pending_exceptions(void)
 
 Bit16u BX_CPU_C::x87_get_FCS(void)
 {
-  if (bx_cpuid_support_fcs_fds_deprecation())
+  if (is_cpu_extension_supported(BX_ISA_FCS_FDS_DEPRECATION))
     return 0;
   else
     return BX_CPU_THIS_PTR the_i387.fcs;
@@ -85,7 +85,7 @@ Bit16u BX_CPU_C::x87_get_FCS(void)
 
 Bit16u BX_CPU_C::x87_get_FDS(void)
 {
-  if (bx_cpuid_support_fcs_fds_deprecation())
+  if (is_cpu_extension_supported(BX_ISA_FCS_FDS_DEPRECATION))
     return 0;
   else
     return BX_CPU_THIS_PTR the_i387.fds;

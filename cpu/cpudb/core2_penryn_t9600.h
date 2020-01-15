@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: core2_penryn_t9600.h 12241 2014-03-15 19:24:42Z sshwarts $
+// $Id: core2_penryn_t9600.h 12476 2014-08-31 18:39:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -36,8 +36,6 @@ public:
   // return CPU name
   virtual const char *get_name(void) const { return "core2_penryn_t9600"; }
 
-  virtual Bit64u get_isa_extensions_bitmask(void) const;
-  virtual Bit32u get_cpu_extensions_bitmask(void) const;
 #if BX_SUPPORT_VMX
   virtual Bit32u get_vmx_extensions_bitmask(void) const;
 #endif

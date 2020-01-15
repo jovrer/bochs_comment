@@ -190,6 +190,8 @@ float32 uint64_to_float32(Bit64u a, float_status_t &status)
 float64 uint64_to_float64(Bit64u a, float_status_t &status)
 {
     if (a == 0) return 0;
+    if (a & BX_CONST64(0x8000000000000000))
+        return normalizeRoundAndPackFloat64(0, 0x43D, a >> 1, status);
     return normalizeRoundAndPackFloat64(0, 0x43C, a, status);
 }
 
@@ -686,6 +688,8 @@ float32 float32_getmant(float32 a, float_status_t &status, int sign_ctrl, int in
     if (aExp == 0) {
         float_raise(status, float_flag_denormal);
         normalizeFloat32Subnormal(aSig, &aExp, &aSig);
+//      aExp += 0x7E;
+        aSig &= 0x7FFFFF;
     }
 
     switch(interv) {
@@ -751,12 +755,15 @@ float32 float32_scalef(float32 a, float32 b, float_status_t &status)
         return a;
     }
 
-    if ((aExp | aSig) == 0) {
-        if (bExp == 0xFF && ! bSign) {
-            float_raise(status, float_flag_invalid);
-            return float32_default_nan;
+    if (aExp == 0) {
+        if (aSig == 0) {
+            if (bExp == 0xFF && ! bSign) {
+                float_raise(status, float_flag_invalid);
+                return float32_default_nan;
+            }
+            return a;
         }
-        return a;
+        float_raise(status, float_flag_denormal);
     }
 
     if ((bExp | bSig) == 0) return a;
@@ -774,6 +781,8 @@ float32 float32_scalef(float32 a, float32 b, float_status_t &status)
     int scale = 0;
 
     if (bExp <= 0x7E) {
+        if (bExp == 0)
+            float_raise(status, float_flag_denormal);
         scale = -bSign;
     }
     else {
@@ -1261,47 +1270,7 @@ float_class_t float32_class(float32 a)
 | value `b', or 'float_relation_unordered' otherwise.
 *----------------------------------------------------------------------------*/
 
-int float32_compare(float32 a, float32 b, float_status_t &status)
-{
-    if (get_denormals_are_zeros(status)) {
-        a = float32_denormal_to_zero(a);
-        b = float32_denormal_to_zero(b);
-    }
-
-    float_class_t aClass = float32_class(a);
-    float_class_t bClass = float32_class(b);
-
-    if (aClass == float_SNaN || aClass == float_QNaN || bClass == float_SNaN || bClass == float_QNaN)
-    {
-        float_raise(status, float_flag_invalid);
-        return float_relation_unordered;
-    }
-
-    if (aClass == float_denormal || bClass == float_denormal) {
-        float_raise(status, float_flag_denormal);
-    }
-
-    if ((a == b) || ((Bit32u) ((a | b)<<1) == 0)) return float_relation_equal;
-
-    int aSign = extractFloat32Sign(a);
-    int bSign = extractFloat32Sign(b);
-    if (aSign != bSign)
-        return (aSign) ? float_relation_less : float_relation_greater;
-
-    if (aSign ^ (a < b)) return float_relation_less;
-    return float_relation_greater;
-}
-
-/*----------------------------------------------------------------------------
-| Compare  between  two  double  precision  floating  point  numbers. Returns
-| 'float_relation_equal'  if the operands are equal, 'float_relation_less' if
-| the    value    'a'   is   less   than   the   corresponding   value   `b',
-| 'float_relation_greater' if the value 'a' is greater than the corresponding
-| value `b', or 'float_relation_unordered' otherwise. Quiet NaNs do not cause
-| an exception.
-*----------------------------------------------------------------------------*/
-
-int float32_compare_quiet(float32 a, float32 b, float_status_t &status)
+int float32_compare(float32 a, float32 b, int quiet, float_status_t &status)
 {
     if (get_denormals_are_zeros(status)) {
         a = float32_denormal_to_zero(a);
@@ -1317,6 +1286,7 @@ int float32_compare_quiet(float32 a, float32 b, float_status_t &status)
     }
 
     if (aClass == float_QNaN || bClass == float_QNaN) {
+        if (! quiet) float_raise(status, float_flag_invalid);
         return float_relation_unordered;
     }
 
@@ -1336,9 +1306,8 @@ int float32_compare_quiet(float32 a, float32 b, float_status_t &status)
 }
 
 /*----------------------------------------------------------------------------
-| Compare bewteen two single precision floating point numbers and return the
-| smaller of  them.  The operation  is performed  according to  the IEC/IEEE
-| Standard for Binary Floating-Point Arithmetic.
+| Compare between two single precision floating point numbers and return the
+| smaller of them.
 *----------------------------------------------------------------------------*/
 
 float32 float32_min(float32 a, float32 b, float_status_t &status)
@@ -1352,9 +1321,8 @@ float32 float32_min(float32 a, float32 b, float_status_t &status)
 }
 
 /*----------------------------------------------------------------------------
-| Compare bewteen two single precision floating point numbers and return the
-| larger  of  them.  The operation  is performed  according to  the IEC/IEEE
-| Standard for Binary Floating-Point Arithmetic.
+| Compare between two single precision floating point numbers and return the
+| larger of them.
 *----------------------------------------------------------------------------*/
 
 float32 float32_max(float32 a, float32 b, float_status_t &status)
@@ -1365,6 +1333,66 @@ float32 float32_max(float32 a, float32 b, float_status_t &status)
   }
 
   return (float32_compare(a, b, status) == float_relation_greater) ? a : b;
+}
+
+/*----------------------------------------------------------------------------
+| Compare between two  single precision  floating point numbers and  return the
+| smaller/larger of them. The operation  is performed according to the IEC/IEEE
+| Standard for Binary Floating-Point Arithmetic.
+*----------------------------------------------------------------------------*/
+
+float32 float32_minmax(float32 a, float32 b, int is_max, int is_abs, float_status_t &status)
+{
+    if (get_denormals_are_zeros(status)) {
+        a = float32_denormal_to_zero(a);
+        b = float32_denormal_to_zero(b);
+    }
+
+    if (float32_is_nan(a) || float32_is_nan(b)) {
+        if (float32_is_signaling_nan(a)) {
+            return propagateFloat32NaN(a, status);
+        }
+        if (float32_is_signaling_nan(b) ) {
+            return propagateFloat32NaN(b, status);
+        }
+        if (! float32_is_nan(b)) {
+            if (float32_is_denormal(b))
+                float_raise(status, float_flag_denormal);
+            return b;
+        }
+        if (! float32_is_nan(a)) {
+            if (float32_is_denormal(a))
+                float_raise(status, float_flag_denormal);
+            return a;
+        }
+        return propagateFloat32NaN(a, b, status);
+    }
+
+    float32 tmp_a = a, tmp_b = b;
+    if (is_abs) {
+        tmp_a &= ~0x80000000; // clear the sign bit
+        tmp_b &= ~0x80000000;
+    }
+
+    int aSign = extractFloat32Sign(tmp_a);
+    int bSign = extractFloat32Sign(tmp_b);
+
+    if (float32_is_denormal(a) || float32_is_denormal(b))
+        float_raise(status, float_flag_denormal);
+
+    if (aSign != bSign) {
+        if (! is_max) {
+            return aSign ? a : b;
+        } else {
+            return aSign ? b : a;
+        }
+    } else {
+        if (! is_max) {
+            return (aSign ^ (tmp_a < tmp_b)) ? a : b;
+        } else {
+            return (aSign ^ (tmp_a < tmp_b)) ? b : a;
+        }
+    }
 }
 
 /*----------------------------------------------------------------------------
@@ -1886,6 +1914,8 @@ float64 float64_getmant(float64 a, float_status_t &status, int sign_ctrl, int in
     if (aExp == 0) {
         float_raise(status, float_flag_denormal);
         normalizeFloat64Subnormal(aSig, &aExp, &aSig);
+//      aExp += 0x3FE;
+        aSig &= BX_CONST64(0xFFFFFFFFFFFFFFFF);
     }
 
     switch(interv) {
@@ -1951,12 +1981,15 @@ float64 float64_scalef(float64 a, float64 b, float_status_t &status)
         return a;
     }
 
-    if ((aExp | aSig) == 0) {
-        if (bExp == 0x7FF && ! bSign) {
-            float_raise(status, float_flag_invalid);
-            return float64_default_nan;
+    if (aExp == 0) {
+        if (aSig == 0) {
+            if (bExp == 0x7FF && ! bSign) {
+                float_raise(status, float_flag_invalid);
+                return float64_default_nan;
+            }
+            return a;
         }
-        return a;
+        float_raise(status, float_flag_denormal);
     }
 
     if ((bExp | bSig) == 0) return a;
@@ -1974,6 +2007,8 @@ float64 float64_scalef(float64 a, float64 b, float_status_t &status)
     int scale = 0;
 
     if (bExp < 0x3FF) {
+        if (bExp == 0)
+            float_raise(status, float_flag_denormal);
         scale = -bSign;
     }
     else {
@@ -2465,47 +2500,7 @@ float_class_t float64_class(float64 a)
 | value `b', or 'float_relation_unordered' otherwise.
 *----------------------------------------------------------------------------*/
 
-int float64_compare(float64 a, float64 b, float_status_t &status)
-{
-    if (get_denormals_are_zeros(status)) {
-        a = float64_denormal_to_zero(a);
-        b = float64_denormal_to_zero(b);
-    }
-
-    float_class_t aClass = float64_class(a);
-    float_class_t bClass = float64_class(b);
-
-    if (aClass == float_SNaN || aClass == float_QNaN || bClass == float_SNaN || bClass == float_QNaN)
-    {
-        float_raise(status, float_flag_invalid);
-        return float_relation_unordered;
-    }
-
-    if (aClass == float_denormal || bClass == float_denormal) {
-        float_raise(status, float_flag_denormal);
-    }
-
-    if ((a == b) || ((Bit64u) ((a | b)<<1) == 0)) return float_relation_equal;
-
-    int aSign = extractFloat64Sign(a);
-    int bSign = extractFloat64Sign(b);
-    if (aSign != bSign)
-        return (aSign) ? float_relation_less : float_relation_greater;
-
-    if (aSign ^ (a < b)) return float_relation_less;
-    return float_relation_greater;
-}
-
-/*----------------------------------------------------------------------------
-| Compare  between  two  double  precision  floating  point  numbers. Returns
-| 'float_relation_equal'  if the operands are equal, 'float_relation_less' if
-| the    value    'a'   is   less   than   the   corresponding   value   `b',
-| 'float_relation_greater' if the value 'a' is greater than the corresponding
-| value `b', or 'float_relation_unordered' otherwise. Quiet NaNs do not cause
-| an exception.
-*----------------------------------------------------------------------------*/
-
-int float64_compare_quiet(float64 a, float64 b, float_status_t &status)
+int float64_compare(float64 a, float64 b, int quiet, float_status_t &status)
 {
     if (get_denormals_are_zeros(status)) {
         a = float64_denormal_to_zero(a);
@@ -2521,6 +2516,7 @@ int float64_compare_quiet(float64 a, float64 b, float_status_t &status)
     }
 
     if (aClass == float_QNaN || bClass == float_QNaN) {
+        if (! quiet) float_raise(status, float_flag_invalid);
         return float_relation_unordered;
     }
 
@@ -2540,9 +2536,8 @@ int float64_compare_quiet(float64 a, float64 b, float_status_t &status)
 }
 
 /*----------------------------------------------------------------------------
-| Compare bewteen two double precision floating point numbers and return the
-| smaller  of  them.  The operation  is performed  according to the IEC/IEEE
-| Standard for Binary Floating-Point Arithmetic.
+| Compare between two double precision floating point numbers and return the
+| smaller of them.
 *----------------------------------------------------------------------------*/
 
 float64 float64_min(float64 a, float64 b, float_status_t &status)
@@ -2556,9 +2551,8 @@ float64 float64_min(float64 a, float64 b, float_status_t &status)
 }
 
 /*----------------------------------------------------------------------------
-| Compare bewteen two double precision floating point numbers and return the
-| larger  of  them.  The operation  is performed  according to  the IEC/IEEE
-| Standard for Binary Floating-Point Arithmetic.
+| Compare between two double precision floating point numbers and return the
+| larger of them.
 *----------------------------------------------------------------------------*/
 
 float64 float64_max(float64 a, float64 b, float_status_t &status)
@@ -2569,6 +2563,66 @@ float64 float64_max(float64 a, float64 b, float_status_t &status)
   }
 
   return (float64_compare(a, b, status) == float_relation_greater) ? a : b;
+}
+
+/*----------------------------------------------------------------------------
+| Compare between two  double precision  floating point numbers and  return the
+| smaller/larger of them. The operation  is performed according to the IEC/IEEE
+| Standard for Binary Floating-Point Arithmetic.
+*----------------------------------------------------------------------------*/
+
+float64 float64_minmax(float64 a, float64 b, int is_max, int is_abs, float_status_t &status)
+{
+    if (get_denormals_are_zeros(status)) {
+        a = float64_denormal_to_zero(a);
+        b = float64_denormal_to_zero(b);
+    }
+
+    if (float64_is_nan(a) || float64_is_nan(b)) {
+        if (float64_is_signaling_nan(a)) {
+            return propagateFloat64NaN(a, status);
+        }
+        if (float64_is_signaling_nan(b)) {
+            return propagateFloat64NaN(b, status);
+        }
+        if (! float64_is_nan(b)) {
+            if (float64_is_denormal(b))
+                float_raise(status, float_flag_denormal);
+            return b;
+        }
+        if (! float64_is_nan(a)) {
+            if (float64_is_denormal(a))
+                float_raise(status, float_flag_denormal);
+            return a;
+        }
+        return propagateFloat64NaN(a, b, status);
+    }
+
+    float64 tmp_a = a, tmp_b = b;
+    if (is_abs) {
+        tmp_a &= ~BX_CONST64(0x8000000000000000); // clear the sign bit
+        tmp_b &= ~BX_CONST64(0x8000000000000000);
+    }
+
+    int aSign = extractFloat64Sign(tmp_a);
+    int bSign = extractFloat64Sign(tmp_b);
+
+    if (float64_is_denormal(a) || float64_is_denormal(b))
+        float_raise(status, float_flag_denormal);
+
+    if (aSign != bSign) {
+        if (! is_max) {
+            return aSign ? a : b;
+        } else {
+            return aSign ? b : a;
+        }
+    } else {
+        if (! is_max) {
+            return (aSign ^ (tmp_a < tmp_b)) ? a : b;
+        } else {
+            return (aSign ^ (tmp_a < tmp_b)) ? b : a;
+        }
+    }
 }
 
 #ifdef FLOATX80

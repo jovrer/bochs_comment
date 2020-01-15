@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: core2_penryn_t9600.cc 12241 2014-03-15 19:24:42Z sshwarts $
+// $Id: core2_penryn_t9600.cc 12505 2014-10-15 08:04:38Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2014 Stanislav Shwartsman
@@ -37,6 +37,47 @@ core2_penryn_t9600_t::core2_penryn_t9600_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 
   if (! BX_SUPPORT_MONITOR_MWAIT)
     BX_INFO(("WARNING: MONITOR/MWAIT support is not compiled in !"));
+
+  static Bit8u supported_extensions[] = {
+      BX_ISA_X87,
+      BX_ISA_486,
+      BX_ISA_PENTIUM,
+      BX_ISA_MMX,
+      BX_ISA_P6,
+      BX_ISA_SYSENTER_SYSEXIT,
+      BX_ISA_SSE,
+      BX_ISA_SSE2,
+      BX_ISA_SSE3,
+      BX_ISA_SSSE3,
+      BX_ISA_SSE4_1,
+#if BX_SUPPORT_MONITOR_MWAIT
+      BX_ISA_MONITOR_MWAIT,
+#endif
+#if BX_SUPPORT_VMX
+      BX_ISA_VMX,
+#endif
+      BX_ISA_SMX,
+      BX_ISA_CLFLUSH,
+      BX_ISA_DEBUG_EXTENSIONS,
+      BX_ISA_VME,
+      BX_ISA_PSE,
+      BX_ISA_PAE,
+      BX_ISA_PGE,
+#if BX_PHY_ADDRESS_LONG
+      BX_ISA_PSE36,
+#endif
+      BX_ISA_MTRR,
+      BX_ISA_PAT,
+      BX_ISA_XAPIC,
+      BX_ISA_LONG_MODE,
+      BX_ISA_LM_LAHF_SAHF,
+      BX_ISA_NX,
+      BX_ISA_CMPXCHG16B,
+      BX_ISA_XSAVE,
+      BX_ISA_EXTENSION_LAST
+  };
+
+  register_cpu_extensions(supported_extensions);
 }
 
 void core2_penryn_t9600_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -109,47 +150,6 @@ void core2_penryn_t9600_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, c
     get_std_cpuid_xsave_leaf(subfunction, leaf);
     return;
   }
-}
-
-Bit64u core2_penryn_t9600_t::get_isa_extensions_bitmask(void) const
-{
-  return BX_ISA_X87 |
-         BX_ISA_486 |
-         BX_ISA_PENTIUM |
-         BX_ISA_P6 |
-         BX_ISA_MMX |
-         BX_ISA_SYSENTER_SYSEXIT |
-         BX_ISA_CLFLUSH |
-         BX_ISA_SSE |
-         BX_ISA_SSE2 |
-         BX_ISA_SSE3 |
-         BX_ISA_SSSE3 |
-         BX_ISA_SSE4_1 |
-#if BX_SUPPORT_MONITOR_MWAIT
-         BX_ISA_MONITOR_MWAIT |
-#endif
-#if BX_SUPPORT_VMX
-         BX_ISA_VMX |
-#endif
-         BX_ISA_SMX |
-         BX_ISA_XSAVE |
-         BX_ISA_CMPXCHG16B |
-         BX_ISA_LM_LAHF_SAHF;
-}
-
-Bit32u core2_penryn_t9600_t::get_cpu_extensions_bitmask(void) const
-{
-  return BX_CPU_DEBUG_EXTENSIONS |
-         BX_CPU_VME |
-         BX_CPU_PSE |
-         BX_CPU_PAE |
-         BX_CPU_PGE |
-         BX_CPU_PSE36 |
-         BX_CPU_MTRR |
-         BX_CPU_PAT |
-         BX_CPU_XAPIC |
-         BX_CPU_LONG_MODE |
-         BX_CPU_NX;
 }
 
 #if BX_SUPPORT_VMX
@@ -470,16 +470,41 @@ void core2_penryn_t9600_t::get_std_cpuid_leaf_6(cpuid_function_t *leaf) const
 void core2_penryn_t9600_t::get_std_cpuid_leaf_A(cpuid_function_t *leaf) const
 {
   // CPUID function 0x0000000A - Architectural Performance Monitoring Leaf
-/*
+
+  // EAX:
+  //   [7:0] Version ID of architectural performance monitoring
+  //  [15:8] Number of general-purpose performance monitoring counters per logical processor
+  // [23:16] Bit width of general-purpose, performance monitoring counter
+  // [31:24] Length of EBX bit vector to enumerate architectural performance
+  //         monitoring events.
+
+  // EBX:
+  //     [0] Core cycle event not available if 1
+  //     [1] Instruction retired event not available if 1
+  //     [2] Reference cycles event not available if 1
+  //     [3] Last-level cache reference event not available if 1
+  //     [4] Last-level cache misses event not available if 1
+  //     [5] Branch instruction retired event not available if 1
+  //     [6] Branch mispredict retired event not available if 1
+  //  [31:7] reserved
+
+  // ECX: reserved
+
+  // EDX:
+  //   [4:0] Number of fixed performance counters (if Version ID > 1)
+  //  [12:5] Bit width of fixed-function performance counters (if Version ID > 1)
+  // [31:13] reserved
+
   leaf->eax = 0x07280202;
   leaf->ebx = 0x00000000;
   leaf->ecx = 0x00000000;
   leaf->edx = 0x00000503;
-*/
-  leaf->eax = 0; // reporting true capabilities breaks Win7 x64 installation
+/*
+  leaf->eax = 0; // reporting true capabilities without supporting it breaks Win7 x64 installation
   leaf->ebx = 0;
   leaf->ecx = 0;
   leaf->edx = 0;
+*/
 
   BX_INFO(("WARNING: Architectural Performance Monitoring is not implemented"));
 }
@@ -610,18 +635,7 @@ void core2_penryn_t9600_t::get_ext_cpuid_leaf_8(cpuid_function_t *leaf) const
 
 void core2_penryn_t9600_t::dump_cpuid(void) const
 {
-  struct cpuid_function_t leaf;
-  unsigned n;
-
-  for (n=0; n<=0xd; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
-
-  for (n=0x80000000; n<=0x80000008; n++) {
-    get_cpuid_leaf(n, 0x00000000, &leaf);
-    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  }
+  bx_cpuid_t::dump_cpuid(0xD, 0x8);
 }
 
 bx_cpuid_t *create_core2_penryn_t9600_cpuid(BX_CPU_C *cpu) { return new core2_penryn_t9600_t(cpu); }

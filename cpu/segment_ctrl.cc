@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: segment_ctrl.cc 12516 2014-10-20 21:10:52Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -126,8 +126,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LFS_GqMp(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit16u fs = read_virtual_word_64(i->seg(), (eaddr + 8) & i->asize_mask());
-  Bit64u reg_64 = read_virtual_qword_64(i->seg(), eaddr);
+  Bit16u fs = read_linear_word(i->seg(), get_laddr64(i->seg(), (eaddr + 8) & i->asize_mask()));
+  Bit64u reg_64 = read_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr));
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS], fs);
 
@@ -170,8 +170,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LGS_GqMp(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit16u gs = read_virtual_word_64(i->seg(), (eaddr + 8) & i->asize_mask());
-  Bit64u reg_64 = read_virtual_qword_64(i->seg(), eaddr);
+  Bit16u gs = read_linear_word(i->seg(), get_laddr64(i->seg(), (eaddr + 8) & i->asize_mask()));
+  Bit64u reg_64 = read_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr));
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS], gs);
 
@@ -214,8 +214,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LSS_GqMp(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  Bit16u ss = read_virtual_word_64(i->seg(), (eaddr + 8) & i->asize_mask());
-  Bit64u reg_64 = read_virtual_qword_64(i->seg(), eaddr);
+  Bit16u ss = read_linear_word(i->seg(), get_laddr64(i->seg(), (eaddr + 8) & i->asize_mask()));
+  Bit64u reg_64 = read_linear_qword(i->seg(), get_laddr64(i->seg(), eaddr));
 
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], ss);
 

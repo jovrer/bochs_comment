@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode.h 12247 2014-03-17 20:29:44Z sshwarts $
+// $Id: fetchdecode.h 12528 2014-11-01 13:12:24Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2013-2014 Stanislav Shwartsman
@@ -126,12 +126,14 @@ enum {
 
 enum {
   BX_VMM_FULL_VECTOR = 0,
-  BX_VMM_SCALAR = 1,
-  BX_VMM_HALF_VECTOR = 2,
-  BX_VMM_QUARTER_VECTOR = 3,
-  BX_VMM_OCT_VECTOR = 4,
-  BX_VMM_VEC128 = 5,
-  BX_VMM_VEC256 = 6
+  BX_VMM_SCALAR_BYTE = 1,
+  BX_VMM_SCALAR_WORD = 2,
+  BX_VMM_SCALAR = 3,
+  BX_VMM_HALF_VECTOR = 4,
+  BX_VMM_QUARTER_VECTOR = 5,
+  BX_VMM_OCT_VECTOR = 6,
+  BX_VMM_VEC128 = 7,
+  BX_VMM_VEC256 = 8
 };
 
 enum {
@@ -227,6 +229,8 @@ const Bit8u OP_mVpd64 = BX_FORM_SRC(BX_VMM_SCALAR, BX_SRC_EVEX_RM);
 const Bit8u OP_mVdq = BX_FORM_SRC(BX_VMM_FULL_VECTOR, BX_SRC_EVEX_RM);
 const Bit8u OP_mVss = BX_FORM_SRC(BX_VMM_SCALAR, BX_SRC_EVEX_RM);
 const Bit8u OP_mVsd = BX_FORM_SRC(BX_VMM_SCALAR, BX_SRC_EVEX_RM);
+const Bit8u OP_mVdq8 = BX_FORM_SRC(BX_VMM_SCALAR_BYTE, BX_SRC_EVEX_RM);
+const Bit8u OP_mVdq16 = BX_FORM_SRC(BX_VMM_SCALAR_WORD, BX_SRC_EVEX_RM);
 const Bit8u OP_mVdq32 = BX_FORM_SRC(BX_VMM_SCALAR, BX_SRC_EVEX_RM);
 const Bit8u OP_mVdq64 = BX_FORM_SRC(BX_VMM_SCALAR, BX_SRC_EVEX_RM);
 const Bit8u OP_mVHV = BX_FORM_SRC(BX_VMM_HALF_VECTOR, BX_SRC_EVEX_RM);
@@ -1020,7 +1024,12 @@ static const BxOpcodeInfo_t BxOpcodeInfoG14R[8] = {
 /* Group 15 */
 /* ******** */
 
-static const BxOpcodeInfo_t BxOpcodeGroupSSE_CLFLUSH[2] = {
+static const BxOpcodeInfo_t BxOpcodeGroupSSE_G15M_nnn6[2] = {
+  /* -- */ { 0, BX_IA_XSAVEOPT },
+  /* 66 */ { 0, BX_IA_CLWB }
+};
+
+static const BxOpcodeInfo_t BxOpcodeGroupSSE_G15M_nnn7[2] = {
   /* -- */ { 0, BX_IA_CLFLUSH },
   /* 66 */ { 0, BX_IA_CLFLUSHOPT }
 };
@@ -1037,14 +1046,14 @@ static const BxOpcodeInfo_t BxOpcodeInfoG15[8*2] = {
   /* 7 */ { BxPrefixSSE, BX_IA_SFENCE, BxOpcodeGroupSSE_ERR },
 
   /* /m form */
-  /* 0 */ { BxPrefixSSE, BX_IA_FXSAVE,   BxOpcodeGroupSSE_ERR },
-  /* 1 */ { BxPrefixSSE, BX_IA_FXRSTOR,  BxOpcodeGroupSSE_ERR },
-  /* 2 */ { BxPrefixSSE, BX_IA_LDMXCSR,  BxOpcodeGroupSSE_ERR },
-  /* 3 */ { BxPrefixSSE, BX_IA_STMXCSR,  BxOpcodeGroupSSE_ERR },
-  /* 4 */ { BxPrefixSSE, BX_IA_XSAVE,    BxOpcodeGroupSSE_ERR },
-  /* 5 */ { BxPrefixSSE, BX_IA_XRSTOR,   BxOpcodeGroupSSE_ERR },
-  /* 6 */ { BxPrefixSSE, BX_IA_XSAVEOPT, BxOpcodeGroupSSE_ERR },
-  /* 7 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_CLFLUSH }
+  /* 0 */ { BxPrefixSSE, BX_IA_FXSAVE,  BxOpcodeGroupSSE_ERR },
+  /* 1 */ { BxPrefixSSE, BX_IA_FXRSTOR, BxOpcodeGroupSSE_ERR },
+  /* 2 */ { BxPrefixSSE, BX_IA_LDMXCSR, BxOpcodeGroupSSE_ERR },
+  /* 3 */ { BxPrefixSSE, BX_IA_STMXCSR, BxOpcodeGroupSSE_ERR },
+  /* 4 */ { BxPrefixSSE, BX_IA_XSAVE,   BxOpcodeGroupSSE_ERR },
+  /* 5 */ { BxPrefixSSE, BX_IA_XRSTOR,  BxOpcodeGroupSSE_ERR },
+  /* 6 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_G15M_nnn6 },
+  /* 7 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_G15M_nnn7 }
 };
 
 #if BX_SUPPORT_X86_64
@@ -1060,14 +1069,14 @@ static const BxOpcodeInfo_t BxOpcodeInfo64G15d[8*2] = {
   /* 7 */ { BxPrefixSSE, BX_IA_SFENCE, BxOpcodeGroupSSE_ERR },
 
   /* /m form */
-  /* 0 */ { BxPrefixSSE, BX_IA_FXSAVE,   BxOpcodeGroupSSE_ERR },
-  /* 1 */ { BxPrefixSSE, BX_IA_FXRSTOR,  BxOpcodeGroupSSE_ERR },
-  /* 2 */ { BxPrefixSSE, BX_IA_LDMXCSR,  BxOpcodeGroupSSE_ERR },
-  /* 3 */ { BxPrefixSSE, BX_IA_STMXCSR,  BxOpcodeGroupSSE_ERR },
-  /* 4 */ { BxPrefixSSE, BX_IA_XSAVE,    BxOpcodeGroupSSE_ERR },
-  /* 5 */ { BxPrefixSSE, BX_IA_XRSTOR,   BxOpcodeGroupSSE_ERR },
-  /* 6 */ { BxPrefixSSE, BX_IA_XSAVEOPT, BxOpcodeGroupSSE_ERR },
-  /* 7 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_CLFLUSH }
+  /* 0 */ { BxPrefixSSE, BX_IA_FXSAVE,  BxOpcodeGroupSSE_ERR },
+  /* 1 */ { BxPrefixSSE, BX_IA_FXRSTOR, BxOpcodeGroupSSE_ERR },
+  /* 2 */ { BxPrefixSSE, BX_IA_LDMXCSR, BxOpcodeGroupSSE_ERR },
+  /* 3 */ { BxPrefixSSE, BX_IA_STMXCSR, BxOpcodeGroupSSE_ERR },
+  /* 4 */ { BxPrefixSSE, BX_IA_XSAVE,   BxOpcodeGroupSSE_ERR },
+  /* 5 */ { BxPrefixSSE, BX_IA_XRSTOR,  BxOpcodeGroupSSE_ERR },
+  /* 6 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_G15M_nnn6 },
+  /* 7 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_G15M_nnn7 }
 };
 
 static const BxOpcodeInfo_t BxOpcodeInfo64G15q[8*2] = {
@@ -1082,14 +1091,14 @@ static const BxOpcodeInfo_t BxOpcodeInfo64G15q[8*2] = {
   /* 7 */ { BxPrefixSSE, BX_IA_SFENCE, BxOpcodeGroupSSE_ERR },
 
   /* /m form */
-  /* 0 */ { BxPrefixSSE, BX_IA_FXSAVE,   BxOpcodeGroupSSE_ERR },
-  /* 1 */ { BxPrefixSSE, BX_IA_FXRSTOR,  BxOpcodeGroupSSE_ERR },
-  /* 2 */ { BxPrefixSSE, BX_IA_LDMXCSR,  BxOpcodeGroupSSE_ERR },
-  /* 3 */ { BxPrefixSSE, BX_IA_STMXCSR,  BxOpcodeGroupSSE_ERR },
-  /* 4 */ { BxPrefixSSE, BX_IA_XSAVE,    BxOpcodeGroupSSE_ERR },
-  /* 5 */ { BxPrefixSSE, BX_IA_XRSTOR,   BxOpcodeGroupSSE_ERR },
-  /* 6 */ { BxPrefixSSE, BX_IA_XSAVEOPT, BxOpcodeGroupSSE_ERR },
-  /* 7 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_CLFLUSH }
+  /* 0 */ { BxPrefixSSE, BX_IA_FXSAVE,  BxOpcodeGroupSSE_ERR },
+  /* 1 */ { BxPrefixSSE, BX_IA_FXRSTOR, BxOpcodeGroupSSE_ERR },
+  /* 2 */ { BxPrefixSSE, BX_IA_LDMXCSR, BxOpcodeGroupSSE_ERR },
+  /* 3 */ { BxPrefixSSE, BX_IA_STMXCSR, BxOpcodeGroupSSE_ERR },
+  /* 4 */ { BxPrefixSSE, BX_IA_XSAVE,   BxOpcodeGroupSSE_ERR },
+  /* 5 */ { BxPrefixSSE, BX_IA_XRSTOR,  BxOpcodeGroupSSE_ERR },
+  /* 6 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_G15M_nnn6 },
+  /* 7 */ { BxPrefixSSE2, BX_IA_ERROR,  BxOpcodeGroupSSE_G15M_nnn7 }
 };
 #endif
 
