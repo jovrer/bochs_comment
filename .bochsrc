@@ -104,6 +104,7 @@
 #
 #  CPU configurations that can be selected:
 # -----------------------------------------------------------------
+#  pentium                    Intel Pentium (P54C)
 #  pentium_mmx                Intel Pentium MMX
 #  amd_k6_2_chomper           AMD-K6(tm) 3D processor (Chomper)
 #  p2_klamath                 Intel Pentium II (Klamath)
@@ -124,6 +125,7 @@
 #  corei7_sandy_bridge_2600k  Intel(R) Core(TM) i7-2600K (Sandy Bridge)
 #  corei7_ivy_bridge_3770k    Intel(R) Core(TM) i7-3770K CPU (Ivy Bridge)
 #  corei7_haswell_4770        Intel(R) Core(TM) i7-4770 CPU (Haswell)
+#  broadwell_ult              Intel(R) Processor 5Y70 CPU (Broadwell)
 #
 #  COUNT:
 #    Set the number of processors:cores per processor:threads per core when
@@ -409,10 +411,17 @@ vgaromimage: file=$BXSHARE/VGABIOS-lgpl-latest
 #     The VGA update timer now uses the realtime engine and the default
 #     value is 5. This parameter can be changed at runtime.
 #
+#   REALTIME
+#     If set to 1, the VGA timer is based on realtime, otherwise it is based
+#     on the ips setting. If the host is slow (low ips, update_freq) and the
+#     guest uses HLT appropriately, setting this to 0 and "clock: sync=none"
+#     may improve the responsiveness of the guest GUI when the guest is
+#     otherwise idle. The default value is 1.
+#
 # Examples:
 #   vga: extension=cirrus, update_freq=10
 #=======================================================================
-#vga: extension=vbe, update_freq=5
+#vga: extension=vbe, update_freq=5, realtime=1
 
 #=======================================================================
 # VOODOO:
@@ -507,12 +516,12 @@ mouse: enabled=0
 #=======================================================================
 # PCI:
 # This option controls the presence of a PCI chipset in Bochs. Currently it only
-# supports the i440FX chipset. You can also specify the devices connected to
-# PCI slots. Up to 5 slots are available. For these combined PCI/ISA devices
-# assigning to slot is mandatory if you want to emulate the PCI model: cirrus,
-# ne2k and pcivga. These PCI-only devices are also supported, but they are
-# auto-assigned if you don't use the slot configuration: e1000, es1370, pcidev,
-# pcipnic, usb_ohci, usb_xhci and voodoo.
+# supports the i430FX and i440FX chipsets. You can also specify the devices
+# connected to PCI slots. Up to 5 slots are available. For these combined PCI/ISA
+# devices assigning to slot is mandatory if you want to emulate the PCI model:
+# cirrus, ne2k and pcivga. These PCI-only devices are also supported, but they
+# are auto-assigned if you don't use the slot configuration: e1000, es1370,
+# pcidev, pcipnic, usb_ohci, usb_xhci and voodoo.
 #
 # Example:
 #   pci: enabled=1, chipset=i440fx, slot1=pcivga, slot2=ne2k
@@ -657,7 +666,8 @@ ata3: enabled=0, ioaddr1=0x168, ioaddr2=0x360, irq=9
 # This defines the type and characteristics of all attached ata devices:
 #   type=       type of attached device [disk|cdrom] 
 #   mode=       only valid for disks [flat|concat|external|dll|sparse|vmware3]
-#                                    [vmware4|undoable|growing|volatile|vpc|vvfat]
+#                                    [vmware4|undoable|growing|volatile|vpc]
+#                                    [vbox|vvfat]
 #   path=       path of the image / directory
 #   cylinders=  only valid for disks
 #   heads=      only valid for disks
@@ -860,14 +870,41 @@ parport1: enabled=1, file="parport.out"
 
 #=======================================================================
 # SOUND:
-# This defines the lowlevel sound driver and the wave (PCM) input and
-# output devices to be used by sound emulation devices. Possible values
-# for the driver parameter are 'default', 'dummy' (no input/output),
-# 'alsa' (if present) and 'sdl' (if present). For some drivers the wave
-# devices must be specified. If the 'wavein' parameter is not set, Bochs
-# uses the 'waveout' device for input, too.
+# This defines the lowlevel sound driver(s) for the wave (PCM) input / output
+# and the MIDI output feature and (if necessary) the devices to be used.
+# It can have several of the following properties.
+# All properties are in the format sound: property=value
+#
+# waveoutdrv:
+#      This defines the driver to be used for the waveout feature.
+#      Possible values are 'file' (all wave data sent to file), 'dummy' (no
+#      output) and the platform-dependant drivers 'alsa', 'oss', 'osx', 'sdl'
+#      and 'win'.
+# waveout:
+#      This defines the device to be used for wave output (if necessary) or
+#      the output file for the 'file' driver.
+# waveindrv:
+#      This defines the driver to be used for the wavein feature.
+#      Possible values are 'dummy' (recording silence) and platform-dependent
+#      drivers 'alsa', 'oss' and 'win'.
+# wavein:
+#      This defines the device to be used for wave output (if necessary).
+# midioutdrv:
+#      This defines the driver to be used for the MIDI output feature.
+#      Possible values are 'file' (all MIDI data sent to file), 'dummy' (no
+#      output) and platform-dependent drivers 'alsa', 'oss', 'osx' and 'win'.
+# midiout:
+#      This defines the device to be used for MIDI output (if necessary).
+# driver:
+#      This defines the driver to be used for all sound features with one
+#      property. Possible values are 'default' (platform default) and all
+#      other choices described above. Overriding one or more settings with
+#      the specific driver parameter is possible.
+#
+# Example for different drivers:
+#   sound: waveoutdrv=sdl, waveindrv=alsa, midioutdrv=dummy
 #=======================================================================
-sound: driver=default, waveout=/dev/dsp. wavein=
+sound: driver=default, waveout=/dev/dsp. wavein=, midiout=
 
 #=======================================================================
 # SPEAKER:
@@ -885,23 +922,22 @@ speaker: enabled=1, mode=sound
 # This defines the SB16 sound emulation. It can have several of the
 # following properties.
 # All properties are in the format sb16: property=value
+#
 # enabled:
 #      This optional property controls the presence of the SB16 emulation.
 #      The emulation is turned on unless this property is used and set to 0.
-# midimode:
-#      0=no data
-#      1=output to device (system dependent. midi denotes the device driver)
-#      2=SMF file output, including headers
-#      3=output the midi data stream to the file (no midi headers and no
-#        delta times, just command and data bytes)
-# midi: The filename is where the midi data is sent. This can be a
-#       device or just a file if you want to record the midi data.
-# wavemode:
-#      0=no data
-#      1=output to device (system dependent. wave denotes the device driver)
-#      2=VOC file output, incl. headers
-#      3=output the raw wave stream to the file
-# wave: This is the file where the wave output is stored (wavemode 2 or 3)
+# midimode: This parameter specifies what to do with the MIDI output.
+#      0 = no output
+#      1 = output to device specified with the sound option (system dependent)
+#      2 = MIDI or raw data output to file (depends on file name extension)
+#      3 = dual output (mode 1 and 2 at the same time)
+# midifile: This is the file where the midi output is stored (midimode 2 or 3).
+# wavemode: This parameter specifies what to do with the PCM output.
+#      0 = no output
+#      1 = output to device specified with the sound option (system dependent)
+#      2 = VOC, WAV or raw data output to file (depends on file name extension)
+#      3 = dual output (mode 1 and 2 at the same time)
+# wavefile: This is the file where the wave output is stored (wavemode 2 or 3).
 # loglevel:
 #      0=no log
 #      1=resource changes, midi program and bank changes
@@ -915,19 +951,19 @@ speaker: enabled=1, mode=sound
 #      non-continuous sound.  750000 is usually a good value.  This needs a
 #      reasonably correct setting for the IPS parameter of the CPU option.
 #
-# Examples for output devices:
-#   sb16: midimode=1, midi="", wavemode=1, wave=""    # win32
-#   sb16: midimode=1, midi=128:0, wavemode=1, wave="" # Linux with ALSA
+# Examples for output modes:
+#   sb16: midimode=2, midifile="output.mid", wavemode=1 # MIDI to file
+#   sb16: midimode=1, wavemode=3, wavefile="output.wav" # wave to file and device
 #=======================================================================
-#sb16: midimode=1, midi=/dev/midi00, wavemode=1, wave=/dev/dsp, loglevel=2, log=sb16.log, dmatimer=600000
+#sb16: midimode=1, wavemode=1, loglevel=2, log=sb16.log, dmatimer=600000
 
 #=======================================================================
 # ES1370:
 # This defines the ES1370 sound emulation (recording and playback - except
 # DAC1+DAC2 output at the same time). The parameter 'enabled' controls the
-# presence of the device. The 'wavemode' parameter can be used to redirect
-# the output to a file (see SB16). The 'wavefile' parameter is similar to the
-# 'wave' parameter of the SB16 soundcard.
+# presence of the device. The wave and MIDI output can be sent to device, file
+# or both using the parameters 'wavemode', 'wavefile', 'midimode' and
+# 'midifile'. See the description of these parameters at the SB16 directive.
 #
 # Examples:
 #   es1370: enabled=1, wavemode=1                       # use 'sound' parameters
@@ -1076,7 +1112,7 @@ speaker: enabled=1, mode=sound
 #=======================================================================
 # USB_XHCI:
 # This option controls the presence of the experimental USB xHCI host controller
-# with a 4-port hub. The portX paramter accepts the same device types with the
+# with a 4-port hub. The portX parameter accepts the same device types with the
 # same syntax as the UHCI controller (see above). The optionsX parameter is
 # also available on xHCI. NOTE: port 1 and 2 are USB3 and only support
 # super-speed devices, but port 3 and 4 are USB2 and support speed settings

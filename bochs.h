@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h 12501 2014-10-14 15:59:10Z sshwarts $
+// $Id: bochs.h 12655 2015-02-19 20:23:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2014  The Bochs Project
+//  Copyright (C) 2001-2015  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -133,7 +133,7 @@ int  bx_write_usb_options(FILE *fp, int maxports, bx_list_c *base);
 Bit32u crc32(const Bit8u *buf, int len);
 
 // used to print param tree from debugger
-void print_tree(bx_param_c *node, int level = 0);
+void print_tree(bx_param_c *node, int level = 0, bx_bool xml = BX_FALSE);
 
 #if BX_ENABLE_STATISTICS
 // print statistics
@@ -240,20 +240,20 @@ void print_statistics_tree(bx_param_c *node, int level = 0);
         if (bx_guard.report.a20) bx_dbg_a20_report(val)
 #  define BX_DBG_IO_REPORT(port, size, op, val) \
         if (bx_guard.report.io) bx_dbg_io_report(port, size, op, val)
-#  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, pl, rw, data) \
-        bx_dbg_lin_memory_access(cpu, lin, phy, len, pl, rw, data)
-#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, why, data) \
-        bx_dbg_phy_memory_access(cpu, phy, len, rw, why, data)
+#  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, memtype, rw, data) \
+        bx_dbg_lin_memory_access(cpu, lin, phy, len, memtype, rw, data)
+#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, memtype, rw, why, data) \
+        bx_dbg_phy_memory_access(cpu, phy, len, memtype, rw, why, data)
 #else  // #if BX_DEBUGGER
 // debugger not compiled in, use empty stubs
 #  define BX_DBG_ASYNC_INTR 1
 #  define BX_DBG_ASYNC_DMA  1
-#  define BX_DBG_DMA_REPORT(addr, len, what, val)                    /* empty */
-#  define BX_DBG_IAC_REPORT(vector, irq)                             /* empty */
-#  define BX_DBG_A20_REPORT(val)                                     /* empty */
-#  define BX_DBG_IO_REPORT(port, size, op, val)                      /* empty */
-#  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, pl, rw, data) /* empty */
-#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, attr, data)    /* empty */
+#  define BX_DBG_DMA_REPORT(addr, len, what, val)                               /* empty */
+#  define BX_DBG_IAC_REPORT(vector, irq)                                        /* empty */
+#  define BX_DBG_A20_REPORT(val)                                                /* empty */
+#  define BX_DBG_IO_REPORT(port, size, op, val)                                 /* empty */
+#  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, memtype, rw, data)       /* empty */
+#  define BX_DBG_PHY_MEMORY_ACCESS(cpu,      phy, len, memtype, rw, attr, data) /* empty */
 #endif  // #if BX_DEBUGGER
 
 #define MAGIC_LOGNUM 0x12345678
@@ -270,7 +270,7 @@ typedef class BOCHSAPI logfunctions
 public:
   logfunctions(void);
   logfunctions(class iofunctions *);
- ~logfunctions(void);
+  virtual ~logfunctions(void);
 
   void info(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
   void error(const char *fmt, ...)  BX_CPP_AttrPrintf(2, 3);
@@ -599,5 +599,31 @@ BX_CPP_INLINE Bit64u bx_bswap64(Bit64u val64)
     (* (Bit32u *)(hostAddrDst)) = (* (Bit32u *)(hostAddrSrc));
 #define CopyHostQWordLittleEndian(hostAddrDst,  hostAddrSrc) \
     (* (Bit64u *)(hostAddrDst)) = (* (Bit64u *)(hostAddrSrc));
+
+// multithreading support
+#ifdef WIN32
+#define BX_THREAD_ID(id) DWORD (id)
+#define BX_THREAD_FUNC(name,arg) DWORD WINAPI name(LPVOID arg)
+#define BX_THREAD_EXIT return 0
+#define BX_THREAD_CREATE(name,arg,id) CreateThread(NULL, 0, name, arg, 0, &(id))
+#define BX_LOCK(mutex) EnterCriticalSection(&(mutex))
+#define BX_UNLOCK(mutex) LeaveCriticalSection(&(mutex))
+#define BX_MUTEX(mutex) CRITICAL_SECTION (mutex)
+#define BX_INIT_MUTEX(mutex)  InitializeCriticalSection(&(mutex))
+#define BX_FINI_MUTEX(mutex) DeleteCriticalSection(&(mutex))
+#define BX_MSLEEP(val) msleep(val)
+#else
+#define BX_THREAD_ID(id) pthread_t (id)
+#define BX_THREAD_FUNC(name,arg) void name(void* arg)
+#define BX_THREAD_EXIT pthread_exit(NULL)
+#define BX_THREAD_CREATE(name,arg,id) \
+    pthread_create(&(id), NULL, (void *(*)(void *))&(name), arg)
+#define BX_LOCK(mutex) pthread_mutex_lock(&(mutex));
+#define BX_UNLOCK(mutex) pthread_mutex_unlock(&(mutex));
+#define BX_MUTEX(mutex) pthread_mutex_t (mutex)
+#define BX_INIT_MUTEX(mutex) pthread_mutex_init(&(mutex),NULL)
+#define BX_FINI_MUTEX(mutex) pthread_mutex_destroy(&(mutex))
+#define BX_MSLEEP(val) usleep(val*1000)
+#endif
 
 #endif  /* BX_BOCHS_H */
