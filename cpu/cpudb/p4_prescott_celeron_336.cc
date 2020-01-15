@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: p4_prescott_celeron_336.cc 10688 2011-09-25 17:36:20Z sshwarts $
+// $Id: p4_prescott_celeron_336.cc 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -99,7 +99,8 @@ Bit64u p4_prescott_celeron_336_t::get_isa_extensions_bitmask(void) const
 #if BX_SUPPORT_MONITOR_MWAIT
          BX_ISA_MONITOR_MWAIT |
 #endif
-         BX_ISA_SSSE3;
+         BX_ISA_SSSE3 |
+         BX_ISA_CMPXCHG16B;
 }
 
 Bit32u p4_prescott_celeron_336_t::get_cpu_extensions_bitmask(void) const

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_uhci.cc 10424 2011-06-25 12:43:27Z vruppert $
+// $Id: usb_uhci.cc 10915 2011-12-31 17:42:59Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin D Lunt (fys at frontiernet net)
@@ -476,10 +476,12 @@ void bx_usb_uhci_c::write(Bit32u address, Bit32u value, unsigned io_len)
             if (BX_UHCI_THIS hub.usb_port[i].device != NULL) {
               DEV_usb_send_msg(BX_UHCI_THIS hub.usb_port[i].device, USB_MSG_RESET);
             }
+            BX_UHCI_THIS hub.usb_port[i].connect_changed = 1;
+            if (BX_UHCI_THIS hub.usb_port[i].enabled) {
+              BX_UHCI_THIS hub.usb_port[i].able_changed = 1;
+              BX_UHCI_THIS hub.usb_port[i].enabled = 0;
+            }
           }
-          BX_UHCI_THIS hub.usb_port[i].connect_changed = 1;
-          BX_UHCI_THIS hub.usb_port[i].enabled = 0;
-          BX_UHCI_THIS hub.usb_port[i].able_changed = 1;
         }
       }
 
@@ -598,9 +600,9 @@ void bx_usb_uhci_c::write(Bit32u address, Bit32u value, unsigned io_len)
         if (!BX_UHCI_THIS hub.usb_port[port].enabled && (value & (1<<2)))
           BX_UHCI_THIS hub.usb_port[port].able_changed = 0;
         else
-          BX_UHCI_THIS hub.usb_port[port].able_changed = (value & (1<<3)) ? 0 : BX_UHCI_THIS hub.usb_port[port].able_changed;
+          if ((value & (1<<3)) != 0) BX_UHCI_THIS hub.usb_port[port].able_changed = 0;
         BX_UHCI_THIS hub.usb_port[port].enabled = (value & (1<<2)) ? 1 : 0;
-        BX_UHCI_THIS hub.usb_port[port].connect_changed = (value & (1<<1)) ? 0 : BX_UHCI_THIS hub.usb_port[port].connect_changed;
+        if ((value & (1<<1)) != 0) BX_UHCI_THIS hub.usb_port[port].connect_changed = 0;
 
         // if port reset, reset function(s)
         //TODO: only reset items on the downstream...
@@ -746,7 +748,7 @@ void bx_usb_uhci_c::usb_timer(void)
                 stack[stk].t = 1;
               }
               // copy pointer for next queue item, in to vert queue head
-              if ((stk > 0) && (stack[stk].d == HC_VERT))
+              if ((stk > 0) && (stack[stk].d == HC_VERT) && !shortpacket)
                 DEV_MEM_WRITE_PHYSICAL(lastvertaddr, 4, (Bit8u*) &td.dword0);
             }
           }
@@ -832,12 +834,12 @@ bx_bool bx_usb_uhci_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *t
 
   // check TD to make sure it is valid
   // A max length 0x500 to 0x77E is illegal
-  if (((td->dword2 >> 21) >= 0x500) && ((td->dword2 >> 21) != 0x7FF)) {
-    BX_ERROR(("error at 11111111111"));
-    return 1;  // error = consistency check failure
+  if ((maxlen >= 0x500) && (maxlen != 0x7FF)) {
+    BX_ERROR(("invalid max. length value 0x%04x", maxlen ));
+    return 0;  // error = consistency check failure
   }
 
-  //if (td->dword0 & 0x8) return 1; // error = reserved bits in dword0 set
+  // if (td->dword0 & 0x8) return 1; // error = reserved bit in dword0 set
   // other error checks here
 
   // the device should remain in a stall state until the next setup packet is recieved
@@ -869,7 +871,7 @@ bx_bool bx_usb_uhci_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *t
     case USB_TOKEN_OUT:
     case USB_TOKEN_SETUP:
       if (maxlen > 0) {
-        DEV_MEM_READ_PHYSICAL_BLOCK(td->dword3, maxlen, device_buffer);
+        DEV_MEM_READ_PHYSICAL_DMA(td->dword3, maxlen, device_buffer);
       }
       ret = BX_UHCI_THIS broadcast_packet(&BX_UHCI_THIS usb_packet);
       len = maxlen;
@@ -883,7 +885,7 @@ bx_bool bx_usb_uhci_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *t
           ret = USB_RET_BABBLE;
         }
         if (len > 0) {
-          DEV_MEM_WRITE_PHYSICAL_BLOCK(td->dword3, len, device_buffer);
+          DEV_MEM_WRITE_PHYSICAL_DMA(td->dword3, len, device_buffer);
         }
       } else {
         len = 0;
@@ -1070,7 +1072,6 @@ void bx_usb_uhci_c::usb_set_connect_status(Bit8u port, int type, bx_bool connect
         }
         BX_UHCI_THIS hub.usb_port[port].status = 1;
         BX_UHCI_THIS hub.usb_port[port].connect_changed = 1;
-        BX_UHCI_THIS hub.usb_port[port].able_changed = 1;
 
         // if in suspend state, signal resume
         if (BX_UHCI_THIS hub.usb_command.suspend) {
@@ -1093,8 +1094,10 @@ void bx_usb_uhci_c::usb_set_connect_status(Bit8u port, int type, bx_bool connect
       } else {
         BX_UHCI_THIS hub.usb_port[port].status = 0;
         BX_UHCI_THIS hub.usb_port[port].connect_changed = 1;
-        BX_UHCI_THIS hub.usb_port[port].enabled = 0;
-        BX_UHCI_THIS hub.usb_port[port].able_changed = 1;
+        if (BX_UHCI_THIS hub.usb_port[port].enabled) {
+          BX_UHCI_THIS hub.usb_port[port].able_changed = 1;
+          BX_UHCI_THIS hub.usb_port[port].enabled = 0;
+        }
         BX_UHCI_THIS hub.usb_port[port].low_speed = 0;
         BX_UHCI_THIS hub.usb_port[port].line_dminus = 0;
         BX_UHCI_THIS hub.usb_port[port].line_dplus = 0;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.cc 10698 2011-09-26 18:08:31Z sshwarts $
+// $Id: crregs.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2010-2011 Stanislav Shwartsman
@@ -1291,6 +1291,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLTS(bxInstruction_c *i)
 }
 
 #if BX_X86_DEBUGGER
+
 bx_bool BX_CPU_C::hwbreakpoint_check(bx_address laddr, unsigned opa, unsigned opb)
 {
   laddr = LPFOf(laddr);
@@ -1403,6 +1404,7 @@ Bit32u BX_CPU_C::hwdebug_compare(bx_address laddr_0, unsigned size,
   return dr6_mask;
 }
 
+#if BX_CPU_LEVEL >= 5
 void BX_CPU_C::iobreakpoint_match(unsigned port, unsigned len)
 {
   // Only compare debug registers if any breakpoints are enabled
@@ -1415,4 +1417,6 @@ void BX_CPU_C::iobreakpoint_match(unsigned port, unsigned len)
     }
   }
 }
+#endif
+
 #endif

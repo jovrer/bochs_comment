@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc 10575 2011-08-14 20:21:07Z sshwarts $
+// $Id: sdl.cc 10897 2011-12-30 09:10:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -319,7 +319,7 @@ void bx_sdl_gui_c::specific_init(int argc, char **argv,
   sdl_fullscreen_toggle = 0;
   dimension_update(640,480);
 
-  SDL_EnableKeyRepeat(250,50);
+  SDL_EnableKeyRepeat(250, 50);
   SDL_WM_SetCaption(BOCHS_WINDOW_NAME, "Bochs");
   SDL_WarpMouse(half_res_x, half_res_y);
 
@@ -334,6 +334,9 @@ void bx_sdl_gui_c::specific_init(int argc, char **argv,
       if (!strcmp(argv[i], "fullscreen")) {
         sdl_fullscreen_toggle = 1;
         switch_to_fullscreen();
+      } else if (!strcmp(argv[i], "nokeyrepeat")) {
+        BX_INFO(("disabled host keyboard repeat"));
+        SDL_EnableKeyRepeat(0, 0);
 #if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
       } else if (!strcmp(argv[i], "gui_debug")) {
         extern void InitDebugDialog();
@@ -428,7 +431,7 @@ void bx_sdl_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
-      sdl_set_status_text(i+1, statusitem_text[i], active, w);
+      sdl_set_status_text(i+1, statusitem_text[i], 0, 0);
     }
   } else if ((unsigned)element < statusitem_count) {
     sdl_set_status_text(element+1, statusitem_text[element], active, w);

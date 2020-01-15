@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc 10617 2011-08-22 10:25:29Z vruppert $
+// $Id: win32.cc 10897 2011-12-30 09:10:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -100,6 +100,7 @@ static BOOL mouseCaptureMode, mouseCaptureNew, mouseToggleReq;
 static UINT_PTR workerThread = 0;
 static DWORD workerThreadID = 0;
 static int mouse_buttons = 3;
+static bx_bool win32_nokeyrepeat = 0;
 
 // Graphics screen stuff
 static unsigned x_tilesize = 0, y_tilesize = 0;
@@ -629,7 +630,10 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   if (argc > 1) {
     for (i = 1; i < argc; i++) {
       BX_INFO(("option %d: %s", i, argv[i]));
-      if (!strcmp(argv[i], "legacyF12")) {
+      if (!strcmp(argv[i], "nokeyrepeat")) {
+        BX_INFO(("disabled host keyboard repeat"));
+        win32_nokeyrepeat = 1;
+      } else if (!strcmp(argv[i], "legacyF12")) {
         BX_PANIC(("The option 'legacyF12' is now deprecated - use 'mouse: toggle=f12' instead"));
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       } else if (!strcmp(argv[i], "gui_debug")) {
@@ -957,7 +961,7 @@ void bx_win32_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (int i = 0; i < (int)statusitem_count; i++) {
-      SetStatusText(i+BX_SB_TEXT_ELEMENTS, statusitem_text[i], active, w);
+      SetStatusText(i+BX_SB_TEXT_ELEMENTS, statusitem_text[i], 0, 0);
     }
   } else if (element < (int)statusitem_count) {
     SetStatusText(element+BX_SB_TEXT_ELEMENTS, statusitem_text[element], active, w);
@@ -1236,7 +1240,9 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       return 0;
     }
     EnterCriticalSection(&stInfo.keyCS);
-    enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_PRESSED);
+    if (((lParam & 0x40000000) == 0) || !win32_nokeyrepeat) {
+      enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_PRESSED);
+    }
     LeaveCriticalSection(&stInfo.keyCS);
     return 0;
 

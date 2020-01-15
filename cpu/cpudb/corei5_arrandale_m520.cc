@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei5_arrandale_m520.cc 10762 2011-11-05 07:31:51Z sshwarts $
+// $Id: corei5_arrandale_m520.cc 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -135,6 +135,7 @@ Bit64u corei5_arrandale_m520_t::get_isa_extensions_bitmask(void) const
          BX_ISA_SMX |
          BX_ISA_RDTSCP |
          BX_ISA_AES_PCLMULQDQ |
+         BX_ISA_CMPXCHG16B |
          BX_ISA_LM_LAHF_SAHF;
 }
 

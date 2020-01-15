@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paging.cc 10702 2011-09-26 19:48:58Z sshwarts $
+// $Id: paging.cc 10943 2012-01-06 10:52:22Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -1154,16 +1154,17 @@ bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned user, unsig
     ppf = (bx_phy_address) lpf;
   }
 
+  // Calculate physical memory address and fill in TLB cache entry
+  paddress = A20ADDR(ppf | poffset);
+
 #if BX_SUPPORT_VMX >= 2
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE)) {
-      ppf = translate_guest_physical(ppf, laddr, 1, 0, rw);
+      paddress = translate_guest_physical(paddress, laddr, 1, 0, rw);
+      ppf = PPFOf(paddress);
     }
   }
 #endif
-
-  // Calculate physical memory address and fill in TLB cache entry
-  paddress = A20ADDR(ppf | poffset);
 
   // direct memory access is NOT allowed by default
   tlbEntry->lpf = lpf | TLB_HostPtr;
@@ -1343,15 +1344,21 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
   }
 
   if (vmexit_reason) {
-    BX_ERROR(("VMEXIT: EPT %s for guest paddr 0x" FMT_ADDRX " laddr " FMT_ADDRX,
-      (vmexit_reason == VMX_VMEXIT_EPT_VIOLATION) ? "violation" : "misconfig", guest_paddr, guest_laddr));
+    BX_ERROR(("VMEXIT: EPT %s for guest paddr 0x" FMT_ADDRX " laddr 0x" FMT_ADDRX,
+       (vmexit_reason == VMX_VMEXIT_EPT_VIOLATION) ? "violation" : "misconfig", guest_paddr, guest_laddr));
     VMwrite64(VMCS_64BIT_GUEST_PHYSICAL_ADDR, guest_paddr);
-    if (guest_laddr_valid) {
-      VMwrite_natural(VMCS_GUEST_LINEAR_ADDR, guest_laddr);
-      vmexit_qualification |= 0x80;
-      if (is_page_walk) vmexit_qualification |= 0x100;
+
+    if (vmexit_reason == VMX_VMEXIT_EPT_MISCONFIGURATION) {
+      VMexit(0, VMX_VMEXIT_EPT_MISCONFIGURATION, 0);
     }
-    VMexit(0, vmexit_reason, vmexit_qualification | (combined_access << 3));
+    else {
+      if (guest_laddr_valid) {
+        VMwrite_natural(VMCS_GUEST_LINEAR_ADDR, guest_laddr);
+        vmexit_qualification |= 0x80;
+        if (! is_page_walk) vmexit_qualification |= 0x100;
+      }
+      VMexit(0, VMX_VMEXIT_EPT_VIOLATION, vmexit_qualification | (combined_access << 3));
+    }
   }
 
   Bit32u page_offset = PAGE_OFFSET(guest_paddr);

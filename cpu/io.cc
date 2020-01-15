@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io.cc 10611 2011-08-21 14:31:08Z sshwarts $
+// $Id: io.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -889,7 +889,7 @@ bx_bool BX_CPP_AttrRegparmN(3) BX_CPU_C::allow_io(bxInstruction_c *i, Bit16u por
     VMexit_IO(i, port, len);
 #endif
 
-#if BX_X86_DEBUGGER
+#if BX_X86_DEBUGGER && BX_CPU_LEVEL >= 5
   iobreakpoint_match(port, len);
 #endif
 

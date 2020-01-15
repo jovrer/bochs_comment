@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: msr.cc 10782 2011-11-21 12:51:50Z sshwarts $
+// $Id: msr.cc 10906 2011-12-31 12:38:46Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008-2011 Stanislav Shwartsman
@@ -30,9 +30,6 @@
 bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
 {
   Bit64u val64 = 0;
-
-  if ((index & 0x3FFFFFFF) >= BX_MSR_MAX_INDEX)
-    return 0;
 
 #if BX_CPU_LEVEL >= 6
   if (bx_cpuid_support_x2apic()) {
@@ -223,9 +220,10 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
 #endif
 
     case BX_MSR_EFER:
-      if (! BX_CPU_THIS_PTR efer_suppmask)
-        return 0;
-
+      if (! BX_CPU_THIS_PTR efer_suppmask) {
+        BX_ERROR(("RDMSR MSR_EFER: EFER MSR is not supported !"));
+        return handle_unknown_rdmsr(index, msr);
+      }
       val64 = BX_CPU_THIS_PTR efer.get32();
       break;
 
@@ -432,9 +430,6 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
   BX_INSTR_WRMSR(BX_CPU_ID, index, val_64);
 
   BX_DEBUG(("WRMSR: write %08x:%08x to MSR %x", val32_hi, val32_lo, index));
-
-  if ((index & 0x3FFFFFFF) >= BX_MSR_MAX_INDEX)
-    return 0;
 
 #if BX_CPU_LEVEL >= 6
   if (bx_cpuid_support_x2apic()) {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: generic_cpuid.cc 10762 2011-11-05 07:31:51Z sshwarts $
+// $Id: generic_cpuid.cc 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -738,7 +738,7 @@ void bx_generic_cpuid_t::init_isa_extensions_bitmask(void)
 #if BX_SUPPORT_X86_64
   static bx_bool x86_64_enabled = SIM->get_param_bool(BXPN_CPUID_X86_64)->get();
   if (x86_64_enabled) {
-    features_bitmask |= BX_ISA_RDTSCP | BX_ISA_LM_LAHF_SAHF;
+    features_bitmask |= BX_ISA_CMPXCHG16B | BX_ISA_RDTSCP | BX_ISA_LM_LAHF_SAHF;
 
     if (sse_enabled < BX_CPUID_SUPPORT_SSE2) {
       BX_PANIC(("PANIC: x86-64 emulation requires SSE2 support !"));
@@ -853,11 +853,14 @@ void bx_generic_cpuid_t::init_isa_extensions_bitmask(void)
 #endif // BX_SUPPORT_X86_64
 
 #if BX_SUPPORT_VMX
-  features_bitmask |= BX_ISA_VMX;
+  static unsigned vmx_enabled = SIM->get_param_num(BXPN_CPUID_VMX)->get();
+  if (vmx_enabled) {
+    features_bitmask |= BX_ISA_VMX;
 
-  if (! sep_enabled) {
-    BX_PANIC(("PANIC: VMX emulation requires SYSENTER/SYSEXIT support !"));
-    return;
+    if (! sep_enabled) {
+      BX_PANIC(("PANIC: VMX emulation requires SYSENTER/SYSEXIT support !"));
+      return;
+    }
   }
 #endif
 
@@ -937,30 +940,36 @@ void bx_generic_cpuid_t::init_cpu_extensions_bitmask(void)
 #if BX_SUPPORT_VMX
 void bx_generic_cpuid_t::init_vmx_extensions_bitmask(void)
 {
-  Bit32u features_bitmask = BX_VMX_VIRTUAL_NMI;
+  Bit32u features_bitmask = 0;
 
-  static bx_bool x86_64_enabled = SIM->get_param_bool(BXPN_CPUID_X86_64)->get();
-  if (x86_64_enabled) {
-    features_bitmask |= BX_VMX_TPR_SHADOW;
+  static unsigned vmx_enabled = SIM->get_param_num(BXPN_CPUID_VMX)->get();
+  if (vmx_enabled) {
+    features_bitmask |= BX_VMX_VIRTUAL_NMI;
 
-  features_bitmask |= BX_VMX_APIC_VIRTUALIZATION |
-                      BX_VMX_WBINVD_VMEXIT;
+    static bx_bool x86_64_enabled = SIM->get_param_bool(BXPN_CPUID_X86_64)->get();
+    if (x86_64_enabled) {
+      features_bitmask |= BX_VMX_TPR_SHADOW |
+                          BX_VMX_APIC_VIRTUALIZATION |
+                          BX_VMX_WBINVD_VMEXIT;
 
 #if BX_SUPPORT_VMX >= 2
-    features_bitmask |= BX_VMX_PREEMPTION_TIMER |
-                        BX_VMX_PAT |
-                        BX_VMX_EFER |
-                        BX_VMX_EPT |
-                        BX_VMX_VPID |
-                        BX_VMX_UNRESTRICTED_GUEST |
-                        BX_VMX_DESCRIPTOR_TABLE_EXIT |
-                        BX_VMX_X2APIC_VIRTUALIZATION |
-                        BX_VMX_PAUSE_LOOP_EXITING;
+      if (vmx_enabled >= 2) {
+        features_bitmask |= BX_VMX_PREEMPTION_TIMER |
+                            BX_VMX_PAT |
+                            BX_VMX_EFER |
+                            BX_VMX_EPT |
+                            BX_VMX_VPID |
+                            BX_VMX_UNRESTRICTED_GUEST |
+                            BX_VMX_DESCRIPTOR_TABLE_EXIT |
+                            BX_VMX_X2APIC_VIRTUALIZATION |
+                            BX_VMX_PAUSE_LOOP_EXITING;
 
-    features_bitmask |= BX_VMX_SAVE_DEBUGCTL_DISABLE |
-                     /* BX_VMX_MONITOR_TRAP_FLAG | */ // not implemented yet
-                        BX_VMX_PERF_GLOBAL_CTRL;
+        features_bitmask |= BX_VMX_SAVE_DEBUGCTL_DISABLE |
+                         /* BX_VMX_MONITOR_TRAP_FLAG | */ // not implemented yet
+                            BX_VMX_PERF_GLOBAL_CTRL;
+      }
 #endif
+    }
   }
   
   this->vmx_extensions_bitmask = features_bitmask;

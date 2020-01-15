@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc 10575 2011-08-14 20:21:07Z sshwarts $
+// $Id: x.cc 10897 2011-12-30 09:10:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -712,7 +712,7 @@ void bx_x_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
-      set_status_text(i+1, statusitem_text[i], active, w);
+      set_status_text(i+1, statusitem_text[i], 0, 0);
     }
   } else if ((unsigned)element < statusitem_count) {
     set_status_text(element+1, statusitem_text[element], active, w);

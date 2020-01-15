@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: corei7_sandy_bridge_2600K.cc 10782 2011-11-21 12:51:50Z sshwarts $
+// $Id: corei7_sandy_bridge_2600K.cc 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -147,6 +147,7 @@ Bit64u corei7_sandy_bridge_2600k_t::get_isa_extensions_bitmask(void) const
          BX_ISA_XSAVEOPT |
          BX_ISA_AES_PCLMULQDQ |
          BX_ISA_AVX |
+         BX_ISA_CMPXCHG16B |
          BX_ISA_LM_LAHF_SAHF;
 }
 

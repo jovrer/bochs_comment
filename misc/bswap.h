@@ -1,9 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpudb.h 10891 2011-12-29 21:41:56Z sshwarts $
+// $Id: bswap.h 10933 2012-01-04 19:34:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
+//  Copyright (C) 2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -17,28 +16,31 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA B 02110-1301 USA
-//
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 /////////////////////////////////////////////////////////////////////////
 
-bx_define_cpudb(bx_generic)
-#if BX_CPU_LEVEL == 5
-bx_define_cpudb(pentium_mmx)
-bx_define_cpudb(amd_k6_2_chomper)
-#elif BX_CPU_LEVEL >= 6
-bx_define_cpudb(p2_klamath)
-bx_define_cpudb(p3_katmai)
-bx_define_cpudb(p4_willamette)
-bx_define_cpudb(core_duo_t2400_yonah)
-bx_define_cpudb(atom_n270)
-#if BX_SUPPORT_X86_64
-bx_define_cpudb(p4_prescott_celeron_336)
-bx_define_cpudb(athlon64_clawhammer)
-bx_define_cpudb(athlon64_venice)
-bx_define_cpudb(core2_penryn_t9600)
-bx_define_cpudb(corei5_arrandale_m520)
-#if BX_SUPPORT_AVX
-bx_define_cpudb(corei7_sandy_bridge_2600k)
+#ifndef BX_BSWAP_H
+#define BX_BSAPP_H
+
+#if BX_HAVE___BUILTIN_BSWAP32
+#define bx_bswap32 __builtin_bswap32
+#else
+BX_CPP_INLINE Bit32u bx_bswap32(Bit32u val32)
+{
+  val32 = ((val32<<8) & 0xFF00FF00) | ((val32>>8) & 0x00FF00FF);
+  return (val32<<16) | (val32>>16);
+}
 #endif
+
+#if BX_HAVE___BUILTIN_BSWAP64
+#define bx_bswap64 __builtin_bswap64
+#else
+BX_CPP_INLINE Bit64u bx_bswap64(Bit64u val64)
+{
+  Bit32u lo = bx_bswap32((Bit32u)(val64 >> 32));
+  Bit32u hi = bx_bswap32((Bit32u)(val64 & 0xFFFFFFFF));
+  return ((Bit64u)hi << 32) | (Bit64u)lo;
+}
 #endif
+
 #endif

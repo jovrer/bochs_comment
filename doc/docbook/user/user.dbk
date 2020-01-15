@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk 10797 2011-11-27 12:13:22Z vruppert $
+$Id: user.dbk 10919 2012-01-01 17:34:23Z vruppert $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -1370,14 +1370,9 @@ check that it looks correct.
 <screen>
   user$ <command>su</command>
   Password:
-  root# <command>ls -l bochs-1.2.1.i386.rpm</command>
-  -rw-rw-r--    1 user     user      1877515 Sep 14 09:02 bochs-1.2.1.i386.rpm
-  root# <command>rpm -i bochs-1.2.1.i386.rpm</command>
-  Looking for fonts to install... /usr/local/bochs/latest/
-  Looking for X11 Font Path... /usr/lib/X11/fonts
-  Installing vga.pcf... ok    (it was already there)
-  Running mkfontdir...
-  Done installing Bochs fonts for X11.
+  root# <command>ls -l bochs-2.5.x86_64.rpm</command>
+  -rw-r--r--    1 user     users     2628643 Nov 27 17:20 bochs-2.5.x86_64.rpm
+  root# <command>rpm -i bochs-2.5.x86_64.rpm</command>
   root# exit
   user$ _
 </screen>
@@ -2306,70 +2301,82 @@ turn it off.
 
 <section><title>Transcript of Successful Compilation</title>
 <para>
+This example shows the output of a compilation and installation on Linux.
 <screen>
-  user$ <command>ls -l bochs-1.2.1.tar.gz</command>
-  -rw-rw-r--    1 user     user       887993 Sep 15 23:24 bochs-1.2.1.tar.gz
-  user$ <command>gunzip -c bochs-1.2.1.tar.gz | tar -xvf -</command>
-  bochs-1.2.1/
-  bochs-1.2.1/bios/
-  bochs-1.2.1/bios/BIOS-bochs-2-processors
-  bochs-1.2.1/bios/Makefile.in
+  user$ <command>ls -l bochs-2.5.tar.gz</command>
+  -rw-r--r-- 1 user   users 4117999 27. Nov 17:14 bochs-2.5.tar.gz
+  user$ <command>gunzip -c bochs-2.5.tar.gz | tar -xvf -</command>
+  bochs-2.5/
+  bochs-2.5/.conf.sparc
+  bochs-2.5/build/
+  bochs-2.5/build/macosx/
+  bochs-2.5/build/macosx/pbdevelopment.plist
+  bochs-2.5/build/macosx/make-dmg.sh
     .
     .
     .
-  bochs-1.2.1/patches/NOTES
-  bochs-1.2.1/patches/patch.4meg-pages
-  bochs-1.2.1/patches/patch.goswin-changes
-  user$ <command>cd bochs-1.2.1</command>
-  user$ <command>./configure --enable-cdrom</command>
-  creating cache ./config.cache
+  bochs-2.5/memory/memory.cc
+  bochs-2.5/memory/misc_mem.cc
+  bochs-2.5/memory/Makefile.in
+  user$ <command>cd bochs-2.5</command>
+  user$ <command>./configure --enable-cpu-level=6</command>
+  checking build system type... x86_64-unknown-linux-gnu
+  checking host system type... x86_64-unknown-linux-gnu
+  checking target system type... x86_64-unknown-linux-gnu
+  checking if you are configuring for another platform... no
+  checking for standard CFLAGS on this platform...
   checking for gcc... gcc
-  checking whether the C compiler (gcc  ) works... yes
-  checking whether the C compiler (gcc  ) is a cross-compiler... no
-  checking whether we are using GNU C... yes
-  checking whether gcc accepts -g... yes
     .
     .
     .
-  creating misc/Makefile
-  creating dynamic/Makefile
-  creating fpu/Makefile
-  creating config.h
+  config.status: creating build/win32/nsis/bochs.nsi
+  config.status: creating host/linux/pcidev/Makefile
+  config.status: creating config.h
+  config.status: creating ltdlconf.h
   user$ <command>make</command>
   cd iodev && \
-  make CC="gcc" CXX="c++" CFLAGS="-g -O2  " CXXFLAGS="-g -O2  " LDFLAGS="" LIBS="" X_LIBS="-L/usr/X11R6/lib" X_PRE_LIBS="-lSM -lICE" prefix="/usr/local" exec_prefix="/usr/local" bindir="/usr/local/bin" infodir="" libiodev.a
-  make[1]: Entering directory `/tmp/bochs-1.2.1/iodev'
-  c++ -c -g -O2    -I.. -I../instrument/stubs devices.cc -o devices.o
-  c++ -c -g -O2    -I.. -I../instrument/stubs pic.cc -o pic.o
-  c++ -c -g -O2    -I.. -I../instrument/stubs pit.cc -o pit.o
-  c++ -c -g -O2    -I.. -I../instrument/stubs unmapped.cc -o unmapped.o
-  c++ -c -g -O2    -I.. -I../instrument/stubs cmos.cc -o cmos.o
+          make  libiodev.a
+  make[1]: Entering directory `/home/volker/Archiv/test/bochs-2.5/iodev'
+  g++ -c  -I.. -I./.. -I../instrument/stubs -I./../instrument/stubs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES    devices.cc -o devices.o
+  g++ -c  -I.. -I./.. -I../instrument/stubs -I./../instrument/stubs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES    virt_timer.cc -o virt_timer.o
+  g++ -c  -I.. -I./.. -I../instrument/stubs -I./../instrument/stubs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES    slowdown_timer.cc -o slowdown_timer.o
+  g++ -c  -I.. -I./.. -I../instrument/stubs -I./../instrument/stubs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES    pic.cc -o pic.o
     .
     .
     .
   echo done
   done
-  c++ -o bochs -g -O2   main.o load32bitOShack.o state_file.o pc_system.o osdep.o \
-     iodev/libiodev.a \
-     cpu/libcpu.a memory/libmemory.a gui/libgui.a \
-     fpu/libfpu.a \
-     -L/usr/X11R6/lib -lSM -lICE -lX11
-  gcc -c -g -O2    -I. -Iinstrument/stubs misc/bximage.c -o misc/bximage.o
-  c++ -o bximage -g -O2   misc/bximage.o
+  /bin/sh ./libtool --mode=link g++ -o bochs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES      -DBX_SHARE_PATH='"/usr/local/share/bochs"'  -export-dynamic logio.o main.o config.o load32bitOShack.o pc_system.o osdep.o plugin.o crc.o   \
+                  iodev/libiodev.a  cpu/libcpu.a cpu/cpudb/libcpudb.a \
+                  memory/libmemory.a gui/libgui.a \
+                  disasm/libdisasm.a   \
+                  fpu/libfpu.a \
+                  -lSM -lICE -lX11 -lXpm -lXrandr   \
+                  \
+                  \
+                  \
+                  \
+                  -lm
+  mkdir .libs
+  g++ -o bochs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES -DBX_SHARE_PATH=\"/usr/local/share/bochs\" logio.o main.o config.o load32bitOShack.o pc_system.o osdep.o plugin.o crc.o -Wl,--export-dynamic  iodev/libiodev.a cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a disasm/libdisasm.a fpu/libfpu.a -lSM -lICE -lX11 -lXpm -lXrandr -lm
+  gcc -c -I. -I./. -Iinstrument/stubs -I./instrument/stubs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES   ./misc/bximage.c -o misc/bximage.o
+  /bin/sh ./libtool --mode=link g++ -o bximage -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES     misc/bximage.o
+  g++ -o bximage -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES misc/bximage.o 
+  gcc -c -I. -I./. -Iinstrument/stubs -I./instrument/stubs -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES   ./misc/bxcommit.c -o misc/bxcommit.o
+  /bin/sh ./libtool --mode=link g++ -o bxcommit -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES    misc/bxcommit.o
+  g++ -o bxcommit -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES misc/bxcommit.o 
   user$ <command>su</command>
   root# <command>make install</command>
   cd iodev && \
-  make CC="gcc" CXX="c++" CFLAGS="-g -O2  " CXXFLAGS="-g -O2  " LDFLAGS="" LIBS="" X_LIBS="-L/usr/X11R6/lib" X_PRE_LIBS="-lSM -lICE" prefix="/usr/local" exec_prefix="/usr/local" bindir="/usr/local/bin" infodir="" libiodev.a
-  make[1]: Entering directory `/tmp/bochs-1.2.1/iodev'
+          make  libiodev.a
+  make[1]: Entering directory `/home/volker/Archiv/test/bochs-2.5/iodev'
     .
     .
     .
-  /usr/local/bochs/1.2.1/install-x11-fonts
-  Looking for fonts to install... font/
-  Looking for X11 Font Path... /usr/lib/X11/fonts
-  Installing vga.pcf... ok    (it was already there)
-  Running mkfontdir...
-  Done installing Bochs fonts for X11.
+  for i in CHANGES COPYING README TODO; do if test -f $i; then install -m 644 $i /usr/local/share/doc/bochs; else install -m 644 ./$i /usr/local/share/doc/bochs; fi; done
+  rm -f /usr/local/share/doc/bochs/README
+  cat ./build/linux/README.linux-binary ./README > /usr/local/share/doc/bochs/README
+  install -m 644 ./.bochsrc /usr/local/share/doc/bochs/bochsrc-sample.txt
   root# <command>exit</command>
   user$ _
 </screen>
@@ -3094,6 +3101,11 @@ This option exists only if Bochs compiled with --enable-monitor-mwait.
 <para>
 When this option is enabled MWAIT will not put the CPU into a sleep state.
 This option exists only if Bochs compiled with --enable-monitor-mwait.
+</para>
+<para><command>vmx</command></para>
+<para>
+Select VMX extensions emulation support.
+This option exists only if Bochs compiled with --enable-vmx option.
 </para>
 <para><command>family</command></para>
 <para>
@@ -4107,33 +4119,33 @@ ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
 ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
 ne2k: mac=fe:fd:00:00:00:01, ethmod=slirp, script=/usr/local/bin/slirp
 
-ioaddr, irq: You probably won't need to change ioaddr and irq, unless there
+IOADDR, IRQ: You probably won't need to change ioaddr and irq, unless there
 are IRQ conflicts. These parameters are ignored if the NE2000 is assigned to
 a PCI slot.
 
-mac: The MAC address MUST NOT match the address of any machine on the net.
+MAC: The MAC address MUST NOT match the address of any machine on the net.
 Also, the first byte must be an even number (bit 0 set means a multicast
 address), and you cannot use ff:ff:ff:ff:ff:ff because that's the broadcast
 address.  For the ethertap module, you must use fe:fd:00:00:00:01.  There may
 be other restrictions too.  To be safe, just use the b0:c4... address.
 
-ethmod: The ethmod value defines which low level OS specific module to be
+ETHMOD: The ethmod value defines which low level OS specific module to be
 used to access physical ethernet interface. You can also specify a network
 simulator or a module with no input/output ("null"). See the table below for
 currently supported values.
 
-ethdev: The ethdev value is the name of the network interface on your host
+ETHDEV: The ethdev value is the name of the network interface on your host
 platform.  On UNIX machines, you can get the name by running ifconfig.  On
 Windows machines, you must run niclist to get the name of the ethdev.
 Niclist source code is in misc/niclist.c and it is included in Windows
 binary releases.
 
-script: The script value is optional, and is the name of a script that
+SCRIPT: The script value is optional, and is the name of a script that
 is executed after bochs initialize the network interface. You can use
 this script to configure this network interface, or enable masquerading.
 This is mainly useful for the tun/tap devices that only exist during
 Bochs execution. The network interface name is supplied to the script
-as first parameter
+as first parameter.
 </screen>
 </para>
 
@@ -4209,7 +4221,7 @@ version where this module was added.
     <entry>vnet</entry>
     <entry>ARP, ping (ICMP-echo), DHCP and read/write TFTP simulation. The virtual
     host uses 192.168.10.1. DHCP assigns 192.168.10.2 to the guest. The TFTP server
-    uses the ethdev value for the root directory and doesn't overwrite files.
+    uses the 'ethdev' value for the root directory and doesn't overwrite files.
     </entry>
     <entry>Yes, for TFTP</entry>
     <entry>No</entry>
@@ -8023,6 +8035,9 @@ When you run bximage without one of the following options,
 it will  appear  in  interactive  mode and  ask   for  all
 required parameters to create an image.
 <screen>
+bximage [options] [filename]
+
+Supported options:
 -fd        Create a floppy image.
 -hd        Create a hard disk image.
 -mode=...  Image mode (for hard disks only - see the bochsrc sample for

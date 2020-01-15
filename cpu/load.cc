@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: load.cc 10629 2011-08-27 13:47:16Z sshwarts $
+// $Id: load.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008-2011 Stanislav Shwartsman
@@ -60,7 +60,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Wb(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  Bit16u val_8 = read_virtual_byte(i->seg(), eaddr);
+  Bit8u val_8 = read_virtual_byte(i->seg(), eaddr);
   BX_WRITE_XMM_REG_LO_BYTE(BX_TMP_REGISTER, val_8);
 
   return BX_CPU_CALL_METHOD(i->execute2, (i));

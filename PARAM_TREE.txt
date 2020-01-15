@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt 10737 2011-10-19 20:54:04Z sshwarts $
+$Id: PARAM_TREE.txt 10897 2011-12-30 09:10:11Z vruppert $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -41,6 +41,7 @@ cpuid
   movbe
   xsave
   xsaveopt
+  vmx
   avx
   avx_f16c
   avx_fma
@@ -246,6 +247,9 @@ sound
     wavemode
     loglevel
     dmatimer
+  es1370
+    enabled
+    wavedev
 
 misc
   port_e9_hack
@@ -279,5 +283,3 @@ wxdebug
 
 user
   (subtree for user-defined options)
-
-(updated July 31, 2011 by vruppert)

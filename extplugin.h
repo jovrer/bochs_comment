@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: extplugin.h 10404 2011-06-15 17:24:32Z vruppert $
+// $Id: extplugin.h 10897 2011-12-30 09:10:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // extplugin.h
@@ -34,6 +34,9 @@ enum plugintype_t {
 
 #define MAX_ARGC 10
 
+typedef int (*plugin_init_t)(struct _plugin_t *plugin, plugintype_t type, int argc, char *argv[]);
+typedef void (*plugin_fini_t)(void);
+
 typedef struct _plugin_t
 {
     plugintype_t type;
@@ -47,8 +50,8 @@ typedef struct _plugin_t
 #endif
     int  argc;
     char *name, *args, *argv[MAX_ARGC];
-    int  (*plugin_init)(struct _plugin_t *plugin, plugintype_t type, int argc, char *argv[]);
-    void (*plugin_fini)(void);
+    plugin_init_t plugin_init;
+    plugin_fini_t plugin_fini;
 
     struct _plugin_t *next;
 } plugin_t;

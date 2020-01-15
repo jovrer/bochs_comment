@@ -1,6 +1,6 @@
 /*
  * misc/bximage.c
- * $Id: bximage.c 10209 2011-02-24 22:05:47Z sshwarts $
+ * $Id: bximage.c 10933 2012-01-04 19:34:08Z vruppert $
  *
  * Create empty hard disk or floppy disk images for bochs.
  *
@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "../osdep.h"
+#include "bswap.h"
 
 #define HDIMAGE_HEADERS_ONLY 1
 #include "../iodev/hdimage.h"
@@ -41,7 +42,7 @@ typedef int (*WRITE_IMAGE_WIN32)(HANDLE, Bit64u);
 #endif
 
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bximage.c 10209 2011-02-24 22:05:47Z sshwarts $";
+char *rcsid = "$Id: bximage.c 10933 2012-01-04 19:34:08Z vruppert $";
 char *divider = "========================================================================";
 
 /* menu data for choosing floppy/hard disk */

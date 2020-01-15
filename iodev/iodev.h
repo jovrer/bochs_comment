@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h 10602 2011-08-18 07:05:09Z vruppert $
+// $Id: iodev.h 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -613,17 +613,12 @@ BX_CPP_INLINE void DEV_MEM_READ_PHYSICAL(bx_phy_address phy_addr, unsigned len, 
   }
 }
 
-BX_CPP_INLINE void DEV_MEM_READ_PHYSICAL_BLOCK(bx_phy_address phy_addr, unsigned len, Bit8u *ptr)
+BX_CPP_INLINE void DEV_MEM_READ_PHYSICAL_DMA(bx_phy_address phy_addr, unsigned len, Bit8u *ptr)
 {
-  Bit8u *memptr;
-
   while(len > 0) { 
     unsigned remainingInPage = 0x1000 - (phy_addr & 0xfff);
     if (len < remainingInPage) remainingInPage = len;
-    memptr = BX_MEM(0)->getHostMemAddr(NULL, phy_addr, BX_READ);
-    if (memptr != NULL) {
-      memcpy(ptr, memptr, remainingInPage);
-    }
+    BX_MEM(0)->dmaReadPhysicalPage(phy_addr, remainingInPage, ptr);
     ptr += remainingInPage;
     phy_addr += remainingInPage;
     len -= remainingInPage;
@@ -646,17 +641,12 @@ BX_CPP_INLINE void DEV_MEM_WRITE_PHYSICAL(bx_phy_address phy_addr, unsigned len,
   }
 }
 
-BX_CPP_INLINE void DEV_MEM_WRITE_PHYSICAL_BLOCK(bx_phy_address phy_addr, unsigned len, Bit8u *ptr)
+BX_CPP_INLINE void DEV_MEM_WRITE_PHYSICAL_DMA(bx_phy_address phy_addr, unsigned len, Bit8u *ptr)
 {
-  Bit8u *memptr;
-
   while(len > 0) { 
     unsigned remainingInPage = 0x1000 - (phy_addr & 0xfff);
     if (len < remainingInPage) remainingInPage = len;
-    memptr = BX_MEM(0)->getHostMemAddr(NULL, phy_addr, BX_WRITE);
-    if (memptr != NULL) {
-      memcpy(memptr, ptr, remainingInPage);
-    }
+    BX_MEM(0)->dmaWritePhysicalPage(phy_addr, remainingInPage, ptr);
     ptr += remainingInPage;
     phy_addr += remainingInPage;
     len -= remainingInPage;

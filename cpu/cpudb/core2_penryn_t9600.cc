@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: core2_penryn_t9600.cc 10725 2011-10-07 19:32:44Z sshwarts $
+// $Id: core2_penryn_t9600.cc 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -134,6 +134,7 @@ Bit64u core2_penryn_t9600_t::get_isa_extensions_bitmask(void) const
 #endif
          BX_ISA_SMX |
          BX_ISA_XSAVE |
+         BX_ISA_CMPXCHG16B |
          BX_ISA_LM_LAHF_SAHF;
 }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_groups.cc 10706 2011-09-29 19:50:27Z sshwarts $
+// $Id: dis_groups.cc 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -66,6 +66,11 @@ void disassembler::EAX_Reg(const x86_insn *insn)
 void disassembler::RAX_Reg(const x86_insn *insn)
 {
   dis_sprintf("%s", general_64bit_regname[rAX_REG]);
+}
+
+void disassembler::RCX_Reg(const x86_insn *insn)
+{
+  dis_sprintf("%s", general_64bit_regname[rCX_REG]);
 }
 
 // segment registers

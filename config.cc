@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc 10737 2011-10-19 20:54:04Z sshwarts $
+// $Id: config.cc 10930 2012-01-04 16:03:52Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -290,7 +290,7 @@ void bx_init_options()
 
   // cpuid subtree
 #if BX_CPU_LEVEL >= 4
-  bx_list_c *cpuid_param = new bx_list_c(root_param, "cpuid", "CPUID Options", 28);
+  bx_list_c *cpuid_param = new bx_list_c(root_param, "cpuid", "CPUID Options", 29);
 
   new bx_param_string_c(cpuid_param,
       "vendor_string",
@@ -359,7 +359,7 @@ void bx_init_options()
 
   new bx_param_bool_c(cpuid_param,
       "sse4a", "Support for AMD SSE4A instructions",
-      "Support for AMD SSE4A instructionã",
+      "Support for AMD SSE4A instructions",
       0);
 
   new bx_param_bool_c(cpuid_param,
@@ -445,6 +445,13 @@ void bx_init_options()
       "mwait_is_nop", "Don't put CPU to sleep state by MWAIT",
       "Don't put CPU to sleep state by MWAIT",
       0);
+#endif
+#if BX_SUPPORT_VMX
+  new bx_param_num_c(cpuid_param,
+      "vmx", "Support for Intel VMX extensions emulation",
+      "Support for Intel VMX extensions emulation",
+      0, BX_SUPPORT_VMX,
+      1);
 #endif
 #endif
 
@@ -1726,13 +1733,6 @@ void bx_init_options()
 #if BX_SUPPORT_IODEBUG
   new bx_param_bool_c(menu, "iodebug", "Enable 'iodebug'", "", 1);
 #endif
-#if BX_SUPPORT_PCI
-  new bx_param_bool_c(menu, "pci_ide", "Enable 'pci_ide'", "", 1);
-  new bx_param_bool_c(menu, "acpi", "Enable 'acpi'", "", 1);
-#endif
-#if BX_SUPPORT_APIC
-  new bx_param_bool_c(menu, "ioapic", "Enable 'ioapic'", "", 1);
-#endif
 
 #if BX_PLUGINS
   // user plugin options
@@ -2740,9 +2740,13 @@ static int parse_line_formatted(const char *context, int num_params, char *param
           PARSE_ERR(("%s: cpuid directive malformed.", context));
         }
 #endif
+#if BX_SUPPORT_VMX
+      } else if (!strncmp(params[i], "vmx=", 4)) {
+        SIM->get_param_num(BXPN_CPUID_VMX)->set(atol(&params[i][4]));
+#endif
 #if BX_SUPPORT_X86_64
       } else if (!strncmp(params[i], "x86_64=", 7)) {
-        if (parse_param_bool(params[i], 9, BXPN_CPUID_X86_64) < 0) {
+        if (parse_param_bool(params[i], 7, BXPN_CPUID_X86_64) < 0) {
           PARSE_ERR(("%s: cpuid directive malformed.", context));
         }
       } else if (!strncmp(params[i], "1g_pages=", 9)) {
@@ -4041,6 +4045,9 @@ int bx_write_configuration(const char *rc, int overwrite)
     SIM->get_param_bool(BXPN_CPUID_XOP)->get(),
     SIM->get_param_bool(BXPN_CPUID_TBM)->get(),
     SIM->get_param_bool(BXPN_CPUID_FMA4)->get());
+#endif
+#if BX_SUPPORT_VMX
+  fprintf(fp, ", vmx=%d", SIM->get_param_num(BXPN_CPUID_VMX)->get());
 #endif
 #if BX_SUPPORT_X86_64
   fprintf(fp, ", x86_64=%d, 1g_pages=%d, pcid=%d, fsgsbase=%d",

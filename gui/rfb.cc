@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc 10575 2011-08-14 20:21:07Z sshwarts $
+// $Id: rfb.cc 10897 2011-12-30 09:10:11Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
@@ -335,7 +335,7 @@ void bx_rfb_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
 {
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
-      rfbSetStatusText(i+1, statusitem_text[i], active, w);
+      rfbSetStatusText(i+1, statusitem_text[i], 0, 0);
     }
   } else if ((unsigned)element < statusitem_count) {
     rfbSetStatusText(element+1, statusitem_text[element], active, w);

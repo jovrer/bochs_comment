@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.txt 10582 2011-08-16 17:27:27Z vruppert $
+// $Id: devices.txt 10909 2011-12-31 13:04:21Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 MOTHER BOARD (i440FX Support)                                   devices.cc
@@ -34,7 +34,7 @@ MOTHER BOARD (i440FX Support)                                   devices.cc
   |        |
   |        +---- Standard PC gameport                           gameport.cc
   |
-  +-------------- Debugging/Instrumentation                     biosdev.cc, iodebug.cc, unmapped.cc
+  +------------- Debugging/Instrumentation                      biosdev.cc, iodebug.cc, unmapped.cc
 
 Attached devices
   |
@@ -50,12 +50,17 @@ Attached devices
   |        |
   |        +---- CD/DVD-ROM image / device access (*)           cdrom.cc
   |                      |
-  |                      +---- Host specific Module             cdrom_amigaos.cc
+  |                      +---- Host specific Modules
+  |                                   |
+  |                                   +---- Amiga/MorphOS       cdrom_amigaos.cc
+  |                                   +---- Windows             cdrom_win32.cc
+  |                                   +---- Mac OSX             cdrom_osx.cc
+  |                                   +---- Linux and others    cdrom_misc.cc
   +---- Network Support
   |        |
   |        +---- Network Devices
   |        |             |
-  |        |             +---- NE2000 (ISA/PCI)                 ne2k.cc, pcipnic.cc
+  |        |             +---- NE2000 (ISA/PCI)                 ne2k.cc
   |        |             +---- PCI Pseudo NIC                   pcipnic.cc
   |        |
   |        +---- Networking Modules                             netmod.cc

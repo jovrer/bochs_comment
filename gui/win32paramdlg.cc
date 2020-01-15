@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32paramdlg.cc 10743 2011-10-20 19:10:06Z sshwarts $
+// $Id: win32paramdlg.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Volker Ruppert
@@ -557,11 +557,12 @@ HWND CreateCombobox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   Combo = CreateWindow("COMBOBOX", "", WS_CHILD | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
                        r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);
   j = 0;
-  do {
+  while(1) {
     choice = eparam->get_choice(j);
+    if (choice == NULL) break;
     SendMessage(Combo, CB_ADDSTRING, 0, (LPARAM)choice);
     j++;
-  } while (choice != NULL);
+  }
   SendMessage(Combo, CB_SETCURSEL, (WPARAM)(eparam->get()-eparam->get_min()), 0);
   SendMessage(Combo, WM_SETFONT, (WPARAM)DlgFont, TRUE);
   ShowWindow(Combo, hide ? SW_HIDE : SW_SHOW);

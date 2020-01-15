@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_tables.h 10749 2011-10-30 08:58:49Z sshwarts $
+// $Id: dis_tables.h 10891 2011-12-29 21:41:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -65,6 +65,7 @@
 
 #define EAX_Reg &disassembler::EAX_Reg
 #define RAX_Reg &disassembler::RAX_Reg
+#define RCX_Reg &disassembler::RCX_Reg
 
 #define CS &disassembler::CS
 #define DS &disassembler::DS

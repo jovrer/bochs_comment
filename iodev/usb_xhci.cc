@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_xhci.cc 10460 2011-07-10 09:30:04Z vruppert $
+// $Id: usb_xhci.cc 10927 2012-01-03 18:14:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010-2011  Benjamin D Lunt (fys [at] fysnet [dot] net)
@@ -409,14 +409,14 @@ bx_bool bx_usb_xhci_c::save_hc_state(void)
   Bit8u buffer[256];
   Bit64u p;
 
-  DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap, 16, buffer);
+  DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap, 16, buffer);
   ReadHostQWordFromLittleEndian(&buffer[0], p);
-  DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address)p, 16, buffer);
+  DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address)p, 16, buffer);
   ReadHostQWordFromLittleEndian(&buffer[0], p);
 
 
   memset(buffer, 0x22, 256);
-  DEV_MEM_WRITE_PHYSICAL_BLOCK(p, 256, buffer);
+  DEV_MEM_WRITE_PHYSICAL_DMA(p, 256, buffer);
 
   // set a flag that says we have a valid saved state
 //#define SCATCH_PAD_RESTORE   1  // 1 = uses system memory and must be maintained.
@@ -1450,7 +1450,7 @@ bx_bool bx_usb_xhci_c::write_handler(bx_phy_address addr, unsigned len, void *da
       // doorbell = slot to use (1 based)
       // (value & 0xFF) = ep (1 = control, 2 = ep1 out, 3 = ep1 in, etc);
       int ep = (value & 0xFF);
-      BX_INFO(("Rang Doorbell:  slot = %i  ep = %i (%s)", doorbell, ep, (ep & 1) ? "IN" : "OUT"));
+      BX_DEBUG(("Rang Doorbell:  slot = %i  ep = %i (%s)", doorbell, ep, (ep & 1) ? "IN" : "OUT"));
       if (ep > 31)
         BX_ERROR(("Doorbell rang with EP > 31  (ep = %i)", ep));
       else
@@ -1545,7 +1545,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
           if (TRB_TOGGLE(trb.command))
             BX_XHCI_THIS hub.slots[slot].ep_context[ep].rcs ^= 1;
           BX_XHCI_THIS hub.slots[slot].ep_context[ep].enqueue_pointer = trb.parameter & (Bit64u) ~0xF;
-          BX_INFO(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i): LINK TRB:  New dq_pointer = 0x" FMT_ADDRX64 " (%i)",
+          BX_DEBUG(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i): LINK TRB:  New dq_pointer = 0x" FMT_ADDRX64 " (%i)",
             (bx_phy_address) org_addr, slot, ep, BX_XHCI_THIS hub.slots[slot].ep_context[ep].enqueue_pointer, BX_XHCI_THIS hub.slots[slot].ep_context[ep].rcs));
 #if ((VERSION_MAJOR == 0) && (VERSION_MINOR == 0x95))
           // https://patchwork.kernel.org/patch/51191/
@@ -1559,7 +1559,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
         case SETUP_STAGE:
           cur_direction = USB_TOKEN_SETUP;
           is_transfer_trb = 1;
-          BX_INFO(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i) (len = %i): Found SETUP TRB", 
+          BX_DEBUG(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i) (len = %i): Found SETUP TRB", 
             (bx_phy_address) org_addr, slot, ep, transfer_length));
           break;
 
@@ -1567,7 +1567,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
         case DATA_STAGE:
           cur_direction = TRB_GET_DIR(trb.command);
           is_transfer_trb = 1;
-          BX_INFO(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i) (len = %i): Found DATA STAGE TRB", 
+          BX_DEBUG(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i) (len = %i): Found DATA STAGE TRB", 
             (bx_phy_address) org_addr, slot, ep, transfer_length));
           break;
 
@@ -1576,14 +1576,14 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
           cur_direction = TRB_GET_DIR(trb.command);
           is_transfer_trb = 1;
           transfer_length = 0;
-          BX_INFO(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i): Found STATUS STAGE TRB", 
+          BX_DEBUG(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i): Found STATUS STAGE TRB", 
             (bx_phy_address) org_addr, slot, ep));
           break;
 
         // Normal TRB
         case NORMAL:
           is_transfer_trb = 1;
-          BX_INFO(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i) (len = %i): Found NORMAL TRB", 
+          BX_DEBUG(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i) (len = %i): Found NORMAL TRB", 
             (bx_phy_address) org_addr, slot, ep, transfer_length));
           break;
 
@@ -1598,7 +1598,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
           }
           if (spd_occurred)
             first_event_trb_encountered = 1;
-          BX_INFO(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i): Found EVENT_DATA TRB: (returning %i)", 
+          BX_DEBUG(("0x" FORMATADDRESS ": Transfer Ring (slot = %i) (ep = %i): Found EVENT_DATA TRB: (returning %i)", 
             (bx_phy_address) org_addr, slot, ep, comp_code));
           break;
 
@@ -1632,7 +1632,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
           case USB_TOKEN_OUT:
           case USB_TOKEN_SETUP:
             if ((is_immed_data == 0) && (transfer_length > 0))
-              DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) address, transfer_length, BX_XHCI_THIS device_buffer);
+              DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) address, transfer_length, BX_XHCI_THIS device_buffer);
             // The XHCI should block all SET_ADDRESS SETUP TOKEN's
             if ((cur_direction == USB_TOKEN_SETUP) &&
                 (BX_XHCI_THIS device_buffer[0] == 0) &&  // Request type
@@ -1644,7 +1644,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
             } else {
               ret = BX_XHCI_THIS broadcast_packet(&packet, port_num - 1);
               len = transfer_length;
-              BX_INFO(("OUT: Transferred %i bytes (ret = %i)", len, ret));
+              BX_DEBUG(("OUT: Transferred %i bytes (ret = %i)", len, ret));
             }
             break;
           case USB_TOKEN_IN:
@@ -1653,8 +1653,8 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
               len = ret;
               bytes_transferred += len;
               if (len > 0)
-                DEV_MEM_WRITE_PHYSICAL_BLOCK((bx_phy_address) address, len, BX_XHCI_THIS device_buffer);
-              BX_INFO(("IN: Transferred %i bytes, requested %i bytes", len, transfer_length));
+                DEV_MEM_WRITE_PHYSICAL_DMA((bx_phy_address) address, len, BX_XHCI_THIS device_buffer);
+              BX_DEBUG(("IN: Transferred %i bytes, requested %i bytes", len, transfer_length));
               if (len < transfer_length) {
                 bytes_not_transferred = transfer_length - len;
                 spd_occurred = 1;
@@ -1681,7 +1681,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
         if (ioc) {
           if ((comp_code == TRB_SUCCESS) && spd_occurred && TRB_SPD(trb.command)) {
             comp_code = SHORT_PACKET;
-            BX_INFO(("Sending Short Packet Detect Event TRB (%i)", bytes_not_transferred));
+            BX_DEBUG(("Sending Short Packet Detect Event TRB (%i)", bytes_not_transferred));
           }
           // create a Event TRB
           write_event_TRB(int_target, org_addr, TRB_SET_COMP_CODE(comp_code) | bytes_not_transferred, 
@@ -1701,7 +1701,7 @@ void bx_usb_xhci_c::process_transfer_ring(const int slot, const int ep)
     read_TRB((bx_phy_address) BX_XHCI_THIS hub.slots[slot].ep_context[ep].enqueue_pointer, &trb);
   }
 
-  BX_INFO(("Process Transfer Ring: Processed %i TRB's", trb_count));
+  BX_DEBUG(("Process Transfer Ring: Processed %i TRB's", trb_count));
   if (trb_count == 0)
     BX_ERROR(("Process Transfer Ring: Doorbell rang, but no TRB's were enqueued in the ring."));
 }
@@ -1794,7 +1794,7 @@ void bx_usb_xhci_c::process_command_ring(void)
       case ADDRESS_DEVICE:
         slot = TRB_GET_SLOT(trb.command);  // slots are 1 based
         if (BX_XHCI_THIS hub.slots[slot].enabled == 1) {
-          DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) trb.parameter, (CONTEXT_SIZE + (CONTEXT_SIZE * 2)), buffer);
+          DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) trb.parameter, (CONTEXT_SIZE + (CONTEXT_SIZE * 2)), buffer);
           bsr = ((trb.command & (1<<9)) == (1<<9));
           ReadHostDWordFromLittleEndian(&buffer[0], tmpval1);
           ReadHostDWordFromLittleEndian(&buffer[4], tmpval2);
@@ -1858,7 +1858,7 @@ void bx_usb_xhci_c::process_command_ring(void)
         {
           slot = TRB_GET_SLOT(trb.command);  // slots are 1 based
           if (BX_XHCI_THIS hub.slots[slot].enabled == 1) {
-            DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) trb.parameter, (CONTEXT_SIZE + (CONTEXT_SIZE * 32)), buffer);
+            DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) trb.parameter, (CONTEXT_SIZE + (CONTEXT_SIZE * 32)), buffer);
             ReadHostDWordFromLittleEndian(&buffer[4], a_flags);
             // only the Slot context and EP1 (control EP) contexts are evaluated. Section 6.2.3.3
             // If the slot is not addresses or configured, then return error
@@ -1946,7 +1946,7 @@ void bx_usb_xhci_c::process_command_ring(void)
         slot = TRB_GET_SLOT(trb.command);  // slots are 1 based
         bx_bool dc = TRB_DC(trb.command);
         if (BX_XHCI_THIS hub.slots[slot].enabled) {
-          DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) trb.parameter, (CONTEXT_SIZE + (CONTEXT_SIZE * 32)), buffer);
+          DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) trb.parameter, (CONTEXT_SIZE + (CONTEXT_SIZE * 32)), buffer);
           ReadHostDWordFromLittleEndian(&buffer[0], d_flags);
           ReadHostDWordFromLittleEndian(&buffer[4], a_flags);
           copy_slot_from_buffer(&slot_context, &buffer[CONTEXT_SIZE]);  // so we get entry_count
@@ -2082,7 +2082,7 @@ void bx_usb_xhci_c::process_command_ring(void)
           unsigned band_speed = ((trb.command & (0x0F << 16)) >> 16) - 1;
           if (hub_id == 0) { // root hub
             if (band_speed < 4) {
-              DEV_MEM_WRITE_PHYSICAL_BLOCK((bx_phy_address) trb.parameter, 1 + USB_XHCI_PORTS, port_band_width[band_speed]);
+              DEV_MEM_WRITE_PHYSICAL_DMA((bx_phy_address) trb.parameter, 1 + USB_XHCI_PORTS, port_band_width[band_speed]);
               comp_code = TRB_SUCCESS;
             } else {
               comp_code = TRB_ERROR;
@@ -2121,14 +2121,13 @@ void bx_usb_xhci_c::process_command_ring(void)
 void bx_usb_xhci_c::init_event_ring(const unsigned interrupter)
 {
   bx_phy_address addr = (bx_phy_address) BX_XHCI_THIS hub.runtime_regs.interrupter[interrupter].erstba.erstabadd;
-  int i;
   Bit8u entry[16];
   Bit32u val32;
   Bit64u val64;
 
   BX_XHCI_THIS hub.ring_members.event_rings[interrupter].rcs = 1;
   BX_XHCI_THIS hub.ring_members.event_rings[interrupter].count = 0;
-  DEV_MEM_READ_PHYSICAL_BLOCK(addr, sizeof(BX_XHCI_THIS hub.ring_members.event_rings[interrupter].entrys),
+  DEV_MEM_READ_PHYSICAL_DMA(addr, sizeof(BX_XHCI_THIS hub.ring_members.event_rings[interrupter].entrys),
     (Bit8u*) BX_XHCI_THIS hub.ring_members.event_rings[interrupter].entrys);
   BX_XHCI_THIS hub.ring_members.event_rings[interrupter].cur_trb = 
     BX_XHCI_THIS hub.ring_members.event_rings[interrupter].entrys[0].addr;
@@ -2139,8 +2138,8 @@ void bx_usb_xhci_c::init_event_ring(const unsigned interrupter)
   BX_DEBUG(("Interrupter %02i: Event Ring Table has %i entries:", interrupter, 
     BX_XHCI_THIS hub.runtime_regs.interrupter[interrupter].erstsz.erstabsize));
   addr = (bx_phy_address) BX_XHCI_THIS hub.runtime_regs.interrupter[interrupter].erstba.erstabadd;
-  for (i=0; i<BX_XHCI_THIS hub.runtime_regs.interrupter[interrupter].erstsz.erstabsize; i++) {
-    DEV_MEM_READ_PHYSICAL_BLOCK(addr + (i * 16), 16, entry);
+  for (int i=0; i<BX_XHCI_THIS hub.runtime_regs.interrupter[interrupter].erstsz.erstabsize; i++) {
+    DEV_MEM_READ_PHYSICAL_DMA(addr + (i * 16), 16, entry);
     ReadHostQWordFromLittleEndian(&entry[0], val64);
     ReadHostDWordFromLittleEndian(&entry[8], val32);
     BX_DEBUG((" %02i:  address = 0x" FMT_ADDRX64 "  Count = %i", i, val64, val32));
@@ -2184,7 +2183,7 @@ void bx_usb_xhci_c::read_TRB(bx_phy_address addr, struct TRB *trb)
 {
   Bit8u buffer[16];
 
-  DEV_MEM_READ_PHYSICAL_BLOCK(addr, 16, buffer);
+  DEV_MEM_READ_PHYSICAL_DMA(addr, 16, buffer);
   ReadHostQWordFromLittleEndian(&buffer[0], trb->parameter);
   ReadHostDWordFromLittleEndian(&buffer[8], trb->status);
   ReadHostDWordFromLittleEndian(&buffer[12], trb->command);
@@ -2197,31 +2196,29 @@ void bx_usb_xhci_c::write_TRB(bx_phy_address addr, const Bit64u parameter, const
   WriteHostQWordToLittleEndian(&buffer[0], parameter);
   WriteHostDWordToLittleEndian(&buffer[8], status);
   WriteHostDWordToLittleEndian(&buffer[12], command);
-  DEV_MEM_WRITE_PHYSICAL_BLOCK(addr, 16, buffer);
+  DEV_MEM_WRITE_PHYSICAL_DMA(addr, 16, buffer);
 }
 
 void bx_usb_xhci_c::update_slot_context(const int slot)
 {
   Bit8u buffer[64];
-  Bit64u slot_addr;
 
   memset(buffer, 0, 64);
   copy_slot_to_buffer(buffer, slot);
-  slot_addr = (BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap + (slot * sizeof(Bit64u)));
-  DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
-  DEV_MEM_WRITE_PHYSICAL_BLOCK((bx_phy_address) slot_addr, CONTEXT_SIZE, buffer);
+  Bit64u slot_addr = (BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap + (slot * sizeof(Bit64u)));
+  DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
+  DEV_MEM_WRITE_PHYSICAL_DMA((bx_phy_address) slot_addr, CONTEXT_SIZE, buffer);
 }
 
 void bx_usb_xhci_c::update_ep_context(const int slot, const int ep)
 {
   Bit8u buffer[64];
-  Bit64u slot_addr;
 
   memset(buffer, 0, 64);
   copy_ep_to_buffer(buffer, slot, ep);
-  slot_addr = (BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap + (slot * sizeof(Bit64u)));
-  DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
-  DEV_MEM_WRITE_PHYSICAL_BLOCK((bx_phy_address) (slot_addr + (ep * CONTEXT_SIZE)), CONTEXT_SIZE, buffer);
+  Bit64u slot_addr = (BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap + (slot * sizeof(Bit64u)));
+  DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
+  DEV_MEM_WRITE_PHYSICAL_DMA((bx_phy_address) (slot_addr + (ep * CONTEXT_SIZE)), CONTEXT_SIZE, buffer);
 }
 
 void bx_usb_xhci_c::dump_slot_context(const Bit32u *context, const int slot)
@@ -2604,7 +2601,7 @@ void bx_usb_xhci_c::usb_set_connect_status(Bit8u port, int type, bx_bool connect
 
     // we changed the value of the port, so show it
     BX_INFO(("Port Status Change Event."));
-    write_event_TRB(0, (port << 24), TRB_SET_COMP_CODE(1), TRB_SET_TYPE(PORT_STATUS_CHANGE), 1);
+    write_event_TRB(0, ((port + 1) << 24), TRB_SET_COMP_CODE(1), TRB_SET_TYPE(PORT_STATUS_CHANGE), 1);
   }
 }
 
@@ -2682,12 +2679,12 @@ void bx_usb_xhci_c::dump_xhci_core(const int slots, const int eps)
   }
 
   slot_addr = BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap;
-  DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
+  DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
   BX_INFO((" SCRATCH PADS:  0x" FMT_ADDRX64, slot_addr));
   for (i=1; i<slots+1; i++) {
     slot_addr = (BX_XHCI_THIS hub.op_regs.HcDCBAAP.dcbaap + (i * sizeof(Bit64u)));
-    DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
-    DEV_MEM_READ_PHYSICAL_BLOCK((bx_phy_address) slot_addr, 2048, buffer);
+    DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) slot_addr, sizeof(Bit64u), (Bit8u *) &slot_addr);
+    DEV_MEM_READ_PHYSICAL_DMA((bx_phy_address) slot_addr, 2048, buffer);
     dump_slot_context((Bit32u *) &buffer[0], i);
     for (p=1; p<eps+1; p++)
       dump_ep_context((Bit32u *) &buffer[p * CONTEXT_SIZE], i, p);

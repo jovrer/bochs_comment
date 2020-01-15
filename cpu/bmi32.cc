@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bmi32.cc 10798 2011-11-27 13:23:26Z sshwarts $
+// $Id: bmi32.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -170,7 +170,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BEXTR_GdEdBdR(bxInstruction_c *i)
     }
   }
 
-  SET_FLAGS_OSZAxC_LOGIC_32(op1_32); // keep PF unchanged
+  SET_FLAGS_OSZAPC_LOGIC_32(op1_32);
 
   BX_WRITE_32BIT_REGZ(i->nnn(), op1_32);
 

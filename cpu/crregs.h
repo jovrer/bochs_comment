@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h 10670 2011-09-16 20:12:36Z sshwarts $
+// $Id: crregs.h 10892 2011-12-29 21:59:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -23,6 +23,18 @@
 
 #ifndef BX_CRREGS
 #define BX_CRREGS
+
+#define BX_CR0_PE_MASK         (1 <<  0)
+#define BX_CR0_MP_MASK         (1 <<  1)
+#define BX_CR0_EM_MASK         (1 <<  2)
+#define BX_CR0_TS_MASK         (1 <<  3)
+#define BX_CR0_ET_MASK         (1 <<  4)
+#define BX_CR0_NE_MASK         (1 <<  5)
+#define BX_CR0_WP_MASK         (1 << 16)
+#define BX_CR0_AM_MASK         (1 << 18)
+#define BX_CR0_NW_MASK         (1 << 29)
+#define BX_CR0_CD_MASK         (1 << 30)
+#define BX_CR0_PG_MASK         (1 << 31)
 
 struct bx_cr0_t {
   Bit32u  val32; // 32bit value of register

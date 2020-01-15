@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmcs.cc 10762 2011-11-05 07:31:51Z sshwarts $
+// $Id: vmcs.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2009-2011 Stanislav Shwartsman
@@ -60,6 +60,10 @@ void BX_CPU_C::init_VMCS(void)
          if(vmcs_map[type][field] >= VMX_VMCS_AREA_SIZE) {
             BX_PANIC(("VMCS type %d field %d (encoding = 0x%08x) is out of VMCS boundaries", type, field, encoding));
          }
+         BX_DEBUG(("VMCS field 0x%08x located at 0x%08x", encoding, vmcs_map[type][field]));
+       }
+       else {
+         BX_DEBUG(("VMCS field 0x%08x is not supported", encoding));
        }
     }
   }

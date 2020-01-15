@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: es1370.cc 10602 2011-08-18 07:05:09Z vruppert $
+// $Id: es1370.cc 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2011  The Bochs Project
@@ -465,10 +465,10 @@ void bx_es1370_c::run_channel(unsigned chan, int timer_id, Bit32u buflen)
 
   if (chan == ADC_CHANNEL) {
     BX_ES1370_THIS soundmod->getwavepacket(temp, tmpbuf);
-    DEV_MEM_WRITE_PHYSICAL_BLOCK(addr, temp, tmpbuf);
+    DEV_MEM_WRITE_PHYSICAL_DMA(addr, temp, tmpbuf);
     transfered = temp;
   } else {
-    DEV_MEM_READ_PHYSICAL_BLOCK(addr, temp, tmpbuf);
+    DEV_MEM_READ_PHYSICAL_DMA(addr, temp, tmpbuf);
     if (((int)chan == BX_ES1370_THIS s.dac_nr_active) && BX_ES1370_THIS s.dac_outputinit) {
       BX_ES1370_THIS soundmod->sendwavepacket(temp, tmpbuf);
     }

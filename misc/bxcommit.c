@@ -1,6 +1,6 @@
 /*
  * misc/bximage.c
- * $Id: bxcommit.c 10209 2011-02-24 22:05:47Z sshwarts $
+ * $Id: bxcommit.c 10933 2012-01-04 19:34:08Z vruppert $
  *
  * Commits a redolog file in a flat file for bochs images.
  *
@@ -44,12 +44,13 @@ int snprintf(char *s, size_t maxlen, const char *format, ...)
 #endif  /* !BX_HAVE_SNPRINTF */
 
 #include "../osdep.h"
+#include "bswap.h"
 
 #define HDIMAGE_HEADERS_ONLY 1
 #include "../iodev/hdimage.h"
 
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bxcommit.c 10209 2011-02-24 22:05:47Z sshwarts $";
+char *rcsid = "$Id: bxcommit.c 10933 2012-01-04 19:34:08Z vruppert $";
 char *divider = "========================================================================";
 
 void myexit(int code)

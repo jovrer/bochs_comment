@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: lazy_flags.h 10798 2011-11-27 13:23:26Z sshwarts $
+// $Id: lazy_flags.h 10888 2011-12-29 20:52:44Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -176,9 +176,9 @@ typedef struct {
 
 /* size, carries, result */
 #define SET_FLAGS_OSZAxC_LOGIC_SIZE(size, lf_result) { \
-  set_ZF(!lf_result); \
-  BX_CPU_THIS_PTR oszapc.result = ((bx_address)(Bit##size##s)(lf_result) & ~((bx_address)(0xff))) \
-     | (BX_CPU_THIS_PTR oszapc.result & 0xff); \
+  bx_bool saved_PF = getB_PF(); \
+  SET_FLAGS_OSZAPC_SIZE(size, (Bit##size##u)(0), lf_result); \
+  set_PF(saved_PF); \
 }
 
 /* result */

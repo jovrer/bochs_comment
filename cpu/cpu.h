@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h 10798 2011-11-27 13:23:26Z sshwarts $
+// $Id: cpu.h 10892 2011-12-29 21:59:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -283,19 +283,21 @@
 #define BX_INSTR_INVPCID        18
 
 // possible types passed to BX_INSTR_CACHE_CNTRL()
-#define BX_INSTR_INVD           20
-#define BX_INSTR_WBINVD         21
+#define BX_INSTR_INVD           10
+#define BX_INSTR_WBINVD         11
 
-// possible types passed to BX_INSTR_FAR_BRANCH()
-#define BX_INSTR_IS_CALL        10
-#define BX_INSTR_IS_RET         11
-#define BX_INSTR_IS_IRET        12
-#define BX_INSTR_IS_JMP         13
-#define BX_INSTR_IS_INT         14
-#define BX_INSTR_IS_SYSCALL     15
-#define BX_INSTR_IS_SYSRET      16
-#define BX_INSTR_IS_SYSENTER    17
-#define BX_INSTR_IS_SYSEXIT     18
+// possible types passed to BX_INSTR_FAR_BRANCH() and BX_INSTR_UCNEAR_BRANCH()
+#define BX_INSTR_IS_JMP            10
+#define BX_INSTR_IS_JMP_INDIRECT   11
+#define BX_INSTR_IS_CALL           12
+#define BX_INSTR_IS_CALL_INDIRECT  13
+#define BX_INSTR_IS_RET            14
+#define BX_INSTR_IS_IRET           15
+#define BX_INSTR_IS_INT            16
+#define BX_INSTR_IS_SYSCALL        17
+#define BX_INSTR_IS_SYSRET         18
+#define BX_INSTR_IS_SYSENTER       19
+#define BX_INSTR_IS_SYSEXIT        20
 
 // possible types passed to BX_INSTR_PREFETCH_HINT()
 #define BX_INSTR_PREFETCH_NTA   0
@@ -3989,7 +3991,9 @@ public: // for now...
 #if BX_X86_DEBUGGER
   // x86 hardware debug support
   BX_SMF bx_bool hwbreakpoint_check(bx_address laddr, unsigned opa, unsigned opb);
+#if BX_CPU_LEVEL >= 5
   BX_SMF void    iobreakpoint_match(unsigned port, unsigned len);
+#endif
   BX_SMF Bit32u  code_breakpoint_match(bx_address laddr);
   BX_SMF void    hwbreakpoint_match(bx_address laddr, unsigned len, unsigned rw);
   BX_SMF Bit32u  hwdebug_compare(bx_address laddr, unsigned len, unsigned opa, unsigned opb);
@@ -4185,7 +4189,6 @@ public: // for now...
   BX_SMF void VMexit_TripleFault(void);
   BX_SMF void VMexit_ExtInterrupt(void);
   BX_SMF void VMexit_TaskSwitch(bxInstruction_c *i, Bit16u tss_selector, unsigned source) BX_CPP_AttrRegparmN(3);
-  BX_SMF void VMexit_SoftwareInterrupt(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
   BX_SMF void VMexit_HLT(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
   BX_SMF void VMexit_PAUSE(bxInstruction_c *i) BX_CPP_AttrRegparmN(1);
   BX_SMF void VMexit_INVLPG(bxInstruction_c *i, bx_address laddr) BX_CPP_AttrRegparmN(2);
