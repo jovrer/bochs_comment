@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: load.cc 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: load.cc 11356 2012-08-21 19:58:41Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2008-2011 Stanislav Shwartsman
@@ -30,21 +30,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Eb(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   TMP8L = read_virtual_byte(i->seg(), eaddr);
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 }
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Ew(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   TMP16 = read_virtual_word(i->seg(), eaddr);
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 }
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Ed(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   TMP32 = read_virtual_dword(i->seg(), eaddr);
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 }
 
 #if BX_SUPPORT_X86_64
@@ -52,7 +52,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Eq(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   TMP64 = read_virtual_qword_64(i->seg(), eaddr);
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 }
 #endif
 
@@ -63,7 +63,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Wb(bxInstruction_c *i)
   Bit8u val_8 = read_virtual_byte(i->seg(), eaddr);
   BX_WRITE_XMM_REG_LO_BYTE(BX_TMP_REGISTER, val_8);
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 #endif
 }
 
@@ -74,7 +74,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Ww(bxInstruction_c *i)
   Bit16u val_16 = read_virtual_word(i->seg(), eaddr);
   BX_WRITE_XMM_REG_LO_WORD(BX_TMP_REGISTER, val_16);
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 #endif
 }
 
@@ -85,7 +85,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Wss(bxInstruction_c *i)
   Bit32u val_32 = read_virtual_dword(i->seg(), eaddr);
   BX_WRITE_XMM_REG_LO_DWORD(BX_TMP_REGISTER, val_32);
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 #endif
 }
 
@@ -96,7 +96,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Wsd(bxInstruction_c *i)
   Bit64u val_64 = read_virtual_qword(i->seg(), eaddr);
   BX_WRITE_XMM_REG_LO_QWORD(BX_TMP_REGISTER, val_64);
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 #endif
 }
 
@@ -112,7 +112,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Wdq(bxInstruction_c *i)
 #endif
     read_virtual_dqword_aligned(i->seg(), eaddr, &BX_READ_XMM_REG(BX_TMP_REGISTER));
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 #endif
 }
 
@@ -122,7 +122,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADU_Wdq(bxInstruction_c *i)
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   read_virtual_dqword(i->seg(), eaddr, &BX_READ_XMM_REG(BX_TMP_REGISTER));
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 #endif
 }
 
@@ -130,22 +130,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOADU_Wdq(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_Vector(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   read_virtual_dword_vector(i->seg(), eaddr, i->getVL() << 2, &BX_READ_AVX_REG(BX_TMP_REGISTER));
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
-#endif
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 }
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LOAD_VectorQ(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   read_virtual_dword_vector(i->seg(), eaddr, i->getVL() << 1, &BX_READ_AVX_REG(BX_TMP_REGISTER));
 
-  return BX_CPU_CALL_METHOD(i->execute2, (i));
-#endif
+  return BX_CPU_CALL_METHOD(i->execute2(), (i));
 }
 
 #endif

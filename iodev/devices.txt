@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.txt 10909 2011-12-31 13:04:21Z vruppert $
+// $Id: devices.txt 11391 2012-09-02 10:51:47Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 MOTHER BOARD (i440FX Support)                                   devices.cc
@@ -19,10 +19,10 @@ MOTHER BOARD (i440FX Support)                                   devices.cc
   |        |
   |        +---- 8259A PIC                                      pic.cc
   |        +---- 82093AA I/O APIC                               ioapic.cc
-  |        +---- 8254/82C54 Programmable Interval Timer         pit_wrap.cc, pit82c54.cc
+  |        +---- 8254/82C54 Programmable Interval Timer         pit.cc, pit82c54.cc
   |        |             |
   |        |             +---- PC Speaker (lowlevel)            speaker.cc
-  |
+  |        |
   |        +---- 8237 DMA controller                            dma.cc
   |        +---- 82077A Floppy Drive Controller (*)             floppy.cc
   |        +---- CMOS device                                    cmos.cc
@@ -44,24 +44,38 @@ Attached devices
   |
   +---- Hard Drive + ATA controller                             harddrv.cc
   |        |
-  |        +---- Hard Drive image support (*)                   hdimage.cc
+  |        +---- Hard Drive image support (*)                   hdimage/
   |        |             |
-  |        |             +---- Additional Modules               vmware3.cc, vmware4.cc, vvfat.cc
+  |        |             +---- Core and basic modules           hdimage.cc
+  |        |             |
+  |        |             +---- Additional modules
+  |        |                          |
+  |        |                          +---- VMware version 3    vmware3.cc
+  |        |                          +---- VMware 4 (VMDK)     vmware4.cc
+  |        |                          +---- VirtualPC           vpc-img.cc
+  |        |                          +---- Virtual VFAT        vvfat.cc
   |        |
-  |        +---- CD/DVD-ROM image / device access (*)           cdrom.cc
+  |        +---- CD/DVD-ROM image / device access (*)           hdimage/cdrom.cc
   |                      |
   |                      +---- Host specific Modules
   |                                   |
-  |                                   +---- Amiga/MorphOS       cdrom_amigaos.cc
-  |                                   +---- Windows             cdrom_win32.cc
-  |                                   +---- Mac OSX             cdrom_osx.cc
-  |                                   +---- Linux and others    cdrom_misc.cc
-  +---- Network Support
+  |                                   +---- Amiga/MorphOS       hdimage/cdrom_amigaos.cc
+  |                                   +---- Windows             hdimage/cdrom_win32.cc
+  |                                   +---- Mac OSX             hdimage/cdrom_osx.cc
+  |                                   +---- Linux and others    hdimage/cdrom_misc.cc
+  |
+  +---- Graphics (VGA core)                                     vgacore.cc
+  |        |
+  |        +---- VGA adapter with VBE and PCI VGA support       vga.cc
+  |        +---- Cirrus Logic PCI/ISA CLGD5446 SVGA adapter     svga_cirrus.cc
+  |
+  +---- Network support                                         network/
   |        |
   |        +---- Network Devices
   |        |             |
   |        |             +---- NE2000 (ISA/PCI)                 ne2k.cc
   |        |             +---- PCI Pseudo NIC                   pcipnic.cc
+  |        |             +---- Intel 82540EM Gigabit Ethernet   e1000.cc
   |        |
   |        +---- Networking Modules                             netmod.cc
   |                      | |
@@ -74,12 +88,7 @@ Attached devices
   |                      +---- virtual Ethernet locator         eth_vnet.cc
   |                      +---- backend for Slirp                eth_slirp.cc
   |
-  +---- Graphics
-  |        |
-  |        +---- VGA, PCI VGA adapter                           vga.cc, pci_vga.cc
-  |        +---- Cirrus Logic PCI/ISA CLGD5446 SVGA adapter     svga_cirrus.cc
-  |
-  +---- Sound support
+  +---- Sound support                                           sound/
   |        |
   |        +---- Sound devices
   |        |             |
@@ -91,13 +100,13 @@ Attached devices
   |                      +---- Dummy / Control Module           soundmod.cc
   |                      +---- Host specific Modules            soundlnx.cc, soundosx.cc, soundwin.cc
   |
-  +---- PCI USB adapter                                         usb_common.cc
+  +---- USB support                                             usb/
            |
            +---- Host Controllers
            |             |
            |             +---- USB OHCI adapter                 usb_ohci.cc
-           |             +---- USB XHCI adapter                 usb_xhci.cc
            |             +---- USB UHCI adapter (PIIX3)         usb_uhci.cc
+           |             +---- USB xHCI adapter                 usb_xhci.cc
            |
            +---- Attached USB devices
                          | |
@@ -108,7 +117,7 @@ Attached devices
                          +---- USB mass storage device (*)      usb_msd.cc, scsi_device.cc
                          +---- USB HP DeskJet 920C printer      usb_printer.cc
 
-(*) USB MSD uses hdimage code and cdrom.cc for image / device access
+(*) USB MSD uses hdimage / cdrom code for image / device access
     Floppy uses hdimage code for VVFAT support
 
 BOCHS timer sycronisation modules

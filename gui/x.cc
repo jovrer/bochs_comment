@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: x.cc 11287 2012-07-15 15:17:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -63,8 +63,9 @@ public:
 #endif
   virtual void beep_on(float frequency);
   virtual void beep_off();
-  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
+  virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
+  virtual void set_mouse_mode_absxy(bx_bool mode);
 #if BX_SHOW_IPS
   virtual void show_ips(Bit32u ips_count);
 #endif
@@ -86,6 +87,7 @@ Display *bx_x_display;
 int bx_x_screen_num;
 static Visual *default_visual;
 static Colormap default_cmap;
+static bx_bool x11_private_colormap;
 static unsigned long white_pixel=0, black_pixel=0;
 
 static char *progname; /* name this program was invoked by */
@@ -112,6 +114,7 @@ static bx_bool mouse_captured = 0;
 static int prev_x=-1, prev_y=-1;
 static int current_x=-1, current_y=-1, current_z=0;
 static unsigned mouse_button_state = 0;
+static bx_bool x11_mouse_mode_absxy = 0;
 
 static int warp_home_x = 200;
 static int warp_home_y = 200;
@@ -126,6 +129,7 @@ static void enable_cursor();
 
 // keyboard
 static bx_bool x11_nokeyrepeat = 0;
+static bx_bool x11_use_kbd_mapping = 0;
 static Bit32u convertStringToXKeysym (const char *string);
 
 static bx_bool x_init_done = 0;
@@ -309,8 +313,6 @@ static void xkeypress(KeySym keysym, int press_release);
 unsigned long col_vals[MAX_VGA_COLORS]; // 256 VGA colors
 unsigned curr_foreground, curr_background;
 
-static unsigned x_tilesize, y_tilesize;
-
 BxEvent *x11_notify_callback (void *unused, BxEvent *event);
 static bxevent_handler old_callback = NULL;
 static void *old_callback_arg = NULL;
@@ -352,8 +354,7 @@ test_alloc_colors (Colormap cmap, Bit32u n_tries) {
 
 bx_x_gui_c::bx_x_gui_c () {}
 
-void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight,
-                     unsigned headerbar_y)
+void bx_x_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
   int i;
   int x, y;   /* window position */
@@ -377,8 +378,6 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
 
   put("XGUI");
 
-  x_tilesize = tilewidth;
-  y_tilesize = tileheight;
   bx_headerbar_y = headerbar_y;
 
   progname = argv[0];
@@ -422,7 +421,8 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
   default_depth  = DefaultDepth(bx_x_display, bx_x_screen_num);
   default_visual = DefaultVisual(bx_x_display, bx_x_screen_num);
 
-  if (!SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
+  x11_private_colormap = SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get();
+  if (!x11_private_colormap) {
     default_cmap = DefaultColormap(bx_x_display, bx_x_screen_num);
     // try to use default colormap.  If not enough colors are available,
     // then switch to private colormap despite the user setting.  There
@@ -430,7 +430,7 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
     // draws everything in black on black.
     if (!test_alloc_colors (default_cmap, 16)) {
       BX_ERROR (("I can't even allocate 16 colors!  Switching to a private colormap"));
-      SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->set(1);
+      x11_private_colormap = 1;
     }
     col_vals[0]  = BlackPixel(bx_x_display, bx_x_screen_num);
     col_vals[15] = WhitePixel(bx_x_display, bx_x_screen_num);
@@ -440,7 +440,7 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
     }
   }
 
-  if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
+  if (x11_private_colormap) {
     default_cmap = XCreateColormap(bx_x_display, DefaultRootWindow(bx_x_display),
                                    default_visual, AllocNone);
     if (XAllocColorCells(bx_x_display, default_cmap, False,
@@ -643,7 +643,8 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
   SIM->set_notify_callback (x11_notify_callback, NULL);
 
   // loads keymap for x11
-  if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
+  x11_use_kbd_mapping = SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get();
+  if (x11_use_kbd_mapping) {
     bx_keymap.loadKeymap(convertStringToXKeysym);
   }
 
@@ -655,9 +656,8 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
         x11_nokeyrepeat = 1;
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       } else if (!strcmp(argv[i], "gui_debug")) {
-        void InitDebugDialog();
         SIM->set_debug_gui(1);
-        InitDebugDialog();
+        init_debug_dialog();
 #endif
 #if BX_SHOW_IPS
       } else if (!strcmp(argv[i], "hideIPS")) {
@@ -708,15 +708,9 @@ void set_status_text(int element, const char *text, bx_bool active, bx_bool w)
   }
 }
 
-void bx_x_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
+void bx_x_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_bool w)
 {
-  if (element < 0) {
-    for (unsigned i = 0; i < statusitem_count; i++) {
-      set_status_text(i+1, statusitem_text[i], 0, 0);
-    }
-  } else if ((unsigned)element < statusitem_count) {
-    set_status_text(element+1, statusitem_text[element], active, w);
-  }
+  set_status_text(element+1, statusitem[element].text, active, w);
 }
 
 // This is called whenever the mouse_enabled parameter changes.  It
@@ -1000,20 +994,30 @@ void bx_x_gui_c::handle_events(void)
 
 void send_keyboard_mouse_status(void)
 {
-   BX_DEBUG(("XXX: prev=(%d,%d) curr=(%d,%d)",
-                        prev_x, prev_y, current_x, current_y));
+  int dx, dy, dz;
+  BX_DEBUG(("XXX: prev=(%d,%d) curr=(%d,%d)",
+            prev_x, prev_y, current_x, current_y));
 
+  if (x11_mouse_mode_absxy) {
+    if ((current_y >= bx_headerbar_y) && (current_y < (dimension_y + bx_headerbar_y))) {
+      dx = current_x * 0x7fff / dimension_x;
+      dy = (current_y - bx_headerbar_y) * 0x7fff / dimension_y;
+      dz = current_z;
+      DEV_mouse_motion(dx, dy, dz, mouse_button_state, 1);
+    }
+    prev_x = current_x;
+    prev_y = current_y;
+    return;
+  }
   if (((prev_x!=-1) && (current_x!=-1) && (prev_y!=-1) && (current_y!=-1)) ||
      (current_z != 0)) {
-    int dx, dy, dz;
-
     // (mch) consider warping here
     dx = current_x - prev_x - warp_dx;
     dy = -(current_y - prev_y - warp_dy);
     dz = current_z;
     warp_cursor(warp_home_x-current_x, warp_home_y-current_y);
 
-    DEV_mouse_motion_ext(dx, dy, dz, mouse_button_state);
+    DEV_mouse_motion(dx, dy, dz, mouse_button_state, 0);
     prev_x = current_x;
     prev_y = current_y;
   } else {
@@ -1053,7 +1057,7 @@ void xkeypress(KeySym keysym, int press_release)
   }
 
   /* Old (no mapping) behavior */
-  if (!SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
+  if (!x11_use_kbd_mapping) {
 
     // this depends on the fact that the X11 keysyms which
     // correspond to the ascii characters space .. tilde
@@ -1230,7 +1234,7 @@ void bx_x_gui_c::clear_screen(void)
 
 void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-                      bx_vga_tminfo_t tm_info)
+                      bx_vga_tminfo_t *tm_info)
 {
   Bit8u *old_line, *new_line, *text_base;
   Bit8u cChar;
@@ -1243,10 +1247,10 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   unsigned char cell[64];
   unsigned long text_palette[16];
 
-  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
-  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  blink_mode = (tm_info->blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info->blink_flags & BX_TEXT_BLINK_STATE) > 0;
   if (blink_mode) {
-    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+    if (tm_info->blink_flags & BX_TEXT_BLINK_TOGGLE)
       forceUpdate = 1;
   }
   if (charmap_updated) {
@@ -1254,7 +1258,7 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     for (unsigned c = 0; c<256; c++) {
       if (char_changed[c]) {
         XFreePixmap(bx_x_display, vgafont[c]);
-        bx_bool gfxchar = tm_info.line_graphics && ((c & 0xE0) == 0xC0);
+        bx_bool gfxchar = tm_info->line_graphics && ((c & 0xE0) == 0xC0);
         j = 0;
         memset(cell, 0, sizeof(cell));
         for(i=0; i<font_height*2; i+=2) {
@@ -1283,27 +1287,27 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     charmap_updated = 0;
   }
   for (i=0; i<16; i++) {
-    text_palette[i] = col_vals[DEV_vga_get_actl_pal_idx(i)];
+    text_palette[i] = col_vals[tm_info->actl_palette[i]];
   }
 
-  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
+  if((tm_info->h_panning != h_panning) || (tm_info->v_panning != v_panning)) {
     forceUpdate = 1;
-    h_panning = tm_info.h_panning;
-    v_panning = tm_info.v_panning;
+    h_panning = tm_info->h_panning;
+    v_panning = tm_info->v_panning;
   }
-  if(tm_info.line_compare != line_compare) {
+  if(tm_info->line_compare != line_compare) {
     forceUpdate = 1;
-    line_compare = tm_info.line_compare;
+    line_compare = tm_info->line_compare;
   }
 
   // first invalidate character at previous and new cursor location
   if ((prev_cursor_y < text_rows) && (prev_cursor_x < text_cols)) {
-    curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
+    curs = prev_cursor_y * tm_info->line_offset + prev_cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   }
-  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < font_height) &&
+  if((tm_info->cs_start <= tm_info->cs_end) && (tm_info->cs_start < font_height) &&
      (cursor_y < text_rows) && (cursor_x < text_cols)) {
-    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    curs = cursor_y * tm_info->line_offset + cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   } else {
     curs = 0xffff;
@@ -1313,7 +1317,7 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   if (v_panning) rows++;
   y = 0;
   cs_y = 0;
-  text_base = new_text - tm_info.start_address;
+  text_base = new_text - tm_info->start_address;
   if (line_compare < dimension_y) {
     split_textrow = (line_compare + v_panning) / font_height;
     split_fontrows = ((line_compare + v_panning) % font_height) + 1;
@@ -1359,7 +1363,7 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = cs_y * tm_info.line_offset;
+    offset = cs_y * tm_info->line_offset;
     do {
       if (h_panning) {
         if (hchars > text_cols) {
@@ -1401,21 +1405,21 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
           XSetForeground(bx_x_display, gc, text_palette[new_background]);
           XSetBackground(bx_x_display, gc, text_palette[new_foreground]);
           if (font_row == 0) {
-            yc2 = yc + tm_info.cs_start;
-            font_row2 = tm_info.cs_start;
-            cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            yc2 = yc + tm_info->cs_start;
+            font_row2 = tm_info->cs_start;
+            cfheight2 = tm_info->cs_end - tm_info->cs_start + 1;
             if ((yc2 + cfheight2) > (dimension_y + bx_headerbar_y)) {
               cfheight2 = dimension_y + bx_headerbar_y - yc2;
             }
           } else {
-            if (v_panning > tm_info.cs_start) {
+            if (v_panning > tm_info->cs_start) {
               yc2 = yc;
               font_row2 = font_row;
-              cfheight2 = tm_info.cs_end - v_panning + 1;
+              cfheight2 = tm_info->cs_end - v_panning + 1;
             } else {
-              yc2 = yc + tm_info.cs_start - v_panning;
-              font_row2 = tm_info.cs_start;
-              cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+              yc2 = yc + tm_info->cs_start - v_panning;
+              font_row2 = tm_info->cs_start;
+              cfheight2 = tm_info->cs_end - tm_info->cs_start + 1;
             }
           }
           if (yc2 < (dimension_y + bx_headerbar_y)) {
@@ -1433,18 +1437,18 @@ void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       new_text = text_base;
       forceUpdate = 1;
       cs_y = 0;
-      if (tm_info.split_hpanning) h_panning = 0;
+      if (tm_info->split_hpanning) h_panning = 0;
       rows = ((dimension_y - line_compare + font_height - 2) / font_height) + 1;
       split_screen = 1;
     } else {
       y++;
       cs_y++;
-      new_text = new_line + tm_info.line_offset;
-      old_text = old_line + tm_info.line_offset;
+      new_text = new_line + tm_info->line_offset;
+      old_text = old_line + tm_info->line_offset;
     }
   } while (--rows);
 
-  h_panning = tm_info.h_panning;
+  h_panning = tm_info->h_panning;
   prev_cursor_x = cursor_x;
   prev_cursor_y = cursor_y;
 
@@ -1674,7 +1678,7 @@ bx_bool bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green,
   color.green = green << 8;
   color.blue  = blue << 8;
 
-  if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
+  if (x11_private_colormap) {
     color.pixel = index;
     XStoreColor(bx_x_display, default_cmap, &color);
     return(0); // no screen update needed
@@ -1713,6 +1717,8 @@ void bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsi
     XResizeWindow(bx_x_display, win, x, y+bx_headerbar_y+bx_statusbar_y);
     dimension_x = x;
     dimension_y = y;
+    warp_home_x = x / 2;
+    warp_home_y = y / 2;
   }
 }
 
@@ -1748,7 +1754,7 @@ void bx_x_gui_c::show_headerbar(void)
       XDrawLine(bx_x_display, win, gc_inv, xleft, sb_ypos+1, xleft,
                 sb_ypos+bx_statusbar_y);
       if (i <= statusitem_count) {
-        set_status_text(i, statusitem_text[i-1], bx_statusitem_active[i]);
+        set_status_text(i, statusitem[i-1].text, bx_statusitem_active[i]);
       }
     } else {
       set_status_text(0, bx_status_info_text, 0);
@@ -1844,8 +1850,11 @@ void bx_x_gui_c::exit(void)
     XFreePixmap(bx_x_display,vgafont[i]);
   }
 
+  if (mouse_captured)
+    enable_cursor();
+
   if (bx_x_display)
-    XCloseDisplay (bx_x_display);
+    XCloseDisplay(bx_x_display);
 
   BX_INFO(("Exit"));
 }
@@ -2019,6 +2028,9 @@ void bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
   int event_base, error_base;
 
   Display *dpy = XOpenDisplay(NULL);
+  if (dpy == NULL) {
+    BX_PANIC(("Cannot connect to X display"));
+  }
   Window root = RootWindow(dpy, 0);
 
   if (XRRQueryExtension (dpy, &event_base, &error_base)) {
@@ -2038,12 +2050,18 @@ void bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
   *bpp = 32;
 }
 
+void bx_x_gui_c::set_mouse_mode_absxy(bx_bool mode)
+{
+  x11_mouse_mode_absxy = mode;
+}
+
 #if BX_SHOW_IPS
 void bx_x_gui_c::show_ips(Bit32u ips_count)
 {
   if (x11_mouse_msg_counter == 0) {
     if (!x11_ips_update && !x11_hide_ips) {
-      sprintf(x11_ips_text, "IPS: %3.3fM", ips_count / 1000000.0);
+      ips_count /= 1000;
+      sprintf(x11_ips_text, "IPS: %u.%3.3uM", ips_count / 1000, ips_count % 1000);
       x11_ips_update = 1;
     }
   } else {

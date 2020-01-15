@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: ret_far.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: ret_far.cc 11106 2012-03-25 11:54:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -46,7 +46,7 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
   /* + 0:     IP      | + 0:        EIP | + 0:        RIP */
 
 #if BX_SUPPORT_X86_64
-  if (StackAddrSize64()) temp_RSP = RSP;
+  if (long64_mode()) temp_RSP = RSP;
   else
 #endif
   {
@@ -56,20 +56,20 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
 
 #if BX_SUPPORT_X86_64
   if (i->os64L()) {
-    raw_cs_selector = (Bit16u) read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 8);
-    return_RIP      =          read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP);
+    raw_cs_selector = (Bit16u) stack_read_qword(temp_RSP + 8);
+    return_RIP      =          stack_read_qword(temp_RSP);
     stack_param_offset = 16;
   }
   else
 #endif
   if (i->os32L()) {
-    raw_cs_selector = (Bit16u) read_virtual_dword(BX_SEG_REG_SS, temp_RSP + 4);
-    return_RIP      =          read_virtual_dword(BX_SEG_REG_SS, temp_RSP);
+    raw_cs_selector = (Bit16u) stack_read_dword(temp_RSP + 4);
+    return_RIP      =          stack_read_dword(temp_RSP);
     stack_param_offset = 8;
   }
   else {
-    raw_cs_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 2);
-    return_RIP      = read_virtual_word(BX_SEG_REG_SS, temp_RSP);
+    raw_cs_selector = stack_read_word(temp_RSP + 2);
+    return_RIP      = stack_read_word(temp_RSP);
     stack_param_offset = 4;
   }
 
@@ -106,7 +106,7 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
     branch_far64(&cs_selector, &cs_descriptor, return_RIP, CPL);
 
 #if BX_SUPPORT_X86_64
-    if (StackAddrSize64())
+    if (long64_mode())
       RSP += stack_param_offset + pop_bytes;
     else
 #endif
@@ -132,18 +132,18 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
 
 #if BX_SUPPORT_X86_64
     if (i->os64L()) {
-      raw_ss_selector = read_virtual_word_64(BX_SEG_REG_SS, temp_RSP + 24 + pop_bytes);
-      return_RSP      = read_virtual_qword_64(BX_SEG_REG_SS, temp_RSP + 16 + pop_bytes);
+      raw_ss_selector = stack_read_word(temp_RSP + 24 + pop_bytes);
+      return_RSP      = stack_read_qword(temp_RSP + 16 + pop_bytes);
     }
     else
 #endif
     if (i->os32L()) {
-      raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 12 + pop_bytes);
-      return_RSP      = read_virtual_dword(BX_SEG_REG_SS, temp_RSP +  8 + pop_bytes);
+      raw_ss_selector = stack_read_word(temp_RSP + 12 + pop_bytes);
+      return_RSP      = stack_read_dword(temp_RSP + 8 + pop_bytes);
     }
     else {
-      raw_ss_selector = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 6 + pop_bytes);
-      return_RSP      = read_virtual_word(BX_SEG_REG_SS, temp_RSP + 4 + pop_bytes);
+      raw_ss_selector = stack_read_word(temp_RSP + 6 + pop_bytes);
+      return_RSP      = stack_read_word(temp_RSP + 4 + pop_bytes);
     }
 
     /* selector index must be within its descriptor table limits,
@@ -213,7 +213,7 @@ BX_CPU_C::return_protected(bxInstruction_c *i, Bit16u pop_bytes)
       load_null_selector(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS], raw_ss_selector);
     }
 
-    if (StackAddrSize64())
+    if (long64_mode())
       RSP = return_RSP + pop_bytes;
     else
 #endif

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.cc 10714 2011-10-01 07:24:18Z sshwarts $
+// $Id: win32dialog.cc 11127 2012-04-06 13:15:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -367,21 +367,25 @@ void SetAdvancedLogOptions(HWND hDlg)
   }
 }
 
-void InitLogOptionsDialog(HWND hDlg)
+void InitLogOptionsDialog(HWND hDlg, BOOL advanced)
 {
   int idx, mod;
-  char prefix[8];
+  char name[32];
 
   for (mod=0; mod<SIM->get_n_log_modules(); mod++) {
-    if (strcmp(SIM->get_prefix(mod), "[     ]")) {
-      lstrcpyn(prefix, SIM->get_prefix(mod), sizeof(prefix));
-      lstrcpy(prefix, prefix+1);
-      prefix[5] = 0;
-      idx = SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_ADDSTRING, 0, (LPARAM)prefix);
+    if (lstrcmp(SIM->get_logfn_name(mod), "?")) {
+      lstrcpyn(name, SIM->get_logfn_name(mod), 32);
+      idx = SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_ADDSTRING, 0, (LPARAM)name);
       SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_SETITEMDATA, idx, mod);
     }
   }
-  SetStandardLogOptions(hDlg);
+  if (advanced) {
+    SendMessage(GetDlgItem(hDlg, IDADVLOGOPT), BM_SETCHECK, BST_CHECKED, 0);
+    SendMessage(GetDlgItem(hDlg, IDDEVLIST), LB_SETCURSEL, 0, 0);
+    SetAdvancedLogOptions(hDlg);
+  } else {
+    SetStandardLogOptions(hDlg);
+  }
 }
 
 void ApplyLogOptions(HWND hDlg, BOOL advanced)
@@ -394,7 +398,7 @@ void ApplyLogOptions(HWND hDlg, BOOL advanced)
     for (level=0; level<N_LOGLEV; level++) {
       idx = SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_GETCURSEL, 0, 0);
       value = SendMessage(GetDlgItem(hDlg, IDLOGEVT1+level), CB_GETITEMDATA, idx, 0);
-      SIM->set_log_action (mod, level, value);
+      SIM->set_log_action(mod, level, value);
     }
     EnableWindow(GetDlgItem(hDlg, IDDEVLIST), TRUE);
   } else {
@@ -420,8 +424,9 @@ static BOOL CALLBACK LogOptDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
 
   switch (msg) {
     case WM_INITDIALOG:
-      InitLogOptionsDialog(hDlg);
-      advanced = FALSE;
+      advanced = (BOOL)lParam;
+      SIM->apply_log_actions_by_device(); // settings from bochsrc
+      InitLogOptionsDialog(hDlg, advanced);
       changed = FALSE;
       EnableWindow(GetDlgItem(hDlg, IDAPPLY), FALSE);
       return TRUE;
@@ -487,9 +492,75 @@ static BOOL CALLBACK LogOptDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lP
   return FALSE;
 }
 
-void LogOptionsDialog(HWND hwnd)
+void LogOptionsDialog(HWND hwnd, bx_bool runtime)
 {
-  DialogBox(NULL, MAKEINTRESOURCE(LOGOPT_DLG), hwnd, (DLGPROC)LogOptDlgProc);
+  DialogBoxParam(NULL, MAKEINTRESOURCE(LOGOPT_DLG), hwnd, (DLGPROC)LogOptDlgProc, (LPARAM)runtime);
+}
+
+static BOOL CALLBACK PluginCtrlDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+  int count, i;
+  long code;
+  bx_list_c *plugin_ctrl;
+  char plugname[20], message[80];
+
+  switch (msg) {
+    case WM_INITDIALOG:
+      plugin_ctrl = (bx_list_c*) SIM->get_param(BXPN_PLUGIN_CTRL);
+      count = plugin_ctrl->get_size();
+      for (i = 0; i < count; i++) {
+        SendMessage(GetDlgItem(hDlg, IDPLUGLIST), LB_ADDSTRING, 0, (LPARAM)plugin_ctrl->get(i)->get_name());
+      }
+      EnableWindow(GetDlgItem(hDlg, IDLOAD), FALSE);
+      EnableWindow(GetDlgItem(hDlg, IDUNLOAD), FALSE);
+      return TRUE;
+    case WM_CLOSE:
+      EndDialog(hDlg, 0);
+      break;
+    case WM_COMMAND:
+      code = HIWORD(wParam);
+      switch (LOWORD(wParam)) {
+        case IDPLUGLIST:
+          if (code == LBN_SELCHANGE) {
+            EnableWindow(GetDlgItem(hDlg, IDUNLOAD), TRUE);
+          }
+          break;
+        case IDEDIT:
+          if (code == EN_CHANGE) {
+            i = GetWindowTextLength(GetDlgItem(hDlg, IDEDIT));
+            EnableWindow(GetDlgItem(hDlg, IDLOAD), i > 0);
+          }
+          break;
+        case IDLOAD:
+          GetDlgItemText(hDlg, IDEDIT, plugname, 18);
+          if (SIM->opt_plugin_ctrl(plugname, 1)) {
+            wsprintf(message, "Plugin '%s' loaded", plugname);
+            MessageBox(hDlg, message, "Plugin Control", MB_ICONINFORMATION);
+            SendMessage(GetDlgItem(hDlg, IDPLUGLIST), LB_ADDSTRING, 0, (LPARAM)plugname);
+          }
+          break;
+        case IDUNLOAD:
+          i = SendMessage(GetDlgItem(hDlg, IDPLUGLIST), LB_GETCURSEL, 0, 0);
+          SendMessage(GetDlgItem(hDlg, IDPLUGLIST), LB_GETTEXT, i, (LPARAM)plugname);
+          if (SIM->opt_plugin_ctrl(plugname, 0)) {
+            wsprintf(message, "Plugin '%s' unloaded", plugname);
+            MessageBox(hDlg, message, "Plugin Control", MB_ICONINFORMATION);
+            SendMessage(GetDlgItem(hDlg, IDPLUGLIST), LB_DELETESTRING, i, 0);
+            EnableWindow(GetDlgItem(hDlg, IDUNLOAD), FALSE);
+          }
+          break;
+        case IDOK:
+          EndDialog(hDlg, 1);
+          break;
+      }
+      break;
+  }
+  return FALSE;
+}
+
+void PluginCtrlDialog(HWND hwnd)
+{
+  DialogBox(NULL, MAKEINTRESOURCE(PLUGIN_CTRL_DLG), hwnd, (DLGPROC)PluginCtrlDlgProc);
 }
 
 typedef struct {
@@ -498,8 +569,9 @@ typedef struct {
 } edit_opts_t;
 
 edit_opts_t start_options[] = {
+  {"Plugin Control", "#plugins"},
   {"Logfile", "log"},
-  {"Log Options", "*"},
+  {"Log Options", "#logopts"},
   {"CPU", "cpu"},
 #if BX_CPU_LEVEL >= 4
   {"CPUID", "cpuid"},
@@ -524,7 +596,7 @@ edit_opts_t runtime_options[] = {
   {"CD-ROM", BXPN_MENU_RUNTIME_CDROM},
   {"USB", BXPN_MENU_RUNTIME_USB},
   {"Misc", BXPN_MENU_RUNTIME_MISC},
-  {"Log Options", "*"},
+  {"Log Options", "#logopts"},
   {NULL, NULL}
 };
 static BOOL CALLBACK MainMenuDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -566,7 +638,12 @@ static BOOL CALLBACK MainMenuDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
       SetFocus(GetDlgItem(hDlg, choice));
       return FALSE;
     case WM_CLOSE:
-      EndDialog(hDlg, -1);
+      if (runtime) {
+        EndDialog(hDlg, 1);
+      } else {
+        bx_user_quit = 1;
+        EndDialog(hDlg, -1);
+      }
       break;
     case WM_COMMAND:
       code = HIWORD(wParam);
@@ -606,14 +683,20 @@ static BOOL CALLBACK MainMenuDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
           } else {
             pname = start_options[i].param;
           }
-          if (lstrcmp(pname, "*")) {
+          if (pname[0] != '#') {
             if (((bx_list_c*)SIM->get_param(pname))->get_size() > 0) {
               win32ParamDialog(hDlg, pname);
             } else {
               MessageBox(hDlg, "Nothing to configure in this section", "Warning", MB_ICONEXCLAMATION);
             }
           } else {
-            LogOptionsDialog(hDlg);
+            if (!lstrcmp(pname, "#logopts")) {
+              LogOptionsDialog(hDlg, runtime);
+            } else if (!lstrcmp(pname, "#plugins")) {
+              PluginCtrlDialog(hDlg);
+            } else {
+              MessageBox(hDlg, "Unknown keyword", "Warning", MB_ICONEXCLAMATION);
+            }
           }
           break;
         case IDRESETCFG:
@@ -637,6 +720,11 @@ static BOOL CALLBACK MainMenuDlgProc(HWND hDlg, UINT msg, WPARAM wParam, LPARAM 
           EndDialog(hDlg, 1);
           break;
         case IDCANCEL:
+          if (runtime) {
+            EndDialog(hDlg, 1);
+            break;
+          }
+        case IDQUIT:
           bx_user_quit = 1;
           EndDialog(hDlg, -1);
           break;

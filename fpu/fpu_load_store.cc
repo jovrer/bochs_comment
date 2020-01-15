@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_load_store.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: fpu_load_store.cc 11313 2012-08-05 13:52:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003-2009 Stanislav Shwartsman
+//   Copyright (c) 2003-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -49,7 +49,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_STi(bxInstruction_c *i)
 
   floatx80 sti_reg = floatx80_default_nan;
 
-  if (IS_TAG_EMPTY(i->rm()))
+  if (IS_TAG_EMPTY(i->src()))
   {
     FPU_exception(FPU_EX_Stack_Underflow);
 
@@ -57,7 +57,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FLD_STi(bxInstruction_c *i)
       BX_NEXT_INSTR(i);
   }
   else {
-    sti_reg = BX_READ_FPU_REG(i->rm());
+    sti_reg = BX_READ_FPU_REG(i->src());
   }
 
   BX_CPU_THIS_PTR the_i387.FPU_push();
@@ -273,20 +273,19 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_STi(bxInstruction_c *i)
   BX_CPU_THIS_PTR prepareFPU(i);
   FPU_update_last_instruction(i);
 
-  int pop_stack = i->nnn() & 1;
-  // handle special case of FSTP opcode @ 0xDF 0xD0..D7
-  if (i->b1() == 0xdf)
-    pop_stack = 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FSTP_STi)
+      pop_stack = 1;
 
   clear_C1();
 
   if (IS_TAG_EMPTY(0)) {
-    FPU_stack_underflow(i->rm(), pop_stack);
+    FPU_stack_underflow(i->dst(), pop_stack);
   }
   else {
     floatx80 st0_reg = BX_READ_FPU_REG(0);
 
-    BX_WRITE_FPU_REG(st0_reg, i->rm());
+    BX_WRITE_FPU_REG(st0_reg, i->dst());
     if (pop_stack)
       BX_CPU_THIS_PTR the_i387.FPU_pop();
   }
@@ -308,7 +307,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_SINGLE_REAL(bxInstruction_c *i
 
   float32 save_reg = float32_default_nan; /* The masked response */
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FSTP_SINGLE_REAL)
+      pop_stack = 1;
 
   if (IS_TAG_EMPTY(0))
   {
@@ -354,7 +355,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FST_DOUBLE_REAL(bxInstruction_c *i
 
   float64 save_reg = float64_default_nan; /* The masked response */
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FSTP_DOUBLE_REAL)
+      pop_stack = 1;
 
   if (IS_TAG_EMPTY(0))
   {
@@ -431,7 +434,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_WORD_INTEGER(bxInstruction_c 
 
   Bit16s save_reg = int16_indefinite;
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FISTP_WORD_INTEGER)
+      pop_stack = 1;
 
   clear_C1();
 
@@ -477,7 +482,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FIST_DWORD_INTEGER(bxInstruction_c
 
   Bit32s save_reg = int32_indefinite; /* The masked response */
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FISTP_DWORD_INTEGER)
+      pop_stack = 1;
 
   clear_C1();
 

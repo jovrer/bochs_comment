@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: atom_n270.cc 10725 2011-10-07 19:32:44Z sshwarts $
+// $Id: atom_n270.cc 11217 2012-06-14 18:56:47Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -32,11 +32,8 @@
 
 atom_n270_t::atom_n270_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 {
-#if BX_SUPPORT_SMP
-  nthreads = SIM->get_param_num(BXPN_CPU_NTHREADS)->get();
-  ncores = SIM->get_param_num(BXPN_CPU_NCORES)->get();
-  nprocessors = SIM->get_param_num(BXPN_CPU_NPROCESSORS)->get();
-#endif
+  if (! BX_SUPPORT_MONITOR_MWAIT)
+    BX_INFO(("WARNING: MONITOR/MWAIT support is not compiled in !"));
 }
 
 void atom_n270_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -58,7 +55,7 @@ void atom_n270_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_func
     get_ext_cpuid_brand_string_leaf(function, leaf);
     return;
   case 0x80000005:
-    get_ext_cpuid_leaf_5(leaf);
+    get_reserved_leaf(leaf);
     return;
   case 0x80000006:
     get_ext_cpuid_leaf_6(leaf);
@@ -79,7 +76,7 @@ void atom_n270_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_func
     get_std_cpuid_leaf_2(leaf);
     return;
   case 0x00000003:
-    get_std_cpuid_leaf_3(leaf);
+    get_reserved_leaf(leaf);
     return;
   case 0x00000004:
     get_std_cpuid_leaf_4(subfunction, leaf);
@@ -180,11 +177,7 @@ void atom_n270_t::get_std_cpuid_leaf_1(cpuid_function_t *leaf) const
   //   [23:16] Number of logical processors in one physical processor
   //   [31:24] Local Apic ID
 
-#if BX_SUPPORT_SMP
   unsigned n_logical_processors = ncores*nthreads;
-#else
-  unsigned n_logical_processors = 1;
-#endif
   leaf->ebx = ((CACHE_LINE_SIZE / 8) << 8) |
               (n_logical_processors << 16);
 #if BX_SUPPORT_APIC
@@ -317,15 +310,7 @@ void atom_n270_t::get_std_cpuid_leaf_2(cpuid_function_t *leaf) const
   leaf->edx = 0x00000000;
 }
 
-// leaf 0x00000003 //
-void atom_n270_t::get_std_cpuid_leaf_3(cpuid_function_t *leaf) const
-{
-  // CPUID function 0x00000003 - Processor Serial Number
-  leaf->eax = 0;
-  leaf->ebx = 0;
-  leaf->ecx = 0;
-  leaf->edx = 0;
-}
+// leaf 0x00000003 - Processor Serial Number (not supported) //
 
 // leaf 0x00000004 //
 void atom_n270_t::get_std_cpuid_leaf_4(Bit32u subfunction, cpuid_function_t *leaf) const
@@ -536,15 +521,7 @@ void atom_n270_t::get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_functio
 #endif
 }
 
-// leaf 0x80000005 //
-void atom_n270_t::get_ext_cpuid_leaf_5(cpuid_function_t *leaf) const
-{
-  // CPUID function 0x800000005 - L1 Cache and TLB Identifiers
-  leaf->eax = 0;
-  leaf->ebx = 0;
-  leaf->ecx = 0; // reserved for Intel
-  leaf->edx = 0;
-}
+// leaf 0x80000005 - L1 Cache and TLB Identifiers (reserved for Intel)
 
 // leaf 0x80000006 //
 void atom_n270_t::get_ext_cpuid_leaf_6(cpuid_function_t *leaf) const

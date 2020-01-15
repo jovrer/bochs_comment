@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.cc 10909 2011-12-31 13:04:21Z vruppert $
+// $Id: devices.cc 11349 2012-08-20 07:35:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -43,7 +43,7 @@ bx_devices_c bx_devices;
 // constructor for bx_devices_c
 bx_devices_c::bx_devices_c()
 {
-  put("DEV");
+  put("devices", "DEV");
 
   read_port_to_handler = NULL;
   write_port_to_handler = NULL;
@@ -79,7 +79,6 @@ void bx_devices_c::init_stubs()
   pluginVgaDevice = &stubVga;
   pluginPicDevice = &stubPic;
   pluginHardDrive = &stubHardDrive;
-  pluginNE2kDevice =&stubNE2k;
   pluginSpeaker = &stubSpeaker;
 #if BX_SUPPORT_IODEBUG
   pluginIODebug = &stubIODebug;
@@ -106,13 +105,8 @@ void bx_devices_c::init(BX_MEM_C *newmem)
   unsigned i;
   const char def_name[] = "Default";
   const char *vga_ext;
-  bx_list_c *plugin_ctrl;
-  bx_param_bool_c *plugin;
-#if !BX_PLUGINS
-  const char *plugname;
-#endif
 
-  BX_DEBUG(("Init $Id: devices.cc 10909 2011-12-31 13:04:21Z vruppert $"));
+  BX_DEBUG(("Init $Id: devices.cc 11349 2012-08-20 07:35:30Z vruppert $"));
   mem = newmem;
 
   /* set builtin default handlers, will be overwritten by the real default handler */
@@ -166,174 +160,65 @@ void bx_devices_c::init(BX_MEM_C *newmem)
   // "by hand" in this file.  Basically, we're using core plugins when we
   // want to control the init order.
   //
-  PLUG_load_plugin(cmos, PLUGTYPE_CORE);
-  PLUG_load_plugin(dma, PLUGTYPE_CORE);
-  PLUG_load_plugin(pic, PLUGTYPE_CORE);
-  PLUG_load_plugin(pit, PLUGTYPE_CORE);
-  PLUG_load_plugin(vga, PLUGTYPE_CORE);
   PLUG_load_plugin(hdimage, PLUGTYPE_CORE);
-  PLUG_load_plugin(floppy, PLUGTYPE_CORE);
-#if BX_SUPPORT_SOUNDLOW
-  PLUG_load_plugin(soundmod, PLUGTYPE_CORE);
-#endif
 #if BX_NETWORKING
-  PLUG_load_plugin(netmod, PLUGTYPE_CORE);
+  network_enabled = is_network_enabled();
+  if (network_enabled)
+    PLUG_load_plugin(netmod, PLUGTYPE_CORE);
 #endif
-
+#if BX_SUPPORT_SOUNDLOW
+  sound_enabled = is_sound_enabled();
+  if (sound_enabled)
+    PLUG_load_plugin(soundmod, PLUGTYPE_CORE);
+#endif
   // PCI logic (i440FX)
   if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
 #if BX_SUPPORT_PCI
     PLUG_load_plugin(pci, PLUGTYPE_CORE);
     PLUG_load_plugin(pci2isa, PLUGTYPE_CORE);
 #if BX_SUPPORT_PCIUSB
-    PLUG_load_plugin(usb_common, PLUGTYPE_CORE);
+    usb_enabled = is_usb_enabled();
+    if (usb_enabled)
+      PLUG_load_plugin(usb_common, PLUGTYPE_CORE);
 #endif
-    PLUG_load_plugin(acpi, PLUGTYPE_OPTIONAL);
+    PLUG_load_plugin(acpi, PLUGTYPE_STANDARD);
 #else
     BX_ERROR(("Bochs is not compiled with PCI support"));
 #endif
   }
-
-  // optional plugins not controlled by separate option
-  plugin_ctrl = (bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL);
-  for (i = 0; i < (unsigned)plugin_ctrl->get_size(); i++) {
-    plugin = (bx_param_bool_c*)(plugin_ctrl->get(i));
-    if (plugin->get()) {
-#if BX_PLUGINS
-      PLUG_load_opt_plugin(plugin->get_name());
+  PLUG_load_plugin(cmos, PLUGTYPE_CORE);
+  PLUG_load_plugin(dma, PLUGTYPE_CORE);
+  PLUG_load_plugin(pic, PLUGTYPE_CORE);
+  PLUG_load_plugin(pit, PLUGTYPE_CORE);
+  PLUG_load_plugin(floppy, PLUGTYPE_CORE);
+  vga_ext = SIM->get_param_string(BXPN_VGA_EXTENSION)->getptr();
+  if (!strcmp(vga_ext, "cirrus")) {
+#if BX_SUPPORT_CLGD54XX
+    PLUG_load_plugin(svga_cirrus, PLUGTYPE_CORE);
 #else
-      // workaround in case of plugins disabled
-      plugname = plugin->get_name();
-      if (!strcmp(plugname, BX_PLUGIN_UNMAPPED)) {
-        PLUG_load_plugin(unmapped, PLUGTYPE_OPTIONAL);
-      }
-      else if (!strcmp(plugname, BX_PLUGIN_BIOSDEV)) {
-        PLUG_load_plugin(biosdev, PLUGTYPE_OPTIONAL);
-      }
-      else if (!strcmp(plugname, BX_PLUGIN_SPEAKER)) {
-        PLUG_load_plugin(speaker, PLUGTYPE_OPTIONAL);
-      }
-      else if (!strcmp(plugname, BX_PLUGIN_EXTFPUIRQ)) {
-        PLUG_load_plugin(extfpuirq, PLUGTYPE_OPTIONAL);
-      }
-#if BX_SUPPORT_GAMEPORT
-      else if (!strcmp(plugname, BX_PLUGIN_GAMEPORT)) {
-        PLUG_load_plugin(gameport, PLUGTYPE_OPTIONAL);
-      }
+    BX_ERROR(("Bochs is not compiled with Cirrus support"));
 #endif
-#if BX_SUPPORT_IODEBUG
-      else if (!strcmp(plugname, BX_PLUGIN_IODEBUG)) {
-        PLUG_load_plugin(iodebug, PLUGTYPE_OPTIONAL);
-      }
-#endif
-#endif
-    }
+  } else {
+    PLUG_load_plugin(vga, PLUGTYPE_CORE);
   }
 
 #if BX_SUPPORT_APIC
-  PLUG_load_plugin(ioapic, PLUGTYPE_OPTIONAL);
+  PLUG_load_plugin(ioapic, PLUGTYPE_STANDARD);
 #endif
-  PLUG_load_plugin(keyboard, PLUGTYPE_OPTIONAL);
+  PLUG_load_plugin(keyboard, PLUGTYPE_STANDARD);
 #if BX_SUPPORT_BUSMOUSE
   if (mouse_type == BX_MOUSE_TYPE_BUS) {
     PLUG_load_plugin(busmouse, PLUGTYPE_OPTIONAL);
   }
 #endif
   if (is_harddrv_enabled()) {
-    PLUG_load_plugin(harddrv, PLUGTYPE_OPTIONAL);
+    PLUG_load_plugin(harddrv, PLUGTYPE_STANDARD);
 #if BX_SUPPORT_PCI
     if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-      PLUG_load_plugin(pci_ide, PLUGTYPE_OPTIONAL);
+      PLUG_load_plugin(pci_ide, PLUGTYPE_STANDARD);
     }
 #endif
   }
-  if (is_serial_enabled())
-    PLUG_load_plugin(serial, PLUGTYPE_OPTIONAL);
-  if (is_parallel_enabled())
-    PLUG_load_plugin(parallel, PLUGTYPE_OPTIONAL);
-
-#if BX_SUPPORT_PCI
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    vga_ext = SIM->get_param_string(BXPN_VGA_EXTENSION)->getptr();
-    if ((DEV_is_pci_device("pcivga")) &&
-        ((!strlen(vga_ext)) || (!strcmp(vga_ext, "none")) || (!strcmp(vga_ext, "vbe")))) {
-      PLUG_load_plugin(pcivga, PLUGTYPE_OPTIONAL);
-    }
-#if BX_SUPPORT_USB_UHCI
-    if (is_usb_uhci_enabled()) {
-      PLUG_load_plugin(usb_uhci, PLUGTYPE_OPTIONAL);
-    }
-#endif
-#if BX_SUPPORT_USB_OHCI
-    if (is_usb_ohci_enabled()) {
-      PLUG_load_plugin(usb_ohci, PLUGTYPE_OPTIONAL);
-    }
-#endif
-#if BX_SUPPORT_USB_XHCI
-    if (is_usb_xhci_enabled()) {
-      PLUG_load_plugin(usb_xhci, PLUGTYPE_OPTIONAL);
-    }
-#endif
-#if BX_SUPPORT_PCIDEV
-    if (SIM->get_param_num(BXPN_PCIDEV_VENDOR)->get() != 0xffff) {
-      PLUG_load_plugin(pcidev, PLUGTYPE_OPTIONAL);
-    }
-#endif
-#if BX_SUPPORT_PCIPNIC
-    if (SIM->get_param_bool(BXPN_PNIC_ENABLED)->get()) {
-      PLUG_load_plugin(pcipnic, PLUGTYPE_OPTIONAL);
-    }
-#endif
-  }
-#endif
-
-  // NE2000 NIC
-  if (SIM->get_param_bool(BXPN_NE2K_ENABLED)->get()) {
-#if BX_SUPPORT_NE2K
-    PLUG_load_plugin(ne2k, PLUGTYPE_OPTIONAL);
-#else
-    BX_ERROR(("Bochs is not compiled with NE2K support"));
-#endif
-  }
-
-  //--- SOUND ---
-  if (SIM->get_param_bool(BXPN_SB16_ENABLED)->get()) {
-#if BX_SUPPORT_SB16
-    PLUG_load_plugin(sb16, PLUGTYPE_OPTIONAL);
-#else
-    BX_ERROR(("Bochs is not compiled with SB16 support"));
-#endif
-  }
-  if (SIM->get_param_bool(BXPN_ES1370_ENABLED)->get()) {
-#if BX_SUPPORT_ES1370
-    PLUG_load_plugin(es1370, PLUGTYPE_OPTIONAL);
-#else
-    BX_ERROR(("Bochs is not compiled with ES1370 support"));
-#endif
-  }
-
-  // CMOS RAM & RTC
-  pluginCmosDevice->init();
-
-  /*--- 8237 DMA ---*/
-  pluginDmaDevice->init();
-
-  //--- FLOPPY ---
-  pluginFloppyDevice->init();
-
-#if BX_SUPPORT_PCI
-  pluginPciBridge->init();
-  pluginPci2IsaBridge->init();
-#endif
-
-  /*--- VGA adapter ---*/
-  pluginVgaDevice->init();
-
-  /*--- 8259A PIC ---*/
-  pluginPicDevice->init();
-
-  /*--- 82C54 PIT ---*/
-  pluginPitDevice->init();
 
   // system hardware
   register_io_read_handler(this, &read_handler, 0x0092,
@@ -387,38 +272,12 @@ void bx_devices_c::init(BX_MEM_C *newmem)
 void bx_devices_c::reset(unsigned type)
 {
   mem->disable_smram();
-#if BX_SUPPORT_PCI
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    pluginPciBridge->reset(type);
-    pluginPci2IsaBridge->reset(type);
-  }
-#endif
-  pluginCmosDevice->reset(type);
-  pluginDmaDevice->reset(type);
-  pluginFloppyDevice->reset(type);
-  pluginVgaDevice->reset(type);
-  pluginPicDevice->reset(type);
-  pluginPitDevice->reset(type);
-  // now reset optional plugins
   bx_reset_plugins(type);
 }
 
 void bx_devices_c::register_state()
 {
   bx_virt_timer.register_state();
-#if BX_SUPPORT_PCI
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    pluginPciBridge->register_state();
-    pluginPci2IsaBridge->register_state();
-  }
-#endif
-  pluginCmosDevice->register_state();
-  pluginDmaDevice->register_state();
-  pluginFloppyDevice->register_state();
-  pluginVgaDevice->register_state();
-  pluginPicDevice->register_state();
-  pluginPitDevice->register_state();
-  // now register state of optional plugins
   bx_plugins_register_state();
 }
 
@@ -426,14 +285,6 @@ void bx_devices_c::after_restore_state()
 {
   bx_slowdown_timer.after_restore_state();
   bx_virt_timer.set_realtime_delay();
-#if BX_SUPPORT_PCI
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    pluginPciBridge->after_restore_state();
-    pluginPci2IsaBridge->after_restore_state();
-  }
-#endif
-  pluginCmosDevice->after_restore_state();
-  pluginVgaDevice->after_restore_state();
   bx_plugins_after_restore_state();
 }
 
@@ -465,27 +316,20 @@ void bx_devices_c::exit()
 
   // unload optional and user plugins first
   bx_unload_plugins();
-
-  PLUG_unload_plugin(pit);
-  PLUG_unload_plugin(cmos);
-  PLUG_unload_plugin(dma);
-  PLUG_unload_plugin(pic);
-  PLUG_unload_plugin(vga);
-  PLUG_unload_plugin(floppy);
-#if BX_SUPPORT_SOUNDLOW
-  PLUG_unload_plugin(soundmod);
-#endif
-#if BX_NETWORKING
-  PLUG_unload_plugin(netmod);
-#endif
-#if BX_SUPPORT_PCI
-  PLUG_unload_plugin(pci);
-  PLUG_unload_plugin(pci2isa);
-#if BX_SUPPORT_PCIUSB
-  PLUG_unload_plugin(usb_common);
-#endif
-#endif
+  bx_unload_core_plugins();
   PLUG_unload_plugin(hdimage);
+#if BX_NETWORKING
+  if (network_enabled)
+    PLUG_unload_plugin(netmod);
+#endif
+#if BX_SUPPORT_SOUNDLOW
+  if (sound_enabled)
+    PLUG_unload_plugin(soundmod);
+#endif
+#if BX_SUPPORT_PCIUSB
+  if (usb_enabled)
+    PLUG_unload_plugin(usb_common);
+#endif
   init_stubs();
 }
 
@@ -1051,49 +895,30 @@ bx_bool bx_devices_c::is_harddrv_enabled(void)
   return 0;
 }
 
-bx_bool bx_devices_c::is_serial_enabled(void)
+bx_bool bx_devices_c::is_network_enabled(void)
 {
-  char pname[24];
-
-  for (int i=0; i<BX_N_SERIAL_PORTS; i++) {
-    sprintf(pname, "ports.serial.%d.enabled", i+1);
-    if (SIM->get_param_bool(pname)->get())
-      return 1;
-  }
-  return 0;
-}
-
-bx_bool bx_devices_c::is_parallel_enabled(void)
-{
-  char pname[26];
-
-  for (int i=0; i<BX_N_PARALLEL_PORTS; i++) {
-    sprintf(pname, "ports.parallel.%d.enabled", i+1);
-    if (SIM->get_param_bool(pname)->get())
-      return 1;
-  }
-  return 0;
-}
-
-bx_bool bx_devices_c::is_usb_ohci_enabled(void)
-{
-  if (SIM->get_param_bool(BXPN_OHCI_ENABLED)->get()) {
+  if (PLUG_device_present("e1000") ||
+      PLUG_device_present("ne2k") ||
+      PLUG_device_present("pcipnic")) {
     return 1;
   }
   return 0;
 }
 
-bx_bool bx_devices_c::is_usb_uhci_enabled(void)
+bx_bool bx_devices_c::is_sound_enabled(void)
 {
-  if (SIM->get_param_bool(BXPN_UHCI_ENABLED)->get()) {
+  if (PLUG_device_present("es1370") ||
+      PLUG_device_present("sb16")) {
     return 1;
   }
   return 0;
 }
 
-bx_bool bx_devices_c::is_usb_xhci_enabled(void)
+bx_bool bx_devices_c::is_usb_enabled(void)
 {
-  if (SIM->get_param_bool(BXPN_XHCI_ENABLED)->get()) {
+  if (PLUG_device_present("usb_ohci") ||
+      PLUG_device_present("usb_uhci") ||
+      PLUG_device_present("usb_xhci")) {
     return 1;
   }
   return 0;
@@ -1168,7 +993,7 @@ void bx_devices_c::mouse_enabled_changed(bx_bool enabled)
   }
 }
 
-void bx_devices_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_devices_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy)
 {
   // If mouse events are disabled on the GUI headerbar, don't
   // generate any mouse data
@@ -1177,13 +1002,13 @@ void bx_devices_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned 
 
   // if a removable mouse is connected, redirect mouse data to the device
   if (bx_mouse[1].dev != NULL) {
-    bx_mouse[1].enq_event(bx_mouse[1].dev, delta_x, delta_y, delta_z, button_state);
+    bx_mouse[1].enq_event(bx_mouse[1].dev, delta_x, delta_y, delta_z, button_state, absxy);
     return;
   }
 
   // if a mouse is connected, direct mouse data to the device
   if (bx_mouse[0].dev != NULL) {
-    bx_mouse[0].enq_event(bx_mouse[0].dev, delta_x, delta_y, delta_z, button_state);
+    bx_mouse[0].enq_event(bx_mouse[0].dev, delta_x, delta_y, delta_z, button_state, absxy);
   }
 }
 
@@ -1191,7 +1016,7 @@ void bx_pci_device_stub_c::register_pci_state(bx_list_c *list)
 {
   char name[6];
 
-  bx_list_c *pci = new bx_list_c(list, "pci_conf", 256);
+  bx_list_c *pci = new bx_list_c(list, "pci_conf");
   for (unsigned i=0; i<256; i++) {
     sprintf(name, "0x%02x", i);
     new bx_shadow_num_c(pci, name, &pci_conf[i], BASE_HEX);

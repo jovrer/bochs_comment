@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: iodev.h 11349 2012-08-20 07:35:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -37,11 +37,14 @@
 /* size of internal buffer for mouse devices */
 #define BX_MOUSE_BUFF_SIZE 48
 
+/* maximum size of the ISA DMA buffer */
+#define BX_DMA_BUFFER_SIZE 512
+
 typedef Bit32u (*bx_read_handler_t)(void *, Bit32u, unsigned);
 typedef void   (*bx_write_handler_t)(void *, Bit32u, Bit32u, unsigned);
 
 typedef bx_bool (*bx_keyb_enq_t)(void *, Bit8u *);
-typedef void (*bx_mouse_enq_t)(void *, int, int, int, unsigned);
+typedef void (*bx_mouse_enq_t)(void *, int, int, int, unsigned, bx_bool);
 typedef void (*bx_mouse_enabled_changed_t)(void *, bx_bool);
 
 #if BX_USE_DEV_SMF
@@ -68,7 +71,7 @@ class BOCHSAPI bx_devmodel_c : public logfunctions {
   virtual void register_state(void) {}
   virtual void after_restore_state(void) {}
 #if BX_DEBUGGER
-  virtual void debug_dump(void) {}
+  virtual void debug_dump(int argc, char **argv) {}
 #endif
 };
 
@@ -192,16 +195,16 @@ class BOCHSAPI bx_dma_stub_c : public bx_devmodel_c {
 public:
   virtual unsigned registerDMA8Channel(
     unsigned channel,
-    void (* dmaRead)(Bit8u *data_byte),
-    void (* dmaWrite)(Bit8u *data_byte),
+    Bit16u (* dmaRead)(Bit8u *data_byte, Bit16u maxlen),
+    Bit16u (* dmaWrite)(Bit8u *data_byte, Bit16u maxlen),
     const char *name)
   {
     STUBFUNC(dma, registerDMA8Channel); return 0;
   }
   virtual unsigned registerDMA16Channel(
     unsigned channel,
-    void (* dmaRead)(Bit16u *data_word),
-    void (* dmaWrite)(Bit16u *data_word),
+    Bit16u (* dmaRead)(Bit16u *data_word, Bit16u maxlen),
+    Bit16u (* dmaWrite)(Bit16u *data_word, Bit16u maxlen),
     const char *name)
   {
     STUBFUNC(dma, registerDMA16Channel); return 0;
@@ -261,14 +264,11 @@ public:
     STUBFUNC(vga, get_gfx_snapshot);
     return 0;
   }
+  virtual void set_override(bx_bool enabled) {
+    STUBFUNC(vga, set_override);
+  }
   virtual void trigger_timer(void *this_ptr) {
     STUBFUNC(vga, trigger_timer);
-  }
-  virtual Bit8u get_actl_palette_idx(Bit8u index) {
-    return 0;
-  }
-  virtual bx_bool vbe_set_base_addr(Bit32u *addr, Bit8u *pci_conf) {
-    return 0;
   }
 };
 
@@ -295,9 +295,6 @@ public:
     STUBFUNC(pci, pci_set_base_io);
     return 0;
   }
-
-  virtual Bit8u rd_memType(Bit32u addr) { return 0; }
-  virtual Bit8u wr_memType(Bit32u addr) { return 0; }
 };
 
 class BOCHSAPI bx_pci2isa_stub_c : public bx_devmodel_c, public bx_pci_device_stub_c {
@@ -313,11 +310,6 @@ public:
     return 0;
   }
   virtual void bmdma_set_irq(Bit8u channel) {}
-};
-
-class BOCHSAPI bx_ne2k_stub_c : public bx_devmodel_c {
-public:
-  virtual void print_info(FILE *file, int page, int reg, int nodups) {}
 };
 
 class BOCHSAPI bx_speaker_stub_c : public bx_devmodel_c {
@@ -340,12 +332,8 @@ public:
 #if BX_SUPPORT_IODEBUG
 class BOCHSAPI bx_iodebug_stub_c : public bx_devmodel_c {
 public:
-  virtual void mem_write(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data) {
-    STUBFUNC(iodebug, mem_write);
-  }
-  virtual void mem_read(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data) {
-    STUBFUNC(iodebug, mem_read);
-  }
+  virtual void mem_write(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data) {}
+  virtual void mem_read(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, void *data) {}
 };
 #endif
 
@@ -394,13 +382,19 @@ public:
   virtual void* init_module(const char *type, logfunctions *dev) {
     STUBFUNC(soundmod_ctl, init_module); return NULL;
   }
+  virtual bx_bool beep_on(float frequency) {
+    return 0;
+  }
+  virtual bx_bool beep_off() {
+    return 0;
+  }
 };
 #endif
 
 #if BX_NETWORKING
 class BOCHSAPI bx_netmod_ctl_stub_c : public bx_devmodel_c {
 public:
-  virtual void* init_module(bx_list_c *base, void* rxh, bx_devmodel_c *dev) {
+  virtual void* init_module(bx_list_c *base, void* rxh, void* rxstat, bx_devmodel_c *dev) {
     STUBFUNC(netmod_ctl, init_module); return NULL;
   }
 };
@@ -458,7 +452,7 @@ public:
   void unregister_removable_mouse(void *dev);
   bx_bool optional_key_enq(Bit8u *scan_code);
   void mouse_enabled_changed(bx_bool enabled);
-  void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state);
+  void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy);
 
   static void timer_handler(void *);
   void timer(void);
@@ -478,7 +472,6 @@ public:
   bx_pic_stub_c     *pluginPicDevice;
   bx_hard_drive_stub_c *pluginHardDrive;
   bx_hdimage_ctl_stub_c *pluginHDImageCtl;
-  bx_ne2k_stub_c    *pluginNE2kDevice;
   bx_speaker_stub_c *pluginSpeaker;
 #if BX_SUPPORT_IODEBUG
   bx_iodebug_stub_c *pluginIODebug;
@@ -512,7 +505,6 @@ public:
   bx_pci_bridge_stub_c  stubPci;
   bx_pci2isa_stub_c stubPci2Isa;
   bx_pci_ide_stub_c stubPciIde;
-  bx_ne2k_stub_c    stubNE2k;
   bx_speaker_stub_c stubSpeaker;
 #if BX_SUPPORT_PCI
   bx_acpi_ctrl_stub_c stubACPIController;
@@ -589,12 +581,14 @@ private:
 
   int timer_handle;
 
+  bx_bool network_enabled;
+  bx_bool sound_enabled;
+  bx_bool usb_enabled;
+
   bx_bool is_harddrv_enabled();
-  bx_bool is_serial_enabled();
-  bx_bool is_parallel_enabled();
-  bx_bool is_usb_ohci_enabled();
-  bx_bool is_usb_uhci_enabled();
-  bx_bool is_usb_xhci_enabled();
+  bx_bool is_network_enabled();
+  bx_bool is_sound_enabled();
+  bx_bool is_usb_enabled();
 };
 
 // memory stub has an assumption that there are no memory accesses splitting 4K page

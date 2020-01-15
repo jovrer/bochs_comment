@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc 10662 2011-09-11 16:27:56Z sshwarts $
+// $Id: siminterface.cc 11367 2012-08-25 13:20:55Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -52,12 +52,12 @@ typedef struct _rt_conf_entry_t {
   struct _rt_conf_entry_t *next;
 } rt_conf_entry_t;
 
-typedef struct _user_option_t {
+typedef struct _addon_option_t {
   const char *name;
-  user_option_parser_t parser;
-  user_option_save_t savefn;
-  struct _user_option_t *next;
-} user_option_t;
+  addon_option_parser_t parser;
+  addon_option_save_t savefn;
+  struct _addon_option_t *next;
+} addon_option_t;
 
 class bx_real_sim_c : public bx_simulator_interface_c {
   bxevent_handler bxevent_callback;
@@ -66,14 +66,15 @@ class bx_real_sim_c : public bx_simulator_interface_c {
   config_interface_callback_t ci_callback;
   void *ci_callback_data;
   rt_conf_entry_t *rt_conf_entries;
-  user_option_t *user_options;
+  addon_option_t *addon_options;
   int init_done;
   int enabled;
   // save context to jump to if we must quit unexpectedly
   jmp_buf *quit_context;
   int exit_code;
   unsigned param_id;
-  bx_bool wx_debug_gui;
+  bx_bool bx_debug_gui;
+  bx_bool wxsel;
 public:
   bx_real_sim_c();
   virtual ~bx_real_sim_c() {}
@@ -89,15 +90,20 @@ public:
   virtual bx_param_enum_c *get_param_enum(const char *pname, bx_param_c *base=NULL);
   virtual Bit32u gen_param_id() { return param_id++; }
   virtual int get_n_log_modules();
-  virtual char *get_prefix(int mod);
+  virtual const char *get_logfn_name(int mod);
+  virtual int get_logfn_id(const char *name);
+  virtual const char *get_prefix(int mod);
   virtual int get_log_action(int mod, int level);
   virtual void set_log_action(int mod, int level, int action);
-  virtual char *get_action_name(int action);
+  virtual const char *get_action_name(int action);
   virtual int get_default_log_action(int level) {
-	return logfunctions::get_default_action(level);
+    return logfunctions::get_default_action(level);
   }
   virtual void set_default_log_action(int level, int action) {
-	logfunctions::set_default_action(level, action);
+    logfunctions::set_default_action(level, action);
+  }
+  virtual void apply_log_actions_by_device() {
+    bx_set_log_actions_by_device(0);
   }
   virtual const char *get_log_level_name(int level);
   virtual int get_max_log_level() { return N_LOGLEV; }
@@ -160,8 +166,9 @@ public:
   virtual void update_runtime_options();
   virtual void set_sim_thread_func(is_sim_thread_func_t func) {}
   virtual bx_bool is_sim_thread();
-  virtual void set_debug_gui(bx_bool val) { wx_debug_gui = val; }
-  virtual bx_bool has_debug_gui() const { return wx_debug_gui; }
+  virtual void set_debug_gui(bx_bool val) { bx_debug_gui = val; }
+  virtual bx_bool has_debug_gui() const { return bx_debug_gui; }
+  virtual bx_bool is_wx_selected() const { return wxsel; }
   // provide interface to bx_gui->set_display_mode() method for config
   // interfaces to use.
   virtual void set_display_mode(disp_mode_t newmode) {
@@ -169,15 +176,16 @@ public:
       bx_gui->set_display_mode(newmode);
   }
   virtual bx_bool test_for_text_console();
-  // user-defined option support
-  virtual bx_bool register_user_option(const char *keyword, user_option_parser_t parser, user_option_save_t save_func);
-  virtual bx_bool unregister_user_option(const char *keyword);
-  virtual bx_bool is_user_option(const char *keyword);
-  virtual Bit32s parse_user_option(const char *context, int num_params, char *params []);
-  virtual Bit32s save_user_options(FILE *fp);
+  // add-on config option support
+  virtual bx_bool register_addon_option(const char *keyword, addon_option_parser_t parser, addon_option_save_t save_func);
+  virtual bx_bool unregister_addon_option(const char *keyword);
+  virtual bx_bool is_addon_option(const char *keyword);
+  virtual Bit32s  parse_addon_option(const char *context, int num_params, char *params []);
+  virtual Bit32s  save_addon_options(FILE *fp);
 
   // save/restore support
   virtual void init_save_restore();
+  virtual void cleanup_save_restore();
   virtual bx_bool save_state(const char *checkpoint_path);
   virtual bx_bool restore_config();
   virtual bx_bool restore_logopts();
@@ -186,6 +194,15 @@ public:
     return (bx_list_c*)get_param("bochs", NULL);
   }
   virtual bx_bool restore_bochs_param(bx_list_c *root, const char *sr_path, const char *restore_name);
+  // special config parameter and options functions for plugins
+  virtual bx_bool opt_plugin_ctrl(const char *plugname, bx_bool load);
+  virtual void init_std_nic_options(const char *name, bx_list_c *menu);
+  virtual void init_usb_options(const char *usb_name, const char *pname, int maxports);
+  virtual int  parse_nic_params(const char *context, const char *param, bx_list_c *base);
+  virtual int  parse_usb_port_params(const char *context, bx_bool devopt,
+                                     const char *param, int maxports, bx_list_c *base);
+  virtual int  write_pci_nic_options(FILE *fp, bx_list_c *base);
+  virtual int  write_usb_options(FILE *fp, int maxports, bx_list_c *base);
 
 private:
   bx_bool save_sr_param(FILE *fp, bx_param_c *node, const char *sr_path, int level);
@@ -302,14 +319,14 @@ bx_param_enum_c *bx_real_sim_c::get_param_enum(const char *pname, bx_param_c *ba
 void bx_init_siminterface()
 {
   siminterface_log = new logfunctions();
-  siminterface_log->put("CTRL");
+  siminterface_log->put("siminterface", "CTRL");
   if (SIM == NULL)
     SIM = new bx_real_sim_c();
   if (root_param == NULL) {
     root_param = new bx_list_c(NULL,
       "bochs",
-      "list of top level bochs parameters",
-      30);
+      "list of top level bochs parameters"
+      );
   }
 }
 
@@ -320,7 +337,8 @@ bx_real_sim_c::bx_real_sim_c()
   ci_callback = NULL;
   ci_callback_data = NULL;
   is_sim_thread_func = NULL;
-  wx_debug_gui = 0;
+  bx_debug_gui = 0;
+  wxsel = 0;
 
   enabled = 1;
   init_done = 0;
@@ -328,7 +346,7 @@ bx_real_sim_c::bx_real_sim_c()
   exit_code = 0;
   param_id = BXP_NEW_PARAM_ID;
   rt_conf_entries = NULL;
-  user_options = NULL;
+  addon_options = NULL;
 }
 
 void bx_real_sim_c::reset_all_param()
@@ -341,7 +359,28 @@ int bx_real_sim_c::get_n_log_modules()
   return io->get_n_logfns();
 }
 
-char *bx_real_sim_c::get_prefix(int mod)
+const char *bx_real_sim_c::get_logfn_name(int mod)
+{
+  logfunc_t *logfn = io->get_logfn(mod);
+  return logfn->get_name();
+}
+
+int bx_real_sim_c::get_logfn_id(const char *name)
+{
+  logfunc_t *logfn;
+  int id = -1;
+
+  for (int i = 0; i < io->get_n_logfns(); i++) {
+    logfn = io->get_logfn(i);
+    if (!stricmp(name, logfn->get_name())) {
+      id = i;
+      break;
+    }
+  }
+  return id;
+}
+
+const char *bx_real_sim_c::get_prefix(int mod)
 {
   logfunc_t *logfn = io->get_logfn(mod);
   return logfn->getprefix();
@@ -362,12 +401,12 @@ void bx_real_sim_c::set_log_action(int mod, int level, int action)
     return;
   }
   // if called with mod<0 loop over all
-  int nmod = get_n_log_modules ();
+  int nmod = get_n_log_modules();
   for (mod=0; mod<nmod; mod++)
     set_log_action(mod, level, action);
 }
 
-char *bx_real_sim_c::get_action_name(int action)
+const char *bx_real_sim_c::get_action_name(int action)
 {
   return io->getaction(action);
 }
@@ -492,6 +531,7 @@ const char *hdimage_mode_names[] = {
   "growing",
   "volatile",
   "vvfat",
+  "vpc",
   NULL
 };
 
@@ -683,7 +723,6 @@ int bx_real_sim_c::create_disk_image(const char *filename, int sectors, bx_bool 
 void bx_real_sim_c::refresh_ci()
 {
   if (SIM->has_debug_gui()) {
-    // presently, only wxWidgets interface uses these events
     // It's an async event, so allocate a pointer and send it.
     // The event will be freed by the recipient.
     BxEvent *event = new BxEvent();
@@ -746,7 +785,7 @@ char *bx_real_sim_c::debug_get_next_command()
 void bx_real_sim_c::debug_puts(const char *text)
 {
   if (SIM->has_debug_gui()) {
-    // send message to the wxWidgets debugger
+    // send message to the gui debugger
     BxEvent *event = new BxEvent();
     event->type = BX_ASYNC_EVT_DBG_MSG;
     event->u.logmsg.msg = text;
@@ -781,9 +820,10 @@ int bx_real_sim_c::configuration_interface(const char *ignore, ci_command_t comm
     return -1;
   }
   if (!strcmp(name, "wx"))
-    wx_debug_gui = 1;
+    wxsel = 1;
   else
-    wx_debug_gui = 0;
+    wxsel = 0;
+  bx_debug_gui = wxsel;
   // enter configuration mode, just while running the configuration interface
   set_display_mode(DISP_MODE_CONFIG);
   int retval = (*ci_callback)(ci_callback_data, command);
@@ -856,90 +896,90 @@ bx_bool bx_real_sim_c::test_for_text_console()
   return 1;
 }
 
-bx_bool bx_real_sim_c::is_user_option(const char *keyword)
+bx_bool bx_real_sim_c::is_addon_option(const char *keyword)
 {
-  user_option_t *user_option;
+  addon_option_t *addon_option;
 
-  for (user_option = user_options; user_option; user_option = user_option->next) {
-    if (!strcmp(user_option->name, keyword)) return 1;
+  for (addon_option = addon_options; addon_option; addon_option = addon_option->next) {
+    if (!strcmp(addon_option->name, keyword)) return 1;
   }
   return 0;
 }
 
-bx_bool bx_real_sim_c::register_user_option(const char *keyword, user_option_parser_t parser,
-                                            user_option_save_t save_func)
+bx_bool bx_real_sim_c::register_addon_option(const char *keyword, addon_option_parser_t parser,
+                                             addon_option_save_t save_func)
 {
-  user_option_t *user_option;
+  addon_option_t *addon_option;
 
-  user_option = (user_option_t *)malloc(sizeof(user_option_t));
-  if (user_option == NULL) {
-    BX_PANIC(("can't allocate user_option_t"));
+  addon_option = (addon_option_t *)malloc(sizeof(addon_option_t));
+  if (addon_option == NULL) {
+    BX_PANIC(("can't allocate addon_option_t"));
     return 0;
   }
 
-  user_option->name = keyword;
-  user_option->parser = parser;
-  user_option->savefn = save_func;
-  user_option->next = NULL;
+  addon_option->name = keyword;
+  addon_option->parser = parser;
+  addon_option->savefn = save_func;
+  addon_option->next = NULL;
 
-  if (user_options == NULL) {
-    user_options = user_option;
+  if (addon_options == NULL) {
+    addon_options = addon_option;
   } else {
-    user_option_t *temp = user_options;
+    addon_option_t *temp = addon_options;
 
     while (temp->next) {
       if (!strcmp(temp->name, keyword)) {
-        free(user_option);
+        free(addon_option);
         return 0;
       }
       temp = temp->next;
     }
-    temp->next = user_option;
+    temp->next = addon_option;
   }
   return 1;
 }
 
-bx_bool bx_real_sim_c::unregister_user_option(const char *keyword)
+bx_bool bx_real_sim_c::unregister_addon_option(const char *keyword)
 {
-  user_option_t *user_option, *prev = NULL;
+  addon_option_t *addon_option, *prev = NULL;
 
-  for (user_option = user_options; user_option; user_option = user_option->next) {
-    if (!strcmp(user_option->name, keyword)) {
+  for (addon_option = addon_options; addon_option; addon_option = addon_option->next) {
+    if (!strcmp(addon_option->name, keyword)) {
       if (prev == NULL) {
-        user_options = user_option->next;
+        addon_options = addon_option->next;
       } else {
-        prev->next = user_option->next;
+        prev->next = addon_option->next;
       }
-      free(user_option);
+      free(addon_option);
       return 1;
     } else {
-      prev = user_option;
+      prev = addon_option;
     }
   }
   return 0;
 }
 
-Bit32s bx_real_sim_c::parse_user_option(const char *context, int num_params, char *params [])
+Bit32s bx_real_sim_c::parse_addon_option(const char *context, int num_params, char *params [])
 {
-  user_option_t *user_option;
+  addon_option_t *addon_option;
 
-  for (user_option = user_options; user_option; user_option = user_option->next) {
-    if ((!strcmp(user_option->name, params[0])) &&
-        (user_option->parser != NULL)) {
-      return (*user_option->parser)(context, num_params, params);
+  for (addon_option = addon_options; addon_option; addon_option = addon_option->next) {
+    if ((!strcmp(addon_option->name, params[0])) &&
+        (addon_option->parser != NULL)) {
+      return (*addon_option->parser)(context, num_params, params);
     }
   }
   return -1;
 
 }
 
-Bit32s bx_real_sim_c::save_user_options(FILE *fp)
+Bit32s bx_real_sim_c::save_addon_options(FILE *fp)
 {
-  user_option_t *user_option;
+  addon_option_t *addon_option;
 
-  for (user_option = user_options; user_option; user_option = user_option->next) {
-    if (user_option->savefn != NULL) {
-      (*user_option->savefn)(fp);
+  for (addon_option = addon_options; addon_option; addon_option = addon_option->next) {
+    if (addon_option->savefn != NULL) {
+      (*addon_option->savefn)(fp);
     }
   }
   return 0;
@@ -947,15 +987,17 @@ Bit32s bx_real_sim_c::save_user_options(FILE *fp)
 
 void bx_real_sim_c::init_save_restore()
 {
+  if (get_bochs_root() == NULL) {
+    new bx_list_c(root_param, "bochs", "subtree for save/restore");
+  }
+}
+
+void bx_real_sim_c::cleanup_save_restore()
+{
   bx_list_c *list;
 
   if ((list = get_bochs_root()) != NULL) {
     list->clear();
-  } else {
-    list = new bx_list_c(root_param,
-      "bochs",
-      "subtree for save/restore",
-      30 + BX_MAX_SMP_THREADS_SUPPORTED);
   }
 }
 
@@ -1340,4 +1382,72 @@ bx_bool bx_real_sim_c::save_sr_param(FILE *fp, bx_param_c *node, const char *sr_
   }
 
   return 1;
+}
+
+bx_bool bx_real_sim_c::opt_plugin_ctrl(const char *plugname, bx_bool load)
+{
+  bx_list_c *plugin_ctrl = (bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL);
+  if (!strcmp(plugname, "*")) {
+    // verify optional plugin configuration and load/unload plugins if necessary
+    int i = 0;
+    while (i < plugin_ctrl->get_size()) {
+      bx_param_bool_c *plugin = (bx_param_bool_c*)plugin_ctrl->get(i);
+      if (load == (bx_bool)plugin->get()) {
+        opt_plugin_ctrl(plugin->get_name(), load);
+        if (load) i++;
+      } else {
+        i++;
+      }
+    }
+    return 1;
+  }
+  if (load != PLUG_device_present(plugname)) {
+    if (load) {
+      if (PLUG_load_opt_plugin(plugname)) {
+        if (plugin_ctrl->get_by_name(plugname) == NULL) {
+          new bx_param_bool_c(plugin_ctrl, plugname, "", "", 1);
+        }
+        return 1;
+      } else {
+        BX_PANIC(("optional plugin '%s' not found", plugname));
+        return 0;
+      }
+    } else {
+      PLUG_unload_opt_plugin(plugname);
+      plugin_ctrl->remove(plugname);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+void bx_real_sim_c::init_std_nic_options(const char *name, bx_list_c *menu)
+{
+  bx_init_std_nic_options(name, menu);
+}
+
+void bx_real_sim_c::init_usb_options(const char *usb_name, const char *pname, int maxports)
+{
+  bx_init_usb_options(usb_name, pname, maxports);
+}
+
+int bx_real_sim_c::parse_nic_params(const char *context, const char *param, bx_list_c *base)
+{
+  return bx_parse_nic_params(context, param, base);
+}
+
+int bx_real_sim_c::parse_usb_port_params(const char *context, bx_bool devopt,
+                                     const char *param, int maxports, bx_list_c *base)
+{
+  return bx_parse_usb_port_params(context, devopt, param, maxports, base);
+}
+
+int bx_real_sim_c::write_pci_nic_options(FILE *fp, bx_list_c *base)
+{
+  return bx_write_pci_nic_options(fp, base);
+}
+
+int bx_real_sim_c::write_usb_options(FILE *fp, int maxports, bx_list_c *base)
+{
+  return bx_write_usb_options(fp, maxports, base);
 }

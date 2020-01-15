@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: acpi.cc 10419 2011-06-23 15:56:02Z vruppert $
+// $Id: acpi.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2006  Volker Ruppert
@@ -77,6 +77,7 @@ int libacpi_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
 
 void libacpi_LTX_plugin_fini(void)
 {
+  bx_devices.pluginACPIController = &bx_devices.stubACPIController;
   delete theACPIController;
 }
 
@@ -110,11 +111,13 @@ Bit64u muldiv64(Bit64u a, Bit32u b, Bit32u c)
 bx_acpi_ctrl_c::bx_acpi_ctrl_c()
 {
   put("ACPI");
+  memset(&s, 0, sizeof(s));
   s.timer_index = BX_NULL_TIMER_HANDLE;
 }
 
 bx_acpi_ctrl_c::~bx_acpi_ctrl_c()
 {
+  SIM->get_bochs_root()->remove("acpi");
   BX_DEBUG(("Exit"));
 }
 
@@ -209,12 +212,12 @@ void bx_acpi_ctrl_c::reset(unsigned type)
 
 void bx_acpi_ctrl_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "acpi", "ACPI Controller State", 6);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "acpi", "ACPI Controller State");
   BXRS_HEX_PARAM_FIELD(list, pmsts, BX_ACPI_THIS s.pmsts);
   BXRS_HEX_PARAM_FIELD(list, pmen, BX_ACPI_THIS s.pmen);
   BXRS_HEX_PARAM_FIELD(list, pmcntrl, BX_ACPI_THIS s.pmcntrl);
   BXRS_HEX_PARAM_FIELD(list, tmr_overflow_time, BX_ACPI_THIS s.tmr_overflow_time);
-  bx_list_c *smbus = new bx_list_c(list, "smbus", "ACPI SMBus", 8);
+  bx_list_c *smbus = new bx_list_c(list, "smbus", "ACPI SMBus");
   BXRS_HEX_PARAM_FIELD(smbus, stat, BX_ACPI_THIS s.smbus.stat);
   BXRS_HEX_PARAM_FIELD(smbus, ctl, BX_ACPI_THIS s.smbus.ctl);
   BXRS_HEX_PARAM_FIELD(smbus, cmd, BX_ACPI_THIS s.smbus.cmd);
@@ -222,7 +225,7 @@ void bx_acpi_ctrl_c::register_state(void)
   BXRS_HEX_PARAM_FIELD(smbus, data0, BX_ACPI_THIS s.smbus.data0);
   BXRS_HEX_PARAM_FIELD(smbus, data1, BX_ACPI_THIS s.smbus.data1);
   BXRS_HEX_PARAM_FIELD(smbus, index, BX_ACPI_THIS s.smbus.index);
-  bx_list_c *data = new bx_list_c(smbus, "data", "ACPI SMBus data", 32);
+  bx_list_c *data = new bx_list_c(smbus, "data", "ACPI SMBus data");
   for (unsigned i = 0; i < 32; i++) {
     char name[6];
     sprintf(name, "0x%02x", i);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gameport.cc 10289 2011-03-31 16:54:06Z vruppert $
+// $Id: gameport.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003-2009  The Bochs Project
@@ -64,18 +64,20 @@ int libgameport_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
 
 void libgameport_LTX_plugin_fini(void)
 {
+  bx_devices.pluginGameport = &bx_devices.stubGameport;
   delete theGameport;
 }
 
 bx_gameport_c::bx_gameport_c()
 {
-  put("GAME");
+  put("gameport", "GAME");
   joyfd = -1;
 }
 
 bx_gameport_c::~bx_gameport_c()
 {
   if (joyfd >= 0) close(joyfd);
+  SIM->get_bochs_root()->remove("gameport");
   BX_DEBUG(("Exit"));
 }
 
@@ -118,7 +120,7 @@ void bx_gameport_c::reset(unsigned type)
 
 void bx_gameport_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "gameport", "Gameport State", 7);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "gameport", "Gameport State");
   BXRS_PARAM_BOOL(list, enabled, BX_GAMEPORT_THIS enabled);
   BXRS_HEX_PARAM_FIELD(list, port, BX_GAMEPORT_THIS port);
   BXRS_DEC_PARAM_FIELD(list, delay_x, BX_GAMEPORT_THIS delay_x);

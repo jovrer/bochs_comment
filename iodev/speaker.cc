@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: speaker.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: speaker.cc 11195 2012-05-24 18:06:40Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright 2003 by David N. Welton <davidw@dedasys.com>.
@@ -22,6 +22,10 @@
 
 #include "iodev.h"
 #include "speaker.h"
+
+#if BX_SUPPORT_SOUNDLOW
+#include "sound/soundmod.h"
+#endif
 
 #ifdef __linux__
 #include <unistd.h>
@@ -48,17 +52,17 @@ int libspeaker_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, ch
 
 void libspeaker_LTX_plugin_fini(void)
 {
+  bx_devices.pluginSpeaker = &bx_devices.stubSpeaker;
   delete theSpeaker;
 }
 
 bx_speaker_c::bx_speaker_c()
 {
-  put("SPEAK");
+  put("speaker", "SPEAK");
 
   beep_frequency = 0.0; // Off
-
 #ifdef __linux__
-  consolefd = open("/dev/console", O_WRONLY);
+  consolefd = -1;
 #endif
 }
 
@@ -75,20 +79,32 @@ bx_speaker_c::~bx_speaker_c()
 
 void bx_speaker_c::init(void)
 {
-#ifdef __linux__
-  if (consolefd != -1) {
-    BX_INFO(("Open /dev/console successfully"));
-  } else {
-    BX_INFO(("Failed to open /dev/console: %s", strerror(errno)));
-    BX_INFO(("Deactivating beep on console"));
-  }
-#endif
-
-  this->beep_off();
+  outputinit = 0;
 }
 
 void bx_speaker_c::reset(unsigned type)
 {
+  if (!outputinit) {
+    outputinit = 1;
+#if BX_SUPPORT_SOUNDLOW
+    if (DEV_soundmod_beep_off()) {
+      BX_INFO(("Using lowlevel sound support for output"));
+      return;
+    }
+#endif
+#ifdef __linux__
+    consolefd = open("/dev/console", O_WRONLY);
+    if (consolefd != -1) {
+      BX_INFO(("Using /dev/console for output"));
+    } else {
+      BX_ERROR(("Failed to open /dev/console: %s", strerror(errno)));
+      BX_ERROR(("Deactivating beep on console"));
+    }
+#elif defined(WIN32)
+    BX_INFO(("Using system beep for output"));
+#endif
+  }
+
   beep_off();
 }
 
@@ -96,6 +112,10 @@ void bx_speaker_c::beep_on(float frequency)
 {
   beep_frequency = frequency;
 
+#if BX_SUPPORT_SOUNDLOW
+  if (DEV_soundmod_beep_on(frequency))
+    return;
+#endif
 #ifdef __linux__
   if (consolefd != -1) {
     this->info("pc speaker on with frequency %f", frequency);
@@ -105,7 +125,7 @@ void bx_speaker_c::beep_on(float frequency)
   usec_start = bx_pc_system.time_usec();
 #endif
 
-  // give the gui a chance to signal beep off
+  // give the gui a chance to signal beep on
   bx_gui->beep_on(frequency);
 }
 
@@ -131,6 +151,10 @@ DWORD WINAPI BeepThread(LPVOID)
 
 void bx_speaker_c::beep_off()
 {
+#if BX_SUPPORT_SOUNDLOW
+  if (DEV_soundmod_beep_off())
+    return;
+#endif
   if (beep_frequency != 0.0) {
 #ifdef __linux__
     if (consolefd != -1) {

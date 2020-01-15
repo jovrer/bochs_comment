@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/development/development.dbk
-$Id: development.dbk 10888 2011-12-29 20:52:44Z sshwarts $
+$Id: development.dbk 11391 2012-09-02 10:51:47Z vruppert $
 
 This is the top level file for the Bochs Developers Manual.
 ================================================================
@@ -211,7 +211,11 @@ disassembler, tracer, instrumentation.
 <row><entry>gui/keymaps</entry><entry>keymaps for the keyboard mapping feature</entry></row>
 <row><entry>host</entry><entry>host specific drivers (currently only used by the pcidev kernel module for Linux)</entry></row>
 <row><entry>instrument</entry><entry>directory tree for the instrumentation feature</entry></row>
-<row><entry>iodev</entry><entry>standard PC devices, PCI devices, lowlevel networking and sound drivers</entry></row>
+<row><entry>iodev</entry><entry>standard PC devices, PCI core devices</entry></row>
+<row><entry>iodev/hdimage</entry><entry>support for different disk image types and lowlevel cdrom access</entry></row>
+<row><entry>iodev/networking</entry><entry>networking devices and lowlevel modules</entry></row>
+<row><entry>iodev/sound</entry><entry>sound devices and lowlevel modules</entry></row>
+<row><entry>iodev/usb</entry><entry>USB HCs and pluggable devices</entry></row>
 <row><entry>memory</entry><entry>memory management and ROM loader</entry></row>
 <row><entry>misc</entry><entry>useful utilities (e.g. bximage, bxcommit, niclist)</entry></row>
 <row><entry>misc/sb16</entry><entry>tool to control the SB16 emulation from the guest side</entry></row>
@@ -1993,7 +1997,9 @@ Compiling Bochs with iodebug support
 ./configure --enable-iodebug
 make
 </screen>
-Other optional fields may be added to the ./configure line, see Bochs documentation for all the information.
+Other optional fields may be added to the ./configure line, see Bochs
+documentation for all the information. To enable the iodebug plugin at runtime,
+it must be loaded with the 'plugin_ctrl' bochsrc option.
 </para>
 
 <para>
@@ -2200,12 +2206,17 @@ Bochs x86 Pentium+ Emulator
 Updated: Sun Nov 27 16:55:00 CET 2011
 Version: 2.5
 </screen>
+In the file <filename>bochs.manifest</filename> you have to update the version
+number for the Windows build.
+<screen>
+  version="2.5.0.0"
+</screen>
 Check date, update/sumup info in CHANGES. Run autoconf to regenerate configure and check them in.
 Create an SVN tag that contains all files of the revision that was used in the release.
 For prereleases I create a normal SVN tag like this:
 <screen>
-  svn mkdir tags/REL_2_5_pre1
-  svn copy trunk/bochs tags/REL_2_5_pre1/bochs
+  svn mkdir tags/REL_2_5_pre1_FINAL
+  svn copy trunk/bochs tags/REL_2_5_pre1_FINAL/bochs
   svn commit
 </screen>
 But for a real release, I make an SVN branch tag AND a normal tag.
@@ -2276,10 +2287,10 @@ cd doc/docbook; touch */*.html
 </screen>
 Do make install_win32 into /tmp or someplace:
 <screen>
-make install_win32 prefix=/tmp/bochs-2.4
+make install_win32 prefix=/tmp/bochs-2.5
 </screen>
-This copies all the files into /tmp/bochs-2.4 and then creates a
-binary ZIP at /tmp/bochs-2.4.zip. Rename that bochs-2.4.win32-bin.zip.
+This copies all the files into /tmp/bochs-2.5 and then creates a
+binary ZIP at /tmp/bochs-2.5.zip. Rename that bochs-2.5.win32-bin.zip.
 </para>
 <para>
 Now make the NSIS installer package (the current script is known to work with NSIS 2.44)
@@ -2289,10 +2300,10 @@ cd build/win32/nsis
 Unzip the binary ZIP file into bochs-$VERSION (must match Makefile) and
 then run make.
 <screen>
-unzip ~/bochs-2.4.zip
+unzip ~/bochs-2.5.zip
 make
 </screen>
-That gives an installer called <filename>Bochs-2.4.exe</filename>. Test and upload it.
+That gives an installer called <filename>Bochs-2.5.exe</filename>. Test and upload it.
 </para>
 </section>
 <section><title>Building the release on Linux</title>
@@ -2302,9 +2313,9 @@ directory name with the version number as the destination. Then create the
 source package from this new directory.
 <screen>
   svn co https://bochs.svn.sourceforge.net/svnroot/bochs/tags/REL_2_4_FINAL/bochs bochs-2.4
-  tar czvf bochs-2.4.tar.gz --exclude=.svn bochs-2.4
+  tar czvf bochs-2.5.tar.gz --exclude=.svn bochs-2.5
 </screen>
-The source TAR file bochs-2.4.tar.gz is ready to upload.
+The source TAR file bochs-2.5.tar.gz is ready to upload.
 </para>
 <para>
 The RPM will be building using the configuration in .conf.linux with

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dbg_main.cc 10889 2011-12-29 21:03:34Z sshwarts $
+// $Id: dbg_main.cc 11250 2012-07-01 14:37:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -74,6 +74,14 @@ static struct {
   unsigned next_bpoint_id;
   unsigned next_wpoint_id;
 } bx_debugger;
+
+typedef struct _debug_info_t {
+  const char *name;
+  bx_devmodel_c *device;
+  struct _debug_info_t *next;
+} debug_info_t;
+
+static debug_info_t *bx_debug_info_list = NULL;
 
 typedef struct {
   FILE    *fp;
@@ -154,6 +162,61 @@ int bx_dbg_set_rcfile(const char *rcfile)
   return bx_nest_infile((char*)rcfile);
 }
 
+bx_bool bx_dbg_register_debug_info(const char *devname, void *dev)
+{
+  debug_info_t *debug_info;
+
+  debug_info = (debug_info_t *)malloc(sizeof(debug_info_t));
+  if (debug_info == NULL) {
+    BX_PANIC(("can't allocate debug_info_t"));
+    return 0;
+  }
+
+  debug_info->name = devname;
+  debug_info->device = (bx_devmodel_c*)dev;
+  debug_info->next = NULL;
+
+  if (bx_debug_info_list == NULL) {
+    bx_debug_info_list = debug_info;
+  } else {
+    debug_info_t *temp = bx_debug_info_list;
+
+    while (temp->next) {
+      if (!strcmp(temp->name, devname)) {
+        free(debug_info);
+        return 0;
+      }
+      temp = temp->next;
+    }
+    temp->next = debug_info;
+  }
+  return 1;
+}
+
+void bx_dbg_info_cleanup(void)
+{
+  debug_info_t *temp = bx_debug_info_list, *next;
+  while (temp != NULL) {
+    next = temp->next;
+    free(temp);
+    temp = next;
+  }
+  bx_debug_info_list = NULL;
+}
+
+bx_bool bx_dbg_info_find_device(const char *devname, debug_info_t **found_debug_info)
+{
+  debug_info_t *debug_info;
+
+  for (debug_info = bx_debug_info_list; debug_info; debug_info = debug_info->next) {
+    if (!strcmp(debug_info->name, devname)) {
+      *found_debug_info = debug_info;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 int bx_dbg_main(void)
 {
   setbuf(stdout, NULL);
@@ -217,6 +280,7 @@ int bx_dbg_main(void)
     BX_CPU(i)->guard_found.eip = BX_CPU(i)->get_instruction_pointer();
     BX_CPU(i)->guard_found.laddr =
       BX_CPU(i)->get_laddr(BX_SEG_REG_CS, BX_CPU(i)->guard_found.eip);
+    BX_CPU(i)->guard_found.code_32_64 = 0;
     // 00 - 16 bit, 01 - 32 bit, 10 - 64-bit, 11 - illegal
     if (BX_CPU(i)->sregs[BX_SEG_REG_CS].cache.u.segment.d_b)
       BX_CPU(i)->guard_found.code_32_64 |= 0x1;
@@ -309,7 +373,7 @@ void bx_get_command(void)
     sprintf(prompt, "<bochs:%d> ", bx_infile_stack[bx_infile_stack_index].lineno);
   }
   if (SIM->has_debug_gui() && bx_infile_stack_index == 0) {
-    // wait for wxWidgets to send another debugger command
+    // wait for gui debugger to send another debugger command
     charptr_ret = SIM->debug_get_next_command();
     if (charptr_ret) {
       strncpy(tmp_buf, charptr_ret, sizeof(tmp_buf));
@@ -620,14 +684,12 @@ void bx_dbg_lin_memory_access(unsigned cpu, bx_address lin, bx_phy_address phy, 
   dbg_printf("\n");
 }
 
-void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw, Bit8u *data)
+void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw, unsigned access, Bit8u *data)
 {
   bx_dbg_check_memory_watchpoints(cpu, phy, len, rw);
 
   if (! BX_CPU(cpu)->trace_mem)
     return;
-
-  unsigned access = rw >> 4;
 
   static const char *access_string[] = {
     "",
@@ -644,8 +706,8 @@ void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, un
     "EPT PDPTE",
     "EPT PML4E",
     "VMCS",
-    "VMX MSR BITMAP",
-    "VMX I/O BITMAP",
+    "MSR BITMAP",
+    "I/O BITMAP",
     "VMX LDMSR",
     "VMX STMSR",
     "VMX VTPR",
@@ -938,6 +1000,12 @@ void bx_dbg_info_control_regs_command(void)
     (cr4 & (1<<2))  ? "TSD" : "tsd",
     (cr4 & (1<<1))  ? "PVI" : "pvi",
     (cr4 & (1<<0))  ? "VME" : "vme");
+#if BX_SUPPORT_X86_64
+  Bit64u cpu_extensions_bitmask = SIM->get_param_num("cpu_extensions_bitmask", dbg_cpu_list)->get();
+  if ((cpu_extensions_bitmask & BX_CPU_LONG_MODE) != 0) {
+    dbg_printf("CR8: 0x%x\n", BX_CPU(dbg_cpu)->get_cr8());
+  }
+#endif
   Bit32u efer = SIM->get_param_num("MSR.EFER", dbg_cpu_list)->get();
   dbg_printf("EFER=0x%08x: %s %s %s %s %s\n", efer,
     (efer & (1<<14)) ? "FFXSR" : "ffxsr",
@@ -1679,8 +1747,6 @@ void bx_dbg_unwatch(bx_phy_address address)
 
 void bx_dbg_continue_command(void)
 {
-  int cpu;
-
   // continue executing, until a guard found
 
 one_more:
@@ -1715,13 +1781,13 @@ one_more:
       stop_reason_t reason = (stop_reason_t) BX_CPU(0)->stop_reason;
       if (found || (reason != STOP_NO_REASON && reason != STOP_CPU_HALTED)) {
         stop = 1;
-        which = cpu;
+        which = 0;
       }
     }
 #if BX_SUPPORT_SMP
     else {
       Bit32u max_executed = 0;
-      for (cpu=0; cpu < BX_SMP_PROCESSORS; cpu++) {
+      for (int cpu=0; cpu < BX_SMP_PROCESSORS; cpu++) {
         Bit64u cpu_icount = BX_CPU(cpu)->get_icount();
         bx_dbg_set_icount_guard(cpu, BX_DBG_DEFAULT_ICOUNT_QUANTUM);
         BX_CPU(cpu)->cpu_loop();
@@ -2604,7 +2670,7 @@ Bit32u bx_dbg_lin_indirect(bx_address addr)
   Bit32u result;
 
   if (! bx_dbg_read_linear(dbg_cpu, addr, 4, databuf)) {
-    /* bx_dbg_read_linear already printed an error message if it failed */
+    /* bx_dbg_read_linear already printed an error message if failed */
     return 0;
   }
 
@@ -2618,12 +2684,51 @@ Bit32u bx_dbg_phy_indirect(bx_phy_address paddr)
   Bit32u result;
 
   if (! BX_MEM(0)->dbg_fetch_mem(BX_CPU(dbg_cpu), paddr, 4, databuf)) {
-    /* dbg_fetch_mem already printed an error message if it failed */
+    /* dbg_fetch_mem already printed an error message if failed */
     return 0;
   }
 
   ReadHostDWordFromLittleEndian(databuf, result);
   return result;
+}
+
+void bx_dbg_writemem_command(const char *filename, bx_address laddr, unsigned len)
+{
+  if (len == 0) {
+    dbg_printf("writemem: required length in bytes\n");
+    return;
+  }
+
+  FILE *f = fopen(filename, "wb");
+  if (!f) {
+    dbg_printf("Can not open file '%s' for writemem log!\n", filename);
+    return;
+  }
+
+  Bit8u databuf[4096];
+
+  while(len > 0) {
+    unsigned bytes = len;
+    if (len > 4096) bytes = 4096;
+
+    // I hope laddr is 4KB aligned so read_linear will be done efficiently
+    if (! bx_dbg_read_linear(dbg_cpu, laddr, bytes, databuf)) {
+      /* bx_dbg_read_linear already printed an error message if failed */
+      len = 0;
+      break;
+    }
+
+    if (fwrite(databuf, 1, bytes, f) < bytes) {
+      dbg_printf("Write error to file '%s'\n", filename);
+      len = 0;
+      break;
+    }
+
+    len -= bytes;
+    laddr += bytes;
+  }
+
+  fclose(f);
 }
 
 void bx_dbg_setpmem_command(bx_phy_address paddr, unsigned len, Bit32u val)
@@ -2845,25 +2950,33 @@ void bx_dbg_print_descriptor(Bit32u lo, Bit32u hi)
   unsigned s = (hi >> 12) & 0x1;
   unsigned d_b = (hi >> 22) & 0x1;
   unsigned g = (hi >> 23) & 0x1;
+#if BX_SUPPORT_X86_64
+  unsigned l = (hi >> 21) & 0x1;
+#endif
 
   // 32-bit trap gate, target=0010:c0108ec4, DPL=0, present=1
   // code segment, base=0000:00cfffff, length=0xffff
   if (s) {
     // either a code or a data segment. bit 11 (type file MSB) then says
     // 0=data segment, 1=code seg
-    if (type&8) {
-      dbg_printf("Code segment, base=0x%08x, limit=0x%08x, %s%s%s, %d-bit\n",
+    if (IS_CODE_SEGMENT(type)) {
+      dbg_printf("Code segment, base=0x%08x, limit=0x%08x, %s, %s%s",
         base, g ? (limit * 4096 + 4095) : limit,
-        (type&2)? "Execute/Read" : "Execute-Only",
-        (type&4)? ", Conforming" : "",
-        (type&1)? ", Accessed" : "",
-        d_b ? 32 : 16);
+        IS_CODE_SEGMENT_READABLE(type) ? "Execute/Read" : "Execute-Only",
+        IS_CODE_SEGMENT_CONFORMING(type)? "Conforming" : "Non-Conforming",
+        IS_SEGMENT_ACCESSED(type)? ", Accessed" : "");
+#if BX_SUPPORT_X86_64
+      if (l && !d_b)
+        dbg_printf(", 64-bit\n");
+      else
+#endif
+        dbg_printf(", %d-bit\n", d_b ? 32 : 16);
     } else {
       dbg_printf("Data segment, base=0x%08x, limit=0x%08x, %s%s%s\n",
         base, g ? (limit * 4096 + 4095) : limit,
-        (type&2)? "Read/Write" : "Read-Only",
-        (type&4)? ", Expand-down" : "",
-        (type&1)? ", Accessed" : "");
+        IS_DATA_SEGMENT_WRITEABLE(type)? "Read/Write" : "Read-Only",
+        IS_DATA_SEGMENT_EXPAND_DOWN(type)? ", Expand-down" : "",
+        IS_SEGMENT_ACCESSED(type)? ", Accessed" : "");
     }
   } else {
     // types from IA32-devel-guide-3, page 3-15.
@@ -3276,54 +3389,72 @@ void bx_dbg_info_tss_command(void)
 }
 
 /*
- * this function implements the info ne2k commands in the debugger
- * info ne2k - shows all registers
- * info ne2k page N - shows all registers in a page
- * info ne2k page N reg M - shows just one register
+ * this implements the info device command in the debugger.
+ * info device - list devices supported by this command
+ * info device [string] - shows the state of device specified in string
+ * info device [string] [string] - shows the state of device with options
  */
-void bx_dbg_info_ne2k(int page, int reg)
+void bx_dbg_info_device(const char *dev, const char *args)
 {
-#if BX_SUPPORT_NE2K
-  DEV_ne2k_print_info(stderr, page, reg, 0);
-#else
-  dbg_printf("NE2000 support is not compiled in\n");
-#endif
-}
+  debug_info_t *temp = NULL;
+  unsigned i, string_i;
+  int argc = 0;
+  char *argv[16];
+  char *ptr;
+  char string[512];
+  size_t len;
 
-/*
- * this implements the info pic command in the debugger.
- * info pic - shows pic registers
- */
-void bx_dbg_info_pic()
-{
-  DEV_pic_debug_dump();
-}
-
-/*
- * this implements the info vga command in the debugger.
- * info vga - shows vga registers
- */
-void bx_dbg_info_vga()
-{
-  DEV_vga_debug_dump();
-}
-
-/*
- * this implements the info pci command in the debugger.
- * info pci - shows i440fx state
- */
-void bx_dbg_info_pci()
-{
-#if BX_SUPPORT_PCI
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    DEV_pci_debug_dump();
+  if (strlen(dev) == 0) {
+    if (bx_debug_info_list == NULL) {
+      dbg_printf("info device list: no device registered\n");
+    } else {
+      dbg_printf("devices supported by 'info device':\n\n");
+      temp = bx_debug_info_list;
+      while (temp) {
+        dbg_printf("%s\n", temp->name);
+        temp = temp->next;
+      }
+      dbg_printf("\n");
+    }
+  } else {
+    if (bx_dbg_info_find_device(dev, &temp)) {
+      if (temp->device != NULL) {
+        len = strlen(args);
+        memset(argv, 0, sizeof(argv));
+        if (len > 0) {
+          char *options = new char[len + 1];
+          strcpy(options, args);
+          ptr = strtok(options, ",");
+          while (ptr) {
+            string_i = 0;
+            for (i=0; i<strlen(ptr); i++) {
+              if (!isspace(ptr[i])) string[string_i++] = ptr[i];
+            }
+            string[string_i] = '\0';
+            if (argc < 16) {
+              argv[argc++] = strdup(string);
+            } else {
+              BX_PANIC (("too many parameters, max is 16\n"));
+              break;
+            }
+            ptr = strtok(NULL, ",");
+          }
+          delete [] options;
+        }
+        temp->device->debug_dump(argc, argv);
+        for (i = 0; i < (unsigned)argc; i++) {
+          if (argv[i] != NULL) {
+            free(argv[i]);
+            argv[i] = NULL;
+          }
+        }
+      } else {
+        BX_PANIC(("info device: device pointer is NULL"));
+      }
+    } else {
+      dbg_printf("info device: '%s' not found\n", dev);
+    }
   }
-  else {
-    dbg_printf("PCI support is disabled in .bochsrc\n");
-  }
-#else
-  dbg_printf("PCI support is not compiled in\n");
-#endif
 }
 
 //
@@ -3508,7 +3639,7 @@ void bx_dbg_print_help(void)
   dbg_printf("    vb|vbreak, lb|lbreak, pb|pbreak|b|break, sb, sba, blist,\n");
   dbg_printf("    bpe, bpd, d|del|delete, watch, unwatch\n");
   dbg_printf("-*- CPU and memory contents -*-\n");
-  dbg_printf("    x, xp, setpmem, crc, info,\n");
+  dbg_printf("    x, xp, setpmem, writemem, crc, info,\n");
   dbg_printf("    r|reg|regs|registers, fp|fpu, mmx, sse, sreg, dreg, creg,\n");
   dbg_printf("    page, set, ptime, print-stack, ?|calc\n");
   dbg_printf("-*- Working with bochs param tree -*-\n");

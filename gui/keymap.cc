@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keymap.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: keymap.cc 11058 2012-02-23 17:16:35Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -80,7 +80,7 @@ bx_keymap_c bx_keymap;
 
 bx_keymap_c::bx_keymap_c(void)
 {
-    put("KMAP");
+    put("keymap", "KMAP");
 
     keymapCount = 0;
     keymapTable = (BXKeyEntry *)NULL;

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: sdl.cc 11370 2012-08-26 12:32:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -49,7 +49,8 @@ public:
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
   virtual void set_display_mode(disp_mode_t newmode);
-  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w = 0);
+  virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
+  virtual void set_mouse_mode_absxy(bx_bool mode);
 #if BX_SHOW_IPS
   virtual void show_ips(Bit32u ips_count);
 #endif
@@ -108,14 +109,14 @@ Bit8u h_panning = 0, v_panning = 0;
 Bit16u line_compare = 1023;
 int fontwidth = 8, fontheight = 16;
 static unsigned vga_bpp=8;
-unsigned tilewidth, tileheight;
 unsigned char menufont[256][8];
 Uint32 palette[256];
 Uint32 headerbar_fg, headerbar_bg;
 Bit8u old_mousebuttons=0, new_mousebuttons=0;
 int old_mousex=0, new_mousex=0;
 int old_mousey=0, new_mousey=0;
-bx_bool just_warped = false;
+bx_bool just_warped = 0;
+bx_bool sdl_mouse_mode_absxy = 0;
 bitmaps *sdl_bitmaps[MAX_SDL_BITMAPS];
 int n_sdl_bitmaps = 0;
 int statusbar_height = 18;
@@ -124,6 +125,7 @@ static unsigned statusitem_pos[12] = {
 };
 static bx_bool statusitem_active[12];
 #if BX_SHOW_IPS
+static bx_bool sdl_hide_ips = 0;
 static bx_bool sdl_ips_update = 0;
 static char sdl_ips_text[20];
 #endif
@@ -142,12 +144,6 @@ static void headerbar_click(int x);
 BxEvent *sdl_notify_callback (void *unused, BxEvent *event);
 static bxevent_handler old_callback = NULL;
 static void *old_callback_arg = NULL;
-#endif
-
-#if BX_SHOW_IPS
-#if  defined(__MINGW32__) || defined(_MSC_VER)
-  void bx_signal_handler(int);
-#endif
 #endif
 
 
@@ -233,7 +229,6 @@ void switch_to_fullscreen(void)
   sdl_fullscreen = SDL_SetVideoMode(res_x,res_y,32, SDL_HWSURFACE|SDL_FULLSCREEN);
   src.y = 0;
   SDL_BlitSurface(tmp,&src,sdl_fullscreen,&dst);
-  SDL_UpdateRect(tmp,0,0,res_x,res_y);
   SDL_FreeSurface(tmp);
 
   SDL_ShowCursor(0);
@@ -249,7 +244,7 @@ void switch_to_fullscreen(void)
 #if defined(__MINGW32__) || defined(_MSC_VER)
 Uint32 SDLCALL sdlTimer(Uint32 interval)
 {
-  bx_signal_handler(SIGALRM);
+  bx_show_ips_handler();
   return interval;
 }
 #endif
@@ -263,22 +258,33 @@ void bx_sdl_morphos_exit(void)
 }
 #endif
 
-void bx_sdl_gui_c::specific_init(int argc, char **argv,
-    unsigned x_tilesize,
-    unsigned y_tilesize,
-    unsigned header_bar_y)
+#if defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
+DWORD WINAPI DebugGuiThread(LPVOID)
+{
+  MSG msg;
+
+  bx_gui->init_debug_dialog();
+  while (GetMessage(&msg, NULL, 0, 0)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+  return 0;
+}
+#endif
+
+void bx_sdl_gui_c::specific_init(int argc, char **argv, unsigned header_bar_y)
 {
   int i,j;
   Uint32 flags;
+#ifdef WIN32
   bx_bool gui_ci;
 
   gui_ci = !strcmp(SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected(), "win32config");
+#endif
   put("SDL");
 
   UNUSED(bochs_icon_bits);
 
-  tilewidth = x_tilesize;
-  tileheight = y_tilesize;
   headerbar_height = header_bar_y;
 
   for(i=0;i<256;i++)
@@ -337,15 +343,29 @@ void bx_sdl_gui_c::specific_init(int argc, char **argv,
       } else if (!strcmp(argv[i], "nokeyrepeat")) {
         BX_INFO(("disabled host keyboard repeat"));
         SDL_EnableKeyRepeat(0, 0);
-#if !defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
       } else if (!strcmp(argv[i], "gui_debug")) {
-        extern void InitDebugDialog();
         SIM->set_debug_gui(1);
+#ifdef WIN32
+        if (gui_ci) {
+          // on Windows the debugger gui must run in a separate thread
+          DWORD threadID;
+          CreateThread(NULL, 0, DebugGuiThread, NULL, 0, &threadID);
+        } else {
+          BX_PANIC(("Config interface 'win32config' is required for gui debugger"));
+        }
+#else
         // redirect notify callback to sdl specific code
         SIM->get_notify_callback (&old_callback, &old_callback_arg);
         assert (old_callback != NULL);
         SIM->set_notify_callback (sdl_notify_callback, NULL);
-        InitDebugDialog();
+        init_debug_dialog();
+#endif 
+#endif
+#if BX_SHOW_IPS
+      } else if (!strcmp(argv[i], "hideIPS")) {
+        BX_INFO(("hide IPS display in status bar"));
+        sdl_hide_ips = 1;
 #endif
       } else {
         BX_PANIC(("Unknown sdl option '%s'", argv[i]));
@@ -427,21 +447,15 @@ void sdl_set_status_text(int element, const char *text, bx_bool active, bx_bool 
   SDL_UpdateRect(sdl_screen, xleft,res_y+headerbar_height+1,xsize,statusbar_height-2);
 }
 
-void bx_sdl_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
+void bx_sdl_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_bool w)
 {
-  if (element < 0) {
-    for (unsigned i = 0; i < statusitem_count; i++) {
-      sdl_set_status_text(i+1, statusitem_text[i], 0, 0);
-    }
-  } else if ((unsigned)element < statusitem_count) {
-    sdl_set_status_text(element+1, statusitem_text[element], active, w);
-  }
+  sdl_set_status_text(element+1, statusitem[element].text, active, w);
 }
 
 void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     unsigned long cursor_x,
     unsigned long cursor_y,
-    bx_vga_tminfo_t tm_info)
+    bx_vga_tminfo_t *tm_info)
 {
   Bit8u *pfont_row, *old_line, *new_line, *text_base;
   unsigned int cs_y, i, x, y;
@@ -458,10 +472,10 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   Uint32 text_palette[16];
 
   forceUpdate = 0;
-  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
-  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  blink_mode = (tm_info->blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info->blink_flags & BX_TEXT_BLINK_STATE) > 0;
   if (blink_mode) {
-    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+    if (tm_info->blink_flags & BX_TEXT_BLINK_TOGGLE)
       forceUpdate = 1;
   }
   if (charmap_updated) {
@@ -469,32 +483,32 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     charmap_updated = 0;
   }
   for (i=0; i<16; i++) {
-    text_palette[i] = palette[DEV_vga_get_actl_pal_idx(i)];
+    text_palette[i] = palette[tm_info->actl_palette[i]];
   }
-  if ((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
+  if ((tm_info->h_panning != h_panning) || (tm_info->v_panning != v_panning)) {
     forceUpdate = 1;
-    h_panning = tm_info.h_panning;
-    v_panning = tm_info.v_panning;
+    h_panning = tm_info->h_panning;
+    v_panning = tm_info->v_panning;
   }
-  if (tm_info.line_compare != line_compare) {
+  if (tm_info->line_compare != line_compare) {
     forceUpdate = 1;
-    line_compare = tm_info.line_compare;
+    line_compare = tm_info->line_compare;
   }
   if (sdl_screen) {
     disp = sdl_screen->pitch/4;
     buf_row = (Uint32 *)sdl_screen->pixels + headerbar_height*disp;
   } else {
     disp = sdl_fullscreen->pitch/4;
-    buf_row = (Uint32 *)sdl_fullscreen->pixels;
+    buf_row = (Uint32 *)sdl_fullscreen->pixels + sdl_fullscreen->offset/4;
   }
   // first invalidate character at previous and new cursor location
   if ((prev_cursor_y < text_rows) && (prev_cursor_x < text_cols)) {
-    curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
+    curs = prev_cursor_y * tm_info->line_offset + prev_cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   }
-  cursor_visible = ((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < fontheight));
+  cursor_visible = ((tm_info->cs_start <= tm_info->cs_end) && (tm_info->cs_start < fontheight));
   if((cursor_visible) && (cursor_y < text_rows) && (cursor_x < text_cols)) {
-    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    curs = cursor_y * tm_info->line_offset + cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   } else {
     curs = 0xffff;
@@ -504,7 +518,7 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   if (v_panning) rows++;
   y = 0;
   cs_y = 0;
-  text_base = new_text - tm_info.start_address;
+  text_base = new_text - tm_info->start_address;
   if (line_compare < res_y) {
     split_textrow = (line_compare + v_panning) / fontheight;
     split_fontrows = ((line_compare + v_panning) % fontheight) + 1;
@@ -550,7 +564,7 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = cs_y * tm_info.line_offset;
+    offset = cs_y * tm_info->line_offset;
     do
     {
       cfwidth = fontwidth;
@@ -580,7 +594,7 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
           bgcolor = text_palette[(new_text[1] >> 4) & 0x0F];
         }
 	invert = ((offset == curs) && (cursor_visible));
-	gfxcharw9 = ((tm_info.line_graphics) && ((new_text[0] & 0xE0) == 0xC0));
+	gfxcharw9 = ((tm_info->line_graphics) && ((new_text[0] & 0xE0) == 0xC0));
 
 	// Display this one char
 	fontrows = cfheight;
@@ -610,7 +624,7 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 	    font_row <<= h_panning;
 	  }
 	  fontpixels = cfwidth;
-	  if ((invert) && (fontline >= tm_info.cs_start) && (fontline <= tm_info.cs_end))
+	  if ((invert) && (fontline >= tm_info->cs_start) && (fontline <= tm_info->cs_end))
 	    mask = 0x100;
 	  else
 	    mask = 0x00;
@@ -650,19 +664,19 @@ void bx_sdl_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       new_text = text_base;
       forceUpdate = 1;
       cs_y = 0;
-      if (tm_info.split_hpanning) h_panning = 0;
+      if (tm_info->split_hpanning) h_panning = 0;
       rows = ((res_y - line_compare + fontheight - 2) / fontheight) + 1;
       split_screen = 1;
     }
     else
     {
-      new_text = new_line + tm_info.line_offset;
-      old_text = old_line + tm_info.line_offset;
+      new_text = new_line + tm_info->line_offset;
+      old_text = old_line + tm_info->line_offset;
       cs_y++;
       y++;
     }
   } while(--rows);
-  h_panning = tm_info.h_panning;
+  h_panning = tm_info->h_panning;
   prev_cursor_x = cursor_x;
   prev_cursor_y = cursor_y;
 }
@@ -691,10 +705,10 @@ void bx_sdl_gui_c::graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y)
   else
   {
     disp = sdl_fullscreen->pitch/4;
-    buf = (Uint32 *)sdl_fullscreen->pixels + y*disp + x;
+    buf = (Uint32 *)sdl_fullscreen->pixels + y*disp + x + sdl_fullscreen->offset/4;
   }
 
-  i = tileheight;
+  i = y_tilesize;
   if(i + y > res_y) i = res_y - y;
 
   // FIXME
@@ -706,7 +720,7 @@ void bx_sdl_gui_c::graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y)
       do
       {
         buf_row = buf;
-        j = tilewidth;
+        j = x_tilesize;
         do
         {
           *buf++ = palette[*snapshot++];
@@ -761,18 +775,18 @@ bx_svga_tileinfo_t *bx_sdl_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 
 Bit8u *bx_sdl_gui_c::graphics_tile_get(unsigned x0, unsigned y0, unsigned *w, unsigned *h)
 {
-  if (x0+tilewidth > res_x) {
+  if (x0+x_tilesize > res_x) {
     *w = res_x - x0;
   }
   else {
-    *w = tilewidth;
+    *w = x_tilesize;
   }
 
-  if (y0+tileheight > res_y) {
+  if (y0+y_tilesize > res_y) {
     *h = res_y - y0;
   }
   else {
-    *h = tileheight;
+    *h = y_tilesize;
   }
 
   if (sdl_screen) {
@@ -781,7 +795,7 @@ Bit8u *bx_sdl_gui_c::graphics_tile_get(unsigned x0, unsigned y0, unsigned *w, un
            sdl_screen->format->BytesPerPixel*x0;
   }
   else {
-    return (Bit8u *)sdl_fullscreen->pixels +
+    return (Bit8u *)sdl_fullscreen->pixels + sdl_fullscreen->offset +
            sdl_fullscreen->pitch*(y0) +
            sdl_fullscreen->format->BytesPerPixel*x0;
   }
@@ -959,7 +973,7 @@ void bx_sdl_gui_c::handle_events(void)
 {
   Bit32u key_event;
   Bit8u mouse_state;
-  int wheel_status;
+  int dx, dy, wheel_status;
   bx_bool mouse_toggle = 0;
 
   while(SDL_PollEvent(&sdl_event))
@@ -968,42 +982,44 @@ void bx_sdl_gui_c::handle_events(void)
     switch(sdl_event.type)
     {
       case SDL_VIDEOEXPOSE:
-	if(sdl_fullscreen_toggle == 0)
-	  SDL_UpdateRect(sdl_screen, 0,0, res_x, res_y+headerbar_height+statusbar_height);
-	else
-	  SDL_UpdateRect(sdl_fullscreen, 0, headerbar_height, res_x, res_y);
-	break;
+        if (sdl_fullscreen_toggle == 0)
+          SDL_UpdateRect(sdl_screen, 0,0, res_x, res_y+headerbar_height+statusbar_height);
+        else
+          SDL_UpdateRect(sdl_fullscreen, 0, headerbar_height, res_x, res_y);
+        break;
 
       case SDL_MOUSEMOTION:
-	//fprintf (stderr, "mouse event to (%d,%d), relative (%d,%d)\n", (int)(sdl_event.motion.x), (int)(sdl_event.motion.y), (int)sdl_event.motion.xrel, (int)sdl_event.motion.yrel);
-	if (!sdl_grab) {
-	  //fprintf (stderr, "ignore mouse event because sdl_grab is off\n");
-	  break;
-	}
-	if (just_warped
-	    && sdl_event.motion.x == half_res_x
-	    && sdl_event.motion.y == half_res_y) {
-	  // This event was generated as a side effect of the WarpMouse,
-	  // and it must be ignored.
-	  //fprintf (stderr, "ignore mouse event because it is a side effect of SDL_WarpMouse\n");
-	  just_warped = false;
-	  break;
-	}
-	//fprintf (stderr, "processing relative mouse event\n");
+        if (!sdl_grab) {
+          break;
+        }
+        if (just_warped
+            && sdl_event.motion.x == half_res_x
+            && sdl_event.motion.y == half_res_y) {
+          // This event was generated as a side effect of the WarpMouse,
+          // and it must be ignored.
+          just_warped = 0;
+          break;
+        }
         new_mousebuttons = ((sdl_event.motion.state & 0x01)|((sdl_event.motion.state>>1)&0x02)
                             |((sdl_event.motion.state<<1)&0x04));
-        DEV_mouse_motion_ext(
-            sdl_event.motion.xrel,
-            -sdl_event.motion.yrel,
-            wheel_status,
-            new_mousebuttons);
-	old_mousebuttons = new_mousebuttons;
-	old_mousex = (int)(sdl_event.motion.x);
-	old_mousey = (int)(sdl_event.motion.y);
-	//fprintf (stderr, "warping mouse to center\n");
-	SDL_WarpMouse(half_res_x, half_res_y);
-	just_warped = 1;
-	break;
+        if (sdl_mouse_mode_absxy) {
+          if ((sdl_event.motion.y >= headerbar_height) && (sdl_event.motion.y < (res_y + headerbar_height))) {
+            dx = sdl_event.motion.x * 0x7fff / res_x;
+            dy = (sdl_event.motion.y - headerbar_height) * 0x7fff / res_y;
+            DEV_mouse_motion(dx, dy, wheel_status, new_mousebuttons, 1);
+          }
+        } else {
+          DEV_mouse_motion(sdl_event.motion.xrel, -sdl_event.motion.yrel,
+                           wheel_status,  new_mousebuttons, 0);
+        }
+        old_mousebuttons = new_mousebuttons;
+        old_mousex = (int)(sdl_event.motion.x);
+        old_mousey = (int)(sdl_event.motion.y);
+        if (!sdl_mouse_mode_absxy) {
+          SDL_WarpMouse(half_res_x, half_res_y);
+          just_warped = 1;
+        }
+        break;
 
       case SDL_MOUSEBUTTONDOWN:
         // mouse capture toggle-check
@@ -1052,11 +1068,16 @@ void bx_sdl_gui_c::handle_events(void)
         if(sdl_fullscreen_toggle == 0)
           new_mousebuttons &= 0x07;
         // send motion information
-        DEV_mouse_motion_ext(
-            new_mousex - old_mousex,
-            -(new_mousey - old_mousey),
-            wheel_status,
-            new_mousebuttons);
+        if (sdl_mouse_mode_absxy) {
+          if ((new_mousey >= headerbar_height) && (new_mousey < (res_y + headerbar_height))) {
+            dx = new_mousex * 0x7fff / res_x;
+            dy = (new_mousey - headerbar_height) * 0x7fff / res_y;
+            DEV_mouse_motion(dx, dy, wheel_status, new_mousebuttons, 1);
+          }
+        } else {
+          DEV_mouse_motion(new_mousex - old_mousex, -(new_mousey - old_mousey),
+                           wheel_status, new_mousebuttons, 0);
+        }
         // mark current state to diff with next packet
         old_mousebuttons = new_mousebuttons;
         old_mousex = new_mousex;
@@ -1081,9 +1102,8 @@ void bx_sdl_gui_c::handle_events(void)
           }
         }
 
-        // Windows/Fullscreen toggle-check
+        // Window/Fullscreen toggle-check
         if (sdl_event.key.keysym.sym == SDLK_SCROLLOCK) {
-//        SDL_WM_ToggleFullScreen(sdl_screen);
           sdl_fullscreen_toggle = ~sdl_fullscreen_toggle;
           if(sdl_fullscreen_toggle == 0)
             switch_to_windowed();
@@ -1195,7 +1215,7 @@ void bx_sdl_gui_c::clear_screen(void)
   {
     color = SDL_MapRGB(sdl_fullscreen->format, 0,0, 0);
     disp = sdl_fullscreen->pitch/4;
-    buf = (Uint32 *)sdl_fullscreen->pixels;
+    buf = (Uint32 *)sdl_fullscreen->pixels + sdl_fullscreen->offset/4;
   }
   else return;
 
@@ -1506,7 +1526,7 @@ void bx_sdl_gui_c::show_headerbar(void)
   } while(--rowsleft);
   SDL_UpdateRect( sdl_screen, 0,res_y+headerbar_height,res_x,statusbar_height);
   for (unsigned i=0; i<statusitem_count; i++) {
-    sdl_set_status_text(i+1, statusitem_text[i], statusitem_active[i+1]);
+    sdl_set_status_text(i+1, statusitem[i].text, statusitem_active[i+1]);
   }
 }
 
@@ -1598,22 +1618,28 @@ void bx_sdl_gui_c::set_display_mode(disp_mode_t newmode)
   if (sdl_fullscreen_toggle) {
     switch (newmode) {
       case DISP_MODE_CONFIG:
-	BX_DEBUG(("switch to configuration mode (windowed)"));
-	switch_to_windowed();
-	break;
+        BX_DEBUG(("switch to configuration mode (windowed)"));
+        switch_to_windowed();
+        break;
       case DISP_MODE_SIM:
-	BX_DEBUG(("switch to simulation mode (fullscreen)"));
-	switch_to_fullscreen();
-	break;
+        BX_DEBUG(("switch to simulation mode (fullscreen)"));
+        switch_to_fullscreen();
+        break;
     }
   }
+}
+
+void bx_sdl_gui_c::set_mouse_mode_absxy(bx_bool mode)
+{
+  sdl_mouse_mode_absxy = mode;
 }
 
 #if BX_SHOW_IPS
 void bx_sdl_gui_c::show_ips(Bit32u ips_count)
 {
-  if (!sdl_ips_update) {
-    sprintf(sdl_ips_text, "IPS: %3.3fM", ips_count / 1000000.0);
+  if (!sdl_hide_ips && !sdl_ips_update) {
+    ips_count /= 1000;
+    sprintf(sdl_ips_text, "IPS: %u.%3.3uM", ips_count / 1000, ips_count % 1000);
     sdl_ips_update = 1;
   }
 }
@@ -1652,7 +1678,7 @@ BxEvent *sdl_notify_callback(void *unused, BxEvent *event)
       }
     case BX_ASYNC_EVT_DBG_MSG:
       {
-        ParseIDText (event->u.logmsg.msg);
+        ParseIDText(event->u.logmsg.msg);
         return event;
       }
     default:

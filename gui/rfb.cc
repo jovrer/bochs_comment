@@ -1,11 +1,13 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.cc 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: rfb.cc 11380 2012-08-28 19:37:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  Psyon.Org!
 //
 //    Donald Becker
 //    http://www.psyon.org
+//
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -51,7 +53,8 @@ public:
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
   void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
-  void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
+  void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
+  virtual void set_mouse_mode_absxy(bx_bool mode);
 #if BX_SHOW_IPS
   void show_ips(Bit32u ips_count);
 #endif
@@ -95,10 +98,14 @@ typedef int SOCKET;
 
 #endif
 
-static bool keep_alive;
-static bool client_connected;
-static bool desktop_resizable;
-
+static bx_bool keep_alive;
+static bx_bool client_connected;
+static bx_bool desktop_resizable;
+#if BX_SHOW_IPS
+static bx_bool rfbHideIPS = 0;
+static bx_bool rfbIPSupdate = 0;
+static char rfbIPStext[40];
+#endif
 static unsigned short rfbPort;
 
 // Headerbar stuff
@@ -158,6 +165,7 @@ static unsigned long  rfbCursorX = 0;
 static unsigned long  rfbCursorY = 0;
 static unsigned long  rfbOriginLeft  = 0;
 static unsigned long  rfbOriginRight = 0;
+static bx_bool  rfbMouseModeAbsXY = 0;
 static unsigned  rfbStatusbarY = 18;
 static unsigned rfbStatusitemPos[12] = {
   0, 170, 210, 250, 290, 330, 370, 410, 450, 490, 530, 570
@@ -188,6 +196,10 @@ void rfbKeyPressed(Bit32u key, int press_release);
 void rfbMouseMove(int x, int y, int bmask);
 void DrawColorPalette();
 
+#if BX_SHOW_IPS && defined(WIN32)
+DWORD WINAPI ShowIPSthread(LPVOID);
+#endif
+
 static const rfbPixelFormat BGR233Format = {
     8, 8, 1, 1, 7, 7, 3, 0, 3, 6
 };
@@ -201,18 +213,15 @@ static const rfbPixelFormat BGR233Format = {
 // Called from gui.cc, once upon program startup, to allow for the
 // specific GUI code (X11, Win32, ...) to be initialized.
 //
-// argc, argv: not used right now, but the intention is to pass native GUI
-//     specific options from the command line.  (X11 options, Win32 options,...)
+// argc, argv: used to pass display library specific options to the init code
+//     (X11 options, Win32 options,...)
 //
-// tilewidth, tileheight: for optimization, graphics_tile_update() passes
-//     only updated regions of the screen to the gui code to be redrawn.
-//     These define the dimensions of a region (tile).
 // headerbar_y:  A headerbar (toolbar) is display on the top of the
 //     VGA window, showing floppy status, and other information.  It
 //     always assumes the width of the current VGA mode width, but
 //     it's height is defined by this parameter.
 
-void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight, unsigned headerbar_y)
+void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
   unsigned char fc, vc;
   int i, timeout = 30;
@@ -225,8 +234,8 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
   rfbDimensionY = BX_RFB_DEF_YDIM;
   rfbWindowX = rfbDimensionX;
   rfbWindowY = rfbDimensionY + rfbHeaderbarY + rfbStatusbarY;
-  rfbTileX      = tilewidth;
-  rfbTileY      = tileheight;
+  rfbTileX      = x_tilesize;
+  rfbTileY      = y_tilesize;
 
   for(i = 0; i < 256; i++) {
     for(int j = 0; j < 16; j++) {
@@ -254,9 +263,9 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
   clientEncodingsCount=0;
   clientEncodings=NULL;
 
-  keep_alive = true;
-  client_connected = false;
-  desktop_resizable = false;
+  keep_alive = 1;
+  client_connected = 0;
+  desktop_resizable = 0;
   StartThread();
 
 #ifdef WIN32
@@ -267,7 +276,7 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
     BX_ERROR(("private_colormap option ignored."));
   }
 
-  // load keymap for sdl
+  // load keymap for rfb
   if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
     bx_keymap.loadKeymap(convertStringToRfbKey);
   }
@@ -277,6 +286,11 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
     for (i = 1; i < argc; i++) {
       if (!strncmp(argv[i], "timeout=", 8)) {
         timeout = atoi(&argv[i][8]);
+#if BX_SHOW_IPS
+      } else if (!strcmp(argv[i], "hideIPS")) {
+        BX_INFO(("hide IPS display in status bar"));
+        rfbHideIPS = 1;
+#endif
       } else {
         BX_PANIC(("Unknown rfb option '%s'", argv[i]));
       }
@@ -287,13 +301,25 @@ void bx_rfb_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsi
   io->set_log_action(LOGLEV_PANIC, ACT_FATAL);
 
   while ((!client_connected) && (timeout--)) {
+    fprintf(stderr, "Waiting for RFB client: %2d\r", timeout+1);
 #ifdef WIN32
     Sleep(1000);
 #else
     sleep(1);
 #endif
   }
-  if (timeout < 0) BX_PANIC(("timeout! no client present"));
+  if ((timeout < 0) && (!client_connected)) {
+    BX_PANIC(("timeout! no client present"));
+  } else {
+    fprintf(stderr, "RFB client connected      \r");
+  }
+
+#if BX_SHOW_IPS && defined(WIN32)
+  if (!rfbHideIPS) {
+    DWORD threadID;
+    CreateThread(NULL, 0, ShowIPSthread, NULL, 0, &threadID);
+  }
+#endif
 
   new_gfx_api = 1;
   dialog_caps = 0;
@@ -331,15 +357,9 @@ void rfbSetStatusText(int element, const char *text, bx_bool active, bx_bool w)
   rfbUpdateRegion.updated = true;
 }
 
-void bx_rfb_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
+void bx_rfb_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_bool w)
 {
-  if (element < 0) {
-    for (unsigned i = 0; i < statusitem_count; i++) {
-      rfbSetStatusText(i+1, statusitem_text[i], 0, 0);
-    }
-  } else if ((unsigned)element < statusitem_count) {
-    rfbSetStatusText(element+1, statusitem_text[element], active, w);
-  }
+  rfbSetStatusText(element+1, statusitem[element].text, active, w);
 }
 
 #ifdef WIN32
@@ -377,7 +397,7 @@ void CDECL ServerThreadInit(void *indata)
 #endif
 
     sServer = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if(sServer == -1) {
+    if(sServer == (SOCKET) -1) {
         BX_PANIC(("could not create socket."));
         goto end_of_thread;
     }
@@ -411,7 +431,7 @@ void CDECL ServerThreadInit(void *indata)
     }
     BX_INFO (("listening for connections on port %i", rfbPort));
     sai_size = sizeof(sai);
-    while(keep_alive) {
+    while (keep_alive) {
         sClient = accept(sServer, (struct sockaddr *)&sai, (socklen_t*)&sai_size);
         if(sClient != INVALID_SOCKET) {
             HandleRfbClient(sClient);
@@ -439,10 +459,9 @@ void HandleRfbClient(SOCKET sClient)
   rfbServerInitMessage sim;
   bx_bool mouse_toggle = 0;
 
-  client_connected = true;
   setsockopt(sClient, IPPROTO_TCP, TCP_NODELAY, (const char *)&one, sizeof(one));
   BX_INFO(("accepted client connection."));
-  snprintf(pv, rfbProtocolVersionMessageSize,
+  snprintf(pv, rfbProtocolVersionMessageSize + 1,
            rfbProtocolVersionFormat,
            rfbServerProtocolMajorVersion,
            rfbServerProtocolMinorVersion);
@@ -488,8 +507,9 @@ void HandleRfbClient(SOCKET sClient)
     return;
   }
 
+  client_connected = 1;
   sGlobal = sClient;
-  while(keep_alive) {
+  while (keep_alive) {
     U8 msgType;
     int n;
 
@@ -497,6 +517,8 @@ void HandleRfbClient(SOCKET sClient)
       if(n == 0) {
         BX_ERROR(("client closed connection."));
       } else {
+        if (errno == EINTR)
+          continue;
         BX_ERROR(("error receiving data."));
       }
       return;
@@ -574,7 +596,7 @@ void HandleRfbClient(SOCKET sClient)
                 BX_INFO(("%08x %s", rfbEncodings[j].id, rfbEncodings[j].name));
                 found=1;
                 if (clientEncodings[i] == rfbEncodingDesktopSize) {
-                  desktop_resizable = true;
+                  desktop_resizable = 1;
                 }
                 break;
               }
@@ -694,6 +716,12 @@ void bx_rfb_gui_c::handle_events(void)
         rfbUpdateRegion.height = 0;
     }
     rfbUpdateRegion.updated = false;
+#if BX_SHOW_IPS
+  if (rfbIPSupdate) {
+    rfbIPSupdate = 0;
+    rfbSetStatusText(0, rfbIPStext, 1);
+  }
+#endif
 }
 
 // ::FLUSH()
@@ -724,7 +752,7 @@ void bx_rfb_gui_c::clear_screen(void)
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is tm_info.line_offset*text_rows
+// format of old_text & new_text: each is tm_info->line_offset*text_rows
 //     bytes long. Each character consists of 2 bytes.  The first by is
 //     the character value, the second is the attribute byte.
 //
@@ -733,17 +761,17 @@ void bx_rfb_gui_c::clear_screen(void)
 // tm_info:  this structure contains information for additional
 //           features in text mode (cursor shape, line offset,...)
 
-void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t tm_info)
+void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long cursor_x, unsigned long cursor_y, bx_vga_tminfo_t *tm_info)
 {
   Bit8u *old_line, *new_line;
   Bit8u cAttr, cChar;
   unsigned int  curs, hchars, offset, rows, x, y, xc, yc;
   bx_bool force_update=0, gfxchar, blink_state, blink_mode;
 
-  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
-  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  blink_mode = (tm_info->blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info->blink_flags & BX_TEXT_BLINK_STATE) > 0;
   if (blink_mode) {
-    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+    if (tm_info->blink_flags & BX_TEXT_BLINK_TOGGLE)
       force_update = 1;
   }
   if(charmap_updated) {
@@ -753,12 +781,12 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
 
   // first invalidate character at previous and new cursor location
   if ((rfbCursorY < text_rows) && (rfbCursorX < text_cols)) {
-    curs = rfbCursorY * tm_info.line_offset + rfbCursorX * 2;
+    curs = rfbCursorY * tm_info->line_offset + rfbCursorX * 2;
     old_text[curs] = ~new_text[curs];
   }
-  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < font_height) &&
+  if((tm_info->cs_start <= tm_info->cs_end) && (tm_info->cs_start < font_height) &&
      (cursor_y < text_rows) && (cursor_x < text_cols)) {
-    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    curs = cursor_y * tm_info->line_offset + cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   } else {
     curs = 0xffff;
@@ -770,7 +798,7 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
     hchars = text_cols;
     new_line = new_text;
     old_line = old_text;
-    offset = y * tm_info.line_offset;
+    offset = y * tm_info->line_offset;
     yc = y * font_height + rfbHeaderbarY;
     x = 0;
     do {
@@ -784,7 +812,7 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
         } else {
           cAttr = new_text[1];
         }
-        gfxchar = tm_info.line_graphics && ((cChar & 0xE0) == 0xC0);
+        gfxchar = tm_info->line_graphics && ((cChar & 0xE0) == 0xC0);
         xc = x * font_width;
         DrawChar(xc, yc, font_width, font_height, 0, (char *)&vga_charmap[cChar<<5], cAttr, gfxchar);
         if(yc < rfbUpdateRegion.y) rfbUpdateRegion.y = yc;
@@ -794,8 +822,8 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
         rfbUpdateRegion.updated = true;
         if (offset == curs) {
           cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
-          DrawChar(xc, yc + tm_info.cs_start, font_width, tm_info.cs_end - tm_info.cs_start + 1,
-                   tm_info.cs_start, (char *)&vga_charmap[cChar<<5], cAttr, gfxchar);
+          DrawChar(xc, yc + tm_info->cs_start, font_width, tm_info->cs_end - tm_info->cs_start + 1,
+                   tm_info->cs_start, (char *)&vga_charmap[cChar<<5], cAttr, gfxchar);
         }
       }
       x++;
@@ -804,8 +832,8 @@ void bx_rfb_gui_c::text_update(Bit8u *old_text, Bit8u *new_text, unsigned long c
       offset+=2;
     } while (--hchars);
     y++;
-    new_text = new_line + tm_info.line_offset;
-    old_text = old_line + tm_info.line_offset;
+    new_text = new_line + tm_info->line_offset;
+    old_text = old_line + tm_info->line_offset;
   } while (--rows);
 
   rfbCursorX = cursor_x;
@@ -841,8 +869,8 @@ bx_bool bx_rfb_gui_c::palette_change(unsigned index, unsigned red, unsigned gree
 // screen, since info in this region has changed.
 //
 // tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'tilewidth' & 'tileheight' parameters to
-//       ::specific_init().  Each value specifies an index into the
+//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
+//       Each value specifies an index into the
 //       array of colors you allocated for ::palette_change()
 // x0: x origin of tile
 // y0: y origin of tile
@@ -1068,7 +1096,7 @@ void bx_rfb_gui_c::show_headerbar(void)
   DrawBitmap(0, rfbWindowY - rfbStatusbarY, rfbWindowX, rfbStatusbarY, newBits, (char)0xf0, false);
   free(newBits);
   for (i = 1; i <= statusitem_count; i++) {
-    rfbSetStatusText(i, statusitem_text[i-1], rfbStatusitemActive[i]);
+    rfbSetStatusText(i, statusitem[i-1].text, rfbStatusitemActive[i]);
   }
 }
 
@@ -1110,7 +1138,7 @@ void bx_rfb_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 void bx_rfb_gui_c::exit(void)
 {
     unsigned int i;
-    keep_alive = false;
+    keep_alive = 0;
 #ifdef WIN32
     StopWinsock();
 #endif
@@ -1645,7 +1673,7 @@ void rfbMouseMove(int x, int y, int bmask)
 {
   static int oldx = -1;
   static int oldy = -1;
-  int xorigin;
+  int dx, dy, xorigin;
 
   if ((oldx == 1) && (oldy == -1)) {
     oldx = x;
@@ -1653,7 +1681,15 @@ void rfbMouseMove(int x, int y, int bmask)
     return;
   }
   if(y > rfbHeaderbarY) {
-    DEV_mouse_motion(x - oldx, oldy - y, bmask);
+    if (rfbMouseModeAbsXY) {
+      if ((y >= rfbHeaderbarY) && (y < (int)(rfbDimensionY + rfbHeaderbarY))) {
+        dx = x * 0x7fff / rfbDimensionX;
+        dy = (y - rfbHeaderbarY) * 0x7fff / rfbDimensionY;
+        DEV_mouse_motion(dx, dy, 0, bmask, 1);
+      }
+    } else {
+      DEV_mouse_motion(x - oldx, oldy - y, 0, bmask, 0);
+    }
     oldx = x;
     oldy = y;
   } else {
@@ -1688,12 +1724,38 @@ void bx_rfb_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
   *bpp = 8;
 }
 
+void bx_rfb_gui_c::set_mouse_mode_absxy(bx_bool mode)
+{
+  rfbMouseModeAbsXY = mode;
+}
+
 #if BX_SHOW_IPS
+#ifdef WIN32
+VOID CALLBACK IPSTimerProc(HWND hWnd, UINT nMsg, UINT_PTR nIDEvent, DWORD dwTime)
+{
+  bx_show_ips_handler();
+}
+
+DWORD WINAPI ShowIPSthread(LPVOID)
+{
+  MSG msg;
+
+  UINT TimerId = SetTimer(NULL, 0, 1000, &IPSTimerProc);
+  while (keep_alive && GetMessage(&msg, NULL, 0, 0)) {
+    DispatchMessage(&msg);
+  }
+  KillTimer(NULL, TimerId);
+  return 0;
+}
+#endif
+
 void bx_rfb_gui_c::show_ips(Bit32u ips_count)
 {
-  char ips_text[40];
-  sprintf(ips_text, "IPS: %3.3fM", ips_count / 1000000.0);
-  rfbSetStatusText(0, ips_text, 1);
+  if (!rfbIPSupdate && !rfbHideIPS) {
+    ips_count /= 1000;
+    sprintf(rfbIPStext, "IPS: %u.%3.3uM", ips_count / 1000, ips_count % 1000);
+    rfbIPSupdate = 1;
+  }
 }
 #endif
 

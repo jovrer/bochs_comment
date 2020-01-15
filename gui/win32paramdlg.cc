@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32paramdlg.cc 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: win32paramdlg.cc 11097 2012-03-15 19:34:13Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Volker Ruppert
@@ -150,7 +150,7 @@ HWND hwndTT, tt_hwndDlg;
 HHOOK tt_hhk;
 const char *tt_text;
 
-BOOL EnumChildProc(HWND hwndCtrl, LPARAM lParam);
+BOOL CALLBACK EnumChildProc(HWND hwndCtrl, LPARAM lParam);
 LRESULT CALLBACK GetMsgProc(int nCode, WPARAM wParam, LPARAM lParam);
 
 BOOL CreateParamDlgTooltip(HWND hwndDlg)
@@ -176,7 +176,7 @@ BOOL CreateParamDlgTooltip(HWND hwndDlg)
   return TRUE;
 }
 
-BOOL EnumChildProc(HWND hwndCtrl, LPARAM lParam)
+BOOL CALLBACK EnumChildProc(HWND hwndCtrl, LPARAM lParam)
 {
   TOOLINFO ti;
   char szClass[64];
@@ -552,7 +552,7 @@ HWND CreateCombobox(HWND hDlg, UINT cid, UINT xpos, UINT ypos, BOOL hide, bx_par
   r.left = xpos;
   r.top = ypos;
   r.right = r.left + 100;
-  r.bottom = r.top + 14;
+  r.bottom = r.top + 14 * ((int)(eparam->get_max() - eparam->get_min()) + 1);
   MapDialogRect(hDlg, &r);
   Combo = CreateWindow("COMBOBOX", "", WS_CHILD | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
                        r.left, r.top, r.right-r.left+1, r.bottom-r.top+1, hDlg, (HMENU)code, NULL, NULL);

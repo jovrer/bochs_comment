@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmfunc.cc 10889 2011-12-29 21:03:34Z sshwarts $
+// $Id: vmfunc.cc 11301 2012-07-27 08:13:39Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -42,12 +42,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMFUNC(bxInstruction_c *i)
 
   if (0 == (vm->vmfunc_ctrls & (BX_CONST64(1)<<function))) {
     BX_ERROR(("VMFUNC: function %d not enabled", function));
-    VMexit_Instruction(i, VMX_VMEXIT_VMFUNC);
+    VMexit(VMX_VMEXIT_VMFUNC, 0);
   }
 
   switch(function) {
   case VMX_VMFUNC_EPTP_SWITCHING:
-     vmfunc_eptp_switching(i);
+     vmfunc_eptp_switching();
      break;
 
   default:
@@ -59,15 +59,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMFUNC(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_VMX >= 2
-extern bx_bool is_eptptr_valid(Bit64u eptptr);
-
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::vmfunc_eptp_switching(bxInstruction_c *i)
+void BX_CPU_C::vmfunc_eptp_switching(void)
 {
   Bit32u eptp_list_entry = ECX;
 
   if (eptp_list_entry >= 512) {
     BX_ERROR(("vmfunc_eptp_switching: invalid EPTP list entry %d", eptp_list_entry));
-    VMexit_Instruction(i, VMX_VMEXIT_VMFUNC);
+    VMexit(VMX_VMEXIT_VMFUNC, 0);
   }
 
   VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
@@ -76,7 +74,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::vmfunc_eptp_switching(bxInstruction_c *i)
   access_read_physical(vm->eptp_list_address + 8 * ECX, 8, &temp_eptp);
   if (! is_eptptr_valid(temp_eptp)) {
     BX_ERROR(("vmfunc_eptp_switching: invalid EPTP value in EPTP entry %d", ECX));
-    VMexit_Instruction(i, VMX_VMEXIT_VMFUNC);
+    VMexit(VMX_VMEXIT_VMFUNC, 0);
   }
 
   vm->eptptr = temp_eptp;

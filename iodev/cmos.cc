@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: cmos.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,7 @@
 
 #include "iodev.h"
 #include "cmos.h"
+#include "virt_timer.h"
 
 #define LOG_THIS theCmosDevice->
 
@@ -101,15 +102,20 @@ Bit8u bin_to_bcd(Bit8u value, bx_bool is_binary)
 
 int libcmos_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  theCmosDevice = new bx_cmos_c();
-  bx_devices.pluginCmosDevice = theCmosDevice;
-  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theCmosDevice, BX_PLUGIN_CMOS);
-  return(0); // Success
+  if (type == PLUGTYPE_CORE) {
+    theCmosDevice = new bx_cmos_c();
+    bx_devices.pluginCmosDevice = theCmosDevice;
+    BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theCmosDevice, BX_PLUGIN_CMOS);
+    return 0; // Success
+  } else {
+    return -1;
+  }
 }
 
 void libcmos_LTX_plugin_fini(void)
-{ if (theCmosDevice != NULL)
-  { delete theCmosDevice;
+{ 
+  if (theCmosDevice != NULL) {
+    delete theCmosDevice;
     theCmosDevice = NULL;
   }
 }
@@ -117,9 +123,7 @@ void libcmos_LTX_plugin_fini(void)
 bx_cmos_c::bx_cmos_c(void)
 {
   put("CMOS");
-
-  for (unsigned i=0; i<128; i++) s.reg[i] = 0;
-
+  memset(&s, 0, sizeof(s));
   s.periodic_timer_index = BX_NULL_TIMER_HANDLE;
   s.one_second_timer_index = BX_NULL_TIMER_HANDLE;
   s.uip_timer_index = BX_NULL_TIMER_HANDLE;
@@ -134,12 +138,13 @@ bx_cmos_c::~bx_cmos_c(void)
     BX_INFO(("Last time is %u (%s)", (unsigned) get_timeval(), tmptime));
     free(tmptime);
   }
+  SIM->get_bochs_root()->remove("cmos");
   BX_DEBUG(("Exit"));
 }
 
 void bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc 10209 2011-02-24 22:05:47Z sshwarts $"));
+  BX_DEBUG(("Init $Id: cmos.cc 11346 2012-08-19 08:16:20Z vruppert $"));
   // CMOS RAM & RTC
 
   DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);
@@ -147,15 +152,27 @@ void bx_cmos_c::init(void)
   DEV_register_iowrite_handler(this, write_handler, 0x0070, "CMOS RAM", 1);
   DEV_register_iowrite_handler(this, write_handler, 0x0071, "CMOS RAM", 1);
   DEV_register_irq(8, "CMOS RTC");
+
+  int clock_sync = SIM->get_param_enum(BXPN_CLOCK_SYNC)->get();
+  BX_CMOS_THIS s.rtc_sync = ((clock_sync == BX_CLOCK_SYNC_REALTIME) ||
+                             (clock_sync == BX_CLOCK_SYNC_BOTH)) &&
+                            SIM->get_param_bool(BXPN_CLOCK_RTC_SYNC)->get();
+
   if (BX_CMOS_THIS s.periodic_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_CMOS_THIS s.periodic_timer_index =
       DEV_register_timer(this, periodic_timer_handler,
         1000000, 1,0, "cmos"); // continuous, not-active
   }
   if (BX_CMOS_THIS s.one_second_timer_index == BX_NULL_TIMER_HANDLE) {
-    BX_CMOS_THIS s.one_second_timer_index =
-      DEV_register_timer(this, one_second_timer_handler,
-        1000000, 1,0, "cmos"); // continuous, not-active
+    if (BX_CMOS_THIS s.rtc_sync) {
+      BX_CMOS_THIS s.one_second_timer_index =
+        bx_virt_timer.register_timer(this, one_second_timer_handler,
+          1000000, 1, 0, "cmos"); // continuous, not-active
+    } else {
+      BX_CMOS_THIS s.one_second_timer_index =
+        DEV_register_timer(this, one_second_timer_handler,
+          1000000, 1,0, "cmos"); // continuous, not-active
+    }
   }
   if (BX_CMOS_THIS s.uip_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_CMOS_THIS s.uip_timer_index =
@@ -254,6 +271,11 @@ void bx_cmos_c::init(void)
   free(tmptime);
 
   BX_CMOS_THIS s.timeval_change = 0;
+
+#if BX_DEBUGGER
+  // register device for the 'info device' command (calls debug_dump())
+  bx_dbg_register_debug_info("cmos", this);
+#endif
 }
 
 void bx_cmos_c::reset(unsigned type)
@@ -269,8 +291,13 @@ void bx_cmos_c::reset(unsigned type)
   BX_CMOS_THIS s.reg[REG_STAT_C] = 0;
 
   // One second timer for updating clock & alarm functions
-  bx_pc_system.activate_timer(BX_CMOS_THIS s.one_second_timer_index,
-                         1000000, 1);
+  if (BX_CMOS_THIS s.rtc_sync) {
+    bx_virt_timer.activate_timer(BX_CMOS_THIS s.one_second_timer_index,
+                                1000000, 1);
+  } else {
+    bx_pc_system.activate_timer(BX_CMOS_THIS s.one_second_timer_index,
+                                1000000, 1);
+  }
 
   // handle periodic interrupt rate select
   BX_CMOS_THIS CRA_change();
@@ -297,9 +324,9 @@ void bx_cmos_c::save_image(void)
 
 void bx_cmos_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "cmos", "CMOS State", 2);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "cmos", "CMOS State");
   BXRS_HEX_PARAM_FIELD(list, mem_address, BX_CMOS_THIS s.cmos_mem_address);
-  bx_list_c *ram = new bx_list_c(list, "ram", 128);
+  bx_list_c *ram = new bx_list_c(list, "ram");
   for (unsigned i=0; i<128; i++) {
     char name[6];
     sprintf(name, "0x%02x", i);
@@ -826,3 +853,24 @@ void bx_cmos_c::update_timeval()
 
   BX_CMOS_THIS s.timeval = mktime(& time_calendar);
 }
+
+#if BX_DEBUGGER
+void bx_cmos_c::debug_dump(int argc, char **argv)
+{
+  int i, j, r;
+
+  dbg_printf("CMOS RTC\n\n");
+  dbg_printf("Index register: 0x%02x\n\n", BX_CMOS_THIS s.cmos_mem_address);
+  r = 0;
+  for (i=0; i<8; i++) {
+    dbg_printf("%04x ", r);
+    for (j=0; j<16; j++) {
+      dbg_printf(" %02x", BX_CMOS_THIS s.reg[r++]);
+    }
+    dbg_printf("\n");
+  }
+  if (argc > 0) {
+    dbg_printf("\nAdditional options not supported\n");
+  }
+}
+#endif

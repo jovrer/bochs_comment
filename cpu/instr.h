@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instr.h 10737 2011-10-19 20:54:04Z sshwarts $
+// $Id: instr.h 11377 2012-08-28 16:05:39Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008-2011 Stanislav Shwartsman
+//   Copyright (c) 2008-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -32,9 +32,9 @@ typedef void BX_INSF_TYPE;
 
 #define BX_SYNC_TIME_IF_SINGLE_PROCESSOR(allowed_delta) {                     \
   if (BX_SMP_PROCESSORS == 1) {                                               \
-    Bit32s delta = BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync; \
-    if (delta > allowed_delta) {                                              \
-      BX_CPU_THIS_PTR icount_last_sync = BX_CPU_THIS_PTR icount;              \
+    Bit32u delta = BX_CPU_THIS_PTR icount - BX_CPU_THIS_PTR icount_last_sync; \
+    if (delta >= allowed_delta) {                                             \
+      BX_CPU_THIS_PTR sync_icount();                                          \
       BX_TICKN(delta);                                                        \
     }                                                                         \
   }                                                                           \
@@ -57,6 +57,12 @@ typedef void BX_INSF_TYPE;
   return;                                              \
 }
 
+#define BX_LINK_TRACE(i) {                             \
+  BX_COMMIT_INSTRUCTION(i);                            \
+  linkTrace(i);                                        \
+  return;                                              \
+}
+
 #define BX_NEXT_INSTR(i) {                             \
   BX_COMMIT_INSTRUCTION(i);                            \
   if (BX_CPU_THIS_PTR async_event) return;             \
@@ -68,6 +74,7 @@ typedef void BX_INSF_TYPE;
 
 #define BX_NEXT_TRACE(i) { return; }
 #define BX_NEXT_INSTR(i) { return; }
+#define BX_LINK_TRACE(i) { return; }
 
 #define BX_SYNC_TIME_IF_SINGLE_PROCESSOR(allowed_delta) \
   if (BX_SMP_PROCESSORS == 1) BX_TICK1()
@@ -98,21 +105,24 @@ public:
   // and a function to execute the instruction after resolving
   // the memory address (if any).
   BxExecutePtr_tR execute;
-  BxExecutePtr_tR execute2;
+
+  union {
+    BxExecutePtr_tR execute2;
+    bxInstruction_c *next;
+  } handlers;
+
   BxResolvePtr_tR ResolveModrm;
 
   struct {
-    // 15..14 VEX Vector Length  (0=no VL, 1=128 bit, 2=256 bit)
-    // 13..13 VEX.W
-    // 12..12 lock
-    // 11...0 opcode
+    // 15...0 opcode
     Bit16u ia_opcode;
 
     //  7...4 (unused)
     //  3...0 ilen (0..15)
     Bit8u ilen;
 
-    //  7...6 repUsed (0=none, 2=0xF2, 3=0xF3)
+    //  7...6 VEX Vector Length (0=no VL, 1=128 bit, 2=256 bit)
+    //        repUsed (0=none, 2=0xF2, 3=0xF3)
     //  5...5 extend8bit
     //  4...4 mod==c0 (modrm)
     //  3...3 os64
@@ -122,14 +132,14 @@ public:
     Bit8u metaInfo1;
   } metaInfo;
 
-#define BX_INSTR_METADATA_SEG   0
-#define BX_INSTR_METADATA_B1    1
-#define BX_INSTR_METADATA_NNN   2
-#define BX_INSTR_METADATA_RM    3
-#define BX_INSTR_METADATA_BASE  4
-#define BX_INSTR_METADATA_INDEX 5
-#define BX_INSTR_METADATA_SCALE 6
-#define BX_INSTR_METADATA_VVV   7
+#define BX_INSTR_METADATA_DST   0
+#define BX_INSTR_METADATA_SRC1  1
+#define BX_INSTR_METADATA_SRC2  2
+#define BX_INSTR_METADATA_SRC3  3
+#define BX_INSTR_METADATA_SEG   4
+#define BX_INSTR_METADATA_BASE  5
+#define BX_INSTR_METADATA_INDEX 6
+#define BX_INSTR_METADATA_SCALE 7
 
   // using 5-bit field for registers (16 regs in 64-bit, RIP, NIL)
   Bit8u metaData[8];
@@ -146,6 +156,7 @@ public:
         Bit16u displ16u; // for 16-bit modrm forms
         Bit32u displ32u; // for 32-bit modrm forms
 
+        Bit32u Id2;
         Bit16u Iw2;
         Bit8u  Ib2;
       };
@@ -170,6 +181,10 @@ public:
   }
 #endif
 
+  BX_CPP_INLINE BxExecutePtr_tR execute2(void) const {
+    return handlers.execute2;
+  }
+
   BX_CPP_INLINE unsigned seg(void) const {
     return metaData[BX_INSTR_METADATA_SEG];
   }
@@ -177,31 +192,17 @@ public:
     metaData[BX_INSTR_METADATA_SEG] = val;
   }
 
-  BX_CPP_INLINE unsigned b1(void) const {
-    return metaData[BX_INSTR_METADATA_B1];
-  }
-  BX_CPP_INLINE void setB1(unsigned b1) {
-    metaData[BX_INSTR_METADATA_B1] = b1 & 0xff;
-  }
-  BX_CPP_INLINE void setModRM(unsigned modrm) {
+  BX_CPP_INLINE void setFoo(unsigned foo) {
     // none of x87 instructions has immediate
-    modRMForm.Ib = modrm;
+    modRMForm.Iw = foo;
   }
-  BX_CPP_INLINE unsigned modrm() const {
-    return modRMForm.Ib;
+  BX_CPP_INLINE unsigned foo() const {
+    return modRMForm.Iw;
   }
-  BX_CPP_INLINE void setNnn(unsigned nnn) {
-    metaData[BX_INSTR_METADATA_NNN] = nnn;
+  BX_CPP_INLINE unsigned b1() const {
+    return modRMForm.Iw >> 8;
   }
-  BX_CPP_INLINE unsigned nnn() const {
-    return metaData[BX_INSTR_METADATA_NNN];
-  }
-  BX_CPP_INLINE void setRm(unsigned rm) {
-    metaData[BX_INSTR_METADATA_RM] = rm;
-  }
-  BX_CPP_INLINE unsigned rm() const {
-    return metaData[BX_INSTR_METADATA_RM];
-  }
+
   BX_CPP_INLINE void setSibScale(unsigned scale) {
     metaData[BX_INSTR_METADATA_SCALE] = scale;
   }
@@ -225,6 +226,7 @@ public:
   BX_CPP_INLINE Bit32u Id() const  { return modRMForm.Id; }
   BX_CPP_INLINE Bit16u Iw() const  { return modRMForm.Iw; }
   BX_CPP_INLINE Bit8u  Ib() const  { return modRMForm.Ib; }
+  BX_CPP_INLINE Bit16u Id2() const { return modRMForm.Id2; }
   BX_CPP_INLINE Bit16u Iw2() const { return modRMForm.Iw2; }
   BX_CPP_INLINE Bit8u  Ib2() const { return modRMForm.Ib2; }
 #if BX_SUPPORT_X86_64
@@ -238,8 +240,7 @@ public:
   // code, when a strict 0 or 1 is not necessary.
   BX_CPP_INLINE void init(unsigned os32, unsigned as32, unsigned os64, unsigned as64)
   {
-    metaInfo.metaInfo1 = (os32<<2) | (os64<<3) | (as32<<0) | (as64<<1);
-    metaInfo.ia_opcode = 0; // clear VEX.W and VEX.VL
+    metaInfo.metaInfo1 = (os32<<2) | (os64<<3) | (as32<<0) | (as64<<1); // VL = 0
   }
 
   BX_CPP_INLINE unsigned os32L(void) const {
@@ -306,10 +307,10 @@ public:
   }
 
   BX_CPP_INLINE unsigned getIaOpcode(void) const {
-    return metaInfo.ia_opcode & 0xfff;
+    return metaInfo.ia_opcode;
   }
   BX_CPP_INLINE void setIaOpcode(Bit16u op) {
-    metaInfo.ia_opcode = (metaInfo.ia_opcode & 0xf000) | op;
+    metaInfo.ia_opcode = op;
   }
   BX_CPP_INLINE const char* getIaOpcodeName(void) const {
     return get_bx_opcode_name(getIaOpcode());
@@ -327,33 +328,34 @@ public:
 
   BX_CPP_INLINE unsigned getVL(void) const {
 #if BX_SUPPORT_AVX
-    return metaInfo.ia_opcode >> 14;
+    return metaInfo.metaInfo1 >> 6;
 #else
     return 0;
 #endif
   }
   BX_CPP_INLINE void setVL(unsigned value) {
-    metaInfo.ia_opcode = (metaInfo.ia_opcode & 0x3fff) | (value << 14);
+    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & 0x3f) | (value << 6);
   }
 
-#if BX_SUPPORT_AVX
-  BX_CPP_INLINE unsigned getVexW(void) const {
-    return metaInfo.metaInfo1 & (1<<13);
+  BX_CPP_INLINE void setSrcReg(unsigned src, unsigned reg) {
+    metaData[src] = reg;
   }
-  BX_CPP_INLINE void setVexW(unsigned bit) {
-    metaInfo.ia_opcode = (metaInfo.ia_opcode & 0xdfff) | (bit << 13);
-  }
-  BX_CPP_INLINE void assertVexW(void) {
-    metaInfo.ia_opcode |= (1 << 13);
-  }
-#endif
 
-  BX_CPP_INLINE void setVvv(unsigned vvv) {
-    metaData[BX_INSTR_METADATA_VVV] = vvv;
+  BX_CPP_INLINE unsigned dst() const {
+    return metaData[BX_INSTR_METADATA_DST];
   }
-  BX_CPP_INLINE unsigned vvv() const {
-    return metaData[BX_INSTR_METADATA_VVV];
+ 
+  BX_CPP_INLINE unsigned src1() const {
+    return metaData[BX_INSTR_METADATA_SRC1];
   }
+  BX_CPP_INLINE unsigned src2() const {
+    return metaData[BX_INSTR_METADATA_SRC2];
+  }
+  BX_CPP_INLINE unsigned src3() const {
+    return metaData[BX_INSTR_METADATA_SRC3];
+  }
+
+  BX_CPP_INLINE unsigned src() const { return src1(); }
 
   BX_CPP_INLINE unsigned modC0() const
   {
@@ -367,19 +369,20 @@ public:
     metaInfo.metaInfo1 |= (1<<4);
   }
 
-  BX_CPP_INLINE unsigned lock() const
-  {
-    return metaInfo.ia_opcode & (1<<12);
+#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
+  BX_CPP_INLINE bxInstruction_c* getNextTrace() const {
+    return handlers.next;
   }
-  BX_CPP_INLINE void assertLock()
-  {
-    metaInfo.ia_opcode |= (1<<12);
+  BX_CPP_INLINE void setNextTrace(bxInstruction_c* iptr) {
+    handlers.next = iptr;
   }
+#endif
+
 };
 // <TAG-CLASS-INSTRUCTION-END>
 
 enum {
-#define bx_define_opcode(a, b, c, d, e) a,
+#define bx_define_opcode(a, b, c, d, s1, s2, s3, s4, e) a,
 #include "ia_opcodes.h"
    BX_IA_LAST
 };

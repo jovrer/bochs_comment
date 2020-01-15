@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpudb.h 10891 2011-12-29 21:41:56Z sshwarts $
+// $Id: cpudb.h 11196 2012-05-26 19:40:18Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -35,10 +35,14 @@ bx_define_cpudb(atom_n270)
 bx_define_cpudb(p4_prescott_celeron_336)
 bx_define_cpudb(athlon64_clawhammer)
 bx_define_cpudb(athlon64_venice)
+bx_define_cpudb(turion64_tyler)
+bx_define_cpudb(phenom_8650_toliman)
 bx_define_cpudb(core2_penryn_t9600)
+bx_define_cpudb(corei5_lynnfield_750)
 bx_define_cpudb(corei5_arrandale_m520)
 #if BX_SUPPORT_AVX
 bx_define_cpudb(corei7_sandy_bridge_2600k)
+bx_define_cpudb(corei7_ivy_bridge_3770k)
 #endif
 #endif
 #endif

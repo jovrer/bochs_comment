@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h 10545 2011-08-06 13:08:31Z vruppert $
+// $Id: gui.h 11229 2012-06-24 09:14:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -64,6 +64,7 @@ typedef struct {
   bx_bool line_graphics;
   bx_bool split_hpanning;
   Bit8u   blink_flags;
+  Bit8u   actl_palette[16];
 } bx_vga_tminfo_t;
 
 typedef struct {
@@ -90,11 +91,10 @@ public:
   virtual ~bx_gui_c ();
   // Define the following functions in the module for your particular GUI
   // (x.cc, win32.cc, ...)
-  virtual void specific_init(int argc, char **argv,
-                 unsigned x_tilesize, unsigned y_tilesize, unsigned header_bar_y) = 0;
+  virtual void specific_init(int argc, char **argv, unsigned header_bar_y) = 0;
   virtual void text_update(Bit8u *old_text, Bit8u *new_text,
                           unsigned long cursor_x, unsigned long cursor_y,
-                          bx_vga_tminfo_t tm_info) = 0;
+                          bx_vga_tminfo_t *tm_info) = 0;
   virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y) = 0;
   virtual bx_svga_tileinfo_t *graphics_tile_info(bx_svga_tileinfo_t *info);
   virtual Bit8u *graphics_tile_get(unsigned x, unsigned y, unsigned *w, unsigned *h);
@@ -111,7 +111,7 @@ public:
   virtual int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)  = 0;
   virtual int set_clipboard_text(char *snapshot, Bit32u len) = 0;
   virtual void mouse_enabled_changed_specific (bx_bool val) = 0;
-  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w=0) {}
+  virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w) {}
   virtual void set_tooltip(unsigned hbar_id, const char *tip) {}
   virtual void exit(void) = 0;
   // set_display_mode() changes the mode between the configuration interface
@@ -136,6 +136,7 @@ public:
   virtual void beep_on(float frequency);
   virtual void beep_off();
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
+  virtual void set_mouse_mode_absxy(bx_bool mode) {}
 
   // The following function(s) are defined already, and your
   // GUI code calls them
@@ -144,16 +145,20 @@ public:
   static void set_text_charbyte(Bit16u address, Bit8u data);
   static Bit8u get_mouse_headerbar_id();
 
-  void init(int argc, char **argv,
-                 unsigned x_tilesize, unsigned y_tilesize);
+  void init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
+            unsigned x_tilesize, unsigned y_tilesize);
   void cleanup(void);
   void update_drive_status_buttons(void);
   static void     mouse_enabled_changed(bx_bool val);
-  int register_statusitem(const char *text);
+  int register_statusitem(const char *text, bx_bool auto_off=0);
+  void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
   static void init_signal_handlers();
   static void toggle_mouse_enable(void);
   bx_bool mouse_toggle_check(Bit32u key, bx_bool pressed);
   const char* get_toggle_info(void);
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+  void init_debug_dialog(void);
+#endif
 
 protected:
   // And these are defined and used privately in gui.cc
@@ -169,6 +174,9 @@ protected:
   static void config_handler(void);
   static void userbutton_handler(void);
   static void save_restore_handler(void);
+
+  static void led_timer_handler(void *);
+  void led_timer(void);
 
   bx_bool floppyA_status;
   bx_bool floppyB_status;
@@ -189,14 +197,27 @@ protected:
   unsigned char vga_charmap[0x2000];
   bx_bool charmap_updated;
   bx_bool char_changed[256];
+
   unsigned statusitem_count;
-  char statusitem_text[BX_MAX_STATUSITEMS][8];
+  int led_timer_index;
+  struct {
+    char text[8];
+    bx_bool active;
+    bx_bool mode; // read/write
+    bx_bool auto_off;
+    Bit8u counter;
+  } statusitem[BX_MAX_STATUSITEMS];
+
   disp_mode_t disp_mode;
   bx_bool new_gfx_api;
   Bit16u host_xres;
   Bit16u host_yres;
   Bit16u host_pitch;
   Bit8u host_bpp;
+  unsigned max_xres;
+  unsigned max_yres;
+  unsigned x_tilesize;
+  unsigned y_tilesize;
   Bit8u *framebuffer;
   Bit32u dialog_caps;
   Bit8u toggle_method;
@@ -216,23 +237,22 @@ protected:
 // Then, each method must be defined later in the file.
 #define DECLARE_GUI_VIRTUAL_METHODS()                                       \
 virtual void specific_init(int argc, char **argv,                           \
-         unsigned x_tilesize, unsigned y_tilesize,                          \
-         unsigned header_bar_y);                                            \
+                           unsigned header_bar_y);                          \
 virtual void text_update(Bit8u *old_text, Bit8u *new_text,                  \
                   unsigned long cursor_x, unsigned long cursor_y,           \
-                  bx_vga_tminfo_t tm_info);                                 \
+                  bx_vga_tminfo_t *tm_info);                                \
 virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y); \
 virtual void handle_events(void);                                           \
 virtual void flush(void);                                                   \
 virtual void clear_screen(void);                                            \
 virtual bx_bool palette_change(unsigned index,                              \
-unsigned red, unsigned green, unsigned blue);                           \
+unsigned red, unsigned green, unsigned blue);                               \
 virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0,   \
-                          unsigned fwidth=0, unsigned bpp=8);           \
+                          unsigned fwidth=0, unsigned bpp=8);               \
 virtual unsigned create_bitmap(const unsigned char *bmap,                   \
-unsigned xdim, unsigned ydim);                                          \
+                               unsigned xdim, unsigned ydim);               \
 virtual unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment,     \
-void (*f)(void));                                                       \
+                                  void (*f)(void));                         \
 virtual void replace_bitmap(unsigned hbar_id, unsigned bmap_id);            \
 virtual void show_headerbar(void);                                          \
 virtual int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes);              \
@@ -244,7 +264,7 @@ virtual void exit(void);                                                    \
 #define DECLARE_GUI_NEW_VIRTUAL_METHODS()                                   \
 virtual bx_svga_tileinfo_t *graphics_tile_info(bx_svga_tileinfo_t *info);   \
 virtual Bit8u *graphics_tile_get(unsigned x, unsigned y,                    \
-                             unsigned *w, unsigned *h);                 \
+                             unsigned *w, unsigned *h);                     \
 virtual void graphics_tile_update_in_place(unsigned x, unsigned y,          \
                                        unsigned w, unsigned h);
 /* end of DECLARE_GUI_NEW_VIRTUAL_METHODS */

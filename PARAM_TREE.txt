@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt 10897 2011-12-30 09:10:11Z vruppert $
+$Id: PARAM_TREE.txt 11276 2012-07-12 14:51:54Z sshwarts $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -26,6 +26,7 @@ cpu
   reset_on_triple_fault
   msrs
   cpuid_limit_winnt
+  mwait_is_nop
 
 cpuid
   family
@@ -39,8 +40,10 @@ cpuid
   sse4a
   aes
   movbe
+  adx
   xsave
   xsaveopt
+  svm
   vmx
   avx
   avx_f16c
@@ -56,7 +59,6 @@ cpuid
   fsgsbase
   smep
   mwait
-  mwait_is_nop
 
 memory
   standard
@@ -230,12 +232,22 @@ network
     ethmod
     ethdev
     script
+    bootrom
   pnic
     enabled
     macaddr
     ethmod
     ethdev
     script
+    bootrom
+
+  e1000
+    enabled
+    macaddr
+    ethmod
+    ethdev
+    script
+    bootrom
 
 sound
   sb16

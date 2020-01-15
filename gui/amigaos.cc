@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amigaos.cc 10588 2011-08-16 19:58:56Z sshwarts $
+// $Id: amigaos.cc 11224 2012-06-21 17:33:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2000-2009  The Bochs Project
+//  Copyright (C) 2000-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -74,35 +74,35 @@ struct InputEvent *MyInputHandler(void)
       case IECODE_LBUTTON:
       {
         mouse_button_state |= 0x01;
-        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, mouse_button_state);
+        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, 0, mouse_button_state, 0);
         return NULL;
       }
 
       case (IECODE_LBUTTON | IECODE_UP_PREFIX):
       {
         mouse_button_state &= ~0x01;
-        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, mouse_button_state);
+        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, 0, mouse_button_state, 0);
         return NULL;
       }
 
       case IECODE_RBUTTON:
       {
         mouse_button_state |= 0x02;
-        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, mouse_button_state);
+        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, 0, mouse_button_state, 0);
         return NULL;
       }
 
       case (IECODE_RBUTTON | IECODE_UP_PREFIX):
       {
         mouse_button_state &= 0x01;
-        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, mouse_button_state);
+        DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, 0, mouse_button_state, 0);
         return NULL;
       }
     }
 
     if (event->ie_Class == IECLASS_RAWMOUSE)
     {
-      DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, mouse_button_state);
+      DEV_mouse_motion(event->ie_position.ie_xy.ie_x, -event->ie_position.ie_xy.ie_y, 0, mouse_button_state, 0);
       return NULL;
     }
 
@@ -302,12 +302,8 @@ bx_bool open_screen(void)
   black = ObtainBestPen(window->WScreen->ViewPort.ColorMap, 0x00000000, 0x00000000, 0x00000000, NULL);
 }
 
-void bx_amigaos_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight,
-                                         unsigned headerbar_y)
+void bx_amigaos_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
-  x_tilesize = tilewidth;
-  y_tilesize = tileheight;
-
   bx_headerbar_y = headerbar_y;
 
   IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 39);
@@ -419,7 +415,7 @@ void bx_amigaos_gui_c::clear_screen(void)
 
 void bx_amigaos_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                                           unsigned long cursor_x, unsigned long cursor_y,
-                                          bx_vga_tminfo_t tm_info)
+                                          bx_vga_tminfo_t *tm_info)
 {
   int i;
   int cursori;

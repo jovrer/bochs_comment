@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h 10734 2011-10-15 19:29:42Z sshwarts $
+// $Id: osdep.h 11371 2012-08-26 14:43:14Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -83,6 +83,7 @@ extern "C" {
 #define mktemp _mktemp
 #define off_t __int64
 #define lseek _lseeki64
+#define fseeko64 _fseeki64
 #define fstat _fstati64
 #define stat  _stati64
 #define read _read
@@ -251,7 +252,7 @@ extern Bit64u bx_get_realtime64_usec (void);
 #if BX_HAVE_FSEEKO64 == 0
 #if BX_HAVE_FSEEK64
   #define fseeko64 fseek64 /* use fseek64() function */
-#else
+#elif !defined(_MSC_VER)
   #define fseeko64 fseeko  /* use regular fseeko() function */
 #endif
 #endif

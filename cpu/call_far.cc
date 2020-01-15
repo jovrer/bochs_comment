@@ -1,8 +1,8 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: call_far.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: call_far.cc 11106 2012-03-25 11:54:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2009 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -193,12 +193,6 @@ BX_CPU_C::call_protected(bxInstruction_c *i, Bit16u cs_raw, bx_address disp)
         // SWITCH_TASKS _without_ nesting to TSS
         task_switch(i, &gate_selector, &gate_descriptor,
           BX_TASK_FROM_CALL, dword1, dword2);
-
-        // EIP must be in code seg limit, else #GP(0)
-        if (EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-          BX_ERROR(("call_protected: EIP not within CS limits"));
-          exception(BX_GP_EXCEPTION, 0);
-        }
         return;
 
       case BX_TASK_GATE:
@@ -359,7 +353,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::call_gate(bx_descriptor_t *gate_descriptor
 
         for (unsigned n=param_count; n>0; n--) {
           temp_ESP -= 4;
-          Bit32u param = read_virtual_dword_32(BX_SEG_REG_SS, return_ESP + (n-1)*4);
+          Bit32u param = stack_read_dword(return_ESP + (n-1)*4);
           write_new_stack_dword_32(&new_stack, temp_ESP, cs_descriptor.dpl, param);
         }
         // push return address onto new stack
@@ -374,7 +368,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::call_gate(bx_descriptor_t *gate_descriptor
 
         for (unsigned n=param_count; n>0; n--) {
           temp_ESP -= 2;
-          Bit16u param = read_virtual_word_32(BX_SEG_REG_SS, return_ESP + (n-1)*2);
+          Bit16u param = stack_read_word(return_ESP + (n-1)*2);
           write_new_stack_word_32(&new_stack, temp_ESP, cs_descriptor.dpl, param);
         }
         // push return address onto new stack
@@ -396,7 +390,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::call_gate(bx_descriptor_t *gate_descriptor
 
         for (unsigned n=param_count; n>0; n--) {
           temp_SP -= 4;
-          Bit32u param = read_virtual_dword_32(BX_SEG_REG_SS, return_ESP + (n-1)*4);
+          Bit32u param = stack_read_dword(return_ESP + (n-1)*4);
           write_new_stack_dword_32(&new_stack, temp_SP, cs_descriptor.dpl, param);
         }
         // push return address onto new stack
@@ -411,7 +405,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::call_gate(bx_descriptor_t *gate_descriptor
 
         for (unsigned n=param_count; n>0; n--) {
           temp_SP -= 2;
-          Bit16u param = read_virtual_word_32(BX_SEG_REG_SS, return_ESP + (n-1)*2);
+          Bit16u param = stack_read_word(return_ESP + (n-1)*2);
           write_new_stack_word_32(&new_stack, temp_SP, cs_descriptor.dpl, param);
         }
         // push return address onto new stack

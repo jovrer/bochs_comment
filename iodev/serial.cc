@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial.cc 10340 2011-04-30 18:47:04Z sshwarts $
+// $Id: serial.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004-2009  The Bochs Project
@@ -54,22 +54,143 @@ typedef int SOCKET;
 
 bx_serial_c *theSerialDevice = NULL;
 
+// builtin configuration handling functions
+
+void serial_init_options(void)
+{
+  static const char *serial_mode_list[] = {
+    "null",
+    "file",
+    "pipe",
+    "pipe-client",
+    "pipe-server",
+    "term",
+    "raw",
+    "mouse",
+    "socket",
+    "socket-client",
+    "socket-server",
+    NULL
+  };
+
+  char name[4], label[80], descr[120];
+
+  bx_list_c *serial = (bx_list_c*)SIM->get_param("ports.serial");
+  for (int i=0; i<BX_N_SERIAL_PORTS; i++) {
+    sprintf(name, "%d", i+1);
+    sprintf(label, "Serial Port %d", i+1);
+    bx_list_c *menu = new bx_list_c(serial, name, label);
+    menu->set_options(menu->SERIES_ASK);
+    sprintf(label, "Enable serial port #%d (COM%d)", i+1, i+1);
+    sprintf(descr, "Controls whether COM%d is installed or not", i+1);
+    bx_param_bool_c *enabled = new bx_param_bool_c(menu, "enabled", label, descr,
+      (i==0)?1 : 0);  // only enable the first by default
+    sprintf(label, "I/O mode of the serial device for COM%d", i+1);
+    bx_param_enum_c *mode = new bx_param_enum_c(menu, "mode", label,
+      "The mode can be one these: 'null', 'file', 'pipe', 'term', 'raw', 'mouse', 'socket'",
+      serial_mode_list, 0, 0);
+    mode->set_ask_format("Choose I/O mode of the serial device [%s] ");
+    sprintf(label, "Pathname of the serial device for COM%d", i+1);
+    bx_param_filename_c *path = new bx_param_filename_c(menu, "dev", label, 
+      "The path can be a real serial device or a pty (X/Unix only)",
+      "", BX_PATHNAME_LEN);
+    bx_list_c *deplist = new bx_list_c(NULL);
+    deplist->add(mode);
+    deplist->add(path);
+    enabled->set_dependent_list(deplist);
+  }
+}
+
+Bit32s serial_options_parser(const char *context, int num_params, char *params[])
+{
+  if ((!strncmp(params[0], "com", 3)) && (strlen(params[0]) == 4)) {
+    char tmpname[80];
+    int idx = params[0][3];
+    if ((idx < '1') || (idx > '9')) {
+      BX_PANIC(("%s: comX directive malformed.", context));
+    }
+    idx -= '0';
+    if (idx > BX_N_SERIAL_PORTS) {
+      BX_PANIC(("%s: comX port number out of range.", context));
+    }
+    sprintf(tmpname, "ports.serial.%d", idx);
+    bx_list_c *base = (bx_list_c*) SIM->get_param(tmpname);
+    for (int i=1; i<num_params; i++) {
+      if (!strncmp(params[i], "enabled=", 8)) {
+        SIM->get_param_bool("enabled", base)->set(atol(&params[i][8]));
+      } else if (!strncmp(params[i], "mode=", 5)) {
+        if (!SIM->get_param_enum("mode", base)->set_by_name(&params[i][5]))
+          BX_PANIC(("%s: com%d serial port mode '%s' not available", context, idx, &params[i][5]));
+        SIM->get_param_bool("enabled", base)->set(1);
+      } else if (!strncmp(params[i], "dev=", 4)) {
+        SIM->get_param_string("dev", base)->set(&params[i][4]);
+        SIM->get_param_bool("enabled", base)->set(1);
+      } else {
+        BX_ERROR(("%s: unknown parameter for com%d ignored.", context, idx));
+      }
+    }
+  } else {
+    BX_PANIC(("%s: unknown directive '%s'", context, params[0]));
+  }
+  return 0;
+}
+
+Bit32s serial_options_save(FILE *fp)
+{
+  char pname[20];
+
+  for (int i=0; i<BX_N_SERIAL_PORTS; i++) {
+    sprintf(pname, "ports.serial.%d", i+1);
+    bx_list_c *base = (bx_list_c*) SIM->get_param(pname);
+    fprintf(fp, "com%d: enabled=%d", i+1, SIM->get_param_bool("enabled", base)->get());
+    if (SIM->get_param_bool("enabled", base)->get()) {
+      fprintf(fp, ", mode=%s", SIM->get_param_enum("mode", base)->get_selected());
+      fprintf(fp, ", dev=\"%s\"", SIM->get_param_string("dev", base)->getptr());
+    }
+    fprintf(fp, "\n");
+  }
+  return 0;
+}
+
+// device plugin entry points
+
 int libserial_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
   theSerialDevice = new bx_serial_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theSerialDevice, BX_PLUGIN_SERIAL);
+  // add new configuration parameters for the config interface
+  serial_init_options();
+  // register add-on options for bochsrc and command line
+  SIM->register_addon_option("com1", serial_options_parser, serial_options_save);
+  SIM->register_addon_option("com2", serial_options_parser, NULL);
+  SIM->register_addon_option("com3", serial_options_parser, NULL);
+  SIM->register_addon_option("com4", serial_options_parser, NULL);
   return(0); // Success
 }
 
 void libserial_LTX_plugin_fini(void)
 {
+  char pnum[4];
+
+  SIM->unregister_addon_option("com1");
+  SIM->unregister_addon_option("com2");
+  SIM->unregister_addon_option("com3");
+  SIM->unregister_addon_option("com4");
   delete theSerialDevice;
+  bx_list_c *menu = (bx_list_c*)SIM->get_param("ports.serial");
+  for (int i=0; i<BX_N_SERIAL_PORTS; i++) {
+    sprintf(pnum, "%d", i+1);
+    menu->remove(pnum);
+  }
 }
+
+// the device object
 
 bx_serial_c::bx_serial_c(void)
 {
-  put("SER");
+  put("serial", "SER");
   for (int i=0; i<BX_SERIAL_MAXDEV; i++) {
+    memset(&s[i], 0, sizeof(bx_serial_t));
     s[i].io_mode = BX_SER_MODE_NULL;
     s[i].tty_id = -1;
     s[i].tx_timer_index = BX_NULL_TIMER_HANDLE;
@@ -116,6 +237,7 @@ bx_serial_c::~bx_serial_c(void)
       }
     }
   }
+  SIM->get_bochs_root()->remove("serial");
   BX_DEBUG(("Exit"));
 }
 
@@ -126,7 +248,7 @@ bx_serial_c::init(void)
   Bit16u ports[BX_SERIAL_MAXDEV] = {0x03f8, 0x02f8, 0x03e8, 0x02e8};
   char name[16], pname[20];
   bx_list_c *base;
-  unsigned i;
+  unsigned i, count = 0;
 
   BX_SER_THIS detect_mouse = 0;
   BX_SER_THIS mouse_port = -1;
@@ -428,8 +550,16 @@ bx_serial_c::init(void)
         BX_SER_THIS s[i].modem_status.cts = 1;
         BX_SER_THIS s[i].modem_status.dsr = 1;
       }
+      count++;
       BX_INFO(("com%d at 0x%04x irq %d", i+1, ports[i], BX_SER_THIS s[i].IRQ));
     }
+  }
+  // Check if the device is disabled or not configured
+  if (count == 0) {
+    BX_INFO(("serial ports disabled"));
+    // mark unused plugin for removal
+    ((bx_param_bool_c*)((bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL))->get_by_name("serial"))->set(0);
+    return;
   }
   if ((BX_SER_THIS mouse_type == BX_MOUSE_TYPE_SERIAL) ||
       (BX_SER_THIS mouse_type == BX_MOUSE_TYPE_SERIAL_WHEEL) ||
@@ -444,10 +574,10 @@ void bx_serial_c::register_state(void)
   char name[6];
   bx_list_c *port;
 
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "serial", "Serial Port State", 9);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "serial", "Serial Port State");
   for (i=0; i<BX_N_SERIAL_PORTS; i++) {
     sprintf(name, "%d", i);
-    port = new bx_list_c(list, name, 28);
+    port = new bx_list_c(list, name);
     new bx_shadow_bool_c(port, "ls_interrupt", &BX_SER_THIS s[i].ls_interrupt);
     new bx_shadow_bool_c(port, "ms_interrupt", &BX_SER_THIS s[i].ms_interrupt);
     new bx_shadow_bool_c(port, "rx_interrupt", &BX_SER_THIS s[i].rx_interrupt);
@@ -463,18 +593,18 @@ void bx_serial_c::register_state(void)
     new bx_shadow_num_c(port, "rx_pollstate", &BX_SER_THIS s[i].rx_pollstate);
     new bx_shadow_num_c(port, "rxbuffer", &BX_SER_THIS s[i].rxbuffer, BASE_HEX);
     new bx_shadow_num_c(port, "thrbuffer", &BX_SER_THIS s[i].thrbuffer, BASE_HEX);
-    bx_list_c *int_en = new bx_list_c(port, "int_enable", 4);
+    bx_list_c *int_en = new bx_list_c(port, "int_enable");
     new bx_shadow_bool_c(int_en, "rxdata_enable", &BX_SER_THIS s[i].int_enable.rxdata_enable);
     new bx_shadow_bool_c(int_en, "txhold_enable", &BX_SER_THIS s[i].int_enable.txhold_enable);
     new bx_shadow_bool_c(int_en, "rxlstat_enable", &BX_SER_THIS s[i].int_enable.rxlstat_enable);
     new bx_shadow_bool_c(int_en, "modstat_enable", &BX_SER_THIS s[i].int_enable.modstat_enable);
-    bx_list_c *int_id = new bx_list_c(port, "int_ident", 2);
+    bx_list_c *int_id = new bx_list_c(port, "int_ident");
     new bx_shadow_bool_c(int_id, "ipending", &BX_SER_THIS s[i].int_ident.ipending);
     new bx_shadow_num_c(int_id, "int_ID", &BX_SER_THIS s[i].int_ident.int_ID, BASE_HEX);
-    bx_list_c *fifo = new bx_list_c(port, "fifo_cntl", 2);
+    bx_list_c *fifo = new bx_list_c(port, "fifo_cntl");
     new bx_shadow_bool_c(fifo, "enable", &BX_SER_THIS s[i].fifo_cntl.enable);
     new bx_shadow_num_c(fifo, "rxtrigger", &BX_SER_THIS s[i].fifo_cntl.rxtrigger, BASE_HEX);
-    bx_list_c *lcntl = new bx_list_c(port, "line_cntl", 7);
+    bx_list_c *lcntl = new bx_list_c(port, "line_cntl");
     new bx_shadow_num_c(lcntl, "wordlen_sel", &BX_SER_THIS s[i].line_cntl.wordlen_sel, BASE_HEX);
     new bx_shadow_bool_c(lcntl, "stopbits", &BX_SER_THIS s[i].line_cntl.stopbits);
     new bx_shadow_bool_c(lcntl, "parity_enable", &BX_SER_THIS s[i].line_cntl.parity_enable);
@@ -482,13 +612,13 @@ void bx_serial_c::register_state(void)
     new bx_shadow_bool_c(lcntl, "stick_parity", &BX_SER_THIS s[i].line_cntl.stick_parity);
     new bx_shadow_bool_c(lcntl, "break_cntl", &BX_SER_THIS s[i].line_cntl.break_cntl);
     new bx_shadow_bool_c(lcntl, "dlab", &BX_SER_THIS s[i].line_cntl.dlab);
-    bx_list_c *mcntl = new bx_list_c(port, "modem_cntl", 5);
+    bx_list_c *mcntl = new bx_list_c(port, "modem_cntl");
     new bx_shadow_bool_c(mcntl, "dtr", &BX_SER_THIS s[i].modem_cntl.dtr);
     new bx_shadow_bool_c(mcntl, "rts", &BX_SER_THIS s[i].modem_cntl.rts);
     new bx_shadow_bool_c(mcntl, "out1", &BX_SER_THIS s[i].modem_cntl.out1);
     new bx_shadow_bool_c(mcntl, "out2", &BX_SER_THIS s[i].modem_cntl.out2);
     new bx_shadow_bool_c(mcntl, "local_loopback", &BX_SER_THIS s[i].modem_cntl.local_loopback);
-    bx_list_c *lstatus = new bx_list_c(port, "line_status", 8);
+    bx_list_c *lstatus = new bx_list_c(port, "line_status");
     new bx_shadow_bool_c(lstatus, "rxdata_ready", &BX_SER_THIS s[i].line_status.rxdata_ready);
     new bx_shadow_bool_c(lstatus, "overrun_error", &BX_SER_THIS s[i].line_status.overrun_error);
     new bx_shadow_bool_c(lstatus, "parity_error", &BX_SER_THIS s[i].line_status.parity_error);
@@ -497,7 +627,7 @@ void bx_serial_c::register_state(void)
     new bx_shadow_bool_c(lstatus, "thr_empty", &BX_SER_THIS s[i].line_status.thr_empty);
     new bx_shadow_bool_c(lstatus, "tsr_empty", &BX_SER_THIS s[i].line_status.tsr_empty);
     new bx_shadow_bool_c(lstatus, "fifo_error", &BX_SER_THIS s[i].line_status.fifo_error);
-    bx_list_c *mstatus = new bx_list_c(port, "modem_status", 8);
+    bx_list_c *mstatus = new bx_list_c(port, "modem_status");
     new bx_shadow_bool_c(mstatus, "delta_cts", &BX_SER_THIS s[i].modem_status.delta_cts);
     new bx_shadow_bool_c(mstatus, "delta_dsr", &BX_SER_THIS s[i].modem_status.delta_dsr);
     new bx_shadow_bool_c(mstatus, "ri_trailedge", &BX_SER_THIS s[i].modem_status.ri_trailedge);
@@ -508,12 +638,12 @@ void bx_serial_c::register_state(void)
     new bx_shadow_bool_c(mstatus, "dcd", &BX_SER_THIS s[i].modem_status.dcd);
     new bx_shadow_num_c(port, "scratch", &BX_SER_THIS s[i].scratch, BASE_HEX);
     new bx_shadow_num_c(port, "tsrbuffer", &BX_SER_THIS s[i].tsrbuffer, BASE_HEX);
-    bx_list_c *rxfifo = new bx_list_c(port, "rx_fifo", 16);
+    bx_list_c *rxfifo = new bx_list_c(port, "rx_fifo");
     for (j=0; j<16; j++) {
       sprintf(name, "0x%02x", j);
       new bx_shadow_num_c(rxfifo, name, &BX_SER_THIS s[i].rx_fifo[j], BASE_HEX);
     }
-    bx_list_c *txfifo = new bx_list_c(port, "tx_fifo", 16);
+    bx_list_c *txfifo = new bx_list_c(port, "tx_fifo");
     for (j=0; j<16; j++) {
       sprintf(name, "0x%02x", j);
       new bx_shadow_num_c(txfifo, name, &BX_SER_THIS s[i].tx_fifo[j], BASE_HEX);
@@ -525,9 +655,9 @@ void bx_serial_c::register_state(void)
   new bx_shadow_num_c(list, "mouse_delayed_dx", &BX_SER_THIS mouse_delayed_dx);
   new bx_shadow_num_c(list, "mouse_delayed_dy", &BX_SER_THIS mouse_delayed_dy);
   new bx_shadow_num_c(list, "mouse_delayed_dz", &BX_SER_THIS mouse_delayed_dz);
-  bx_list_c *mousebuf = new bx_list_c(list, "mouse_internal_buffer", 3);
+  bx_list_c *mousebuf = new bx_list_c(list, "mouse_internal_buffer");
   new bx_shadow_num_c(mousebuf, "num_elements", &BX_SER_THIS mouse_internal_buffer.num_elements);
-  bx_list_c *buffer = new bx_list_c(mousebuf, "buffer", BX_MOUSE_BUFF_SIZE);
+  bx_list_c *buffer = new bx_list_c(mousebuf, "buffer");
   for (i=0; i<BX_MOUSE_BUFF_SIZE; i++) {
     sprintf(name, "0x%02x", i);
     new bx_shadow_num_c(buffer, name, &BX_SER_THIS mouse_internal_buffer.buffer[i], BASE_HEX);
@@ -1513,12 +1643,12 @@ void bx_serial_c::fifo_timer(void)
   raise_interrupt(port, BX_SER_INT_FIFO);
 }
 
-void bx_serial_c::mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_serial_c::mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy)
 {
-  ((bx_serial_c*)dev)->mouse_enq(delta_x, delta_y, delta_z, button_state);
+  ((bx_serial_c*)dev)->mouse_enq(delta_x, delta_y, delta_z, button_state, absxy);
 }
 
-void bx_serial_c::mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_serial_c::mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy)
 {
   Bit8u b1, b2, b3, mouse_data[5];
   int bytes, tail;

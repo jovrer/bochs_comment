@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vm8086.cc 10208 2011-02-24 21:54:04Z sshwarts $
+// $Id: vm8086.cc 11107 2012-03-25 19:07:17Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -67,14 +67,14 @@ void BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector, Bit32
     temp_ESP = SP;
 
   // load SS:ESP from stack
-  new_esp         =          read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP+12);
-  raw_ss_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP+16);
+  new_esp         =          stack_read_dword(temp_ESP+12);
+  raw_ss_selector = (Bit16u) stack_read_dword(temp_ESP+16);
 
   // load ES,DS,FS,GS from stack
-  raw_es_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP+20);
-  raw_ds_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP+24);
-  raw_fs_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP+28);
-  raw_gs_selector = (Bit16u) read_virtual_dword_32(BX_SEG_REG_SS, temp_ESP+32);
+  raw_es_selector = (Bit16u) stack_read_dword(temp_ESP+20);
+  raw_ds_selector = (Bit16u) stack_read_dword(temp_ESP+24);
+  raw_fs_selector = (Bit16u) stack_read_dword(temp_ESP+28);
+  raw_gs_selector = (Bit16u) stack_read_dword(temp_ESP+32);
 
   writeEFlags(flags32, EFlagsValidMask);
 
@@ -176,13 +176,13 @@ int BX_CPU_C::v86_redirect_interrupt(Bit8u vector)
   {
     bx_address tr_base = BX_CPU_THIS_PTR tr.cache.u.segment.base;
     if (BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled < 103) {
-      BX_ERROR(("INT_Ib(): TR.limit < 103 in VME"));
+      BX_ERROR(("v86_redirect_interrupt(): TR.limit < 103 in VME"));
       exception(BX_GP_EXCEPTION, 0);
     }
 
     Bit32u io_base = system_read_word(tr_base + 102), offset = io_base - 32 + (vector >> 3);
     if (offset > BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled) {
-      BX_ERROR(("INT_Ib(): failed to fetch VME redirection bitmap"));
+      BX_ERROR(("v86_redirect_interrupt(): failed to fetch VME redirection bitmap"));
       exception(BX_GP_EXCEPTION, 0);
     }
 
@@ -228,7 +228,7 @@ int BX_CPU_C::v86_redirect_interrupt(Bit8u vector)
   // interrupt is not redirected or VME is OFF
   if (BX_CPU_THIS_PTR get_IOPL() < 3)
   {
-    BX_DEBUG(("INT_Ib(): Interrupt cannot be redirected, generate #GP(0)"));
+    BX_DEBUG(("v86_redirect_interrupt(): interrupt cannot be redirected, generate #GP(0)"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -255,9 +255,11 @@ void BX_CPU_C::init_v8086_mode(void)
 
   handleCpuModeChange();
 
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+#if BX_CPU_LEVEL >= 4
   handleAlignmentCheck(/* CPL change */);
 #endif
+
+  invalidate_stack_cache();
 }
 
 #endif /* BX_CPU_LEVEL >= 3 */

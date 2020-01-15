@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: proc_ctrl.cc 11313 2012-08-05 13:52:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -45,7 +45,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_PAUSE(i);
+    VMexit_PAUSE();
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_PAUSE)) Svm_Vmexit(SVM_VMEXIT_PAUSE);
+  }
 #endif
 
   BX_NEXT_INSTR(i);
@@ -54,8 +60,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PREFETCH(bxInstruction_c *i)
 {
 #if BX_INSTRUMENTATION
-  BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->nnn(), i->seg(),
-     BX_CPU_CALL_METHODR(i->ResolveModrm, (i)));
+  BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->src(), i->seg(), BX_CPU_CALL_METHODR(i->ResolveModrm, (i)));
 #endif
 
   BX_NEXT_INSTR(i);
@@ -67,8 +72,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
-    BX_ERROR(("VMEXIT: CPUID in VMX non-root operation"));
-    VMexit(i, VMX_VMEXIT_CPUID, 0);
+    BX_DEBUG(("VMEXIT: CPUID in VMX non-root operation"));
+    VMexit(VMX_VMEXIT_CPUID, 0);
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_CPUID)) Svm_Vmexit(SVM_VMEXIT_CPUID);
   }
 #endif
 
@@ -93,6 +104,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
 //
 void BX_CPU_C::shutdown(void)
 {
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_SHUTDOWN)) Svm_Vmexit(SVM_VMEXIT_SHUTDOWN);
+  }
+#endif
+
   BX_PANIC(("Entering to shutdown state still not implemented"));
 
   BX_CPU_THIS_PTR clear_IF();
@@ -131,8 +148,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
   }
 
 #if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_HLT(i);
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_HLT_VMEXIT)) {
+      BX_DEBUG(("VMEXIT: HLT"));
+      VMexit(VMX_VMEXIT_HLT, 0);
+    }
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_HLT)) Svm_Vmexit(SVM_VMEXIT_HLT);
+  }
 #endif
 
   // stops instruction execution and places the processor in a
@@ -173,7 +200,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     BX_ERROR(("VMEXIT: INVD in VMX non-root operation"));
-    VMexit(i, VMX_VMEXIT_INVD, 0);
+    VMexit(VMX_VMEXIT_INVD, 0);
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_INVD)) Svm_Vmexit(SVM_VMEXIT_INVD);
   }
 #endif
 
@@ -192,13 +225,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("INVD/WBINVD: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("WBINVD: priveledge check failed, generate #GP(0)"));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_WBINVD(i);
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_WBINVD_VMEXIT)) {
+      BX_ERROR(("VMEXIT: WBINVD in VMX non-root operation"));
+      VMexit(VMX_VMEXIT_WBINVD, 0);
+    }
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT1_WBINVD)) Svm_Vmexit(SVM_VMEXIT_WBINVD);
+  }
 #endif
 
   invalidate_prefetch_q();
@@ -216,7 +259,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
   bx_segment_reg_t *seg = &BX_CPU_THIS_PTR sregs[i->seg()];
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  bx_address laddr = BX_CPU_THIS_PTR get_laddr(i->seg(), eaddr);
+  bx_address laddr = get_laddr(i->seg(), eaddr);
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
@@ -273,6 +316,10 @@ void BX_CPU_C::handleCpuModeChange(void)
       BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RIP);
       BX_CLEAR_64BIT_HIGH(BX_64BIT_REG_RSP);
     }
+
+    // switching between compatibility and long64 mode also affect SS.BASE
+    // which is always zero in long64 mode
+    invalidate_stack_cache();
   }
   else
 #endif
@@ -280,6 +327,7 @@ void BX_CPU_C::handleCpuModeChange(void)
     if (BX_CPU_THIS_PTR cr0.get_PE()) {
       if (BX_CPU_THIS_PTR get_VM()) {
         BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;
+        CPL = 3;
       }
       else
         BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_PROTECTED;
@@ -292,7 +340,7 @@ void BX_CPU_C::handleCpuModeChange(void)
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment  = 1;  /* data/code segment */
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.type = BX_DATA_READ_WRITE_ACCESSED;
 
-      BX_ASSERT(CPL == 0);
+      CPL = 0;
     }
   }
 
@@ -300,7 +348,7 @@ void BX_CPU_C::handleCpuModeChange(void)
 
 #if BX_CPU_LEVEL >= 6
 #if BX_SUPPORT_AVX
-  handleAvxModeChange();
+  handleAvxModeChange(); /* protected mode reloaded */
 #endif
 #endif
 
@@ -315,21 +363,21 @@ void BX_CPU_C::handleCpuModeChange(void)
   }
 }
 
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+#if BX_CPU_LEVEL >= 4
 void BX_CPU_C::handleAlignmentCheck(void)
 {
   if (CPL == 3 && BX_CPU_THIS_PTR cr0.get_AM() && BX_CPU_THIS_PTR get_AC()) {
-    if (BX_CPU_THIS_PTR alignment_check_mask == 0) {
-      BX_CPU_THIS_PTR alignment_check_mask = 0xF;
-      BX_INFO(("Enable alignment check (#AC exception)"));
-    }
+#if BX_SUPPORT_ALIGNMENT_CHECK == 0
+    BX_PANIC(("WARNING: Alignment check (#AC exception) was not compiled in !"));
+#else
+    BX_CPU_THIS_PTR alignment_check_mask = 0xF;
+#endif
   }
+#if BX_SUPPORT_ALIGNMENT_CHECK
   else {
-    if (BX_CPU_THIS_PTR alignment_check_mask != 0) {
-      BX_CPU_THIS_PTR alignment_check_mask = 0;
-      BX_INFO(("Disable alignment check (#AC exception)"));
-    }
+    BX_CPU_THIS_PTR alignment_check_mask = 0;
   }
+#endif
 }
 #endif
 
@@ -397,46 +445,73 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoAVX(bxInstruction_c *i)
 
 #endif
 
+void BX_CPU_C::handleCpuContextChange(void)
+{
+  TLB_flush();
+
+  invalidate_prefetch_q();
+  invalidate_stack_cache();
+#if BX_CPU_LEVEL >= 4
+  handleAlignmentCheck();
+#endif
+  handleCpuModeChange();
+#if BX_CPU_LEVEL >= 6
+  handleSseModeChange();
+#if BX_SUPPORT_AVX
+  handleAvxModeChange();
+#endif
+#endif
+}
+
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
-  if (BX_CPU_THIS_PTR cr4.get_PCE() || CPL==0 || real_mode()) {
-
-#if BX_SUPPORT_VMX
-    if (BX_CPU_THIS_PTR in_vmx_guest)
-      VMexit_RDPMC(i);
-#endif
-
-    /* According to manual, Pentium 4 has 18 counters,
-     * previous versions have two.  And the P4 also can do
-     * short read-out (EDX always 0).  Otherwise it is
-     * limited to 40 bits.
-     */
-
-    if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_SSE2)) { // Pentium 4 processor (see cpuid.cc)
-      if ((ECX & 0x7fffffff) >= 18)
-        exception(BX_GP_EXCEPTION, 0);
-    }
-    else {
-      if ((ECX & 0xffffffff) >= 2)
-        exception(BX_GP_EXCEPTION, 0);
-    }
-
-    // Most counters are for hardware specific details, which
-    // we anyhow do not emulate (like pipeline stalls etc)
-
-    // Could be interesting to count number of memory reads,
-    // writes.  Misaligned etc...  But to monitor bochs, this
-    // is easier done from the host.
-
-    RAX = 0;
-    RDX = 0; // if P4 and ECX & 0x10000000, then always 0 (short read 32 bits)
-
-    BX_ERROR(("RDPMC: Performance Counters Support not reasonably implemented yet"));
-  } else {
-    // not allowed to use RDPMC!
+  if (! BX_CPU_THIS_PTR cr4.get_PCE() && CPL != 0 ) {
+    BX_ERROR(("RDPMC: not allowed to use instruction !"));
     exception(BX_GP_EXCEPTION, 0);
   }
+
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest)  {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_RDPMC_VMEXIT)) {
+      BX_DEBUG(("VMEXIT: RDPMC"));
+      VMexit(VMX_VMEXIT_RDPMC, 0);
+    }
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_RDPMC)) Svm_Vmexit(SVM_VMEXIT_RDPMC);
+  }
+#endif
+
+  /* According to manual, Pentium 4 has 18 counters,
+   * previous versions have two.  And the P4 also can do
+   * short read-out (EDX always 0).  Otherwise it is
+   * limited to 40 bits.
+   */
+
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_SSE2)) { // Pentium 4 processor (see cpuid.cc)
+    if ((ECX & 0x7fffffff) >= 18)
+      exception(BX_GP_EXCEPTION, 0);
+  }
+  else {
+    if ((ECX & 0xffffffff) >= 2)
+      exception(BX_GP_EXCEPTION, 0);
+  }
+
+  // Most counters are for hardware specific details, which
+  // we anyhow do not emulate (like pipeline stalls etc)
+
+  // Could be interesting to count number of memory reads,
+  // writes.  Misaligned etc...  But to monitor bochs, this
+  // is easier done from the host.
+
+  RAX = 0;
+  RDX = 0; // if P4 and ECX & 0x10000000, then always 0 (short read 32 bits)
+
+  BX_ERROR(("RDPMC: Performance Counters Support not implemented yet"));
 #endif
 
   BX_NEXT_INSTR(i);
@@ -445,10 +520,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 5
 Bit64u BX_CPU_C::get_TSC(void)
 {
-  Bit64u tsc = bx_pc_system.time_ticks() - BX_CPU_THIS_PTR msr.tsc_last_reset;
-#if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest)
-    tsc += VMX_TSC_Offset();
+  Bit64u tsc = bx_pc_system.time_ticks() - BX_CPU_THIS_PTR tsc_last_reset;
+#if BX_SUPPORT_VMX || BX_SUPPORT_SVM
+  tsc += BX_CPU_THIS_PTR tsc_offset;
 #endif
   return tsc;
 }
@@ -457,7 +531,7 @@ void BX_CPU_C::set_TSC(Bit64u newval)
 {
   // compute the correct setting of tsc_last_reset so that a get_TSC()
   // will return newval
-  BX_CPU_THIS_PTR msr.tsc_last_reset = bx_pc_system.time_ticks() - newval;
+  BX_CPU_THIS_PTR tsc_last_reset = bx_pc_system.time_ticks() - newval;
 
   // verify
   BX_ASSERT(get_TSC() == newval);
@@ -467,25 +541,32 @@ void BX_CPU_C::set_TSC(Bit64u newval)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
-  if (! BX_CPU_THIS_PTR cr4.get_TSD() || CPL==0) {
-
-#if BX_SUPPORT_VMX
-    if (BX_CPU_THIS_PTR in_vmx_guest)
-      VMexit_RDTSC(i);
-#endif
-
-    // return ticks
-    Bit64u ticks = BX_CPU_THIS_PTR get_TSC();
-
-    RAX = GET32L(ticks);
-    RDX = GET32H(ticks);
-
-    BX_DEBUG(("RDTSC: ticks 0x%08x:%08x", EDX, EAX));
-
-  } else {
+  if (BX_CPU_THIS_PTR cr4.get_TSD() && CPL != 0) {
     BX_ERROR(("RDTSC: not allowed to use instruction !"));
     exception(BX_GP_EXCEPTION, 0);
   }
+
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_RDTSC_VMEXIT)) {
+      BX_DEBUG(("VMEXIT: RDTSC"));
+      VMexit(VMX_VMEXIT_RDTSC, 0);
+    }
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest)
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_RDTSC)) Svm_Vmexit(SVM_VMEXIT_RDTSC);
+#endif
+
+  // return ticks
+  Bit64u ticks = BX_CPU_THIS_PTR get_TSC();
+
+  RAX = GET32L(ticks);
+  RDX = GET32H(ticks);
+
+  BX_DEBUG(("RDTSC: ticks 0x%08x:%08x", EDX, EAX));
 #endif
 
   BX_NEXT_INSTR(i);
@@ -505,24 +586,32 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
   }
 #endif
 
-  if (! BX_CPU_THIS_PTR cr4.get_TSD() || CPL==0) {
-
-#if BX_SUPPORT_VMX
-    if (BX_CPU_THIS_PTR in_vmx_guest)
-      VMexit_RDTSC(i);
-#endif
-
-    // return ticks
-    Bit64u ticks = BX_CPU_THIS_PTR get_TSC();
-
-    RAX = GET32L(ticks);
-    RDX = GET32H(ticks);
-    RCX = MSR_TSC_AUX;
-
-  } else {
+  if (BX_CPU_THIS_PTR cr4.get_TSD() && CPL != 0) {
     BX_ERROR(("RDTSCP: not allowed to use instruction !"));
     exception(BX_GP_EXCEPTION, 0);
   }
+
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_RDTSC_VMEXIT)) {
+      BX_DEBUG(("VMEXIT: RDTSCP"));
+      VMexit(VMX_VMEXIT_RDTSCP, 0);
+    }
+  }
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest)
+    if (SVM_INTERCEPT(SVM_INTERCEPT1_RDTSCP)) Svm_Vmexit(SVM_VMEXIT_RDTSCP);
+#endif
+
+  // return ticks
+  Bit64u ticks = BX_CPU_THIS_PTR get_TSC();
+
+  RAX = GET32L(ticks);
+  RDX = GET32H(ticks);
+  RCX = MSR_TSC_AUX;
+
 #endif
 
   BX_NEXT_INSTR(i);
@@ -567,8 +656,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
   BX_DEBUG(("MONITOR instruction executed EAX = 0x%08x", EAX));
 
 #if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_MONITOR(i);
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_MONITOR_VMEXIT)) {
+      BX_DEBUG(("VMEXIT: MONITOR"));
+      VMexit(VMX_VMEXIT_MONITOR, 0);
+    }
+  }
 #endif
 
   if (RCX != 0) {
@@ -581,7 +674,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
   bx_address offset = RAX & i->asize_mask();
 
   // set MONITOR
-  bx_address laddr = BX_CPU_THIS_PTR get_laddr(i->seg(), offset);
+  bx_address laddr = get_laddr(i->seg(), offset);
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
@@ -608,6 +701,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
 
   bx_phy_address paddr = translate_linear(laddr, USER_PL, BX_READ);
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT1_MONITOR)) Svm_Vmexit(SVM_VMEXIT_MONITOR);
+  }
+#endif
+
   // Set the monitor immediately. If monitor is still armed when we MWAIT,
   // the processor will stall.
 
@@ -633,8 +732,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
   BX_DEBUG(("MWAIT instruction executed ECX = 0x%08x", ECX));
 
 #if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_MWAIT(i);
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_MWAIT_VMEXIT)) {
+      BX_DEBUG(("VMEXIT: MWAIT"));
+      VMexit(VMX_VMEXIT_MWAIT, BX_CPU_THIS_PTR monitor.armed);
+    }
+  }
 #endif
 
   // only one extension is supported
@@ -644,13 +747,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0);
   }
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT1_MWAIT_ARMED))
+      if (BX_CPU_THIS_PTR monitor.armed) Svm_Vmexit(SVM_VMEXIT_MWAIT_CONDITIONAL);
+    
+    if (SVM_INTERCEPT(SVM_INTERCEPT1_MWAIT)) Svm_Vmexit(SVM_VMEXIT_MWAIT);
+  }
+#endif
+
   // If monitor has already triggered, we just return.
   if (! BX_CPU_THIS_PTR monitor.armed) {
     BX_DEBUG(("MWAIT: the MONITOR was not armed or already triggered"));
     BX_NEXT_TRACE(i);
   }
 
-  static bx_bool mwait_is_nop = SIM->get_param_bool(BXPN_CPUID_MWAIT_IS_NOP)->get();
+  static bx_bool mwait_is_nop = SIM->get_param_bool(BXPN_MWAIT_IS_NOP)->get();
   if (mwait_is_nop) {
     BX_NEXT_TRACE(i);
   }
@@ -667,8 +779,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
     // When "interrupt window exiting" VMX control is set MWAIT instruction
     // won't cause the processor to enter BX_ACTIVITY_STATE_MWAIT_IF sleep
     // state with EFLAGS.IF = 0
-    if (BX_CPU_THIS_PTR vmx_interrupt_window && ! BX_CPU_THIS_PTR get_IF())
-    {
+    if (BX_CPU_THIS_PTR vmx_interrupt_window && ! BX_CPU_THIS_PTR get_IF()) {
       BX_NEXT_TRACE(i);
     }
 #endif
@@ -864,9 +975,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
   updateFetchModeMask(/* CS reloaded */);
 #endif
 
-#if BX_SUPPORT_ALIGNMENT_CHECK
   handleAlignmentCheck(/* CPL change */);
-#endif
 
   parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + (i->os64L() ? 40:24)) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
@@ -1090,9 +1199,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 
     handleCpuModeChange(); // mode change could only happen when in long64 mode
 
-#if BX_SUPPORT_ALIGNMENT_CHECK
     handleAlignmentCheck(/* CPL change */);
-#endif
 
     // SS base, limit, attributes unchanged
     parse_selector((Bit16u)(((MSR_STAR >> 48) + 8) | 3),
@@ -1129,9 +1236,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 
     updateFetchModeMask(/* CS reloaded */);
 
-#if BX_SUPPORT_ALIGNMENT_CHECK
     handleAlignmentCheck(/* CPL change */);
-#endif
 
     // SS base, limit, attributes unchanged
     parse_selector((Bit16u)(((MSR_STAR >> 48) + 8) | 3),
@@ -1178,10 +1283,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
 
   if (i->os64L()) {
-    BX_WRITE_64BIT_REG(i->rm(), MSR_FSBASE);
+    BX_WRITE_64BIT_REG(i->dst(), MSR_FSBASE);
   }
   else {
-    BX_WRITE_32BIT_REGZ(i->rm(), (Bit32u) MSR_FSBASE);
+    BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_FSBASE);
   }
 
   BX_NEXT_INSTR(i);
@@ -1194,10 +1299,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
 
   if (i->os64L()) {
-    BX_WRITE_64BIT_REG(i->rm(), MSR_GSBASE);
+    BX_WRITE_64BIT_REG(i->dst(), MSR_GSBASE);
   }
   else {
-    BX_WRITE_32BIT_REGZ(i->rm(), (Bit32u) MSR_GSBASE);
+    BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_GSBASE);
   }
 
   BX_NEXT_INSTR(i);
@@ -1210,7 +1315,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
 
   if (i->os64L()) {
-    Bit64u fsbase = BX_READ_64BIT_REG(i->rm());
+    Bit64u fsbase = BX_READ_64BIT_REG(i->src());
     if (!IsCanonical(fsbase)) {
       BX_ERROR(("WRFSBASE: canonical failure !"));
       exception(BX_GP_EXCEPTION, 0);
@@ -1219,7 +1324,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE(bxInstruction_c *i)
   }
   else {
     // 32-bit value is always canonical
-    MSR_FSBASE = BX_READ_32BIT_REG(i->rm());
+    MSR_FSBASE = BX_READ_32BIT_REG(i->src());
   }
 
   BX_NEXT_INSTR(i);
@@ -1232,7 +1337,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
 
   if (i->os64L()) {
-    Bit64u gsbase = BX_READ_64BIT_REG(i->rm());
+    Bit64u gsbase = BX_READ_64BIT_REG(i->src());
     if (!IsCanonical(gsbase)) {
       BX_ERROR(("WRGSBASE: canonical failure !"));
       exception(BX_GP_EXCEPTION, 0);
@@ -1241,7 +1346,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE(bxInstruction_c *i)
   }
   else {
     // 32-bit value is always canonical
-    MSR_GSBASE = BX_READ_32BIT_REG(i->rm());
+    MSR_GSBASE = BX_READ_32BIT_REG(i->src());
   }
 
   BX_NEXT_INSTR(i);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svga_cirrus.h 10544 2011-08-05 15:47:33Z vruppert $
+// $Id: svga_cirrus.h 11148 2012-04-23 17:06:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Copyright (c) 2004 Makoto Suzuki (suzu)
@@ -61,10 +61,7 @@ typedef void (*bx_cirrus_bitblt_rop_t)(
     int dstpitch,int srcpitch,
     int bltwidth,int bltheight);
 
-class bx_svga_cirrus_c : public bx_vga_c
-#if BX_SUPPORT_PCI
-  , public bx_pci_device_stub_c
-#endif
+class bx_svga_cirrus_c : public bx_vgacore_c
 {
 public:
   bx_svga_cirrus_c();
@@ -81,14 +78,15 @@ public:
                                  unsigned *txHeight, unsigned *txWidth);
   virtual Bit32u get_gfx_snapshot(Bit8u **snapshot_ptr, Bit8u **palette_ptr,
                                   unsigned *iHeight, unsigned *iWidth, unsigned *iDepth);
-  virtual void trigger_timer(void *this_ptr);
-  virtual Bit8u get_actl_palette_idx(Bit8u index);
   virtual void register_state(void);
   virtual void after_restore_state(void);
 
 #if BX_SUPPORT_PCI
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+#endif
+#if BX_DEBUGGER
+  virtual void   debug_dump(int argc, char **argv);
 #endif
 
 private:

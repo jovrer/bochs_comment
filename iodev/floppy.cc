@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.cc 10793 2011-11-26 15:09:00Z vruppert $
+// $Id: floppy.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -49,7 +49,7 @@ extern "C" {
 }
 #endif
 #include "iodev.h"
-#include "hdimage.h"
+#include "hdimage/hdimage.h"
 #include "floppy.h"
 // windows.h included by bochs.h
 #ifdef WIN32
@@ -110,10 +110,14 @@ static Bit16u drate_in_k[4] = {
 
 int libfloppy_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  theFloppyController = new bx_floppy_ctrl_c();
-  bx_devices.pluginFloppyDevice = theFloppyController;
-  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theFloppyController, BX_PLUGIN_FLOPPY);
-  return(0); // Success
+  if (type == PLUGTYPE_CORE) {
+    theFloppyController = new bx_floppy_ctrl_c();
+    bx_devices.pluginFloppyDevice = theFloppyController;
+    BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theFloppyController, BX_PLUGIN_FLOPPY);
+    return 0; // Success
+  } else {
+    return -1;
+  }
 }
 
 void libfloppy_LTX_plugin_fini(void)
@@ -123,15 +127,24 @@ void libfloppy_LTX_plugin_fini(void)
 
 bx_floppy_ctrl_c::bx_floppy_ctrl_c()
 {
-  put("FDD");
+  put("floppy", "FDD");
+  memset(&s, 0, sizeof(s));
   s.floppy_timer_index = BX_NULL_TIMER_HANDLE;
 }
 
 bx_floppy_ctrl_c::~bx_floppy_ctrl_c()
 {
-  for (int i = 0; i < 4; i++) {
+  char pname[10];
+
+  for (int i = 0; i < 2; i++) {
     close_media(&BX_FD_THIS s.media[i]);
+    sprintf(pname, "floppy.%d", i);
+    bx_list_c *floppy = (bx_list_c*)SIM->get_param(pname);
+    SIM->get_param_string("path", floppy)->set_handler(NULL);
+    SIM->get_param_bool("readonly", floppy)->set_handler(NULL);
+    SIM->get_param_bool("status", floppy)->set_handler(NULL);
   }
+  SIM->get_bochs_root()->remove("floppy");
   BX_DEBUG(("Exit"));
 }
 
@@ -140,7 +153,7 @@ void bx_floppy_ctrl_c::init(void)
   Bit8u i, devtype, cmos_value;
   char pname[10];
 
-  BX_DEBUG(("Init $Id: floppy.cc 10793 2011-11-26 15:09:00Z vruppert $"));
+  BX_DEBUG(("Init $Id: floppy.cc 11346 2012-08-19 08:16:20Z vruppert $"));
   DEV_dma_register_8bit_channel(2, dma_read, dma_write, "Floppy Drive");
   DEV_register_irq(6, "Floppy Drive");
   for (unsigned addr=0x03F2; addr<=0x03F7; addr++) {
@@ -265,6 +278,10 @@ void bx_floppy_ctrl_c::init(void)
   }
   // register handler for correct floppy parameter handling after runtime config
   SIM->register_runtime_config_handler(this, runtime_config_handler);
+#if BX_DEBUGGER
+  // register device for the 'info device' command (calls debug_dump())
+  bx_dbg_register_debug_info("floppy", this);
+#endif
 }
 
 void bx_floppy_ctrl_c::reset(unsigned type)
@@ -323,9 +340,9 @@ void bx_floppy_ctrl_c::register_state(void)
   char name[8];
   bx_list_c *drive;
 
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "floppy", "Floppy State", 35);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "floppy", "Floppy State");
   new bx_shadow_num_c(list, "data_rate", &BX_FD_THIS s.data_rate);
-  bx_list_c *command = new bx_list_c(list, "command", 10);
+  bx_list_c *command = new bx_list_c(list, "command");
   for (i=0; i<10; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(command, name, &BX_FD_THIS s.command[i], BASE_HEX);
@@ -339,7 +356,7 @@ void bx_floppy_ctrl_c::register_state(void)
   new bx_shadow_num_c(list, "reset_sensei", &BX_FD_THIS s.reset_sensei);
   new bx_shadow_num_c(list, "format_count", &BX_FD_THIS s.format_count);
   new bx_shadow_num_c(list, "format_fillbyte", &BX_FD_THIS s.format_fillbyte, BASE_HEX);
-  bx_list_c *result = new bx_list_c(list, "result", 10);
+  bx_list_c *result = new bx_list_c(list, "result");
   for (i=0; i<10; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(result, name, &BX_FD_THIS s.result[i], BASE_HEX);
@@ -365,7 +382,7 @@ void bx_floppy_ctrl_c::register_state(void)
   new bx_shadow_data_c(list, "buffer", BX_FD_THIS s.floppy_buffer, 512);
   for (i=0; i<4; i++) {
     sprintf(name, "drive%d", i);
-    drive = new bx_list_c(list, name, 6);
+    drive = new bx_list_c(list, name);
     new bx_shadow_num_c(drive, "cylinder", &BX_FD_THIS s.cylinder[i]);
     new bx_shadow_num_c(drive, "head", &BX_FD_THIS s.head[i]);
     new bx_shadow_num_c(drive, "sector", &BX_FD_THIS s.sector[i]);
@@ -435,7 +452,7 @@ Bit32u bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
     case 0x3F5: /* diskette controller data */
       if ((BX_FD_THIS s.main_status_reg & FD_MS_NDMA) &&
           ((BX_FD_THIS s.pending_command & 0x4f) == 0x46)) {
-        dma_write(&value);
+        dma_write(&value, 1);
         lower_interrupt();
         // don't enter idle phase until we've given CPU last data byte
         if (BX_FD_THIS s.TC) enter_idle_phase();
@@ -594,7 +611,7 @@ void bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
     case 0x3F5: /* diskette controller data */
       BX_DEBUG(("command = 0x%02x", (unsigned) value));
       if ((BX_FD_THIS s.main_status_reg & FD_MS_NDMA) && ((BX_FD_THIS s.pending_command & 0x4f) == 0x45)) {
-        BX_FD_THIS dma_read((Bit8u *) &value);
+        BX_FD_THIS dma_read((Bit8u *) &value, 1);
         BX_FD_THIS lower_interrupt();
         break;
       } else if (BX_FD_THIS s.command_complete) {
@@ -1213,18 +1230,21 @@ void bx_floppy_ctrl_c::timer()
   }
 }
 
-void bx_floppy_ctrl_c::dma_write(Bit8u *data_byte)
+Bit16u bx_floppy_ctrl_c::dma_write(Bit8u *buffer, Bit16u maxlen)
 {
   // A DMA write is from I/O to Memory
-  // We need to return the next data byte from the floppy buffer
+  // We need to return the next data byte(s) from the floppy buffer
   // to be transfered via the DMA to memory. (read block from floppy)
+  //
+  // maxlen is the maximum length of the DMA transfer
 
-  Bit8u drive;
+  Bit8u drive = BX_FD_THIS s.DOR & 0x03;
+  Bit16u len = 512 - BX_FD_THIS s.floppy_buffer_index;
+  if (len > maxlen) len = maxlen;
+  memcpy(buffer, &BX_FD_THIS s.floppy_buffer[BX_FD_THIS s.floppy_buffer_index], len);
+  BX_FD_THIS s.floppy_buffer_index += len;
+  BX_FD_THIS s.TC = get_tc() && (len == maxlen);
 
-  drive = BX_FD_THIS s.DOR & 0x03;
-  *data_byte = BX_FD_THIS s.floppy_buffer[BX_FD_THIS s.floppy_buffer_index++];
-
-  BX_FD_THIS s.TC = get_tc();
   if ((BX_FD_THIS s.floppy_buffer_index >= 512) || (BX_FD_THIS s.TC)) {
 
     if (BX_FD_THIS s.floppy_buffer_index >= 512) {
@@ -1268,33 +1288,35 @@ void bx_floppy_ctrl_c::dma_write(Bit8u *data_byte)
                                   sector_time , 0);
     }
   }
+  return len;
 }
 
-void bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
+Bit16u bx_floppy_ctrl_c::dma_read(Bit8u *buffer, Bit16u maxlen)
 {
   // A DMA read is from Memory to I/O
   // We need to write the data_byte which was already transfered from memory
   // via DMA to I/O (write block to floppy)
+  //
+  // maxlen is the length of the DMA transfer (not implemented yet)
 
-  Bit8u drive;
+  Bit8u drive = BX_FD_THIS s.DOR & 0x03;
   Bit32u logical_sector, sector_time;
 
-  drive = BX_FD_THIS s.DOR & 0x03;
   if (BX_FD_THIS s.pending_command == 0x4d) { // format track in progress
     BX_FD_THIS s.format_count--;
     switch (3 - (BX_FD_THIS s.format_count & 0x03)) {
       case 0:
-        BX_FD_THIS s.cylinder[drive] = *data_byte;
+        BX_FD_THIS s.cylinder[drive] = *buffer;
         break;
       case 1:
-        if (*data_byte != BX_FD_THIS s.head[drive])
+        if (*buffer != BX_FD_THIS s.head[drive])
           BX_ERROR(("head number does not match head field"));
         break;
       case 2:
-        BX_FD_THIS s.sector[drive] = *data_byte;
+        BX_FD_THIS s.sector[drive] = *buffer;
         break;
       case 3:
-        if (*data_byte != 2) BX_ERROR(("dma_read: sector size %d not supported", 128<<(*data_byte)));
+        if (*buffer != 2) BX_ERROR(("dma_read: sector size %d not supported", 128<<(*buffer)));
         BX_DEBUG(("formatting cylinder %u head %u sector %u",
                   BX_FD_THIS s.cylinder[drive], BX_FD_THIS s.head[drive],
                   BX_FD_THIS s.sector[drive]));
@@ -1315,10 +1337,14 @@ void bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
                                     sector_time , 0);
         break;
     }
+    return 1;
   } else { // write normal data
-    BX_FD_THIS s.floppy_buffer[BX_FD_THIS s.floppy_buffer_index++] = *data_byte;
+    Bit16u len = 512 - BX_FD_THIS s.floppy_buffer_index;
+    if (len > maxlen) len = maxlen;
+    memcpy(&BX_FD_THIS s.floppy_buffer[BX_FD_THIS s.floppy_buffer_index], buffer, len);
+    BX_FD_THIS s.floppy_buffer_index += len;
+    BX_FD_THIS s.TC = get_tc() && (len == maxlen);
 
-    BX_FD_THIS s.TC = get_tc();
     if ((BX_FD_THIS s.floppy_buffer_index >= 512) || (BX_FD_THIS s.TC)) {
       logical_sector = (BX_FD_THIS s.cylinder[drive] * BX_FD_THIS s.media[drive].heads * BX_FD_THIS s.media[drive].sectors_per_track) +
                        (BX_FD_THIS s.head[drive] * BX_FD_THIS s.media[drive].sectors_per_track) +
@@ -1333,7 +1359,7 @@ void bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
         // ST2: CRCE=1, SERR=1, BCYL=1, NDAM=1.
         BX_FD_THIS s.status_reg2 = 0x31; // 0011 0001
         enter_result_phase();
-        return;
+        return 1;
       }
       floppy_xfer(drive, logical_sector*512, BX_FD_THIS s.floppy_buffer,
                   512, TO_FLOPPY);
@@ -1351,6 +1377,7 @@ void bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
         enter_result_phase();
       }
     }
+    return len;
   }
 }
 
@@ -1819,6 +1846,7 @@ void bx_floppy_ctrl_c::enter_idle_phase(void)
   BX_FD_THIS s.command_index = 0;
   BX_FD_THIS s.command_size = 0;
   BX_FD_THIS s.pending_command = 0;
+  BX_FD_THIS s.result_size = 0;
 
   BX_FD_THIS s.floppy_buffer_index = 0;
 }
@@ -1917,3 +1945,45 @@ const char* bx_floppy_ctrl_c::floppy_param_string_handler(bx_param_string_c *par
   }
   return val;
 }
+
+#if BX_DEBUGGER
+void bx_floppy_ctrl_c::debug_dump(int argc, char **argv)
+{
+  int i;
+
+  dbg_printf("i82077AA FDC\n\n");
+  for (i = 0; i < 2; i++) {
+    dbg_printf("fd%d: ", i);
+    if (BX_FD_THIS s.device_type[i] == FDRIVE_NONE) {
+      dbg_printf("not installed\n");
+    } else if (BX_FD_THIS s.media[i].type == BX_FLOPPY_NONE) {
+      dbg_printf("media not present\n");
+    } else {
+#define MED (BX_FD_THIS s.media[i])
+      dbg_printf("tracks=%d, heads=%d, spt=%d, readonly=%d\n",
+                 MED.tracks, MED.heads, MED.sectors_per_track, MED.write_protected);
+#undef MED
+    }
+  }
+  dbg_printf("\ncontroller status: ");
+  if (BX_FD_THIS s.pending_command == 0) {
+    if (BX_FD_THIS s.command_complete) {
+      dbg_printf("idle phase\n");
+    } else {
+      dbg_printf("command phase (command=0x%02x)\n", BX_FD_THIS s.command[0]);
+    }
+  } else {
+    if (BX_FD_THIS s.result_size == 0) {
+      dbg_printf("execution phase (command=0x%02x)\n", BX_FD_THIS s.pending_command);
+    } else {
+      dbg_printf("result phase (command=0x%02x)\n", BX_FD_THIS s.pending_command);
+    }
+  }
+  dbg_printf("DOR = 0x%02x\n", BX_FD_THIS s.DOR);
+  dbg_printf("MSR = 0x%02x\n", BX_FD_THIS s.main_status_reg);
+  dbg_printf("DSR = 0x%02x\n", BX_FD_THIS s.data_rate);
+  if (argc > 0) {
+    dbg_printf("\nAdditional options not supported\n");
+  }
+}
+#endif

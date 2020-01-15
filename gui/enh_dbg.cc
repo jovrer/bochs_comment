@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.cc 10615 2011-08-21 19:09:35Z sshwarts $
+// $Id: enh_dbg.cc 11250 2012-07-01 14:37:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -35,6 +35,20 @@
 // -- i.e. No further initialization necessary.
 static disassembler bx_disassemble;
 
+const char* DC0txt[2] = {"P.Address","L.Address"};    // DumpMode definitions in text
+
+const char* BTxt[6] = {
+  "Continue [c]",
+  "Step [s]",
+  "Step N [s ###]",
+  "Refresh",
+  "Break [^C]",
+  "Break All"};
+
+int BtnLkup[6] = {
+    CMD_CONT, CMD_STEP1, CMD_STEPN, CMD_RFRSH, CMD_BREAK
+};
+
 #ifdef WIN32
 int useCR = 1;                    // Win32 needs CRLF pairs for an EOL
 bx_bool NeedSysRresize = TRUE;    // use Sys Reg to help autosize Reg "hex" column
@@ -45,9 +59,9 @@ bx_bool NeedSysRresize = FALSE;   // use Sys Reg to help autosize Reg "hex" colu
 
 bx_bool SeeReg[8] = {
     TRUE,   // in 64bit mode, show 32bit versions of registers also (EAX, ...)
-    FALSE,  // show segment registers (CS, ...)
-    FALSE,  // show GDTR, IDTR, LDTR, Task Reg
-    FALSE,  // show control register (CR0, ...)
+    TRUE,  // show segment registers (CS, ...)
+    TRUE,  // show GDTR, IDTR, LDTR, Task Reg
+    TRUE,  // show control register (CR0, ...)
     FALSE,  // show FPU (STi) / MMX registers
     FALSE,  // show XMM registers
     FALSE,  // show the Debug Registers (DR0, ...)
@@ -64,7 +78,7 @@ int UprCase = 0;                // 1 = convert all Asm, Register names, Register
 int DumpInAsciiMode = 3;        // bit 1 = show ASCII in dumps, bit 2 = show hex, value=0 is illegal
 
 bx_bool isLittleEndian = TRUE;
-int DefaultAsmLines = 250;      // default # of asm lines disassembled and "cached"
+int DefaultAsmLines = 512;      // default # of asm lines disassembled and "cached"
 int bottommargin = 6;           // ASM autoscroller tries to leave this many lines below
 int topmargin = 3;              // autoscroller tries to leave this many lines above
 // Note: topmargin must be less than bottommargin
@@ -81,8 +95,6 @@ Bit64u BottomAsmLA;         // beginning and end addrs on ASM window
 Bit64u TopAsmLA;
 
 Bit32u PrevStepNSize = 50;  // cpu_loop control variables
-Bit64u PrevPtime = 9;       // any number other than 0
-Bit64u NewPtime;            // used to test whether sim has "updated"
 unsigned TotCPUs;           // # of CPUs in a multi-CPU simulation
 unsigned CpuSupportSSE = 0; // cpu supports SSE
 unsigned CurrentCPU;        // cpu that is being displayed
@@ -276,7 +288,7 @@ int DoMatch(const char *text, const char *p, bx_bool IsCaseSensitive)
             // NO BREAK HERE
 
             default:
-                if (IsCaseSensitive != FALSE)
+                if (IsCaseSensitive)
                 {
                     if (text[pT] != p[pP])
                         return MATCH_FALSE;
@@ -457,9 +469,9 @@ void UpdateStatus()
             switch (CpuMode) {
                 case BX_MODE_IA32_REAL:
                     if (In32Mode == FALSE)
-                        strcpy (mode, "CPU: Real Mode (16)");
+                        strcpy (mode, "CPU: Real Mode 16");
                     else
-                        strcpy (mode, "CPU: Real Mode (32)");
+                        strcpy (mode, "CPU: Real Mode 32");
                     break;
                 case BX_MODE_IA32_V8086:
                     strcpy (mode, "CPU: V8086 Mode");
@@ -467,15 +479,15 @@ void UpdateStatus()
                 case BX_MODE_IA32_PROTECTED:
                     if (In32Mode == FALSE) {
                         if (InPaging != 0)
-                            strcpy (mode, "CPU: PMode (16) (PG)");
+                            strcpy (mode, "CPU: Protected Mode 16 (PG)");
                         else
-                            strcpy (mode, "CPU: PMode (16)");
+                            strcpy (mode, "CPU: Protected Mode 16");
                     }
                     else {
                         if (InPaging != 0)
-                            strcpy (mode, "CPU: PMode (32) (PG)");
+                            strcpy (mode, "CPU: Protected Mode 32 (PG)");
                         else
-                            strcpy (mode, "CPU: PMode (32)");
+                            strcpy (mode, "CPU: Protected Mode 32");
                     }
                     break;
                 case BX_MODE_LONG_COMPAT:
@@ -1002,7 +1014,8 @@ void LoadRegList()
     cols[1] = regtxt;
     cols[2] = regtxt + 40;
     itemnum = 0;
-    if (In64Mode != FALSE)
+#if BX_SUPPORT_X86_64
+    if (In64Mode)
     {
         showEreg = SeeReg[0];       // get user option setting for EAX, etc.
         for (i = RAX_Rnum; i <= R15_Rnum; i++)
@@ -1015,6 +1028,7 @@ void LoadRegList()
             ++itemnum;
         }
     }
+#endif
 
     // then 32bit GP registers (if appropriate)
     if (showEreg != FALSE)
@@ -1092,7 +1106,12 @@ void LoadRegList()
         for(i = CR0_Rnum; i <= EFER_Rnum; i++)
         {
             RitemToRnum[itemnum] = i;
-            sprintf(regtxt,"%08X",(Bit32u)rV[i]);
+
+            if (In64Mode && (i == CR2_Rnum || i == CR3_Rnum))
+                sprintf(regtxt,Fmt64b[UprCase],rV[i]);
+            else
+                sprintf(regtxt,Fmt32b[UprCase],(Bit32u)rV[i]);
+
             cols[0] = RDispName[i];
             InsertListRow(cols, 2, REG_WND, itemnum, 2);    // 2 cols, group 2
             ++itemnum;
@@ -1478,9 +1497,9 @@ void FillIDT()
     char *cols[18];
     char idttxt[80];
     unsigned int mode = 0;
-    if (In32Mode != FALSE)
+    if (In32Mode)
         mode = 1;
-    if (In64Mode != FALSE)
+    if (In64Mode)
         mode = 2;
     doDumpRefresh = FALSE;
 
@@ -1687,7 +1706,7 @@ void FillStack()
     wordsize = 4;       // assume Pmode
     if (In32Mode == FALSE)
         wordsize = 2;
-    else if (In64Mode != FALSE)
+    else if (In64Mode)
         wordsize = 8;
     len = STACK_ENTRIES * wordsize;
 
@@ -1980,7 +1999,7 @@ void FillDataX(char* t, char C, bx_bool doHex)
         *d = AsciiHex[2* (unsigned char)C];
         d[1] = AsciiHex[2* (unsigned char)C + 1];
         d[2] = 0;
-        if (isLittleEndian != FALSE)    // little endian => reverse hex digits
+        if (isLittleEndian) // little endian => reverse hex digits
         {
             strcat(d,t);
             strcpy(t,d);    // so append the new bytes to the FRONT of t
@@ -2173,17 +2192,11 @@ void OnBreak()
     int i = EFER_Rnum + 1;
     // check if Ptime has changed
     TakeInputFocus();
-    NewPtime = bx_pc_system.time_ticks();
-    if (PrevPtime == NewPtime)      // if not, nothing really changed
-    {
-        UpdateStatus();     // Updates if there really was a status change, at least
-        return;
-    }
+
     // display the new ptime on the status bar
     char time_buf[20];
-    sprintf (time_buf,"t= " FMT_LL "d", NewPtime);
+    sprintf (time_buf,"t= " FMT_LL "d", bx_pc_system.time_ticks());
     SetStatusText (2, time_buf);
-    PrevPtime = NewPtime;
 
     // remember register values from before the last run
     while (--i >= 0)
@@ -2214,7 +2227,7 @@ void OnBreak()
             In32Mode = d_b;
         }
     }
-    if (CpuModeChange != FALSE)
+    if (CpuModeChange)
     {
         GrayMenuItem ((int) In64Mode, CMD_EREG);
         BottomAsmLA = ~0;       // force an ASM autoload
@@ -2293,20 +2306,21 @@ bx_bool InitDataDump(bx_bool isLinear, Bit64u newDS)
     }
 
     // load 4k DataDump array from bochs emulated linear or physical memory
-    if (isLinear != FALSE)
+    if (isLinear)
     {
         // cannot read linear mem across a 4K boundary -- so break the read in two
         // -- calculate location of 4K boundary (h):
-        unsigned int len = (int) newDS & 0xfff;
-        unsigned int i = 4096 - len;
+        unsigned len = (int) newDS & 0xfff;
+        unsigned i = 4096 - len;
         Bit64u h = newDS + i;
         retval = ReadBxLMem(newDS,i,(Bit8u *)DataDump);
         if (retval != FALSE && len != 0)
             retval = ReadBxLMem(h,len,(Bit8u *)DataDump + i);
     }
-    else
-        retval = (bx_bool) bx_mem.dbg_fetch_mem( BX_CPU(CurrentCPU),
+    else {
+        retval = (bx_bool) bx_mem.dbg_fetch_mem(BX_CPU(CurrentCPU),
             (bx_phy_address)newDS, 4096, (Bit8u *)DataDump);
+    }
     if (retval == FALSE)
     {
         // assume that the DataDump array is still valid -- fetch_mem should error without damage
@@ -2314,6 +2328,7 @@ bx_bool InitDataDump(bx_bool isLinear, Bit64u newDS)
             DispMessage ("Address range was not legal memory","Memory Error");
         return retval;
     }
+
     SA_valid = FALSE;       // any previous MemDump click is now irrelevant
     ResizeColmns = TRUE;    // autosize column 0 once
     DumpInitted = TRUE;     // OK to refresh the Dump window in the future (it has data)
@@ -2684,17 +2699,15 @@ void ChangeReg()
     int i = RitemToRnum[L];
     if (i > EFER_Rnum)      // TODO: extend this to more reg -- need display names for all
         return;
-    char *d1 = RDispName[i];
 //  if (i > EFER_Rnum)
 //      *tmpcb = 0;
 //  else
         sprintf (tmpcb,"0x" FMT_LL "X", rV[i]);
-    if (AskText("Change Register Value",d1,tmpcb))
+    if (AskText("Change Register Value",RDispName[i],tmpcb))
     {
-        Bit64u val;
-        val = cvt64(tmpcb,TRUE);            // input either hex or decimal
+        Bit64u val = cvt64(tmpcb,TRUE);     // input either hex or decimal
 #if BX_SUPPORT_X86_64
-        if (i >= EAX_Rnum && i <= EBP_Rnum) // must use RAX-RBP when setting 32b registers
+        if (i >= EAX_Rnum && i <= EIP_Rnum) // must use RAX-RIP when setting 32b registers
             i -= EAX_Rnum - RAX_Rnum;
 #endif
         RegObject[CurrentCPU][i]->set(val); // the set function should be a bool, not a void
@@ -2731,7 +2744,7 @@ void SetMemLine(int L)
         char *x = tmpcb;
         upr(x);         // force input string to uppercase
 
-        if (LinearDump != FALSE)    // is h is a LINEAR address? Convert to physical!
+        if (LinearDump)    // is h is a LINEAR address? Convert to physical!
         {
             // use the ReadBx function to calculate the lin->phys offset
             if (ReadBxLMem(h,0,(Bit8u *)addrstr) == FALSE) // "read" 0 bytes
@@ -2764,6 +2777,8 @@ void SetMemLine(int L)
                 sscanf (s,"%2X", (unsigned int*)&newval);
                 if (bx_mem.dbg_set_mem( (bx_phy_address) h, 1, &newval) == FALSE)
                     err = 2;
+                else
+                    *u++ = newval;      // update DataDump array so it will refresh on the screen
                 ++h;                    // bump to the next mem address
                 while (*x == ' ')       // scan past whitespace
                     ++x;

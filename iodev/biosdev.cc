@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: biosdev.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: biosdev.cc 11058 2012-02-23 17:16:35Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -59,11 +59,13 @@ void libbiosdev_LTX_plugin_fini(void)
 
 bx_biosdev_c::bx_biosdev_c(void)
 {
+  memset(&s, 0, sizeof(s));
+
   bioslog = new logfunctions();
   bioslog->put("BIOS");
 
   vgabioslog = new logfunctions();
-  vgabioslog->put("VBIOS");
+  vgabioslog->put("vgabios", "VBIOS");
 }
 
 bx_biosdev_c::~bx_biosdev_c(void)
@@ -90,11 +92,6 @@ void bx_biosdev_c::init(void)
   DEV_register_iowrite_handler(this, write_handler, 0x0501, "VGABios Panic Port 1", 3);
   DEV_register_iowrite_handler(this, write_handler, 0x0502, "VGABios Panic Port 2", 3);
   DEV_register_iowrite_handler(this, write_handler, 0x0503, "VGABios Debug Port", 1);
-
-  s.bios_message_i = 0;
-  s.bios_panic_flag = 0;
-  s.vgabios_message_i = 0;
-  s.vgabios_panic_flag = 0;
 }
 
   // static IO port write callback handler

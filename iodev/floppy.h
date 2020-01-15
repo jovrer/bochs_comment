@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h 10620 2011-08-22 17:57:21Z vruppert $
+// $Id: floppy.h 11277 2012-07-12 21:20:46Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -54,6 +54,9 @@ public:
   virtual void reset(unsigned type);
   virtual unsigned set_media_status(unsigned drive, bx_bool status);
   virtual void register_state(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
+#endif
 
 private:
 
@@ -131,8 +134,8 @@ private:
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
-  BX_FD_SMF void   dma_write(Bit8u *data_byte);
-  BX_FD_SMF void   dma_read(Bit8u *data_byte);
+  BX_FD_SMF Bit16u dma_write(Bit8u *buffer, Bit16u maxlen);
+  BX_FD_SMF Bit16u dma_read(Bit8u *buffer, Bit16u maxlen);
   BX_FD_SMF void   floppy_command(void);
   BX_FD_SMF void   floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer, Bit32u bytes, Bit8u direction);
   BX_FD_SMF void   raise_interrupt(void);
@@ -153,48 +156,4 @@ private:
   static void runtime_config_handler(void *);
   void runtime_config(void);
 };
-
-
-#ifdef WIN32
-
-// used for direct floppy access in Win95
-#define  VWIN32_DIOC_DOS_IOCTL  1
-#define  VWIN32_DIOC_DOS_INT25  2
-#define  VWIN32_DIOC_DOS_INT26  3
-
-typedef struct _DIOC_REGISTERS {
-    DWORD reg_EBX;
-    DWORD reg_EDX;
-    DWORD reg_ECX;
-    DWORD reg_EAX;
-    DWORD reg_EDI;
-    DWORD reg_ESI;
-    DWORD reg_Flags;
-} DIOC_REGISTERS, *PDIOC_REGISTERS;
-
-#pragma pack(push, 1)
-typedef struct _BLOCK_DEV_PARAMS {
-    BYTE  features;
-    BYTE  dev_type;
-    WORD  attribs;
-    WORD  cylinders;
-    BYTE  media_type;
-    // BPB
-    WORD  bytes_per_sector;
-    BYTE  sect_per_cluster;
-    WORD  reserved_sectors;
-    BYTE  fats;
-    WORD  root_entries;
-    WORD  tot_sectors;
-    BYTE  media_id;
-    WORD  sects_per_fat;
-    WORD  sects_per_track;
-    WORD  num_heads;
-    WORD  hidden_sectors;
-    BYTE  remainder[5];
-} BLOCK_DEV_PARAMS, *PBLOCK_DEV_PARAMS;
-#pragma pack(pop)
-
-#endif /* WIN32 */
-
 #endif

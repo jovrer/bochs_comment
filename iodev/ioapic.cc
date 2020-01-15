@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.cc 10350 2011-05-04 18:37:50Z vruppert $
+// $Id: ioapic.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -44,6 +44,7 @@ int libioapic_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
 
 void libioapic_LTX_plugin_fini(void)
 {
+  bx_devices.pluginIOAPIC = &bx_devices.stubIOAPIC;
   delete theIOAPIC;
 }
 
@@ -72,17 +73,26 @@ static bx_bool ioapic_read(bx_phy_address a20addr, unsigned len, void *data, voi
 
 static bx_bool ioapic_write(bx_phy_address a20addr, unsigned len, void *data, void *param)
 {
-  if (len != 4) {
-    BX_PANIC(("I/O apic write with len=%d (should be 4)", len));
-    return 1;
-  }
-
   if(a20addr & 0xf) {
     BX_PANIC(("I/O apic write at unaligned address 0x" FMT_PHY_ADDRX, a20addr));
     return 1;
   }
 
-  theIOAPIC->write_aligned(a20addr, *((Bit32u*) data));
+  if (len == 4) {
+    theIOAPIC->write_aligned(a20addr, *((Bit32u*) data));
+  }
+  else {
+    if ((a20addr & 0xff) != 0)
+      BX_PANIC(("I/O apic write with len=%d (should be 4) at address 0x" FMT_PHY_ADDRX, len, a20addr));
+
+    if (len == 2)
+      theIOAPIC->write_aligned(a20addr, (Bit32u) *((Bit16u*) data));
+    else if (len == 1)
+      theIOAPIC->write_aligned(a20addr, (Bit32u) *((Bit8u*) data));
+    else
+      BX_PANIC(("Unsupported I/O APIC write at address 0x" FMT_PHY_ADDRX ", len=%d", a20addr, len));
+  }
+
   return 1;
 }
 
@@ -112,7 +122,13 @@ void bx_io_redirect_entry_t::register_state(bx_param_c *parent)
 bx_ioapic_c::bx_ioapic_c(): base_addr(BX_IOAPIC_BASE_ADDR)
 {
   set_id(BX_IOAPIC_DEFAULT_ID);
-  put("IOAP");
+  put("ioapic", "IOAP");
+}
+
+bx_ioapic_c::~bx_ioapic_c()
+{
+  SIM->get_bochs_root()->remove("ioapic");
+  BX_DEBUG(("Exit"));
 }
 
 void bx_ioapic_c::init(void)
@@ -121,6 +137,10 @@ void bx_ioapic_c::init(void)
   DEV_register_memory_handlers(theIOAPIC,
       ioapic_read, ioapic_write, base_addr, base_addr + 0xfff);
   reset(BX_RESET_HARDWARE);
+#if BX_DEBUGGER
+  // register device for the 'info device' command (calls debug_dump())
+  bx_dbg_register_debug_info("ioapic", this);
+#endif
 }
 
 void bx_ioapic_c::reset(unsigned type)
@@ -293,19 +313,37 @@ void bx_ioapic_c::service_ioapic()
 
 void bx_ioapic_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "ioapic", "IOAPIC State", 4);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "ioapic", "IOAPIC State");
 
   BXRS_HEX_PARAM_SIMPLE(list, ioregsel);
   BXRS_HEX_PARAM_SIMPLE(list, intin);
   BXRS_HEX_PARAM_SIMPLE(list, irr);
 
-  bx_list_c *table = new bx_list_c(list, "ioredtbl", BX_IOAPIC_NUM_PINS);
+  bx_list_c *table = new bx_list_c(list, "ioredtbl");
   for (unsigned i=0; i<BX_IOAPIC_NUM_PINS; i++) {
     char name[6];
     sprintf(name, "0x%02x", i);
-    bx_list_c *entry = new bx_list_c(table, name, 2);
+    bx_list_c *entry = new bx_list_c(table, name);
     ioredtbl[i].register_state(entry);
   }
 }
+
+#if BX_DEBUGGER
+void bx_ioapic_c::debug_dump(int argc, char **argv)
+{
+  int i;
+  char buf[1024];
+
+  dbg_printf("82093AA I/O APIC\n\n");
+  for (i = 0; i < BX_IOAPIC_NUM_PINS; i++) {
+    bx_io_redirect_entry_t *entry = ioredtbl + i;
+    entry->sprintf_self(buf);
+    dbg_printf("entry[%d]: %s\n", i, buf);
+  }
+  if (argc > 0) {
+    dbg_printf("\nAdditional options not supported\n");
+  }
+}
+#endif
 
 #endif /* if BX_SUPPORT_APIC */

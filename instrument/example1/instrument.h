@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h 10690 2011-09-25 17:40:41Z sshwarts $
+// $Id: instrument.h 11295 2012-07-24 15:32:55Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2006-2009 Stanislav Shwartsman
+//   Copyright (c) 2006-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -54,7 +54,7 @@ public:
   struct {
     bx_address laddr;     // linear address
     bx_phy_address paddr; // physical address
-    unsigned op;          // BX_READ, BX_WRITE or BX_RW
+    unsigned rw;          // BX_READ, BX_WRITE or BX_RW
     unsigned size;        // 1 .. 32
   } data_access[MAX_DATA_ACCESSES];
 
@@ -75,9 +75,9 @@ public:
 
   void bx_instr_reset(unsigned type);
 
-  void bx_instr_cnear_branch_taken(bx_address new_eip);
-  void bx_instr_cnear_branch_not_taken();
-  void bx_instr_ucnear_branch(unsigned what, bx_address new_eip);
+  void bx_instr_cnear_branch_taken(bx_address branch_eip, bx_address new_eip);
+  void bx_instr_cnear_branch_not_taken(bx_address branch_eip);
+  void bx_instr_ucnear_branch(unsigned what, bx_address branch_eip, bx_address new_eip);
   void bx_instr_far_branch(unsigned what, Bit16u new_cs, bx_address new_eip);
 
   void bx_instr_before_execution(bxInstruction_c *i);
@@ -87,7 +87,7 @@ public:
   void bx_instr_exception(unsigned vector, unsigned error_code);
   void bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_address eip);
 
-  void bx_instr_mem_data_access(unsigned seg, bx_address offset, unsigned len, unsigned rw);
+  void bx_instr_lin_access(bx_address lin, bx_phy_adress phy, unsigned len, unsigned rw);
 
 private:
   void branch_taken(bx_address new_eip);
@@ -114,10 +114,10 @@ extern bxInstrumentation *icpu;
 #define BX_INSTR_DEBUG_PROMPT()
 #define BX_INSTR_DEBUG_CMD(cmd)
 
-/* branch resoultion */
-#define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, new_eip)       icpu[cpu_id].bx_instr_cnear_branch_taken(new_eip)
-#define BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(cpu_id)   icpu[cpu_id].bx_instr_cnear_branch_not_taken()
-#define BX_INSTR_UCNEAR_BRANCH(cpu_id, what, new_eip)      icpu[cpu_id].bx_instr_ucnear_branch(what, new_eip)
+/* branch resolution */
+#define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, branch_eip, new_eip) icpu[cpu_id].bx_instr_cnear_branch_taken(branch_eip, new_eip)
+#define BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(cpu_id, branch_eip) icpu[cpu_id].bx_instr_cnear_branch_not_taken(branch_eip)
+#define BX_INSTR_UCNEAR_BRANCH(cpu_id, what, branch_eip, new_eip) icpu[cpu_id].bx_instr_ucnear_branch(what, branch_eip, new_eip)
 #define BX_INSTR_FAR_BRANCH(cpu_id, what, new_cs, new_eip) icpu[cpu_id].bx_instr_far_branch(what, new_cs, new_eip)
 
 /* decoding completed */
@@ -142,14 +142,10 @@ extern bxInstrumentation *icpu;
 #define BX_INSTR_REPEAT_ITERATION(cpu_id, i)
 
 /* memory access */
-#define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
+#define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw) \
+                    icpu[cpu_id].bx_instr_lin_access(lin, phy, len, rw)
 
-#define BX_INSTR_MEM_DATA_ACCESS(cpu_id, seg, offset, len, rw) \
-                    icpu[cpu_id].bx_instr_mem_data_access(seg, offset, len, rw)
-
-/* called from memory object */
-#define BX_INSTR_PHY_WRITE(cpu_id, addr, len)
-#define BX_INSTR_PHY_READ(cpu_id, addr, len)
+#define BX_INSTR_PHY_ACCESS(cpu_id, phy, len, rw)
 
 /* feedback from device units */
 #define BX_INSTR_INP(addr, len)
@@ -176,10 +172,10 @@ extern bxInstrumentation *icpu;
 #define BX_INSTR_DEBUG_PROMPT()
 #define BX_INSTR_DEBUG_CMD(cmd)
 
-/* branch resoultion */
-#define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, new_eip)
-#define BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(cpu_id)
-#define BX_INSTR_UCNEAR_BRANCH(cpu_id, what, new_eip)
+/* branch resolution */
+#define BX_INSTR_CNEAR_BRANCH_TAKEN(cpu_id, branch_eip, new_eip)
+#define BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(cpu_id, branch_eip)
+#define BX_INSTR_UCNEAR_BRANCH(cpu_id, what, branch_eip, new_eip)
 #define BX_INSTR_FAR_BRANCH(cpu_id, what, new_cs, new_eip)
 
 /* decoding completed */
@@ -201,15 +197,11 @@ extern bxInstrumentation *icpu;
 #define BX_INSTR_AFTER_EXECUTION(cpu_id, i)
 #define BX_INSTR_REPEAT_ITERATION(cpu_id, i)
 
-/* memory access */
+/* linear memory access */
 #define BX_INSTR_LIN_ACCESS(cpu_id, lin, phy, len, rw)
 
-/* memory access */
-#define BX_INSTR_MEM_DATA_ACCESS(cpu_id, seg, offset, len, rw)
-
-/* called from memory object */
-#define BX_INSTR_PHY_WRITE(cpu_id, addr, len)
-#define BX_INSTR_PHY_READ(cpu_id, addr, len)
+/* physical memory access */
+#define BX_INSTR_PHY_ACCESS(cpu_id, phy, len, rw)
 
 /* feedback from device units */
 #define BX_INSTR_INP(addr, len)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.h 10419 2011-06-23 15:56:02Z vruppert $
+// $Id: pci.h 11148 2012-04-23 17:06:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -59,13 +59,12 @@ public:
                                   bx_write_handler_t f2, Bit32u *addr,
                                   Bit8u *pci_conf, unsigned size,
                                   const Bit8u *iomask, const char *name);
-  virtual Bit8u rd_memType(Bit32u addr);
-  virtual Bit8u wr_memType(Bit32u addr);
 
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
-
-  virtual void debug_dump(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
+#endif
 
 private:
   Bit8u pci_handler_id[0x100];  // 256 devices/functions

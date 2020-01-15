@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.cc 10589 2011-08-16 20:07:08Z sshwarts $
+// $Id: wxmain.cc 11366 2012-08-24 21:49:02Z vruppert $
 /////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -109,10 +109,8 @@ bool isSimThread() {
   if (wxThread::IsMain()) return false;
   wxThread *current = wxThread::This();
   if (current == (wxThread*) theFrame->GetSimThread()) {
-    // wxLogDebug("isSimThread? yes");
     return true;
   }
-  // wxLogDebug("isSimThread? no");
   return false;
 }
 
@@ -206,19 +204,19 @@ extern "C" int libwx_LTX_plugin_init(plugin_t *plugin, plugintype_t type,
   MyPanel::OnPluginInit();
   bx_list_c *list = new bx_list_c(SIM->get_param("."),
       "wxdebug",
-      "subtree for the wx debugger",
-      30);
+      "subtree for the wx debugger"
+      );
   bx_list_c *cpu = new bx_list_c(list,
       "cpu",
-      "CPU State",
-      BX_MAX_SMP_THREADS_SUPPORTED);
+      "CPU State"
+      );
   cpu->set_options(bx_list_c::USE_TAB_WINDOW);
   return 0; // success
 }
 
 extern "C" void libwx_LTX_plugin_fini()
 {
-  // fprintf(stderr, "plugin_fini for wxmain.cc\n");
+  // Nothing here yet
 }
 
 
@@ -327,11 +325,13 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   EVT_MENU(ID_Simulate_PauseResume, MyFrame::OnPauseResumeSim)
   EVT_MENU(ID_Simulate_Stop, MyFrame::OnKillSim)
   EVT_MENU(ID_Sim2CI_Event, MyFrame::OnSim2CIEvent)
+  EVT_MENU(ID_Edit_Plugins, MyFrame::OnEditPluginCtrl)
   EVT_MENU(ID_Edit_ATA0, MyFrame::OnEditATA)
   EVT_MENU(ID_Edit_ATA1, MyFrame::OnEditATA)
   EVT_MENU(ID_Edit_ATA2, MyFrame::OnEditATA)
   EVT_MENU(ID_Edit_ATA3, MyFrame::OnEditATA)
   EVT_MENU(ID_Edit_CPU, MyFrame::OnEditCPU)
+  EVT_MENU(ID_Edit_CPUID, MyFrame::OnEditCPUID)
   EVT_MENU(ID_Edit_Memory, MyFrame::OnEditMemory)
   EVT_MENU(ID_Edit_Clock_Cmos, MyFrame::OnEditClockCmos)
   EVT_MENU(ID_Edit_PCI, MyFrame::OnEditPCI)
@@ -345,7 +345,6 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   EVT_MENU(ID_Log_Prefs, MyFrame::OnLogPrefs)
   EVT_MENU(ID_Log_PrefsDevice, MyFrame::OnLogPrefsDevice)
   EVT_MENU(ID_Debug_ShowCpu, MyFrame::OnShowCpu)
-  EVT_MENU(ID_Debug_ShowKeyboard, MyFrame::OnShowKeyboard)
 #if BX_DEBUGGER
   EVT_MENU(ID_Debug_Console, MyFrame::OnDebugLog)
 #endif
@@ -402,8 +401,7 @@ END_EVENT_TABLE()
 // - Debug
 //   +----------------------|
 //   | Show CPU             |
-//   | Show Memory          |
-//   | ? what else ?        |
+//   | Debug Console        |
 //   +----------------------|
 // - Event Log
 //   +----------------------+
@@ -441,6 +439,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuConfiguration->Append(ID_Quit, wxT("&Quit"));
 
   menuEdit = new wxMenu;
+  menuEdit->Append(ID_Edit_Plugins, wxT("Pl&ugin Control..."));
   menuEdit->Append(ID_Edit_FD_0, wxT("Floppy Disk &0..."));
   menuEdit->Append(ID_Edit_FD_1, wxT("Floppy Disk &1..."));
   menuEdit->Append(ID_Edit_ATA0, wxT("ATA Channel 0..."));
@@ -448,6 +447,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuEdit->Append(ID_Edit_ATA2, wxT("ATA Channel 2..."));
   menuEdit->Append(ID_Edit_ATA3, wxT("ATA Channel 3..."));
   menuEdit->Append(ID_Edit_CPU, wxT("&CPU..."));
+  menuEdit->Append(ID_Edit_CPUID, wxT("CPU&ID..."));
   menuEdit->Append(ID_Edit_Memory, wxT("&Memory..."));
   menuEdit->Append(ID_Edit_Clock_Cmos, wxT("C&lock/Cmos..."));
   menuEdit->Append(ID_Edit_PCI, wxT("&PCI..."));
@@ -469,11 +469,9 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
 
   menuDebug = new wxMenu;
   menuDebug->Append(ID_Debug_ShowCpu, wxT("Show &CPU"));
-  menuDebug->Append(ID_Debug_ShowKeyboard, wxT("Show &Keyboard"));
 #if BX_DEBUGGER
   menuDebug->Append(ID_Debug_Console, wxT("Debug Console"));
 #endif
-  menuDebug->Append(ID_Debug_ShowMemory, wxT("Show &memory"));
 
   menuLog = new wxMenu;
   menuLog->Append(ID_Log_View, wxT("&View"));
@@ -493,7 +491,6 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   SetMenuBar(menuBar);
 
   // disable things that don't work yet
-  menuDebug->Enable(ID_Debug_ShowMemory, FALSE);  // not implemented
   menuLog->Enable(ID_Log_View, FALSE);  // not implemented
   // enable ATA channels in menu
   menuEdit->Enable(ID_Edit_ATA1, BX_MAX_ATA_CHANNEL > 1);
@@ -535,7 +532,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   bxToolBar->Realize();
 
   // create a MyPanel that covers the whole frame
-  panel = new MyPanel(this, -1);
+  panel = new MyPanel(this, -1, wxDefaultPosition, wxDefaultSize, wxNO_BORDER);
   panel->SetBackgroundColour(wxColour(0,0,0));
   panel->SetFocus();
   wxGridSizer *sz = new wxGridSizer(1, 1);
@@ -606,10 +603,25 @@ void MyFrame::OnStateRestore(wxCommandEvent& WXUNUSED(event))
   }
 }
 
+void MyFrame::OnEditPluginCtrl(wxCommandEvent& WXUNUSED(event))
+{
+  PluginControlDialog dlg(this, -1);
+  dlg.ShowModal();
+}
+
 void MyFrame::OnEditCPU(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param("cpu");
+  dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
+  dlg.AddParam(list);
+  dlg.ShowModal();
+}
+
+void MyFrame::OnEditCPUID(wxCommandEvent& WXUNUSED(event))
+{
+  ParamDialog dlg(this, -1);
+  bx_list_c *list = (bx_list_c*) SIM->get_param("cpuid");
   dlg.SetTitle(wxString(list->get_title(), wxConvUTF8));
   dlg.AddParam(list);
   dlg.ShowModal();
@@ -821,31 +833,6 @@ void MyFrame::OnShowCpu(wxCommandEvent& WXUNUSED(event))
   showCpu->Show(TRUE);
 }
 
-void MyFrame::OnShowKeyboard(wxCommandEvent& WXUNUSED(event))
-{
-  bx_list_c *list = (bx_list_c*)SIM->get_param(BXPN_WX_KBD_STATE);
-  int list_size = 0;
-
-  if (list != NULL) {
-    list_size = list->get_size();
-  }
-  if (list_size == 0) {
-    // if params not initialized yet, then give up
-    wxMessageBox(wxT("Cannot show the debugger window until the simulation has begun."),
-                 wxT("Sim not running"), wxOK | wxICON_ERROR, this);
-    return;
-  }
-  if (showKbd == NULL) {
-    showKbd = new ParamDialog(this, -1);
-    showKbd->SetTitle(wxT("Keyboard State (incomplete, this is a demo)"));
-    showKbd->AddParam(SIM->get_param(BXPN_WX_KBD_STATE));
-    showKbd->Init();
-  } else {
-    showKbd->CopyParamToGui();
-  }
-  showKbd->Show(TRUE);
-}
-
 #if BX_DEBUGGER
 void MyFrame::OnDebugLog(wxCommandEvent& WXUNUSED(event))
 {
@@ -975,8 +962,8 @@ void MyFrame::simStatusChanged(StatusChange change, bx_bool popupNotify) {
     if (!SIM->get_param_bool("enabled", base)->get()) {
       menuEdit->Enable(ID_Edit_ATA0+i, canConfigure);
     } else {
-    sprintf(ata_name, "ata.%d.master", i);
-    base = (bx_list_c*) SIM->get_param(ata_name);
+      sprintf(ata_name, "ata.%d.master", i);
+      base = (bx_list_c*) SIM->get_param(ata_name);
       if (SIM->get_param_enum("type", base)->get() != BX_ATA_DEVICE_CDROM) {
         sprintf(ata_name, "ata.%d.slave", i);
         base = (bx_list_c*) SIM->get_param(ata_name);
@@ -1237,6 +1224,10 @@ void MyFrame::OnSim2CIEvent(wxCommandEvent& event)
       sim_thread->SendSyncResponse(be);
     }
     break;
+  case BX_ASYNC_EVT_QUIT_SIM:
+    wxMessageBox(wxT("Bochs simulation has stopped."), wxT("Bochs Stopped"),
+        wxOK | wxICON_INFORMATION, this);
+    break;
   default:
     wxLogDebug(wxT("OnSim2CIEvent: event type %d ignored"), (int)be->type);
     if (!BX_EVT_IS_ASYNC(be->type)) {
@@ -1413,7 +1404,10 @@ void *SimThread::Entry(void)
   if (!wxBochsClosing) {
     if (!wxBochsStopSim) {
       wxLogDebug(wxT("SimThread::Entry: sim thread ending.  call simStatusChanged"));
-      theFrame->simStatusChanged(theFrame->Stop, true);
+      theFrame->simStatusChanged(theFrame->Stop, false);
+      BxEvent *be = new BxEvent;
+      be->type = BX_ASYNC_EVT_QUIT_SIM;
+      SIM->sim_to_ci_event(be);
     }
   } else {
     wxLogMessage(wxT("SimThread::Entry: the gui is waiting for sim to finish.  Now that it has finished, I will close the frame."));

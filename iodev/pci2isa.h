@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.h 10419 2011-06-23 15:56:02Z vruppert $
+// $Id: pci2isa.h 11148 2012-04-23 17:06:19Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -42,6 +42,9 @@ public:
 
   virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
   virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
+#endif
 
 private:
 

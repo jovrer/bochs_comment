@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.h 10613 2011-08-21 16:44:02Z sshwarts $
+// $Id: icache.h 11389 2012-09-01 19:13:01Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -101,8 +101,8 @@ BX_CPP_INLINE void bxPageWriteStampTable::resetWriteStamps(void)
 
 extern bxPageWriteStampTable pageWriteStampTable;
 
-#define BxICacheEntries (64 * 1024)  // Must be a power of 2.
-#define BxICacheMemPool (384 * 1024)
+#define BxICacheEntries (256 * 1024)  // Must be a power of 2.
+#define BxICacheMemPool (576 * 1024)
 
 #define BX_MAX_TRACE_LENGTH 32
 
@@ -201,7 +201,6 @@ public:
   {
     return &(entry[hash(pAddr, fetchModeMask)]);
   }
-
 };
 
 BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
@@ -224,6 +223,10 @@ BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
 
   mpindex = 0;
 }
+
+#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
+extern void genDummyICacheEntry(bxInstruction_c *i);
+#endif
 
 BX_CPP_INLINE void bxICache_c::handleSMC(bx_phy_address pAddr, Bit32u mask)
 {
@@ -248,12 +251,17 @@ BX_CPP_INLINE void bxICache_c::handleSMC(bx_phy_address pAddr, Bit32u mask)
 
   bxICacheEntry_c *e = get_entry(pAddr, 0);
 
+  // go over 32 "cache lines" of 128 byte each
   for (unsigned n=0; n < 32; n++) {
     Bit32u line_mask = (1 << n);
     if (line_mask > mask) break;
     for (unsigned index=0; index < 128; index++, e++) {
       if (pAddr == LPFOf(e->pAddr) && (e->traceMask & mask) != 0) {
         e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
+#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
+        for (unsigned instr=0;instr < e->tlen; instr++)
+          genDummyICacheEntry(e->i + instr);
+#endif
       }
     }
   }

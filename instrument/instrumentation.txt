@@ -66,19 +66,19 @@ state.  The  callback  receives  monitored  memory  range and MWAIT flags as a
 parameters.
 
 
-	void bx_instr_cnear_branch_taken(unsigned cpu, bx_address new_eip);
+	void bx_instr_cnear_branch_taken(unsigned cpu, bx_address branch_eip, bx_address new_eip);
 
 The  callback  is  called  each time, when currently executed instruction is a
 conditional near branch and it is taken.
 
 
-	void bx_instr_cnear_branch_not_taken(unsigned cpu);
+	void bx_instr_cnear_branch_not_taken(unsigned cpu, bx_address branch_eip);
 
 The  callback  is  called  each time, when currently executed instruction is a
 conditional near branch and it is not taken.
 
 
-	void bx_instr_ucnear_branch(unsigned cpu, unsigned what, bx_address new_eip);
+	void bx_instr_ucnear_branch(unsigned cpu, unsigned what, bx_address branch_eip, bx_address new_eip);
 
 The  callback  is  called each time, when currently executed instruction is an
 unconditional near branch (always taken).
@@ -210,7 +210,7 @@ The  callback  is  called  each  time,  when Bochs simulator executes a linear
 memory  access.  Note  that  no  page split accesses will be generated because
 Bochs  splits  page split accesses to two different memory accesses during its
 execution  flow.  The  callback  also  will not be generated in case of direct
-physical memory access like in SMM, VMM or SVM modes.
+physical memory access like page walks, SMM, VMM or SVM operations.
 
 Possible access types are: BX_READ, BX_WRITE and BX_RW. 
 
@@ -218,21 +218,15 @@ Currently  the  callback is not supported when repeat-speedups optimization is
 enabled.
 
 
-	void bx_instr_mem_data_access(unsigned cpu, unsigned seg, bx_address offset, unsigned len, unsigned rw);
+	void bx_instr_phy_access(unsigned cpu, bx_address lin, bx_address phy, unsigned len, unsigned rw);
 
-The  callback is called each time, when Bochs simulator executes segment based
-linear memory access. In contrast to previous  callback it will be called even
-if memory access fails  because of  any reason (for example segment protection
-failure or page fault).
+The  callback  is called  each  time, when Bochs simulator executes a physical
+memory  access.  Physical  accesses include memory  accesses generated  by the
+CPU during  page walks, SMM, VMM or SVM  operations. Note that  no  page split
+accesses will be  generated because  Bochs splits  page split accesses  to two
+different memory accesses during its execution flow.
 
-The callback will not be called for  system memory accesses like sys desriptor
-tables reads/writes or new stack pushes during far call or exception.
-
-
-	void bx_instr_phy_read(unsigned cpu, bx_address addr, unsigned len);
-	void bx_instr_phy_write(unsigned cpu, bx_address addr, unsigned len);
-
-These callback functions are the feedback from external memory system.
+Possible access types are: BX_READ, BX_WRITE and BX_RW. 
 
 
 	void bx_instr_inp(Bit16u addr, unsigned len);
@@ -246,8 +240,6 @@ Known problems:
 
 1. BX_INSTR_LIN_ACCESS doesn't work when repeat-speedups feature is enabled.
 
-2. BX_INSTR_MEM_DATA doesn't work when repeat-speedups feature is enabled.
-
 Feature requests:
 
 1. BX_INSTR_CNEAR_BRANCH_NOT_TAKEN callback should have an additional 
@@ -255,17 +247,3 @@ Feature requests:
 
 2. BX_INSTR_SMI, BX_INSTR_NMI, BX_INSTR_SIPI and other external events
    callbacks
-
-3. ???
-
-While using Bochs as a reference model for simulations, the simulator needs
-information about what loads/stores are taking place with each instruction.
-Presumably,  that  is  what  the BX_INSTR_MEM_DATA() instrumentation macros
-cover (which is the place where our simulator hooks up).
-
-The RETnear_xxx() functions call access_linear() directly, rather than call
-read_virtual_xxx()  functions. This is a problem for code making use of the
-BX_INSTR_MEM_DATA()   hook  because  it  does  not  get  called  for  these
-instructions.  Should  this  be  changed along with some other instructions
-that exhibit this?
-							Brian Slechta

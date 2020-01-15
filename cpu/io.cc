@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io.cc 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: io.cc 11117 2012-03-28 21:11:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -47,7 +47,7 @@ Bit32u BX_CPU_C::FastRepINSW(bxInstruction_c *i, bx_address dstOff, Bit16u port,
   if ((dstOff | 0xfff) > dstSegPtr->cache.u.segment.limit_scaled)
     return 0;
 
-  bx_address laddrDst = BX_CPU_THIS_PTR get_laddr(BX_SEG_REG_ES, dstOff);
+  bx_address laddrDst = get_laddr32(BX_SEG_REG_ES, dstOff);
   // check that the address is word aligned
   if (laddrDst & 1) return 0;
 
@@ -120,7 +120,7 @@ Bit32u BX_CPU_C::FastRepOUTSW(bxInstruction_c *i, unsigned srcSeg, bx_address sr
   if ((srcOff | 0xfff) > srcSegPtr->cache.u.segment.limit_scaled)
     return 0;
 
-  bx_address laddrSrc = BX_CPU_THIS_PTR get_laddr(srcSeg, srcOff);
+  bx_address laddrSrc = get_laddr32(srcSeg, srcOff);
   // check that the address is word aligned
   if (laddrSrc & 1) return 0;
 
@@ -883,6 +883,12 @@ bx_bool BX_CPP_AttrRegparmN(3) BX_CPU_C::allow_io(bxInstruction_c *i, Bit16u por
     if ((permission16 >> bit_index) & mask)
       return(0);
   }
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_IO)) SvmInterceptIO(i, port, len);
+  }
+#endif
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)

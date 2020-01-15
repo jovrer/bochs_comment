@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu_compare.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: fpu_compare.cc 11313 2012-08-05 13:52:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003-2009 Stanislav Shwartsman
+//   Copyright (c) 2003-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -80,14 +80,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOM_STi(bxInstruction_c *i)
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
-  int pop_stack = i->nnn() & 1;
-  // handle special case of FSTP opcode @ 0xDE 0xD0..D7
-  if (i->b1() == 0xde)
-    pop_stack = 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FCOMP_STi)
+      pop_stack = 1;
 
   clear_C1();
 
-  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->rm()))
+  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->src()))
   {
       FPU_exception(FPU_EX_Stack_Underflow);
       setcc(FPU_SW_C0|FPU_SW_C2|FPU_SW_C3);
@@ -103,7 +102,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOM_STi(bxInstruction_c *i)
   float_status_t status =
      FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-  int rc = floatx80_compare(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->rm()), status);
+  int rc = floatx80_compare(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->src()), status);
   setcc(status_word_flags_fpu_compare(rc));
 
   if (! FPU_exception(status.float_exception_flags)) {
@@ -123,7 +122,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOMI_ST0_STj(bxInstruction_c *i)
 
   clear_C1();
 
-  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->rm()))
+  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->src()))
   {
       FPU_exception(FPU_EX_Stack_Underflow);
       setEFlagsOSZAPC(EFlagsZFMask | EFlagsPFMask | EFlagsCFMask);
@@ -139,7 +138,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOMI_ST0_STj(bxInstruction_c *i)
   float_status_t status =
       FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-  int rc = floatx80_compare(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->rm()), status);
+  int rc = floatx80_compare(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->src()), status);
   BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 
   if (! FPU_exception(status.float_exception_flags)) {
@@ -159,7 +158,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FUCOMI_ST0_STj(bxInstruction_c *i)
 
   clear_C1();
 
-  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->rm()))
+  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->src()))
   {
       FPU_exception(FPU_EX_Stack_Underflow);
       setEFlagsOSZAPC(EFlagsZFMask | EFlagsPFMask | EFlagsCFMask);
@@ -175,7 +174,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FUCOMI_ST0_STj(bxInstruction_c *i)
   float_status_t status =
       FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-  int rc = floatx80_compare_quiet(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->rm()), status);
+  int rc = floatx80_compare_quiet(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->src()), status);
   BX_CPU_THIS_PTR write_eflags_fpu_compare(rc);
 
   if (! FPU_exception(status.float_exception_flags)) {
@@ -191,9 +190,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FUCOM_STi(bxInstruction_c *i)
   BX_CPU_THIS_PTR prepareFPU(i);
   BX_CPU_THIS_PTR FPU_update_last_instruction(i);
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FUCOMP_STi)
+      pop_stack = 1;
 
-  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->rm()))
+  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->src()))
   {
       FPU_exception(FPU_EX_Stack_Underflow);
       setcc(FPU_SW_C0|FPU_SW_C2|FPU_SW_C3);
@@ -209,7 +210,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FUCOM_STi(bxInstruction_c *i)
   float_status_t status =
       FPU_pre_exception_handling(BX_CPU_THIS_PTR the_i387.get_control_word());
 
-  int rc = floatx80_compare_quiet(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->rm()), status);
+  int rc = floatx80_compare_quiet(BX_READ_FPU_REG(0), BX_READ_FPU_REG(i->src()), status);
   setcc(status_word_flags_fpu_compare(rc));
 
   if (! FPU_exception(status.float_exception_flags)) {
@@ -224,7 +225,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOM_SINGLE_REAL(bxInstruction_c *
 {
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  int pop_stack = i->nnn() & 1, rc;
+  int rc, pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FCOMP_SINGLE_REAL)
+      pop_stack = 1;
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   float32 load_reg = read_virtual_dword(i->seg(), RMAddr(i));
@@ -272,7 +275,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCOM_DOUBLE_REAL(bxInstruction_c *
 {
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  int pop_stack = i->nnn() & 1, rc;
+  int rc, pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FCOMP_DOUBLE_REAL)
+      pop_stack = 1;
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   float64 load_reg = read_virtual_qword(i->seg(), RMAddr(i));
@@ -320,7 +325,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FICOM_WORD_INTEGER(bxInstruction_c
 {
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FICOMP_WORD_INTEGER)
+      pop_stack = 1;
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   Bit16s load_reg = (Bit16s) read_virtual_word(i->seg(), RMAddr(i));
@@ -361,7 +368,9 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FICOM_DWORD_INTEGER(bxInstruction_
 {
   BX_CPU_THIS_PTR prepareFPU(i);
 
-  int pop_stack = i->nnn() & 1;
+  int pop_stack = 0;
+  if (i->getIaOpcode() == BX_IA_FICOMP_DWORD_INTEGER)
+      pop_stack = 1;
 
   RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
   Bit32s load_reg = (Bit32s) read_virtual_dword(i->seg(), RMAddr(i));
@@ -461,38 +470,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FUCOMPP(bxInstruction_c *i)
      BX_CPU_THIS_PTR the_i387.FPU_pop();
      BX_CPU_THIS_PTR the_i387.FPU_pop();
   }
-
-  BX_NEXT_INSTR(i);
-}
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::FCMOV_ST0_STj(bxInstruction_c *i)
-{
-  BX_CPU_THIS_PTR prepareFPU(i);
-  BX_CPU_THIS_PTR FPU_update_last_instruction(i);
-
-  if (IS_TAG_EMPTY(0) || IS_TAG_EMPTY(i->rm()))
-  {
-     FPU_stack_underflow(0);
-     BX_NEXT_INSTR(i);
-  }
-
-  floatx80 sti_reg = BX_READ_FPU_REG(i->rm());
-
-  bx_bool condition = 0;
-  switch(i->nnn() & 3)
-  {
-     case 0: condition = get_CF(); break;
-     case 1: condition = get_ZF(); break;
-     case 2: condition = get_CF() || get_ZF(); break;
-     case 3: condition = get_PF(); break;
-     default:
-        BX_PANIC(("FCMOV_ST0_STj: default case"));
-  }
-  if (i->b1() & 1)
-     condition = !condition;
-
-  if (condition)
-     BX_WRITE_FPU_REG(sti_reg, 0);
 
   BX_NEXT_INSTR(i);
 }

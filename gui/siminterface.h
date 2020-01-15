@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h 10662 2011-09-11 16:27:56Z sshwarts $
+// $Id: siminterface.h 11367 2012-08-25 13:20:55Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -257,7 +257,8 @@ typedef enum {
   BX_ASYNC_EVT_DBG_MSG,           // simulator -> CI
   BX_ASYNC_EVT_VALUE_CHANGED,     // simulator -> CI
   BX_ASYNC_EVT_TOOLBAR,           // CI -> simulator
-  BX_ASYNC_EVT_REFRESH            // simulator -> CI
+  BX_ASYNC_EVT_REFRESH,           // simulator -> CI
+  BX_ASYNC_EVT_QUIT_SIM           // simulator -> CI
 } BxEventType;
 
 typedef union {
@@ -294,14 +295,14 @@ typedef struct {
 // Event type: BX_ASYNC_EVT_MOUSE
 //
 // A mouse event can be sent from the VGA window to the Bochs
-// simulator.  It is asynchronous.  Currently unused because mouse
-// events aren't implemented in our wxWidgets code yet.
+// simulator.  It is asynchronous.
 typedef struct {
   // type is BX_EVT_MOUSE
-  Bit16s dx, dy;           // mouse motion delta
+  Bit16s dx, dy, dz;       // mouse motion delta
   Bit8u buttons;           // which buttons are pressed.
                            // bit 0: 1=left button down, 0=up
                            // bit 1: 1=right button down, 0=up
+                           // bit 2: 1=middle button down, 0=up
 } BxMouseEvent;
 
 // Event type: BX_SYNC_EVT_GET_PARAM, BX_ASYNC_EVT_SET_PARAM
@@ -519,9 +520,10 @@ enum {
   BX_HDIMAGE_MODE_UNDOABLE,
   BX_HDIMAGE_MODE_GROWING,
   BX_HDIMAGE_MODE_VOLATILE,
-  BX_HDIMAGE_MODE_VVFAT
+  BX_HDIMAGE_MODE_VVFAT,
+  BX_HDIMAGE_MODE_VPC
 };
-#define BX_HDIMAGE_MODE_LAST     BX_HDIMAGE_MODE_VVFAT
+#define BX_HDIMAGE_MODE_LAST     BX_HDIMAGE_MODE_VPC
 
 enum {
   BX_CLOCK_SYNC_NONE,
@@ -544,7 +546,10 @@ enum {
 enum {
   BX_CPUID_SUPPORT_LEGACY_APIC,
   BX_CPUID_SUPPORT_XAPIC,
+#if BX_CPU_LEVEL >= 6
+  BX_CPUID_SUPPORT_XAPIC_EXT,
   BX_CPUID_SUPPORT_X2APIC
+#endif
 };
 
 #define BX_CLOCK_TIME0_LOCAL     1
@@ -571,8 +576,8 @@ enum ci_return_t {
 typedef int (*config_interface_callback_t)(void *userdata, ci_command_t command);
 typedef BxEvent* (*bxevent_handler)(void *theclass, BxEvent *event);
 typedef void (*rt_conf_handler_t)(void *this_ptr);
-typedef Bit32s (*user_option_parser_t)(const char *context, int num_params, char *params[]);
-typedef Bit32s (*user_option_save_t)(FILE *fp);
+typedef Bit32s (*addon_option_parser_t)(const char *context, int num_params, char *params[]);
+typedef Bit32s (*addon_option_save_t)(FILE *fp);
 
 // bx_gui->set_display_mode() changes the mode between the configuration
 // interface and the simulation.  This is primarily intended for display
@@ -600,12 +605,15 @@ public:
   virtual bx_param_enum_c *get_param_enum(const char *pname, bx_param_c *base=NULL) {return NULL;}
   virtual unsigned gen_param_id() {return 0;}
   virtual int get_n_log_modules() {return -1;}
-  virtual char *get_prefix(int mod) {return 0;}
+  virtual const char *get_logfn_name(int mod) {return 0;}
+  virtual int get_logfn_id(const char *name) {return -1;}
+  virtual const char *get_prefix(int mod) {return 0;}
   virtual int get_log_action(int mod, int level) {return -1;}
   virtual void set_log_action(int mod, int level, int action) {}
   virtual int get_default_log_action(int level) {return -1;}
   virtual void set_default_log_action(int level, int action) {}
-  virtual char *get_action_name(int action) {return 0;}
+  virtual void apply_log_actions_by_device() {}
+  virtual const char *get_action_name(int action) {return 0;}
   virtual const char *get_log_level_name(int level) {return 0;}
   virtual int get_max_log_level() {return -1;}
 
@@ -699,26 +707,37 @@ public:
     is_sim_thread_func = func;
   }
   virtual bx_bool is_sim_thread() {return 1;}
+  virtual bx_bool is_wx_selected() const {return 0;}
   virtual void set_debug_gui(bx_bool val) {}
   virtual bx_bool has_debug_gui() const {return 0;}
   // provide interface to bx_gui->set_display_mode() method for config
   // interfaces to use.
   virtual void set_display_mode(disp_mode_t newmode) {}
   virtual bx_bool test_for_text_console() {return 1;}
-  // user-defined option support
-  virtual bx_bool register_user_option(const char *keyword, user_option_parser_t parser, user_option_save_t save_func) {return 0;}
-  virtual bx_bool unregister_user_option(const char *keyword) {return 0;}
-  virtual bx_bool is_user_option(const char *keyword) {return 0;}
-  virtual Bit32s parse_user_option(const char *context, int num_params, char *params []) {return -1;}
-  virtual Bit32s save_user_options(FILE *fp) {return -1;}
+  // add-on config option support
+  virtual bx_bool register_addon_option(const char *keyword, addon_option_parser_t parser, addon_option_save_t save_func) {return 0;}
+  virtual bx_bool unregister_addon_option(const char *keyword) {return 0;}
+  virtual bx_bool is_addon_option(const char *keyword) {return 0;}
+  virtual Bit32s parse_addon_option(const char *context, int num_params, char *params []) {return -1;}
+  virtual Bit32s save_addon_options(FILE *fp) {return -1;}
   // save/restore support
   virtual void init_save_restore() {}
+  virtual void cleanup_save_restore() {}
   virtual bx_bool save_state(const char *checkpoint_path) {return 0;}
   virtual bx_bool restore_config() {return 0;}
   virtual bx_bool restore_logopts() {return 0;}
   virtual bx_bool restore_hardware() {return 0;}
   virtual bx_list_c *get_bochs_root() {return NULL;}
   virtual bx_bool restore_bochs_param(bx_list_c *root, const char *sr_path, const char *restore_name) { return 0; }
+  // special config parameter and options functions for plugins
+  virtual bx_bool opt_plugin_ctrl(const char *plugname, bx_bool load) {return 0;}
+  virtual void init_std_nic_options(const char *name, bx_list_c *menu) {}
+  virtual void init_usb_options(const char *usb_name, const char *pname, int maxports) {}
+  virtual int  parse_nic_params(const char *context, const char *param, bx_list_c *base) {return 0;}
+  virtual int  parse_usb_port_params(const char *context, bx_bool devopt,
+                                     const char *param, int maxports, bx_list_c *base) {return 0;}
+  virtual int  write_pci_nic_options(FILE *fp, bx_list_c *base) {return 0;}
+  virtual int  write_usb_options(FILE *fp, int maxports, bx_list_c *base) {return 0;}
 };
 
 BOCHSAPI extern bx_simulator_interface_c *SIM;

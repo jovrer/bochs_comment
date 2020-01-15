@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: msr.cc 10906 2011-12-31 12:38:46Z sshwarts $
+// $Id: msr.cc 11299 2012-07-26 16:03:26Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008-2011 Stanislav Shwartsman
+//   Copyright (c) 2008-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -187,7 +187,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
       val64 = VMX_MSR_VMX_TRUE_VMENTRY_CTRLS;
       break;
     case BX_MSR_VMX_EPT_VPID_CAP:
-      if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT) || BX_SUPPORT_VMX_EXTENSION(BX_VMX_VPID)) {
+      if (VMX_MSR_VMX_EPT_VPID_CAP != 0) {
         val64 = VMX_MSR_VMX_EPT_VPID_CAP;
         break;
       }
@@ -226,6 +226,16 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::rdmsr(Bit32u index, Bit64u *msr)
       }
       val64 = BX_CPU_THIS_PTR efer.get32();
       break;
+
+#if BX_SUPPORT_SVM
+    case BX_SVM_HSAVE_PA_MSR:
+      if (! bx_cpuid_support_svm()) {
+        BX_ERROR(("RDMSR SVM_HSAVE_PA_MSR: SVM support not enabled !"));
+        return handle_unknown_rdmsr(index, msr);
+      }
+      val64 = BX_CPU_THIS_PTR msr.svm_hsave_pa;
+      break;
+#endif
 
     case BX_MSR_STAR:
       if ((BX_CPU_THIS_PTR efer_suppmask & BX_EFER_SCE_MASK) == 0) {
@@ -347,9 +357,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDMSR(bxInstruction_c *i)
   Bit32u index = ECX;
   Bit64u val64 = 0;
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_MSR)) SvmInterceptMSR(BX_READ, index);
+  }
+#endif
+
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_MSR(i, VMX_VMEXIT_RDMSR, index);
+    VMexit_MSR(VMX_VMEXIT_RDMSR, index);
 #endif
 
 #if BX_SUPPORT_VMX >= 2
@@ -435,7 +451,7 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
   if (bx_cpuid_support_x2apic()) {
     if (index >= 0x800 && index <= 0xBFF) {
       if (BX_CPU_THIS_PTR msr.apicbase & 0x400)  // X2APIC mode
-        return BX_CPU_THIS_PTR lapic.write_x2apic(index, val_64);
+        return BX_CPU_THIS_PTR lapic.write_x2apic(index, val32_hi, val32_lo);
       else
         return 0;
     }
@@ -637,6 +653,19 @@ bx_bool BX_CPP_AttrRegparmN(2) BX_CPU_C::wrmsr(Bit32u index, Bit64u val_64)
       return 0;
 #endif
 
+#if BX_SUPPORT_SVM
+    case BX_SVM_HSAVE_PA_MSR:
+      if (! bx_cpuid_support_svm()) {
+        BX_ERROR(("WRMSR SVM_HSAVE_PA_MSR: SVM support not enabled !"));
+        return handle_unknown_wrmsr(index, val_64);
+      }
+      if ((val_64 & 0xfff) != 0 || ! IsValidPhyAddr(val_64)) {
+        BX_ERROR(("WRMSR SVM_HSAVE_PA_MSR: invalid or not page aligned physical address !"));
+      }
+      BX_CPU_THIS_PTR msr.svm_hsave_pa = val_64;
+      break;
+#endif
+
     case BX_MSR_EFER:
       if (! SetEFER(val_64)) return 0;
       break;
@@ -830,9 +859,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRMSR(bxInstruction_c *i)
   Bit64u val_64 = ((Bit64u) EDX << 32) | EAX;
   Bit32u index = ECX;
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_MSR)) SvmInterceptMSR(BX_WRITE, index);
+  }
+#endif
+
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)
-    VMexit_MSR(i, VMX_VMEXIT_WRMSR, index);
+    VMexit_MSR(VMX_VMEXIT_WRMSR, index);
 #endif
 
 #if BX_SUPPORT_VMX >= 2

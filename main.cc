@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc 10890 2011-12-29 21:25:34Z sshwarts $
+// $Id: main.cc 11370 2012-08-26 12:32:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -250,7 +250,8 @@ void print_tree(bx_param_c *node, int level)
 }
 #endif
 
-int bxmain (void) {
+int bxmain(void)
+{
 #ifdef HAVE_LOCALE_H
   // Initialize locale (for isprint() and other functions)
   setlocale (LC_ALL, "");
@@ -261,8 +262,8 @@ int bxmain (void) {
   if (setjmp (context) == 0) {
     SIM->set_quit_context (&context);
     BX_INSTR_INIT_ENV();
-    if (bx_init_main(bx_startup_flags.argc, bx_startup_flags.argv) < 0)
-    { BX_INSTR_EXIT_ENV();
+    if (bx_init_main(bx_startup_flags.argc, bx_startup_flags.argv) < 0) {
+      BX_INSTR_EXIT_ENV();
       return 0;
     }
     // read a param to decide which config interface to start.
@@ -414,6 +415,7 @@ int RedirectIOToConsole()
   long lStdHandle;
   FILE *fp;
   // allocate a console for this app
+  FreeConsole();
   if (!AllocConsole()) {
     MessageBox(NULL, "Failed to create text console", "Error", MB_ICONERROR);
     return 0;
@@ -453,13 +455,25 @@ int WINAPI WinMain(
   bx_startup_flags.hPrevInstance = hPrevInstance;
   bx_startup_flags.m_lpCmdLine = m_lpCmdLine;
   bx_startup_flags.nCmdShow = nCmdShow;
-  if (!RedirectIOToConsole()) {
-    return 1;
-  }
-  SetConsoleTitle("Bochs for Windows (wxWidgets port) - Console");
   int max_argv = 20;
   bx_startup_flags.argv = (char**) malloc (max_argv * sizeof (char*));
   split_string_into_argv(m_lpCmdLine, &bx_startup_flags.argc, bx_startup_flags.argv, max_argv);
+  int arg = 1;
+  bx_bool bx_noconsole = 0;
+  while (arg < bx_startup_flags.argc) {
+    if (!strcmp("-noconsole", bx_startup_flags.argv[arg])) {
+      bx_noconsole = 1;
+      break;
+    }
+    arg++;
+  }
+
+  if (!bx_noconsole) {
+    if (!RedirectIOToConsole()) {
+      return 1;
+    }
+    SetConsoleTitle("Bochs for Windows (wxWidgets port) - Console");
+  }
   return bxmain();
 }
 #endif
@@ -471,14 +485,28 @@ int CDECL main(int argc, char *argv[])
 {
   bx_startup_flags.argc = argc;
   bx_startup_flags.argv = argv;
-#if BX_WITH_SDL && defined(WIN32)
-  // if SDL/win32, try to create a console window.
-  if (!RedirectIOToConsole()) {
-    return 1;
+#ifdef WIN32
+  int arg = 1;
+  bx_bool bx_noconsole = 0;
+  while (arg < argc) {
+    if (!strcmp("-noconsole", argv[arg])) {
+      bx_noconsole = 1;
+      break;
+    }
+    arg++;
   }
+
+  if (bx_noconsole) {
+    FreeConsole();
+  } else {
+#if BX_WITH_SDL
+    // if SDL/win32, try to create a console window.
+    if (!RedirectIOToConsole()) {
+      return 1;
+    }
 #endif
-#if defined(WIN32)
-  SetConsoleTitle("Bochs for Windows - Console");
+    SetConsoleTitle("Bochs for Windows - Console");
+  }
 #endif
   return bxmain();
 }
@@ -498,7 +526,11 @@ void print_usage(void)
     "  -rc filename     execute debugger commands stored in file\n"
     "  -dbglog filename specify Bochs internal debugger log file name\n"
 #endif
+#ifdef WIN32
+    "  -noconsole       disable console window\n"
+#endif
     "  --help           display this help and exit\n"
+    "  --help features  display available features / devices and exit\n"
 #if BX_CPU_LEVEL > 4
     "  --help cpu       display supported CPU models and exit\n"
 #endif
@@ -541,9 +573,50 @@ int bx_init_main(int argc, char *argv[])
         || !strncmp("/?", argv[arg], 2)
 #endif
        ) {
-#if BX_CPU_LEVEL > 4
       if ((arg+1) < argc) {
-        if (!strcmp("cpu", argv[arg+1])) {
+        if (!strcmp("features", argv[arg+1])) {
+          fprintf(stderr, "Supported features:\n\n");
+#if BX_SUPPORT_CLGD54XX
+          fprintf(stderr, "cirrus\n");
+#endif
+#if BX_SUPPORT_PCI
+          fprintf(stderr, "pci\n");
+#endif
+#if BX_SUPPORT_PCIDEV
+          fprintf(stderr, "pcidev\n");
+#endif
+#if BX_SUPPORT_NE2K
+          fprintf(stderr, "ne2k\n");
+#endif
+#if BX_SUPPORT_PCIPNIC
+          fprintf(stderr, "pcipnic\n");
+#endif
+#if BX_SUPPORT_E1000
+          fprintf(stderr, "e1000\n");
+#endif
+#if BX_SUPPORT_SB16
+          fprintf(stderr, "sb16\n");
+#endif
+#if BX_SUPPORT_ES1370
+          fprintf(stderr, "es1370\n");
+#endif
+#if BX_SUPPORT_USB_OHCI
+          fprintf(stderr, "usb_ohci\n");
+#endif
+#if BX_SUPPORT_USB_UHCI
+          fprintf(stderr, "usb_uhci\n");
+#endif
+#if BX_SUPPORT_USB_XHCI
+          fprintf(stderr, "usb_xhci\n");
+#endif
+#if BX_GDBSTUB
+          fprintf(stderr, "gdbstub\n");
+#endif
+          fprintf(stderr, "\n");
+          arg++;
+        }
+#if BX_CPU_LEVEL > 4
+        else if (!strcmp("cpu", argv[arg+1])) {
           fprintf(stderr, "Supported CPU models:\n\n");
           do {
             fprintf(stderr, "%s\n", SIM->get_param_enum(BXPN_CPU_MODEL)->get_choice(i));
@@ -551,10 +624,8 @@ int bx_init_main(int argc, char *argv[])
           fprintf(stderr, "\n");
           arg++;
         }
-      }
-      else
 #endif
-      {
+      } else {
         print_usage();
       }
       SIM->quit_sim(0);
@@ -597,6 +668,11 @@ int bx_init_main(int argc, char *argv[])
         SIM->get_param_string(BXPN_RESTORE_PATH)->set(argv[arg]);
       }
     }
+#ifdef WIN32
+    else if (!strcmp("-noconsole", argv[arg])) {
+      // already handled in main() / WinMain()
+    }
+#endif
 #if BX_WITH_CARBON
     else if (!strncmp("-psn", argv[arg], 4)) {
       // "-psn" is passed if we are launched by double-clicking
@@ -730,8 +806,11 @@ int bx_init_main(int argc, char *argv[])
     load_rcfile = 0;
     norcfile = 0;
   }
+  // load pre-defined optional plugins before parsing configuration
+  SIM->opt_plugin_ctrl("*", 1);
+  SIM->init_save_restore();
   if (load_rcfile) {
-    /* parse configuration file and command line arguments */
+    // parse configuration file and command line arguments
 #ifdef WIN32
     int length;
     if (bochsrc_filename != NULL) {
@@ -864,12 +943,14 @@ bx_bool load_and_init_display_lib(void)
 
 int bx_begin_simulation (int argc, char *argv[])
 {
-  SIM->init_save_restore();
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     if (!SIM->restore_config()) {
       BX_PANIC(("cannot restore configuration"));
       SIM->get_param_bool(BXPN_RESTORE_FLAG)->set(0);
     }
+  } else {
+    // make sure all optional plugins have been loaded
+    SIM->opt_plugin_ctrl("*", 1);
   }
 
   // deal with gui selection
@@ -1008,6 +1089,32 @@ void bx_sr_after_restore_state(void)
   DEV_after_restore_state();
 }
 
+void bx_set_log_actions_by_device(bx_bool panic_flag)
+{
+  int id, l, m, val;
+  bx_list_c *loglev, *level;
+  bx_param_num_c *action;
+
+  loglev = (bx_list_c*) SIM->get_param("general.logfn");
+  for (l = 0; l < loglev->get_size(); l++) {
+    level = (bx_list_c*) loglev->get(l);
+    for (m = 0; m < level->get_size(); m++) {
+      action = (bx_param_num_c*) level->get(m);
+      id = SIM->get_logfn_id(action->get_name());
+      val = action->get();
+      if (id < 0) {
+        if (panic_flag) {
+          BX_PANIC(("unknown log function module '%s'", action->get_name()));
+        }
+      } else if (val >= 0) {
+        SIM->set_log_action(id, l, val);
+        // mark as 'done'
+        action->set(-1);
+      }
+    }
+  }
+}
+
 void bx_init_hardware()
 {
   // all configuration has been read, now initialize everything.
@@ -1084,11 +1191,13 @@ void bx_init_hardware()
     BX_INFO(("  AES support: %s", aes_enabled?"yes":"no"));
     bx_bool movbe_enabled = SIM->get_param_bool(BXPN_CPUID_MOVBE)->get();
     BX_INFO(("  MOVBE support: %s", movbe_enabled?"yes":"no"));
+    bx_bool adx_enabled = SIM->get_param_bool(BXPN_CPUID_ADX)->get();
+    BX_INFO(("  ADX support: %s", adx_enabled?"yes":"no"));
 #if BX_SUPPORT_X86_64
     bx_bool x86_64_enabled = SIM->get_param_bool(BXPN_CPUID_X86_64)->get();
     BX_INFO(("  x86-64 support: %s", x86_64_enabled?"yes":"no"));
-    bx_bool xlarge_pages_enabled = SIM->get_param_bool(BXPN_CPUID_1G_PAGES)->get();
-    BX_INFO(("  1G paging support: %s", xlarge_pages_enabled?"yes":"no"));
+    bx_bool xlarge_enabled = SIM->get_param_bool(BXPN_CPUID_1G_PAGES)->get();
+    BX_INFO(("  1G paging support: %s", xlarge_enabled?"yes":"no"));
 #else
     BX_INFO(("  x86-64 support: no"));
 #endif
@@ -1114,6 +1223,10 @@ void bx_init_hardware()
     else {
       BX_INFO(("  VMX support: no"));
     }
+#endif
+#if BX_SUPPORT_SVM
+    bx_bool svm_enabled = SIM->get_param_bool(BXPN_CPUID_SVM)->get();
+    BX_INFO(("  SVM support: %s", svm_enabled?"yes":"no"));
 #endif
 #endif // BX_CPU_LEVEL >= 6
   }
@@ -1203,6 +1316,8 @@ void bx_init_hardware()
 #endif
 
   DEV_init_devices();
+  // unload optional plugins which are unused and marked for removal
+  SIM->opt_plugin_ctrl("*", 0);
   bx_pc_system.register_state();
   DEV_register_state();
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
@@ -1210,6 +1325,8 @@ void bx_init_hardware()
       BX_PANIC(("cannot restore log options"));
       SIM->get_param_bool(BXPN_RESTORE_FLAG)->set(0);
     }
+  } else {
+    bx_set_log_actions_by_device(1);
   }
 
   // will enable A20 line and reset CPU and devices
@@ -1235,8 +1352,10 @@ void bx_init_hardware()
 
 #if BX_SHOW_IPS
 #if !defined(WIN32)
-  signal(SIGALRM, bx_signal_handler);
-  alarm(1);
+  if (!SIM->is_wx_selected()) {
+    signal(SIGALRM, bx_signal_handler);
+    alarm(1);
+  }
 #endif
 #endif
 }
@@ -1279,14 +1398,40 @@ int bx_atexit(void)
 
 #if BX_SHOW_IPS
 #if !defined(__MINGW32__) && !defined(_MSC_VER)
-  signal(SIGALRM, SIG_DFL);
+  if (!SIM->is_wx_selected()) {
+    alarm(0);
+    signal(SIGALRM, SIG_DFL);
+  }
 #endif
 #endif
 
+  SIM->cleanup_save_restore();
   SIM->set_init_done(0);
 
   return 0;
 }
+
+#if BX_SHOW_IPS
+void bx_show_ips_handler(void)
+{
+  static Bit64u ticks_count = 0;
+  static Bit64u counts = 0;
+
+  // amount of system ticks passed from last time the handler was called
+  Bit64u ips_count = bx_pc_system.time_ticks() - ticks_count;
+  if (ips_count) {
+    bx_gui->show_ips((Bit32u) ips_count);
+    ticks_count = bx_pc_system.time_ticks();
+    counts++;
+    if (bx_dbg.print_timestamps) {
+      printf("IPS: %u\taverage = %u\t\t(%us)\n",
+         (unsigned) ips_count, (unsigned) (ticks_count/counts), (unsigned) counts);
+      fflush(stdout);
+    }
+  }
+  return;
+}
+#endif
 
 void CDECL bx_signal_handler(int signum)
 {
@@ -1311,26 +1456,13 @@ void CDECL bx_signal_handler(int signum)
 #endif
 
 #if BX_SHOW_IPS
-  static Bit64u ticks_count = 0;
-  static Bit64u counts = 0;
-
-  if (signum == SIGALRM)
-  {
-    // amount of system ticks passed from last time the handler was called
-    Bit64u ips_count = bx_pc_system.time_ticks() - ticks_count;
-    if (ips_count) {
-      bx_gui->show_ips((Bit32u) ips_count);
-      ticks_count = bx_pc_system.time_ticks();
-      counts++;
-      if (bx_dbg.print_timestamps) {
-        printf("IPS: %u\taverage = %u\t\t(%us)\n",
-           (unsigned) ips_count, (unsigned) (ticks_count/counts), (unsigned) counts);
-        fflush(stdout);
-      }
-    }
+  if (signum == SIGALRM) {
+    bx_show_ips_handler();
 #if !defined(WIN32)
-    signal(SIGALRM, bx_signal_handler);
-    alarm(1);
+    if (!SIM->is_wx_selected()) {
+      signal(SIGALRM, bx_signal_handler);
+      alarm(1);
+    }
 #endif
     return;
   }

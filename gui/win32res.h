@@ -1,4 +1,5 @@
 #define ICON_BOCHS  1000
+#define ICON_BOCHS2 1001
 
 #define MAINMENU_DLG 1100
 #define IDCONFIG     1110
@@ -10,6 +11,7 @@
 #define IDEDITBOX    1170
 #define IDSIMU       1180
 #define IDRESTORE    1190
+#define IDQUIT       1195
 #define LOGOPT_DLG   1200
 #define IDDEVLIST    1210
 #define IDLOGLBL1    1221
@@ -24,6 +26,11 @@
 #define IDLOGEVT5    1235
 #define IDADVLOGOPT  1240
 #define IDAPPLY      1250
+#define PLUGIN_CTRL_DLG 1300
+#define IDPLUGLIST   1310
+#define IDEDIT       1320
+#define IDLOAD       1330
+#define IDUNLOAD     1340
 #define ASK_DLG     2000
 #define IDASKTX1    2010
 #define IDASKDEV    2020

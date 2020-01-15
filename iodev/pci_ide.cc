@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.cc 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: pci_ide.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -55,7 +55,7 @@ void libpci_ide_LTX_plugin_fini(void)
 
 bx_pci_ide_c::bx_pci_ide_c()
 {
-  put("PIDE");
+  put("pci_ide", "PIDE");
   s.bmdma[0].timer_index = BX_NULL_TIMER_HANDLE;
   s.bmdma[1].timer_index = BX_NULL_TIMER_HANDLE;
   s.bmdma[0].buffer = NULL;
@@ -70,6 +70,7 @@ bx_pci_ide_c::~bx_pci_ide_c()
   if (s.bmdma[1].buffer != NULL) {
     delete [] s.bmdma[1].buffer;
   }
+  SIM->get_bochs_root()->remove("pci_ide");
   BX_DEBUG(("Exit"));
 }
 
@@ -137,7 +138,7 @@ void bx_pci_ide_c::register_state(void)
 {
   char name[6];
 
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci_ide", "PCI IDE Controller State", 5);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci_ide", "PCI IDE Controller State");
 
   register_pci_state(list);
 
@@ -146,7 +147,7 @@ void bx_pci_ide_c::register_state(void)
 
   for (unsigned i=0; i<2; i++) {
     sprintf(name, "%d", i);
-    bx_list_c *ctrl = new bx_list_c(list, name, 7);
+    bx_list_c *ctrl = new bx_list_c(list, name);
     BXRS_PARAM_BOOL(ctrl, cmd_ssbm, BX_PIDE_THIS s.bmdma[i].cmd_ssbm);
     BXRS_PARAM_BOOL(ctrl, cmd_rwcon, BX_PIDE_THIS s.bmdma[i].cmd_rwcon);
     BXRS_HEX_PARAM_FIELD(ctrl, status, BX_PIDE_THIS s.bmdma[i].status);

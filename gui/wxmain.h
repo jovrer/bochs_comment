@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h 10400 2011-06-13 09:32:39Z vruppert $
+// $Id: wxmain.h 11339 2012-08-15 12:47:08Z vruppert $
 /////////////////////////////////////////////////////////////////
 
 // This file defines variables and classes that the wxWidgets .cc files
@@ -33,6 +33,7 @@ enum
   ID_Config_Read,
   ID_Config_Save,
   ID_State_Restore,
+  ID_Edit_Plugins,
   ID_Edit_FD_0,
   ID_Edit_FD_1,
   ID_Edit_ATA0,
@@ -41,6 +42,7 @@ enum
   ID_Edit_ATA3,
   ID_Edit_Cdrom1,  // for toolbar. FIXME: toolbar can't handle >1 cdrom
   ID_Edit_CPU,
+  ID_Edit_CPUID,
   ID_Edit_Memory,
   ID_Edit_Clock_Cmos,
   ID_Edit_PCI,
@@ -55,9 +57,7 @@ enum
   ID_Simulate_PauseResume,
   ID_Simulate_Stop,
   ID_Debug_ShowCpu,
-  ID_Debug_ShowKeyboard,
   ID_Debug_Console,
-  ID_Debug_ShowMemory,
   ID_Log_View,
   ID_Log_Prefs,
   ID_Log_PrefsDevice,
@@ -89,10 +89,16 @@ enum
   ID_Debug_Step,
   ID_Debug_Commit,
   ID_Close,
+  // Debug console
   ID_Execute,
   ID_DebugCommand,
   // advanced log options
   ID_ApplyDefault,
+  // dialog box: PluginControlDialog
+  ID_PluginList,
+  ID_PluginName,
+  ID_Load,
+  ID_Unload,
   // that's all
   ID_LAST_USER_DEFINED
 };
@@ -165,7 +171,9 @@ public:
   void OnKillSim(wxCommandEvent& event);
   void OnSim2CIEvent(wxCommandEvent& event);
   void OnLogMsg(BxEvent *logMsgEvent);
+  void OnEditPluginCtrl(wxCommandEvent& event);
   void OnEditCPU(wxCommandEvent& event);
+  void OnEditCPUID(wxCommandEvent& event);
   void OnEditMemory(wxCommandEvent& event);
   void OnEditClockCmos(wxCommandEvent& event);
   void OnEditPCI(wxCommandEvent& event);
@@ -180,7 +188,6 @@ public:
   void OnLogPrefsDevice(wxCommandEvent& event);
   void OnEditATA(wxCommandEvent& event);
   void OnShowCpu(wxCommandEvent& event);
-  void OnShowKeyboard(wxCommandEvent& event);
 #if BX_DEBUGGER
   void OnDebugLog(wxCommandEvent& event);
   void DebugBreak();

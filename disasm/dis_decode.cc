@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_decode.cc 10786 2011-11-23 19:43:50Z sshwarts $
+// $Id: dis_decode.cc 11327 2012-08-08 20:11:27Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -301,6 +301,8 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
        case _GRP64B:
          entry = &(OPCODE_TABLE(entry)[insn.os_64 ? 2 : insn.os_32]);
+         if (sse_prefix == SSE_PREFIX_66)
+             sse_prefix = 0;
          break;
 
        case _GRPVEXW:

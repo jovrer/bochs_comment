@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: macintosh.cc 10470 2011-07-11 17:36:10Z vruppert $
+// $Id: macintosh.cc 11224 2012-06-21 17:33:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -390,15 +390,12 @@ void CreateWindows(void)
 // argc, argv: not used right now, but the intention is to pass native GUI
 //     specific options from the command line.  (X11 options, Win32 options,...)
 //
-// tilewidth, tileheight: for optimization, graphics_tile_update() passes
-//     only updated regions of the screen to the gui code to be redrawn.
-//     These define the dimensions of a region (tile).
 // headerbar_y:  A headerbar (toolbar) is display on the top of the
 //     VGA window, showing floppy status, and other information.  It
 //     always assumes the width of the current VGA mode width, but
 //     it's height is defined by this parameter.
 
-void bx_macintosh_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight, unsigned headerbar_y)
+void bx_macintosh_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
   put("MGUI");
   InitToolbox();
@@ -415,7 +412,7 @@ void bx_macintosh_gui_c::specific_init(int argc, char **argv, unsigned tilewidth
   BX_ASSERT (gCTable != NULL);
   CTabChanged(gCTable); //(*gCTable)->ctSeed = GetCTSeed();
   SetRect(&srcTextRect, 0, 0, FONT_WIDTH, FONT_HEIGHT);
-  SetRect(&srcTileRect, 0, 0, tilewidth, tileheight);
+  SetRect(&srcTileRect, 0, 0, x_tilesize, y_tilesize);
 
   CreateMenus();
   CreateVGAFont();
@@ -818,7 +815,7 @@ void bx_macintosh_gui_c::handle_events(void)
     dx = mousePt.h - prevPt.h;
     dy = prevPt.v - mousePt.v;
 
-    DEV_mouse_motion(dx, dy, mouse_button_state);
+    DEV_mouse_motion(dx, dy, 0, mouse_button_state, 0);
 
     if (!cursorVisible)
     {
@@ -870,7 +867,7 @@ void bx_macintosh_gui_c::clear_screen(void)
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is tm_info.line_offset*text_rows
+// format of old_text & new_text: each is tm_info->line_offset*text_rows
 //     bytes long. Each character consists of 2 bytes.  The first by is
 //     the character value, the second is the attribute byte.
 //
@@ -881,7 +878,7 @@ void bx_macintosh_gui_c::clear_screen(void)
 
 void bx_macintosh_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                  unsigned long cursor_x, unsigned long cursor_y,
-                 bx_vga_tminfo_t tm_info)
+                 bx_vga_tminfo_t *tm_info)
 {
   int           i;
   unsigned char achar;
@@ -1025,8 +1022,8 @@ bx_bool bx_macintosh_gui_c::palette_change(unsigned index, unsigned red, unsigne
 // screen, since info in this region has changed.
 //
 // tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'tilewidth' & 'tileheight' parameters to
-//       ::specific_init().  Each value specifies an index into the
+//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
+//       Each value specifies an index into the
 //       array of colors you allocated for ::palette_change()
 // x0: x origin of tile
 // y0: y origin of tile

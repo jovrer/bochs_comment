@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: p4_willamette.cc 10688 2011-09-25 17:36:20Z sshwarts $
+// $Id: p4_willamette.cc 10955 2012-01-07 17:54:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -23,21 +23,11 @@
 
 #include "bochs.h"
 #include "cpu.h"
-#include "param_names.h"
 #include "p4_willamette.h"
 
 #define LOG_THIS cpu->
 
 #if BX_CPU_LEVEL >= 6
-
-p4_willamette_t::p4_willamette_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
-{
-#if BX_SUPPORT_SMP
-  nthreads = SIM->get_param_num(BXPN_CPU_NTHREADS)->get();
-  ncores = SIM->get_param_num(BXPN_CPU_NCORES)->get();
-  nprocessors = SIM->get_param_num(BXPN_CPU_NPROCESSORS)->get();
-#endif
-}
 
 void p4_willamette_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
 {
@@ -134,11 +124,7 @@ void p4_willamette_t::get_std_cpuid_leaf_1(cpuid_function_t *leaf) const
   //   [23:16] Number of logical processors in one physical processor
   //   [31:24] Local Apic ID
 
-#if BX_SUPPORT_SMP
   unsigned n_logical_processors = ncores*nthreads;
-#else
-  unsigned n_logical_processors = 1;
-#endif
   leaf->ebx = ((CACHE_LINE_SIZE / 8) << 8) |
               (n_logical_processors << 16);
 #if BX_SUPPORT_APIC

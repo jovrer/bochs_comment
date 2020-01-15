@@ -2,19 +2,19 @@ dnl // Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.50)
 AC_INIT(bochs.h)
-AC_REVISION([[$Id: configure.in 10946 2012-01-06 18:46:16Z vruppert $]])
+AC_REVISION([[$Id: configure.in 11392 2012-09-02 11:11:00Z vruppert $]])
 AC_CONFIG_HEADER(config.h)
 AC_CONFIG_HEADER(ltdlconf.h)
 
 dnl // Put Bochs version information right here so that it gets substituted
 dnl // into all the right places.
-VERSION="2.5.1"
-VER_STRING="2.5.1"
+VERSION="2.6"
+VER_STRING="2.6"
 dnl // WIN_VER_STRING format is "a, b, c, d"
 dnl // c should be > 90 for pre-release of next version otherwise patch level
 dnl // d should be 0 for release and 1 for svn version
-WIN_VER_STRING="2, 5, 1, 0"
-REL_STRING="Built from SVN snapshot on January 6, 2012"
+WIN_VER_STRING="2, 6, 0, 0"
+REL_STRING="Built from SVN snapshot on September 2nd, 2012"
 
 changequote(<<, >>)
 changequote([, ])
@@ -44,7 +44,16 @@ case "$target" in
     DEFAULT_GUI=win32                 # default to win32 gui
     MSVC_TARGET=1
     ;;
-  *-pc-cygwin* | *-pc-mingw32*)
+  *-pc-cygwin*)
+    NO_LT=1   # do not use libtool at all on cygwin
+    if test "$with_term" = yes; then
+      # ncurses won't compile with -mno-cygwin or -DWIN32
+      # also, I can't get it to link without this -DBROKEN_LINKER=1 hack.
+      # see /usr/include/curses.h for details.
+      ADD_FLAGS="-DBROKEN_LINKER=1"
+    fi
+    ;;
+  *-mingw32*)
     NO_LT=1   # do not use libtool at all on cygwin
     if test "$with_term" = yes; then
       # ncurses won't compile with -mno-cygwin or -DWIN32
@@ -53,7 +62,7 @@ case "$target" in
       ADD_FLAGS="-DBROKEN_LINKER=1"
     else
       # default case
-      ADD_FLAGS="-DWIN32"   # required for cygwin compile+win32 gui
+      ADD_FLAGS="-DWIN32"   # required for mingw compile+win32 gui
       DEFAULT_GUI=win32     # default to win32 gui
     fi
     ;;
@@ -108,19 +117,24 @@ AC_PROG_CC
 AC_PROG_CXX
 AC_PROG_MAKE_SET
 
-dnl------------ libtool configuration
-dnl Configure libtool, and default to shared libraries.  Libtool will only be
-dnl used for compiling and linking plugins.
-AC_DISABLE_STATIC
-dnl Check for dlopen support
-AC_LIBTOOL_DLOPEN
-dnl Configure libtool
-AC_PROG_LIBTOOL
-dnl Configure the ltdl library.  This must go after AC_PROG_LIBTOOL or
-dnl else it disables shared libraries somehow.
-AC_LIB_LTDL
+if test "$MSVC_TARGET" != 1; then
+  dnl------------ libtool configuration
+  dnl Configure libtool, and default to shared libraries.  Libtool will only be
+  dnl used for compiling and linking plugins.
+  AC_DISABLE_STATIC
+  dnl Check for dlopen support
+  AC_LIBTOOL_DLOPEN
+  dnl Configure libtool
+  AC_PROG_LIBTOOL
+  dnl Configure the ltdl library.  This must go after AC_PROG_LIBTOOL or
+  dnl else it disables shared libraries somehow.
+  AC_LIB_LTDL
+fi
 
-AC_PATH_XTRA
+AC_PATH_PROG(PKGCONFIG, pkg-config, not_found)
+if test "$PKGCONFIG" = not_found; then
+  AC_PATH_XTRA
+fi
 
 AC_C_BIGENDIAN
 AC_C_INLINE
@@ -132,51 +146,72 @@ AC_CHECK_SIZEOF(unsigned long long)
 AC_CHECK_SIZEOF(int *)
 AC_CHECK_FUNCS(getenv, AC_DEFINE(BX_HAVE_GETENV))
 AC_CHECK_FUNCS(setenv, AC_DEFINE(BX_HAVE_SETENV))
-AC_CHECK_FUNCS(select, AC_DEFINE(BX_HAVE_SELECT))
 AC_CHECK_FUNCS(snprintf, AC_DEFINE(BX_HAVE_SNPRINTF))
 AC_CHECK_FUNCS(vsnprintf, AC_DEFINE(BX_HAVE_VSNPRINTF))
-AC_CHECK_FUNCS(strtoull, AC_DEFINE(BX_HAVE_STRTOULL))
-AC_CHECK_FUNCS(strtouq, AC_DEFINE(BX_HAVE_STRTOUQ))
-AC_CHECK_FUNCS(strdup, AC_DEFINE(BX_HAVE_STRDUP))
-AC_CHECK_FUNCS(strrev, AC_DEFINE(BX_HAVE_STRREV))
-AC_CHECK_FUNCS(stricmp, AC_DEFINE(BX_HAVE_STRICMP))
-AC_CHECK_FUNCS(strcasecmp, AC_DEFINE(BX_HAVE_STRCASECMP))
+
+if test "$MSVC_TARGET" != 1; then
+  AC_CHECK_FUNCS(select, AC_DEFINE(BX_HAVE_SELECT))
+  AC_CHECK_TYPE(socklen_t, AC_DEFINE(BX_HAVE_SOCKLEN_T), , [#include <sys/types.h>
+  #include <sys/socket.h>])
+  AC_CHECK_FUNCS(strtoull, AC_DEFINE(BX_HAVE_STRTOULL))
+  AC_CHECK_FUNCS(strtouq, AC_DEFINE(BX_HAVE_STRTOUQ))
+  AC_CHECK_FUNCS(strdup, AC_DEFINE(BX_HAVE_STRDUP))
+  AC_CHECK_FUNCS(strrev, AC_DEFINE(BX_HAVE_STRREV))
+  AC_CHECK_FUNCS(stricmp, AC_DEFINE(BX_HAVE_STRICMP))
+  AC_CHECK_FUNCS(strcasecmp, AC_DEFINE(BX_HAVE_STRCASECMP))
+  AC_CHECK_FUNCS(mkstemp, AC_DEFINE(BX_HAVE_MKSTEMP))
+  AC_CHECK_HEADER(sys/mman.h, AC_DEFINE(BX_HAVE_SYS_MMAN_H))
+  AC_CHECK_FUNCS(gettimeofday, AC_DEFINE(BX_HAVE_GETTIMEOFDAY))
+  AC_CHECK_FUNCS(usleep, AC_DEFINE(BX_HAVE_USLEEP))
+
+  AC_MSG_CHECKING(for __builtin_bswap32)
+  AC_TRY_LINK([],[
+    __builtin_bswap32(0x12345678);
+  ],[
+    AC_DEFINE(BX_HAVE___BUILTIN_BSWAP32, 1, [Define to 1 if you have the '__builtin_bswap32' function.])
+    AC_MSG_RESULT(yes)
+  ],[
+    AC_MSG_RESULT(no)
+  ])
+  AC_MSG_CHECKING(for __builtin_bswap64)
+  AC_TRY_LINK([],[
+    __builtin_bswap64(0x12345678);
+  ],[
+    AC_DEFINE(BX_HAVE___BUILTIN_BSWAP64, 1, [Define to 1 if you have the '__builtin_bswap64' function.])
+    AC_MSG_RESULT(yes)
+  ],[
+    AC_MSG_RESULT(no)
+  ])
+  AC_CHECK_FUNCS(tmpfile64, AC_DEFINE(BX_HAVE_TMPFILE64))
+  AC_CHECK_FUNCS(fseek64, AC_DEFINE(BX_HAVE_FSEEK64))
+  AC_CHECK_FUNCS(fseeko64, AC_DEFINE(BX_HAVE_FSEEKO64))
+else
+  AC_DEFINE(BX_HAVE_SELECT, 1)
+  AC_DEFINE(BX_HAVE_SOCKLEN_T, 0)
+  AC_DEFINE(BX_HAVE_STRTOULL, 1)
+  AC_DEFINE(BX_HAVE_STRTOUQ, 0)
+  AC_DEFINE(BX_HAVE_STRDUP, 1)
+  AC_DEFINE(BX_HAVE_STRREV, 1)
+  AC_DEFINE(BX_HAVE_STRICMP, 1)
+  AC_DEFINE(BX_HAVE_STRCASECMP, 0)
+  AC_DEFINE(BX_HAVE_MKSTEMP, 0)
+  AC_DEFINE(BX_HAVE_SYS_MMAN_H, 0)
+  AC_DEFINE(BX_HAVE_GETTIMEOFDAY, 0)
+  AC_DEFINE(BX_HAVE_USLEEP, 0)
+  AC_DEFINE(BX_HAVE___BUILTIN_BSWAP32, 0)
+  AC_DEFINE(BX_HAVE___BUILTIN_BSWAP64, 0)
+  AC_DEFINE(BX_HAVE_TMPFILE64, 0)
+  AC_DEFINE(BX_HAVE_FSEEK64, 0)
+  AC_DEFINE(BX_HAVE_FSEEKO64, 0)
+fi
 AC_CHECK_FUNCS(sleep, AC_DEFINE(BX_HAVE_SLEEP))
-AC_CHECK_FUNCS(usleep, AC_DEFINE(BX_HAVE_USLEEP))
 AC_CHECK_FUNCS(nanosleep, AC_DEFINE(BX_HAVE_NANOSLEEP))
 AC_CHECK_FUNCS(abort, AC_DEFINE(BX_HAVE_ABORT))
-AC_CHECK_FUNCS(gettimeofday, AC_DEFINE(BX_HAVE_GETTIMEOFDAY))
-AC_CHECK_TYPE(socklen_t, AC_DEFINE(BX_HAVE_SOCKLEN_T), , [#include <sys/types.h>
-#include <sys/socket.h>])
 AC_CHECK_MEMBER(struct sockaddr_in.sin_len, AC_DEFINE(BX_HAVE_SOCKADDR_IN_SIN_LEN), , [#include <sys/socket.h>
 #include <netinet/in.h> ])
-AC_CHECK_FUNCS(mkstemp, AC_DEFINE(BX_HAVE_MKSTEMP))
-AC_CHECK_HEADER(sys/mman.h, AC_DEFINE(BX_HAVE_SYS_MMAN_H))
 AC_CHECK_FUNCS(timelocal, AC_DEFINE(BX_HAVE_TIMELOCAL))
 AC_CHECK_FUNCS(gmtime, AC_DEFINE(BX_HAVE_GMTIME))
 AC_CHECK_FUNCS(mktime, AC_DEFINE(BX_HAVE_MKTIME))
-AC_CHECK_FUNCS(tmpfile64, AC_DEFINE(BX_HAVE_TMPFILE64))
-AC_CHECK_FUNCS(fseek64, AC_DEFINE(BX_HAVE_FSEEK64))
-AC_CHECK_FUNCS(fseeko64, AC_DEFINE(BX_HAVE_FSEEKO64))
-
-AC_MSG_CHECKING(for __builtin_bswap32)
-AC_TRY_LINK([],[
-  __builtin_bswap32(0x12345678);
-],[
-  AC_DEFINE(BX_HAVE___BUILTIN_BSWAP32, 1, [Define to 1 if you have the '__builtin_bswap32' function.])
-  AC_MSG_RESULT(yes)
-],[
-  AC_MSG_RESULT(no)
-])
-AC_MSG_CHECKING(for __builtin_bswap64)
-AC_TRY_LINK([],[
-  __builtin_bswap64(0x12345678);
-],[
-  AC_DEFINE(BX_HAVE___BUILTIN_BSWAP64, 1, [Define to 1 if you have the '__builtin_bswap64' function.])
-  AC_MSG_RESULT(yes)
-],[
-  AC_MSG_RESULT(no)
-])
 
 dnl As of autoconf 2.53, the standard largefile test fails for Linux/gcc.
 dnl It does not put the largefiles arguments into CFLAGS, even though Linux/gcc
@@ -243,15 +278,6 @@ else
 	# expect link failure
     fi
 fi
-
-AC_MSG_CHECKING(for struct timeval)
-AC_TRY_COMPILE([#include <sys/time.h>],
-    [struct timeval x;],
-    [
-      AC_MSG_RESULT(yes)
-      AC_DEFINE(BX_HAVE_STRUCT_TIMEVAL, 1)
-    ],
-    AC_MSG_RESULT(no))
 
 AC_MSG_CHECKING(if compiler allows __attribute__)
 AC_TRY_COMPILE([], [typedef struct { } __attribute__ ((packed)) junk;],
@@ -363,7 +389,7 @@ if test "$with_all_libs" = yes; then
   if test "$with_rfb" != yes; then
     can_compile_rfb=1
     case $target in
-      *-pc-windows* | *-pc-winnt* | *-pc-cygwin* | *-pc-mingw32*)
+      *-pc-windows* | *-pc-winnt* | *-pc-cygwin* | *-mingw32*)
 	AC_CHECK_HEADER([winsock.h], [], [ can_compile_rfb=0 ])
 	AC_CHECK_HEADER([process.h], [], [ can_compile_rfb=0 ])
         ;;
@@ -460,6 +486,8 @@ AC_SUBST(NONPLUGIN_GUI_LINK_OPTS)
 # objs list, according to which display libraries are enabled.
 IODEV_NON_PLUGIN_OBJS=$GUI_NON_PLUGIN_OBJS
 IODEV_PLUGIN_OBJS=$GUI_PLUGIN_OBJS
+IODEV_EXT_NON_PLUGIN_OBJS=$GUI_NON_PLUGIN_OBJS
+IODEV_EXT_PLUGIN_OBJS=$GUI_PLUGIN_OBJS
 
 # on MacOSX if they enabled plugins, make sure that dlopen() was found.
 # It is provided by a library called dlcompat.
@@ -619,34 +647,31 @@ AC_ARG_ENABLE(large-ramfile,
     AC_DEFINE(BX_LARGE_RAMFILE, 0)
    fi],
   [
-    AC_MSG_RESULT(no)
-    AC_DEFINE(BX_LARGE_RAMFILE, 0)
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_LARGE_RAMFILE, 1)
     ]
   )
 AC_SUBST(BX_LARGE_RAMFILE)
 
+networking=no
+NETDEV_OBJS=''
 AC_MSG_CHECKING(for NE2000 support)
 AC_ARG_ENABLE(ne2000,
   [  --enable-ne2000                   enable NE2000 support],
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_NE2K, 1)
-    NE2K_OBJS='ne2k.o'
+    NETDEV_OBJS='ne2k.o'
     networking=yes
    else
     AC_MSG_RESULT(no)
     AC_DEFINE(BX_SUPPORT_NE2K, 0)
-    NE2K_OBJS=''
-    networking=no
    fi],
   [
     AC_MSG_RESULT(no)
     AC_DEFINE(BX_SUPPORT_NE2K, 0)
-    NE2K_OBJS=''
-    networking=no
     ]
   )
-AC_SUBST(NE2K_OBJS)
 
 AC_MSG_CHECKING(for i440FX PCI support)
 AC_ARG_ENABLE(pci,
@@ -655,7 +680,7 @@ AC_ARG_ENABLE(pci,
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_PCI, 1)
     pci=1
-    PCI_OBJ='pci.o pci2isa.o pci_ide.o pcivga.o acpi.o'
+    PCI_OBJ='pci.o pci2isa.o pci_ide.o acpi.o'
    else
     AC_MSG_RESULT(no)
     AC_DEFINE(BX_SUPPORT_PCI, 0)
@@ -692,12 +717,12 @@ AC_ARG_ENABLE(pcidev,
 	  		PCIDEV_MODULE_MAKE_ALL="all-kernel24"
 			KERNEL_MODULE_SUFFIX="o"
           	;;
-		2.6*)
+		2.6*|3.*)
 	  		PCIDEV_MODULE_MAKE_ALL="all-kernel26"
 			KERNEL_MODULE_SUFFIX="ko"
 		;;
 		*)
-                        AC_MSG_ERROR([Linux kernel 2.4 or 2.6 is required for PCI host device mapping])
+			AC_MSG_ERROR([Linux kernel 2.4, 2.6 or 3.x is required for PCI host device mapping])
 		;;
 	  esac
 	  KERNELDIR="/lib/modules/$linux_version/build"
@@ -705,6 +730,7 @@ AC_ARG_ENABLE(pcidev,
 	  INSMOD="insmod"
 	  RMMOD="rmmod"
 	  DEPMOD="depmod"
+	  CLEAN_PCIDEV_VAR=clean_pcidev
 	  AC_SUBST(KERNELDIR)
 	  AC_SUBST(LSMOD)
 	  AC_SUBST(INSMOD)
@@ -712,6 +738,7 @@ AC_ARG_ENABLE(pcidev,
 	  AC_SUBST(DEPMOD)
 	  AC_SUBST(PCIDEV_MODULE_MAKE_ALL)
 	  AC_SUBST(KERNEL_MODULE_SUFFIX)
+	  AC_SUBST(CLEAN_PCIDEV_VAR)
         ;;
         *)
           AC_MSG_ERROR([PCI host device mapping requires Linux as host])
@@ -731,13 +758,14 @@ AC_ARG_ENABLE(pcidev,
 )
 
 use_usb=0
+USBHC_OBJS=''
 AC_MSG_CHECKING(for USB UHCI support)
 AC_ARG_ENABLE(usb,
   [  --enable-usb                      enable USB UHCI support],
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_USB_UHCI, 1)
-    PCI_OBJ="$PCI_OBJ usb_uhci.o"
+    USBHC_OBJS="usb_uhci.o"
     use_usb=1
    else
     AC_MSG_RESULT(no)
@@ -755,7 +783,7 @@ AC_ARG_ENABLE(usb-ohci,
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_USB_OHCI, 1)
-    PCI_OBJ="$PCI_OBJ usb_ohci.o"
+    USBHC_OBJS="$USBHC_OBJS usb_ohci.o"
     use_usb=1
    else
     AC_MSG_RESULT(no)
@@ -773,7 +801,7 @@ AC_ARG_ENABLE(usb-xhci,
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_USB_XHCI, 1)
-    PCI_OBJ="$PCI_OBJ usb_xhci.o"
+    USBHC_OBJS="$USBHC_OBJS usb_xhci.o"
     use_usb=1
    else
     AC_MSG_RESULT(no)
@@ -789,9 +817,14 @@ if test "$use_usb" = 1; then
   USBCORE_OBJ="usb_common.o"
   USBDEV_OBJS="usb_hid.o usb_hub.o usb_msd.o usb_printer.o"
   SCSI_OBJS="scsi_device.o"
+  AC_SUBST(USBHC_OBJS)
   AC_SUBST(USBCORE_OBJ)
   AC_SUBST(USBDEV_OBJS)
   AC_SUBST(SCSI_OBJS)
+  if test "$bx_plugins" = 0; then
+    USB_LIB_VAR='iodev/usb/libusb.a'
+    AC_SUBST(USB_LIB_VAR)
+  fi
 fi
 
 AC_MSG_CHECKING(for PCI pseudo NIC support)
@@ -800,7 +833,7 @@ AC_ARG_ENABLE(pnic,
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_PCIPNIC, 1)
-    PCI_OBJ="$PCI_OBJ pcipnic.o"
+    NETDEV_OBJS="$NETDEV_OBJS pcipnic.o"
     networking=yes
    else
     AC_MSG_RESULT(no)
@@ -809,6 +842,24 @@ AC_ARG_ENABLE(pnic,
   [
     AC_MSG_RESULT(no)
     AC_DEFINE(BX_SUPPORT_PCIPNIC, 0)
+    ]
+  )
+
+AC_MSG_CHECKING(for Intel(R) Gigabit Ethernet support)
+AC_ARG_ENABLE(e1000,
+  [  --enable-e1000                    enable Intel(R) Gigabit Ethernet support],
+  [if test "$enableval" = yes; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_SUPPORT_E1000, 1)
+    NETDEV_OBJS="$NETDEV_OBJS e1000.o"
+    networking=yes
+   else
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_E1000, 0)
+   fi],
+  [
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_E1000, 0)
     ]
   )
 
@@ -833,7 +884,7 @@ if test "$networking" = yes; then
     fi
   fi
   case "$target" in
-    *-pc-windows* | *-pc-winnt* | *-pc-cygwin* | *-pc-mingw32*)
+    *-pc-windows* | *-pc-winnt* | *-pc-cygwin* | *-mingw32*)
     NETLOW_OBJS="$NETLOW_OBJS eth_win32.o"
     AC_DEFINE(BX_NETMOD_WIN32, 1)
     ;;
@@ -886,11 +937,16 @@ if test "$networking" = yes; then
 
     ;;
   esac
+  if test "$bx_plugins" = 0; then
+    NETWORK_LIB_VAR='iodev/network/libnetwork.a'
+    AC_SUBST(NETWORK_LIB_VAR)
+  fi
   AC_DEFINE(BX_NETWORKING, 1)
 else
   AC_DEFINE(BX_NETWORKING, 0)
 fi
 
+AC_SUBST(NETDEV_OBJS)
 AC_SUBST(NETLOW_OBJS)
 
 AC_MSG_CHECKING(for repeated IO and mem copy speedups)
@@ -1023,6 +1079,17 @@ AC_ARG_ENABLE(debugger,
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_DEBUGGER, 1)
     DEBUGGER_VAR='$(DEBUGGER_LIB)'
+    NO_FLEX_YACC=''
+    AC_PATH_PROG(FLEX, flex, not_found)
+    AC_PATH_PROG(YACC, yacc, not_found)
+    AC_MSG_CHECKING(whether to generate parser / lexer files)
+    if test "$FLEX" = not_found -o "$YACC" = not_found -o "$MSVC_TARGET" = 1; then
+      NO_FLEX_YACC='#'
+      AC_MSG_RESULT(no)
+    else
+      AC_MSG_RESULT(yes)
+    fi
+    AC_SUBST(NO_FLEX_YACC)
     bx_debugger=1
    else
     AC_MSG_RESULT(no)
@@ -1451,6 +1518,33 @@ if test "$support_vmx" -gt 1 -a "$use_x86_64" = 0; then
   AC_MSG_ERROR([VMXx2 support require x86-64 enabled])
 fi
 
+support_svm=0
+AC_MSG_CHECKING(for SVM support)
+AC_ARG_ENABLE(svm,
+  [  --enable-svm                      SVM (AMD: secure virtual machine) emulation],
+  [if test "$enableval" = yes; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_SUPPORT_SVM, 1)
+    support_svm=1
+   elif test "$enableval" = no; then
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_SVM, 0)
+   fi
+   ],
+  [
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_SVM, 0)
+    ]
+  )
+
+if test "$support_svm" -gt 0 -a "$bx_cpu_level" -lt 6; then
+  AC_MSG_ERROR([for SVM support the CPU level must be set to 6])
+fi
+
+if test "$support_svm" -gt 1 -a "$use_x86_64" = 0; then
+  AC_MSG_ERROR([SVM support require x86-64 enabled])
+fi
+
 AC_MSG_CHECKING(for 3DNow! support)
 AC_ARG_ENABLE(3dnow,
   [  --enable-3dnow                    3DNow! support (incomplete)],
@@ -1584,7 +1678,7 @@ if test "$bx_cdrom" = 1; then
   AC_MSG_RESULT(yes)
   CDROM_OBJS='cdrom.o'
   case $target in
-    *-pc-windows* | *-pc-winnt* | *-pc-cygwin* | *-pc-mingw32*)
+    *-pc-windows* | *-pc-winnt* | *-pc-cygwin* | *-mingw32*)
       CDROM_OBJS="$CDROM_OBJS cdrom_win32.o"
       AC_DEFINE(BX_SUPPORT_CDROM, 1)
       ;;
@@ -1707,6 +1801,20 @@ if test "$soundcard_present" = 1; then
       AC_MSG_RESULT(dummy)
       ;;
   esac
+  AC_MSG_CHECKING(for additional sound lowlevel modules)
+  if test "$with_sdl" = yes; then
+    SOUNDLOW_OBJS="$SOUNDLOW_OBJS soundsdl.o"
+    if test "$bx_plugins" = 1; then
+      SOUND_LINK_OPTS="$SOUND_LINK_OPTS `sdl-config --libs`"
+    fi
+    AC_MSG_RESULT(sdl)
+  else
+    AC_MSG_RESULT(none)
+  fi
+  if test "$bx_plugins" = 0; then
+    SOUND_LIB_VAR='iodev/sound/libsound.a'
+    AC_SUBST(SOUND_LIB_VAR)
+  fi
 else
   AC_DEFINE(BX_SUPPORT_SOUNDLOW, 0)
 fi
@@ -1765,6 +1873,7 @@ if test $build_docbook = 1; then
   AC_MSG_RESULT(yes)
   BUILD_DOCBOOK_VAR=build_docbook
   INSTALL_DOCBOOK_VAR=install_docbook
+  CLEAN_DOCBOOK_VAR=clean_docbook
   if test "$DOCBOOK2HTML" = not_found; then
     echo "ERROR: docbook2html must be installed to build the documentation"
     exit 1
@@ -1774,11 +1883,16 @@ else
 fi
 AC_SUBST(BUILD_DOCBOOK_VAR)
 AC_SUBST(INSTALL_DOCBOOK_VAR)
+AC_SUBST(CLEAN_DOCBOOK_VAR)
 AC_SUBST(DOCBOOK2HTML)
 
 PRIMARY_TARGET='bochs'
 PLUGIN_LIBNAME_TRANSFORMATION='%.o=libbx_%.la'
 
+if test "$bx_plugins" = 0; then
+  HDIMAGE_LIB_VAR='iodev/hdimage/libhdimage.a'
+  AC_SUBST(HDIMAGE_LIB_VAR)
+fi
 IODEV_LIB_VAR='iodev/libiodev.a'
 NONINLINE_VAR='$(NONINLINE_OBJS)'
 
@@ -1858,8 +1972,8 @@ LINK="\$(CXX) -o \$@ \$(CXXFLAGS) \$(LDFLAGS)"
 LINK_CONSOLE="\$(CXX) -o \$@ \$(CXXFLAGS_CONSOLE) \$(LDFLAGS)"
 # unless NO_LT is set, add libtool to the front of the link command
 if test "$NO_LT" != 1; then
-  LINK="\$(LIBTOOL) --mode=link $LINK"
-  LINK_CONSOLE="\$(LIBTOOL) --mode=link $LINK_CONSOLE"
+  LINK="\$(LIBTOOL) --mode=link --tag CXX $LINK"
+  LINK_CONSOLE="\$(LIBTOOL) --mode=link --tag CXX $LINK_CONSOLE"
 fi
 EXE=""
 COMMAND_SEPARATOR="&& \\"
@@ -1881,7 +1995,7 @@ AC_MSG_RESULT($WX_CONFIG)
 ok_wx_version=0
 wx_multi_lib=0
 needs_gtk2=0
-wx_needs_gtk2=0
+wx_needs_gdk2=0
 AC_MSG_CHECKING(for wxWidgets library version)
 if test x$WX_CONFIG != xnot_found; then
   WX_VERSION=`$WX_CONFIG --version`
@@ -1897,7 +2011,7 @@ if test x$WX_CONFIG != xnot_found; then
       ok_wx_version=1
       wx_multi_lib=1
       case x$WX_BASENAME in
-        xwx_gtk2|xwx_gtk2u) wx_needs_gtk2=1 ;;
+        xwx_gtk2|xwx_gtk2u) wx_needs_gdk2=1 ;;
         *) ;;
       esac
       ;;
@@ -1912,9 +2026,6 @@ if test "$cross_configure" = 0; then
     # detected a usable version
     if test "$with_all_libs" = yes; then
       with_wx=yes
-    fi
-    if test "$with_wx" = yes; then
-      needs_gtk2=$wx_needs_gtk2
     fi
   else
     if test "$with_wx" = yes; then
@@ -1940,15 +2051,7 @@ if test "$with_x11" = yes; then
     echo ERROR: X windows gui was selected, but X windows libraries were not found.
     exit 1
   fi
-  AC_DEFINE(BX_WITH_X11, 1)
-  SPECIFIC_GUI_OBJS="$SPECIFIC_GUI_OBJS \$(GUI_OBJS_X11)"
-  GUI_CFLAGS="$GUI_CFLAGS \$(X_CFLAGS)"
-  GUI_CXXFLAGS="$GUI_CXXFLAGS \$(X_CFLAGS)"
-  GUI_LINK_OPTS="$GUI_LINK_OPTS \$(GUI_LINK_OPTS_X)"
-  # The enhanced X debugger depends on GTK2
-  if test "$gui_debugger" = 1; then
-    needs_gtk2=1
-  fi
+
   check_xpm=0
   AC_MSG_CHECKING(whether user wants XPM support)
   AC_ARG_ENABLE(xpm,
@@ -1972,8 +2075,26 @@ if test "$with_x11" = yes; then
         XPM_LIB='-lXpm'
       ])
   fi
+
+  if test "$PKGCONFIG" != not_found; then
+    X_CFLAGS="`pkg-config --cflags x11`"
+    X_LIBS="`pkg-config --libs x11` $XPM_LIB -lXrandr"
+  else
+    X_LIBS="$X_LIBS -lX11 $XPM_LIB -lXrandr"
+  fi
+
+  AC_DEFINE(BX_WITH_X11, 1)
+  SPECIFIC_GUI_OBJS="$SPECIFIC_GUI_OBJS \$(GUI_OBJS_X11)"
+  GUI_CFLAGS="$GUI_CFLAGS \$(X_CFLAGS)"
+  GUI_CXXFLAGS="$GUI_CXXFLAGS \$(X_CFLAGS)"
+  GUI_LINK_OPTS="$GUI_LINK_OPTS \$(GUI_LINK_OPTS_X)"
+  # The enhanced X debugger depends on GTK2
+  if test "$gui_debugger" = 1; then
+    needs_gtk2=1
+  fi
 fi
-AC_SUBST(XPM_LIB)
+AC_SUBST(X_CFLAGS)
+AC_SUBST(X_LIBS)
 
 if test "$with_sdl" = yes; then
   display_libs="$display_libs sdl"
@@ -1996,7 +2117,7 @@ if test "$with_sdl" = yes; then
          EXTRA_BX_OBJS="$EXTRA_BX_OBJS win32res.o"
          ;;
       *-cygwin* | *-mingw32*)
-         RC_CMD="windres -o "
+         RC_CMD="windres -I. -o "
          EXTRA_BX_OBJS="$EXTRA_BX_OBJS win32res.o"
          ;;
     esac
@@ -2042,7 +2163,7 @@ if test "$with_win32" = yes; then
        ;;
     *-cygwin* | *-mingw32*)
        if test "$with_wx" != yes; then
-         RC_CMD="windres -o "
+         RC_CMD="windres -I. -o "
          EXTRA_BX_OBJS="$EXTRA_BX_OBJS win32res.o"
        fi
        GUI_LINK_OPTS="$GUI_LINK_OPTS \$(GUI_LINK_OPTS_WIN32)"
@@ -2096,6 +2217,11 @@ if test "$with_wx" = yes; then
   SPECIFIC_GUI_SUPPORT_OBJS="$SPECIFIC_GUI_SUPPORT_OBJS \$(GUI_OBJS_WX_SUPPORT)"
   WX_CFLAGS="`$WX_CONFIG --cflags`"
   WX_CXXFLAGS="`$WX_CONFIG --cxxflags`"
+  if test "$wx_needs_gdk2" = 1; then
+    GDK_CFLAGS="`pkg-config --cflags gdk-2.0`"
+    WX_CFLAGS="$WX_CFLAGS $GDK_CFLAGS"
+    WX_CXXFLAGS="$WX_CXXFLAGS $GDK_CFLAGS"
+  fi
   if test "$wx_multi_lib" = 1; then
     GUI_LINK_OPTS_WX="`$WX_CONFIG --libs core,base`"
   else
@@ -2114,7 +2240,17 @@ if test "$with_wx" = yes; then
        EXTRA_BX_OBJS="$EXTRA_BX_OBJS wxbochs_resources.o"
 	   GUI_LINK_OPTS_WX="$GUI_LINK_OPTS_WX --subsystem,windows -mwindows"
        ;;
+    *)
+      # This is required for XStringToKeysym
+      if test "$with_x11" != yes -a "$bx_plugins" != 1; then
+        GUI_LINK_OPTS="$GUI_LINK_OPTS -lX11"
+      fi
+      ;;
   esac
+  # The enhanced X debugger depends on GTK2 (unused yet, but fixes link failure)
+  if test "$gui_debugger" = 1 -a "$DEFAULT_GUI" != win32; then
+    needs_gtk2=1
+  fi
 fi
 
 if test "$with_nogui" = yes; then
@@ -2135,11 +2271,9 @@ fi
 
 # some display libraries and the enhanced debugger may depend on the GTK+ software package
 if test "$needs_gtk2" = 1; then
-  # if pkg-config exists, then add it to the /gui cflags.
-  gtkconf=`pkg-config --cflags gtk+-2.0`
-  if test $? = 0; then
-    # pkg-config was found and returned 0, so it must return valid output
-    TOOLKIT_CXXFLAGS="$gtkconf"
+  # pkg-config is required to set TOOLKIT_CXXFLAGS and LIBS
+  if test "$PKGCONFIG" != not_found; then
+    TOOLKIT_CXXFLAGS="`pkg-config --cflags gtk+-2.0`"
     LIBS="$LIBS `pkg-config --libs gtk+-2.0`"
   else
     echo "ERROR: pkg-config was not found, or unable to access the gtk+-2.0 package."
@@ -2246,25 +2380,11 @@ case "$target" in
     AC_DEFINE(BX_64BIT_CONSTANTS_USE_LL, 0)
     AC_DEFINE(inline, __forceinline)
     AC_DEFINE(BX_NO_ATTRIBUTES, 1)
-    AC_DEFINE(BX_HAVE_STRICMP, 1)
-    AC_DEFINE(BX_HAVE_STRCASECMP, 0)
-    AC_DEFINE(BX_HAVE_STRTOULL, 1)
-    AC_DEFINE(BX_HAVE_STRTOUQ, 0)
-    AC_DEFINE(BX_HAVE_STRREV, 1)
-    AC_DEFINE(BX_HAVE_STRDUP, 1)
     AC_DEFINE(HAVE_LIBREADLINE, 0)
     AC_DEFINE(HAVE_READLINE_HISTORY_H, 0)
     READLINE_LIB="";
-    AC_DEFINE(BX_HAVE_GETTIMEOFDAY, 0)
     AC_DEFINE(BX_HAVE_DLFCN_H, 0)
-    AC_DEFINE(BX_HAVE_MKSTEMP, 0)
-    AC_DEFINE(BX_HAVE_SYS_MMAN_H, 0)
-    AC_DEFINE(BX_HAVE_USLEEP, 0)
     AC_DEFINE(BX_NETMOD_TAP, 0)
-    AC_DEFINE(BX_HAVE_SELECT, 1)
-    AC_DEFINE(BX_HAVE_SOCKLEN_T, 0)
-    AC_DEFINE(BX_HAVE___BUILTIN_BSWAP32, 0)
-    AC_DEFINE(BX_HAVE___BUILTIN_BSWAP64, 0)
     ;;
   *-pc-cygwin*)
     EXE=".exe"
@@ -2288,7 +2408,7 @@ ENH_DBG_OBJS=""
 if test "$gui_debugger" = 1; then
   if test "$needs_gtk2" = 1; then
      ENH_DBG_OBJS="gtk_enh_dbg_osdep.o"
-  elif test "$with_win32" = yes; then
+  elif test "$DEFAULT_GUI" = win32; then
      ENH_DBG_OBJS="win32_enh_dbg_osdep.o"
   fi
 fi
@@ -2359,7 +2479,7 @@ if test "$with_rfb" = yes; then
       RFB_LIBS="$RFB_LIBS wsock32.lib"
       have_socket=yes
       ;;
-    *-pc-winnt* | *-pc-cygwin* | *-pc-mingw32*)
+    *-pc-winnt* | *-pc-cygwin* | *-mingw32*)
       # is this okay without a check ?
       RFB_LIBS="$RFB_LIBS -lwsock32"
       have_socket=yes
@@ -2582,22 +2702,33 @@ ACX_PTHREAD([
   ])
 
 
-# since RFB (usually) needs pthread library, check that it was found.
+# since some features need the pthread library, check that it was found.
 # But on win32 platforms, the pthread library is not needed.
-if test "$with_rfb" = yes -a "$cross_configure" = 0; then
-  if test "$pthread_ok" = yes; then
-    RFB_LIBS="$RFB_LIBS $PTHREAD_LIBS"
-    CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
-    CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
-    CC="$PTHREAD_CC"
-  else
-    case "$target" in
-	  *-pc-windows* | *-pc-winnt* | *-cygwin* | *-mingw*)
-	    # pthread not needed for win32 platform
-		;;
-	  *)
-    echo ERROR: --with-rfb requires the pthread library, which could not be found.; exit 1
-    esac
+if test "$cross_configure" = 0; then
+  if test "$with_rfb" = yes -o "$soundcard_present" = 1; then
+    if test "$pthread_ok" = yes; then
+      if test "$with_rfb" = yes; then
+        RFB_LIBS="$RFB_LIBS $PTHREAD_LIBS"
+      fi
+      if test "$soundcard_present" = 1; then
+        if test "$bx_plugins" = 1; then
+          SOUND_LINK_OPTS="$SOUND_LINK_OPTS $PTHREAD_LIBS"
+        else
+          DEVICE_LINK_OPTS="$DEVICE_LINK_OPTS $PTHREAD_LIBS"
+        fi
+      fi
+      CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+      CXXFLAGS="$CXXFLAGS $PTHREAD_CFLAGS"
+      CC="$PTHREAD_CC"
+    else
+      case "$target" in
+        *-pc-windows* | *-pc-winnt* | *-cygwin* | *-mingw32*)
+          # pthread not needed for win32 platform
+          ;;
+        *)
+          echo ERROR: the pthread library is required, but could not be found.; exit 1
+      esac
+    fi
   fi
 fi
 
@@ -2695,6 +2826,8 @@ AC_SUBST(GUI_NON_PLUGIN_OBJS)
 AC_SUBST(GUI_PLUGIN_OBJS)
 AC_SUBST(IODEV_NON_PLUGIN_OBJS)
 AC_SUBST(IODEV_PLUGIN_OBJS)
+AC_SUBST(IODEV_EXT_NON_PLUGIN_OBJS)
+AC_SUBST(IODEV_EXT_PLUGIN_OBJS)
 AC_SUBST(PLUGIN_VAR)
 AC_SUBST(PLUGIN_TARGET)
 AC_SUBST(INSTALL_PLUGINS_VAR)
@@ -2702,11 +2835,11 @@ AC_SUBST(INSTALL_PLUGINS_VAR)
 AC_PATH_PROG(GZIP, gzip)
 AC_PATH_PROG(TAR, tar)
 
-AC_OUTPUT(Makefile iodev/Makefile bx_debug/Makefile bios/Makefile \
-	 cpu/Makefile cpu/cpudb/Makefile memory/Makefile gui/Makefile \
-	 disasm/Makefile ${INSTRUMENT_DIR}/Makefile misc/Makefile \
-	 fpu/Makefile doc/docbook/Makefile \
-	 build/linux/bochs-dlx \
+AC_OUTPUT(Makefile iodev/Makefile iodev/hdimage/Makefile iodev/usb/Makefile \
+	 iodev/network/Makefile iodev/sound/Makefile bx_debug/Makefile \
+	 bios/Makefile cpu/Makefile cpu/cpudb/Makefile memory/Makefile \
+	 gui/Makefile disasm/Makefile ${INSTRUMENT_DIR}/Makefile misc/Makefile \
+	 fpu/Makefile doc/docbook/Makefile build/linux/bochs-dlx \
 	 bxversion.h bxversion.rc build/macosx/Info.plist \
 	 build/win32/nsis/Makefile build/win32/nsis/bochs.nsi \
 	 host/linux/pcidev/Makefile)

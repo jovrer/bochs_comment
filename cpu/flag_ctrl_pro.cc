@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl_pro.cc 10664 2011-09-12 19:36:53Z sshwarts $
+// $Id: flag_ctrl_pro.cc 11107 2012-03-25 19:07:17Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -49,7 +49,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::setEFlags(Bit32u val)
   BX_CPU_THIS_PTR eflags = val;
   setEFlagsOSZAPC(val);			// update lazy flags state
 
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+#if BX_CPU_LEVEL >= 4
   handleAlignmentCheck(/* EFLAGS.AC reloaded */);
 #endif
 
@@ -72,8 +72,7 @@ BX_CPU_C::writeEFlags(Bit32u flags, Bit32u changeMask)
   // Screen out changing of any unsupported bits.
   changeMask &= supportMask;
 
-  Bit32u newEFlags = (BX_CPU_THIS_PTR read_eflags() & ~changeMask) |
-              (flags & changeMask);
+  Bit32u newEFlags = (read_eflags() & ~changeMask) | (flags & changeMask);
   setEFlags(newEFlags);
 }
 

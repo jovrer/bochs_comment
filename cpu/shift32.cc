@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: shift32.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: shift32.cc 11313 2012-08-05 13:52:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,26 +26,24 @@
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, op2_32, result_32;
   unsigned count;
   unsigned of, cf;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xa4) // 0x1a4
-    count = i->Ib();
-  else // 0x1a5
+  if (i->getIaOpcode() == BX_IA_SHLD_EdGd)
     count = CL;
+  else // BX_IA_SHLD_EdGdIb
+    count = i->Ib();
 
   count &= 0x1f; // use only 5 LSB's
 
   if (count) {
-    op2_32 = BX_READ_32BIT_REG(i->nnn());
+    Bit32u op2_32 = BX_READ_32BIT_REG(i->src());
 
-    result_32 = (op1_32 << count) | (op2_32 >> (32 - count));
+    Bit32u result_32 = (op1_32 << count) | (op2_32 >> (32 - count));
 
     write_RMW_virtual_dword(result_32);
 
@@ -65,23 +63,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdR(bxInstruction_c *i)
   unsigned count;
   unsigned of, cf;
 
-  if (i->b1() == 0xa4) // 0x1a4
-    count = i->Ib();
-  else // 0x1a5
+  if (i->getIaOpcode() == BX_IA_SHLD_EdGd)
     count = CL;
+  else // BX_IA_SHLD_EdGdIb
+    count = i->Ib();
 
   count &= 0x1f; // use only 5 LSB's
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
-    op2_32 = BX_READ_32BIT_REG(i->nnn());
+    op1_32 = BX_READ_32BIT_REG(i->dst());
+    op2_32 = BX_READ_32BIT_REG(i->src());
 
     result_32 = (op1_32 << count) | (op2_32 >> (32 - count));
 
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
 
@@ -95,26 +93,24 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, op2_32, result_32;
   unsigned count;
   unsigned cf, of;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xac) // 0x1ac
-    count = i->Ib();
-  else // 0x1ad
+  if (i->getIaOpcode() == BX_IA_SHRD_EdGd)
     count = CL;
+  else // BX_IA_SHRD_EdGdIb
+    count = i->Ib();
 
   count &= 0x1f; // use only 5 LSB's
 
   if (count) {
-    op2_32 = BX_READ_32BIT_REG(i->nnn());
+    Bit32u op2_32 = BX_READ_32BIT_REG(i->src());
 
-    result_32 = (op2_32 << (32 - count)) | (op1_32 >> count);
+    Bit32u result_32 = (op2_32 << (32 - count)) | (op1_32 >> count);
 
     write_RMW_virtual_dword(result_32);
 
@@ -134,23 +130,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdR(bxInstruction_c *i)
   unsigned count;
   unsigned cf, of;
 
-  if (i->b1() == 0xac) // 0x1ac
-    count = i->Ib();
-  else // 0x1ad
+  if (i->getIaOpcode() == BX_IA_SHRD_EdGd)
     count = CL;
+  else // BX_IA_SHRD_EdGdIb
+    count = i->Ib();
 
   count &= 0x1f; // use only 5 LSB's
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
-    op2_32 = BX_READ_32BIT_REG(i->nnn());
+    op1_32 = BX_READ_32BIT_REG(i->dst());
+    op2_32 = BX_READ_32BIT_REG(i->src());
 
     result_32 = (op2_32 << (32 - count)) | (op1_32 >> count);
 
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
 
@@ -164,23 +160,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_ROL_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (count) {
-    result_32 = (op1_32 << count) | (op1_32 >> (32 - count));
+    Bit32u result_32 = (op1_32 << count) | (op1_32 >> (32 - count));
 
     write_RMW_virtual_dword(result_32);
 
@@ -199,20 +193,20 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdR(bxInstruction_c *i)
   unsigned count;
   unsigned bit0, bit31;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_ROL_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
+    op1_32 = BX_READ_32BIT_REG(i->dst());
     result_32 = (op1_32 << count) | (op1_32 >> (32 - count));
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
     bit0  = (result_32 & 0x1);
     bit31 = (result_32 >> 31);
@@ -225,24 +219,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
   unsigned bit31, bit30;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_ROR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (count) {
-    result_32 = (op1_32 >> count) | (op1_32 << (32 - count));
+    Bit32u result_32 = (op1_32 >> count) | (op1_32 << (32 - count));
 
     write_RMW_virtual_dword(result_32);
 
@@ -261,20 +253,20 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdR(bxInstruction_c *i)
   unsigned count;
   unsigned bit31, bit30;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_ROR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
+    op1_32 = BX_READ_32BIT_REG(i->dst());
     result_32 = (op1_32 >> count) | (op1_32 << (32 - count));
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
     bit31 = (result_32 >> 31) & 1;
     bit30 = (result_32 >> 30) & 1;
@@ -287,18 +279,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
+  Bit32u result_32;
   unsigned count;
   unsigned cf, of;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_RCL_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
@@ -325,22 +316,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdM(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
+  Bit32u result_32;
   unsigned count;
   unsigned cf, of;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_RCL_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
     BX_NEXT_INSTR(i);
   }
 
-  op1_32 = BX_READ_32BIT_REG(i->rm());
+  Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
 
   if (count==1) {
     result_32 = (op1_32 << 1) | getB_CF();
@@ -350,7 +341,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
                 (op1_32 >> (33 - count));
   }
 
-  BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+  BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
   cf = (op1_32 >> (32 - count)) & 0x1;
   of = cf ^ (result_32 >> 31); // of = cf ^ result31
@@ -361,18 +352,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
+  Bit32u result_32;
   unsigned count;
   unsigned cf, of;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_RCR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
@@ -400,23 +390,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdM(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
+  Bit32u result_32;
   unsigned count;
   unsigned cf, of;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_RCR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
     BX_NEXT_INSTR(i);
   }
 
-  op1_32 = BX_READ_32BIT_REG(i->rm());
+  Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
 
   if (count==1) {
     result_32 = (op1_32 >> 1) | (getB_CF() << 31);
@@ -426,7 +416,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
                 (op1_32 << (33 - count));
   }
 
-  BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+  BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
   cf = (op1_32 >> (count - 1)) & 0x1;
   of = ((result_32 << 1) ^ result_32) >> 31; // of = result30 ^ result31
@@ -437,25 +427,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
   unsigned cf, of;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_SHL_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (count) {
     /* count < 32, since only lower 5 bits used */
-    result_32 = (op1_32 << count);
+    Bit32u result_32 = (op1_32 << count);
 
     write_RMW_virtual_dword(result_32);
 
@@ -470,29 +458,28 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdM(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdR(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
-  unsigned cf, of;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_SHL_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
+    Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
 
     /* count < 32, since only lower 5 bits used */
-    result_32 = (op1_32 << count);
-    cf = (op1_32 >> (32 - count)) & 0x1;
-    of = cf ^ (result_32 >> 31);
+    Bit32u result_32 = (op1_32 << count);
 
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
+
+    unsigned cf = (op1_32 >> (32 - count)) & 0x1;
+    unsigned of = cf ^ (result_32 >> 31);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
     SET_FLAGS_OxxxxC(of, cf);
@@ -503,31 +490,28 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
-  unsigned of, cf;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_SHR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (count) {
-    result_32 = (op1_32 >> count);
+    Bit32u result_32 = (op1_32 >> count);
 
     write_RMW_virtual_dword(result_32);
 
-    cf = (op1_32 >> (count - 1)) & 0x1;
+    unsigned cf = (op1_32 >> (count - 1)) & 0x1;
     // note, that of == result31 if count == 1 and
     //            of == 0        if count >= 2
-    of = ((result_32 << 1) ^ result_32) >> 31;
+    unsigned of = ((result_32 << 1) ^ result_32) >> 31;
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
     SET_FLAGS_OxxxxC(of, cf);
@@ -538,29 +522,27 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdM(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdR(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
-  unsigned of, cf;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_SHR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
-    result_32 = (op1_32 >> count);
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
+    Bit32u result_32 = (op1_32 >> count);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
-    cf = (op1_32 >> (count - 1)) & 0x1;
+    unsigned cf = (op1_32 >> (count - 1)) & 0x1;
     // note, that of == result31 if count == 1 and
     //            of == 0        if count >= 2
-    of = ((result_32 << 1) ^ result_32) >> 31;
+    unsigned of = ((result_32 << 1) ^ result_32) >> 31;
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
     SET_FLAGS_OxxxxC(of, cf);
@@ -571,30 +553,28 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdR(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdM(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
 
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
-  /* pointer, segment address pair */
-  op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
+  Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_SAR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (count) {
     /* count < 32, since only lower 5 bits used */
-    result_32 = ((Bit32s) op1_32) >> count;
+    Bit32u result_32 = ((Bit32s) op1_32) >> count;
 
     write_RMW_virtual_dword(result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
-    set_CF((op1_32 >> (count - 1)) & 1);
-    clear_OF();  /* signed overflow cannot happen in SAR instruction */
+    unsigned cf = (op1_32 >> (count - 1)) & 1;
+    SET_FLAGS_OxxxxC(0, cf); /* signed overflow cannot happen in SAR instruction */
   }
 
   BX_NEXT_INSTR(i);
@@ -602,30 +582,29 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdM(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdR(bxInstruction_c *i)
 {
-  Bit32u op1_32, result_32;
   unsigned count;
 
-  if (i->b1() == 0xd3)
+  if (i->getIaOpcode() == BX_IA_SAR_Ed)
     count = CL;
-  else // 0xc1 or 0xd1
+  else
     count = i->Ib();
 
   count &= 0x1f;
 
   if (!count) {
-    BX_CLEAR_64BIT_HIGH(i->rm()); // always clear upper part of the register
+    BX_CLEAR_64BIT_HIGH(i->dst()); // always clear upper part of the register
   }
   else {
-    op1_32 = BX_READ_32BIT_REG(i->rm());
+    Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
 
     /* count < 32, since only lower 5 bits used */
-    result_32 = ((Bit32s) op1_32) >> count;
+    Bit32u result_32 = ((Bit32s) op1_32) >> count;
 
-    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    BX_WRITE_32BIT_REGZ(i->dst(), result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
-    set_CF((op1_32 >> (count - 1)) & 1);
-    clear_OF();  /* signed overflow cannot happen in SAR instruction */
+    unsigned cf = (op1_32 >> (count - 1)) & 1;
+    SET_FLAGS_OxxxxC(0, cf); /* signed overflow cannot happen in SAR instruction */
   }
 
   BX_NEXT_INSTR(i);

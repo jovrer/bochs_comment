@@ -1,5 +1,5 @@
 .\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
-.TH bochsrc 5 "30 Dec 2011" "bochsrc" "The Bochs Project"
+.TH bochsrc 5 "28 Aug 2012" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -42,6 +42,23 @@ Example:
   #include /etc/bochsrc
 
 .TP
+.I "plugin_ctrl:"
+Controls the presence of optional device plugins. These plugins are loaded
+directly with this option and some of them install a config option that is
+only available when the plugin device is loaded. The value "1" means to load
+the plugin and "0" will unload it (if loaded before).
+
+These plugins will be loaded by default (if present): 'biosdev', 'extfpuirq',
+'gameport', 'iodebug','parallel', 'serial', 'speaker' and 'unmapped'.
+
+These plugins are also supported, but they are usually loaded directly with
+their bochsrc option: 'e1000', 'es1370', 'ne2k', 'pcidev', 'pcipnic', 'sb16',
+'usb_ohci', 'usb_uhci' and 'usb_xhci'.
+
+Example:
+  plugin_ctrl: unmapped=0, e1000=1 # unload 'unmapped' and load 'e1000'
+
+.TP
 .I "config_interface:"
 The configuration interface is a series of menus or dialog boxes that
 allows you to change all the settings that control Bochs's behavior.
@@ -82,20 +99,24 @@ The choices are:
   wx          wxWidgets library, cross platform
   nogui       no display at all
 
-Some display libraries now support specific option to control their
-behaviour. See the examples below for currently supported options.
-
 .B NOTE:
 if you use the "wx" configuration interface, you must also use
 the "wx" display library.
+
+.B Specific options:
+Some display libraries now support specific options to control their
+behaviour. These options are supported by more than one display library:
+
+  "gui_debug"   - use GTK debugger gui (sdl, x)
+  "hideIPS"     - disable IPS output in status bar (rfb, sdl, wx, x)
+  "nokeyrepeat" - turn off host keyboard repeat (sdl, x)
+
+See the examples below for other currently supported options.
 
 Examples:
   display_library: x
   display_library: rfb, options="timeout=60"  # time to wait for client
   display_library: sdl, options="fullscreen"  # startup in fullscreen mode
-  display_library: x, options="hideIPS" # disable IPS output in status bar
-  display_library: x, options="gui_debug" # use GTK debugger gui
-  display_library: x, options="nokeyrepeat" # turn off host keyboard repeat
 
 
 .TP
@@ -144,6 +165,11 @@ cpuid_limit_winnt:
 
 Determine whether to limit maximum CPUID function to 2. This mode is
 required to workaround WinNT installation and boot issues.
+
+mwait_is_nop:
+
+When this option is enabled MWAIT will not put the CPU into a sleep state.
+This option exists only if Bochs compiled with --enable-monitor-mwait.
 
 msrs:
 
@@ -200,7 +226,7 @@ This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
 
 apic:
 
-Select APIC configuration (LEGACY/XAPIC/X2APIC).
+Select APIC configuration (LEGACY/XAPIC/XAPIC_EXT/X2APIC).
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
 
 sep:
@@ -227,6 +253,11 @@ This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 movbe:
 
 Select MOVBE Intel(R) Atom instruction support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+adx:
+
+Select ADCX/ADOX instructions support.
 This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 
 xsave:
@@ -299,15 +330,15 @@ mwait:
 Select MONITOR/MWAIT instructions support.
 This option exists only if Bochs compiled with --enable-monitor-mwait.
 
-mwait_is_nop:
-
-When this option is enabled MWAIT will not put the CPU into a sleep state.
-This option exists only if Bochs compiled with --enable-monitor-mwait.
-
 vmx:
 
 Select VMX extensions emulation support.
 This option exists only if Bochs compiled with --enable-vmx option.
+
+svm:
+
+Select AMD SVM (Secure Virtual Machine) extensions emulation support.
+This option exists only if Bochs compiled with --enable-svm option.
 
 family:
 
@@ -454,7 +485,7 @@ Examples:
 This defines the type and characteristics of all attached ata devices:
    type=       type of attached device [disk|cdrom]
    path=       path of the image
-   mode=       image mode [flat|concat|external|dll|sparse|vmware3|undoable|growing|volatile], only valid for disks
+   mode=       image mode [flat|concat|external|dll|sparse|vmware3|vmware4|undoable|growing|volatile|vpc|vvfat], only valid for disks
    cylinders=  only valid for disks
    heads=      only valid for disks
    spt=        only valid for disks
@@ -486,9 +517,11 @@ The mode option defines how the disk image is handled. Disks can be defined as:
   - dll : developer's specific, through a DLL
   - sparse : stackable, commitable, rollbackable
   - vmware3 : vmware3 disk support
+  - vmware4 : vmware4 disk support (aka VMDK)
   - undoable : flat file with commitable redolog
   - growing : growing file
   - volatile : flat file with volatile redolog
+  - vpc : fixed / dynamic size VirtualPC image
   - vvfat: local directory appears as read-only VFAT disk (with volatile redolog)
 
 The disk translation scheme (implemented in legacy int13 bios functions, and used by
@@ -746,6 +779,9 @@ Example for output to ALSA:
   wavemode=1, wave=alsa,
   log=sb16.log, dmatimer=600000
 
+Example for output using SDL:
+  sb16: wavemode=1, wave=sdl
+
 .B NOTE:
 The  examples are wrapped onto three  lines for
 formatting  reasons, but  it should all be  on
@@ -754,38 +790,51 @@ one line in the actual bochsrc file.
 .TP
 .I "es1370:"
 This defines the ES1370 sound emulation. The parameter 'enabled' controls the
-presence of the device. In addition to this, it must be assigned to a PCI
-slot. The 'wavedev' parameter is similar to the 'wave' parameter of the SB16
-soundcard. The emulation supports recording and playback (except DAC1+DAC2
-output at the same time).
+presence of the device. The 'wavedev' parameter is similar to the 'wave'
+parameter of the SB16 soundcard. The emulation supports recording and playback
+(except DAC1+DAC2 output at the same time).
 
 Examples:
-  es1370: enabled=1, wavedev=""       # win32
-  es1370: enabled=1, wavedev=alsa     # Linux with ALSA
+  es1370: enabled=1, wavedev=""    # win32
+  es1370: enabled=1, wavedev=alsa  # Linux with ALSA
+  es1370: enabled=1, wavedev=sdl   # use SDL audio (if present) for output
 
 .TP
-.I "keyboard_serial_delay:"
-Approximate time in microseconds that it takes
-one  character  to   be  transfered  from  the
-keyboard to controller over the serial path.
+.I "keyboard:"
+This defines parameters related to the emulated keyboard:
 
-Example:
-  keyboard_serial_delay: 200
+type:
 
-.TP
-.I "keyboard_paste_delay:"
+Type of keyboard return by a "identify keyboard" command to the
+keyboard controller. It must be one of "xt", "at" or "mf".
+Defaults to "mf". It should be ok for almost everybody. A known
+exception is french macs, that do have a "at"-like keyboard.
+
+serial_delay:
+
+Approximate time in microseconds that it takes one character to
+be transferred from the keyboard to controller over the serial path.
+
+paste_delay:
+
 Approximate time in microseconds between attempts to paste
 characters to the keyboard controller. This leaves time for the
 guest os to deal with the flow of characters.  The ideal setting
 depends on how your operating system processes characters.  The
-default of 100000 usec (.1 seconds) was chosen because it works
+default of 100000 usec (.1 seconds) was chosen because it works 
 consistently in Windows.
 
 If your OS is losing characters during a paste, increase the paste
 delay until it stops losing characters.
 
-Example:
-  keyboard_paste_delay: 100000
+keymap:
+
+This enables a remap of a physical localized keyboard to a
+virtualized us keyboard, as the PC architecture expects.
+
+Examples:
+  keyboard: type=mf, serial_delay=200, paste_delay=100000
+  keyboard: keymap=gui/keymaps/x11-pc-de.map
 
 .TP
 .I "clock:"
@@ -828,8 +877,8 @@ type
 With the mouse type option you can select the type of mouse to emulate.
 The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
 on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
-setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb_uhci'
-or 'usb_ohci' option (requires PCI and USB support).
+setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb_uhci',
+'usb_ohci' or 'usb_xhci' option (requires PCI and USB support).
 
 enabled
 
@@ -868,8 +917,11 @@ Example:
 .I "pci:"
 This option controls the presence of a PCI chipset in Bochs. Currently it only
 supports the i440FX chipset. You can also specify the devices connected to
-PCI slots. Up to 5 slots are available. These devices are currently supported:
-cirrus, es1370, ne2k, pcivga, pcidev, pcipnic, usb_ohci and usb_xhci.
+PCI slots. Up to 5 slots are available. For these combined PCI/ISA devices
+assigning to slot is mandatory if you want to emulate the PCI model: cirrus,
+ne2k and pcivga. These PCI-only devices are also supported, but they are
+auto-assigned if you don't use the slot configuration: e1000, es1370, pcidev,
+pcipnic, usb_ohci and usb_xhci.
 
 Example:
   pci: enabled=1, chipset=i440fx, slot1=pcivga, slot2=ne2k
@@ -894,7 +946,8 @@ Defines the characteristics of an attached ne2000 isa card :
    mac=MACADDR,
    ethmod=MODULE,
    ethdev=DEVICE,
-   script=SCRIPT
+   script=SCRIPT,
+   bootrom=BOOTROM
 
 .B PROPERTIES FOR ne2k:
 
@@ -917,7 +970,7 @@ to access physical ethernet interface. Current implemented values include
  - win32  : ethernet on win32
  - tap    : ethernet through a linux tap interface
  - tuntap : ethernet through a linux tuntap interface
- - slirp  : ethernet backend for Slirp and a builtin DHCP server
+ - slirp  : ethernet backend for Slirp with builtin DHCP / TFTP servers
 
 If you don't want to make connections to any physical networks,
 you can use the following 'ethmod's to simulate a virtual network.
@@ -944,6 +997,11 @@ This is mainly useful for the tun/tap devices that only exist during
 Bochs execution. The network interface name is supplied to the script
 as first parameter.
 
+BOOTROM:
+The bootrom value is optional, and is the name of the ROM image
+to load. Note that this feature is only implemented for the PCI version of
+the NE2000.
+
 Examples:
   ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xlo
   ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
@@ -952,34 +1010,27 @@ Examples:
   ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
   ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
   ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
+  ne2k: mac=b0:c4:20:00:00:01, ethmod=slirp, script=/usr/local/bin/slirp, bootrom=ne2k_pci.rom
 
 .TP
-.I "pnic:"
+.I "pcipnic:"
 To support the Bochs/Etherboot pseudo-NIC, Bochs must be compiled with the
 --enable-pnic configure option. It accepts the same syntax (for mac, ethmod,
-ethdev, script) and supports the same networking modules as the NE2000 adapter.
-In addition to this, it must be assigned to a PCI slot.
+ethdev, script, bootrom) and supports the same networking modules as the NE2000
+adapter.
 
 Example:
   pnic: enabled=1, mac=b0:c4:20:00:00:00, ethmod=vnet
 
 .TP
-.I "keyboard_mapping:"
-This enables a remap of a physical localized keyboard to a
-virtualized us keyboard, as the PC architecture expects.
-If enabled, the keymap file must be specified.
-
- Examples:
-   keyboard_mapping: enabled=1, map=gui/keymaps/x11-pc-de.map
-
-.TP
-.I "keyboard_type:"
-Type of emulated keyboard sent back  to the OS
-to a "keyboard identify"  command.  It must be
-one of "xt", "at" or "mf".
+.I "e1000:"
+To support the Intel(R) 82540EM Gigabit Ethernet adapter, Bochs must be compiled
+with the --eanble-e1000 configure option. The E1000 accepts the same syntax
+(for mac, ethmod, ethdev, script, bootrom) and supports the same networking
+modules as the NE2000 adapter.
 
 Example:
-  keyboard_type: mf
+  e1000: enabled=1, mac=52:54:00:12:34:56, ethmod=slirp, script=/usr/local/bin/slirp
 
 .TP
 .I "user_shortcut:"
@@ -1045,20 +1096,19 @@ Example:
 .I "usb_ohci:"
 This option controls the presence of the USB OHCI host controller with a
 2-port hub. The portX option accepts the same device types with the same
-syntax as the UHCI controller (see above). The OHCI HC must be assigned to
-a PCI slot.
+syntax as the UHCI controller (see above).
 
 Example:
   usb_ohci: enabled=1
 
 .TP
-.I "plugin_ctrl:"
-Controls the presence of optional plugins without a separate option.
-By default all existing plugins are enabled. These plugins are currently
-supported: 'acpi', 'biosdev', 'extfpuirq', 'gameport', 'iodebug', 'pci_ide', 'speaker' and 'unmapped'.
+.I "usb_xhci:"
+This option controls the presence of the experimental USB xHCI host controller
+with a 4-port hub. The portX option accepts the same device types with the same
+syntax as the UHCI controller (see above).
 
 Example:
-  plugin_ctrl: biosdev=0, speaker=0
+  usb_xhci: enabled=1
 
 .TP
 .I "user_plugin:"
@@ -1073,8 +1123,8 @@ Example:
 .SH LICENSE
 This program  is distributed  under the terms of the  GNU
 Lesser General Public License as published  by  the  Free
-Software  Foundation.  See  the  COPYING file located  in
-/usr/share/doc/bochs/ for details on the license and
+Software  Foundation.  See  the LICENSE and COPYING files located
+in /usr/share/doc/bochs/ for details on the license and
 the lack of warranty.
 .\"SKIP_SECTION"
 .SH AVAILABILITY

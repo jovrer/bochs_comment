@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gtk_enh_dbg_osdep.cc 10298 2011-04-03 10:29:19Z vruppert $
+// $Id: gtk_enh_dbg_osdep.cc 11131 2012-04-10 12:44:06Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -1287,7 +1287,7 @@ gboolean MemMouseDown_cb(GtkWidget *widget, GdkEventButton *event, gpointer data
 // Change the CPU display
 void CPUb_cb(GtkWidget *widget, gpointer CPUnum)    // "CPUnum" is the value supplied at handler creation
 {
-    unsigned int newCPU = GPOINTER_TO_INT( CPUnum );
+    unsigned int newCPU = GPOINTER_TO_INT(CPUnum);
     if (CurrentCPU != newCPU)
     {
         // change text on CurrentCPU button to lowercase and BOLD with markup
@@ -1300,7 +1300,6 @@ void CPUb_cb(GtkWidget *widget, gpointer CPUnum)    // "CPUnum" is the value sup
         gtk_label_set_markup (GTK_LABEL(CpuB_label[newCPU]), tmpcb);
         CurrentCPU = newCPU;
         BottomAsmLA = ~0;       // force an ASM autoload, to repaint
-        PrevPtime = 0;          // force a full update
         if (AtBreak != FALSE)   // if at a break, pretend it just happened
             OnBreak();          // refresh the ASM and Register windows
     }

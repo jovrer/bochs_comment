@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc 10470 2011-07-11 17:36:10Z vruppert $
+// $Id: term.cc 11073 2012-03-03 12:41:24Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2000-2009  The Bochs Project
+//  Copyright (C) 2000-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -169,15 +169,12 @@ void bx_term_gui_c::sighandler(int signo)
 // argc, argv: not used right now, but the intention is to pass native GUI
 //     specific options from the command line.  (X11 options, Win32 options,...)
 //
-// tilewidth, tileheight: for optimization, graphics_tile_update() passes
-//     only updated regions of the screen to the gui code to be redrawn.
-//     These define the dimensions of a region (tile).
 // headerbar_y:  A headerbar (toolbar) is display on the top of the
 //     VGA window, showing floppy status, and other information.  It
 //     always assumes the width of the current VGA mode width, but
 //     it's height is defined by this parameter.
 
-void bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight, unsigned headerbar_y)
+void bx_term_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
   put("TGUI");
 
@@ -545,7 +542,7 @@ chtype get_term_char(Bit8u vga_char[])
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is tm_info.line_offset*text_rows
+// format of old_text & new_text: each is tm_info->line_offset*text_rows
 //     bytes long. Each character consists of 2 bytes.  The first by is
 //     the character value, the second is the attribute byte.
 //
@@ -556,7 +553,7 @@ chtype get_term_char(Bit8u vga_char[])
 
 void bx_term_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
         unsigned long cursor_x, unsigned long cursor_y,
-        bx_vga_tminfo_t tm_info)
+        bx_vga_tminfo_t *tm_info)
 {
   unsigned char *old_line, *new_line, *new_start;
   unsigned char cAttr;
@@ -595,25 +592,25 @@ void bx_term_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       old_text+=2;
     } while (--hchars);
     y++;
-    new_text = new_line + tm_info.line_offset;
-    old_text = old_line + tm_info.line_offset;
+    new_text = new_line + tm_info->line_offset;
+    old_text = old_line + tm_info->line_offset;
   } while (--rows);
 
   if ((cursor_x<text_cols) && (cursor_y<text_rows)
-      && (tm_info.cs_start <= tm_info.cs_end)) {
+      && (tm_info->cs_start <= tm_info->cs_end)) {
     if(cursor_x>0)
       cursor_x--;
     else {
       cursor_x=COLS-1;
       cursor_y--;
     }
-    cAttr = new_start[cursor_y*tm_info.line_offset+cursor_x*2+1];
+    cAttr = new_start[cursor_y*tm_info->line_offset+cursor_x*2+1];
 #if BX_HAVE_COLOR_SET
     if (has_colors()) {
       color_set(get_color_pair(cAttr), NULL);
     }
 #endif
-    ch = get_term_char(&new_start[cursor_y*tm_info.line_offset+cursor_x*2]);
+    ch = get_term_char(&new_start[cursor_y*tm_info->line_offset+cursor_x*2]);
     if ((cAttr & 0x08) > 0) ch |= A_BOLD;
     if ((cAttr & 0x80) > 0) ch |= A_REVERSE;
     mvaddch(cursor_y, cursor_x, ch);
@@ -653,8 +650,8 @@ bx_bool bx_term_gui_c::palette_change(unsigned index, unsigned red, unsigned gre
 // screen, since info in this region has changed.
 //
 // tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'tilewidth' & 'tileheight' parameters to
-//       ::specific_init().  Each value specifies an index into the
+//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
+//       Each value specifies an index into the
 //       array of colors you allocated for ::palette_change()
 // x0: x origin of tile
 // y0: y origin of tile

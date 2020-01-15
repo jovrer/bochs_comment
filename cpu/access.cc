@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: access.cc 10270 2011-03-19 20:09:34Z sshwarts $
+// $Id: access.cc 11103 2012-03-20 18:26:04Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2005-2010  The Bochs Project
@@ -49,6 +49,8 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned le
     return 0;
   }
 
+  length--;
+
   switch (seg->cache.type) {
     case 0: case 1:   // read only
     case 4: case 5:   // read only, expand down
@@ -60,8 +62,8 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned le
       return 0;
 
     case 2: case 3: /* read/write */
-      if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
-          || (length-1 > seg->cache.u.segment.limit_scaled))
+      if (offset > (seg->cache.u.segment.limit_scaled - length)
+          || length > seg->cache.u.segment.limit_scaled)
       {
         BX_ERROR(("write_virtual_checks(): write beyond limit, r/w"));
         return 0;
@@ -83,8 +85,8 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned le
         upper_limit = 0xffffffff;
       else
         upper_limit = 0x0000ffff;
-      if ((offset <= seg->cache.u.segment.limit_scaled) ||
-           (offset > upper_limit) || ((upper_limit - offset) < (length - 1)))
+      if (offset <= seg->cache.u.segment.limit_scaled ||
+           offset > upper_limit || (upper_limit - offset) < length)
       {
         BX_ERROR(("write_virtual_checks(): write beyond limit, r/w ED"));
         return 0;
@@ -113,13 +115,15 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned len
     return 0;
   }
 
+  length--;
+
   switch (seg->cache.type) {
     case 0: case 1: /* read only */
     case 2: case 3: /* read/write */
     case 10: case 11: /* execute/read */
     case 14: case 15: /* execute/read-only, conforming */
-      if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
-          || (length-1 > seg->cache.u.segment.limit_scaled))
+      if (offset > (seg->cache.u.segment.limit_scaled - length)
+          || length > seg->cache.u.segment.limit_scaled)
       {
         BX_ERROR(("read_virtual_checks(): read beyond limit"));
         return 0;
@@ -137,8 +141,8 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned len
         upper_limit = 0xffffffff;
       else
         upper_limit = 0x0000ffff;
-      if ((offset <= seg->cache.u.segment.limit_scaled) ||
-           (offset > upper_limit) || ((upper_limit - offset) < (length - 1)))
+      if (offset <= seg->cache.u.segment.limit_scaled ||
+           offset > upper_limit || (upper_limit - offset) < length)
       {
         BX_ERROR(("read_virtual_checks(): read beyond limit ED"));
         return 0;
@@ -173,13 +177,15 @@ BX_CPU_C::execute_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned 
     return 0;
   }
 
+  length--;
+
   switch (seg->cache.type) {
     case 0: case 1: /* read only */
     case 2: case 3: /* read/write */
     case 10: case 11: /* execute/read */
     case 14: case 15: /* execute/read-only, conforming */
-      if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
-          || (length-1 > seg->cache.u.segment.limit_scaled))
+      if (offset > (seg->cache.u.segment.limit_scaled - length)
+          || length > seg->cache.u.segment.limit_scaled)
       {
         BX_ERROR(("execute_virtual_checks(): read beyond limit"));
         return 0;
@@ -193,8 +199,8 @@ BX_CPU_C::execute_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned 
 
     case 8: case 9: /* execute only */
     case 12: case 13: /* execute only, conforming */
-      if (offset > (seg->cache.u.segment.limit_scaled - length + 1)
-          || (length-1 > seg->cache.u.segment.limit_scaled))
+      if (offset > (seg->cache.u.segment.limit_scaled - length)
+          || length > seg->cache.u.segment.limit_scaled)
       {
         BX_ERROR(("execute_virtual_checks(): read beyond limit execute only"));
         return 0;
@@ -207,8 +213,8 @@ BX_CPU_C::execute_virtual_checks(bx_segment_reg_t *seg, Bit32u offset, unsigned 
         upper_limit = 0xffffffff;
       else
         upper_limit = 0x0000ffff;
-      if ((offset <= seg->cache.u.segment.limit_scaled) ||
-           (offset > upper_limit) || ((upper_limit - offset) < (length - 1)))
+      if (offset <= seg->cache.u.segment.limit_scaled ||
+           offset > upper_limit || (upper_limit - offset) < length)
       {
         BX_ERROR(("execute_virtual_checks(): read beyond limit ED"));
         return 0;
@@ -255,11 +261,9 @@ BX_CPU_C::system_read_byte(bx_address laddr)
   if (tlbEntry->lpf == lpf) {
     bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
     Bit32u pageOffset = PAGE_OFFSET(laddr);
-    BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, tlbEntry->ppf | pageOffset, 1, BX_READ);
     Bit8u *hostAddr = (Bit8u*) (hostPageAddr | pageOffset);
     data = *hostAddr;
-    BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr,
-        tlbEntry->ppf | pageOffset, 1, 0, BX_READ, (Bit8u*) &data);
+    BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, (tlbEntry->ppf | pageOffset), 1, 0, BX_READ, (Bit8u*) &data);
     return data;
   }
 
@@ -285,11 +289,9 @@ BX_CPU_C::system_read_word(bx_address laddr)
   if (tlbEntry->lpf == lpf) {
     bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
     Bit32u pageOffset = PAGE_OFFSET(laddr);
-    BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, tlbEntry->ppf | pageOffset, 2, BX_READ);
     Bit16u *hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
     ReadHostWordFromLittleEndian(hostAddr, data);
-    BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr,
-        tlbEntry->ppf | pageOffset, 2, 0, BX_READ, (Bit8u*) &data);
+    BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, (tlbEntry->ppf | pageOffset), 2, 0, BX_READ, (Bit8u*) &data);
     return data;
   }
 
@@ -315,11 +317,9 @@ BX_CPU_C::system_read_dword(bx_address laddr)
   if (tlbEntry->lpf == lpf) {
     bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
     Bit32u pageOffset = PAGE_OFFSET(laddr);
-    BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, tlbEntry->ppf | pageOffset, 4, BX_READ);
     Bit32u *hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
     ReadHostDWordFromLittleEndian(hostAddr, data);
-    BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr,
-        tlbEntry->ppf | pageOffset, 4, 0, BX_READ, (Bit8u*) &data);
+    BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, (tlbEntry->ppf | pageOffset), 4, 0, BX_READ, (Bit8u*) &data);
     return data;
   }
 
@@ -345,11 +345,9 @@ BX_CPU_C::system_read_qword(bx_address laddr)
   if (tlbEntry->lpf == lpf) {
     bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
     Bit32u pageOffset = PAGE_OFFSET(laddr);
-    BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, tlbEntry->ppf | pageOffset, 8, BX_READ);
     Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
     ReadHostQWordFromLittleEndian(hostAddr, data);
-    BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr,
-        tlbEntry->ppf | pageOffset, 8, 0, BX_READ, (Bit8u*) &data);
+    BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, (tlbEntry->ppf | pageOffset), 8, 0, BX_READ, (Bit8u*) &data);
     return data;
   }
 
@@ -377,8 +375,7 @@ BX_CPU_C::system_write_byte(bx_address laddr, Bit8u data)
       bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
       Bit32u pageOffset = PAGE_OFFSET(laddr);
       bx_phy_address pAddr = tlbEntry->ppf | pageOffset;
-      BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, pAddr, 1, BX_WRITE);
-      BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr, pAddr, 1, 0, BX_WRITE, (Bit8u*) &data);
+      BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 1, 0, BX_WRITE, (Bit8u*) &data);
       Bit8u *hostAddr = (Bit8u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 1);
      *hostAddr = data;
@@ -409,8 +406,7 @@ BX_CPU_C::system_write_word(bx_address laddr, Bit16u data)
       bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
       Bit32u pageOffset = PAGE_OFFSET(laddr);
       bx_phy_address pAddr = tlbEntry->ppf | pageOffset;
-      BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, pAddr, 2, BX_WRITE);
-      BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr, pAddr, 2, 0, BX_WRITE, (Bit8u*) &data);
+      BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 2, 0, BX_WRITE, (Bit8u*) &data);
       Bit16u *hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 2);
       WriteHostWordToLittleEndian(hostAddr, data);
@@ -441,8 +437,7 @@ BX_CPU_C::system_write_dword(bx_address laddr, Bit32u data)
       bx_hostpageaddr_t hostPageAddr = tlbEntry->hostPageAddr;
       Bit32u pageOffset = PAGE_OFFSET(laddr);
       bx_phy_address pAddr = tlbEntry->ppf | pageOffset;
-      BX_INSTR_LIN_ACCESS(BX_CPU_ID, laddr, pAddr, 4, BX_WRITE);
-      BX_DBG_LIN_MEMORY_ACCESS(BX_CPU_ID, laddr, pAddr, 4, 0, BX_WRITE, (Bit8u*) &data);
+      BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 4, 0, BX_WRITE, (Bit8u*) &data);
       Bit32u *hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 4);
       WriteHostDWordToLittleEndian(hostAddr, data);

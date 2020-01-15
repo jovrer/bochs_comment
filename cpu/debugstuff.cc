@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc 10916 2011-12-31 19:46:33Z sshwarts $
+// $Id: debugstuff.cc 11142 2012-04-16 19:18:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -43,7 +43,7 @@ void BX_CPU_C::debug_disasm_instruction(bx_address offset)
   static disassembler bx_disassemble;
   unsigned remainsInPage = 0x1000 - PAGE_OFFSET(offset);
 
-  bx_bool valid = dbg_xlate_linear2phy(BX_CPU_THIS_PTR get_laddr(BX_SEG_REG_CS, offset), &phy_addr);
+  bx_bool valid = dbg_xlate_linear2phy(get_laddr(BX_SEG_REG_CS, offset), &phy_addr);
   if (valid) {
     BX_MEM(0)->dbg_fetch_mem(BX_CPU_THIS, phy_addr, 16, instr_buf);
     unsigned isize = bx_disassemble.disasm(
@@ -114,9 +114,11 @@ void BX_CPU_C::debug(bx_address offset)
     long64_mode() ? 64 : (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b ? 32 : 16)));
   BX_INFO(("SS.mode = %u bit",
     long64_mode() ? 64 : (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b ? 32 : 16)));
+#if BX_CPU_LEVEL >= 5
+  BX_INFO(("EFER   = 0x%08x", BX_CPU_THIS_PTR efer.get32()));
+#endif
 #if BX_SUPPORT_X86_64
   if (long_mode()) {
-    BX_INFO(("EFER   = 0x%08x", BX_CPU_THIS_PTR efer.get32()));
     BX_INFO(("| RAX=%08x%08x  RBX=%08x%08x",
           (unsigned) (RAX >> 32), (unsigned) EAX,
           (unsigned) (RBX >> 32), (unsigned) EBX));
@@ -276,7 +278,7 @@ bx_bool BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
 
   switch (reg) {
     case BX_DBG_REG_EIP:
-      EIP = val;
+      RIP = BX_CPU_THIS_PTR prev_rip = val;
       invalidate_prefetch_q();
       return(1);
     case BX_DBG_REG_EFLAGS:
@@ -341,7 +343,7 @@ bx_bool BX_CPU_C::dbg_set_sreg(unsigned sreg_no, bx_segment_reg_t *sreg)
     BX_CPU_THIS_PTR sregs[sreg_no] = *sreg;
     if (sreg_no == BX_SEG_REG_CS) {
       handleCpuModeChange();
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+#if BX_CPU_LEVEL >= 4
       handleAlignmentCheck(/* CPL change */);
 #endif
       invalidate_prefetch_q();

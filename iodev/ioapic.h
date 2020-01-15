@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: ioapic.h 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -74,10 +74,13 @@ public:
 class bx_ioapic_c : public bx_ioapic_stub_c {
 public:
   bx_ioapic_c();
-  virtual ~bx_ioapic_c() {}
+  virtual ~bx_ioapic_c();
   virtual void init();
   virtual void reset(unsigned type);
   virtual void register_state(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
+#endif
 
   virtual void receive_eoi(Bit8u vector);
   virtual void set_irq_level(Bit8u int_in, bx_bool level);

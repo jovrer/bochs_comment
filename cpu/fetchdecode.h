@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode.h 10762 2011-11-05 07:31:51Z sshwarts $
+// $Id: fetchdecode.h 11313 2012-08-05 13:52:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2011 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -59,15 +59,30 @@ BX_CPP_INLINE Bit64u FetchQWORD(const Bit8u *iptr)
 }
 #endif
 
-#define BX_PREPARE_SSE (0x01)
-#define BX_PREPARE_AVX (0x02)
-#define BX_VEX_NO_VVV  (0x04) /* no VEX.VVV allowed */
+#define BX_PREPARE_SSE (0x80)
+#define BX_PREPARE_AVX (0x40)
 
 struct bxIAOpcodeTable {
   BxExecutePtr_tR execute1;
   BxExecutePtr_tR execute2;
-  Bit32u flags;
+  Bit8u src[4];
 };
+
+enum {
+  BX_SRC_NONE = 0,
+  BX_SRC_EAX,
+  BX_SRC_NNN,
+  BX_SRC_RM,
+  BX_SRC_MEM_NO_VVV,
+  BX_SRC_VVV,
+  BX_SRC_VIB,
+  BX_SRC_VIB_RM, // RM when VEX.W = 1, VIB otherwise
+  BX_SRC_RM_VIB, // RM when VEX.W = 0, VIB otherwise
+  BX_SRC_RM_VVV, // RM when VEX.W = 1, VVV otherwise
+  BX_SRC_VVV_RM  // RM when VEX.W = 0, VVV otherwise
+};
+
+#define BX_SRC_XMM0 (BX_SRC_EAX)
 
 //
 // Common FetchDecode Opcode Tables
@@ -179,7 +194,6 @@ static const BxOpcodeInfo_t BxOpcodeInfo64G1AEq[8] = {
 /* ******* */
 
 static const BxOpcodeInfo_t BxOpcodeInfoG2Eb[8] = {
-  // attributes defined in main area
   /* 0 */ { 0, BX_IA_ROL_Eb },
   /* 1 */ { 0, BX_IA_ROR_Eb },
   /* 2 */ { 0, BX_IA_RCL_Eb },
@@ -191,7 +205,6 @@ static const BxOpcodeInfo_t BxOpcodeInfoG2Eb[8] = {
 };
 
 static const BxOpcodeInfo_t BxOpcodeInfoG2Ew[8] = {
-  // attributes defined in main area
   /* 0 */ { 0, BX_IA_ROL_Ew },
   /* 1 */ { 0, BX_IA_ROR_Ew },
   /* 2 */ { 0, BX_IA_RCL_Ew },
@@ -203,7 +216,6 @@ static const BxOpcodeInfo_t BxOpcodeInfoG2Ew[8] = {
 };
 
 static const BxOpcodeInfo_t BxOpcodeInfoG2Ed[8] = {
-  // attributes defined in main area
   /* 0 */ { 0, BX_IA_ROL_Ed },
   /* 1 */ { 0, BX_IA_ROR_Ed },
   /* 2 */ { 0, BX_IA_RCL_Ed },
@@ -216,7 +228,6 @@ static const BxOpcodeInfo_t BxOpcodeInfoG2Ed[8] = {
 
 #if BX_SUPPORT_X86_64
 static const BxOpcodeInfo_t BxOpcodeInfo64G2Eq[8] = {
-  // attributes defined in main area
   /* 0 */ { 0, BX_IA_ROL_Eq },
   /* 1 */ { 0, BX_IA_ROR_Eq },
   /* 2 */ { 0, BX_IA_RCL_Eq },
@@ -225,6 +236,60 @@ static const BxOpcodeInfo_t BxOpcodeInfo64G2Eq[8] = {
   /* 5 */ { 0, BX_IA_SHR_Eq },
   /* 6 */ { 0, BX_IA_SHL_Eq },
   /* 7 */ { 0, BX_IA_SAR_Eq }
+};
+#endif
+
+/* ********* */
+/* Group2 Ib */
+/* ********* */
+
+static const BxOpcodeInfo_t BxOpcodeInfoG2EbIb[8] = {
+  // attributes defined in main area
+  /* 0 */ { 0, BX_IA_ROL_EbIb },
+  /* 1 */ { 0, BX_IA_ROR_EbIb },
+  /* 2 */ { 0, BX_IA_RCL_EbIb },
+  /* 3 */ { 0, BX_IA_RCR_EbIb },
+  /* 4 */ { 0, BX_IA_SHL_EbIb },
+  /* 5 */ { 0, BX_IA_SHR_EbIb },
+  /* 6 */ { 0, BX_IA_SHL_EbIb },
+  /* 7 */ { 0, BX_IA_SAR_EbIb }
+};
+
+static const BxOpcodeInfo_t BxOpcodeInfoG2EwIb[8] = {
+  // attributes defined in main area
+  /* 0 */ { 0, BX_IA_ROL_EwIb },
+  /* 1 */ { 0, BX_IA_ROR_EwIb },
+  /* 2 */ { 0, BX_IA_RCL_EwIb },
+  /* 3 */ { 0, BX_IA_RCR_EwIb },
+  /* 4 */ { 0, BX_IA_SHL_EwIb },
+  /* 5 */ { 0, BX_IA_SHR_EwIb },
+  /* 6 */ { 0, BX_IA_SHL_EwIb },
+  /* 7 */ { 0, BX_IA_SAR_EwIb }
+};
+
+static const BxOpcodeInfo_t BxOpcodeInfoG2EdIb[8] = {
+  // attributes defined in main area
+  /* 0 */ { 0, BX_IA_ROL_EdIb },
+  /* 1 */ { 0, BX_IA_ROR_EdIb },
+  /* 2 */ { 0, BX_IA_RCL_EdIb },
+  /* 3 */ { 0, BX_IA_RCR_EdIb },
+  /* 4 */ { 0, BX_IA_SHL_EdIb },
+  /* 5 */ { 0, BX_IA_SHR_EdIb },
+  /* 6 */ { 0, BX_IA_SHL_EdIb },
+  /* 7 */ { 0, BX_IA_SAR_EdIb }
+};
+
+#if BX_SUPPORT_X86_64
+static const BxOpcodeInfo_t BxOpcodeInfo64G2EqIb[8] = {
+  // attributes defined in main area
+  /* 0 */ { 0, BX_IA_ROL_EqIb },
+  /* 1 */ { 0, BX_IA_ROR_EqIb },
+  /* 2 */ { 0, BX_IA_RCL_EqIb },
+  /* 3 */ { 0, BX_IA_RCR_EqIb },
+  /* 4 */ { 0, BX_IA_SHL_EqIb },
+  /* 5 */ { 0, BX_IA_SHR_EqIb },
+  /* 6 */ { 0, BX_IA_SHL_EqIb },
+  /* 7 */ { 0, BX_IA_SAR_EqIb }
 };
 #endif
 
@@ -411,14 +476,14 @@ static const BxOpcodeInfo_t BxOpcodeInfoG7[64+8] = {
   /* 0F 01 D5 */ { 0, BX_IA_ERROR },
   /* 0F 01 D6 */ { 0, BX_IA_ERROR },
   /* 0F 01 D7 */ { 0, BX_IA_ERROR },
-  /* 0F 01 D8 */ { 0, BX_IA_ERROR },
-  /* 0F 01 D9 */ { 0, BX_IA_ERROR },
-  /* 0F 01 DA */ { 0, BX_IA_ERROR },
-  /* 0F 01 DB */ { 0, BX_IA_ERROR },
-  /* 0F 01 DC */ { 0, BX_IA_ERROR },
-  /* 0F 01 DD */ { 0, BX_IA_ERROR },
-  /* 0F 01 DE */ { 0, BX_IA_ERROR },
-  /* 0F 01 DF */ { 0, BX_IA_ERROR },
+  /* 0F 01 D8 */ { 0, BX_IA_VMRUN },
+  /* 0F 01 D9 */ { 0, BX_IA_VMMCALL },
+  /* 0F 01 DA */ { 0, BX_IA_VMLOAD },
+  /* 0F 01 DB */ { 0, BX_IA_VMSAVE },
+  /* 0F 01 DC */ { 0, BX_IA_STGI },
+  /* 0F 01 DD */ { 0, BX_IA_CLGI },
+  /* 0F 01 DE */ { 0, BX_IA_SKINIT },
+  /* 0F 01 DF */ { 0, BX_IA_INVLPGA },
   /* 0F 01 E0 */ { 0, BX_IA_SMSW_Ew },
   /* 0F 01 E1 */ { 0, BX_IA_SMSW_Ew },
   /* 0F 01 E2 */ { 0, BX_IA_SMSW_Ew },
@@ -490,14 +555,14 @@ static const BxOpcodeInfo_t BxOpcodeInfoG7q[64+8] = {
   /* 0F 01 D5 */ { 0, BX_IA_ERROR },
   /* 0F 01 D6 */ { 0, BX_IA_ERROR },
   /* 0F 01 D7 */ { 0, BX_IA_ERROR },
-  /* 0F 01 D8 */ { 0, BX_IA_ERROR },
-  /* 0F 01 D9 */ { 0, BX_IA_ERROR },
-  /* 0F 01 DA */ { 0, BX_IA_ERROR },
-  /* 0F 01 DB */ { 0, BX_IA_ERROR },
-  /* 0F 01 DC */ { 0, BX_IA_ERROR },
-  /* 0F 01 DD */ { 0, BX_IA_ERROR },
-  /* 0F 01 DE */ { 0, BX_IA_ERROR },
-  /* 0F 01 DF */ { 0, BX_IA_ERROR },
+  /* 0F 01 D8 */ { 0, BX_IA_VMRUN },
+  /* 0F 01 D9 */ { 0, BX_IA_VMMCALL },
+  /* 0F 01 DA */ { 0, BX_IA_VMLOAD },
+  /* 0F 01 DB */ { 0, BX_IA_VMSAVE },
+  /* 0F 01 DC */ { 0, BX_IA_STGI },
+  /* 0F 01 DD */ { 0, BX_IA_CLGI },
+  /* 0F 01 DE */ { 0, BX_IA_SKINIT },
+  /* 0F 01 DF */ { 0, BX_IA_INVLPGA },
   /* 0F 01 E0 */ { 0, BX_IA_SMSW_Ew },
   /* 0F 01 E1 */ { 0, BX_IA_SMSW_Ew },
   /* 0F 01 E2 */ { 0, BX_IA_SMSW_Ew },

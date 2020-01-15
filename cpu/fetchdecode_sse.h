@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode_sse.h 10674 2011-09-18 16:18:22Z sshwarts $
+// $Id: fetchdecode_sse.h 11327 2012-08-08 20:11:27Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -110,9 +110,9 @@ static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f10[3] = {
 };
 
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f11[3] = {
-  /* 66 */ { BxArithDstRM, BX_IA_MOVUPD_WpdVpd },
-  /* F3 */ { BxArithDstRM, BX_IA_MOVSS_WssVss },
-  /* F2 */ { BxArithDstRM, BX_IA_MOVSD_WsdVsd }
+  /* 66 */ { 0, BX_IA_MOVUPD_WpdVpd },
+  /* F3 */ { 0, BX_IA_MOVSS_WssVss },
+  /* F2 */ { 0, BX_IA_MOVSD_WsdVsd }
 };
 
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f12[3] = {
@@ -158,7 +158,7 @@ static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f28[3] = {
 };
 
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f29[3] = {
-  /* 66 */ { BxArithDstRM, BX_IA_MOVAPD_WpdVpd },
+  /* 66 */ { 0, BX_IA_MOVAPD_WpdVpd },
   /* F3 */ { 0, BX_IA_ERROR },
   /* F2 */ { 0, BX_IA_ERROR }
 };
@@ -462,8 +462,8 @@ static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f7eQ[3] = {
 #endif
 
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f7f[3] = {
-  /* 66 */ { BxArithDstRM, BX_IA_MOVDQA_WdqVdq },
-  /* F3 */ { BxArithDstRM, BX_IA_MOVDQU_WdqVdq },
+  /* 66 */ { 0, BX_IA_MOVDQA_WdqVdq },
+  /* F3 */ { 0, BX_IA_MOVDQU_WdqVdq },
   /* F2 */ { 0, BX_IA_ERROR }
 };
 
@@ -528,9 +528,9 @@ static const BxOpcodeInfo_t BxOpcodeGroupSSE_0fd5[3] = {
 };
 
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0fd6[3] = {
-  /* 66 */ { BxArithDstRM, BX_IA_MOVQ_WqVq },
-  /* F3 */ { 0,            BX_IA_MOVQ2DQ_VdqQq },
-  /* F2 */ { 0,            BX_IA_MOVDQ2Q_PqVRq }
+  /* 66 */ { 0, BX_IA_MOVQ_WqVq },
+  /* F3 */ { 0, BX_IA_MOVQ2DQ_VdqQq },
+  /* F2 */ { 0, BX_IA_MOVDQ2Q_PqVRq }
 };
 
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0fd7R[3] = {
@@ -955,6 +955,28 @@ static const BxOpcodeInfo_t BxOpcodeGroupOsize0f38f1[BX_SUPPORT_X86_64 + 2] = {
 #endif
 };
 
+static const BxOpcodeInfo_t BxOpcodeGroupOsize_660f38f6[BX_SUPPORT_X86_64 + 2] = {
+  /* 16 */ { 0, BX_IA_ADCX_GdEd },
+  /* 32 */ { 0, BX_IA_ADCX_GdEd },
+#if BX_SUPPORT_X86_64
+  /* 64 */ { 0, BX_IA_ADCX_GqEq },
+#endif
+};
+
+static const BxOpcodeInfo_t BxOpcodeGroupOsize_f20f38f6[BX_SUPPORT_X86_64 + 2] = {
+  /* 16 */ { 0, BX_IA_ADOX_GdEd },
+  /* 32 */ { 0, BX_IA_ADOX_GdEd },
+#if BX_SUPPORT_X86_64
+  /* 64 */ { 0, BX_IA_ADOX_GqEq },
+#endif
+};
+
+static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f38f6[3] = {
+  /* 66 */ { BxOSizeGrp, BX_IA_ERROR, BxOpcodeGroupOsize_660f38f6 },
+  /* F2 */ { BxOSizeGrp, BX_IA_ERROR, BxOpcodeGroupOsize_f20f38f6 },
+  /* F3 */ { 0, BX_IA_ERROR },
+};
+
 static const BxOpcodeInfo_t BxOpcodeGroupSSE_0f3a0f[3] = {
   /* 66 */ { 0, BX_IA_PALIGNR_VdqWdqIb },
   /* F3 */ { 0, BX_IA_ERROR },
@@ -1211,7 +1233,7 @@ static const BxOpcodeInfo_t BxOpcode3ByteTable0f38[256] = {
   /* F3 */ { 0, BX_IA_ERROR },
   /* F4 */ { 0, BX_IA_ERROR },
   /* F5 */ { 0, BX_IA_ERROR },
-  /* F6 */ { 0, BX_IA_ERROR },
+  /* F6 */ { BxPrefixSSE, BX_IA_ERROR, BxOpcodeGroupSSE_0f38f6 },
   /* F7 */ { 0, BX_IA_ERROR },
   /* F8 */ { 0, BX_IA_ERROR },
   /* F9 */ { 0, BX_IA_ERROR },

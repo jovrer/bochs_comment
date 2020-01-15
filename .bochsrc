@@ -2,6 +2,22 @@
 # your pathname includes spaces.
 
 #=======================================================================
+# PLUGIN_CTRL:
+# Controls the presence of optional device plugins. These plugins are loaded
+# directly with this option and some of them install a config option that is
+# only available when the plugin device is loaded. The value "1" means to load
+# the plugin and "0" will unload it (if loaded before).
+#
+# These plugins will be loaded by default (if present): 'biosdev', 'extfpuirq',
+# 'gameport', 'iodebug','parallel', 'serial', 'speaker' and 'unmapped'.
+#
+# These plugins are also supported, but they are usually loaded directly with
+# their bochsrc option: 'e1000', 'es1370', 'ne2k', 'pcidev', 'pcipnic', 'sb16',
+# 'usb_ohci', 'usb_uhci' and 'usb_xhci'.
+#=======================================================================
+#plugin_ctrl: unmapped=0, e1000=1 # unload 'unmapped' and load 'e1000'
+
+#=======================================================================
 # CONFIG_INTERFACE
 #
 # The configuration interface is a series of menus or dialog boxes that
@@ -49,8 +65,14 @@
 # the "wx" display library.
 #
 # Specific options:
-# Some display libraries now support specific option to control their
-# behaviour. See the examples below for currently supported options.
+# Some display libraries now support specific options to control their
+# behaviour. These options are supported by more than one display library:
+#
+# "gui_debug"   - use GTK debugger gui (sdl, x) / Win32 debugger gui (sdl, win32)
+# "hideIPS"     - disable IPS output in status bar (rfb, sdl, win32, wx, x)
+# "nokeyrepeat" - turn off host keyboard repeat (sdl, win32, x)
+#
+# See the examples below for other currently supported options.
 #=======================================================================
 #display_library: amigaos
 #display_library: carbon
@@ -59,11 +81,9 @@
 #display_library: rfb, options="timeout=60" # time to wait for client
 #display_library: sdl, options="fullscreen" # startup in fullscreen mode
 #display_library: term
-#display_library: win32, options="gui_debug" # use Win32 debugger gui
+#display_library: win32
 #display_library: wx
-#display_library: x, options="hideIPS" # disable IPS output in status bar
-#display_library: x, options="gui_debug" # use GTK debugger gui
-#display_library: x, options="nokeyrepeat" # turn off host keyboard repeat
+#display_library: x
 
 #=======================================================================
 # ROMIMAGE:
@@ -79,7 +99,7 @@
 # Bochs. The start address optional, since it can be calculated from image size.
 #=======================================================================
 romimage: file=$BXSHARE/BIOS-bochs-latest 
-#romimage: file=bios/seabios-0.6.1.bin
+#romimage: file=bios/seabios-1.6.3.bin
 #romimage: file=mybios.bin, address=0xfff80000 # 512k at memory top
 
 #=======================================================================
@@ -102,10 +122,14 @@ romimage: file=$BXSHARE/BIOS-bochs-latest
 #  atom_n270                  Intel(R) Atom(TM) CPU N270
 #  athlon64_clawhammer        AMD Athlon(tm) 64 Processor 2800+ (Clawhammer)
 #  athlon64_venice            AMD Athlon(tm) 64 Processor 3000+ (Venice)
+#  turion64_tyler             AMD Turion(tm) 64 X2 Mobile TL-60 (Tyler)
+#  phenom_8650_toliman        AMD Phenom X3 8650 (Toliman)
 #  p4_prescott_celeron_336    Intel(R) Celeron(R) 336 (Prescott)
 #  core2_penryn_t9600         Intel Mobile Core 2 Duo T9600 (Penryn)
+#  corei5_lynnfield_750       Intel(R) Core(TM) i5   750 (Lynnfield)
 #  corei5_arrandale_m520      Intel(R) Core(TM) i5 M 520 (Arrandale)
 #  corei7_sandy_bridge_2600k  Intel(R) Core(TM) i7-2600K (Sandy Bridge)
+#  corei7_ivy_bridge_3770k    Intel(R) Core(TM) i7-3770K CPU (Ivy Bridge)
 #
 #  COUNT:
 #    Set the number of processors:cores per processor:threads per core 
@@ -137,6 +161,10 @@ romimage: file=$BXSHARE/BIOS-bochs-latest
 #    message instead of generating #GP exception. This option is enabled
 #    by default but will not be avaiable if configurable MSRs are enabled.
 #
+#  MWAIT_IS_NOP:
+#    When this option is enabled MWAIT will not put the CPU into a sleep state.
+#    This option exists only if Bochs compiled with --enable-monitor-mwait.
+#
 #  IPS:
 #    Emulated Instructions Per Second. This is the number of IPS that bochs
 #    is capable of running on your machine. You can recompile Bochs with
@@ -159,7 +187,7 @@ romimage: file=$BXSHARE/BIOS-bochs-latest
 #  2.2.6 2.6Ghz Intel Core 2 Duo with WinXP/g++ 3.4       21 to 25 Mips
 #  2.2.6 2.1Ghz Athlon XP with Linux 2.6/g++ 3.4          12 to 15 Mips
 #=======================================================================
-cpu: count=1, ips=50000000, reset_on_triple_fault=1, ignore_bad_msrs=1, msrs="msrs.def"
+cpu: model=core2_penryn_t9600, count=1, ips=50000000, reset_on_triple_fault=1, ignore_bad_msrs=1, msrs="msrs.def"
 cpu: cpuid_limit_winnt=0
 
 #=======================================================================
@@ -173,7 +201,7 @@ cpu: cpuid_limit_winnt=0
 #    This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
 #
 #  APIC:
-#    Select APIC configuration (LEGACY/XAPIC/X2APIC).
+#    Select APIC configuration (LEGACY/XAPIC/XAPIC_EXT/X2APIC).
 #    This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
 #
 #  SEP:
@@ -195,6 +223,10 @@ cpu: cpuid_limit_winnt=0
 #
 #  MOVBE:
 #    Select MOVBE Intel(R) Atom instruction support.
+#    This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+#
+#  ADX:
+#    Select ADCX/ADOX instructions support.
 #    This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
 #
 #  XSAVE:
@@ -255,10 +287,6 @@ cpu: cpuid_limit_winnt=0
 #
 #  MWAIT:
 #    Select MONITOR/MWAIT instructions support.
-#    This option exists only if Bochs compiled with --enable-monitor-mwait.
-#
-#  MWAIT_IS_NOP:
-#    When this option is enabled MWAIT will not put the CPU into a sleep state.
 #    This option exists only if Bochs compiled with --enable-monitor-mwait.
 #
 #  VMX:
@@ -427,7 +455,7 @@ ata3: enabled=0, ioaddr1=0x168, ioaddr2=0x360, irq=9
 # This defines the type and characteristics of all attached ata devices:
 #   type=       type of attached device [disk|cdrom] 
 #   mode=       only valid for disks [flat|concat|external|dll|sparse|vmware3]
-#   mode=       only valid for disks [undoable|growing|volatile|vvfat]
+#                                    [vmware4|undoable|growing|volatile|vpc|vvfat]
 #   path=       path of the image / directory
 #   cylinders=  only valid for disks
 #   heads=      only valid for disks
@@ -507,6 +535,10 @@ boot: disk
 #  preserve performance and host-time correlation.
 #  It is possible to enable both synchronization methods.
 #
+#  RTC_SYNC:
+#  If this option is enabled together with the realtime synchronization,
+#  the RTC runs at realtime speed. This feature is disabled by default.
+#
 #  TIME0:
 #  Specifies the start (boot) time of the virtual machine. Use a time 
 #  value as returned by the time(2) system call. If no time0 value is 
@@ -575,7 +607,7 @@ log: bochsout.txt
 #=======================================================================
 # LOG CONTROLS
 #
-# Bochs now has four severity levels for event logging.
+# Bochs has four severity levels for event logging.
 #   panic: cannot proceed.  If you choose to continue after a panic, 
 #          don't be surprised if you get strange behavior or crashes.
 #   error: something went wrong, but it is probably safe to continue the
@@ -584,9 +616,13 @@ log: bochsout.txt
 #   debug: messages useful only when debugging the code.  This may
 #          spit out thousands per second.
 #
-# For events of each level, you can choose to crash, report, or ignore.
-# TODO: allow choice based on the facility: e.g. crash on panics from
-#       everything except the cdrom, and only report those.
+# For events of each level, you can choose to exit Bochs ('fatal'), 'report'
+# or 'ignore'. On some guis you have the additional choice 'ask'. A gui dialog
+# appears asks how to proceed.
+#
+# It is also possible to specify the 'action' to do for each Bochs facility
+# separately (e.g. crash on panics from everything except the cdrom, and only
+# report those). See the 'log function' module list in the user documentation.
 #
 # If you are experiencing many panics, it can be helpful to change
 # the panic action to report instead of fatal.  However, be aware
@@ -597,7 +633,7 @@ log: bochsout.txt
 panic: action=ask
 error: action=report
 info: action=report
-debug: action=ignore
+debug: action=ignore, pci=report # report BX_DEBUG from module 'pci'
 
 #=======================================================================
 # DEBUGGER_LOG:
@@ -701,48 +737,57 @@ parport1: enabled=1, file="parport.out"
 # Examples for output devices:
 #   sb16: midimode=1, midi="", wavemode=1, wave=""           # win32
 #   sb16: midimode=1, midi=alsa:128:0, wavemode=1, wave=alsa # Linux with ALSA
+#   sb16: wavemode=1, wave=sdl # use SDL audio (if present) for output
 #=======================================================================
 #sb16: midimode=1, midi=/dev/midi00, wavemode=1, wave=/dev/dsp, loglevel=2, log=sb16.log, dmatimer=600000
 
 #=======================================================================
 # ES1370:
 # This defines the ES1370 sound emulation. The parameter 'enabled' controls the
-# presence of the device. In addition to this, it must be assigned to a PCI
-# slot. The 'wavedev' parameter is similar to the 'wave' parameter of the SB16
-# soundcard. The emulation supports recording and playback (except DAC1+DAC2
-# output at the same time).
+# presence of the device. The 'wavedev' parameter is similar to the 'wave'
+# parameter of the SB16 soundcard. The emulation supports recording and playback
+# (except DAC1+DAC2 output at the same time).
 #
 # Examples:
-#   es1370: enabled=1, wavedev=""       # win32
-#   es1370: enabled=1, wavedev=alsa     # Linux with ALSA
+#   es1370: enabled=1, wavedev=""    # win32
+#   es1370: enabled=1, wavedev=alsa  # Linux with ALSA
+#   es1370: enabled=1, wavedev=sdl   # use SDL audio (if present) for output
 #=======================================================================
 #es1370: enabled=1, wavedev=alsa
 
 #=======================================================================
-# KEYBOARD_SERIAL_DELAY:
-# Approximate time in microseconds that it takes one character to
-# be transfered from the keyboard to controller over the serial path.
-# Examples:
-#   keyboard_serial_delay: 200
-#=======================================================================
-keyboard_serial_delay: 250
-
-#=======================================================================
-# KEYBOARD_PASTE_DELAY:
-# Approximate time in microseconds between attempts to paste
-# characters to the keyboard controller. This leaves time for the
-# guest os to deal with the flow of characters.  The ideal setting
-# depends on how your operating system processes characters.  The
-# default of 100000 usec (.1 seconds) was chosen because it works 
-# consistently in Windows.
+# KEYBOARD:
+# This defines parameters related to the emulated keyboard
 #
-# If your OS is losing characters during a paste, increase the paste
-# delay until it stops losing characters.
+#   TYPE:
+#     Type of keyboard return by a "identify keyboard" command to the
+#     keyboard controller. It must be one of "xt", "at" or "mf".
+#     Defaults to "mf". It should be ok for almost everybody. A known
+#     exception is french macs, that do have a "at"-like keyboard.
+#
+#   SERIAL_DELAY:
+#     Approximate time in microseconds that it takes one character to
+#     be transferred from the keyboard to controller over the serial path.
+#
+#   PASTE_DELAY:
+#     Approximate time in microseconds between attempts to paste
+#     characters to the keyboard controller. This leaves time for the
+#     guest os to deal with the flow of characters.  The ideal setting
+#     depends on how your operating system processes characters.  The
+#     default of 100000 usec (.1 seconds) was chosen because it works 
+#     consistently in Windows.
+#     If your OS is losing characters during a paste, increase the paste
+#     delay until it stops losing characters.
+#
+#   KEYMAP:
+#     This enables a remap of a physical localized keyboard to a
+#     virtualized us keyboard, as the PC architecture expects.
 #
 # Examples:
-#   keyboard_paste_delay: 100000
+#   keyboard: type=mf, serial_delay=200, paste_delay=100000
+#   keyboard: keymap=gui/keymaps/x11-pc-de.map
 #=======================================================================
-keyboard_paste_delay: 100000
+#keyboard: type=mf, serial_delay=250
 
 #=======================================================================
 # MOUSE:
@@ -753,8 +798,8 @@ keyboard_paste_delay: 100000
 #  With the mouse type option you can select the type of mouse to emulate.
 #  The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
 #  on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
-#  setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb_uhci'
-#  or 'usb_ohci' option (requires PCI and USB support).
+#  setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb_uhci',
+#  'usb_ohci' or 'usb_xhci' options (requires PCI and USB support).
 #
 #  ENABLED:
 #  The Bochs gui creates mouse "events" unless the 'enabled' option is
@@ -807,7 +852,7 @@ private_colormap: enabled=0
 #
 # Format:
 # ne2k: enabled=1, ioaddr=IOADDR, irq=IRQ, mac=MACADDR, ethmod=MODULE,
-#       ethdev=DEVICE, script=SCRIPT
+#       ethdev=DEVICE, script=SCRIPT, bootrom=BOOTROM
 #
 # IOADDR, IRQ: You probably won't need to change ioaddr and irq, unless there
 # are IRQ conflicts. These arguments are ignored when assign the ne2k to a
@@ -832,6 +877,10 @@ private_colormap: enabled=0
 # Bochs execution. The network interface name is supplied to the script
 # as first parameter.
 #
+# BOOTROM: The bootrom value is optional, and is the name of the ROM image
+# to load. Note that this feature is only implemented for the PCI version of
+# the NE2000.
+#
 # If you don't want to make connections to any physical networks,
 # you can use the following 'ethmod's to simulate a virtual network.
 #   null: All packets are discarded, but logged to a few files.
@@ -852,42 +901,31 @@ private_colormap: enabled=0
 # ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=null, ethdev=eth0
 # ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
 # ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
-# ne2k: mac=b0:c4:20:00:00:01, ethmod=slirp, script=/usr/local/bin/slirp
+# ne2k: mac=b0:c4:20:00:00:01, ethmod=slirp, script=/usr/local/bin/slirp, bootrom=ne2k_pci.rom
 
 #=======================================================================
-# pnic: Bochs/Etherboot pseudo-NIC
+# pcipnic: Bochs/Etherboot pseudo-NIC
 #
 # Format:
-# pnic: enabled=1, mac=MACADDR, ethmod=MODULE, ethdev=DEVICE, script=SCRIPT
+# pcipnic: enabled=1, mac=MACADDR, ethmod=MODULE, ethdev=DEVICE, script=SCRIPT,
+#          bootrom=BOOTROM
 #
-# The pseudo-NIC accepts the same syntax (for mac, ethmod, ethdev, script) and
-# supports the same networking modules as the NE2000 adapter. In addition to
-# this, it must be assigned to a PCI slot.
+# The pseudo-NIC accepts the same syntax (for mac, ethmod, ethdev, script,
+# bootrom) and supports the same networking modules as the NE2000 adapter.
 #=======================================================================
-#pnic: enabled=1, mac=b0:c4:20:00:00:00, ethmod=vnet
+#pcipnic: enabled=1, mac=b0:c4:20:00:00:00, ethmod=vnet
 
 #=======================================================================
-# KEYBOARD_MAPPING:
-# This enables a remap of a physical localized keyboard to a
-# virtualized us keyboard, as the PC architecture expects.
-# If enabled, the keymap file must be specified.
-# 
-# Examples:
-#   keyboard_mapping: enabled=1, map=gui/keymaps/x11-pc-de.map
-#=======================================================================
-keyboard_mapping: enabled=0, map=
-
-#=======================================================================
-# KEYBOARD_TYPE:
-# Type of keyboard return by a "identify keyboard" command to the
-# keyboard controler. It must be one of "xt", "at" or "mf".
-# Defaults to "mf". It should be ok for almost everybody. A known
-# exception is french macs, that do have a "at"-like keyboard.
+# e1000: Intel(R) 82540EM Gigabit Ethernet adapter
 #
-# Examples:
-#   keyboard_type: mf
+# Format:
+# e1000: enabled=1, mac=MACADDR, ethmod=MODULE, ethdev=DEVICE, script=SCRIPT
+#        bootrom=BOOTROM
+#
+# The E1000 accepts the same syntax (for mac, ethmod, ethdev, script, bootrom)
+# and supports the same networking modules as the NE2000 adapter.
 #=======================================================================
-#keyboard_type: mf
+#e1000: enabled=1, mac=52:54:00:12:34:56, ethmod=slirp, script=/usr/local/bin/slirp
 
 #=======================================================================
 # USER_SHORTCUT:
@@ -908,8 +946,11 @@ keyboard_mapping: enabled=0, map=
 # PCI:
 # This option controls the presence of a PCI chipset in Bochs. Currently it only
 # supports the i440FX chipset. You can also specify the devices connected to
-# PCI slots. Up to 5 slots are available. These devices are currently supported:
-# cirrus, es1370, ne2k, pcivga, pcidev, pcipnic, usb_ohci and usb_xhci.
+# PCI slots. Up to 5 slots are available. For these combined PCI/ISA devices
+# assigning to slot is mandatory if you want to emulate the PCI model: cirrus,
+# ne2k and pcivga. These PCI-only devices are also supported, but they are
+# auto-assigned if you don't use the slot configuration: e1000, es1370, pcidev,
+# pcipnic, usb_ohci and usb_xhci.
 #
 # Example:
 #   pci: enabled=1, chipset=i440fx, slot1=pcivga, slot2=ne2k
@@ -961,8 +1002,7 @@ pci: enabled=1, chipset=i440fx
 # USB_OHCI:
 # This option controls the presence of the USB OHCI host controller with a
 # 2-port hub. The portX option accepts the same device types with the same
-# syntax as the UHCI controller (see above). The OHCI HC must be assigned to
-# a PCI slot.
+# syntax as the UHCI controller (see above).
 #=======================================================================
 #usb_ohci: enabled=1
 #usb_ohci: enabled=1, port1=printer:usbprinter.bin
@@ -971,8 +1011,7 @@ pci: enabled=1, chipset=i440fx
 # USB_XHCI:
 # This option controls the presence of the experimental USB xHCI host controller
 # with a 4-port hub. The portX option accepts the same device types with the
-# same syntax as the UHCI controller (see above). The xHCI HC must be assigned
-# to a PCI slot.
+# same syntax as the UHCI controller (see above).
 #=======================================================================
 #usb_xhci: enabled=1
 
@@ -1044,15 +1083,6 @@ pci: enabled=1, chipset=i440fx
 # Default value is enabled=0.
 #=======================================================================
 #gdbstub: enabled=0, port=1234, text_base=0, data_base=0, bss_base=0
-
-#=======================================================================
-# PLUGIN_CTRL:
-# Controls the presence of optional plugins without a separate option.
-# By default all existing plugins are enabled. These plugins are currently
-# supported: 'biosdev', 'extfpuirq', 'gameport', 'iodebug', 'speaker'
-# and 'unmapped'.
-#=======================================================================
-#plugin_ctrl: biosdev=0, speaker=0
 
 #=======================================================================
 # USER_PLUGIN:

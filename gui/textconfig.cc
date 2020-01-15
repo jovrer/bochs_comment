@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc 10716 2011-10-01 12:48:48Z vruppert $
+// $Id: textconfig.cc 11127 2012-04-06 13:15:27Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -60,6 +60,7 @@ extern "C" {
 void bx_config_interface_init();
 int bx_read_rc(char *rc);
 int bx_write_rc(char *rc);
+void bx_plugin_ctrl();
 void bx_log_options(int individual);
 int bx_atexit();
 #if BX_DEBUGGER
@@ -95,6 +96,7 @@ int ask_uint(const char *prompt, const char *help, Bit32u min, Bit32u max, Bit32
   assert(base==10 || base==16);
   while (1) {
     printf(prompt, the_default);
+    fflush(stdout);
     if (!fgets(buffer, sizeof(buffer), stdin))
       return -1;
     clean = clean_string(buffer);
@@ -139,6 +141,7 @@ int ask_int(const char *prompt, const char *help, Bit32s min, Bit32s max, Bit32s
   int illegal;
   while (1) {
     printf(prompt, the_default);
+    fflush(stdout);
     if (!fgets(buffer, sizeof(buffer), stdin))
       return -1;
     clean = clean_string(buffer);
@@ -155,7 +158,7 @@ int ask_int(const char *prompt, const char *help, Bit32s min, Bit32s max, Bit32s
     illegal = (1 != sscanf(buffer, "%d", &n));
     if (illegal || n<min || n>max) {
       printf("Your choice (%s) was not an integer between %d and %d.\n\n",
-	  clean, min, max);
+             clean, min, max);
     } else {
       // choice is okay
       *out = n;
@@ -172,6 +175,7 @@ int ask_menu(const char *prompt, const char *help, int n_choices, const char *ch
   *out = -1;
   while (1) {
     printf(prompt, choice[the_default]);
+    fflush(stdout);
     if (!fgets(buffer, sizeof(buffer), stdin))
       return -1;
     clean = clean_string(buffer);
@@ -182,9 +186,9 @@ int ask_menu(const char *prompt, const char *help, int n_choices, const char *ch
     }
     for (i=0; i<n_choices; i++) {
       if (!strcmp(choice[i], clean)) {
-	// matched, return the choice number
-	*out = i;
-	return 0;
+        // matched, return the choice number
+        *out = i;
+        return 0;
       }
     }
     if (clean[0] != '?') {
@@ -208,6 +212,7 @@ int ask_yn(const char *prompt, const char *help, Bit32u the_default, Bit32u *out
   while (1) {
     // if there's a %s field, substitute in the default yes/no.
     printf(prompt, the_default ? "yes" : "no");
+    fflush(stdout);
     if (!fgets(buffer, sizeof(buffer), stdin))
       return -1;
     clean = clean_string(buffer);
@@ -240,6 +245,7 @@ int ask_string(const char *prompt, const char *the_default, char *out)
   assert(the_default != out);
   out[0] = 0;
   printf(prompt, the_default);
+  fflush(stdout);
   if (fgets(buffer, sizeof(buffer), stdin) == NULL)
     return -1;
   clean = clean_string(buffer);
@@ -284,23 +290,24 @@ static const char *startup_options_prompt =
 "Bochs Options Menu\n"
 "------------------\n"
 "0. Return to previous menu\n"
-"1. Logfile options\n"
-"2. Log options for all devices\n"
-"3. Log options for individual devices\n"
-"4. CPU options\n"
-"5. CPUID options\n"
-"6. Memory options\n"
-"7. Clock & CMOS options\n"
-"8. PCI options\n"
-"9. Bochs Display & Interface options\n"
-"10. Keyboard & Mouse options\n"
-"11. Disk & Boot options\n"
-"12. Serial / Parallel / USB options\n"
-"13. Network card options\n"
-"14. Sound card options\n"
-"15. Other options\n"
+"1. Optional plugin control\n"
+"2. Logfile options\n"
+"3. Log options for all devices\n"
+"4. Log options for individual devices\n"
+"5. CPU options\n"
+"6. CPUID options\n"
+"7. Memory options\n"
+"8. Clock & CMOS options\n"
+"9. PCI options\n"
+"10. Bochs Display & Interface options\n"
+"11. Keyboard & Mouse options\n"
+"12. Disk & Boot options\n"
+"13. Serial / Parallel / USB options\n"
+"14. Network card options\n"
+"15. Sound card options\n"
+"16. Other options\n"
 #if BX_PLUGINS
-"16. User-defined options\n"
+"17. User-defined options\n"
 #endif
 "\n"
 "Please choose one: [0] ";
@@ -325,6 +332,16 @@ static const char *runtime_menu_prompt =
 "14. Quit now\n"
 "\n"
 "Please choose one:  [13] ";
+
+static const char *plugin_ctrl_prompt =
+"\n-----------------------\n"
+"Optional plugin control\n"
+"-----------------------\n"
+"0. Return to previous menu\n"
+"1. Load optional plugin\n"
+"2. Unload optional plugin\n"
+"\n"
+"Please choose one:  [0] ";
 
 #define NOT_IMPLEMENTED(choice) \
   fprintf(stderr, "ERROR: choice %d not implemented\n", choice);
@@ -372,14 +389,13 @@ int do_menu(const char *pname)
 {
   bx_list_c *menu = (bx_list_c *)SIM->get_param(pname, NULL);
   while (1) {
-    menu->get_choice()->set(0);
+    menu->set_choice(0);
     int status = menu->text_ask(stdin, stderr);
     if (status < 0) return status;
-    bx_param_num_c *choice = menu->get_choice();
-    if (choice->get() < 1)
-      return choice->get();
+    if (menu->get_choice() < 1)
+      return menu->get_choice();
     else {
-      int index = choice->get() - 1;  // choosing 1 means list[0]
+      int index = menu->get_choice() - 1;  // choosing 1 means list[0]
       bx_param_c *chosen = menu->get(index);
       assert(chosen != NULL);
       if (chosen->get_enabled()) {
@@ -464,26 +480,27 @@ int bx_config_interface(int menu)
         }
         break;
       case BX_CI_START_OPTS:
-        if (ask_uint(startup_options_prompt, "", 0, 15+BX_PLUGINS, 0, &choice, 10) < 0) return -1;
+        if (ask_uint(startup_options_prompt, "", 0, 16+BX_PLUGINS, 0, &choice, 10) < 0) return -1;
         switch (choice) {
           case 0: return 0;
-          case 2: bx_log_options(0); break;
-          case 3: bx_log_options(1); break;
-          case 1: do_menu("log"); break;
-          case 4: do_menu("cpu"); break;
-          case 5: do_menu("cpuid"); break;
-          case 6: do_menu("memory"); break;
-          case 7: do_menu("clock_cmos"); break;
-          case 8: do_menu("pci"); break;
-          case 9: do_menu("display"); break;
-          case 10: do_menu("keyboard_mouse"); break;
-          case 11: do_menu(BXPN_MENU_DISK); break;
-          case 12: do_menu("ports"); break;
-          case 13: do_menu("network"); break;
-          case 14: do_menu("sound"); break;
-          case 15: do_menu("misc"); break;
+          case 1: bx_plugin_ctrl(); break;
+          case 3: bx_log_options(0); break;
+          case 4: bx_log_options(1); break;
+          case 2: do_menu("log"); break;
+          case 5: do_menu("cpu"); break;
+          case 6: do_menu("cpuid"); break;
+          case 7: do_menu("memory"); break;
+          case 8: do_menu("clock_cmos"); break;
+          case 9: do_menu("pci"); break;
+          case 10: do_menu("display"); break;
+          case 11: do_menu("keyboard_mouse"); break;
+          case 12: do_menu(BXPN_MENU_DISK); break;
+          case 13: do_menu("ports"); break;
+          case 14: do_menu("network"); break;
+          case 15: do_menu("sound"); break;
+          case 16: do_menu("misc"); break;
 #if BX_PLUGINS
-          case 16: do_menu("user"); break;
+          case 17: do_menu("user"); break;
 #endif
           default: BAD_OPTION(menu, choice);
         }
@@ -572,6 +589,7 @@ static int log_level_n_choices_normal = 4;
 
 void bx_log_options(int individual)
 {
+  SIM->apply_log_actions_by_device(); // settings from bochsrc
   if (individual) {
     int done = 0;
     while (!done) {
@@ -652,10 +670,53 @@ int bx_write_rc(char *rc)
       if (!overwrite) continue;  // if "no", start loop over, asking for a different file
       // they confirmed, so try again with overwrite bit set
       if (SIM->write_rc(newrc, 1) >= 0) {
-	fprintf(stderr, "Overwriting existing configuration '%s'.\n", newrc);
-	return 0;
+        fprintf(stderr, "Overwriting existing configuration '%s'.\n", newrc);
+        return 0;
       } else {
-	fprintf(stderr, "Write failed to '%s'.\n", newrc);
+        fprintf(stderr, "Write failed to '%s'.\n", newrc);
+      }
+    }
+  }
+}
+
+void bx_plugin_ctrl()
+{
+  Bit32u choice;
+  bx_list_c *plugin_ctrl;
+  int count;
+  char plugname[512];
+
+  while (1) {
+    if (ask_uint(plugin_ctrl_prompt, "", 0, 2, 0, &choice, 10) < 0) return;
+    if (choice == 0) {
+      return;
+    } else {
+      plugin_ctrl = (bx_list_c*) SIM->get_param(BXPN_PLUGIN_CTRL);
+      count = plugin_ctrl->get_size();
+      if (count == 0) {
+        fprintf(stderr, "\nNo optional plugins loaded\n");
+      } else {
+        fprintf(stderr, "\nCurrently loaded plugins:");
+        for (int i = 0; i < count; i++) {
+          if (i > 0) fprintf(stderr, ",");
+          fprintf(stderr, " %s", plugin_ctrl->get(i)->get_name());
+        }
+        fprintf(stderr, "\n");
+      }
+      if (choice == 1) {
+        ask_string("\nEnter the name of the plugin to load.\nTo cancel, type 'none'. [%s] ", "none", plugname);
+        if (strcmp(plugname, "none")) {
+          if (!SIM->opt_plugin_ctrl(plugname, 1)) {
+            fprintf(stderr, "\nPlugin already loaded.\n");
+          }
+        }
+      } else {
+        ask_string("\nEnter the name of the plugin to unload.\nTo cancel, type 'none'. [%s] ", "none", plugname);
+        if (strcmp(plugname, "none")) {
+          if (!SIM->opt_plugin_ctrl(plugname, 0)) {
+            fprintf(stderr, "\nNo plugin unloaded.\n");
+          }
+        }
       }
     }
   }
@@ -689,7 +750,7 @@ config_interface_notify_callback(void *unused, BxEvent *event)
       fprintf(stderr, "               This affects only %s events from device %s\n", SIM->get_log_level_name (level), event->u.logmsg.prefix);
       fprintf(stderr, "  die        - stop execution now\n");
       fprintf(stderr, "  abort      - dump core %s\n",
-	  BX_HAVE_ABORT ? "" : "(Disabled)");
+              BX_HAVE_ABORT ? "" : "(Disabled)");
 #if BX_DEBUGGER
       fprintf(stderr, "  debug      - continue and return to bochs debugger\n");
 #endif
@@ -809,16 +870,19 @@ void bx_param_string_c::text_print(FILE *fp)
 
 void bx_list_c::text_print(FILE *fp)
 {
+  bx_listitem_t *item;
+  int i = 0;
+
   fprintf(fp, "%s: ", get_name());
-  for (int i=0; i<size; i++) {
-    assert(list[i] != NULL);
-    if (list[i]->get_enabled()) {
-      if ((i>0) && (options & SERIES_ASK))
+  for (item = list; item; item = item->next) {
+    if (item->param->get_enabled()) {
+      if ((i > 0) && (options & SERIES_ASK))
         fprintf(fp, ", ");
-      list[i]->text_print(fp);
+      item->param->text_print(fp);
       if (!(options & SERIES_ASK))
         fprintf(fp, "\n");
     }
+    i++;
   }
 }
 
@@ -939,8 +1003,8 @@ int bx_param_string_c::text_ask(FILE *fpin, FILE *fpout)
       // copy raw hex into buffer
       status = parse_raw_bytes(buffer, buffer2, maxsize, separator);
       if (status < 0) {
-	fprintf(fpout, "Illegal raw byte format.  I expected something like 3A%c03%c12%c...\n", separator, separator, separator);
-	continue;
+        fprintf(fpout, "Illegal raw byte format.  I expected something like 3A%c03%c12%c...\n", separator, separator, separator);
+        continue;
       }
     }
     if (!equals(buffer))
@@ -951,6 +1015,7 @@ int bx_param_string_c::text_ask(FILE *fpin, FILE *fpout)
 
 int bx_list_c::text_ask(FILE *fpin, FILE *fpout)
 {
+  bx_listitem_t *item;
   bx_list_c *child;
 
   const char *my_title = title;
@@ -961,46 +1026,45 @@ int bx_list_c::text_ask(FILE *fpin, FILE *fpout)
   for (i=0; i<imax; i++) fprintf(fpout, "-");
   fprintf(fpout, "\n");
   if (options & SERIES_ASK) {
-    for (int i=0; i<size; i++) {
-      if (list[i]->get_enabled()) {
-        if (!SIM->get_init_done() || list[i]->get_runtime_param()) {
-          list[i]->text_ask(fpin, fpout);
+    for (item = list; item; item = item->next) {
+      if (item->param->get_enabled()) {
+        if (!SIM->get_init_done() || item->param->get_runtime_param()) {
+          item->param->text_ask(fpin, fpout);
         }
       }
     }
   } else {
     if (options & SHOW_PARENT)
       fprintf(fpout, "0. Return to previous menu\n");
-    for (int i=0; i<size; i++) {
-      assert(list[i] != NULL);
+    int i = 0;
+    for (item = list; item; item = item->next) {
       fprintf(fpout, "%d. ", i+1);
-      if ((list[i]->get_enabled()) &&
-          (!SIM->get_init_done() || list[i]->get_runtime_param())) {
-        if (list[i]->get_type() == BXT_LIST) {
-          child = (bx_list_c*)list[i];
+      if ((item->param->get_enabled()) &&
+          (!SIM->get_init_done() || item->param->get_runtime_param())) {
+        if (item->param->get_type() == BXT_LIST) {
+          child = (bx_list_c*)item->param;
           fprintf(fpout, "%s\n", child->get_title());
         } else {
-          if ((options & SHOW_GROUP_NAME) && (list[i]->get_group() != NULL))
-            fprintf(fpout, "%s ", list[i]->get_group());
-          list[i]->text_print(fpout);
+          if ((options & SHOW_GROUP_NAME) && (item->param->get_group() != NULL))
+            fprintf(fpout, "%s ", item->param->get_group());
+          item->param->text_print(fpout);
           fprintf(fpout, "\n");
         }
       } else {
-        if (list[i]->get_type() == BXT_LIST) {
-          child = (bx_list_c*)list[i];
+        if (item->param->get_type() == BXT_LIST) {
+          child = (bx_list_c*)item->param;
           fprintf(fpout, "%s (disabled)\n", child->get_title());
         } else {
           fprintf(fpout, "(disabled)\n");
         }
       }
+      i++;
     }
     fprintf(fpout, "\n");
-    Bit32u n = choice->get();
     int min = (options & SHOW_PARENT) ? 0 : 1;
     int max = size;
-    int status = ask_uint("Please choose one: [%d] ", "", min, max, n, &n, 10);
+    int status = ask_uint("Please choose one: [%d] ", "", min, max, choice, &choice, 10);
     if (status < 0) return status;
-    choice->set(n);
   }
   return 0;
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: opcodes.inc 10891 2011-12-29 21:41:56Z sshwarts $
+// $Id: opcodes.inc 11276 2012-07-12 14:51:54Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -44,6 +44,8 @@ Ia_adcw_Ew_Gw = { "adc", "adcw", Ew, Gw, XX, XX, 0 },
 Ia_adcw_Ew_Iw = { "adc", "adcw", Ew, Iw, XX, XX, 0 },
 Ia_adcw_Ew_sIb = { "adc", "adcw", Ew, sIbw, XX, XX, 0 },
 Ia_adcw_Gw_Ew = { "adc", "adcw", Gw, Ew, XX, XX, 0 },
+Ia_adcx_Gd_Ed = { "adcx", "adcxd", Gd, Ed, XX, XX, IA_ADX },
+Ia_adcx_Gq_Eq = { "adcx", "adcxq", Gq, Eq, XX, XX, IA_ADX },
 Ia_addb_AL_Ib = { "add", "addb", AL_Reg, Ib, XX, XX, 0 },
 Ia_addb_Eb_Gb = { "add", "addb", Eb, Gb, XX, XX, 0 },
 Ia_addb_Eb_Ib = { "add", "addb", Eb, Ib, XX, XX, 0 },
@@ -69,6 +71,8 @@ Ia_addw_Ew_Gw = { "add", "addw", Ew, Gw, XX, XX, 0 },
 Ia_addw_Ew_Iw = { "add", "addw", Ew, Iw, XX, XX, 0 },
 Ia_addw_Ew_sIb = { "add", "addw", Ew, sIbw, XX, XX, 0 },
 Ia_addw_Gw_Ew = { "add", "addw", Gw, Ew, XX, XX, 0 },
+Ia_adox_Gd_Ed = { "adox", "adoxd", Gd, Ed, XX, XX, IA_ADX },
+Ia_adox_Gq_Eq = { "adox", "adoxq", Gq, Eq, XX, XX, IA_ADX },
 Ia_aesdec_Vdq_Wdq = { "aesdec", "aesdec", Vdq, Wdq, XX, XX, IA_AES_PCLMULQDQ },
 Ia_aesdeclast_Vdq_Wdq = { "aesdeclast", "aesdeclast", Vdq, Wdq, XX, XX, IA_AES_PCLMULQDQ },
 Ia_aesenc_Vdq_Wdq = { "aesenc", "aesenc", Vdq, Wdq, XX, XX, IA_AES_PCLMULQDQ },
@@ -942,9 +946,9 @@ Ia_pmuludq_Pq_Qq = { "pmuludq", "pmuludq", Pq, Qq, XX, XX, IA_SSE2 },
 Ia_pmuludq_Vdq_Wdq = { "pmuludq", "pmuludq", Vdq, Wdq, XX, XX, IA_SSE2 },
 Ia_popal = { "popad", "popal", XX, XX, XX, XX, 0 },
 Ia_popaw = { "popa", "popa", XX, XX, XX, XX, 0 },
-Ia_popcnt_Gd_Ed = { "popcnt", "popcnt", Gd, Ed, XX, XX, IA_SSE4_2 },
-Ia_popcnt_Gq_Eq = { "popcnt", "popcnt", Gq, Eq, XX, XX, IA_SSE4_2 },
-Ia_popcnt_Gw_Ew = { "popcnt", "popcnt", Gw, Ew, XX, XX, IA_SSE4_2 },
+Ia_popcnt_Gd_Ed = { "popcnt", "popcnt", Gd, Ed, XX, XX, IA_POPCNT },
+Ia_popcnt_Gq_Eq = { "popcnt", "popcnt", Gq, Eq, XX, XX, IA_POPCNT },
+Ia_popcnt_Gw_Ew = { "popcnt", "popcnt", Gw, Ew, XX, XX, IA_POPCNT },
 Ia_popfl = { "popfd", "popfl", XX, XX, XX, XX, 0 },
 Ia_popfq = { "popfq", "popfq", XX, XX, XX, XX, 0 },
 Ia_popfw = { "popf", "popf", XX, XX, XX, XX, 0 },

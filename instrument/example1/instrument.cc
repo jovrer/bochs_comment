@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc 10491 2011-07-23 19:58:38Z sshwarts $
+// $Id: instrument.cc 11295 2012-07-24 15:32:55Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2006-2009 Stanislav Shwartsman
+//   Copyright (c) 2006-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -79,7 +79,7 @@ void bxInstrumentation::bx_print_instruction(void)
       fprintf(stderr, "MEM ACCESS[%u]: 0x" FMT_ADDRX " (linear) 0x" FMT_PHY_ADDRX " (physical) %s SIZE: %d\n", n,
                     data_access[n].laddr,
                     data_access[n].paddr,
-                    data_access[n].op == BX_READ ? "RD":"WR",
+                    data_access[n].rw == BX_READ ? "RD":"WR",
                     data_access[n].size);
     }
     fprintf(stderr, "\n");
@@ -117,20 +117,19 @@ void bxInstrumentation::branch_taken(bx_address new_eip)
 {
   if (!active || !ready) return;
 
-  // find linear address
-  bx_address laddr = BX_CPU(cpu_id)->get_laddr(BX_SEG_REG_CS, new_eip);
-
   is_branch = 1;
   is_taken = 1;
-  target_linear = laddr;
+
+  // find linear address
+  target_linear = BX_CPU(cpu_id)->get_laddr(BX_SEG_REG_CS, new_eip);
 }
 
-void bxInstrumentation::bx_instr_cnear_branch_taken(bx_address new_eip)
+void bxInstrumentation::bx_instr_cnear_branch_taken(bx_address branch_eip, bx_address new_eip)
 {
   branch_taken(new_eip);
 }
 
-void bxInstrumentation::bx_instr_cnear_branch_not_taken()
+void bxInstrumentation::bx_instr_cnear_branch_not_taken(bx_address branch_eip)
 {
   if (!active || !ready) return;
 
@@ -138,7 +137,7 @@ void bxInstrumentation::bx_instr_cnear_branch_not_taken()
   is_taken = 0;
 }
 
-void bxInstrumentation::bx_instr_ucnear_branch(unsigned what, bx_address new_eip)
+void bxInstrumentation::bx_instr_ucnear_branch(unsigned what, bx_address branch_eip, bx_address new_eip)
 {
   branch_taken(new_eip);
 }
@@ -172,27 +171,15 @@ void bxInstrumentation::bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_addr
   }
 }
 
-void bxInstrumentation::bx_instr_mem_data_access(unsigned seg, bx_address offset, unsigned len, unsigned rw)
+void bxInstrumentation::bx_instr_lin_access(bx_address lin, bx_phy_adress phy, unsigned len, unsigned rw)
 {
-  bx_phy_address phy;
-
   if(!active || !ready) return;
 
-  if (num_data_accesses >= MAX_DATA_ACCESSES)
-  {
-    return;
+  if (num_data_accesses < MAX_DATA_ACCESSES) {
+    data_access[num_data_accesses].laddr = lin;
+    data_access[num_data_accesses].paddr = phy;
+    data_access[num_data_accesses].rw    = rw;
+    data_access[num_data_accesses].size  = len;
+    num_data_accesses++;
   }
-
-  bx_address lin = BX_CPU(cpu)->get_laddr(seg, offset);
-  bx_bool page_valid = BX_CPU(cpu)->dbg_xlate_linear2phy(lin, &phy);
-
-  // If linear translation doesn't exist, a paging exception will occur.
-  // Invalidate physical address data for now.
-  if (!page_valid) phy = (bx_phy_address) (-1);
-
-  data_access[num_data_accesses].laddr = lin;
-  data_access[num_data_accesses].paddr = phy;
-  data_access[num_data_accesses].op    = rw;
-  data_access[num_data_accesses].size  = len;
-  num_data_accesses++;
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: p4_willamette.h 10688 2011-09-25 17:36:20Z sshwarts $
+// $Id: p4_willamette.h 10954 2012-01-07 17:06:03Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -30,7 +30,7 @@
 
 class p4_willamette_t : public bx_cpuid_t {
 public:
-  p4_willamette_t(BX_CPU_C *cpu);
+  p4_willamette_t(BX_CPU_C *cpu): bx_cpuid_t(cpu) {}
   virtual ~p4_willamette_t() {}
 
   // return CPU name
@@ -44,12 +44,6 @@ public:
   virtual void dump_cpuid(void) const;
 
 private:
-#if BX_SUPPORT_SMP
-  unsigned nprocessors;
-  unsigned ncores;
-  unsigned nthreads;
-#endif
-
   void get_std_cpuid_leaf_0(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_1(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_2(cpuid_function_t *leaf) const;

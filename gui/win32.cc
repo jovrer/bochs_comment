@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: win32.cc 11381 2012-08-29 20:36:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -32,7 +32,6 @@
 #include "param_names.h"
 #include "keymap.h"
 #include "iodev/iodev.h"
-#include "iodev/vga.h"
 #if BX_WITH_WIN32
 
 #include "zmouse.h"
@@ -47,9 +46,10 @@ class bx_win32_gui_c : public bx_gui_c {
 public:
   bx_win32_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS();
-  virtual void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
+  virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
   virtual void set_tooltip(unsigned hbar_id, const char *tip);
+  virtual void set_mouse_mode_absxy(bx_bool mode);
 #if BX_SHOW_IPS
   virtual void show_ips(Bit32u ips_count);
 #endif
@@ -97,13 +97,15 @@ static int ms_xdelta=0, ms_ydelta=0, ms_zdelta=0;
 static int ms_lastx=0, ms_lasty=0;
 static int ms_savedx=0, ms_savedy=0;
 static BOOL mouseCaptureMode, mouseCaptureNew, mouseToggleReq;
+static BOOL win32MouseModeAbsXY = 0;
 static UINT_PTR workerThread = 0;
 static DWORD workerThreadID = 0;
 static int mouse_buttons = 3;
 static bx_bool win32_nokeyrepeat = 0;
 
 // Graphics screen stuff
-static unsigned x_tilesize = 0, y_tilesize = 0;
+static unsigned x_tilesize = 0;
+static unsigned win32_max_xres = 0, win32_max_yres = 0;
 static BITMAPINFO* bitmap_info=(BITMAPINFO*)0;
 static RGBQUAD* cmap_index;  // indeces into system colormap
 static HBITMAP MemoryBitmap = NULL;
@@ -147,16 +149,16 @@ static unsigned bx_hb_separator;
 // Status Bar stuff
 #if BX_SHOW_IPS
 static BOOL ipsUpdate = FALSE;
+static BOOL  hideIPS = FALSE;
 static char ipsText[20];
-#define BX_SB_TEXT_ELEMENTS 2
-#else
-#define BX_SB_TEXT_ELEMENTS 1
 #endif
+#define BX_SB_MAX_TEXT_ELEMENTS    2
 #define SIZE_OF_SB_ELEMENT        40
 #define SIZE_OF_SB_MOUSE_MESSAGE 170
-#define SIZE_OF_SB_IPS_MESSAGE 90
-long SB_Edges[BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1];
+#define SIZE_OF_SB_IPS_MESSAGE    90
+long SB_Edges[BX_MAX_STATUSITEMS+BX_SB_MAX_TEXT_ELEMENTS+1];
 char SB_Text[BX_MAX_STATUSITEMS][10];
+unsigned SB_Text_Elements;
 bx_bool SB_Active[BX_MAX_STATUSITEMS];
 bx_bool SB_ActiveW[BX_MAX_STATUSITEMS];
 
@@ -197,7 +199,7 @@ sharedThreadInfo stInfo;
 LRESULT CALLBACK mainWndProc (HWND, UINT, WPARAM, LPARAM);
 LRESULT CALLBACK simWndProc (HWND, UINT, WPARAM, LPARAM);
 VOID CDECL UIThread(PVOID);
-void SetStatusText(int Num, const char *Text, bx_bool active, bx_bool w=0);
+void SetStatusText(unsigned Num, const char *Text, bx_bool active, bx_bool w=0);
 void terminateEmul(int);
 void create_vga_font(void);
 static unsigned char reverse_bitorder(unsigned char);
@@ -583,17 +585,12 @@ void terminateEmul(int reason)
 // argc, argv: used to pass display library specific options to the init code
 //     (X11 options, Win32 options,...)
 //
-// tilewidth, tileheight: for optimization, graphics_tile_update() passes
-//     only updated regions of the screen to the gui code to be redrawn.
-//     These define the dimensions of a region (tile).
 // headerbar_y:  A headerbar (toolbar) is display on the top of the
 //     VGA window, showing floppy status, and other information.  It
 //     always assumes the width of the current VGA mode width, but
 //     it's height is defined by this parameter.
 
-void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
-                                   tilewidth, unsigned tileheight,
-                                   unsigned headerbar_y)
+void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
   int i;
   bx_bool gui_ci;
@@ -616,8 +613,9 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   InitializeCriticalSection(&stInfo.keyCS);
   InitializeCriticalSection(&stInfo.mouseCS);
 
-  x_tilesize = tilewidth;
-  y_tilesize = tileheight;
+  x_tilesize = this->x_tilesize;
+  win32_max_xres = this->max_xres;
+  win32_max_yres = this->max_yres;
 
   bx_bitmap_entries = 0;
   bx_headerbar_entries = 0;
@@ -643,6 +641,11 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
         } else {
           BX_PANIC(("Config interface 'win32config' is required for gui debugger"));
         }
+#endif
+#if BX_SHOW_IPS
+      } else if (!strcmp(argv[i], "hideIPS")) {
+        BX_INFO(("hide IPS display in status bar"));
+        hideIPS = TRUE;
 #endif
       } else {
         BX_PANIC(("Unknown win32 option '%s'", argv[i]));
@@ -703,8 +706,8 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   else
     terminateEmul(EXIT_GMH_FAILURE);
 
-  // Wait for a window before continuing
-  if ((stInfo.kill == 0) && (FindWindow(szAppName, NULL) == NULL))
+  // Wait until UI init is ready before continuing
+  if ((stInfo.kill == 0) && (stInfo.UIinited == FALSE))
     Sleep(500);
 
   // Now set this thread's priority to below normal because this is where
@@ -803,7 +806,7 @@ VOID CDECL UIThread(PVOID pvoid)
   workerThreadID = GetCurrentThreadId();
 
   GetClassInfo(NULL, WC_DIALOG, &wndclass);
-  wndclass.style = CS_HREDRAW | CS_VREDRAW;
+  wndclass.style = CS_HREDRAW | CS_VREDRAW | CS_NOCLOSE;
   wndclass.lpfnWndProc = mainWndProc;
   wndclass.cbClsExtra = 0;
   wndclass.cbWndExtra = 0;
@@ -812,7 +815,7 @@ VOID CDECL UIThread(PVOID pvoid)
   wndclass.lpszMenuName = NULL;
   wndclass.lpszClassName = szAppName;
 
-  RegisterClass (&wndclass);
+  RegisterClass(&wndclass);
 
   wndclass.style = CS_HREDRAW | CS_VREDRAW;
   wndclass.lpfnWndProc = simWndProc;
@@ -825,7 +828,7 @@ VOID CDECL UIThread(PVOID pvoid)
   wndclass.lpszMenuName = NULL;
   wndclass.lpszClassName = "SIMWINDOW";
 
-  RegisterClass (&wndclass);
+  RegisterClass(&wndclass);
 
   SetRect(&wndRect, 0, 0, stretched_x, stretched_y);
   DWORD sim_style = WS_CHILD;
@@ -857,15 +860,19 @@ VOID CDECL UIThread(PVOID pvoid)
     hwndSB = CreateStatusWindow(WS_CHILD | WS_VISIBLE, "",
                                 stInfo.mainWnd, 0x7712);
     if (hwndSB) {
-      int elements;
+      unsigned elements;
       SB_Edges[0] = SIZE_OF_SB_MOUSE_MESSAGE + SIZE_OF_SB_ELEMENT;
+      SB_Text_Elements = 1;
 #if BX_SHOW_IPS
-      SB_Edges[1] = SB_Edges[0] + SIZE_OF_SB_IPS_MESSAGE;
+      if (!hideIPS) {
+        SB_Edges[1] = SB_Edges[0] + SIZE_OF_SB_IPS_MESSAGE;
+        SB_Text_Elements = 2;
+      }
 #endif
-      for (elements = BX_SB_TEXT_ELEMENTS; elements < (BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS); elements++)
+      for (elements = SB_Text_Elements; elements < (BX_MAX_STATUSITEMS+SB_Text_Elements); elements++)
         SB_Edges[elements] = SB_Edges[elements-1] + SIZE_OF_SB_ELEMENT;
       SB_Edges[elements] = -1;
-      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1, (LPARAM)&SB_Edges);
+      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+SB_Text_Elements+1, (LPARAM)&SB_Edges);
     }
     SetStatusText(0, szMouseEnable, TRUE);
 
@@ -906,7 +913,7 @@ VOID CDECL UIThread(PVOID pvoid)
     cursorWarped();
 
     hdc = GetDC(stInfo.simWnd);
-    MemoryBitmap = CreateCompatibleBitmap(hdc, BX_MAX_XRES, BX_MAX_YRES);
+    MemoryBitmap = CreateCompatibleBitmap(hdc, win32_max_xres, win32_max_yres);
     MemoryDC = CreateCompatibleDC(hdc);
     ReleaseDC(stInfo.simWnd, hdc);
 
@@ -915,12 +922,14 @@ VOID CDECL UIThread(PVOID pvoid)
       ShowWindow(stInfo.mainWnd, SW_SHOW);
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       if (gui_debug) {
-        InitDebugDialog();
+        bx_gui->init_debug_dialog();
       }
 #endif
 #if BX_SHOW_IPS
-      UINT idTimer = 2;
-      SetTimer(stInfo.simWnd, idTimer, 1000, (TIMERPROC)MyTimer);
+      if (!hideIPS) {
+        UINT idTimer = 2;
+        SetTimer(stInfo.simWnd, idTimer, 1000, (TIMERPROC)MyTimer);
+      }
 #endif
       stInfo.UIinited = TRUE;
 
@@ -938,34 +947,28 @@ VOID CDECL UIThread(PVOID pvoid)
   _endthread();
 }
 
-void SetStatusText(int Num, const char *Text, bx_bool active, bx_bool w)
+void SetStatusText(unsigned Num, const char *Text, bx_bool active, bx_bool w)
 {
   char StatText[MAX_PATH];
 
-  if ((Num < BX_SB_TEXT_ELEMENTS) || (Num > (BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS))) {
+  if ((Num < SB_Text_Elements) || (Num > (BX_MAX_STATUSITEMS+SB_Text_Elements))) {
     StatText[0] = ' ';  // Add space to text in 1st and last items
     lstrcpy(StatText+1, Text);
     SendMessage(hwndSB, SB_SETTEXT, Num, (LPARAM)StatText);
   } else {
     StatText[0] = 9;  // Center the rest
     lstrcpy(StatText+1, Text);
-    lstrcpy(SB_Text[Num-BX_SB_TEXT_ELEMENTS], StatText);
-    SB_Active[Num-BX_SB_TEXT_ELEMENTS] = active;
-    SB_ActiveW[Num-BX_SB_TEXT_ELEMENTS] = w;
-    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (LPARAM)SB_Text[Num-BX_SB_TEXT_ELEMENTS]);
+    lstrcpy(SB_Text[Num-SB_Text_Elements], StatText);
+    SB_Active[Num-SB_Text_Elements] = active;
+    SB_ActiveW[Num-SB_Text_Elements] = w;
+    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (LPARAM)SB_Text[Num-SB_Text_Elements]);
   }
   UpdateWindow(hwndSB);
 }
 
-void bx_win32_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
+void bx_win32_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_bool w)
 {
-  if (element < 0) {
-    for (int i = 0; i < (int)statusitem_count; i++) {
-      SetStatusText(i+BX_SB_TEXT_ELEMENTS, statusitem_text[i], 0, 0);
-    }
-  } else if (element < (int)statusitem_count) {
-    SetStatusText(element+BX_SB_TEXT_ELEMENTS, statusitem_text[element], active, w);
-  }
+  SetStatusText(element+SB_Text_Elements, statusitem[element].text, active, w);
 }
 
 LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
@@ -1029,8 +1032,8 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     lpdis = (DRAWITEMSTRUCT *)lParam;
     if (lpdis->hwndItem == hwndSB) {
       sbtext = (char *)lpdis->itemData;
-      if (SB_Active[lpdis->itemID-BX_SB_TEXT_ELEMENTS]) {
-        if (SB_ActiveW[lpdis->itemID-BX_SB_TEXT_ELEMENTS])
+      if (SB_Active[lpdis->itemID-SB_Text_Elements]) {
+        if (SB_ActiveW[lpdis->itemID-SB_Text_Elements])
           SetBkColor(lpdis->hDC, 0x000040FF);
         else
           SetBkColor(lpdis->hDC, 0x0000FF00);
@@ -1100,7 +1103,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       SetMouseCapture();
     }
     // If mouse escaped, bring it back
-    if (mouseCaptureMode)
+    if (mouseCaptureMode && !win32MouseModeAbsXY)
     {
       pt.x = 0;
       pt.y = 0;
@@ -1219,7 +1222,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     return DefWindowProc (hwnd, iMsg, wParam, lParam);
 
   case WM_DESTROY:
-    KillTimer (hwnd, 1);
+    KillTimer(hwnd, 1);
     stInfo.UIinited = FALSE;
     return 0;
 
@@ -1393,8 +1396,13 @@ void enq_mouse_event(void)
     }
     QueueEvent& current=keyevents[tail];
     current.key_event=MOUSE_MOTION;
-    current.mouse_x=ms_xdelta;
-    current.mouse_y=ms_ydelta;
+    if (win32MouseModeAbsXY) {
+      current.mouse_x = ms_lastx * 0x7fff / dimension_x;
+      current.mouse_y = ms_lasty * 0x7fff / dimension_y;
+    } else {
+      current.mouse_x = ms_xdelta;
+      current.mouse_y = ms_ydelta;
+    }
     current.mouse_z=ms_zdelta;
     current.mouse_button_state=mouse_button_state;
     resetDelta();
@@ -1443,12 +1451,12 @@ void bx_win32_gui_c::handle_events(void)
     key = queue_event->key_event;
     if (key==MOUSE_MOTION)
     {
-      DEV_mouse_motion_ext(queue_event->mouse_x,
-        queue_event->mouse_y, queue_event->mouse_z, queue_event->mouse_button_state);
+      DEV_mouse_motion(queue_event->mouse_x, queue_event->mouse_y,
+                       queue_event->mouse_z, queue_event->mouse_button_state, win32MouseModeAbsXY);
     }
     // Check for mouse buttons first
     else if (key & MOUSE_PRESSED) {
-      DEV_mouse_motion_ext(0, 0, 0, LOWORD(key));
+      DEV_mouse_motion(0, 0, 0, LOWORD(key), 0);
     }
     else if (key & HEADERBAR_CLICKED) {
       headerbar_click(LOWORD(key));
@@ -1520,7 +1528,7 @@ void bx_win32_gui_c::clear_screen(void)
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is tm_info.line_offset*text_rows
+// format of old_text & new_text: each is tm_info->line_offset*text_rows
 //     bytes long. Each character consists of 2 bytes.  The first by is
 //     the character value, the second is the attribute byte.
 //
@@ -1531,7 +1539,7 @@ void bx_win32_gui_c::clear_screen(void)
 
 void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                                  unsigned long cursor_x, unsigned long cursor_y,
-                                 bx_vga_tminfo_t tm_info)
+                                 bx_vga_tminfo_t *tm_info)
 {
   HDC hdc;
   unsigned char data[64];
@@ -1549,17 +1557,17 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 
   EnterCriticalSection(&stInfo.drawCS);
 
-  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
-  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  blink_mode = (tm_info->blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info->blink_flags & BX_TEXT_BLINK_STATE) > 0;
   if (blink_mode) {
-    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+    if (tm_info->blink_flags & BX_TEXT_BLINK_TOGGLE)
       forceUpdate = 1;
   }
   if (charmap_updated) {
     for (unsigned c = 0; c<256; c++) {
       if (char_changed[c]) {
         memset(data, 0, sizeof(data));
-        BOOL gfxchar = tm_info.line_graphics && ((c & 0xE0) == 0xC0);
+        BOOL gfxchar = tm_info->line_graphics && ((c & 0xE0) == 0xC0);
         for (i=0; i<(unsigned)yChar; i++) {
           data[i*2] = vga_charmap[c*32+i];
           if (gfxchar) {
@@ -1574,29 +1582,29 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     charmap_updated = 0;
   }
   for (i=0; i<16; i++) {
-    text_pal_idx[i] = DEV_vga_get_actl_pal_idx(i);
+    text_pal_idx[i] = tm_info->actl_palette[i];
   }
 
   hdc = GetDC(stInfo.simWnd);
 
-  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
+  if((tm_info->h_panning != h_panning) || (tm_info->v_panning != v_panning)) {
     forceUpdate = 1;
-    h_panning = tm_info.h_panning;
-    v_panning = tm_info.v_panning;
+    h_panning = tm_info->h_panning;
+    v_panning = tm_info->v_panning;
   }
-  if(tm_info.line_compare != line_compare) {
+  if(tm_info->line_compare != line_compare) {
     forceUpdate = 1;
-    line_compare = tm_info.line_compare;
+    line_compare = tm_info->line_compare;
   }
 
   // first invalidate character at previous and new cursor location
   if((prev_cursor_y < text_rows) && (prev_cursor_x < text_cols)) {
-    curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
+    curs = prev_cursor_y * tm_info->line_offset + prev_cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   }
-  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < yChar) &&
+  if((tm_info->cs_start <= tm_info->cs_end) && (tm_info->cs_start < yChar) &&
      (cursor_y < text_rows) && (cursor_x < text_cols)) {
-    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    curs = cursor_y * tm_info->line_offset + cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   } else {
     curs = 0xffff;
@@ -1606,7 +1614,7 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   if (v_panning) rows++;
   y = 0;
   cs_y = 0;
-  text_base = new_text - tm_info.start_address;
+  text_base = new_text - tm_info->start_address;
   if (line_compare < dimension_y) {
     split_textrow = (line_compare + v_panning) / yChar;
     split_fontrows = ((line_compare + v_panning) % yChar) + 1;
@@ -1652,7 +1660,7 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = cs_y * tm_info.line_offset;
+    offset = cs_y * tm_info->line_offset;
     do {
       if (h_panning) {
         if (hchars > text_cols) {
@@ -1687,18 +1695,18 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                    font_row, SRCCOPY, cAttr);
         if (offset == curs) {
           if (font_row == 0) {
-            yc2 = yc + tm_info.cs_start;
-            font_row2 = tm_info.cs_start;
-            cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            yc2 = yc + tm_info->cs_start;
+            font_row2 = tm_info->cs_start;
+            cfheight2 = tm_info->cs_end - tm_info->cs_start + 1;
           } else {
-            if (v_panning > tm_info.cs_start) {
+            if (v_panning > tm_info->cs_start) {
               yc2 = yc;
               font_row2 = font_row;
-              cfheight2 = tm_info.cs_end - v_panning + 1;
+              cfheight2 = tm_info->cs_end - v_panning + 1;
             } else {
-              yc2 = yc + tm_info.cs_start - v_panning;
-              font_row2 = tm_info.cs_start;
-              cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+              yc2 = yc + tm_info->cs_start - v_panning;
+              font_row2 = tm_info->cs_start;
+              cfheight2 = tm_info->cs_end - tm_info->cs_start + 1;
             }
           }
           cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
@@ -1715,18 +1723,18 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       new_text = text_base;
       forceUpdate = 1;
       cs_y = 0;
-      if (tm_info.split_hpanning) h_panning = 0;
+      if (tm_info->split_hpanning) h_panning = 0;
       rows = ((dimension_y - line_compare + yChar - 2) / yChar) + 1;
       split_screen = 1;
     } else {
       y++;
       cs_y++;
-      new_text = new_line + tm_info.line_offset;
-      old_text = old_line + tm_info.line_offset;
+      new_text = new_line + tm_info->line_offset;
+      old_text = old_line + tm_info->line_offset;
     }
   } while (--rows);
 
-  h_panning = tm_info.h_panning;
+  h_panning = tm_info->h_panning;
 
   prev_cursor_x = cursor_x;
   prev_cursor_y = cursor_y;
@@ -1803,8 +1811,8 @@ bx_bool bx_win32_gui_c::palette_change(unsigned index, unsigned red,
 // screen, since info in this region has changed.
 //
 // tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'tilewidth' & 'tileheight' parameters to
-//       ::specific_init().  Each value specifies an index into the
+//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
+//       Each value specifies an index into the
 //       array of colors you allocated for ::palette_change()
 // x0: x origin of tile
 // y0: y origin of tile
@@ -2058,8 +2066,6 @@ void bx_win32_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 // exit from the native GUI mechanism.
 void bx_win32_gui_c::exit(void)
 {
-  printf("# In bx_win32_gui_c::exit(void)!\n");
-
   // kill thread first...
   PostMessage(stInfo.mainWnd, WM_CLOSE, 0, 0);
 
@@ -2200,10 +2206,15 @@ void bx_win32_gui_c::set_tooltip(unsigned hbar_id, const char *tip)
   bx_headerbar_entry[hbar_id].tooltip = tip;
 }
 
+void bx_win32_gui_c::set_mouse_mode_absxy(bx_bool mode)
+{
+  win32MouseModeAbsXY = mode;
+}
+
 #if BX_SHOW_IPS
 VOID CALLBACK MyTimer(HWND hwnd,UINT uMsg, UINT idEvent, DWORD dwTime)
 {
-  bx_signal_handler(SIGALRM);
+  bx_show_ips_handler();
 }
 
 void bx_win32_gui_c::show_ips(Bit32u ips_count)

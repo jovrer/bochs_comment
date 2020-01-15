@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.cc 10888 2011-12-29 20:52:44Z sshwarts $
+// $Id: memory.cc 11221 2012-06-18 11:41:26Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -60,8 +60,6 @@ void BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned le
 #if BX_SUPPORT_IODEBUG
     bx_devices.pluginIODebug->mem_write(cpu, a20addr, len, data);
 #endif
-
-    BX_INSTR_PHY_WRITE(cpu->which_cpu(), a20addr, len);
 
     if ((a20addr >= 0x000a0000 && a20addr < 0x000c0000) && BX_MEM_THIS smram_available)
     {
@@ -155,20 +153,16 @@ mem_write:
       // ignore write to ROM
 #else
       // Write Based on 440fx Programming
-      if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
-      {
-        switch (DEV_pci_wr_memtype((Bit32u) a20addr)) {
-          case 0x1:   // Writes to ShadowRAM
-            BX_DEBUG(("Writing to ShadowRAM: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
-            *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
-            break;
-
-          case 0x0:   // Writes to ROM, Inhibit
-            BX_DEBUG(("Write to ROM ignored: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
-            break;
-
-          default:
-            BX_PANIC(("writePhysicalPage: default case"));
+      if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000)) {
+        unsigned area = (unsigned)(a20addr >> 14) & 0x0f;
+        if (area > BX_MEM_AREA_F0000) area = BX_MEM_AREA_F0000;
+        if (BX_MEM_THIS memory_type[area][1] == 1) {
+          // Writes to ShadowRAM
+          BX_DEBUG(("Writing to ShadowRAM: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
+          *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
+        } else {
+          // Writes to ROM, Inhibit
+          BX_DEBUG(("Write to ROM ignored: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
         }
       }
 #endif
@@ -209,8 +203,6 @@ void BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
 #if BX_SUPPORT_IODEBUG
     bx_devices.pluginIODebug->mem_read(cpu, a20addr, len, data);
 #endif
-
-    BX_INSTR_PHY_READ(cpu->which_cpu(), a20addr, len);
 
     if ((a20addr >= 0x000a0000 && a20addr < 0x000c0000) && BX_MEM_THIS smram_available)
     {
@@ -290,23 +282,20 @@ mem_read:
       }
 
 #if BX_SUPPORT_PCI
-      if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
-      {
-        switch (DEV_pci_rd_memtype((Bit32u) a20addr)) {
-          case 0x0:  // Read from ROM
-            if ((a20addr & 0xfffe0000) == 0x000e0000) {
-              // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
-              *data_ptr = BX_MEM_THIS rom[BIOS_MAP_LAST128K(a20addr)];
-            }
-            else {
-              *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
-            }
-            break;
-          case 0x1:  // Read from ShadowRAM
-            *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
-            break;
-          default:
-            BX_PANIC(("readPhysicalPage: default case"));
+      if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000)) {
+        unsigned area = (unsigned)(a20addr >> 14) & 0x0f;
+        if (area > BX_MEM_AREA_F0000) area = BX_MEM_AREA_F0000;
+        if (BX_MEM_THIS memory_type[area][0] == 0) {
+          // Read from ROM
+          if ((a20addr & 0xfffe0000) == 0x000e0000) {
+            // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+            *data_ptr = BX_MEM_THIS rom[BIOS_MAP_LAST128K(a20addr)];
+          } else {
+            *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
+          }
+        } else {
+          // Read from ShadowRAM
+          *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
         }
       }
       else

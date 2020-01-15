@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: unmapped.cc 10731 2011-10-09 19:26:30Z sshwarts $
+// $Id: unmapped.cc 10886 2011-12-29 19:51:54Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -45,7 +45,7 @@ void libunmapped_LTX_plugin_fini(void)
 
 bx_unmapped_c::bx_unmapped_c(void)
 {
-  put("UNMP");
+  put("unmapped", "UNMP");
 }
 
 bx_unmapped_c::~bx_unmapped_c(void)

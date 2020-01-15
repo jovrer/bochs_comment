@@ -1,6 +1,6 @@
 /*
  * misc/bximage.c
- * $Id: bximage.c 10933 2012-01-04 19:34:08Z vruppert $
+ * $Id: bximage.c 11315 2012-08-05 18:13:38Z vruppert $
  *
  * Create empty hard disk or floppy disk images for bochs.
  *
@@ -27,7 +27,11 @@
 #include "bswap.h"
 
 #define HDIMAGE_HEADERS_ONLY 1
-#include "../iodev/hdimage.h"
+#include "../iodev/hdimage/hdimage.h"
+
+#define BX_MAX_CYL_BITS 24 // 8 TB
+
+const int bx_max_hd_megs = (int)(((1 << BX_MAX_CYL_BITS) - 1) * 16.0 * 63.0 / 2048.0);
 
 int bx_hdimage;
 int bx_fdsize_idx;
@@ -42,7 +46,7 @@ typedef int (*WRITE_IMAGE_WIN32)(HANDLE, Bit64u);
 #endif
 
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bximage.c 10933 2012-01-04 19:34:08Z vruppert $";
+char *rcsid = "$Id: bximage.c 11315 2012-08-05 18:13:38Z vruppert $";
 char *divider = "========================================================================";
 
 /* menu data for choosing floppy/hard disk */
@@ -561,10 +565,10 @@ int parse_cmdline(int argc, char *argv[])
         if (sscanf(&argv[arg][6], "%d", &bx_hdsize) != 1) {
           printf("Error in hard disk image size argument: %s\n\n", &argv[arg][6]);
           ret = 0;
-        } else if ((bx_hdsize < 1) || (bx_hdsize > 32255)) {
+        } else if ((bx_hdsize < 1) || (bx_hdsize > bx_max_hd_megs)) {
           printf("Hard disk image size out of range\n\n");
           ret = 0;
-	}
+        }
       } else {
         printf("Image type (fd/hd) not specified\n\n");
       }
@@ -611,6 +615,7 @@ int CDECL main(int argc, char *argv[])
   Bit64s sectors = 0;
   char filename[256];
   char bochsrc_line[256];
+  char prompt[80];
 
   WRITE_IMAGE write_function=NULL;
 #ifdef WIN32
@@ -626,24 +631,25 @@ int CDECL main(int argc, char *argv[])
       fatal(EOF_ERR);
   }
   if (bx_hdimage) {
-    unsigned int cyl;
+    Bit64u cyl;
     int hdsize, heads=16, spt=63;
     int mode;
 
     if (bx_interactive) {
       if (ask_menu(hdmode_menu, hdmode_n_choices, hdmode_choices, bx_hdimagemode, &mode) < 0)
         fatal (EOF_ERR);
-      if (ask_int("\nEnter the hard disk size in megabytes, between 1 and 129023\n", 1, 129023, bx_hdsize, &hdsize) < 0)
+      sprintf(prompt, "\nEnter the hard disk size in megabytes, between 1 and %d\n", bx_max_hd_megs);
+      if (ask_int(prompt, 1, bx_max_hd_megs, bx_hdsize, &hdsize) < 0)
         fatal(EOF_ERR);
     } else {
       mode = bx_hdimagemode;
       hdsize = bx_hdsize;
     }
-    cyl = (unsigned int) (hdsize*1024.0*1024.0/16.0/63.0/512.0);
-    assert (cyl < 262144);
+    cyl = (Bit64u)(hdsize*1024.0*1024.0/16.0/63.0/512.0);
+    assert(cyl < (1 << BX_MAX_CYL_BITS));
     sectors = cyl*heads*spt;
     printf("\nI will create a '%s' hard disk image with\n", hdmode_choices[mode]);
-    printf("  cyl=%d\n", cyl);
+    printf("  cyl=" FMT_LL "d\n", cyl);
     printf("  heads=%d\n", heads);
     printf("  sectors per track=%d\n", spt);
     printf("  total sectors=" FMT_LL "d\n", sectors);
@@ -656,7 +662,7 @@ int CDECL main(int argc, char *argv[])
       strcpy(filename, bx_filename);
     }
 
-    sprintf(bochsrc_line, "ata0-master: type=disk, path=\"%s\", mode=%s, cylinders=%d, heads=%d, spt=%d", filename, hdmode_choices[mode], cyl, heads, spt);
+    sprintf(bochsrc_line, "ata0-master: type=disk, path=\"%s\", mode=%s, cylinders=" FMT_LL "d, heads=%d, spt=%d", filename, hdmode_choices[mode], cyl, heads, spt);
 
     switch (mode) {
       case 1:

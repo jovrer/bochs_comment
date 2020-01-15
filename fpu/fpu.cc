@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: fpu.cc 11168 2012-05-11 06:35:16Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003-2009 Stanislav Shwartsman
@@ -43,7 +43,7 @@ void BX_CPU_C::prepareFPU(bxInstruction_c *i, bx_bool check_pending_exceptions)
 
 void BX_CPU_C::FPU_update_last_instruction(bxInstruction_c *i)
 {
-  BX_CPU_THIS_PTR the_i387.foo = (((Bit32u)(i->b1()) << 8) | i->modrm()) & 0x7ff;
+  BX_CPU_THIS_PTR the_i387.foo = i->foo();
   BX_CPU_THIS_PTR the_i387.fcs = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
   BX_CPU_THIS_PTR the_i387.fip = BX_CPU_THIS_PTR prev_rip;
 
@@ -588,6 +588,41 @@ void BX_CPU_C::print_state_FPU(void)
           fp.exp & 0xffff, GET32H(fp.fraction), GET32L(fp.fraction),
           f, (f_class == float_NaN) ? (floatx80_is_signaling_nan(fp) ? "SNAN" : "QNAN") : fp_class[f_class]);
   }
+}
+
+#include "softfloat-specialize.h"
+
+/* -----------------------------------------------------------
+ * Slimmed down version used to compile against a CPU simulator
+ * rather than a kernel (ported by Kevin Lawton)
+ * ------------------------------------------------------------ */
+
+int FPU_tagof(const floatx80 &reg)
+{
+   Bit32s exp = floatx80_exp(reg);
+   if (exp == 0)
+   {
+      if (! floatx80_fraction(reg))
+          return FPU_Tag_Zero;
+
+      /* The number is a de-normal or pseudodenormal. */
+      return FPU_Tag_Special;
+   }
+
+   if (exp == 0x7fff)
+   {
+      /* Is an Infinity, a NaN, or an unsupported data type. */
+      return FPU_Tag_Special;
+   }
+
+   if (!(reg.fraction & BX_CONST64(0x8000000000000000)))
+   {
+      /* Unsupported data type. */
+      /* Valid numbers have the ms bit set to 1. */
+      return FPU_Tag_Special;
+   }
+
+   return FPU_Tag_Valid;
 }
 
 #endif

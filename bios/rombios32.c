@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios32.c 10442 2011-07-03 08:10:16Z vruppert $
+// $Id: rombios32.c 11180 2012-05-13 20:06:51Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  32 bit Bochs BIOS init code
@@ -599,6 +599,7 @@ typedef struct PCIDevice {
 
 static uint32_t pci_bios_io_addr;
 static uint32_t pci_bios_mem_addr;
+static uint32_t pci_bios_rom_start;
 /* host irqs corresponding to PCI irqs A-D */
 static uint8_t pci_irqs[4] = { 11, 9, 11, 9 };
 static PCIDevice i440_pcidev = {-1, -1};
@@ -645,10 +646,10 @@ static void pci_set_io_region_addr(PCIDevice *d, int region_num, uint32_t addr)
     uint32_t ofs, old_addr;
 
     if ( region_num == PCI_ROM_SLOT ) {
-        ofs = 0x30;
-        addr |= 0x01;
+        ofs = PCI_ROM_ADDRESS;
+        addr |= PCI_ROM_ADDRESS_ENABLE;
     }else{
-        ofs = 0x10 + region_num * 4;
+        ofs = PCI_BASE_ADDRESS_0 + region_num * 4;
     }
 
     old_addr = pci_config_readl(d, ofs);
@@ -659,11 +660,11 @@ static void pci_set_io_region_addr(PCIDevice *d, int region_num, uint32_t addr)
     /* enable memory mappings */
     cmd = pci_config_readw(d, PCI_COMMAND);
     if ( region_num == PCI_ROM_SLOT )
-        cmd |= 2;
+        cmd |= PCI_COMMAND_MEMORY;
     else if (old_addr & PCI_ADDRESS_SPACE_IO)
-        cmd |= 1;
+        cmd |= PCI_COMMAND_IO;
     else
-        cmd |= 2;
+        cmd |= PCI_COMMAND_MEMORY;
     pci_config_writew(d, PCI_COMMAND, cmd);
 }
 
@@ -817,10 +818,56 @@ static void piix4_pm_enable(PCIDevice *d)
 #endif
 }
 
+static void pci_bios_init_pcirom(PCIDevice *d, uint32_t paddr)
+{
+    PCIDevice d1, *i440fx = &d1;
+    uint32_t tmpaddr, size;
+    uint8_t reg, v;
+    int copied, shift, tmpsize;
+
+    i440fx->bus = 0;
+    i440fx->devfn = 0;
+    if (paddr != 0) {
+        size = readb((void *)(paddr + 2));
+        if (size & 0x03) {
+            size &= 0xfc;
+            size += 0x04;
+        }
+        size <<= 9;
+        if ((pci_bios_rom_start + size) > 0xe0000)
+            return;
+        tmpaddr = pci_bios_rom_start;
+        copied = 0;
+        do {
+            tmpsize = 0x4000 - (tmpaddr & 0x3fff);
+            if ((size - copied) < tmpsize) {
+                tmpsize = size - copied;
+            }
+            reg = 0x5a + (uint8_t)((tmpaddr >> 15) & 0x07);
+            if (tmpaddr & 0x4000) {
+                shift = 4;
+            } else {
+                shift = 0;
+            }
+            v = pci_config_readb(i440fx, reg);
+            v = (v & (~(0x03 << shift))) | (0x02 << shift);
+            pci_config_writeb(i440fx, reg, v);
+            memcpy((void *)tmpaddr, (void *)(paddr + copied), tmpsize);
+            v = (v & (~(0x03 << shift))) | (0x01 << shift);
+            pci_config_writeb(i440fx, reg, v);
+            tmpaddr += tmpsize;
+            copied += tmpsize;
+        } while (copied < size);
+        BX_INFO("PCI ROM copied to 0x%05x (size=0x%05x)\n", pci_bios_rom_start, size);
+        pci_bios_rom_start += size;
+        pci_config_writeb(d, PCI_ROM_ADDRESS, 0x00);
+    }
+}
+
 static void pci_bios_init_device(PCIDevice *d)
 {
     PCIDevice d1, *i440fx = &d1;
-    int class, v;
+    uint16_t class;
     uint32_t *paddr;
     int i, pin, pic_irq, vendor_id, device_id;
 
@@ -832,7 +879,7 @@ static void pci_bios_init_device(PCIDevice *d)
     BX_INFO("PCI: bus=%d devfn=0x%02x: vendor_id=0x%04x device_id=0x%04x class=0x%04x\n",
             d->bus, d->devfn, vendor_id, device_id, class);
     switch(class) {
-    case 0x0101: /* Mass storage controller - IDE interface */
+    case PCI_CLASS_STORAGE_IDE:
         if (vendor_id == PCI_VENDOR_ID_INTEL &&
            (device_id == PCI_DEVICE_ID_INTEL_82371SB_1 ||
             device_id == PCI_DEVICE_ID_INTEL_82371AB)) {
@@ -848,7 +895,7 @@ static void pci_bios_init_device(PCIDevice *d)
             pci_set_io_region_addr(d, 3, 0x374);
         }
         break;
-    case 0x0800: /* Generic system peripheral - PIC */
+    case PCI_CLASS_SYSTEM_PIC:
         if (vendor_id == PCI_VENDOR_ID_IBM) {
             /* IBM */
             if (device_id == 0x0046 || device_id == 0xFFFF) {
@@ -872,10 +919,10 @@ static void pci_bios_init_device(PCIDevice *d)
             uint32_t val, size ;
 
             if (i == PCI_ROM_SLOT) {
-                ofs = 0x30;
+                ofs = PCI_ROM_ADDRESS;
                 pci_config_writel(d, ofs, 0xfffffffe);
             } else {
-                ofs = 0x10 + i * 4;
+                ofs = PCI_BASE_ADDRESS_0 + i * 4;
                 pci_config_writel(d, ofs, 0xffffffff);
             }
             val = pci_config_readl(d, ofs);
@@ -887,21 +934,8 @@ static void pci_bios_init_device(PCIDevice *d)
                     paddr = &pci_bios_mem_addr;
                 *paddr = (*paddr + size - 1) & ~(size - 1);
                 pci_set_io_region_addr(d, i, *paddr);
-                if ((i == PCI_ROM_SLOT) && (class == 0x0300)) {
-                    v = pci_config_readb(i440fx, 0x5a);
-                    v = (v & 0xcc) | 0x22;
-                    pci_config_writeb(i440fx, 0x5a, v);
-                    memcpy((void *)0xc0000, (void *)*paddr, 0x8000);
-                    v = (v & 0xcc) | 0x11;
-                    pci_config_writeb(i440fx, 0x5a, v);
-                    if (size > 0x8000) {
-                        v = pci_config_readb(i440fx, 0x5b);
-                        v = (v & 0xcc) | 0x22;
-                        pci_config_writeb(i440fx, 0x5b, v);
-                        memcpy((void *)0xc8000, (void *)(*paddr + 0x8000), size - 0x8000);
-                        v = (v & 0xcc) | 0x11;
-                        pci_config_writeb(i440fx, 0x5b, v);
-                    }
+                if ((i == PCI_ROM_SLOT) && (class == PCI_CLASS_DISPLAY_VGA)) {
+                    pci_bios_init_pcirom(d, *paddr);
                 }
                 *paddr += size;
             }
@@ -929,6 +963,18 @@ static void pci_bios_init_device(PCIDevice *d)
     }
 }
 
+static void pci_bios_init_optrom(PCIDevice *d)
+{
+    uint32_t paddr;
+    uint16_t class;
+
+    class = pci_config_readw(d, PCI_CLASS_DEVICE);
+    if (class != PCI_CLASS_DISPLAY_VGA) {
+        paddr = pci_config_readl(d, PCI_ROM_ADDRESS) & 0xfffffc00;
+        pci_bios_init_pcirom(d, paddr);
+    }
+}
+
 void pci_for_each_device(void (*init_func)(PCIDevice *d))
 {
     PCIDevice d1, *d = &d1;
@@ -952,10 +998,13 @@ void pci_bios_init(void)
 {
     pci_bios_io_addr = 0xc000;
     pci_bios_mem_addr = 0xc0000000;
+    pci_bios_rom_start = 0xc0000;
 
     pci_for_each_device(pci_bios_init_bridges);
 
     pci_for_each_device(pci_bios_init_device);
+
+    pci_for_each_device(pci_bios_init_optrom);
 }
 
 /****************************************************/
@@ -1087,12 +1136,10 @@ static void mptable_init(void)
 
     /* irqs */
     for(i = 0; i < 16; i++) {
-#ifdef BX_QEMU
         /* One entry per ioapic input. Input 2 is covered by 
            irq0->inti2 override (i == 0). irq 2 is unused */
         if (i == 2)
             continue;
-#endif        
         putb(&q, 3); /* entry type = I/O interrupt */
         putb(&q, 0); /* interrupt type = vectored interrupt */
         putb(&q, 0); /* flags: po=0, el=0 */
@@ -1100,11 +1147,7 @@ static void mptable_init(void)
         putb(&q, 0); /* source bus ID = ISA */
         putb(&q, i); /* source bus IRQ */
         putb(&q, ioapic_id); /* dest I/O APIC ID */
-#ifdef BX_QEMU
         putb(&q, i == 0 ? 2 : i); /* dest I/O APIC interrupt in */
-#else
-        putb(&q, i); /* dest I/O APIC interrupt in */
-#endif        
     }
     /* patch length */
     len = q - mp_config_table;
@@ -1381,7 +1424,6 @@ struct madt_io_apic
 			  * lines start */
 } __attribute__((__packed__));
 
-#ifdef BX_QEMU
 struct madt_int_override
 {
 	APIC_HEADER_DEF
@@ -1390,7 +1432,6 @@ struct madt_int_override
 	uint32_t               gsi;     /* GSI that source will signal */
 	uint16_t               flags;   /* MPS INTI flags */
 } __attribute__((__packed__));
-#endif
 
 #include "acpi-dsdt.hex"
 
@@ -1550,11 +1591,7 @@ void acpi_bios_init(void)
     madt_addr = addr;
     madt_size = sizeof(*madt) +
         sizeof(struct madt_processor_apic) * smp_cpus +
-#ifdef BX_QEMU
         sizeof(struct madt_io_apic) + sizeof(struct madt_int_override);
-#else
-        sizeof(struct madt_io_apic);
-#endif
     madt = (void *)(addr);
     addr += madt_size;
 
@@ -1629,9 +1666,7 @@ void acpi_bios_init(void)
     {
         struct madt_processor_apic *apic;
         struct madt_io_apic *io_apic;
-#ifdef BX_QEMU
         struct madt_int_override *int_override;
-#endif
 
         memset(madt, 0, madt_size);
         madt->local_apic_address = cpu_to_le32(0xfee00000);
@@ -1651,7 +1686,6 @@ void acpi_bios_init(void)
         io_apic->io_apic_id = smp_cpus;
         io_apic->address = cpu_to_le32(0xfec00000);
         io_apic->interrupt = cpu_to_le32(0);
-#ifdef BX_QEMU
         io_apic++;
 
         int_override = (void *)io_apic;
@@ -1661,7 +1695,6 @@ void acpi_bios_init(void)
         int_override->source = cpu_to_le32(0);
         int_override->gsi = cpu_to_le32(2);
         int_override->flags = cpu_to_le32(0);
-#endif
 
         acpi_build_table_header((struct acpi_table_header *)madt,
                                 "APIC", madt_size, 1);

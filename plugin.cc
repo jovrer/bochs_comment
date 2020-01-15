@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.cc 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: plugin.cc 11141 2012-04-16 19:17:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -88,6 +88,7 @@ static void plugin_init_one(plugin_t *plugin);
 #endif
 
 device_t *devices = NULL;      /* Head of the linked list of registered devices  */
+device_t *core_devices = NULL; /* Head of the linked list of registered core devices  */
 
 plugin_t *current_plugin_context = NULL;
 
@@ -545,7 +546,7 @@ plugin_startup(void)
 
 void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmodel_c *devmodel, const char *name)
 {
-  device_t *device;
+  device_t *device, **devlist;
 
   device = (device_t *)malloc (sizeof (device_t));
   if (!device)
@@ -558,29 +559,26 @@ void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmod
   device->devmodel = devmodel;
   device->plugin = plugin;  // this can be NULL
   device->next = NULL;
+  device->plugtype = type;
 
-  // Don't add every kind of device to the list.
   switch (type) {
     case PLUGTYPE_CORE:
-      // Core devices are present whether or not we are using plugins, so
-      // they are managed by the same code in iodev/devices.cc whether
-      // plugins are on or off.
-      free(device);
-      return; // Do not add core devices to the devices list.
+      devlist = &core_devices;
+      break;
+    case PLUGTYPE_STANDARD:
     case PLUGTYPE_OPTIONAL:
     case PLUGTYPE_USER:
     default:
-      // The plugin system will manage optional and user devices only.
+      devlist = &devices;
       break;
   }
 
-  if (!devices) {
+  if (!*devlist) {
     /* Empty list, this become the first entry. */
-    devices = device;
-  }
-  else {
+    *devlist = device;
+  } else {
     /* Non-empty list.  Add to end. */
-    device_t *temp = devices;
+    device_t *temp = *devlist;
 
     while (temp->next)
       temp = temp->next;
@@ -593,12 +591,12 @@ void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmod
 /* Plugin system: Remove registered plugin device                       */
 /************************************************************************/
 
-void pluginUnregisterDeviceDevmodel(plugin_t *plugin)
+void pluginUnregisterDeviceDevmodel(const char *name)
 {
   device_t *device, *prev = NULL;
 
   for (device = devices; device; device = device->next) {
-    if (device->plugin == plugin) {
+    if (!strcmp(name, device->name)) {
       if (prev == NULL) {
         devices = device->next;
       } else {
@@ -616,16 +614,16 @@ void pluginUnregisterDeviceDevmodel(plugin_t *plugin)
 /* Plugin system: Check if a plugin is loaded                           */
 /************************************************************************/
 
-bx_bool pluginDevicePresent(char *name)
+bx_bool pluginDevicePresent(const char *name)
 {
   device_t *device;
 
   for (device = devices; device; device = device->next)
   {
-    if (strcmp(device->name,name)==0) return true;
+    if (!strcmp(name, device->name)) return 1;
   }
 
-  return false;
+  return 0;
 }
 
 #if BX_PLUGINS
@@ -638,7 +636,7 @@ int bx_load_plugin(const char *name, plugintype_t type)
   char *namecopy = new char[1+strlen(name)];
   strcpy(namecopy, name);
   plugin_load(namecopy, (char*)"", type);
-  return 0;
+  return 1;
 }
 
 void bx_unload_plugin(const char *name, bx_bool devflag)
@@ -648,7 +646,7 @@ void bx_unload_plugin(const char *name, bx_bool devflag)
   for (plugin = plugins; plugin; plugin = plugin->next) {
     if (!strcmp(plugin->name, name)) {
       if (devflag) {
-        pluginUnregisterDeviceDevmodel(plugin);
+        pluginUnregisterDeviceDevmodel(plugin->name);
       }
       plugin = plugin_unload(plugin);
       if (prev == NULL) {
@@ -673,23 +671,28 @@ void bx_init_plugins()
 {
   device_t *device;
 
-#if BX_PLUGINS
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_OPTIONAL) {
-      pluginlog->info("init_dev of '%s' plugin device by virtual method",device->name);
-      device->devmodel->init();
-    }
-  }
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_USER) {
-      pluginlog->info("init_dev of '%s' plugin device by virtual method",device->name);
-      device->devmodel->init();
-    }
-  }
-#else
-  for (device = devices; device; device = device->next) {
+  for (device = core_devices; device; device = device->next) {
     pluginlog->info("init_dev of '%s' plugin device by virtual method",device->name);
     device->devmodel->init();
+  }
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_STANDARD) {
+      pluginlog->info("init_dev of '%s' plugin device by virtual method",device->name);
+      device->devmodel->init();
+    }
+  }
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_OPTIONAL) {
+      pluginlog->info("init_dev of '%s' plugin device by virtual method",device->name);
+      device->devmodel->init();
+    }
+  }
+#if BX_PLUGINS
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_USER) {
+      pluginlog->info("init_dev of '%s' plugin device by virtual method",device->name);
+      device->devmodel->init();
+    }
   }
 #endif
 }
@@ -702,23 +705,28 @@ void bx_reset_plugins(unsigned signal)
 {
   device_t *device;
 
-#if BX_PLUGINS
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_OPTIONAL) {
-      pluginlog->info("reset of '%s' plugin device by virtual method",device->name);
-      device->devmodel->reset(signal);
-    }
-  }
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_USER) {
-      pluginlog->info("reset of '%s' plugin device by virtual method",device->name);
-      device->devmodel->reset(signal);
-    }
-  }
-#else
-  for (device = devices; device; device = device->next) {
+  for (device = core_devices; device; device = device->next) {
     pluginlog->info("reset of '%s' plugin device by virtual method",device->name);
     device->devmodel->reset(signal);
+  }
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_STANDARD) {
+      pluginlog->info("reset of '%s' plugin device by virtual method",device->name);
+      device->devmodel->reset(signal);
+    }
+  }
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_OPTIONAL) {
+      pluginlog->info("reset of '%s' plugin device by virtual method",device->name);
+      device->devmodel->reset(signal);
+    }
+  }
+#if BX_PLUGINS
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_USER) {
+      pluginlog->info("reset of '%s' plugin device by virtual method",device->name);
+      device->devmodel->reset(signal);
+    }
   }
 #endif
 }
@@ -738,13 +746,37 @@ void bx_unload_plugins()
       bx_unload_plugin(device->name, 0);
 #endif
     } else {
-      delete device->devmodel;
+#if !BX_PLUGINS
+      if (!bx_unload_opt_plugin(device->name, 0)) {
+        delete device->devmodel;
+      }
+#endif
     }
     next = device->next;
     free(device);
     device = next;
   }
   devices = NULL;
+}
+
+void bx_unload_core_plugins()
+{
+  device_t *device, *next;
+
+  device = core_devices;
+  while (device != NULL) {
+    if (device->plugin != NULL) {
+#if BX_PLUGINS
+      bx_unload_plugin(device->name, 0);
+#endif
+    } else {
+      delete device->devmodel;
+    }
+    next = device->next;
+    free(device);
+    device = next;
+  }
+  core_devices = NULL;
 }
 
 /**************************************************************************/
@@ -755,25 +787,14 @@ void bx_plugins_register_state()
 {
   device_t *device;
 
-#if BX_PLUGINS
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_OPTIONAL) {
-      pluginlog->info("register state of '%s' plugin device by virtual method",device->name);
-      device->devmodel->register_state();
-    }
+  for (device = core_devices; device; device = device->next) {
+    pluginlog->info("register state of '%s' plugin device by virtual method",device->name);
+    device->devmodel->register_state();
   }
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_USER) {
-      pluginlog->info("register state of '%s' plugin device by virtual method",device->name);
-      device->devmodel->register_state();
-    }
-  }
-#else
   for (device = devices; device; device = device->next) {
     pluginlog->info("register state of '%s' plugin device by virtual method",device->name);
     device->devmodel->register_state();
   }
-#endif
 }
 
 /***************************************************************************/
@@ -784,22 +805,119 @@ void bx_plugins_after_restore_state()
 {
   device_t *device;
 
+  for (device = core_devices; device; device = device->next) {
+    device->devmodel->after_restore_state();
+  }
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_STANDARD) {
+      device->devmodel->after_restore_state();
+    }
+  }
+  for (device = devices; device; device = device->next) {
+    if (device->plugtype == PLUGTYPE_OPTIONAL) {
+      device->devmodel->after_restore_state();
+    }
+  }
 #if BX_PLUGINS
   for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_OPTIONAL) {
+    if (device->plugtype == PLUGTYPE_USER) {
       device->devmodel->after_restore_state();
     }
-  }
-  for (device = devices; device; device = device->next) {
-    if (device->plugin->type == PLUGTYPE_USER) {
-      device->devmodel->after_restore_state();
-    }
-  }
-#else
-  for (device = devices; device; device = device->next) {
-    device->devmodel->after_restore_state();
   }
 #endif
 }
+
+#if !BX_PLUGINS
+
+// special code for loading optional plugins when plugins are turned off
+
+typedef struct {
+  const char *name;
+  plugin_init_t plugin_init;
+  plugin_fini_t plugin_fini;
+  bx_bool       status;
+} builtin_plugin_t;
+
+#define BUILTIN_PLUGIN_ENTRY(mod) {#mod, lib##mod##_LTX_plugin_init, lib##mod##_LTX_plugin_fini, 0}
+
+static builtin_plugin_t builtin_opt_plugins[] = {
+  BUILTIN_PLUGIN_ENTRY(unmapped),
+  BUILTIN_PLUGIN_ENTRY(biosdev),
+  BUILTIN_PLUGIN_ENTRY(speaker),
+  BUILTIN_PLUGIN_ENTRY(extfpuirq),
+  BUILTIN_PLUGIN_ENTRY(parallel),
+  BUILTIN_PLUGIN_ENTRY(serial),
+#if BX_SUPPORT_E1000
+  BUILTIN_PLUGIN_ENTRY(e1000),
+#endif
+#if BX_SUPPORT_ES1370
+  BUILTIN_PLUGIN_ENTRY(es1370),
+#endif
+#if BX_SUPPORT_GAMEPORT
+  BUILTIN_PLUGIN_ENTRY(gameport),
+#endif
+#if BX_SUPPORT_IODEBUG
+  BUILTIN_PLUGIN_ENTRY(iodebug),
+#endif
+#if BX_SUPPORT_NE2K
+  BUILTIN_PLUGIN_ENTRY(ne2k),
+#endif
+#if BX_SUPPORT_PCIDEV
+  BUILTIN_PLUGIN_ENTRY(pcidev),
+#endif
+#if BX_SUPPORT_PCIPNIC
+  BUILTIN_PLUGIN_ENTRY(pcipnic),
+#endif
+#if BX_SUPPORT_SB16
+  BUILTIN_PLUGIN_ENTRY(sb16),
+#endif
+#if BX_SUPPORT_USB_OHCI
+  BUILTIN_PLUGIN_ENTRY(usb_ohci),
+#endif
+#if BX_SUPPORT_USB_UHCI
+  BUILTIN_PLUGIN_ENTRY(usb_uhci),
+#endif
+#if BX_SUPPORT_USB_XHCI
+  BUILTIN_PLUGIN_ENTRY(usb_xhci),
+#endif
+  {"NULL", NULL, NULL, 0}
+};
+
+int bx_load_opt_plugin(const char *name)
+{
+  int i = 0;
+  while (strcmp(builtin_opt_plugins[i].name, "NULL")) {
+    if (!strcmp(name, builtin_opt_plugins[i].name)) {
+      if (builtin_opt_plugins[i].status == 0) {
+        builtin_opt_plugins[i].plugin_init(NULL, PLUGTYPE_OPTIONAL, 0, NULL);
+        builtin_opt_plugins[i].status = 1;
+      }
+      return 1;
+    }
+    i++;
+  };
+  return 0;
+}
+
+int bx_unload_opt_plugin(const char *name, bx_bool devflag)
+{
+  int i = 0;
+  while (strcmp(builtin_opt_plugins[i].name, "NULL")) {
+    if (!strcmp(name, builtin_opt_plugins[i].name)) {
+      if (builtin_opt_plugins[i].status == 1) {
+        if (devflag) {
+          pluginUnregisterDeviceDevmodel(builtin_opt_plugins[i].name);
+        }
+        builtin_opt_plugins[i].plugin_fini();
+        builtin_opt_plugins[i].status = 0;
+      }
+      return 1;
+    }
+    i++;
+  };
+  return 0;
+}
+
+#endif
 
 }

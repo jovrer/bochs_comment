@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pic.cc 10747 2011-10-23 21:53:56Z sshwarts $
+// $Id: pic.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -33,10 +33,14 @@ bx_pic_c *thePic = NULL;
 
 int libpic_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePic = new bx_pic_c();
-  bx_devices.pluginPicDevice = thePic;
-  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePic, BX_PLUGIN_PIC);
-  return(0); // Success
+  if (type == PLUGTYPE_CORE) {
+    thePic = new bx_pic_c();
+    bx_devices.pluginPicDevice = thePic;
+    BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePic, BX_PLUGIN_PIC);
+    return 0; // Success
+  } else {
+    return -1;
+  }
 }
 
 void libpic_LTX_plugin_fini(void)
@@ -51,6 +55,7 @@ bx_pic_c::bx_pic_c(void)
 
 bx_pic_c::~bx_pic_c(void)
 {
+  SIM->get_bochs_root()->remove("pic");
   BX_DEBUG(("Exit"));
 }
 
@@ -114,6 +119,11 @@ void bx_pic_c::init(void)
   BX_PIC_THIS s.slave_pic.rotate_on_autoeoi = 0;
   BX_PIC_THIS s.slave_pic.edge_level = 0;
   BX_PIC_THIS s.slave_pic.IRQ_in = 0;
+
+#if BX_DEBUGGER
+  // register device for the 'info device' command (calls debug_dump())
+  bx_dbg_register_debug_info("pic", this);
+#endif
 }
 
 void bx_pic_c::reset(unsigned type) {}
@@ -122,8 +132,8 @@ void bx_pic_c::register_state(void)
 {
   bx_list_c *ctrl;
 
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pic", "PIC State", 2);
-  ctrl = new bx_list_c(list, "master", 17);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pic", "PIC State");
+  ctrl = new bx_list_c(list, "master");
   new bx_shadow_num_c(ctrl, "interrupt_offset", &BX_PIC_THIS s.master_pic.interrupt_offset, BASE_HEX);
   new bx_shadow_num_c(ctrl, "auto_eoi", &BX_PIC_THIS s.master_pic.auto_eoi, BASE_HEX);
   new bx_shadow_num_c(ctrl, "imr", &BX_PIC_THIS s.master_pic.imr, BASE_HEX);
@@ -141,7 +151,7 @@ void bx_pic_c::register_state(void)
   new bx_shadow_bool_c(ctrl, "polled", &BX_PIC_THIS s.master_pic.polled);
   new bx_shadow_bool_c(ctrl, "rotate_on_autoeoi", &BX_PIC_THIS s.master_pic.rotate_on_autoeoi);
   new bx_shadow_num_c(ctrl, "edge_level", &BX_PIC_THIS s.master_pic.edge_level, BASE_HEX);
-  ctrl = new bx_list_c(list, "slave", 17);
+  ctrl = new bx_list_c(list, "slave");
   new bx_shadow_num_c(ctrl, "interrupt_offset", &BX_PIC_THIS s.slave_pic.interrupt_offset, BASE_HEX);
   new bx_shadow_num_c(ctrl, "auto_eoi", &BX_PIC_THIS s.slave_pic.auto_eoi, BASE_HEX);
   new bx_shadow_num_c(ctrl, "imr", &BX_PIC_THIS s.slave_pic.imr, BASE_HEX);
@@ -858,15 +868,19 @@ Bit8u bx_pic_c::IAC(void)
 }
 
 #if BX_DEBUGGER
-void bx_pic_c::debug_dump(void)
+void bx_pic_c::debug_dump(int argc, char **argv)
 {
-  dbg_printf("s.master_pic.imr = %02x\n", BX_PIC_THIS s.master_pic.imr);
-  dbg_printf("s.master_pic.isr = %02x\n", BX_PIC_THIS s.master_pic.isr);
-  dbg_printf("s.master_pic.irr = %02x\n", BX_PIC_THIS s.master_pic.irr);
-  dbg_printf("s.master_pic.irq = %02x\n", BX_PIC_THIS s.master_pic.irq);
-  dbg_printf("s.slave_pic.imr = %02x\n", BX_PIC_THIS s.slave_pic.imr);
-  dbg_printf("s.slave_pic.isr = %02x\n", BX_PIC_THIS s.slave_pic.isr);
-  dbg_printf("s.slave_pic.irr = %02x\n", BX_PIC_THIS s.slave_pic.irr);
-  dbg_printf("s.slave_pic.irq = %02x\n", BX_PIC_THIS s.slave_pic.irq);
+  dbg_printf("i8259A PIC\n\n");
+  dbg_printf("master IMR = %02x\n", BX_PIC_THIS s.master_pic.imr);
+  dbg_printf("master ISR = %02x\n", BX_PIC_THIS s.master_pic.isr);
+  dbg_printf("master IRR = %02x\n", BX_PIC_THIS s.master_pic.irr);
+  dbg_printf("master IRQ = %02x\n", BX_PIC_THIS s.master_pic.irq);
+  dbg_printf("slave IMR = %02x\n", BX_PIC_THIS s.slave_pic.imr);
+  dbg_printf("slave ISR = %02x\n", BX_PIC_THIS s.slave_pic.isr);
+  dbg_printf("slave IRR = %02x\n", BX_PIC_THIS s.slave_pic.irr);
+  dbg_printf("slave IRQ = %02x\n", BX_PIC_THIS s.slave_pic.irq);
+  if (argc > 0) {
+    dbg_printf("\nAdditional options not supported\n");
+  }
 }
 #endif

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: wx.cc 11370 2012-08-26 12:32:10Z vruppert $
 /////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
 // wxPanel called a MyPanel, which has methods to display
@@ -67,7 +67,8 @@ public:
   bx_wx_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
-  void statusbar_setitem(int element, bx_bool active, bx_bool w=0);
+  void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
+  virtual void set_mouse_mode_absxy(bx_bool mode);
 #if BX_SHOW_IPS
   void show_ips(Bit32u ips_count);
 #endif
@@ -99,6 +100,7 @@ static unsigned wxTileX = 0;
 static unsigned wxTileY = 0;
 static unsigned long wxCursorX = 0;
 static unsigned long wxCursorY = 0;
+static bx_bool wxMouseModeAbsXY = 0;
 static unsigned long wxFontX = 0;
 static unsigned long wxFontY = 0;
 static unsigned int text_rows=25, text_cols=80;
@@ -114,6 +116,7 @@ wxCriticalSection event_thread_lock;
 BxEvent event_queue[MAX_EVENTS];
 unsigned long num_events = 0;
 static bx_bool mouse_captured = 0;
+static bx_bool wx_hide_ips = 0;
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXGTK__)
 static Bit32u convertStringToGDKKey (const char *string);
 #endif
@@ -169,10 +172,10 @@ void MyPanel::OnTimer(wxTimerEvent& WXUNUSED(event))
     IFDBG_VGA(wxLogDebug(wxT("calling refresh")));
     Refresh(FALSE);
   }
-#if BX_SHOW_IPS && defined(WIN32)
+#if BX_SHOW_IPS
   static int i = 10;
   if (--i <= 0) {
-    bx_signal_handler(SIGALRM);
+    bx_show_ips_handler();
     i = 10;
   }
 #endif
@@ -215,15 +218,23 @@ void MyPanel::ToggleMouse (bool fromToolbar)
     wxMessageBox(msg, wxT("Mouse Capture Enabled"), wxOK | wxICON_INFORMATION);
     first_enable = false;
   }
-  enable->set (en);
-  IFDBG_MOUSE (wxLogDebug (wxT ("now mouse is %sabled", en ? "en" : "dis")));
+  enable->set(en);
+  IFDBG_MOUSE(wxLogDebug (wxT ("now mouse is %sabled", en ? "en" : "dis")));
   if (en) {
     mouseSavedX = wxScreenX / 2;
     mouseSavedY = wxScreenY / 2;
-    WarpPointer (mouseSavedX, mouseSavedY);
-    SetCursor (*blankCursor);
+    WarpPointer(mouseSavedX, mouseSavedY);
+#if defined(__WXMSW__)
+    ShowCursor(0);
+#else
+    SetCursor(*blankCursor);
+#endif
   } else {
-    SetCursor (wxNullCursor);
+#if defined(__WXMSW__)
+    ShowCursor(1);
+#else
+    SetCursor(wxNullCursor);
+#endif
   }
   if (needmutex) wxMutexGuiLeave();
 }
@@ -273,8 +284,14 @@ void MyPanel::OnMouse(wxMouseEvent& event)
       Bit16s dy = y - mouseSavedY;
       IFDBG_MOUSE (wxLogDebug (wxT ("mouse moved by delta %d,%d", dx, dy)));
       event_queue[num_events].type = BX_ASYNC_EVT_MOUSE;
-      event_queue[num_events].u.mouse.dx = dx;
-      event_queue[num_events].u.mouse.dy = -dy;
+      if (wxMouseModeAbsXY) {
+        event_queue[num_events].u.mouse.dx = x * 0x7fff / wxScreenX;
+        event_queue[num_events].u.mouse.dy = y * 0x7fff / wxScreenY;
+      } else {
+        event_queue[num_events].u.mouse.dx = dx;
+        event_queue[num_events].u.mouse.dy = -dy;
+      }
+      // TODO: handle mouse wheel
       event_queue[num_events].u.mouse.buttons = buttons;
       num_events++;
       mouseSavedX = x;
@@ -284,9 +301,11 @@ void MyPanel::OnMouse(wxMouseEvent& event)
     }
   }
 
-  mouseSavedX = wxScreenX / 2;
-  mouseSavedY = wxScreenY / 2;
-  WarpPointer (mouseSavedX, mouseSavedY);
+  if (!wxMouseModeAbsXY) {
+    mouseSavedX = wxScreenX / 2;
+    mouseSavedY = wxScreenY / 2;
+    WarpPointer(mouseSavedX, mouseSavedY);
+  }
   // The WarpPointer moves the pointer back to the middle of the
   // screen.  This WILL produce another mouse motion event, which needs
   // to be ignored.  It will be ignored because the new motion event
@@ -902,8 +921,7 @@ bx_bool MyPanel::fillBxKeyEvent(wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rele
 // fill in methods of bx_gui
 //////////////////////////////////////////////////////////////
 
-void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight,
-                     unsigned headerbar_y)
+void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
   int b,i,j;
   unsigned char fc, vc;
@@ -943,8 +961,8 @@ void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsig
   }
   memset(wxScreen, 0, wxScreenX * wxScreenY * 3);
 
-  wxTileX = tilewidth;
-  wxTileY = tileheight;
+  wxTileX = x_tilesize;
+  wxTileY = y_tilesize;
 
   // load keymap tables
   if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get())
@@ -953,6 +971,22 @@ void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsig
 #else
     bx_keymap.loadKeymap(NULL);
 #endif
+
+  // parse x11 specific options
+  if (argc > 1) {
+    for (i = 1; i < argc; i++) {
+#if BX_SHOW_IPS
+      if (!strcmp(argv[i], "hideIPS")) {
+        BX_INFO(("hide IPS display in status bar"));
+        wx_hide_ips = 1;
+      } else {
+        BX_PANIC(("Unknown wx option '%s'", argv[i]));
+      }
+#else
+      BX_PANIC(("Unknown wx option '%s'", argv[i]));
+#endif
+    }
+  }
 
   new_gfx_api = 1;
   dialog_caps = BX_GUI_DLG_USER | BX_GUI_DLG_SNAPSHOT | BX_GUI_DLG_SAVE_RESTORE;
@@ -1065,7 +1099,8 @@ void bx_wx_gui_c::handle_events(void)
         DEV_mouse_motion(
             event_queue[i].u.mouse.dx,
             event_queue[i].u.mouse.dy,
-            event_queue[i].u.mouse.buttons);
+            0,
+            event_queue[i].u.mouse.buttons, wxMouseModeAbsXY);
         break;
       default:
         wxLogError (wxT ("handle_events received unhandled event type %d in queue"), (int)event_queue[i].type);
@@ -1074,30 +1109,24 @@ void bx_wx_gui_c::handle_events(void)
   num_events = 0;
 }
 
-void bx_wx_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
+void bx_wx_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_bool w)
 {
 #if defined(__WXMSW__)
   char status_text[10];
 #endif
 
   wxMutexGuiEnter();
-  if (element < 0) {
-    for (unsigned i = 0; i < statusitem_count; i++) {
-      theFrame->SetStatusText(wxT(""), i+1);
-    }
-  } else if ((unsigned)element < statusitem_count) {
-    if (active) {
+  if (active) {
 #if defined(__WXMSW__)
-        status_text[0] = 9;
-        strcpy(status_text+1, statusitem_text[element]);
-        theFrame->SetStatusText(status_text, element+1);
+    status_text[0] = 9;
+    strcpy(status_text+1, statusitem[element].text);
+    theFrame->SetStatusText(status_text, element+1);
 #else
-      theFrame->SetStatusText(wxString(statusitem_text[element], wxConvUTF8),
-        element+1);
+    theFrame->SetStatusText(wxString(statusitem[element].text, wxConvUTF8),
+                            element+1);
 #endif
-    } else {
-      theFrame->SetStatusText(wxT(""), element+1);
-    }
+  } else {
+    theFrame->SetStatusText(wxT(""), element+1);
   }
   wxMutexGuiLeave();
 }
@@ -1155,13 +1184,11 @@ static void UpdateScreen(unsigned char *newBits, int x, int y, int width, int he
   }
 }
 
-static void DrawBochsBitmap(int x, int y, int width, int height, char *bmap, char color, int fontx, int fonty, bx_bool gfxchar)
+static void DrawBochsBitmap(int x, int y, int width, int height, char *bmap, char fgcolor, char bgcolor, int fontx, int fonty, bx_bool gfxchar)
 {
   static unsigned char newBits[9 * 32];
   unsigned char mask;
   int bytes = width * height;
-  char bgcolor = DEV_vga_get_actl_pal_idx((color >> 4) & 0xF);
-  char fgcolor = DEV_vga_get_actl_pal_idx(color & 0xF);
 
   if (y > wxScreenY) return;
 
@@ -1195,7 +1222,7 @@ static void DrawBochsBitmap(int x, int y, int width, int height, char *bmap, cha
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is tm_info.line_offset*text_rows
+// format of old_text & new_text: each is tm_info->line_offset*text_rows
 //     bytes long. Each character consists of 2 bytes.  The first by is
 //     the character value, the second is the attribute byte.
 //
@@ -1205,47 +1232,52 @@ static void DrawBochsBitmap(int x, int y, int width, int height, char *bmap, cha
 //           features in text mode (cursor shape, line offset,...)
 
 void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
-                      unsigned long cursor_x, unsigned long cursor_y,
-          bx_vga_tminfo_t tm_info)
+                              unsigned long cursor_x, unsigned long cursor_y,
+                              bx_vga_tminfo_t *tm_info)
 {
   IFDBG_VGA(wxLogDebug (wxT ("text_update")));
 
   Bit8u *old_line, *new_line, *text_base;
   Bit8u cAttr, cChar;
-  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2, cs_y;
+  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2, cs_y, i;
   Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
   Bit8u split_textrow, split_fontrows;
   bx_bool forceUpdate = 0, gfxchar, split_screen, blink_state, blink_mode;
+  Bit8u text_pal_idx[16];
+  char bgcolor, fgcolor;
 
   // first check if the screen needs to be redrawn completely
-  blink_mode = (tm_info.blink_flags & BX_TEXT_BLINK_MODE) > 0;
-  blink_state = (tm_info.blink_flags & BX_TEXT_BLINK_STATE) > 0;
+  blink_mode = (tm_info->blink_flags & BX_TEXT_BLINK_MODE) > 0;
+  blink_state = (tm_info->blink_flags & BX_TEXT_BLINK_STATE) > 0;
   if (blink_mode) {
-    if (tm_info.blink_flags & BX_TEXT_BLINK_TOGGLE)
+    if (tm_info->blink_flags & BX_TEXT_BLINK_TOGGLE)
       forceUpdate = 1;
   }
   if(charmap_updated) {
     forceUpdate = 1;
     charmap_updated = 0;
   }
-  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
-    forceUpdate = 1;
-    h_panning = tm_info.h_panning;
-    v_panning = tm_info.v_panning;
+  for (i = 0; i < 16; i++) {
+    text_pal_idx[i] = tm_info->actl_palette[i];
   }
-  if(tm_info.line_compare != line_compare) {
+  if((tm_info->h_panning != h_panning) || (tm_info->v_panning != v_panning)) {
     forceUpdate = 1;
-    line_compare = tm_info.line_compare;
+    h_panning = tm_info->h_panning;
+    v_panning = tm_info->v_panning;
+  }
+  if(tm_info->line_compare != line_compare) {
+    forceUpdate = 1;
+    line_compare = tm_info->line_compare;
   }
 
   // invalidate character at previous and new cursor location
   if((wxCursorY < text_rows) && (wxCursorX < text_cols)) {
-    curs = wxCursorY * tm_info.line_offset + wxCursorX * 2;
+    curs = wxCursorY * tm_info->line_offset + wxCursorX * 2;
     old_text[curs] = ~new_text[curs];
   }
-  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < wxFontY) &&
+  if((tm_info->cs_start <= tm_info->cs_end) && (tm_info->cs_start < wxFontY) &&
      (cursor_y < text_rows) && (cursor_x < text_cols)) {
-    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    curs = cursor_y * tm_info->line_offset + cursor_x * 2;
     old_text[curs] = ~new_text[curs];
   } else {
     curs = 0xffff;
@@ -1255,7 +1287,7 @@ void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   if (v_panning) rows++;
   y = 0;
   cs_y = 0;
-  text_base = new_text - tm_info.start_address;
+  text_base = new_text - tm_info->start_address;
   if (line_compare < wxScreenY) {
     split_textrow = (line_compare + v_panning) / wxFontY;
     split_fontrows = ((line_compare + v_panning) % wxFontY) + 1;
@@ -1301,7 +1333,7 @@ void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     new_line = new_text;
     old_line = old_text;
     x = 0;
-    offset = cs_y * tm_info.line_offset;
+    offset = cs_y * tm_info->line_offset;
     do {
       if (h_panning) {
         if (hchars > text_cols) {
@@ -1332,28 +1364,29 @@ void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
         } else {
           cAttr = new_text[1];
         }
-        gfxchar = tm_info.line_graphics && ((cChar & 0xE0) == 0xC0);
+        gfxchar = tm_info->line_graphics && ((cChar & 0xE0) == 0xC0);
+        bgcolor = text_pal_idx[(cAttr >> 4) & 0xF];
+        fgcolor = text_pal_idx[cAttr & 0xF];
         DrawBochsBitmap(xc, yc, cfwidth, cfheight, (char *)&vga_charmap[cChar<<5],
-                        cAttr, font_col, font_row, gfxchar);
+                        fgcolor, bgcolor, font_col, font_row, gfxchar);
         if (offset == curs) {
           if (font_row == 0) {
-            yc2 = yc + tm_info.cs_start;
-            font_row2 = tm_info.cs_start;
-            cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            yc2 = yc + tm_info->cs_start;
+            font_row2 = tm_info->cs_start;
+            cfheight2 = tm_info->cs_end - tm_info->cs_start + 1;
           } else {
-            if (v_panning > tm_info.cs_start) {
+            if (v_panning > tm_info->cs_start) {
               yc2 = yc;
               font_row2 = font_row;
-              cfheight2 = tm_info.cs_end - v_panning + 1;
+              cfheight2 = tm_info->cs_end - v_panning + 1;
             } else {
-              yc2 = yc + tm_info.cs_start - v_panning;
-              font_row2 = tm_info.cs_start;
-              cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+              yc2 = yc + tm_info->cs_start - v_panning;
+              font_row2 = tm_info->cs_start;
+              cfheight2 = tm_info->cs_end - tm_info->cs_start + 1;
             }
           }
-          cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
           DrawBochsBitmap(xc, yc2, cfwidth, cfheight2, (char *)&vga_charmap[cChar<<5],
-                          cAttr, font_col, font_row2, gfxchar);
+                          bgcolor, fgcolor, font_col, font_row2, gfxchar);
         }
       }
       x++;
@@ -1365,18 +1398,18 @@ void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       new_text = text_base;
       forceUpdate = 1;
       cs_y = 0;
-      if (tm_info.split_hpanning) h_panning = 0;
+      if (tm_info->split_hpanning) h_panning = 0;
       rows = ((wxScreenY - line_compare + wxFontY - 2) / wxFontY) + 1;
       split_screen = 1;
     } else {
       y++;
       cs_y++;
-      new_text = new_line + tm_info.line_offset;
-      old_text = old_line + tm_info.line_offset;
+      new_text = new_line + tm_info->line_offset;
+      old_text = old_line + tm_info->line_offset;
     }
   } while (--rows);
 
-  h_panning = tm_info.h_panning;
+  h_panning = tm_info->h_panning;
   wxCursorX = cursor_x;
   wxCursorY = cursor_y;
 
@@ -1406,8 +1439,8 @@ bx_bool bx_wx_gui_c::palette_change(unsigned index, unsigned red, unsigned green
 // screen, since info in this region has changed.
 //
 // tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'tilewidth' & 'tileheight' parameters to
-//       ::specific_init().  Each value specifies an index into the
+//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
+//       Each value specifies an index into the
 //       array of colors you allocated for ::palette_change()
 // x0: x origin of tile
 // y0: y origin of tile
@@ -1659,16 +1692,21 @@ int bx_wx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   return ret;
 }
 
+void bx_wx_gui_c::set_mouse_mode_absxy(bx_bool mode)
+{
+  wxMouseModeAbsXY = mode;
+}
+
 #if BX_SHOW_IPS
 void bx_wx_gui_c::show_ips(Bit32u ips_count)
 {
   char ips_text[40];
-  bx_bool is_main_thread = wxThread::IsMain();
-  bx_bool needmutex = !is_main_thread && SIM->is_sim_thread();
-  if (needmutex) wxMutexGuiEnter();
-  sprintf(ips_text, "IPS: %3.3fM", ips_count / 1000000.0);
-  theFrame->SetStatusText(wxString(ips_text, wxConvUTF8), 0);
-  if (needmutex) wxMutexGuiLeave();
+
+  if (!wx_hide_ips) {
+    ips_count /= 1000;
+    sprintf(ips_text, "IPS: %u.%3.3uM", ips_count / 1000, ips_count % 1000);
+    theFrame->SetStatusText(wxString(ips_text, wxConvUTF8), 0);
+  }
 }
 #endif
 

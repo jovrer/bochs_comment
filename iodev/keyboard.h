@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: keyboard.h 11224 2012-06-21 17:33:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -222,8 +222,8 @@ private:
 
   static void mouse_enabled_changed_static(void *dev, bx_bool enabled);
   void mouse_enabled_changed(bx_bool enabled);
-  static void mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state);
-  void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state);
+  static void mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy);
+  void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy);
 
   static void   timer_handler(void *);
   void   timer(void);

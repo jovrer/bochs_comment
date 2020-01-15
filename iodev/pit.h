@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit.h,v 1.15 2006/05/27 15:54:48 sshwarts Exp $
+// $Id: pit.h 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,79 +16,59 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
 #ifndef _BX_PIT_H
 #define _BX_PIT_H
 
-#include "config.h"
-
-#if (BX_USE_NEW_PIT==0)
+#include "bochs.h"
+#include "pit82c54.h"
 
 #if BX_USE_PIT_SMF
 #  define BX_PIT_SMF  static
-#  define BX_PIT_THIS bx_pit.
+#  define BX_PIT_THIS thePit->
 #else
 #  define BX_PIT_SMF
 #  define BX_PIT_THIS this->
 #endif
 
-#ifdef OUT
-#  undef OUT
-#endif
-
-
-typedef struct {
-  Bit8u      mode;
-  Bit8u      latch_mode;
-  Bit16u     input_latch_value;
-  bx_bool    input_latch_toggle;
-  Bit16u     output_latch_value;
-  bx_bool    output_latch_toggle;
-  bx_bool    output_latch_full;
-  Bit16u     counter_max;
-  Bit16u     counter;
-  bx_bool    bcd_mode;
-  bx_bool    active;
-  bx_bool    GATE;     // GATE input  pin
-  bx_bool    OUT;      // OUT  output pin
-} bx_pit_t;
-
-class bx_pit_c : public logfunctions {
+class bx_pit_c : public bx_devmodel_c {
 public:
   bx_pit_c();
   virtual ~bx_pit_c();
-  BX_PIT_SMF int init(void);
-  BX_PIT_SMF void reset( unsigned type);
-  BX_PIT_SMF bx_bool periodic( Bit32u   usec_delta );
-#if BX_SUPPORT_SAVE_RESTORE
-  BX_PIT_SMF void register_state(void);
+  virtual void init(void);
+  virtual void reset(unsigned type);
+  virtual void register_state(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
 #endif
 
 private:
-
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
 #if !BX_USE_PIT_SMF
-  Bit32u   read( Bit32u   addr, unsigned int len );
-  void write( Bit32u   addr, Bit32u   Value, unsigned int len );
+  Bit32u   read(Bit32u addr, unsigned len);
+  void write(Bit32u addr, Bit32u Value, unsigned len);
 #endif
 
   struct s_type {
-    bx_pit_t timer[3];
-    Bit8u   speaker_data_on;
-    bx_bool refresh_clock_div2;
-    int  timer_handle[3];
+    pit_82C54 timer;
+    bx_bool speaker_data_on;
+    bx_bool speaker_active;
+    Bit64u  last_usec;
+    Bit32u  last_next_event_time;
+    Bit64u  total_ticks;
+    Bit64u  total_usec;
+    int     timer_handle[3];
   } s;
 
-  BX_PIT_SMF void  write_count_reg( Bit8u   value, unsigned timerid );
-  BX_PIT_SMF Bit8u read_counter( unsigned timerid );
-  BX_PIT_SMF void  latch( unsigned timerid );
-  BX_PIT_SMF void  set_GATE(unsigned pit_id, unsigned value);
-  BX_PIT_SMF void  start(unsigned timerid);
+  static void timer_handler(void *this_ptr);
+  BX_PIT_SMF void handle_timer();
+  BX_PIT_SMF bx_bool periodic(Bit32u usec_delta);
+
+  BX_PIT_SMF void  irq_handler(bx_bool value);
+
+  BX_PIT_SMF Bit16u get_timer(int Timer);
 };
 
-extern bx_pit_c bx_pit;
-
-#endif  // #if (BX_USE_NEW_PIT==0)
 #endif  // #ifndef _BX_PIT_H

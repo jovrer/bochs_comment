@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: atom_n270.h 10725 2011-10-07 19:32:44Z sshwarts $
+// $Id: atom_n270.h 11217 2012-06-14 18:56:47Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -44,16 +44,9 @@ public:
   virtual void dump_cpuid(void) const;
 
 private:
-#if BX_SUPPORT_SMP
-  unsigned nprocessors;
-  unsigned ncores;
-  unsigned nthreads;
-#endif
-
   void get_std_cpuid_leaf_0(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_1(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_2(cpuid_function_t *leaf) const;
-  void get_std_cpuid_leaf_3(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_4(Bit32u subfunction, cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_5(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_6(cpuid_function_t *leaf) const;
@@ -62,7 +55,6 @@ private:
   void get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const;
   void get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const;
-  void get_ext_cpuid_leaf_5(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_6(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_7(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_8(cpuid_function_t *leaf) const;

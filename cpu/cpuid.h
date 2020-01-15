@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpuid.h 10891 2011-12-29 21:41:56Z sshwarts $
+// $Id: cpuid.h 11276 2012-07-12 14:51:54Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2010-2011 Stanislav Shwartsman
+//   Copyright (c) 2010-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -33,7 +33,7 @@ struct cpuid_function_t {
 
 class bx_cpuid_t {
 public:
-  bx_cpuid_t(BX_CPU_C *_cpu): cpu(_cpu) {}
+  bx_cpuid_t(BX_CPU_C *_cpu);
   virtual ~bx_cpuid_t() {}
 
   // return CPU name
@@ -43,6 +43,9 @@ public:
   virtual Bit32u get_cpu_extensions_bitmask(void) const = 0;
 #if BX_SUPPORT_VMX
   virtual Bit32u get_vmx_extensions_bitmask(void) const { return 0; }
+#endif
+#if BX_SUPPORT_SVM
+  virtual Bit32u get_svm_extensions_bitmask(void) const { return 0; }
 #endif
 
   virtual void get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const = 0;
@@ -56,6 +59,10 @@ public:
 
 protected:
   BX_CPU_C *cpu;
+
+  unsigned nprocessors;
+  unsigned ncores;
+  unsigned nthreads;
 
   void get_reserved_leaf(cpuid_function_t *leaf) const
   {
@@ -84,30 +91,32 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_ISA_SSSE3                 (BX_CONST64(1) << 12)  /* SSSE3 instruction */
 #define BX_ISA_SSE4_1                (BX_CONST64(1) << 13)  /* SSE4_1 instruction */
 #define BX_ISA_SSE4_2                (BX_CONST64(1) << 14)  /* SSE4_2 instruction */
-#define BX_ISA_MONITOR_MWAIT         (BX_CONST64(1) << 15)  /* MONITOR/MWAIT instruction */
-#define BX_ISA_VMX                   (BX_CONST64(1) << 16)  /* VMX instruction */
-#define BX_ISA_SMX                   (BX_CONST64(1) << 17)  /* SMX instruction */
-#define BX_ISA_LM_LAHF_SAHF          (BX_CONST64(1) << 18)  /* Long Mode LAHF/SAHF instruction */
-#define BX_ISA_CMPXCHG16B            (BX_CONST64(1) << 19)  /* CMPXCHG16B instruction */
-#define BX_ISA_RDTSCP                (BX_CONST64(1) << 20)  /* RDTSCP instruction */
-#define BX_ISA_XSAVE                 (BX_CONST64(1) << 21)  /* XSAVE/XRSTOR extensions instruction */
-#define BX_ISA_XSAVEOPT              (BX_CONST64(1) << 22)  /* XSAVEOPT instruction */
-#define BX_ISA_AES_PCLMULQDQ         (BX_CONST64(1) << 23)  /* AES+PCLMULQDQ instruction */
-#define BX_ISA_MOVBE                 (BX_CONST64(1) << 24)  /* MOVBE Intel Atom(R) instruction */
-#define BX_ISA_FSGSBASE              (BX_CONST64(1) << 25)  /* FS/GS BASE access instruction */
-#define BX_ISA_INVPCID               (BX_CONST64(1) << 26)  /* INVPCID instruction */
-#define BX_ISA_AVX                   (BX_CONST64(1) << 27)  /* AVX instruction */
-#define BX_ISA_AVX2                  (BX_CONST64(1) << 28)  /* AVX2 instruction */
-#define BX_ISA_AVX_F16C              (BX_CONST64(1) << 29)  /* AVX F16 convert instruction */
-#define BX_ISA_AVX_FMA               (BX_CONST64(1) << 30)  /* AVX FMA instruction */
-#define BX_ISA_SSE4A                 (BX_CONST64(1) << 31)  /* SSE4A instruction (AMD) */
-#define BX_ISA_LZCNT                 (BX_CONST64(1) << 32)  /* LZCNT instruction */
-#define BX_ISA_BMI1                  (BX_CONST64(1) << 33)  /* BMI1 instruction */
-#define BX_ISA_BMI2                  (BX_CONST64(1) << 34)  /* BMI2 instruction */
-#define BX_ISA_FMA4                  (BX_CONST64(1) << 35)  /* FMA4 instruction (AMD) */
-#define BX_ISA_XOP                   (BX_CONST64(1) << 36)  /* XOP instruction (AMD) */
-#define BX_ISA_TBM                   (BX_CONST64(1) << 37)  /* TBM instruction (AMD) */
-#define BX_ISA_SVM                   (BX_CONST64(1) << 38)  /* SVM instruction (AMD) */
+#define BX_ISA_POPCNT                (BX_CONST64(1) << 15)  /* POPCNT instruction */
+#define BX_ISA_MONITOR_MWAIT         (BX_CONST64(1) << 16)  /* MONITOR/MWAIT instruction */
+#define BX_ISA_VMX                   (BX_CONST64(1) << 17)  /* VMX instruction */
+#define BX_ISA_SMX                   (BX_CONST64(1) << 18)  /* SMX instruction */
+#define BX_ISA_LM_LAHF_SAHF          (BX_CONST64(1) << 19)  /* Long Mode LAHF/SAHF instruction */
+#define BX_ISA_CMPXCHG16B            (BX_CONST64(1) << 20)  /* CMPXCHG16B instruction */
+#define BX_ISA_RDTSCP                (BX_CONST64(1) << 21)  /* RDTSCP instruction */
+#define BX_ISA_XSAVE                 (BX_CONST64(1) << 22)  /* XSAVE/XRSTOR extensions instruction */
+#define BX_ISA_XSAVEOPT              (BX_CONST64(1) << 23)  /* XSAVEOPT instruction */
+#define BX_ISA_AES_PCLMULQDQ         (BX_CONST64(1) << 24)  /* AES+PCLMULQDQ instruction */
+#define BX_ISA_MOVBE                 (BX_CONST64(1) << 25)  /* MOVBE Intel Atom(R) instruction */
+#define BX_ISA_FSGSBASE              (BX_CONST64(1) << 26)  /* FS/GS BASE access instruction */
+#define BX_ISA_INVPCID               (BX_CONST64(1) << 27)  /* INVPCID instruction */
+#define BX_ISA_AVX                   (BX_CONST64(1) << 28)  /* AVX instruction */
+#define BX_ISA_AVX2                  (BX_CONST64(1) << 29)  /* AVX2 instruction */
+#define BX_ISA_AVX_F16C              (BX_CONST64(1) << 30)  /* AVX F16 convert instruction */
+#define BX_ISA_AVX_FMA               (BX_CONST64(1) << 31)  /* AVX FMA instruction */
+#define BX_ISA_SSE4A                 (BX_CONST64(1) << 32)  /* SSE4A instruction (AMD) */
+#define BX_ISA_LZCNT                 (BX_CONST64(1) << 33)  /* LZCNT instruction */
+#define BX_ISA_BMI1                  (BX_CONST64(1) << 34)  /* BMI1 instruction */
+#define BX_ISA_BMI2                  (BX_CONST64(1) << 35)  /* BMI2 instruction */
+#define BX_ISA_FMA4                  (BX_CONST64(1) << 36)  /* FMA4 instruction (AMD) */
+#define BX_ISA_XOP                   (BX_CONST64(1) << 37)  /* XOP instruction (AMD) */
+#define BX_ISA_TBM                   (BX_CONST64(1) << 38)  /* TBM instruction (AMD) */
+#define BX_ISA_SVM                   (BX_CONST64(1) << 39)  /* SVM instruction (AMD) */
+#define BX_ISA_ADX                   (BX_CONST64(1) << 40)  /* ADCX/ADOX instruction */
 
 // cpuid non-ISA features
 #define BX_CPU_DEBUG_EXTENSIONS      (1 <<  0)              /* Debug Extensions support */
@@ -120,14 +129,16 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_CPU_PAT                   (1 <<  7)              /* PAT support */
 #define BX_CPU_XAPIC                 (1 <<  8)              /* XAPIC support */
 #define BX_CPU_X2APIC                (1 <<  9)              /* X2APIC support */
-#define BX_CPU_NX                    (1 << 10)              /* No-Execute support */
-#define BX_CPU_LONG_MODE             (1 << 11)              /* Long Mode (x86-64) support */
-#define BX_CPU_1G_PAGES              (1 << 12)              /* 1Gb pages support */
-#define BX_CPU_PCID                  (1 << 13)              /* PCID pages support */
-#define BX_CPU_SMEP                  (1 << 14)              /* SMEP support */
-#define BX_CPU_FFXSR                 (1 << 15)              /* EFER.FFXSR support */
-#define BX_CPU_ALT_MOV_CR8           (1 << 16)              /* LOCK CR0 access CR8 */
-#define BX_CPU_TSC_DEADLINE          (1 << 17)              /* TSC-Deadline */
+#define BX_CPU_XAPIC_EXT             (1 << 10)              /* XAPIC Extensions support */
+#define BX_CPU_NX                    (1 << 11)              /* No-Execute support */
+#define BX_CPU_LONG_MODE             (1 << 12)              /* Long Mode (x86-64) support */
+#define BX_CPU_1G_PAGES              (1 << 13)              /* 1Gb pages support */
+#define BX_CPU_PCID                  (1 << 14)              /* PCID pages support */
+#define BX_CPU_SMEP                  (1 << 15)              /* SMEP support */
+#define BX_CPU_FFXSR                 (1 << 16)              /* EFER.FFXSR support */
+#define BX_CPU_ALT_MOV_CR8           (1 << 17)              /* LOCK CR0 access CR8 */
+#define BX_CPU_TSC_DEADLINE          (1 << 18)              /* TSC-Deadline */
+#define BX_CPU_MISALIGNED_SSE        (1 << 19)              /* Misaligned SSE */
 
 // cpuid VMX features
 #define BX_VMX_TPR_SHADOW            (1 <<  0)              /* TPR shadow */
@@ -147,6 +158,7 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 #define BX_VMX_DESCRIPTOR_TABLE_EXIT (1 << 14)              /* Descriptor Table VMEXIT */
 #define BX_VMX_PAUSE_LOOP_EXITING    (1 << 15)              /* Pause Loop Exiting */
 #define BX_VMX_EPTP_SWITCHING        (1 << 16)              /* EPTP switching (VM Function 0) */
+#define BX_VMX_EPT_ACCESS_DIRTY      (1 << 17)              /* Extended Page Tables (EPT) A/D Bits */
 
 // CPUID defines - STD features CPUID[0x00000001].EDX
 // ----------------------------
@@ -292,26 +304,39 @@ typedef bx_cpuid_t* (*bx_create_cpuid_method)(BX_CPU_C *cpu);
 //   [0:0]    FS/GS BASE access instructions
 //   [2:1]    reserved
 //   [3:3]    BMI1: Advanced Bit Manipulation Extensions
-//   [4:4]    reserved
+//   [4:4]    HLE: Hardware Lock Elision
 //   [5:5]    AVX2
 //   [6:6]    reserved
 //   [7:7]    SMEP: Supervisor Mode Execution Protection
 //   [8:8]    BMI2: Advanced Bit Manipulation Extensions
 //   [9:9]    Support for Enhanced REP MOVSB/STOSB
 //   [10:10]  Support for INVPCID instruction
-//   [31:10]  reserved
+//   [11:11]  RTM: Restricted Transactional Memory
+//   [17:12]  reserved
+//   [18:18]  RDSEED instruction support
+//   [19:19]  ADCX/ADOX instructions support
+//   [31:20]  reserved
 
 #define BX_CPUID_EXT3_FSGSBASE               (1 <<  0)
 #define BX_CPUID_EXT3_RESERVED1              (1 <<  1)
 #define BX_CPUID_EXT3_RESERVED2              (1 <<  2)
 #define BX_CPUID_EXT3_BMI1                   (1 <<  3)
-#define BX_CPUID_EXT3_RESERVED4              (1 <<  4)
+#define BX_CPUID_EXT3_HLE                    (1 <<  4)
 #define BX_CPUID_EXT3_AVX2                   (1 <<  5)
 #define BX_CPUID_EXT3_RESERVED6              (1 <<  6)
 #define BX_CPUID_EXT3_SMEP                   (1 <<  7)
 #define BX_CPUID_EXT3_BMI2                   (1 <<  8)
 #define BX_CPUID_EXT3_ENCHANCED_REP_STRINGS  (1 <<  9)
 #define BX_CPUID_EXT3_INVPCID                (1 << 10)
+#define BX_CPUID_EXT3_RTM                    (1 << 11)
+#define BX_CPUID_EXT3_RESERVED12             (1 << 12)
+#define BX_CPUID_EXT3_RESERVED13             (1 << 13)
+#define BX_CPUID_EXT3_RESERVED14             (1 << 14)
+#define BX_CPUID_EXT3_RESERVED15             (1 << 15)
+#define BX_CPUID_EXT3_RESERVED16             (1 << 16)
+#define BX_CPUID_EXT3_RESERVED17             (1 << 17)
+#define BX_CPUID_EXT3_RDSEED                 (1 << 18)
+#define BX_CPUID_EXT3_ADX                    (1 << 19)
 // ...
 
 

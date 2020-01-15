@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.cc 10640 2011-08-30 21:32:40Z sshwarts $
+// $Id: smm.cc 11305 2012-08-01 14:56:51Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2006-2011 Stanislav Shwartsman
+//   Copyright (c) 2006-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,38 +28,6 @@
 
 #if BX_CPU_LEVEL >= 3
 
-//
-// Some of the CPU field must be saved and restored in order to continue the
-// simulation correctly after the RSM instruction:
-//
-//      ---------------------------------------------------------------
-//
-// 1. General purpose registers: EAX-EDI, R8-R15
-// 2. EIP, RFLAGS
-// 3. Segment registers CS, DS, SS, ES, FS, GS
-//    fields: valid      - not required, initialized according to selector value
-//            p          - must be saved/restored
-//            dpl        - must be saved/restored
-//            segment    - must be 1 for seg registers, not required to save
-//            type       - must be saved/restored
-//            base       - must be saved/restored
-//            limit      - must be saved/restored
-//            g          - must be saved/restored
-//            d_b        - must be saved/restored
-//            l          - must be saved/restored
-//            avl        - must be saved/restored
-// 4. GDTR, IDTR
-//     fields: base, limit
-// 5. LDTR, TR
-//     fields: base, limit, anything else ?
-// 6. Debug Registers DR0-DR7, only DR6 and DR7 are saved
-// 7. Control Registers: CR0, CR1 is always 0, CR2 is NOT saved, CR3, CR4, EFER
-// 8. SMBASE
-// 9. MSR/FPU/XMM/APIC are NOT saved accoring to Intel docs
-//
-
-#define SMM_SAVE_STATE_MAP_SIZE 128
-
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
 {
   /* If we are not in System Management Mode, then #UD should be generated */
@@ -72,7 +40,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR in_vmx) {
     if (BX_CPU_THIS_PTR in_vmx_guest) {
       BX_ERROR(("VMEXIT: RSM in VMX non-root operation"));
-      VMexit(i, VMX_VMEXIT_RSM, 0);
+      VMexit(VMX_VMEXIT_RSM, 0);
     }
     else {
       BX_ERROR(("RSM in VMX root operation !"));
@@ -80,8 +48,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
     }
   }
 #endif
-
-  invalidate_prefetch_q();
 
   BX_INFO(("RSM: Resuming from System Management Mode"));
 
@@ -96,7 +62,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
   for(n=0;n<SMM_SAVE_STATE_MAP_SIZE;n++) {
     base -= 4;
     access_read_physical(base, 4, &saved_state[n]);
-    BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, base, 4, BX_SMRAM_ACCESS | BX_READ, (Bit8u*)(&saved_state[n]));
+    BX_NOTIFY_PHY_MEMORY_ACCESS(base, 4, BX_READ, BX_SMRAM_ACCESS, (Bit8u*)(&saved_state[n]));
   }
   BX_CPU_THIS_PTR in_smm = 0;
 
@@ -113,8 +79,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
 
 void BX_CPU_C::enter_system_management_mode(void)
 {
-  invalidate_prefetch_q();
-
   BX_INFO(("Enter to System Management Mode"));
 
   // debug(BX_CPU_THIS_PTR prev_rip);
@@ -163,7 +127,7 @@ void BX_CPU_C::enter_system_management_mode(void)
   for(n=0;n<SMM_SAVE_STATE_MAP_SIZE;n++) {
     base -= 4;
     access_write_physical(base, 4, &saved_state[n]);
-    BX_DBG_PHY_MEMORY_ACCESS(BX_CPU_ID, base, 4, BX_SMRAM_ACCESS | BX_WRITE, (Bit8u*)(&saved_state[n]));
+    BX_NOTIFY_PHY_MEMORY_ACCESS(base, 4, BX_WRITE, BX_SMRAM_ACCESS, (Bit8u*)(&saved_state[n]));
   }
 
   BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
@@ -179,9 +143,6 @@ void BX_CPU_C::enter_system_management_mode(void)
 #if BX_CPU_LEVEL >= 5
   BX_CPU_THIS_PTR cr4.set32(0);
 #endif
-
-  // paging mode was changed - flush TLB
-  TLB_flush(); //  Flush Global entries also
 
 #if BX_CPU_LEVEL >= 5
   BX_CPU_THIS_PTR efer.set32(0);
@@ -203,19 +164,6 @@ void BX_CPU_C::enter_system_management_mode(void)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b = 0; /* 16bit default size */
 #if BX_SUPPORT_X86_64
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l   = 0; /* 16bit default size */
-#endif
-
-  handleCpuModeChange();
-
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
-  handleAlignmentCheck();
-#endif
-
-#if BX_CPU_LEVEL >= 6
-  handleSseModeChange();
-#if BX_SUPPORT_AVX
-  handleAvxModeChange();
-#endif
 #endif
 
   /* DS (Data Segment) and descriptor cache */
@@ -242,6 +190,12 @@ void BX_CPU_C::enter_system_management_mode(void)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES] = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS];
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS] = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS];
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS] = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS];
+
+  handleCpuContextChange();
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  BX_CPU_THIS_PTR monitor.reset_monitor();
+#endif
 
   BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_CONTEXT_SWITCH, 0);
 }
@@ -505,200 +459,51 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
 
 bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
 {
-  Bit32u temp_cr0    = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR0);
-  Bit32u temp_eflags = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFLAGS);
-  Bit32u temp_efer   = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFER);
-  Bit32u temp_cr4    = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR4);
+  BX_SMM_State smm_state;
 
-  // Processors that support VMX operation perform RSM as follows:
-#if BX_SUPPORT_VMX
-  // IF VMXE=1 in CR4 image in SMRAM
-  // THEN
-  //   fail and enter shutdown state;
+  smm_state.smm_revision_id = SMRAM_FIELD(saved_state, SMRAM_FIELD_SMM_REVISION_ID);
 
-  if (temp_cr4 & BX_CR4_VMXE_MASK) {
-    BX_PANIC(("SMM restore: CR4.VMXE is set in restore image !"));
-    return 0;
-  }
-
-  // restore state normally from SMRAM;
-  // CR4.VMXE = value stored internally;
-  // IF internal storage indicates that the logical processor had been in VMX operation (root or non-root)
-  // THEN
-  //   enter VMX operation (root or non-root);
-  //   restore VMX-critical state
-  //   set CR0.PE, CR0.NE, and CR0.PG to 1;
-  //   IF RFLAGS.VM = 0
-  //   THEN
-  //     CS.RPL = SS.DPL;
-  //     SS.RPL = SS.DPL;
-  //   FI;
-  //   If necessary, restore current VMCS pointer;
-  //   Leave SMM; Deassert SMMEM on subsequent bus transactions;
-  //   IF logical processor will be in VMX operation after RSM
-  //   THEN
-  //     block A20M and leave A20M mode;
-  //   FI;
-
-  if (BX_CPU_THIS_PTR in_smm_vmx) {
-    BX_CPU_THIS_PTR in_vmx = 1;
-    BX_CPU_THIS_PTR in_vmx_guest = BX_CPU_THIS_PTR in_smm_vmx_guest;
-    BX_INFO(("SMM Restore: enable VMX %s mode", BX_CPU_THIS_PTR in_vmx_guest ? "guest" : "host"));
-    temp_cr4 |= BX_CR4_VMXE_MASK; /* set VMXE */
-    temp_cr0 |= (1<<31)  /* PG */ | (1 << 5) /* NE */ | 0x1 /* PE */;
-    // block and disable A20M;
-  }
-#endif
-
-  bx_bool pe = (temp_cr0 & 0x1);
-  bx_bool pg = (temp_cr0 >> 31) & 0x1;
-
-  // check CR0 conditions for entering to shutdown state
-  if (!check_CR0(temp_cr0)) {
-    BX_PANIC(("SMM restore: CR0 consistency check failed !"));
-    return 0;
-  }
-
-  if (!check_CR4(temp_cr4)) {
-    BX_PANIC(("SMM restore: CR4 consistency check failed !"));
-    return 0;
-  }
-
-  // shutdown if write to reserved CR4 bits
-  if (!SetCR4(temp_cr4)) {
-    BX_PANIC(("SMM restore: incorrect CR4 state !"));
-    return 0;
-  }
-
-  if (temp_efer & ~((Bit64u) BX_CPU_THIS_PTR efer_suppmask)) {
-    BX_PANIC(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", temp_efer));
-    return 0;
-  }
-
-  BX_CPU_THIS_PTR efer.set32(temp_efer & BX_CPU_THIS_PTR efer_suppmask);
-
-  if (BX_CPU_THIS_PTR efer.get_LMA()) {
-    if (temp_eflags & EFlagsVMMask) {
-      BX_PANIC(("SMM restore: If EFER.LMA = 1 => RFLAGS.VM=0 !"));
-      return 0;
-    }
-
-    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !pg || !pe || !BX_CPU_THIS_PTR efer.get_LME()) {
-      BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
-      return 0;
-    }
-  }
-  else {
-    if (BX_CPU_THIS_PTR cr4.get_PCIDE()) {
-      BX_PANIC(("SMM restore: CR4.PCIDE must be clear when not in long mode !"));
-      return 0;
-    }
-  }
-
-  if (BX_CPU_THIS_PTR cr4.get_PAE() && pg && pe && BX_CPU_THIS_PTR efer.get_LME()) {
-    if (! BX_CPU_THIS_PTR efer.get_LMA()) {
-      BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
-      return 0;
-    }
-  }
-
-  // hack CR0 to be able to back to long mode correctly
-  BX_CPU_THIS_PTR cr0.set_PE(0); // real mode (bit 0)
-  BX_CPU_THIS_PTR cr0.set_PG(0); // paging disabled (bit 31)
-  if (! SetCR0(temp_cr0)) {
-    BX_PANIC(("SMM restore: failed to restore CR0 !"));
-    return 0;
-  }
-  setEFlags(temp_eflags);
-
-  bx_phy_address temp_cr3 = (bx_phy_address) SMRAM_FIELD64(saved_state, SMRAM_FIELD_CR3_HI32, SMRAM_FIELD_CR3);
-  if (!SetCR3(temp_cr3)) {
-    BX_PANIC(("SMM restore: failed to restore CR3 !"));
-    return 0;
-  }
-
-  if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
-    if (! CheckPDPTR(temp_cr3)) {
-      BX_ERROR(("SMM restore: PDPTR check failed !"));
-      return 0;
-    }
-  }
+  smm_state.cr0.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR0);
+  smm_state.cr3 = SMRAM_FIELD64(saved_state, SMRAM_FIELD_CR3_HI32, SMRAM_FIELD_CR3);
+  smm_state.cr4.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR4);
+  smm_state.efer.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFER);
+  smm_state.eflags = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFLAGS);
 
   for (int n=0; n<BX_GENERAL_REGISTERS; n++) {
-    Bit64u val_64 = SMRAM_FIELD64(saved_state,
+    smm_state.gen_reg[n] = SMRAM_FIELD64(saved_state,
            SMRAM_FIELD_RAX_HI32 + 2*n, SMRAM_FIELD_EAX + 2*n);
-
-    BX_WRITE_64BIT_REG(n, val_64);
   }
 
-  RIP = SMRAM_FIELD64(saved_state, SMRAM_FIELD_RIP_HI32, SMRAM_FIELD_EIP);
+  smm_state.rip = SMRAM_FIELD64(saved_state, SMRAM_FIELD_RIP_HI32, SMRAM_FIELD_EIP);
 
-  BX_CPU_THIS_PTR dr6.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR6);
-  BX_CPU_THIS_PTR dr7.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR7);
+  smm_state.dr6 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR6);
+  smm_state.dr7 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR7);
 
-  BX_CPU_THIS_PTR gdtr.base  = SMRAM_FIELD64(saved_state, SMRAM_FIELD_GDTR_BASE_HI32, SMRAM_FIELD_GDTR_BASE);
-  BX_CPU_THIS_PTR gdtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_GDTR_LIMIT);
-  BX_CPU_THIS_PTR idtr.base  = SMRAM_FIELD64(saved_state, SMRAM_FIELD_IDTR_BASE_HI32, SMRAM_FIELD_IDTR_BASE);
-  BX_CPU_THIS_PTR idtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_IDTR_LIMIT);
+  smm_state.gdtr.base  = SMRAM_FIELD64(saved_state, SMRAM_FIELD_GDTR_BASE_HI32, SMRAM_FIELD_GDTR_BASE);
+  smm_state.gdtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_GDTR_LIMIT);
+  smm_state.idtr.base  = SMRAM_FIELD64(saved_state, SMRAM_FIELD_IDTR_BASE_HI32, SMRAM_FIELD_IDTR_BASE);
+  smm_state.idtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_IDTR_LIMIT);
 
   for (int segreg = 0; segreg < 6; segreg++) {
-    Bit16u ar_data = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg) >> 16;
-    if (set_segment_ar_data(&BX_CPU_THIS_PTR sregs[segreg],
-          (ar_data >> 8) & 1,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg) & 0xf0ff,
-          SMRAM_FIELD64(saved_state, SMRAM_FIELD_ES_BASE_HI32 + 4*segreg, SMRAM_FIELD_ES_BASE + 4*segreg),
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_LIMIT + 4*segreg), ar_data))
-    {
-       if (! BX_CPU_THIS_PTR sregs[segreg].cache.segment) {
-         BX_PANIC(("SMM restore: restored valid non segment %d !", segreg));
-         return 0;
-       }
-    }
+    smm_state.segreg[segreg].selector_ar = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg);
+    smm_state.segreg[segreg].base = SMRAM_FIELD64(saved_state, SMRAM_FIELD_ES_BASE_HI32 + 4*segreg, SMRAM_FIELD_ES_BASE + 4*segreg);
+    smm_state.segreg[segreg].limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_LIMIT + 4*segreg);
   }
 
-  handleCpuModeChange();
+  smm_state.ldtr.selector_ar = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR);
+  smm_state.ldtr.base = SMRAM_FIELD64(saved_state, SMRAM_FIELD_LDTR_BASE_HI32, SMRAM_FIELD_LDTR_BASE);
+  smm_state.ldtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_LIMIT);
 
-  handleSseModeChange();
-#if BX_SUPPORT_AVX
-  handleAvxModeChange();
-#endif
-
-  Bit16u ar_data = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR) >> 16;
-  if (set_segment_ar_data(&BX_CPU_THIS_PTR ldtr,
-          (ar_data >> 8) & 1,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR) & 0xf0ff,
-          SMRAM_FIELD64(saved_state, SMRAM_FIELD_LDTR_BASE_HI32, SMRAM_FIELD_LDTR_BASE),
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_LIMIT), ar_data))
-  {
-     if (BX_CPU_THIS_PTR ldtr.cache.type != BX_SYS_SEGMENT_LDT) {
-        BX_PANIC(("SMM restore: LDTR is not LDT descriptor type !"));
-        return 0;
-     }
-  }
-
-  ar_data = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR) >> 16;
-  if (set_segment_ar_data(&BX_CPU_THIS_PTR tr,
-          (ar_data >> 8) & 1,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR) & 0xf0ff,
-          SMRAM_FIELD64(saved_state, SMRAM_FIELD_TR_BASE_HI32, SMRAM_FIELD_TR_BASE),
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_LIMIT), ar_data))
-  {
-     if (BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_286_TSS &&
-         BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_BUSY_286_TSS &&
-         BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_386_TSS &&
-         BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_BUSY_386_TSS)
-     {
-        BX_PANIC(("SMM restore: TR is not TSS descriptor type !"));
-        return 0;
-     }
-  }
+  smm_state.tr.selector_ar = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR);
+  smm_state.tr.base = SMRAM_FIELD64(saved_state, SMRAM_FIELD_TR_BASE_HI32, SMRAM_FIELD_TR_BASE);
+  smm_state.tr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_LIMIT);
 
   if (SMM_REVISION_ID & SMM_SMBASE_RELOCATION)
-     BX_CPU_THIS_PTR smbase = SMRAM_FIELD(saved_state, SMRAM_FIELD_SMBASE_OFFSET);
+     smm_state.smbase = SMRAM_FIELD(saved_state, SMRAM_FIELD_SMBASE_OFFSET);
+  else
+     smm_state.smbase = 0;
 
-  BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_CONTEXT_SWITCH, 0);
-
-  return 1;
+  return resume_from_system_management_mode(&smm_state);
 }
 
 #else /* BX_SUPPORT_X86_64 == 0 */
@@ -759,82 +564,204 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
 
 bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
 {
-  // check conditions for entering to shutdown state
-  Bit32u temp_cr0 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR0);
-  if (!check_CR0(temp_cr0)) {
+  BX_SMM_State smm_state;
+
+  smm_state.smm_revision_id = SMRAM_FIELD(saved_state, SMRAM_FIELD_SMM_REVISION_ID);
+
+  smm_state.cr0.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR0);
+  smm_state.cr3 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR3);
+#if BX_CPU_LEVEL >= 5
+  smm_state.cr4.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR4);
+  smm_state.efer.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFER);
+#endif
+
+  smm_state.eflags = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFLAGS);
+
+  for (int n=0; n<BX_GENERAL_REGISTERS; n++) {
+    smm_state.gen_reg[n] = SMRAM_FIELD(saved_state, SMRAM_FIELD_EAX + n);
+  }
+
+  smm_state.rip = SMRAM_FIELD(saved_state, SMRAM_FIELD_EIP);
+
+  smm_state.dr6 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR6);
+  smm_state.dr7 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR7);
+
+  smm_state.gdtr.base  = SMRAM_FIELD(saved_state, SMRAM_FIELD_GDTR_BASE);
+  smm_state.gdtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_GDTR_LIMIT);
+
+  smm_state.idtr.base  = SMRAM_FIELD(saved_state, SMRAM_FIELD_IDTR_BASE);
+  smm_state.idtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_IDTR_LIMIT);
+
+  for (int segreg = 0; segreg < 6; segreg++) {
+    smm_state.segreg[segreg].selector_ar = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg);
+    smm_state.segreg[segreg].base = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_BASE + 4*segreg);
+    smm_state.segreg[segreg].limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_LIMIT + 4*segreg);
+  }
+
+  smm_state.ldtr.selector_ar = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR);
+  smm_state.ldtr.base = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_BASE);
+  smm_state.ldtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_LIMIT);
+
+  smm_state.tr.selector_ar = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR);
+  smm_state.tr.base = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_BASE);
+  smm_state.tr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_LIMIT);
+
+  if (SMM_REVISION_ID & SMM_SMBASE_RELOCATION)
+     smm_state.smbase = SMRAM_FIELD(saved_state, SMRAM_FIELD_SMBASE_OFFSET);
+  else
+     smm_state.smbase = 0;
+
+  return resume_from_system_management_mode(&smm_state);
+}
+
+#endif /* BX_SUPPORT_X86_64 */
+
+bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
+{
+  // Processors that support VMX operation perform RSM as follows:
+#if BX_SUPPORT_VMX
+  // IF VMXE=1 in CR4 image in SMRAM
+  // THEN
+  //   fail and enter shutdown state;
+
+  if (smm_state->cr4.get_VMXE()) {
+    BX_PANIC(("SMM restore: CR4.VMXE is set in restore image !"));
+    return 0;
+  }
+
+  // restore state normally from SMRAM;
+  // CR4.VMXE = value stored internally;
+  // IF internal storage indicates that the logical processor had been in VMX operation (root or non-root)
+  // THEN
+  //   enter VMX operation (root or non-root);
+  //   restore VMX-critical state
+  //   set CR0.PE, CR0.NE, and CR0.PG to 1;
+  //   IF RFLAGS.VM = 0
+  //   THEN
+  //     CS.RPL = SS.DPL;
+  //     SS.RPL = SS.DPL;
+  //   FI;
+  //   If necessary, restore current VMCS pointer;
+  //   Leave SMM; Deassert SMMEM on subsequent bus transactions;
+  //   IF logical processor will be in VMX operation after RSM
+  //   THEN
+  //     block A20M and leave A20M mode;
+  //   FI;
+
+  if (BX_CPU_THIS_PTR in_smm_vmx) {
+    BX_CPU_THIS_PTR in_vmx = 1;
+    BX_CPU_THIS_PTR in_vmx_guest = BX_CPU_THIS_PTR in_smm_vmx_guest;
+    BX_INFO(("SMM Restore: enable VMX %s mode", BX_CPU_THIS_PTR in_vmx_guest ? "guest" : "host"));
+
+    smm_state->cr0.set_PG(1); // set CR0.PG, CR0.NE and CR0.PE
+    smm_state->cr0.set_NE(1);
+    smm_state->cr0.set_PE(1);
+
+    smm_state->cr4.set_VMXE(1);
+    // block and disable A20M;
+  }
+#endif
+
+  // check CR0 conditions for entering to shutdown state
+  if (!check_CR0(smm_state->cr0.get32())) {
     BX_PANIC(("SMM restore: CR0 consistency check failed !"));
     return 0;
   }
 
 #if BX_CPU_LEVEL >= 5
-  Bit32u temp_cr4 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR4);
-  if (! check_CR4(temp_cr4)) {
+  if (!check_CR4(smm_state->cr4.get32())) {
     BX_PANIC(("SMM restore: CR4 consistency check failed !"));
     return 0;
   }
-#endif
 
-  if (!SetCR0(temp_cr0)) {
-    BX_PANIC(("SMM restore: failed to restore CR0 !"));
-    return 0;
-  }
-#if BX_CPU_LEVEL >= 5
-  if (!SetCR4(temp_cr4)) {
+  // shutdown if write to reserved CR4 bits
+  if (!SetCR4(smm_state->cr4.get32())) {
     BX_PANIC(("SMM restore: incorrect CR4 state !"));
     return 0;
   }
+
+  if (smm_state->efer.get32() & ~((Bit64u) BX_CPU_THIS_PTR efer_suppmask)) {
+    BX_PANIC(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", smm_state->efer.get32()));
+    return 0;
+  }
+
+  BX_CPU_THIS_PTR efer.set32(smm_state->efer.val32);
+
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR efer.get_LMA()) {
+    if (smm_state->eflags & EFlagsVMMask) {
+      BX_PANIC(("SMM restore: If EFER.LMA = 1 => RFLAGS.VM=0 !"));
+      return 0;
+    }
+
+    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !smm_state->cr0.get_PG() || !smm_state->cr0.get_PE() || !BX_CPU_THIS_PTR efer.get_LME()) {
+      BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
+      return 0;
+    }
+  }
+  else {
+    if (BX_CPU_THIS_PTR cr4.get_PCIDE()) {
+      BX_PANIC(("SMM restore: CR4.PCIDE must be clear when not in long mode !"));
+      return 0;
+    }
+  }
+
+  if (BX_CPU_THIS_PTR cr4.get_PAE() && smm_state->cr0.get_PG() && smm_state->cr0.get_PE() && BX_CPU_THIS_PTR efer.get_LME()) {
+    if (! BX_CPU_THIS_PTR efer.get_LMA()) {
+      BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
+      return 0;
+    }
+  }
 #endif
 
-  Bit32u temp_cr3 = SMRAM_FIELD(saved_state, SMRAM_FIELD_CR3);
-  if (!SetCR3(temp_cr3)) {
+#endif
+
+  // hack CR0 to be able to back to long mode correctly
+  BX_CPU_THIS_PTR cr0.set_PE(0); // real mode (bit 0)
+  BX_CPU_THIS_PTR cr0.set_PG(0); // paging disabled (bit 31)
+  if (! SetCR0(smm_state->cr0.get32())) {
+    BX_PANIC(("SMM restore: failed to restore CR0 !"));
+    return 0;
+  }
+  setEFlags(smm_state->eflags);
+
+  if (!SetCR3(smm_state->cr3)) {
     BX_PANIC(("SMM restore: failed to restore CR3 !"));
     return 0;
   }
 
 #if BX_CPU_LEVEL >= 6
-  if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE()) {
-    if (! CheckPDPTR(temp_cr3)) {
+  if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
+    if (! CheckPDPTR(smm_state->cr3)) {
       BX_ERROR(("SMM restore: PDPTR check failed !"));
       return 0;
     }
   }
 #endif
 
-#if BX_CPU_LEVEL >= 5
-  Bit32u temp_efer = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFER);
-  if (temp_efer & ~BX_CPU_THIS_PTR efer_suppmask) {
-    BX_ERROR(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", temp_efer));
-    return 0;
-  }
-  BX_CPU_THIS_PTR efer.set32(temp_efer & BX_CPU_THIS_PTR efer_suppmask);
+#if BX_SUPPORT_X86_64
+  for (int n=0; n<BX_GENERAL_REGISTERS; n++)
+    BX_WRITE_64BIT_REG(n, smm_state->gen_reg[n]);
+#else
+  for (int n=0; n<BX_GENERAL_REGISTERS; n++)
+    BX_WRITE_32BIT_REGZ(n, smm_state->gen_reg[n]);
 #endif
 
-  Bit32u temp_eflags = SMRAM_FIELD(saved_state, SMRAM_FIELD_EFLAGS);
-  setEFlags(temp_eflags);
+  RIP = BX_CPU_THIS_PTR prev_rip = smm_state->rip;
 
-  for (int n=0; n<BX_GENERAL_REGISTERS; n++) {
-    Bit32u val_32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_EAX + n);
-    BX_WRITE_32BIT_REGZ(n, val_32);
-  }
+  BX_CPU_THIS_PTR dr6.val32 = smm_state->dr6;
+  BX_CPU_THIS_PTR dr7.val32 = smm_state->dr7;
 
-  EIP = SMRAM_FIELD(saved_state, SMRAM_FIELD_EIP);
-
-  BX_CPU_THIS_PTR dr6.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR6);
-  BX_CPU_THIS_PTR dr7.val32 = SMRAM_FIELD(saved_state, SMRAM_FIELD_DR7);
-
-  BX_CPU_THIS_PTR gdtr.base  = SMRAM_FIELD(saved_state, SMRAM_FIELD_GDTR_BASE);
-  BX_CPU_THIS_PTR gdtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_GDTR_LIMIT);
-
-  BX_CPU_THIS_PTR idtr.base  = SMRAM_FIELD(saved_state, SMRAM_FIELD_IDTR_BASE);
-  BX_CPU_THIS_PTR idtr.limit = SMRAM_FIELD(saved_state, SMRAM_FIELD_IDTR_LIMIT);
+  BX_CPU_THIS_PTR gdtr = smm_state->gdtr;
+  BX_CPU_THIS_PTR idtr = smm_state->idtr;
 
   for (int segreg = 0; segreg < 6; segreg++) {
-    Bit32u ar_data = SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg) >> 16;
+    Bit16u ar_data = smm_state->segreg[segreg].selector_ar >> 16;
     if (set_segment_ar_data(&BX_CPU_THIS_PTR sregs[segreg],
           (ar_data >> 8) & 1,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg) & 0xf0ff,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_BASE + 4*segreg),
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_LIMIT + 4*segreg), ar_data))
+          smm_state->segreg[segreg].selector_ar & 0xf0ff,
+          smm_state->segreg[segreg].base,
+          smm_state->segreg[segreg].limit, ar_data))
     {
        if (! BX_CPU_THIS_PTR sregs[segreg].cache.segment) {
          BX_PANIC(("SMM restore: restored valid non segment %d !", segreg));
@@ -843,12 +770,12 @@ bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
     }
   }
 
-  Bit32u ar_data = SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR) >> 16;
+  Bit16u ar_data = smm_state->ldtr.selector_ar >> 16;
   if (set_segment_ar_data(&BX_CPU_THIS_PTR ldtr,
           (ar_data >> 8) & 1,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR) & 0xf0ff,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_BASE),
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_LIMIT), ar_data))
+          smm_state->ldtr.selector_ar & 0xf0ff,
+          smm_state->ldtr.base,
+          smm_state->ldtr.limit, ar_data))
   {
      if (BX_CPU_THIS_PTR ldtr.cache.type != BX_SYS_SEGMENT_LDT) {
         BX_PANIC(("SMM restore: LDTR is not LDT descriptor type !"));
@@ -856,12 +783,12 @@ bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
      }
   }
 
-  ar_data = SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR) >> 16;
+  ar_data = smm_state->tr.selector_ar >> 16;
   if (set_segment_ar_data(&BX_CPU_THIS_PTR tr,
           (ar_data >> 8) & 1,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR) & 0xf0ff,
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_BASE),
-          SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_LIMIT), ar_data))
+          smm_state->tr.selector_ar & 0xf0ff,
+          smm_state->tr.base,
+          smm_state->tr.limit, ar_data))
   {
      if (BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_286_TSS &&
          BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_BUSY_286_TSS &&
@@ -874,7 +801,7 @@ bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
   }
 
   if (SMM_REVISION_ID & SMM_SMBASE_RELOCATION) {
-     BX_CPU_THIS_PTR smbase = SMRAM_FIELD(saved_state, SMRAM_FIELD_SMBASE_OFFSET);
+     BX_CPU_THIS_PTR smbase = smm_state->smbase;
 #if BX_CPU_LEVEL < 6
      if (BX_CPU_THIS_PTR smbase & 0x7fff) {
         BX_PANIC(("SMM restore: SMBASE must be aligned to 32K !"));
@@ -883,9 +810,15 @@ bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
 #endif
   }
 
+  handleCpuContextChange();
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  BX_CPU_THIS_PTR monitor.reset_monitor();
+#endif
+
+  BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_CONTEXT_SWITCH, 0);
+
   return 1;
 }
-
-#endif /* BX_SUPPORT_X86_64 */
 
 #endif /* BX_CPU_LEVEL >= 3 */

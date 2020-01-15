@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc 10360 2011-05-10 20:04:20Z sshwarts $
+// $Id: keyboard.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -77,23 +77,20 @@ void libkeyboard_LTX_plugin_fini(void)
 
 bx_keyb_c::bx_keyb_c()
 {
-  put("KBD");
+  put("keyboard", "KBD");
+  memset(&s, 0, sizeof(s));
   pastebuf = NULL;
 }
 
 bx_keyb_c::~bx_keyb_c()
 {
-  // remove runtime parameter handler
+  // remove runtime parameter handlers
   SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set_handler(NULL);
+  SIM->get_param_num(BXPN_MOUSE_ENABLED)->set_handler(NULL);
   if (pastebuf != NULL) {
     delete [] pastebuf;
   }
-#if BX_WITH_WX
-  bx_list_c *list = (bx_list_c*)SIM->get_param(BXPN_WX_KBD_STATE);
-  if (list != NULL) {
-    list->clear();
-  }
-#endif
+  SIM->get_bochs_root()->remove("keyboard");
   BX_DEBUG(("Exit"));
 }
 
@@ -120,7 +117,7 @@ void bx_keyb_c::resetinternals(bx_bool powerup)
 
 void bx_keyb_c::init(void)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc 10360 2011-05-10 20:04:20Z sshwarts $"));
+  BX_DEBUG(("Init $Id: keyboard.cc 11346 2012-08-19 08:16:20Z vruppert $"));
   Bit32u   i;
 
   DEV_register_irq(1, "8042 Keyboard controller");
@@ -207,52 +204,6 @@ void bx_keyb_c::init(void)
   BX_KEY_THIS statusbar_id[1] = bx_gui->register_statusitem("CAPS");
   BX_KEY_THIS statusbar_id[2] = bx_gui->register_statusitem("SCRL");
 
-#if BX_WITH_WX
-  bx_param_num_c *param;
-  bx_list_c *list;
-  if (SIM->get_param("wxdebug") != NULL) {
-    // register shadow params (Experimental, not a complete list by far)
-    list = (bx_list_c*)SIM->get_param(BXPN_WX_KBD_STATE);
-    if (list == NULL) {
-      list = new bx_list_c(SIM->get_param("wxdebug"), "keyboard",
-                           "Keyboard State", 20);
-    }
-    new bx_shadow_bool_c(list, "irq1_req",
-          "Keyboard IRQ1 requested",
-          &BX_KEY_THIS s.kbd_controller.irq1_requested);
-    new bx_shadow_bool_c(list, "irq12_req",
-          "Keyboard IRQ12 requested",
-          &BX_KEY_THIS s.kbd_controller.irq12_requested);
-    param = new bx_shadow_num_c(list, "timer_pending",
-          &BX_KEY_THIS s.kbd_controller.timer_pending);
-    param->set_label("Keyboard timer pending");
-    new bx_shadow_bool_c(list, "pare",
-          "Keyboard PARE",
-          &BX_KEY_THIS s.kbd_controller.pare);
-    new bx_shadow_bool_c(list, "tim",
-          "Keyboard TIM",
-          &BX_KEY_THIS s.kbd_controller.tim);
-    new bx_shadow_bool_c(list, "auxb",
-          "Keyboard AUXB",
-          &BX_KEY_THIS s.kbd_controller.auxb);
-    new bx_shadow_bool_c(list, "keyl",
-          "Keyboard KEYL",
-          &BX_KEY_THIS s.kbd_controller.keyl);
-    new bx_shadow_bool_c(list, "c_d",
-          "Keyboard C_D",
-          &BX_KEY_THIS s.kbd_controller.c_d);
-    new bx_shadow_bool_c(list, "sysf",
-          "Keyboard SYSF",
-          &BX_KEY_THIS s.kbd_controller.sysf);
-    new bx_shadow_bool_c(list, "inpb",
-          "Keyboard INPB",
-          &BX_KEY_THIS s.kbd_controller.inpb);
-    new bx_shadow_bool_c(list, "outb",
-          "Keyboard OUTB",
-          &BX_KEY_THIS s.kbd_controller.outb);
-  }
-#endif
-
   if ((BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_PS2) ||
       (BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_IMPS2)) {
     DEV_register_default_mouse(this, mouse_enq_static, mouse_enabled_changed_static);
@@ -278,8 +229,8 @@ void bx_keyb_c::register_state(void)
   char name[4];
   bx_list_c *buffer;
 
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "keyboard", "Keyboard State", 7);
-  bx_list_c *ctrl = new bx_list_c(list, "controller", 23);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "keyboard", "Keyboard State");
+  bx_list_c *ctrl = new bx_list_c(list, "controller");
   BXRS_PARAM_BOOL(ctrl, tim, BX_KEY_THIS s.kbd_controller.tim);
   BXRS_PARAM_BOOL(ctrl, auxb, BX_KEY_THIS s.kbd_controller.auxb);
   BXRS_PARAM_BOOL(ctrl, c_d, BX_KEY_THIS s.kbd_controller.c_d);
@@ -303,7 +254,7 @@ void bx_keyb_c::register_state(void)
   BXRS_PARAM_BOOL(ctrl, expecting_scancodes_set, BX_KEY_THIS s.kbd_controller.expecting_scancodes_set);
   BXRS_DEC_PARAM_FIELD(ctrl, current_scancodes_set, BX_KEY_THIS s.kbd_controller.current_scancodes_set);
   BXRS_PARAM_BOOL(ctrl, bat_in_progress, BX_KEY_THIS s.kbd_controller.bat_in_progress);
-  bx_list_c *mouse = new bx_list_c(list, "mouse", 12);
+  bx_list_c *mouse = new bx_list_c(list, "mouse");
   BXRS_DEC_PARAM_FIELD(mouse, sample_rate, BX_KEY_THIS s.mouse.sample_rate);
   BXRS_DEC_PARAM_FIELD(mouse, resolution_cpmm, BX_KEY_THIS s.mouse.resolution_cpmm);
   BXRS_DEC_PARAM_FIELD(mouse, scaling, BX_KEY_THIS s.mouse.scaling);
@@ -316,9 +267,9 @@ void bx_keyb_c::register_state(void)
   BXRS_DEC_PARAM_FIELD(mouse, delayed_dz, BX_KEY_THIS s.mouse.delayed_dz);
   BXRS_DEC_PARAM_FIELD(mouse, im_request, BX_KEY_THIS s.mouse.im_request);
   BXRS_PARAM_BOOL(mouse, im_mode, BX_KEY_THIS s.mouse.im_mode);
-  bx_list_c *kbdbuf = new bx_list_c(list, "kbd_internal_buffer", 9);
+  bx_list_c *kbdbuf = new bx_list_c(list, "kbd_internal_buffer");
   BXRS_DEC_PARAM_FIELD(kbdbuf, num_elements, BX_KEY_THIS s.kbd_internal_buffer.num_elements);
-  buffer = new bx_list_c(kbdbuf, "buffer", BX_KBD_ELEMENTS);
+  buffer = new bx_list_c(kbdbuf, "buffer");
   for (i=0; i<BX_KBD_ELEMENTS; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(buffer, name, &BX_KEY_THIS s.kbd_internal_buffer.buffer[i], BASE_HEX);
@@ -330,15 +281,15 @@ void bx_keyb_c::register_state(void)
   BXRS_DEC_PARAM_FIELD(kbdbuf, repeat_rate, BX_KEY_THIS s.kbd_internal_buffer.repeat_rate);
   BXRS_DEC_PARAM_FIELD(kbdbuf, led_status, BX_KEY_THIS s.kbd_internal_buffer.led_status);
   BXRS_PARAM_BOOL(kbdbuf, scanning_enabled, BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled);
-  bx_list_c *mousebuf = new bx_list_c(list, "mouse_internal_buffer", 3);
+  bx_list_c *mousebuf = new bx_list_c(list, "mouse_internal_buffer");
   BXRS_DEC_PARAM_FIELD(mousebuf, num_elements, BX_KEY_THIS s.mouse_internal_buffer.num_elements);
-  buffer = new bx_list_c(mousebuf, "buffer", BX_MOUSE_BUFF_SIZE);
+  buffer = new bx_list_c(mousebuf, "buffer");
   for (i=0; i<BX_MOUSE_BUFF_SIZE; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(buffer, name, &BX_KEY_THIS s.mouse_internal_buffer.buffer[i], BASE_HEX);
   }
   BXRS_DEC_PARAM_FIELD(mousebuf, head, BX_KEY_THIS s.mouse_internal_buffer.head);
-  buffer = new bx_list_c(list, "controller_Q", BX_KBD_CONTROLLER_QSIZE);
+  buffer = new bx_list_c(list, "controller_Q");
   for (i=0; i<BX_KBD_CONTROLLER_QSIZE; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(buffer, name, &BX_KEY_THIS s.controller_Q[i], BASE_HEX);
@@ -1619,12 +1570,12 @@ void bx_keyb_c::mouse_enabled_changed(bx_bool enabled)
   BX_DEBUG(("PS/2 mouse %s", enabled?"enabled":"disabled"));
 }
 
-void bx_keyb_c::mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_keyb_c::mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy)
 {
-  ((bx_keyb_c*)dev)->mouse_motion(delta_x, delta_y, delta_z, button_state);
+  ((bx_keyb_c*)dev)->mouse_motion(delta_x, delta_y, delta_z, button_state, absxy);
 }
 
-void bx_keyb_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state)
+void bx_keyb_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy)
 {
   bx_bool force_enq=0;
 

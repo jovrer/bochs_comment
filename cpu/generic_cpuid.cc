@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: generic_cpuid.cc 10891 2011-12-29 21:41:56Z sshwarts $
+// $Id: generic_cpuid.cc 11276 2012-07-12 14:51:54Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011 Stanislav Shwartsman
+//   Copyright (c) 2011-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,18 +28,60 @@
 
 #define LOG_THIS cpu->
 
-#if BX_CPU_LEVEL >= 4
-
-bx_generic_cpuid_t::bx_generic_cpuid_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
+bx_cpuid_t::bx_cpuid_t(BX_CPU_C *_cpu): cpu(_cpu)
 {
 #if BX_SUPPORT_SMP
   nthreads = SIM->get_param_num(BXPN_CPU_NTHREADS)->get();
   ncores = SIM->get_param_num(BXPN_CPU_NCORES)->get();
   nprocessors = SIM->get_param_num(BXPN_CPU_NPROCESSORS)->get();
+#else
+  nthreads = 1;
+  ncores = 1;
+  nprocessors = 1;
 #endif
+}
 
+#if BX_CPU_LEVEL >= 4
+
+bx_generic_cpuid_t::bx_generic_cpuid_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
+{
   init_isa_extensions_bitmask();
   init_cpu_extensions_bitmask();
+#if BX_SUPPORT_VMX
+  init_vmx_extensions_bitmask();
+#endif
+#if BX_SUPPORT_SVM
+  init_svm_extensions_bitmask();
+#endif
+
+#if BX_CPU_LEVEL <= 5
+  // 486 and Pentium processors
+  max_std_leaf = 1;
+#else
+  // for Pentium Pro, Pentium II, Pentium 4 processors
+  max_std_leaf = 2;
+
+  // do not report CPUID functions above 0x3 if cpuid_limit_winnt is set
+  // to workaround WinNT issue.
+  static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
+  if (! cpuid_limit_winnt) {
+    if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_MONITOR_MWAIT))
+      max_std_leaf = 0x5;
+    if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_X2APIC))
+      max_std_leaf = 0xB;
+    if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_XSAVE))
+      max_std_leaf = 0xD;
+  }
+#endif
+
+#if BX_CPU_LEVEL <= 5
+  max_ext_leaf = 0;
+#else
+  max_ext_leaf = 0x80000008;
+
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_SVM))
+    max_ext_leaf = 0x8000000A;
+#endif
 }
 
 void bx_generic_cpuid_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpuid_function_t *leaf) const
@@ -47,6 +89,13 @@ void bx_generic_cpuid_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpu
   static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
   if (cpuid_limit_winnt)
     if (function > 2 && function < 0x80000000) function = 2;
+
+#if BX_CPU_LEVEL >= 6
+  if (function >= 0x80000000 && function > max_ext_leaf)
+    function = max_std_leaf;
+#endif
+  if (function <  0x80000000 && function > max_std_leaf)
+    function = max_std_leaf;
 
   switch(function) {
 #if BX_CPU_LEVEL >= 6
@@ -61,7 +110,6 @@ void bx_generic_cpuid_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpu
   case 0x80000004:
     get_ext_cpuid_brand_string_leaf(function, leaf);
     return;
-#if BX_SUPPORT_X86_64
   case 0x80000005:
     get_ext_cpuid_leaf_5(leaf);
     return;
@@ -73,6 +121,10 @@ void bx_generic_cpuid_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpu
     return;
   case 0x80000008:
     get_ext_cpuid_leaf_8(leaf);
+    return;
+#if BX_SUPPORT_SVM
+  case 0x8000000A:
+    get_ext_cpuid_leaf_A(leaf);
     return;
 #endif
 #endif
@@ -87,7 +139,7 @@ void bx_generic_cpuid_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpu
     get_std_cpuid_leaf_2(leaf);
     return;
   case 0x00000003:
-    get_std_cpuid_leaf_3(leaf);
+    get_reserved_leaf(leaf);
     return;
   case 0x00000004:
     get_std_cpuid_leaf_4(subfunction, leaf);
@@ -102,10 +154,8 @@ void bx_generic_cpuid_t::get_cpuid_leaf(Bit32u function, Bit32u subfunction, cpu
     get_std_cpuid_leaf_7(subfunction, leaf);
     return;
   case 0x00000008:
-    get_reserved_leaf(leaf);
-    return;
   case 0x00000009:
-    get_std_cpuid_leaf_9(leaf);
+    get_reserved_leaf(leaf);
     return;
   case 0x0000000A:
     get_std_cpuid_leaf_A(leaf);
@@ -133,26 +183,7 @@ void bx_generic_cpuid_t::get_std_cpuid_leaf_0(cpuid_function_t *leaf) const
   // EBX: vendor ID string
   // EDX: vendor ID string
   // ECX: vendor ID string
-
-#if BX_CPU_LEVEL <= 5
-  // 486 and Pentium processors
-  leaf->eax = 1;
-#else
-  // for Pentium Pro, Pentium II, Pentium 4 processors
-  leaf->eax = 2;
-
-  // do not report CPUID functions above 0x3 if cpuid_limit_winnt is set
-  // to workaround WinNT issue.
-  static bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
-  if (! cpuid_limit_winnt) {
-    if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_MONITOR_MWAIT))
-      leaf->eax = 0x5;
-    if (BX_CPUID_SUPPORT_CPU_EXTENSION(BX_CPU_X2APIC))
-      leaf->eax = 0xb;
-    if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_XSAVE))
-      leaf->eax = 0xd;
-  }
-#endif
+  leaf->eax = max_std_leaf;
 
   // CPUID vendor string (e.g. GenuineIntel, AuthenticAMD, CentaurHauls, ...)
   memcpy(&(leaf->ebx), vendor_string,     4);
@@ -186,11 +217,7 @@ void bx_generic_cpuid_t::get_std_cpuid_leaf_1(cpuid_function_t *leaf) const
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_CLFLUSH)) {
     leaf->ebx |= (CACHE_LINE_SIZE / 8) << 8;
   }
-#if BX_SUPPORT_SMP
   unsigned n_logical_processors = ncores*nthreads;
-#else
-  unsigned n_logical_processors = 1;
-#endif
   leaf->ebx |= (n_logical_processors << 16);
 #if BX_SUPPORT_APIC
   leaf->ebx |= ((cpu->get_apic_id() & 0xff) << 24);
@@ -226,15 +253,7 @@ void bx_generic_cpuid_t::get_std_cpuid_leaf_2(cpuid_function_t *leaf) const
 #endif
 }
 
-// leaf 0x00000003 //
-void bx_generic_cpuid_t::get_std_cpuid_leaf_3(cpuid_function_t *leaf) const
-{
-  // CPUID function 0x00000003 - Processor Serial Number
-  leaf->eax = 0;
-  leaf->ebx = 0;
-  leaf->ecx = 0;
-  leaf->edx = 0;
-}
+// leaf 0x00000003 - Processor Serial Number (not supported) //
 
 // leaf 0x00000004 //
 void bx_generic_cpuid_t::get_std_cpuid_leaf_4(Bit32u subfunction, cpuid_function_t *leaf) const
@@ -300,17 +319,8 @@ void bx_generic_cpuid_t::get_std_cpuid_leaf_7(Bit32u subfunction, cpuid_function
   leaf->edx = 0;
 }
 
-// leaf 0x00000008 - reserved //
-
-// leaf 0x00000009 //
-void bx_generic_cpuid_t::get_std_cpuid_leaf_9(cpuid_function_t *leaf) const
-{
-  // CPUID function 0x00000009 - Direct Cache Access Information Leaf
-  leaf->eax = 0;
-  leaf->ebx = 0;
-  leaf->ecx = 0;
-  leaf->edx = 0;
-}
+// leaf 0x00000008 reserved                          //
+// leaf 0x00000009 direct cache access not supported //
 
 // leaf 0x0000000A //
 void bx_generic_cpuid_t::get_std_cpuid_leaf_A(cpuid_function_t *leaf) const
@@ -459,7 +469,7 @@ void bx_generic_cpuid_t::get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const
   // EBX: vendor ID string
   // EDX: vendor ID string
   // ECX: vendor ID string
-  leaf->eax = BX_SUPPORT_X86_64 ? 0x80000008 : 0x80000004;
+  leaf->eax = max_ext_leaf;
 #if BX_CPU_VENDOR_INTEL
   leaf->ebx = 0;
   leaf->edx = 0;          // Reserved for Intel
@@ -566,8 +576,6 @@ void bx_generic_cpuid_t::get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_
 #endif
 }
 
-#if BX_SUPPORT_X86_64
-
 // leaf 0x80000005 //
 void bx_generic_cpuid_t::get_ext_cpuid_leaf_5(cpuid_function_t *leaf) const
 {
@@ -606,6 +614,41 @@ void bx_generic_cpuid_t::get_ext_cpuid_leaf_8(cpuid_function_t *leaf) const
   leaf->ebx = 0;
   leaf->ecx = 0; // Reserved, undefined
   leaf->edx = 0;
+}
+
+#if BX_SUPPORT_SVM
+
+// leaf 0x8000000A //
+void bx_generic_cpuid_t::get_ext_cpuid_leaf_A(cpuid_function_t *leaf) const
+{
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_SVM))
+  {
+    leaf->eax = BX_SVM_REVISION;
+    leaf->ebx = 0x40; /* number of ASIDs */
+    leaf->ecx = 0;
+
+    // * [0:0]   NP - Nested paging support
+    //   [1:1]   LBR virtualization
+    //   [2:2]   SVM Lock
+    // * [3:3]   NRIPS - Next RIP save on VMEXIT
+    //   [4:4]   TscRate - MSR based TSC ratio control
+    //   [5:5]   VMCB Clean bits support
+    //   [6:6]   Flush by ASID support
+    //   [7:7]   Decode assists support
+    //   [9:8]   Reserved
+    //   [10:10] Pause filter support
+    //   [11:11] Reserved
+    //   [12:12] Pause filter threshold support
+    //   [31:13] Reserved
+
+    leaf->edx = BX_CPUID_SVM_NESTED_PAGING | BX_CPUID_SVM_NRIP_SAVE;
+  }
+  else {
+    leaf->eax = 0;
+    leaf->ebx = 0;
+    leaf->ecx = 0; // Reserved, undefined
+    leaf->edx = 0;
+  }
 }
 
 #endif
@@ -675,9 +718,13 @@ void bx_generic_cpuid_t::init_isa_extensions_bitmask(void)
     }
   }
 
-  // enabled CLFLUSH only when SSE2 or higher is enabled
+  // enable CLFLUSH only when SSE2 or higher is enabled
   if (sse_enabled >= BX_CPUID_SUPPORT_SSE2)
     features_bitmask |= BX_ISA_CLFLUSH;
+
+  // enable POPCNT if SSE4.2 is enabled
+  if (sse_enabled >= BX_CPUID_SUPPORT_SSE4_2)
+    features_bitmask |= BX_ISA_POPCNT;
 
   static bx_bool sse4a_enabled = SIM->get_param_bool(BXPN_CPUID_SSE4A)->get();
   if (sse4a_enabled) {
@@ -731,6 +778,17 @@ void bx_generic_cpuid_t::init_isa_extensions_bitmask(void)
     // MOVBE required 3-byte opcode (SSS3E support or more)
     if (sse_enabled < BX_CPUID_SUPPORT_SSSE3) {
       BX_PANIC(("PANIC: MOVBE support requires SSSE3 or higher !"));
+      return;
+    }
+  }
+
+  static bx_bool adx_enabled = SIM->get_param_bool(BXPN_CPUID_ADX)->get();
+  if (adx_enabled) {
+    features_bitmask |= BX_ISA_ADX;
+
+    // ADX required 3-byte opcode (SSS3E support or more)
+    if (sse_enabled < BX_CPUID_SUPPORT_SSSE3) {
+      BX_PANIC(("PANIC: ADX support requires SSSE3 or higher !"));
       return;
     }
   }
@@ -864,6 +922,25 @@ void bx_generic_cpuid_t::init_isa_extensions_bitmask(void)
   }
 #endif
 
+#if BX_SUPPORT_SVM
+  static unsigned svm_enabled = SIM->get_param_num(BXPN_CPUID_SVM)->get();
+  if (svm_enabled) {
+    features_bitmask |= BX_ISA_SVM;
+
+    if (! x86_64_enabled) {
+      BX_PANIC(("PANIC: SVM emulation requires x86-64 support !"));
+      return;
+    }
+  }
+#endif
+
+#if BX_SUPPORT_VMX && BX_SUPPORT_SVM
+  if (vmx_enabled && svm_enabled) {
+    BX_PANIC(("PANIC: VMX and SVM emulation cannot be enabled together in same configuration !"));
+    return;
+  }
+#endif
+
 #endif // CPU_LEVEL >= 6
 
 #endif // CPU_LEVEL >= 5
@@ -881,20 +958,22 @@ void bx_generic_cpuid_t::init_cpu_extensions_bitmask(void)
   static unsigned apic_enabled = SIM->get_param_enum(BXPN_CPUID_APIC)->get();
   // determine SSE in runtime
   switch (apic_enabled) {
+#if BX_CPU_LEVEL >= 6
     case BX_CPUID_SUPPORT_X2APIC:
-      features_bitmask |= BX_CPU_X2APIC;
+      features_bitmask |= BX_CPU_X2APIC | BX_CPU_XAPIC;
+      break;
+    case BX_CPUID_SUPPORT_XAPIC_EXT:
+      features_bitmask |= BX_CPU_XAPIC_EXT | BX_CPU_XAPIC;
+      break;
+#endif
     case BX_CPUID_SUPPORT_XAPIC:
       features_bitmask |= BX_CPU_XAPIC;
-    case BX_CPUID_SUPPORT_LEGACY_APIC:
-    default:
       break;
+    case BX_CPUID_SUPPORT_LEGACY_APIC:
+      break;
+    default:
+      BX_PANIC(("unknown APIC option %d", apic_enabled));
   };
-
-  // I would like to allow XAPIC configuration with i586 together
-  if (apic_enabled >= BX_CPUID_SUPPORT_X2APIC && BX_CPU_LEVEL < 6) {
-    BX_PANIC(("PANIC: X2APIC require CPU_LEVEL >= 6 !"));
-    return;
-  }
 #endif
 
 #if BX_CPU_LEVEL >= 5
@@ -910,6 +989,10 @@ void bx_generic_cpuid_t::init_cpu_extensions_bitmask(void)
 #endif
   features_bitmask |= BX_CPU_MTRR;
   features_bitmask |= BX_CPU_PAT;
+
+#if BX_SUPPORT_MISALIGNED_SSE
+  features_bitmask |= BX_CPU_MISALIGNED_SSE;
+#endif
 
   static bx_bool smep_enabled = SIM->get_param_bool(BXPN_CPUID_SMEP)->get();
   if (smep_enabled)
@@ -928,7 +1011,15 @@ void bx_generic_cpuid_t::init_cpu_extensions_bitmask(void)
     if (xlarge_pages)
       features_bitmask |= BX_CPU_1G_PAGES;
   }
+
+#if BX_SUPPORT_SVM
+  static unsigned svm_enabled = SIM->get_param_num(BXPN_CPUID_SVM)->get();
+  if (svm_enabled) {
+    features_bitmask |= BX_CPU_ALT_MOV_CR8 | BX_CPU_XAPIC_EXT; // auto-enable together with SVM
+  }
 #endif
+
+#endif // BX_SUPPORT_X86_64
 
 #endif // CPU_LEVEL >= 6
 
@@ -973,6 +1064,21 @@ void bx_generic_cpuid_t::init_vmx_extensions_bitmask(void)
   }
   
   this->vmx_extensions_bitmask = features_bitmask;
+}
+#endif
+
+#if BX_SUPPORT_SVM
+void bx_generic_cpuid_t::init_svm_extensions_bitmask(void)
+{
+  Bit32u features_bitmask = 0;
+
+  static bx_bool svm_enabled = SIM->get_param_bool(BXPN_CPUID_SVM)->get();
+  if (svm_enabled) {
+    features_bitmask = BX_CPUID_SVM_NESTED_PAGING |
+                       BX_CPUID_SVM_NRIP_SAVE;
+  }
+
+  this->svm_extensions_bitmask = features_bitmask;
 }
 #endif
 
@@ -1077,8 +1183,7 @@ Bit32u bx_generic_cpuid_t::get_extended_cpuid_features(void) const
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_MOVBE))
     features |= BX_CPUID_EXT_MOVBE;
 
-  // enable POPCNT if SSE4_2 is enabled
-  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_SSE4_2))
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_POPCNT))
     features |= BX_CPUID_EXT_POPCNT;
 
   // support for AES
@@ -1218,11 +1323,7 @@ Bit32u bx_generic_cpuid_t::get_std_cpuid_features(void) const
     features |= BX_CPUID_STD_SELF_SNOOP;
 #endif
 
-#if BX_SUPPORT_SMP
-  // Intel(R) HyperThreading Technology
-  if (SIM->get_param_num(BXPN_CPU_NTHREADS)->get() > 1)
-    features |= BX_CPUID_STD_HT;
-#endif
+  features |= BX_CPUID_STD_HT;
 
   return features;
 }
@@ -1389,25 +1490,16 @@ Bit32u bx_generic_cpuid_t::get_ext3_cpuid_features(void) const
 void bx_generic_cpuid_t::dump_cpuid(void) const
 {
   struct cpuid_function_t leaf;
+  unsigned n;
 
-  get_cpuid_leaf(0x00000000, 0x00000000, &leaf);
-  BX_INFO(("CPUID[0x00000000]: %08x %08x %08x %08x", leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  Bit32u max_std_function = leaf.eax, n;
-
-  if (max_std_function > 0) {
-    for (n=1; n<=max_std_function;n++) {
-      get_cpuid_leaf(n, 0x00000000, &leaf);
-      BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-    }
+  for (n=0; n <= max_std_leaf; n++) {
+    get_cpuid_leaf(n, 0x00000000, &leaf);
+    BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
   }
 
 #if BX_CPU_LEVEL >= 6
-  get_cpuid_leaf(0x80000000, 0x00000000, &leaf);
-  BX_INFO(("CPUID[0x80000000]: %08x %08x %08x %08x", leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
-  Bit32u max_ext_function = leaf.eax;
-
-  if (max_ext_function > 0) {
-    for (n=0x80000001; n<=max_ext_function;n++) {
+  if (max_ext_leaf > 0) {
+    for (n=0x80000000; n <= max_ext_leaf; n++) {
       get_cpuid_leaf(n, 0x00000000, &leaf);
       BX_INFO(("CPUID[0x%08x]: %08x %08x %08x %08x", n, leaf.eax, leaf.ebx, leaf.ecx, leaf.edx));
     }

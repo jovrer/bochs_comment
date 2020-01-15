@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h 10731 2011-10-09 19:26:30Z sshwarts $
+// $Id: bochs.h 11370 2012-08-26 12:32:10Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -111,13 +111,22 @@ extern "C" {
 #endif
 
 // prototypes
-int bx_begin_simulation(int argc, char *argv[]);
+int  bx_begin_simulation(int argc, char *argv[]);
 void bx_stop_simulation();
 char *bx_find_bochsrc(void);
-int bx_parse_cmdline(int arg, int argc, char *argv[]);
-int bx_read_configuration(const char *rcfile);
-int bx_write_configuration(const char *rcfile, int overwrite);
+int  bx_parse_cmdline(int arg, int argc, char *argv[]);
+int  bx_read_configuration(const char *rcfile);
+int  bx_write_configuration(const char *rcfile, int overwrite);
 void bx_reset_options(void);
+void bx_set_log_actions_by_device(bx_bool panic_flag);
+// special config parameter and options functions for plugins
+void bx_init_std_nic_options(const char *name, bx_list_c *menu);
+void bx_init_usb_options(const char *usb_name, const char *pname, int maxports);
+int  bx_parse_nic_params(const char *context, const char *param, bx_list_c *base);
+int  bx_parse_usb_port_params(const char *context, bx_bool devopt,
+                              const char *param, int maxports, bx_list_c *base);
+int  bx_write_pci_nic_options(FILE *fp, bx_list_c *base);
+int  bx_write_usb_options(FILE *fp, int maxports, bx_list_c *base);
 Bit32u crc32(const Bit8u *buf, int len);
 // for param-tree testing only
 void print_tree(bx_param_c *node, int level = 0);
@@ -220,8 +229,8 @@ void print_tree(bx_param_c *node, int level = 0);
         if (bx_guard.report.io) bx_dbg_io_report(port, size, op, val)
 #  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, pl, rw, data) \
         bx_dbg_lin_memory_access(cpu, lin, phy, len, pl, rw, data)
-#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, data) \
-        bx_dbg_phy_memory_access(cpu, phy, len, rw, data)
+#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, why, data) \
+        bx_dbg_phy_memory_access(cpu, phy, len, rw, why, data)
 #else  // #if BX_DEBUGGER
 // debugger not compiled in, use empty stubs
 #  define BX_DBG_ASYNC_INTR 1
@@ -231,13 +240,14 @@ void print_tree(bx_param_c *node, int level = 0);
 #  define BX_DBG_A20_REPORT(val)                                     /* empty */
 #  define BX_DBG_IO_REPORT(port, size, op, val)                      /* empty */
 #  define BX_DBG_LIN_MEMORY_ACCESS(cpu, lin, phy, len, pl, rw, data) /* empty */
-#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, data)          /* empty */
+#  define BX_DBG_PHY_MEMORY_ACCESS(cpu, phy, len, rw, attr, data)    /* empty */
 #endif  // #if BX_DEBUGGER
 
 #define MAGIC_LOGNUM 0x12345678
 
 typedef class BOCHSAPI logfunctions
 {
+  char *name;
   char *prefix;
 // values of onoff: 0=ignore, 1=report, 2=ask, 3=fatal
 #define ACT_IGNORE 0
@@ -261,23 +271,25 @@ public:
   void ldebug(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
   void fatal (const char *prefix, const char *fmt, va_list ap, int exit_status);
   void ask (int level, const char *prefix, const char *fmt, va_list ap);
-  void put(const char *);
+  void put(const char *p);
+  void put(const char *n, const char *p);
   void setio(class iofunctions *);
   void setonoff(int loglev, int value) {
     assert (loglev >= 0 && loglev < N_LOGLEV);
     onoff[loglev] = value;
   }
-  char *getprefix () { return prefix; }
-  int getonoff(int level) {
+  const char *get_name() const { return name; }
+  const char *getprefix() const { return prefix; }
+  int getonoff(int level) const {
     assert (level>=0 && level<N_LOGLEV);
     return onoff[level];
   }
-  static void set_default_action (int loglev, int action) {
+  static void set_default_action(int loglev, int action) {
     assert (loglev >= 0 && loglev < N_LOGLEV);
     assert (action >= 0 && action < N_ACT);
     default_onoff[loglev] = action;
   }
-  static int get_default_action (int loglev) {
+  static int get_default_action(int loglev) {
     assert (loglev >= 0 && loglev < N_LOGLEV);
     return default_onoff[loglev];
   }
@@ -308,13 +320,13 @@ public:
   void init_log(FILE *fs);
   void exit_log();
   void set_log_prefix(const char *prefix);
-  int get_n_logfns() { return n_logfn; }
+  int get_n_logfns() const { return n_logfn; }
   logfunc_t *get_logfn(int index) { return logfn_list[index]; }
   void add_logfn(logfunc_t *fn);
   void remove_logfn(logfunc_t *fn);
   void set_log_action(int loglevel, int action);
-  const char *getlevel(int i);
-  char *getaction(int i);
+  const char *getlevel(int i) const;
+  const char *getaction(int i) const;
   
 protected:
   int n_logfn;
@@ -412,7 +424,10 @@ typedef struct {
 #endif
 } bx_debug_t;
 
-BOCHSAPI_MSVCONLY void CDECL bx_signal_handler(int signum);
+#if BX_SHOW_IPS
+BOCHSAPI_MSVCONLY void bx_show_ips_handler(void);
+#endif
+void CDECL bx_signal_handler(int signum);
 int bx_atexit(void);
 BOCHSAPI extern bx_debug_t bx_dbg;
 
@@ -426,27 +441,6 @@ BOCHSAPI extern Bit32u apic_id_mask;
 #define BX_WRITE        1
 #define BX_EXECUTE      2
 #define BX_RW           3
-
-// to be used in concatenation with BX_READ/BX_WRITE/BX_EXECUTE/BX_RW
-#define BX_PDPTR0_ACCESS          0x010
-#define BX_PDPTR1_ACCESS          0x020
-#define BX_PDPTR2_ACCESS          0x030
-#define BX_PDPTR3_ACCESS          0x040
-#define BX_PTE_ACCESS             0x050
-#define BX_PDE_ACCESS             0x060
-#define BX_PDPTE_ACCESS           0x070
-#define BX_PML4E_ACCESS           0x080
-#define BX_EPT_PTE_ACCESS         0x090
-#define BX_EPT_PDE_ACCESS         0x0a0
-#define BX_EPT_PDPTE_ACCESS       0x0b0
-#define BX_EPT_PML4E_ACCESS       0x0c0
-#define BX_VMCS_ACCESS            0x0d0
-#define BX_VMX_MSR_BITMAP_ACCESS  0x0e0
-#define BX_VMX_IO_BITMAP_ACCESS   0x0f0
-#define BX_VMX_LOAD_MSR_ACCESS    0x100
-#define BX_VMX_STORE_MSR_ACCESS   0x110
-#define BX_VMX_VTPR_ACCESS        0x120
-#define BX_SMRAM_ACCESS           0x130
 
 // types of reset
 #define BX_RESET_SOFTWARE 10

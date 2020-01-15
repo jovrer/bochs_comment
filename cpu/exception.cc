@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: exception.cc 10262 2011-03-15 20:20:15Z sshwarts $
+// $Id: exception.cc 11330 2012-08-09 13:11:25Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2010  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -334,29 +334,7 @@ void BX_CPU_C::protected_mode_int(Bit8u vector, unsigned soft_int, bx_bool push_
 
     // switch tasks with nesting to TSS
     task_switch(0, &tss_selector, &tss_descriptor,
-                    BX_TASK_FROM_INT, dword1, dword2);
-
-    RSP_SPECULATIVE;
-
-    // if interrupt was caused by fault with error code
-    //   stack limits must allow push of 2 more bytes, else #SS(0)
-    // push error code onto stack
-
-    if (push_error) {
-      if (tss_descriptor.type >= 9) // TSS386
-        push_32(error_code);
-      else
-        push_16(error_code);
-    }
-
-    // instruction pointer must be in CS limit, else #GP(0)
-    if (EIP > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
-      BX_ERROR(("interrupt(): EIP > CS.limit"));
-      exception(BX_GP_EXCEPTION, 0);
-    }
-
-    RSP_COMMIT;
-
+                    BX_TASK_FROM_INT, dword1, dword2, push_error, error_code);
     return;
 
   case BX_286_INTERRUPT_GATE:
@@ -750,7 +728,7 @@ void BX_CPU_C::interrupt(Bit8u vector, unsigned type, bx_bool push_error, Bit16u
   BX_CPU_THIS_PTR debug_trap = 0;
   BX_CPU_THIS_PTR inhibit_mask = 0;
 
-#if BX_SUPPORT_VMX
+#if BX_SUPPORT_VMX || BX_SUPPORT_SVM
   BX_CPU_THIS_PTR in_event = 1;
 #endif
 
@@ -763,11 +741,15 @@ void BX_CPU_C::interrupt(Bit8u vector, unsigned type, bx_bool push_error, Bit16u
   {
     RSP_SPECULATIVE;
 
-    if(real_mode()) {
-       real_mode_int(vector, push_error, error_code);
-    }
-    else {
-       protected_mode_int(vector, soft_int, push_error, error_code);
+    // software interrupt can be redirefcted in v8086 mode
+    if (type != BX_SOFTWARE_INTERRUPT || !v8086_mode() || !v86_redirect_interrupt(vector))
+    {
+      if(real_mode()) {
+        real_mode_int(vector, push_error, error_code);
+      }
+      else {
+        protected_mode_int(vector, soft_int, push_error, error_code);
+      }
     }
 
     RSP_COMMIT;
@@ -777,7 +759,7 @@ void BX_CPU_C::interrupt(Bit8u vector, unsigned type, bx_bool push_error, Bit16u
   BX_CPU_THIS_PTR in_repeat = 0;
 #endif
 
-#if BX_SUPPORT_VMX
+#if BX_SUPPORT_VMX || BX_SUPPORT_SVM
   BX_CPU_THIS_PTR in_event = 0;
 #endif
 }
@@ -801,10 +783,10 @@ static const bx_bool is_exception_OK[3][3] = {
 #define BX_EXCEPTION_CLASS_FAULT 1
 #define BX_EXCEPTION_CLASS_ABORT 2
 
-struct BxExceptionInfo exceptions_info[BX_CPU_HANDLED_EXCEPTIONS+1] = {
+struct BxExceptionInfo exceptions_info[BX_CPU_HANDLED_EXCEPTIONS] = {
   /* DE */ { BX_ET_CONTRIBUTORY, BX_EXCEPTION_CLASS_FAULT, 0 },
   /* DB */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
-  /* -- */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }, // NMI
+  /* 02 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }, // NMI
   /* BP */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_TRAP,  0 },
   /* OF */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_TRAP,  0 },
   /* BR */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
@@ -812,18 +794,29 @@ struct BxExceptionInfo exceptions_info[BX_CPU_HANDLED_EXCEPTIONS+1] = {
   /* NM */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
   /* DF */ { BX_ET_DOUBLE_FAULT, BX_EXCEPTION_CLASS_FAULT, 1 },
              // coprocessor segment overrun (286,386 only)
-  /* -- */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 09 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
   /* TS */ { BX_ET_CONTRIBUTORY, BX_EXCEPTION_CLASS_FAULT, 1 },
   /* NP */ { BX_ET_CONTRIBUTORY, BX_EXCEPTION_CLASS_FAULT, 1 },
   /* SS */ { BX_ET_CONTRIBUTORY, BX_EXCEPTION_CLASS_FAULT, 1 },
   /* GP */ { BX_ET_CONTRIBUTORY, BX_EXCEPTION_CLASS_FAULT, 1 },
   /* PF */ { BX_ET_PAGE_FAULT,   BX_EXCEPTION_CLASS_FAULT, 1 },
-  /* -- */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }, // reserved
+  /* 15 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }, // reserved
   /* MF */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
   /* AC */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 1 },
   /* MC */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_ABORT, 0 },
   /* XM */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
-  /* -- */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }  // default
+  /* 20 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 21 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 22 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 23 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 24 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 25 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 26 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 27 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 28 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 29 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 },
+  /* 30 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }, // FIXME: SVM #SF
+  /* 31 */ { BX_ET_BENIGN,       BX_EXCEPTION_CLASS_FAULT, 0 }
 };
 
 // vector:     0..255: vector in IDT
@@ -858,7 +851,11 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
   }
 
 #if BX_SUPPORT_VMX
-  VMexit_Event(0, BX_HARDWARE_EXCEPTION, vector, error_code, push_error);
+  VMexit_Event(BX_HARDWARE_EXCEPTION, vector, error_code, push_error);
+#endif
+
+#if BX_SUPPORT_SVM
+  SvmInterceptException(BX_HARDWARE_EXCEPTION, vector, error_code, push_error);
 #endif
 
   if (BX_CPU_THIS_PTR errorno > 0) {
@@ -902,16 +899,11 @@ void BX_CPU_C::exception(unsigned vector, Bit16u error_code)
   }
 
   if (vector == BX_DB_EXCEPTION) {
-    // Commit debug events to DR6
-#if BX_CPU_LEVEL <= 4
-    // On 386/486 bit12 is settable
-    BX_CPU_THIS_PTR dr6.val32 = (BX_CPU_THIS_PTR dr6.val32 & 0xffff0ff0) |
-                          (BX_CPU_THIS_PTR debug_trap & 0x0000f00f);
-#else
-    // On Pentium+, bit12 is always zero
-    BX_CPU_THIS_PTR dr6.val32 = (BX_CPU_THIS_PTR dr6.val32 & 0xffff0ff0) |
+    // Commit debug events to DR6: preserve DR5.BS and DR6.BD values,
+    // only software can clear them
+    BX_CPU_THIS_PTR dr6.val32 = (BX_CPU_THIS_PTR dr6.val32 & 0xffff6ff0) |
                           (BX_CPU_THIS_PTR debug_trap & 0x0000e00f);
-#endif
+
     // clear GD flag in the DR7 prior entering debug exception handler
     BX_CPU_THIS_PTR dr7.set_GD(0);
   }

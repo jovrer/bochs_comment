@@ -1,19 +1,18 @@
 Bochs - The cross platform IA-32 (x86) emulator
-Updated: Fri Jan  6 19:40:00 CET 2012
-Version: 2.5.1
+Updated: Sun Sep  2 13:10:00 CEST 2012
+Version: 2.6
 
 WHAT IS BOCHS?
 
 Bochs is a highly portable open source IA-32 (x86) PC emulator
 written in C++, that runs on most popular platforms.  It includes
 emulation of the Intel x86 CPU, common I/O devices, and a custom
-BIOS.  Currently, Bochs can be compiled to emulate a 386, 486,
-Pentium/PentiumII/PentiumIII/Pentium4 or x86-64 CPU, including optional
-MMX, SSEx and 3DNow! instructions.  Bochs is capable of running
-most Operating Systems inside the emulation, for example Linux, DOS,
-Windows 95/98/NT/2000/XP or Windows Vista.
-Bochs was written by Kevin Lawton and is currently maintained by
-the Bochs project at "http://bochs.sourceforge.net".
+BIOS. Bochs can be compiled to emulate many different x86 CPUs,
+from early 386 to the most recent x86-64 Intel and AMD processors
+which may even not reached the market yet. Bochs is capable of running
+most Operating Systems inside the emulation, for example DOS,
+Linux or Windows. Bochs was written by Kevin Lawton and is currently
+maintained by the Bochs project at "http://bochs.sourceforge.net".
 
 Bochs can be compiled and used in a variety of modes, some which are
 still in development.  The 'typical' use of bochs is to provide
@@ -23,14 +22,14 @@ the emulator on your workstation, much like you have a machine
 inside of a machine.  Bochs will allow you to run Windows
 applications on a Solaris machine with X11, for example.
 
-Bochs is distributed under the GNU LGPL.  See COPYING for details.
+Bochs is distributed under the GNU LGPL. See LICENSE and COPYING for details.
 
 GETTING CURRENT SOURCE CODE
 
 Source code for Bochs is available from the Bochs home page at
 http://bochs.sourceforge.net.  You can download the most recent
 release, use SVN to get the latest sources, or grab a SVN
-snapshot which is updated nightly.  The releases contain the most
+snapshot which is updated frequently. The releases contain the most
 stable code, but if you want the very newest features try the
 SVN version instead.
 

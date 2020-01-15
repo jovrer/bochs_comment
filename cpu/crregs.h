@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h 10892 2011-12-29 21:59:03Z sshwarts $
+// $Id: crregs.h 11272 2012-07-11 15:07:54Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -148,6 +148,7 @@ struct bx_dr6_t {
   IMPLEMENT_CRREG_ACCESSORS(B2, 2);
   IMPLEMENT_CRREG_ACCESSORS(B3, 3);
 
+#define BX_DEBUG_TRAP_HIT             (1 << 12)
 #define BX_DEBUG_DR_ACCESS_BIT        (1 << 13)
 #define BX_DEBUG_SINGLE_STEP_BIT      (1 << 14)
 #define BX_DEBUG_TRAP_TASK_SWITCH_BIT (1 << 15)
@@ -214,9 +215,9 @@ struct bx_efer_t {
   IMPLEMENT_CRREG_ACCESSORS(LMA,   10);
 #endif
   IMPLEMENT_CRREG_ACCESSORS(NXE,   11);
+#if BX_SUPPORT_X86_64
   IMPLEMENT_CRREG_ACCESSORS(SVME,  12); /* AMD Secure Virtual Machine */
   IMPLEMENT_CRREG_ACCESSORS(LMSLE, 13); /* AMD Long Mode Segment Limit */
-#if BX_SUPPORT_X86_64
   IMPLEMENT_CRREG_ACCESSORS(FFXSR, 14);
 #endif
 

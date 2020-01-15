@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.cc 10439 2011-06-29 19:48:46Z sshwarts $
+// $Id: pci.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -39,10 +39,14 @@ bx_pci_bridge_c *thePciBridge = NULL;
 
 int libpci_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePciBridge = new bx_pci_bridge_c();
-  bx_devices.pluginPciBridge = thePciBridge;
-  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePciBridge, BX_PLUGIN_PCI);
-  return(0); // Success
+  if (type == PLUGTYPE_CORE) {
+    thePciBridge = new bx_pci_bridge_c();
+    bx_devices.pluginPciBridge = thePciBridge;
+    BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePciBridge, BX_PLUGIN_PCI);
+    return 0; // Success
+  } else {
+    return -1;
+  }
 }
 
 void libpci_LTX_plugin_fini(void)
@@ -57,7 +61,7 @@ bx_pci_bridge_c::bx_pci_bridge_c()
 
 bx_pci_bridge_c::~bx_pci_bridge_c()
 {
-  debug_dump();
+  SIM->get_bochs_root()->remove("pci_bridge");
   BX_DEBUG(("Exit"));
 }
 
@@ -87,8 +91,6 @@ void bx_pci_bridge_c::init(void)
 
   for (i=0x0CFC; i<=0x0CFF; i++) {
     DEV_register_ioread_handler(this, read_handler, i, "i440FX", 7);
-  }
-  for (i=0x0CFC; i<=0x0CFF; i++) {
     DEV_register_iowrite_handler(this, write_handler, i, "i440FX", 7);
   }
 
@@ -103,6 +105,11 @@ void bx_pci_bridge_c::init(void)
   BX_PCI_THIS pci_conf[0x02] = 0x37;
   BX_PCI_THIS pci_conf[0x03] = 0x12;
   BX_PCI_THIS pci_conf[0x0b] = 0x06;
+
+#if BX_DEBUGGER
+  // register device for the 'info device' command (calls debug_dump())
+  bx_dbg_register_debug_info("pci", this);
+#endif
 }
 
   void
@@ -148,7 +155,7 @@ bx_pci_bridge_c::reset(unsigned type)
 
 void bx_pci_bridge_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci_bridge", "PCI Bridge State", 3);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci_bridge", "PCI Bridge State");
   BXRS_HEX_PARAM_FIELD(list, confAddr, BX_PCI_THIS confAddr);
   BXRS_HEX_PARAM_FIELD(list, confData, BX_PCI_THIS confData);
   register_pci_state(list);
@@ -272,12 +279,14 @@ Bit32u bx_pci_bridge_c::pci_read_handler(Bit8u address, unsigned io_len)
 // pci configuration space write callback handler
 void bx_pci_bridge_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
-  Bit8u value8;
+  Bit8u value8, oldval;
+  unsigned area;
 
   if ((address >= 0x10) && (address < 0x34))
     return;
   for (unsigned i=0; i<io_len; i++) {
     value8 = (value >> (i*8)) & 0xFF;
+    oldval = BX_PCI_THIS pci_conf[address+i];
     switch (address+i) {
       case 0x04:
         BX_PCI_THIS pci_conf[address+i] = (value8 & 0x40) | 0x06;
@@ -292,9 +301,23 @@ void bx_pci_bridge_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io
       case 0x5D:
       case 0x5E:
       case 0x5F:
-        BX_INFO(("440FX PMC write to PAM register %x (TLB Flush)", address+i));
-        BX_PCI_THIS pci_conf[address+i] = value8;
-        bx_pc_system.MemoryMappingChanged();
+        if (value != oldval) {
+          BX_PCI_THIS pci_conf[address+i] = value8;
+          if ((address+i) == 0x59) {
+            area = BX_MEM_AREA_F0000;
+            DEV_mem_set_memory_type(area, 0, (value >> 4) & 0x1);
+            DEV_mem_set_memory_type(area, 1, (value >> 5) & 0x1);
+          } else {
+            area = ((address+i) - 0x5a) << 1;
+            DEV_mem_set_memory_type(area, 0, (value >> 0) & 0x1);
+            DEV_mem_set_memory_type(area, 1, (value >> 1) & 0x1);
+            area++;
+            DEV_mem_set_memory_type(area, 0, (value >> 4) & 0x1);
+            DEV_mem_set_memory_type(area, 1, (value >> 5) & 0x1);
+          }
+          BX_INFO(("440FX PMC write to PAM register %x (TLB Flush)", address+i));
+          bx_pc_system.MemoryMappingChanged();
+        }
         break;
       case 0x72:
         smram_control(value);  // SMRAM conrol register
@@ -362,117 +385,48 @@ void bx_pci_bridge_c::smram_control(Bit8u value8)
   BX_PCI_THIS pci_conf[0x72] = value8;
 }
 
-Bit8u bx_pci_bridge_c::rd_memType(Bit32u addr)
+#if BX_DEBUGGER
+void bx_pci_bridge_c::debug_dump(int argc, char **argv)
 {
-   switch ((addr & 0xFC000) >> 12) {
-      case 0xC0:
-           return (BX_PCI_THIS pci_conf[0x5A] & 0x1);
-      case 0xC4:
-           return ((BX_PCI_THIS pci_conf[0x5A] >> 4) & 0x1);
-      case 0xC8:
-           return (BX_PCI_THIS pci_conf[0x5B] & 0x1);
-      case 0xCC:
-           return ((BX_PCI_THIS pci_conf[0x5B] >> 4) & 0x1);
+  int arg, i, j, r;
 
-      case 0xD0:
-           return (BX_PCI_THIS pci_conf[0x5C] & 0x1);
-      case 0xD4:
-           return ((BX_PCI_THIS pci_conf[0x5C] >> 4) & 0x1);
-      case 0xD8:
-           return (BX_PCI_THIS pci_conf[0x5D] & 0x1);
-      case 0xDC:
-           return ((BX_PCI_THIS pci_conf[0x5D] >> 4) & 0x1);
+  dbg_printf("i440FX PMC/DBX\n\n");
+  dbg_printf("confAddr = 0x%08x\n", BX_PCI_THIS confAddr);
+  dbg_printf("confData = 0x%08x\n", BX_PCI_THIS confData);
 
-      case 0xE0:
-           return (BX_PCI_THIS pci_conf[0x5E] & 0x1);
-      case 0xE4:
-           return ((BX_PCI_THIS pci_conf[0x5E] >> 4) & 0x1);
-      case 0xE8:
-           return (BX_PCI_THIS pci_conf[0x5F] & 0x1);
-      case 0xEC:
-           return ((BX_PCI_THIS pci_conf[0x5F] >> 4) & 0x1);
-
-      case 0xF0:
-      case 0xF4:
-      case 0xF8:
-      case 0xFC:
-           return ((BX_PCI_THIS pci_conf[0x59] >> 4) & 0x1);
-
-      default:
-           BX_PANIC(("rd_memType () Error: Memory Type not known !"));
-           break;
-   }
-
-   return(0); // keep compiler happy
-}
-
-Bit8u bx_pci_bridge_c::wr_memType(Bit32u addr)
-{
-   switch ((addr & 0xFC000) >> 12) {
-      case 0xC0:
-           return ((BX_PCI_THIS pci_conf[0x5A] >> 1) & 0x1);
-      case 0xC4:
-           return ((BX_PCI_THIS pci_conf[0x5A] >> 5) & 0x1);
-      case 0xC8:
-           return ((BX_PCI_THIS pci_conf[0x5B] >> 1) & 0x1);
-      case 0xCC:
-           return ((BX_PCI_THIS pci_conf[0x5B] >> 5) & 0x1);
-
-      case 0xD0:
-           return ((BX_PCI_THIS pci_conf[0x5C] >> 1) & 0x1);
-      case 0xD4:
-           return ((BX_PCI_THIS pci_conf[0x5C] >> 5) & 0x1);
-      case 0xD8:
-           return ((BX_PCI_THIS pci_conf[0x5D] >> 1) & 0x1);
-      case 0xDC:
-           return ((BX_PCI_THIS pci_conf[0x5D] >> 5) & 0x1);
-
-      case 0xE0:
-           return ((BX_PCI_THIS pci_conf[0x5E] >> 1) & 0x1);
-      case 0xE4:
-           return ((BX_PCI_THIS pci_conf[0x5E] >> 5) & 0x1);
-      case 0xE8:
-           return ((BX_PCI_THIS pci_conf[0x5F] >> 1) & 0x1);
-      case 0xEC:
-           return ((BX_PCI_THIS pci_conf[0x5F] >> 5) & 0x1);
-
-      case 0xF0:
-      case 0xF4:
-      case 0xF8:
-      case 0xFC:
-           return ((BX_PCI_THIS pci_conf[0x59] >> 5) & 0x1);
-
-      default:
-           BX_PANIC(("wr_memType () Error: Memory Type not known !"));
-           break;
-   }
-
-   return(0); // keep compiler happy
-}
-
-void bx_pci_bridge_c::debug_dump()
-{
-  int i;
-
-  BX_DEBUG(("i440fxConfAddr:0x%08x", BX_PCI_THIS confAddr));
-  BX_DEBUG(("i440fxConfData:0x%08x", BX_PCI_THIS confData));
-
-#ifdef DUMP_FULL_I440FX
-  for (i=0; i<256; i++) {
-    BX_DEBUG(("i440fxArray%02x:0x%02x", i, BX_PCI_THIS pci_conf[i]));
+  if (argc == 0) {
+    for (i = 0x59; i < 0x60; i++) {
+      dbg_printf("PAM reg 0x%02x = 0x%02x\n", i, BX_PCI_THIS pci_conf[i]);
+    }
+    dbg_printf("SMRAM control = 0x%02x\n", BX_PCI_THIS pci_conf[0x72]);
+    dbg_printf("\nSupported options:\n");
+    dbg_printf("info device 'pci' 'dump=full' - show PCI config space\n");
+  } else {
+    for (arg = 0; arg < argc; arg++) {
+      if (!strcmp(argv[arg], "dump=full")) {
+        dbg_printf("\nPCI config space\n\n");
+        r = 0;
+        for (i=0; i<16; i++) {
+          dbg_printf("%04x ", r);
+          for (j=0; j<16; j++) {
+            dbg_printf(" %02x", BX_PCI_THIS pci_conf[r++]);
+          }
+          dbg_printf("\n");
+        }
+      } else {
+        dbg_printf("\nUnknown option: '%s'\n", argv[arg]);
+      }
+    }
   }
-#else /* DUMP_FULL_I440FX */
-  for (i=0x59; i<0x60; i++) {
-    BX_DEBUG(("i440fxArray%02x:0x%02x", i, BX_PCI_THIS pci_conf[i]));
-  }
-#endif /* DUMP_FULL_I440FX */
 }
+#endif
 
 bx_bool bx_pci_bridge_c::register_pci_handlers(bx_pci_device_stub_c *dev,
                                         Bit8u *devfunc, const char *name,
                                         const char *descr)
 {
   unsigned i, handle;
+  int first_free_slot = -1;
   char devname[80];
   char *device;
 
@@ -481,15 +435,30 @@ bx_bool bx_pci_bridge_c::register_pci_handlers(bx_pci_device_stub_c *dev,
     for (i = 0; i < BX_N_PCI_SLOTS; i++) {
       sprintf(devname, "pci.slot.%d", i+1);
       device = SIM->get_param_string(devname)->getptr();
-      if ((strlen(device) > 0) && (!strcmp(name, device))) {
-        *devfunc = (i + 2) << 3;
-        BX_PCI_THIS slot_used[i] = 1;
-        BX_INFO(("PCI slot #%d used by plugin '%s'", i+1, name));
-        break;
+      if (strlen(device) > 0) {
+        if (!strcmp(name, device)) {
+          *devfunc = (i + 2) << 3;
+          BX_PCI_THIS slot_used[i] = 1;
+          BX_INFO(("PCI slot #%d used by plugin '%s'", i+1, name));
+          break;
+        }
+      } else if (first_free_slot == -1) {
+        first_free_slot = i;
       }
     }
     if (*devfunc == 0x00) {
-      BX_ERROR(("Plugin '%s' not connected to a PCI slot", name));
+      // auto-assign device to PCI slot if possible
+      if (first_free_slot != -1) {
+        i = (unsigned)first_free_slot;
+        sprintf(devname, "pci.slot.%d", i+1);
+        SIM->get_param_string(devname)->set(name);
+        *devfunc = (i + 2) << 3;
+        BX_PCI_THIS slot_used[i] = 1;
+        BX_INFO(("PCI slot #%d used by plugin '%s'", i+1, name));
+      } else {
+        BX_ERROR(("Plugin '%s' not connected to a PCI slot", name));
+        return 0;
+      }
     }
   }
   /* check if device/function is available */
@@ -497,17 +466,16 @@ bx_bool bx_pci_bridge_c::register_pci_handlers(bx_pci_device_stub_c *dev,
     if (BX_PCI_THIS num_pci_handlers >= BX_MAX_PCI_DEVICES) {
       BX_INFO(("too many PCI devices installed."));
       BX_PANIC(("  try increasing BX_MAX_PCI_DEVICES"));
-      return false;
+      return 0;
     }
     handle = BX_PCI_THIS num_pci_handlers++;
     BX_PCI_THIS pci_handler[handle].handler = dev;
     BX_PCI_THIS pci_handler_id[*devfunc] = handle;
     BX_INFO(("%s present at device %d, function %d", descr, *devfunc >> 3,
              *devfunc & 0x07));
-    return true; // device/function mapped successfully
-  }
-  else {
-    return false; // device/function not available, return false.
+    return 1; // device/function mapped successfully
+  } else {
+    return 0; // device/function not available, return false.
   }
 }
 

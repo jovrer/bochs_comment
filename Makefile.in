@@ -1,4 +1,4 @@
-# Copyright (C) 2001-2011  The Bochs Project
+# Copyright (C) 2001-2012  The Bochs Project
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -43,7 +43,7 @@ REL_STRING=@REL_STRING@
 MAN_PAGE_1_LIST=bochs bximage bxcommit bochs-dlx
 MAN_PAGE_5_LIST=bochsrc
 INSTALL_LIST_SHARE=bios/BIOS-bochs-* bios/VGABIOS* @INSTALL_LIST_FOR_PLATFORM@
-INSTALL_LIST_DOC=CHANGES COPYING README TODO
+INSTALL_LIST_DOC=CHANGES COPYING LICENSE README TODO
 INSTALL_LIST_BIN=bochs@EXE@ bximage@EXE@ bxcommit@EXE@
 INSTALL_LIST_BIN_OPTIONAL=bochsdbg@EXE@
 INSTALL_LIST_WIN32=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) $(INSTALL_LIST_BIN) $(INSTALL_LIST_BIN_OPTIONAL) niclist@EXE@
@@ -79,7 +79,7 @@ RC_CMD=@RC_CMD@
 srcdir = @srcdir@
 VPATH = @srcdir@
 
-SHELL = /bin/sh
+SHELL = @SHELL@
 
 @SET_MAKE@
 
@@ -95,8 +95,7 @@ LIBS = @LIBS@
 #   solaris needs -lreadline -lcurses
 X_LIBS = @X_LIBS@
 X_PRE_LIBS = @X_PRE_LIBS@
-XPM_LIB = @XPM_LIB@
-GUI_LINK_OPTS_X = $(X_LIBS) $(X_PRE_LIBS) -lX11 $(XPM_LIB) -lXrandr
+GUI_LINK_OPTS_X = $(X_LIBS) $(X_PRE_LIBS)
 GUI_LINK_OPTS_SDL = `sdl-config --cflags --libs`
 GUI_LINK_OPTS_SVGA =  -lvga -lvgagl
 GUI_LINK_OPTS_RFB = @RFB_LIBS@
@@ -173,12 +172,13 @@ all: @PRIMARY_TARGET@ @PLUGIN_TARGET@ bximage@EXE@ bxcommit@EXE@ @BUILD_DOCBOOK_
 
 @EXTERNAL_DEPENDENCY@
 
-bochs@EXE@: @IODEV_LIB_VAR@ @DEBUGGER_VAR@ \
-           cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
-           @DISASM_VAR@ @INSTRUMENT_VAR@ $(BX_OBJS) \
-           $(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
+bochs@EXE@: @IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		@DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a \
+		gui/libgui.a @DISASM_VAR@ @INSTRUMENT_VAR@ $(BX_OBJS) \
+		$(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
 	@LINK@ @EXPORT_DYNAMIC@ $(BX_OBJS) $(SIMX86_OBJS) \
-		@IODEV_LIB_VAR@ @DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
+		@IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		@DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
 		 memory/libmemory.a gui/libgui.a \
 		@DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
 		@GDBSTUB_VAR@ @FPU_VAR@ \
@@ -192,22 +192,22 @@ bochs@EXE@: @IODEV_LIB_VAR@ @DEBUGGER_VAR@ \
 # Special make target for cygwin/mingw using dlltool instead of
 # libtool.  This creates a .DEF file, and exports file, an import library,
 # and then links bochs.exe with the exports file.
-.win32_dll_plugin_target: @IODEV_LIB_VAR@ @DEBUGGER_VAR@ \
-           cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
-           @DISASM_VAR@ @INSTRUMENT_VAR@ $(BX_OBJS) \
-           $(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
+.win32_dll_plugin_target: @IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ \
+		@SOUND_LIB_VAR@ @DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
+		memory/libmemory.a gui/libgui.a @DISASM_VAR@ @INSTRUMENT_VAR@ \
+		$(BX_OBJS) $(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
 	$(DLLTOOL) --export-all-symbols --output-def bochs.def \
 		$(BX_OBJS) $(SIMX86_OBJS) \
-		@IODEV_LIB_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
-		memory/libmemory.a gui/libgui.a \
+		@IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
 		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
 		@GDBSTUB_VAR@ @FPU_VAR@
 	$(DLLTOOL) --dllname bochs.exe --def bochs.def --output-lib dllexports.a
 	$(DLLTOOL) --dllname bochs.exe --output-exp bochs.exp --def bochs.def
 	$(CXX) -o bochs.exe $(CXXFLAGS) $(LDFLAGS) -export-dynamic \
 	    $(BX_OBJS) bochs.exp $(SIMX86_OBJS) \
-		@IODEV_LIB_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
-		memory/libmemory.a gui/libgui.a \
+		@IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
 		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
 		@GDBSTUB_VAR@ @FPU_VAR@ \
 		$(GUI_LINK_OPTS) \
@@ -225,6 +225,18 @@ bochs_plugins:
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) plugins
 	@CD_UP_ONE@
+	cd iodev/hdimage @COMMAND_SEPARATOR@
+	$(MAKE) plugins
+	@CD_UP_TWO@
+	cd iodev/usb @COMMAND_SEPARATOR@
+	$(MAKE) plugins
+	@CD_UP_TWO@
+	cd iodev/network @COMMAND_SEPARATOR@
+	$(MAKE) plugins
+	@CD_UP_TWO@
+	cd iodev/sound @COMMAND_SEPARATOR@
+	$(MAKE) plugins
+	@CD_UP_TWO@
 
 bximage@EXE@: misc/bximage.o
 	@LINK_CONSOLE@ $(BXIMAGE_LINK_OPTS) misc/bximage.o
@@ -236,10 +248,10 @@ niclist@EXE@: misc/niclist.o
 	@LINK_CONSOLE@ misc/niclist.o
 
 # compile with console CXXFLAGS, not gui CXXFLAGS
-misc/bximage.o: $(srcdir)/misc/bximage.c $(srcdir)/misc/bswap.h $(srcdir)/iodev/hdimage.h
+misc/bximage.o: $(srcdir)/misc/bximage.c $(srcdir)/misc/bswap.h $(srcdir)/iodev/hdimage/hdimage.h
 	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) $(srcdir)/misc/bximage.c @OFP@$@
 
-misc/bxcommit.o: $(srcdir)/misc/bxcommit.c $(srcdir)/misc/bswap.h $(srcdir)/iodev/hdimage.h
+misc/bxcommit.o: $(srcdir)/misc/bxcommit.c $(srcdir)/misc/bswap.h $(srcdir)/iodev/hdimage/hdimage.h
 	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) $(srcdir)/misc/bxcommit.c @OFP@$@
 
 misc/niclist.o: $(srcdir)/misc/niclist.c
@@ -252,6 +264,26 @@ iodev/libiodev.a::
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) $(MDEFINES) libiodev.a
 	@CD_UP_ONE@
+
+iodev/hdimage/libhdimage.a::
+	cd iodev/hdimage @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libhdimage.a
+	@CD_UP_TWO@
+
+iodev/usb/libusb.a::
+	cd iodev/usb @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libusb.a
+	@CD_UP_TWO@
+
+iodev/network/libnetwork.a::
+	cd iodev/network @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libnetwork.a
+	@CD_UP_TWO@
+
+iodev/sound/libsound.a::
+	cd iodev/sound @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libsound.a
+	@CD_UP_TWO@
 
 bx_debug/libdebug.a::
 	cd bx_debug @COMMAND_SEPARATOR@
@@ -359,12 +391,20 @@ install_libtool_plugins::
 	for i in $(DESTDIR)$(plugdir); do mkdir -p $$i && test -d $$i && test -w $$i; done
 	list=`cd gui && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install gui/$$i $(DESTDIR)$(plugdir); done
 	list=`cd iodev && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/hdimage && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/hdimage/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/usb && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/usb/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/network && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/network/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/sound && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/sound/$$i $(DESTDIR)$(plugdir); done
 	$(LIBTOOL) --finish $(DESTDIR)$(plugdir)
 
 install_dll_plugins::
 	for i in $(DESTDIR)$(plugdir); do mkdir -p $$i && test -d $$i && test -w $$i; done
 	list=`cd gui && echo *.dll`; for i in $$list; do cp gui/$$i $(DESTDIR)$(plugdir); done
 	list=`cd iodev && echo *.dll`; for i in $$list; do cp iodev/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/hdimage && echo *.dll`; for i in $$list; do cp iodev/hdimage/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/usb && echo *.dll`; for i in $$list; do cp iodev/usb/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/network && echo *.dll`; for i in $$list; do cp iodev/network/$$i $(DESTDIR)$(plugdir); done
+	list=`cd iodev/sound && echo *.dll`; for i in $$list; do cp iodev/sound/$$i $(DESTDIR)$(plugdir); done
 
 install_share::
 	for i in $(DESTDIR)$(sharedir);	do mkdir -p $$i && test -d $$i && test -w $$i; done
@@ -380,14 +420,18 @@ install_doc::
 	install -m 644 $(srcdir)/.bochsrc $(DESTDIR)$(docdir)/bochsrc-sample.txt
 
 
+# docbook section: the -C option can be used here
 build_docbook::
-	cd doc/docbook; make
+	$(MAKE) -C doc/docbook
 
 dl_docbook::
-	cd doc/docbook; make dl_docs
+	$(MAKE) -C doc/docbook dl_docs
 
 install_docbook: build_docbook
-	cd doc/docbook; make install
+	$(MAKE) -C doc/docbook install
+
+clean_docbook::
+	$(MAKE) -C doc/docbook clean
 
 install_man::
 	-mkdir -p $(DESTDIR)$(man1dir)
@@ -470,16 +514,33 @@ clean:
 local-dist-clean: clean
 	@RMCOMMAND@ config.h config.status config.log config.cache
 	@RMCOMMAND@ .dummy `find . -name '*.dsp' -o -name '*.dsw' -o -name '*.opt' -o -name '.DS_Store'`
-	@RMCOMMAND@ bxversion.h build/linux/bochs-dlx _rpm_top *.rpm
+	@RMCOMMAND@ bxversion.h bxversion.rc build/linux/bochs-dlx _rpm_top *.rpm
 	@RMCOMMAND@ build/win32/nsis/Makefile build/win32/nsis/bochs.nsi
 	@RMCOMMAND@ build/macosx/Info.plist build/macosx/script_compiled.rsrc
 	@RMCOMMAND@ libtool
 	@RMCOMMAND@ ltdlconf.h
 
-all-clean: clean
+clean_pcidev::
+	cd host/linux/pcidev @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_THREE@
+
+all-clean: clean @CLEAN_DOCBOOK_VAR@ @CLEAN_PCIDEV_VAR@
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
+	cd iodev/hdimage @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
+	cd iodev/usb @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
+	cd iodev/network @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
+	cd iodev/sound @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
 	cd bx_debug @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
@@ -507,17 +568,23 @@ all-clean: clean
 	cd fpu @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
-	cd doc/docbook @COMMAND_SEPARATOR@
-	$(MAKE) clean
-	@CD_UP_TWO@
-	cd host/linux/pcidev @COMMAND_SEPARATOR@
-	$(MAKE) clean
-	@CD_UP_THREE@
 
 dist-clean: local-dist-clean
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@
+	cd iodev/hdimage @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
+	cd iodev/usb @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
+	cd iodev/network @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
+	cd iodev/sound @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
 	cd bx_debug @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@

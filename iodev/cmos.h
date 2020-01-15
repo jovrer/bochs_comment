@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: cmos.h 11182 2012-05-15 17:03:45Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -42,6 +42,9 @@ public:
   virtual void save_image(void);
   virtual void register_state(void);
   virtual void after_restore_state(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
+#endif
 
   virtual Bit32u get_reg(unsigned reg) {
     return s.reg[reg];
@@ -63,6 +66,7 @@ public:
     bx_bool timeval_change;
     bx_bool rtc_mode_12hour;
     bx_bool rtc_mode_binary;
+    bx_bool rtc_sync;
 
     Bit8u   reg[128];
   } s;  // state information

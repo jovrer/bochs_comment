@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc 10516 2011-07-31 14:38:03Z vruppert $
+// $Id: logio.cc 11116 2012-03-27 21:30:34Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2010  The Bochs Project
@@ -33,7 +33,7 @@
 
 static int Allocio=0;
 
-const char* iofunctions::getlevel(int i)
+const char* iofunctions::getlevel(int i) const
 {
   static const char *loglevel[N_LOGLEV] = {
     "DEBUG",
@@ -46,11 +46,11 @@ const char* iofunctions::getlevel(int i)
   else return "?";
 }
 
-char* iofunctions::getaction(int i)
+const char* iofunctions::getaction(int i) const
 {
   static const char *name[] = { "ignore", "report", "ask", "fatal" };
   assert (i>=ACT_IGNORE && i<N_ACT);
-  return (char *) name[i];
+  return name[i];
 }
 
 void iofunctions::flush(void)
@@ -71,7 +71,7 @@ void iofunctions::init(void)
   n_logfn = 0;
   init_log(stderr);
   log = new logfunc_t(this);
-  log->put("IO");
+  log->put("logio", "IO");
   log->ldebug("Init(log file: '%s').",logfn);
 }
 
@@ -280,8 +280,9 @@ int logfunctions::default_onoff[N_LOGLEV] =
 
 logfunctions::logfunctions(void)
 {
+  name = NULL;
   prefix = NULL;
-  put(" ");
+  put("?", " ");
   if (io == NULL && Allocio == 0) {
     Allocio = 1;
     io = new iofunc_t(stderr);
@@ -295,8 +296,9 @@ logfunctions::logfunctions(void)
 
 logfunctions::logfunctions(iofunc_t *iofunc)
 {
+  name = NULL;
   prefix = NULL;
-  put(" ");
+  put("?", " ");
   setio(iofunc);
   // BUG: unfortunately this can be called before the bochsrc is read,
   // which means that the bochsrc has no effect on the actions.
@@ -307,6 +309,7 @@ logfunctions::logfunctions(iofunc_t *iofunc)
 logfunctions::~logfunctions()
 {
   logio->remove_logfn(this);
+  if (name) free(name);
   if (prefix) free(prefix);
 }
 
@@ -320,14 +323,25 @@ void logfunctions::setio(iofunc_t *i)
 
 void logfunctions::put(const char *p)
 {
+  const char *n = p;
+  put(n, p);
+}
+
+void logfunctions::put(const char *n, const char *p)
+{
   char *tmpbuf=strdup("[     ]");   // if we ever have more than 32 chars,
                                     // we need to rethink this
 
   if (tmpbuf == NULL)
     return;                         // allocation not successful
 
-  if (prefix != NULL)
-  {
+  if (name != NULL) {
+    free(name);             // free previously allocated memory
+    name = NULL;
+  }
+  name = strdup(n);
+
+  if (prefix != NULL) {
     free(prefix);             // free previously allocated memory
     prefix = NULL;
   }

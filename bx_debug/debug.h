@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debug.h 10731 2011-10-09 19:26:30Z sshwarts $
+// $Id: debug.h 11151 2012-04-24 11:01:59Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2011  The Bochs Project
@@ -18,6 +18,8 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
+#ifndef BX_DEBUG_H
+#define BX_DEBUG_H
 
 // if including from C parser, need basic types etc
 #include "config.h"
@@ -197,6 +199,9 @@ void bx_add_lex_input(char *buf);
 extern int bxparse(void);
 extern void bxerror(char *s);
 
+// register function for 'info device' command
+bx_bool bx_dbg_register_debug_info(const char *devname, void *dev);
+
 #define EMPTY_ARG (-1)
 
 bx_bool bx_dbg_read_linear(unsigned which_cpu, bx_address laddr, unsigned len, Bit8u *buf);
@@ -277,6 +282,7 @@ void bx_dbg_examine_command(const char *command, const char *format, bx_bool for
                     bx_address addr, bx_bool addr_passed);
 Bit32u bx_dbg_lin_indirect(bx_address addr);
 Bit32u bx_dbg_phy_indirect(bx_phy_address addr);
+void bx_dbg_writemem_command(const char *filename, bx_address laddr, unsigned len);
 void bx_dbg_setpmem_command(bx_phy_address addr, unsigned len, Bit32u val);
 void bx_dbg_query_command(const char *);
 void bx_dbg_take_command(const char *, unsigned n);
@@ -286,10 +292,7 @@ void bx_dbg_instrument_command(const char *);
 void bx_dbg_doit_command(unsigned);
 void bx_dbg_crc_command(bx_phy_address addr1, bx_phy_address addr2);
 void bx_dbg_linux_syscall(unsigned which_cpu);
-void bx_dbg_info_ne2k(int page, int reg);
-void bx_dbg_info_pic(void);
-void bx_dbg_info_vga(void);
-void bx_dbg_info_pci(void);
+void bx_dbg_info_device(const char *, const char *);
 void bx_dbg_print_help(void);
 void bx_dbg_calc_command(Bit64u value);
 void bx_dbg_dump_table(void);
@@ -301,7 +304,7 @@ void bx_dbg_halt(unsigned cpu);
 
 // memory trace callbacks from CPU, len=1,2,4 or 8
 void bx_dbg_lin_memory_access(unsigned cpu, bx_address lin, bx_phy_address phy, unsigned len, unsigned pl, unsigned rw, Bit8u *data);
-void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw, Bit8u *data);
+void bx_dbg_phy_memory_access(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw, unsigned attr, Bit8u *data);
 
 // check memory access for watchpoints
 void bx_dbg_check_memory_watchpoints(unsigned cpu, bx_phy_address phy, unsigned len, unsigned rw);
@@ -504,3 +507,5 @@ void bx_dbg_disassemble_current(int which_cpu, int print_time);
 #endif // #ifdef __cplusplus
 
 #endif // #if BX_DEBUGGER
+
+#endif

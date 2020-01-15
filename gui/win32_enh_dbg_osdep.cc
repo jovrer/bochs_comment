@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32_enh_dbg_osdep.cc 10298 2011-04-03 10:29:19Z vruppert $
+// $Id: win32_enh_dbg_osdep.cc 11131 2012-04-10 12:44:06Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -1490,7 +1490,6 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                     SendMessage (hCPUt[newCPU],WM_SETTEXT,(WPARAM) 0 ,(LPARAM) tmpcb);
                     CurrentCPU = newCPU;
                     BottomAsmLA = ~0;       // force an ASM autoload, to repaint
-                    PrevPtime = 0;          // force a full update
                     if (AtBreak != FALSE)   // if at a break, pretend it just happened
                         OnBreak();          // refresh the ASM and Register windows
                 }

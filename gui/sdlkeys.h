@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdlkeys.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: sdlkeys.h 11076 2012-03-04 21:37:49Z vruppert $
 /////////////////////////////////////////////////////////////////////////
   
 // This file is simply a list of SDL key symbols taken from <SDL/SDL_keysym.h>.
@@ -59,9 +59,9 @@ DEF_SDL_KEY( SDLK_EQUALS )
 DEF_SDL_KEY( SDLK_GREATER )
 DEF_SDL_KEY( SDLK_QUESTION )
 DEF_SDL_KEY( SDLK_AT )
-DEF_SDL_KEY( /*  )
-DEF_SDL_KEY( Skip uppercase letters )
-DEF_SDL_KEY( */ )
+//DEF_SDL_KEY(  )
+//DEF_SDL_KEY( Skip uppercase letters )
+//DEF_SDL_KEY(  )
 DEF_SDL_KEY( SDLK_LEFTBRACKET )
 DEF_SDL_KEY( SDLK_BACKSLASH )
 DEF_SDL_KEY( SDLK_RIGHTBRACKET )

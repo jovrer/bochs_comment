@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.h 10298 2011-04-03 10:29:19Z vruppert $
+// $Id: enh_dbg.h 11250 2012-07-01 14:37:13Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -401,19 +401,11 @@ extern Bit32s yClick;          // values are in Listview coordinates
 
 #include "wenhdbg_res.h"    // MenuIDs
 
-static const char* DC0txt[2] = {"P.Address","L.Address"};    // DumpMode definitions in text
+extern const char* DC0txt[2];    // DumpMode definitions in text
 
-static const char* BTxt[6] = {
-  "Continue [c]",
-  "Step [s]",
-  "Step N [s ###]",
-  "Refresh",
-  "Break [^C]",
-  "Break All"};
+extern const char* BTxt[6];
 
-static int BtnLkup[6] = {
-    CMD_CONT, CMD_STEP1, CMD_STEPN, CMD_RFRSH, CMD_BREAK
-};
+extern int BtnLkup[6];
 
 #endif
 

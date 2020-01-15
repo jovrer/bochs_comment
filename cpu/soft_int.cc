@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc 10451 2011-07-06 20:01:18Z sshwarts $
+// $Id: soft_int.cc 11313 2012-08-05 13:52:40Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,7 +26,7 @@
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 {
-  Bit16s op1_16 = BX_READ_16BIT_REG(i->nnn());
+  Bit16s op1_16 = BX_READ_16BIT_REG(i->dst());
 
   Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
@@ -43,7 +43,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
 {
-  Bit32s op1_32 = BX_READ_32BIT_REG(i->nnn());
+  Bit32s op1_32 = BX_READ_32BIT_REG(i->dst());
 
   Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
@@ -63,7 +63,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT1(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX
-  VMexit_Event(i, BX_PRIVILEGED_SOFTWARE_INTERRUPT, 1, 0, 0);
+  VMexit_Event(BX_PRIVILEGED_SOFTWARE_INTERRUPT, 1, 0, 0);
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT1_ICEBP)) Svm_Vmexit(SVM_VMEXIT_ICEBP);
+  }
 #endif
 
 #if BX_DEBUGGER
@@ -89,7 +95,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT3(bxInstruction_c *i)
   // INT 3 is not IOPL sensitive
 
 #if BX_SUPPORT_VMX
-  VMexit_Event(i, BX_SOFTWARE_EXCEPTION, 3, 0, 0);
+  VMexit_Event(BX_SOFTWARE_EXCEPTION, 3, 0, 0);
+#endif
+
+#if BX_SUPPORT_SVM
+  SvmInterceptException(BX_SOFTWARE_EXCEPTION, 3, 0, 0);
 #endif
 
 #if BX_DEBUGGER
@@ -109,14 +119,16 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT3(bxInstruction_c *i)
 
 BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
 {
-#if BX_DEBUGGER
-  BX_CPU_THIS_PTR show_flag |= Flag_softint;
-#endif
-
   Bit8u vector = i->Ib();
 
 #if BX_SUPPORT_VMX
-  VMexit_Event(i, BX_SOFTWARE_INTERRUPT, vector, 0, 0);
+  VMexit_Event(BX_SOFTWARE_INTERRUPT, vector, 0, 0);
+#endif
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_SOFTINT)) Svm_Vmexit(SVM_VMEXIT_SOFTWARE_INTERRUPT);
+  }
 #endif
 
 #ifdef SHOW_EXIT_STATUS
@@ -125,18 +137,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
   }
 #endif
 
-  RSP_SPECULATIVE;
-
-  if (v8086_mode()) {
-    // redirect interrupt through virtual-mode idt
-    if (v86_redirect_interrupt(vector)) goto done;
-  }
+#if BX_DEBUGGER
+  BX_CPU_THIS_PTR show_flag |= Flag_softint;
+#endif
 
   interrupt(vector, BX_SOFTWARE_INTERRUPT, 0, 0);
-
-done:
-
-  RSP_COMMIT;
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
@@ -150,7 +155,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INTO(bxInstruction_c *i)
   if (get_OF()) {
 
 #if BX_SUPPORT_VMX
-    VMexit_Event(i, BX_SOFTWARE_EXCEPTION, 4, 0, 0);
+    VMexit_Event(BX_SOFTWARE_EXCEPTION, 4, 0, 0);
+#endif
+
+#if BX_SUPPORT_SVM
+    SvmInterceptException(BX_SOFTWARE_EXCEPTION, 4, 0, 0);
 #endif
 
 #if BX_DEBUGGER

@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.h 10579 2011-08-15 10:37:41Z vruppert $
+// $Id: virt_timer.h 11183 2012-05-17 09:11:48Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -81,8 +81,7 @@ private:
 
   int system_timer_id;
 
-  //Whether or not to use virtual timers.
-  bx_bool use_virtual_timers;
+  //Whether or not to use realtime virtual timers.
   bx_bool virtual_timers_realtime;
 
   // A special null timer is always inserted in the timer[0] slot.  This

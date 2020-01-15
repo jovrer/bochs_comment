@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h 10493 2011-07-24 14:11:10Z vruppert $
+// $Id: harddrv.h 11162 2012-05-06 19:19:00Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2011  The Bochs Project
@@ -197,8 +197,8 @@ public:
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
 
-  static void iolight_timer_handler(void *);
-  BX_HD_SMF void iolight_timer(void);
+  static void seek_timer_handler(void *);
+  BX_HD_SMF void seek_timer(void);
 
   static void runtime_config_handler(void *);
   void runtime_config(void);
@@ -216,12 +216,12 @@ private:
   BX_HD_SMF void raise_interrupt(Bit8u channel) BX_CPP_AttrRegparmN(1);
   BX_HD_SMF void atapi_cmd_error(Bit8u channel, sense_t sense_key, asc_t asc, bx_bool show);
   BX_HD_SMF void init_mode_sense_single(Bit8u channel, const void* src, int size);
-  BX_HD_SMF void atapi_cmd_nop(Bit8u channel) BX_CPP_AttrRegparmN(1);
+  BX_HD_SMF void atapi_cmd_nop(controller_t *controller) BX_CPP_AttrRegparmN(1);
   BX_HD_SMF bx_bool bmdma_present(void);
   BX_HD_SMF void set_signature(Bit8u channel, Bit8u id);
   BX_HD_SMF bx_bool ide_read_sector(Bit8u channel, Bit8u *buffer, Bit32u buffer_size);
   BX_HD_SMF bx_bool ide_write_sector(Bit8u channel, Bit8u *buffer, Bit32u buffer_size);
-  BX_HD_SMF void lba48_transform(Bit8u channel, bx_bool lba48);
+  BX_HD_SMF void lba48_transform(controller_t *controller, bx_bool lba48);
 
   static Bit64s cdrom_status_handler(bx_param_c *param, int set, Bit64s val);
   static const char* cdrom_path_handler(bx_param_string_c *param, int set,
@@ -248,7 +248,6 @@ private:
 
       Bit8u model_no[41];
       int statusbar_id;
-      int iolight_counter;
       Bit8u device_num; // for ATAPI identify & inquiry
       bx_bool status_changed;
     } drives[2];
@@ -260,8 +259,9 @@ private:
 
   } channels[BX_MAX_ATA_CHANNEL];
 
-  int iolight_timer_index;
+  int seek_timer_index;
   Bit8u cdrom_count;
+  bx_bool pci_enabled;
 };
 
 #endif

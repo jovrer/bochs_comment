@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y 10731 2011-10-09 19:26:30Z sshwarts $
+// $Id: parser.y 11152 2012-04-24 17:48:38Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -39,7 +39,6 @@
 %token <sval> BX_TOKEN_CONTINUE
 %token <sval> BX_TOKEN_STEPN
 %token <sval> BX_TOKEN_STEP_OVER
-%token <sval> BX_TOKEN_NEXT_STEP
 %token <sval> BX_TOKEN_SET
 %token <sval> BX_TOKEN_DEBUGGER
 %token <sval> BX_TOKEN_LIST_BREAK
@@ -73,6 +72,7 @@
 %token <sval> BX_TOKEN_XFORMAT
 %token <sval> BX_TOKEN_DISFORMAT
 %token <sval> BX_TOKEN_RESTORE
+%token <sval> BX_TOKEN_WRITEMEM
 %token <sval> BX_TOKEN_SETPMEM
 %token <sval> BX_TOKEN_SYMBOLNAME
 %token <sval> BX_TOKEN_QUERY
@@ -110,13 +110,11 @@
 %token <sval> BX_TOKEN_WHERE
 %token <sval> BX_TOKEN_PRINT_STRING
 %token <uval> BX_TOKEN_NUMERIC
-%token <sval> BX_TOKEN_NE2000
-%token <sval> BX_TOKEN_PIC
 %token <sval> BX_TOKEN_PAGE
 %token <sval> BX_TOKEN_HELP
 %token <sval> BX_TOKEN_CALC
 %token <sval> BX_TOKEN_VGA
-%token <sval> BX_TOKEN_PCI
+%token <sval> BX_TOKEN_DEVICE
 %token <sval> BX_TOKEN_COMMAND
 %token <sval> BX_TOKEN_GENERIC
 %token BX_TOKEN_RSHIFT
@@ -163,6 +161,7 @@ command:
     | quit_command
     | examine_command
     | restore_command
+    | writemem_command
     | setpmem_command
     | query_command
     | take_command
@@ -617,34 +616,19 @@ info_command:
         bx_dbg_info_symbols_command($3);
         free($1); free($2); free($3);
       }
-    | BX_TOKEN_INFO BX_TOKEN_NE2000 '\n'
+    | BX_TOKEN_INFO BX_TOKEN_DEVICE '\n'
       {
-        bx_dbg_info_ne2k(-1, -1);
+        bx_dbg_info_device("", "");
         free($1); free($2);
       }
-    | BX_TOKEN_INFO BX_TOKEN_NE2000 BX_TOKEN_PAGE BX_TOKEN_NUMERIC '\n'
+    | BX_TOKEN_INFO BX_TOKEN_DEVICE BX_TOKEN_STRING '\n'
       {
-        free($1); free($2); free($3);
-        bx_dbg_info_ne2k($4, -1);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_NE2000 BX_TOKEN_PAGE BX_TOKEN_NUMERIC BX_TOKEN_REGISTERS BX_TOKEN_NUMERIC '\n'
-      {
-        free($1); free($2); free($3); free($5);
-        bx_dbg_info_ne2k($4, $6);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_PIC '\n'
-      {
-        bx_dbg_info_pic();
+        bx_dbg_info_device($3, "");
         free($1); free($2);
       }
-    | BX_TOKEN_INFO BX_TOKEN_VGA '\n'
+    | BX_TOKEN_INFO BX_TOKEN_DEVICE BX_TOKEN_STRING BX_TOKEN_STRING '\n'
       {
-        bx_dbg_info_vga();
-        free($1); free($2);
-      }
-    | BX_TOKEN_INFO BX_TOKEN_PCI '\n'
-      {
-        bx_dbg_info_pci();
+        bx_dbg_info_device($3, $4);
         free($1); free($2);
       }
     ;
@@ -776,6 +760,14 @@ restore_command:
       {
         bx_dbg_restore_command($2, $3);
         free($1); free($2); free($3);
+      }
+    ;
+
+writemem_command:
+      BX_TOKEN_WRITEMEM BX_TOKEN_STRING BX_TOKEN_NUMERIC BX_TOKEN_NUMERIC '\n'
+      {
+        bx_dbg_writemem_command($2, $3, $4);
+        free($1); free($2);
       }
     ;
 
@@ -1059,6 +1051,11 @@ help_command:
          dbg_printf("dreg - show debug registers\n");
          free($1);free($2);
        }
+     | BX_TOKEN_HELP BX_TOKEN_WRITEMEM '\n'
+       {
+         dbg_printf("writemem <filename> <laddr> <len> - dump 'len' bytes of virtual memory starting from the linear address 'laddr' into the file\n");
+         free($1);free($2);
+       }
      | BX_TOKEN_HELP BX_TOKEN_SETPMEM '\n'
        {
          dbg_printf("setpmem <addr> <datasize> <val> - set physical memory location of size 'datasize' to value 'val'\n");
@@ -1134,10 +1131,9 @@ help_command:
          dbg_printf("info tab - show page tables\n");
          dbg_printf("info eflags - show decoded EFLAGS register\n");
          dbg_printf("info symbols [string] - list symbols whose prefix is string\n");
-         dbg_printf("info pic - show PICs registers\n");
-         dbg_printf("info ne2000 - show NE2000 registers\n");
-         dbg_printf("info vga - show vga registers\n");
-         dbg_printf("info pci - show i440fx PCI state\n");
+         dbg_printf("info device - show list of devices supported by this command\n");
+         dbg_printf("info device [string] - show state of device specified in string\n");
+         dbg_printf("info device [string] [string] - show state of device with options\n");
          free($1);free($2);
        }
      | BX_TOKEN_HELP BX_TOKEN_SHOW '\n'

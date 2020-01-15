@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dma.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: dma.h 11277 2012-07-12 21:20:46Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -41,14 +41,17 @@ public:
   virtual void     set_DRQ(unsigned channel, bx_bool val);
   virtual unsigned get_TC(void);
   virtual void     register_state(void);
+#if BX_DEBUGGER
+  virtual void debug_dump(int argc, char **argv);
+#endif
 
   virtual unsigned registerDMA8Channel(unsigned channel,
-    void (* dmaRead)(Bit8u *data_byte),
-    void (* dmaWrite)(Bit8u *data_byte),
+    Bit16u (* dmaRead)(Bit8u *data_byte, Bit16u maxlen),
+    Bit16u (* dmaWrite)(Bit8u *data_byte, Bit16u maxlen),
     const char *name);
   virtual unsigned registerDMA16Channel(unsigned channel,
-    void (* dmaRead)(Bit16u *data_word),
-    void (* dmaWrite)(Bit16u *data_word),
+    Bit16u (* dmaRead)(Bit16u *data_word, Bit16u maxlen),
+    Bit16u (* dmaWrite)(Bit16u *data_word, Bit16u maxlen),
     const char *name);
   virtual unsigned unregisterDMAChannel(unsigned channel);
 
@@ -75,8 +78,8 @@ private:
     struct {
       struct {
         Bit8u mode_type;
-        Bit8u address_decrement;
-        Bit8u autoinit_enable;
+        bx_bool address_decrement;
+        bx_bool autoinit_enable;
         Bit8u transfer_type;
       } mode;
       Bit16u  base_address;
@@ -94,10 +97,10 @@ private:
   Bit8u   ext_page_reg[16]; // Extra page registers (unused)
 
   struct {
-    void (* dmaRead8)(Bit8u *data_byte);
-    void (* dmaWrite8)(Bit8u *data_byte);
-    void (* dmaRead16)(Bit16u *data_word);
-    void (* dmaWrite16)(Bit16u *data_word);
+    Bit16u (* dmaRead8)(Bit8u *data_byte, Bit16u maxlen);
+    Bit16u (* dmaWrite8)(Bit8u *data_byte, Bit16u maxlen);
+    Bit16u (* dmaRead16)(Bit16u *data_word, Bit16u maxlen);
+    Bit16u (* dmaWrite16)(Bit16u *data_word, Bit16u maxlen);
   } h[4]; // DMA read and write handlers
 };
 

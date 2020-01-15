@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc 10727 2011-10-09 08:20:32Z sshwarts $
+// $Id: gui.cc 11302 2012-07-28 08:17:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -21,7 +21,6 @@
 
 #include <signal.h>
 #include "iodev.h"
-#include "vga.h"
 #include "keymap.h"
 #include "gui/bitmaps/floppya.h"
 #include "gui/bitmaps/floppyb.h"
@@ -94,10 +93,11 @@ static user_key_t user_keys[N_USER_KEYS] =
   { "power", BX_KEY_POWER_POWER }
 };
 
-bx_gui_c::bx_gui_c(void)
+bx_gui_c::bx_gui_c(void): disp_mode(DISP_MODE_SIM)
 {
   put("GUI"); // Init in specific_init
   statusitem_count = 0;
+  led_timer_index = BX_NULL_TIMER_HANDLE;
   framebuffer = NULL;
 }
 
@@ -108,12 +108,17 @@ bx_gui_c::~bx_gui_c()
   }
 }
 
-void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
+void bx_gui_c::init(int argc, char **argv, unsigned max_xres, unsigned max_yres,
+                    unsigned tilewidth, unsigned tileheight)
 {
   BX_GUI_THIS new_gfx_api = 0;
   BX_GUI_THIS host_xres = 640;
   BX_GUI_THIS host_yres = 480;
   BX_GUI_THIS host_bpp = 8;
+  BX_GUI_THIS max_xres = max_xres;
+  BX_GUI_THIS max_yres = max_yres;
+  BX_GUI_THIS x_tilesize = tilewidth;
+  BX_GUI_THIS y_tilesize = tileheight;
   BX_GUI_THIS dialog_caps = BX_GUI_DLG_RUNTIME | BX_GUI_DLG_SAVE_RESTORE;
 
   BX_GUI_THIS toggle_method = SIM->get_param_enum(BXPN_MOUSE_TOGGLE)->get();
@@ -133,7 +138,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
       break;
   }
 
-  specific_init(argc, argv, tilewidth, tileheight, BX_HEADER_BAR_Y);
+  specific_init(argc, argv, BX_HEADER_BAR_Y);
 
   // Define some bitmaps to use in the headerbar
   BX_GUI_THIS floppyA_bmap_id = create_bitmap(bx_floppya_bmap,
@@ -241,9 +246,15 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
   BX_GUI_THIS charmap_updated = 0;
 
   if (!BX_GUI_THIS new_gfx_api && (BX_GUI_THIS framebuffer == NULL)) {
-    BX_GUI_THIS framebuffer = new Bit8u[BX_MAX_XRES * BX_MAX_YRES * 4];
+    BX_GUI_THIS framebuffer = new Bit8u[max_xres * max_yres * 4];
   }
   show_headerbar();
+
+  // register timer for status bar LEDs
+  if (BX_GUI_THIS led_timer_index == BX_NULL_TIMER_HANDLE) {
+    BX_GUI_THIS led_timer_index =
+      DEV_register_timer(this, led_timer_handler, 100000, 1, 1, "status bar LEDs");
+  }
 }
 
 void bx_gui_c::cleanup(void)
@@ -439,6 +450,11 @@ void bx_gui_c::snapshot_handler(void)
       strcpy (filename, "snapshot.txt");
     }
     FILE *fp = fopen(filename, "wb");
+    if (! fp) {
+      BX_ERROR(("snapshot button failed: cannot create text file"));
+      free(snapshot_ptr);
+      return;
+    }
     fwrite(snapshot_ptr, 1, len, fp);
     fclose(fp);
     free(snapshot_ptr);
@@ -745,14 +761,56 @@ void bx_gui_c::beep_off()
   BX_DEBUG(("GUI Beep OFF"));
 }
 
-int bx_gui_c::register_statusitem(const char *text)
+int bx_gui_c::register_statusitem(const char *text, bx_bool auto_off)
 {
   if (statusitem_count < BX_MAX_STATUSITEMS) {
-    strncpy(statusitem_text[statusitem_count], text, 8);
-    statusitem_text[statusitem_count][7] = 0;
+    strncpy(statusitem[statusitem_count].text, text, 8);
+    statusitem[statusitem_count].text[7] = 0;
+    statusitem[statusitem_count].auto_off = auto_off;
+    statusitem[statusitem_count].counter = 0;
+    statusitem[statusitem_count].active = 0;
+    statusitem[statusitem_count].mode = 0;
     return statusitem_count++;
   } else {
    return -1;
+  }
+}
+
+void bx_gui_c::statusbar_setitem(int element, bx_bool active, bx_bool w)
+{
+  if (element < 0) {
+    for (unsigned i = 0; i < statusitem_count; i++) {
+      statusbar_setitem_specific(i, 0, 0);
+    }
+  } else if ((unsigned)element < statusitem_count) {
+    if ((active != statusitem[element].active) ||
+        (w != statusitem[element].mode)) {
+      statusbar_setitem_specific(element, active, w);
+      statusitem[element].active = active;
+      statusitem[element].mode = w;
+    }
+    if (active && statusitem[element].auto_off) {
+      statusitem[element].counter = 5;
+    }
+  }
+}
+
+void bx_gui_c::led_timer_handler(void *this_ptr)
+{
+  bx_gui_c *class_ptr = (bx_gui_c *) this_ptr;
+  class_ptr->led_timer();
+}
+
+void bx_gui_c::led_timer()
+{
+  for (unsigned i = 0; i < statusitem_count; i++) {
+    if (statusitem[i].auto_off) {
+      if (statusitem[i].counter > 0) {
+        if (!(--statusitem[i].counter)) {
+          statusbar_setitem(i, 0);
+        }
+      }
+    }
   }
 }
 
@@ -816,18 +874,16 @@ bx_svga_tileinfo_t *bx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 Bit8u *bx_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
                             unsigned *w, unsigned *h)
 {
-  if (x0+X_TILESIZE > BX_GUI_THIS host_xres) {
+  if (x0+BX_GUI_THIS x_tilesize > BX_GUI_THIS host_xres) {
     *w = BX_GUI_THIS host_xres - x0;
-  }
-  else {
-    *w = X_TILESIZE;
+  } else {
+    *w = BX_GUI_THIS x_tilesize;
   }
 
-  if (y0+Y_TILESIZE > BX_GUI_THIS host_yres) {
+  if (y0+BX_GUI_THIS y_tilesize > BX_GUI_THIS host_yres) {
     *h = BX_GUI_THIS host_yres - y0;
-  }
-  else {
-    *h = Y_TILESIZE;
+  } else {
+    *h = BX_GUI_THIS y_tilesize;
   }
 
   return (Bit8u *)framebuffer + y0 * BX_GUI_THIS host_pitch +
@@ -837,13 +893,14 @@ Bit8u *bx_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
 void bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
                                         unsigned w, unsigned h)
 {
-  Bit8u tile[X_TILESIZE * Y_TILESIZE * 4];
+  Bit8u *tile;
   Bit8u *tile_ptr, *fb_ptr;
   Bit16u xc, yc, fb_pitch, tile_pitch;
   Bit8u r, diffx, diffy;
 
-  diffx = (x0 % X_TILESIZE);
-  diffy = (y0 % Y_TILESIZE);
+  tile = new Bit8u[BX_GUI_THIS x_tilesize * BX_GUI_THIS y_tilesize * 4];
+  diffx = (x0 % BX_GUI_THIS x_tilesize);
+  diffy = (y0 % BX_GUI_THIS y_tilesize);
   if (diffx > 0) {
     x0 -= diffx;
     w += diffx;
@@ -853,9 +910,9 @@ void bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
     h += diffy;
   }
   fb_pitch = BX_GUI_THIS host_pitch;
-  tile_pitch = X_TILESIZE * ((BX_GUI_THIS host_bpp + 1) >> 3);
-  for (yc=y0; yc<(y0+h); yc+=Y_TILESIZE) {
-    for (xc=x0; xc<(x0+w); xc+=X_TILESIZE) {
+  tile_pitch = BX_GUI_THIS x_tilesize * ((BX_GUI_THIS host_bpp + 1) >> 3);
+  for (yc=y0; yc<(y0+h); yc+=BX_GUI_THIS y_tilesize) {
+    for (xc=x0; xc<(x0+w); xc+=BX_GUI_THIS x_tilesize) {
       fb_ptr = BX_GUI_THIS framebuffer + (yc * fb_pitch + xc * ((BX_GUI_THIS host_bpp + 1) >> 3));
       tile_ptr = &tile[0];
       for (r=0; r<h; r++) {
@@ -866,6 +923,7 @@ void bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
       BX_GUI_THIS graphics_tile_update(tile, xc, yc);
     }
   }
+  delete [] tile;
 }
 
 void bx_gui_c::show_ips(Bit32u ips_count)
@@ -879,3 +937,11 @@ Bit8u bx_gui_c::get_mouse_headerbar_id()
 {
   return BX_GUI_THIS mouse_hbar_id;
 }
+
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+void bx_gui_c::init_debug_dialog()
+{
+  extern void InitDebugDialog();
+  InitDebugDialog();
+}
+#endif

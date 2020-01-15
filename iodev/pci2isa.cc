@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.cc 10419 2011-06-23 15:56:02Z vruppert $
+// $Id: pci2isa.cc 11346 2012-08-19 08:16:20Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -40,10 +40,14 @@ bx_piix3_c *thePci2IsaBridge = NULL;
 
 int libpci2isa_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePci2IsaBridge = new bx_piix3_c();
-  bx_devices.pluginPci2IsaBridge = thePci2IsaBridge;
-  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePci2IsaBridge, BX_PLUGIN_PCI2ISA);
-  return(0); // Success
+  if (type == PLUGTYPE_CORE) {
+    thePci2IsaBridge = new bx_piix3_c();
+    bx_devices.pluginPci2IsaBridge = thePci2IsaBridge;
+    BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePci2IsaBridge, BX_PLUGIN_PCI2ISA);
+    return 0; // Success
+  } else {
+    return -1;
+  }
 }
 
 void libpci2isa_LTX_plugin_fini(void)
@@ -53,11 +57,12 @@ void libpci2isa_LTX_plugin_fini(void)
 
 bx_piix3_c::bx_piix3_c()
 {
-  put("P2I");
+  put("pci2isa", "P2I");
 }
 
 bx_piix3_c::~bx_piix3_c()
 {
+  SIM->get_bochs_root()->remove("pci2isa");
   BX_DEBUG(("Exit"));
 }
 
@@ -102,6 +107,10 @@ void bx_piix3_c::init(void)
   BX_P2I_THIS pci_conf[0x61] = 0x80;
   BX_P2I_THIS pci_conf[0x62] = 0x80;
   BX_P2I_THIS pci_conf[0x63] = 0x80;
+#if BX_DEBUGGER
+  // register device for the 'info device' command (calls debug_dump())
+  bx_dbg_register_debug_info("pci2isa", this);
+#endif
 }
 
 void bx_piix3_c::reset(unsigned type)
@@ -150,7 +159,7 @@ void bx_piix3_c::register_state(void)
   unsigned i;
   char name[6];
 
-  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci2isa", "PCI-to-ISA Bridge State", 8);
+  bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci2isa", "PCI-to-ISA Bridge State");
 
   register_pci_state(list);
 
@@ -160,12 +169,12 @@ void bx_piix3_c::register_state(void)
   BXRS_HEX_PARAM_FIELD(list, apms, BX_P2I_THIS s.apms);
   BXRS_HEX_PARAM_FIELD(list, pci_reset, BX_P2I_THIS s.pci_reset);
 
-  bx_list_c *irqr = new bx_list_c(list, "irq_registry", 16);
+  bx_list_c *irqr = new bx_list_c(list, "irq_registry");
   for (i=0; i<16; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(irqr, name, &BX_P2I_THIS s.irq_registry[i]);
   }
-  bx_list_c *irql = new bx_list_c(list, "irq_level", 16);
+  bx_list_c *irql = new bx_list_c(list, "irq_level");
   for (i=0; i<16; i++) {
     sprintf(name, "%d", i);
     new bx_shadow_num_c(irql, name, &BX_P2I_THIS s.irq_level[i]);
@@ -373,5 +382,45 @@ void bx_piix3_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
     }
   }
 }
+
+#if BX_DEBUGGER
+void bx_piix3_c::debug_dump(int argc, char **argv)
+{
+  int arg, i, j, r;
+
+  dbg_printf("PIIX3 ISA bridge\n\n");
+  dbg_printf("ELCR1 = 0x%02x\n", BX_P2I_THIS s.elcr1);
+  dbg_printf("ELCR2 = 0x%02x\n", BX_P2I_THIS s.elcr2);
+  if (argc == 0) {
+    for (i = 0; i < 4; i++) {
+      dbg_printf("PIRQ%c# = 0x%02x", i + 65, BX_P2I_THIS pci_conf[0x60 + i]);
+      Bit8u irq = BX_P2I_THIS pci_conf[0x60 + i];
+      if (irq < 16) {
+        dbg_printf(" (level=%d)\n", BX_P2I_THIS s.irq_level[irq] > 0);
+      } else {
+        dbg_printf("\n");
+      }
+    }
+    dbg_printf("\nSupported options:\n");
+    dbg_printf("info device 'pci2isa' 'dump=full' - show PCI config space\n");
+  } else {
+    for (arg = 0; arg < argc; arg++) {
+      if (!strcmp(argv[arg], "dump=full")) {
+        dbg_printf("\nPCI config space\n\n");
+        r = 0;
+        for (i=0; i<16; i++) {
+          dbg_printf("%04x ", r);
+          for (j=0; j<16; j++) {
+            dbg_printf(" %02x", BX_P2I_THIS pci_conf[r++]);
+          }
+          dbg_printf("\n");
+        }
+      } else {
+        dbg_printf("\nUnknown option: '%s'\n", argv[arg]);
+      }
+    }
+  }
+}
+#endif
 
 #endif /* BX_SUPPORT_PCI */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: extplugin.h 10897 2011-12-30 09:10:11Z vruppert $
+// $Id: extplugin.h 10966 2012-01-10 17:45:18Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // extplugin.h
@@ -28,6 +28,7 @@
 enum plugintype_t {
   PLUGTYPE_NULL=100,
   PLUGTYPE_CORE,
+  PLUGTYPE_STANDARD,
   PLUGTYPE_OPTIONAL,
   PLUGTYPE_USER
 };

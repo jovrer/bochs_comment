@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.cc 10681 2011-09-21 20:28:29Z sshwarts $
+// $Id: icache.cc 11356 2012-08-21 19:58:41Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2011 Stanislav Shwartsman
@@ -55,11 +55,11 @@ BX_INSF_TYPE BX_CPU_C::BxEndTrace(bxInstruction_c *i)
   // do nothing, return to main cpu_loop
 }
 
-void genDummyICacheEntry(bxInstruction_c *i, BxExecutePtr_tR execute)
+void genDummyICacheEntry(bxInstruction_c *i)
 {
   i->setILen(0);
   i->setIaOpcode(BX_INSERTED_OPCODE);
-  i->execute = execute;
+  i->execute = &BX_CPU_C::BxEndTrace;
 }
 
 #endif
@@ -123,14 +123,14 @@ bxICacheEntry_c* BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBia
       entry->pAddr = ~entry->pAddr;
       entry->traceMask = 0x80000000; /* last line in page */
       pageWriteStampTable.markICacheMask(entry->pAddr, entry->traceMask);
-      pageWriteStampTable.markICacheMask(BX_CPU_THIS_PTR pAddrPage, 0x1);
+      pageWriteStampTable.markICacheMask(BX_CPU_THIS_PTR pAddrFetchPage, 0x1);
 
 #if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
       entry->tlen++; /* Add the inserted end of trace opcode */
-      genDummyICacheEntry(++i, &BX_CPU_C::BxEndTrace);
+      genDummyICacheEntry(++i);
 #endif
 
-      BX_CPU_THIS_PTR iCache.commit_page_split_trace(BX_CPU_THIS_PTR pAddrPage, entry);
+      BX_CPU_THIS_PTR iCache.commit_page_split_trace(BX_CPU_THIS_PTR pAddrFetchPage, entry);
       return entry;
     }
 
@@ -175,7 +175,7 @@ bxICacheEntry_c* BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBia
 
 #if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
   entry->tlen++; /* Add the inserted end of trace opcode */
-  genDummyICacheEntry(i, &BX_CPU_C::BxEndTrace);
+  genDummyICacheEntry(i);
 #endif
 
   BX_CPU_THIS_PTR iCache.commit_trace(entry->tlen);

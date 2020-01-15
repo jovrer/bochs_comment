@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl_pro.cc 10890 2011-12-29 21:25:34Z sshwarts $
+// $Id: segment_ctrl_pro.cc 11107 2012-03-25 19:07:17Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2012  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -90,6 +90,8 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector    = ss_selector;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache       = descriptor;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid = 1;
+
+      invalidate_stack_cache();
 
       return;
     }
@@ -197,10 +199,13 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
   if (seg == &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS]) {
     invalidate_prefetch_q();
     updateFetchModeMask(/* CS reloaded */);
-#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+#if BX_CPU_LEVEL >= 4
     handleAlignmentCheck(/* CPL change */);
 #endif
   }
+
+  if (seg == &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS])
+    invalidate_stack_cache();
 }
 
   void BX_CPP_AttrRegparmN(2)
@@ -227,6 +232,8 @@ BX_CPU_C::load_null_selector(bx_segment_reg_t *seg, unsigned value)
 #if BX_SUPPORT_X86_64
   seg->cache.u.segment.l            = 0;
 #endif
+
+  invalidate_stack_cache();
 }
 
 BX_CPP_INLINE void BX_CPU_C::validate_seg_reg(unsigned seg)
@@ -526,6 +533,8 @@ BX_CPU_C::load_ss(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache = *descriptor;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.rpl = cpl;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid = 1;
+
+  invalidate_stack_cache();
 }
 
 void BX_CPU_C::fetch_raw_descriptor(const bx_selector_t *selector,

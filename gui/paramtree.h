@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paramtree.h 10489 2011-07-22 17:46:06Z sshwarts $
+// $Id: paramtree.h 11035 2012-02-14 18:13:54Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2010  The Bochs Project
@@ -429,19 +429,20 @@ public:
   void restore(FILE *save_file);
 };
 
-#define BX_DEFAULT_LIST_SIZE 6
+typedef struct _bx_listitem_t {
+  bx_param_c *param;
+  struct _bx_listitem_t *next;
+} bx_listitem_t;
 
 class BOCHSAPI bx_list_c : public bx_param_c {
 protected:
-  // just a list of bx_param_c objects.  size tells current number of
-  // objects in the list, and maxsize tells how many list items are
-  // allocated in the constructor.
-  bx_param_c **list;
-  int size, maxsize;
+  // chained list of bx_listitem_t
+  bx_listitem_t *list;
+  int size;
   // for a menu, the value of choice before the call to "ask" is default.
-  // After ask, choice holds the value that the user chose.  Choice defaults
+  // After ask, choice holds the value that the user chose. Choice defaults
   // to 1 in the constructor.
-  bx_param_num_c *choice;
+  Bit32u choice; // type Bit32u is compatible with ask_uint
   // title of the menu or series
   char *title;
   void init(const char *list_title);
@@ -468,9 +469,9 @@ public:
     // item (used in the runtime menu).
     SHOW_GROUP_NAME = (1<<4)
   } bx_listopt_bits;
-  bx_list_c(bx_param_c *parent, int maxsize);
-  bx_list_c(bx_param_c *parent, const char *name, int maxsize);
-  bx_list_c(bx_param_c *parent, const char *name, const char *title, int maxsize = BX_DEFAULT_LIST_SIZE);
+  bx_list_c(bx_param_c *parent);
+  bx_list_c(bx_param_c *parent, const char *name);
+  bx_list_c(bx_param_c *parent, const char *name, const char *title);
   bx_list_c(bx_param_c *parent, const char *name, const char *title, bx_param_c **init_list);
   virtual ~bx_list_c();
   bx_list_c *clone();
@@ -478,7 +479,8 @@ public:
   bx_param_c *get(int index);
   bx_param_c *get_by_name(const char *name);
   int get_size() const { return size; }
-  bx_param_num_c *get_choice() { return choice; }
+  int get_choice() const { return choice; }
+  void set_choice(int new_choice) { choice = new_choice; }
   char *get_title() { return title; }
   void set_parent(bx_param_c *newparent);
   bx_param_c *get_parent() { return parent; }
