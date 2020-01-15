@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.h,v 1.11 2006/05/27 15:54:49 sshwarts Exp $
+// $Id: virt_timer.h,v 1.13 2006/09/18 18:10:49 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -145,7 +145,10 @@ public:
   //The real timer handler.
   void timer_handler();
 
-  //Initialization
+  //Initialization step #1 in constructor and for cleanup
+  void setup(void);
+
+  //Initialization step #2
   void init(void);
 
 #if BX_SUPPORT_SAVE_RESTORE

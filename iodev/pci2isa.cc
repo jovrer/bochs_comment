@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.cc,v 1.36 2006/08/21 21:29:16 sshwarts Exp $
+// $Id: pci2isa.cc,v 1.41 2007/08/04 08:57:42 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -42,13 +42,16 @@ bx_piix3_c *thePci2IsaBridge = NULL;
 
 int libpci2isa_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePci2IsaBridge = new bx_piix3_c ();
+  thePci2IsaBridge = new bx_piix3_c();
   bx_devices.pluginPci2IsaBridge = thePci2IsaBridge;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePci2IsaBridge, BX_PLUGIN_PCI2ISA);
   return(0); // Success
 }
 
-void libpci2isa_LTX_plugin_fini(void) {}
+void libpci2isa_LTX_plugin_fini(void)
+{
+  delete thePci2IsaBridge;
+}
 
 bx_piix3_c::bx_piix3_c()
 {
@@ -58,7 +61,7 @@ bx_piix3_c::bx_piix3_c()
 
 bx_piix3_c::~bx_piix3_c()
 {
-  // nothing for now
+  BX_DEBUG(("Exit"));
 }
 
 void bx_piix3_c::init(void)
@@ -152,11 +155,9 @@ void bx_piix3_c::register_state(void)
   char name[6];
 
   bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pci2isa", "PCI-to-ISA Bridge State", 8);
-  bx_list_c *pci_conf = new bx_list_c(list, "pci_conf", 256);
-  for (i=0; i<256; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(pci_conf, name, &BX_P2I_THIS s.pci_conf[i], BASE_HEX);
-  }
+
+  register_pci_state(list, BX_P2I_THIS s.pci_conf);
+
   BXRS_HEX_PARAM_FIELD(list, elcr1, BX_P2I_THIS s.elcr1);
   BXRS_HEX_PARAM_FIELD(list, elcr2, BX_P2I_THIS s.elcr2);
   BXRS_HEX_PARAM_FIELD(list, apmc, BX_P2I_THIS s.apmc);
@@ -293,7 +294,11 @@ void bx_piix3_c::write(Bit32u address, Bit32u value, unsigned io_len)
 
   switch (address) {
     case 0x00b2:
+#if BX_SUPPORT_ACPI
+      DEV_acpi_generate_smi((Bit8u)value);
+#else
       BX_ERROR(("write %08x: APM command register not supported yet", value));
+#endif
       BX_P2I_THIS s.apmc = value & 0xff;
       break;
     case 0x00b3:

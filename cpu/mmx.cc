@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mmx.cc,v 1.54 2006/05/16 16:20:26 sshwarts Exp $
+// $Id: mmx.cc,v 1.61 2007/07/09 15:16:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2002 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -94,10 +94,10 @@ void BX_CPU_C::print_state_MMX(void)
 
 void BX_CPU_C::prepareMMX(void)
 {
-  if(BX_CPU_THIS_PTR cr0.ts)
+  if(BX_CPU_THIS_PTR cr0.get_TS())
     exception(BX_NM_EXCEPTION, 0, 0);
 
-  if(BX_CPU_THIS_PTR cr0.em)
+  if(BX_CPU_THIS_PTR cr0.get_EM())
     exception(BX_UD_EXCEPTION, 0, 0);
 
   /* cause transition from FPU to MMX technology state */
@@ -115,12 +115,12 @@ void BX_CPU_C::prepareFPU2MMX(void)
 
 #endif
 
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
 
 /* 0F 38 00 */
 void BX_CPU_C::PSHUFB_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -140,12 +140,12 @@ void BX_CPU_C::PSHUFB_PqQq(bxInstruction_c *i)
     if (mask & 0x80)
       result.mmxubyte(j) = 0;
     else
-      result.mmxubyte(j) = op1.mmxubyte(mask & 0xf);
+      result.mmxubyte(j) = op1.mmxubyte(mask & 0x7);
   }
 
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSHUFB_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PSHUFB_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -153,7 +153,7 @@ void BX_CPU_C::PSHUFB_PqQq(bxInstruction_c *i)
 /* 0F 38 01 */
 void BX_CPU_C::PHADDW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -174,7 +174,7 @@ void BX_CPU_C::PHADDW_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PHADDW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PHADDW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -182,7 +182,7 @@ void BX_CPU_C::PHADDW_PqQq(bxInstruction_c *i)
 /* 0F 38 02 */
 void BX_CPU_C::PHADDD_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -201,7 +201,7 @@ void BX_CPU_C::PHADDD_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PHADDD_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PHADDD_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -209,7 +209,7 @@ void BX_CPU_C::PHADDD_PqQq(bxInstruction_c *i)
 /* 0F 38 03 */
 void BX_CPU_C::PHADDSW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -231,7 +231,7 @@ void BX_CPU_C::PHADDSW_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PHADDSW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PHADDSW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -239,7 +239,7 @@ void BX_CPU_C::PHADDSW_PqQq(bxInstruction_c *i)
 /* 0F 38 04 */
 void BX_CPU_C::PMADDUBSW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -264,7 +264,7 @@ void BX_CPU_C::PMADDUBSW_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PMADDUBSW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PMADDUBSW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -272,7 +272,7 @@ void BX_CPU_C::PMADDUBSW_PqQq(bxInstruction_c *i)
 /* 0F 38 05 */
 void BX_CPU_C::PHSUBSW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -294,7 +294,7 @@ void BX_CPU_C::PHSUBSW_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PHSUBSW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PHSUBSW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -302,7 +302,7 @@ void BX_CPU_C::PHSUBSW_PqQq(bxInstruction_c *i)
 /* 0F 38 05 */
 void BX_CPU_C::PHSUBW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -323,7 +323,7 @@ void BX_CPU_C::PHSUBW_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PHSUBW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PHSUBW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -331,7 +331,7 @@ void BX_CPU_C::PHSUBW_PqQq(bxInstruction_c *i)
 /* 0F 38 06 */
 void BX_CPU_C::PHSUBD_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -350,7 +350,7 @@ void BX_CPU_C::PHSUBD_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PHSUBD_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PHSUBD_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -358,7 +358,7 @@ void BX_CPU_C::PHSUBD_PqQq(bxInstruction_c *i)
 /* 0F 38 08 */
 void BX_CPU_C::PSIGNB_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2;
@@ -379,7 +379,7 @@ void BX_CPU_C::PSIGNB_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSIGNB_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PSIGNB_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -387,7 +387,7 @@ void BX_CPU_C::PSIGNB_PqQq(bxInstruction_c *i)
 /* 0F 38 09 */
 void BX_CPU_C::PSIGNW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2;
@@ -408,7 +408,7 @@ void BX_CPU_C::PSIGNW_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSIGNW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PSIGNW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -416,7 +416,7 @@ void BX_CPU_C::PSIGNW_PqQq(bxInstruction_c *i)
 /* 0F 38 0A */
 void BX_CPU_C::PSIGND_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2;
@@ -439,7 +439,7 @@ void BX_CPU_C::PSIGND_PqQq(bxInstruction_c *i)
 
   BX_WRITE_MMX_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSIGND_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PSIGND_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -447,7 +447,7 @@ void BX_CPU_C::PSIGND_PqQq(bxInstruction_c *i)
 /* 0F 38 0B */
 void BX_CPU_C::PMULHRSW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -474,7 +474,7 @@ void BX_CPU_C::PMULHRSW_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PMULHRSW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PMULHRSW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -482,7 +482,7 @@ void BX_CPU_C::PMULHRSW_PqQq(bxInstruction_c *i)
 /* 0F 38 1C */
 void BX_CPU_C::PABSB_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op;
@@ -507,7 +507,7 @@ void BX_CPU_C::PABSB_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), op);
 #else
-  BX_INFO(("PABSB_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PABSB_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -515,7 +515,7 @@ void BX_CPU_C::PABSB_PqQq(bxInstruction_c *i)
 /* 0F 38 1D */
 void BX_CPU_C::PABSW_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op;
@@ -536,7 +536,7 @@ void BX_CPU_C::PABSW_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), op);
 #else
-  BX_INFO(("PABSW_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PABSW_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -544,7 +544,7 @@ void BX_CPU_C::PABSW_PqQq(bxInstruction_c *i)
 /* 0F 38 1E */
 void BX_CPU_C::PABSD_PqQq(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op;
@@ -563,7 +563,7 @@ void BX_CPU_C::PABSD_PqQq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), op);
 #else
-  BX_INFO(("PABSD_PqQq: required SSE4, use --enable-sse option"));
+  BX_INFO(("PABSD_PqQq: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -571,7 +571,7 @@ void BX_CPU_C::PABSD_PqQq(bxInstruction_c *i)
 /* 0F 3A 0F */
 void BX_CPU_C::PALIGNR_PqQqIb(bxInstruction_c *i)
 {
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
   BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister op1 = BX_READ_MMX_REG(i->nnn()), op2, result;
@@ -599,12 +599,12 @@ void BX_CPU_C::PALIGNR_PqQqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_MMX_REG(i->nnn(), result);
 #else
-  BX_INFO(("PALIGNR_PqQqIb: required SSE4, use --enable-sse option"));
+  BX_INFO(("PALIGNR_PqQqIb: required SSE3E, use --enable-sse and --enable-sse-extension options"));
   UndefinedOpcode(i);
 #endif
 }
 
-#endif /* BX_SUPPORT_SSE >= 4 */
+#endif // BX_SUPPORT_SSE >= 4 || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
 
 /* 0F 60 */
 void BX_CPU_C::PUNPCKLBW_PqQd(bxInstruction_c *i)
@@ -1206,7 +1206,7 @@ void BX_CPU_C::MOVD_EdPd(bxInstruction_c *i)
   {
     /* destination is a register or memory reference */
     if (i->modC0()) {
-      BX_WRITE_32BIT_REG(i->rm(), MMXUD0(op));
+      BX_WRITE_32BIT_REGZ(i->rm(), MMXUD0(op));
     }
     else {
       write_virtual_dword(i->seg(), RMAddr(i), &(MMXUD0(op)));
@@ -1241,7 +1241,7 @@ void BX_CPU_C::MOVQ_QqPq(bxInstruction_c *i)
 }
 
 /* 0F C4 */
-void BX_CPU_C::PINSRW_PqEdIb(bxInstruction_c *i)
+void BX_CPU_C::PINSRW_PqEwIb(bxInstruction_c *i)
 {
 #if BX_SUPPORT_3DNOW || BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareMMX();
@@ -1958,12 +1958,12 @@ void BX_CPU_C::PMULHW_PqQq(bxInstruction_c *i)
 void BX_CPU_C::MOVNTQ_MqPq(bxInstruction_c *i)
 {
 #if BX_SUPPORT_3DNOW || BX_SUPPORT_SSE >= 1
-  BX_CPU_THIS_PTR prepareMMX();
-
   if (i->modC0()) {
     BX_INFO(("MOVNTQ_MqPq: must be memory reference"));
     UndefinedOpcode(i);
   }
+
+  BX_CPU_THIS_PTR prepareMMX();
 
   BxPackedMmxRegister reg = BX_READ_MMX_REG(i->nnn());
   write_virtual_qword(i->seg(), RMAddr(i), (Bit64u *) &reg);

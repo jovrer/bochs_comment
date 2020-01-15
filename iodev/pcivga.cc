@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcivga.cc,v 1.12 2006/06/14 16:44:33 sshwarts Exp $
+// $Id: pcivga.cc,v 1.15 2007/04/03 22:38:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002,2003 Mike Nordell
@@ -42,13 +42,16 @@ bx_pcivga_c* thePciVgaAdapter = 0;
 
 int libpcivga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePciVgaAdapter = new bx_pcivga_c ();
+  thePciVgaAdapter = new bx_pcivga_c();
   bx_devices.pluginPciVgaAdapter = thePciVgaAdapter;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePciVgaAdapter, BX_PLUGIN_PCIVGA);
   return 0; // Success
 }
 
-void libpcivga_LTX_plugin_fini(void) {}
+void libpcivga_LTX_plugin_fini(void)
+{
+  delete thePciVgaAdapter;
+}
 
 bx_pcivga_c::bx_pcivga_c()
 {
@@ -58,7 +61,7 @@ bx_pcivga_c::bx_pcivga_c()
 
 bx_pcivga_c::~bx_pcivga_c()
 {
-  // nothing for now
+  BX_DEBUG(("Exit"));
 }
 
 void bx_pcivga_c::init(void)
@@ -111,15 +114,8 @@ void bx_pcivga_c::reset(unsigned type)
 #if BX_SUPPORT_SAVE_RESTORE
 void bx_pcivga_c::register_state(void)
 {
-  unsigned i;
-  char name[6];
-
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pcivga", "PCI VGA Adapter State");
-  bx_list_c *pci_conf = new bx_list_c(list, "pci_conf", 256);
-  for (i=0; i<256; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(pci_conf, name, &BX_PCIVGA_THIS s.pci_conf[i], BASE_HEX);
-  }
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pcivga", "PCI VGA Adapter State", 1);
+  register_pci_state(list, BX_PCIVGA_THIS s.pci_conf);
 }
 #endif
 

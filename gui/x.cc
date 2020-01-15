@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.103 2006/04/14 13:27:17 vruppert Exp $
+// $Id: x.cc,v 1.107 2006/10/29 08:48:30 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -544,6 +544,8 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
       &class_hints);
   XFree(windowName.value);
   XFree(iconName.value);
+  Atom wm_delete = XInternAtom(bx_x_display, "WM_DELETE_WINDOW", 1);
+  XSetWMProtocols(bx_x_display, win, &wm_delete, 1);
   }
 
   /* Select event types wanted */
@@ -925,6 +927,12 @@ bx_x_gui_c::handle_events(void)
       //retval = 1;
       break;
 
+    case ClientMessage:
+      if (!strcmp(XGetAtomName(bx_x_display, report.xclient.message_type), "WM_PROTOCOLS")) {
+        bx_stop_simulation();
+      }
+      break;
+
     default:
       // (mch) Ignore...
       BX_DEBUG(("XXX: default Xevent type"));
@@ -1167,17 +1175,13 @@ xkeypress(KeySym keysym, int press_release)
 }
 
 
-  void
-bx_x_gui_c::clear_screen(void)
+void bx_x_gui_c::clear_screen(void)
 {
   XClearArea(bx_x_display, win, 0, bx_headerbar_y, dimension_x, dimension_y, 0);
 }
 
 
-
-
-  void
-bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
+void bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
                       bx_vga_tminfo_t tm_info, unsigned nrows)
 {
@@ -1189,6 +1193,7 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   Bit8u split_textrow, split_fontrows;
   bx_bool forceUpdate = 0, split_screen;
   unsigned char cell[64];
+  unsigned long text_palette[16];
 
   UNUSED(nrows);
   if (charmap_updated) {
@@ -1223,6 +1228,9 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     }
     forceUpdate = 1;
     charmap_updated = 0;
+  }
+  for (i=0; i<16; i++) {
+    text_palette[i] = col_vals[DEV_vga_get_actl_pal_idx(i)];
   }
 
   if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
@@ -1321,14 +1329,14 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
         new_foreground = new_text[1] & 0x0f;
         new_background = (new_text[1] & 0xf0) >> 4;
 
-        XSetForeground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_foreground)]);
-        XSetBackground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_background)]);
+        XSetForeground(bx_x_display, gc, text_palette[new_foreground]);
+        XSetBackground(bx_x_display, gc, text_palette[new_background]);
 
         XCopyPlane(bx_x_display, vgafont[cChar], win, gc, font_col, font_row, cfwidth, cfheight,
                    xc, yc, 1);
         if (offset == curs) {
-          XSetForeground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_background)]);
-          XSetBackground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_foreground)]);
+          XSetForeground(bx_x_display, gc, text_palette[new_background]);
+          XSetBackground(bx_x_display, gc, text_palette[new_foreground]);
           if (font_row == 0) {
             yc2 = yc + tm_info.cs_start;
             font_row2 = tm_info.cs_start;
@@ -1380,8 +1388,7 @@ bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   XFlush(bx_x_display);
 }
 
-  int
-bx_x_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+int bx_x_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
 {
   int len;
   Bit8u *tmp = (Bit8u *)XFetchBytes (bx_x_display, &len);
@@ -1396,8 +1403,7 @@ bx_x_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
   return 1;
 }
 
-  int
-bx_x_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+int bx_x_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 {
   // this writes data to the clipboard.
   BX_INFO (("storing %d bytes to X windows clipboard", len));
@@ -1407,8 +1413,7 @@ bx_x_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 }
 
 
-  void
-bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
+void bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
   unsigned x, y, y_size;
   unsigned color, offset;
@@ -1993,10 +1998,20 @@ void x11_create_button(Display *display, Drawable dialog, GC gc, int x, int y,
 
 int x11_ask_dialog(BxEvent *event)
 {
+#if BX_DEBUGGER || BX_GDBSTUB
+  const int button_x[4] = { 36, 121, 206, 291 };
+  const int ask_code[4] = { BX_LOG_ASK_CHOICE_CONTINUE,
+                            BX_LOG_ASK_CHOICE_CONTINUE_ALWAYS,
+                            BX_LOG_ASK_CHOICE_ENTER_DEBUG,
+                            BX_LOG_ASK_CHOICE_DIE };
+  const int num_ctrls = 4;
+#else
   const int button_x[3] = { 81, 166, 251 };
   const int ask_code[3] = { BX_LOG_ASK_CHOICE_CONTINUE,
                             BX_LOG_ASK_CHOICE_CONTINUE_ALWAYS,
                             BX_LOG_ASK_CHOICE_DIE };
+  const int num_ctrls = 3;
+#endif
   Window dialog;
   XSizeHints hint;
   XEvent xevent;
@@ -2004,7 +2019,7 @@ int x11_ask_dialog(BxEvent *event)
   KeySym key;
   int done, i, level, cpos;
   int retcode = -1;
-  int valid = 0, control = 2, oldctrl = -1;
+  int valid = 0, control = num_ctrls - 1, oldctrl = -1;
   unsigned long black_pixel, white_pixel;
   char name[16], text[10], device[16], message[512];
 
@@ -2022,6 +2037,8 @@ int x11_ask_dialog(BxEvent *event)
   dialog = XCreateSimpleWindow(bx_x_display, RootWindow(bx_x_display,bx_x_screen_num),
     hint.x, hint.y, hint.width, hint.height, 4, black_pixel, white_pixel);
   XSetStandardProperties(bx_x_display, dialog, name, name, None, NULL, 0, &hint);
+  Atom wm_delete = XInternAtom(bx_x_display, "WM_DELETE_WINDOW", 1);
+  XSetWMProtocols(bx_x_display, dialog, &wm_delete, 1);
 
   gc = XCreateGC(bx_x_display, dialog, 0, 0);
   gc_inv = XCreateGC(bx_x_display, dialog, 0, 0);
@@ -2059,11 +2076,15 @@ int x11_ask_dialog(BxEvent *event)
                              gc, 20, 45, message, strlen(message));
           }
           x11_create_button(xevent.xexpose.display, dialog,
-                            gc, 83, 80, 65, 20, "Continue");
+                            gc, button_x[0] + 2, 80, 65, 20, "Continue");
           x11_create_button(xevent.xexpose.display, dialog,
-                            gc, 168, 80, 65, 20, "Alwayscont");
+                            gc, button_x[1] + 2, 80, 65, 20, "Alwayscont");
+#if BX_DEBUGGER || BX_GDBSTUB
           x11_create_button(xevent.xexpose.display, dialog,
-                            gc, 253, 80, 65, 20, "Quit");
+                            gc, button_x[2] + 2, 80, 65, 20, "Debugger");
+#endif
+          x11_create_button(xevent.xexpose.display, dialog,
+                            gc, button_x[num_ctrls-1] + 2, 80, 65, 20, "Quit");
           oldctrl = control - 1;
           if (oldctrl < 0) oldctrl = 1;
         }
@@ -2071,15 +2092,20 @@ int x11_ask_dialog(BxEvent *event)
       case ButtonPress:
         if (xevent.xbutton.button == Button1) {
           if ((xevent.xbutton.y > 80) && (xevent.xbutton.y < 100)) {
-            if ((xevent.xbutton.x > 83) && (xevent.xbutton.x < 148)) {
+            if ((xevent.xbutton.x > (button_x[0] + 2)) && (xevent.xbutton.x < (button_x[0] + 68))) {
               control = 0;
               valid = 1;
-            } else if ((xevent.xbutton.x > 168) && (xevent.xbutton.x < 233)) {
+            } else if ((xevent.xbutton.x > (button_x[1] + 2)) && (xevent.xbutton.x < (button_x[1] + 68))) {
               control = 1;
               valid = 1;
-            } else if ((xevent.xbutton.x > 253) && (xevent.xbutton.x < 318)) {
+            } else if ((xevent.xbutton.x > (button_x[2] + 2)) && (xevent.xbutton.x < (button_x[2] + 68))) {
               control = 2;
               valid = 1;
+#if BX_DEBUGGER || BX_GDBSTUB
+            } else if ((xevent.xbutton.x > (button_x[3] + 2)) && (xevent.xbutton.x < (button_x[3] + 68))) {
+              control = 3;
+              valid = 1;
+#endif
             }
           }
         }
@@ -2093,11 +2119,17 @@ int x11_ask_dialog(BxEvent *event)
         i = XLookupString((XKeyEvent *)&xevent, text, 10, &key, 0);
         if (key == XK_Tab) {
           control++;
-          if (control == 3) control = 0;
+          if (control >= num_ctrls) control = 0;
         } else if (key == XK_Escape) {
-          control = 2;
+          control = num_ctrls - 1;
           done = 1;
         } else if ((key == XK_space) || (key == XK_Return)) {
+          done = 1;
+        }
+        break;
+      case ClientMessage:
+        if (!strcmp(XGetAtomName(bx_x_display, xevent.xclient.message_type), "WM_PROTOCOLS")) {
+          control = num_ctrls - 1;
           done = 1;
         }
         break;
@@ -2110,6 +2142,7 @@ int x11_ask_dialog(BxEvent *event)
   }
   retcode = ask_code[control];
   XFreeGC(bx_x_display, gc);
+  XFreeGC(bx_x_display, gc_inv);
   XDestroyWindow(bx_x_display, dialog);
   return retcode;
 }
@@ -2138,6 +2171,8 @@ int x11_string_dialog(bx_param_string_c *param)
   dialog = XCreateSimpleWindow(bx_x_display, RootWindow(bx_x_display,bx_x_screen_num),
     hint.x, hint.y, hint.width, hint.height, 4, black_pixel, white_pixel);
   XSetStandardProperties(bx_x_display, dialog, name, name, None, NULL, 0, &hint);
+  Atom wm_delete = XInternAtom(bx_x_display, "WM_DELETE_WINDOW", 1);
+  XSetWMProtocols(bx_x_display, dialog, &wm_delete, 1);
 
   gc = XCreateGC(bx_x_display, dialog, 0, 0);
   gc_inv = XCreateGC(bx_x_display, dialog, 0, 0);
@@ -2224,6 +2259,12 @@ int x11_string_dialog(bx_param_string_c *param)
           }
         }
         break;
+      case ClientMessage:
+        if (!strcmp(XGetAtomName(bx_x_display, xevent.xclient.message_type), "WM_PROTOCOLS")) {
+          control = 2;
+          done = 1;
+        }
+        break;
     }
     if (control != oldctrl) {
       if (oldctrl > 0) {
@@ -2244,6 +2285,7 @@ int x11_string_dialog(bx_param_string_c *param)
   if (control == 1) param->set(value);
   if (control == 2) control = -1;
   XFreeGC(bx_x_display, gc);
+  XFreeGC(bx_x_display, gc_inv);
   XDestroyWindow(bx_x_display, dialog);
   return control;
 }

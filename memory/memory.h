@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h,v 1.38 2006/05/31 17:20:52 sshwarts Exp $
+// $Id: memory.h,v 1.41 2006/10/02 17:40:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -28,8 +28,6 @@
 
 #ifndef BX_MEM_H
 #  define BX_MEM_H 1
-
-#define BX_USE_MEM_SMF 0
 
 #if BX_USE_MEM_SMF
 // if static member functions on, then there is only one memory
@@ -87,6 +85,7 @@ public:
  ~BX_MEM_C();
   BX_MEM_SMF void    alloc_vector_aligned (size_t bytes, size_t alignment) BX_CPP_AttrRegparmN(2);
   BX_MEM_SMF void    init_memory(int memsize);
+  BX_MEM_SMF void    cleanup_memory(void);
   BX_MEM_SMF void    enable_smram(bx_bool enable, bx_bool restricted);
   BX_MEM_SMF void    disable_smram(void);
   BX_MEM_SMF bx_bool is_smram_accessible(void);
@@ -97,7 +96,7 @@ public:
   BX_MEM_SMF void    load_ROM(const char *path, bx_phy_address romaddress, Bit8u type);
   BX_MEM_SMF void    load_RAM(const char *path, bx_phy_address romaddress, Bit8u type);
   BX_MEM_SMF Bit32u  get_memory_in_k(void);
-  BX_MEM_SMF bx_bool dbg_fetch_mem(bx_phy_address addr, unsigned len, Bit8u *buf);
+  BX_MEM_SMF bx_bool dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, Bit8u *buf);
   BX_MEM_SMF bx_bool dbg_set_mem(bx_phy_address addr, unsigned len, Bit8u *buf);
   BX_MEM_SMF bx_bool dbg_crc32(bx_phy_address addr1, bx_phy_address addr2, Bit32u *crc);
   BX_MEM_SMF Bit8u* getHostMemAddr(BX_CPU_C *cpu, bx_phy_address a20Addr, unsigned op, unsigned access_type);

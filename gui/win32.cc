@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.108 2006/07/23 11:09:15 vruppert Exp $
+// $Id: win32.cc,v 1.113 2007/08/18 08:05:30 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -50,6 +50,7 @@ public:
   bx_win32_gui_c (void) {}
   DECLARE_GUI_VIRTUAL_METHODS();
   virtual void statusbar_setitem(int element, bx_bool active);
+  virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
   virtual void set_tooltip(unsigned hbar_id, const char *tip);
 #if BX_SHOW_IPS
   virtual void show_ips(Bit32u ips_count);
@@ -81,6 +82,7 @@ IMPLEMENT_GUI_PLUGIN_CODE(win32)
 #define MOUSE_PRESSED       0x20000000
 #define HEADERBAR_CLICKED   0x08000000
 #define MOUSE_MOTION        0x22000000
+#define BX_SYSKEY           (KF_UP|KF_REPEAT|KF_ALTDOWN)
 void enq_key_event(Bit32u, Bit32u);
 void enq_mouse_event(void);
 
@@ -112,6 +114,26 @@ static HBITMAP MemoryBitmap = NULL;
 static HDC MemoryDC = NULL;
 static RECT updated_area;
 static BOOL updated_area_valid = FALSE;
+static HWND desktopWindow;
+static RECT desktop;
+static BOOL queryFullScreen = FALSE;
+static int desktop_x, desktop_y;
+static BOOL toolbarVisible, statusVisible;
+
+// Text mode screen stuff
+static unsigned prev_cursor_x = 0;
+static unsigned prev_cursor_y = 0;
+static HBITMAP vgafont[256];
+static int xChar = 8, yChar = 16;
+static unsigned int text_rows=25, text_cols=80;
+static Bit8u text_pal_idx[16];
+#if !BX_USE_WINDOWS_FONTS
+static Bit8u h_panning = 0, v_panning = 0;
+static Bit16u line_compare = 1023;
+#else
+static HFONT hFont[3];
+static int FontId = 2;
+#endif
 
 // Headerbar stuff
 HWND hwndTB, hwndSB;
@@ -150,21 +172,14 @@ bx_bool SB_Active[BX_MAX_STATUSITEMS];
 static unsigned dimension_x, dimension_y, current_bpp;
 static unsigned stretched_x, stretched_y;
 static unsigned stretch_factor=1;
-static unsigned prev_cursor_x = 0;
-static unsigned prev_cursor_y = 0;
-static HBITMAP vgafont[256];
-static int xChar = 8, yChar = 16;
-static unsigned int text_rows=25, text_cols=80;
 static BOOL BxTextMode = TRUE;
 static BOOL legacyF12 = FALSE;
 static BOOL fix_size = FALSE;
-#if !BX_USE_WINDOWS_FONTS
-static Bit8u h_panning = 0, v_panning = 0;
-static Bit16u line_compare = 1023;
-#else
-static HFONT hFont[3];
-static int FontId = 2;
+#if BX_DEBUGGER
+static BOOL windebug = FALSE;
 #endif
+static HWND hotKeyReceiver = NULL;
+static HWND saveParent = NULL;
 
 static char *szMouseEnable = "CTRL + 3rd button enables mouse ";
 static char *szMouseDisable = "CTRL + 3rd button disables mouse";
@@ -405,7 +420,7 @@ Bit32u win32_to_bx_key[2][0x100] =
     0,
     BX_KEY_KP_DIVIDE,
     0,
-    0,                  /* ?? BX_KEY_PRINT ( ibm 124 ) ?? */
+    BX_KEY_PRINT,
     BX_KEY_ALT_R,
     0,
     0,
@@ -598,6 +613,15 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   int i;
 
   put("WGUI");
+
+  // prepare for possible fullscreen mode
+  desktopWindow = GetDesktopWindow();
+  GetWindowRect(desktopWindow, &desktop);
+  desktop_x = desktop.right - desktop.left;
+  desktop_y = desktop.bottom - desktop.top;
+  hotKeyReceiver = stInfo.simWnd;
+  BX_INFO(("Desktop Window dimensions: %d x %d", desktop_x, desktop_y));
+
   static RGBQUAD black_quad={ 0, 0, 0, 0};
   stInfo.kill = 0;
   stInfo.UIinited = FALSE;
@@ -629,6 +653,11 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
       BX_INFO(("option %d: %s", i, argv[i]));
       if (!strcmp(argv[i], "legacyF12")) {
         legacyF12 = TRUE;
+#if BX_DEBUGGER
+      } else if (!strcmp(argv[i], "windebug")) {
+        windebug = TRUE;
+        SIM->set_debug_gui(1);
+#endif
       } else {
         BX_PANIC(("Unknown win32 option '%s'", argv[i]));
       }
@@ -659,7 +688,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   bitmap_info->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
   bitmap_info->bmiHeader.biWidth=x_tilesize;
   // Height is negative for top-down bitmap
-  bitmap_info->bmiHeader.biHeight= -y_tilesize;
+  bitmap_info->bmiHeader.biHeight= -(LONG)y_tilesize;
   bitmap_info->bmiHeader.biPlanes=1;
   bitmap_info->bmiHeader.biBitCount=8;
   bitmap_info->bmiHeader.biCompression=BI_RGB;
@@ -706,26 +735,65 @@ void resize_main_window()
   RECT R;
   int toolbar_y = 0;
   int statusbar_y = 0;
+  unsigned long mainStyle;
 
   if (IsWindowVisible(hwndTB)) {
+    toolbarVisible = TRUE;
     GetWindowRect(hwndTB, &R);
     toolbar_y = R.bottom - R.top;
   }
 
   if (IsWindowVisible(hwndSB)) {
+    statusVisible = TRUE;
     GetWindowRect(hwndSB, &R);
     statusbar_y = R.bottom - R.top;
   }
 
-  SetRect(&R, 0, 0, stretched_x, stretched_y);
-  DWORD style = GetWindowLong(stInfo.simWnd, GWL_STYLE);
-  DWORD exstyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
-  AdjustWindowRectEx(&R, style, FALSE, exstyle);
-  style = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
-  AdjustWindowRect(&R, style, FALSE);
-  SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, R.right - R.left,
+  // stretched_x and stretched_y were set in dimension_update()
+  // if we need to do any additional resizing, do it now
+  if ((desktop_y > 0) && (stretched_y >= (unsigned)desktop_y)) {
+    if (!queryFullScreen) {
+      MessageBox(NULL,
+        "Going into fullscreen mode -- Alt-Enter to revert",
+        "Going fullscreen",
+        MB_APPLMODAL);
+      queryFullScreen = TRUE;
+    }
+    // hide toolbar and status bars to get some additional space
+    ShowWindow(hwndTB, SW_HIDE);
+    ShowWindow(hwndSB, SW_HIDE);
+    // hide title bar
+    mainStyle = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
+    mainStyle &= ~(WS_CAPTION | WS_BORDER);
+    SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
+    // maybe need to adjust stInfo.simWnd here also?
+    if (saveParent = SetParent(stInfo.mainWnd, desktopWindow)) {
+      BX_DEBUG(("Saved parent window"));
+      SetWindowPos(stInfo.mainWnd, HWND_TOPMOST, desktop.left, desktop.top,
+       desktop.right, desktop.bottom, SWP_SHOWWINDOW);
+    }
+  } else {
+    if (saveParent) {
+      BX_DEBUG(("Restoring parent window"));
+      SetParent(stInfo.mainWnd, saveParent);
+      saveParent = NULL;
+    }
+    // put back the title bar, border, etc...
+    mainStyle = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
+    mainStyle |= WS_CAPTION | WS_BORDER;
+    SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
+    if (toolbarVisible) ShowWindow(hwndTB, SW_SHOW);
+    if (statusVisible) ShowWindow(hwndSB, SW_SHOW);
+    SetRect(&R, 0, 0, stretched_x, stretched_y);
+    DWORD style = GetWindowLong(stInfo.simWnd, GWL_STYLE);
+    DWORD exstyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
+    AdjustWindowRectEx(&R, style, FALSE, exstyle);
+    style = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
+    AdjustWindowRect(&R, style, FALSE);
+    SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, R.right - R.left,
                R.bottom - R.top + toolbar_y + statusbar_y,
                SWP_NOMOVE | SWP_NOZORDER);
+  }
   fix_size = FALSE;
 }
 
@@ -848,7 +916,12 @@ VOID UIThread(PVOID pvoid) {
 
     if (MemoryBitmap && MemoryDC) {
       resize_main_window();
-      ShowWindow (stInfo.mainWnd, SW_SHOW);
+      ShowWindow(stInfo.mainWnd, SW_SHOW);
+#if BX_DEBUGGER
+      if (windebug) {
+        InitDebugDialog(stInfo.mainWnd);
+      }
+#endif
       stInfo.UIinited = TRUE;
 
       bx_gui->clear_screen();
@@ -930,16 +1003,24 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
   case WM_SIZE:
     {
+      int x, y;
       SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
       SendMessage(hwndSB, WM_SIZE, 0, 0);
-      int rect_data[] = { 1, 0, IsWindowVisible(hwndTB), 100, IsWindowVisible(hwndSB), 0x7712, 0, 0 };
+      // now fit simWindow to mainWindow
+      int rect_data[] = { 1, 0, IsWindowVisible(hwndTB),
+       100, IsWindowVisible(hwndSB), 0x7712, 0, 0 };
       RECT R;
       GetEffectiveClientRect( hwnd, &R, rect_data );
-      MoveWindow(stInfo.simWnd, R.left, R.top, R.right - R.left, R.bottom - R.top, TRUE);
+      x = R.right - R.left;
+      y = R.bottom - R.top;
+      MoveWindow(stInfo.simWnd, R.left, R.top, x, y, TRUE);
       GetClientRect(stInfo.simWnd, &R);
-      if (((R.right - R.left) != stretched_x) || ((R.bottom - R.top) != stretched_y)) {
-        BX_ERROR(("Sim window's client size(%d, %d) was different from the stretched size(%d, %d) !!", (R.right - R.left), (R.bottom - R.top), stretched_x, stretched_y));
-        fix_size = TRUE;
+      x = R.right - R.left;
+      y = R.bottom - R.top;
+      if ((x != (int)stretched_x) || (y != (int)stretched_y)) {
+        BX_ERROR(("Sim client size(%d, %d) != stretched size(%d, %d)!",
+          x, y, stretched_x, stretched_y));
+        if (!saveParent) fix_size = TRUE; // no fixing if fullscreen
       }
     }
     break;
@@ -1006,6 +1087,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
   static BOOL mouseModeChange = FALSE;
 
   switch (iMsg) {
+
   case WM_CREATE:
 #if BX_USE_WINDOWS_FONTS
     InitFont();
@@ -1149,18 +1231,48 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
   case WM_KEYUP:
   case WM_SYSKEYUP:
-    EnterCriticalSection(&stInfo.keyCS);
-    enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_RELEASED);
-    LeaveCriticalSection(&stInfo.keyCS);
+    // check if it's keyup, alt key, non-repeat
+    // see http://msdn2.microsoft.com/en-us/library/ms646267.aspx
+    if (wParam == VK_RETURN) {
+      if ((HIWORD(lParam) & BX_SYSKEY) == (KF_ALTDOWN | KF_UP)) {
+        if (!saveParent) {
+          BX_INFO(("entering fullscreen mode"));
+          theGui->dimension_update(desktop_x, desktop_y,
+                                   0, 0, current_bpp);
+        } else {
+          BX_INFO(("leaving fullscreen mode"));
+          theGui->dimension_update(dimension_x, desktop_y - 1,
+                                 0, 0, current_bpp);
+        }
+      }
+    } else {
+      EnterCriticalSection(&stInfo.keyCS);
+      enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_RELEASED);
+      LeaveCriticalSection(&stInfo.keyCS);
+    }
     return 0;
 
+  case WM_SYSCHAR:
+    // check if it's keydown, alt key, non-repeat
+    // see http://msdn2.microsoft.com/en-us/library/ms646267.aspx
+    if (wParam == VK_RETURN) {
+      if ((HIWORD(lParam) & BX_SYSKEY) == KF_ALTDOWN) {
+        if (!saveParent) {
+          BX_INFO(("entering fullscreen mode"));
+          theGui->dimension_update(desktop_x, desktop_y,
+                                   0, 0, current_bpp);
+        } else {
+          BX_INFO(("leaving fullscreen mode"));
+          theGui->dimension_update(dimension_x, desktop_y - 1,
+                                   0, 0, current_bpp);
+        }
+      }
+    }
   case WM_CHAR:
   case WM_DEADCHAR:
-  case WM_SYSCHAR:
   case WM_SYSDEADCHAR:
     return 0;
   }
-
   return DefWindowProc (hwnd, iMsg, wParam, lParam);
 }
 
@@ -1395,12 +1507,17 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 {
   HDC hdc;
   unsigned char data[64];
-  Bit8u *old_line, *new_line, *text_base;
+  Bit8u *old_line, *new_line;
   Bit8u cAttr, cChar;
-  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2, cs_y;
+  unsigned int curs, hchars, i, offset, rows, x, y, xc, yc;
+  BOOL forceUpdate = FALSE;
+#if !BX_USE_WINDOWS_FONTS
+  Bit8u *text_base;
   Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
   Bit8u split_textrow, split_fontrows;
-  BOOL forceUpdate = FALSE, split_screen;
+  unsigned int yc2, cs_y;
+  BOOL split_screen;
+#endif
 
   if (!stInfo.UIinited) return;
 
@@ -1412,7 +1529,7 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
       if (char_changed[c]) {
         memset(data, 0, sizeof(data));
         BOOL gfxchar = tm_info.line_graphics && ((c & 0xE0) == 0xC0);
-        for (unsigned i=0; i<(unsigned)yChar; i++) {
+        for (i=0; i<(unsigned)yChar; i++) {
           data[i*2] = vga_charmap[c*32+i];
           if (gfxchar) {
             data[i*2+1] = (data[i*2] << 7);
@@ -1424,6 +1541,9 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     }
     forceUpdate = TRUE;
     charmap_updated = 0;
+  }
+  for (i=0; i<16; i++) {
+    text_pal_idx[i] = DEV_vga_get_actl_pal_idx(i);
   }
 
   hdc = GetDC(stInfo.simWnd);
@@ -1796,7 +1916,7 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, 
 
   resize_main_window();
 
-  BX_INFO (("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
+  BX_INFO(("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
 
   host_xres = x;
   host_yres = y;
@@ -1991,13 +2111,14 @@ unsigned char reverse_bitorder(unsigned char b) {
 
 COLORREF GetColorRef(unsigned char attr)
 {
-  return RGB(cmap_index[attr].rgbRed, cmap_index[attr].rgbGreen,
-             cmap_index[attr].rgbBlue);
+  Bit8u pal_idx = text_pal_idx[attr];
+  return RGB(cmap_index[pal_idx].rgbRed, cmap_index[pal_idx].rgbGreen,
+             cmap_index[pal_idx].rgbBlue);
 }
 
 
-void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart, int width,
-                 int height, int fcol, int frow, DWORD dwRop, unsigned char cColor) {
+void DrawBitmap(HDC hdc, HBITMAP hBitmap, int xStart, int yStart, int width,
+                int height, int fcol, int frow, DWORD dwRop, unsigned char cColor) {
   BITMAP bm;
   HDC hdcMem;
   POINT ptSize, ptOrg;
@@ -2020,19 +2141,17 @@ void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart, int width,
 
   oldObj = SelectObject(MemoryDC, MemoryBitmap);
 
-//Colors taken from Ralf Browns interrupt list.
-//(0=black, 1=blue, 2=red, 3=purple, 4=green, 5=cyan, 6=yellow, 7=white)
-//The highest background bit usually means blinking characters. No idea
-//how to implement that so for now it's just implemented as color.
-//Note: it is also possible to program the VGA controller to have the
-//high bit for the foreground color enable blinking characters.
+  // The highest background bit usually means blinking characters. No idea
+  // how to implement that so for now it's just implemented as color.
+  // Note: it is also possible to program the VGA controller to have the
+  // high bit for the foreground color enable blinking characters.
 
-	COLORREF crFore = SetTextColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx((cColor>>4)&0xf)));
-	COLORREF crBack = SetBkColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx(cColor&0xf)));
-	BitBlt (MemoryDC, xStart, yStart, ptSize.x, ptSize.y, hdcMem, ptOrg.x,
-		  ptOrg.y, dwRop);
-	SetBkColor(MemoryDC, crBack);
-	SetTextColor(MemoryDC, crFore);
+  COLORREF crFore = SetTextColor(MemoryDC, GetColorRef((cColor>>4)&0xf));
+  COLORREF crBack = SetBkColor(MemoryDC, GetColorRef(cColor&0xf));
+  BitBlt(MemoryDC, xStart, yStart, ptSize.x, ptSize.y, hdcMem, ptOrg.x,
+         ptOrg.y, dwRop);
+  SetBkColor(MemoryDC, crBack);
+  SetTextColor(MemoryDC, crFore);
 
   SelectObject(MemoryDC, oldObj);
 
@@ -2083,11 +2202,24 @@ void alarm(int time)
 #endif
 #endif
 
-void bx_win32_gui_c::mouse_enabled_changed_specific (bx_bool val)
+void bx_win32_gui_c::mouse_enabled_changed_specific(bx_bool val)
 {
-  if ((val != mouseCaptureMode) && !mouseToggleReq) {
+  if ((val != (bx_bool)mouseCaptureMode) && !mouseToggleReq) {
     mouseToggleReq = TRUE;
     mouseCaptureNew = val;
+  }
+}
+
+void bx_win32_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
+{
+  if (desktop_y > 0) {
+    *xres = desktop_x;
+    *yres = desktop_y;
+    *bpp = 32;
+  } else {
+    *xres = 1024;
+    *yres = 768;
+    *bpp = 32;
   }
 }
 
@@ -2131,15 +2263,13 @@ void DrawChar (HDC hdc, unsigned char c, int xStart, int yStart,
   oldObj = SelectObject(MemoryDC, MemoryBitmap);
   hFontOld=(HFONT)SelectObject(MemoryDC, hFont[FontId]);
 
-//Colors taken from Ralf Browns interrupt list.
-//(0=black, 1=blue, 2=red, 3=purple, 4=green, 5=cyan, 6=yellow, 7=white)
-//The highest background bit usually means blinking characters. No idea
-//how to implement that so for now it's just implemented as color.
-//Note: it is also possible to program the VGA controller to have the
-//high bit for the foreground color enable blinking characters.
+  // The highest background bit usually means blinking characters. No idea
+  // how to implement that so for now it's just implemented as color.
+  // Note: it is also possible to program the VGA controller to have the
+  // high bit for the foreground color enable blinking characters.
 
-  COLORREF crFore = SetTextColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx(cColor&0xf)));
-  COLORREF crBack = SetBkColor(MemoryDC, GetColorRef(DEV_vga_get_actl_pal_idx((cColor>>4)&0xf)));
+  COLORREF crFore = SetTextColor(MemoryDC, GetColorRef(cColor&0xf));
+  COLORREF crBack = SetBkColor(MemoryDC, GetColorRef((cColor>>4)&0xf));
   str[0]=c;
   str[1]=0;
 

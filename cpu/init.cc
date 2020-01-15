@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.120 2006/08/26 07:35:27 vruppert Exp $
+// $Id: init.cc,v 1.131 2007/09/10 20:47:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -258,15 +258,17 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
     // they can be visible in the config interface.
     // (Experimental, obviously not a complete list)
     bx_param_num_c *param;
-    char cpu_name[10], cpu_title[10];
+    char cpu_name[10], cpu_title[10], cpu_pname[16];
     const char *fmt16 = "%04X";
     const char *fmt32 = "%08X";
     Bit32u oldbase = bx_param_num_c::set_default_base(16);
     const char *oldfmt = bx_param_num_c::set_default_format(fmt32);
     sprintf(cpu_name, "%d", BX_CPU_ID);
     sprintf(cpu_title, "CPU %d", BX_CPU_ID);
-    bx_list_c *list = new bx_list_c(SIM->get_param(BXPN_WX_CPU_STATE), 
-       cpu_name, cpu_title, 60);
+    sprintf(cpu_pname, "%s.%d", BXPN_WX_CPU_STATE, BX_CPU_ID);
+    if (SIM->get_param(cpu_pname) == NULL) {
+      bx_list_c *list = new bx_list_c(SIM->get_param(BXPN_WX_CPU_STATE), 
+         cpu_name, cpu_title, 60);
 
 #define DEFPARAM_NORMAL(name,field) \
     new bx_shadow_num_c(list, #name, &(field))
@@ -291,11 +293,11 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
       DEFPARAM_NORMAL(CR2, cr2);
       DEFPARAM_NORMAL(CR3, cr3);
 #if BX_CPU_LEVEL >= 4
-      DEFPARAM_NORMAL(CR4, cr4.registerValue);
+      DEFPARAM_NORMAL(CR4, cr4.val32);
 #endif
 
-    // segment registers require a handler function because they have
-    // special get/set requirements.
+      // segment registers require a handler function because they have
+      // special get/set requirements.
 #define DEFPARAM_SEG_REG(x) \
     param = new bx_param_num_c(list, \
       #x, #x, "", 0, 0xffff, 0); \
@@ -309,25 +311,25 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
         #name"_limit", \
         & BX_CPU_THIS_PTR field.limit);
 
-    DEFPARAM_SEG_REG(CS);
-    DEFPARAM_SEG_REG(DS);
-    DEFPARAM_SEG_REG(SS);
-    DEFPARAM_SEG_REG(ES);
-    DEFPARAM_SEG_REG(FS);
-    DEFPARAM_SEG_REG(GS);
-    DEFPARAM_SEG_REG(LDTR);
-    DEFPARAM_SEG_REG(TR);
-    DEFPARAM_GLOBAL_SEG_REG(GDTR, gdtr);
-    DEFPARAM_GLOBAL_SEG_REG(IDTR, idtr);
+      DEFPARAM_SEG_REG(CS);
+      DEFPARAM_SEG_REG(DS);
+      DEFPARAM_SEG_REG(SS);
+      DEFPARAM_SEG_REG(ES);
+      DEFPARAM_SEG_REG(FS);
+      DEFPARAM_SEG_REG(GS);
+      DEFPARAM_SEG_REG(LDTR);
+      DEFPARAM_SEG_REG(TR);
+      DEFPARAM_GLOBAL_SEG_REG(GDTR, gdtr);
+      DEFPARAM_GLOBAL_SEG_REG(IDTR, idtr);
 #undef DEFPARAM_NORMAL
 #undef DEFPARAM_SEG_REG
 #undef DEFPARAM_GLOBAL_SEG_REG
 
-    param = new bx_shadow_num_c(list, "EFLAGS",
-        &BX_CPU_THIS_PTR eflags.val32);
+      param = new bx_shadow_num_c(list, "EFLAGS",
+          &BX_CPU_THIS_PTR eflags.val32);
 
-    // flags implemented in lazy_flags.cc must be done with a handler
-    // that calls their get function, to force them to be computed.
+      // flags implemented in lazy_flags.cc must be done with a handler
+      // that calls their get function, to force them to be computed.
 #define DEFPARAM_EFLAG(name) \
     param = new bx_param_bool_c(list, \
             #name, #name, "", get_##name()); \
@@ -338,39 +340,40 @@ void BX_CPU_C::initialize(BX_MEM_C *addrspace)
     param->set_handler(cpu_param_handler);
 
 #if BX_CPU_LEVEL >= 4
-    DEFPARAM_EFLAG(ID);
-    DEFPARAM_EFLAG(VIP);
-    DEFPARAM_EFLAG(VIF);
-    DEFPARAM_EFLAG(AC);
+      DEFPARAM_EFLAG(ID);
+      DEFPARAM_EFLAG(VIP);
+      DEFPARAM_EFLAG(VIF);
+      DEFPARAM_EFLAG(AC);
 #endif
 #if BX_CPU_LEVEL >= 3
-    DEFPARAM_EFLAG(VM);
-    DEFPARAM_EFLAG(RF);
+      DEFPARAM_EFLAG(VM);
+      DEFPARAM_EFLAG(RF);
 #endif
 #if BX_CPU_LEVEL >= 2
-    DEFPARAM_EFLAG(NT);
-    // IOPL is a special case because it is 2 bits wide.
-    param = new bx_shadow_num_c(
-            list,
-            "IOPL",
-            &eflags.val32, 10,
-            12, 13);
-    param->set_range(0, 3);
-    param->set_format("%d");
+      DEFPARAM_EFLAG(NT);
+      // IOPL is a special case because it is 2 bits wide.
+      param = new bx_shadow_num_c(
+              list,
+              "IOPL",
+              &eflags.val32, 10,
+              12, 13);
+      param->set_range(0, 3);
+      param->set_format("%d");
 #endif
-    DEFPARAM_LAZY_EFLAG(OF);
-    DEFPARAM_EFLAG(DF);
-    DEFPARAM_EFLAG(IF);
-    DEFPARAM_EFLAG(TF);
-    DEFPARAM_LAZY_EFLAG(SF);
-    DEFPARAM_LAZY_EFLAG(ZF);
-    DEFPARAM_LAZY_EFLAG(AF);
-    DEFPARAM_LAZY_EFLAG(PF);
-    DEFPARAM_LAZY_EFLAG(CF);
+      DEFPARAM_LAZY_EFLAG(OF);
+      DEFPARAM_EFLAG(DF);
+      DEFPARAM_EFLAG(IF);
+      DEFPARAM_EFLAG(TF);
+      DEFPARAM_LAZY_EFLAG(SF);
+      DEFPARAM_LAZY_EFLAG(ZF);
+      DEFPARAM_LAZY_EFLAG(AF);
+      DEFPARAM_LAZY_EFLAG(PF);
+      DEFPARAM_LAZY_EFLAG(CF);
 
-    // restore defaults
-    bx_param_num_c::set_default_base(oldbase);
-    bx_param_num_c::set_default_format(oldfmt);
+      // restore defaults
+      bx_param_num_c::set_default_base(oldbase);
+      bx_param_num_c::set_default_format(oldfmt);
+    }
   }
 #endif
 }
@@ -430,11 +433,11 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_FIELD(list, DR6, dr6);
   BXRS_HEX_PARAM_FIELD(list, DR7, dr7);
 #endif
-  BXRS_HEX_PARAM_FIELD(list, cR0, cr0.val32);
+  BXRS_HEX_PARAM_FIELD(list, CR0, cr0.val32);
   BXRS_HEX_PARAM_FIELD(list, CR2, cr2);
   BXRS_HEX_PARAM_FIELD(list, CR3, cr3);
 #if BX_CPU_LEVEL >= 4
-  BXRS_HEX_PARAM_FIELD(list, CR4, cr4.registerValue);
+  BXRS_HEX_PARAM_FIELD(list, CR4, cr4.val32);
 #endif
 
   for(i=0; i<6; i++) {
@@ -464,21 +467,21 @@ void BX_CPU_C::register_state(void)
 
   bx_list_c *LDTR = new bx_list_c (list, "LDTR", 7);
   BXRS_PARAM_SPECIAL16(LDTR, selector, param_save_handler, param_restore_handler);
-  BXRS_HEX_PARAM_FIELD(LDTR, base,  ldtr.cache.u.ldt.base);
-  BXRS_HEX_PARAM_FIELD(LDTR, limit, ldtr.cache.u.ldt.limit);
-  BXRS_HEX_PARAM_FIELD(LDTR, limit_scaled, ldtr.cache.u.ldt.limit);
+  BXRS_HEX_PARAM_FIELD(LDTR, base,  ldtr.cache.u.system.base);
+  BXRS_HEX_PARAM_FIELD(LDTR, limit, ldtr.cache.u.system.limit);
+  BXRS_HEX_PARAM_FIELD(LDTR, limit_scaled, ldtr.cache.u.system.limit);
   BXRS_PARAM_SPECIAL8 (LDTR, ar_byte, param_save_handler, param_restore_handler);
-  BXRS_PARAM_BOOL(LDTR, granularity, ldtr.cache.u.ldt.g);
-  BXRS_PARAM_BOOL(LDTR, avl, ldtr.cache.u.ldt.avl);
+  BXRS_PARAM_BOOL(LDTR, granularity, ldtr.cache.u.system.g);
+  BXRS_PARAM_BOOL(LDTR, avl, ldtr.cache.u.system.avl);
 
   bx_list_c *TR = new bx_list_c (list, "TR", 7);
   BXRS_PARAM_SPECIAL16(TR, selector, param_save_handler, param_restore_handler);
-  BXRS_HEX_PARAM_FIELD(TR, base,  tr.cache.u.tss.base);
-  BXRS_HEX_PARAM_FIELD(TR, limit, tr.cache.u.tss.limit);
-  BXRS_HEX_PARAM_FIELD(TR, limit_scaled, tr.cache.u.tss.limit_scaled);
+  BXRS_HEX_PARAM_FIELD(TR, base,  tr.cache.u.system.base);
+  BXRS_HEX_PARAM_FIELD(TR, limit, tr.cache.u.system.limit);
+  BXRS_HEX_PARAM_FIELD(TR, limit_scaled, tr.cache.u.system.limit_scaled);
   BXRS_PARAM_SPECIAL8 (TR, ar_byte, param_save_handler, param_restore_handler);
-  BXRS_PARAM_BOOL(TR, granularity, tr.cache.u.tss.g);
-  BXRS_PARAM_BOOL(TR, avl, tr.cache.u.tss.avl);
+  BXRS_PARAM_BOOL(TR, granularity, tr.cache.u.system.g);
+  BXRS_PARAM_BOOL(TR, avl, tr.cache.u.system.avl);
 
   BXRS_HEX_PARAM_SIMPLE(list, smbase);
 
@@ -641,14 +644,14 @@ Bit64s BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
       BX_PANIC(("save/restore: CPUID mismatch"));
     }
   } else if (!strcmp(pname, "EFLAGS")) {
-    BX_CPU_THIS_PTR setEFlags(val);
+    BX_CPU_THIS_PTR setEFlags((Bit32u)val);
 #if BX_SUPPORT_X86_64
   } else if (!strcmp(pname, "EFER")) {
-    BX_CPU_THIS_PTR msr.sce   = (val >> 0)  & 1;
-    BX_CPU_THIS_PTR msr.lme   = (val >> 8)  & 1;
-    BX_CPU_THIS_PTR msr.lma   = (val >> 10) & 1;
-    BX_CPU_THIS_PTR msr.nxe   = (val >> 11) & 1;
-    BX_CPU_THIS_PTR msr.ffxsr = (val >> 14) & 1;
+    BX_CPU_THIS_PTR efer.sce   = (val >> 0)  & 1;
+    BX_CPU_THIS_PTR efer.lme   = (val >> 8)  & 1;
+    BX_CPU_THIS_PTR efer.lma   = (val >> 10) & 1;
+    BX_CPU_THIS_PTR efer.nxe   = (val >> 11) & 1;
+    BX_CPU_THIS_PTR efer.ffxsr = (val >> 14) & 1;
 #endif
   } else if (!strcmp(pname, "ar_byte") || !strcmp(pname, "selector")) {
     segname = param->get_parent()->get_name();
@@ -673,10 +676,10 @@ Bit64s BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
       bx_descriptor_t *d = &(segment->cache);
       bx_selector_t *selector = &(segment->selector);
       if (!strcmp(pname, "ar_byte")) {
-        set_ar_byte(d, val);
+        set_ar_byte(d, (Bit8u)val);
       }
       else if (!strcmp(pname, "selector")) {
-        parse_selector(val, selector);
+        parse_selector((Bit16u)val, selector);
         // validate the selector
         if ((selector->value & 0xfffc) != 0) d->valid = 1;
         else d->valid = 0;
@@ -739,19 +742,8 @@ void BX_CPU_C::reset(unsigned source)
   ESP = 0;
 #endif
 
-  // all status flags at known values, use BX_CPU_THIS_PTR eflags structure
-  BX_CPU_THIS_PTR lf_flags_status = 0x000000;
-
   // status and control flags register set
   BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
-  BX_CPU_THIS_PTR clear_IF ();
-#if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR clear_RF ();
-  BX_CPU_THIS_PTR clear_VM ();
-#endif
-#if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR clear_AC ();
-#endif
 
   BX_CPU_THIS_PTR inhibit_mask = 0;
   BX_CPU_THIS_PTR debug_trap = 0;
@@ -859,12 +851,12 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR ldtr.cache.dpl      = 0; /* field not used */
   BX_CPU_THIS_PTR ldtr.cache.segment  = 0; /* system segment */
   BX_CPU_THIS_PTR ldtr.cache.type     = BX_SYS_SEGMENT_LDT;
-  BX_CPU_THIS_PTR ldtr.cache.u.ldt.base       = 0x00000000;
-  BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit      =     0xFFFF;
+  BX_CPU_THIS_PTR ldtr.cache.u.system.base       = 0x00000000;
+  BX_CPU_THIS_PTR ldtr.cache.u.system.limit      =     0xFFFF;
 #if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR tr.cache.u.ldt.limit_scaled =     0xFFFF;
-  BX_CPU_THIS_PTR tr.cache.u.ldt.avl = 0;
-  BX_CPU_THIS_PTR tr.cache.u.ldt.g   = 0;  /* byte granular */
+  BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled =   0xFFFF;
+  BX_CPU_THIS_PTR ldtr.cache.u.system.avl = 0;
+  BX_CPU_THIS_PTR ldtr.cache.u.system.g   = 0;  /* byte granular */
 #endif
 
   /* TR (Task Register) */
@@ -878,12 +870,12 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR tr.cache.dpl      = 0; /* field not used */
   BX_CPU_THIS_PTR tr.cache.segment  = 0; /* system segment */
   BX_CPU_THIS_PTR tr.cache.type     = BX_SYS_SEGMENT_BUSY_286_TSS;
-  BX_CPU_THIS_PTR tr.cache.u.tss.base         = 0x00000000;
-  BX_CPU_THIS_PTR tr.cache.u.tss.limit        =     0xFFFF;
+  BX_CPU_THIS_PTR tr.cache.u.system.base         = 0x00000000;
+  BX_CPU_THIS_PTR tr.cache.u.system.limit        =     0xFFFF;
 #if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled =     0xFFFF;
-  BX_CPU_THIS_PTR tr.cache.u.tss.avl = 0;
-  BX_CPU_THIS_PTR tr.cache.u.tss.g   = 0;  /* byte granular */
+  BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled =     0xFFFF;
+  BX_CPU_THIS_PTR tr.cache.u.system.avl = 0;
+  BX_CPU_THIS_PTR tr.cache.u.system.g   = 0;  /* byte granular */
 #endif
 #endif
 
@@ -914,31 +906,13 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR nmi_pending = 0;
   BX_CPU_THIS_PTR in_smm = 0;
   BX_CPU_THIS_PTR nmi_disable = 0;
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  BX_CPU_THIS_PTR alignment_check = 0;
+#endif
 
   BX_CPU_THIS_PTR smbase = 0x30000;
 
-#if BX_CPU_LEVEL >= 2
-  // MSW (Machine Status Word), so called on 286
-  // CR0 (Control Register 0), so called on 386+
-  BX_CPU_THIS_PTR cr0.ts = 0; // no task switch
-  BX_CPU_THIS_PTR cr0.em = 0; // emulate math coprocessor
-  BX_CPU_THIS_PTR cr0.mp = 0; // wait instructions not trapped
-  BX_CPU_THIS_PTR cr0.pe = 0; // real mode
-  BX_CPU_THIS_PTR cr0.val32 = 0;
-
-#if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR cr0.pg = 0; // paging disabled
-  // no change to cr0.val32
-#endif
-
-#if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR cr0.cd = 0;
-  BX_CPU_THIS_PTR cr0.nw = 0;
-  BX_CPU_THIS_PTR cr0.am = 0; // disable alignment check
-  BX_CPU_THIS_PTR cr0.wp = 0; // disable write-protect
-  BX_CPU_THIS_PTR cr0.ne = 0; // np exceptions through int 13H, DOS compat
-  BX_CPU_THIS_PTR cr0.val32 |= 0x00000000;
-#endif
+  BX_CPU_THIS_PTR cr0.setRegister(0);
 
   // handle reserved bits
 #if BX_CPU_LEVEL == 3
@@ -948,10 +922,6 @@ void BX_CPU_C::reset(unsigned source)
   // bit 4 is hardwired to 1 on all x86
   BX_CPU_THIS_PTR cr0.val32 |= 0x00000010;
 #endif
-#endif // CPU >= 2
-
-  // CR0 paging might be modified
-  TLB_flush(1);
 
 #if BX_CPU_LEVEL >= 3
   BX_CPU_THIS_PTR cr1 = 0;
@@ -959,9 +929,13 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR cr3 = 0;
   BX_CPU_THIS_PTR cr3_masked = 0;
 #endif
+
 #if BX_CPU_LEVEL >= 4
   BX_CPU_THIS_PTR cr4.setRegister(0);
 #endif
+
+  // CR0/CR4 paging might be modified
+  TLB_flush(1);
 
 /* initialise MSR registers to defaults */
 #if BX_CPU_LEVEL >= 5
@@ -972,9 +946,10 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR msr.apicbase |= 0x900;
 #endif
 #if BX_SUPPORT_X86_64
-  BX_CPU_THIS_PTR msr.lme = BX_CPU_THIS_PTR msr.lma = 0;
-  BX_CPU_THIS_PTR msr.sce = BX_CPU_THIS_PTR msr.nxe = 0;
-  BX_CPU_THIS_PTR msr.ffxsr = 0;
+  BX_CPU_THIS_PTR efer.lme = BX_CPU_THIS_PTR efer.lma = 0;
+  BX_CPU_THIS_PTR efer.sce = BX_CPU_THIS_PTR efer.nxe = 0;
+  BX_CPU_THIS_PTR efer.ffxsr = 0;
+
   BX_CPU_THIS_PTR msr.star  = 0;
   BX_CPU_THIS_PTR msr.lstar = 0;
   BX_CPU_THIS_PTR msr.cstar = 0;
@@ -993,11 +968,9 @@ void BX_CPU_C::reset(unsigned source)
 
   BX_CPU_THIS_PTR EXT = 0;
 
-#if BX_SUPPORT_PAGING
 #if BX_USE_TLB
   TLB_init();
 #endif // BX_USE_TLB
-#endif // BX_SUPPORT_PAGING
 
   // invalidate the prefetch queue
   BX_CPU_THIS_PTR eipPageBias = 0;
@@ -1133,8 +1106,8 @@ void BX_CPU_C::assert_checks(void)
 {
   // check CPU mode consistency
 #if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR msr.lma) {
-    if (! BX_CPU_THIS_PTR cr0.pe) {
+  if (BX_CPU_THIS_PTR efer.lma) {
+    if (! BX_CPU_THIS_PTR cr0.get_PE()) {
       BX_PANIC(("assert_checks: EFER.LMA is set when CR0.PE=0 !"));
     }
     if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l) {
@@ -1149,7 +1122,7 @@ void BX_CPU_C::assert_checks(void)
   else 
 #endif
   {
-    if (BX_CPU_THIS_PTR cr0.pe) {
+    if (BX_CPU_THIS_PTR cr0.get_PE()) {
       if (BX_CPU_THIS_PTR get_VM()) {
         if (BX_CPU_THIS_PTR cpu_mode != BX_MODE_IA32_V8086)
           BX_PANIC(("assert_checks: unconsistent cpu_mode BX_MODE_IA32_V8086 !"));
@@ -1165,9 +1138,18 @@ void BX_CPU_C::assert_checks(void)
     }
   }
 
+  // check CR0 consistency
+  if (BX_CPU_THIS_PTR cr0.get_PG() && ! BX_CPU_THIS_PTR cr0.get_PE())
+    BX_PANIC(("assert_checks: CR0.PG=1 with CR0.PE=0 !"));
+#if BX_CPU_LEVEL >= 4
+  if (BX_CPU_THIS_PTR cr0.get_NW() && ! BX_CPU_THIS_PTR cr0.get_CD())
+    BX_PANIC(("assert_checks: CR0.NW=1 with CR0.CD=0 !"));
+#endif
+
+
 #if BX_SUPPORT_X86_64
   // VM should be OFF in long mode
-  if (IsLongMode()) {
+  if (long_mode()) {
     if (BX_CPU_THIS_PTR get_VM()) BX_PANIC(("assert_checks: VM is set in long mode !"));
   }
 
@@ -1196,9 +1178,9 @@ void BX_CPU_C::assert_checks(void)
       case BX_SYS_SEGMENT_BUSY_286_TSS:
       case BX_SYS_SEGMENT_AVAIL_286_TSS:
 #if BX_CPU_LEVEL >= 3
-        if (BX_CPU_THIS_PTR tr.cache.u.tss.g != 0)
+        if (BX_CPU_THIS_PTR tr.cache.u.system.g != 0)
           BX_PANIC(("assert_checks: tss286.g != 0 !"));
-        if (BX_CPU_THIS_PTR tr.cache.u.tss.avl != 0)
+        if (BX_CPU_THIS_PTR tr.cache.u.system.avl != 0)
           BX_PANIC(("assert_checks: tss286.avl != 0 !"));
 #endif
         break;
@@ -1209,37 +1191,6 @@ void BX_CPU_C::assert_checks(void)
         BX_PANIC(("assert_checks: TR is not TSS type !"));
     }
   }
-
-  // validate CR0 register
-  if (BX_CPU_THIS_PTR cr0.pe != (BX_CPU_THIS_PTR cr0.val32 & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.PE !"));
-  if (BX_CPU_THIS_PTR cr0.mp != ((BX_CPU_THIS_PTR cr0.val32 >>  1) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.MP !"));
-  if (BX_CPU_THIS_PTR cr0.em != ((BX_CPU_THIS_PTR cr0.val32 >>  2) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.EM !"));
-  if (BX_CPU_THIS_PTR cr0.ts != ((BX_CPU_THIS_PTR cr0.val32 >>  3) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.TS !"));
-#if BX_CPU_LEVEL >= 4
-  if (BX_CPU_THIS_PTR cr0.ne != ((BX_CPU_THIS_PTR cr0.val32 >>  5) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.NE !"));
-  if (BX_CPU_THIS_PTR cr0.wp != ((BX_CPU_THIS_PTR cr0.val32 >> 16) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.WP !"));
-  if (BX_CPU_THIS_PTR cr0.am != ((BX_CPU_THIS_PTR cr0.val32 >> 18) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.AM !"));
-  if (BX_CPU_THIS_PTR cr0.nw != ((BX_CPU_THIS_PTR cr0.val32 >> 29) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.NW !"));
-  if (BX_CPU_THIS_PTR cr0.cd != ((BX_CPU_THIS_PTR cr0.val32 >> 30) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.CD !"));
-#endif
-  if (BX_CPU_THIS_PTR cr0.pg != ((BX_CPU_THIS_PTR cr0.val32 >> 31) & 1))
-    BX_PANIC(("assert_checks: inconsistent CR0.PG !"));
-
-  if (BX_CPU_THIS_PTR cr0.pg && ! BX_CPU_THIS_PTR cr0.pe)
-    BX_PANIC(("assert_checks: CR0.PG=1 with CR0.PE=0 !"));
-#if BX_CPU_LEVEL >= 4
-  if (BX_CPU_THIS_PTR cr0.nw && ! BX_CPU_THIS_PTR cr0.cd)
-    BX_PANIC(("assert_checks: CR0.NW=1 with CR0.CD=0 !"));
-#endif
 }
 
 void BX_CPU_C::set_INTR(bx_bool value)

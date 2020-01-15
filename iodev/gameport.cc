@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gameport.cc,v 1.10 2006/05/28 18:14:05 sshwarts Exp $
+// $Id: gameport.cc,v 1.13 2007/04/03 22:38:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  MandrakeSoft S.A.
@@ -61,7 +61,7 @@ bx_gameport_c *theGameport = NULL;
 
 int libgameport_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  theGameport = new bx_gameport_c ();
+  theGameport = new bx_gameport_c();
   bx_devices.pluginGameport = theGameport;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theGameport, BX_PLUGIN_GAMEPORT);
   return(0); // Success
@@ -69,18 +69,20 @@ int libgameport_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
 
 void libgameport_LTX_plugin_fini(void)
 {
+  delete theGameport;
 }
 
 bx_gameport_c::bx_gameport_c()
 {
   put("GAME");
-  settype(EXTFPUIRQLOG);
+  settype(GAMELOG);
+  joyfd = -1;
 }
 
 bx_gameport_c::~bx_gameport_c()
 {
   if (joyfd >= 0) close(joyfd);
-  BX_DEBUG(("Exit."));
+  BX_DEBUG(("Exit"));
 }
 
 void bx_gameport_c::init(void)
@@ -121,7 +123,7 @@ void bx_gameport_c::reset(unsigned type)
 #if BX_SUPPORT_SAVE_RESTORE
 void bx_gameport_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "gameport", "Gameport State");
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "gameport", "Gameport State", 6);
   BXRS_HEX_PARAM_FIELD(list, port, BX_GAMEPORT_THIS port);
   BXRS_DEC_PARAM_FIELD(list, delay_x, BX_GAMEPORT_THIS delay_x);
   BXRS_DEC_PARAM_FIELD(list, delay_y, BX_GAMEPORT_THIS delay_y);

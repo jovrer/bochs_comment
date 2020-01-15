@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.h,v 1.24 2006/05/27 15:54:49 sshwarts Exp $
+// $Id: pit_wrap.h,v 1.26 2007/04/08 21:57:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -28,9 +28,6 @@
 #define _BX_PIT_WRAP_H
 
 #include "bochs.h"
-
-#if BX_USE_NEW_PIT
-
 #include "pit82c54.h"
 
 #if BX_USE_PIT_SMF
@@ -50,6 +47,7 @@ public:
   bx_pit_c();
   virtual ~bx_pit_c() {}
   BX_PIT_SMF int init(void);
+  BX_PIT_SMF void exit(void);
   BX_PIT_SMF void reset(unsigned type);
   BX_PIT_SMF bx_bool periodic(Bit32u usec_delta);
 #if BX_SUPPORT_SAVE_RESTORE
@@ -93,5 +91,4 @@ private:
 
 extern bx_pit_c bx_pit;
 
-#endif  // #if BX_USE_NEW_PIT
 #endif  // #ifndef _BX_PIT_WRAP_H

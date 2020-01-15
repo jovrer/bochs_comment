@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcipnic.cc,v 1.21 2006/05/29 22:33:38 sshwarts Exp $
+// $Id: pcipnic.cc,v 1.23 2007/02/03 17:56:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2003  Fen Systems Ltd.
@@ -36,16 +36,18 @@ bx_pcipnic_c* thePNICDevice = NULL;
 
 const Bit8u pnic_iomask[16] = {2, 0, 2, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-  int
-libpcipnic_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int libpcipnic_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePNICDevice = new bx_pcipnic_c ();
+  thePNICDevice = new bx_pcipnic_c();
   bx_devices.pluginPciPNicAdapter = thePNICDevice;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePNICDevice, BX_PLUGIN_PCIPNIC);
   return 0; // Success
 }
 
-void libpcipnic_LTX_plugin_fini(void) {}
+void libpcipnic_LTX_plugin_fini(void)
+{
+  delete thePNICDevice;
+}
 
 bx_pcipnic_c::bx_pcipnic_c()
 {
@@ -55,7 +57,7 @@ bx_pcipnic_c::bx_pcipnic_c()
 
 bx_pcipnic_c::~bx_pcipnic_c()
 {
-  // nothing for now
+  BX_DEBUG(("Exit"));
 }
 
 void bx_pcipnic_c::init(void)
@@ -169,11 +171,7 @@ void bx_pcipnic_c::register_state(void)
   }
   new bx_shadow_data_c(list, "rData", BX_PNIC_THIS s.rData, PNIC_DATA_SIZE);
   new bx_shadow_data_c(list, "recvRing", (Bit8u*)BX_PNIC_THIS s.recvRing, PNIC_RECV_RINGS*PNIC_DATA_SIZE);
-  bx_list_c *pci_conf = new bx_list_c(list, "pci_conf", 256);
-  for (i=0; i<256; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(pci_conf, name, &BX_PNIC_THIS s.pci_conf[i], BASE_HEX);
-  }
+  register_pci_state(list, BX_PNIC_THIS s.pci_conf);
 }
 
 void bx_pcipnic_c::after_restore_state(void)

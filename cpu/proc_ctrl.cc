@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc,v 1.157 2006/08/25 19:56:03 sshwarts Exp $
+// $Id: proc_ctrl.cc,v 1.168 2007/09/10 20:47:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -53,6 +53,10 @@ void BX_CPU_C::NOP(bxInstruction_c *i)
 void BX_CPU_C::PREFETCH(bxInstruction_c *i)
 {
 #if BX_SUPPORT_3DNOW || BX_SUPPORT_SSE >= 1
+  if (i->modC0()) {
+    BX_ERROR(("PREFETCH: use of register is undefined opcode"));
+    UndefinedOpcode(i);
+  }
   BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->nnn(), i->seg(), RMAddr(i));
 #else
   UndefinedOpcode(i);
@@ -90,12 +94,8 @@ void BX_CPU_C::shutdown(void)
 
 void BX_CPU_C::HLT(bxInstruction_c *i)
 {
-  // hack to panic if HLT comes from BIOS
-  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value == 0xf000)
-    BX_PANIC(("HALT instruction encountered in the BIOS ROM"));
-
   if (!real_mode() && CPL!=0) {
-    BX_ERROR(("HLT: %s priveledge check failed, CPL=%d, generate #GP(0)",
+    BX_DEBUG(("HLT: %s priveledge check failed, CPL=%d, generate #GP(0)",
         cpu_mode_string(BX_CPU_THIS_PTR cpu_mode), CPL));
     exception(BX_GP_EXCEPTION, 0, 0);
     return;
@@ -131,11 +131,9 @@ void BX_CPU_C::CLTS(bxInstruction_c *i)
   if (!real_mode() && CPL!=0) {
     BX_ERROR(("CLTS: priveledge check failed, generate #GP(0)"));
     exception(BX_GP_EXCEPTION, 0, 0);
-    return;
   }
 
-  BX_CPU_THIS_PTR cr0.ts = 0;
-  BX_CPU_THIS_PTR cr0.val32 &= ~0x08;
+  BX_CPU_THIS_PTR cr0.set_TS(0);
 }
 
 void BX_CPU_C::INVD(bxInstruction_c *i)
@@ -143,12 +141,9 @@ void BX_CPU_C::INVD(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 4
   invalidate_prefetch_q();
 
-  // protected or v8086 mode
-  if (BX_CPU_THIS_PTR cr0.pe) {
-    if (CPL!=0) {
-      BX_ERROR(("INVD: priveledge check failed, generate #GP(0)"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("INVD: priveledge check failed, generate #GP(0)"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   BX_DEBUG(("INVD: Flush caches and TLB !"));
@@ -169,11 +164,9 @@ void BX_CPU_C::WBINVD(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 4
   invalidate_prefetch_q();
 
-  if (BX_CPU_THIS_PTR cr0.pe) {
-    if (CPL!=0) {
-      BX_ERROR(("WBINVD: priveledge check failed, generate #GP(0)"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("WBINVD: priveledge check failed, generate #GP(0)"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   BX_DEBUG(("WBINVD: Flush caches and TLB !"));
@@ -189,13 +182,28 @@ void BX_CPU_C::WBINVD(bxInstruction_c *i)
 #endif
 }
 
+void BX_CPU_C::CLFLUSH(bxInstruction_c *i)
+{
+  if (i->modC0()) {
+    return; // SFENCE instruction
+  }
+
+#if BX_SUPPORT_CLFLUSH
+  // check if we could access the memory
+  read_virtual_checks(&BX_CPU_THIS_PTR sregs[i->seg()], RMAddr(i), 1);
+#else
+  BX_INFO(("CLFLUSH: not supported, enable with SSE2"));
+  UndefinedOpcode(i);
+#endif
+}
+
 #if BX_CPU_LEVEL >= 3
 void BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 {
   Bit32u val_32;
 
-  if (v8086_mode()) {
-    BX_INFO(("MOV_DdRd: v8086 mode causes #GP(0)"));
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("MOV_DdRd: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -213,16 +221,7 @@ void BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
-  /* #GP(0) if CPL is not 0 */
-  if (protected_mode() && CPL!=0) {
-    BX_INFO(("MOV_DdRd: #GP(0) if CPL is not 0"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
   val_32 = BX_READ_32BIT_REG(i->rm());
-  if (bx_dbg.dreg)
-    BX_INFO(("MOV_DdRd: DR[%u]=%08xh unhandled",
-      (unsigned) i->nnn(), (unsigned) val_32));
 
   switch (i->nnn()) {
     case 0: // DR0
@@ -329,8 +328,8 @@ void BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 {
   Bit32u val_32;
 
-  if (v8086_mode()) {
-    BX_INFO(("MOV_RdDd: v8086 mode causes #GP(0)"));
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("MOV_RdDd: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -339,15 +338,6 @@ void BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
    */
   if (!i->modC0())
     BX_PANIC(("MOV_RdDd(): rm field not a register!"));
-
-  /* #GP(0) if CPL is not 0 */
-  if (protected_mode() && (CPL!=0)) {
-    BX_INFO(("MOV_RdDd: #GP(0) if CPL is not 0"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  if (bx_dbg.dreg)
-    BX_INFO(("MOV_RdDd: DR%u not implemented yet", i->nnn()));
 
   switch (i->nnn()) {
     case 0: // DR0
@@ -426,8 +416,6 @@ void BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
   }
 
   Bit64u val_64 = BX_READ_64BIT_REG(i->rm());
-  if (bx_dbg.dreg)
-    BX_INFO(("MOV_DqRq: DR[%u]=%08xh unhandled", i->nnn(), (unsigned) val_64));
 
   switch (i->nnn()) {
     case 0: // DR0
@@ -535,9 +523,6 @@ void BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  if (bx_dbg.dreg)
-    BX_INFO(("MOV_RqDq: DR%u not implemented yet", i->nnn()));
-
   switch (i->nnn()) {
     case 0: // DR0
       val_64 = BX_CPU_THIS_PTR dr0;
@@ -591,8 +576,8 @@ void BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
   // mov general register data to control register
   Bit32u val_32;
 
-  if (v8086_mode()) {
-    BX_INFO(("MOV_CdRd: v8086 mode causes #GP(0)"));
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("MOV_CdRd: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -609,12 +594,6 @@ void BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
     BX_PANIC(("MOV_CdRd(): rm field not a register!"));
 
   invalidate_prefetch_q();
-
-  /* #GP(0) if CPL is not 0 */
-  if (protected_mode() && CPL!=0) {
-    BX_INFO(("MOV_CdRd: #GP(0) if CPL is not 0"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
 
   val_32 = BX_READ_32BIT_REG(i->rm());
 
@@ -658,8 +637,8 @@ void BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
   // mov control register data to register
   Bit32u val_32;
 
-  if (v8086_mode()) {
-    BX_INFO(("MOV_RdCd: v8086 mode causes #GP(0)"));
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("MOV_RdCd: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -674,12 +653,6 @@ void BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
    */
   if (!i->modC0())
     BX_PANIC(("MOV_RdCd(): rm field not a register!"));
-
-  /* #GP(0) if CPL is not 0 */
-  if (protected_mode() && CPL!=0) {
-    BX_INFO(("MOV_RdCd: #GP(0) if CPL is not 0"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
 
   switch (i->nnn()) {
     case 0: // CR0 (MSW)
@@ -861,11 +834,9 @@ void BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
-  if (protected_mode() || v8086_mode()) {
-    if (CPL != 0) {
-      BX_INFO(("LMSW: CPL != 0, CPL=%u", (unsigned) CPL));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("LMSW: CPL!=0 not in real mode"));
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   if (i->modC0()) {
@@ -878,7 +849,7 @@ void BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
   // LMSW does not affect PG,CD,NW,AM,WP,NE,ET bits, and cannot clear PE
 
   // LMSW cannot clear PE
-  if (BX_CPU_THIS_PTR cr0.pe)
+  if (BX_CPU_THIS_PTR cr0.get_PE())
     msw |= 0x0001; // adjust PE bit to current value of 1
 
   msw &= 0x000f; // LMSW only affects last 4 flags
@@ -892,10 +863,10 @@ void BX_CPU_C::SMSW_Ew(bxInstruction_c *i)
 
 #if BX_CPU_LEVEL == 2
   msw = 0xfff0; /* 80286 init value */
-  msw |= (BX_CPU_THIS_PTR cr0.ts << 3) |
-         (BX_CPU_THIS_PTR cr0.em << 2) |
-         (BX_CPU_THIS_PTR cr0.mp << 1) |
-         (BX_CPU_THIS_PTR cr0.pe);
+  msw |= (BX_CPU_THIS_PTR cr0.get_TS() << 3) |
+         (BX_CPU_THIS_PTR cr0.get_EM() << 2) |
+         (BX_CPU_THIS_PTR cr0.get_MP() << 1) |
+         (BX_CPU_THIS_PTR cr0.get_PE());
 #else /* 386+ */
   msw = BX_CPU_THIS_PTR cr0.val32 & 0xffff;
 #endif
@@ -947,7 +918,7 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
 
   if (v8086_mode()) BX_PANIC(("proc_ctrl: LOADALL in v8086 mode unsupported"));
 
-  if (BX_CPU_THIS_PTR cr0.pe) 
+  if (BX_CPU_THIS_PTR cr0.get_PE()) 
   {
     BX_PANIC(("LOADALL not yet supported for protected mode"));
   }
@@ -955,12 +926,12 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
   BX_PANIC(("LOADALL: handle CR0.val32"));
   /* MSW */
   BX_CPU_THIS_PTR mem->readPhysicalPage(BX_CPU_THIS, 0x806, 2, &msw);
-  BX_CPU_THIS_PTR cr0.pe = (msw & 0x01); msw >>= 1;
-  BX_CPU_THIS_PTR cr0.mp = (msw & 0x01); msw >>= 1;
-  BX_CPU_THIS_PTR cr0.em = (msw & 0x01); msw >>= 1;
-  BX_CPU_THIS_PTR cr0.ts = (msw & 0x01);
+  BX_CPU_THIS_PTR cr0.set_PE(msw & 0x01); msw >>= 1;
+  BX_CPU_THIS_PTR cr0.set_MP(msw & 0x01); msw >>= 1;
+  BX_CPU_THIS_PTR cr0.set_EM(msw & 0x01); msw >>= 1;
+  BX_CPU_THIS_PTR cr0.set_TS(msw & 0x01);
 
-  if (BX_CPU_THIS_PTR cr0.pe || BX_CPU_THIS_PTR cr0.mp || BX_CPU_THIS_PTR cr0.em || BX_CPU_THIS_PTR cr0.ts)
+  if (BX_CPU_THIS_PTR cr0.get_PE() || BX_CPU_THIS_PTR cr0.get_MP() || BX_CPU_THIS_PTR cr0.get_EM() || BX_CPU_THIS_PTR cr0.get_TS())
     BX_PANIC(("LOADALL set PE, MP, EM or TS bits in MSW!"));
 
   /* TR */
@@ -980,13 +951,13 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
   BX_CPU_THIS_PTR tr.cache.segment     = (access & 0x10) >> 4;
   // don't allow busy bit in tr.cache.type, so bit 2 is masked away too.
   BX_CPU_THIS_PTR tr.cache.type        = (access & 0x0d);
-  BX_CPU_THIS_PTR tr.cache.u.tss.base  = (base_23_16 << 16) | base_15_0;
-  BX_CPU_THIS_PTR tr.cache.u.tss.limit = limit;
+  BX_CPU_THIS_PTR tr.cache.u.system.base  = (base_23_16 << 16) | base_15_0;
+  BX_CPU_THIS_PTR tr.cache.u.system.limit = limit;
 
   if ((BX_CPU_THIS_PTR tr.selector.value & 0xfffc) == 0) {
     BX_CPU_THIS_PTR tr.cache.valid = 0;
   }
-  if (BX_CPU_THIS_PTR tr.cache.u.tss.limit < 43 ||
+  if (BX_CPU_THIS_PTR tr.cache.u.system.limit < 43 ||
       BX_CPU_THIS_PTR tr.cache.type != BX_SYS_SEGMENT_AVAIL_286_TSS ||
       BX_CPU_THIS_PTR tr.cache.segment)
   {
@@ -998,8 +969,8 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR tr.selector.index    = 0;
     BX_CPU_THIS_PTR tr.selector.ti       = 0;
     BX_CPU_THIS_PTR tr.selector.rpl      = 0;
-    BX_CPU_THIS_PTR tr.cache.u.tss.base  = 0;
-    BX_CPU_THIS_PTR tr.cache.u.tss.limit = 0;
+    BX_CPU_THIS_PTR tr.cache.u.system.base  = 0;
+    BX_CPU_THIS_PTR tr.cache.u.system.limit = 0;
     BX_CPU_THIS_PTR tr.cache.p           = 0;
   }
 
@@ -1023,8 +994,8 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR ldtr.cache.p       = 0;
     BX_CPU_THIS_PTR ldtr.cache.segment = 0;
     BX_CPU_THIS_PTR ldtr.cache.type    = 0;
-    BX_CPU_THIS_PTR ldtr.cache.u.ldt.base = 0;
-    BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit = 0;
+    BX_CPU_THIS_PTR ldtr.cache.u.system.base = 0;
+    BX_CPU_THIS_PTR ldtr.cache.u.system.limit = 0;
     BX_CPU_THIS_PTR ldtr.selector.value = 0;
     BX_CPU_THIS_PTR ldtr.selector.index = 0;
     BX_CPU_THIS_PTR ldtr.selector.ti    = 0;
@@ -1039,8 +1010,8 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR ldtr.cache.dpl        = (access >> 5) & 0x03;
     BX_CPU_THIS_PTR ldtr.cache.segment    = (access >> 4) & 0x01;
     BX_CPU_THIS_PTR ldtr.cache.type       = (access & 0x0f);
-    BX_CPU_THIS_PTR ldtr.cache.u.ldt.base = (base_23_16 << 16) | base_15_0;
-    BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit = limit;
+    BX_CPU_THIS_PTR ldtr.cache.u.system.base = (base_23_16 << 16) | base_15_0;
+    BX_CPU_THIS_PTR ldtr.cache.u.system.limit = limit;
 
     if (access == 0) {
       BX_PANIC(("loadall: LDTR case access byte=0."));
@@ -1239,8 +1210,8 @@ void BX_CPU_C::LOADALL(bxInstruction_c *i)
 void BX_CPU_C::handleCpuModeChange(void)
 {
 #if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR msr.lma) {
-    if (! BX_CPU_THIS_PTR cr0.pe) {
+  if (BX_CPU_THIS_PTR efer.lma) {
+    if (! BX_CPU_THIS_PTR cr0.get_PE()) {
       BX_PANIC(("change_cpu_mode: EFER.LMA is set when CR0.PE=0 !"));
     }
     if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l) {
@@ -1255,7 +1226,7 @@ void BX_CPU_C::handleCpuModeChange(void)
   else 
 #endif
   {
-    if (BX_CPU_THIS_PTR cr0.pe) {
+    if (BX_CPU_THIS_PTR cr0.get_PE()) {
       if (BX_CPU_THIS_PTR get_VM()) {
         BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;
         BX_DEBUG(("VM8086 Mode Activated"));
@@ -1280,12 +1251,12 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
   bx_bool pg = (val_32 >> 31) & 0x01;
 
   if (pg && !pe) {
-    BX_INFO(("SetCR0: GP(0) when attempt to set CR0.PG with CR0.PE cleared !"));
+    BX_ERROR(("SetCR0: GP(0) when attempt to set CR0.PG with CR0.PE cleared !"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   if (nw && !cd) {
-    BX_INFO(("SetCR0: GP(0) when attempt to set CR0.NW with CR0.CD cleared !"));
+    BX_ERROR(("SetCR0: GP(0) when attempt to set CR0.NW with CR0.CD cleared !"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -1293,72 +1264,53 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
 
   // from either MOV_CdRd() or debug functions
   // protection checks made already or forcing from debug
-  Bit32u oldCR0 = BX_CPU_THIS_PTR cr0.val32, newCR0;
+  Bit32u oldCR0 = BX_CPU_THIS_PTR cr0.val32;
 
-  bx_bool prev_pe = BX_CPU_THIS_PTR cr0.pe;
 #if BX_SUPPORT_X86_64
-  bx_bool prev_pg = BX_CPU_THIS_PTR cr0.pg;
-#endif
-
-  BX_CPU_THIS_PTR cr0.pe = pe;
-  BX_CPU_THIS_PTR cr0.mp = (val_32 >> 1) & 0x01;
-  BX_CPU_THIS_PTR cr0.em = (val_32 >> 2) & 0x01;
-  BX_CPU_THIS_PTR cr0.ts = (val_32 >> 3) & 0x01;
-  // cr0.et is hardwired to 1
-#if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR cr0.ne = (val_32 >> 5)  & 0x01;
-  BX_CPU_THIS_PTR cr0.wp = (val_32 >> 16) & 0x01;
-  BX_CPU_THIS_PTR cr0.am = (val_32 >> 18) & 0x01;
-  BX_CPU_THIS_PTR cr0.nw = nw;
-  BX_CPU_THIS_PTR cr0.cd = cd;
-#endif
-  BX_CPU_THIS_PTR cr0.pg = pg;
-
-#if BX_CPU_LEVEL >= 4
-  if (BX_CPU_THIS_PTR cr0.am) {
-    BX_DEBUG(("WARNING: Alignment check enabled but not implemented !"));
-  }
+  bx_bool prev_pg = BX_CPU_THIS_PTR cr0.get_PG();
 #endif
 
   // handle reserved bits behaviour
 #if BX_CPU_LEVEL == 3
-  newCR0 = val_32 | 0x7ffffff0;
+  val_32 = val_32 | 0x7ffffff0;
 #elif BX_CPU_LEVEL == 4
-  newCR0 = (val_32 | 0x00000010) & 0xe005003f;
+  val_32 = (val_32 | 0x00000010) & 0xe005003f;
 #elif BX_CPU_LEVEL == 5
-  newCR0 = val_32 | 0x00000010;
+  val_32 = val_32 | 0x00000010;
 #elif BX_CPU_LEVEL == 6
-  newCR0 = (val_32 | 0x00000010) & 0xe005003f;
+  val_32 = (val_32 | 0x00000010) & 0xe005003f;
 #else
-#error "MOV_CdRd: implement reserved bits behaviour for this CPU_LEVEL"
+#error "SetCR0: implement reserved bits behaviour for this CPU_LEVEL"
 #endif
-  BX_CPU_THIS_PTR cr0.val32 = newCR0;
+  BX_CPU_THIS_PTR cr0.val32 = val_32;
 
-  if (prev_pe==0 && BX_CPU_THIS_PTR cr0.pe) {
-    BX_DEBUG(("Enter Protected Mode"));
-    BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_PROTECTED;
-  }
-  else if (prev_pe==1 && BX_CPU_THIS_PTR cr0.pe==0) {
-    BX_DEBUG(("Enter Real Mode"));
-    BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_REAL;
-  }
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  if (BX_CPU_THIS_PTR cr0.get_AM() && BX_CPU_THIS_PTR get_AC())
+    BX_CPU_THIS_PTR alignment_check = 1;
+  else 
+    BX_CPU_THIS_PTR alignment_check = 0;
+#endif
 
 #if BX_SUPPORT_X86_64
-  if (prev_pg==0 && BX_CPU_THIS_PTR cr0.pg) {
-    if (BX_CPU_THIS_PTR msr.lme) {
+  if (prev_pg==0 && BX_CPU_THIS_PTR cr0.get_PG()) {
+    if (BX_CPU_THIS_PTR efer.lme) {
       if (!BX_CPU_THIS_PTR cr4.get_PAE()) {
-        BX_ERROR(("SetCR0: attempt to enter x86-64 LONG mode without enabling CR4.PAE !"));
+        BX_ERROR(("SetCR0: attempt to enter x86-64 long mode without enabling CR4.PAE !"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
-      BX_CPU_THIS_PTR msr.lma = 1;
+      if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l) {
+        BX_ERROR(("SetCR0: attempt to enter x86-64 long mode with CS.L !"));
+        exception(BX_GP_EXCEPTION, 0, 0);
+      }
+      BX_CPU_THIS_PTR efer.lma = 1;
     }
   }
-  else if (prev_pg==1 && BX_CPU_THIS_PTR cr0.pg==0) {
-    if (BX_CPU_THIS_PTR msr.lma) {
+  else if (prev_pg==1 && ! BX_CPU_THIS_PTR cr0.get_PG()) {
+    if (BX_CPU_THIS_PTR efer.lma) {
       if (BX_CPU_THIS_PTR dword.rip_upper != 0) {
         BX_PANIC(("SetCR0: attempt to leave x86-64 LONG mode with RIP upper != 0 !!!"));
       }
-      BX_CPU_THIS_PTR msr.lma = 0;
+      BX_CPU_THIS_PTR efer.lma = 0;
     }
   }
 #endif  // #if BX_SUPPORT_X86_64
@@ -1367,7 +1319,7 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
 
   // Give the paging unit a chance to look for changes in bits
   // it cares about, like {PG,PE}, so it can flush cache entries etc.
-  pagingCR0Changed(oldCR0, newCR0);
+  pagingCR0Changed(oldCR0, val_32);
 }
 
 #if BX_CPU_LEVEL >= 4
@@ -1428,18 +1380,18 @@ bx_bool BX_CPU_C::SetCR4(Bit32u val_32)
 
 #if BX_SUPPORT_X86_64
   // need to GP(0) if LMA=1 and PAE=1->0
-  if ((BX_CPU_THIS_PTR msr.lma)
+  if ((BX_CPU_THIS_PTR efer.lma)
       && (!(val_32 >> 5) & 1)
       && (BX_CPU_THIS_PTR cr4.get_PAE())) 
   {
-    BX_ERROR(("SetCR4: attempt to change PAE when LMA=1"));
+    BX_ERROR(("SetCR4: attempt to change PAE when EFER.LMA=1"));
     return 0;
   }
 #endif
 
   // Need to GPF if trying to set undefined bits.
   if (val_32 & ~allowMask) {
-    BX_INFO(("#GP(0): SetCR4: Write of 0x%08x not supported (allowMask=0x%x)", val_32, allowMask));
+    BX_ERROR(("#GP(0): SetCR4: Write of 0x%08x not supported (allowMask=0x%x)", val_32, allowMask));
     return 0;
   }
 
@@ -1540,15 +1492,9 @@ void BX_CPU_C::RDTSCP(bxInstruction_c *i)
 void BX_CPU_C::RDMSR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
-  invalidate_prefetch_q();
 
-  if (v8086_mode()) {
-    BX_INFO(("RDMSR: Invalid in virtual 8086 mode"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  if (protected_mode() && CPL != 0) {
-    BX_INFO(("RDMSR: CPL != 0"));
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("RDMSR: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -1676,7 +1622,7 @@ do_exception:
   exception(BX_GP_EXCEPTION, 0, 0);
 
 #else  /* BX_CPU_LEVEL >= 5 */
-  BX_INFO(("RDMSR: Pentium CPU required"));
+  BX_INFO(("RDMSR: Pentium CPU required, use --enable-cpu-level=5"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1686,13 +1632,8 @@ void BX_CPU_C::WRMSR(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 5
   invalidate_prefetch_q();
 
-  if (v8086_mode()) {
-    BX_INFO(("WRMSR: Invalid in virtual 8086 mode"));
-    exception(BX_GP_EXCEPTION, 0, 0);
-  }
-
-  if (protected_mode() && CPL != 0) {
-    BX_INFO(("WDMSR: CPL != 0"));
+  if (!real_mode() && CPL!=0) {
+    BX_ERROR(("WRMSR: CPL!=0 not in real mode"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -1774,16 +1715,16 @@ void BX_CPU_C::WRMSR(bxInstruction_c *i)
     case BX_MSR_EFER:
       // GPF #0 if lme 0->1 and cr0.pg = 1
       // GPF #0 if lme 1->0 and cr0.pg = 1
-      if ((BX_CPU_THIS_PTR msr.lme != ((EAX >> 8) & 1)) &&
-          (BX_CPU_THIS_PTR cr0.pg == 1))
+      if ((BX_CPU_THIS_PTR efer.lme != ((EAX >> 8) & 1)) &&
+           BX_CPU_THIS_PTR cr0.get_PG())
       {
         BX_ERROR(("WRMSR: attempt to change LME when CR0.PG=1"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
-      BX_CPU_THIS_PTR msr.sce   = (EAX >> 0)  & 1;
-      BX_CPU_THIS_PTR msr.lme   = (EAX >> 8)  & 1;
-      BX_CPU_THIS_PTR msr.nxe   = (EAX >> 11) & 1;
-      BX_CPU_THIS_PTR msr.ffxsr = (EAX >> 14) & 1;
+      BX_CPU_THIS_PTR efer.sce   = (EAX >> 0)  & 1;
+      BX_CPU_THIS_PTR efer.lme   = (EAX >> 8)  & 1;
+      BX_CPU_THIS_PTR efer.nxe   = (EAX >> 11) & 1;
+      BX_CPU_THIS_PTR efer.ffxsr = (EAX >> 14) & 1;
       return;
 
     case BX_MSR_STAR:
@@ -1830,7 +1771,7 @@ do_exception:
   exception(BX_GP_EXCEPTION, 0, 0);
 
 #else  /* BX_CPU_LEVEL >= 5 */
-  BX_INFO(("RDMSR: Pentium CPU required"));
+  BX_INFO(("WRMSR: Pentium CPU required, use --enable-cpu-level=5"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1907,7 +1848,7 @@ void BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
   if (CPL != 0) {
-    BX_INFO(("sysexit at non-zero cpl %u !", CPL));
+    BX_ERROR(("sysexit at non-zero cpl %u !", CPL));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
@@ -2029,13 +1970,13 @@ SYSCALL_LEGACY_MODE:
 
   BX_DEBUG(("Execute SYSCALL instruction"));
 
-  if (!BX_CPU_THIS_PTR msr.sce) {
+  if (!BX_CPU_THIS_PTR efer.sce) {
     exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   invalidate_prefetch_q();
 
-  if (BX_CPU_THIS_PTR msr.lma)
+  if (BX_CPU_THIS_PTR efer.lma)
   {
     RCX = RIP;
     R11 = read_eflags() & ~(EFlagsRFMask);
@@ -2200,7 +2141,7 @@ SYSRET_NON_64BIT_MODE:
 
   BX_DEBUG(("Execute SYSRET instruction"));
 
-  if (!BX_CPU_THIS_PTR msr.sce) {
+  if (!BX_CPU_THIS_PTR efer.sce) {
     exception(BX_UD_EXCEPTION, 0, 0);
   }
 
@@ -2314,6 +2255,8 @@ SYSRET_NON_64BIT_MODE:
 void BX_CPU_C::SWAPGS(bxInstruction_c *i)
 {
   Bit64u temp_GS_base;
+
+  BX_ASSERT(protected_mode());
 
   if(CPL != 0)
     exception(BX_GP_EXCEPTION, 0, 0);

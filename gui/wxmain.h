@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h,v 1.56 2006/06/06 22:11:09 sshwarts Exp $
+// $Id: wxmain.h,v 1.58 2006/09/03 16:55:35 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 // This file defines variables and classes that the wxWidgets .cc files 
 // share.  It should be included only by wx.cc and wxmain.cc.  
@@ -32,7 +32,6 @@ enum
   ID_Config_New,
   ID_Config_Read,
   ID_Config_Save,
-  ID_State_Save,
   ID_State_Restore,
   ID_Edit_FD_0,
   ID_Edit_FD_1,
@@ -169,7 +168,6 @@ public:
   void OnConfigNew(wxCommandEvent& event);
   void OnConfigRead(wxCommandEvent& event);
   void OnConfigSave(wxCommandEvent& event);
-  void OnStateSave(wxCommandEvent& event);
   void OnStateRestore(wxCommandEvent& event);
   void OnQuit(wxCommandEvent& event);
   void OnAbout(wxCommandEvent& event);
@@ -221,6 +219,7 @@ private:
   wxMenu *menuDebug;
   wxMenu *menuLog;
   wxMenu *menuHelp;
+  wxToolBar *bxToolBar;
   ParamDialog *showCpu, *showKbd;
 #if BX_DEBUGGER
   DebugLogDialog *showDebugLog;

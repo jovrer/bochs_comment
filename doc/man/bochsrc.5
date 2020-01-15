@@ -1,5 +1,5 @@
 .\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
-.TH bochsrc 5 "22 Jun 2006" "bochsrc" "The Bochs Project"
+.TH bochsrc 5 "15 Sep 2007" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -348,9 +348,9 @@ Examples:
 
 .TP
 .I "boot:"
-This defines the boot sequence. Now you can specify up to 3 boot drives.
-You can either boot from 'floppy', 'disk' or 'cdrom'
-(legacy 'a' and 'c' are also supported)
+This defines the boot sequence. Now you can specify up to 3 boot drives,
+which can be 'floppy', 'disk', 'cdrom' or 'network' (boot ROM).
+Legacy 'a' and 'c' are also supported.
 
 Example:
   boot: cdrom, floppy, disk
@@ -585,7 +585,7 @@ Example:
 .TP
 .I "ips:"
 Emulated Instructions Per Second.  This option is deprecated.
-Use the CPU paramter IPS instead (cpu: ips=N).
+Use the CPU parameter IPS instead (cpu: ips=N).
 
 .TP
 .I "clock:"
@@ -726,13 +726,13 @@ Bochs execution. The network interface name is supplied to the script
 as first parameter
 
 Examples:
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xlo
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
-  ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
-  ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xlo
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
+  ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
+  ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
 
 .TP
 .I "keyboard_mapping:"
@@ -755,7 +755,7 @@ Example:
 .TP
 .I "user_shortcut:"
 This defines the keyboard shortcut to be sent when you press the "user"
-button in the headerbar. The shortcut string is a combination of maximum
+button in the header bar. The shortcut string is a combination of maximum
 3 key names (listed below) separated with a '-' character. The old-style
 syntax (without the '-') still works for the key combinations supported
 in Bochs 2.2.1.
@@ -764,7 +764,7 @@ Valid key names:
 
 "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
 "f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
-"right", "shift", "space", "tab", "up", and "win".
+"right", "shift", "space", "tab", "up", "win" and "print".
 
 Example:
   user_shortcut: keys=ctrl-alt-del

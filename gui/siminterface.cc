@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc,v 1.164 2006/06/16 09:10:26 vruppert Exp $
+// $Id: siminterface.cc,v 1.175 2007/08/01 17:09:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // See siminterface.h for description of the siminterface concept.
@@ -128,8 +128,9 @@ public:
   virtual int begin_simulation (int argc, char *argv[]);
   virtual void set_sim_thread_func(is_sim_thread_func_t func) {}
   virtual bx_bool is_sim_thread();
-  bx_bool wxsel;
-  virtual bx_bool is_wx_selected() { return wxsel; }
+  bx_bool debug_gui;
+  virtual void set_debug_gui(bx_bool val) { debug_gui = val; }
+  virtual bx_bool has_debug_gui() { return debug_gui; }
   // provide interface to bx_gui->set_display_mode() method for config
   // interfaces to use.
   virtual void set_display_mode(disp_mode_t newmode) {
@@ -144,6 +145,7 @@ public:
   virtual Bit32s save_user_options(FILE *fp);
 #if BX_SUPPORT_SAVE_RESTORE
   // save/restore support
+  virtual void init_save_restore();
   virtual bx_bool save_state(const char *checkpoint_path);
   virtual bx_bool restore_config();
   virtual bx_bool restore_logopts();
@@ -274,16 +276,6 @@ void bx_init_siminterface()
       "bochs",
       "list of top level bochs parameters", 
       30);
-#if BX_SUPPORT_SAVE_RESTORE
-    bx_list_c *list = new bx_list_c(root_param,
-        "save_restore",
-        "subtree for save/restore", 
-        30);
-    new bx_list_c(list,
-        "cpu",
-        "CPU State", 
-        BX_MAX_SMP_THREADS_SUPPORTED);
-#endif
   }
 }
 
@@ -294,7 +286,7 @@ bx_real_sim_c::bx_real_sim_c()
   ci_callback = NULL;
   ci_callback_data = NULL;
   is_sim_thread_func = NULL;
-  wxsel = 0;
+  debug_gui = 0;
   
   enabled = 1;
   init_done = 0;
@@ -358,18 +350,13 @@ int bx_real_sim_c::get_max_log_level()
 void bx_real_sim_c::quit_sim(int code) {
   BX_INFO(("quit_sim called with exit code %d", code));
   exit_code = code;
+  io->exit_log();
   // use longjmp to quit cleanly, no matter where in the stack we are.
   if (quit_context != NULL) {
     longjmp(*quit_context, 1);
     BX_PANIC(("in bx_real_sim_c::quit_sim, longjmp should never return"));
-  }
-  if (SIM->is_wx_selected()) {
-    // in wxWidgets, the whole simulator is running in a separate thread.
-    // our only job is to end the thread as soon as possible, NOT to shut
-    // down the whole application with an exit.
-    bx_stop_simulation();
   } else {
-    // just a single thread.  Use exit() to stop the application.
+    // use exit() to stop the application.
     if (!code)
       BX_PANIC(("Quit simulation command"));
     ::exit(exit_code);
@@ -459,34 +446,22 @@ int bx_real_sim_c::get_cdrom_options(int level, bx_list_c **out, int *where)
 }
 
 char *bochs_start_names[] = { "quick", "load", "edit", "run" };
-int n_bochs_start_names = 3;
 
 char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", "auto", NULL };
 int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8, -1 };
-int n_floppy_type_names = 10;
-
 char *floppy_status_names[] = { "ejected", "inserted", NULL };
-int n_floppy_status_names = 2;
-char *bochs_bootdisk_names[] = { "none", "floppy", "disk","cdrom", NULL };
-int n_bochs_bootdisk_names = 4;
+
+char *bochs_bootdisk_names[] = { "none", "floppy", "disk","cdrom", "network", NULL };
 char *loader_os_names[] = { "none", "linux", "nullkernel", NULL };
-int n_loader_os_names = 3;
 char *keyboard_type_names[] = { "xt", "at", "mf", NULL };
-int n_keyboard_type_names = 3;
 
 char *atadevice_type_names[] = { "disk", "cdrom", NULL };
-int n_atadevice_type_names = 2;
-//char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "undoable", "growing", "volatile", "z-undoable", "z-volatile", NULL };
-char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "undoable", "growing", "volatile", NULL };
-int n_atadevice_mode_names = 9;
+//char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "vmware4", "undoable", "growing", "volatile", "z-undoable", "z-volatile", NULL };
+char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "vmware4", "undoable", "growing", "volatile", NULL };
 char *atadevice_status_names[] = { "ejected", "inserted", NULL };
-int n_atadevice_status_names = 2;
 char *atadevice_biosdetect_names[] = { "none", "auto", "cmos", NULL };
-int n_atadevice_biosdetect_names = 3;
 char *atadevice_translation_names[] = { "none", "lba", "large", "rechs", "auto", NULL };
-int n_atadevice_translation_names = 5;
 char *clock_sync_names[] = { "none", "realtime", "slowdown", "both", NULL };
-int clock_sync_n_names=4;
 
 
 void bx_real_sim_c::set_notify_callback(bxevent_handler func, void *arg)
@@ -596,8 +571,12 @@ void bx_real_sim_c::periodic()
   sim_to_ci_event (&tick);
   if (tick.retcode < 0) {
     BX_INFO(("Bochs thread has been asked to quit."));
+#if !BX_DEBUGGER
     bx_atexit();
     quit_sim(0);
+#else
+    bx_dbg_exit(0);
+#endif
   }
   static int refresh_counter = 0;
   if (++refresh_counter == 50) {
@@ -607,13 +586,6 @@ void bx_real_sim_c::periodic()
     refresh_ci();
     refresh_counter = 0;
   }
-#if 0
-  // watch for memory leaks.  Allocate a small block of memory, print the
-  // pointer that is returned, then free.
-  BxEvent *memcheck = new BxEvent ();
-  BX_INFO(("memory allocation at %p", memcheck));
-  delete memcheck;
-#endif
 }
 
 // create a disk image file called filename, size=512 bytes * sectors.
@@ -675,11 +647,11 @@ int bx_real_sim_c::create_disk_image(
 }
 
 void bx_real_sim_c::refresh_ci() {
-  if (SIM->is_wx_selected()) {
+  if (SIM->has_debug_gui()) {
     // presently, only wxWidgets interface uses these events
     // It's an async event, so allocate a pointer and send it.
     // The event will be freed by the recipient.
-    BxEvent *event = new BxEvent ();
+    BxEvent *event = new BxEvent();
     event->type = BX_ASYNC_EVT_REFRESH;
     sim_to_ci_event(event);
   }
@@ -725,12 +697,11 @@ void bx_real_sim_c::debug_interpret_cmd(char *cmd)
 
 char *bx_real_sim_c::debug_get_next_command()
 {
-  fprintf(stderr, "begin debug_get_next_command\n");
   BxEvent event;
   event.type = BX_SYNC_EVT_GET_DBG_COMMAND;
-  BX_INFO(("asking for next debug command"));
+  BX_DEBUG(("asking for next debug command"));
   sim_to_ci_event (&event);
-  BX_INFO(("received next debug command: '%s'", event.u.debugcmd.command));
+  BX_DEBUG(("received next debug command: '%s'", event.u.debugcmd.command));
   if (event.retcode >= 0)
     return event.u.debugcmd.command;
   return NULL;
@@ -738,12 +709,12 @@ char *bx_real_sim_c::debug_get_next_command()
 
 void bx_real_sim_c::debug_puts(const char *text)
 {
-  if (SIM->is_wx_selected()) {
+  if (SIM->has_debug_gui()) {
     // send message to the wxWidgets debugger
     BxEvent *event = new BxEvent();
     event->type = BX_ASYNC_EVT_DBG_MSG;
     event->u.logmsg.msg = text;
-    sim_to_ci_event (event);
+    sim_to_ci_event(event);
     // the event will be freed by the recipient
   } else {
     // text mode debugger: just write to console
@@ -776,9 +747,9 @@ int bx_real_sim_c::configuration_interface(const char *ignore, ci_command_t comm
     return -1;
   }
   if (!strcmp(name, "wx")) 
-    wxsel = 1;
+    debug_gui = 1;
   else
-    wxsel = 0;
+    debug_gui = 0;
   // enter configuration mode, just while running the configuration interface
   set_display_mode(DISP_MODE_CONFIG);
   int retval = (*ci_callback)(ci_callback_data, command);
@@ -868,6 +839,24 @@ Bit32s bx_real_sim_c::save_user_options(FILE *fp)
 }
 
 #if BX_SUPPORT_SAVE_RESTORE
+void bx_real_sim_c::init_save_restore()
+{
+  bx_list_c *list;
+
+  if ((list = get_sr_root()) != NULL) {
+    list->clear();
+  } else {
+    list = new bx_list_c(root_param,
+      "save_restore",
+      "subtree for save/restore", 
+      30);
+  }
+  new bx_list_c(list,
+    "cpu",
+    "CPU State", 
+    BX_MAX_SMP_THREADS_SUPPORTED);
+}
+
 bx_bool bx_real_sim_c::save_state(const char *checkpoint_path)
 {
   char sr_file[BX_PATHNAME_LEN];
@@ -1972,7 +1961,12 @@ bx_list_c::bx_list_c(bx_param_c *parent, const char *name, char *title, bx_param
 
 bx_list_c::~bx_list_c()
 {
-  if (list != NULL) delete [] list;
+  if (list != NULL) {
+    for (int i=0; i<this->size; i++) {
+      delete list[i];
+    }
+    delete [] list;
+  }
   if (title != NULL) delete title;
   if (options != NULL) delete options;
   if (choice != NULL) delete choice;
@@ -2052,4 +2046,15 @@ void bx_list_c::reset()
   for (i=0; i<imax; i++) {
     get(i)->reset();
   }
+}
+
+void bx_list_c::clear()
+{
+  int i, imax = get_size();
+  bx_param_c *param;
+  for (i=0; i<imax; i++) {
+    param = get(i);
+    delete param;
+  }
+  this->size = 0;
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h,v 1.303 2006/08/25 19:56:03 sshwarts Exp $
+// $Id: cpu.h,v 1.325 2007/09/10 20:47:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -87,6 +87,15 @@
 #define BX_64BIT_REG_RBP 5
 #define BX_64BIT_REG_RSI 6
 #define BX_64BIT_REG_RDI 7
+
+#define BX_64BIT_REG_R8  8
+#define BX_64BIT_REG_R9  9
+#define BX_64BIT_REG_R10 10
+#define BX_64BIT_REG_R11 11
+#define BX_64BIT_REG_R12 12
+#define BX_64BIT_REG_R13 13
+#define BX_64BIT_REG_R14 14
+#define BX_64BIT_REG_R15 15
 
 #if defined(NEED_CPU_REG_SHORTCUTS)
 
@@ -185,9 +194,11 @@
   BX_CPU_THIS_PTR gen_reg[index].word.rx = val; \
 }
 
+/*
 #define BX_WRITE_32BIT_REG(index, val) {\
   BX_CPU_THIS_PTR gen_reg[index].dword.erx = val; \
 }
+*/
 
 #if BX_SUPPORT_X86_64
 
@@ -320,10 +331,8 @@
 
 const char* cpu_mode_string(unsigned cpu_mode);
 
-#define BX_CANONICAL_BITS   (48)
-
 #if BX_SUPPORT_X86_64
-#define IsCanonical(offset) ((Bit64u)((((Bit64s)(offset)) >> (BX_CANONICAL_BITS-1)) + 1) < 2)
+#define IsCanonical(offset) ((Bit64u)((((Bit64s)(offset)) >> (BX_LIN_ADDRESS_WIDTH-1)) + 1) < 2)
 #else
 #define IsCanonical(offset) (0)
 #endif
@@ -331,11 +340,9 @@ const char* cpu_mode_string(unsigned cpu_mode);
 #if BX_SUPPORT_X86_64
 #define Is64BitMode()       (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
 #define StackAddrSize64()   (Is64BitMode())
-#define IsLongMode()        (BX_CPU_THIS_PTR msr.lma)
 #else
 #define Is64BitMode()       (0)
 #define StackAddrSize64()   (0)
-#define IsLongMode()        (0)
 #endif
 
 #if BX_SUPPORT_APIC
@@ -422,6 +429,27 @@ typedef struct {
       (BX_CPU_THIS_PTR eflags.val32&~(1<<bitnum))|((!!val)<<bitnum);  \
   }
 
+#if BX_SUPPORT_ALIGNMENT_CHECK
+
+#define DECLARE_EFLAG_ACCESSOR_AC(bitnum)                             \
+  BX_CPP_INLINE void    clear_AC ();                                  \
+  BX_CPP_INLINE Bit32u  get_AC();                                     \
+  BX_CPP_INLINE bx_bool getB_AC();                                    \
+
+#define IMPLEMENT_EFLAG_ACCESSOR_AC(bitnum)                           \
+  BX_CPP_INLINE void BX_CPU_C::clear_AC () {                          \
+    BX_CPU_THIS_PTR eflags.val32 &= ~(1<<bitnum);                     \
+    BX_CPU_THIS_PTR alignment_check = 0;                              \
+  }                                                                   \
+  BX_CPP_INLINE Bit32u  BX_CPU_C::get_AC() {                          \
+    return BX_CPU_THIS_PTR eflags.val32 & (1 << bitnum);              \
+  }                                                                   \
+  BX_CPP_INLINE Bit32u  BX_CPU_C::getB_AC() {                         \
+    return 1 & (BX_CPU_THIS_PTR eflags.val32 >> bitnum);              \
+  }
+
+#endif
+
 #define DECLARE_EFLAG_ACCESSOR_VM(bitnum)                             \
   BX_CPP_INLINE void    assert_VM();                                  \
   BX_CPP_INLINE void    clear_VM();                                   \
@@ -443,16 +471,16 @@ typedef struct {
     set_VM(0);                                                        \
   }                                                                   \
   BX_CPP_INLINE void BX_CPU_C::set_VM(Bit32u val) {                   \
-    if (IsLongMode()) return;                                         \
+    if (long_mode()) return;                                          \
     if (val) {                                                        \
        BX_CPU_THIS_PTR eflags.val32 |= (1<<bitnum);                   \
        BX_CPU_THIS_PTR eflags.VM_cached = 1;                          \
-       if (BX_CPU_THIS_PTR cr0.pe)                                    \
+       if (BX_CPU_THIS_PTR cr0.get_PE())                              \
          BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_V8086;               \
     } else {                                                          \
        BX_CPU_THIS_PTR eflags.val32 &= ~(1<<bitnum);                  \
        BX_CPU_THIS_PTR eflags.VM_cached = 0;                          \
-       if (BX_CPU_THIS_PTR cr0.pe)                                    \
+       if (BX_CPU_THIS_PTR cr0.get_PE())                              \
          BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_PROTECTED;           \
     }                                                                 \
   }
@@ -501,85 +529,6 @@ typedef struct {
 
 } bx_flags_reg_t;
 
-#if BX_CPU_LEVEL >= 2
-typedef struct {
-  Bit32u  val32; // 32bit value of register
-
-  // bitfields broken out for efficient access
-#if BX_CPU_LEVEL >= 3
-  bx_bool pg; // paging
-#endif
-
-// CR0 notes:
-//   Each x86 level has its own quirks regarding how it handles
-//   reserved bits.  I used DOS DEBUG.EXE in real mode on the
-//   following processors, tried to clear bits 1..30, then tried
-//   to set bits 1..30, to see how these bits are handled.
-//   I found the following:
-//
-//   Processor    try to clear bits 1..30    try to set bits 1..30
-//   386          7FFFFFF0                   7FFFFFFE
-//   486DX2       00000010                   6005003E
-//   Pentium      00000010                   7FFFFFFE
-//   Pentium-II   00000010                   6005003E
-//
-// My assumptions:
-//   All processors: bit 4 is hardwired to 1 (not true on all clones)
-//   386: bits 5..30 of CR0 are also hardwired to 1
-//   Pentium: reserved bits retain value set using mov cr0, reg32
-//   486DX2/Pentium-II: reserved bits are hardwired to 0
-
-#if BX_CPU_LEVEL >= 4
-  bx_bool cd; // cache disable
-  bx_bool nw; // no write-through
-  bx_bool am; // alignment mask
-  bx_bool wp; // write-protect
-  bx_bool ne; // numerics exception
-#endif
-
-  bx_bool ts; // task switched
-  bx_bool em; // emulate math coprocessor
-  bx_bool mp; // monitor coprocessor
-  bx_bool pe; // protected mode enable
-} bx_cr0_t;
-#endif
-
-#if BX_CPU_LEVEL >= 4
-typedef struct {
-  Bit32u  registerValue; // 32bit value of register
-
-  // Accessors for all cr4 bitfields.
-#define IMPLEMENT_CR4_ACCESSORS(name,bitnum)                                 \
-  BX_CPP_INLINE bx_bool get_##name () {                                      \
-    return 1 & (registerValue >> bitnum);                                    \
-  }                                                                          \
-  BX_CPP_INLINE void set_##name (Bit8u val) {                                \
-    registerValue = (registerValue&~(1<<bitnum)) | (val ? (1<<bitnum) : 0);  \
-  }
-#if BX_SUPPORT_VME
-  IMPLEMENT_CR4_ACCESSORS(VME, 0);
-  IMPLEMENT_CR4_ACCESSORS(PVI, 1);
-#endif
-  IMPLEMENT_CR4_ACCESSORS(TSD, 2);
-  IMPLEMENT_CR4_ACCESSORS(DE,  3);
-  IMPLEMENT_CR4_ACCESSORS(PSE, 4);
-  IMPLEMENT_CR4_ACCESSORS(PAE, 5);
-  IMPLEMENT_CR4_ACCESSORS(MCE, 6);
-  IMPLEMENT_CR4_ACCESSORS(PGE, 7);
-  IMPLEMENT_CR4_ACCESSORS(PCE, 8);
-  IMPLEMENT_CR4_ACCESSORS(OSFXSR, 9);
-  IMPLEMENT_CR4_ACCESSORS(OSXMMEXCPT, 10);
-  BX_CPP_INLINE Bit32u  getRegister() { return registerValue; }
-  BX_CPP_INLINE void    setRegister(Bit32u r) { registerValue = r; }
-} bx_cr4_t;
-#endif  // #if BX_CPU_LEVEL >= 4
-
-#if BX_SUPPORT_VME
-  #define CR4_VME_ENABLED (BX_CPU_THIS_PTR cr4.get_VME())
-#else
-  #define CR4_VME_ENABLED (0)
-#endif
-
 #if BX_CPU_LEVEL >= 5
 typedef struct
 {
@@ -588,13 +537,6 @@ typedef struct
 #endif
 
 #if BX_SUPPORT_X86_64
-  // x86-64 EFER bits
-  bx_bool sce;		// system call extensions
-  bx_bool lme;		// long mode enable
-  bx_bool lma;		// long mode active
-  bx_bool nxe;		// no-execute enable
-  bx_bool ffxsr;	// fast FXSAVE/FXRSTOR
-
   Bit64u star;
   Bit64u lstar;
   Bit64u cstar;
@@ -622,6 +564,18 @@ typedef struct
 } bx_regs_msr_t;
 #endif
 
+#if BX_SUPPORT_X86_64
+typedef struct bx_efer_t {
+  // x86-64 EFER bits
+  bx_bool sce;		// system call extensions
+  bx_bool lme;		// long mode enable
+  bx_bool lma;		// long mode active
+  bx_bool nxe;		// no-execute enable
+  bx_bool ffxsr;	// fast FXSAVE/FXRSTOR
+} bx_efer_t;
+#endif
+
+#include "crregs.h"
 #include "descriptor.h"
 
 // <TAG-CLASS-INSTRUCTION-START>
@@ -642,8 +596,8 @@ public:
   // 26..23  ilen (0..15).  Leave this one on top so no mask is needed.
   // 22..22  mod==c0 (modrm)
   // 21..13  b1 (9bits of opcode; 1byte-op=0..255, 2byte-op=256..511.
-  // 12..12  BxRepeatableZF (pass-thru from fetchdecode attributes)
-  // 11..11  BxRepeatable   (pass-thru from fetchdecode attributes)
+  // 12..12  (unused)
+  // 11..11  (unused)
   // 10...9  repUsed (0=none, 2=0xF2, 3=0xF3).
   //  8...8  extend8bit
   //  7...7  as64
@@ -838,20 +792,6 @@ public:
   }
   BX_CPP_INLINE void setRepUsed(unsigned value) {
     metaInfo = (metaInfo & ~(3<<9)) | (value<<9);
-  }
-  BX_CPP_INLINE void setRepAttr(unsigned value) {
-    // value is expected to be masked, and only contain bits
-    // for BxRepeatable and BxRepeatableZF.  We don't need to
-    // keep masking out these bits before we add in new ones,
-    // since the fetch process won't start with repeatable attributes
-    // and then delete them.
-    metaInfo |= value;
-  }
-  BX_CPP_INLINE unsigned repeatableL(void) {
-    return metaInfo & (1<<11);
-  }
-  BX_CPP_INLINE unsigned repeatableZFL(void) {
-    return metaInfo & (1<<12);
   }
 
   BX_CPP_INLINE unsigned b1(void) {
@@ -1101,6 +1041,10 @@ public: // for now...
 #endif
 #endif
 
+#if BX_SUPPORT_X86_64
+  bx_efer_t efer;
+#endif
+
   /* SMM base register */
   Bit32u smbase;
 
@@ -1176,6 +1120,9 @@ public: // for now...
   unsigned cpu_mode;
   bx_bool  in_smm;
   bx_bool  nmi_disable;
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  bx_bool  alignment_check;
+#endif
 
 #if BX_DEBUGGER
   Bit32u watchpoint;
@@ -1191,10 +1138,6 @@ public: // for now...
   bx_guard_found_t guard_found;
 #endif
   Bit8u trace;
-
-#if BX_GDBSTUB
-  Bit8u ispanic;
-#endif
 
   // for paging
 #if BX_USE_TLB
@@ -1405,12 +1348,20 @@ public: // for now...
   BX_SMF void ARPL_EwGw(bxInstruction_c *);
   BX_SMF void PUSH_Id(bxInstruction_c *);
   BX_SMF void PUSH_Iw(bxInstruction_c *);
+
   BX_SMF void INSB_YbDX(bxInstruction_c *);
   BX_SMF void INSW_YwDX(bxInstruction_c *);
   BX_SMF void INSD_YdDX(bxInstruction_c *);
   BX_SMF void OUTSB_DXXb(bxInstruction_c *);
   BX_SMF void OUTSW_DXXw(bxInstruction_c *);
   BX_SMF void OUTSD_DXXd(bxInstruction_c *);
+
+  BX_SMF void REP_INSB_YbDX(bxInstruction_c *);
+  BX_SMF void REP_INSW_YwDX(bxInstruction_c *);
+  BX_SMF void REP_INSD_YdDX(bxInstruction_c *);
+  BX_SMF void REP_OUTSB_DXXb(bxInstruction_c *);
+  BX_SMF void REP_OUTSW_DXXw(bxInstruction_c *);
+  BX_SMF void REP_OUTSD_DXXd(bxInstruction_c *);
 
   BX_SMF void BOUND_GwMa(bxInstruction_c *);
   BX_SMF void BOUND_GdMa(bxInstruction_c *);
@@ -1451,12 +1402,12 @@ public: // for now...
   BX_SMF void SAHF(bxInstruction_c *);
   BX_SMF void LAHF(bxInstruction_c *);
 
-  BX_SMF void MOV_ALOb(bxInstruction_c *);
+  BX_SMF void MOV_ALOd(bxInstruction_c *);
   BX_SMF void MOV_EAXOd(bxInstruction_c *);
-  BX_SMF void MOV_AXOw(bxInstruction_c *);
-  BX_SMF void MOV_ObAL(bxInstruction_c *);
+  BX_SMF void MOV_AXOd(bxInstruction_c *);
+  BX_SMF void MOV_OdAL(bxInstruction_c *);
   BX_SMF void MOV_OdEAX(bxInstruction_c *);
-  BX_SMF void MOV_OwAX(bxInstruction_c *);
+  BX_SMF void MOV_OdAX(bxInstruction_c *);
   BX_SMF void TEST_ALIb(bxInstruction_c *);
   BX_SMF void TEST_EAXId(bxInstruction_c *);
   BX_SMF void TEST_AXIw(bxInstruction_c *);
@@ -1477,6 +1428,22 @@ public: // for now...
   BX_SMF void STOSD_YdEAX(bxInstruction_c *);
   BX_SMF void LODSD_EAXXd(bxInstruction_c *);
   BX_SMF void SCASD_EAXXd(bxInstruction_c *);
+
+  BX_SMF void REP_MOVSB_XbYb(bxInstruction_c *);
+  BX_SMF void REP_MOVSW_XwYw(bxInstruction_c *);
+  BX_SMF void REP_MOVSD_XdYd(bxInstruction_c *);
+  BX_SMF void REP_CMPSB_XbYb(bxInstruction_c *);
+  BX_SMF void REP_CMPSW_XwYw(bxInstruction_c *);
+  BX_SMF void REP_CMPSD_XdYd(bxInstruction_c *);
+  BX_SMF void REP_STOSB_YbAL(bxInstruction_c *);
+  BX_SMF void REP_LODSB_ALXb(bxInstruction_c *);
+  BX_SMF void REP_SCASB_ALXb(bxInstruction_c *);
+  BX_SMF void REP_STOSW_YwAX(bxInstruction_c *);
+  BX_SMF void REP_LODSW_AXXw(bxInstruction_c *);
+  BX_SMF void REP_SCASW_AXXw(bxInstruction_c *);
+  BX_SMF void REP_STOSD_YdEAX(bxInstruction_c *);
+  BX_SMF void REP_LODSD_EAXXd(bxInstruction_c *);
+  BX_SMF void REP_SCASD_EAXXd(bxInstruction_c *);
 
   BX_SMF void RETnear32(bxInstruction_c *);
   BX_SMF void RETnear16(bxInstruction_c *);
@@ -1536,6 +1503,7 @@ public: // for now...
   BX_SMF void CLTS(bxInstruction_c *);
   BX_SMF void INVD(bxInstruction_c *);
   BX_SMF void WBINVD(bxInstruction_c *);
+  BX_SMF void CLFLUSH(bxInstruction_c *);
 
   BX_SMF void MOV_CdRd(bxInstruction_c *);
   BX_SMF void MOV_DdRd(bxInstruction_c *);
@@ -1598,11 +1566,16 @@ public: // for now...
   BX_SMF void BTC_EwIb(bxInstruction_c *);
   BX_SMF void BTC_EdIb(bxInstruction_c *);
 
-  BX_SMF void LES_GvMp(bxInstruction_c *);
-  BX_SMF void LDS_GvMp(bxInstruction_c *);
-  BX_SMF void LSS_GvMp(bxInstruction_c *);
-  BX_SMF void LFS_GvMp(bxInstruction_c *);
-  BX_SMF void LGS_GvMp(bxInstruction_c *);
+  BX_SMF void LES_GwMp(bxInstruction_c *);
+  BX_SMF void LDS_GwMp(bxInstruction_c *);
+  BX_SMF void LSS_GwMp(bxInstruction_c *);
+  BX_SMF void LFS_GwMp(bxInstruction_c *);
+  BX_SMF void LGS_GwMp(bxInstruction_c *);
+  BX_SMF void LES_GdMp(bxInstruction_c *);
+  BX_SMF void LDS_GdMp(bxInstruction_c *);
+  BX_SMF void LSS_GdMp(bxInstruction_c *);
+  BX_SMF void LFS_GdMp(bxInstruction_c *);
+  BX_SMF void LGS_GdMp(bxInstruction_c *);
 
   BX_SMF void MOVZX_GdEb(bxInstruction_c *);
   BX_SMF void MOVZX_GwEb(bxInstruction_c *);
@@ -1957,7 +1930,7 @@ public: // for now...
   BX_SMF void MOVAPS_WpsVps(bxInstruction_c *i);
   BX_SMF void CVTPI2PS_VpsQq(bxInstruction_c *i);
   BX_SMF void CVTSI2SS_VssEd(bxInstruction_c *i);
-  BX_SMF void MOVNTPS_MdqVps(bxInstruction_c *i);
+  BX_SMF void MOVNTPS_MpsVps(bxInstruction_c *i);
   BX_SMF void CVTTPS2PI_PqWps(bxInstruction_c *i);
   BX_SMF void CVTTSS2SI_GdWss(bxInstruction_c *i);
   BX_SMF void CVTPS2PI_PqWps(bxInstruction_c *i);
@@ -1987,7 +1960,7 @@ public: // for now...
   BX_SMF void PSHUFLW_VqWqIb(bxInstruction_c *i);
   BX_SMF void CMPPS_VpsWpsIb(bxInstruction_c *i);
   BX_SMF void CMPSS_VssWssIb(bxInstruction_c *i);
-  BX_SMF void PINSRW_PqEdIb(bxInstruction_c *i);
+  BX_SMF void PINSRW_PqEwIb(bxInstruction_c *i);
   BX_SMF void PEXTRW_GdPqIb(bxInstruction_c *i);
   BX_SMF void SHUFPS_VpsWpsIb(bxInstruction_c *i);
   BX_SMF void PMOVMSKB_GdPRq(bxInstruction_c *i);
@@ -2038,7 +2011,7 @@ public: // for now...
   BX_SMF void MAXSD_VsdWsd(bxInstruction_c *i);
   BX_SMF void PUNPCKLBW_VdqWq(bxInstruction_c *i);
   BX_SMF void PUNPCKLWD_VdqWq(bxInstruction_c *i);
-  BX_SMF void PUNPCKLDQ_VdqWq(bxInstruction_c *i);
+  BX_SMF void UNPCKLPS_VpsWq(bxInstruction_c *i);
   BX_SMF void PACKSSWB_VdqWq(bxInstruction_c *i);
   BX_SMF void PCMPGTB_VdqWq(bxInstruction_c *i);
   BX_SMF void PCMPGTW_VdqWq(bxInstruction_c *i);
@@ -2046,7 +2019,7 @@ public: // for now...
   BX_SMF void PACKUSWB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PUNPCKHBW_VdqWq(bxInstruction_c *i);
   BX_SMF void PUNPCKHWD_VdqWq(bxInstruction_c *i);
-  BX_SMF void PUNPCKHDQ_VdqWq(bxInstruction_c *i);
+  BX_SMF void UNPCKHPS_VpsWq(bxInstruction_c *i);
   BX_SMF void PACKSSDW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PUNPCKLQDQ_VdqWq(bxInstruction_c *i);
   BX_SMF void PUNPCKHQDQ_VdqWq(bxInstruction_c *i);
@@ -2061,8 +2034,8 @@ public: // for now...
   BX_SMF void CMPPD_VpdWpdIb(bxInstruction_c *i);
   BX_SMF void CMPSD_VsdWsdIb(bxInstruction_c *i);
   BX_SMF void MOVNTI_MdGd(bxInstruction_c *i);
-  BX_SMF void PINSRW_VdqEdIb(bxInstruction_c *i);
-  BX_SMF void PEXTRW_GdVRdqIb(bxInstruction_c *i);
+  BX_SMF void PINSRW_VdqEwIb(bxInstruction_c *i);
+  BX_SMF void PEXTRW_GdUdqIb(bxInstruction_c *i);
   BX_SMF void SHUFPD_VpdWpdIb(bxInstruction_c *i);
   BX_SMF void PSRLW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSRLD_VdqWdq(bxInstruction_c *i);
@@ -2073,15 +2046,15 @@ public: // for now...
   BX_SMF void MOVQ_WqVq(bxInstruction_c *i);
   BX_SMF void MOVDQ2Q_PqVRq(bxInstruction_c *i);
   BX_SMF void MOVQ2DQ_VdqQq(bxInstruction_c *i);
-  BX_SMF void PMOVMSKB_GdVRdq(bxInstruction_c *i);
+  BX_SMF void PMOVMSKB_GdUdq(bxInstruction_c *i);
   BX_SMF void PSUBUSB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSUBUSW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PMINUB_VdqWdq(bxInstruction_c *i);
-  BX_SMF void PAND_VdqWdq(bxInstruction_c *i);
+  BX_SMF void ANDPS_VpsWps(bxInstruction_c *i);
   BX_SMF void PADDUSB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PADDUSW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PMAXUB_VdqWdq(bxInstruction_c *i);
-  BX_SMF void PANDN_VdqWdq(bxInstruction_c *i);
+  BX_SMF void ANDNPS_VpsWps(bxInstruction_c *i);
   BX_SMF void PAVGB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSRAW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSRAD_VdqWdq(bxInstruction_c *i);
@@ -2094,11 +2067,11 @@ public: // for now...
   BX_SMF void PSUBSB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSUBSW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PMINSW_VdqWdq(bxInstruction_c *i);
-  BX_SMF void POR_VdqWdq(bxInstruction_c *i);
+  BX_SMF void ORPS_VpsWps(bxInstruction_c *i);
   BX_SMF void PADDSB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PADDSW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PMAXSW_VdqWdq(bxInstruction_c *i);
-  BX_SMF void PXOR_VdqWdq(bxInstruction_c *i);
+  BX_SMF void XORPS_VpsWps(bxInstruction_c *i);
   BX_SMF void PSLLW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSLLD_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSLLQ_VdqWdq(bxInstruction_c *i);
@@ -2106,7 +2079,7 @@ public: // for now...
   BX_SMF void PMULUDQ_VdqWdq(bxInstruction_c *i);
   BX_SMF void PMADDWD_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSADBW_VdqWdq(bxInstruction_c *i);
-  BX_SMF void MASKMOVDQU_VdqVRdq(bxInstruction_c *i);
+  BX_SMF void MASKMOVDQU_VdqUdq(bxInstruction_c *i);
   BX_SMF void PSUBB_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSUBW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PSUBD_VdqWdq(bxInstruction_c *i);
@@ -2127,71 +2100,6 @@ public: // for now...
   BX_SMF void PSLLDQ_UdqIb(bxInstruction_c *i);
   /* SSE2 */
 
-  /*** Duplicate SSE/SSE2 instructions ***/
-  // Although in implementation, these instructions are aliased to the
-  // another function, it's nice to have them call a seperate function when
-  // the decoder is being tested in stand-alone mode.
-#ifdef StandAloneDecoder
-  BX_SMF void MOVUPD_VpdWpd(bxInstruction_c *);
-  BX_SMF void MOVUPD_WpdVpd(bxInstruction_c *);
-  BX_SMF void MOVAPD_VpdWpd(bxInstruction_c *);
-  BX_SMF void MOVAPD_WpdVpd(bxInstruction_c *);
-  BX_SMF void MOVDQU_VdqWdq(bxInstruction_c *);
-  BX_SMF void MOVDQU_WdqVdq(bxInstruction_c *);
-  BX_SMF void MOVDQA_VdqWdq(bxInstruction_c *);
-  BX_SMF void MOVDQA_WdqVdq(bxInstruction_c *);
-  BX_SMF void UNPCKHPS_VpsWq(bxInstruction_c *);
-  BX_SMF void UNPCKLPS_VpsWq(bxInstruction_c *);
-  BX_SMF void ANDPS_VpsWps(bxInstruction_c *);
-  BX_SMF void ANDPD_VpdWpd(bxInstruction_c *);
-  BX_SMF void ANDNPS_VpsWps(bxInstruction_c *);
-  BX_SMF void ANDNPD_VpdWpd(bxInstruction_c *);
-  BX_SMF void ORPS_VpsWps(bxInstruction_c *);
-  BX_SMF void ORPD_VpdWpd(bxInstruction_c *);
-  BX_SMF void XORPS_VpsWps(bxInstruction_c *);
-  BX_SMF void XORPD_VpdWpd(bxInstruction_c *);
-  BX_SMF void UNPCKHPD_VpdWq(bxInstruction_c *);
-  BX_SMF void UNPCKLPD_VpdWq(bxInstruction_c *);
-  BX_SMF void MOVLPD_VsdMq(bxInstruction_c *);
-  BX_SMF void MOVLPD_MqVsd(bxInstruction_c *);
-  BX_SMF void MOVHPD_VsdMq(bxInstruction_c *);
-  BX_SMF void MOVHPD_MqVsd(bxInstruction_c *);
-  BX_SMF void MOVNTPD_MdqVpd(bxInstruction_c *);
-  BX_SMF void MOVNTDQ_MdqVdq(bxInstruction_c *);
-#else
-#define MOVUPD_VpdWpd  /* 66 0f 10 */ MOVUPS_VpsWps    /*    0f 10 */
-#define MOVUPD_WpdVpd  /* 66 0f 11 */ MOVUPS_WpsVps    /*    0f 11 */
-#define MOVAPD_VpdWpd  /* 66 0f 28 */ MOVAPS_VpsWps    /*    0f 28 */
-#define MOVAPD_WpdVpd  /* 66 0f 29 */ MOVAPS_WpsVps    /*    0f 29 */
-#define MOVDQU_VdqWdq  /* f3 0f 6f */ MOVUPS_VpsWps    /*    0f 10 */
-#define MOVDQU_WdqVdq  /* f3 0f 7f */ MOVUPS_WpsVps    /*    0f 11 */
-#define MOVDQA_VdqWdq  /* 66 0f 6f */ MOVAPS_VpsWps    /*    0f 28 */
-#define MOVDQA_WdqVdq  /* 66 0f 7f */ MOVAPS_WpsVps    /*    0f 29 */
-
-#define UNPCKHPS_VpsWq /*    0f 15 */ PUNPCKHDQ_VdqWq  /* 66 0f 6a */
-#define UNPCKLPS_VpsWq /*    0f 14 */ PUNPCKLDQ_VdqWq  /* 66 0f 62 */
-
-#define ANDPS_VpsWps   /*    0f 54 */ PAND_VdqWdq      /* 66 0f db */
-#define ANDPD_VpdWpd   /* 66 0f 54 */ PAND_VdqWdq      /* 66 0f db */
-#define ANDNPS_VpsWps  /*    0f 55 */ PANDN_VdqWdq     /* 66 0f df */
-#define ANDNPD_VpdWpd  /* 66 0f 55 */ PANDN_VdqWdq     /* 66 0f df */
-#define ORPS_VpsWps    /*    0f 56 */ POR_VdqWdq       /* 66 0f eb */
-#define ORPD_VpdWpd    /* 66 0f 56 */ POR_VdqWdq       /* 66 0f eb */
-#define XORPS_VpsWps   /*    0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
-#define XORPD_VpdWpd   /* 66 0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
-
-#define UNPCKHPD_VpdWq /* 66 0f 15 */ PUNPCKHQDQ_VdqWq /* 66 0f 6d */
-#define UNPCKLPD_VpdWq /* 66 0f 14 */ PUNPCKLQDQ_VdqWq /* 66 0f 6c */
-
-#define MOVLPD_VsdMq   /* 66 0f 12 */ MOVLPS_VpsMq     /*    0f 12 */
-#define MOVLPD_MqVsd   /* 66 0f 13 */ MOVLPS_MqVps     /*    0f 13 */
-#define MOVHPD_VsdMq   /* 66 0f 16 */ MOVHPS_VpsMq     /*    0f 16 */
-#define MOVHPD_MqVsd   /* 66 0f 17 */ MOVHPS_MqVps     /*    0f 17 */
-
-#define MOVNTPD_MdqVpd /* 66 0f 2b */ MOVNTPS_MdqVps   /*    0f 2b */
-#define MOVNTDQ_MdqVdq /* 66 0f e7 */ MOVNTPD_MdqVpd   /* 66 0f 2b */
-#endif  // #ifdef StandAloneDecoder
-
   /* SSE3 */
   BX_SMF void MOVDDUP_VpdWq(bxInstruction_c *i);
   BX_SMF void MOVSLDUP_VpsWps(bxInstruction_c *i);
@@ -2205,7 +2113,8 @@ public: // for now...
   BX_SMF void LDDQU_VdqMdq(bxInstruction_c *i);
   /* SSE3 */
 
-#if BX_SUPPORT_SSE >= 4
+#if (BX_SUPPORT_SSE >= 4) || (BX_SUPPORT_SSE >= 3 && BX_SUPPORT_SSE_EXTENSION > 0)
+  /* SSE3E */
   BX_SMF void PSHUFB_PqQq(bxInstruction_c *i);
   BX_SMF void PHADDW_PqQq(bxInstruction_c *i);
   BX_SMF void PHADDD_PqQq(bxInstruction_c *i);
@@ -2239,7 +2148,142 @@ public: // for now...
   BX_SMF void PABSW_VdqWdq(bxInstruction_c *i);
   BX_SMF void PABSD_VdqWdq(bxInstruction_c *i);
   BX_SMF void PALIGNR_VdqWdqIb(bxInstruction_c *i);
+  /* SSE3E */
 #endif
+
+#if BX_SUPPORT_SSE >= 4
+  /* SSE4.1 */
+  BX_SMF void PBLENDVB_VdqWdq(bxInstruction_c *i);
+  BX_SMF void BLENDVPS_VpsWps(bxInstruction_c *i);
+  BX_SMF void BLENDVPD_VpdWpd(bxInstruction_c *i);
+  BX_SMF void PTEST_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMULDQ_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PCMPEQQ_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PACKUSDW_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMOVSXBW_VdqWq(bxInstruction_c *i);
+  BX_SMF void PMOVSXBD_VdqWd(bxInstruction_c *i);
+  BX_SMF void PMOVSXBQ_VdqWw(bxInstruction_c *i);
+  BX_SMF void PMOVSXWD_VdqWq(bxInstruction_c *i);
+  BX_SMF void PMOVSXWQ_VdqWd(bxInstruction_c *i);
+  BX_SMF void PMOVSXDQ_VdqWq(bxInstruction_c *i);
+  BX_SMF void PMOVZXBW_VdqWq(bxInstruction_c *i);
+  BX_SMF void PMOVZXBD_VdqWd(bxInstruction_c *i);
+  BX_SMF void PMOVZXBQ_VdqWw(bxInstruction_c *i);
+  BX_SMF void PMOVZXWD_VdqWq(bxInstruction_c *i);
+  BX_SMF void PMOVZXWQ_VdqWd(bxInstruction_c *i);
+  BX_SMF void PMOVZXDQ_VdqWq(bxInstruction_c *i);
+  BX_SMF void PMINSB_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMINSD_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMINUW_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMINUD_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMAXSB_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMAXSD_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMAXUW_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMAXUD_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PMULLD_VdqWdq(bxInstruction_c *i);
+  BX_SMF void PHMINPOSUW_VdqWdq(bxInstruction_c *i);
+  BX_SMF void ROUNDPS_VpsWpsIb(bxInstruction_c *i);
+  BX_SMF void ROUNDPD_VpdWpdIb(bxInstruction_c *i);
+  BX_SMF void ROUNDSS_VssWssIb(bxInstruction_c *i);
+  BX_SMF void ROUNDSD_VsdWsdIb(bxInstruction_c *i);
+  BX_SMF void BLENDPS_VpsWpsIb(bxInstruction_c *i);
+  BX_SMF void BLENDPD_VpdWpdIb(bxInstruction_c *i);
+  BX_SMF void PBLENDW_VdqWdqIb(bxInstruction_c *i);
+  BX_SMF void PEXTRB_HbdUdqIb(bxInstruction_c *i);
+  BX_SMF void PEXTRW_HwdUdqIb(bxInstruction_c *i);
+  BX_SMF void PEXTRD_HdUdqIb(bxInstruction_c *i);
+  BX_SMF void EXTRACTPS_HdUpsIb(bxInstruction_c *i);
+  BX_SMF void PINSRB_VdqEbIb(bxInstruction_c *i);
+  BX_SMF void INSERTPS_VpsWssIb(bxInstruction_c *i);
+  BX_SMF void PINSRD_VdqEdIb(bxInstruction_c *i);
+  BX_SMF void DPPS_VpsWpsIb(bxInstruction_c *i);
+  BX_SMF void DPPD_VpdWpdIb(bxInstruction_c *i);
+  BX_SMF void MPSADBW_VdqWdqIb(bxInstruction_c *i);
+  /* SSE4.1 */
+#endif
+
+  /*** Duplicate SSE instructions ***/
+  // Although in implementation, these instructions are aliased to the
+  // another function, it's nice to have them call a separate function when
+  // the decoder is being tested in stand-alone mode.
+#ifdef STAND_ALONE_DECODER
+  BX_SMF void MOVUPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void MOVUPD_WpdVpd(bxInstruction_c *);
+  BX_SMF void MOVAPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void MOVAPD_WpdVpd(bxInstruction_c *);
+  BX_SMF void MOVDQU_VdqWdq(bxInstruction_c *);
+  BX_SMF void MOVDQU_WdqVdq(bxInstruction_c *);
+  BX_SMF void MOVDQA_VdqWdq(bxInstruction_c *);
+  BX_SMF void MOVDQA_WdqVdq(bxInstruction_c *);
+  BX_SMF void PUNPCKHDQ_VdqWq(bxInstruction_c *);
+  BX_SMF void PUNPCKLDQ_VdqWq(bxInstruction_c *);
+  BX_SMF void ANDPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void ANDNPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void ORPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void XORPD_VpdWpd(bxInstruction_c *);
+  BX_SMF void PAND_VdqWdq(bxInstruction_c *);
+  BX_SMF void PANDN_VdqWdq(bxInstruction_c *);
+  BX_SMF void POR_VdqWdq(bxInstruction_c *);
+  BX_SMF void PXOR_VdqWdq(bxInstruction_c *);
+  BX_SMF void UNPCKHPD_VpdWq(bxInstruction_c *);
+  BX_SMF void UNPCKLPD_VpdWq(bxInstruction_c *);
+  BX_SMF void MOVLPD_VsdMq(bxInstruction_c *);
+  BX_SMF void MOVLPD_MqVsd(bxInstruction_c *);
+  BX_SMF void MOVHPD_VsdMq(bxInstruction_c *);
+  BX_SMF void MOVHPD_MqVsd(bxInstruction_c *);
+  BX_SMF void MOVNTPD_MdqVpd(bxInstruction_c *);
+  BX_SMF void MOVNTDQ_MdqVdq(bxInstruction_c *);
+  BX_SMF void MOVNTDQA_VdqMdq(bxInstruction_c *i);
+#else
+
+#if BX_SUPPORT_SSE >= 2
+  #define SSE2_ALIAS(i) i
+#else
+  #define SSE2_ALIAS(i) BxError
+#endif
+
+#if BX_SUPPORT_SSE >= 4
+  #define SSE4_ALIAS(i) i
+#else
+  #define SSE4_ALIAS(i) BxError
+#endif
+
+#define MOVUPD_VpdWpd   /* 66 0f 10 */ SSE2_ALIAS(MOVUPS_VpsWps)  /*  0f 10 */
+#define MOVUPD_WpdVpd   /* 66 0f 11 */ SSE2_ALIAS(MOVUPS_WpsVps)  /*  0f 11 */
+#define MOVAPD_VpdWpd   /* 66 0f 28 */ SSE2_ALIAS(MOVAPS_VpsWps)  /*  0f 28 */
+#define MOVAPD_WpdVpd   /* 66 0f 29 */ SSE2_ALIAS(MOVAPS_WpsVps)  /*  0f 29 */
+#define MOVDQU_VdqWdq   /* f3 0f 6f */ SSE2_ALIAS(MOVUPS_VpsWps)  /*  0f 10 */
+#define MOVDQU_WdqVdq   /* f3 0f 7f */ SSE2_ALIAS(MOVUPS_WpsVps)  /*  0f 11 */
+#define MOVDQA_VdqWdq   /* 66 0f 6f */ SSE2_ALIAS(MOVAPS_VpsWps)  /*  0f 28 */
+#define MOVDQA_WdqVdq   /* 66 0f 7f */ SSE2_ALIAS(MOVAPS_WpsVps)  /*  0f 29 */
+
+#define PUNPCKLDQ_VdqWq /* 66 0f 62 */ SSE2_ALIAS(UNPCKLPS_VpsWq) /*  0f 14 */
+#define PUNPCKHDQ_VdqWq /* 66 0f 6a */ SSE2_ALIAS(UNPCKHPS_VpsWq) /*  0f 15 */
+
+#define PAND_VdqWdq     /* 66 0f db */ SSE2_ALIAS(ANDPS_VpsWps)   /*  0f 54 */
+#define PANDN_VdqWdq    /* 66 0f df */ SSE2_ALIAS(ANDNPS_VpsWps)  /*  0f 55 */
+#define POR_VdqWdq      /* 66 0f eb */ SSE2_ALIAS(ORPS_VpsWps)    /*  0f 56 */
+#define PXOR_VdqWdq     /* 66 0f ef */ SSE2_ALIAS(XORPS_VpsWps)   /*  0f 57 */
+
+#define ANDPD_VpdWpd    /* 66 0f 54 */ SSE2_ALIAS(ANDPS_VpsWps)   /*  0f 54 */
+#define ANDNPD_VpdWpd   /* 66 0f 55 */ SSE2_ALIAS(ANDNPS_VpsWps)  /*  0f 55 */
+#define ORPD_VpdWpd     /* 66 0f 56 */ SSE2_ALIAS(ORPS_VpsWps)    /*  0f 56 */
+#define XORPD_VpdWpd    /* 66 0f 57 */ SSE2_ALIAS(XORPS_VpsWps)   /*  0f 57 */
+
+#define MOVLPD_VsdMq    /* 66 0f 12 */ SSE2_ALIAS(MOVLPS_VpsMq)   /*  0f 12 */
+#define MOVLPD_MqVsd    /* 66 0f 13 */ SSE2_ALIAS(MOVLPS_MqVps)   /*  0f 13 */
+#define MOVHPD_VsdMq    /* 66 0f 16 */ SSE2_ALIAS(MOVHPS_VpsMq)   /*  0f 16 */
+#define MOVHPD_MqVsd    /* 66 0f 17 */ SSE2_ALIAS(MOVHPS_MqVps)   /*  0f 17 */
+
+#define MOVNTPD_MpdVpd  /* 66 0f 2b */ SSE2_ALIAS(MOVNTPS_MpsVps) /*  0f 2b */
+#define MOVNTDQ_MdqVdq  /* 66 0f e7 */ SSE2_ALIAS(MOVNTPS_MpsVps) /*  0f 2b */
+
+#define UNPCKLPD_VpdWq  /* 66 0f 14 */ PUNPCKLQDQ_VdqWq /* 66 0f 6c */
+#define UNPCKHPD_VpdWq  /* 66 0f 15 */ PUNPCKHQDQ_VdqWq /* 66 0f 6d */
+
+#define MOVNTDQA_VdqMdq /* 66 0f 38 2a */ SSE4_ALIAS(LDDQU_VdqMdq) /* f2 0f f0 */
+
+#endif  // #ifdef STAND_ALONE_DECODER
 
   BX_SMF void CMPXCHG_XBTS(bxInstruction_c *);
   BX_SMF void CMPXCHG_IBTS(bxInstruction_c *);
@@ -2368,10 +2412,15 @@ public: // for now...
 
   BX_SMF void MOVSQ_XqYq(bxInstruction_c *);
   BX_SMF void CMPSQ_XqYq(bxInstruction_c *);
-
   BX_SMF void STOSQ_YqRAX(bxInstruction_c *);
   BX_SMF void LODSQ_RAXXq(bxInstruction_c *);
   BX_SMF void SCASQ_RAXXq(bxInstruction_c *);
+
+  BX_SMF void REP_MOVSQ_XqYq(bxInstruction_c *);
+  BX_SMF void REP_CMPSQ_XqYq(bxInstruction_c *);
+  BX_SMF void REP_STOSQ_YqRAX(bxInstruction_c *);
+  BX_SMF void REP_LODSQ_RAXXq(bxInstruction_c *);
+  BX_SMF void REP_SCASQ_RAXXq(bxInstruction_c *);
 
   BX_SMF void RETnear64(bxInstruction_c *);
   BX_SMF void ENTER64_IwIb(bxInstruction_c *);
@@ -2382,13 +2431,12 @@ public: // for now...
 
   BX_SMF void CALL_Aq(bxInstruction_c *);
   BX_SMF void JMP_Jq(bxInstruction_c *);
+  BX_SMF void JCC_Jq(bxInstruction_c *);
 
   BX_SMF void MOV_CqRq(bxInstruction_c *);
   BX_SMF void MOV_DqRq(bxInstruction_c *);
   BX_SMF void MOV_RqCq(bxInstruction_c *);
   BX_SMF void MOV_RqDq(bxInstruction_c *);
-
-  BX_SMF void JCC_Jq(bxInstruction_c *);
 
   BX_SMF void SHLD_EqGq(bxInstruction_c *);
   BX_SMF void SHRD_EqGq(bxInstruction_c *);
@@ -2471,6 +2519,15 @@ public: // for now...
   BX_SMF void PUSH64_GS(bxInstruction_c *);
   BX_SMF void POP64_GS(bxInstruction_c *);
 
+  BX_SMF void LSS_GqMp(bxInstruction_c *);
+  BX_SMF void LFS_GqMp(bxInstruction_c *);
+  BX_SMF void LGS_GqMp(bxInstruction_c *);
+
+  BX_SMF void SGDT64_Ms(bxInstruction_c *);
+  BX_SMF void SIDT64_Ms(bxInstruction_c *);
+  BX_SMF void LGDT64_Ms(bxInstruction_c *);
+  BX_SMF void LIDT64_Ms(bxInstruction_c *);
+
   BX_SMF void SYSCALL(bxInstruction_c *i);
   BX_SMF void SYSRET(bxInstruction_c *i);
 
@@ -2485,7 +2542,6 @@ public: // for now...
   BX_SMF void CMPXCHG16B(bxInstruction_c *);
 #endif  // #if BX_SUPPORT_X86_64
 
-  // mch added
   BX_SMF void INVLPG(bxInstruction_c *);
   BX_SMF void RSM(bxInstruction_c *);
 
@@ -2496,7 +2552,7 @@ public: // for now...
   BX_SMF void SYSENTER(bxInstruction_c *);
   BX_SMF void SYSEXIT(bxInstruction_c *);
 
-  BX_SMF unsigned fetchDecode(Bit8u *, bxInstruction_c *, unsigned);
+  BX_SMF unsigned fetchDecode32(Bit8u *, bxInstruction_c *, unsigned);
 #if BX_SUPPORT_X86_64
   BX_SMF unsigned fetchDecode64(Bit8u *, bxInstruction_c *, unsigned);
 #endif
@@ -2562,14 +2618,13 @@ public: // for now...
   BX_SMF void Resolve64Mod0Rm1(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm2(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm3(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF void Resolve64Mod0Rm5(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void Resolve64Mod0Rip(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm6(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm7(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm8(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm9(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm10(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm11(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF void Resolve64Mod0Rm13(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm14(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void Resolve64Mod0Rm15(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
@@ -2641,6 +2696,10 @@ public: // for now...
   BX_SMF bx_bool  dbg_check_begin_instr_bpoint(void);
   BX_SMF bx_bool  dbg_check_end_instr_bpoint(void);
 #endif
+#if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
+  BX_SMF bx_bool  dbg_instruction_prolog(void);
+  BX_SMF bx_bool  dbg_instruction_epilog(void);
+#endif
 #if BX_DEBUGGER || BX_DISASM || BX_INSTRUMENTATION || BX_GDBSTUB
   BX_SMF bx_bool  dbg_xlate_linear2phy(bx_address linear, bx_phy_address *phy);
 #endif
@@ -2677,10 +2736,29 @@ public: // for now...
   BX_SMF void read_virtual_tword(unsigned seg, bx_address offset, floatx80 *data) BX_CPP_AttrRegparmN(3);
 #endif
 
-#define readVirtualDQword(s, off, data) read_virtual_dqword(s, off, data)
-#define readVirtualDQwordAligned(s, off, data) read_virtual_dqword_aligned(s, off, data)
-#define writeVirtualDQword(s, off, data) write_virtual_dqword(s, off, data)
-#define writeVirtualDQwordAligned(s, off, data) write_virtual_dqword_aligned(s, off, data)
+#if BX_SUPPORT_MISALIGNED_SSE
+
+#define readVirtualDQwordAligned(s, off, data)   \
+  if (! MXCSR.get_misaligned_exception_mask())   \
+    read_virtual_dqword_aligned(s, off, data);   \
+  else                                           \
+    read_virtual_dqword(s, off, data);
+
+#define writeVirtualDQwordAligned(s, off, data)  \
+  if (! MXCSR.get_misaligned_exception_mask())   \
+    write_virtual_dqword_aligned(s, off, data);  \
+  else                                           \
+    write_virtual_dqword(s, off, data);
+
+#else // BX_SUPPORT_MISALIGNED_SSE = 0
+
+#define readVirtualDQwordAligned(s, off, data)   \
+  read_virtual_dqword_aligned(s, off, data)
+
+#define writeVirtualDQwordAligned(s, off, data)  \
+  write_virtual_dqword_aligned(s, off, data)
+
+#endif
 
   BX_SMF void read_RMW_virtual_byte(unsigned seg, bx_address offset, Bit8u *data) BX_CPP_AttrRegparmN(3);
   BX_SMF void read_RMW_virtual_word(unsigned seg, bx_address offset, Bit16u *data) BX_CPP_AttrRegparmN(3);
@@ -2732,10 +2810,13 @@ public: // for now...
        Bit16u port, Bit32u wordCount);
 #endif
 
+  BX_SMF void repeat(bxInstruction_c *i, BxExecutePtr_t execute);
+  BX_SMF void repeat_ZFL(bxInstruction_c *i, BxExecutePtr_t execute);
+
   BX_SMF void access_linear(bx_address address, unsigned length, unsigned pl,
        unsigned rw, void *data) BX_CPP_AttrRegparmN(3);
-  BX_SMF bx_phy_address translate_linear(bx_address laddr, 
-       unsigned pl, unsigned rw, unsigned access_type) BX_CPP_AttrRegparmN(3);
+  BX_SMF void page_fault(unsigned fault, bx_address laddr, unsigned pl, unsigned rw, unsigned access_type);
+  BX_SMF bx_phy_address translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned access_type);
   BX_SMF bx_phy_address itranslate_linear(bx_address laddr, unsigned pl) BX_CPP_AttrRegparmN(2);
   BX_SMF bx_phy_address dtranslate_linear(bx_address laddr, unsigned pl, unsigned rw) BX_CPP_AttrRegparmN(3);
   BX_SMF void TLB_flush(bx_bool invalidateGlobal);
@@ -2841,8 +2922,7 @@ public: // for now...
 #if BX_SUPPORT_X86_64
   BX_SMF  void   fetch_raw_descriptor64(const bx_selector_t *selector,
                          Bit32u *dword1, Bit32u *dword2, Bit32u *dword3, unsigned exception_no);
-  BX_SMF void    loadSRegLMNominal(unsigned seg, unsigned selector,
-                                   bx_address base, unsigned dpl);
+  BX_SMF void    loadSRegLMNominal(unsigned seg, unsigned selector, unsigned dpl);
 #endif
   BX_SMF void    push_16(Bit16u value16) BX_CPP_AttrRegparmN(1);
   BX_SMF void    push_32(Bit32u value32);
@@ -2901,15 +2981,19 @@ public: // for now...
   BX_CPP_INLINE Bit32u get_EFER(void);
 #endif
 
-  DECLARE_EFLAG_ACCESSOR   (DF,  10)
   DECLARE_EFLAG_ACCESSOR   (ID,  21)
   DECLARE_EFLAG_ACCESSOR   (VIP, 20)
   DECLARE_EFLAG_ACCESSOR   (VIF, 19)
+#if BX_SUPPORT_ALIGNMENT_CHECK
+  DECLARE_EFLAG_ACCESSOR_AC(     18)
+#else
   DECLARE_EFLAG_ACCESSOR   (AC,  18)
+#endif
   DECLARE_EFLAG_ACCESSOR_VM(     17)
   DECLARE_EFLAG_ACCESSOR   (RF,  16)
   DECLARE_EFLAG_ACCESSOR   (NT,  14)
   DECLARE_EFLAG_ACCESSOR_IOPL(   12)
+  DECLARE_EFLAG_ACCESSOR   (DF,  10)
   DECLARE_EFLAG_ACCESSOR   (IF,   9)
   DECLARE_EFLAG_ACCESSOR   (TF,   8)
 
@@ -2917,6 +3001,7 @@ public: // for now...
   BX_SMF BX_CPP_INLINE bx_bool smm_mode(void);
   BX_SMF BX_CPP_INLINE bx_bool protected_mode(void);
   BX_SMF BX_CPP_INLINE bx_bool v8086_mode(void);
+  BX_SMF BX_CPP_INLINE bx_bool long_mode(void);
   BX_SMF BX_CPP_INLINE unsigned get_cpu_mode(void);
 
 #if BX_CPU_LEVEL >= 5
@@ -3068,11 +3153,11 @@ BX_CPP_INLINE void BX_CPU_C::set_reg64(unsigned reg, Bit64u val)
 #if BX_SUPPORT_X86_64
 BX_CPP_INLINE Bit32u BX_CPU_C::get_EFER(void)
 {
-   return (BX_CPU_THIS_PTR msr.sce   <<  0) |
-          (BX_CPU_THIS_PTR msr.lme   <<  8) |
-          (BX_CPU_THIS_PTR msr.lma   << 10) |
-          (BX_CPU_THIS_PTR msr.nxe   << 11) |
-          (BX_CPU_THIS_PTR msr.ffxsr << 14);
+   return (BX_CPU_THIS_PTR efer.sce   <<  0) |
+          (BX_CPU_THIS_PTR efer.lme   <<  8) |
+          (BX_CPU_THIS_PTR efer.lma   << 10) |
+          (BX_CPU_THIS_PTR efer.nxe   << 11) |
+          (BX_CPU_THIS_PTR efer.ffxsr << 14);
 }
 #endif
 
@@ -3094,6 +3179,15 @@ BX_CPP_INLINE bx_bool BX_CPU_C::v8086_mode(void)
 BX_CPP_INLINE bx_bool BX_CPU_C::protected_mode(void)
 {
   return (BX_CPU_THIS_PTR cpu_mode >= BX_MODE_IA32_PROTECTED);
+}
+
+BX_CPP_INLINE unsigned BX_CPU_C::long_mode(void)
+{
+#if BX_SUPPORT_X86_64
+  return BX_CPU_THIS_PTR efer.lma;
+#else
+  return 0;
+#endif
 }
 
 BX_CPP_INLINE unsigned BX_CPU_C::get_cpu_mode(void)
@@ -3252,15 +3346,19 @@ BX_CPP_INLINE void BX_CPU_C::set_PF_base(Bit8u val)
   SET_FLAGS_OSZAP_RESULT_SIZE(_64, result, ins)
 #endif
 
-IMPLEMENT_EFLAG_ACCESSOR   (DF,  10)
 IMPLEMENT_EFLAG_ACCESSOR   (ID,  21)
 IMPLEMENT_EFLAG_ACCESSOR   (VIP, 20)
 IMPLEMENT_EFLAG_ACCESSOR   (VIF, 19)
+#if BX_SUPPORT_ALIGNMENT_CHECK
+IMPLEMENT_EFLAG_ACCESSOR_AC(     18)
+#else
 IMPLEMENT_EFLAG_ACCESSOR   (AC,  18)
+#endif
 IMPLEMENT_EFLAG_ACCESSOR_VM(     17)
 IMPLEMENT_EFLAG_ACCESSOR   (RF,  16)
 IMPLEMENT_EFLAG_ACCESSOR   (NT,  14)
 IMPLEMENT_EFLAG_ACCESSOR_IOPL(   12)
+IMPLEMENT_EFLAG_ACCESSOR   (DF,  10)
 IMPLEMENT_EFLAG_ACCESSOR   (IF,   9)
 IMPLEMENT_EFLAG_ACCESSOR   (TF,   8)
 
@@ -3269,9 +3367,6 @@ IMPLEMENT_EFLAG_ACCESSOR   (TF,   8)
 //
 // For decoding...
 //
-
-#define BX_REPE_PREFIX  10
-#define BX_REPNE_PREFIX 11
 
 #define BX_TASK_FROM_JUMP         10
 #define BX_TASK_FROM_CALL_OR_INT  11
@@ -3287,7 +3382,7 @@ IMPLEMENT_EFLAG_ACCESSOR   (TF,   8)
 #define BxImmediate_Iw      0x0004 // 16 bits regardless
 #define BxImmediate_IvIw    0x0005 // call_Ap
 #define BxImmediate_IwIb    0x0006 // enter_IwIb
-#define BxImmediate_O       0x0007 // mov_ALOb, mov_ObAL, mov_eAXOv, mov_OveAX
+#define BxImmediate_O       0x0007 // MOV_ALOd, mov_OdAL, mov_eAXOv, mov_OveAX
 #define BxImmediate_BrOff8  0x0008 // Relative branch offset byte
 #define BxImmediate_BrOff16 0x0009 // Relative branch offset word
 #define BxImmediate_BrOff32 BxImmediate_Iv
@@ -3310,9 +3405,6 @@ IMPLEMENT_EFLAG_ACCESSOR   (TF,   8)
 #define BxAnother           0x0100 // bit  8
 #define BxLockable          0x0200 // bit  9
 #define Bx3ByteOpcode       0x0400 // bit 10
-
-#define BxRepeatable        0x0800 // bit 11 (pass through to metaInfo field)
-#define BxRepeatableZF      0x1000 // bit 12 (pass through to metaInfo field)
 
 #define BxGroup1          BxGroupN
 #define BxGroup2          BxGroupN

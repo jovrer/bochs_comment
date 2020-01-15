@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc,v 1.121 2006/08/25 18:26:27 vruppert Exp $
+// $Id: keyboard.cc,v 1.130 2007/04/03 22:38:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -76,13 +76,31 @@ int libkeyboard_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, c
 
 void libkeyboard_LTX_plugin_fini(void)
 {
-  BX_INFO(("keyboard plugin_fini"));
+  delete theKeyboard;
 }
 
 bx_keyb_c::bx_keyb_c()
 {
   put("KBD");
   settype(KBDLOG);
+  pastebuf = NULL;
+}
+
+bx_keyb_c::~bx_keyb_c()
+{
+  // remove runtime parameter handler
+  SIM->get_param_bool(BXPN_MOUSE_ENABLED)->set_handler(NULL);
+  SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set_handler(NULL);
+  if (pastebuf != NULL) {
+    delete [] pastebuf;
+  }
+#if BX_WITH_WX
+  bx_list_c *list = (bx_list_c*)SIM->get_param(BXPN_WX_KBD_STATE);
+  if (list != NULL) {
+    list->clear();
+  }
+#endif
+  BX_DEBUG(("Exit"));
 }
 
 // flush internal buffer and reset keyboard settings to power-up condition
@@ -108,7 +126,7 @@ void bx_keyb_c::resetinternals(bx_bool powerup)
 
 void bx_keyb_c::init(void)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc,v 1.121 2006/08/25 18:26:27 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: keyboard.cc,v 1.130 2007/04/03 22:38:48 sshwarts Exp $"));
   Bit32u   i;
 
   DEV_register_irq(1, "8042 Keyboard controller");
@@ -198,10 +216,14 @@ void bx_keyb_c::init(void)
 
 #if BX_WITH_WX
   bx_param_num_c *param;
+  bx_list_c *list;
   if (SIM->get_param("wxdebug") != NULL) {
     // register shadow params (Experimental, not a complete list by far)
-    bx_list_c *list = new bx_list_c(SIM->get_param("wxdebug"), "keyboard",
-                                    "Keyboard State", 20);
+    list = (bx_list_c*)SIM->get_param(BXPN_WX_KBD_STATE);
+    if (list == NULL) {
+      list = new bx_list_c(SIM->get_param("wxdebug"), "keyboard",
+                           "Keyboard State", 20);
+    }
     new bx_shadow_bool_c(list, "irq1_req",
           "Keyboard IRQ1 requested",
           &BX_KEY_THIS s.kbd_controller.irq1_requested);
@@ -311,7 +333,7 @@ void bx_keyb_c::register_state(void)
   BXRS_DEC_PARAM_FIELD(kbdbuf, repeat_rate, BX_KEY_THIS s.kbd_internal_buffer.repeat_rate);
   BXRS_DEC_PARAM_FIELD(kbdbuf, led_status, BX_KEY_THIS s.kbd_internal_buffer.led_status);
   BXRS_PARAM_BOOL(kbdbuf, scanning_enabled, BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled);
-  bx_list_c *mousebuf = new bx_list_c(list, "mouse_internal_buffer");
+  bx_list_c *mousebuf = new bx_list_c(list, "mouse_internal_buffer", 3);
   BXRS_DEC_PARAM_FIELD(mousebuf, num_elements, BX_KEY_THIS s.mouse_internal_buffer.num_elements);
   buffer = new bx_list_c(mousebuf, "buffer", BX_MOUSE_BUFF_SIZE);
   for (i=0; i<BX_MOUSE_BUFF_SIZE; i++) {
@@ -1507,7 +1529,7 @@ void bx_keyb_c::kbd_ctrl_to_mouse(Bit8u value)
         // If PS/2 mouse present, send NACK for unknown commands, otherwise ignore
         if (is_ps2) {
           BX_ERROR(("[mouse] kbd_ctrl_to_mouse(): got value of 0x%02x", value));
-          kbd_enQ(0xFE); /* send NACK */
+          controller_enQ(0xFE, 1); /* send NACK */
         }
     }
   }
@@ -1581,10 +1603,11 @@ void bx_keyb_c::create_mouse_packet(bool force_enq)
 
 void bx_keyb_c::mouse_enabled_changed(bx_bool enabled)
 {
+  BX_KEY_THIS s.mouse.captured = enabled;
 #if BX_SUPPORT_PCIUSB
-  // if type == usb, connect or disconnect the USB mouse
-  if (BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_USB) {
-    DEV_usb_mouse_enable(enabled);
+  // if an usb mouse is connected, notify the device about the status change
+  if (DEV_usb_mouse_connected()) {
+    DEV_usb_mouse_enabled_changed(enabled);
     return;
   }
 #endif
@@ -1596,7 +1619,6 @@ void bx_keyb_c::mouse_enabled_changed(bx_bool enabled)
   BX_KEY_THIS s.mouse.delayed_dx=0;
   BX_KEY_THIS s.mouse.delayed_dy=0;
   BX_KEY_THIS s.mouse.delayed_dz=0;
-  BX_KEY_THIS s.mouse.captured = enabled;
   BX_DEBUG(("PS/2 mouse %s", enabled?"enabled":"disabled"));
 }
 
@@ -1609,9 +1631,18 @@ void bx_keyb_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned but
   if (!BX_KEY_THIS s.mouse.captured)
     return;
 
+#if BX_SUPPORT_PCIUSB
+  // if an usb mouse is connected, redirect mouse data to the usb device
+  if (DEV_usb_mouse_connected()) {
+    DEV_usb_mouse_enq(delta_x, delta_y, delta_z, button_state);
+    return;
+  }
+#endif
+
   // if type == serial, redirect mouse data to the serial device
   if ((BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_SERIAL) ||
-      (BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_SERIAL_WHEEL)) {
+      (BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_SERIAL_WHEEL) ||
+      (BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_SERIAL_MSYS)) {
     DEV_serial_mouse_enq(delta_x, delta_y, delta_z, button_state);
     return;
   }
@@ -1620,14 +1651,6 @@ void bx_keyb_c::mouse_motion(int delta_x, int delta_y, int delta_z, unsigned but
   // if type == bus, redirect mouse data to the bus device
   if (BX_KEY_THIS s.mouse.type == BX_MOUSE_TYPE_BUS) {
     DEV_bus_mouse_enq(delta_x, delta_y, 0, button_state);
-    return;
-  }
-#endif
-
-#if BX_SUPPORT_PCIUSB
-  // if an usb mouse is connected redirect mouse data to the usb device
-  if (DEV_usb_mouse_connected()) {
-    DEV_usb_mouse_enq(delta_x, delta_y, delta_z, button_state);
     return;
   }
 #endif

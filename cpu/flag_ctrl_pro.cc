@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl_pro.cc,v 1.24 2006/04/05 17:31:31 sshwarts Exp $
+// $Id: flag_ctrl_pro.cc,v 1.26 2007/07/31 20:25:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -35,10 +35,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::setEFlags(Bit32u val)
 {
   // VM flag could not be set from long mode
 #if BX_SUPPORT_X86_64
-  if (IsLongMode()) {
+  if (long_mode()) {
     if (BX_CPU_THIS_PTR get_VM()) BX_PANIC(("VM is set in long mode !"));
     val &= ~EFlagsVMMask;
   }
+#endif
+
+#if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
+  if (BX_CPU_THIS_PTR get_AC() && BX_CPU_THIS_PTR cr0.get_AM())
+    BX_CPU_THIS_PTR alignment_check = 1;
+  else 
+    BX_CPU_THIS_PTR alignment_check = 0;
 #endif
 
   BX_CPU_THIS_PTR eflags.val32 = val;

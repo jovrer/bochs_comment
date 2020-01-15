@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.50 2006/05/29 22:33:38 sshwarts Exp $
+// $Id: sb16.cc,v 1.54 2007/04/08 15:02:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -44,7 +44,7 @@ bx_sb16_c *theSB16Device = NULL;
 
 int libsb16_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  theSB16Device = new bx_sb16_c ();
+  theSB16Device = new bx_sb16_c();
   bx_devices.pluginSB16Device = theSB16Device;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theSB16Device, BX_PLUGIN_SB16);
   return(0); // Success
@@ -52,6 +52,7 @@ int libsb16_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
 
 void libsb16_LTX_plugin_fini(void)
 {
+  delete theSB16Device;
 }
 
 // some shortcuts to save typing
@@ -121,6 +122,11 @@ bx_sb16_c::~bx_sb16_c(void)
 
   if ((SIM->get_param_num(BXPN_SB16_LOGLEVEL)->get() > 0) && LOGFILE)
     fclose(LOGFILE);
+
+  SIM->get_param_num(BXPN_SB16_DMATIMER)->set_handler(NULL);
+  SIM->get_param_num(BXPN_SB16_LOGLEVEL)->set_handler(NULL);
+
+  BX_DEBUG(("Exit"));
 }
 
 void bx_sb16_c::init(void)
@@ -424,7 +430,7 @@ void bx_sb16_c::register_state(void)
     sprintf(name, "0x%02x", i);
     new bx_shadow_num_c(mixer, name, &MIXER.reg[i], BASE_HEX);
   }
-  bx_list_c *emul = new bx_list_c(list, "emul");
+  bx_list_c *emul = new bx_list_c(list, "emul", 2);
   new bx_shadow_num_c(emul, "remaps", &EMUL.remaps);
   bx_list_c *remap = new bx_list_c(emul, "remaplist", 256);
   for (i=0; i<EMUL.remaps; i++) {
@@ -572,8 +578,8 @@ Bit32u bx_sb16_c::dsp_dataread()
 void bx_sb16_c::dsp_datawrite(Bit32u value)
 {
   int bytesneeded;
-  Bit8u index, mode, value8;
-  Bit16u length;
+  Bit8u index = 0, mode = 0, value8 = 0;
+  Bit16u length = 0;
 
   writelog(WAVELOG(4), "DSP Data port write, value %x", value);
 
@@ -1963,7 +1969,7 @@ Bit32u bx_sb16_c::emul_read()
 
 void bx_sb16_c::emul_write(Bit32u value)
 {
-  Bit8u value8;
+  Bit8u value8 = 0;
 
   writelog(4, "write to emulator port, value %02x", value);
 

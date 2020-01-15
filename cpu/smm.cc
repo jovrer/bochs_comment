@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.cc,v 1.19 2006/06/12 16:58:27 sshwarts Exp $
+// $Id: smm.cc,v 1.26 2007/09/10 20:47:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -78,7 +78,6 @@ void BX_CPU_C::RSM(bxInstruction_c *i)
   BX_INFO(("RSM: Resuming from System Management Mode !"));
 
   BX_CPU_THIS_PTR nmi_disable = 0;
-  BX_CPU_THIS_PTR in_smm = 0;
 
   Bit32u saved_state[SMM_SAVE_STATE_MAP_SIZE], n;
   // reset reserved bits
@@ -90,6 +89,7 @@ void BX_CPU_C::RSM(bxInstruction_c *i)
     base -= 4;
     BX_CPU_THIS_PTR mem->readPhysicalPage(BX_CPU_THIS, base, 4, &saved_state[n]);
   }
+  BX_CPU_THIS_PTR in_smm = 0;
 
   // restore the CPU state from SMRAM
   if (! smram_restore_state(saved_state)) {
@@ -97,16 +97,16 @@ void BX_CPU_C::RSM(bxInstruction_c *i)
     shutdown();
   }
 
-  debug(RIP);
+  // debug(RIP);
 }
 
 void BX_CPU_C::enter_system_management_mode(void)
 {
   invalidate_prefetch_q();
 
-  debug(BX_CPU_THIS_PTR prev_eip);
-
   BX_INFO(("Enter to System Management Mode !"));
+
+  // debug(BX_CPU_THIS_PTR prev_eip);
 
   BX_CPU_THIS_PTR in_smm = 1;
 
@@ -128,11 +128,10 @@ void BX_CPU_C::enter_system_management_mode(void)
   BX_CPU_THIS_PTR dr7 = 0x00000400;
 
   // CR0 - PE, EM, TS, and PG flags set to 0; others unmodified
-  BX_CPU_THIS_PTR cr0.pe = 0; // real mode (bit 0)
-  BX_CPU_THIS_PTR cr0.em = 0; // emulate math coprocessor (bit 2)
-  BX_CPU_THIS_PTR cr0.ts = 0; // no task switch (bit 3)
-  BX_CPU_THIS_PTR cr0.pg = 0; // paging disabled (bit 31)
-  BX_CPU_THIS_PTR cr0.val32 &= 0x7ffffff2;
+  BX_CPU_THIS_PTR cr0.set_PE(0); // real mode (bit 0)
+  BX_CPU_THIS_PTR cr0.set_EM(0); // emulate math coprocessor (bit 2)
+  BX_CPU_THIS_PTR cr0.set_TS(0); // no task switch (bit 3)
+  BX_CPU_THIS_PTR cr0.set_PG(0); // paging disabled (bit 31)
 
   BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_REAL;
 
@@ -143,10 +142,10 @@ void BX_CPU_C::enter_system_management_mode(void)
   BX_CPU_THIS_PTR cr4.setRegister(0);
 #endif
 
-  // EFER.LME = 0, EFER.LME = 1
+  // EFER.LME = 0, EFER.LME = 0
 #if BX_SUPPORT_X86_64
-  BX_CPU_THIS_PTR msr.lme = 0;
-  BX_CPU_THIS_PTR msr.lma = 0;
+  BX_CPU_THIS_PTR efer.lme = 0;
+  BX_CPU_THIS_PTR efer.lma = 0;
 #endif
 
   parse_selector(BX_CPU_THIS_PTR smbase >> 4,
@@ -215,21 +214,21 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
 {
   // --- General Purpose Registers --- //
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RAX_HI32) = RAX >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RAX_LO32) = RAX & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RAX_LO32) = EAX;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RCX_HI32) = RCX >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RCX_LO32) = RCX & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RCX_LO32) = ECX;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RDX_HI32) = RDX >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RDX_LO32) = RDX & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RDX_LO32) = EDX;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RBX_HI32) = RBX >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RBX_LO32) = RBX & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RBX_LO32) = EBX;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RSP_HI32) = RSP >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RSP_LO32) = RSP & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RSP_LO32) = ESP;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RBP_HI32) = RBP >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RBP_LO32) = RBP & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RBP_LO32) = EBP;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RSI_HI32) = RSI >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RSI_LO32) = RSI & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RSI_LO32) = ESI;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_RDI_HI32) = RDI >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RDI_LO32) = RDI & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_OFFSET_RDI_LO32) = EDI;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_R8_HI32)  =  R8 >> 32;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_R8_LO32)  =  R8 & 0xffffffff;
   SMRAM_FIELD(saved_state, SMRAM_OFFSET_R9_HI32)  =  R9 >> 32;
@@ -268,9 +267,9 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
   /* base+0x7ebc to base+0x7ea0 is reserved */
 
   // --- Task Register --- //
-  SMRAM_FIELD(saved_state, SMRAM_TR_BASE_HI32) = BX_CPU_THIS_PTR tr.cache.u.tss.base >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_TR_BASE_LO32) = BX_CPU_THIS_PTR tr.cache.u.tss.base & 0xffffffff;
-  SMRAM_FIELD(saved_state, SMRAM_TR_LIMIT) = BX_CPU_THIS_PTR tr.cache.u.tss.limit;
+  SMRAM_FIELD(saved_state, SMRAM_TR_BASE_HI32) = BX_CPU_THIS_PTR tr.cache.u.system.base >> 32;
+  SMRAM_FIELD(saved_state, SMRAM_TR_BASE_LO32) = BX_CPU_THIS_PTR tr.cache.u.system.base & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_TR_LIMIT) = BX_CPU_THIS_PTR tr.cache.u.system.limit;
   SMRAM_FIELD(saved_state, SMRAM_TR_SELECTOR_AR) = BX_CPU_THIS_PTR tr.selector.value |
     (((Bit32u) get_segment_ar_data(&BX_CPU_THIS_PTR tr.cache)) << 16);
 
@@ -279,9 +278,9 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
   SMRAM_FIELD(saved_state, SMRAM_IDTR_BASE_LO32) = BX_CPU_THIS_PTR idtr.base & 0xffffffff;
   SMRAM_FIELD(saved_state, SMRAM_IDTR_LIMIT) = BX_CPU_THIS_PTR idtr.limit;
   // --- LDTR --- //
-  SMRAM_FIELD(saved_state, SMRAM_LDTR_BASE_HI32) = BX_CPU_THIS_PTR ldtr.cache.u.ldt.base >> 32;
-  SMRAM_FIELD(saved_state, SMRAM_LDTR_BASE_LO32) = BX_CPU_THIS_PTR ldtr.cache.u.ldt.base & 0xffffffff;
-  SMRAM_FIELD(saved_state, SMRAM_LDTR_LIMIT) = BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit;
+  SMRAM_FIELD(saved_state, SMRAM_LDTR_BASE_HI32) = BX_CPU_THIS_PTR ldtr.cache.u.system.base >> 32;
+  SMRAM_FIELD(saved_state, SMRAM_LDTR_BASE_LO32) = BX_CPU_THIS_PTR ldtr.cache.u.system.base & 0xffffffff;
+  SMRAM_FIELD(saved_state, SMRAM_LDTR_LIMIT) = BX_CPU_THIS_PTR ldtr.cache.u.system.limit;
   SMRAM_FIELD(saved_state, SMRAM_LDTR_SELECTOR_AR) = BX_CPU_THIS_PTR ldtr.selector.value |
     (((Bit32u) get_segment_ar_data(&BX_CPU_THIS_PTR ldtr.cache)) << 16);
   // --- GDTR --- //
@@ -360,35 +359,34 @@ bx_bool BX_CPU_C::smram_restore_state(const Bit32u *saved_state)
     return 0;
   }
 
-  BX_CPU_THIS_PTR msr.sce   = (temp_efer >> 0)  & 1;
-  BX_CPU_THIS_PTR msr.lme   = (temp_efer >> 8)  & 1;
-  BX_CPU_THIS_PTR msr.lma   = (temp_efer >> 10) & 1;
-  BX_CPU_THIS_PTR msr.nxe   = (temp_efer >> 11) & 1;
-  BX_CPU_THIS_PTR msr.ffxsr = (temp_efer >> 14) & 1;
+  BX_CPU_THIS_PTR efer.sce   = (temp_efer >> 0)  & 1;
+  BX_CPU_THIS_PTR efer.lme   = (temp_efer >> 8)  & 1;
+  BX_CPU_THIS_PTR efer.lma   = (temp_efer >> 10) & 1;
+  BX_CPU_THIS_PTR efer.nxe   = (temp_efer >> 11) & 1;
+  BX_CPU_THIS_PTR efer.ffxsr = (temp_efer >> 14) & 1;
 
-  if (BX_CPU_THIS_PTR msr.lma) {
+  if (BX_CPU_THIS_PTR efer.lma) {
     if (temp_eflags & EFlagsVMMask) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 => RFLAGS.VM=0 !"));
       return 0;
     }
 
-    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !pg || !pe || !BX_CPU_THIS_PTR msr.lme) {
+    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !pg || !pe || !BX_CPU_THIS_PTR efer.lme) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
       return 0;
     }
   }
 
-  if (BX_CPU_THIS_PTR cr4.get_PAE() && pg && pe && BX_CPU_THIS_PTR msr.lme) {
-    if (! BX_CPU_THIS_PTR msr.lma) {
+  if (BX_CPU_THIS_PTR cr4.get_PAE() && pg && pe && BX_CPU_THIS_PTR efer.lme) {
+    if (! BX_CPU_THIS_PTR efer.lma) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
       return 0;
     }
   }
 
   // hack CR0 to be able to back to long mode correctly
-  BX_CPU_THIS_PTR cr0.pe = 0; // real mode (bit 0)
-  BX_CPU_THIS_PTR cr0.pg = 0; // paging disabled (bit 31)
-  BX_CPU_THIS_PTR cr0.val32 &= 0x7ffffffe;
+  BX_CPU_THIS_PTR cr0.set_PE(0); // real mode (bit 0)
+  BX_CPU_THIS_PTR cr0.set_PG(0); // paging disabled (bit 31)
   SetCR0(temp_cr0);
   setEFlags(temp_eflags);
 
@@ -582,8 +580,8 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
   SMRAM_FIELD(saved_state, SMRAM_ES_SELECTOR_AR) = seg->selector.value |
     (((Bit32u) get_segment_ar_data(&seg->cache)) << 16);
   // --- LDTR --- //
-  SMRAM_FIELD(saved_state, SMRAM_LDTR_BASE) = BX_CPU_THIS_PTR ldtr.cache.u.ldt.base;
-  SMRAM_FIELD(saved_state, SMRAM_LDTR_LIMIT) = BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit;
+  SMRAM_FIELD(saved_state, SMRAM_LDTR_BASE) = BX_CPU_THIS_PTR ldtr.cache.u.system.base;
+  SMRAM_FIELD(saved_state, SMRAM_LDTR_LIMIT) = BX_CPU_THIS_PTR ldtr.cache.u.system.limit;
   SMRAM_FIELD(saved_state, SMRAM_LDTR_SELECTOR_AR) = BX_CPU_THIS_PTR ldtr.selector.value |
     (((Bit32u) get_segment_ar_data(&BX_CPU_THIS_PTR ldtr.cache)) << 16);
   // --- GDTR --- //
@@ -593,8 +591,8 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
   /* base+0x7f68 is reserved */
 
   // --- Task Register --- //
-  SMRAM_FIELD(saved_state, SMRAM_TR_BASE) = BX_CPU_THIS_PTR tr.cache.u.tss.base;
-  SMRAM_FIELD(saved_state, SMRAM_TR_LIMIT) = BX_CPU_THIS_PTR tr.cache.u.tss.limit;
+  SMRAM_FIELD(saved_state, SMRAM_TR_BASE) = BX_CPU_THIS_PTR tr.cache.u.system.base;
+  SMRAM_FIELD(saved_state, SMRAM_TR_LIMIT) = BX_CPU_THIS_PTR tr.cache.u.system.limit;
   SMRAM_FIELD(saved_state, SMRAM_TR_SELECTOR_AR) = BX_CPU_THIS_PTR tr.selector.value |
     (((Bit32u) get_segment_ar_data(&BX_CPU_THIS_PTR tr.cache)) << 16);
 

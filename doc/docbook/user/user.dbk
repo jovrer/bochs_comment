@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.218 2006/08/27 07:06:01 vruppert Exp $
+$Id: user.dbk,v 1.228 2007/09/15 16:00:19 vruppert Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -34,16 +34,17 @@ This is the top level file for the Bochs Users Manual.
 <section id="whatisbochs"><title>What is Bochs?</title>
 <para>
 Bochs is a program that simulates a complete Intel x86 computer.  It 
-can be configured to act like a <!--286,--> 386, 486, Pentium, Pentium Pro, or
-x86-64 CPU, including optional MMX, SSE/SSE2/SSE3 and 3DNow! instructions.
+can be configured to act like a <!--286,--> 386, 486, Pentium, Pentium II, 
+Pentium III, Pentium 4 or even like x86-64 CPU, including optional MMX, SSEx 
+and 3DNow! instructions.
 Bochs interprets every instruction from power-up to reboot, and has
 device models for all of the standard PC peripherals: keyboard, mouse,
 VGA card/monitor, disks, timer chips, network card, etc.  Because Bochs
 simulates the whole PC environment, the software running in the simulation
 "believes" it is running on a real machine.  This approach allows Bochs
 to run a wide variety of software with no modification, include most popular
-x86 operating systems: Windows 95/98/NT/2000, all Linux flavors, all BSD flavors,
-and more.
+x86 operating systems: Windows 95/98/NT/2000/XP and Vista, all Linux flavors, 
+all BSD flavors, and more.
 </para>
 
 <para>
@@ -382,8 +383,9 @@ currently work with.
   <row>
     <entry>Enhanced BIOS</entry>
     <entry>Yes</entry>
-    <entry>Implements ElTorito, EDD v3.0, basic APM features, basic PCIBIOS features
-    and the PCI interrupt routing table.
+    <entry>Implements ElTorito, EDD v3.0, basic APM feature, PCIBIOS features
+    and the PCI interrupt routing table. The latest version of the Bochs BIOS
+    has a 32-bit init for ACPI, SMM and SMP.
     </entry>
   </row>
   <row>
@@ -426,7 +428,7 @@ currently work with.
   <row>
     <entry>Hard disk</entry>
     <entry>Yes</entry>
-    <entry>Emulates ATA-2/IDE hard drives via image files.  Physical
+    <entry>Emulates ATA-6/IDE hard drives via image files.  Physical
     hard disk access is supported on some architecture, but NOT recommended, primarily for safety reasons.
     Hard disk up to 127GB are supported, on any platform that support large files access.
     </entry>
@@ -459,7 +461,7 @@ currently work with.
   <row>
     <entry>Sound Blaster</entry>
     <entry>Yes</entry>
-    <entry>Emulates a Sound Blaster 16 card. On Windows, Linux, FreeBSD, MacOS 9 and
+    <entry>Emulates a Sound Blaster 16 card (ISA, no plug&amp;play). On Windows, Linux, FreeBSD, MacOS 9 and
     MacOSX, the output can be sent to the host computer's sound system, see
     <xref linkend="sb16-emulation"> for details.
     </entry>
@@ -513,9 +515,10 @@ currently work with.
   <row>
     <entry>USB</entry>
     <entry>incomplete</entry>
-    <entry>The USB root hub is available, USB mouse and keypad are implemented,
-    other devices are under construction. Access to real hardware and runtime
-    options to plug in or remove devices are not implemented yet.
+    <entry>The USB root hub and the devices 'mouse', 'tablet', 'keypad' and
+    'disk' are available. Plugging in and removing devices at runtime is
+    possible, but still experimental. Access to real hardware is not
+    implemented yet.
     </entry>
   </row>
   <row>
@@ -1335,7 +1338,8 @@ DLX Linux screenshot.
 </thead>
 <tbody>
 
-<row><entry>BIOS-bochs-latest </entry> <entry> ROM BIOS image for Bochs </entry> </row>
+<row><entry>BIOS-bochs-latest </entry> <entry> default ROM BIOS image for Bochs </entry> </row>
+<row><entry>BIOS-bochs-legacy </entry> <entry> ROM BIOS image without 32-bit init code </entry> </row>
 <row><entry>bochs.exe </entry> <entry> the main Bochs executable </entry> </row>
 <row><entry>bochs.ico </entry> <entry> the Bochs icon (used for links in start menu and on the desktop) </entry> </row>
 <row><entry>bochsdbg.exe </entry> <entry> the main Bochs executable with debugger enabled </entry> </row>
@@ -1532,7 +1536,8 @@ description of each one.
 <row><entry>/usr/share/man/man1/* </entry> <entry> man pages for bochs, bochs-dlx, bximage and bxcommit</entry> </row>
 <row><entry>/usr/share/man/man5/* </entry> <entry> man page for bochsrc </entry> </row>
 <row><entry>/usr/share/doc/bochs/index.html</entry> <entry> a local copy of all Bochs documentation ( <ulink url="http://bochs.sourceforge.net/doc/docbook/index.html">Online copy</ulink> )</entry> </row>
-<row><entry>/usr/share/bochs/BIOS-bochs-latest </entry> <entry> ROM BIOS image for Bochs </entry> </row>
+<row><entry>/usr/share/bochs/BIOS-bochs-latest </entry> <entry> default ROM BIOS image for Bochs </entry> </row>
+<row><entry>/usr/share/bochs/BIOS-bochs-legacy </entry> <entry> ROM BIOS image without 32-bit init code </entry> </row>
 <row><entry>/usr/share/bochs/VGABIOS-elpin-2.40 </entry> <entry> VGA BIOS image for Bochs </entry> </row>
 <row><entry>/usr/share/bochs/VGABIOS-elpin-LICENSE </entry> <entry> license for VGA BIOS </entry> </row>
 <row><entry>/usr/share/bochs/VGABIOS-lgpl-latest </entry> <entry> LGPL'd VGA BIOS image for Bochs </entry> </row>
@@ -2068,16 +2073,6 @@ turn it off.
       </entry>
     </row>
     <row>
-      <entry>--enable-new-pit</entry>
-      <entry>yes</entry>
-      <entry>
-      Enables Greg Alexander's PIT model, written during Summer 2001.  This
-      model was written from scratch to be much more complete than the old
-      Bochs PIT model, which was missing many registers and features.
-      If you disable this option, the old PIT model will be used instead.
-      </entry>
-    </row>
-    <row>
       <entry>--enable-idle-hack</entry>
       <entry>no</entry>
       <entry>
@@ -2202,7 +2197,7 @@ turn it off.
       <entry>no</entry>
       <entry>
       Add support for SSE instructions, written by Stanislav Shwartsman.
-      Any of SSE/SSE2/SSE3 instruction sets are supported.
+      Any of SSE/SSE2/SSE3/SSE3E/SSE4.1 instruction sets are supported.
       </entry>
     </row>
     <row>
@@ -2281,9 +2276,8 @@ turn it off.
       features of the debugger.  You only want this option if you are 
       developing guest OS code for use in Bochs.  In other words, most people
       don't.  Also, it should only be used with --enable-debugger.  See the
-      <ulink url="http://bochs.sourceforge.net/docs-html/iodebug.html">old documentation</ulink> for
-      details.
-      <footnote><para>&FIXME; move iodebug.html to the new developer docs</para></footnote>
+      <ulink url="http://bochs.sourceforge.net/doc/docbook/development/iodebug.html">
+      developer documentation</ulink> for details.
       </entry>
     </row>
     <row>
@@ -2318,7 +2312,8 @@ turn it off.
       <entry>--enable-usb</entry>
       <entry>no</entry>
       <entry>
-        Enable limited i440FX PCI USB support. This is not yet complete.
+        Enable limited i440FX PCI USB support. This is not yet complete (root hub
+        and 4 device types are available).
       </entry>
     </row>
     <row>
@@ -3118,19 +3113,21 @@ speed.</para></footnote>.
 <para>
 Examples:
 <screen>
-  romimage: file=bios/BIOS-bochs-latest, address=0xf0000
-  romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
+  romimage: file=bios/BIOS-bochs-latest, address=0xe0000
+  romimage: file=$BXSHARE/BIOS-bochs-legacy, address=0xf0000
   romimage: file=mybios.bin, address=0xfff80000
   romimage: file=mybios.bin
 </screen>
 The ROM BIOS controls what the PC does when it first powers on.  Normally, you
 can use a precompiled BIOS in the source or binary distribution called
-<filename>BIOS-bochs-latest</filename>.  The ROM BIOS is usually loaded
-starting at address 0xf0000, and it is exactly 64k long.
+<filename>BIOS-bochs-latest</filename>. The default ROM BIOS is usually loaded
+starting at address 0xe0000, and it is exactly 128k long. The legacy version of
+the Bochs BIOS is usually loaded starting at address 0xf0000, and it is exactly
+64k long.
 You can also use the environment variable $BXSHARE to specify the location of the BIOS.
 The usage of external large BIOS images (up to 512k) at memory top is
 now supported, but we still recommend to use the BIOS distributed with Bochs.
-Now the start address can be calculated from image size.
+The start address is now optional, since it can be calculated from image size.
 </para>
 </section>
 
@@ -3276,7 +3273,7 @@ This defines the type and characteristics of all attached ata devices:
 <row> 
   <entry> mode  </entry> 
   <entry> image type, only valid for disks </entry> 
-  <entry> [flat | concat | external | dll | sparse | vmware3 | undoable | growing | volatile ]</entry> 
+  <entry> [flat | concat | external | dll | sparse | vmware3 | vmware4 | undoable | growing | volatile ]</entry> 
 </row>
 <row> <entry> cylinders </entry> <entry> only valid for disks </entry> </row>
 <row> <entry> heads </entry> <entry> only valid for disks </entry> </row>
@@ -3357,7 +3354,10 @@ dll : developer's specific, through a DLL
 sparse : stackable, commitable, rollbackable
 </para></listitem>
 <listitem><para>
-vmware3 : vmware3 disk support
+vmware3 : vmware version 3 disk support
+</para></listitem>
+<listitem><para>
+vmware4 : vmware version 4 disk support
 </para></listitem>
 <listitem><para>
 undoable : flat file with commitable redolog
@@ -3394,13 +3394,13 @@ Default values are:
 Examples:
 <screen>
   boot: floppy
-  boot: disk
-  boot: cdrom
+  boot: cdrom, disk
+  boot: network, disk
   boot: cdrom, floppy, disk
 </screen>
 This defines the boot sequence. You can specify up to 3 boot drives,
-which can be 'floppy', 'disk' or 'cdrom'.
-'a' and 'c' are also accepted for historical reasons.
+which can be 'floppy', 'disk', 'cdrom' or 'network' (boot ROM).
+Legacy 'a' and 'c' are also supported.
 </para>
 </section>
 
@@ -3471,6 +3471,7 @@ Starting with version 2.2, some display libraries support specific options:
   display_library: rfb, options="timeout=60"  # time to wait for client
   display_library: sdl, options="fullscreen"  # startup in fullscreen mode
   display_library: win32, options="legacyF12" # use F12 to toggle mouse
+  display_library: win32, options="windebug" # use experimental debugger gui
 </screen>
 </para>
 
@@ -3706,7 +3707,8 @@ are in the usual "property=value" format.
    <listitem><para>
    midi: The filename is where the midi data is sent to. This
    can be a device or just a file if you want to record the midi data.
-   On a Windows host, you should use "midi" as filename.
+   On a Windows host this parameter is ignored when using output to the sound
+   device.
    </para></listitem>
    
    <listitem><para>
@@ -3722,7 +3724,8 @@ are in the usual "property=value" format.
    
    <listitem><para>
    wave: This is the device/file where wave output is stored.
-   On a Windows host, you should use "wave" as filename.
+   On a Windows host this parameter is ignored when using output to the sound
+   device.
    </para></listitem>
    
    <listitem><para>
@@ -3873,11 +3876,10 @@ mouse usage at runtime (see <link linkend="headerbar">headerbar</link>).
 <para>
   With the mouse type option you can select the type of mouse to emulate.
   The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
-  on PS/2), 'serial', 'serial_wheel' (one com port requires setting
-  'mode=mouse', see <link linkend="bochsopt-com">com option</link>) and
-  'usb' (3-button mouse - one of the USB ports must be connected with the
-  'mouse' device, see <link linkend="bochsopt-usb1">usb1 option</link> -
-  requires PCI and USB support).
+  on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
+  setting 'mode=mouse', see <link linkend="bochsopt-com">com option</link>).
+  To connect a mouse to an USB port, see the <link linkend="bochsopt-usb1">usb1 option</link>
+  (requires PCI and USB support).
 </para>
 </section>
 
@@ -3936,18 +3938,23 @@ located in the <constant>bochs/host/linux/pcidev/</constant> directory.
 
 <section id="bochsopt-usb1"><title>usb1</title>
 <para>
-Example:
+Examples:
 <screen>
   usb1: enabled=1, port1=mouse, port2=keypad
+  usb1: enabled=1, port1=tablet, port2=disk:usbdisk.img
 </screen>
 This option controls the presence of the USB root hub which is a part of the
 i440FX PCI chipset.
 </para>
 <para>
 With the port<replaceable>X</replaceable> option you can connect devices
-to the hub (currently supported: 'mouse' and 'keypad'). If you connect
-the mouse to one of the ports and use the <link linkend="bochsopt-mouse">mouse option</link>
-'type=usb' you'll have a 3-button USB mouse.
+to the hub (currently supported: 'mouse', 'tablet', 'keypad' and 'disk').
+If you connect the mouse or tablet to one of the ports, Bochs forwards the
+mouse movement data to the USB device instead of the selected mouse type.
+When connecting the keypad to one of the ports, Bochs forwards the input of
+the numeric keypad to the USB device instead of the PS/2 keyboard.
+To connect a flat image as an USB hardisk you can use the 'disk' device with
+the path to the image separated with a colon (see above).
 </para>
 <note><para>
 PCI support must be enabled.
@@ -3978,14 +3985,14 @@ the NE2000 just comment out the ne2k line.
 <para>
 Examples:
 <screen>
-ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
-ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=en0 #macosx
-ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
-ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=<replaceable>MYCARD</replaceable>
-ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
-ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
-ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
-ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
+ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
+ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=en0 #macosx
+ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
+ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=<replaceable>MYCARD</replaceable>
+ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
+ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
+ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
+ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
 
 ioaddr, irq: You probably won't need to change ioaddr and irq, unless there
 are IRQ conflicts. These parameters are ignored if the NE2000 is assigned to
@@ -4166,7 +4173,7 @@ Valid key names:
 <para>
 "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
 "f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus",
-"right", "shift", "space", "tab", "up", and "win".
+"right", "shift", "space", "tab", "up", "win" and "print".
 </para>
 </section>
 
@@ -4181,6 +4188,18 @@ The rtc_init parameter controls whether initialize the RTC with values stored
 in the image. By default the time0 argument given to the
 <link linkend="bochsopt-clock">clock option</link> is used. With 'rtc_init=image'
 the image is the source for the initial time.
+</para>
+</section>
+
+<section><title>magic_break</title>
+<para>
+Example:
+<screen>
+  magic_break: enabled=1
+</screen>
+This enables the "magic breakpoint" feature when using the debugger.
+The useless cpu instruction XCHG BX, BX causes Bochs to enter the
+debugger mode. This might be useful for software development.
 </para>
 </section>
 
@@ -5757,7 +5776,7 @@ structures are dynamicly created by Bochs.
 </para></listitem>
 <listitem><para> ACPI support is required to boot SMP system in most of modern
 operating systems. For example WinXP 64 bit require ACPI support even for 
-single processor configuration. Still not supported by Bochs.
+single processor configuration. Still not supported by Bochs. (FIXME)
 </para></listitem>
 </itemizedlist>
 </para>
@@ -5808,13 +5827,13 @@ one that's closest to what you need, add it to your bochsrc file, and
 edit the values if necessary.
 <screen>
   # sample for Mac OS X
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=en0
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=en0
   # sample for FreeBSD
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
   # sample for Linux
-  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
+  ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
   # sample for Windows
-  ne2k: ioaddr=0x240, irq=9, mac=00:c4:3B:00:C3:00, ethmod=win32, ethdev=NE2000
+  ne2k: ioaddr=0x300, irq=9, mac=00:c4:3B:00:C3:00, ethmod=win32, ethdev=NE2000
 </screen>
 You see the pattern.  Usually you won't need to change the I/O address, IRQ
 number, or MAC address.  The <varname>ethmod</varname> value depends on your
@@ -5844,8 +5863,8 @@ begin.  DLX Linux should boot in the Bochs window, and you should see
 that Linux detects the NE2000 card.  Eventually it gets to a login prompt.
 <screen>
   ne.c:v1.10 9/23/94 Donald Becker (becker@cesdis.gsfc.nasa.gov)
-  NE*000 ethercard probe at 0x280: b0 c4 20 00 00 00
-  eth0: NE2000 found at 0x280, using IRQ 9.
+  NE*000 ethercard probe at 0x300: b0 c4 20 00 00 00
+  eth0: NE2000 found at 0x300, using IRQ 9.
 </screen>
 </para>
 
@@ -5991,7 +6010,7 @@ Some of the other options in this group is probably also needed,
                 (see <xref linkend="compiling">)
         </para>
         <para>edit your <replaceable>.bochsrc</replaceable> configuration file and add something like :
-                <screen>  ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, 
+                <screen>  ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, 
                           ethmod=tuntap, ethdev=/dev/net/tun0, script=<replaceable>/path/to/tunconfig</replaceable>
                 </screen>
         </para>
@@ -6537,7 +6556,7 @@ Enable the <link linkend="bochsopt-gdbstub">gdbstub option</link> in <filename>b
 <section>
 <title>Running GDB</title>
 <para>
-Bochs GDB stub waits for a connection on port 1234 on localhost (127.0.0.1). Just start GDB like this:
+Bochs GDB stub waits for a connection on TCP port 1234. Just start GDB like this:
 
 <screen>
   $ gdb YOUR-KERNEL
@@ -7189,7 +7208,12 @@ If unspecified, the default "mode" is flat.
  </row>
  <row> <entry> vmware3 </entry> <entry> vmware3 disk support </entry> 
        <entry> 
-       vmware3 compatibility
+       vmware version 3 compatibility
+       </entry>
+ </row>
+ <row> <entry> vmware4 </entry> <entry> vmware4 disk support </entry> 
+       <entry> 
+       vmware version 4 compatibility
        </entry>
  </row>
  <row> <entry> undoable </entry> <entry> flat file with a commitable redolog </entry> 
@@ -7476,40 +7500,40 @@ No external tool support Sparse disk images yet.
 </section>
 </section>
 
-<section><title>vmware3</title>
+<section><title>vmware3/vmware4</title>
 <para>
 </para>
 <section><title>description</title>
 <para>
-Sharvil Nanavati has added vmware3 disk image support into Bochs
+Sharvil Nanavati has added vmware3/4 disk image support into Bochs
 for Net Integration Technologies, Inc. 
-You should be able to use disk images created by vmware3.
+You should be able to use disk images created by vmware version 3 and 4.
 </para>
 </section>
 <section><title>image creation</title>
 <para>
-Create such disk image with vmware3.
+Create such disk image with vmware version 3 or 4.
 </para>
 </section>
 <section><title>path</title>
 <para>
 The "path" option of the ataX-xxx directive in the configuration file
-must point to the vmware3 disk image.
+must point to the vmware3/4 disk image.
 </para>
 </section>
 <section><title>external tools</title>
 <para>
-&FIXME; give a look at vmware3 tools : disk image creation, etc.
+&FIXME; give a look at vmware3/4 tools : disk image creation, etc.
 </para>
 </section>
 <section><title>typical use</title>
 <para>
-If you want to use an existing vmware3 disk image.
+If you want to use an existing vmware3/4 disk image.
 </para>
 </section>
 <section><title>limitations</title>
 <para>
-Only vmware version 3 disk image files are supported.
+Only vmware versions 3 and 4 disk image files are supported.
 </para>
 </section>
 </section>
@@ -8345,7 +8369,7 @@ on your home directory and edit it with your favorite editor (GNU Emacs, i hope 
 <para>For my image file I have the following configuration :
 
 <screen>
-romimage: file=/usr/share/bochs/BIOS-bochs-latest, address=0xf0000
+romimage: file=/usr/share/bochs/BIOS-bochs-latest
 megs: 128
 vgaromimage: file=/usr/share/bochs/VGABIOS-lgpl-latest
 floppya: 1_44=/dev/fd0, status=ejected
@@ -8365,7 +8389,7 @@ mouse: enabled=0
 private_colormap: enabled=0
 fullscreen: enabled=0
 screenmode: name="sample"
-ne2k: ioaddr=0x280, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
+ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
 keyboard_mapping: enabled=0, map=
 keyboard_type: xt
 i440fxsupport: enabled=0
@@ -8562,6 +8586,24 @@ pathname, like <filename>c:\windows\himem.sys</filename>.
 </para>
 
 </section>
+<section><title>SB16 driver for DOS</title>
+<para>
+To use the SB16 device in DOS you need to load a driver for it. The file <filename>
+SBBASIC.EXE</filename> contains a self-extracting archive with all required file.
+After unpacking it to <varname>C:\SB16</varname> you can execute <filename>INSTALL.EXE</filename>
+to install the driver. The file <filename>DISK.ID</filename> should contain the version
+string <varname>SDR-31STD-1-US (Revision 1)</varname>.
+</para>
+</section>
+<section><title>Bootdisks of early DOS versions</title>
+<para>
+On the Web there are bootdisks available for most of the DOS versions ever released,
+but some of them have been reported to fail in Bochs. The bootdisk for MS-DOS 1.25
+contains a boot sector of a newer DOS version, so it would fail on real hardware,
+too. The floppy image for MS-DOS 2.11 has a boot sector that tries to boot from
+hard disk instead of the floppy.
+</para>
+</section>
 </section>
 
 <section id="guest-win95">
@@ -8670,7 +8712,7 @@ Setup your <filename>bochsrc</filename> file. For example:
   ata0-master: type=disk, path=62M.img, cylinders=940, heads=8, spt=17
   floppya: 1_44=1.44, status=inserted
   vgaromimage: file=bios/VGABIOS-lgpl-latest
-  romimage: file=bios/BIOS-bochs-latest, address=0xf0000
+  romimage: file=bios/BIOS-bochs-latest
   log: ./bochs.out
   vga_update_interval: 300000
   keyboard_serial_delay: 200
@@ -9568,7 +9610,7 @@ megs: 64
 
 # Filename of ROM images go here.  Be sure to check your installation for the location
 # of these two files (type: man find).  Paths must be absolute.
-romimage: file=/usr/local/etc/bochs/bios/BIOS-bochs-latest, address=0xf0000
+romimage: file=/usr/local/etc/bochs/bios/BIOS-bochs-latest
 vgaromimage: file=/usr/local/etc/bochs/bios/VGABIOS-lgpl-latest
 
 # Floppies are commented out, but you may need them later.
@@ -9881,7 +9923,7 @@ megs: 64
 
 # Filename of ROM images go here.  Be sure to check your installation for the location
 # of these two files (type: man find).  Paths must be absolute.
-romimage: file=/usr/local/etc/bochs/bios/BIOS-bochs-latest, address=0xf0000
+romimage: file=/usr/local/etc/bochs/bios/BIOS-bochs-latest
 vgaromimage: file=/usr/local/etc/bochs/bios/VGABIOS-lgpl-latest
 
 # Floppies are commented out, but you may need them later.
@@ -10571,7 +10613,7 @@ ata0-slave: type=cdrom, path="/dev/cdrom", status=inserted, biosdetect=auto, mod
 ata1: enabled=0
 ata2: enabled=0
 ata3: enabled=0
-romimage: file=bios/BIOS-bochs-latest, address=0xf0000
+romimage: file=bios/BIOS-bochs-latest
 vgaromimage: file=bios/VGABIOS-lgpl-latest
 megs: 64
 parport1: enabled=1, file="lp.pipe"
@@ -10640,7 +10682,7 @@ step took just over eight hours!  (BTW, it was MUCH longer in version 1.4.1.  Gr
 <para>
 After the install finishes, you will need to change the following lines in .bochsrc file:
 <programlisting>
-ne2k: ioaddr=0x280, irq=10, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
+ne2k: ioaddr=0x300, irq=10, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
 boot: disk
 </programlisting>
 Obviously, if you're not using Linux, the ethmode and ethdev values on the ne2k line will be different.

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.h,v 1.36 2006/08/25 18:26:27 vruppert Exp $
+// $Id: keyboard.h,v 1.39 2006/09/16 14:47:40 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -49,7 +49,7 @@
 class bx_keyb_c : public bx_keyb_stub_c {
 public:
   bx_keyb_c();
-  virtual ~bx_keyb_c() {}
+  virtual ~bx_keyb_c();
   // implement bx_devmodel_c interface
   virtual void init(void);
   virtual void reset(unsigned type);

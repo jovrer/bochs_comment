@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.339 2006/07/21 18:26:53 vruppert Exp $
+// $Id: main.cc,v 1.352 2007/09/13 09:44:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -73,10 +73,9 @@ bx_bool bx_gui_sighandler = 0;
 Bit32u bx_unmapped_io_read_handler(Bit32u address, unsigned io_len);
 void   bx_unmapped_io_write_handler(Bit32u address, Bit32u value,
                                     unsigned io_len);
-void   bx_close_harddrive(void);
 #endif
 
-void bx_init_bx_dbg (void);
+void bx_init_bx_dbg(void);
 static char *divider = "========================================================================";
 static logfunctions thePluginLog;
 logfunctions *pluginlog = &thePluginLog;
@@ -186,30 +185,31 @@ static void carbonFatalDialog(const char *error, const char *exposition)
 }
 #endif
 
+#if BX_DEBUGGER
 void print_tree(bx_param_c *node, int level)
 {
   int i;
   char tmpstr[BX_PATHNAME_LEN], tmpbyte[4];
 
   for (i=0; i<level; i++)
-    printf ("  ");
+    dbg_printf("  ");
   if (node == NULL) {
-      printf("NULL pointer\n");
+      dbg_printf("NULL pointer\n");
       return;
   }
   switch (node->get_type()) {
     case BXT_PARAM_NUM:
       if (((bx_param_num_c*)node)->get_base() == BASE_DEC) {
-        printf("%s = " FMT_LL "d (number)\n", node->get_name(), ((bx_param_num_c*)node)->get64());
+        dbg_printf("%s = " FMT_LL "d (number)\n", node->get_name(), ((bx_param_num_c*)node)->get64());
       } else {
-        printf("%s = 0x" FMT_LL "x (hex number)\n", node->get_name(), ((bx_param_num_c*)node)->get64());
+        dbg_printf("%s = 0x" FMT_LL "x (hex number)\n", node->get_name(), ((bx_param_num_c*)node)->get64());
       }
       break;
     case BXT_PARAM_BOOL:
-      printf("%s = %s (boolean)\n", node->get_name(), ((bx_param_bool_c*)node)->get()?"true":"false");
+      dbg_printf("%s = %s (boolean)\n", node->get_name(), ((bx_param_bool_c*)node)->get()?"true":"false");
       break;
     case BXT_PARAM_ENUM:
-      printf("%s = '%s' (enum)\n", node->get_name(), ((bx_param_enum_c*)node)->get_selected());
+      dbg_printf("%s = '%s' (enum)\n", node->get_name(), ((bx_param_enum_c*)node)->get_selected());
       break;
     case BXT_PARAM_STRING:
       if (((bx_param_string_c*)node)->get_options()->get() & bx_param_string_c::RAW_BYTES) {
@@ -223,14 +223,14 @@ void print_tree(bx_param_c *node, int level)
           sprintf(tmpbyte, "%02x", (Bit8u)((bx_param_string_c*)node)->getptr()[i]);
           strcat(tmpstr, tmpbyte);
         }
-        printf("%s = '%s' (raw byte string)\n", node->get_name(), tmpstr);
+        dbg_printf("%s = '%s' (raw byte string)\n", node->get_name(), tmpstr);
       } else {
-        printf("%s = '%s' (string)\n", node->get_name(), ((bx_param_string_c*)node)->getptr());
+        dbg_printf("%s = '%s' (string)\n", node->get_name(), ((bx_param_string_c*)node)->getptr());
       }
       break;
     case BXT_LIST:
       {
-	printf("%s = \n", node->get_name());
+	dbg_printf("%s = \n", node->get_name());
 	bx_list_c *list = (bx_list_c*)node;
 	for (i=0; i < list->get_size(); i++) {
 	   print_tree(list->get(i), level+1);
@@ -239,13 +239,14 @@ void print_tree(bx_param_c *node, int level)
       }
 #if BX_SUPPORT_SAVE_RESTORE
     case BXT_PARAM_DATA:
-      printf("%s = 'size=%d' (binary data)\n", node->get_name(), ((bx_shadow_data_c*)node)->get_size());
+      dbg_printf("%s = 'size=%d' (binary data)\n", node->get_name(), ((bx_shadow_data_c*)node)->get_size());
       break;
 #endif
     default:
-      printf("%s (unknown parameter type)\n", node->get_name());
+      dbg_printf("%s (unknown parameter type)\n", node->get_name());
   }
 }
+#endif
 
 int bxmain () {
 #ifdef HAVE_LOCALE_H
@@ -397,15 +398,17 @@ int split_string_into_argv (
 // It creates a console window.
 //
 // NOTE: It could probably be written so that it can safely be called for all
-// win32 builds.  Right now it appears to have absolutely no error checking:
-// for example if AllocConsole returns false we should probably return early.
-void RedirectIOToConsole()
+// win32 builds.
+int RedirectIOToConsole()
 {
   int hConHandle;
   long lStdHandle;
   FILE *fp;
   // allocate a console for this app
-  AllocConsole();
+  if (!AllocConsole()) {
+    MessageBox(NULL, "Failed to create text console", "Error", MB_ICONERROR);
+    return 0;
+  }
   // redirect unbuffered STDOUT to the console
   lStdHandle = (long)GetStdHandle(STD_OUTPUT_HANDLE);
   hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
@@ -424,6 +427,7 @@ void RedirectIOToConsole()
   fp = _fdopen( hConHandle, "w" );
   *stderr = *fp;
   setvbuf(stderr, NULL, _IONBF, 0);
+  return 1;
 }
 #endif  /* if defined(__WXMSW__) || (BX_WITH_SDL && defined(WIN32)) */
 
@@ -440,7 +444,10 @@ int WINAPI WinMain(
   bx_startup_flags.hPrevInstance = hPrevInstance;
   bx_startup_flags.m_lpCmdLine = m_lpCmdLine;
   bx_startup_flags.nCmdShow = nCmdShow;
-  RedirectIOToConsole ();
+  if (!RedirectIOToConsole()) {
+    return 1;
+  }
+  SetConsoleTitle("Bochs for Windows (wxWidgets port) - Console");
   int max_argv = 20;
   bx_startup_flags.argv = (char**) malloc (max_argv * sizeof (char*));
   split_string_into_argv(m_lpCmdLine, &bx_startup_flags.argc, bx_startup_flags.argv, max_argv);
@@ -457,7 +464,9 @@ int main (int argc, char *argv[])
   bx_startup_flags.argv = argv;
 #if BX_WITH_SDL && defined(WIN32)
   // if SDL/win32, try to create a console window.
-  RedirectIOToConsole ();
+  if (!RedirectIOToConsole()) {
+    return 1;
+  }
 #endif
 #if defined(WIN32)
   SetConsoleTitle("Bochs for Windows - Console");
@@ -475,6 +484,9 @@ void print_usage()
     "  -q               quick start (skip configuration interface)\n"
 #if BX_SUPPORT_SAVE_RESTORE
     "  -r path          restore the Bochs state from path\n"
+#endif
+#if BX_DEBUGGER
+    "  -rc filename     execute debugger commands stored in file\n"
 #endif
     "  --help           display this help and exit\n\n"
     "For information on Bochs configuration file arguments, see the\n"
@@ -511,31 +523,31 @@ int bx_init_main (int argc, char *argv[])
   int arg = 1, load_rcfile=1;
   while (arg < argc) {
     // parse next arg
-    if (!strcmp ("--help", argv[arg]) || !strncmp ("-h", argv[arg], 2)
+    if (!strcmp("--help", argv[arg]) || !strncmp("-h", argv[arg], 2)
 #if defined(WIN32)
-        || !strncmp ("/?", argv[arg], 2)
+        || !strncmp("/?", argv[arg], 2)
 #endif
        ) {
       print_usage();
-      SIM->quit_sim (0);
+      SIM->quit_sim(0);
     }
-    else if (!strcmp ("-n", argv[arg])) {
+    else if (!strcmp("-n", argv[arg])) {
       load_rcfile = 0;
     }
-    else if (!strcmp ("-q", argv[arg])) {
+    else if (!strcmp("-q", argv[arg])) {
       SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_QUICK_START);
     }
-    else if (!strcmp ("-f", argv[arg])) {
+    else if (!strcmp("-f", argv[arg])) {
       if (++arg >= argc) BX_PANIC(("-f must be followed by a filename"));
       else bochsrc_filename = argv[arg];
     }
-    else if (!strcmp ("-qf", argv[arg])) {
+    else if (!strcmp("-qf", argv[arg])) {
       SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_QUICK_START);
       if (++arg >= argc) BX_PANIC(("-qf must be followed by a filename"));
       else bochsrc_filename = argv[arg];
     }
 #if BX_SUPPORT_SAVE_RESTORE
-    else if (!strcmp ("-r", argv[arg])) {
+    else if (!strcmp("-r", argv[arg])) {
       if (++arg >= argc) BX_PANIC(("-r must be followed by a path"));
       else {
         SIM->get_param_enum(BXPN_BOCHS_START)->set(BX_QUICK_START);
@@ -545,7 +557,7 @@ int bx_init_main (int argc, char *argv[])
     }
 #endif
 #if BX_WITH_CARBON
-    else if (!strncmp ("-psn", argv[arg], 4)) {
+    else if (!strncmp("-psn", argv[arg], 4)) {
       // "-psn" is passed if we are launched by double-clicking
       // ugly hack.  I don't know how to open a window to print messages in,
       // so put them in /tmp/early-bochs-out.txt.  Sorry. -bbd
@@ -562,6 +574,13 @@ int bx_init_main (int argc, char *argv[])
       for (int a=0; a<argc; a++) {
         BX_INFO (("argument %d is %s", a, argv[a]));
       }
+    }
+#endif
+#if BX_DEBUGGER
+    else if (!strcmp("-rc", argv[arg])) {
+      // process "-rc filename" option, if it exists
+      if (++arg >= argc) BX_PANIC(("-rc must be followed by a filename"));
+      else bx_dbg_set_rcfile(argv[arg]);
     }
 #endif
     else if (argv[arg][0] == '-') {
@@ -813,6 +832,7 @@ bx_bool load_and_init_display_lib()
 int bx_begin_simulation (int argc, char *argv[])
 {
 #if BX_SUPPORT_SAVE_RESTORE
+  SIM->init_save_restore();
   if (SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
     if (!SIM->restore_config()) {
       BX_PANIC(("cannot restore configuration"));
@@ -846,12 +866,11 @@ int bx_begin_simulation (int argc, char *argv[])
   bx_gui->update_drive_status_buttons();
   // iniialize statusbar and set all items inactive
 #if BX_SUPPORT_SAVE_RESTORE
-  if (!SIM->get_param_bool(BXPN_RESTORE_FLAG)->get()) {
+  if (!SIM->get_param_bool(BXPN_RESTORE_FLAG)->get())
 #endif
+  {
     bx_gui->statusbar_setitem(-1, 0);
-#if BX_SUPPORT_SAVE_RESTORE
   }
-#endif
 
   // The set handler for mouse_enabled does not actually update the gui
   // until init_done is set.  This forces the set handler to be called,
@@ -862,37 +881,42 @@ int bx_begin_simulation (int argc, char *argv[])
 #if BX_DEBUGGER
   // If using the debugger, it will take control and call
   // bx_init_hardware() and cpu_loop()
-  bx_dbg_main(argc, argv);
+  bx_dbg_main();
 #else 
 #if BX_GDBSTUB
   // If using gdbstub, it will take control and call
   // bx_init_hardware() and cpu_loop()
-  if (bx_dbg.gdbstub_enabled) bx_gdbstub_init(argc, argv);
+  if (bx_dbg.gdbstub_enabled) bx_gdbstub_init();
   else
 #endif
   {
-#if BX_SUPPORT_SMP == 0
-    // only one processor, run as fast as possible by not messing with
-    // quantums and loops.
-    BX_CPU(0)->cpu_loop(0);
-    // for one processor, the only reason for cpu_loop to return is
-    // that kill_bochs_request was set by the GUI interface.
-#else
-    // SMP simulation: do a few instructions on each processor, then switch
-    // to another.  Increasing quantum speeds up overall performance, but
-    // reduces granularity of synchronization between processors.
-    int processor = 0;
-    int quantum = SIM->get_param_num(BXPN_SMP_QUANTUM)->get();
-    while (1) {
-      // do some instructions in each processor
-      BX_CPU(processor)->cpu_loop(quantum);
-      processor = (processor+1) % BX_SMP_PROCESSORS;
-      if (bx_pc_system.kill_bochs_request) 
-        break;
-      if (processor == 0) 
-        BX_TICKN(quantum);
+    if (BX_SMP_PROCESSORS == 1) {
+      // only one processor, run as fast as possible by not messing with
+      // quantums and loops.
+      while (1) {
+        BX_CPU(0)->cpu_loop(0);
+        if (bx_pc_system.kill_bochs_request) 
+          break;
+      }
+      // for one processor, the only reason for cpu_loop to return is
+      // that kill_bochs_request was set by the GUI interface.
     }
-#endif
+    else {
+      // SMP simulation: do a few instructions on each processor, then switch
+      // to another.  Increasing quantum speeds up overall performance, but
+      // reduces granularity of synchronization between processors.
+      int processor = 0;
+      int quantum = SIM->get_param_num(BXPN_SMP_QUANTUM)->get();
+      while (1) {
+        // do some instructions in each processor
+        BX_CPU(processor)->cpu_loop(quantum);
+        processor = (processor+1) % BX_SMP_PROCESSORS;
+        if (bx_pc_system.kill_bochs_request) 
+          break;
+        if (processor == 0) 
+          BX_TICKN(quantum);
+      }
+    }
   }
 #endif /* BX_DEBUGGER == 0 */
   BX_INFO(("cpu loop quit, shutting down simulator"));
@@ -955,7 +979,7 @@ int bx_init_hardware()
   BX_INFO(("  APIC support: %s",BX_SUPPORT_APIC?"yes":"no"));
   BX_INFO(("CPU configuration"));
   BX_INFO(("  level: %d",BX_CPU_LEVEL));
-  BX_INFO(("  paging support: %s, tlb enabled: %s",BX_SUPPORT_PAGING?"yes":"no",BX_USE_TLB?"yes":"no"));
+  BX_INFO(("  TLB enabled: %s",BX_USE_TLB?"yes":"no"));
 #if BX_SUPPORT_SMP
   BX_INFO(("  SMP support: yes, quantum=%d", SIM->get_param_num(BXPN_SMP_QUANTUM)->get()));
 #else
@@ -967,6 +991,7 @@ int bx_init_hardware()
     BX_INFO(("  SSE support: no"));
   else
     BX_INFO(("  SSE support: %d",BX_SUPPORT_SSE));
+  BX_INFO(("  CLFLUSH support: %s",BX_SUPPORT_CLFLUSH?"yes":"no"));
   BX_INFO(("  v8086 mode support: %s",BX_SUPPORT_V8086_MODE?"yes":"no"));
   BX_INFO(("  VME support: %s",BX_SUPPORT_VME?"yes":"no"));
   BX_INFO(("  3dnow! support: %s",BX_SUPPORT_3DNOW?"yes":"no"));
@@ -1094,6 +1119,9 @@ int bx_init_hardware()
 
 void bx_init_bx_dbg(void)
 {
+#if BX_DEBUGGER
+  bx_dbg_init_infile();
+#endif
   bx_dbg.floppy = 0;
   bx_dbg.keyboard = 0;
   bx_dbg.video = 0;
@@ -1131,17 +1159,11 @@ void bx_init_bx_dbg(void)
 
 int bx_atexit(void)
 {
-  static bx_bool been_here = 0;
-  if (been_here) return 1;   // protect from reentry
-  been_here = 1;
+  if (!SIM->get_init_done()) return 1; // protect from reentry
 
   // in case we ended up in simulation mode, change back to config mode
   // so that the user can see any messages left behind on the console.
   SIM->set_display_mode(DISP_MODE_CONFIG);
-
-#if BX_PROVIDE_DEVICE_MODELS==1
-  bx_pc_system.exit();
-#endif
 
 #if BX_DEBUGGER == 0
   if (SIM && SIM->get_init_done()) {
@@ -1150,12 +1172,10 @@ int bx_atexit(void)
   }
 #endif
 
-#if BX_SUPPORT_PCI
-  if (SIM && SIM->get_init_done()) {
-    if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-      bx_devices.pluginPciBridge->print_i440fx_state();
-    }
-  }
+  BX_MEM(0)->cleanup_memory();
+
+#if BX_PROVIDE_DEVICE_MODELS==1
+  bx_pc_system.exit();
 #endif
 
   // restore signal handling to defaults
@@ -1169,6 +1189,8 @@ int bx_atexit(void)
   signal(SIGALRM, SIG_DFL);
 #endif
 #endif
+
+  SIM->set_init_done(0);
 
   return 0;
 }

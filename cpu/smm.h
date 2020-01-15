@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.h,v 1.1 2006/04/05 17:44:04 sshwarts Exp $
+// $Id: smm.h,v 1.4 2007/03/23 21:27:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2006 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -32,7 +32,8 @@
 #if BX_SUPPORT_X86_64 
 
 // for x86-64 configuration using AMD Athlon 64 512-byte SMM save state map
-#define SMM_REVISION_ID (0x00000000 | SMM_SMBASE_RELOCATION)
+// revision ID according to QEMU/Bochs BIOS
+#define SMM_REVISION_ID (0x00000064 | SMM_SMBASE_RELOCATION)
 
 #define SMRAM_OFFSET_RAX_HI32  0x7ffc
 #define SMRAM_OFFSET_RAX_LO32  0x7ff8
@@ -76,7 +77,7 @@
 #define SMRAM_OFFSET_DR7       0x7f60
 // Hi32 part of 64-bit CR0     0x7f5c    (always zero)
 #define SMRAM_OFFSET_CR0       0x7f58
-// Hi32 part of 64-bit CR3     0x7f54    (always zerom, 32-bit physical address)
+// Hi32 part of 64-bit CR3     0x7f54    (always zero, 32-bit physical address)
 #define SMRAM_OFFSET_CR3       0x7f50
 // Hi32 part of 64-bit CR4     0x7f4c    (always zero)
 #define SMRAM_OFFSET_CR4       0x7f48

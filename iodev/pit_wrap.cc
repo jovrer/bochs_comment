@@ -1,5 +1,5 @@
 ///////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.cc,v 1.62 2006/05/27 15:54:48 sshwarts Exp $
+// $Id: pit_wrap.cc,v 1.65 2007/04/08 21:57:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -26,8 +26,6 @@
 
 
 #include "iodev.h"
-
-#if BX_USE_NEW_PIT
 
 #include "speaker.h"
 
@@ -124,7 +122,7 @@ int bx_pit_c::init(void)
   BX_DEBUG(("pit: RESETting timer."));
   bx_virt_timer.deactivate_timer(BX_PIT_THIS s.timer_handle[0]);
   BX_DEBUG(("deactivated timer."));
-  if(BX_PIT_THIS s.timer.get_next_event_time()) {
+  if (BX_PIT_THIS s.timer.get_next_event_time()) {
     bx_virt_timer.activate_timer(BX_PIT_THIS s.timer_handle[0], 
 				(Bit32u)BX_MAX(1,TICKS_TO_USEC(BX_PIT_THIS s.timer.get_next_event_time())),
 				0);
@@ -146,6 +144,12 @@ int bx_pit_c::init(void)
   return(1);
 }
 
+void bx_pit_c::exit(void)
+{
+  BX_PIT_THIS s.timer_handle[0] = BX_NULL_TIMER_HANDLE;
+  BX_PIT_THIS s.timer.init();
+}
+
 void bx_pit_c::reset(unsigned type)
 {
   BX_PIT_THIS s.timer.reset(type);
@@ -161,7 +165,7 @@ void bx_pit_c::register_state(void)
   new bx_shadow_num_c(list, "last_next_event_time", &BX_PIT_THIS s.last_next_event_time);
   new bx_shadow_num_c(list, "total_ticks", &BX_PIT_THIS s.total_ticks);
   new bx_shadow_num_c(list, "total_usec", &BX_PIT_THIS s.total_usec);
-  bx_list_c *counter = new bx_list_c(list, "counter");
+  bx_list_c *counter = new bx_list_c(list, "counter", 4);
   BX_PIT_THIS s.timer.register_state(counter);
 }
 #endif
@@ -388,5 +392,3 @@ void bx_pit_c::irq_handler(bx_bool value)
     DEV_pic_lower_irq(0);
   }
 }
-
-#endif // #if BX_USE_NEW_PIT

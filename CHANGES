@@ -1,3 +1,162 @@
+Changes in 2.3.5 (September 16, 2007):
+
+Brief summary :
+- Critical problems fixed for x86-64 support in CPU and Bochs internal debugger
+- ACPI support
+- The release compiled with x86-64 and ACPI
+- Hard disk emulation supports ATA-6 (LBA48 addressing, UDMA modes)
+- Added emulation of Intel SSE4.1 instruction set
+
+Detailed change log :
+
+- CPU
+  - Fixed critical bug with 0x90 opcode (NOP) handling in x86-64 mode
+  - implied stack references where the stack address is not in canonical form 
+    should causes a stack exception (#SS)
+  - Added emulation of SSE4.1 instruction set (Stanislav)
+  - Do not save and restore XMM8-XMM15 registers when not in x86-64 mode
+  - Fixed zero upper 32-bit part of GPR in x86-64 mode
+  - CMOV_GdEd should zero upper 32-bit part of GPR register even if the
+    'cmov' condition was false !
+  - Implemented CLFLUSH instruction, report non-zero cache size in CPUID
+  - Fixed PUSHA/POPA instructions behavior in real mode
+  - Fixed detection of inexact result by FPU
+  - Fixed denormals-are-zero (DAZ) handling by SSE convert instructions
+  - Implemented Misaligned Exception Mask support for SSE (MXCSR[17])
+  - Implemented Alignment Check in the CPU and #AC exception, to enable
+    use --enable-alignment-check configure option
+
+- General
+  - 2nd simulation support in wxBochs now almost usable (simulation cleanup
+    code added and memory leaks fixed)
+
+- Configure and compile
+  - several fixes for MacOSX, OpenBSD and Solaris 10
+  - enable save/restore feature by default for all configurations
+  - reorganized SSE configure options to match Intel(R) Programming 
+    Reference Manual, new option introduced for SSE extensions enabling.
+    To enable Intel Core Duo 2 new instructions use 
+        --enable-sse=3 --enable-sse-extension
+    enabling of SSE4.1 (--enable-sse=4) will enable SSE3 extensions as well
+  - removed old PIT, always use new PIT written by Greg Alexander,
+    removed configure option --enable-new-pit
+
+- I/O devices (Volker)
+  - Floppy
+    - partial non-DMA mode support (patch by John Comeau)
+  - Hard drive / cdrom
+    - hard disk emulation now supports ATA-6 (LBA48 addressing, UDMA modes)
+    - VMWare version 4 disk image support added (patch by Sharvil Nanavati)
+  - PCI
+    - initial support for the PIIX4 ACPI controller
+  - Serial
+    - added support for 3-button mouse with Mousesystems protocol
+  - USB
+    - experimental USB device change support added
+    - rewrite of the existing USB devices code
+    - new USB devices 'disk' and 'tablet' (ported from the Qemu project)
+
+- Bochs internal debugger
+  - fixed broken debugger "rc file" option (execute debugger command from file)
+  - implementation of a gui frontend ("windebug") for win32 started
+  - gdbstub now accepts connection from any host
+  - several documentation updates
+  - a lot of disasm and internal debugger x86_64 support fixes
+
+- Configuration interface
+  - fixes and improvements to the save state dialog handling
+
+- Display libraries
+  - text mode color handling improved in some guis
+  - win32 fullscreen mode (patch by John Comeau)
+
+- System BIOS (Volker)
+  - 32-bit PM BIOS init code for ACPI, PCI, SMP and SMM (initial patches by
+    Fabrice Bellard)
+  - PCI BIOS function "find class code" implemented
+
+- SF patches applied
+ [1791000] 15h 8600h is reading the wrong stack frame by Sebastian
+ [1791016] rombios32.c, ram_probe(), BX_INFO missing value by Sebastian
+ [1786429] typo in bochsrc.5 by Sebastian
+ [1785204] Extend acpi_build_table_header to accept a revision number by Sebastian
+ [1766536] Partial Patch for Bug Report 1549873 by Ben Lunt
+ [1763578] ACPI Table Revision 0 -> 1  
+ [1642490] implement alignment check and #AC exception by Stanislav Shwartsman
+ [1695652] [PATCH] .pcap pktlog and vnet PXE boot by Duane Voth
+ [1741153] Add expansion-ROM boot support to the ROMBIOS
+ [1734159] Implemented INT15h, fn 0xC2 (mouse), subfn 3, set resolution
+ [1712970] bios_printf %s fix  
+ [1573297] PUSHA/POPA real mode fix by Stanislav Shwartsman
+ [1641816] partial support for non-DMA access to floppy by John Comeau 
+ [1624032] shows where write outside of memory occurred by John Comeau
+ [1607793] allow fullscreen when app requests it by John Comeau
+ [1603013] Bugfix for major NOP problem on x64 by mvysin
+ [1600178] Make tap and tuntap compile on OpenBSD by Jonathan Gray
+ [1149659] improve gdbstub network efficiency by Avi Kivity 
+ [1554502] Trivial FPU exception handling fix  
+
+- these S.F. bugs were closed
+ [1316008] Double faults when it shouldn't - gcc 4.0.2
+ [1787289] broken ABI for redolog class when enable-compressed-hd
+ [1787500] tftp_send_optack not 64bit clean
+ [1264540] Security issue with Bochs website  
+ [1767217] Debugger Faults including ud2
+ [1729822] Various security issues in io device emulation
+ [1675202] mptable hosed (bad entry count in header)
+ [1197141] 'make install' installs to bad location
+ [1157623] x86Solaris10 cannot recoginize ACPI RSD PTR
+ [1768254] large HDD in Bochs/bximage
+ [1496157] Windows Vista Beta2 dosn't boot
+ [1755915] Illegal Hard Disk Signature Output
+ [1717790] info gdt and info idt scrolls away, too long result  
+ [1726640] Debugger displays incorrect segment for mov instruction
+ [1719156] Typo in misc_mem.cpp
+ [1715270] Debugger broken in/beyond 2.3
+ [1689107] v8086 mode priviledge check failed
+ [1704484] A few checks when CPU_LEVEL < 4  
+ [1678395] Problem with zero sector...
+  [876990] SA-RTL OS fails on PIC configuration
+ [1673582] save/restore didn't restore simulation correctly
+ [1586662] EDD int 13h bug, modify eax
+  [666618] POP_A Panic in DOS EMU
+ [1001485] panic: not enough bytes on stack
+ [1667336] delay times an order of magnitude slow  
+ [1665601] crash disassembling bootcode
+ [1657065] CVS sources won't compile
+ [1653805] bochs's gdbstub uses incorrect protocol
+ [1640737] ASM sti command frezzes guest OS
+ [1636439] latest CVS sources don't compile under Cygwin
+ [1634357] disasm incorrect (no sign ext) displacement in 64-bit mode
+ [1376453] pcidev segfaults bochs
+ [1180890] IOAPIC in BOCHS - WinXP 64 in MP version
+ [1597528] 2.3 fails to compile on amd64
+ [1526255] FLD1 broken when compaling with gcc 4.0.x
+ [1597451] eth_fbsd is broken under FreeBSD
+ [1571949] Bochs will not compile under Solaris
+ [1500216] Bochs fails to boot BeOs CD
+ [1458339] bochs-2.2.6 WinXP Binary ACPI error installing FreeBSD 6.0
+ [1440011] patches needed for FreeBSD 6.0 to compile Bochs
+  [431674] some devices don't have a prefix
+  [458150] QNX demo disk crashes with new pit
+  [818322] Bochs 2.1 cvs: OS/2 - read verify on non disk
+  [906840] KBD: bogus scan codes generated in set 3
+ [1005053] No keyboard codes translation
+ [1109374] Problem with Scancodeset 2
+ [1572345] Bochs won't continue
+ [1568153] Bochs looks for (and loads?) unspecified display libraries
+ [1563462] Errors in /iodev/harddrv.h
+ [1562172] TLB_init() fails to initialize priv_check array if USE_TLB 0
+ [1385303] debugger crashes after panic
+ [1438227] crc.cpp missing in bx_debug version 2.2.6
+ [1501825] debugger crashes on to high input
+ [1420959] Memory leak + buffer overflow in Bochs debugger
+ [1553289] Error in Dis-assembler
+  [542464] I cannot use FLAT
+ [1548270] Bochs won't die with its pseudo terminal
+ [1545588] roundAndPackFloatx80 does not detect round up correctly  
+
+-------------------------------------------------------------------------
 Changes in 2.3 (August 27, 2006):
 
 Brief summary :
@@ -20,7 +179,7 @@ Detailed change log :
   - Raise A20 line after system reset (Stanislav Shwartsman)
   - Implemented SMI and NMI delivery (APIC) and handling in CPU (Stanislav)
   - Experimental implementation of System Management Mode (Stanislav)
-  - Added emulation of SSE4 instructions (Stanislav Shwarstman)
+  - Added emulation of SSE3E instructions (Stanislav Shwarstman)
   - Save and restore FPU opcode, FIP and FDP in FXSAVE/FRSTOR instructions
   - Fixed bug in MOVD_EdVd opcode (always generated #UD exception)
   - Fixed critical issue, Bochs was not supporting > 16 bit LDT.LIMIT values

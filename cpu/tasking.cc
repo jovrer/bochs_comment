@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: tasking.cc,v 1.36 2006/08/25 19:56:03 sshwarts Exp $
+// $Id: tasking.cc,v 1.39 2007/07/09 15:16:14 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -178,10 +178,10 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     new_TSS_max = 103;
   }
 
-  obase32 = BX_CPU_THIS_PTR tr.cache.u.tss.base;        // old TSS.base
-  old_TSS_limit = BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled;
-  nbase32 = tss_descriptor->u.tss.base;                 // new TSS.base
-  new_TSS_limit = tss_descriptor->u.tss.limit_scaled;
+  obase32 = BX_CPU_THIS_PTR tr.cache.u.system.base;        // old TSS.base
+  old_TSS_limit = BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled;
+  nbase32 = tss_descriptor->u.system.base;                 // new TSS.base
+  new_TSS_limit = tss_descriptor->u.system.limit_scaled;
 
   // TSS must have valid limit, else #TS(TSS selector)
   if (tss_selector->ti || tss_descriptor->valid==0 ||
@@ -195,18 +195,14 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     BX_INFO(("TASK SWITCH: switching to the same TSS !"));
   }
 
-#if BX_SUPPORT_PAGING
   // Check that old TSS, new TSS, and all segment descriptors
   // used in the task switch are paged in.
-  if (BX_CPU_THIS_PTR cr0.pg)
+  if (BX_CPU_THIS_PTR cr0.get_PG())
   {
-    // Old TSS
-    (void) dtranslate_linear(obase32, 0, BX_WRITE);
-    (void) dtranslate_linear(obase32 + old_TSS_max, 0, BX_WRITE);
-
-    // New TSS
-    (void) dtranslate_linear(nbase32, 0, BX_READ);
-    (void) dtranslate_linear(nbase32 + new_TSS_max, 0, BX_READ);
+    dtranslate_linear(obase32, 0, BX_WRITE); // new TSS
+    dtranslate_linear(obase32 + old_TSS_max, 0, BX_WRITE);
+    dtranslate_linear(nbase32, 0, BX_READ);  // old TSS
+    dtranslate_linear(nbase32 + new_TSS_max, 0, BX_READ);
 
     // ??? Humm, we check the new TSS region with READ above,
     // but sometimes we need to write the link field in that
@@ -215,13 +211,12 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     // the written state consistent (ie, we don't encounter a
     // page fault in the middle).
 
-    if (source==BX_TASK_FROM_CALL_OR_INT)
+    if (source == BX_TASK_FROM_CALL_OR_INT)
     {
-      (void) dtranslate_linear(nbase32,     0, BX_WRITE);
-      (void) dtranslate_linear(nbase32 + 2, 0, BX_WRITE);
+      dtranslate_linear(nbase32,     0, BX_WRITE);
+      dtranslate_linear(nbase32 + 2, 0, BX_WRITE);
     }
   }
-#endif // BX_SUPPORT_PAGING
 
   // Privilege and busy checks done in CALL, JUMP, INT, IRET
 
@@ -336,7 +331,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
     trap_word = 0; // keep compiler happy (not used)
   }
   else {
-    if (BX_CPU_THIS_PTR cr0.pg)
+    if (BX_CPU_THIS_PTR cr0.get_PG())
       access_linear(nbase32 + 0x1c, 4, 0, BX_READ, &newCR3);
     else
       newCR3 = 0;   // keep compiler happy (not used)
@@ -404,9 +399,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   BX_CPU_THIS_PTR tr.cache.type &= ~2;
 
   // Step 8: Set TS flag in the CR0 image stored in the new task TSS.
-
-  BX_CPU_THIS_PTR cr0.ts = 1;
-  BX_CPU_THIS_PTR cr0.val32 |= 0x00000008;
+  BX_CPU_THIS_PTR cr0.set_TS(1);
 
   // Task switch clears LE/L3/L2/L1/L0 in DR7
   BX_CPU_THIS_PTR dr7 &= ~0x00000155;
@@ -427,7 +420,7 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   //          EFLAGS, EIP, general purpose registers, and segment
   //          descriptor parts of the segment registers.
 
-  if ((tss_descriptor->type >= 9) && BX_CPU_THIS_PTR cr0.pg) {
+  if ((tss_descriptor->type >= 9) && BX_CPU_THIS_PTR cr0.get_PG()) {
     // change CR3 only if it actually modified
     if (newCR3 != BX_CPU_THIS_PTR cr3) {
       CR3_change(newCR3); // Tell paging unit about new cr3 value
@@ -470,8 +463,8 @@ void BX_CPU_C::task_switch(bx_selector_t *tss_selector,
   // Start out with invalid descriptor caches, fill in
   // with values only as they are validated.
   BX_CPU_THIS_PTR ldtr.cache.valid = 0;
-  BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit = 0;
-  BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit_scaled = 0;
+  BX_CPU_THIS_PTR ldtr.cache.u.system.limit = 0;
+  BX_CPU_THIS_PTR ldtr.cache.u.system.limit_scaled = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].cache.valid = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid = 0;
@@ -754,26 +747,26 @@ void BX_CPU_C::get_SS_ESP_from_TSS(unsigned pl, Bit16u *ss, Bit32u *esp)
   if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_386_TSS) {
     // 32-bit TSS
     Bit32u TSSstackaddr = 8*pl + 4;
-    if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled) {
+    if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled) {
       BX_DEBUG(("get_SS_ESP_from_TSS(386): TSSstackaddr > TSS.LIMIT"));
       exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
     }
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr+4, 2, 0, BX_READ, ss);
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr,   4, 0, BX_READ, esp);
   }
   else if (BX_CPU_THIS_PTR tr.cache.type==BX_SYS_SEGMENT_AVAIL_286_TSS) {
     // 16-bit TSS
     Bit16u temp16;
     Bit32u TSSstackaddr = 4*pl + 2;
-    if ((TSSstackaddr+4) > BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled) {
+    if ((TSSstackaddr+4) > BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled) {
       BX_DEBUG(("get_SS_ESP_from_TSS(286): TSSstackaddr > TSS.LIMIT"));
       exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
     }
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr+2, 2, 0, BX_READ, ss);
-    access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
+    access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
       TSSstackaddr,   2, 0, BX_READ, &temp16);
     *esp = temp16; // truncate
   }
@@ -791,12 +784,12 @@ void BX_CPU_C::get_RSP_from_TSS(unsigned pl, Bit64u *rsp)
 
   // 32-bit TSS
   Bit32u TSSstackaddr = 8*pl + 4;
-  if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.tss.limit_scaled) {
+  if ((TSSstackaddr+7) > BX_CPU_THIS_PTR tr.cache.u.system.limit_scaled) {
     BX_DEBUG(("get_RSP_from_TSS(): TSSstackaddr > TSS.LIMIT"));
     exception(BX_TS_EXCEPTION, BX_CPU_THIS_PTR tr.selector.value & 0xfffc, 0);
   }
 
-  access_linear(BX_CPU_THIS_PTR tr.cache.u.tss.base +
+  access_linear(BX_CPU_THIS_PTR tr.cache.u.system.base +
     TSSstackaddr, 8, 0, BX_READ, rsp);
 }
 #endif  // #if BX_SUPPORT_X86_64

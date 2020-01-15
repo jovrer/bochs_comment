@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.199 2006/06/21 20:42:26 sshwarts Exp $
+// $Id: siminterface.h,v 1.210 2007/08/01 17:09:52 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Intro to siminterface by Bryce Denney:
@@ -120,6 +120,11 @@ typedef enum {
 // define parameter path names.  These names give the location in the
 // parameter tree where each can be found.  The names correspond to
 // the old BXP_* enum values, which have been eliminated.
+#define BXPN_SEL_CONFIG_INTERFACE        "general.config_interface"
+#define BXPN_BOCHS_START                 "general.start_mode"
+#define BXPN_RESTORE_FLAG                "general.restore"
+#define BXPN_RESTORE_PATH                "general.restore_path"
+#define BXPN_DEBUG_RUNNING               "general.debug_running"
 #define BXPN_CPU_NPROCESSORS             "cpu.n_processors"
 #define BXPN_CPU_NCORES                  "cpu.n_cores"
 #define BXPN_CPU_NTHREADS                "cpu.n_threads"
@@ -154,7 +159,6 @@ typedef enum {
 #define BXPN_I440FX_SUPPORT              "pci.i440fx_support"
 #define BXPN_PCIDEV_VENDOR               "pci.pcidev.vendor"
 #define BXPN_PCIDEV_DEVICE               "pci.pcidev.device"
-#define BXPN_SEL_CONFIG_INTERFACE        "display.config_interface"
 #define BXPN_SEL_DISPLAY_LIBRARY         "display.display_library"
 #define BXPN_DISPLAYLIB_OPTIONS          "display.displaylib_options"
 #define BXPN_PRIVATE_COLORMAP            "display.private_colormap"
@@ -204,9 +208,7 @@ typedef enum {
 #define BXPN_ATA3_SLAVE                  "ata.3.slave"
 #define BXPN_USB1_ENABLED                "ports.usb.1.enabled"
 #define BXPN_USB1_PORT1                  "ports.usb.1.port1"
-#define BXPN_USB1_OPTION1                "ports.usb.1.option1"
 #define BXPN_USB1_PORT2                  "ports.usb.1.port2"
-#define BXPN_USB1_OPTION2                "ports.usb.1.option2"
 #define BXPN_NE2K                        "network.ne2k"
 #define BXPN_NE2K_ENABLED                "network.ne2k.enabled"
 #define BXPN_PNIC                        "network.pnic"
@@ -222,10 +224,6 @@ typedef enum {
 #define BXPN_LOG_FILENAME                "log.filename"
 #define BXPN_LOG_PREFIX                  "log.prefix"
 #define BXPN_DEBUGGER_LOG_FILENAME       "log.debugger_filename"
-#define BXPN_BOCHS_START                 "general.start_mode"
-#define BXPN_DEBUG_RUNNING               "general.debug_running"
-#define BXPN_RESTORE_FLAG                "general.restore"
-#define BXPN_RESTORE_PATH                "general.restore_path"
 #define BXPN_MENU_DISK                   "menu.disk"
 #define BXPN_MENU_MEMORY                 "menu.memory"
 #define BXPN_MENU_RUNTIME                "menu.runtime"
@@ -278,6 +276,7 @@ typedef enum {
 #define BX_BOOT_FLOPPYA 1
 #define BX_BOOT_DISKC   2
 #define BX_BOOT_CDROM   3
+#define BX_BOOT_NETWORK 4
 
 // loader hack
 #define Load32bitOSNone        0
@@ -849,7 +848,8 @@ public:
     IS_FILENAME = 2,       // 1=yes it's a filename, 0=not a filename.
                            // Some guis have a file browser. This
                            // bit suggests that they use it.
-    SAVE_FILE_DIALOG = 4   // Use save dialog opposed to open file dialog
+    SAVE_FILE_DIALOG = 4,  // Use save dialog opposed to open file dialog
+    SELECT_FOLDER_DLG = 8  // Use folder selection dialog
   } bx_string_opt_bits;
   bx_param_string_c(bx_param_c *parent,
       const char *name,
@@ -947,8 +947,8 @@ public:
     // item (used in the runtime menu).
     SHOW_GROUP_NAME = (1<<4)
   } bx_listopt_bits;
-  bx_list_c(bx_param_c *parent, int maxsize = BX_DEFAULT_LIST_SIZE);
-  bx_list_c(bx_param_c *parent, const char *name, int maxsize = BX_DEFAULT_LIST_SIZE);
+  bx_list_c(bx_param_c *parent, int maxsize);
+  bx_list_c(bx_param_c *parent, const char *name, int maxsize);
   bx_list_c(bx_param_c *parent, const char *name, char *title, int maxsize = BX_DEFAULT_LIST_SIZE);
   bx_list_c(bx_param_c *parent, const char *name, char *title, bx_param_c **init_list);
   virtual ~bx_list_c();
@@ -963,6 +963,7 @@ public:
   void set_parent(bx_param_c *newparent);
   bx_param_c *get_parent() { return parent; }
   virtual void reset();
+  virtual void clear();
 #if BX_USE_TEXTCONFIG
   virtual void text_print(FILE *);
   virtual int text_ask(FILE *fpin, FILE *fpout);
@@ -996,11 +997,9 @@ enum {
 #if BX_SUPPORT_BUSMOUSE
   BX_MOUSE_TYPE_BUS,
 #endif
-#if BX_SUPPORT_PCIUSB
-  BX_MOUSE_TYPE_USB,
-#endif
   BX_MOUSE_TYPE_SERIAL,
-  BX_MOUSE_TYPE_SERIAL_WHEEL
+  BX_MOUSE_TYPE_SERIAL_WHEEL,
+  BX_MOUSE_TYPE_SERIAL_MSYS
 };
 
 #define BX_FLOPPY_NONE   10 // floppy not present
@@ -1038,12 +1037,13 @@ enum {
 #define BX_ATA_MODE_DLL_HD      3
 #define BX_ATA_MODE_SPARSE      4
 #define BX_ATA_MODE_VMWARE3     5
-#define BX_ATA_MODE_UNDOABLE    6
-#define BX_ATA_MODE_GROWING     7
-#define BX_ATA_MODE_VOLATILE    8
-#define BX_ATA_MODE_Z_UNDOABLE  9
-#define BX_ATA_MODE_Z_VOLATILE  10
-#define BX_ATA_MODE_LAST        10
+#define BX_ATA_MODE_VMWARE4     6
+#define BX_ATA_MODE_UNDOABLE    7
+#define BX_ATA_MODE_GROWING     8
+#define BX_ATA_MODE_VOLATILE    9
+#define BX_ATA_MODE_Z_UNDOABLE  10
+#define BX_ATA_MODE_Z_VOLATILE  11
+#define BX_ATA_MODE_LAST        11
 
 #define BX_CLOCK_SYNC_NONE     0
 #define BX_CLOCK_SYNC_REALTIME 1
@@ -1055,30 +1055,18 @@ enum {
 #define BX_CLOCK_TIME0_UTC       2
 
 BOCHSAPI extern char *bochs_start_names[];
-BOCHSAPI extern int n_bochs_start_names;
 BOCHSAPI extern char *floppy_type_names[];
 BOCHSAPI extern int floppy_type_n_sectors[];
-BOCHSAPI extern int n_floppy_type_names;
 BOCHSAPI extern char *floppy_status_names[];
-BOCHSAPI extern int n_floppy_status_names;
 BOCHSAPI extern char *bochs_bootdisk_names[];
-BOCHSAPI extern int n_bochs_bootdisk_names;
 BOCHSAPI extern char *loader_os_names[];
-BOCHSAPI extern int n_loader_os_names;
 BOCHSAPI extern char *keyboard_type_names[];
-BOCHSAPI extern int n_keyboard_type_names;
 BOCHSAPI extern char *atadevice_type_names[];
-BOCHSAPI extern int n_atadevice_type_names;
 BOCHSAPI extern char *atadevice_mode_names[];
-BOCHSAPI extern int n_atadevice_mode_names;
 BOCHSAPI extern char *atadevice_status_names[];
-BOCHSAPI extern int n_atadevice_status_names;
 BOCHSAPI extern char *atadevice_biosdetect_names[];
-BOCHSAPI extern int n_atadevice_biosdetect_names;
 BOCHSAPI extern char *atadevice_translation_names[];
-BOCHSAPI extern int n_atadevice_translation_names;
 BOCHSAPI extern char *clock_sync_names[];
-BOCHSAPI extern int clock_sync_n_names;
 
 ////////////////////////////////////////////////////////////////////
 // base class simulator interface, contains just virtual functions.
@@ -1087,7 +1075,7 @@ BOCHSAPI extern int clock_sync_n_names;
 
 #include <setjmp.h>
 
-enum ci_command_t { CI_START, CI_RUNTIME_CONFIG, CI_SAVE_RESTORE, CI_SHUTDOWN };
+enum ci_command_t { CI_START, CI_RUNTIME_CONFIG, CI_SHUTDOWN };
 enum ci_return_t { 
   CI_OK,                  // normal return value 
   CI_ERR_NO_TEXT_CONSOLE  // err: can't work because there's no text console
@@ -1110,6 +1098,7 @@ enum disp_mode_t { DISP_MODE_CONFIG=100, DISP_MODE_SIM };
 class BOCHSAPI bx_simulator_interface_c {
 public:
   bx_simulator_interface_c() {}
+  virtual ~bx_simulator_interface_c() {}
   virtual void set_quit_context(jmp_buf *context) {}
   virtual int get_init_done() { return -1; }
   virtual int set_init_done(int n) {return -1;}
@@ -1218,7 +1207,8 @@ public:
     is_sim_thread_func = func;
   }
   virtual bx_bool is_sim_thread() {return 1;}
-  virtual bx_bool is_wx_selected() {return 0;}
+  virtual void set_debug_gui(bx_bool val) {}
+  virtual bx_bool has_debug_gui() {return 0;}
   // provide interface to bx_gui->set_display_mode() method for config
   // interfaces to use.
   virtual void set_display_mode(disp_mode_t newmode) {}
@@ -1230,6 +1220,7 @@ public:
   virtual Bit32s save_user_options(FILE *fp) {return -1;}
 #if BX_SUPPORT_SAVE_RESTORE
   // save/restore support
+  virtual void init_save_restore() {}
   virtual bx_bool save_state(const char *checkpoint_path) {return 0;}
   virtual bx_bool restore_config() {return 0;}
   virtual bx_bool restore_logopts() {return 0;}

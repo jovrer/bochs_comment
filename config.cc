@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc,v 1.109 2006/06/21 20:42:26 sshwarts Exp $
+// $Id: config.cc,v 1.119 2007/04/08 15:02:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -334,6 +334,24 @@ void bx_init_options()
   // general options subtree
   menu = new bx_list_c(root_param, "general", "");
 
+ // config interface option, set in bochsrc or command line
+  static char *config_interface_list[] = {
+#if BX_USE_TEXTCONFIG
+    "textconfig",
+#endif
+#if BX_WITH_WX
+    "wx",
+#endif
+    NULL
+  };
+  bx_param_enum_c *sel_config = new bx_param_enum_c(menu,
+    "config_interface", "Configuration interface",
+    "Select configuration interface",
+    config_interface_list,
+    0,
+    0);
+  sel_config->set_by_name(BX_DEFAULT_CONFIG_INTERFACE);
+
   // quick start option, set by command line arg
   new bx_param_enum_c(menu,
       "start_mode",
@@ -637,26 +655,7 @@ void bx_init_options()
   pcidev->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::USE_BOX_TITLE);
 
   // display subtree
-  bx_list_c *display = new bx_list_c(root_param, "display", "Bochs Display & Interface Options", 8);
-
-  // display & interface options
-  static char *config_interface_list[] = {
-#if BX_USE_TEXTCONFIG
-    "textconfig",
-#endif
-#if BX_WITH_WX
-    "wx",
-#endif
-    NULL
-  };
-  bx_param_enum_c *sel_config = new bx_param_enum_c(display,
-    "config_interface", "Configuration interface",
-    "Select configuration interface",
-    config_interface_list,
-    0,
-    0);
-  sel_config->set_by_name(BX_DEFAULT_CONFIG_INTERFACE);
-  sel_config->set_ask_format("Choose which configuration interface to use: [%s] ");
+  bx_list_c *display = new bx_list_c(root_param, "display", "Bochs Display & Interface Options", 7);
 
   // this is a list of gui libraries that are known to be available at
   // compile time.  The one that is listed first will be the default,
@@ -806,11 +805,9 @@ void bx_init_options()
 #if BX_SUPPORT_BUSMOUSE
     "bus",
 #endif
-#if BX_SUPPORT_PCIUSB
-    "usb",
-#endif
     "serial",
     "serial_wheel",
+    "serial_msys",
     NULL
   };
   type = new bx_param_enum_c(mouse,
@@ -818,9 +815,6 @@ void bx_init_options()
       "The mouse type can be one of these: 'none', 'ps2', 'imps2', 'serial', 'serial_wheel'"
 #if BX_SUPPORT_BUSMOUSE
       ", 'bus'"
-#endif
-#if BX_SUPPORT_PCIUSB
-      ", 'usb'"
 #endif
       ,
       mouse_type_list,
@@ -1288,7 +1282,7 @@ void bx_init_options()
     enabled->set_dependent_list(deplist);
   }
 
-  bx_param_string_c *port, *option;
+  bx_param_string_c *port;
 
   // usb hubs
   bx_list_c *usb = new bx_list_c(ports, "usb", "USB Hub Options");
@@ -1309,24 +1303,12 @@ void bx_init_options()
       "Device connected to USB port #1",
       "", BX_PATHNAME_LEN);
     port->set_group(group);
-    option = new bx_param_string_c(menu,
-      "option1", 
-      "Port #1 device options", 
-      "Options for device on USB port #1",
-      "", BX_PATHNAME_LEN);
-    option->set_group(group);
     port = new bx_param_string_c(menu,
       "port2", 
       "Port #2 device", 
       "Device connected to USB port #2",
       "", BX_PATHNAME_LEN);
     port->set_group(group);
-    option = new bx_param_string_c(menu,
-      "option2", 
-      "Port #2 device options", 
-      "Options for device on USB port #2",
-      "", BX_PATHNAME_LEN);
-    option->set_group(group);
     enabled->set_dependent_list(menu->clone());
   }
 
@@ -1376,7 +1358,7 @@ void bx_init_options()
     "NE2K I/O Address",
     "I/O base address of the emulated NE2K device",
     0, 0xffff,
-    0x240);
+    0x300);
   ioaddr->set_base(16);
   irq = new bx_param_num_c(menu,
     "irq",
@@ -1606,17 +1588,11 @@ void bx_init_options()
       SIM->get_param_num(BXPN_SB16_DMATIMER),
       SIM->get_param_num(BXPN_SB16_LOGLEVEL),
       SIM->get_param_string(BXPN_USB1_PORT1),
-      SIM->get_param_string(BXPN_USB1_OPTION1),
       SIM->get_param_string(BXPN_USB1_PORT2),
-      SIM->get_param_string(BXPN_USB1_OPTION2),
       NULL
   };
   menu = new bx_list_c(special_menus, "runtime", "Misc runtime options", runtime_init_list);
   menu->get_options()->set(bx_list_c::SHOW_PARENT | bx_list_c::SHOW_GROUP_NAME);
-
-// param-tree test output
-//printf("parameter tree:\n");
-//print_tree(root_param, 0);
 }
 
 void bx_reset_options()
@@ -1741,6 +1717,8 @@ static int parse_bochsrc(const char *rcfile)
   FILE *fd = NULL;
   char *ret;
   char line[512];
+  char context[BX_PATHNAME_LEN];
+  Bit32u linenum = 1;
 
   // try several possibilities for the bochsrc before giving up
 
@@ -1757,12 +1735,14 @@ static int parse_bochsrc(const char *rcfile)
     if ((len>0) && (line[len-1] < ' '))
       line[len-1] = '\0';
     if ((ret != NULL) && strlen(line)) {
-      if (parse_line_unformatted(rcfile, line) < 0) {
+      sprintf(context, "%s:%u", rcfile, linenum);
+      if (parse_line_unformatted(context, line) < 0) {
         retval = -1;
         break;  // quit parsing after first error
-        }
       }
-    } while (!feof(fd));
+    }
+    linenum++;
+  } while (!feof(fd));
   fclose(fd);
   bochsrc_include_count--;
   return retval;
@@ -2266,6 +2246,8 @@ static Bit32s parse_line_formatted(const char *context, int num_params, char *pa
       SIM->get_param_num("heads", base)->set(heads);
       SIM->get_param_num("spt", base)->set(sectors);
       SIM->get_param_num("biosdetect", base)->set(biosdetect);
+    } else {
+      SIM->get_param_bool("present", base)->set(0);
     }
 
     // if enabled, check if device ok
@@ -2700,11 +2682,11 @@ static Bit32s parse_line_formatted(const char *context, int num_params, char *pa
       } else if (!strncmp(params[i], "port1=", 6)) {
         SIM->get_param_string("port1", base)->set(&params[i][6]);
       } else if (!strncmp(params[i], "option1=", 8)) {
-        SIM->get_param_string("option1", base)->set(&params[i][8]);
+        PARSE_WARN(("%s: usb port1 option is now deprecated", context));
       } else if (!strncmp(params[i], "port2=", 6)) {
         SIM->get_param_string("port2", base)->set(&params[i][6]);
       } else if (!strncmp(params[i], "option2=", 8)) {
-        SIM->get_param_string("option2", base)->set(&params[i][8]);
+        PARSE_WARN(("%s: usb port2 option is now deprecated", context));
       } else if (!strncmp(params[i], "ioaddr=", 7)) {
         PARSE_WARN(("%s: usb ioaddr is now DEPRECATED (assigned by BIOS).", context));
       } else if (!strncmp(params[i], "irq=", 4)) {
@@ -3161,10 +3143,8 @@ int bx_write_usb_options(FILE *fp, bx_list_c *base, int n)
 {
   fprintf(fp, "usb%d: enabled=%d", n, SIM->get_param_bool("enabled", base)->get());
   if (SIM->get_param_bool("enabled", base)->get()) {
-    fprintf(fp, ", port1=%s, option1=%s", SIM->get_param_string("port1", base)->getptr(),
-            SIM->get_param_string("option1", base)->getptr());
-    fprintf(fp, ", port2=%s, option2=%s", SIM->get_param_string("port2", base)->getptr(),
-            SIM->get_param_string("option2", base)->getptr());
+    fprintf(fp, ", port1=%s", SIM->get_param_string("port1", base)->getptr());
+    fprintf(fp, ", port2=%s", SIM->get_param_string("port2", base)->getptr());
   }
   fprintf(fp, "\n");
   return 0;
@@ -3348,10 +3328,16 @@ int bx_write_configuration(const char *rc, int overwrite)
     fprintf(fp, "\n");
   fprintf(fp, "megs: %d\n", SIM->get_param_num(BXPN_MEM_SIZE)->get());
   strptr = SIM->get_param_string(BXPN_ROM_PATH)->getptr();
-  if (strlen(strptr) > 0)
-    fprintf(fp, "romimage: file=\"%s\", address=0x%05x\n", strptr, (unsigned int)SIM->get_param_num(BXPN_ROM_ADDRESS)->get());
-  else
+  if (strlen(strptr) > 0) {
+    fprintf(fp, "romimage: file=\"%s\"", strptr);
+    if (SIM->get_param_num(BXPN_ROM_ADDRESS)->get() != 0)
+      fprintf(fp, ", address=0x%08x\n", (unsigned int) SIM->get_param_num(BXPN_ROM_ADDRESS)->get());
+    else
+      fprintf(fp, "\n");
+  }
+  else {
     fprintf(fp, "# no romimage\n");
+  }
   strptr = SIM->get_param_string(BXPN_VGA_ROM_PATH)->getptr();
   if (strlen(strptr) > 0)
     fprintf(fp, "vgaromimage: file=\"%s\"\n", strptr);

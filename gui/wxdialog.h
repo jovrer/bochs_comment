@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h,v 1.64 2006/03/26 15:52:31 vruppert Exp $
+// $Id: wxdialog.h,v 1.68 2006/12/17 08:17:28 vruppert Exp $
 ////////////////////////////////////////////////////////////////////
 //
 // wxWidgets dialogs for Bochs
@@ -78,8 +78,8 @@ public:
   { wxT("Continue"), wxT("Kill Sim"), wxT("Dump Core"), wxT("Debugger"), wxT("Help") }
 #define LOG_MSG_DONT_ASK_STRING \
   wxT("Don't ask about future messages like this")
-#define LOG_MSG_CONTEXT wxT("Context: %s")
-#define LOG_MSG_MSG wxT("Message: %s")
+#define LOG_MSG_CONTEXT wxT("Context: ")
+#define LOG_MSG_MSG wxT("Message: ")
 private:
   wxStaticText *context, *message;
   wxCheckBox *dontAsk;
@@ -168,8 +168,8 @@ DECLARE_EVENT_TABLE()
 class FloppyConfigDialog: public wxDialog
 {
 public:
-#define FLOPPY_CONFIG_TITLE wxT("Configure %s")
-#define FLOPPY_CONFIG_INSTRS wxT("Select the device or image to use when simulating %s.")
+#define FLOPPY_CONFIG_TITLE wxT("Configure ")
+#define FLOPPY_CONFIG_INSTRS wxT("Select the device or image to use when simulating ")
 #define FLOPPY_CONFIG_CAP wxT("What is the capacity of this disk?")
 #define FLOPPY_CONFIG_HINT wxT("To create a disk image, choose the file name and capacity, then click on \"Create Image\".\n\n" \
                            "Clicking OK signals a media change for this drive.")
@@ -198,7 +198,7 @@ public:
   void SetFilename(wxString f);
   // Use char* instead of wxString because the array we use is already
   // expressed as a char *[].
-  void SetCapacityChoices(int n, char *choices[]);
+  void SetCapacityChoices(char *choices[]);
   void SetCapacity(int cap);
   int GetRadio();
   int GetCapacity() { return capacity->GetSelection(); }
@@ -517,7 +517,7 @@ class CpuRegistersDialog : public ParamDialog
     "EBP", "ESI", "EDI", "ESP", \
     NULL }
 #define CPU_REGS_MAIN_REGS2     \
-  { "EIP", "CS", "SS", "DS"     \
+  { "EIP", "CS", "SS", "DS",    \
     "ES", "FS", "GS", "EFLAGS", \
     NULL }
 #define CPU_REGS_MAIN_REGS3     \

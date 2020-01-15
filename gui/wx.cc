@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc,v 1.84 2006/05/07 09:49:16 vruppert Exp $
+// $Id: wx.cc,v 1.89 2006/10/25 17:40:56 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
@@ -94,6 +94,7 @@ static char *wxScreen = NULL;
 wxCriticalSection wxScreen_lock;
 static long wxScreenX = 0;
 static long wxScreenY = 0;
+static bx_bool wxScreenCheckSize = 0;
 static unsigned wxTileX = 0;
 static unsigned wxTileY = 0;
 static unsigned long wxCursorX = 0;
@@ -112,6 +113,7 @@ static struct {
 wxCriticalSection event_thread_lock;
 BxEvent event_queue[MAX_EVENTS];
 unsigned long num_events = 0;
+static bx_bool mouse_captured = 0;
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXGTK__)
 static Bit32u convertStringToGDKKey (const char *string);
 #endif
@@ -153,10 +155,19 @@ MyPanel::~MyPanel ()
 
 void MyPanel::OnTimer(wxTimerEvent& WXUNUSED(event))
 {
-  IFDBG_VGA(wxLogDebug (wxT ("timer")));
+  int cx, cy;
+
+  if (wxScreenCheckSize) {
+    theFrame->GetClientSize(&cx, &cy);
+    if ((cx != wxScreenX) || (cy != wxScreenY)) {
+      theFrame->SetClientSize(wxScreenX, wxScreenY);
+    }
+    wxScreenCheckSize = 0;
+  }
+  IFDBG_VGA(wxLogDebug(wxT("timer")));
   if (needRefresh) {
-    IFDBG_VGA(wxLogDebug (wxT ("calling refresh")));
-    Refresh (FALSE);
+    IFDBG_VGA(wxLogDebug(wxT("calling refresh")));
+    Refresh(FALSE);
   }
 }
 
@@ -233,7 +244,7 @@ void MyPanel::OnMouse(wxMouseEvent& event)
     return;
   }
 
-  if (!SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get()) 
+  if (!mouse_captured) 
     return;  // mouse disabled, ignore the event
 
   // process buttons and motion together
@@ -902,7 +913,11 @@ bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned t
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::specific_init trying to get lock. wxScreen=%p", wxScreen)));
   wxCriticalSectionLocker lock(wxScreen_lock);
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::specific_init got lock. wxScreen=%p", wxScreen)));
-  wxScreen = (char *)malloc(wxScreenX * wxScreenY * 3);
+  if (wxScreen == NULL) {
+    wxScreen = (char *)malloc(wxScreenX * wxScreenY * 3);
+  } else {
+    wxScreen = (char *)realloc(wxScreen, wxScreenX * wxScreenY * 3);
+  }
   memset(wxScreen, 0, wxScreenX * wxScreenY * 3);
 
   wxTileX = tilewidth;
@@ -917,7 +932,7 @@ bx_wx_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned t
 #endif
 
   new_gfx_api = 1;
-  dialog_caps = BX_GUI_DLG_USER | BX_GUI_DLG_SNAPSHOT;
+  dialog_caps = BX_GUI_DLG_USER | BX_GUI_DLG_SNAPSHOT | BX_GUI_DLG_SAVE_RESTORE;
 }
 
 // ::HANDLE_EVENTS()
@@ -934,17 +949,20 @@ void bx_wx_gui_c::handle_events(void)
     switch(event_queue[i].type) {
       case BX_ASYNC_EVT_TOOLBAR:
         switch (event_queue[i].u.toolbar.button) {
-          case BX_TOOLBAR_FLOPPYA: floppyA_handler (); break;
-          case BX_TOOLBAR_FLOPPYB: floppyB_handler (); break;
-          case BX_TOOLBAR_CDROMD: cdromD_handler (); break;
-          case BX_TOOLBAR_RESET: reset_handler (); break;
-          case BX_TOOLBAR_POWER: power_handler (); break;
-          case BX_TOOLBAR_COPY: copy_handler (); break;
-          case BX_TOOLBAR_PASTE: paste_handler (); break;
-          case BX_TOOLBAR_SNAPSHOT: snapshot_handler (); break;
-          case BX_TOOLBAR_CONFIG: config_handler (); break;
-          case BX_TOOLBAR_MOUSE_EN: thePanel->ToggleMouse (true); break;
-          case BX_TOOLBAR_USER: userbutton_handler (); break;
+          case BX_TOOLBAR_FLOPPYA: floppyA_handler(); break;
+          case BX_TOOLBAR_FLOPPYB: floppyB_handler(); break;
+          case BX_TOOLBAR_CDROMD: cdromD_handler(); break;
+          case BX_TOOLBAR_RESET: reset_handler(); break;
+          case BX_TOOLBAR_POWER: power_handler(); break;
+#if BX_SUPPORT_SAVE_RESTORE
+          case BX_TOOLBAR_SAVE_RESTORE: save_restore_handler(); break;
+#endif
+          case BX_TOOLBAR_COPY: copy_handler(); break;
+          case BX_TOOLBAR_PASTE: paste_handler(); break;
+          case BX_TOOLBAR_SNAPSHOT: snapshot_handler(); break;
+          case BX_TOOLBAR_CONFIG: config_handler(); break;
+          case BX_TOOLBAR_MOUSE_EN: thePanel->ToggleMouse(true); break;
+          case BX_TOOLBAR_USER: userbutton_handler(); break;
           default:
             wxLogDebug (wxT ("unknown toolbar id %d"), event_queue[i].u.toolbar.button);
         }
@@ -1042,6 +1060,7 @@ bx_wx_gui_c::statusbar_setitem(int element, bx_bool active)
   char status_text[10];
 #endif
 
+  wxMutexGuiEnter();
   if (element < 0) {
     for (unsigned i = 0; i < statusitem_count; i++) {
       if (active) {
@@ -1070,6 +1089,7 @@ bx_wx_gui_c::statusbar_setitem(int element, bx_bool active)
       theFrame->SetStatusText(wxT(""), element+1);
     }
   }
+  wxMutexGuiLeave();
 }
 
 // ::FLUSH()
@@ -1433,7 +1453,7 @@ bx_wx_gui_c::graphics_tile_get(unsigned x0, unsigned y0,
 bx_wx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
                                         unsigned w, unsigned h)
 {
-  thePanel->MyRefresh ();
+  thePanel->MyRefresh();
 }
 
 // ::DIMENSION_UPDATE()
@@ -1484,13 +1504,12 @@ void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, uns
 
   // this method is called from the simulation thread, so we must get the GUI
   // thread mutex first to be safe.
-  wxMutexGuiEnter ();
-  //theFrame->SetSize(-1, -1, wxScreenX + 6, wxScreenY + 100, 0);
-  //wxSize size = theFrame->GetToolBar()->GetToolSize();
-  theFrame->SetClientSize(wxScreenX, wxScreenY); // + size.GetHeight());
-  theFrame->Layout ();
-  wxMutexGuiLeave ();
-  thePanel->MyRefresh ();
+  wxMutexGuiEnter();
+  theFrame->SetClientSize(wxScreenX, wxScreenY);
+  theFrame->Layout();
+  wxMutexGuiLeave();
+  thePanel->MyRefresh();
+  wxScreenCheckSize = 1;
 }
 
 
@@ -1576,15 +1595,14 @@ bx_wx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 // Called before bochs terminates, to allow for a graceful
 // exit from the native GUI mechanism.
 
-  void
-bx_wx_gui_c::exit(void)
+void bx_wx_gui_c::exit(void)
 {
-  BX_INFO(("bx_wx_gui_c::exit() not implemented yet."));
+  clear_screen();
 }
 
-  void
-bx_wx_gui_c::mouse_enabled_changed_specific (bx_bool val)
+void bx_wx_gui_c::mouse_enabled_changed_specific(bx_bool val)
 {
+  mouse_captured = val;
 }
 
 
@@ -1634,8 +1652,10 @@ bx_wx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 void bx_wx_gui_c::show_ips(Bit32u ips_count)
 {
   char ips_text[40];
+  wxMutexGuiEnter();
   sprintf(ips_text, "IPS: %9u", ips_count);
   theFrame->SetStatusText(wxString(ips_text, wxConvUTF8), 0);
+  wxMutexGuiLeave();
 }
 #endif
 

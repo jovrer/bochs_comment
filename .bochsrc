@@ -59,6 +59,7 @@
 #display_library: sdl, options="fullscreen" # startup in fullscreen mode
 #display_library: term
 #display_library: win32, options="legacyF12" # use F12 to toggle mouse
+#display_library: win32, options="windebug" # use experimental debugger gui
 #display_library: wx
 #display_library: x
 
@@ -67,16 +68,16 @@
 # The ROM BIOS controls what the PC does when it first powers on.
 # Normally, you can use a precompiled BIOS in the source or binary
 # distribution called BIOS-bochs-latest. The ROM BIOS is usually loaded
-# starting at address 0xf0000, and it is exactly 64k long.
+# starting at address 0xf0000, and it is exactly 64k long. Another option
+# is 128k BIOS which is loaded at address 0xe0000.
 # You can also use the environment variable $BXSHARE to specify the
 # location of the BIOS.
 # The usage of external large BIOS images (up to 512k) at memory top is
 # now supported, but we still recommend to use the BIOS distributed with
 # Bochs. Now the start address can be calculated from image size.
 #=======================================================================
-romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
+romimage: file=$BXSHARE/BIOS-bochs-latest 
 #romimage: file=mybios.bin, address=0xfff80000 # 512k at memory top
-#romimage: file=mybios.bin # calculate start address from image size
 
 #=======================================================================
 # CPU:
@@ -282,7 +283,8 @@ ata3: enabled=0, ioaddr1=0x168, ioaddr2=0x360, irq=9
 #   ata3-master: type=disk, mode=flat, path=483M.sample, cylinders=1024, heads=15, spt=63
 #   ata3-slave:  type=cdrom, path=iso.sample, status=inserted
 #=======================================================================
-ata0-master: type=disk, mode=flat, path="30M.sample", cylinders=615, heads=6, spt=17
+ata0-master: type=disk, mode=flat, path="30M.sample"
+#ata0-master: type=disk, mode=flat, path="30M.sample", cylinders=615, heads=6, spt=17
 #ata0-master: type=disk, mode=flat, path="c.img", cylinders=0 # autodetect
 #ata0-slave: type=cdrom, path=D:, status=inserted
 #ata0-slave: type=cdrom, path=/dev/cdrom, status=inserted
@@ -291,15 +293,13 @@ ata0-master: type=disk, mode=flat, path="30M.sample", cylinders=615, heads=6, sp
 
 #=======================================================================
 # BOOT:
-# This defines the boot sequence. Now you can specify up to 3 boot drives.
-# You can either boot from 'floppy', 'disk' or 'cdrom'
-# legacy 'a' and 'c' are also supported
+# This defines the boot sequence. Now you can specify up to 3 boot drives,
+# which can be 'floppy', 'disk', 'cdrom' or 'network' (boot ROM).
+# Legacy 'a' and 'c' are also supported.
 # Examples:
 #   boot: floppy
-#   boot: disk
-#   boot: cdrom
-#   boot: c
-#   boot: a
+#   boot: cdrom, disk
+#   boot: network, disk
 #   boot: cdrom, floppy, disk
 #=======================================================================
 #boot: floppy
@@ -430,8 +430,8 @@ debugger_log: -
 # Other serial modes are 'null' (no input/output), 'file' (output to a file
 # specified as the 'dev' parameter), 'raw' (use the real serial port - under
 # construction for win32), 'mouse' (standard serial mouse - requires
-# mouse option setting 'type=serial' or 'type=serial_wheel') and 'socket'
-# (connect a networking socket).
+# mouse option setting 'type=serial', 'type=serial_wheel' or 'type=serial_msys')
+# and 'socket' (connect a networking socket).
 #
 # Examples:
 #   com1: enabled=1, mode=null
@@ -548,9 +548,9 @@ keyboard_paste_delay: 100000
 # mouse button on X11, SDL, wxWidgets and Win32).
 # With the mouse type option you can select the type of mouse to emulate.
 # The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
-# on PS/2), 'serial', 'serial_wheel' (one com port requires setting
-# 'mode=mouse') and 'usb' (3-button mouse - one of the USB ports must be
-# connected with the 'mouse' device - requires PCI and USB support).
+# on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
+# setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb1'
+# option (requires PCI and USB support).
 #
 # Examples:
 #   mouse: enabled=1
@@ -625,15 +625,15 @@ private_colormap: enabled=0
 #         overwrite files.
 #
 #=======================================================================
-# ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=fbsd, ethdev=en0 #macosx
-# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
-# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
-# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
-# ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
-# ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
-# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=null, ethdev=eth0
-# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
-# ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
+# ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=fbsd, ethdev=en0 #macosx
+# ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
+# ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
+# ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
+# ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
+# ne2k: ioaddr=0x300, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
+# ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=null, ethdev=eth0
+# ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
+# ne2k: ioaddr=0x300, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
 
 #=======================================================================
 # KEYBOARD_MAPPING:
@@ -668,7 +668,7 @@ keyboard_mapping: enabled=0, map=
 # Valid key names:
 # "alt", "bksl", "bksp", "ctrl", "del", "down", "end", "enter", "esc",
 # "f1", ... "f12", "home", "ins", "left", "menu", "minus", "pgdwn", "pgup",
-# "plus", "right", "shift", "space", "tab", "up", and "win".
+# "plus", "right", "shift", "space", "tab", "up", "win" and "print".
 #
 # Example:
 #   user_shortcut: keys=ctrl-alt-del
@@ -692,14 +692,16 @@ i440fxsupport: enabled=1
 # USB1:
 # This option controls the presence of the USB root hub which is a part
 # of the i440FX PCI chipset. With the portX option you can connect devices
-# to the hub (currently supported: 'mouse' and 'keypad'). If you connect
-# the mouse to one of the ports and use the mouse option 'type=usb' you'll
-# have a 3-button USB mouse.
-#
-# Example:
-#   usb1: enabled=1, port1=mouse, port2=keypad
+# to the hub (currently supported: 'mouse', 'tablet', 'keypad' and 'disk').
+# If you connect the mouse or tablet to one of the ports, Bochs forwards the
+# mouse movement data to the USB device instead of the selected mouse type.
+# When connecting the keypad to one of the ports, Bochs forwards the input of
+# the numeric keypad to the USB device instead of the PS/2 keyboard.
+# To connect a flat image as an USB hardisk you can use the 'disk' device with
+# the path to the image separated with a colon (see below).
 #=======================================================================
 #usb1: enabled=1
+#usb1: enabled=1, port1=mouse, port2=disk:usbdisk.img
 
 #=======================================================================
 # CMOSIMAGE:
@@ -714,9 +716,19 @@ i440fxsupport: enabled=1
 #cmosimage: file=cmos.img, rtc_init=time0
 
 #=======================================================================
-# other stuff
+# MAGIC_BREAK:
+# This enables the "magic breakpoint" feature when using the debugger.
+# The useless cpu instruction XCHG BX, BX causes Bochs to enter the
+# debugger mode. This might be useful for software development.
+#
+# Example:
+#   magic_break: enabled=1
 #=======================================================================
 #magic_break: enabled=1
+
+#=======================================================================
+# other stuff
+#=======================================================================
 #load32bitOSImage: os=nullkernel, path=../kernel.img, iolog=../vga_io.log
 #load32bitOSImage: os=linux, path=../linux.img, iolog=../vga_io.log, initrd=../initrd.img
 #text_snapshot_check: enable

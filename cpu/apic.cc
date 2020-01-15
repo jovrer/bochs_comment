@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.cc,v 1.94 2006/06/20 16:51:03 sshwarts Exp $
+// $Id: apic.cc,v 1.96 2007/04/04 16:55:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -35,6 +35,9 @@
 #define LOG_THIS this->
 
 #define APIC_BROADCAST_PHYSICAL_DESTINATION_MODE (APIC_MAX_ID)
+
+#define BX_LAPIC_FIRST_VECTOR	0x10
+#define BX_LAPIC_LAST_VECTOR	0xfe
 
 ///////////// APIC BUS /////////////
 
@@ -91,9 +94,11 @@ int apic_bus_deliver_interrupt(Bit8u vector, Bit8u dest, Bit8u delivery_mode, Bi
 
 int apic_bus_deliver_lowest_priority(Bit8u vector, Bit8u dest, bx_bool trig_mode, bx_bool broadcast)
 {
+  int i;
+
 #ifndef BX_IMPLEMENT_XAPIC
   // search for if focus processor exists
-  for (int i=0; i<BX_NUM_LOCAL_APICS; i++) {
+  for (i=0; i<BX_NUM_LOCAL_APICS; i++) {
     if(BX_CPU_APIC(i)->is_focus(vector)) {
       BX_CPU_APIC(i)->deliver(vector, APIC_DM_LOWPRI, trig_mode);
       return 1;
@@ -104,7 +109,7 @@ int apic_bus_deliver_lowest_priority(Bit8u vector, Bit8u dest, bx_bool trig_mode
   // focus processor not found, looking for lowest priority agent
   int lowest_priority_agent = -1, lowest_priority = 0x100;
 
-  for (int i=0; i<BX_NUM_LOCAL_APICS; i++) {
+  for (i=0; i<BX_NUM_LOCAL_APICS; i++) {
     if(broadcast || BX_CPU_APIC(i)->match_logical_addr(dest)) {
 #ifndef BX_IMPLEMENT_XAPIC
       int priority = BX_CPU_APIC(i)->get_apr();
@@ -273,7 +278,7 @@ void bx_local_apic_c::init()
   log_dest = 0;
   task_priority = 0;
 
-  for(i=0; i<BX_LOCAL_APIC_MAX_INTS; i++) {
+  for(i=0; i<BX_LAPIC_MAX_INTS; i++) {
     irr[i] = isr[i] = tmr[i] = 0;
   }
 
@@ -643,7 +648,7 @@ void bx_local_apic_c::read_aligned(bx_phy_address addr, Bit32u *data)
 
 int bx_local_apic_c::highest_priority_int(Bit8u *array)
 {
-  for(int i=BX_APIC_LAST_VECTOR; i>=BX_APIC_FIRST_VECTOR; i--)
+  for(int i=BX_LAPIC_LAST_VECTOR; i>=BX_LAPIC_FIRST_VECTOR; i--)
     if(array[i]) return i;
 
   return -1;
@@ -715,7 +720,7 @@ void bx_local_apic_c::trigger_irq(unsigned vector, unsigned trigger_mode, bx_boo
 {
   BX_DEBUG(("Local apic on %s: trigger interrupt vector=0x%x", cpu->name, vector));
   
-  if(vector > BX_APIC_LAST_VECTOR || vector < BX_APIC_FIRST_VECTOR) {
+  if(vector > BX_LAPIC_LAST_VECTOR || vector < BX_LAPIC_FIRST_VECTOR) {
     shadow_error_status |= APIC_ERR_RX_ILLEGAL_VEC;
     BX_INFO(("bogus vector %#x, ignoring ...", vector));
     return;
@@ -779,7 +784,7 @@ spurious:
 void bx_local_apic_c::print_status(void)
 {
   BX_INFO(("%s local apic: status is {:", cpu->name));
-  for(int vec=0; vec<BX_LOCAL_APIC_MAX_INTS; vec++) {
+  for(int vec=0; vec<BX_LAPIC_MAX_INTS; vec++) {
     if(irr[vec] || isr[vec]) {
       BX_INFO(("vec 0x%x: irr=%d, isr=%d", vec,(int)irr[vec],(int)isr[vec]));
     }
@@ -953,10 +958,10 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, log_dest);
   BXRS_HEX_PARAM_SIMPLE(lapic, dest_format);
   
-  bx_list_c *ISR = new bx_list_c(lapic, "isr", BX_LOCAL_APIC_MAX_INTS);
-  bx_list_c *TMR = new bx_list_c(lapic, "tmr", BX_LOCAL_APIC_MAX_INTS);
-  bx_list_c *IRR = new bx_list_c(lapic, "irr", BX_LOCAL_APIC_MAX_INTS);
-  for (i=0; i<BX_LOCAL_APIC_MAX_INTS; i++) {
+  bx_list_c *ISR = new bx_list_c(lapic, "isr", BX_LAPIC_MAX_INTS);
+  bx_list_c *TMR = new bx_list_c(lapic, "tmr", BX_LAPIC_MAX_INTS);
+  bx_list_c *IRR = new bx_list_c(lapic, "irr", BX_LAPIC_MAX_INTS);
+  for (i=0; i<BX_LAPIC_MAX_INTS; i++) {
     sprintf(name, "0x%02x", i);
     new bx_shadow_num_c(ISR, name, &isr[i]);
     new bx_shadow_num_c(TMR, name, &tmr[i]);

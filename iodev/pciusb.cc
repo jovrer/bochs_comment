@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pciusb.cc,v 1.40 2006/08/20 09:19:59 vruppert Exp $
+// $Id: pciusb.cc,v 1.59 2007/04/15 09:39:22 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -58,6 +58,8 @@
 
 #include "iodev.h"
 #if BX_SUPPORT_PCI && BX_SUPPORT_PCIUSB
+#include "usb_hid.h"
+#include "usb_msd.h"
 
 #define LOG_THIS theUSBDevice->
 
@@ -66,9 +68,48 @@ bx_pciusb_c* theUSBDevice = NULL;
 const Bit8u usb_iomask[32] = {2, 1, 2, 1, 2, 1, 2, 0, 4, 0, 0, 0, 1, 0, 0, 0,
                               3, 1, 3, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
+// Dumps the contents of a buffer to the log file
+void usb_dump_packet(Bit8u *data, unsigned size)
+{
+  char the_packet[256], str[16];
+  strcpy(the_packet, "Packet contents (in hex):");
+  unsigned offset = 0;
+  for (unsigned p=0; p<size; p++) {
+    if (!(p & 0x0F)) {
+      BX_DEBUG(("%s", the_packet));
+      sprintf(the_packet, "  0x%04X ", offset);
+      offset += 16;
+    }
+    sprintf(str, " %02X", data[p]);
+    strcat(the_packet, str);
+  }
+  if (strlen(the_packet))
+    BX_DEBUG(("%s", the_packet));
+}
+
+int set_usb_string(Bit8u *buf, const char *str)
+{
+  int len, i;
+  Bit8u *q;
+
+  q = buf;
+  len = strlen(str);
+  if (len > 32) {
+    *q = 0;
+    return 0;
+  }
+  *q++ = 2 * len + 2;
+  *q++ = 3;
+  for(i = 0; i < len; i++) {
+    *q++ = str[i];
+    *q++ = 0;
+  }
+  return q - buf;
+}
+
 int libpciusb_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  theUSBDevice = new bx_pciusb_c ();
+  theUSBDevice = new bx_pciusb_c();
   bx_devices.pluginPciUSBAdapter = theUSBDevice;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theUSBDevice, BX_PLUGIN_PCIUSB);
   return 0; // Success
@@ -76,24 +117,36 @@ int libpciusb_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
 
 void libpciusb_LTX_plugin_fini(void)
 {
+  delete theUSBDevice;
 }
 
 bx_pciusb_c::bx_pciusb_c()
 {
   put("USB");
   settype(PCIUSBLOG);
+  for (int i=0; i<BX_USB_CONFDEV; i++) {
+    memset((void*)&hub[i], 0, sizeof(bx_usb_t));
+  }
+  device_buffer = NULL;
 }
 
 bx_pciusb_c::~bx_pciusb_c()
 {
-  //TODO:  free  BX_USB_THIS device_buffer
+  if (BX_USB_THIS device_buffer != NULL)
+    delete [] BX_USB_THIS device_buffer;
 
-  // close any open handles
-  for (int i=0; i<USB_CUR_DEVS; i++)
-    if (BX_USB_THIS hub[0].device[i].fd > -1) 
-      ::close(BX_USB_THIS hub[0].device[i].fd);
+  for (int i=0; i<BX_USB_CONFDEV; i++) {
+    for (int j=0; j<USB_NUM_PORTS; j++) {
+      if (BX_USB_THIS hub[i].usb_port[j].device != NULL) {
+        delete BX_USB_THIS hub[i].usb_port[j].device;
+      }
+    }
+  }
 
-  BX_DEBUG(("Exit."));
+  SIM->get_param_string(BXPN_USB1_PORT1)->set_handler(NULL);
+  SIM->get_param_string(BXPN_USB1_PORT2)->set_handler(NULL);
+
+  BX_DEBUG(("Exit"));
 }
 
 void bx_pciusb_c::init(void)
@@ -126,12 +179,8 @@ void bx_pciusb_c::init(void)
 
   SIM->get_param_string(BXPN_USB1_PORT1)->set_handler(usb_param_handler);
   SIM->get_param_string(BXPN_USB1_PORT1)->set_runtime_param(1);
-  SIM->get_param_string(BXPN_USB1_OPTION1)->set_handler(usb_param_handler);
-  SIM->get_param_string(BXPN_USB1_OPTION1)->set_runtime_param(1);
   SIM->get_param_string(BXPN_USB1_PORT2)->set_handler(usb_param_handler);
   SIM->get_param_string(BXPN_USB1_PORT2)->set_runtime_param(1);
-  SIM->get_param_string(BXPN_USB1_OPTION2)->set_handler(usb_param_handler);
-  SIM->get_param_string(BXPN_USB1_OPTION2)->set_runtime_param(1);
 
   //HACK: Turn on debug messages from the start
   //BX_USB_THIS setonoff(LOGLEV_DEBUG, ACT_REPORT);
@@ -175,17 +224,7 @@ void bx_pciusb_c::reset(unsigned type)
 
   // reset locals
   BX_USB_THIS busy = 0;
-  BX_USB_THIS last_connect = 0xFF;
   BX_USB_THIS global_reset = 0;
-  BX_USB_THIS set_address_stk = 0;
-  memset(BX_USB_THIS saved_key, 0, 8);
-  memset(BX_USB_THIS key_pad_packet, 0, 8);
-
-  // mouse packet stuff
-  BX_USB_THIS mouse_delayed_dx = 0;
-  BX_USB_THIS mouse_delayed_dy = 0;
-  BX_USB_THIS mouse_delayed_dz = 0;
-  BX_USB_THIS button_state = 0;
 
   // Put the USB registers into their RESET state
   for (i=0; i<BX_USB_CONFDEV; i++) {
@@ -221,23 +260,15 @@ void bx_pciusb_c::reset(unsigned type)
       BX_USB_THIS hub[i].usb_port[j].enabled = 0;
       BX_USB_THIS hub[i].usb_port[j].able_changed = 0;
       BX_USB_THIS hub[i].usb_port[j].status = 0;
-      BX_USB_THIS hub[i].usb_port[j].device_num = -1;
+      if (BX_USB_THIS hub[i].usb_port[j].device != NULL) {
+        delete BX_USB_THIS hub[i].usb_port[j].device;
+        BX_USB_THIS hub[i].usb_port[j].device = NULL;
+      }
     }
   }
 
-  // First, clear out the device(s)
-  for (i=0; i<BX_USB_CONFDEV; i++)
-    for (j=0; j<USB_CUR_DEVS; j++) {
-      memset(&BX_USB_THIS hub[i].device[j], 0, sizeof(USB_DEVICE));
-      BX_USB_THIS hub[i].device[j].fd = -1;
-    }
-
-  BX_USB_THIS keyboard_connected = 0;
-  BX_USB_THIS mouse_connected = 0;
-  BX_USB_THIS flash_connected = 0;
-
-  // include the device(s) initialize code
-  #include "pciusb_devs.h"
+  BX_USB_THIS mousedev = NULL;
+  BX_USB_THIS keybdev = NULL;
 
   init_device(0, SIM->get_param_string(BXPN_USB1_PORT1)->getptr());
   init_device(1, SIM->get_param_string(BXPN_USB1_PORT2)->getptr());
@@ -246,11 +277,11 @@ void bx_pciusb_c::reset(unsigned type)
 #if BX_SUPPORT_SAVE_RESTORE
 void bx_pciusb_c::register_state(void)
 {
-  unsigned i, j, n;
-  char hubnum[8], portnum[8], name[6];
+  unsigned i, j;
+  char hubnum[8], portnum[8];
   bx_list_c *hub, *usb_cmd, *usb_st, *usb_en, *port;
 
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pciusb", "PCI USB Controller State", BX_USB_CONFDEV + 15);
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pciusb", "PCI USB Controller State", BX_USB_CONFDEV + 2);
   for (i=0; i<BX_USB_CONFDEV; i++) {
     sprintf(hubnum, "hub%d", i+1);
     hub = new bx_list_c(list, hubnum, USB_NUM_PORTS + 7);
@@ -263,14 +294,14 @@ void bx_pciusb_c::register_state(void)
     new bx_shadow_bool_c(usb_cmd, "reset", &BX_USB_THIS hub[i].usb_command.reset);
     new bx_shadow_bool_c(usb_cmd, "host_reset", &BX_USB_THIS hub[i].usb_command.host_reset);
     new bx_shadow_bool_c(usb_cmd, "schedule", &BX_USB_THIS hub[i].usb_command.schedule);
-    usb_st = new bx_list_c(hub, "usb_status");
+    usb_st = new bx_list_c(hub, "usb_status", 6);
     new bx_shadow_bool_c(usb_st, "host_halted", &BX_USB_THIS hub[i].usb_status.host_halted);
     new bx_shadow_bool_c(usb_st, "host_error", &BX_USB_THIS hub[i].usb_status.host_error);
     new bx_shadow_bool_c(usb_st, "pci_error", &BX_USB_THIS hub[i].usb_status.pci_error);
     new bx_shadow_bool_c(usb_st, "resume", &BX_USB_THIS hub[i].usb_status.resume);
     new bx_shadow_bool_c(usb_st, "error_interrupt", &BX_USB_THIS hub[i].usb_status.error_interrupt);
     new bx_shadow_bool_c(usb_st, "interrupt", &BX_USB_THIS hub[i].usb_status.interrupt);
-    usb_en = new bx_list_c(hub, "usb_enable");
+    usb_en = new bx_list_c(hub, "usb_enable", 4);
     new bx_shadow_bool_c(usb_en, "short_packet", &BX_USB_THIS hub[i].usb_enable.short_packet);
     new bx_shadow_bool_c(usb_en, "on_complete", &BX_USB_THIS hub[i].usb_enable.on_complete);
     new bx_shadow_bool_c(usb_en, "resume", &BX_USB_THIS hub[i].usb_enable.resume);
@@ -280,7 +311,7 @@ void bx_pciusb_c::register_state(void)
     new bx_shadow_num_c(hub, "sof_timing", &BX_USB_THIS hub[i].usb_sof.sof_timing, BASE_HEX);
     for (j=0; j<USB_NUM_PORTS; j++) {
       sprintf(portnum, "port%d", j+1);
-      port = new bx_list_c(hub, portnum, 10);
+      port = new bx_list_c(hub, portnum, 11);
       new bx_shadow_bool_c(port, "suspend", &BX_USB_THIS hub[i].usb_port[j].suspend);
       new bx_shadow_bool_c(port, "reset", &BX_USB_THIS hub[i].usb_port[j].reset);
       new bx_shadow_bool_c(port, "low_speed", &BX_USB_THIS hub[i].usb_port[j].low_speed);
@@ -291,40 +322,13 @@ void bx_pciusb_c::register_state(void)
       new bx_shadow_bool_c(port, "enabled", &BX_USB_THIS hub[i].usb_port[j].enabled);
       new bx_shadow_bool_c(port, "connect_changed", &BX_USB_THIS hub[i].usb_port[j].connect_changed);
       new bx_shadow_bool_c(port, "status", &BX_USB_THIS hub[i].usb_port[j].status);
+      // empty list for USB device state
+      new bx_list_c(port, "device", 20);
     }
-    bx_list_c *pci_conf = new bx_list_c(hub, "pci_conf", 256);
-    for (n=0; n<256; n++) {
-      sprintf(name, "0x%02x", n);
-      new bx_shadow_num_c(pci_conf, name, &BX_USB_THIS hub[i].pci_conf[n], BASE_HEX);
-    }
+    register_pci_state(hub, BX_USB_THIS hub[i].pci_conf);
   }
   new bx_shadow_bool_c(list, "busy", &BX_USB_THIS busy);
   new bx_shadow_num_c(list, "global_reset", &BX_USB_THIS global_reset);
-  new bx_shadow_num_c(list, "mouse_delayed_dx", &BX_USB_THIS mouse_delayed_dx);
-  new bx_shadow_num_c(list, "mouse_delayed_dy", &BX_USB_THIS mouse_delayed_dy);
-  new bx_shadow_num_c(list, "mouse_delayed_dz", &BX_USB_THIS mouse_delayed_dz);
-  new bx_shadow_num_c(list, "button_state", &BX_USB_THIS button_state);
-  new bx_shadow_num_c(list, "mouse_x", &BX_USB_THIS mouse_x);
-  new bx_shadow_num_c(list, "mouse_y", &BX_USB_THIS mouse_y);
-  new bx_shadow_num_c(list, "mouse_z", &BX_USB_THIS mouse_z);
-  new bx_shadow_num_c(list, "b_state", &BX_USB_THIS b_state);
-  bx_list_c *svkey = new bx_list_c(list, "saved_key", 8);
-  for (i=0; i<8; i++) {
-    sprintf(name, "%d", i);
-    new bx_shadow_num_c(svkey, name, &BX_USB_THIS saved_key[i]);
-  }
-  bx_list_c *kppkt = new bx_list_c(list, "key_pad_packet", 8);
-  for (i=0; i<8; i++) {
-    sprintf(name, "%d", i);
-    new bx_shadow_num_c(kppkt, name, &BX_USB_THIS key_pad_packet[i]);
-  }
-  new bx_shadow_data_c(list, "device_buffer", BX_USB_THIS device_buffer, 65536);
-  new bx_shadow_num_c(list, "set_address_stk", &BX_USB_THIS set_address_stk);
-  bx_list_c *setaddr = new bx_list_c(list, "set_address", 128);
-  for (i=0; i<128; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(setaddr, name, &BX_USB_THIS set_address[i], BASE_HEX);
-  }
 }
 
 void bx_pciusb_c::after_restore_state(void)
@@ -336,44 +340,56 @@ void bx_pciusb_c::after_restore_state(void)
   {
      BX_INFO(("new base address: 0x%04x", BX_USB_THIS hub[0].base_ioaddr));
   }
+  for (int i=0; i<BX_USB_CONFDEV; i++) {
+    for (int j=0; j<USB_NUM_PORTS; j++) {
+      if (BX_USB_THIS hub[i].usb_port[j].device != NULL) {
+        BX_USB_THIS hub[i].usb_port[j].device->after_restore_state();
+      }
+    }
+  }
 }
 #endif
 
-void bx_pciusb_c::init_device(Bit8u port, char *devname)
+void bx_pciusb_c::init_device(Bit8u port, const char *devname)
 {
-  Bit8u type = USB_DEV_TYPE_NONE;
-  bx_bool connected = 0;
+  usbdev_type type = USB_DEV_TYPE_NONE;
+#if BX_SUPPORT_SAVE_RESTORE
+  char pname[BX_PATHNAME_LEN];
+#endif
 
-  if (!strlen(devname)) return;
+  if (!strlen(devname) || !strcmp(devname, "none")) return;
 
   if (!strcmp(devname, "mouse")) {
     type = USB_DEV_TYPE_MOUSE;
-    connected = SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get();
-    if (SIM->get_param_enum(BXPN_MOUSE_TYPE)->get() == BX_MOUSE_TYPE_USB) {
-      BX_USB_THIS mouse_connected = connected;
-    } else if (connected) {
-      BX_ERROR(("USB mouse connect ignored, since other mouse type is configured"));
-      connected = 0;
+    BX_USB_THIS hub[0].usb_port[port].device = new usb_hid_device_t(type);
+    if (BX_USB_THIS mousedev == NULL) {
+      BX_USB_THIS mousedev = (usb_hid_device_t*)BX_USB_THIS hub[0].usb_port[port].device;
+    }
+  } else if (!strcmp(devname, "tablet")) {
+    type = USB_DEV_TYPE_TABLET;
+    BX_USB_THIS hub[0].usb_port[port].device = new usb_hid_device_t(type);
+    if (BX_USB_THIS mousedev == NULL) {
+      BX_USB_THIS mousedev = (usb_hid_device_t*)BX_USB_THIS hub[0].usb_port[port].device;
     }
   } else if (!strcmp(devname, "keypad")) {
     type = USB_DEV_TYPE_KEYPAD;
-    connected = 1;
-    BX_USB_THIS keyboard_connected = 1;
-//} else if (!strcmp(devname, "flash")) {
-//  type = USB_DEV_TYPE_FLASH;
-//  connected = 1;
-//  BX_USB_THIS flash_connected = 1;
+    BX_USB_THIS hub[0].usb_port[port].device = new usb_hid_device_t(type);
+    if (BX_USB_THIS keybdev == NULL) {
+      BX_USB_THIS keybdev = (usb_hid_device_t*)BX_USB_THIS hub[0].usb_port[port].device;
+    }
+  } else if (!strncmp(devname, "disk:", 5)) {
+    type = USB_DEV_TYPE_DISK;
+    BX_USB_THIS hub[0].usb_port[port].device = new usb_msd_device_t();
   } else {
     BX_PANIC(("unknown USB device: %s", devname));
     return;
   }
-  for (int i=0; i<USB_CUR_DEVS; i++) {
-    if (BX_USB_THIS hub[0].device[i].dev_type == type) {
-      BX_USB_THIS hub[0].usb_port[port].device_num = i;
-      BX_USB_THIS hub[0].device[i].stall_once &= ~0x80; // clear out the "stall once bit has happened"
-    }
-  }
-  usb_set_connect_status(port, type, connected);
+#if BX_SUPPORT_SAVE_RESTORE
+  sprintf(pname, "pciusb.hub1.port%d.device", port+1);
+  bx_list_c *devlist = (bx_list_c*)SIM->get_param(pname, SIM->get_sr_root());
+  BX_USB_THIS hub[0].usb_port[port].device->register_state(devlist);
+#endif
+  usb_set_connect_status(port, type, 1);
 }
 
 void bx_pciusb_c::set_irq_level(bx_bool level)
@@ -517,9 +533,11 @@ void bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
       if (BX_USB_THIS hub[0].usb_command.host_reset) {
         BX_USB_THIS reset(0);
         for (unsigned i=0; i<USB_NUM_PORTS; i++) {
-          if (BX_USB_THIS hub[0].usb_port[i].status)
-            usb_set_connect_status(i, BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[i].device_num].dev_type,
-              BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[i].device_num].connect_status);
+          if (BX_USB_THIS hub[0].usb_port[i].status) {
+            if (BX_USB_THIS hub[0].usb_port[i].device != NULL) {
+              BX_USB_THIS usb_send_msg(BX_USB_THIS hub[0].usb_port[i].device, USB_MSG_RESET);
+            }
+          }
           BX_USB_THIS hub[0].usb_port[i].connect_changed = 1;
           BX_USB_THIS hub[0].usb_port[i].enabled = 0;
           BX_USB_THIS hub[0].usb_port[i].able_changed = 1;
@@ -547,7 +565,7 @@ void bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
         BX_USB_THIS hub[0].usb_status.host_halted = 0;
         BX_DEBUG(("Schedule bit set in Command register"));
       } else {
-        //BX_USB_THIS hub[0].usb_status.host_halted = 1;
+        BX_USB_THIS hub[0].usb_status.host_halted = 1;
         BX_DEBUG(("Schedule bit clear in Command register"));
       }
 
@@ -595,7 +613,7 @@ void bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
         BX_DEBUG(("write to frame number register with bits 15:11 not zero: 0x%04x", value));
 
       if (BX_USB_THIS hub[0].usb_status.host_halted)
-        BX_USB_THIS hub[0].usb_frame_num.frame_num = value;
+        BX_USB_THIS hub[0].usb_frame_num.frame_num = (value & 0x07FF);
       else
         // ignored by the hardward, but lets report it anyway
         BX_DEBUG(("write to frame number register with STATUS.HALTED == 0"));
@@ -605,7 +623,7 @@ void bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
       if (value & 0xFFF)
         BX_PANIC(("write to frame base register with bits 11:0 not zero: 0x%08x", value));
 
-      BX_USB_THIS hub[0].usb_frame_base.frame_base = value;
+      BX_USB_THIS hub[0].usb_frame_base.frame_base = (value & ~0xfff);
       break;
 
     case 0x0C: // start of Frame Modify register (8-bit)
@@ -655,8 +673,12 @@ void bx_pciusb_c::write(Bit32u address, Bit32u value, unsigned io_len)
           BX_USB_THIS hub[0].usb_port[port].enabled = 0;
           // are we are currently connected/disconnected
           if (BX_USB_THIS hub[0].usb_port[port].status) {
-            BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].connect_status = 0;
-            usb_set_connect_status(port, BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].dev_type, 1);
+            if (BX_USB_THIS hub[0].usb_port[port].device != NULL) {
+              BX_USB_THIS hub[0].usb_port[port].low_speed =
+                (BX_USB_THIS hub[0].usb_port[port].device->get_speed() == USB_SPEED_LOW);
+              usb_set_connect_status(port, BX_USB_THIS hub[0].usb_port[port].device->get_type(), 1);
+              BX_USB_THIS usb_send_msg(BX_USB_THIS hub[0].usb_port[port].device, USB_MSG_RESET);
+            }
           }
           BX_INFO(("Port%d: Reset", port+1));
         }
@@ -708,7 +730,6 @@ void bx_pciusb_c::usb_timer(void)
     BX_USB_THIS busy = 0;
   }
   if (BX_USB_THIS hub[0].usb_command.schedule) {
-    struct USB_DEVICE *dev = NULL;
     BX_USB_THIS busy = 1;
     bx_bool fire_int = 0;
     set_irq_level(0);  // make sure it is low
@@ -771,7 +792,7 @@ void bx_pciusb_c::usb_timer(void)
               Bit16u r_actlen = (((td.dword1 & 0x7FF)+1) & 0x7FF);
               Bit16u r_maxlen = (((td.dword2>>21)+1) & 0x7FF);
               BX_DEBUG((" r_actlen = 0x%04X r_maxlen = 0x%04X", r_actlen, r_maxlen));
-              if (((td.dword2 & 0xFF) == TOKEN_IN) && spd && stk && (r_actlen < r_maxlen) && ((td.dword1 & 0x00FF0000) == 0)) {
+              if (((td.dword2 & 0xFF) == USB_TOKEN_IN) && spd && stk && (r_actlen < r_maxlen) && ((td.dword1 & 0x00FF0000) == 0)) {
                 shortpacket = 1;
                 td.dword1 |= (1<<29);
               }
@@ -827,7 +848,8 @@ void bx_pciusb_c::usb_timer(void)
 
     // if we needed to fire an interrupt now, lets do it *after* we increment the frame_num register
     if (fire_int) {
-      BX_USB_THIS hub[0].usb_status.interrupt = 1 | ((stalled) ? 2 : 0);
+      BX_USB_THIS hub[0].usb_status.interrupt = 1;
+      BX_USB_THIS hub[0].usb_status.error_interrupt = stalled;
       set_irq_level(1);
     }
 
@@ -848,22 +870,13 @@ void bx_pciusb_c::usb_timer(void)
 
 bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td) {
   
-  int i, j;
-  Bit8u protocol = 0;
-  bx_bool fnd;
+  int i, len = 0, ret = 0;
+  usb_device_t *dev = NULL;
 
   Bit16u maxlen = (td->dword2 >> 21);
   Bit8u  addr   = (td->dword2 >> 8) & 0x7F;
   Bit8u  endpt  = (td->dword2 >> 15) & 0x0F;
   Bit8u  pid    =  td->dword2 & 0xFF;
-  Bit8u  data[64];
-  struct REQUEST_PACKET *rp = (struct REQUEST_PACKET *) data;
-
-  // if packet, read in the packet data
-  if (pid == TOKEN_SETUP) {
-    if (td->dword3) DEV_MEM_READ_PHYSICAL(td->dword3, 8, data);
-    // the '8' above may need to be maxlen (unless maxlen == 0)
-  }
 
   BX_DEBUG(("QH%03i:TD found at address: 0x%08X", queue_num, address));
   BX_DEBUG(("  %08X   %08X   %08X   %08X", td->dword0, td->dword1, td->dword2, td->dword3));
@@ -880,623 +893,82 @@ bx_bool bx_pciusb_c::DoTransfer(Bit32u address, Bit32u queue_num, struct TD *td)
 
   // find device address
   bx_bool at_least_one = 0;
-  struct USB_DEVICE *dev = NULL;
-  for (i=0; i<USB_CUR_DEVS; i++) {
-    if (BX_USB_THIS hub[0].device[i].connect_status) at_least_one = 1;
-    if ((BX_USB_THIS hub[0].device[i].address == addr) && BX_USB_THIS hub[0].device[i].connect_status) {
-      dev = &BX_USB_THIS hub[0].device[i];
-      break;
+  for (i=0; i<USB_NUM_PORTS; i++) {
+    if (BX_USB_THIS hub[0].usb_port[i].device != NULL) {
+      if (BX_USB_THIS hub[0].usb_port[i].device->get_connected()) {
+        at_least_one = 1;
+        if (BX_USB_THIS hub[0].usb_port[i].device->get_address() == addr) {
+          dev = BX_USB_THIS hub[0].usb_port[i].device;
+          break;
+        }
+      }
     }
   }
   if (!at_least_one) {
-    BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
+    BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==USB_TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
     return 1;
   }
   if (dev == NULL) {
-    if ((pid == TOKEN_OUT) && (maxlen == 0x7FF) && (addr == 0)) {
+    if ((pid == USB_TOKEN_OUT) && (maxlen == 0x7FF) && (addr == 0)) {
       // This is the "keep awake" packet that Windows sends once a schedule cycle.
       // For now, let it pass through to the code below.
     } else {
       BX_PANIC(("Device not found for addr: %i", addr));
-      BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
+      BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==USB_TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
       return 1;  // device not found
     }
   }
 
   // the device should remain in a stall state until the next setup packet is recieved
   // For some reason, this doesn't work yet.
-  //if (dev && dev->in_stall && (pid != TOKEN_SETUP))
+  //if (dev && dev->in_stall && (pid != USB_TOKEN_SETUP))
   //  return FALSE;
 
   maxlen++;
   maxlen &= 0x7FF;
-  if (dev) {
-    if (maxlen > dev->function.device_descr.max_packet_size)
-      maxlen = dev->function.device_descr.max_packet_size;
-  } else
-    maxlen = 0;
 
-  // parse and get command
-  Bit16u cnt;
-  switch (pid) {
-    case TOKEN_IN:   // Data came from HC to Host
-      // if an interrupt in / bulk in, do the protocol packet.
-      if (endpt > 0) {
-        fnd = 0;
-        for (i=0; (i<dev->function.device_config[dev->config].interfaces) && !fnd; i++) {
-          for (j=0; j<dev->function.device_config[dev->config].Interface[i].num_endpts; j++) {
-            if (endpt == (dev->function.device_config[dev->config].Interface[i].endpts[j].endpt & 0x7F)) {
-              protocol = dev->function.device_config[dev->config].Interface[i].protocol;
-              fnd = 1;
-              break;
-            }
-          }
+  if (dev != NULL) {
+    BX_USB_THIS usb_packet.pid = pid;
+    BX_USB_THIS usb_packet.devaddr = addr;
+    BX_USB_THIS usb_packet.devep = endpt;
+    BX_USB_THIS usb_packet.data = device_buffer;
+    BX_USB_THIS usb_packet.len = maxlen;
+    switch (pid) {
+      case USB_TOKEN_OUT:
+      case USB_TOKEN_SETUP:
+        if (maxlen > 0) {
+          DEV_MEM_READ_PHYSICAL(td->dword3, maxlen, device_buffer);
         }
-        if (fnd) {
-          cnt = dev->function.device_config[dev->config].Interface[dev->Interface].endpts[0].max_size;
-          switch (protocol) {
-            case 1:  // keypad
-
-              memcpy(device_buffer, BX_USB_THIS key_pad_packet, 8);
-
-              DEV_MEM_WRITE_PHYSICAL(td->dword3, cnt, device_buffer);
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, cnt-1);
-              break;
-
-            case 2:  // mouse
-              if (!BX_USB_THIS mouse_x && !BX_USB_THIS mouse_y) {
-                // if there's no new movement, handle delayed one
-                BX_USB_THIS usb_mouse_enq(0, 0, BX_USB_THIS mouse_z, BX_USB_THIS b_state);
-              }
-              device_buffer[0] = (Bit8u) BX_USB_THIS b_state;
-              device_buffer[1] = (Bit8s) BX_USB_THIS mouse_x;
-              device_buffer[2] = (Bit8s) BX_USB_THIS mouse_y;
-              device_buffer[3] = (Bit8s) BX_USB_THIS mouse_z;  // if wheel mouse
-              BX_USB_THIS b_state = 0;
-              BX_USB_THIS mouse_x = 0;
-              BX_USB_THIS mouse_y = 0;
-              BX_USB_THIS mouse_z = 0;
-              DEV_MEM_WRITE_PHYSICAL(td->dword3, cnt, device_buffer);
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, cnt-1);
-              break;
-
-            case 0x50: // USB Mass Storage ????
-              Bit8u bulk_int_packet[1024];
-              if (flash_stick(bulk_int_packet, maxlen, 0)) {
-
-              } else {
-
-              }
-              break;
-
-            default:
-              BX_PANIC(("Unknown/unsupported endpt protocol issued an Interrupt In / Bulk packet.  protocol %i", protocol));
-          }       
-        } else {
-          BX_PANIC(("Unknown endpt issued an Interrupt In / Bulk packet.  ID 0x%04x Interface %i  endpt %i", i, endpt, dev->function.device_descr.vendorid));
-        }
-      } else {
-        BX_DEBUG(("TOKEN_IN: len = %i", maxlen));
-        BX_DEBUG(("          address = 0x%08X, Depth = %i, QH = %i, Terminate = %i\n"
-                  "                              spd=%i, c_err=%i, LS=%i, IOS=%i, IOC=%i, status=0x%02X, act_len=0x%03X\n"
-                  "                              max_len=0x%03X, D=%i, EndPt=%i, addr=%i, PID=0x%02X\n"
-                  "                              buffer address = 0x%08X",
-        td->dword0 & ~0x0000000F, (td->dword0 & 0x00000004)?1:0, (td->dword0 & 0x00000002)?1:0, (td->dword0 & 0x00000001)?1:0,
-        (td->dword1 & 0x20000000)?1:0, (td->dword1 & 0x18000000)>>27, (td->dword1 & 0x04000000)?1:0, (td->dword1 & 0x02000000)?1:0, (td->dword1 & 0x01000000)?1:0, (td->dword1 & 0x00FF0000)>>16, td->dword1 & 0x000007FF,
-        (td->dword2 & 0xFFE00000)>>21, (td->dword2 & 0x00080000)?1:0, (td->dword2 & 0x00078000)>>15, (td->dword2 & 0x00007F00)>>8, td->dword2 & 0x000000FF,
-        td->dword3));
-        // After a set address, the Host will send an empty IN packet for the status stage.
-        //  The address on the IN packet will still be zero (0).
-        //  So we need to set the address for this device *after* the in packet.
-        if (maxlen == 0) {
-          BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x7FF);
-          if (BX_USB_THIS set_address_stk && (addr == 0)) {
-            BX_USB_THIS set_address_stk--;
-            dev->address = BX_USB_THIS set_address[BX_USB_THIS set_address_stk];
-            dev->state = STATE_ADDRESS;
-          }
-          break;
-        }
-
-        if (dev->function.in_cnt > 0) {
-          bx_gui->statusbar_setitem(BX_USB_THIS hub[0].statusbar_id[0], 1);
-          cnt = (dev->function.in_cnt < maxlen) ? dev->function.in_cnt : maxlen;
-          DEV_MEM_WRITE_PHYSICAL(td->dword3, cnt, dev->function.in);
-          dump_packet(dev->function.in, cnt);
-          dev->function.in += cnt;
-          dev->function.in_cnt -= cnt;
-          BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, cnt-1);
-        } else
-          BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x7FF);
-        bx_gui->statusbar_setitem(BX_USB_THIS hub[0].statusbar_id[0], 0);
-      }
-      break;
-    case TOKEN_OUT: // data should go from Host to HC
-      // (remember that we will get an out once in a while with dev==NULL)
-      if ((addr > 0) && (endpt > 0)) {
-        fnd = 0;
-        for (i=0; (i<dev->function.device_config[dev->config].interfaces) && !fnd; i++) {
-          for (j=0; j<dev->function.device_config[dev->config].Interface[i].num_endpts; j++) {
-            if (endpt == (dev->function.device_config[dev->config].Interface[i].endpts[j].endpt & 0x7F)) {
-              protocol = dev->function.device_config[dev->config].Interface[i].protocol;
-              fnd = 1;
-              break;
-            }
-          }
-        }
-        if (fnd) {
-          // Read in the packet
-          Bit8u bulk_int_packet[1024];
-          DEV_MEM_READ_PHYSICAL(td->dword3, maxlen, bulk_int_packet);
-
-          // now do the task
-          switch (protocol) {
-            case 1:  // keypad
-              BX_PANIC(("Keyboard received and OUT packet!"));
-              break;
-
-            case 2:  // mouse
-              BX_PANIC(("Mouse received and OUT packet!"));
-              break;
-
-            case 0x50: // USB Mass Storage ????
-              if (flash_stick(bulk_int_packet, maxlen, 1)) {
-
-              } else {
-
-              }
-              break;
-              
-            default:
-              BX_PANIC(("Unknown/unsupported endpt protocol issued an Interrupt Out / Bulk packet.  protocol %i", protocol));
-          }       
-        } else {
-          BX_PANIC(("Unknown endpt issued an Interrupt Out / Bulk packet.  ID 0x%04x Interface %i  endpt %i", i, endpt, dev->function.device_descr.vendorid));
-        }
-      } else {
-        BX_DEBUG(("TOKEN_OUT: maxlen = 0x%03X", maxlen));
-        BX_DEBUG(("          address = 0x%08X, Depth = %i, QH = %i, Terminate = %i\n"
-                  "                              spd=%i, c_err=%i, LS=%i, IOS=%i, IOC=%i, status=0x%02X, act_len=0x%03X\n"
-                  "                              max_len=0x%03X, D=%i, EndPt=%i, addr=%i, PID=0x%02X\n"
-                  "                              buffer address = 0x%08X",
-        td->dword0 & ~0x0000000F, (td->dword0 & 0x00000004)?1:0, (td->dword0 & 0x00000002)?1:0, (td->dword0 & 0x00000001)?1:0,
-        (td->dword1 & 0x20000000)?1:0, (td->dword1 & 0x18000000)>>27, (td->dword1 & 0x04000000)?1:0, (td->dword1 & 0x02000000)?1:0, (td->dword1 & 0x01000000)?1:0, (td->dword1 & 0x00FF0000)>>16, td->dword1 & 0x000007FF,
-        (td->dword2 & 0xFFE00000)>>21, (td->dword2 & 0x00080000)?1:0, (td->dword2 & 0x00078000)>>15, (td->dword2 & 0x00007F00)>>8, td->dword2 & 0x000000FF,
-        td->dword3));
-
-        if (maxlen == 0) {
-          BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x7FF);
-        } else {
-          BX_ERROR(("Got to this position and shouldn't have...000"));
-        }
-      }
-      bx_gui->statusbar_setitem(BX_USB_THIS hub[0].statusbar_id[0], 0);
-      break;
-    case TOKEN_SETUP:
-      if (dev) dev->in_stall = 0;
-
-      // as a debug check, stall on the first setup packet after boot up.
-      if (dev && (dev->stall_once & 0x01) && !(dev->stall_once & 0x80)) {
-        dev->stall_once |= 0x80;
-        BX_USB_THIS set_status(td, 1, 0, 0, 0, 1, 0, 0x007);
-        BX_INFO((" Stalling once one first setup packet after bootup"));
+        ret = dev->handle_packet(&BX_USB_THIS usb_packet);
+        len = maxlen;
         break;
-      }
-
-      BX_DEBUG((" SETUP packet: %02X %02X %02X %02X %02X %02X %02X %02X", 
-        data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7]));
-      switch (rp->request) {
-        case GET_STATUS:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              BX_ERROR(("Request: GET_STATUS returned an error"));
-              break;
-            case STATE_ADDRESS:
-              if (rp->index > 0) {
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: GET_STATUS returned an error"));
-                break;
-              } // else fall through
-            case STATE_CONFIGURED:
-
-              BX_PANIC(("Request: GET_STATUS not implemented yet"));
-
-              // If the interface or endpoint does not exist, return error
-
-              BX_DEBUG(("Request: GET_STATUS"));
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
+      case USB_TOKEN_IN:
+        ret = dev->handle_packet(&BX_USB_THIS usb_packet);
+        if (ret >= 0) {
+          len = ret;
+          if (len > maxlen) {
+            len = maxlen;
+            ret = USB_RET_BABBLE;
           }
-          break;
-        case CLEAR_FEATURE:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              BX_ERROR(("Request: CLEAR_FEATURE returned an error"));
-              break;
-            case STATE_ADDRESS:
-              if (rp->index > 0) {
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: CLEAR_FEATURE returned an error"));
-                break;
-              } // else fall through
-            case STATE_CONFIGURED:
-              if (rp->length) {
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: CLEAR_FEATURE returned an error:  length > 0"));
-                break;
-              }
-              // At this point, we don't implement features.  So until we do, there isn't anything
-              //  to clear.  Just log an error and continue.
-              BX_ERROR(("Request: CLEAR_FEATURE:  Not implemented yet."));
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-              break;
+          if (len > 0) {
+            DEV_MEM_WRITE_PHYSICAL(td->dword3, len, device_buffer);
           }
-          break;
-        case SET_FEATURE:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-              if (((rp->index >> 8) == SET_FEATURE_TEST_MODE) && (rp->request_type == 0) && ((rp->index & 0xFF) == 0)) {
-                BX_DEBUG(("Request: SET_FEATURE in TEST MODE"));
-              } else {
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: SET_FEATURE returned an error"));
-              }
-              break;
-            case STATE_ADDRESS:
-              if ((rp->index & 0xFF) > 0) {
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: SET_FEATURE returned an error"));
-                break;
-              } // else fall through
-            case STATE_CONFIGURED:
-
-              BX_PANIC(("Request: SET_FEATURE not implemented yet"));
-
-              BX_DEBUG(("Request: SET_FEATURE"));
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-          }
-          break;
-        case SET_ADDRESS:
-          BX_DEBUG(("Request: SET_ADDRESS: %04x", rp->value));
-          BX_DEBUG(("          address = 0x%08X, Depth = %i, QH = %i, Terminate = %i\n"
-                    "                              spd=%i, c_err=%i, LS=%i, IOS=%i, IOC=%i, status=0x%02X, act_len=0x%03X\n"
-                    "                              max_len=0x%03X, D=%i, EndPt=%i, addr=%i, PID=0x%02X\n"
-                    "                              buffer address = 0x%08X",
-          td->dword0 & ~0x0000000F, (td->dword0 & 0x00000004)?1:0, (td->dword0 & 0x00000002)?1:0, (td->dword0 & 0x00000001)?1:0,
-          (td->dword1 & 0x20000000)?1:0, (td->dword1 & 0x18000000)>>27, (td->dword1 & 0x04000000)?1:0, (td->dword1 & 0x02000000)?1:0, (td->dword1 & 0x01000000)?1:0, (td->dword1 & 0x00FF0000)>>16, td->dword1 & 0x000007FF,
-          (td->dword2 & 0xFFE00000)>>21, (td->dword2 & 0x00080000)?1:0, (td->dword2 & 0x00078000)>>15, (td->dword2 & 0x00007F00)>>8, td->dword2 & 0x000000FF,
-          td->dword3));
-          if ((rp->value > 127) || rp->index || rp->length) {
-            BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-            BX_ERROR(("Request: SET_ADDRESS returned an error"));
-          } else {
-            switch (dev->state) {
-              case STATE_DEFAULT:
-                BX_USB_THIS set_address[BX_USB_THIS set_address_stk] = (Bit8u) rp->value;
-                BX_USB_THIS set_address_stk++;
-                BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007);
-                break;
-              case STATE_ADDRESS:
-                if (rp->value > 0) {
-                  BX_USB_THIS set_address[BX_USB_THIS set_address_stk] = (Bit8u) rp->value;
-                  BX_USB_THIS set_address_stk++;
-                } else {
-                  BX_USB_THIS set_address[BX_USB_THIS set_address_stk] = 0;
-                  BX_USB_THIS set_address_stk++;
-                  dev->state = STATE_DEFAULT;
-                }
-                BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007);
-                break;
-              case STATE_CONFIGURED:
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: SET_ADDRESS returned an error"));
-            }
-          }
-          break;
-        case GET_DESCRIPTOR:
-          BX_DEBUG(("Request: GET_DESCRIPTOR: 0x%02x  0x%02x  %i", rp->value >> 8, rp->value & 0xFF, rp->length));
-          BX_DEBUG(("          address = 0x%08X, Depth = %i, QH = %i, Terminate = %i\n"
-                    "                              spd=%i, c_err=%i, LS=%i, IOS=%i, IOC=%i, status=0x%02X, act_len=0x%03X\n"
-                    "                              max_len=0x%03X, D=%i, EndPt=%i, addr=%i, PID=0x%02X\n"
-                    "                              buffer address = 0x%08X",
-          td->dword0 & ~0x0000000F, (td->dword0 & 0x00000004)?1:0, (td->dword0 & 0x00000002)?1:0, (td->dword0 & 0x00000001)?1:0,
-          (td->dword1 & 0x20000000)?1:0, (td->dword1 & 0x18000000)>>27, (td->dword1 & 0x04000000)?1:0, (td->dword1 & 0x02000000)?1:0, (td->dword1 & 0x01000000)?1:0, (td->dword1 & 0x00FF0000)>>16, td->dword1 & 0x000007FF,
-          (td->dword2 & 0xFFE00000)>>21, (td->dword2 & 0x00080000)?1:0, (td->dword2 & 0x00078000)>>15, (td->dword2 & 0x00007F00)>>8, td->dword2 & 0x000000FF,
-          td->dword3));
-
-          switch (dev->state) {
-            case STATE_DEFAULT:
-            case STATE_ADDRESS:
-            case STATE_CONFIGURED:
-              unsigned ret;
-              ret = BX_USB_THIS GetDescriptor(dev, rp);
-              BX_USB_THIS set_status(td, ret, 0, 0, 0, (ret && pid==TOKEN_SETUP)?1:0, 0, 0x007);
-          }
-          break;
-        case SET_DESCRIPTOR:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-              BX_ERROR(("Request: SET_DESCRIPTOR returned an error"));
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              break;
-            case STATE_ADDRESS:
-            case STATE_CONFIGURED:
-              
-              BX_PANIC(("Request: SET_DESCRIPTOR not implemented yet"));
-
-              //dev->descriptor = (Bit8u) rp->value >> 8;
-
-              BX_DEBUG(("Request: SET_DESCRIPTOR: %02x", rp->value >> 8));
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-          }
-          break;
-        case GET_CONFIGURATION:
-          BX_DEBUG(("Request: GET_CONFIGURATION"));
-          BX_DEBUG(("          address = 0x%08X, Depth = %i, QH = %i, Terminate = %i\n"
-                    "                              spd=%i, c_err=%i, LS=%i, IOS=%i, IOC=%i, status=0x%02X, act_len=0x%03X\n"
-                    "                              max_len=0x%03X, D=%i, EndPt=%i, addr=%i, PID=0x%02X\n"
-                    "                              buffer address = 0x%08X",
-          td->dword0 & ~0x0000000F, (td->dword0 & 0x00000004)?1:0, (td->dword0 & 0x00000002)?1:0, (td->dword0 & 0x00000001)?1:0,
-          (td->dword1 & 0x20000000)?1:0, (td->dword1 & 0x18000000)>>27, (td->dword1 & 0x04000000)?1:0, (td->dword1 & 0x02000000)?1:0, (td->dword1 & 0x01000000)?1:0, (td->dword1 & 0x00FF0000)>>16, td->dword1 & 0x000007FF,
-          (td->dword2 & 0xFFE00000)>>21, (td->dword2 & 0x00080000)?1:0, (td->dword2 & 0x00078000)>>15, (td->dword2 & 0x00007F00)>>8, td->dword2 & 0x000000FF,
-          td->dword3));
-          switch (dev->state) {
-            case STATE_DEFAULT:
-              BX_ERROR(("Request: GET_CONFIGURATION returned an error"));
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              break;
-            case STATE_ADDRESS:
-              // must return zero if in the address state
-              *device_buffer = 0;
-              break;
-            case STATE_CONFIGURED:
-              *device_buffer = dev->function.device_config[dev->config].config_val;
-          }
-          dev->function.in = device_buffer;
-          dev->function.in_cnt = 1;
-          BX_DEBUG(("Request: GET_CONFIGURATION"));
-          BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-          break;
-        case SET_CONFIGURATION:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              BX_ERROR(("Request: SET_CONFIGURATION: returned an error"));
-              break;
-            case STATE_CONFIGURED:
-              if ((rp->value & 0xFF) == 0) {
-                dev->state = STATE_DEFAULT;
-                BX_DEBUG(("Request: SET_CONFIGURATION = 0 (set to default state)"));
-                BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-                break;
-              } // else fall through ????
-            case STATE_ADDRESS:
-              dev->config = 0xFF;
-              unsigned configs;
-              for (configs=0; configs<dev->function.configs; configs++) {
-                if ((rp->value & 0xFF) == dev->function.device_config[configs].config_val) {
-                  dev->config = configs;
-                  dev->state = STATE_CONFIGURED;
-                  break;
-                }
-              }
-              if (dev->config == 0xFF) {
-                dev->config = 0;
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-                BX_ERROR(("Request: SET_CONFIGURATION: returned an error"));
-              } else {
-                BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-                BX_DEBUG(("Request: SET_CONFIGURATION: %02x", rp->value));
-              }
-              break;
-          }
-          break;
-        case GET_INTERFACE:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-            case STATE_ADDRESS:
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              BX_ERROR(("Request: GET_INTERFACE returned and error: not in configured state"));
-              break;
-            case STATE_CONFIGURED:
-              if ((unsigned)(rp->index + 1) > dev->function.device_config[dev->config].interfaces) {
-                BX_PANIC(("GET_INTERFACE: wanted interface number is greater than interface count."));
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              }
-              // The USB specs say that I can return a STALL if only one interface is used. (ie, no alternate)
-              // However, Win98SE doesn't like it at all....
-              //if (dev->function.device_config[dev->config].interfaces > 1) {
-                *device_buffer = dev->function.device_config[dev->config].Interface[rp->value & 0xFF].alternate;
-                dev->function.in = device_buffer;
-                dev->function.in_cnt = 1;
-                if (dev->function.in_cnt > rp->length)
-                  dev->function.in_cnt = rp->length;
-                BX_DEBUG(("Request: GET_INTERFACE  %02X  %02X  %02X", rp->value >> 8, rp->value & 0xFF, rp->length));
-                BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-              //} else {
-              //  BX_DEBUG(("Request: GET_INTERFACE  %02X  %02X  %02X (Only 1 interface, returning STALL)", rp->value >> 8, rp->value & 0xFF, rp->length));
-              //  BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              //}
-              break;
-          }
-          break;
-        case SET_INTERFACE:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-            case STATE_ADDRESS:
-              BX_ERROR(("Request: SET_INTERFACE returned and error: not in configured state"));
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              break;
-            case STATE_CONFIGURED:
-              if ((unsigned)(rp->index + 1) > dev->function.device_config[dev->config].interfaces) {
-                BX_PANIC(("SET_INTERFACE: wanted interface number is greater than interface count."));
-                BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              }
-              dev->Interface = (Bit8u) rp->index;
-              dev->alt_interface = (Bit8u) rp->value;
-              BX_DEBUG(("Request: SET_INTERFACE: %02x (alt %02x)", rp->index, rp->value));
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-          }
-          break;
-        case SYNCH_FRAME:
-          switch (dev->state) {
-            case STATE_DEFAULT:
-            case STATE_ADDRESS:
-              BX_ERROR(("Request: SYNCH_FRAME returned and error: not in configured state"));
-              BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-              break;
-            case STATE_CONFIGURED:
-
-              BX_PANIC(("Request: SYNCH_FRAME not implemented yet"));
-
-              BX_DEBUG(("Request: SYNCH_FRAME"));
-              BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, 0x007); // an 8 byte packet was received
-          }
-          break;
-        case 0xFE:
-          // The Kingston driver sends the control packet.
-          // At the moment, I haven't a clue to what it is.
-          //   are we ready.???
-          
-          dev->scratch = 0;
-          dev->function.in = (Bit8u *) &dev->scratch;
-          dev->function.in_cnt = 1;
-          
-          BX_USB_THIS set_status(td, 1, 0, 0, 0, (pid==TOKEN_SETUP)?1:0, 0, 0x007); // an 8 byte packet was received, but stalled
-          break;
-        default:
-          BX_PANIC((" **** illegal or unknown REQUEST sent to Host Controller:  %02x", data[1]));
-      }
-      break;
-    default:
-      BX_PANIC(("illegal PID sent to Host Controller:  %02x", pid));
-  }
-  // did it stall?, then set the "in_stall" state
-  if (td->dword1 & (1<<22))
-    if (dev) dev->in_stall = 1;
-  
-  return 1;
-}
-
-unsigned bx_pciusb_c::GetDescriptor(struct USB_DEVICE *dev, struct REQUEST_PACKET *packet)
-{
-  Bit8u *p = device_buffer;
-  unsigned i, j, fnd, ret = 0; // ret = 0 = no error
-
-  BX_DEBUG(("GET DESCRIPTOR  0x%02X 0x%02X  value=0x%04X  len=%i index=%i", 
-    packet->request, packet->request_type, packet->value, packet->length, packet->index));
-    
-  switch (packet->value >> 8) {
-    case DEVICE:
-      dev->function.in = (Bit8u *) &dev->function.device_descr;
-      dev->function.in_cnt = dev->function.device_descr.len;
-      ret = 0;
-      break;
-    case CONFIG:
-      memcpy(p, &dev->function.device_config[dev->config], 9); p += 9;  // config descriptor
-      for (i=0; i<dev->function.device_config[dev->config].interfaces; i++) {
-        memcpy(p, &dev->function.device_config[dev->config].Interface[i], 9); p += 9;
-        for (j=0; j<dev->function.device_config[dev->config].Interface[i].num_endpts; j++) {
-          memcpy(p, &dev->function.device_config[dev->config].Interface[i].endpts[j], 7); p += 7;
+        } else {
+          len = 0;
         }
-        memcpy(p, &dev->function.device_config[dev->config].Interface[i].dev_hid_descript, 6); p += 6;
-        for (j=0; j<dev->function.device_config[dev->config].Interface[i].dev_hid_descript.num_descriptors; j++) {
-          memcpy(p, &dev->function.device_config[dev->config].Interface[i].dev_hid_descript.descriptor[j], 3); p += 3;
-        }
-      }
-      dev->function.in = device_buffer;
-      dev->function.in_cnt = (p - device_buffer);
-      ret = 0;
-      break;
-    case STRING:
-      switch (packet->value & 0xFF) {
-        case 0: // string descriptor table
-          dev->function.in = (Bit8u *) &dev->function.str_descriptor;
-          dev->function.in_cnt = dev->function.str_descriptor.size;
-          ret = 0;
-          break;
-        case 1: case 2: case 3:
-        case 4: case 5: case 6:
-          dev->function.in = (Bit8u *) &dev->function.string[(packet->value & 0xFF)-1];
-          dev->function.in_cnt = dev->function.string[(packet->value & 0xFF)-1].size;
-          break;
-          ret = 0;
-        default:
-          BX_ERROR(("STRING:  %i", packet->value & 0xFF));
-          ret = 1;
-      }
-      break;
-    case INTERFACE:
-      BX_PANIC(("GET_DESCRIPTOR: INTERFACE not implemented yet."));
-      ret = 1;
-      break;
-    case ENDPOINT:
-      BX_PANIC(("GET_DESCRIPTOR: ENDPOINT not implemented yet."));
-      ret = 1;
-      break;
-    case DEVICE_QUALIFIER:
-      BX_PANIC(("GET_DESCRIPTOR: DEVICE_QUALIFIER not implemented yet."));
-      ret = 1;
-      break;
-    case OTHER_SPEED_CONFIG:
-      BX_PANIC(("GET_DESCRIPTOR: OTHER_SPEED_CONFIG not implemented yet."));
-      ret = 1;
-      break;
-    case INTERFACE_POWER:
-      BX_PANIC(("GET_DESCRIPTOR: INTERFACE_POWER not implemented yet."));
-      ret = 1;
-      break;
-    case 0x21:  // (HID device descriptor)
-      dev->function.in = (Bit8u *) &dev->function.device_config[dev->config].Interface[packet->index-1].dev_hid_descript;
-      dev->function.in_cnt = dev->function.device_config[dev->config].Interface[packet->index-1].dev_hid_descript.size;
-      ret = 0;
-      break;
-    case 0x22:  // (HID report descriptor)
-      // Win98SE passes packet->index as endpoint number (packet->request_type = 0x82)
-      // SuSE Linux passes packet->index as interface number (packet->request_type = 0x81)
-      switch (packet->request_type & 0x1F) {
-        case 2: // endpoint
-          fnd = 0;
-          for (i=0; (i<dev->function.device_config[dev->config].interfaces) && !fnd; i++) {
-            for (j=0; (j<dev->function.device_config[dev->config].Interface[i].num_endpts) && !fnd; j++) {
-              if ((dev->function.device_config[dev->config].Interface[i].endpts[j].endpt & ~0x80) == packet->index) {
-                packet->index = i;
-                fnd = 1;
-              }
-            }
-          }
-          if (!fnd) {
-            BX_ERROR(("Get Descriptor:  HID Report:  index = endpint.  did not find endpoint"));
-            ret = 1;
-            break;
-          } // else fall through to interface
-        case 1: // interface
-          for (i=0; i<dev->function.device_config[dev->config].Interface[packet->index].dev_hid_descript.num_descriptors; i++) {
-            if (dev->function.device_config[dev->config].Interface[packet->index].dev_hid_descript.descriptor[i].type == 0x22) {
-              dev->function.in = dev->function.device_config[dev->config].Interface[packet->index].dev_hid_descript.descriptor[i].dev_hid_descript_report;
-              dev->function.in_cnt = dev->function.device_config[dev->config].Interface[packet->index].dev_hid_descript.descriptor[i].len;
-              break;
-            }
-          }
-          ret = 0;
-          break;
-        case 0:  // device
-        case 3:  // other
-        default: // reserved
-          BX_ERROR(("Get Descriptor:  HID Report:  index = reserved.  Should be Interface or Endpoint"));
-          ret = 1;
-          break;
-      }
-      break;
-    default:
-      BX_PANIC((" **** illegal or unknown GET_DESCRIPTOR::DEVICE sent to Host Controller:  %02x", packet->value >> 8));
-      return 1;
+        break;
+      default:
+        BX_USB_THIS hub[i].usb_status.host_error = 1;
+        BX_USB_THIS set_irq_level(1);
+    }
+    if (ret >= 0) {
+      BX_USB_THIS set_status(td, 0, 0, 0, 0, 0, 0, len-1);
+    } else {
+      BX_USB_THIS set_status(td, 1, 0, 0, 0, 0, 0, 0x007); // stalled
+    }
+    return 1;
   }
-  if (dev->function.in_cnt > packet->length)
-    dev->function.in_cnt = packet->length;
-  
-  return ret;
+  return 0;
 }
 
 // If the request fails, set the stall bit ????
@@ -1517,7 +989,7 @@ void bx_pciusb_c::set_status(struct TD *td, bx_bool stalled, bx_bool data_buffer
   if (stalled || data_buffer_error || babble || nak || crc_time_out || bitstuff_error)
     td->dword1 &= ~((1<<28) | (1<<27));  // clear the c_err field in there was an error
 }
- 
+
 // pci configuration space read callback handler
 Bit32u bx_pciusb_c::pci_read_handler(Bit8u address, unsigned io_len)
 {
@@ -1640,29 +1112,24 @@ void bx_pciusb_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len
   BX_DEBUG(("USB PCI write register 0x%02x                   value 0x%s", address, szTmp));
 }
 
-void bx_pciusb_c::usb_mouse_enable(bx_bool enable)
+void bx_pciusb_c::usb_mouse_enabled_changed(bx_bool enable)
 {
-  BX_USB_THIS mouse_connected = enable;
-  if (BX_USB_THIS last_connect != enable) {
-    for (int i=0; i<USB_NUM_PORTS; i++)
-      usb_set_connect_status(i, USB_DEV_TYPE_MOUSE, enable);
-    BX_USB_THIS last_connect = enable;
+  if (enable && (BX_USB_THIS mousedev != NULL)) {
+    mousedev->handle_reset();
   }
 }
 
 void bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected)
 {
-  if (BX_USB_THIS hub[0].usb_port[port].device_num > -1) {
-    if (BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].dev_type == type) {
+  char pname[BX_PATHNAME_LEN];
+  char fname[BX_PATHNAME_LEN];
+
+  if (BX_USB_THIS hub[0].usb_port[port].device != NULL) {
+    if (BX_USB_THIS hub[0].usb_port[port].device->get_type() == type) {
       if (connected) {
-        if (!BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].connect_status) {
-          BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].state = STATE_DEFAULT;
-          BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].address = 0;
-          BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].alt_interface = 0;
-          BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].Interface = 0;
-          BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].config = 0;
-          BX_USB_THIS hub[0].usb_port[port].low_speed = 
-            BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].low_speed;
+        if (!BX_USB_THIS hub[0].usb_port[port].device->get_connected()) {
+          BX_USB_THIS hub[0].usb_port[port].low_speed =
+            (BX_USB_THIS hub[0].usb_port[port].device->get_speed() == USB_SPEED_LOW);
         }
         if (BX_USB_THIS hub[0].usb_port[port].low_speed) {
           BX_USB_THIS hub[0].usb_port[port].line_dminus = 1;  //  dminus=1 & dplus=0 = low speed  (at idle time)
@@ -1674,7 +1141,6 @@ void bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected
         BX_USB_THIS hub[0].usb_port[port].status = 1;       // 
         BX_USB_THIS hub[0].usb_port[port].connect_changed = 1;
         BX_USB_THIS hub[0].usb_port[port].able_changed = 1;
-        BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].connect_status = 1;
 
         // if in suspend state, signal resume
         if (BX_USB_THIS hub[0].usb_command.suspend) {
@@ -1686,25 +1152,20 @@ void bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected
           }
         }
 
-        // If the type is a flash stick, we need to close, then re open the file connected with it.
-        // **** We current assume the flash stick is on port1 ****
-        /*
-        if (type == USB_DEV_TYPE_FLASH) {
-          if (BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].fd > -1) 
-            ::close(BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].fd);
-          BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].fd = 
-            ::open(bx_options.usb[0].Opath1->getptr(), O_RDWR | O_BINARY);
-          if (BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].fd < 0)
-            BX_PANIC(("Could not open file for USB flash stick: %s", bx_options.usb[0].Opath1->getptr()));
-        
-          // look at size of image file to calculate disk geometry
-          struct stat stat_buf;
-          int ret = fstat(BX_USB_THIS hub[0].device[BX_USB_THIS hub[0].usb_port[port].device_num].fd, &stat_buf);
-          if (ret) BX_PANIC(("fstat() returns error!"));
-          if (stat_buf.st_size != (USB_FLASH_SIZE * 0x00100000))
-            BX_PANIC(("size of disk image must be %i Megs", USB_FLASH_SIZE));
+        if ((type == USB_DEV_TYPE_DISK) &&
+            (!BX_USB_THIS hub[0].usb_port[port].device->get_connected())) {
+          if (port == 0) {
+            strcpy(pname, BXPN_USB1_PORT1);
+          } else {
+            strcpy(pname, BXPN_USB1_PORT2);
+          }
+          strcpy(fname, SIM->get_param_string(pname)->getptr() + 5);
+          if (!((usb_msd_device_t*)BX_USB_THIS hub[0].usb_port[port].device)->init(fname)) {
+            usb_set_connect_status(port, USB_DEV_TYPE_DISK, 0);
+          } else {
+            BX_INFO(("HD on USB port #%d: '%s'", port+1, fname));
+          }
         }
-        */
       } else {
         BX_USB_THIS hub[0].usb_port[port].status = 0;
         BX_USB_THIS hub[0].usb_port[port].connect_changed = 1;
@@ -1713,6 +1174,25 @@ void bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected
         BX_USB_THIS hub[0].usb_port[port].low_speed = 0;
         BX_USB_THIS hub[0].usb_port[port].line_dminus = 0;  //  dminus=1 & dplus=0 = low speed  (at idle time)
         BX_USB_THIS hub[0].usb_port[port].line_dplus = 0;   //  dminus=0 & dplus=1 = high speed (at idle time)
+        if ((type == USB_DEV_TYPE_MOUSE) ||
+            (type == USB_DEV_TYPE_TABLET)) {
+          if (BX_USB_THIS hub[0].usb_port[port].device == BX_USB_THIS mousedev) {
+            BX_USB_THIS mousedev = NULL;
+          }
+        } else if (type == USB_DEV_TYPE_KEYPAD) {
+          if (BX_USB_THIS hub[0].usb_port[port].device == BX_USB_THIS keybdev) {
+            BX_USB_THIS keybdev = NULL;
+          }
+        }
+        if (BX_USB_THIS hub[0].usb_port[port].device != NULL) {
+          delete BX_USB_THIS hub[0].usb_port[port].device;
+          BX_USB_THIS hub[0].usb_port[port].device = NULL;
+#if BX_SUPPORT_SAVE_RESTORE
+          sprintf(pname, "pciusb.hub1.port%d.device", port+1);
+          bx_list_c *devlist = (bx_list_c*)SIM->get_param(pname, SIM->get_sr_root());
+          devlist->clear();
+#endif
+        }
       }
     }
   }
@@ -1720,197 +1200,226 @@ void bx_pciusb_c::usb_set_connect_status(Bit8u port, int type, bx_bool connected
 
 void bx_pciusb_c::usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state)
 {
-  // scale down the motion
-  if ( (delta_x < -1) || (delta_x > 1) )
-    delta_x /= 2;
-  if ( (delta_y < -1) || (delta_y > 1) )
-    delta_y /= 2;
-
-  if(delta_x>127) delta_x=127;
-  if(delta_y>127) delta_y=127;
-  if(delta_x<-128) delta_x=-128;
-  if(delta_y<-128) delta_y=-128;
-
-  BX_USB_THIS mouse_delayed_dx+=delta_x;
-  BX_USB_THIS mouse_delayed_dy-=delta_y;
-
-  if (BX_USB_THIS mouse_delayed_dx > 127) {
-    delta_x = 127;
-    BX_USB_THIS mouse_delayed_dx -= 127;
-  } else if (BX_USB_THIS mouse_delayed_dx < -128) {
-    delta_x = -128;
-    BX_USB_THIS mouse_delayed_dx += 128;
-  } else {
-    delta_x = BX_USB_THIS mouse_delayed_dx;
-    BX_USB_THIS mouse_delayed_dx = 0;
+  if (BX_USB_THIS mousedev != NULL) {
+    mousedev->mouse_enq(delta_x, delta_y, delta_z, button_state);
   }
-  if (BX_USB_THIS mouse_delayed_dy > 127) {
-    delta_y = 127;
-    BX_USB_THIS mouse_delayed_dy -= 127;
-  } else if (BX_USB_THIS mouse_delayed_dy < -128) {
-    delta_y = -128;
-    BX_USB_THIS mouse_delayed_dy += 128;
-  } else {
-    delta_y = BX_USB_THIS mouse_delayed_dy;
-    BX_USB_THIS mouse_delayed_dy = 0;
-  }
-
-  BX_USB_THIS mouse_x = (Bit8s) delta_x;
-  BX_USB_THIS mouse_y = (Bit8s) delta_y;
-  BX_USB_THIS mouse_z = (Bit8s) delta_z;
-  BX_USB_THIS b_state = (Bit8u) button_state;
 }
 
 bx_bool bx_pciusb_c::usb_key_enq(Bit8u *scan_code)
 {
-  bx_bool is_break_code = 0;
-  Bit8u our_scan_code[8];
-
-  memset(our_scan_code, 0, 8);
-  int os = 0;
-  for (int s=0; s<8; s++) {
-    if ((scan_code[s] == 0xF0) && ((s == 0) || ((s == 1) && (scan_code[0] == 0xE0)))) {
-      is_break_code = 1;
-    } else {
-      if (!(our_scan_code[os++] = scan_code[s])) break;
-    }
+  if (BX_USB_THIS keybdev != NULL) {
+    return keybdev->key_enq(scan_code);
   }
-  
-  // if it is the break code of the saved key, then clear our packet key.
-  if (is_break_code && !memcmp(BX_USB_THIS saved_key, our_scan_code, 8)) {
-    memset(BX_USB_THIS saved_key, 0, 8);
-    memset(BX_USB_THIS key_pad_packet, 0, 8);
-    return 1; // tell the keyboard handler that we used it, and to return with out processing key
-  }
-
-  // find an attached keyboard device and one that has a conversion table filled.
-  // we assume the (bochs) user has only one device attached with these specs.
-  bx_bool fnd = 0;
-  struct USB_DEVICE *dev;
-  for (int i=0; i<BX_USB_CONFDEV && !fnd; i++) {
-    for (int j=0; j<USB_NUM_PORTS && !fnd; j++) {
-      // is there something plugged in to this port?
-      if (BX_USB_THIS hub[i].usb_port[j].status) {
-        if (BX_USB_THIS hub[i].usb_port[j].device_num < 0)
-          BX_PANIC(("USB internal error at line %i", __LINE__));
-        dev = &BX_USB_THIS hub[i].device[BX_USB_THIS hub[i].usb_port[j].device_num];
-        for (int k=0; k<dev->function.device_descr.configs && !fnd; k++) {
-          for (int l=0; l<dev->function.device_config[k].interfaces && !fnd; l++) {
-            if ((dev->function.device_config[k].Interface[l].protocol == 1) 
-              && dev->function.device_config[k].Interface[l].lookup_cnt) {
-              // Only do this if the keypad is in the configured state
-              if (dev->state == STATE_CONFIGURED) {
-                for (int m=0; m<dev->function.device_config[k].Interface[l].lookup_cnt; m++) {
-                  if (!memcmp(dev->function.device_config[k].Interface[l].lookup[m].scan_code, our_scan_code, 8)) {
-                    memcpy(BX_USB_THIS key_pad_packet, dev->function.device_config[k].Interface[l].lookup[m].keypad_packet, 8);
-                    fnd = 1;
-                    break;
-                  }
-                }
-              } else {
-                memset(BX_USB_THIS saved_key, 0, 8);
-                return 0;  // if keypad is not configured, it can't send scan codes. 
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  if (!fnd) {
-    memset(BX_USB_THIS key_pad_packet, 0, 8);
-    memset(BX_USB_THIS saved_key, 0, 8);
-  } else {
-    memcpy(BX_USB_THIS saved_key, our_scan_code, 8);
-    // print a debug line to the log file
-    char bx_debug_code[128] = "";
-    char value[8];
-    for (unsigned i=0; i<strlen((char *) our_scan_code); i++) {
-      sprintf(value, "0x%02x", our_scan_code[i]);
-      if (i) strcat(bx_debug_code, "  ");
-      strcat(bx_debug_code, value);
-    }
-    BX_DEBUG(("Re-routing scan code (%s) to USB keypad", bx_debug_code));
-  }
-
-  // tell the keyboard handler whether we used it or not.  (0 = no, 1 = yes and keyboard.cc ignores keystoke)
-  return fnd;
+  return 0;
 }
 
 bx_bool bx_pciusb_c::usb_keyboard_connected()
 {
-  return BX_USB_THIS keyboard_connected;
+  return (BX_USB_THIS keybdev != NULL);
 }
 
 bx_bool bx_pciusb_c::usb_mouse_connected()
 {
-  return BX_USB_THIS mouse_connected;
+  return (BX_USB_THIS mousedev != NULL);
 }
 
-// Dumps the contents of a buffer to the log file
-void bx_pciusb_c::dump_packet(Bit8u *data, unsigned size)
+// Send an internal message to a USB device
+void bx_pciusb_c::usb_send_msg(usb_device_t *dev, int msg)
 {
-  char the_packet[256], str[16];
-  strcpy(the_packet, "Packet contents (in hex):");
-  unsigned offset = 0;
-  for (unsigned p=0; p<size; p++) {
-    if (!(p & 0x0F)) {
-      BX_DEBUG(("%s", the_packet));
-      sprintf(the_packet, "  0x%04X ", offset);
-      offset += 16;
-    }
-    sprintf(str, " %02X", data[p]);
-    strcat(the_packet, str);
-  }
-  if (strlen(the_packet))
-    BX_DEBUG(("%s", the_packet));
+    USBPacket p;
+    memset(&p, 0, sizeof(p));
+    p.pid = msg;
+    dev->handle_packet(&p);
 }
 
-// usb flash stick support
-// packet is the data coming in/going out
-// size is the size of the data
-// out = 1 if Host to Device, 0 it Device to Host
+// base class for USB devices
 
-bx_bool bx_pciusb_c::flash_stick(Bit8u *packet, Bit16u size, bx_bool out)
+usb_device_t::usb_device_t(void)
 {
-  // packet contains the SCSI interface command
-  dump_packet(packet, size);
-  
-  if (out) {
-
-      // TODO:
-
-      // From this point on, it is simply a SCSI command interface.
-      // We could set up the image so that we could use the existing
-      //  harddrv.cc and cdrom.cc code and our flash.img file.
-  
-      // At this point, I don't have the time to do this, but if someone
-      //  else would like to, please do.
-
-  } else {
-    
-    // For now, I will not implement the write part.
-    
-  }
-  
-  return 1;
+  memset((void*)&d, 0, sizeof(d));
 }
 
+#if BX_SUPPORT_SAVE_RESTORE
+void usb_device_t::register_state(bx_list_c *parent)
+{
+  bx_list_c *list = new bx_list_c(parent, "d", "Common USB Device State");
+  new bx_shadow_num_c(list, "addr", &d.addr);
+  new bx_shadow_num_c(list, "state", &d.state);
+  new bx_shadow_num_c(list, "remote_wakeup", &d.remote_wakeup);
+  register_state_specific(parent);
+}
+#endif
+
+// generic USB packet handler
+
+#define SETUP_STATE_IDLE 0
+#define SETUP_STATE_DATA 1
+#define SETUP_STATE_ACK  2
+
+int usb_device_t::handle_packet(USBPacket *p)
+{
+  int l, ret = 0;
+  int len = p->len;
+  Bit8u *data = p->data;
+
+  switch(p->pid) {
+    case USB_MSG_ATTACH:
+      d.state = USB_STATE_ATTACHED;
+      break;
+    case USB_MSG_DETACH:
+      d.state = USB_STATE_NOTATTACHED;
+      break;
+    case USB_MSG_RESET:
+      d.remote_wakeup = 0;
+      d.addr = 0;
+      d.state = USB_STATE_DEFAULT;
+      handle_reset();
+      break;
+    case USB_TOKEN_SETUP:
+      if (d.state < USB_STATE_DEFAULT || p->devaddr != d.addr)
+        return USB_RET_NODEV;
+      if (len != 8)
+        goto fail;
+      memcpy(d.setup_buf, data, 8);
+      d.setup_len = (d.setup_buf[7] << 8) | d.setup_buf[6];
+      d.setup_index = 0;
+      if (d.setup_buf[0] & USB_DIR_IN) {
+        ret = handle_control((d.setup_buf[0] << 8) | d.setup_buf[1],
+                             (d.setup_buf[3] << 8) | d.setup_buf[2],
+                             (d.setup_buf[5] << 8) | d.setup_buf[4],
+                             d.setup_len, d.data_buf);
+        if (ret < 0)
+          return ret;
+        if (ret < d.setup_len)
+          d.setup_len = ret;
+        d.setup_state = SETUP_STATE_DATA;
+      } else {
+        if (d.setup_len == 0)
+          d.setup_state = SETUP_STATE_ACK;
+        else
+          d.setup_state = SETUP_STATE_DATA;
+      }
+      break;
+    case USB_TOKEN_IN:
+      if (d.state < USB_STATE_DEFAULT || p->devaddr != d.addr)
+        return USB_RET_NODEV;
+      switch(p->devep) {
+        case 0:
+          switch(d.setup_state) {
+            case SETUP_STATE_ACK:
+              if (!(d.setup_buf[0] & USB_DIR_IN)) {
+                d.setup_state = SETUP_STATE_IDLE;
+                ret = handle_control((d.setup_buf[0] << 8) | d.setup_buf[1],
+                                     (d.setup_buf[3] << 8) | d.setup_buf[2],
+                                     (d.setup_buf[5] << 8) | d.setup_buf[4],
+                                     d.setup_len, d.data_buf);
+                if (ret > 0)
+                  ret = 0;
+              } else {
+                // return 0 byte
+              }
+              break;
+            case SETUP_STATE_DATA:
+              if (d.setup_buf[0] & USB_DIR_IN) {
+                l = d.setup_len - d.setup_index;
+                if (l > len)
+                  l = len;
+                memcpy(data, d.data_buf + d.setup_index, l);
+                d.setup_index += l;
+                if (d.setup_index >= d.setup_len)
+                  d.setup_state = SETUP_STATE_ACK;
+                ret = l;
+              } else {
+                d.setup_state = SETUP_STATE_IDLE;
+                goto fail;
+              }
+              break;
+            default:
+                goto fail;
+            }
+            break;
+        default:
+            ret = handle_data(p);
+            break;
+        }
+        break;
+    case USB_TOKEN_OUT:
+        if (d.state < USB_STATE_DEFAULT || p->devaddr != d.addr)
+          return USB_RET_NODEV;
+        switch(p->devep) {
+        case 0:
+          switch(d.setup_state) {
+            case SETUP_STATE_ACK:
+              if (d.setup_buf[0] & USB_DIR_IN) {
+                d.setup_state = SETUP_STATE_IDLE;
+                // transfer OK
+              } else {
+                // ignore additionnal output
+              }
+              break;
+            case SETUP_STATE_DATA:
+              if (!(d.setup_buf[0] & USB_DIR_IN)) {
+                l = d.setup_len - d.setup_index;
+                if (l > len)
+                  l = len;
+                memcpy(d.data_buf + d.setup_index, data, l);
+                d.setup_index += l;
+                if (d.setup_index >= d.setup_len)
+                  d.setup_state = SETUP_STATE_ACK;
+                ret = l;
+              } else {
+                d.setup_state = SETUP_STATE_IDLE;
+                goto fail;
+              }
+              break;
+            default:
+              goto fail;
+          }
+          break;
+        default:
+          ret = handle_data(p);
+          break;
+      }
+      break;
+    default:
+    fail:
+      ret = USB_RET_STALL;
+      break;
+  }
+  return ret;
+}
+
+
+// USB runtime parameter handler
+ 
 const char *bx_pciusb_c::usb_param_handler(bx_param_string_c *param, int set, const char *val, int maxlen)
 {
+  usbdev_type type = USB_DEV_TYPE_NONE;
+
   // handler for USB runtime parameters
   if (set) {
     char pname[BX_PATHNAME_LEN];
     param->get_param_path(pname, BX_PATHNAME_LEN);
     if (!strcmp(pname, BXPN_USB1_PORT1)) {
-      BX_ERROR(("USB port #1 device change not implemented yet"));
-    } else if (!strcmp(pname, BXPN_USB1_OPTION1)) {
-      BX_ERROR(("USB port #1 option change not implemented yet"));
+      BX_INFO(("USB port #1 experimental device change"));
+      if (!strcmp(val, "none") && BX_USB_THIS hub[0].usb_port[0].status) {
+        if (BX_USB_THIS hub[0].usb_port[0].device != NULL) {
+          type = BX_USB_THIS hub[0].usb_port[0].device->get_type();
+        }
+        usb_set_connect_status(0, type, 0);
+      } else if (strcmp(val, "none") && !BX_USB_THIS hub[0].usb_port[0].status) {
+        init_device(0, val);
+      }
     } else if (!strcmp(pname, BXPN_USB1_PORT2)) {
-      BX_ERROR(("USB port #2 device change not implemented yet"));
-    } else if (!strcmp(pname, BXPN_USB1_OPTION2)) {
-      BX_ERROR(("USB port #2 option change not implemented yet"));
+      BX_INFO(("USB port #2 experimental device change"));
+      if (!strcmp(val, "none") && BX_USB_THIS hub[0].usb_port[1].status) {
+        if (BX_USB_THIS hub[0].usb_port[1].device != NULL) {
+          type = BX_USB_THIS hub[0].usb_port[1].device->get_type();
+        }
+        usb_set_connect_status(1, type, 0);
+      } else if (strcmp(val, "none") && !BX_USB_THIS hub[0].usb_port[1].status) {
+        init_device(1, val);
+      }
     } else {
       BX_PANIC(("usb_param_handler called with unexpected parameter '%s'", pname));
     }

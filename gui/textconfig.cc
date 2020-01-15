@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc,v 1.61 2006/07/29 09:58:24 vruppert Exp $
+// $Id: textconfig.cc,v 1.65 2006/11/12 10:07:18 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This is code for a text-mode configuration interface.  Note that this file
@@ -46,6 +46,10 @@ void bx_config_interface_init();
 int bx_read_rc(char *rc);
 int bx_write_rc(char *rc);
 void bx_log_options(int individual);
+int bx_atexit();
+#if BX_DEBUGGER
+void bx_dbg_exit(int code);
+#endif
 
 /******************************************************************/
 /* lots of code stolen from bximage.c */
@@ -312,15 +316,6 @@ static char *runtime_menu_prompt =
 "13. Quit now\n"
 "\n"
 "Please choose one:  [12] ";
-
-#if BX_SUPPORT_SAVE_RESTORE
-static char *save_state_prompt =
-"----------------\n"
-"Save Bochs State\n"
-"----------------\n\n"
-"What is the path to save the Bochs state to?\n"
-"To cancel, type 'none'. [%s] ";
-#endif
 #endif
 
 #define NOT_IMPLEMENTED(choice) \
@@ -540,40 +535,17 @@ int bx_config_interface(int menu)
             case BX_CI_RT_QUIT:
               fprintf(stderr, "You chose quit on the configuration interface.\n");
               bx_user_quit = 1;
+#if !BX_DEBUGGER
+              bx_atexit();
               SIM->quit_sim(1);
+#else
+              bx_dbg_exit(1);
+#endif
               return -1;
             default: fprintf(stderr, "Menu choice %d not implemented.\n", choice);
           }
         }
         break;
-#if BX_SUPPORT_SAVE_RESTORE
-      case BX_CI_SAVE_RESTORE:
-        {
-          Bit32u cont = 1;
-#ifdef WIN32
-          cont = win32SaveState();
-#else
-          if (ask_string(save_state_prompt, "none", sr_path) >= 0) {
-            if (strcmp(sr_path, "none")) {
-              if (SIM->save_state(sr_path)) {
-                cont = 0;
-                ask_yn("\nThe save function currently doesn't handle the state of hard drive images,\n"
-                       "so we don't recommend to continue, unless you are running a read-only\n"
-                       "guest system (e.g. Live-CD).\n\n"
-                       "Do you want to continue? [no]", "", 0, &cont);
-              }
-            }
-          }
-#endif
-          if (!cont) {
-            bx_user_quit = 1;
-            SIM->quit_sim(1);
-            return -1;
-          } else {
-            return 0;
-          }
-        }
-#endif
       default:
         fprintf(stderr, "Unknown config interface menu type.\n");
         assert(menu >=0 && menu < BX_CI_N_MENUS);
@@ -956,10 +928,15 @@ bx_param_string_c::text_ask(FILE *fpin, FILE *fpout)
   int status;
   const char *prompt = get_ask_format();
   if (prompt == NULL) {
-    // default prompt, if they didn't set an ask format string
-    text_print(fpout);
-    fprintf(fpout, "\n");
-    prompt = "Enter a new value, '?' for help, or press return for no change.\n";
+    if (options->get() & SELECT_FOLDER_DLG) {
+      fprintf(fpout, "%s\n\n", get_label());
+      prompt = "Enter a path to an existing folder or press enter to cancel\n";
+    } else {
+      // default prompt, if they didn't set an ask format string
+      text_print(fpout);
+      fprintf(fpout, "\n");
+      prompt = "Enter a new value, '?' for help, or press return for no change.\n";
+    }
   }
   while (1) {
     char buffer[1024];
@@ -1057,11 +1034,6 @@ static int ci_callback(void *userdata, ci_command_t command)
       break;
     case CI_RUNTIME_CONFIG:
       bx_config_interface(BX_CI_RUNTIME);
-      break;
-    case CI_SAVE_RESTORE:
-#if BX_SUPPORT_SAVE_RESTORE
-      bx_config_interface(BX_CI_SAVE_RESTORE);
-#endif
       break;
     case CI_SHUTDOWN:
       break;

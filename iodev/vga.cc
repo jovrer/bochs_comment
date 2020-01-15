@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vga.cc,v 1.137 2006/08/18 15:43:20 vruppert Exp $
+// $Id: vga.cc,v 1.142 2007/04/03 22:38:49 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -81,16 +81,14 @@ bx_vga_c *theVga = NULL;
 unsigned old_iHeight = 0, old_iWidth = 0, old_MSL = 0;
 
 #if BX_SUPPORT_CLGD54XX
-  void
-libvga_set_smf_pointer(bx_vga_c *theVga_ptr)
+void libvga_set_smf_pointer(bx_vga_c *theVga_ptr)
 {
   theVga = theVga_ptr;
 }
 #else // BX_SUPPORT_CLGD54XX
-  int
-libvga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int libvga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  theVga = new bx_vga_c ();
+  theVga = new bx_vga_c();
   bx_devices.pluginVgaDevice = theVga;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theVga, BX_PLUGIN_VGA);
   return(0); // Success
@@ -98,6 +96,7 @@ libvga_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv
 
 void libvga_LTX_plugin_fini(void)
 {
+  delete theVga;
 }
 #endif // BX_SUPPORT_CLGD54XX
 
@@ -115,12 +114,15 @@ bx_vga_c::~bx_vga_c()
 {
   if (s.memory != NULL) {
     delete [] s.memory;
+    s.memory = NULL;
   }
+  SIM->get_param_num(BXPN_VGA_UPDATE_INTERVAL)->set_handler(NULL);
+  BX_DEBUG(("Exit"));
 }
 
 void bx_vga_c::init(void)
 {
-  unsigned i,string_i;
+  unsigned i,len,string_i;
   unsigned x,y;
 #if BX_SUPPORT_VBE  
   Bit16u max_xres, max_yres, max_bpp;
@@ -236,8 +238,11 @@ void bx_vga_c::init(void)
   memset(argv, 0, sizeof(argv));
   argc = 1;
   argv[0] = "bochs";
-  if (strlen(SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->getptr())) {
-    ptr = strtok(SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->getptr(), ",");
+  len = strlen(SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->getptr());
+  if (len > 0) {
+    char *options = new char[len + 1];
+    strcpy(options, SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->getptr());
+    ptr = strtok(options, ",");
     while (ptr) {
       string_i = 0;
       for (i=0; i<strlen(ptr); i++) {
@@ -255,9 +260,10 @@ void bx_vga_c::init(void)
       }
       ptr = strtok(NULL, ",");
     }
+    delete [] options;
   }
   bx_gui->init(argc, argv, BX_VGA_THIS s.x_tilesize, BX_VGA_THIS s.y_tilesize);
-  for (i = 1; i < 16; i++)
+  for (i = 1; i < (unsigned)argc; i++)
   {
     if ( argv[i] != NULL )
     {
@@ -410,14 +416,14 @@ void bx_vga_c::register_state(void)
   }
 #endif
   bx_list_c *list = new bx_list_c(parent, "vga", "VGA Adapter State", 17);
-  bx_list_c *misc = new bx_list_c(list, "misc_output");
+  bx_list_c *misc = new bx_list_c(list, "misc_output", 6);
   new bx_shadow_bool_c(misc, "color_emulation", &BX_VGA_THIS s.misc_output.color_emulation);
   new bx_shadow_bool_c(misc, "enable_ram", &BX_VGA_THIS s.misc_output.enable_ram);
   new bx_shadow_num_c(misc, "clock_select", &BX_VGA_THIS s.misc_output.clock_select);
   new bx_shadow_bool_c(misc, "select_high_bank", &BX_VGA_THIS s.misc_output.select_high_bank);
   new bx_shadow_bool_c(misc, "horiz_sync_pol", &BX_VGA_THIS s.misc_output.horiz_sync_pol);
   new bx_shadow_bool_c(misc, "vert_sync_pol", &BX_VGA_THIS s.misc_output.vert_sync_pol);
-  bx_list_c *crtc = new bx_list_c(list, "CRTC");
+  bx_list_c *crtc = new bx_list_c(list, "CRTC", 3);
   new bx_shadow_num_c(crtc, "address", &BX_VGA_THIS s.CRTC.address, BASE_HEX);
   reg = new bx_list_c(crtc, "reg", 0x19);
   for (i=0; i<=0x18; i++) {
@@ -446,7 +452,7 @@ void bx_vga_c::register_state(void)
   new bx_shadow_bool_c(mode, "pixel_panning_compat", &BX_VGA_THIS s.attribute_ctrl.mode_ctrl.pixel_panning_compat);
   new bx_shadow_bool_c(mode, "pixel_clock_select", &BX_VGA_THIS s.attribute_ctrl.mode_ctrl.pixel_clock_select);
   new bx_shadow_bool_c(mode, "internal_palette_size", &BX_VGA_THIS s.attribute_ctrl.mode_ctrl.internal_palette_size);
-  bx_list_c *pel = new bx_list_c(list, "pel");
+  bx_list_c *pel = new bx_list_c(list, "pel", 6);
   new bx_shadow_num_c(pel, "write_data_register", &BX_VGA_THIS s.pel.write_data_register, BASE_HEX);
   new bx_shadow_num_c(pel, "write_data_cycle", &BX_VGA_THIS s.pel.write_data_cycle);
   new bx_shadow_num_c(pel, "read_data_register", &BX_VGA_THIS s.pel.read_data_register, BASE_HEX);
@@ -539,6 +545,12 @@ void bx_vga_c::after_restore_state(void)
   old_iWidth = BX_MAX_XRES;
   old_iHeight = BX_MAX_YRES;
   BX_VGA_THIS redraw_area(0, 0, BX_MAX_XRES, BX_MAX_YRES);
+#if BX_SUPPORT_VBE
+  if (BX_VGA_THIS s.vbe_enabled) {
+    bx_gui->dimension_update(BX_VGA_THIS s.vbe_xres, BX_VGA_THIS s.vbe_yres, 0, 0,
+                             BX_VGA_THIS s.vbe_bpp);
+  }
+#endif
   BX_VGA_THIS update();
   bx_gui->flush();
 }

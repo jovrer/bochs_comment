@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.55 2006/06/12 19:51:31 sshwarts Exp $
+// $Id: logio.cc,v 1.60 2006/11/19 16:18:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -71,6 +71,21 @@ void iofunctions::add_logfn(logfunc_t *fn)
   logfn_list[n_logfn++] = fn;
 }
 
+void iofunctions::remove_logfn(logfunc_t *fn)
+{
+  assert(n_logfn > 0);
+  int i = 0;
+  while ((fn != logfn_list[i]) && (i < n_logfn)) {
+    i++;
+  };
+  if (i < n_logfn) {
+    for (int j=i; j<n_logfn-1; j++) {
+      logfn_list[j] = logfn_list[j+1];
+    }
+    n_logfn--;
+  }
+}
+
 void iofunctions::set_log_action(int loglevel, int action)
 {
   for(int i=0; i<n_logfn; i++)
@@ -125,6 +140,17 @@ void iofunctions::init_log(int fd)
   init_log(tmpfd);
 };
 
+void iofunctions::exit_log()
+{
+  flush();
+  if (logfd != stderr) {
+    fclose(logfd);
+    logfd = stderr;
+    free(logfn);
+    logfn = "/dev/stderr";
+  }
+}
+
 // all other functions may use genlog safely.
 #define LOG_THIS genlog->
 
@@ -154,11 +180,6 @@ void iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list
     case LOGLEV_DEBUG: c='d'; break;
     default: break;
   }
-
-  //fprintf(logfd, "-%c",c);
-
-  //if(prefix != NULL)
-  //        fprintf(logfd, "%s ", prefix);
 
   s=logprefix;
   while(*s) {
@@ -281,6 +302,7 @@ logfunctions::logfunctions(iofunc_t *iofunc)
 
 logfunctions::~logfunctions()
 {
+  this->logio->remove_logfn(this);
   if (prefix) free(prefix);
 }
 
@@ -471,7 +493,7 @@ void logfunctions::ask(int level, const char *prefix, const char *fmt, va_list a
     case BX_LOG_NOTIFY_FAILED:
       bx_user_quit = (val==BX_LOG_ASK_CHOICE_DIE)?1:0;
       in_ask_already = 0;  // because fatal will longjmp out
-      fatal(prefix, fmt, ap, 1);
+      fatal(prefix, buf1, ap, 1);
       // should never get here
       BX_PANIC(("in ask(), fatal() should never return!"));
       break;
@@ -495,6 +517,10 @@ void logfunctions::ask(int level, const char *prefix, const char *fmt, va_list a
       // instruction, it should notice the user interrupt and return to
       // the debugger.
       bx_debug_break();
+      break;
+#elif BX_GDBSTUB
+    case BX_LOG_ASK_CHOICE_ENTER_DEBUG:
+      bx_gdbstub_break();
       break;
 #endif
     default:
@@ -552,7 +578,9 @@ static void carbonFatalDialog(const char *error, const char *exposition)
 
 void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int exit_status)
 {
+#if !BX_DEBUGGER
   bx_atexit();
+#endif
 #if BX_WITH_CARBON
   if(!isatty(STDIN_FILENO) && !SIM->get_init_done())
   {
@@ -571,15 +599,6 @@ void logfunctions::fatal(const char *prefix, const char *fmt, va_list ap, int ex
   fprintf(stderr, "%s ", prefix);
   vfprintf(stderr, fmt, ap);
   fprintf(stderr, "\n%s\n", divider);
-#endif
-#if 0 && defined(WIN32)
-#error disabled because it is not working yet!
-  // wait for a keypress before quitting.  Depending on how bochs is
-  // installed, the console window can disappear before the user has
-  // a chance to read the final message.
-  fprintf(stderr, "\n\nPress Enter to exit...\n");
-  char buf[8];
-  fgets(buf, 8, stdin);
 #endif
 #if !BX_DEBUGGER
   BX_EXIT(exit_status);

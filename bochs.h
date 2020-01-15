@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.195 2006/05/28 17:07:56 sshwarts Exp $
+// $Id: bochs.h,v 1.207 2007/04/19 16:12:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -50,6 +50,23 @@ extern "C" {
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(__sun__)
+#undef EAX
+#undef ECX
+#undef EDX
+#undef EBX
+#undef ESP
+#undef EBP
+#undef ESI
+#undef EDI
+#undef EIP
+#undef CS
+#undef DS
+#undef ES
+#undef SS
+#undef FS
+#undef GS
+#endif
 #include <assert.h>
 #include <errno.h>
 
@@ -60,11 +77,7 @@ extern "C" {
 #endif
 #include <time.h>
 #if BX_WITH_MACOS
-#define Float32 KLUDGE_Float32
-#define Float64 KLUDGE_Float64
 #  include <types.h>
-#undef Float32
-#undef Float64
 #  include <stat.h>
 #  include <cstdio>
 #  include <unistd.h>
@@ -191,6 +204,13 @@ void print_tree(bx_param_c *node, int level = 0);
 #  define A20ADDR(x)                (x)
 #endif
 
+#if BX_SUPPORT_SMP
+#  define BX_TICK1_IF_SINGLE_PROCESSOR() \
+             if (BX_SMP_PROCESSORS == 1) BX_TICK1()
+#else
+#  define BX_TICK1_IF_SINGLE_PROCESSOR() BX_TICK1()
+#endif
+
 // you can't use static member functions on the CPU, if there are going
 // to be 2 cpus.  Check this early on.
 #if BX_SUPPORT_SMP
@@ -294,7 +314,7 @@ enum {
   CPU10LOG, CPU11LOG, CPU12LOG, CPU13LOG, CPU14LOG, CPU15LOG, CTRLLOG,
   UNMAPLOG, SERRLOG, BIOSLOG, PIT81LOG, PIT82LOG, IODEBUGLOG, PCI2ISALOG,
   PLUGINLOG, EXTFPUIRQLOG , PCIVGALOG, PCIUSBLOG, VTIMERLOG, STIMERLOG,
-  PCIIDELOG, PCIDEVLOG, PCIPNICLOG, SPEAKERLOG, BUSMLOG
+  PCIIDELOG, PCIDEVLOG, PCIPNICLOG, SPEAKERLOG, BUSMLOG, GAMELOG, ACPILOG
 };
 
 class BOCHSAPI iofunctions {
@@ -318,11 +338,13 @@ public:
 	void init_log(const char *fn);
 	void init_log(int fd);
 	void init_log(FILE *fs);
+	void exit_log();
 	void set_log_prefix(const char *prefix);
-	int get_n_logfns () { return n_logfn; }
-	logfunc_t *get_logfn (int index) { return logfn_list[index]; }
-	void add_logfn (logfunc_t *fn);
-	void set_log_action (int loglevel, int action);
+	int get_n_logfns() { return n_logfn; }
+	logfunc_t *get_logfn(int index) { return logfn_list[index]; }
+	void add_logfn(logfunc_t *fn);
+	void remove_logfn(logfunc_t *fn);
+	void set_log_action(int loglevel, int action);
 	const char *getlevel(int i) {
 		static const char *loglevel[N_LOGLEV] = {
 			"DEBUG",
@@ -390,7 +412,8 @@ BOCHSAPI extern logfunc_t *genlog;
 
 #if BX_GDBSTUB
 // defines for GDB stub
-void bx_gdbstub_init(int argc, char* argv[]);
+void bx_gdbstub_init(void);
+void bx_gdbstub_break(void);
 int bx_gdbstub_check(unsigned int eip);
 #define GDBSTUB_STOP_NO_REASON   (0xac0)
 

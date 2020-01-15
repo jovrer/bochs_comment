@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dma.cc,v 1.40 2006/06/14 16:44:33 sshwarts Exp $
+// $Id: dma.cc,v 1.42 2007/04/03 22:38:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -52,6 +52,7 @@ int libdma_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
 
 void libdma_LTX_plugin_fini(void)
 {
+  delete theDmaDevice;
 }
 
 bx_dma_c::bx_dma_c()
@@ -62,7 +63,7 @@ bx_dma_c::bx_dma_c()
 
 bx_dma_c::~bx_dma_c()
 {
-   BX_DEBUG(("Exit"));
+  BX_DEBUG(("Exit"));
 }
 
 unsigned bx_dma_c::registerDMA8Channel(unsigned channel,
@@ -122,7 +123,7 @@ unsigned bx_dma_c::get_TC(void)
 void bx_dma_c::init(void)
 {
   unsigned c, i, j;
-  BX_DEBUG(("Init $Id: dma.cc,v 1.40 2006/06/14 16:44:33 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: dma.cc,v 1.42 2007/04/03 22:38:47 sshwarts Exp $"));
 
   /* 8237 DMA controller */
 
@@ -195,7 +196,7 @@ void bx_dma_c::register_state(void)
 {
   unsigned i, c;
   char name[6];
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "dma", "DMA State");
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "dma", "DMA State", 3);
   for (i=0; i<2; i++) {
     sprintf(name, "%d", i);
     bx_list_c *ctrl = new bx_list_c(list, name, 8);

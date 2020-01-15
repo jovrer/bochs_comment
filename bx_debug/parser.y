@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parser.y,v 1.18 2006/05/30 19:46:31 sshwarts Exp $
+// $Id: parser.y,v 1.20 2006/10/21 21:28:20 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 
 %{
@@ -14,7 +14,6 @@
   char    *sval;
   Bit64u   uval;
   bx_bool  bval;
-  bx_num_range uval_range;
 }
 
 // Common registers
@@ -120,7 +119,6 @@
 %token BX_TOKEN_REG_EIP
 %token BX_TOKEN_REG_RIP
 %type <uval> optional_numeric
-%type <uval_range> numeric_range optional_numeric_range
 %type <uval> vexpression
 %type <uval> expression
 
@@ -436,7 +434,7 @@ breakpoint_command:
         bx_dbg_vbreakpoint_command(bkAtIP, 0, 0);
         free($1);
       }
-    | BX_TOKEN_VBREAKPOINT vexpression ':' expression '\n'
+    | BX_TOKEN_VBREAKPOINT vexpression ':' vexpression '\n'
       {
         bx_dbg_vbreakpoint_command(bkRegular, $2, $4);
         free($1);
@@ -615,20 +613,6 @@ info_command:
 optional_numeric :
    /* empty */ { $$ = EMPTY_ARG; }
    | BX_TOKEN_NUMERIC;
-
-optional_numeric_range:
-   /* empty */ { $$ = make_num_range (EMPTY_ARG, EMPTY_ARG); }
-   | numeric_range;
-
-numeric_range :
-    expression
-    {
-      $$ = make_num_range ($1, $1);
-    }
-  | expression expression
-    {
-      $$ = make_num_range ($1, $2);
-    };
    
 regs_command:
       BX_TOKEN_REGISTERS '\n'
@@ -743,14 +727,34 @@ set_cpu_command:
     ;
 
 disassemble_command:
-      BX_TOKEN_DISASSEMBLE optional_numeric_range '\n'
+      BX_TOKEN_DISASSEMBLE '\n'
       {
-        bx_dbg_disassemble_command(NULL, $2);
+        bx_dbg_disassemble_current(NULL);
         free($1);
       }
-    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT optional_numeric_range '\n'
+    | BX_TOKEN_DISASSEMBLE expression '\n'
       {
-        bx_dbg_disassemble_command($2, $3);
+        bx_dbg_disassemble_command(NULL, $2, $2);
+        free($1);
+      }
+    | BX_TOKEN_DISASSEMBLE expression expression '\n'
+      {
+        bx_dbg_disassemble_command(NULL, $2, $3);
+        free($1);
+      }
+    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT '\n'
+      {
+        bx_dbg_disassemble_current($2);
+        free($1); free($2);
+      }
+    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT expression '\n'
+      {
+        bx_dbg_disassemble_command($2, $3, $3);
+        free($1); free($2);
+      }
+    | BX_TOKEN_DISASSEMBLE BX_TOKEN_DISFORMAT expression expression '\n'
+      {
+        bx_dbg_disassemble_command($2, $3, $4);
         free($1); free($2);
       }
     | BX_TOKEN_DISASSEMBLE BX_TOKEN_SWITCH_MODE '\n'

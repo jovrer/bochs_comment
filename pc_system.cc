@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.62 2006/05/29 22:33:38 sshwarts Exp $
+// $Id: pc_system.cc,v 1.65 2006/09/17 20:37:27 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -67,23 +67,23 @@ bx_pc_system_c::bx_pc_system_c()
   ticksTotal = 0; // Reset ticks since emulator started.
   timer[0].inUse      = 1;
   timer[0].period     = NullTimerInterval;
-  timer[0].timeToFire = ticksTotal + NullTimerInterval;
   timer[0].active     = 1;
   timer[0].continuous = 1;
   timer[0].funct      = nullTimer;
   timer[0].this_ptr   = this;
-  currCountdown       = NullTimerInterval;
-  currCountdownPeriod = NullTimerInterval;
   numTimers = 1; // So far, only the nullTimer.
-  triggeredTimer = 0;
-  lastTimeUsec = 0;
-  usecSinceLast = 0;
 }
 
 void bx_pc_system_c::initialize(Bit32u ips)
 {
+  ticksTotal = 0;
+  timer[0].timeToFire = NullTimerInterval;
+  currCountdown       = NullTimerInterval;
+  currCountdownPeriod = NullTimerInterval;
+  lastTimeUsec = 0;
+  usecSinceLast = 0;
+  triggeredTimer = 0;
   HRQ = 0;
-
   kill_bochs_request = 0;
 
   // parameter 'ips' is the processor speed in Instructions-Per-Second
@@ -214,14 +214,13 @@ Bit8u bx_pc_system_c::IAC(void)
 
 void bx_pc_system_c::exit(void)
 {
-  if (DEV_cmos_present())
-    DEV_cmos_save_image();
-  if (DEV_hd_present())
-    DEV_hd_close_harddrive();
-
-  BX_INFO(("Last time is %u", (unsigned) DEV_cmos_get_timeval()));
-
-  if (bx_gui) bx_gui->exit();
+  // delete all registered timers (exception: null timer and APIC timer)
+  numTimers = 1 + BX_SUPPORT_APIC;
+  bx_devices.exit();
+  if (bx_gui) {
+    bx_gui->cleanup();
+    bx_gui->exit();
+  }
 }
 
 #if BX_SUPPORT_SAVE_RESTORE
@@ -230,12 +229,12 @@ void bx_pc_system_c::register_state(void)
 
   bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pc_system", "PC System State", 8);
   BXRS_PARAM_BOOL(list, enable_a20, enable_a20);
-  BXRS_HEX_PARAM_SIMPLE(list, currCountdown);
-  BXRS_HEX_PARAM_SIMPLE(list, currCountdownPeriod);
-  BXRS_HEX_PARAM_SIMPLE(list, ticksTotal);
-  BXRS_HEX_PARAM_SIMPLE(list, lastTimeUsec);
-  BXRS_HEX_PARAM_SIMPLE(list, usecSinceLast);
-  BXRS_HEX_PARAM_SIMPLE(list, HRQ);
+  BXRS_DEC_PARAM_SIMPLE(list, currCountdown);
+  BXRS_DEC_PARAM_SIMPLE(list, currCountdownPeriod);
+  BXRS_DEC_PARAM_SIMPLE(list, ticksTotal);
+  BXRS_DEC_PARAM_SIMPLE(list, lastTimeUsec);
+  BXRS_DEC_PARAM_SIMPLE(list, usecSinceLast);
+  BXRS_PARAM_BOOL(list, HRQ, HRQ);
 
   bx_list_c *timers = new bx_list_c(list, "timer", numTimers);
   for (unsigned i = 0; i < numTimers; i++) {
@@ -316,6 +315,7 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
     }
   }
 
+  BX_DEBUG(("timer id %d registered for '%s'", i, id));
   // If we didn't find a free slot, increment the bound, numTimers.
   if (i==numTimers)
     numTimers++; // One new timer installed.

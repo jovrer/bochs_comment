@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.cc,v 1.51 2006/05/29 22:33:38 sshwarts Exp $
+// $Id: pci.cc,v 1.54 2007/04/03 22:38:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -42,7 +42,7 @@ bx_pci_bridge_c *thePciBridge = NULL;
 
 int libpci_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
 {
-  thePciBridge = new bx_pci_bridge_c ();
+  thePciBridge = new bx_pci_bridge_c();
   bx_devices.pluginPciBridge = thePciBridge;
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePciBridge, BX_PLUGIN_PCI);
   return(0); // Success
@@ -50,6 +50,7 @@ int libpci_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
 
 void libpci_LTX_plugin_fini(void)
 {
+  delete thePciBridge;
 }
 
 bx_pci_bridge_c::bx_pci_bridge_c()
@@ -60,7 +61,8 @@ bx_pci_bridge_c::bx_pci_bridge_c()
 
 bx_pci_bridge_c::~bx_pci_bridge_c()
 {
-  // nothing for now
+  print_i440fx_state();
+  BX_DEBUG(("Exit"));
 }
 
 void bx_pci_bridge_c::init(void)
@@ -151,7 +153,7 @@ bx_pci_bridge_c::reset(unsigned type)
 #if BX_SUPPORT_SAVE_RESTORE
 void bx_pci_bridge_c::register_state(void)
 {
-  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pci_bridge", "PCI Bridge State");
+  bx_list_c *list = new bx_list_c(SIM->get_sr_root(), "pci_bridge", "PCI Bridge State", 3);
   BXRS_HEX_PARAM_FIELD(list, confAddr, BX_PCI_THIS s.i440fx.confAddr);
   BXRS_HEX_PARAM_FIELD(list, confData, BX_PCI_THIS s.i440fx.confData);
   bx_list_c *pci_conf = new bx_list_c(list, "pci_conf", 256);

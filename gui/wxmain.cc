@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.cc,v 1.142 2006/06/07 19:40:15 vruppert Exp $
+// $Id: wxmain.cc,v 1.152 2006/12/17 08:17:28 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxmain.cc implements the wxWidgets frame, toolbar, menus, and dialogs.
@@ -102,6 +102,11 @@ MyPanel *thePanel = NULL;
 // any events that might reference parts of the GUI or create new dialogs.
 bool wxBochsClosing = false;
 
+// The wxBochsStopSim flag is used to select the right way when the simulation
+// thread stops. It is set to 'true' when the stop simulation menu item is
+// clicked instead of the power button.
+bool wxBochsStopSim = false;
+
 bool isSimThread() {
   if (wxThread::IsMain()) return false;
   wxThread *current = wxThread::This();
@@ -168,7 +173,6 @@ static int ci_callback(void *userdata, ci_command_t command)
   switch (command)
   {
     case CI_START:
-      // fprintf(stderr, "wxmain.cc: start\n");
 #ifdef __WXMSW__
       // on Windows only, wxEntry needs some data that is passed into WinMain.
       // So, in main.cc we define WinMain and fill in the bx_startup_flags
@@ -185,9 +189,6 @@ static int ci_callback(void *userdata, ci_command_t command)
       break;
     case CI_RUNTIME_CONFIG:
       fprintf(stderr, "wxmain.cc: runtime config not implemented\n");
-      break;
-    case CI_SAVE_RESTORE:
-      fprintf(stderr, "wxmain.cc: save state not implemented\n");
       break;
     case CI_SHUTDOWN:
       fprintf(stderr, "wxmain.cc: shutdown not implemented\n");
@@ -322,7 +323,6 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   EVT_MENU(ID_Config_New, MyFrame::OnConfigNew)
   EVT_MENU(ID_Config_Read, MyFrame::OnConfigRead)
   EVT_MENU(ID_Config_Save, MyFrame::OnConfigSave)
-  EVT_MENU(ID_State_Save, MyFrame::OnStateSave)
   EVT_MENU(ID_State_Restore, MyFrame::OnStateRestore)
   EVT_MENU(ID_Quit, MyFrame::OnQuit)
   EVT_MENU(ID_Help_About, MyFrame::OnAbout)
@@ -358,6 +358,9 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   EVT_TOOL(ID_Edit_Cdrom, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_Reset, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_Power, MyFrame::OnToolbarClick)
+#if BX_SUPPORT_SAVE_RESTORE
+  EVT_TOOL(ID_Toolbar_SaveRestore, MyFrame::OnToolbarClick)
+#endif
   EVT_TOOL(ID_Toolbar_Copy, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_Paste, MyFrame::OnToolbarClick)
   EVT_TOOL(ID_Toolbar_Snapshot, MyFrame::OnToolbarClick)
@@ -438,7 +441,6 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuConfiguration->Append(ID_Config_Read, wxT("&Read Configuration"));
   menuConfiguration->Append(ID_Config_Save, wxT("&Save Configuration"));
   menuConfiguration->AppendSeparator();
-  menuConfiguration->Append(ID_State_Save, wxT("&Save State"));
   menuConfiguration->Append(ID_State_Restore, wxT("&Restore State"));
   menuConfiguration->AppendSeparator();
   menuConfiguration->Append(ID_Quit, wxT("&Quit"));
@@ -503,7 +505,6 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuEdit->Enable(ID_Edit_ATA2, BX_MAX_ATA_CHANNEL > 2);
   menuEdit->Enable(ID_Edit_ATA3, BX_MAX_ATA_CHANNEL > 3);
   // enable restore state if present
-  menuConfiguration->Enable(ID_State_Save, FALSE);
   menuConfiguration->Enable(ID_State_Restore, BX_SUPPORT_SAVE_RESTORE);
 
   CreateStatusBar();
@@ -513,11 +514,11 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   sb->SetStatusWidths(12, sbwidth);
 
   CreateToolBar(wxNO_BORDER|wxHORIZONTAL|wxTB_FLAT);
-  wxToolBar *tb = GetToolBar();
-  tb->SetToolBitmapSize(wxSize(32, 32));
+  bxToolBar = GetToolBar();
+  bxToolBar->SetToolBitmapSize(wxSize(32, 32));
 
 #define BX_ADD_TOOL(id, xpm_name, tooltip) do { \
-    tb->AddTool(id, wxBitmap(xpm_name), tooltip); \
+    bxToolBar->AddTool(id, wxBitmap(xpm_name), tooltip); \
   } while (0)
 
   BX_ADD_TOOL(ID_Edit_FD_0, floppya_xpm, wxT("Change Floppy A"));
@@ -538,7 +539,7 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   BX_ADD_TOOL(ID_Toolbar_Mouse_en, mouse_xpm, wxT("Enable/disable mouse capture\nThere is also a shortcut for this: a CTRL key + the middle mouse button."));
   BX_ADD_TOOL(ID_Toolbar_User, userbutton_xpm, wxT("Keyboard shortcut"));
 
-  tb->Realize();
+  bxToolBar->Realize();
 
   // create a MyPanel that covers the whole frame
   panel = new MyPanel(this, -1);
@@ -594,30 +595,6 @@ void MyFrame::OnConfigSave(wxCommandEvent& WXUNUSED(event))
     SIM->write_rc(bochsrc, 1);
   }
   delete fdialog;
-}
-
-void MyFrame::OnStateSave(wxCommandEvent& event)
-{
-#if BX_SUPPORT_SAVE_RESTORE
-  char sr_path[512];
-  // pass some initial dir to wxDirDialog
-  wxString dirSaveRestore;
-
-  wxGetHomeDir(&dirSaveRestore);
-  wxDirDialog ddialog(this, wxT("Select folder with save/restore data"), dirSaveRestore, wxDD_DEFAULT_STYLE);
-
-  if (ddialog.ShowModal() == wxID_OK) {
-    strncpy(sr_path, ddialog.GetPath().mb_str(wxConvUTF8), sizeof(sr_path));
-    if (SIM->save_state(sr_path)) {
-      if (wxMessageBox(wxT("The save function currently doesn't handle the state of hard\n"
-                           "drive images, so we don't recommend to continue, unless you\n"
-                           "are running a read-only guest system (e.g. Live-CD).\n\nDo you want to continue?"),
-                           wxT("WARNING"), wxYES_NO, this) == wxNO) {
-        OnKillSim(event);
-      }
-    }
-  }
-#endif
 }
 
 void MyFrame::OnStateRestore(wxCommandEvent& WXUNUSED(event))
@@ -855,10 +832,16 @@ void MyFrame::OnShowCpu(wxCommandEvent& WXUNUSED(event))
 
 void MyFrame::OnShowKeyboard(wxCommandEvent& WXUNUSED(event))
 {
-  if (SIM->get_param(BXPN_WX_KBD_STATE) == NULL) {
+  bx_list_c *list = (bx_list_c*)SIM->get_param(BXPN_WX_KBD_STATE);
+  int list_size = 0;
+
+  if (list != NULL) {
+    list_size = list->get_size();
+  }
+  if (list_size == 0) {
     // if params not initialized yet, then give up
     wxMessageBox(wxT("Cannot show the debugger window until the simulation has begun."),
-                 wxT("Sim not started"), wxOK | wxICON_ERROR, this );
+                 wxT("Sim not running"), wxOK | wxICON_ERROR, this );
     return;
   }
   if (showKbd == NULL) {
@@ -884,7 +867,7 @@ void
 MyFrame::DebugBreak()
 {
   if (debugCommand) {
-    delete debugCommand;
+    delete [] debugCommand;
     debugCommand = NULL;
   }
   wxASSERT(showDebugLog != NULL);
@@ -909,7 +892,7 @@ MyFrame::DebugCommand(const char *cmd)
   if (debugCommand != NULL) {
     // one is already waiting
     wxLogDebug(wxT("multiple debugger commands, discarding the earlier one"));
-    delete debugCommand;
+    delete [] debugCommand;
     debugCommand = NULL;
   }
   int len = strlen(cmd);
@@ -935,6 +918,7 @@ MyFrame::DebugCommand(const char *cmd)
 void MyFrame::OnQuit(wxCommandEvent& event)
 {
   wxBochsClosing = true;
+  bx_user_quit = 1;
   if (!sim_thread) {
     // no simulation thread is running. Just close the window.
     Close( TRUE );
@@ -973,6 +957,9 @@ void MyFrame::simStatusChanged(StatusChange change, bx_bool popupNotify) {
       menuSimulate->Enable(ID_Simulate_PauseResume, FALSE);
       menuSimulate->Enable(ID_Simulate_Stop, FALSE);
       menuSimulate->SetLabel(ID_Simulate_PauseResume, wxT("&Pause"));
+#if BX_DEBUGGER
+      showDebugLog->Show(FALSE);
+#endif
       // This should only be used if the simulation stops due to error.
       // Obviously if the user asked it to stop, they don't need to be told.
       if (popupNotify)
@@ -992,7 +979,6 @@ void MyFrame::simStatusChanged(StatusChange change, bx_bool popupNotify) {
   menuConfiguration->Enable(ID_Config_New, canConfigure);
   menuConfiguration->Enable(ID_Config_Read, canConfigure);
 #if BX_SUPPORT_SAVE_RESTORE
-  menuConfiguration->Enable(ID_State_Save, (change == Pause));
   menuConfiguration->Enable(ID_State_Restore, canConfigure);
 #endif
   // only enabled ATA channels with a cdrom connected are available at runtime
@@ -1022,11 +1008,14 @@ void MyFrame::simStatusChanged(StatusChange change, bx_bool popupNotify) {
   // during simulation, certain menu options like the floppy disk
   // can be modified under some circumstances.  A floppy drive can
   // only be edited if it was enabled at boot time.
-  bx_param_c *param;
-  param = SIM->get_param(BXPN_FLOPPYA);
-  menuEdit->Enable(ID_Edit_FD_0, canConfigure || param->get_enabled());
-  param = SIM->get_param(BXPN_FLOPPYB);
-  menuEdit->Enable(ID_Edit_FD_1, canConfigure || param->get_enabled());
+  Bit64u value;
+  value = SIM->get_param_enum(BXPN_FLOPPYA_DEVTYPE)->get();
+  menuEdit->Enable(ID_Edit_FD_0, canConfigure || (value != BX_FLOPPY_NONE));
+  bxToolBar->EnableTool(ID_Edit_FD_0, canConfigure || (value != BX_FLOPPY_NONE));
+  value = SIM->get_param_enum(BXPN_FLOPPYB_DEVTYPE)->get();
+  menuEdit->Enable(ID_Edit_FD_1, canConfigure || (value != BX_FLOPPY_NONE));
+  bxToolBar->EnableTool(ID_Edit_FD_1, canConfigure || (value != BX_FLOPPY_NONE));
+  bxToolBar->EnableTool(ID_Edit_Cdrom, canConfigure || (SIM->get_first_cdrom() != NULL));
 }
 
 void MyFrame::OnStartSim(wxCommandEvent& event)
@@ -1062,6 +1051,7 @@ void MyFrame::OnStartSim(wxCommandEvent& event)
         wxT("2nd time warning"), wxOK | wxICON_WARNING, this);
   }
   num_events = 0;  // clear the queue of events for bochs to handle
+  wxBochsStopSim = false;
   sim_thread = new SimThread(this);
   sim_thread->Create();
   sim_thread->Run();                                                        
@@ -1095,12 +1085,17 @@ void MyFrame::OnKillSim(wxCommandEvent& WXUNUSED(event))
   // the sim_thread may be waiting for a debugger command.  If so, send
   // it a "quit"
   DebugCommand("quit");
+  debugCommand = NULL;
 #endif
   if (sim_thread) {
+    wxBochsStopSim = true;
     sim_thread->Delete();
     // Next time the simulator reaches bx_real_sim_c::periodic() it
     // will quit.  This is better than killing the thread because it
     // gives it a chance to clean up after itself.
+  }
+  if (!wxBochsClosing) {
+    theFrame->simStatusChanged(theFrame->Stop, true);
   }
 }
 
@@ -1121,36 +1116,41 @@ MyFrame::HandleAskParamString(bx_param_string_c *param)
   if ((msg == NULL) || (strlen(msg) == 0)) {
     msg = param->get_name();
   }
-  const char *newval = NULL;
+  char newval[512];
+  newval[0] = 0;
   wxDialog *dialog = NULL;
-  if (n_opt & param->IS_FILENAME) {
+  if (n_opt & param->SELECT_FOLDER_DLG) {
+    // pass some initial dir to wxDirDialog
+    wxString homeDir;
+
+    wxGetHomeDir(&homeDir);
+    wxDirDialog *ddialog = new wxDirDialog(this, wxString(msg, wxConvUTF8), homeDir, wxDD_DEFAULT_STYLE);
+
+    if (ddialog->ShowModal() == wxID_OK)
+      strncpy(newval, ddialog->GetPath().mb_str(wxConvUTF8), sizeof(newval));
+    dialog = ddialog; // so I can delete it
+  } else if (n_opt & param->IS_FILENAME) {
     // use file open dialog
-        long style = 
-          (n_opt & param->SAVE_FILE_DIALOG) ? wxSAVE|wxOVERWRITE_PROMPT : wxOPEN;
-        wxLogDebug(wxT("HandleAskParamString: create dialog"));
-        wxFileDialog *fdialog = new wxFileDialog(this, wxString(msg, wxConvUTF8), wxT(""), wxString(param->getptr(), wxConvUTF8), wxT("*.*"), style);
-        wxLogDebug(wxT("HandleAskParamString: before showmodal"));
-        if (fdialog->ShowModal() == wxID_OK)
-          newval = fdialog->GetPath().mb_str(wxConvUTF8);
-        wxLogDebug(wxT("HandleAskParamString: after showmodal"));
-        dialog = fdialog; // so I can delete it
+    long style = 
+      (n_opt & param->SAVE_FILE_DIALOG) ? wxSAVE|wxOVERWRITE_PROMPT : wxOPEN;
+    wxFileDialog *fdialog = new wxFileDialog(this, wxString(msg, wxConvUTF8), wxT(""), wxString(param->getptr(), wxConvUTF8), wxT("*.*"), style);
+    if (fdialog->ShowModal() == wxID_OK)
+      strncpy(newval, fdialog->GetPath().mb_str(wxConvUTF8), sizeof(newval));
+    dialog = fdialog; // so I can delete it
   } else {
     // use simple string dialog
-        long style = wxOK|wxCANCEL;
-        wxTextEntryDialog *tdialog = new wxTextEntryDialog(this, wxString(msg, wxConvUTF8), wxT("Enter new value"), wxString(param->getptr(), wxConvUTF8), style);
-        if (tdialog->ShowModal() == wxID_OK)
-          newval = tdialog->GetValue().mb_str(wxConvUTF8);
-        dialog = tdialog; // so I can delete it
+    long style = wxOK|wxCANCEL;
+    wxTextEntryDialog *tdialog = new wxTextEntryDialog(this, wxString(msg, wxConvUTF8), wxT("Enter new value"), wxString(param->getptr(), wxConvUTF8), style);
+    if (tdialog->ShowModal() == wxID_OK)
+      strncpy(newval, tdialog->GetValue().mb_str(wxConvUTF8), sizeof(newval));
+    dialog = tdialog; // so I can delete it
   }
-  // newval points to memory inside the dialog.  As soon as dialog is deleted,
-  // newval points to junk.  So be sure to copy the text out before deleting
-  // it!
-  if (newval && strlen(newval)>0) {
-        // change floppy path to this value.
-        wxLogDebug(wxT("Setting param %s to '%s'"), param->get_name(), newval);
-        param->set(newval);
-        delete dialog;
-        return 1;
+  if (strlen(newval) > 0) {
+    // change floppy path to this value.
+    wxLogDebug(wxT("Setting param %s to '%s'"), param->get_name(), newval);
+    param->set(newval);
+    delete dialog;
+    return 1;
   }
   delete dialog;
   return -1;
@@ -1180,9 +1180,13 @@ MyFrame::HandleAskParam(BxEvent *event)
     case BXT_PARAM_STRING:
       return HandleAskParamString((bx_param_string_c *)param);
     case BXT_PARAM_BOOL:
-      ((bx_param_bool_c *)param)->set(wxMessageBox(wxString(param->get_description(), wxConvUTF8),
-                                                   wxString(param->get_label(), wxConvUTF8), wxYES_NO, this) == wxYES);
-      return 0;
+      {
+        long style = wxYES_NO;
+        if (((bx_param_bool_c *)param)->get() == 0) style |= wxNO_DEFAULT;
+        ((bx_param_bool_c *)param)->set(wxMessageBox(wxString(param->get_description(), wxConvUTF8),
+                                                     wxString(param->get_label(), wxConvUTF8), style, this) == wxYES);
+        return 0;
+      }
     default:
       {
         wxString msg;
@@ -1276,7 +1280,7 @@ void MyFrame::OnLogMsg(BxEvent *be) {
     wxASSERT(be->type == BX_SYNC_EVT_LOG_ASK);
   wxString levelName(SIM->get_log_level_name(be->u.logmsg.level), wxConvUTF8);
   LogMsgAskDialog dlg(this, -1, levelName);  // panic, error, etc.
-#if !BX_DEBUGGER
+#if !BX_DEBUGGER && !BX_GDBSTUB
   dlg.EnableButton(dlg.DEBUG, FALSE);
 #endif
   dlg.SetContext(wxString(be->u.logmsg.prefix, wxConvUTF8));
@@ -1310,7 +1314,7 @@ void MyFrame::editFloppyConfig(int drive)
 {
   FloppyConfigDialog dlg(this, -1);
   dlg.SetDriveName(wxString(drive==0? BX_FLOPPY0_NAME : BX_FLOPPY1_NAME, wxConvUTF8));
-  dlg.SetCapacityChoices(n_floppy_type_names, floppy_type_names);
+  dlg.SetCapacityChoices(floppy_type_names);
   bx_list_c *list = (bx_list_c*) SIM->get_param((drive==0)? BXPN_FLOPPYA : BXPN_FLOPPYB);
   if (!list) { wxLogError(wxT("floppy object param is null")); return; }
   bx_param_filename_c *fname = (bx_param_filename_c*) list->get_by_name("path");
@@ -1346,13 +1350,10 @@ void MyFrame::editFloppyConfig(int drive)
     // otherwise the SetFilename() should have done the right thing.
   }
   int n = dlg.ShowModal();
-  wxLogMessage(wxT("floppy config returned %d"), n);
   if (n==wxID_OK) {
     char filename[1024];
     wxString fn(dlg.GetFilename());
     strncpy(filename, fn.mb_str(wxConvUTF8), sizeof(filename));
-    wxLogMessage(wxT("filename is '%s'"), filename);
-    wxLogMessage(wxT("capacity = %d (%s)"), dlg.GetCapacity(), floppy_type_names[dlg.GetCapacity()]);
     fname->set(filename);
     disktype->set(disktype->get_min() + dlg.GetCapacity());
     if (sim_thread == NULL) {
@@ -1402,8 +1403,11 @@ void MyFrame::OnToolbarClick(wxCommandEvent& event)
   bx_toolbar_buttons which = BX_TOOLBAR_UNDEFINED;
   int id = event.GetId();
   switch (id) {
-    case ID_Toolbar_Power:which = BX_TOOLBAR_POWER; break;
+    case ID_Toolbar_Power: which = BX_TOOLBAR_POWER; wxBochsStopSim = false; break;
     case ID_Toolbar_Reset: which = BX_TOOLBAR_RESET; break;
+#if BX_SUPPORT_SAVE_RESTORE
+    case ID_Toolbar_SaveRestore: which = BX_TOOLBAR_SAVE_RESTORE; break;
+#endif
     case ID_Edit_FD_0: 
       // floppy config dialog box
       editFloppyConfig(0);
@@ -1481,8 +1485,10 @@ SimThread::Entry(void)
   wxLogDebug(wxT("SimThread::Entry: get gui mutex"));
   wxMutexGuiEnter();
   if (!wxBochsClosing) {
-    wxLogDebug(wxT("SimThread::Entry: sim thread ending.  call simStatusChanged"));
-    theFrame->simStatusChanged(theFrame->Stop, true);
+    if (!wxBochsStopSim) {
+      wxLogDebug(wxT("SimThread::Entry: sim thread ending.  call simStatusChanged"));
+      theFrame->simStatusChanged(theFrame->Stop, true);
+    }
   } else {
     wxLogMessage(wxT("SimThread::Entry: the gui is waiting for sim to finish.  Now that it has finished, I will close the frame."));
     theFrame->Close(TRUE);

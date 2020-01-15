@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.52 2006/05/27 15:54:47 sshwarts Exp $
+// $Id: plugin.h,v 1.58 2007/08/04 08:57:42 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file provides macros and types needed for plugins.  It is based on
@@ -45,6 +45,7 @@ extern "C" {
 #define BX_PLUGIN_PCIPNIC   "pcipnic"
 #define BX_PLUGIN_GAMEPORT  "gameport"
 #define BX_PLUGIN_SPEAKER   "speaker"
+#define BX_PLUGIN_ACPI      "acpi"
 
 
 #define BX_REGISTER_DEVICE_DEVMODEL(a,b,c,d) pluginRegisterDeviceDevmodel(a,b,c,d)
@@ -56,6 +57,7 @@ extern "C" {
 #define DEV_register_state() {bx_devices.register_state(); }
 #define DEV_after_restore_state() {bx_devices.after_restore_state(); }
 #define PLUG_load_plugin(name,type) {bx_load_plugin(#name,type);}
+#define PLUG_unload_plugin(name) {bx_unload_plugin(#name);}
 
 #define DEV_register_ioread_handler(b,c,d,e,f)  pluginRegisterIOReadHandler(b,c,d,e,f)
 #define DEV_register_iowrite_handler(b,c,d,e,f) pluginRegisterIOWriteHandler(b,c,d,e,f)
@@ -80,6 +82,7 @@ extern "C" {
 // When plugins are off, PLUG_load_plugin will call the plugin_init function
 // directly.
 #define PLUG_load_plugin(name,type) {lib##name##_LTX_plugin_init(NULL,type,0,NULL);}
+#define PLUG_unload_plugin(name) {lib##name##_LTX_plugin_fini();}
 #define DEV_register_ioread_handler(b,c,d,e,f) bx_devices.register_io_read_handler(b,c,d,e,f)
 #define DEV_register_iowrite_handler(b,c,d,e,f) bx_devices.register_io_write_handler(b,c,d,e,f)
 #define DEV_unregister_ioread_handler(b,c,d,e)  bx_devices.unregister_io_read_handler(b,c,d,e)
@@ -105,7 +108,6 @@ extern "C" {
 #define DEV_cmos_set_reg(a,b) (bx_devices.pluginCmosDevice->set_reg(a,b))
 #define DEV_cmos_checksum() (bx_devices.pluginCmosDevice->checksum_cmos())
 #define DEV_cmos_get_timeval() (bx_devices.pluginCmosDevice->get_timeval())
-#define DEV_cmos_save_image() (bx_devices.pluginCmosDevice->save_image())
 #define DEV_cmos_present() (bx_devices.pluginCmosDevice != &bx_devices.stubCmos)
 
 ///////// keyboard macros
@@ -131,7 +133,6 @@ extern "C" {
     (bx_devices.pluginHardDrive->get_cd_media_status(handle))
 #define DEV_hd_set_cd_media_status(handle, status) \
     (bx_devices.pluginHardDrive->set_cd_media_status(handle, status))
-#define DEV_hd_close_harddrive()  bx_devices.pluginHardDrive->close_harddrive()
 #define DEV_hd_present() (bx_devices.pluginHardDrive != &bx_devices.stubHardDrive)
 #define DEV_hd_bmdma_read_sector(a,b,c) bx_devices.pluginHardDrive->bmdma_read_sector(a,b,c)
 #define DEV_hd_bmdma_write_sector(a,b) bx_devices.pluginHardDrive->bmdma_write_sector(a,b)
@@ -193,6 +194,7 @@ extern "C" {
 #define DEV_pci_print_i440fx_state() bx_devices.pluginPciBridge->print_i440fx_state()
 #define DEV_ide_bmdma_present() bx_devices.pluginPciIdeController->bmdma_present()
 #define DEV_ide_bmdma_set_irq(a) bx_devices.pluginPciIdeController->bmdma_set_irq(a)
+#define DEV_acpi_generate_smi(a) bx_devices.pluginACPIController->generate_smi(a)
 
 ///////// NE2000 macro
 #define DEV_ne2k_print_info(file,page,reg,brief) \
@@ -214,8 +216,8 @@ extern "C" {
 #if BX_SUPPORT_PCIUSB
 #define DEV_usb_mouse_enq(dx, dy, dz, state) \
     (bx_devices.pluginPciUSBAdapter->usb_mouse_enq(dx, dy, dz, state))
-#define DEV_usb_mouse_enable(enable) \
-    (bx_devices.pluginPciUSBAdapter->usb_mouse_enable(enable))
+#define DEV_usb_mouse_enabled_changed(enable) \
+    (bx_devices.pluginPciUSBAdapter->usb_mouse_enabled_changed(enable))
 #define DEV_usb_key_enq(scan_code) \
     (bx_devices.pluginPciUSBAdapter->usb_key_enq(scan_code))
 #define DEV_usb_keyboard_connected() \
@@ -253,11 +255,11 @@ typedef struct _device_t
 
 extern device_t *devices;
 
-void plugin_startup (void);
-void plugin_load (char *name, char *args, plugintype_t);
-plugin_t *plugin_unload (plugin_t *plugin);
-void plugin_init_all (void);
-void plugin_fini_all (void);
+void plugin_startup(void);
+void plugin_load(char *name, char *args, plugintype_t);
+plugin_t *plugin_unload(plugin_t *plugin);
+void plugin_init_all(void);
+void plugin_fini_all(void);
 
 /* === Device Stuff === */
 typedef void (*deviceInitMem_t)(BX_MEM_C *);
@@ -335,8 +337,10 @@ BOCHSAPI extern Bit8u    (*pluginWr_memType)(Bit32u addr);
 void plugin_abort(void);
 
 int bx_load_plugin(const char *name, plugintype_t type);
+extern void bx_unload_plugin(const char *name);
 extern void bx_init_plugins(void);
 extern void bx_reset_plugins(unsigned);
+extern void bx_unload_plugins(void);
 #if BX_SUPPORT_SAVE_RESTORE
 extern void bx_plugins_register_state();
 extern void bx_plugins_after_restore_state();
@@ -376,6 +380,7 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(ne2k)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(extfpuirq)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(gameport)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(speaker)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(acpi)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(amigaos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(beos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(carbon)

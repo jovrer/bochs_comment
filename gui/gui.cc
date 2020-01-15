@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.97 2006/06/07 19:40:14 vruppert Exp $
+// $Id: gui.cc,v 1.100 2007/08/18 08:05:30 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -53,7 +53,7 @@ bx_gui_c *bx_gui = NULL;
 #define LOG_THIS BX_GUI_THIS
 
 #define BX_KEY_UNKNOWN 0x7fffffff
-#define N_USER_KEYS 35
+#define N_USER_KEYS 36
 
 typedef struct {
   char *key;
@@ -96,7 +96,8 @@ static user_key_t user_keys[N_USER_KEYS] =
   { "space", BX_KEY_SPACE },
   { "tab",   BX_KEY_TAB },
   { "up",    BX_KEY_UP },
-  { "win",   BX_KEY_WIN_L }
+  { "win",   BX_KEY_WIN_L },
+  { "print", BX_KEY_PRINT }
 };
 
 bx_gui_c::bx_gui_c(void)
@@ -238,13 +239,18 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
 
   BX_GUI_THIS charmap_updated = 0;
 
-  if (!BX_GUI_THIS new_gfx_api) {
+  if (!BX_GUI_THIS new_gfx_api && (BX_GUI_THIS framebuffer == NULL)) {
     BX_GUI_THIS framebuffer = new Bit8u[BX_MAX_XRES * BX_MAX_YRES * 4];
   }
   show_headerbar();
 }
 
-void bx_gui_c::update_drive_status_buttons (void)
+void bx_gui_c::cleanup(void)
+{
+  statusitem_count = 0;
+}
+
+void bx_gui_c::update_drive_status_buttons(void)
 {
   BX_GUI_THIS floppyA_status = DEV_floppy_get_media_status(0)
     && (SIM->get_param_enum(BXPN_FLOPPYA_STATUS)->get() == BX_INSERTED);
@@ -601,8 +607,25 @@ void bx_gui_c::userbutton_handler(void)
 #if BX_SUPPORT_SAVE_RESTORE
 void bx_gui_c::save_restore_handler(void)
 {
+  int ret;
+  char sr_path[BX_PATHNAME_LEN];
+
   if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_SAVE_RESTORE) {
-    SIM->configuration_interface(NULL, CI_SAVE_RESTORE);
+    sr_path[0] = 0;
+    ret = SIM->ask_filename(sr_path, sizeof(sr_path),
+                            "Save Bochs state to folder...", "none",
+                            bx_param_string_c::SELECT_FOLDER_DLG);
+    if ((ret >= 0) && (strcmp(sr_path, "none"))) {
+      if (SIM->save_state(sr_path)) {
+        if (!SIM->ask_yes_no("WARNING",
+              "The save function currently doesn't handle the state of hard drive images,\n"
+              "so we don't recommend to continue, unless you are running a read-only\n"
+              "guest system (e.g. Live-CD).\n\n"
+              "Do you want to continue?", 0)) {
+          power_handler();
+        }
+      }
+    }
   }
 }
 #endif

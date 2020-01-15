@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.165 2006/06/25 21:44:46 sshwarts Exp $
+// $Id: cpu.cc,v 1.172 2007/07/09 15:16:10 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -112,12 +112,6 @@ static unsigned iCacheMisses=0;
     if (count == 0) return;           \
   }
 
-#if BX_SUPPORT_SMP
-#  define BX_TICK1_IF_SINGLE_PROCESSOR()
-#else
-#  define BX_TICK1_IF_SINGLE_PROCESSOR() BX_TICK1()
-#endif
-
 // Make code more tidy with a few macros.
 #if BX_SUPPORT_X86_64==0
 #define RIP EIP
@@ -173,7 +167,7 @@ BX_CPP_INLINE bxInstruction_c* BX_CPU_C::fetchInstruction(bxInstruction_c *iStor
     ret = fetchDecode64(fetchPtr, i, maxFetch);
   else
 #endif
-    ret = fetchDecode(fetchPtr, i, maxFetch);
+    ret = fetchDecode32(fetchPtr, i, maxFetch);
 
   if (ret==0) {
     // return iStorage and leave icache entry invalid (do not cache instr)
@@ -268,12 +262,8 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
     // or the boundary fetch (across pages), by this point.
     BX_INSTR_FETCH_DECODE_COMPLETED(BX_CPU_ID, i);
 
-#if BX_DEBUGGER
-    if(dbg_check_begin_instr_bpoint()) return;
-#endif
-
-#if BX_EXTERNAL_DEBUGGER
-    bx_external_debugger(BX_CPU_THIS);
+#if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
+      if (dbg_instruction_prolog()) return;
 #endif
 
 #if BX_DISASM
@@ -290,109 +280,18 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
     // decoding instruction compeleted -> continue with execution
     BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
     RIP += i->ilen();
-
-    if ( !(i->repUsedL() && i->repeatableL()) ) {
-      // non repeating instruction
-      BX_CPU_CALL_METHOD(execute, (i));
-    }
-    else {
-
-repeat_loop:
-
-      if (i->repeatableZFL()) {
-#if BX_SUPPORT_X86_64
-        if (i->as64L()) {
-          if (RCX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-            RCX --;
-          }
-          if ((i->repUsedValue()==3) && (get_ZF()==0)) goto debugger_check;
-          if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto debugger_check;
-          if (RCX == 0) goto debugger_check;
-        }
-        else
-#endif
-        if (i->as32L()) {
-          if (ECX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-            ECX --;
-          }
-          if ((i->repUsedValue()==3) && (get_ZF()==0)) goto debugger_check;
-          if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto debugger_check;
-          if (ECX == 0) goto debugger_check;
-        }
-        else {
-          if (CX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-            CX --;
-          }
-          if ((i->repUsedValue()==3) && (get_ZF()==0)) goto debugger_check;
-          if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto debugger_check;
-          if (CX == 0) goto debugger_check;
-        }
-      }
-      else { // normal repeat, no concern for ZF
-#if BX_SUPPORT_X86_64
-        if (i->as64L()) {
-          if (RCX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-            RCX --;
-          }
-          if (RCX == 0) goto debugger_check;
-        }
-        else
-#endif
-        if (i->as32L()) {
-          if (ECX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-            ECX --;
-          }
-          if (ECX == 0) goto debugger_check;
-        }
-        else { // 16bit addrsize
-          if (CX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-            CX --;
-          }
-          if (CX == 0) goto debugger_check;
-        }
-      }
-
-      BX_TICK1_IF_SINGLE_PROCESSOR();
-#if BX_DEBUGGER == 0
-      // when debugger is not enabled, directly jump to next iteration
-      if (! BX_CPU_THIS_PTR async_event) goto repeat_loop;
-#endif
-//    invalidate_prefetch_q(); // why do we need invalidate_prefetch_q ?
-      RIP = BX_CPU_THIS_PTR prev_eip; // repeat loop not done, restore RIP
-      goto debugger_check;
-    }
-
-debugger_check:
-    BX_CPU_THIS_PTR prev_eip = RIP; // commit new EIP
-    BX_CPU_THIS_PTR prev_esp = RSP; // commit new ESP
+    BX_CPU_CALL_METHOD(execute, (i)); // might iterate repeat instruction
+    BX_CPU_THIS_PTR prev_eip = RIP; // commit new RIP
+    BX_CPU_THIS_PTR prev_esp = RSP; // commit new RSP
     BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
     BX_TICK1_IF_SINGLE_PROCESSOR();
 
     // inform instrumentation about new instruction
     BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
 
-#if BX_DEBUGGER
-    // note instr generating exceptions never reach this point.
-    if (dbg_check_end_instr_bpoint()) return;
-#endif
-
-#if BX_GDBSTUB
-    if (bx_dbg.gdbstub_enabled) {
-      unsigned reason = bx_gdbstub_check(EIP);
-      if (reason != GDBSTUB_STOP_NO_REASON) return;
-    }
+      // note instr generating exceptions never reach this point
+#if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
+      if (dbg_instruction_epilog()) return;
 #endif
 
 #if BX_SUPPORT_SMP || BX_DEBUGGER
@@ -404,6 +303,110 @@ debugger_check:
 #endif
 
   }  // while (1)
+}
+
+void BX_CPU_C::repeat(bxInstruction_c *i, BxExecutePtr_t execute)
+{
+  // non repeated instruction
+  if (! i->repUsedL()) {
+    BX_CPU_CALL_METHOD(execute, (i));
+    return;
+  }
+
+  while(1) {
+
+#if BX_SUPPORT_X86_64
+    if (i->as64L()) {
+      if (RCX != 0) {
+        BX_CPU_CALL_METHOD(execute, (i));
+        BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+        RCX --;
+      }
+      if (RCX == 0) return;
+    }
+    else
+#endif
+    if (i->as32L()) {
+      if (ECX != 0) {
+        BX_CPU_CALL_METHOD(execute, (i));
+        BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+        ECX --;
+      }
+      if (ECX == 0) return;
+    }
+    else { // 16bit addrsize
+      if (CX != 0) {
+        BX_CPU_CALL_METHOD(execute, (i));
+        BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+        CX --;
+      }
+      if (CX == 0) return;
+    }
+
+    BX_TICK1_IF_SINGLE_PROCESSOR();
+
+#if BX_DEBUGGER == 0
+    if (BX_CPU_THIS_PTR async_event)
+#endif
+      break; // exit always if debugger enabled
+  }
+
+  RIP = BX_CPU_THIS_PTR prev_eip; // repeat loop not done, restore RIP
+}
+
+void BX_CPU_C::repeat_ZFL(bxInstruction_c *i, BxExecutePtr_t execute)
+{
+  // non repeated instruction
+  if (! i->repUsedL()) {
+    BX_CPU_CALL_METHOD(execute, (i));
+    return;
+  }
+
+  while(1) {
+
+#if BX_SUPPORT_X86_64
+    if (i->as64L()) {
+      if (RCX != 0) {
+        BX_CPU_CALL_METHOD(execute, (i));
+        BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+        RCX --;
+      }
+      if ((i->repUsedValue()==3) && (get_ZF()==0)) return;
+      if ((i->repUsedValue()==2) && (get_ZF()!=0)) return;
+      if (RCX == 0) return;
+    }
+    else
+#endif
+    if (i->as32L()) {
+      if (ECX != 0) {
+        BX_CPU_CALL_METHOD(execute, (i));
+        BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+        ECX --;
+      }
+      if ((i->repUsedValue()==3) && (get_ZF()==0)) return;
+      if ((i->repUsedValue()==2) && (get_ZF()!=0)) return;
+      if (ECX == 0) return;
+    }
+    else {
+      if (CX != 0) {
+        BX_CPU_CALL_METHOD(execute, (i));
+        BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+        CX --;
+      }
+      if ((i->repUsedValue()==3) && (get_ZF()==0)) return;
+      if ((i->repUsedValue()==2) && (get_ZF()!=0)) return;
+      if (CX == 0) return;
+    }
+
+    BX_TICK1_IF_SINGLE_PROCESSOR();
+
+#if BX_DEBUGGER == 0
+    if (BX_CPU_THIS_PTR async_event)
+#endif
+      break; // exit always if debugger enabled
+  }
+
+  RIP = BX_CPU_THIS_PTR prev_eip; // repeat loop not done, restore RIP
 }
 
 unsigned BX_CPU_C::handleAsyncEvent(void)
@@ -663,14 +666,12 @@ void BX_CPU_C::prefetch(void)
     }
   }
 
-#if BX_SUPPORT_PAGING
-  if (BX_CPU_THIS_PTR cr0.pg) {
+  if (BX_CPU_THIS_PTR cr0.get_PG()) {
     // aligned block guaranteed to be all in one page, same A20 address
     pAddr = itranslate_linear(laddr, CPL==3);
     pAddr = A20ADDR(pAddr);
   }
   else
-#endif // BX_SUPPORT_PAGING
   {
     pAddr = A20ADDR(laddr);
   }
@@ -745,7 +746,7 @@ void BX_CPU_C::boundaryFetch(Bit8u *fetchPtr, unsigned remainingInPage, bxInstru
   else
 #endif
   {
-    ret = fetchDecode(fetchBuffer, i, 15);
+    ret = fetchDecode32(fetchBuffer, i, 15);
   }
 
   if (ret==0) {
@@ -787,6 +788,37 @@ void BX_CPU_C::ask(int level, const char *prefix, const char *fmt, va_list ap)
   trap_debugger(1);
 }
 #endif
+
+#if BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
+bx_bool BX_CPU_C::dbg_instruction_prolog(void)
+{
+#if BX_DEBUGGER
+  if(dbg_check_begin_instr_bpoint()) return 1;
+#endif
+
+#if BX_EXTERNAL_DEBUGGER
+  bx_external_debugger(BX_CPU_THIS);
+#endif
+
+  return 0;
+}
+
+bx_bool BX_CPU_C::dbg_instruction_epilog(void)
+{
+#if BX_DEBUGGER
+  if (dbg_check_end_instr_bpoint()) return 1;
+#endif
+
+#if BX_GDBSTUB
+  if (bx_dbg.gdbstub_enabled) {
+    unsigned reason = bx_gdbstub_check(EIP);
+    if (reason != GDBSTUB_STOP_NO_REASON) return 1;
+  }
+#endif
+
+  return 0;
+}
+#endif // BX_DEBUGGER || BX_EXTERNAL_DEBUGGER || BX_GDBSTUB
 
 #if BX_DEBUGGER
 extern unsigned dbg_show_mask;

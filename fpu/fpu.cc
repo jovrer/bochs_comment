@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fpu.cc,v 1.20 2006/03/06 22:03:04 sshwarts Exp $
+// $Id: fpu.cc,v 1.24 2007/09/11 13:11:03 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
-//          Written by Stanislav Shwartsman <stl at fidonet.org.il>
+//          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -37,7 +37,7 @@
 void BX_CPU_C::prepareFPU(bxInstruction_c *i, 
 	bx_bool check_pending_exceptions, bx_bool update_last_instruction)
 {
-  if (BX_CPU_THIS_PTR cr0.em || BX_CPU_THIS_PTR cr0.ts)
+  if (BX_CPU_THIS_PTR cr0.get_EM() || BX_CPU_THIS_PTR cr0.get_TS())
     exception(BX_NM_EXCEPTION, 0, 0);
 
   if (check_pending_exceptions)
@@ -63,20 +63,21 @@ void BX_CPU_C::FPU_check_pending_exceptions(void)
 {
   if(BX_CPU_THIS_PTR the_i387.get_partial_status() & FPU_SW_Summary)
   {
-    // NE=1 selects the native or internal mode, which generates #MF, 
-    // which is the same as the native version of exception handling 
-    // for the 80286 and 80287 and the i386 processors and i387 math 
-    // coprocessor.
+     // NE=1 selects the native or internal mode, which generates #MF,
+     // which is an extension introduced with 80486.
+     // NE=0 selects the original (backward compatible) FPU error
+     // handling, which generates an IRQ 13 via the PIC chip.
 #if BX_CPU_LEVEL >= 4
-    if (BX_CPU_THIS_PTR cr0.ne == 0)
-    {
-      // MSDOS compatibility external interrupt (IRQ13)
-      BX_INFO (("math_abort: MSDOS compatibility FPU exception"));
-      DEV_pic_raise_irq(13);
-    }
-    else
+     if (BX_CPU_THIS_PTR cr0.get_NE() != 0) {
+         exception(BX_MF_EXCEPTION, 0, 0);
+     }
+     else
 #endif
-      exception(BX_MF_EXCEPTION, 0, 0);
+     {
+        // MSDOS compatibility external interrupt (IRQ13)
+        BX_INFO (("math_abort: MSDOS compatibility FPU exception"));
+        DEV_pic_raise_irq(13);
+     }
   }
 }
 
@@ -505,8 +506,8 @@ void BX_CPU_C::print_state_FPU()
   reg = BX_CPU_THIS_PTR the_i387.get_control_word();
   fprintf(stderr, "control word: 0x%04x\n", reg);
   reg = BX_CPU_THIS_PTR the_i387.get_status_word();
-  fprintf(stderr, "status word:  0x%04x\n", reg);
-  fprintf(stderr, "        TOP:  %d\n", FPU_TOS&7);
+  fprintf(stderr, "status  word: 0x%04x\n", reg);
+  fprintf(stderr, "        TOS : %d\n", FPU_TOS&7);
   reg = BX_CPU_THIS_PTR the_i387.get_tag_word();
   fprintf(stderr, "tag word:     0x%04x\n", reg);
   reg = BX_CPU_THIS_PTR the_i387.foo;

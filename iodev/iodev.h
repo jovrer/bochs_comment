@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.75 2006/05/27 15:54:48 sshwarts Exp $
+// $Id: iodev.h,v 1.88 2007/08/04 08:57:42 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -58,7 +58,6 @@ class bx_g2h_c;
 #endif
 
 
-
 typedef Bit32u (*bx_read_handler_t)(void *, Bit32u, unsigned);
 typedef void   (*bx_write_handler_t)(void *, Bit32u, Bit32u, unsigned);
 
@@ -95,6 +94,8 @@ class BOCHSAPI bx_devmodel_c : public logfunctions {
 // declare stubs for PCI devices
 //////////////////////////////////////////////////////////////////////
 
+class bx_list_c;
+
 // the best should be deriving of bx_pci_device_stub_c from bx_devmodel_c
 // but it make serious problems for cirrus_svga device
 class BOCHSAPI bx_pci_device_stub_c {
@@ -106,6 +107,10 @@ public:
   }
 
   virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len) {}
+
+#if BX_SUPPORT_SAVE_RESTORE
+  void register_pci_state(bx_list_c *list, Bit8u *pci_conf);
+#endif
 };
 
 //////////////////////////////////////////////////////////////////////
@@ -134,9 +139,6 @@ public:
 
 class BOCHSAPI bx_hard_drive_stub_c : public bx_devmodel_c {
 public:
-  virtual void   close_harddrive(void) {
-    STUBFUNC(HD, close_harddrive);
-  }
   virtual void   init() {
     STUBFUNC(HD, init);
   }
@@ -198,9 +200,6 @@ public:
   }
   virtual void checksum_cmos(void) {
     STUBFUNC(cmos, checksum);
-  }
-  virtual void save_image(void) {
-    STUBFUNC(cmos, save_image);
   }
 };
 
@@ -352,8 +351,8 @@ public:
   virtual void usb_mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state) {
     STUBFUNC(pciusb, usb_mouse_enq);
   }
-  virtual void usb_mouse_enable(bx_bool enable) {
-    STUBFUNC(pciusb, usb_mouse_enable);
+  virtual void usb_mouse_enabled_changed(bx_bool enable) {
+    STUBFUNC(pciusb, usb_mouse_enabled_changed);
   }
   virtual bx_bool usb_key_enq(Bit8u *scan_code) {
     STUBFUNC(pciusb, usb_key_enq);
@@ -365,6 +364,13 @@ public:
   virtual bx_bool usb_mouse_connected() {
     return 0;
   }
+};
+#endif
+
+#if BX_SUPPORT_ACPI
+class BOCHSAPI bx_acpi_ctrl_stub_c : public bx_devmodel_c, public bx_pci_device_stub_c {
+public:
+  virtual void generate_smi(Bit8u value) {}
 };
 #endif
 
@@ -381,6 +387,8 @@ class BOCHSAPI bx_devices_c : public logfunctions {
 public:
   bx_devices_c(void);
  ~bx_devices_c(void);
+  // Initialize the device stubs (in constructur and exit())
+  void init_stubs(void);
   // Register I/O addresses and IRQ lines. Initialize any internal
   // structures.  init() is called only once, even if the simulator
   // reboots or is restarted.
@@ -389,33 +397,35 @@ public:
   // The types of reset conditions are defined in bochs.h:
   // power-on, hardware, or software.
   void reset(unsigned type);
+  // Cleanup the devices when the simulation quits.
+  void exit(void);
 #if BX_SUPPORT_SAVE_RESTORE
   void register_state(void);
   void after_restore_state(void);
 #endif
   BX_MEM_C *mem;  // address space associated with these devices
-  bx_bool register_io_read_handler(void *this_ptr, bx_read_handler_t f, 
-		  Bit32u addr, const char *name, Bit8u mask );
-  bx_bool unregister_io_read_handler( void *this_ptr, bx_read_handler_t f,
-                                        Bit32u addr, Bit8u mask );
-  bx_bool register_io_write_handler(void *this_ptr, bx_write_handler_t f, Bit32u addr, const char *name, Bit8u mask );
-  bx_bool unregister_io_write_handler( void *this_ptr, bx_write_handler_t f,
-                                        Bit32u addr, Bit8u mask );
-  bx_bool register_io_read_handler_range( void *this_ptr, bx_read_handler_t f,
-		  Bit32u begin_addr, Bit32u end_addr, 
-		  const char *name, Bit8u mask );
-  bx_bool register_io_write_handler_range( void *this_ptr, bx_write_handler_t f,
-		  Bit32u begin_addr, Bit32u end_addr, 
-		  const char *name, Bit8u mask );
-  bx_bool unregister_io_read_handler_range( void *this_ptr, bx_read_handler_t f,
-                                        Bit32u begin, Bit32u end, Bit8u mask );
-  bx_bool unregister_io_write_handler_range( void *this_ptr, bx_write_handler_t f,
-                                        Bit32u begin, Bit32u end, Bit8u mask );
-  bx_bool register_default_io_read_handler(void *this_ptr, bx_read_handler_t f, const char *name, Bit8u mask );
-  bx_bool register_default_io_write_handler(void *this_ptr, bx_write_handler_t f, const char *name, Bit8u mask );
+  bx_bool register_io_read_handler(void *this_ptr, bx_read_handler_t f,
+                                   Bit32u addr, const char *name, Bit8u mask);
+  bx_bool unregister_io_read_handler(void *this_ptr, bx_read_handler_t f,
+                                     Bit32u addr, Bit8u mask);
+  bx_bool register_io_write_handler(void *this_ptr, bx_write_handler_t f,
+                                    Bit32u addr, const char *name, Bit8u mask);
+  bx_bool unregister_io_write_handler(void *this_ptr, bx_write_handler_t f,
+                                      Bit32u addr, Bit8u mask );
+  bx_bool register_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
+                                         Bit32u begin_addr, Bit32u end_addr,
+                                         const char *name, Bit8u mask);
+  bx_bool register_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
+                                          Bit32u begin_addr, Bit32u end_addr,
+                                          const char *name, Bit8u mask );
+  bx_bool unregister_io_read_handler_range(void *this_ptr, bx_read_handler_t f,
+                                           Bit32u begin, Bit32u end, Bit8u mask);
+  bx_bool unregister_io_write_handler_range(void *this_ptr, bx_write_handler_t f,
+                                            Bit32u begin, Bit32u end, Bit8u mask);
+  bx_bool register_default_io_read_handler(void *this_ptr, bx_read_handler_t f, const char *name, Bit8u mask);
+  bx_bool register_default_io_write_handler(void *this_ptr, bx_write_handler_t f, const char *name, Bit8u mask);
   bx_bool register_irq(unsigned irq, const char *name);
   bx_bool unregister_irq(unsigned irq, const char *name);
-  void iodev_init(void);
   Bit32u inp(Bit16u addr, unsigned io_len) BX_CPP_AttrRegparmN(2);
   void   outp(Bit16u addr, Bit32u value, unsigned io_len) BX_CPP_AttrRegparmN(3);
 
@@ -429,6 +439,9 @@ public:
   bx_pci_bridge_stub_c *pluginPciBridge;
   bx_pci2isa_stub_c *pluginPci2IsaBridge;
   bx_pci_ide_stub_c *pluginPciIdeController;
+#if BX_SUPPORT_ACPI
+  bx_acpi_ctrl_stub_c *pluginACPIController;
+#endif
   bx_devmodel_c     *pluginPciVgaAdapter;
   bx_devmodel_c     *pluginPciDevAdapter;
   bx_devmodel_c     *pluginPciPNicAdapter;
@@ -439,7 +452,7 @@ public:
   bx_cmos_stub_c    *pluginCmosDevice;
   bx_serial_stub_c  *pluginSerialDevice;
 #if BX_SUPPORT_PCIUSB
-  bx_pci_usb_stub_c     *pluginPciUSBAdapter;
+  bx_pci_usb_stub_c *pluginPciUSBAdapter;
 #endif
   bx_devmodel_c     *pluginParallelDevice;
   bx_devmodel_c     *pluginUnmapped;
@@ -480,7 +493,10 @@ public:
   bx_speaker_stub_c stubSpeaker;
   bx_serial_stub_c  stubSerial;
 #if BX_SUPPORT_PCIUSB
-  bx_pci_usb_stub_c     stubUsbAdapter;
+  bx_pci_usb_stub_c stubUsbAdapter;
+#endif
+#if BX_SUPPORT_ACPI
+  bx_acpi_ctrl_stub_c stubACPIController;
 #endif
 
   // Some info to pass to devices which can handled bulk IO.  This allows
@@ -500,7 +516,7 @@ private:
 	struct io_handler_struct *prev;	
 	void *funct; // C++ type checking is great, but annoying
 	void *this_ptr;
-	const char *handler_name;  // name of device
+	char *handler_name;  // name of device
 	int usage_count;
 	Bit8u mask;          // io_len mask
   };
@@ -512,7 +528,7 @@ private:
   
   // more for informative purposes, the names of the devices which
   // are use each of the IRQ 0..15 lines are stored here
-  const char *irq_handler_name[BX_MAX_IRQS];
+  char *irq_handler_name[BX_MAX_IRQS];
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -539,6 +555,9 @@ private:
 #include "iodev/pci.h"
 #include "iodev/pci2isa.h"
 #include "iodev/pci_ide.h"
+#if BX_SUPPORT_ACPI
+#include "iodev/acpi.h"
+#endif
 #if BX_SUPPORT_PCIVGA
 #include "iodev/pcivga.h"
 #endif
@@ -567,7 +586,6 @@ private:
 #endif
 #include "iodev/parallel.h"
 #include "iodev/pic.h"
-#include "iodev/pit.h"
 #include "iodev/pit_wrap.h"
 #include "iodev/virt_timer.h"
 #include "iodev/serial.h"

@@ -15,23 +15,31 @@
   base  =  sib_byte & 0x07;        \
 }
 
-// will be used in future
-#define IA_286        0x00000001        /* 286+ instruction */
-#define IA_386        0x00000002        /* 386+ instruction */
-#define IA_486        0x00000004        /* 486+ instruction */
-#define IA_PENTIUM    0x00000008        /* Pentium+ instruction */
-#define IA_P6         0x00000010        /* P6 new instruction */
-#define IA_SYSTEM     0x00000020        /* system instruction (require CPL=0) */
-#define IA_LEGACY     0x00000040        /* legacy instruction */
-#define IA_X87        0x00000080        /* FPU (X87) instruction */
-#define IA_MMX        0x00000100        /* MMX instruction */
-#define IA_3DNOW      0x00000200        /* 3DNow! instruction */
-#define IA_PREFETCH   0x00000400        /* Prefetch instruction */
-#define IA_SSE        0x00000800        /* SSE  instruction */
-#define IA_SSE2       0x00001000        /* SSE2 instruction */
-#define IA_SSE3       0x00002000        /* SSE3 instruction */
-#define IA_SSE4       0x00004000        /* SSE4 instruction */
-#define IA_X86_64     0x00008000        /* x86-64 instruction */
+/* Instruction set attributes */
+#define IA_386              0x00000000        /* 386 instruction */
+#define IA_486              0x00000001        /* 486 new instruction */
+#define IA_PENTIUM          0x00000002        /* Pentium+ mew instruction */
+#define IA_P6               0x00000004        /* P6 new instruction */
+#define IA_LEGACY           0x00000008        /* legacy instruction */
+#define IA_X87              0x00000010        /* FPU (X87) instruction */
+#define IA_MMX              0x00000020        /* MMX instruction */
+#define IA_3DNOW            0x00000040        /* 3DNow! instruction */
+#define IA_3DNOW_EXT        0x00000080        /* 3DNow! extensions */
+#define IA_MONITOR_MWAIT    0x00000100        /* MONITOR/MWAIT instruction */
+#define IA_CLFLUSH          0x00000200        /* CLFLUSH instruction */
+#define IA_SSE              0x00000400        /* SSE  instruction */
+#define IA_SSE2             0x00000800        /* SSE2 instruction */
+#define IA_SSE3             0x00001000        /* SSE3 instruction */
+#define IA_SSE3E            0x00002000        /* SSE3E instruction */
+#define IA_SSE4_1           0x00004000        /* SSE4_1 instruction */
+#define IA_SSE4_2           0x00008000        /* SSE4_2 instruction */
+#define IA_SSE4A            0x00010000        /* SSE4A instruction */
+#define IA_SSE5             0x00020000        /* SSE5 instruction */
+#define IA_X86_64           0x00040000        /* x86-64 instruction */
+#define IA_SYSCALL_SYSRET   0x00080000        /* SYSCALL/SYSRET instruction */
+#define IA_SYSENTER_SYSEXIT 0x00100000        /* SYSENTER/SYSEXIT instruction */
+#define IA_VMX              0x00200000        /* VMX instruction */
+#define IA_UNDOCUMENTED     0x80000000        /* instruction undocumented */
 
 /* general purpose bit register */
 enum {
@@ -70,6 +78,7 @@ struct BxDisasmOpcodeInfo_t
     BxDisasmPtr_t Operand1;
     BxDisasmPtr_t Operand2;
     BxDisasmPtr_t Operand3;
+    Bit32u Attr;
 };
 
 struct BxDisasmOpcodeTable_t
@@ -273,7 +282,8 @@ private:
   void print_memory_access16(int datasize,
           const char *seg, const char *index, Bit16u disp);
   void print_memory_access  (int datasize,
-          const char *seg, const char *base, const char *index, int scale, Bit32u disp);
+          const char *seg, const char *base, const char *index, int scale,
+          Bit32s disp, bx_bool disp64 = 0);
 
   void print_disassembly_intel(const x86_insn *insn, const BxDisasmOpcodeInfo_t *entry);
   void print_disassembly_att  (const x86_insn *insn, const BxDisasmOpcodeInfo_t *entry);
@@ -290,11 +300,14 @@ public:
  * D  - The reg field of the ModR/M byte selects a debug register.
  * E  - A ModR/M byte follows the opcode and specifies the operand. The 
  *      operand is either a general-purpose register or a memory address. 
- *      If it is a memory address, the address is computed from a segment 
- *      register and any of the following values: a base register, an
- *      index register, a scaling factor, a displacement.
+ *      In case of the register operand, the R/M field of the ModR/M byte
+ *      selects a general register.
  * F  - Flags Register.
  * G  - The reg field of the ModR/M byte selects a general register.
+ * H  - A ModR/M byte follows the opcode and specifies the operand. The 
+ *      operand is either a general-purpose register or a memory address. 
+ *      In case of the register operand, the reg field of the ModR/M byte 
+ *      selects a general register.
  * I  - Immediate data. The operand value is encoded in subsequent bytes of 
  *      the instruction.
  * J  - The instruction contains a relative offset to be added to the 
@@ -315,8 +328,8 @@ public:
  *      index register, a scaling factor, and a displacement.
  * R  - The mod field of the ModR/M byte may refer only to a general register.
  * S  - The reg field of the ModR/M byte selects a segment register.
- * U  - The R/M field of the ModR/M byte selects a 128-bit XMM register.
  * T  - The reg field of the ModR/M byte selects a test register.
+ * U  - The R/M field of the ModR/M byte selects a 128-bit XMM register.
  * V  - The reg field of the ModR/M byte selects a 128-bit XMM register.
  * W  - A ModR/M byte follows the opcode and specifies the operand. The 
  *      operand is either a 128-bit XMM register or a memory address. If 
@@ -413,6 +426,11 @@ public:
   void Gd(const x86_insn *insn);
   void Gq(const x86_insn *insn);
 
+  void Hbd(const x86_insn *insn);
+  void Hwd(const x86_insn *insn);
+  void  Hd(const x86_insn *insn);
+  void  Hq(const x86_insn *insn);
+
   // immediate
   void I1(const x86_insn *insn);
   void Ib(const x86_insn *insn);
@@ -456,7 +474,10 @@ public:
   void Vpd(const x86_insn *insn);
 
   // xmm register or memory operand
+  void Ww(const x86_insn *insn);
+  void Wd(const x86_insn *insn);
   void Wq(const x86_insn *insn);
+
   void Wdq(const x86_insn *insn);
   void Wss(const x86_insn *insn);
   void Wsd(const x86_insn *insn);
@@ -484,6 +505,8 @@ public:
   void Mdq(const x86_insn *insn);
   void Mps(const x86_insn *insn);
   void Mpd(const x86_insn *insn);
+  void Mss(const x86_insn *insn);
+  void Msd(const x86_insn *insn);
 
   // string instructions
   void OP_X(const x86_insn *insn, unsigned size);
