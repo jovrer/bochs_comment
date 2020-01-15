@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_hid.cc,v 1.20 2009/04/17 12:20:17 vruppert Exp $
+// $Id: usb_hid.cc,v 1.22 2011/02/12 14:00:34 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  Volker Ruppert
+//  Copyright (C) 2009-2011  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -28,7 +28,6 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
 #if BX_SUPPORT_PCI && BX_SUPPORT_PCIUSB
@@ -390,7 +389,8 @@ struct KEYPAD keypad_lookup[KEYPAD_LEN] = {
 usb_hid_device_c::usb_hid_device_c(usbdev_type type)
 {
   d.type = type;
-  d.speed = USB_SPEED_LOW;
+  d.maxspeed = USB_SPEED_LOW;
+  d.speed = d.maxspeed;
   if (d.type == USB_DEV_TYPE_MOUSE) {
     strcpy(d.devname, "USB Mouse");
     DEV_register_removable_mouse((void*)this, mouse_enq_static, mouse_enabled_changed);

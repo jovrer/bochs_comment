@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmx.h,v 1.30 2010/04/24 09:36:04 sshwarts Exp $
+// $Id: vmx.h,v 1.33 2010/12/06 21:45:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2009 Stanislav Shwartsman
+//   Copyright (c) 2009-2010 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -366,6 +366,8 @@ enum VMX_vmabort_code {
 #define VMCS_HOST_RSP                                      0x00006C14
 #define VMCS_HOST_RIP                                      0x00006C16
 
+#define VMX_HIGHEST_VMCS_ENCODING   (0x2C)
+
 // ===============================
 //  VMCS fields encoding/decoding
 // ===============================
@@ -403,10 +405,10 @@ enum VMX_vmabort_code {
 #define VMCS_VMX_ABORT_FIELD_ADDR                (0x0004)
 #define VMCS_LAUNCH_STATE_FIELD_ADDR             (0x0008)
 
-// invent Bochs CPU VMCS layout - allocate 32 fields of each type
+// invent Bochs CPU VMCS layout - allocate 64 fields of each type
 #define VMCS_DATA_OFFSET                         (0x0010)
 
-#if ((VMCS_DATA_OFFSET + 32*16*4) > VMX_VMCS_AREA_SIZE)
+#if ((VMCS_DATA_OFFSET + 4*(64*15 + VMX_HIGHEST_VMCS_ENCODING)) > VMX_VMCS_AREA_SIZE)
   #error "VMCS area size exceeded !"
 #endif
 
@@ -960,8 +962,8 @@ enum VMX_Activity_State {
    ((((Bit64u) VMX_MSR_CR4_FIXED0_HI) << 32) | VMX_MSR_CR4_FIXED0_LO)
 
 // allowed 1-setting in CR0 in VMX mode
-#define VMX_MSR_CR4_FIXED1_LO GET32L(get_cr4_allow_mask(BX_CPU_THIS_PTR isa_extensions_bitmask))
-#define VMX_MSR_CR4_FIXED1_HI GET32H(get_cr4_allow_mask(BX_CPU_THIS_PTR isa_extensions_bitmask))
+#define VMX_MSR_CR4_FIXED1_LO GET32L(get_cr4_allow_mask())
+#define VMX_MSR_CR4_FIXED1_HI GET32H(get_cr4_allow_mask())
 
 #define VMX_MSR_CR4_FIXED1 \
    ((((Bit64u) VMX_MSR_CR4_FIXED1_HI) << 32) | VMX_MSR_CR4_FIXED1_LO)
@@ -975,8 +977,6 @@ enum VMX_Activity_State {
 // 09:01 highest index value used for any VMCS encoding
 // 63:10 reserved, must be zero
 //
-
-#define VMX_HIGHEST_VMCS_ENCODING 0x2C
 
 #define VMX_MSR_VMCS_ENUM_LO (VMX_HIGHEST_VMCS_ENCODING)
 #define VMX_MSR_VMCS_ENUM_HI (0x00000000)

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.114 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: gui.cc,v 1.119 2011/01/24 20:35:50 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -20,10 +20,9 @@
 
 
 #include <signal.h>
-#include "param_names.h"
-#include "bochs.h"
-#include "keymap.h"
 #include "iodev.h"
+#include "vga.h"
+#include "keymap.h"
 #include "gui/bitmaps/floppya.h"
 #include "gui/bitmaps/floppyb.h"
 #include "gui/bitmaps/mouse.h"
@@ -117,6 +116,23 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
   BX_GUI_THIS host_bpp = 8;
   BX_GUI_THIS dialog_caps = BX_GUI_DLG_RUNTIME | BX_GUI_DLG_SAVE_RESTORE;
 
+  BX_GUI_THIS toggle_method = SIM->get_param_enum(BXPN_MOUSE_TOGGLE)->get();
+  BX_GUI_THIS toggle_keystate = 0;
+  switch (toggle_method) {
+    case BX_MOUSE_TOGGLE_CTRL_MB:
+      strcpy(mouse_toggle_text, "CTRL + 3rd button");
+      break;
+    case BX_MOUSE_TOGGLE_CTRL_F10:
+      strcpy(mouse_toggle_text, "CTRL + F10");
+      break;
+    case BX_MOUSE_TOGGLE_CTRL_ALT:
+      strcpy(mouse_toggle_text, "CTRL + ALT");
+      break;
+    case BX_MOUSE_TOGGLE_F12:
+      strcpy(mouse_toggle_text, "F12");
+      break;
+  }
+
   specific_init(argc, argv, tilewidth, tileheight, BX_HEADER_BAR_Y);
 
   // Define some bitmaps to use in the headerbar
@@ -151,7 +167,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
   // when that bitmap is clicked on
 
   // Floppy A:
-  BX_GUI_THIS floppyA_status = DEV_floppy_get_media_status(0);
+  BX_GUI_THIS floppyA_status = SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get();
   if (BX_GUI_THIS floppyA_status)
     BX_GUI_THIS floppyA_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyA_bmap_id,
                           BX_GRAVITY_LEFT, floppyA_handler);
@@ -161,7 +177,7 @@ void bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheig
   BX_GUI_THIS set_tooltip(BX_GUI_THIS floppyA_hbar_id, "Change floppy A: media");
 
   // Floppy B:
-  BX_GUI_THIS floppyB_status = DEV_floppy_get_media_status(1);
+  BX_GUI_THIS floppyB_status = SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get();
   if (BX_GUI_THIS floppyB_status)
     BX_GUI_THIS floppyB_hbar_id = headerbar_bitmap(BX_GUI_THIS floppyB_bmap_id,
                           BX_GRAVITY_LEFT, floppyB_handler);
@@ -241,10 +257,8 @@ void bx_gui_c::cleanup(void)
 
 void bx_gui_c::update_drive_status_buttons(void)
 {
-  BX_GUI_THIS floppyA_status = DEV_floppy_get_media_status(0)
-    && (SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get());
-  BX_GUI_THIS floppyB_status = DEV_floppy_get_media_status(1)
-    && (SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get());
+  BX_GUI_THIS floppyA_status = SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get();
+  BX_GUI_THIS floppyB_status = SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get();
   Bit32u handle = DEV_hd_get_first_cd_handle();
   BX_GUI_THIS cdromD_status = DEV_hd_get_cd_media_status(handle);
   if (BX_GUI_THIS floppyA_status)
@@ -510,6 +524,44 @@ void bx_gui_c::toggle_mouse_enable(void)
   int old = SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get();
   BX_DEBUG (("toggle mouse_enabled, now %d", !old));
   SIM->get_param_bool(BXPN_MOUSE_ENABLED)->set(!old);
+}
+
+bx_bool bx_gui_c::mouse_toggle_check(Bit32u key, bx_bool pressed)
+{
+  Bit32u newstate;
+  bx_bool toggle = 0;
+
+  newstate = toggle_keystate;
+  if (pressed) {
+    newstate |= key;
+    if (newstate == toggle_keystate) return 0;
+    switch (toggle_method) {
+      case BX_MOUSE_TOGGLE_CTRL_MB:
+        toggle = (newstate & BX_GUI_MT_CTRL_MB) == BX_GUI_MT_CTRL_MB;
+        if (!toggle) {
+          toggle = (newstate & BX_GUI_MT_CTRL_LRB) == BX_GUI_MT_CTRL_LRB;
+        }
+        break;
+      case BX_MOUSE_TOGGLE_CTRL_F10:
+        toggle = (newstate & BX_GUI_MT_CTRL_F10) == BX_GUI_MT_CTRL_F10;
+        break;
+      case BX_MOUSE_TOGGLE_CTRL_ALT:
+        toggle = (newstate & BX_GUI_MT_CTRL_ALT) == BX_GUI_MT_CTRL_ALT;
+        break;
+      case BX_MOUSE_TOGGLE_F12:
+        toggle = (newstate == BX_GUI_MT_F12);
+        break;
+    }
+    toggle_keystate = newstate;
+  } else {
+    toggle_keystate &= ~key;
+  }
+  return toggle;
+}
+
+const char* bx_gui_c::get_toggle_info(void)
+{
+  return mouse_toggle_text;
 }
 
 Bit32u get_user_key(char *key)

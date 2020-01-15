@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.253 2010/04/13 17:56:50 sshwarts Exp $
+// $Id: bochs.h,v 1.256 2010/09/20 20:43:16 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2010  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -328,23 +328,9 @@ public:
   void add_logfn(logfunc_t *fn);
   void remove_logfn(logfunc_t *fn);
   void set_log_action(int loglevel, int action);
-  const char *getlevel(int i) {
-    static const char *loglevel[N_LOGLEV] = {
-      "DEBUG",
-      "INFO",
-      "ERROR",
-      "PANIC",
-      "PASS"
-    };
-    if (i>=0 && i<N_LOGLEV) return loglevel[i];
-    else return "?";
-  }
-  char *getaction(int i) {
-    static const char *name[] = { "ignore", "report", "ask", "fatal" };
-    assert (i>=ACT_IGNORE && i<N_ACT);
-    return (char *) name[i];
-  }
-
+  const char *getlevel(int i);
+  char *getaction(int i);
+  
 protected:
   int n_logfn;
 #define MAX_LOGFNS 512
@@ -444,6 +430,9 @@ typedef struct {
 void CDECL bx_signal_handler(int signum);
 int bx_atexit(void);
 BOCHSAPI extern bx_debug_t bx_dbg;
+
+// determinted by XAPIC option
+BOCHSAPI extern Bit32u apic_id_mask;
 
 // memory access type (read/write/execute/rw)
 #define BX_READ         0
@@ -609,5 +598,27 @@ void bx_center_print(FILE *file, const char *line, unsigned maxwidth);
 }
 
 #endif
+
+BX_CPP_INLINE Bit32u bx_bswap32(Bit32u val32)
+{
+  Bit32u b0 = val32 & 0xff; val32 >>= 8;
+  Bit32u b1 = val32 & 0xff; val32 >>= 8;
+  Bit32u b2 = val32 & 0xff; val32 >>= 8;
+  Bit32u b3 = val32;
+  return (b0<<24) | (b1<<16) | (b2<<8) | b3;
+}
+
+BX_CPP_INLINE Bit64u bx_bswap64(Bit64u val64)
+{
+  Bit64u b0 = val64 & 0xff; val64 >>= 8;
+  Bit64u b1 = val64 & 0xff; val64 >>= 8;
+  Bit64u b2 = val64 & 0xff; val64 >>= 8;
+  Bit64u b3 = val64 & 0xff; val64 >>= 8;
+  Bit64u b4 = val64 & 0xff; val64 >>= 8;
+  Bit64u b5 = val64 & 0xff; val64 >>= 8;
+  Bit64u b6 = val64 & 0xff; val64 >>= 8;
+  Bit64u b7 = val64;
+  return (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
+}
 
 #endif  /* BX_BOCHS_H */

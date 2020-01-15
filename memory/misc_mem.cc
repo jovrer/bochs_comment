@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: misc_mem.cc,v 1.144 2010/03/16 14:51:20 sshwarts Exp $
+// $Id: misc_mem.cc,v 1.152 2011/02/11 15:33:08 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -41,6 +41,8 @@ BX_MEM_C::BX_MEM_C()
   blocks = NULL;
   len    = 0;
   used_blocks = 0;
+  for (int i = 0; i < 65; i++)
+    rom_present[i] = 0;
 
   memory_handlers = NULL;
 }
@@ -73,7 +75,7 @@ void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
 {
   unsigned idx;
 
-  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.144 2010/03/16 14:51:20 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: misc_mem.cc,v 1.152 2011/02/11 15:33:08 vruppert Exp $"));
 
   // accept only memory size which is multiply of 1M
   BX_ASSERT((host & 0xfffff) == 0);
@@ -95,13 +97,11 @@ void BX_MEM_C::init_memory(Bit64u guest, Bit64u host)
   BX_MEM_THIS rom = &BX_MEM_THIS vector[host];
   BX_MEM_THIS bogus = &BX_MEM_THIS vector[host + BIOSROMSZ + EXROMSIZE];
   memset(BX_MEM_THIS rom, 0xff, BIOSROMSZ + EXROMSIZE + 4096);
-  for (idx = 0; idx < 65; idx++)
-    BX_MEM_THIS rom_present[idx] = 0;
 
   // block must be large enough to fit num_blocks in 32-bit
   BX_ASSERT((BX_MEM_THIS len / BX_MEM_BLOCK_LEN) <= 0xffffffff);
 
-  Bit32u num_blocks = BX_MEM_THIS len / BX_MEM_BLOCK_LEN;
+  Bit32u num_blocks = (Bit32u)(BX_MEM_THIS len / BX_MEM_BLOCK_LEN);
   BX_INFO(("%.2fMB", (float)(BX_MEM_THIS len / (1024.0*1024.0))));
   BX_INFO(("mem block size = 0x%08x, blocks=%u", BX_MEM_BLOCK_LEN, num_blocks));
   BX_MEM_THIS blocks = new Bit8u* [num_blocks];
@@ -320,7 +320,7 @@ void BX_MEM_C::load_ROM(const char *path, bx_phy_address romaddress, Bit8u type)
     }
     if (romaddress < 0xe0000) {
       offset = (romaddress & EXROM_MASK) + BIOSROMSZ;
-      start_idx = ((romaddress - 0xc0000) >> 11);
+      start_idx = (((Bit32u)romaddress - 0xc0000) >> 11);
       end_idx = start_idx + (size >> 11) + (((size % 2048) > 0) ? 1 : 0);
     } else {
       offset = romaddress & BIOS_MASK;
@@ -371,7 +371,7 @@ void BX_MEM_C::load_RAM(const char *path, bx_phy_address ramaddress, Bit8u type)
 {
   struct stat stat_buf;
   int fd, ret;
-  unsigned long size, offset;
+  Bit32u size, offset;
 
   if (*path == '\0') {
     BX_PANIC(("RAM: Optional RAM image undefined"));
@@ -427,10 +427,11 @@ bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
 #if BX_SUPPORT_PCI
     else if (BX_MEM_THIS pci_enabled && (addr >= 0x000c0000 && addr < 0x00100000))
     {
-      switch (DEV_pci_rd_memtype (addr)) {
+      switch (DEV_pci_rd_memtype ((Bit32u) addr)) {
         case 0x0:  // Read from ROM
           if ((addr & 0xfffe0000) == 0x000e0000) {
-            *buf = BX_MEM_THIS rom[addr & BIOS_MASK];
+            // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+            *buf = BX_MEM_THIS rom[BIOS_MAP_LAST128K(addr)];
           }
           else {
             *buf = BX_MEM_THIS rom[(addr & EXROM_MASK) + BIOSROMSZ];
@@ -451,7 +452,8 @@ bx_bool BX_MEM_C::dbg_fetch_mem(BX_CPU_C *cpu, bx_phy_address addr, unsigned len
       }
       // must be in C0000 - FFFFF range
       else if ((addr & 0xfffe0000) == 0x000e0000) {
-        *buf = BX_MEM_THIS rom[addr & BIOS_MASK];
+        // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+        *buf = BX_MEM_THIS rom[BIOS_MAP_LAST128K(addr)];
       }
       else {
         *buf = BX_MEM_THIS rom[(addr & EXROM_MASK) + BIOSROMSZ];
@@ -606,10 +608,11 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw)
 #if BX_SUPPORT_PCI
     else if (BX_MEM_THIS pci_enabled && (a20addr >= 0x000c0000 && a20addr < 0x00100000))
     {
-      switch (DEV_pci_rd_memtype (a20addr)) {
+      switch (DEV_pci_rd_memtype ((Bit32u) a20addr)) {
         case 0x0:   // Read from ROM
           if ((a20addr & 0xfffe0000) == 0x000e0000) {
-            return (Bit8u *) &BX_MEM_THIS rom[a20addr & BIOS_MASK];
+            // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+            return (Bit8u *) &BX_MEM_THIS rom[BIOS_MAP_LAST128K(a20addr)];
           }
           else {
             return (Bit8u *) &BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
@@ -630,7 +633,8 @@ Bit8u *BX_MEM_C::getHostMemAddr(BX_CPU_C *cpu, bx_phy_address addr, unsigned rw)
       }
       // must be in C0000 - FFFFF range
       else if ((a20addr & 0xfffe0000) == 0x000e0000) {
-        return (Bit8u *) &BX_MEM_THIS rom[a20addr & BIOS_MASK];
+        // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+        return (Bit8u *) &BX_MEM_THIS rom[BIOS_MAP_LAST128K(a20addr)];
       }
       else {
         return((Bit8u *) &BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ]);
@@ -692,7 +696,7 @@ BX_MEM_C::registerMemoryHandlers(void *param, memory_handler_t read_handler,
   if (!read_handler || !write_handler)
     return 0;
   BX_INFO(("Register memory access handlers: 0x" FMT_PHY_ADDRX " - 0x" FMT_PHY_ADDRX, begin_addr, end_addr));
-  for (unsigned page_idx = begin_addr >> 20; page_idx <= end_addr >> 20; page_idx++) {
+  for (unsigned page_idx = (Bit32u)(begin_addr >> 20); page_idx <= (Bit32u)(end_addr >> 20); page_idx++) {
     struct memory_handler_struct *memory_handler = new struct memory_handler_struct;
     memory_handler->next = BX_MEM_THIS memory_handlers[page_idx];
     BX_MEM_THIS memory_handlers[page_idx] = memory_handler;
@@ -711,7 +715,7 @@ BX_MEM_C::unregisterMemoryHandlers(memory_handler_t read_handler, memory_handler
 {
   bx_bool ret = 1;
   BX_INFO(("Memory access handlers unregistered: 0x" FMT_PHY_ADDRX " - 0x" FMT_PHY_ADDRX, begin_addr, end_addr));
-  for (unsigned page_idx = begin_addr >> 20; page_idx <= end_addr >> 20; page_idx++) {
+  for (unsigned page_idx = (Bit32u)(begin_addr >> 20); page_idx <= (Bit32u)(end_addr >> 20); page_idx++) {
     struct memory_handler_struct *memory_handler = BX_MEM_THIS memory_handlers[page_idx];
     struct memory_handler_struct *prev = NULL;
     while (memory_handler &&

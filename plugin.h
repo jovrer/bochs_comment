@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.81 2009/08/22 19:30:23 sshwarts Exp $
+// $Id: plugin.h,v 1.88 2011/02/14 21:14:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -49,17 +49,20 @@ extern "C" {
 #define BX_PLUGIN_KEYBOARD  "keyboard"
 #define BX_PLUGIN_BUSMOUSE  "busmouse"
 #define BX_PLUGIN_HARDDRV   "harddrv"
+#define BX_PLUGIN_HDIMAGE   "hdimage"
 #define BX_PLUGIN_DMA       "dma"
 #define BX_PLUGIN_PIC       "pic"
 #define BX_PLUGIN_PIT       "pit"
 #define BX_PLUGIN_PCI       "pci"
 #define BX_PLUGIN_PCI2ISA   "pci2isa"
 #define BX_PLUGIN_PCI_IDE   "pci_ide"
+#define BX_PLUGIN_SOUNDMOD  "soundmod"
 #define BX_PLUGIN_SB16      "sb16"
 #define BX_PLUGIN_NE2K      "ne2k"
 #define BX_PLUGIN_EXTFPUIRQ "extfpuirq"
 #define BX_PLUGIN_PCIVGA    "pcivga"
 #define BX_PLUGIN_PCIDEV    "pcidev"
+#define BX_PLUGIN_USB_COMMON "usb_common"
 #define BX_PLUGIN_USB_UHCI  "usb_uhci"
 #define BX_PLUGIN_USB_OHCI  "usb_ohci"
 #define BX_PLUGIN_PCIPNIC   "pcipnic"
@@ -169,15 +172,14 @@ extern "C" {
 #define DEV_hd_bmdma_read_sector(a,b,c) bx_devices.pluginHardDrive->bmdma_read_sector(a,b,c)
 #define DEV_hd_bmdma_write_sector(a,b) bx_devices.pluginHardDrive->bmdma_write_sector(a,b)
 #define DEV_hd_bmdma_complete(a) bx_devices.pluginHardDrive->bmdma_complete(a)
+#define DEV_hdimage_init_image(a,b,c) bx_devices.pluginHDImageCtl->init_image(a,b,c)
 
 #define DEV_bulk_io_quantum_requested() (bx_devices.bulkIOQuantumsRequested)
 #define DEV_bulk_io_quantum_transferred() (bx_devices.bulkIOQuantumsTransferred)
 #define DEV_bulk_io_host_addr() (bx_devices.bulkIOHostAddr)
 
-///////// FLOPPY macros
-#define DEV_floppy_get_media_status(drive) bx_devices.pluginFloppyDevice->get_media_status(drive)
+///////// FLOPPY macro
 #define DEV_floppy_set_media_status(drive, status)  bx_devices.pluginFloppyDevice->set_media_status(drive, status)
-#define DEV_floppy_present() (bx_devices.pluginFloppyDevice != &bx_devices.stubFloppy)
 
 ///////// DMA macros
 #define DEV_dma_register_8bit_channel(channel, dmaRead, dmaWrite, name) \
@@ -237,11 +239,18 @@ extern "C" {
 #define DEV_speaker_beep_on(frequency) bx_devices.pluginSpeaker->beep_on(frequency)
 #define DEV_speaker_beep_off() bx_devices.pluginSpeaker->beep_off()
 
-//////// Memory macros
+///////// Memory macros
 #define DEV_register_memory_handlers(param,rh,wh,b,e) \
     bx_devices.mem->registerMemoryHandlers(param,rh,wh,b,e)
 #define DEV_unregister_memory_handlers(rh,wh,b,e) \
     bx_devices.mem->unregisterMemoryHandlers(rh,wh,b,e)
+
+///////// USB device macros
+#define DEV_usb_init_device(a,b,c,d) (usbdev_type)bx_devices.pluginUsbDevCtl->init_device(a,b,(void**)c,d)
+#define DEV_usb_send_msg(a,b) bx_devices.pluginUsbDevCtl->usb_send_msg((void*)a,b)
+
+///////// Sound macro
+#define DEV_sound_init_module(a,b,c) bx_devices.pluginSoundModCtl->init_module(a,(void**)b,c)
 
 
 #if BX_HAVE_DLFCN_H
@@ -366,6 +375,7 @@ int plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[]);
   void lib##mod##_LTX_plugin_fini(void);
 
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(harddrv)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(hdimage)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(keyboard)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(busmouse)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(serial)
@@ -383,9 +393,11 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci2isa)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci_ide)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcivga)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcidev)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(usb_common)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(usb_uhci)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(usb_ohci)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcipnic)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(soundmod)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(sb16)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(ne2k)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(extfpuirq)

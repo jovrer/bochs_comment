@@ -1,3 +1,129 @@
+Changes in 2.4.6 (February 22, 2011):
+
+Brief summary :
+- Support more host OS to run on:
+  - Include win64 native binary in the release.
+  - Fixed failures on big endian hosts.
+- BIOS: Support for up to 2M ROM BIOS images.
+- GUI: select mouse capture toggle method in .bochsrc.
+- Ported most of Qemu's 'virtual VFAT' block driver
+  (except runtime write support, but plus FAT32 suppport)
+- Added write protect option for floppy drives.
+- Bugfixes / improved internal debugger + instrumentation.
+
+Detailed change log :
+
+- CPU and internal debugger
+  - Implemented Process Context ID (PCID) feature
+  - Implemented FS/GS BASE access instructions support
+    (according to document from http://software.intel.com/en-us/avx/)
+  - Rewritten from scratch SMC detection algorithm
+    - Implemented fine-grained SMC detection (on 128 byte granularity)
+  - Bugfixes for CPU emulation correctness and stability
+    - Fixed failures on Big Endian hosts !
+  - Print detailed page walk information and attributes in
+    internal debugger 'page' command
+  - Updated/Fixed instrumentation callbacks
+
+- Configure and compile
+  - Bochs now can be compiled as native Windows x86-64 application
+    (tested with Mingw gcc 4.5.1 and Microsoft Visual Studio Express 2010)
+  - Added ability to configure CPUID stepping through .bochsrc.
+    The default stepping value is 3.
+  - Added ability to disable MONITOR/MWAIT support through .bochsrc
+    CPUID option. The option is available only if compiled with
+    --enable-monitor-mwait configure option.
+  - Determine and select max physical address size automatically at
+    configure time:
+    - 32-bit physical address for 386/486 guests
+    - 36-bit physical address for PSE-36 enabled Pentium guest
+    - 40-bit physical address for PAE enabled P6 or later guests
+  - Update config.guess/config.sub scripts to May 2010 revisions.
+  - Update Visual Studio 2008 project files in build/win32/vs2008ex-workspace.zip
+  - Added Bochs compilation timestamp after Bochs version string.
+
+- GUI and display libraries (Volker)
+  - Added new .bochsrc option to select mouse capture toggle method.
+    In addition to the default Bochs method using the CTRL key and the
+    middle mouse button there are now the choices:
+    - CTRL+F10 (like DOSBox)
+    - CTRL+ALT (like QEMU)
+    - F12 (replaces win32 'legacyF12' option)
+  - display library 'x' now uses the desktop size for the maximum guest resolution
+
+- ROM BIOS
+  - Support for up to 2M ROM BIOS images
+
+- I/O Devices
+  - 3 new 'pseudo device' plugins created by plugin separation (see below)
+  - Fixes for emulated DHCP in eth_vnet (patch from @SF tracker)
+  - Added support for VGA graphics mode with 400 lines (partial fix for SF bug #2948724)
+  - NE2K: Fixed "send buffer" command issue on big endian hosts
+  - USB
+    - converted common USB code plus devices to the new 'usb_common' plugin
+      Now the USB device classes no longer exist twice if both HC plugins are loaded.
+    - added 'pseudo device' in common USB code for the device creation. This makes
+      the HCs independent from the device specific code.
+    - USB MSD: added support for disk image modes (like ATA disks)
+    - USB printer: output file creation failure now causes a disconnect
+    - re-implemented "options" parameter for additional options of connected
+      devices (currently only used to set the speed reported by device and to
+      specify an alternative redolog file of USB MSD disk image modes)
+  - hard drive
+    - new disk image mode 'vvfat'
+      - ported the read-only part of Qemu's 'virtual VFAT' block driver
+      - additions: configurable disk geometry, FAT32 support, read MBR and/or
+        boot sector from file, volatile write support using hdimage redolog_t
+        class, optional commit support on Bochs exit, save/restore file
+        attributes, 1.44 MB floppy support, set file modification date/time
+    - converted the complete hdimage stuff to the new 'hdimage' plugin
+    - new hdimage method get_capabilities() that can return special flags
+    - vmware3, vmware4 and vvfat classes now return HDIMAGE_HAS_GEOMETRY flag
+    - other disk image modes by default return HDIMAGE_AUTO_GEOMETRY if
+      cylinder value is set to 0
+    - multiple sector read/write support for some image modes
+    - new log prefix "IMG" for hdimage messages
+  - floppy
+    - added write protect option for floppy drives (based on @SF patch by Ben Lunt)
+    - vvfat support
+    - bugfix: close images on exit
+  - SB16
+    - converted the sound output module stuff to the new 'soundmod' plugin
+
+- SF patches applied
+ [3164945] hack to compile under WIN64 by Darek Mihocka and Stanislav
+ [3164073] Fine grain SMC invalidation by Stanislav
+ [1539417] write protect for floppy drives by Ben Lunt
+ [2862322] fixes for emulated DHCP in eth_vnet
+
+- these S.F. bugs were closed/fixed
+ [2588085] Mouse capture
+ [3140332] typo in mf3/ps2 mapping of BX_KEY_CTRL_R
+ [3111577] No "back" option in log settings
+ [3108422] Timing window in NE2K emulation
+ [3084390] Bochs won't load floppy plugin right on startup
+ [3043174] Docbook use of '_' build failure
+ [3085140] Ia_arpl_Ew_Rw definition of error
+ [3078995] ROL/ROR/SHL/SHR modeling wrong when dest reg is 32 bit
+ [2864794] BX_INSTR_OPCODE in "cpu_loop" causes crash in x86_64 host
+ [2884071] [AIX host] prefetch: EIP [00010000] > CS.limit [0000ffff]
+ [3053542] 64 bit mode: far-jmp instruction is error
+ [3011112] error compile vs2008/2010 with X2APIC
+ [3002017] compile error with vs 2010
+ [3009767] guest RFLAGS.IF blocks externel interrupt in VMX guest mode
+ [2964655] VMX not enabled in MSR IA32_FEATURE_CONTROL
+ [3005865] IDT show bug
+ [3001637] CMOS MAP register meaning error
+ [2994370] Cannot build with 3DNow support
+
+- these S.F. feature requests were closed/implemented
+ [1510142] Native Windows XP x64 Edition binary
+ [1062553] select mouse (de)activation in bochsrc
+ [2930633] legacy mouse capture key : not specific enough
+ [2930679] Let user change mouse capture control key
+ [2803538] Show flags for pages when using "info tab"
+
+-------------------------------------------------------------------------
 Changes in 2.4.5 (April 25, 2010):
 
 Brief summary :

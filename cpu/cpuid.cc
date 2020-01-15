@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpuid.cc,v 1.114 2010/04/24 09:36:04 sshwarts Exp $
+// $Id: cpuid.cc,v 1.127 2011/01/12 20:12:05 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2010 Stanislav Shwartsman
@@ -24,6 +24,7 @@
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
+#include "model_specific.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
 #include "param_names.h"
@@ -48,7 +49,9 @@
 
 Bit32u BX_CPU_C::get_cpu_version_information(void)
 {
-  Bit32u family = 0, model = 0, stepping = 0;
+  Bit32u stepping = SIM->get_param_num(BXPN_CPUID_STEPPING)->get();
+
+  Bit32u family = 0, model = 0;
   Bit32u extended_model = 0;
   Bit32u extended_family = 0;
 
@@ -63,10 +66,8 @@ Bit32u BX_CPU_C::get_cpu_version_information(void)
 
 #if BX_SUPPORT_FPU
   model = 1;            // 486dx
-  stepping = 3;
 #else
   model = 2;            // 486sx
-  stepping = 3;
 #endif
 
   /* **************** */
@@ -80,8 +81,6 @@ Bit32u BX_CPU_C::get_cpu_version_information(void)
     model = 4; // Pentium MMX
   else
     model = 1; // Pentium 60/66
-
-  stepping = 3;
 
   /* ****** */
   /*  i686  */
@@ -103,7 +102,6 @@ Bit32u BX_CPU_C::get_cpu_version_information(void)
 */
     model    = 0;
     family   = 0xf;
-    stepping = 0;
 
 #if BX_SUPPORT_X86_64
     model    = 2;       // Hammer returns what?
@@ -113,7 +111,6 @@ Bit32u BX_CPU_C::get_cpu_version_information(void)
   else {                // Pentium Pro/Pentium II/Pentium III processor
     family   = 6;
     model    = 8;
-    stepping = 3;
   }
 
 #else
@@ -146,7 +143,8 @@ Bit32u BX_CPU_C::get_extended_cpuid_features(void)
   // [12:12] FMA Instructions support
   // [13:13] CMPXCHG16B: CMPXCHG16B instruction support
   // [14:14] xTPR update control
-  // [16:15] reserved
+  // [15:15] PDCM - Perfon and Debug Capability MSR
+  // [16:16] reserved
   // [17:17] PCID: Process Context Identifiers
   // [18:18] DCA - Direct Cache Access
   // [19:19] SSE4.1 Instructions
@@ -154,62 +152,76 @@ Bit32u BX_CPU_C::get_extended_cpuid_features(void)
   // [21:21] X2APIC
   // [22:22] MOVBE instruction
   // [23:23] POPCNT instruction
-  // [24:24] reserved
+  // [24:24] TSC Deadline
   // [25:25] AES Instructions
   // [26:26] XSAVE extensions support
   // [27:27] OSXSAVE support
   // [28:28] AVX extensions support
-  // [31:29] reserved
+  // [29:29] F16C - Float16 conversion support
+  // [30:30] RDRAND instruction
+  // [31:31] reserved
 
   Bit32u features = 0;
 
-  // support SSE3
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE3))
-    features |= (1<<0);
+    features |= BX_CPUID_EXT_SSE3;
 
-  // support for PCLMULQDQ
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_AES_PCLMULQDQ))
-    features |= (1<<1);
+    features |= BX_CPUID_EXT_PCLMULQDQ;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_MONITOR_MWAIT))
-    features |= (1<<3);
+    features |= BX_CPUID_EXT_MONITOR_MWAIT;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_VMX))
-    features |= (1<<5);
+    features |= BX_CPUID_EXT_VMX;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSSE3))
-    features |= (1<<9);
+    features |= BX_CPUID_EXT_SSSE3;
 
 #if BX_SUPPORT_X86_64
-  // support CMPXCHG16B
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_X86_64))
-    features |= (1<<13);
+    features |= BX_CPUID_EXT_CMPXCHG16B;
+
+  if (SIM->get_param_bool(BXPN_CPUID_PCID)->get())
+    features |= BX_CPUID_EXT_PCID;
 #endif
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE4_1))
-    features |= (1<<19);
+    features |= BX_CPUID_EXT_SSE4_1;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE4_2))
-    features |= (1<<20);
+    features |= BX_CPUID_EXT_SSE4_2;
 
 #if BX_SUPPORT_X2APIC
-  features |= (1<<21);           // support X2APIC
+  features |= BX_CPUID_EXT_X2APIC;
 #endif
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_MOVBE))
-    features |= (1<<22);
+    features |= BX_CPUID_EXT_MOVBE;
 
   // enable POPCNT if SSE4_2 is enabled
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE4_2))
-    features |= (1<<23);
+    features |= BX_CPUID_EXT_POPCNT;
 
   // support for AES
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_AES_PCLMULQDQ))
-    features |= (1<<25);
+    features |= BX_CPUID_EXT_AES;
 
   // support XSAVE extensions
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_XSAVE))
-    features |= (1<<26) | (1<<27);
+    features |= BX_CPUID_EXT_XSAVE | BX_CPUID_EXT_OSXSAVE;
+
+  return features;
+}
+
+Bit32u BX_CPU_C::get_ext2_cpuid_features(void)
+{
+  Bit32u features = 0;
+
+  //   [0:0]  FS/GS BASE access instructions
+  //  [31:1]  Reserved
+  if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_FSGSBASE))
+    features |= 1;
 
   return features;
 }
@@ -253,64 +265,65 @@ Bit32u BX_CPU_C::get_std_cpuid_features(void)
   Bit32u features = 0;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_X87))
-    features |= (1<<0);
+    features |= BX_CPUID_STD_X87;
 
 #if BX_CPU_LEVEL >= 5
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_PENTIUM)) {
     // Pentium only features
-    features |= (1<<1);             // support VME
-    features |= (1<<3);             // support PSE
-    features |= (1<<4);             // support Time Stamp Counter
-    features |= (1<<5);             // support RDMSR/WRMSR
-    features |= (1<<7) | (1<<14);   // support Machine Check
-    features |= (1<<8);             // support CMPXCHG8B instruction
+    features |= BX_CPUID_STD_VME;
+    features |= BX_CPUID_STD_DEBUG_EXTENSIONS;
+    features |= BX_CPUID_STD_PSE;
+    features |= BX_CPUID_STD_TSC;
+    features |= BX_CPUID_STD_MSR;
+    // support Machine Check
+    features |= BX_CPUID_STD_MCE | BX_CPUID_STD_MCA;
+    features |= BX_CPUID_STD_CMPXCHG8B;
   }
 #endif
-
-  features |= (1<<2);   // support Debug Extensions
 
 #if BX_SUPPORT_APIC
   // if MSR_APICBASE APIC Global Enable bit has been cleared,
   // the CPUID feature flag for the APIC is set to 0.
   if (BX_CPU_THIS_PTR msr.apicbase & 0x800)
-    features |= (1<<9); // APIC on chip
+    features |= BX_CPUID_STD_APIC; // APIC on chip
 #endif
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SYSENTER_SYSEXIT))
-    features |= (1<<11);
+    features |= BX_CPUID_STD_SYSENTER_SYSEXIT;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_CLFLUSH))
-    features |= (1<<19);
+    features |= BX_CPUID_STD_CLFLUSH;
 
 #if BX_CPU_LEVEL >= 5
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_MMX))
-    features |= (1<<23);
+    features |= BX_CPUID_STD_MMX;
 #endif
 
 #if BX_CPU_LEVEL >= 6
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_P6)) {
-    features |= (1<<6);   // support PAE
-    features |= (1<<12);  // support MTRRs
-    features |= (1<<13);  // support Global pages
-    features |= (1<<15);  // support CMOV instructions
-    features |= (1<<16);  // support PAT
-    features |= (1<<17);  // support PSE-36
+    features |= BX_CPUID_STD_PAE;
+    features |= BX_CPUID_STD_MTRR;
+    features |= BX_CPUID_STD_GLOBAL_PAGES;
+    features |= BX_CPUID_STD_CMOV;
+    features |= BX_CPUID_STD_PAT;
+    features |= BX_CPUID_STD_PSE36;
+    features |= BX_CPUID_STD_ACPI;
   }
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_FXSAVE_FXRSTOR))
-    features |= (1<<24);  // support FSAVE/FXRSTOR instructions
+    features |= BX_CPUID_STD_FXSAVE_FXRSTOR;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE))
-    features |= (1<<25);
+    features |= BX_CPUID_STD_SSE;
 
   if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_SSE2))
-    features |= (1<<26);
+    features |= BX_CPUID_STD_SSE2;
 #endif
 
 #if BX_SUPPORT_SMP
   // Intel(R) HyperThreading Technology
   if (SIM->get_param_num(BXPN_CPU_NTHREADS)->get() > 1)
-    features |= (1<<28);
+    features |= BX_CPUID_STD_HT;
 #endif
 
   return features;
@@ -341,6 +354,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       }
 #endif
 #if BX_CPU_LEVEL >= 6
+      if (function == 0x7) {
+        bx_cpuid_extended_cpuid_leaf(subfunction);
+        return;
+      }
       if (function == 0xd) {
         bx_cpuid_xsave_leaf(subfunction);
         return;
@@ -376,7 +393,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
 {
   Bit8u *vendor_string = (Bit8u *)SIM->get_param_string(BXPN_VENDOR_STRING)->getptr();
   Bit8u *brand_string = (Bit8u *)SIM->get_param_string(BXPN_BRAND_STRING)->getptr();
-  bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
+  bx_bool cpuid_limit_winnt = SIM->get_param_bool(BXPN_CPUID_LIMIT_WINNT)->get();
 #if BX_SUPPORT_X86_64
   bx_bool xlarge_pages_enabled = SIM->get_param_bool(BXPN_CPUID_1G_PAGES)->get();
 #endif
@@ -417,7 +434,7 @@ void BX_CPU_C::set_cpuid_defaults(void)
   // do not report CPUID functions above 0x3 if cpuid_limit_winnt is set
   // to workaround WinNT issue.
   if (! cpuid_limit_winnt) {
-    if (BX_SUPPORT_MONITOR_MWAIT)
+    if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_MONITOR_MWAIT))
       cpuid->eax = 0x5;
 #if BX_SUPPORT_X2APIC
     cpuid->eax = 0xb;
@@ -431,6 +448,11 @@ void BX_CPU_C::set_cpuid_defaults(void)
   memcpy(&(cpuid->ebx), vendor_string,     4);
   memcpy(&(cpuid->edx), vendor_string + 4, 4);
   memcpy(&(cpuid->ecx), vendor_string + 8, 4);
+#ifdef BX_BIG_ENDIAN
+  cpuid->ebx = bx_bswap32(cpuid->ebx);
+  cpuid->ecx = bx_bswap32(cpuid->ecx);
+  cpuid->edx = bx_bswap32(cpuid->edx);
+#endif
 
   BX_INFO(("CPUID[0x00000000]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
 
@@ -463,71 +485,10 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->ebx |= ((BX_CPU_THIS_PTR lapic.get_id() & 0xff) << 24);
 #endif
 
-  // ECX:       Extended Feature Flags
-  //   [0:0]   SSE3: SSE3 Instructions
-  //   [1:1]   PCLMULQDQ Instruction support
-  //   [2:2]   DTES64: 64-bit DS area
-  //   [3:3]   MONITOR/MWAIT support
-  //   [4:4]   DS-CPL: CPL qualified debug store
-  //   [5:5]   VMX: Virtual Machine Technology
-  //   [6:6]   SMX: Secure Virtual Machine Technology
-  //   [7:7]   EST: Enhanced Intel SpeedStep Technology
-  //   [8:8]   TM2: Thermal Monitor 2
-  //   [9:9]   SSSE3: SSSE3 Instructions
-  //   [10:10] CNXT-ID: L1 context ID
-  //   [11:11] reserved
-  //   [12:12] FMA Instructions support
-  //   [13:13] CMPXCHG16B: CMPXCHG16B instruction support
-  //   [14:14] xTPR update control
-  //   [16:15] reserved
-  //   [17:17] PCID: Process Context Identifiers
-  //   [18:18] DCA - Direct Cache Access
-  //   [19:19] SSE4.1 Instructions
-  //   [20:20] SSE4.2 Instructions
-  //   [21:21] X2APIC
-  //   [22:22] MOVBE instruction
-  //   [23:23] POPCNT instruction
-  //   [24:24] reserved
-  //   [25:25] AES Instructions
-  //   [26:26] XSAVE extensions support
-  //   [27:27] OSXSAVE support
-  //   [28:28] AVX extensions support
-  //   [31:29] reserved
+  // ECX: Extended Feature Flags
   cpuid->ecx = get_extended_cpuid_features();
 
-  // EDX:       Standard Feature Flags
-  //   [0:0]   FPU on chip
-  //   [1:1]   VME: Virtual-8086 Mode enhancements
-  //   [2:2]   DE: Debug Extensions (I/O breakpoints)
-  //   [3:3]   PSE: Page Size Extensions
-  //   [4:4]   TSC: Time Stamp Counter
-  //   [5:5]   MSR: RDMSR and WRMSR support
-  //   [6:6]   PAE: Physical Address Extensions
-  //   [7:7]   MCE: Machine Check Exception
-  //   [8:8]   CXS: CMPXCHG8B instruction
-  //   [9:9]   APIC: APIC on Chip
-  //   [10:10] Reserved
-  //   [11:11] SYSENTER/SYSEXIT support
-  //   [12:12] MTRR: Memory Type Range Reg
-  //   [13:13] PGE/PTE Global Bit
-  //   [14:14] MCA: Machine Check Architecture
-  //   [15:15] CMOV: Cond Mov/Cmp Instructions
-  //   [16:16] PAT: Page Attribute Table
-  //   [17:17] PSE-36: Physical Address Extensions
-  //   [18:18] PSN: Processor Serial Number
-  //   [19:19] CLFLUSH: CLFLUSH Instruction support
-  //   [20:20] Reserved
-  //   [21:21] DS: Debug Store
-  //   [22:22] ACPI: Thermal Monitor and Software Controlled Clock Facilities
-  //   [23:23] MMX Technology
-  //   [24:24] FXSR: FXSAVE/FXRSTOR (also indicates CR4.OSFXSR is available)
-  //   [25:25] SSE: SSE Extensions
-  //   [26:26] SSE2: SSE2 Extensions
-  //   [27:27] Self Snoop
-  //   [28:28] Hyper Threading Technology
-  //   [29:29] TM: Thermal Monitor
-  //   [30:30] Reserved
-  //   [31:31] PBE: Pending Break Enable
+  // EDX: Standard Feature Flags
   cpuid->edx = get_std_cpuid_features();
 
   BX_INFO(("CPUID[0x00000001]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
@@ -580,22 +541,39 @@ void BX_CPU_C::set_cpuid_defaults(void)
 #if BX_SUPPORT_MONITOR_MWAIT
   // ------------------------------------------------------
   // CPUID function 0x00000005
-  cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[5]);
+  if (BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_MONITOR_MWAIT))
+  {
+    cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[5]);
 
-  // EAX - Smallest monitor-line size in bytes
-  // EBX - Largest  monitor-line size in bytes
-  // ECX -
-  //   [31:2] - reserved
-  //    [1:1] - exit MWAIT even with EFLAGS.IF = 0
-  //    [0:0] - MONITOR/MWAIT extensions are supported
-  // EDX - Reserved
-  cpuid->eax = CACHE_LINE_SIZE;
-  cpuid->ebx = CACHE_LINE_SIZE;
-  cpuid->ecx = 3;
-  cpuid->edx = 0;
+    // EAX - Smallest monitor-line size in bytes
+    // EBX - Largest  monitor-line size in bytes
+    // ECX -
+    //   [31:2] - reserved
+    //    [1:1] - exit MWAIT even with EFLAGS.IF = 0
+    //    [0:0] - MONITOR/MWAIT extensions are supported
+    // EDX - Reserved
+    cpuid->eax = CACHE_LINE_SIZE;
+    cpuid->ebx = CACHE_LINE_SIZE;
+    cpuid->ecx = 3;
+    cpuid->edx = 0;
 
-  BX_INFO(("CPUID[0x00000005]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
+    BX_INFO(("CPUID[0x00000005]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
+  }
 #endif
+
+  // ------------------------------------------------------
+  // CPUID function 0x00000007
+  cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[7]);
+
+  cpuid->ebx = get_ext2_cpuid_features();
+  cpuid->ecx = 0;
+  cpuid->edx = 0;
+  if (cpuid->ebx)
+    cpuid->eax = 1; /* report max sub-leaves that are supported in leaf 7 */
+  else
+    cpuid->eax = 0; /* leaf 7 not supported */
+  
+  BX_INFO(("CPUID[0x00000007]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
 
   // ------------------------------------------------------
   // CPUID function 0x0000000d
@@ -603,11 +581,11 @@ void BX_CPU_C::set_cpuid_defaults(void)
   {
     cpuid = &(BX_CPU_THIS_PTR cpuid_std_function[0xd]);
 
-    // EAX - XCR0 lower 32 bits
+    // EAX - valid bits of XCR0 (lower part)
     // EBX - Maximum size (in bytes) required by enabled features
     // ECX - Maximum size (in bytes) required by CPU supported features
-    // EDX - XCR0 upper 32 bits
-    cpuid->eax = BX_CPU_THIS_PTR xcr0.get32();
+    // EDX - valid bits of XCR0 (upper part)
+    cpuid->eax = BX_XCR0_SUPPORTED_BITS;
     cpuid->ebx = 512+64;
     cpuid->ecx = 512+64;
     cpuid->edx = 0;
@@ -638,6 +616,12 @@ void BX_CPU_C::set_cpuid_defaults(void)
   memcpy(&(cpuid->ecx), vendor_string + 8, 4);
 #endif
 
+#ifdef BX_BIG_ENDIAN
+  cpuid->ebx = bx_bswap32(cpuid->ebx);
+  cpuid->ecx = bx_bswap32(cpuid->ecx);
+  cpuid->edx = bx_bswap32(cpuid->edx);
+#endif
+
   BX_INFO(("CPUID[0x80000000]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
 
   // ------------------------------------------------------
@@ -651,24 +635,25 @@ void BX_CPU_C::set_cpuid_defaults(void)
   cpuid->ebx = 0;
 
   // ECX:
-  //     [0:0]   LAHF/SAHF available in 64-bit mode
-  //     [1:1]   AMD CmpLegacy
-  //     [2:2]   AMD Secure Virtual Machine Technology
+  //     [0:0]   LAHF/SAHF instructions support in 64-bit mode
+  //     [1:1]   CMP_Legacy: Core multi-processing legacy mode (AMD)
+  //     [2:2]   SVM: Secure Virtual Machine (AMD)
   //     [3:3]   Extended APIC Space
-  //     [4:4]   Alternative CR8 (treat lock mov cr0 as mov cr8)
-  //     [5:5]   LZCNT support
-  //     [6:6]   SSE4A support
+  //     [4:4]   AltMovCR8: LOCK MOV CR0 means MOV CR8
+  //     [5:5]   LZCNT: LZCNT instruction support
+  //     [6:6]   SSE4A: SSE4A Instructions support
   //     [7:7]   Misaligned SSE support
-  //     [8:8]   3DNow! prefetch support
-  //     [9:9]   OS visible workarounds
-  //     [10:10] Reserved
-  //     [11:11] SSE5A
-  //     [12:31] Reserved
+  //     [8:8]   PREFETCHW: PREFETCHW instruction support
+  //     [9:9]   OSVW: OS visible workarounds (AMD)
+  //     [11:10] reserved
+  //     [12:12] SKINIT support
+  //     [13:13] WDT: Watchdog timer support
+  //     [31:14] reserved
 #if BX_SUPPORT_X86_64
-  cpuid->ecx = 1 | (1<<8);
+  cpuid->ecx = BX_CPUID_EXT2_LAHF_SAHF;
 #endif
 #if BX_SUPPORT_MISALIGNED_SSE
-  cpuid->ecx |= (1<<7);
+  cpuid->ecx |= BX_CPUID_EXT2_MISALIGNED_SSE;
 #endif
 
   // EDX:
@@ -707,12 +692,16 @@ void BX_CPU_C::set_cpuid_defaults(void)
   unsigned features  = BX_CPU_VENDOR_INTEL ? 0 : get_std_cpuid_features();
   features &= 0x0183F3FF;
 #if BX_SUPPORT_3DNOW
-  features |= (1 << 22) | (1 << 30) | (1 << 31);  // only AMD is interesting in AMD MMX extensions
+  // only AMD is interesting in AMD MMX extensions
+  features |= BX_CPUID_STD2_AMD_MMX_EXT | BX_CPUID_STD2_3DNOW_EXT | BX_CPUID_STD2_3DNOW;
 #endif
 #if BX_SUPPORT_X86_64
-  features |= (1 << 29) | (1 << 27) | (1 << 25) | (1 << 20) | (1 << 11);
+  features |= BX_CPUID_STD2_SYSCALL_SYSRET |
+              BX_CPUID_STD2_NX |
+              BX_CPUID_STD2_FFXSR |
+              BX_CPUID_STD2_RDTSCP | BX_CPUID_STD2_LONG_MODE;
   if (xlarge_pages_enabled)
-    features |= (1 << 26);
+    features |= BX_CPUID_STD2_1G_PAGES;
 #endif
   cpuid->edx = features;
 
@@ -730,6 +719,12 @@ void BX_CPU_C::set_cpuid_defaults(void)
   memcpy(&(cpuid->ebx), brand_string +  4, 4);
   memcpy(&(cpuid->ecx), brand_string +  8, 4);
   memcpy(&(cpuid->edx), brand_string + 12, 4);
+#ifdef BX_BIG_ENDIAN
+  cpuid->eax = bx_bswap32(cpuid->eax);
+  cpuid->ebx = bx_bswap32(cpuid->ebx);
+  cpuid->ecx = bx_bswap32(cpuid->ecx);
+  cpuid->edx = bx_bswap32(cpuid->edx);
+#endif
 
   BX_INFO(("CPUID[0x80000002]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
 
@@ -739,6 +734,12 @@ void BX_CPU_C::set_cpuid_defaults(void)
   memcpy(&(cpuid->ebx), brand_string + 20, 4);
   memcpy(&(cpuid->ecx), brand_string + 24, 4);
   memcpy(&(cpuid->edx), brand_string + 28, 4);
+#ifdef BX_BIG_ENDIAN
+  cpuid->eax = bx_bswap32(cpuid->eax);
+  cpuid->ebx = bx_bswap32(cpuid->ebx);
+  cpuid->ecx = bx_bswap32(cpuid->ecx);
+  cpuid->edx = bx_bswap32(cpuid->edx);
+#endif
 
   BX_INFO(("CPUID[0x80000003]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
 
@@ -748,6 +749,12 @@ void BX_CPU_C::set_cpuid_defaults(void)
   memcpy(&(cpuid->ebx), brand_string + 36, 4);
   memcpy(&(cpuid->ecx), brand_string + 40, 4);
   memcpy(&(cpuid->edx), brand_string + 44, 4);
+#ifdef BX_BIG_ENDIAN
+  cpuid->eax = bx_bswap32(cpuid->eax);
+  cpuid->ebx = bx_bswap32(cpuid->ebx);
+  cpuid->ecx = bx_bswap32(cpuid->ecx);
+  cpuid->edx = bx_bswap32(cpuid->edx);
+#endif
 
   BX_INFO(("CPUID[0x80000004]: %08x %08x %08x %08x", cpuid->eax, cpuid->ebx, cpuid->ecx, cpuid->edx));
 
@@ -809,7 +816,12 @@ void BX_CPU_C::set_cpuid_defaults(void)
 
 #if BX_SUPPORT_X2APIC
 
-#include <math.h>
+Bit32u ilog2(Bit32u x)
+{
+  Bit32u count = 0;
+  while(x>>=1) count++;
+  return count;
+}
 
 void BX_CPU_C::bx_cpuid_extended_topology_leaf(Bit32u subfunction)
 {
@@ -820,17 +832,17 @@ void BX_CPU_C::bx_cpuid_extended_topology_leaf(Bit32u subfunction)
   switch(subfunction) {
   case 0:
      if (nthreads > 1) {
-        RAX = (bx_address) ceil(log(nthreads)/log(2));
+        RAX = ilog2(nthreads-1)+1;
         RBX = nthreads;
         RCX = subfunction | (1<<8);
      }
      else if (ncores > 1) {
-        RAX = (bx_address) ceil(log(ncores)/log(2));
+        RAX = ilog2(ncores-1)+1;
         RBX = ncores;
         RCX = subfunction | (2<<8);
      }
      else if (nprocessors > 1) {
-        RAX = (bx_address) ceil(log(nprocessors)/log(2));
+        RAX = ilog2(nprocessors-1)+1;
         RBX = nprocessors;
         RCX = subfunction;
      }
@@ -844,12 +856,12 @@ void BX_CPU_C::bx_cpuid_extended_topology_leaf(Bit32u subfunction)
   case 1:
      if (nthreads > 1) {
         if (ncores > 1) {
-           RAX = (bx_address) ceil(log(ncores)/log(2));
+           RAX = ilog2(ncores-1)+1;
            RBX = ncores;
            RCX = subfunction | (2<<8);
         }
         else if (nprocessors > 1) {
-           RAX = (bx_address) ceil(log(nprocessors)/log(2));
+           RAX = ilog2(nprocessors-1)+1;
            RBX = nprocessors;
            RCX = subfunction;
         }
@@ -861,7 +873,7 @@ void BX_CPU_C::bx_cpuid_extended_topology_leaf(Bit32u subfunction)
      }
      else if (ncores > 1) {
         if (nprocessors > 1) {
-           RAX = (bx_address) ceil(log(nprocessors)/log(2));
+           RAX = ilog2(nprocessors-1)+1;
            RBX = nprocessors;
            RCX = subfunction;
         }
@@ -880,7 +892,7 @@ void BX_CPU_C::bx_cpuid_extended_topology_leaf(Bit32u subfunction)
   case 2:
      if (nthreads > 1) {
         if (nprocessors > 1) {
-           RAX = (bx_address) ceil(log(nprocessors)/log(2));
+           RAX = ilog2(nprocessors-1)+1;
            RBX = nprocessors;
         }
         else {
@@ -908,6 +920,22 @@ void BX_CPU_C::bx_cpuid_extended_topology_leaf(Bit32u subfunction)
 #endif
 
 #if BX_CPU_LEVEL >= 6
+void BX_CPU_C::bx_cpuid_extended_cpuid_leaf(Bit32u subfunction)
+{
+  if (subfunction == 0) {
+    RAX = BX_CPU_THIS_PTR cpuid_std_function[0x7].eax;
+    RBX = BX_CPU_THIS_PTR cpuid_std_function[0x7].ebx;
+    RCX = BX_CPU_THIS_PTR cpuid_std_function[0x7].ecx;
+    RDX = BX_CPU_THIS_PTR cpuid_std_function[0x7].edx;
+  }
+  else {
+    RAX = 0; // reserved
+    RBX = 0; // reserved
+    RCX = 0; // reserved
+    RDX = 0; // reserved
+  }
+}
+
 void BX_CPU_C::bx_cpuid_xsave_leaf(Bit32u subfunction)
 {
   BX_ASSERT(BX_CPU_SUPPORT_ISA_EXTENSION(BX_CPU_XSAVE));
@@ -945,7 +973,13 @@ void BX_CPU_C::init_isa_features_bitmask(void)
   xsave_enabled = SIM->get_param_bool(BXPN_CPUID_XSAVE)->get();
   xapic_enabled = SIM->get_param_bool(BXPN_CPUID_XAPIC)->get();
   sse_enabled = SIM->get_param_enum(BXPN_CPUID_SSE)->get();
+#if BX_SUPPORT_X86_64
+  bx_bool fsgsbase_enabled = SIM->get_param_bool(BXPN_CPUID_FSGSBASE)->get();
 #endif
+#if BX_SUPPORT_MONITOR_MWAIT
+  bx_bool mwait_enabled = SIM->get_param_bool(BXPN_CPUID_MWAIT)->get();
+#endif
+#endif // BX_CPU_LEVEL >= 6
 
   // sanity checks
 #if BX_SUPPORT_3DNOW
@@ -1035,12 +1069,14 @@ void BX_CPU_C::init_isa_features_bitmask(void)
 #if BX_SUPPORT_3DNOW
   features_bitmask |= BX_CPU_3DNOW;
 #endif
-#if BX_SUPPORT_MONITOR_MWAIT
-  features_bitmask |= BX_CPU_MONITOR_MWAIT;
-#endif
 
 #if BX_CPU_LEVEL >= 6
   features_bitmask |= BX_CPU_P6;
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  if (mwait_enabled)
+    features_bitmask |= BX_CPU_MONITOR_MWAIT;
+#endif
 
   // FXSAVE/FXRSTOR support come with Pentium II
   if (mmx_enabled)
@@ -1088,6 +1124,9 @@ void BX_CPU_C::init_isa_features_bitmask(void)
 
 #if BX_SUPPORT_X86_64
   features_bitmask |= BX_CPU_X86_64;
+
+  if (fsgsbase_enabled)
+    features_bitmask |= BX_CPU_FSGSBASE;
 #endif
 
   BX_CPU_THIS_PTR isa_extensions_bitmask = features_bitmask;

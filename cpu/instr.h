@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instr.h,v 1.26 2010/02/24 19:27:51 sshwarts Exp $
+// $Id: instr.h,v 1.32 2010/12/22 21:16:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2008-2009 Stanislav Shwartsman
+//   Copyright (c) 2008-2010 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -36,6 +36,8 @@ typedef bx_address (BX_CPU_C::*BxResolvePtr_tR)(bxInstruction_c *) BX_CPP_AttrRe
 #endif
 // <TAG-TYPE-EXECUTEPTR-END>
 
+extern bx_address bx_asize_mask[];
+
 // <TAG-CLASS-INSTRUCTION-START>
 class bxInstruction_c {
 public:
@@ -53,15 +55,15 @@ public:
 
     //  7...4 (unused)
     //  3...0 ilen (0..15)
-    Bit8u metaInfo2;
+    Bit8u ilen;
 
-    //  7...7 extend8bit
-    //  6...6 as64
-    //  5...5 os64
-    //  4...4 as32
-    //  3...3 os32
-    //  2...2 mod==c0 (modrm)
-    //  1...0 repUsed (0=none, 2=0xF2, 3=0xF3)
+    //  7...6 repUsed (0=none, 2=0xF2, 3=0xF3)
+    //  5...5 extend8bit
+    //  4...4 mod==c0 (modrm)
+    //  3...3 os64
+    //  2...2 os32
+    //  1...1 as64
+    //  0...0 as32
     Bit8u metaInfo1;
   } metaInfo;
 
@@ -88,21 +90,11 @@ public:
       union {
         Bit16u displ16u; // for 16-bit modrm forms
         Bit32u displ32u; // for 32-bit modrm forms
-      };
-    } modRMForm;
 
-    struct {
-      union {
-        Bit32u Id;
-        Bit16u Iw;
-        Bit8u  Ib;
-      };
-      union {
-        Bit32u Id2; // Not used (for alignment)
         Bit16u Iw2;
         Bit8u  Ib2;
       };
-    } IxIxForm;
+    } modRMForm;
 
 #if BX_SUPPORT_X86_64
     struct {
@@ -123,14 +115,6 @@ public:
   }
   BX_CPP_INLINE void setB1(unsigned b1) {
     metaData[BX_INSTR_METADATA_B1] = b1 & 0xff;
-  }
-  BX_CPP_INLINE void setOpcodeReg(unsigned opreg) {
-    // The opcodeReg form (low 3 bits of the opcode byte (extended
-    // by REX.B on x86-64) to be used with IxIxForm or IqForm.
-    metaData[BX_INSTR_METADATA_RM] = opreg;
-  }
-  BX_CPP_INLINE unsigned opcodeReg() const {
-    return metaData[BX_INSTR_METADATA_RM];
   }
   BX_CPP_INLINE void setModRM(unsigned modrm) {
     metaData[BX_INSTR_METADATA_MODRM] = modrm;
@@ -173,8 +157,8 @@ public:
   BX_CPP_INLINE Bit32u Id() const  { return modRMForm.Id; }
   BX_CPP_INLINE Bit16u Iw() const  { return modRMForm.Iw; }
   BX_CPP_INLINE Bit8u  Ib() const  { return modRMForm.Ib; }
-  BX_CPP_INLINE Bit16u Iw2() const { return IxIxForm.Iw2; } // Legacy
-  BX_CPP_INLINE Bit8u  Ib2() const { return IxIxForm.Ib2; } // Legacy
+  BX_CPP_INLINE Bit16u Iw2() const { return modRMForm.Iw2; }
+  BX_CPP_INLINE Bit8u  Ib2() const { return modRMForm.Ib2; }
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE Bit64u Iq() const  { return IqForm.Iq; }
 #endif
@@ -186,62 +170,70 @@ public:
   // code, when a strict 0 or 1 is not necessary.
   BX_CPP_INLINE void init(unsigned os32, unsigned as32, unsigned os64, unsigned as64)
   {
-    metaInfo.metaInfo1 = (os32<<3) | (as32<<4) | (os64<<5) | (as64<<6);
+    metaInfo.metaInfo1 = (os32<<2) | (os64<<3) | (as32<<0) | (as64<<1);
   }
 
   BX_CPP_INLINE unsigned os32L(void) const {
-    return metaInfo.metaInfo1 & (1<<3);
+    return metaInfo.metaInfo1 & (1<<2);
   }
   BX_CPP_INLINE void setOs32B(unsigned bit) {
-    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & ~(1<<3)) | (bit<<3);
+    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & ~(1<<2)) | (bit<<2);
   }
   BX_CPP_INLINE void assertOs32(void) {
-    metaInfo.metaInfo1 |= (1<<3);
-  }
-
-  BX_CPP_INLINE unsigned as32L(void) const {
-    return metaInfo.metaInfo1 & (1<<4);
-  }
-  BX_CPP_INLINE void setAs32B(unsigned bit) {
-    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & ~(1<<4)) | (bit<<4);
+    metaInfo.metaInfo1 |= (1<<2);
   }
 
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE unsigned os64L(void) const {
-    return metaInfo.metaInfo1 & (1<<5);
+    return metaInfo.metaInfo1 & (1<<3);
   }
   BX_CPP_INLINE void assertOs64(void) {
-    metaInfo.metaInfo1 |= (1<<5);
+    metaInfo.metaInfo1 |= (1<<3);
   }
 #else
   BX_CPP_INLINE unsigned os64L(void) const { return 0; }
 #endif
 
+
+  BX_CPP_INLINE unsigned as32L(void) const {
+    return metaInfo.metaInfo1 & 0x1;
+  }
+  BX_CPP_INLINE void setAs32B(unsigned bit) {
+    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & ~0x1) | (bit);
+  }
+
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE unsigned as64L(void) const {
-    return metaInfo.metaInfo1 & (1<<6);
+    return metaInfo.metaInfo1 & (1<<1);
   }
-  BX_CPP_INLINE void setAs64B(unsigned bit) {
-    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & ~(1<<6)) | (bit<<6);
+  BX_CPP_INLINE void clearAs64(void) {
+    metaInfo.metaInfo1 &= ~(1<<1);
   }
 #else
   BX_CPP_INLINE unsigned as64L(void) const { return 0; }
 #endif
 
+  BX_CPP_INLINE unsigned asize(void) const {
+    return metaInfo.metaInfo1 & 0x3;
+  }
+  BX_CPP_INLINE bx_address asize_mask(void) const {
+    return bx_asize_mask[asize()];
+  }
+
 #if BX_SUPPORT_X86_64
   BX_CPP_INLINE unsigned extend8bitL(void) const {
-    return metaInfo.metaInfo1 & (1<<7);
+    return metaInfo.metaInfo1 & (1<<5);
   }
   BX_CPP_INLINE void assertExtend8bit(void) {
-    metaInfo.metaInfo1 |= (1<<7);
+    metaInfo.metaInfo1 |= (1<<5);
   }
 #endif
 
   BX_CPP_INLINE unsigned ilen(void) const {
-    return metaInfo.metaInfo2;
+    return metaInfo.ilen;
   }
   BX_CPP_INLINE void setILen(unsigned ilen) {
-    metaInfo.metaInfo2 = ilen;
+    metaInfo.ilen = ilen;
   }
 
   BX_CPP_INLINE unsigned getIaOpcode(void) const {
@@ -252,13 +244,13 @@ public:
   }
 
   BX_CPP_INLINE unsigned repUsedL(void) const {
-    return metaInfo.metaInfo1 & 3;
+    return metaInfo.metaInfo1 >> 6;
   }
   BX_CPP_INLINE unsigned repUsedValue(void) const {
-    return metaInfo.metaInfo1 & 3;
+    return metaInfo.metaInfo1 >> 6;
   }
   BX_CPP_INLINE void setRepUsed(unsigned value) {
-    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & ~3) | (value);
+    metaInfo.metaInfo1 = (metaInfo.metaInfo1 & 0x3f) | (value << 6);
   }
 
   BX_CPP_INLINE unsigned modC0() const
@@ -266,11 +258,11 @@ public:
     // This is a cheaper way to test for modRM instructions where
     // the mod field is 0xc0.  FetchDecode flags this condition since
     // it is quite common to be tested for.
-    return metaInfo.metaInfo1 & (1<<2);
+    return metaInfo.metaInfo1 & (1<<4);
   }
   BX_CPP_INLINE unsigned assertModC0()
   {
-    return metaInfo.metaInfo1 |= (1<<2);
+    return metaInfo.metaInfo1 |= (1<<4);
   }
 };
 // <TAG-CLASS-INSTRUCTION-END>
@@ -278,7 +270,7 @@ public:
 const char *get_bx_opcode_name(Bit16u ia_opcode);
 
 enum {
-#define bx_define_opcode(a, b, c, d) a,
+#define bx_define_opcode(a, b, c, d, e) a,
 #include "ia_opcodes.h"
    BX_IA_LAST
 };

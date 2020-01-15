@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_tables.inc,v 1.33 2010/02/09 19:44:25 sshwarts Exp $
+// $Id: dis_tables.inc,v 1.37 2010/10/11 15:33:11 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2010 Stanislav Shwartsman
@@ -399,8 +399,8 @@ static BxDisasmOpcodeTable_t BxDisasmGroupRmG7VMX[8] = {
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_G7VMX[4] = {
   /* -- */ { GRPRM(G7VMX)   },
   /* 66 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid },
-  /* F3 */ { 0, &Ia_Invalid }
+  /* F3 */ { 0, &Ia_Invalid },
+  /* F2 */ { 0, &Ia_Invalid }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupRmMONITOR[8] = {
@@ -481,21 +481,21 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG8EqIb[8] = {
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_G9VMX6[4] = {
   /* -- */ { 0, &Ia_vmptrld_Mq },
   /* 66 */ { 0, &Ia_vmclear_Mq },
-  /* F2 */ { 0, &Ia_Invalid  },
-  /* F3 */ { 0, &Ia_vmxon_Mq }
+  /* F3 */ { 0, &Ia_vmxon_Mq },
+  /* F2 */ { 0, &Ia_Invalid  }
 };
 
 /* VMX */
 static BxDisasmOpcodeTable_t BxDisasmGroupSSE_G9VMX7[4] = {
   /* -- */ { 0, &Ia_vmptrst_Mq },
   /* 66 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid },
-  /* F3 */ { 0, &Ia_Invalid }
+  /* F3 */ { 0, &Ia_Invalid },
+  /* F2 */ { 0, &Ia_Invalid }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG9[8] = {
   /* 0 */ { 0, &Ia_Invalid },
-  /* 1 */ { 0, &Ia_cmpxchg8b },
+  /* 1 */ { 0, &Ia_cmpxchg8b_Mq },
   /* 2 */ { 0, &Ia_Invalid },
   /* 3 */ { 0, &Ia_Invalid },
   /* 4 */ { 0, &Ia_Invalid },
@@ -506,7 +506,7 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG9[8] = {
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG9q[8] = {
   /* 0 */ { 0, &Ia_Invalid },
-  /* 1 */ { 0, &Ia_cmpxchg16b },
+  /* 1 */ { 0, &Ia_cmpxchg16b_Mdq },
   /* 2 */ { 0, &Ia_Invalid },
   /* 3 */ { 0, &Ia_Invalid },
   /* 4 */ { 0, &Ia_Invalid },
@@ -598,21 +598,21 @@ static BxDisasmOpcodeTable_t BxDisasmGroupG14[8] = {
 
 /* Group15 */
 static BxDisasmOpcodeTable_t BxDisasmGroupG15M[8] = {
-  /* 0 */ { 0, &Ia_fxsave  },
-  /* 1 */ { 0, &Ia_fxrstor },
-  /* 2 */ { 0, &Ia_ldmxcsr },
-  /* 3 */ { 0, &Ia_stmxcsr },
-  /* 4 */ { 0, &Ia_xsave   },
-  /* 5 */ { 0, &Ia_xrstor  },
-  /* 6 */ { 0, &Ia_Invalid },
-  /* 7 */ { 0, &Ia_cflush  }
+  /* 0 */ { 0, &Ia_fxsave   },
+  /* 1 */ { 0, &Ia_fxrstor  },
+  /* 2 */ { 0, &Ia_ldmxcsr  },
+  /* 3 */ { 0, &Ia_stmxcsr  },
+  /* 4 */ { 0, &Ia_xsave    },
+  /* 5 */ { 0, &Ia_xrstor   },
+  /* 6 */ { 0, &Ia_xsaveopt },
+  /* 7 */ { 0, &Ia_cflush   }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupG15R[8] = {
-  /* 0 */ { 0, &Ia_Invalid },
-  /* 1 */ { 0, &Ia_Invalid },
-  /* 2 */ { 0, &Ia_Invalid },
-  /* 3 */ { 0, &Ia_Invalid },
+  /* 0 */ { GRPSSEF3(Ia_rdfsbase_Ry) },
+  /* 1 */ { GRPSSEF3(Ia_rdgsbase_Ry) },
+  /* 2 */ { GRPSSEF3(Ia_wrfsbase_Ry) },
+  /* 3 */ { GRPSSEF3(Ia_wrgsbase_Ry) },
   /* 4 */ { 0, &Ia_Invalid },
   /* 5 */ { 0, &Ia_lfence },
   /* 6 */ { 0, &Ia_mfence },
@@ -741,7 +741,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes16[256*2] = {
   /* 60 */ { 0, &Ia_pushaw     },
   /* 61 */ { 0, &Ia_popaw      },
   /* 62 */ { 0, &Ia_boundw_Gw_Ma },
-  /* 63 */ { 0, &Ia_arpl_Ew_Rw },
+  /* 63 */ { 0, &Ia_arpl_Ew_Gw },
   /* 64 */ { 0, &Ia_prefix_fs  },   // FS:
   /* 65 */ { 0, &Ia_prefix_gs  },   // GS:
   /* 66 */ { 0, &Ia_prefix_osize }, // OSIZE:
@@ -1262,7 +1262,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes32[256*2] = {
   /* 60 */ { 0, &Ia_pushal        },
   /* 61 */ { 0, &Ia_popal         },
   /* 62 */ { 0, &Ia_boundl_Gd_Ma  },
-  /* 63 */ { 0, &Ia_arpl_Ew_Rw    },
+  /* 63 */ { 0, &Ia_arpl_Ew_Gw    },
   /* 64 */ { 0, &Ia_prefix_fs     },   // FS:
   /* 65 */ { 0, &Ia_prefix_gs     },   // GS:
   /* 66 */ { 0, &Ia_prefix_osize  },   // OSIZE:
@@ -3020,10 +3020,10 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodes64q[256*2] = {
   /* 0F 27 */ { 0, &Ia_Invalid    },
   /* 0F 28 */ { GRPSSE(0f28) },
   /* 0F 29 */ { GRPSSE(0f29) },
-  /* 0F 2A */ { GRPSSE(0f2aQ) },
-  /* 0F 2B */ { GRPSSE(0f2b)  },
-  /* 0F 2C */ { GRPSSE(0f2cQ) },
-  /* 0F 2D */ { GRPSSE(0f2dQ) },
+  /* 0F 2A */ { GRPSSE(0f2a) },
+  /* 0F 2B */ { GRPSSE(0f2b) },
+  /* 0F 2C */ { GRPSSE(0f2c) },
+  /* 0F 2D */ { GRPSSE(0f2d) },
   /* 0F 2E */ { GRPSSE(0f2e) },
   /* 0F 2F */ { GRPSSE(0f2f) },
   /* 0F 30 */ { 0, &Ia_wrmsr },

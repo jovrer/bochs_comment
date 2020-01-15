@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.312 2010/04/20 06:14:55 sshwarts Exp $
+// $Id: cpu.cc,v 1.319 2011/01/26 11:48:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -119,41 +119,14 @@ void BX_CPU_C::cpu_loop(Bit32u max_instr_count)
       }
     }
 
-no_async_event:
+    bxICacheEntry_c *entry = getICacheEntry();
 
-    bx_address eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
-
-    if (eipBiased >= BX_CPU_THIS_PTR eipPageWindowSize) {
-      prefetch();
-      eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
-    }
-
-    bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrPage + eipBiased;
-    bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.get_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
     bxInstruction_c *i = entry->i;
-
-    InstrICache_Increment(iCacheLookups);
-    InstrICache_Stats();
-
-    if ((entry->pAddr != pAddr) ||
-        (entry->writeStamp != *(BX_CPU_THIS_PTR currPageWriteStampPtr)))
-    {
-      // iCache miss. No validated instruction with matching fetch parameters
-      // is in the iCache.
-      InstrICache_Increment(iCacheMisses);
-      serveICacheMiss(entry, (Bit32u) eipBiased, pAddr);
-      i = entry->i;
-    }
 
 #if BX_SUPPORT_TRACE_CACHE
     bxInstruction_c *last = i + (entry->tlen);
 
     for(;;) {
-#endif
-
-#if BX_INSTRUMENTATION
-      BX_INSTR_OPCODE(BX_CPU_ID, BX_CPU_THIS_PTR eipFetchPtr + (RIP + BX_CPU_THIS_PTR eipPageBias),
-         i->ilen(), BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, long64_mode());
 #endif
 
 #if BX_DISASM
@@ -189,10 +162,40 @@ no_async_event:
         break;
       }
 
-      if (++i == last) goto no_async_event;
+      if (++i == last) {
+        entry = getICacheEntry();
+        i = entry->i;
+        last = i + (entry->tlen);
+      }
     }
 #endif
   }  // while (1)
+}
+
+bxICacheEntry_c* BX_CPU_C::getICacheEntry(void)
+{
+  bx_address eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
+
+  if (eipBiased >= BX_CPU_THIS_PTR eipPageWindowSize) {
+    prefetch();
+    eipBiased = RIP + BX_CPU_THIS_PTR eipPageBias;
+  }
+
+  bx_phy_address pAddr = BX_CPU_THIS_PTR pAddrPage + eipBiased;
+  bxICacheEntry_c *entry = BX_CPU_THIS_PTR iCache.get_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
+
+  InstrICache_Increment(iCacheLookups);
+  InstrICache_Stats();
+
+  if (entry->pAddr != pAddr)
+  {
+    // iCache miss. No validated instruction with matching fetch parameters
+    // is in the iCache.
+    InstrICache_Increment(iCacheMisses);
+    serveICacheMiss(entry, (Bit32u) eipBiased, pAddr);
+  }
+
+  return entry;
 }
 
 void BX_CPP_AttrRegparmN(2) BX_CPU_C::repeat(bxInstruction_c *i, BxExecutePtr_tR execute)
@@ -469,7 +472,7 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
         return 1; // Return to caller of cpu_loop.
 #endif
 
-      BX_TICK1();
+      BX_TICKN(10); // when in HLT run time faster for single CPU
     }
   } else if (bx_pc_system.kill_bochs_request) {
     // setting kill_bochs_request causes the cpu loop to return ASAP.
@@ -561,7 +564,12 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
     VMexit(0, VMX_VMEXIT_INTERRUPT_WINDOW, 0);
   }
 #endif
-  else if (BX_CPU_INTR && BX_CPU_THIS_PTR get_IF() && BX_DBG_ASYNC_INTR)
+  else if (BX_CPU_INTR && BX_DBG_ASYNC_INTR && 
+          (BX_CPU_THIS_PTR get_IF()
+#if BX_SUPPORT_VMX
+       || (BX_CPU_THIS_PTR in_vmx_guest && PIN_VMEXIT(VMX_VM_EXEC_CTRL1_EXTERNAL_INTERRUPT_VMEXIT))
+#endif
+          ))
   {
     Bit8u vector;
 #if BX_SUPPORT_VMX
@@ -735,7 +743,7 @@ void BX_CPU_C::prefetch(void)
   }  
   else {
     bx_phy_address pAddr = translate_linear(laddr, CPL, BX_EXECUTE);
-    BX_CPU_THIS_PTR pAddrPage = LPFOf(pAddr);
+    BX_CPU_THIS_PTR pAddrPage = PPFOf(pAddr);
   }
 
   if (fetchPtr) {
@@ -755,8 +763,6 @@ void BX_CPU_C::prefetch(void)
       }
     }
   }
-
-  BX_CPU_THIS_PTR currPageWriteStampPtr = pageWriteStampTable.getPageWriteStampPtr(BX_CPU_THIS_PTR pAddrPage);
 }
 
 void BX_CPU_C::deliver_SIPI(unsigned vector)

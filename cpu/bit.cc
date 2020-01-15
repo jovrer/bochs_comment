@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bit.cc,v 1.68 2010/03/19 10:00:48 sshwarts Exp $
+// $Id: bit.cc,v 1.71 2010/12/25 17:04:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -239,54 +239,28 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SETNLE_EbR(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSWAP_RX(bxInstruction_c *i)
 {
   BX_ERROR(("BSWAP with 16-bit opsize: undefined behavior !"));
-  BX_WRITE_16BIT_REG(i->opcodeReg(), 0);
+  BX_WRITE_16BIT_REG(i->rm(), 0);
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSWAP_ERX(bxInstruction_c *i)
 {
-  Bit32u val32, b0, b1, b2, b3;
+  Bit32u val32 = BX_READ_32BIT_REG(i->rm());
 
-  val32 = BX_READ_32BIT_REG(i->opcodeReg());
-  b0 = val32 & 0xff; val32 >>= 8;
-  b1 = val32 & 0xff; val32 >>= 8;
-  b2 = val32 & 0xff; val32 >>= 8;
-  b3 = val32;
-  val32 = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-
-  BX_WRITE_32BIT_REGZ(i->opcodeReg(), val32);
+  BX_WRITE_32BIT_REGZ(i->rm(), bx_bswap32(val32));
 }
 
 #if BX_SUPPORT_X86_64
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BSWAP_RRX(bxInstruction_c *i)
 {
-  Bit64u val64, b0, b1, b2, b3, b4, b5, b6, b7;
+  Bit64u val64 = BX_READ_64BIT_REG(i->rm());
 
-  val64 = BX_READ_64BIT_REG(i->opcodeReg());
-  b0 = val64 & 0xff; val64 >>= 8;
-  b1 = val64 & 0xff; val64 >>= 8;
-  b2 = val64 & 0xff; val64 >>= 8;
-  b3 = val64 & 0xff; val64 >>= 8;
-  b4 = val64 & 0xff; val64 >>= 8;
-  b5 = val64 & 0xff; val64 >>= 8;
-  b6 = val64 & 0xff; val64 >>= 8;
-  b7 = val64;
-  val64 = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-
-  BX_WRITE_64BIT_REG(i->opcodeReg(), val64);
+  BX_WRITE_64BIT_REG(i->rm(), bx_bswap64(val64));
 }
 #endif
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_GwEw(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_GwEwR(bxInstruction_c *i)
 {
-  Bit16u val16, b0, b1;
-
-  if (i->modC0()) {
-    val16 = BX_READ_16BIT_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    val16 = read_virtual_word(i->seg(), eaddr);
-  }
+  Bit16u val16 = BX_READ_16BIT_REG(i->rm()), b0, b1;
   
   b0 = val16 & 0xff; val16 >>= 8;
   b1 = val16;
@@ -312,36 +286,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_EwGw(bxInstruction_c *i)
   }
 }
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_GdEd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_GdEdR(bxInstruction_c *i)
 {
-  Bit32u val32, b0, b1, b2, b3;
-
-  if (i->modC0()) {
-    val32 = BX_READ_32BIT_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    val32 = read_virtual_dword(i->seg(), eaddr);
-  }
+  Bit32u val32 = BX_READ_32BIT_REG(i->rm());
   
-  b0 = val32 & 0xff; val32 >>= 8;
-  b1 = val32 & 0xff; val32 >>= 8;
-  b2 = val32 & 0xff; val32 >>= 8;
-  b3 = val32;
-  val32 = (b0<<24) | (b1<<16) | (b2<<8) | b3;
-
-  BX_WRITE_32BIT_REGZ(i->nnn(), val32);
+  BX_WRITE_32BIT_REGZ(i->nnn(), bx_bswap32(val32));
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_EdGd(bxInstruction_c *i)
 {
-  Bit32u val32 = BX_READ_32BIT_REG(i->nnn()), b0, b1, b2, b3;
+  Bit32u val32 = BX_READ_32BIT_REG(i->nnn());
 
-  b0 = val32 & 0xff; val32 >>= 8;
-  b1 = val32 & 0xff; val32 >>= 8;
-  b2 = val32 & 0xff; val32 >>= 8;
-  b3 = val32;
-  val32 = (b0<<24) | (b1<<16) | (b2<<8) | b3;
+  val32 = bx_bswap32(val32);
 
   if (i->modC0()) {
     BX_WRITE_32BIT_REGZ(i->rm(), val32);
@@ -354,45 +310,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_EdGd(bxInstruction_c *i)
 
 #if BX_SUPPORT_X86_64
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_GqEq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_GqEqR(bxInstruction_c *i)
 {
-  Bit64u val64, b0, b1, b2, b3, b4, b5, b6, b7;
-
-  if (i->modC0()) {
-    val64 = BX_READ_64BIT_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    val64 = read_virtual_qword(i->seg(), eaddr);
-  }
+  Bit64u val64 = BX_READ_64BIT_REG(i->rm());
   
-  b0 = val64 & 0xff; val64 >>= 8;
-  b1 = val64 & 0xff; val64 >>= 8;
-  b2 = val64 & 0xff; val64 >>= 8;
-  b3 = val64 & 0xff; val64 >>= 8;
-  b4 = val64 & 0xff; val64 >>= 8;
-  b5 = val64 & 0xff; val64 >>= 8;
-  b6 = val64 & 0xff; val64 >>= 8;
-  b7 = val64;
-  val64 = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
-
-  BX_WRITE_64BIT_REG(i->nnn(), val64);
+  BX_WRITE_64BIT_REG(i->nnn(), bx_bswap64(val64));
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVBE_EqGq(bxInstruction_c *i)
 {
   Bit64u val64 = BX_READ_64BIT_REG(i->nnn());
-  Bit64u b0, b1, b2, b3, b4, b5, b6, b7;
 
-  b0 = val64 & 0xff; val64 >>= 8;
-  b1 = val64 & 0xff; val64 >>= 8;
-  b2 = val64 & 0xff; val64 >>= 8;
-  b3 = val64 & 0xff; val64 >>= 8;
-  b4 = val64 & 0xff; val64 >>= 8;
-  b5 = val64 & 0xff; val64 >>= 8;
-  b6 = val64 & 0xff; val64 >>= 8;
-  b7 = val64;
-  val64 = (b0<<56) | (b1<<48) | (b2<<40) | (b3<<32) | (b4<<24) | (b5<<16) | (b6<<8) | b7;
+  val64 = bx_bswap64(val64);
 
   if (i->modC0()) {
     BX_WRITE_64BIT_REG(i->rm(), val64);

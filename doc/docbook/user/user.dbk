@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.277 2010/04/24 09:36:04 sshwarts Exp $
+$Id: user.dbk,v 1.288 2011/02/21 21:50:54 vruppert Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -416,7 +416,8 @@ currently work with.
     <entry>Yes</entry>
     <entry>Supports floppy disk images on all platforms: 2.88M 3.5", 1.44M 3.5", 1.2M 5.25",
     720K 3.5" and 360K 5.25". On Unix and Windows 9x/NT/2000/XP, Bochs can access the
-    physical floppy drive.
+    physical floppy drive. It is also possible to use a local directory as VFAT media
+    (1.44M only).
     </entry>
   </row>
   <row>
@@ -434,6 +435,7 @@ currently work with.
     <entry>Emulates ATA-6/IDE hard drives via image files.  Physical
     hard disk access is supported on some architecture, but NOT recommended, primarily for safety reasons.
     Hard disks up to 127GB are supported, on any platform that support large files access.
+    It is also possible to use a local directory as VFAT drive.
     </entry>
   </row>
   <row>
@@ -519,9 +521,9 @@ currently work with.
     <entry>USB</entry>
     <entry>incomplete</entry>
     <entry>Two types of host controllers (UHCI and OHCI) and the devices 'mouse',
-    'tablet', 'keypad', 'disk', 'cdrom' and 'hub' are available. Plugging in and
-    removing devices at runtime is possible. Access to real hardware is not
-    implemented yet.
+    'tablet', 'keypad', 'disk', 'cdrom', 'hub' and 'printer'. are available.
+    Plugging in and removing devices at runtime is possible. Access to real
+    hardware is not implemented yet.
     </entry>
   </row>
   <row>
@@ -2998,11 +3000,6 @@ Reset the CPU when triple fault occur (highly recommended) rather than PANIC.
 Remember that if you are trying to continue after triple fault the simulation
 will be completely bogus !
 </para>
-<para><command>cpuid_limit_winnt</command></para>
-<para>
-Determine whether to limit maximum CPUID function to 3. This mode is required
-to workaround WinNT installation and boot issues.
-</para>
 <para><command>msrs</command></para>
 <para>
 Define path to user CPU Model Specific Registers (MSRs) specification.
@@ -3013,16 +3010,6 @@ See example in msrs.def.
 Ignore MSR references that Bochs does not understand; print a warning message
 instead of generating #GP exception. This option is enabled by default but 
 will not be avaiable if configurable MSRs are enabled.
-</para>
-<para><command>vendor_string</command></para>
-<para>
-Set the CPUID vendor string returned by CPUID(0x0).  This should be a
-twelve-character ASCII string. 
-</para>
-<para><command>brand_string</command></para>
-<para>
-Set the CPUID brand string returned by CPUID(0x80000002 .. 0x80000004]).  This should be 
-at most a forty-eight-character ASCII string.  
 </para>
 <para><command>ips</command></para>
 <para>
@@ -3062,6 +3049,91 @@ speed.</para></footnote>.
 </tbody>
 </tgroup>
 </table>
+</section>
+
+<section><title>cpuid</title>
+<para>
+Example:
+<screen>
+  cpuid: mmx=1, sep=1, sse=sse4_2, xapic=1, aes=1, movbe=1, xsave=1, cpuid_limit_winnt=0
+</screen>
+This defines features and functionality supported by Bochs emulated CPU:
+</para>
+<para><command>mmx</command></para>
+<para>
+Select MMX instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
+</para>
+<para><command>sep</command></para>
+<para>
+Select SYSENTER/SYSEXIT instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>sse</command></para>
+<para>
+Select SSE instruction set support.
+Any of NONE/SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2 could be selected.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>xapic</command></para>
+<para>
+Select XAPIC extensions support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>aes</command></para>
+<para>
+Select AES instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>movbe</command></para>
+<para>
+Select MOVBE Intel(R) Atom instruction support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>xsave</command></para>
+<para>
+Select XSAVE extensions support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+</para>
+<para><command>1g_pages</command></para>
+<para>
+Enable 1G page size support in long mode.
+This option exists only if Bochs compiled with x86-64 support.
+</para>
+<para><command>pcid</command></para>
+<para>
+Enable Process-Context Identifiers (PCID) support in long mode.
+This option exists only if Bochs compiled with x86-64 support.
+</para>
+<para><command>mwait</command></para>
+<para>
+Select MONITOR/MWAIT instructions support.
+This option exists only if Bochs compiled with --enable-monitor-mwait.
+</para>
+<para><command>mwait_is_nop</command></para>
+<para>
+When this option is enabled MWAIT will not put the CPU into a sleep state.
+This option exists only if Bochs compiled with --enable-monitor-mwait.
+</para>
+<para><command>stepping</command></para>
+<para>
+Set stepping information returned by CPUID. Default stepping value is 3.
+</para>
+<para><command>vendor_string</command></para>
+<para>
+Set the CPUID vendor string returned by CPUID(0x0).  This should be a
+twelve-character ASCII string.
+</para>
+<para><command>brand_string</command></para>
+<para>
+Set the CPUID brand string returned by CPUID(0x80000002 .. 0x80000004]).  This should be
+at most a forty-eight-character ASCII string.
+</para>
+<para><command>cpuid_limit_winnt</command></para>
+<para>
+Determine whether to limit maximum CPUID function to 3. This mode is required
+to workaround WinNT installation and boot issues.
+</para>
 </section>
 
 <section><title>romimage</title>
@@ -3152,14 +3224,16 @@ Examples:
 <screen>
 2.88M 3.5" media:
   floppya: 2_88=a:, status=inserted
-1.44M 3.5" media:
-  floppya: 1_44=floppya.img, status=inserted
+1.44M 3.5" media (write protected):
+  floppya: 1_44=floppya.img, status=inserted, write_protected=1
 1.2M  5.25" media:
   floppyb: 1_2=/dev/fd0, status=inserted
 720K  3.5" media:
   floppya: 720k=/usr/local/bochs/images/win95.img, status=inserted
 auto-detect floppy media type:
   floppya: image=floppy.img, status=inserted
+use directory as VFAT media:
+  floppya: 1_44=vvfat:path, status=inserted
 1.44M 3.5" floppy drive, no media:
   floppya: type=1_44
 </screen>
@@ -3183,6 +3257,10 @@ or <constant>inserted</constant>. Usually you will want to use
 <para>
 The parameter 'type' can be used to enable the floppy drive without media
 and status specified. Usually the drive type is set up based on the media type.
+</para>
+<para>
+The optional parameter 'write_protected' can be used to control the media
+write protect switch. By default it is turned off.
 </para>
 </section>
 
@@ -3234,7 +3312,7 @@ This defines the type and characteristics of all attached ata devices:
 <row>
   <entry> mode  </entry>
   <entry> image type, only valid for disks </entry>
-  <entry> [flat | concat | external | dll | sparse | vmware3 | vmware4 | undoable | growing | volatile ]</entry>
+  <entry> [flat | concat | external | dll | sparse | vmware3 | vmware4 | undoable | growing | volatile | vvfat ]</entry>
 </row>
 <row> <entry> cylinders </entry> <entry> only valid for disks </entry> </row>
 <row> <entry> heads </entry> <entry> only valid for disks </entry> </row>
@@ -3243,6 +3321,7 @@ This defines the type and characteristics of all attached ata devices:
 <row> <entry> biosdetect </entry> <entry> type of biosdetection </entry> <entry> [none | auto], only for disks on ata0 [cmos] </entry> </row>
 <row> <entry> translation </entry> <entry> type of translation done by the BIOS (legacy int13), only for disks </entry> <entry> [none | lba | large | rechs | auto] </entry> </row>
 <row> <entry> model </entry> <entry> string returned by identify device ATA command </entry> </row>
+<row> <entry> journal </entry> <entry> optional filename of the redolog for undoable, volatile and vvfat disks </entry> </row>
 </tbody>
 </tgroup>
 </table>
@@ -3332,6 +3411,9 @@ growing : growing file
 </para></listitem>
 <listitem><para>
 volatile : flat file with volatile redolog
+</para></listitem>
+<listitem><para>
+vvfat: local directory appears as VFAT disk (with volatile redolog / optional commit)
 </para></listitem>
 </itemizedlist>
 Please see <xref linkend="harddisk-modes"> for a discussion on disk modes.
@@ -3439,7 +3521,6 @@ behaviour. See the examples below for currently supported options.
 <screen>
   display_library: rfb, options="timeout=60"  # time to wait for client
   display_library: sdl, options="fullscreen"  # startup in fullscreen mode
-  display_library: win32, options="legacyF12" # use F12 to toggle mouse
   display_library: win32, options="gui_debug" # use win32 debugger gui frontend
   display_library: x, options="hideIPS"       # disable IPS output in status bar
   display_library: x, options="gui_debug"     # use GTK debugger gui frontend
@@ -3845,23 +3926,37 @@ Default value are sync=none, time0=local
 Examples:
 <screen>
   mouse: enabled=1
-  mouse: enabled=1, type=imps2
-  mouse: enabled=1, type=serial
-  mouse: enabled=0
+  mouse: type=imps2, enabled=1
+  mouse: type=serial, enabled=1
+  mouse: enabled=0, toggle=ctrl+f10
 </screen>
+This defines parameters for the emulated mouse type, the initial status
+of the mouse capture and the runtime method to toggle it.
+</para>
+<para><command>type</command></para>
+<para>
+With the mouse type option you can select the type of mouse to emulate.
+The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
+on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
+setting 'mode=mouse', see <link linkend="bochsopt-com">com option</link>).
+To connect a mouse to an USB port, see the <link linkend="bochsopt-usb-uhci">usb_uhci</link>
+or 'usb_ohci' option (requires PCI and USB support).
+</para>
+<para><command>enabled</command></para>
+<para>
 The Bochs gui creates mouse "events" unless the 'enabled' option is
 set to 0. The hardware emulation itself is not disabled by this.
 Unless you have a particular reason for enabling the mouse by default,
 it is recommended that you leave it off. You can also toggle the
-mouse usage at runtime (see <link linkend="headerbar">headerbar</link>).
+mouse usage at runtime (see <link linkend="headerbar">headerbar</link>
+and the 'toggle' option below).
 </para>
+<para><command>toggle</command></para>
 <para>
-  With the mouse type option you can select the type of mouse to emulate.
-  The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
-  on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
-  setting 'mode=mouse', see <link linkend="bochsopt-com">com option</link>).
-  To connect a mouse to an USB port, see the <link linkend="bochsopt-usb_uhci">usb_uhci option</link>
-  (requires PCI and USB support).
+The default method to toggle the mouse capture at runtime is to press the
+CTRL key and the middle mouse button ('ctrl+mbutton'). This option allows
+to change the method to 'ctrl+f10' (like DOSBox) or 'ctrl+alt' (like QEMU)
+or 'f12' (replaces win32 'legacyF12' option).
 </para>
 </section>
 
@@ -3918,21 +4013,28 @@ located in the <constant>bochs/host/linux/pcidev/</constant> directory.
 </para>
 </section>
 
-<section id="bochsopt-usb_uhci"><title>usb_uhci</title>
+<section id="bochsopt-usb-uhci"><title>usb_uhci</title>
 <para>
 Examples:
 <screen>
-  usb_uhci: enabled=1, port1=mouse, port2=keypad
-  usb_uhci: enabled=1, port1=tablet, port2=disk:usbdisk.img
-  usb_uhci: enabled=1, port1=hub:7, port2=cdrom:image.iso
+  usb_uhci: enabled=1, port1=mouse, port2=disk:usbstick.img
+  usb_uhci: enabled=1, port1=hub:7, port2=disk:growing:usbdisk.img
+  usb_uhci: enabled=1, port2=disk:undoable:usbdisk.img, options1=journal:redo.log
+  usb_uhci: enabled=1, port1=printer:printdata.bin, port2=cdrom:image.iso
 </screen>
 This option controls the presence of the USB root hub which is a part of the
 i440FX PCI chipset.
 </para>
 <para>
 With the port<replaceable>X</replaceable> option you can connect devices
-to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom'
-and 'hub').
+to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom',
+'hub' and 'printer').
+</para>
+<para>
+The options<replaceable>X</replaceable> parameter can be used to assign specific
+options to the device connected to the corresponding USB port. Currently this
+feature is only used to set the speed reported by device and by the 'disk'
+device to specify an alternative redolog file of some image modes.
 </para>
 <para>
 If you connect the mouse or tablet to one of the ports, Bochs forwards the
@@ -3941,10 +4043,14 @@ When connecting the keypad to one of the ports, Bochs forwards the input of
 the numeric keypad to the USB device instead of the PS/2 keyboard.
 </para>
 <para>
-To connect a flat image as an USB hard disk you can use the 'disk' device with
-the path to the image separated with a colon (see above). To emulate an USB
-cdrom you can use the 'cdrom' device name and the path to an ISO image or raw
-device name also separated with a colon.
+To connect a 'flat' mode image as an USB hardisk you can use the 'disk' device
+with the path to the image separated with a colon. To use other disk image modes
+similar to ATA disks the syntax 'disk:mode:filename' must be used (see above).
+</para>
+<para>
+To emulate an USB cdrom you can use the 'cdrom' device name and the path to
+an ISO image or raw device name also separated with a colon. An option to
+insert/eject media is available in the runtime configuration.
 </para>
 <para>
 The device name 'hub' connects an external hub with max. 8 ports (default: 4)
@@ -3952,12 +4058,18 @@ to the root hub. To specify the number of ports you have to add the value
 separated with a colon. Connecting devices to the external hub ports is only
 available in the runtime configuration.
 </para>
+<para>
+The device 'printer' emulates the HP Deskjet 920C printer. The PCL data is
+sent to a file specified in bochsrc.txt. The current code appends the PCL
+code to the file if the file already existed. It would probably be nice to
+overwrite the file instead, asking user first.
+</para>
 <note><para>
 PCI support must be enabled.
 </para></note>
 </section>
 
-<section id="bochsopt-usb_ohci"><title>usb_ohci</title>
+<section id="bochsopt-usb-ohci"><title>usb_ohci</title>
 <para>
 Example:
 <screen>
@@ -3965,7 +4077,7 @@ Example:
 </screen>
 This option controls the presence of the USB OHCI host controller with a
 2-port hub. The portX option accepts the same device types with the same
-syntax as the UHCI controller (see the <link linkend="bochsopt-usb_uhci">usb_uhci option</link>).
+syntax as the UHCI controller (see the <link linkend="bochsopt-usb-uhci">usb_uhci option</link>).
 The OHCI HC must be assigned to a PCI slot.
 </para>
 </section>
@@ -4362,13 +4474,6 @@ Edit <filename>config.h</filename> after running configure, but before compiling
 <para>
 BX_USE_SB16_SMF should be 1 unless you intend to have several sound cards
 running at the same time.
-</para>
-
-<para>
-BX_USE_SOUND_VIRTUAL can be 0 or 1, and determines whether the output class
-uses virtual functions or not. The former is more versatile and allows to
-select the class at runtime (not supported at the moment), while the latter
-is slightly faster.
 </para>
 
 <para>
@@ -4867,8 +4972,9 @@ You can also start bochs with the -q option to skip these menus.
 2. Read options from...
 3. Edit options
 4. Save options to...
-5. Begin simulation
-6. Quit now
+5. Restore the Bochs state from...
+6. Begin simulation
+7. Quit now
 
 Please choose one: [5]
 </screen>
@@ -4911,13 +5017,13 @@ behavoiur of Bochs at runtime if you click on one of these buttons:
 <para>
   Here you can enable the creation of mouse events by the host. Once mouse
   events are captured, you cannot reach the button anymore, in order to disable
-  capturing again. In this case, use "Ctrl+3rd mouse button" to disable it.
-  On Win32 Bochs can be configured to use the legacy F12 button to toggle the
-  mouse capture.
+  capturing again. By default you can enable and disable the mouse capture pressing
+  the CTRL key and the third (middle) mouse button. See the <link linkend="bochsopt-mouse">mouse option</link>
+  parameter 'toggle' for other methods to toggle the mouse capture.
 </para>
 <para>&FIXME; Support for 2 button mouse to toggle the capture mode not yet complete.
-  Some display libraries still don't support the new feature, but
-  it is already supported on X11, SDL, wxWidgets and Win32.</para>
+  Some display libraries still don't support changing the mouse capture at runtime,
+  but it is already supported on RFB, SDL, Win32, wxWidgets and X11.</para>
 </listitem>
 <listitem>
 <para>user button</para>
@@ -4986,13 +5092,11 @@ Bochs Runtime Options
 7. (not implemented)
 8. Log options for all devices
 9. Log options for individual devices
-10. VGA Update Interval: 100000
-11. Mouse: disabled
-12. Keyboard paste delay: 100000
-13. Userbutton shortcut: ctrlaltdel
-14. Instruction tracing: off (doesn't exist yet)
-15. Continue simulation
-16. Quit now
+10. Instruction tracing: off (doesn't exist yet)
+11. USB runtime options
+12. Misc runtime options
+13. Continue simulation
+14. Quit now
 
 Please choose one:  [15]
 </screen>
@@ -7255,6 +7359,11 @@ If unspecified, the default "mode" is flat.
        always rollbacked
        </entry>
  </row>
+ <row> <entry> vvfat </entry> <entry> local directory appears as VFAT disk (with volatile redolog) </entry>
+       <entry>
+       optional commit or rollback
+       </entry>
+ </row>
 </tbody>
 </tgroup>
 </table>
@@ -7816,6 +7925,82 @@ The flat disk images must be created with the bximage utility
 <section><title>limitations</title>
 <para>
 &FIXME; to be completed
+</para>
+</section>
+</section>
+
+<section><title>vvfat</title>
+<para>
+</para>
+<section><title>description</title>
+<para>
+    The "vvfat" disk image mode is mostly a port of Qemu's "virtual VFAT" block
+    driver (written by Johannes E. Schindelin). It supports the read-only part
+    of this implementation plus some additions. The structures of the
+    virtual disk are created from the contents of the specified local directory
+    when Bochs is starting. All writes to this virtual disk go to a volatile
+    redolog and when closing Bochs, the user can decide whether or not to commit
+    the changes. If "No" is seclected, all changes will be lost when Bochs quits
+    and the files of the local directory are not modified. Otherwise the changes
+    of files and directories are committed. WARNING: Don't use important data without
+    backup in the "vvfat" directory when using this "optional commit" feature.
+</para>
+<para>
+    In addition to Qemu's "vvfat" implementation the Bochs one supports configurable
+    disk geometry, FAT32 and reading MBR and/or boot sector from file. When using
+    the autodetection feature, the CHS values 1024/16/63 (Qemu defaults) are used.
+    To use an MBR image file from a real disk it must be named <filename>vvfat_mbr.bin</filename>
+    and placed in the specified directory. Bochs uses the geometry and file system
+    type from this file and doesn't show it on the virtual disk. The same applies
+    to a boot sector image file, but it must be named <filename>vvfat_boot.bin</filename>.
+    Using both image file is also possible if they match (grabbed from the same disk).
+</para>
+<para>
+    FAT32 is enabled for disk with minimum 2 GB size, or if MBR / boot sector image
+    enable this filesystem. When using "vvfat" for a floppy, FAT12 is used (1.44M
+    media only). In all other cases FAT16 is used. Long filename support
+    is always present.
+</para>
+<para>
+    Special FAT file attributes are stored in a special file named <filename>vvfat_attr.cfg</filename>.
+    When using the "optional commit" feature, modified attributes are saved to this file.
+    The "optional commit" also supports setting the file modification date and time.
+</para>
+</section>
+<section><title>image creation</title>
+<para>
+    Not necessary. The directory must exist before running Bochs.
+</para>
+</section>
+<section><title>path</title>
+<para>
+    The "path" option of the ataX-xxx directive in the configuration file
+    must point to an existing local directory. The redolog name can be set
+    with the "journal" option of the same directive. If not set, the redolog
+    name is created by adding the filename "vvfat.dir.redolog" to the path.
+    A random suffix is also appended to the redolog name.
+</para>
+</section>
+<section><title>external tools</title>
+<para>
+    You can use your favourite file manager to copy file to the directory you'd
+    like to use. The directory should not be modified while Bochs is running.
+</para>
+</section>
+<section><title>typical use</title>
+<para>
+    Accessing files of the host hard drive is only possible with vvfat.
+</para>
+</section>
+<section><title>limitations</title>
+<para>
+    There is no runtime write support present yet. All changes are written to
+    the volatile redolog and they can only be committed on Bochs exit.
+</para>
+<para>
+    When using the MBR from image file only the first partition is used and it
+    must be of type FAT16 or FAT32. FAT12 can be used for the floppy only.
+    An extended partition or other file system types are not supported.
 </para>
 </section>
 </section>

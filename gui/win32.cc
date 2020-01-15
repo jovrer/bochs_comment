@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.137 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: win32.cc,v 1.143 2011/01/25 15:49:32 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -32,6 +32,7 @@
 #include "param_names.h"
 #include "keymap.h"
 #include "iodev/iodev.h"
+#include "iodev/vga.h"
 #if BX_WITH_WIN32
 
 #include "zmouse.h"
@@ -99,7 +100,7 @@ static int ms_xdelta=0, ms_ydelta=0, ms_zdelta=0;
 static int ms_lastx=0, ms_lasty=0;
 static int ms_savedx=0, ms_savedy=0;
 static BOOL mouseCaptureMode, mouseCaptureNew, mouseToggleReq;
-static unsigned long workerThread = 0;
+static UINT_PTR workerThread = 0;
 static DWORD workerThreadID = 0;
 static int mouse_buttons = 3;
 
@@ -171,7 +172,6 @@ static unsigned dimension_x, dimension_y, current_bpp;
 static unsigned stretched_x, stretched_y;
 static unsigned stretch_factor=1;
 static BOOL BxTextMode = TRUE;
-static BOOL legacyF12 = FALSE;
 static BOOL fix_size = FALSE;
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
 static BOOL gui_debug = FALSE;
@@ -179,9 +179,9 @@ static BOOL gui_debug = FALSE;
 static HWND hotKeyReceiver = NULL;
 static HWND saveParent = NULL;
 
-static const char *szMouseEnable = "CTRL + 3rd button enables mouse ";
-static const char *szMouseDisable = "CTRL + 3rd button disables mouse";
-static const char *szMouseTooltip = "Enable mouse capture\nUse CTRL + 3rd button to release";
+static char szMouseEnable[40];
+static char szMouseDisable[40];
+static char szMouseTooltip[64];
 
 static const char szAppName[] = "Bochs for Windows";
 static const char szWindowName[] = "Bochs for Windows - Display";
@@ -637,20 +637,12 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   mouseCaptureNew = FALSE;
   mouseToggleReq = FALSE;
 
-  mouse_buttons = GetSystemMetrics(SM_CMOUSEBUTTONS);
-  BX_INFO(("Number of Mouse Buttons = %d", mouse_buttons));
-  if (mouse_buttons == 2) {
-    szMouseEnable = "CTRL + Lbutton + Rbutton enables mouse ";
-    szMouseDisable = "CTRL + Lbutton + Rbutton disables mouse";
-    szMouseTooltip = "Enable mouse capture\nUse CTRL + Lbutton + Rbutton to release";
-  }
-
   // parse win32 specific options
   if (argc > 1) {
     for (i = 1; i < argc; i++) {
       BX_INFO(("option %d: %s", i, argv[i]));
       if (!strcmp(argv[i], "legacyF12")) {
-        legacyF12 = TRUE;
+        BX_PANIC(("The option 'legacyF12' is now deprecated - use 'mouse: toggle=f12' instead"));
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       } else if (!strcmp(argv[i], "gui_debug")) {
         if (gui_ci) {
@@ -666,10 +658,17 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
     }
   }
 
-  if (legacyF12) {
-    szMouseEnable = "Press F12 to enable mouse ";
-    szMouseDisable = "Press F12 to disable mouse";
-    szMouseTooltip = "Enable mouse capture\nUse F12 to release";
+  mouse_buttons = GetSystemMetrics(SM_CMOUSEBUTTONS);
+  BX_INFO(("Number of Mouse Buttons = %d", mouse_buttons));
+  if ((SIM->get_param_enum(BXPN_MOUSE_TOGGLE)->get() == BX_MOUSE_TOGGLE_CTRL_MB) &&
+      (mouse_buttons == 2)) {
+    lstrcpy(szMouseEnable, "CTRL + Lbutton + Rbutton enables mouse ");
+    lstrcpy(szMouseDisable, "CTRL + Lbutton + Rbutton disables mouse");
+    lstrcpy(szMouseTooltip, "Enable mouse capture\nUse CTRL + Lbutton + Rbutton to release");
+  } else {
+    wsprintf(szMouseEnable, "%s enables mouse ", get_toggle_info());
+    wsprintf(szMouseDisable, "%s disables mouse", get_toggle_info());
+    wsprintf(szMouseTooltip, "Enable mouse capture\nUse %s to release", get_toggle_info());
   }
 
   stInfo.hInstance = GetModuleHandle(NULL);
@@ -770,7 +769,8 @@ void resize_main_window()
     mainStyle &= ~(WS_CAPTION | WS_BORDER);
     SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
     // maybe need to adjust stInfo.simWnd here also?
-    if (saveParent = SetParent(stInfo.mainWnd, desktopWindow)) {
+    saveParent = SetParent(stInfo.mainWnd, desktopWindow);
+    if (saveParent) {
       BX_DEBUG(("Saved parent window"));
       SetWindowPos(stInfo.mainWnd, HWND_TOPMOST, desktop.left, desktop.top,
        desktop.right, desktop.bottom, SWP_SHOWWINDOW);
@@ -873,7 +873,7 @@ VOID CDECL UIThread(PVOID pvoid)
       for (elements = BX_SB_TEXT_ELEMENTS; elements < (BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS); elements++)
         SB_Edges[elements] = SB_Edges[elements-1] + SIZE_OF_SB_ELEMENT;
       SB_Edges[elements] = -1;
-      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1, (long)&SB_Edges);
+      SendMessage(hwndSB, SB_SETPARTS, BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS+1, (LPARAM)&SB_Edges);
     }
     SetStatusText(0, szMouseEnable, TRUE);
 
@@ -953,14 +953,14 @@ void SetStatusText(int Num, const char *Text, bx_bool active, bx_bool w)
   if ((Num < BX_SB_TEXT_ELEMENTS) || (Num > (BX_MAX_STATUSITEMS+BX_SB_TEXT_ELEMENTS))) {
     StatText[0] = ' ';  // Add space to text in 1st and last items
     lstrcpy(StatText+1, Text);
-    SendMessage(hwndSB, SB_SETTEXT, Num, (long)StatText);
+    SendMessage(hwndSB, SB_SETTEXT, Num, (LPARAM)StatText);
   } else {
     StatText[0] = 9;  // Center the rest
     lstrcpy(StatText+1, Text);
     lstrcpy(SB_Text[Num-BX_SB_TEXT_ELEMENTS], StatText);
     SB_Active[Num-BX_SB_TEXT_ELEMENTS] = active;
     SB_ActiveW[Num-BX_SB_TEXT_ELEMENTS] = w;
-    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (long)SB_Text[Num-BX_SB_TEXT_ELEMENTS]);
+    SendMessage(hwndSB, SB_SETTEXT, Num | SBT_OWNERDRAW, (LPARAM)SB_Text[Num-BX_SB_TEXT_ELEMENTS]);
   }
   UpdateWindow(hwndSB);
 }
@@ -1094,6 +1094,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
   HDC hdc, hdcMem;
   PAINTSTRUCT ps;
   POINT pt;
+  bx_bool mouse_toggle = 0;
   static BOOL mouseModeChange = FALSE;
 
   switch (iMsg) {
@@ -1170,11 +1171,14 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
   case WM_LBUTTONDBLCLK:
   case WM_LBUTTONUP:
     if (mouse_buttons == 2) {
-      if (wParam == (MK_CONTROL | MK_LBUTTON | MK_RBUTTON)) {
-        mouseCaptureMode = !mouseCaptureMode;
-        SetMouseCapture();
-        mouseModeChange = TRUE;
+      if ((wParam & MK_LBUTTON) == MK_LBUTTON) {
+        if (bx_gui->mouse_toggle_check(BX_MT_LBUTTON, 1)) {
+          mouseCaptureMode = !mouseCaptureMode;
+          SetMouseCapture();
+          mouseModeChange = TRUE;
+        }
       } else if (mouseModeChange && (iMsg == WM_LBUTTONUP)) {
+        bx_gui->mouse_toggle_check(BX_MT_LBUTTON, 0);
         mouseModeChange = FALSE;
       } else {
         processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 1);
@@ -1187,11 +1191,14 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
   case WM_MBUTTONDOWN:
   case WM_MBUTTONDBLCLK:
   case WM_MBUTTONUP:
-    if (wParam == (MK_CONTROL | MK_MBUTTON)) {
-      mouseCaptureMode = !mouseCaptureMode;
-      SetMouseCapture();
-      mouseModeChange = TRUE;
+    if ((wParam & MK_MBUTTON) == MK_MBUTTON) {
+      if (bx_gui->mouse_toggle_check(BX_MT_MBUTTON, 1)) {
+        mouseCaptureMode = !mouseCaptureMode;
+        SetMouseCapture();
+        mouseModeChange = TRUE;
+      }
     } else if (mouseModeChange && (iMsg == WM_MBUTTONUP)) {
+      bx_gui->mouse_toggle_check(BX_MT_MBUTTON, 0);
       mouseModeChange = FALSE;
     } else {
       processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 4);
@@ -1202,11 +1209,14 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
   case WM_RBUTTONDBLCLK:
   case WM_RBUTTONUP:
     if (mouse_buttons == 2) {
-      if (wParam == (MK_CONTROL | MK_LBUTTON | MK_RBUTTON)) {
-        mouseCaptureMode = !mouseCaptureMode;
-        SetMouseCapture();
-        mouseModeChange = TRUE;
+      if ((wParam & MK_RBUTTON) == MK_RBUTTON) {
+        if (bx_gui->mouse_toggle_check(BX_MT_RBUTTON, 1)) {
+          mouseCaptureMode = !mouseCaptureMode;
+          SetMouseCapture();
+          mouseModeChange = TRUE;
+        }
       } else if (mouseModeChange && (iMsg == WM_RBUTTONUP)) {
+        bx_gui->mouse_toggle_check(BX_MT_RBUTTON, 0);
         mouseModeChange = FALSE;
       } else {
         processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 2);
@@ -1229,7 +1239,16 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
   case WM_KEYDOWN:
   case WM_SYSKEYDOWN:
-    if (legacyF12 && (wParam == VK_F12)) {
+    if (wParam == VK_CONTROL) {
+      mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_CTRL, 1);
+    } else if (wParam == VK_MENU) {
+      mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_ALT, 1);
+    } else if (wParam == VK_F10) {
+      mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_F10, 1);
+    } else if (wParam == VK_F12) {
+      mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_F12, 1);
+    }
+    if (mouse_toggle) {
       mouseCaptureMode = !mouseCaptureMode;
       SetMouseCapture();
       return 0;
@@ -1255,6 +1274,15 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
                                0, 0, current_bpp);
       }
     } else {
+      if (wParam == VK_CONTROL) {
+        bx_gui->mouse_toggle_check(BX_MT_KEY_CTRL, 0);
+      } else if (wParam == VK_MENU) {
+        bx_gui->mouse_toggle_check(BX_MT_KEY_ALT, 0);
+      } else if (wParam == VK_F10) {
+        bx_gui->mouse_toggle_check(BX_MT_KEY_F10, 0);
+      } else if (wParam == VK_F12) {
+        bx_gui->mouse_toggle_check(BX_MT_KEY_F12, 0);
+      }
       EnterCriticalSection(&stInfo.keyCS);
       enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_RELEASED);
       LeaveCriticalSection(&stInfo.keyCS);
@@ -1992,7 +2020,7 @@ unsigned bx_win32_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim,
   bx_bitmaps[bx_bitmap_entries].ydim = ydim;
 
   tbab.hInst = NULL;
-  tbab.nID = (UINT)bx_bitmaps[bx_bitmap_entries].bmap;
+  tbab.nID = (UINT_PTR)bx_bitmaps[bx_bitmap_entries].bmap;
   SendMessage(hwndTB, TB_ADDBITMAP, 1, (LPARAM)&tbab);
 
   bx_bitmap_entries++;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.h,v 1.26 2010/03/31 14:00:46 sshwarts Exp $
+// $Id: crregs.h,v 1.30 2010/07/22 15:12:08 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2007-2009 Stanislav Shwartsman
@@ -28,12 +28,12 @@ struct bx_cr0_t {
   Bit32u  val32; // 32bit value of register
 
   // Accessors for all cr0 bitfields.
-#define IMPLEMENT_CRREG_ACCESSORS(name,bitnum)               \
-  BX_CPP_INLINE bx_bool get_##name () {                      \
-    return 1 & (val32 >> bitnum);                            \
-  }                                                          \
-  BX_CPP_INLINE void set_##name (Bit8u val) {                \
-    val32 = (val32&~(1<<bitnum)) | (val ? (1<<bitnum) : 0);  \
+#define IMPLEMENT_CRREG_ACCESSORS(name, bitnum)            \
+  BX_CPP_INLINE bx_bool get_##name () {                    \
+    return 1 & (val32 >> bitnum);                          \
+  }                                                        \
+  BX_CPP_INLINE void set_##name (Bit8u val) {              \
+    val32 = (val32 & ~(1<<bitnum)) | ((!!val) << bitnum);  \
   }
 
 // CR0 notes:
@@ -75,13 +75,29 @@ struct bx_cr0_t {
 };
 
 #if BX_CPU_LEVEL >= 4
+
+#define BX_CR4_VME_MASK        (1 << 0)
+#define BX_CR4_PVI_MASK        (1 << 1)
+#define BX_CR4_TSD_MASK        (1 << 2)
+#define BX_CR4_DE_MASK         (1 << 3)
+#define BX_CR4_PSE_MASK        (1 << 4)
+#define BX_CR4_PAE_MASK        (1 << 5)
+#define BX_CR4_MCE_MASK        (1 << 6)
+#define BX_CR4_PGE_MASK        (1 << 7)
+#define BX_CR4_PCE_MASK        (1 << 8)
+#define BX_CR4_OSFXSR_MASK     (1 << 9)
+#define BX_CR4_OSXMMEXCPT_MASK (1 << 10)
+#define BX_CR4_VMXE_MASK       (1 << 13)
+#define BX_CR4_SMXE_MASK       (1 << 14)
+#define BX_CR4_FSGSBASE_MASK   (1 << 16)
+#define BX_CR4_PCIDE_MASK      (1 << 17)
+#define BX_CR4_OSXSAVE_MASK    (1 << 18)
+
 struct bx_cr4_t {
   Bit32u  val32; // 32bit value of register
 
-#if BX_CPU_LEVEL >= 5
   IMPLEMENT_CRREG_ACCESSORS(VME, 0);
   IMPLEMENT_CRREG_ACCESSORS(PVI, 1);
-#endif
   IMPLEMENT_CRREG_ACCESSORS(TSD, 2);
   IMPLEMENT_CRREG_ACCESSORS(DE,  3);
   IMPLEMENT_CRREG_ACCESSORS(PSE, 4);
@@ -94,20 +110,28 @@ struct bx_cr4_t {
 #if BX_SUPPORT_VMX
   IMPLEMENT_CRREG_ACCESSORS(VMXE, 13);
 #endif
-#if BX_CPU_LEVEL >= 6
+#if BX_SUPPORT_X86_64
+  IMPLEMENT_CRREG_ACCESSORS(FSGSBASE, 16);
   IMPLEMENT_CRREG_ACCESSORS(PCIDE, 17);
-  IMPLEMENT_CRREG_ACCESSORS(OSXSAVE, 18);
 #endif
+  IMPLEMENT_CRREG_ACCESSORS(OSXSAVE, 18);
 
   BX_CPP_INLINE Bit32u get32() { return val32; }
   BX_CPP_INLINE void set32(Bit32u val) { val32 = val; }
 };
 
-extern bx_address get_cr4_allow_mask(Bit32u);
+#define BX_CR4_FLUSH_TLB_MASK \
+   (BX_CR4_PSE_MASK | BX_CR4_PAE_MASK | BX_CR4_PGE_MASK | BX_CR4_PCIDE_MASK)
 
 #endif  // #if BX_CPU_LEVEL >= 4
 
 #if BX_SUPPORT_X86_64
+
+#define BX_EFER_SCE_MASK       (1 <<  0)
+#define BX_EFER_LME_MASK       (1 <<  8)
+#define BX_EFER_LMA_MASK       (1 << 10)
+#define BX_EFER_NXE_MASK       (1 << 11)
+#define BX_EFER_FFXSR_MASK     (1 << 14)
 
 struct bx_efer_t {
   Bit32u val32; // 32bit value of register
@@ -116,15 +140,17 @@ struct bx_efer_t {
   IMPLEMENT_CRREG_ACCESSORS(LME,    8);
   IMPLEMENT_CRREG_ACCESSORS(LMA,   10);
   IMPLEMENT_CRREG_ACCESSORS(NXE,   11);
+  IMPLEMENT_CRREG_ACCESSORS(SVME,  12); /* AMD Secure Virtual Machine */
+  IMPLEMENT_CRREG_ACCESSORS(LMSLE, 13); /* AMD Long Mode Segment Limit */
   IMPLEMENT_CRREG_ACCESSORS(FFXSR, 14);
 
   BX_CPP_INLINE Bit32u get32() { return val32; }
   BX_CPP_INLINE void set32(Bit32u val) { val32 = val; }
 };
 
-#define BX_EFER_LME_MASK       (1 <<  8)
-#define BX_EFER_LMA_MASK       (1 << 10)
-#define BX_EFER_SUPPORTED_BITS BX_CONST64(0x00004d01)
+#define BX_EFER_SUPPORTED_BITS \
+   ((Bit64u) (BX_EFER_SCE_MASK | BX_EFER_LME_MASK | \
+              BX_EFER_LMA_MASK | BX_EFER_NXE_MASK | BX_EFER_FFXSR_MASK))
 
 #endif
 

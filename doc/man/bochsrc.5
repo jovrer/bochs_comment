@@ -1,5 +1,5 @@
 .\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
-.TH bochsrc 5 "30 April 2009" "bochsrc" "The Bochs Project"
+.TH bochsrc 5 "20 Feb 2011" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -140,11 +140,6 @@ Reset the CPU when triple fault occur (highly recommended) rather than
 PANIC. Remember that if you trying to continue after triple fault the
 simulation will be completely bogus !
 
-cpuid_limit_winnt:
-
-Determine whether to limit maximum CPUID function to 3. This mode is
-required to workaround WinNT installation and boot issues.
-
 msrs:
 
 Define path to user CPU Model Specific Registers (MSRs) specification.
@@ -155,16 +150,6 @@ ignore_bad_msrs:
 Ignore MSR references that Bochs does not understand; print a warning
 message instead of generating #GP exception. This option is enabled
 by default but will not be avaiable if configurable MSRs are enabled.
-
-vendor_string:
-
-Set the CPUID vendor string returned by CPUID(0x0).  This should be a
-twelve-character ASCII string.  
-
-brand_string:
-
-Set the CPUID vendor string returned by CPUID(0x80000002 .. 0x80000004).  
-This should be at most a forty-eight-character ASCII string.  
 
 ips:
 
@@ -198,6 +183,88 @@ speed.
 
 Example:
   cpu: count=2, ips=10000000, msrs="msrs.def"
+
+.TP
+.I "cpuid:"
+This defines features and functionality supported by Bochs emulated CPU:
+
+mmx:
+
+Select MMX instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 5.
+
+sep:
+
+Select SYSENTER/SYSEXIT instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+sse:
+
+Select SSE instruction set support.
+Any of NONE/SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2 could be selected.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+xapic:
+
+Select XAPIC extensions support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+aes:
+
+Select AES instruction set support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+movbe:
+
+Select MOVBE Intel(R) Atom instruction support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+xsave:
+
+Select XSAVE extensions support.
+This option exists only if Bochs compiled with BX_CPU_LEVEL >= 6.
+
+1g_pages:
+
+Enable 1G page size support in long mode.
+This option exists only if Bochs compiled with x86-64 support.
+
+pcid:
+
+Enable Process-Context Identifiers (PCID) support in long mode.
+This option exists only if Bochs compiled with x86-64 support.
+
+mwait:
+
+Select MONITOR/MWAIT instructions support.
+This option exists only if Bochs compiled with --enable-monitor-mwait.
+
+mwait_is_nop:
+
+When this option is enabled MWAIT will not put the CPU into a sleep state.
+This option exists only if Bochs compiled with --enable-monitor-mwait.
+
+stepping:
+
+Set stepping information returned by CPUID. Default stepping value is 3.
+
+vendor_string:
+
+Set the CPUID vendor string returned by CPUID(0x0).  This should be a
+twelve-character ASCII string.
+
+brand_string:
+
+Set the CPUID vendor string returned by CPUID(0x80000002 .. 0x80000004).
+This should be at most a forty-eight-character ASCII string.
+
+cpuid_limit_winnt:
+
+Determine whether to limit maximum CPUID function to 3. This mode is
+required to workaround WinNT installation and boot issues.
+
+Example:
+  cpuid: mmx=1, sep=1, sse=sse4_2, xapic=1, aes=1, movbe=1, xsave=1, cpuid_limit_winnt=0
 
 .TP
 .I "megs:"
@@ -257,13 +324,16 @@ to use 'inserted'.
 The parameter 'type' can be used to enable the floppy drive without media
 and status specified. Usually the drive type is set up based on the media type.
 
+The optional parameter 'write_protected' can be used to control the media
+write protect switch. By default it is turned off.
+
 Example:
 
 2.88M 3.5" media:
   floppya: 2_88=path, status=ejected
 
-1.44M 3.5" media:
-  floppya: 1_44=path, status=inserted
+1.44M 3.5" media (write protected):
+  floppya: 1_44=path, status=inserted, write_protected=1
 
 1.2M  5.25" media:
   floppyb: 1_2=path, status=ejected
@@ -276,6 +346,9 @@ Example:
 
 Autodetect floppy media type:
   floppya: image=path, status=inserted
+
+Use directory as 1.44M VFAT media:
+  floppya: 1_44=vvfat:path, status=inserted
 
 1.44M 3.5" floppy drive, no media:
   floppya: type=1_44
@@ -307,7 +380,7 @@ This defines the type and characteristics of all attached ata devices:
    biosdetect= type of biosdetection [none|auto], only for disks on ata0 [cmos]
    translation=type of translation of the bios, only for disks [none|lba|large|rechs|auto]
    model=      string returned by identify device command
-   journal=    optional filename of the redolog for undoable and volatile disks
+   journal=    optional filename of the redolog for undoable, volatile and vvfat disks
 
 Point this at a hard disk image file, cdrom iso file,
 or a physical cdrom device.
@@ -334,6 +407,7 @@ The mode option defines how the disk image is handled. Disks can be defined as:
   - undoable : flat file with commitable redolog
   - growing : growing file
   - volatile : flat file with volatile redolog
+  - vvfat: local directory appears as read-only VFAT disk (with volatile redolog)
 
 The disk translation scheme (implemented in legacy int13 bios functions, and used by
 older operating systems like MS-DOS), can be defined as:
@@ -665,20 +739,37 @@ Example:
 
 .TP
 .I "mouse:"
-The Bochs gui creates mouse "events" unless the 'enabled' option is
-set to 0. The hardware emulation itself is not disabled by this.
-Unless you have a particular reason for enabling the mouse by default,
-it is recommended that you leave it off. You can also toggle the mouse
-usage at runtime (control key + middle mouse button).
+This defines parameters for the emulated mouse type, the initial status
+of the mouse capture and the runtime method to toggle it.
+
+type
+
 With the mouse type option you can select the type of mouse to emulate.
 The default value is 'ps2'. The other choices are 'imps2' (wheel mouse
 on PS/2), 'serial', 'serial_wheel' and 'serial_msys' (one com port requires
 setting 'mode=mouse'). To connect a mouse to an USB port, see the 'usb_uhci'
 or 'usb_ohci' option (requires PCI and USB support).
 
+enabled
+
+The Bochs gui creates mouse "events" unless the 'enabled' option is
+set to 0. The hardware emulation itself is not disabled by this.
+Unless you have a particular reason for enabling the mouse by default,
+it is recommended that you leave it off. You can also toggle the mouse
+usage at runtime (RFB, SDL, Win32, wxWidgets and X11 - see below).
+
+toggle
+
+The default method to toggle the mouse capture at runtime is to press the
+CTRL key and the middle mouse button ('ctrl+mbutton'). This option allows
+to change the method to 'ctrl+f10' (like DOSBox), 'ctrl+alt' (like QEMU)
+or 'f12' (replaces win32 'legacyF12' option).
+
 Examples:
-  mouse: enabled=0
-  mouse: enabled=1, type=imps2
+  mouse: enabled=1
+  mouse: type=imps2, enabled=1
+  mouse: type=serial, enabled=1
+  mouse: enabled=0, toggle=ctrl+f10
 
 .TP
 .I "private_colormap:"
@@ -839,27 +930,36 @@ Example:
 .I "usb_uhci:"
 This option controls the presence of the USB root hub which is a part
 of the i440FX PCI chipset. With the portX option you can connect devices
-to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom'
-and 'hub').
+to the hub (currently supported: 'mouse', 'tablet', 'keypad', 'disk', 'cdrom',
+'hub' and 'printer').
+
+The optionsX parameter can be used to assign specific options to the device
+connected to the corresponding USB port. Currently this feature is only used
+to set the speed reported by device and by the 'disk' device to specify
+an alternative redolog file of some image modes.
 
 If you connect the mouse or tablet to one of the ports, Bochs forwards the
 mouse movement data to the USB device instead of the selected mouse type.
 When connecting the keypad to one of the ports, Bochs forwards the input of
 the numeric keypad to the USB device instead of the PS/2 keyboard.
 
-To connect a flat image as an USB hardisk you can use the 'disk' device with
-the path to the image separated with a colon (see below). To emulate an USB
-cdrom you can use the 'cdrom' device name and the path to an ISO image or raw
-device name also separated with a colon.
+To connect a 'flat' mode image as an USB hardisk you can use the 'disk' device
+with the path to the image separated with a colon. To use other disk image modes
+similar to ATA disks the syntax 'disk:mode:filename' must be used (see below).
 
-The device name 'hub' connects an external hub with max. 8 ports (default: 4)
-to the root hub. To specify the number of ports you have to add the value
-separated with a colon. Connecting devices to the external hub ports is only
-available in the runtime configuration.
+To emulate an USB cdrom you can use the 'cdrom' device name and the path to
+an ISO image or raw device name also separated with a colon. An option to
+insert/eject media is available in the runtime configuration.
+
+The device 'printer' emulates the HP Deskjet 920C printer. The PCL data is
+sent to a file specified in bochsrc.txt. The current code appends the PCL
+code to the file if the file already existed. It would probably be nice to
+overwrite the file instead, asking user first.
 
 Example:
-  usb_uhci: enabled=1, port1=mouse, port2=disk:usbdisk.img
-  usb_uhci: enabled=1, port1=hub:7, port2=cdrom:image.iso
+  usb_uhci: enabled=1, port1=mouse, port2=disk:usbstick.img
+  usb_uhci: enabled=1, port1=hub:7, port2=disk:growing:usbdisk.img
+  usb_uhci: enabled=1, port1=printer:printdata.bin, port2=cdrom:image.iso
 
 .TP
 .I "usb_ohci:"

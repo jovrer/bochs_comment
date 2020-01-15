@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.h,v 1.19 2009/03/24 16:28:03 vruppert Exp $
+// $Id: win32dialog.h,v 1.22 2011/02/11 14:23:30 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -23,12 +23,13 @@
 
 #include "config.h"
 
+// Compilation for WIN64 native require minimum 0x0500
 #ifndef _WIN32_IE
-#define _WIN32_IE 0x0400	// Force a minimum "OS level" for commctrl.h
+#define _WIN32_IE 0x0500  /* Force a minimum "OS level" for commctrl.h */
 #endif
-#if _WIN32_IE < 0x0400
+#if _WIN32_IE < 0x0500
 #undef _WIN32_IE
-#define _WIN32_IE 0x0400
+#define _WIN32_IE 0x0500
 #endif
 
 extern "C" {
@@ -39,6 +40,11 @@ extern "C" {
 #include <shlobj.h>
 #include <ctype.h>
 }
+
+// 64-bit windows env misses this define
+#ifndef GWL_WNDPROC
+#define GWL_WNDPROC (-4)
+#endif
 
 #if BX_USE_TEXTCONFIG && defined(WIN32)
 

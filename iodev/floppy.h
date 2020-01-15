@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h,v 1.34 2009/12/04 19:50:27 sshwarts Exp $
+// $Id: floppy.h,v 1.40 2011/01/18 21:04:44 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -45,6 +45,8 @@ typedef struct {
 #ifdef WIN32
   unsigned char raw_floppy_win95_drv;
 #endif
+  bx_bool  vvfat_floppy;
+  device_image_t *vvfat;
   } floppy_t;
 
 class bx_floppy_ctrl_c : public bx_floppy_stub_c {
@@ -53,8 +55,7 @@ public:
   virtual ~bx_floppy_ctrl_c();
   virtual void init(void);
   virtual void reset(unsigned type);
-  virtual unsigned set_media_status(unsigned drive, unsigned status);
-  virtual unsigned get_media_status(unsigned drive);
+  virtual unsigned set_media_status(unsigned drive, bx_bool status);
   virtual void register_state(void);
 
 private:
@@ -145,11 +146,13 @@ private:
   BX_FD_SMF void   reset_changeline(void);
   BX_FD_SMF bx_bool get_tc(void);
   static void      timer_handler(void *);
-
-public:
   BX_FD_SMF void   timer(void);
   BX_FD_SMF void   increment_sector(void);
-  BX_FD_SMF bx_bool evaluate_media(Bit8u devtype, Bit8u type, char *path, floppy_t *floppy);
+  BX_FD_SMF bx_bool evaluate_media(Bit8u devtype, Bit8u type, char *path, floppy_t *media);
+  BX_FD_SMF void    close_media(floppy_t *media);
+  // runtime options
+  static Bit64s    floppy_param_handler(bx_param_c *param, int set, Bit64s val);
+  static const char* floppy_param_string_handler(bx_param_string_c *param, int set, const char *oldval, const char *val, int maxlen);
 };
 
 

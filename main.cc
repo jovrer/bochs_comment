@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.420 2010/04/24 09:36:04 sshwarts Exp $
+// $Id: main.cc,v 1.422 2010/11/21 12:02:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -113,6 +113,14 @@ void bx_print_header()
   if (REL_STRING[0]) {
     sprintf(buffer, "%s\n", REL_STRING);
     bx_center_print(stdout, buffer, 72);
+#ifdef __DATE__
+#ifdef __TIME__
+    sprintf(buffer, "Compiled at %s, %s\n", __DATE__, __TIME__);
+#else
+    sprintf(buffer, "Compiled at %s\n", __DATE__);
+#endif
+    bx_center_print(stdout, buffer, 72);
+#endif
   }
   printf("%s\n", divider);
 }
@@ -1005,15 +1013,25 @@ void bx_init_hardware()
   bx_bool movbe_enabled = SIM->get_param_bool(BXPN_CPUID_MOVBE)->get();
   bx_bool sep_enabled = SIM->get_param_bool(BXPN_CPUID_SEP)->get();
   bx_bool xsave_enabled = SIM->get_param_bool(BXPN_CPUID_XSAVE)->get();
-#endif
 #if BX_SUPPORT_X86_64
   bx_bool xlarge_pages_enabled = SIM->get_param_bool(BXPN_CPUID_1G_PAGES)->get();
+#endif
+#if BX_SUPPORT_MONITOR_MWAIT
+  bx_bool mwait_enabled = SIM->get_param_bool(BXPN_CPUID_MWAIT)->get();
+#endif
 #endif
 
   // Output to the log file the cpu and device settings
   // This will by handy for bug reports
   BX_INFO(("Bochs x86 Emulator %s", VER_STRING));
   BX_INFO(("  %s", REL_STRING));
+#ifdef __DATE__
+#ifdef __TIME__
+  BX_INFO(("Compiled at %s, %s", __DATE__, __TIME__));
+#else
+  BX_INFO(("Compiled at %s", __DATE__));
+#endif
+#endif
   BX_INFO(("System configuration"));
   BX_INFO(("  processors: %d (cores=%u, HT threads=%u)", BX_SMP_PROCESSORS,
     SIM->get_param_num(BXPN_CPU_NCORES)->get(), SIM->get_param_num(BXPN_CPU_NTHREADS)->get()));
@@ -1046,7 +1064,9 @@ void bx_init_hardware()
 #if BX_SUPPORT_X86_64
   BX_INFO(("  1G paging support: %s",xlarge_pages_enabled?"yes":"no"));
 #endif
-  BX_INFO(("  MWAIT support: %s",BX_SUPPORT_MONITOR_MWAIT?"yes":"no"));
+#if BX_SUPPORT_MONITOR_MWAIT
+  BX_INFO(("  MWAIT support: %s",mwait_enabled?"yes":"no"));
+#endif
 #if BX_SUPPORT_VMX
   BX_INFO(("  VMX support: %d",BX_SUPPORT_VMX));
 #else

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.cc,v 1.150 2009/12/04 19:50:26 sshwarts Exp $
+// $Id: devices.cc,v 1.154 2011/02/14 21:14:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2011  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -89,6 +89,12 @@ void bx_devices_c::init_stubs()
 #if BX_SUPPORT_APIC
   pluginIOAPIC = &stubIOAPIC;
 #endif
+#if BX_SUPPORT_PCIUSB
+  pluginUsbDevCtl = &stubUsbDevCtl;
+#endif
+#if BX_SUPPORT_SB16
+  pluginSoundModCtl = &stubSoundModCtl;
+#endif
 #if 0
   g2h = NULL;
 #endif
@@ -104,7 +110,7 @@ void bx_devices_c::init(BX_MEM_C *newmem)
   const char *plugname;
 #endif
 
-  BX_DEBUG(("Init $Id: devices.cc,v 1.150 2009/12/04 19:50:26 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: devices.cc,v 1.154 2011/02/14 21:14:20 vruppert Exp $"));
   mem = newmem;
 
   /* set builtin default handlers, will be overwritten by the real default handler */
@@ -163,13 +169,20 @@ void bx_devices_c::init(BX_MEM_C *newmem)
   PLUG_load_plugin(pic, PLUGTYPE_CORE);
   PLUG_load_plugin(pit, PLUGTYPE_CORE);
   PLUG_load_plugin(vga, PLUGTYPE_CORE);
+  PLUG_load_plugin(hdimage, PLUGTYPE_CORE);
   PLUG_load_plugin(floppy, PLUGTYPE_CORE);
+#if BX_SUPPORT_SB16
+  PLUG_load_plugin(soundmod, PLUGTYPE_CORE);
+#endif
 
   // PCI logic (i440FX)
   if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
 #if BX_SUPPORT_PCI
     PLUG_load_plugin(pci, PLUGTYPE_CORE);
     PLUG_load_plugin(pci2isa, PLUGTYPE_CORE);
+#if BX_SUPPORT_PCIUSB
+    PLUG_load_plugin(usb_common, PLUGTYPE_CORE);
+#endif
   } else {
     plugin_ctrl = (bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL);
     SIM->get_param_bool(BX_PLUGIN_PCI_IDE, plugin_ctrl)->set(0);
@@ -330,7 +343,7 @@ void bx_devices_c::init(BX_MEM_C *newmem)
                             "Port 92h System Control", 1);
 
   // misc. CMOS
-  Bit32u memory_in_k = mem->get_memory_len() / 1024;
+  Bit32u memory_in_k = (Bit32u)mem->get_memory_len() / 1024;
   Bit32u extended_memory_in_k = memory_in_k > 1024 ? (memory_in_k - 1024) : 0;
   if (extended_memory_in_k > 0xfc00) extended_memory_in_k = 0xfc00;
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_groups.cc,v 1.52 2010/04/02 19:01:16 sshwarts Exp $
+// $Id: dis_groups.cc,v 1.55 2010/11/23 15:42:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2009 Stanislav Shwartsman
@@ -330,9 +330,9 @@ void disassembler::ST0(const x86_insn *insn)
 void disassembler::STi(const x86_insn *insn)
 {
   if (intel_mode)
-    dis_sprintf  ("st(%d)", insn->rm);
+    dis_sprintf  ("st(%d)", insn->rm & 7);
   else
-    dis_sprintf("%%st(%d)", insn->rm);
+    dis_sprintf("%%st(%d)", insn->rm & 7);
 }
 
 // 16-bit general purpose register
@@ -353,21 +353,27 @@ void disassembler::Rq(const x86_insn *insn)
   dis_sprintf("%s", general_64bit_regname[insn->rm]);
 }
 
+void disassembler::Ry(const x86_insn *insn)
+{
+  if (insn->os_64) Rq(insn);
+  else Rd(insn);
+}
+
 // mmx register
 void disassembler::Pq(const x86_insn *insn)
 {
   if (intel_mode)
-    dis_sprintf  ("mm%d", insn->nnn);
+    dis_sprintf  ("mm%d", insn->nnn & 0x7);
   else
-    dis_sprintf("%%mm%d", insn->nnn);
+    dis_sprintf("%%mm%d", insn->nnn & 0x7);
 }
 
 void disassembler::Nq(const x86_insn *insn)
 {
   if (intel_mode)
-    dis_sprintf  ("mm%d", insn->rm);
+    dis_sprintf  ("mm%d", insn->rm & 0x7);
   else
-    dis_sprintf("%%mm%d", insn->rm);
+    dis_sprintf("%%mm%d", insn->rm & 0x7);
 }
 
 void disassembler::Qd(const x86_insn *insn)
@@ -375,9 +381,9 @@ void disassembler::Qd(const x86_insn *insn)
   if (insn->mod == 3)
   {
     if (intel_mode)
-      dis_sprintf  ("mm%d", insn->rm);
+      dis_sprintf  ("mm%d", insn->rm & 0x7);
     else
-      dis_sprintf("%%mm%d", insn->rm);
+      dis_sprintf("%%mm%d", insn->rm & 0x7);
   }
   else
     (this->*resolve_modrm)(insn, D_SIZE);
@@ -388,9 +394,9 @@ void disassembler::Qq(const x86_insn *insn)
   if (insn->mod == 3)
   {
     if (intel_mode)
-      dis_sprintf  ("mm%d", insn->rm);
+      dis_sprintf  ("mm%d", insn->rm & 0x7);
     else
-      dis_sprintf("%%mm%d", insn->rm);
+      dis_sprintf("%%mm%d", insn->rm & 0x7);
   }
   else
     (this->*resolve_modrm)(insn, Q_SIZE);
@@ -639,8 +645,7 @@ void disassembler::Jb(const x86_insn *insn)
     }
 
     if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit32u target = (Bit32u)(db_eip + (Bit32s) imm32);
-      target += db_base;
+      Bit32u target = (Bit32u)(db_base + db_eip + (Bit32s) imm32);
       dis_sprintf(" (0x%08x)", target);
     }
   }
@@ -696,8 +701,7 @@ void disassembler::Jd(const x86_insn *insn)
     }
 
     if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit64u target = db_eip + (Bit64s) imm64;
-      target += db_base;
+      Bit64u target = db_base + db_eip + (Bit64s) imm64;
       dis_sprintf(" (0x%08x%08x)", GET32H(target), GET32L(target));
     }
 
@@ -712,8 +716,7 @@ void disassembler::Jd(const x86_insn *insn)
   }
 
   if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-    Bit32u target = (Bit32u)(db_eip + (Bit32s) imm32);
-    target += db_base;
+    Bit32u target = (Bit32u)(db_base + db_eip + (Bit32s) imm32);
     dis_sprintf(" (0x%08x)", target);
   }
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware4.cc,v 1.5 2009/02/08 09:05:52 vruppert Exp $
+// $Id: vmware4.cc,v 1.9 2011/01/24 20:35:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -31,13 +31,12 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#define NO_DEVICE_INCLUDES
-
 #include "iodev.h"
 #include "hdimage.h"
 #include "vmware4.h"
 
-#define LOG_THIS bx_devices.pluginHardDrive->
+#define LOG_THIS bx_devices.pluginHDImageCtl->
+
 const off_t vmware4_image_t::INVALID_OFFSET = (off_t)-1;
 const int vmware4_image_t::SECTOR_SIZE = 512;
 
@@ -133,11 +132,11 @@ ssize_t vmware4_image_t::read(void * buf, size_t count)
         off_t readable = perform_seek();
         if(readable == INVALID_OFFSET)
         {
-            BX_DEBUG(("vmware4 disk image read failed on %d bytes at " FMT_LL "d", count, current_offset));
+            BX_DEBUG(("vmware4 disk image read failed on %u bytes at " FMT_LL "d", (unsigned)count, current_offset));
             return -1;
         }
 
-        off_t copysize = (count > readable) ? readable : count;
+        off_t copysize = ((off_t)count > readable) ? readable : count;
         memcpy(buf, tlb + current_offset - tlb_offset, (size_t)copysize);
 
         current_offset += copysize;
@@ -155,11 +154,11 @@ ssize_t vmware4_image_t::write(const void * buf, size_t count)
         off_t writable = perform_seek();
         if(writable == INVALID_OFFSET)
         {
-            BX_DEBUG(("vmware4 disk image write failed on %d bytes at " FMT_LL "d", count, current_offset));
+            BX_DEBUG(("vmware4 disk image write failed on %u bytes at " FMT_LL "d", (unsigned)count, current_offset));
             return -1;
         }
 
-        off_t writesize = (count > writable) ? writable : count;
+        off_t writesize = ((off_t)count > writable) ? writable : count;
         memcpy(tlb + current_offset - tlb_offset, buf, (size_t)writesize);
 
         current_offset += writesize;
@@ -215,7 +214,7 @@ bool vmware4_image_t::read_header()
     if(!is_valid_header())
         BX_PANIC(("invalid vmware4 virtual disk image"));
 
-    BX_DEBUG(("VM4_Header (size=%d)", sizeof(VM4_Header)));
+    BX_DEBUG(("VM4_Header (size=%u)", (unsigned)sizeof(VM4_Header)));
     BX_DEBUG(("   .version                    = %d", header.version));
     BX_DEBUG(("   .flags                      = %d", header.flags));
     BX_DEBUG(("   .total_sectors              = " FMT_LL "d", header.total_sectors));
@@ -326,4 +325,9 @@ void vmware4_image_t::write_block_index(Bit64u sector, Bit32u index, Bit32u bloc
 
     ::lseek(file_descriptor, sector * SECTOR_SIZE + index * sizeof(Bit32u), SEEK_SET);
     ::write(file_descriptor, &block_sector, sizeof(Bit32u));
+}
+
+Bit32u vmware4_image_t::get_capabilities(void)
+{
+  return HDIMAGE_HAS_GEOMETRY;
 }

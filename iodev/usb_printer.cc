@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_printer.cc,v 1.3 2010/01/02 16:54:40 vruppert Exp $
+// $Id: usb_printer.cc,v 1.6 2011/02/12 14:00:34 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin David Lunt
@@ -25,7 +25,6 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
 #if BX_SUPPORT_PCI && BX_SUPPORT_PCIUSB
@@ -113,22 +112,39 @@ static const Bit8u bx_device_id_string[] =
 usb_printer_device_c::usb_printer_device_c(usbdev_type type, const char *filename)
 {
   d.type = type;
-  d.speed = USB_SPEED_FULL;
-  strcpy(d.devname, "USB Printer");
-  d.connected = 1;
-  
+  d.maxspeed = USB_SPEED_FULL;
+  d.speed = d.maxspeed;
   memset((void*)&s, 0, sizeof(s));
-  strncpy(s.fname, filename, 255);
-  s.fp = fopen(s.fname, "w+b");
-  if (s.fp == NULL)
-    BX_PANIC(("Could not create/open %s", s.fname));
-  
+  strcpy(d.devname, "USB Printer");
+  s.fname = filename;
+  s.fp = NULL;
+
   put("USBPR");
 }
 
 usb_printer_device_c::~usb_printer_device_c(void)
 {
-  fclose(s.fp);
+  if (s.fp != NULL) {
+    fclose(s.fp);
+  }
+}
+
+bx_bool usb_printer_device_c::init()
+{
+  s.fp = fopen(s.fname, "w+b");
+  if (s.fp == NULL) {
+    BX_ERROR(("Could not create/open %s", s.fname));
+    return 0;
+  } else {
+    sprintf(s.info_txt, "USB printer: file=%s", s.fname);
+    d.connected = 1;
+    return 1;
+  }
+}
+
+const char* usb_printer_device_c::get_info()
+{
+  return s.info_txt;
 }
 
 void usb_printer_device_c::register_state_specific(bx_list_c *parent)
@@ -237,7 +253,7 @@ int usb_printer_device_c::handle_control(int request, int value, int index, int 
     case EndpointOutRequest | USB_REQ_SET_INTERFACE:
       ret = 0;
       break;
-    
+
     /* printer specific requests */
     case InterfaceInClassRequest | 0x00:  // 1284 get device id string
       memcpy(data, bx_device_id_string, sizeof(bx_device_id_string));
@@ -267,7 +283,7 @@ int usb_printer_device_c::handle_control(int request, int value, int index, int 
 int usb_printer_device_c::handle_data(USBPacket *p)
 {
   int ret = 0;
-  
+
   switch(p->pid) {
     case USB_TOKEN_IN:
       if (p->devep == 1) {

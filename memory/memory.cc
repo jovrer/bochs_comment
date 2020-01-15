@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.cc,v 1.82 2009/12/04 16:53:12 sshwarts Exp $
+// $Id: memory.cc,v 1.86 2011/01/04 21:03:44 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -86,28 +86,33 @@ mem_write:
 
   // all memory access fits in single 4K page
   if (a20addr < BX_MEM_THIS len && ! is_bios) {
-    pageWriteStampTable.decWriteStamp(a20addr);
     // all of data is within limits of physical memory
     if (a20addr < 0x000a0000 || a20addr >= 0x00100000)
     {
       if (len == 8) {
+        pageWriteStampTable.decWriteStamp(a20addr, 8);
         WriteHostQWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit64u*)data);
         return;
       }
       if (len == 4) {
+        pageWriteStampTable.decWriteStamp(a20addr, 4);
         WriteHostDWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit32u*)data);
         return;
       }
       if (len == 2) {
+        pageWriteStampTable.decWriteStamp(a20addr, 2);
         WriteHostWordToLittleEndian(BX_MEM_THIS get_vector(a20addr), *(Bit16u*)data);
         return;
       }
       if (len == 1) {
+        pageWriteStampTable.decWriteStamp(a20addr, 1);
         * (BX_MEM_THIS get_vector(a20addr)) = * (Bit8u *) data;
         return;
       }
       // len == other, just fall thru to special cases handling
     }
+
+    pageWriteStampTable.decWriteStamp(a20addr);
 
 #ifdef BX_LITTLE_ENDIAN
     data_ptr = (Bit8u *) data;
@@ -152,7 +157,7 @@ mem_write:
       // Write Based on 440fx Programming
       if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
       {
-        switch (DEV_pci_wr_memtype(a20addr)) {
+        switch (DEV_pci_wr_memtype((Bit32u) a20addr)) {
           case 0x1:   // Writes to ShadowRAM
             BX_DEBUG(("Writing to ShadowRAM: address 0x" FMT_PHY_ADDRX ", data %02x", a20addr, *data_ptr));
             *(BX_MEM_THIS get_vector(a20addr)) = *data_ptr;
@@ -287,10 +292,11 @@ mem_read:
 #if BX_SUPPORT_PCI
       if (BX_MEM_THIS pci_enabled && ((a20addr & 0xfffc0000) == 0x000c0000))
       {
-        switch (DEV_pci_rd_memtype(a20addr)) {
+        switch (DEV_pci_rd_memtype((Bit32u) a20addr)) {
           case 0x0:  // Read from ROM
             if ((a20addr & 0xfffe0000) == 0x000e0000) {
-              *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
+              // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+              *data_ptr = BX_MEM_THIS rom[BIOS_MAP_LAST128K(a20addr)];
             }
             else {
               *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
@@ -310,7 +316,8 @@ mem_read:
           *data_ptr = *(BX_MEM_THIS get_vector(a20addr));
         }
         else if ((a20addr & 0xfffe0000) == 0x000e0000) {
-          *data_ptr = BX_MEM_THIS rom[a20addr & BIOS_MASK];
+          // last 128K of BIOS ROM mapped to 0xE0000-0xFFFFF
+          *data_ptr = BX_MEM_THIS rom[BIOS_MAP_LAST128K(a20addr)];
         }
         else {
           *data_ptr = BX_MEM_THIS rom[(a20addr & EXROM_MASK) + BIOSROMSZ];

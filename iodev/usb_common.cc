@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_common.cc,v 1.13 2009/12/04 13:01:41 sshwarts Exp $
+// $Id: usb_common.cc,v 1.17 2011/02/12 14:00:34 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin D Lunt (fys at frontiernet net)
@@ -56,11 +56,28 @@
 
 #define LOG_THIS
 
-usbdev_type usb_init_device(const char *devname, logfunctions *hub, usb_device_c **device)
+bx_usb_devctl_c* theUsbDevCtl = NULL;
+
+int libusb_common_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+{
+  theUsbDevCtl = new bx_usb_devctl_c;
+  bx_devices.pluginUsbDevCtl = theUsbDevCtl;
+  return(0); // Success
+}
+
+void libusb_common_LTX_plugin_fini(void)
+{
+  delete theUsbDevCtl;
+}
+
+int bx_usb_devctl_c::init_device(bx_list_c *portconf, logfunctions *hub, void **dev, bx_list_c *sr_list)
 {
   usbdev_type type = USB_DEV_TYPE_NONE;
   int ports;
+  usb_device_c **device = (usb_device_c**)dev;
+  const char *devname = NULL;
 
+  devname = ((bx_param_string_c*)portconf->get_by_name("device"))->getptr();
   if (!strcmp(devname, "mouse")) {
     type = USB_DEV_TYPE_MOUSE;
     *device = new usb_hid_device_c(type);
@@ -112,7 +129,85 @@ usbdev_type usb_init_device(const char *devname, logfunctions *hub, usb_device_c
     hub->panic("unknown USB device: %s", devname);
     return type;
   }
+  if (*device != NULL) {
+    (*device)->register_state(sr_list);
+    parse_port_options(*device, portconf);
+  }
   return type;
+}
+
+void bx_usb_devctl_c::parse_port_options(usb_device_c *device, bx_list_c *portconf)
+{
+  const char *raw_options;
+  char *options;
+  unsigned i, string_i;
+  int optc, speed = USB_SPEED_LOW;
+  char *opts[16];
+  char *ptr;
+  char string[512];
+  size_t len;
+
+  memset(opts, 0, sizeof(opts));
+  optc = 0;
+  raw_options = ((bx_param_string_c*)portconf->get_by_name("options"))->getptr();
+  len = strlen(raw_options);
+  if (len > 0) {
+    options = new char[len + 1];
+    strcpy(options, raw_options);
+    ptr = strtok(options, ",");
+    while (ptr) {
+      string_i = 0;
+      for (i=0; i<strlen(ptr); i++) {
+        if (!isspace(ptr[i])) string[string_i++] = ptr[i];
+      }
+      string[string_i] = '\0';
+      if (opts[optc] != NULL) {
+        free(opts[optc]);
+        opts[optc] = NULL;
+      }
+      if (optc < 16) {
+        opts[optc++] = strdup(string);
+      } else {
+        BX_ERROR(("too many parameters, max is 16"));
+        break;
+      }
+      ptr = strtok(NULL, ",");
+    }
+    delete [] options;
+  }
+  for (i = 0; i < (unsigned)optc; i++) {
+    if (!strncmp(opts[i], "speed:", 6)) {
+      if (!strcmp(opts[i]+6, "low")) {
+        speed = USB_SPEED_LOW;
+      } else if (!strcmp(opts[i]+6, "full")) {
+        speed = USB_SPEED_FULL;
+      } else if (!strcmp(opts[i]+6, "high")) {
+        speed = USB_SPEED_HIGH;
+      } else if (!strcmp(opts[i]+6, "super")) {
+        speed = USB_SPEED_SUPER;
+      } else {
+        BX_ERROR(("unknown USB device speed: '%s'", opts[i]+6));
+      }
+      if (speed <= device->get_maxspeed()) {
+        device->set_speed(speed);
+      } else {
+        BX_ERROR(("unsupported USB device speed: '%s'", opts[i]+6));
+      }
+    } else if (!device->set_option(opts[i])) {
+      BX_ERROR(("unknown USB device option: '%s'", opts[i]));
+    }
+  }
+  for (i = 1; i < (unsigned)optc; i++) {
+    if (opts[i] != NULL) {
+      free(opts[i]);
+      opts[i] = NULL;
+    }
+  }
+}
+
+void bx_usb_devctl_c::usb_send_msg(void *dev, int msg)
+{
+  ((usb_device_c*)dev)->usb_send_msg(msg);
 }
 
 // Dumps the contents of a buffer to the log file

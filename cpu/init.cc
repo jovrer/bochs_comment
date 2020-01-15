@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.242 2010/04/19 11:09:35 sshwarts Exp $
+// $Id: init.cc,v 1.250 2010/12/22 21:16:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -515,9 +515,9 @@ void BX_CPU_C::register_state(void)
     bx_list_c *sse = new bx_list_c(cpu, "SSE", 2*BX_XMM_REGISTERS+1);
     BXRS_HEX_PARAM_FIELD(sse, mxcsr, mxcsr.mxcsr);
     for (n=0; n<BX_XMM_REGISTERS; n++) {
-      sprintf(name, "xmm%02d_hi", n);
+      sprintf(name, "xmm%02d_1", n);
       new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(1), BASE_HEX);
-      sprintf(name, "xmm%02d_lo", n);
+      sprintf(name, "xmm%02d_0", n);
       new bx_shadow_num_c(sse, name, &xmm[n].xmm64u(0), BASE_HEX);
     }
   }
@@ -688,17 +688,20 @@ void BX_CPU_C::param_restore(bx_param_c *param, Bit64s val)
 
 void BX_CPU_C::after_restore_state(void)
 {
-  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_REAL) CPL = 0;
-  else {
-    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_V8086) CPL = 3;
-  }
-
   TLB_flush();
 
 #if BX_CPU_LEVEL >= 4 && BX_SUPPORT_ALIGNMENT_CHECK
   handleAlignmentCheck();
 #endif
   handleCpuModeChange();
+#if BX_CPU_LEVEL >= 6
+  handleSseModeChange();
+#endif
+
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_REAL) CPL = 0;
+  else {
+    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_IA32_V8086) CPL = 3;
+  }
 
 #if BX_SUPPORT_VMX
   set_VMCSPTR(BX_CPU_THIS_PTR vmcsptr);
@@ -727,34 +730,10 @@ void BX_CPU_C::reset(unsigned source)
   else
     BX_INFO(("cpu reset"));
 
-#if BX_SUPPORT_X86_64
-  RAX = 0; // processor passed test :-)
-  RBX = 0;
-  RCX = 0;
-  RDX = get_cpu_version_information();
-  RBP = 0;
-  RSI = 0;
-  RDI = 0;
-  RSP = 0;
-  R8  = 0;
-  R9  = 0;
-  R10 = 0;
-  R11 = 0;
-  R12 = 0;
-  R13 = 0;
-  R14 = 0;
-  R15 = 0;
-#else
-  // general registers
-  EAX = 0; // processor passed test :-)
-  EBX = 0;
-  ECX = 0;
-  EDX = get_cpu_version_information();
-  EBP = 0;
-  ESI = 0;
-  EDI = 0;
-  ESP = 0;
-#endif
+  for (n=0;n<BX_GENERAL_REGISTERS;n++)
+    BX_WRITE_32BIT_REGZ(n, 0);
+
+  BX_WRITE_32BIT_REGZ(BX_32BIT_REG_EDX, get_cpu_version_information());
 
   // initialize NIL register
   BX_WRITE_32BIT_REGZ(BX_NIL_REGISTER, 0);
@@ -804,7 +783,6 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl = 0;
 #endif
 
-  updateFetchModeMask();
   flushICaches();
 
   /* DS (Data Segment) and descriptor cache */
@@ -1023,6 +1001,8 @@ void BX_CPU_C::reset(unsigned source)
 #endif
 
 #if BX_CPU_LEVEL >= 6
+  BX_CPU_THIS_PTR sse_ok = 0;
+
   // Reset XMM state - unchanged on #INIT
   if (source == BX_RESET_HARDWARE) {
     for(n=0; n<BX_XMM_REGISTERS; n++)
@@ -1047,8 +1027,9 @@ void BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR vmx_interrupt_window = 0;
   BX_CPU_THIS_PTR vmcsptr = BX_CPU_THIS_PTR vmxonptr = BX_INVALID_VMCSPTR;
   BX_CPU_THIS_PTR vmcshostptr = 0;
-  BX_CPU_THIS_PTR msr.ia32_feature_ctrl = 0x4; /* enable VMX, should be done in BIOS instead */
-
+  /* enable VMX, should be done in BIOS instead */
+  BX_CPU_THIS_PTR msr.ia32_feature_ctrl =
+    /*BX_IA32_FEATURE_CONTROL_LOCK_BIT | */BX_IA32_FEATURE_CONTROL_VMX_ENABLE_BIT;
 #endif
 
 #if BX_SUPPORT_SMP
@@ -1076,6 +1057,8 @@ void BX_CPU_C::reset(unsigned source)
 #if BX_CPU_LEVEL >= 5
   BX_CPU_THIS_PTR ignore_bad_msrs = SIM->get_param_bool(BXPN_IGNORE_BAD_MSRS)->get();
 #endif
+
+  updateFetchModeMask();
 
   BX_INSTR_RESET(BX_CPU_ID, source);
 }
@@ -1198,7 +1181,7 @@ void BX_CPU_C::assert_checks(void)
   if (! check_CR0(BX_CPU_THIS_PTR cr0.val32))
     BX_PANIC(("assert_checks: CR0 consistency checks failed !"));
 
-#if BX_CPU_LEVEL > 3
+#if BX_CPU_LEVEL >= 4
   // check CR4 consistency
   if (! check_CR4(BX_CPU_THIS_PTR cr4.val32))
     BX_PANIC(("assert_checks: CR4 consistency checks failed !"));

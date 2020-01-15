@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.cc,v 1.51 2010/02/28 14:52:17 sshwarts Exp $
+// $Id: ioapic.cc,v 1.54 2011/01/02 16:51:08 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -137,7 +137,7 @@ void bx_ioapic_c::reset(unsigned type)
 
 Bit32u bx_ioapic_c::read_aligned(bx_phy_address address)
 {
-  BX_DEBUG(("IOAPIC: read aligned addr=%08x", address));
+  BX_DEBUG(("IOAPIC: read aligned addr=0x" FMT_PHY_ADDRX, address));
   address &= 0xff;
   if (address == 0x00) {
     // select register

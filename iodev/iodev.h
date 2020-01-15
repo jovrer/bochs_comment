@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.119 2010/02/26 14:18:19 sshwarts Exp $
+// $Id: iodev.h,v 1.129 2011/02/14 21:14:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2011  The Bochs Project
 //
 //  I/O port handlers API Copyright (C) 2003 by Frank Cornelis
 //
@@ -80,6 +80,7 @@ class BOCHSAPI bx_devmodel_c : public logfunctions {
 //////////////////////////////////////////////////////////////////////
 
 class bx_list_c;
+class device_image_t;
 
 // the best should be deriving of bx_pci_device_stub_c from bx_devmodel_c
 // but it make serious problems for cirrus_svga device
@@ -159,9 +160,6 @@ public:
 
 class BOCHSAPI bx_floppy_stub_c : public bx_devmodel_c {
 public:
-  virtual unsigned get_media_status(unsigned drive) {
-    STUBFUNC(floppy,  get_media_status); return 0;
-  }
   virtual unsigned set_media_status(unsigned drive, unsigned status) {
     STUBFUNC(floppy, set_media_status); return 0;
   }
@@ -237,10 +235,10 @@ public:
                            unsigned width, unsigned height) {
     STUBFUNC(vga, redraw_area);
   }
-  virtual Bit8u mem_read(Bit32u addr) {
+  virtual Bit8u mem_read(bx_phy_address addr) {
     STUBFUNC(vga, mem_read);  return 0;
   }
-  virtual void mem_write(Bit32u addr, Bit8u value) {
+  virtual void mem_write(bx_phy_address addr, Bit8u value) {
     STUBFUNC(vga, mem_write);
   }
   virtual void get_text_snapshot(Bit8u **text_snapshot,
@@ -343,6 +341,32 @@ public:
 };
 #endif
 
+#if BX_SUPPORT_PCIUSB
+class BOCHSAPI bx_usb_devctl_stub_c : public bx_devmodel_c {
+public:
+  virtual int init_device(bx_list_c *portconf, logfunctions *hub, void **dev, bx_list_c *sr_list) {
+    STUBFUNC(usb_devctl, init_device); return 0;
+  }
+  virtual void usb_send_msg(void *dev, int msg) {}
+};
+#endif
+
+class BOCHSAPI bx_hdimage_ctl_stub_c : public bx_devmodel_c {
+public:
+  virtual device_image_t* init_image(Bit8u image_mode, Bit64u disk_size, const char *journal) {
+    STUBFUNC(hdimage_ctl, init_image); return NULL;
+  }
+};
+
+#if BX_SUPPORT_SB16
+class BOCHSAPI bx_soundmod_ctl_stub_c : public bx_devmodel_c {
+public:
+  virtual int init_module(const char *type, void **module, logfunctions *dev) {
+    STUBFUNC(soundmod_ctl, init_module); return 0;
+  }
+};
+#endif
+
 class BOCHSAPI bx_devices_c : public logfunctions {
 public:
   bx_devices_c();
@@ -414,6 +438,7 @@ public:
   bx_vga_stub_c     *pluginVgaDevice;
   bx_pic_stub_c     *pluginPicDevice;
   bx_hard_drive_stub_c *pluginHardDrive;
+  bx_hdimage_ctl_stub_c *pluginHDImageCtl;
   bx_ne2k_stub_c    *pluginNE2kDevice;
   bx_speaker_stub_c *pluginSpeaker;
 #if BX_SUPPORT_IODEBUG
@@ -421,6 +446,12 @@ public:
 #endif
 #if BX_SUPPORT_APIC
   bx_ioapic_stub_c  *pluginIOAPIC;
+#endif
+#if BX_SUPPORT_PCIUSB
+  bx_usb_devctl_stub_c  *pluginUsbDevCtl;
+#endif
+#if BX_SUPPORT_SB16
+  bx_soundmod_ctl_stub_c  *pluginSoundModCtl;
 #endif
 #if 0
   bx_g2h_c          *g2h;
@@ -431,6 +462,7 @@ public:
   bx_cmos_stub_c stubCmos;
   bx_keyb_stub_c stubKeyboard;
   bx_hard_drive_stub_c stubHardDrive;
+  bx_hdimage_ctl_stub_c stubHDImage;
   bx_dma_stub_c  stubDma;
   bx_pic_stub_c  stubPic;
   bx_floppy_stub_c  stubFloppy;
@@ -448,6 +480,12 @@ public:
 #endif
 #if BX_SUPPORT_APIC
   bx_ioapic_stub_c stubIOAPIC;
+#endif
+#if BX_SUPPORT_PCIUSB
+  bx_usb_devctl_stub_c stubUsbDevCtl;
+#endif
+#if BX_SUPPORT_SB16
+  bx_soundmod_ctl_stub_c  stubSoundModCtl;
 #endif
 
   // Some info to pass to devices which can handled bulk IO.  This allows
@@ -575,12 +613,6 @@ BX_CPP_INLINE void DEV_MEM_WRITE_PHYSICAL_BLOCK(bx_phy_address phy_addr, unsigne
     len -= remainingInPage;
   }
 }
-
-#ifndef NO_DEVICE_INCLUDES
-
-#include "iodev/vga.h"
-
-#endif /* NO_DEVICE_INCLUDES */
 
 BOCHSAPI extern bx_devices_c bx_devices;
 

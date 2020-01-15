@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.130 2010/02/26 14:18:18 sshwarts Exp $
+// $Id: x.cc,v 1.133 2011/02/10 23:00:56 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -39,6 +39,7 @@ extern "C" {
 #include <X11/Xos.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#include <X11/extensions/Xrandr.h>
 #if BX_HAVE_XPM_H
 #include <X11/xpm.h>
 #endif
@@ -106,7 +107,6 @@ static unsigned imDepth, imWide, imBPP;
 static int prev_x=-1, prev_y=-1;
 static int current_x=-1, current_y=-1, current_z=0;
 static unsigned mouse_button_state = 0;
-static bx_bool CTRL_pressed = 0;
 
 static unsigned prev_cursor_x=0;
 static unsigned prev_cursor_y=0;
@@ -478,11 +478,11 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
 
 #if BX_HAVE_XPM_H
   /* Create pixmap from XPM for icon */
-  XCreatePixmapFromData(bx_x_display, win, icon_bochs_xpm, &icon_pixmap, &icon_mask, NULL);
+  XCreatePixmapFromData(bx_x_display, win, (char **)icon_bochs_xpm, &icon_pixmap, &icon_mask, NULL);
 #else
   /* Create pixmap of depth 1 (bitmap) for icon */
   icon_pixmap = XCreateBitmapFromData(bx_x_display, win,
-    (char *) bochs_icon_bits, bochs_icon_width, bochs_icon_height);
+    (char *)bochs_icon_bits, bochs_icon_width, bochs_icon_height);
 #endif
 
   /* Set size hints for window manager.  The window manager may
@@ -619,7 +619,7 @@ void bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsign
       bx_status_led_green = 0;
       bx_status_graytext = 0;
   }
-  strcpy(bx_status_info_text, "CTRL + 3rd button enables mouse");
+  sprintf(bx_status_info_text, "%s enables mouse", get_toggle_info());
 
   x_init_done = true;
   }
@@ -724,7 +724,8 @@ void bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
   BX_DEBUG (("mouse_enabled=%d, x11 specific code", val?1:0));
   if (val) {
     BX_INFO(("[x] Mouse on"));
-    set_status_text(0, "CTRL + 3rd button disables mouse", 0);
+    sprintf(bx_status_info_text, "%s disables mouse", get_toggle_info());
+    set_status_text(0, bx_status_info_text, 0);
     mouse_enable_x = current_x;
     mouse_enable_y = current_y;
     disable_cursor();
@@ -732,7 +733,8 @@ void bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
     warp_cursor(warp_home_x-current_x, warp_home_y-current_y);
   } else {
     BX_INFO(("[x] Mouse off"));
-    set_status_text(0, "CTRL + 3rd button enables mouse", 0);
+    sprintf(bx_status_info_text, "%s enables mouse", get_toggle_info());
+    set_status_text(0, bx_status_info_text, 0);
     enable_cursor();
     warp_cursor(mouse_enable_x-current_x, mouse_enable_y-current_y);
   }
@@ -840,7 +842,7 @@ void bx_x_gui_c::handle_events(void)
           mouse_update = 0;
           break;
         case Button2:
-          if (CTRL_pressed) {
+          if (mouse_toggle_check(BX_MT_MBUTTON, 1)) {
             toggle_mouse_enable();
           } else {
             mouse_button_state |= 0x04;
@@ -878,6 +880,7 @@ void bx_x_gui_c::handle_events(void)
           mouse_update = 0;
           break;
         case Button2:
+          mouse_toggle_check(BX_MT_MBUTTON, 0);
           mouse_button_state &= ~0x04;
           send_keyboard_mouse_status();
           mouse_update = 0;
@@ -1011,9 +1014,20 @@ void bx_x_gui_c::flush(void)
 void xkeypress(KeySym keysym, int press_release)
 {
   Bit32u key_event;
+  bx_bool mouse_toggle = 0;
 
   if ((keysym == XK_Control_L) || (keysym == XK_Control_R)) {
-    CTRL_pressed = !press_release;
+     mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_CTRL, !press_release);
+  } else if (keysym == XK_Alt_L) {
+     mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_ALT, !press_release);
+  } else if (keysym == XK_F10) {
+     mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_F10, !press_release);
+  } else if (keysym == XK_F12) {
+     mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_F12, !press_release);
+  }
+  if (mouse_toggle) {
+    bx_gui->toggle_mouse_enable();
+    return;
   }
 
   /* Old (no mapping) behavior */
@@ -1972,8 +1986,18 @@ void bx_x_gui_c::beep_off()
 
 void bx_x_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
 {
-  *xres = 1024;
-  *yres = 768;
+  int num_sizes;
+  Rotation original_rotation;
+
+  Display *dpy = XOpenDisplay(NULL);
+  Window root = RootWindow(dpy, 0);
+  XRRScreenSize *xrrs = XRRSizes(dpy, 0, &num_sizes);
+  XRRScreenConfiguration *conf = XRRGetScreenInfo(dpy, root);
+  SizeID original_size_id = XRRConfigCurrentConfiguration(conf, &original_rotation);
+  *xres = xrrs[original_size_id].width;
+  *yres = xrrs[original_size_id].height;
+  XCloseDisplay(dpy);
+  // always return 32 bit depth
   *bpp = 32;
 }
 

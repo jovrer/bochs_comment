@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.h,v 1.51 2010/02/13 09:41:51 sshwarts Exp $
+// $Id: icache.h,v 1.61 2011/01/23 17:21:34 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2007-2009 Stanislav Shwartsman
+//   Copyright (c) 2007-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -24,71 +24,68 @@
 #ifndef BX_ICACHE_H
 #define BX_ICACHE_H
 
-// bit 31 indicates code page
-const Bit32u ICacheWriteStampInvalid  = 0xffffffff;
-const Bit32u ICacheWriteStampStart    = 0x7fffffff;
-const Bit32u ICacheWriteStampFetchModeMask = ~ICacheWriteStampStart;
-
-#if BX_SUPPORT_TRACE_CACHE
-extern void handleSMC(void);
-#endif
+extern void handleSMC(bx_phy_address pAddr, Bit32u mask);
 
 class bxPageWriteStampTable
 {
-  // A table (dynamically allocated) to store write-stamp generation IDs.
-  // Each time a write occurs to a physical page, a generation ID is
-  // decremented. Only iCache entries which have write stamps matching
-  // the physical page write stamp are valid.
-  Bit32u *pageWriteStampTable;
-
 #define PHY_MEM_PAGES (1024*1024)
+  Bit32u *fineGranularityMapping;
 
 public:
   bxPageWriteStampTable() {
-    pageWriteStampTable = new Bit32u[PHY_MEM_PAGES];
+    fineGranularityMapping = new Bit32u[PHY_MEM_PAGES];
     resetWriteStamps();
   }
- ~bxPageWriteStampTable() { delete [] pageWriteStampTable; }
+ ~bxPageWriteStampTable() { delete [] fineGranularityMapping; }
 
   BX_CPP_INLINE Bit32u hash(bx_phy_address pAddr) const {
-#if BX_PHY_ADDRESS_LONG
-    // can share writeStamps between multiple pages
-    return (Bit32u) ((pAddr >> 12) & (PHY_MEM_PAGES-1));
-#else
-    return (Bit32u) (pAddr) >> 12;
-#endif
+    // can share writeStamps between multiple pages if >32 bit phy address
+    return ((Bit32u) pAddr) >> 12;
   }
 
-  BX_CPP_INLINE Bit32u getPageWriteStamp(bx_phy_address pAddr) const
+  BX_CPP_INLINE Bit32u getFineGranularityMapping(bx_phy_address pAddr) const
   {
-    return pageWriteStampTable[hash(pAddr)];
+    return fineGranularityMapping[hash(pAddr)];
   }
 
-  BX_CPP_INLINE const Bit32u *getPageWriteStampPtr(bx_phy_address pAddr) const
+  BX_CPP_INLINE void markICache(bx_phy_address pAddr, unsigned len)
   {
-    return &pageWriteStampTable[hash(pAddr)];
+    Bit32u mask  = 1 << (PAGE_OFFSET((Bit32u) pAddr) >> 7);
+           mask |= 1 << (PAGE_OFFSET((Bit32u) pAddr + len - 1) >> 7);
+
+    fineGranularityMapping[hash(pAddr)] |= mask;
   }
 
-  BX_CPP_INLINE void setPageWriteStamp(bx_phy_address pAddr, Bit32u pageWriteStamp)
+  BX_CPP_INLINE void markICacheMask(bx_phy_address pAddr, Bit32u mask)
   {
-    pageWriteStampTable[hash(pAddr)] = pageWriteStamp;
+    fineGranularityMapping[hash(pAddr)] |= mask;
   }
 
-  BX_CPP_INLINE void markICache(bx_phy_address pAddr)
-  {
-    pageWriteStampTable[hash(pAddr)] |= ICacheWriteStampFetchModeMask;
-  }
-
+  // whole page is being altered
   BX_CPP_INLINE void decWriteStamp(bx_phy_address pAddr)
   {
     Bit32u index = hash(pAddr);
-    if (pageWriteStampTable[index] & ICacheWriteStampFetchModeMask) {
-#if BX_SUPPORT_TRACE_CACHE
-      handleSMC(); // one of the CPUs might be running trace from this page
-#endif
-      // Decrement page write stamp, so iCache entries with older stamps are
-      // effectively invalidated.
-      pageWriteStampTable[index] = (pageWriteStampTable[index] - 1) & ~ICacheWriteStampFetchModeMask;
+
+    if (fineGranularityMapping[index]) {
+      handleSMC(pAddr, 0xffffffff); // one of the CPUs might be running trace from this page
+      fineGranularityMapping[index] = 0;
+    }
+  }
+
+  // assumption: write does not split 4K page
+  BX_CPP_INLINE void decWriteStamp(bx_phy_address pAddr, unsigned len)
+  {
+    Bit32u index = hash(pAddr);
+
+    if (fineGranularityMapping[index]) {
+       Bit32u mask  = 1 << (PAGE_OFFSET((Bit32u) pAddr) >> 7);
+              mask |= 1 << (PAGE_OFFSET((Bit32u) pAddr + len - 1) >> 7);
+
+       if (fineGranularityMapping[index] & mask) {
+          // one of the CPUs might be running trace from this page
+          handleSMC(pAddr, mask);
+          fineGranularityMapping[index] &= ~mask;
+       }       
     }
   }
 
@@ -98,7 +95,7 @@ public:
 BX_CPP_INLINE void bxPageWriteStampTable::resetWriteStamps(void)
 {
   for (Bit32u i=0; i<PHY_MEM_PAGES; i++) {
-    pageWriteStampTable[i] = ICacheWriteStampStart - 1;
+    fineGranularityMapping[i] = 0;
   }
 }
 
@@ -114,8 +111,8 @@ extern bxPageWriteStampTable pageWriteStampTable;
 struct bxICacheEntry_c
 {
   bx_phy_address pAddr; // Physical address of the instruction
-  Bit32u writeStamp;    // Generation ID. Each write to a physical page
-                        // decrements this value
+  Bit32u traceMask;
+
 #if BX_SUPPORT_TRACE_CACHE
   Bit32u tlen;          // Trace length in instructions
   bxInstruction_c *i;
@@ -125,12 +122,21 @@ struct bxICacheEntry_c
 #endif
 };
 
+#define BX_ICACHE_INVALID_PHY_ADDRESS (bx_phy_address(-1))
+
 class BOCHSAPI bxICache_c {
 public:
   bxICacheEntry_c entry[BxICacheEntries];
 #if BX_SUPPORT_TRACE_CACHE
   bxInstruction_c mpool[BxICacheMemPool];
   unsigned mpindex;
+
+#define BX_ICACHE_PAGE_SPLIT_ENTRIES 8 /* must be power of two */
+  struct pageSplitEntryIndex {
+    bx_phy_address ppf; // Physical address of 2nd page of the trace 
+    bxICacheEntry_c *e; // Pointer to icache entry
+  } pageSplitIndex[BX_ICACHE_PAGE_SPLIT_ENTRIES];
+  int nextPageSplitIndex;
 #endif
 
 public:
@@ -153,7 +159,23 @@ public:
   }
 
   BX_CPP_INLINE void commit_trace(unsigned len) { mpindex += len; }
+
+  BX_CPP_INLINE void commit_page_split_trace(bx_phy_address paddr, bxICacheEntry_c *entry)
+  {
+    mpindex++;  // commit_trace(1)
+
+    // register page split entry
+    if (pageSplitIndex[nextPageSplitIndex].ppf != BX_ICACHE_INVALID_PHY_ADDRESS)
+      pageSplitIndex[nextPageSplitIndex].e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
+
+    pageSplitIndex[nextPageSplitIndex].ppf = paddr;
+    pageSplitIndex[nextPageSplitIndex].e = entry;
+
+    nextPageSplitIndex = (nextPageSplitIndex+1) & (BX_ICACHE_PAGE_SPLIT_ENTRIES-1);
+  }
 #endif
+
+  BX_CPP_INLINE void handleSMC(bx_phy_address pAddr, Bit32u mask);
 
   BX_CPP_INLINE void purgeICacheEntries(void);
   BX_CPP_INLINE void flushICacheEntries(void);
@@ -168,22 +190,53 @@ public:
 BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
 {
   bxICacheEntry_c* e = entry;
-  for (unsigned i=0; i<BxICacheEntries; i++, e++) {
-    e->writeStamp = ICacheWriteStampInvalid;
+  unsigned i;
+
+  for (i=0; i<BxICacheEntries; i++, e++) {
+    e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
+    e->traceMask = 0;
   }
+
 #if BX_SUPPORT_TRACE_CACHE
+  for (i=0;i<BX_ICACHE_PAGE_SPLIT_ENTRIES;i++)
+    pageSplitIndex[i].ppf = BX_ICACHE_INVALID_PHY_ADDRESS;
+
+  nextPageSplitIndex = 0;
   mpindex = 0;
 #endif
 }
 
-// Since the write stamps may overflow if we always simply decrese them,
-// this function has to be called often enough that we can reset them.
-BX_CPP_INLINE void bxICache_c::purgeICacheEntries(void)
+BX_CPP_INLINE void bxICache_c::handleSMC(bx_phy_address pAddr, Bit32u mask)
 {
-  flushICacheEntries();
+  // TODO: invalidate only entries in same page as pAddr
+
+  pAddr = LPFOf(pAddr);
+
+#if BX_SUPPORT_TRACE_CACHE
+  if (mask & 0x1) {
+    // the store touched 1st cache line in the page, check for
+    // page split traces to invalidate.
+    for (unsigned i=0;i<BX_ICACHE_PAGE_SPLIT_ENTRIES;i++) {
+      if (pAddr == pageSplitIndex[i].ppf) {
+        pageSplitIndex[i].ppf = BX_ICACHE_INVALID_PHY_ADDRESS;
+      }
+    }
+  }
+#endif
+
+  bxICacheEntry_c *e = get_entry(pAddr, 0);
+
+  for (unsigned n=0; n < 32; n++) {
+    Bit32u line_mask = (1 << n);
+    if (line_mask > mask) break;
+    for (unsigned index=0; index < 128; index++, e++) {
+      if (pAddr == LPFOf(e->pAddr) && (e->traceMask & mask) != 0) {
+        e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
+      }
+    }
+  }
 }
 
-extern void purgeICaches(void);
 extern void flushICaches(void);
 
 #endif

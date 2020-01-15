@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_msd.cc,v 1.24 2009/04/21 15:37:17 vruppert Exp $
+// $Id: usb_msd.cc,v 1.31 2011/02/12 14:00:34 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  Volker Ruppert
+//  Copyright (C) 2009-2011  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -26,7 +26,6 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#define NO_DEVICE_INCLUDES
 #include "iodev.h"
 
 #if BX_SUPPORT_PCI && BX_SUPPORT_PCIUSB
@@ -138,23 +137,37 @@ usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
 {
   char pname[10];
   char label[32];
+  char tmpfname[BX_PATHNAME_LEN];
+  char *ptr1, *ptr2;
   bx_param_string_c *path;
   bx_param_bool_c *status;
 
   d.type = type;
-  d.speed = USB_SPEED_FULL;
+  d.maxspeed = USB_SPEED_FULL;
+  d.speed = d.maxspeed;
   memset((void*)&s, 0, sizeof(s));
-  s.fname = filename;
   if (d.type == USB_DEV_TYPE_DISK) {
     strcpy(d.devname, "BOCHS USB HARDDRIVE");
+    strcpy(tmpfname, filename);
+    ptr1 = strtok(tmpfname, ":");
+    ptr2 = strtok(NULL, ":");
+    if ((ptr2 == NULL) || (strlen(ptr1) < 2)) {
+      s.image_mode = BX_HDIMAGE_MODE_FLAT;
+      s.fname = filename;
+    } else {
+      s.image_mode = SIM->hdimage_get_mode(ptr1);
+      s.fname = filename+strlen(ptr1)+1;
+    }
+    s.journal[0] = 0;
   } else if (d.type == USB_DEV_TYPE_CDROM) {
     strcpy(d.devname, "BOCHS USB CDROM");
+    s.fname = filename;
     // config options
     bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
     sprintf(pname, "cdrom%d", ++cdrom_count);
     sprintf(label, "USB CD-ROM #%d Configuration", cdrom_count);
     s.config = new bx_list_c(usb_rt, pname, label, 2);
-    s.config->set_options(bx_list_c::SERIES_ASK | bx_list_c::USE_BOX_TITLE);
+    s.config->set_options(bx_list_c::SERIES_ASK);
     s.config->set_runtime_param(1);
     s.config->set_device_param(this);
     path = new bx_param_string_c(s.config, "path", "Path", "", "", BX_PATHNAME_LEN);
@@ -164,7 +177,6 @@ usb_msd_device_c::usb_msd_device_c(usbdev_type type, const char *filename)
     status = new bx_param_bool_c(s.config, "status", "Inserted", "", 1);
     status->set_handler(cd_param_handler);
     status->set_runtime_param(1);
-    // TODO: status
 #if BX_WITH_WX
     bx_list_c *usb = (bx_list_c*)SIM->get_param("ports.usb");
     usb->add(s.config);
@@ -191,16 +203,26 @@ usb_msd_device_c::~usb_msd_device_c(void)
   }
 }
 
+bx_bool usb_msd_device_c::set_option(const char *option)
+{
+  if (!strncmp(option, "journal:", 8)) {
+    strcpy(s.journal, option+8);
+    return 1;
+  }
+  return 0;
+}
+
 bx_bool usb_msd_device_c::init()
 {
   if (d.type == USB_DEV_TYPE_DISK) {
-    s.hdimage = new default_image_t();
+    s.hdimage = DEV_hdimage_init_image(s.image_mode, 0, s.journal);
     if (s.hdimage->open(s.fname) < 0) {
       BX_ERROR(("could not open hard drive image file '%s'", s.fname));
       return 0;
     } else {
       s.scsi_dev = new scsi_device_t(s.hdimage, 0, usb_msd_command_complete, (void*)this);
     }
+    sprintf(s.info_txt, "USB HD: path='%s', mode='%s'", s.fname, hdimage_mode_names[s.image_mode]);
   } else if (d.type == USB_DEV_TYPE_CDROM) {
     s.cdrom = new LOWLEVEL_CDROM(s.fname);
     if (!s.cdrom->insert_cdrom()) {
@@ -209,11 +231,17 @@ bx_bool usb_msd_device_c::init()
     } else {
       s.scsi_dev = new scsi_device_t(s.cdrom, 0, usb_msd_command_complete, (void*)this);
     }
+    sprintf(s.info_txt, "USB CD: path='%s'", s.fname);
   }
   s.scsi_dev->register_state(s.sr_list, "scsidev");
   s.mode = USB_MSDM_CBW;
   d.connected = 1;
   return 1;
+}
+
+const char* usb_msd_device_c::get_info()
+{
+  return s.info_txt;
 }
 
 void usb_msd_device_c::register_state_specific(bx_list_c *parent)

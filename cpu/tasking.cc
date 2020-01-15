@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: tasking.cc,v 1.93 2010/04/22 17:51:37 sshwarts Exp $
+// $Id: tasking.cc,v 1.97 2010/12/22 21:16:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2010  The Bochs Project
@@ -467,7 +467,7 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
   if ((tss_descriptor->type >= 9) && BX_CPU_THIS_PTR cr0.get_PG()) {
     // change CR3 only if it actually modified
     if (newCR3 != BX_CPU_THIS_PTR cr3) {
-      BX_DEBUG(("task_switch changing CR3 to 0x" FMT_PHY_ADDRX, newCR3));
+      BX_DEBUG(("task_switch changing CR3 to 0x%08x", newCR3));
 #if BX_CPU_LEVEL >= 6
       if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE()) {
         if (! CheckPDPTR(newCR3)) {
@@ -675,12 +675,15 @@ void BX_CPU_C::task_switch(bxInstruction_c *i, bx_selector_t *tss_selector,
 #endif
   }
 
-
   if (tss_descriptor->type >= 9 && (trap_word & 0x1)) {
     BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_TRAP_TASK_SWITCH_BIT; // BT flag
     BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
     BX_INFO(("task_switch: T bit set in new TSS"));
   }
+
+#if BX_CPU_LEVEL >= 6
+  handleSseModeChange(); /* CR0.TS changes */
+#endif
 
   //
   // Step 12: Begin execution of new task.
@@ -784,6 +787,12 @@ Bit64u BX_CPU_C::get_RSP_from_TSS(unsigned pl)
   }
 
   Bit64u rsp = system_read_qword(BX_CPU_THIS_PTR tr.cache.u.segment.base + TSSstackaddr);
+
+  if (! IsCanonical(rsp)) {
+    BX_ERROR(("get_RSP_from_TSS: canonical address failure 0x%08x%08x", GET32H(rsp), GET32L(rsp)));
+    exception(BX_SS_EXCEPTION, BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value & 0xfffc);
+  }
+
   return rsp;
 }
 #endif  // #if BX_SUPPORT_X86_64

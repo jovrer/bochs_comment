@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h,v 1.36 2009/12/04 20:02:12 sshwarts Exp $
+// $Id: osdep.h,v 1.39 2011/01/09 19:20:11 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -62,8 +62,12 @@ extern "C" {
 #endif
 
 // always return regular file.
+#ifndef S_ISREG
 #  define S_ISREG(m)      (((m) & S_IFMT) == S_IFREG)
+#endif
+#ifndef S_ISCHR
 #  define S_ISCHR(m)      (((m) & S_IFMT) == S_IFCHR)
+#endif
 
 // win32 has snprintf though with different name.
 #define snprintf _snprintf
@@ -74,6 +78,9 @@ extern "C" {
 #define BX_HAVE_VSNPRINTF 1
 
 #if defined(_MSC_VER)
+#define access _access
+#define fdopen _fdopen
+#define mktemp _mktemp
 #define off_t __int64
 #define lseek _lseeki64
 #define fstat _fstati64
@@ -100,9 +107,15 @@ extern "C" {
 #endif  /* __MINGW32__ defined */
 
 #else    /* not WIN32 definitions */
+#if SIZEOF_UNSIGNED_LONG == 8
+#define FMT_LL "%l"
+#define FMT_TICK "%011lu"
+#define FMT_ADDRX64 "%016lx"
+#else
 #define FMT_LL "%ll"
 #define FMT_TICK "%011llu"
 #define FMT_ADDRX64 "%016llx"
+#endif
 #endif   /* not WIN32 definitions */
 
 #define FMT_ADDRX32 "%08x"

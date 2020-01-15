@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.cc,v 1.33 2010/03/14 15:51:26 sshwarts Exp $
+// $Id: icache.cc,v 1.43 2011/01/25 20:59:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2007-2009 Stanislav Shwartsman
+//   Copyright (c) 2007-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -37,7 +37,6 @@ void flushICaches(void)
 {
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++) {
     BX_CPU(i)->iCache.flushICacheEntries();
-    BX_CPU(i)->invalidate_prefetch_q();
 #if BX_SUPPORT_TRACE_CACHE
     BX_CPU(i)->async_event |= BX_ASYNC_EVENT_STOP_TRACE;
 #endif
@@ -46,18 +45,17 @@ void flushICaches(void)
   pageWriteStampTable.resetWriteStamps();
 }
 
-void purgeICaches(void)
+void handleSMC(bx_phy_address pAddr, Bit32u mask)
 {
-  flushICaches();
+  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++) {
+#if BX_SUPPORT_TRACE_CACHE
+    BX_CPU(i)->async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+#endif
+    BX_CPU(i)->iCache.handleSMC(pAddr, mask);
+  }
 }
 
 #if BX_SUPPORT_TRACE_CACHE
-
-void handleSMC(void)
-{
-  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
-    BX_CPU(i)->async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-}
 
 void BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBiased, bx_phy_address pAddr)
 {
@@ -66,14 +64,16 @@ void BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBiased, bx_phy_
   // Cache miss. We weren't so lucky, but let's be optimistic - try to build 
   // trace from incoming instruction bytes stream !
   entry->pAddr = pAddr;
-  pageWriteStampTable.markICache(pAddr);
-  entry->writeStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
+  entry->traceMask = 0;
 
   unsigned remainingInPage = BX_CPU_THIS_PTR eipPageWindowSize - eipBiased;
   const Bit8u *fetchPtr = BX_CPU_THIS_PTR eipFetchPtr + eipBiased;
   int ret;
 
   bxInstruction_c *i = entry->i;
+
+  Bit32u pageOffset = PAGE_OFFSET((Bit32u) pAddr);
+  Bit32u traceMask = 0;
 
   for (unsigned n=0;n<BX_MAX_TRACE_LENGTH;n++)
   {
@@ -93,10 +93,17 @@ void BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBiased, bx_phy_
          break;
       }
       // First instruction is boundary fetch, leave the trace cache entry 
-      // invalid and do not cache the instruction.
-      entry->writeStamp = ICacheWriteStampInvalid;
+      // invalid for now because boundaryFetch() can fault
+      entry->pAddr = ~entry->pAddr;
       entry->tlen = 1;
       boundaryFetch(fetchPtr, remainingInPage, i);
+
+      // Add the instruction to trace cache
+      entry->pAddr = ~entry->pAddr;
+      entry->traceMask = 0x80000000; /* last line in page */
+      pageWriteStampTable.markICacheMask(entry->pAddr, entry->traceMask);
+      pageWriteStampTable.markICacheMask(BX_CPU_THIS_PTR pAddrPage, 0x1);
+      BX_CPU_THIS_PTR iCache.commit_page_split_trace(BX_CPU_THIS_PTR pAddrPage, entry);
       return;
     }
 
@@ -104,16 +111,30 @@ void BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBiased, bx_phy_
     unsigned iLen = i->ilen();
     entry->tlen++;
 
+    BX_INSTR_OPCODE(BX_CPU_ID, fetchPtr, iLen,
+       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, long64_mode());
+
+    traceMask |= 1 <<  (pageOffset >> 7);
+    traceMask |= 1 << ((pageOffset + iLen - 1) >> 7);
+
     // continue to the next instruction
     remainingInPage -= iLen;
     if (ret != 0 /* stop trace indication */ || remainingInPage == 0) break;
     pAddr += iLen;
+    pageOffset += iLen;
     fetchPtr += iLen;
     i++;
 
     // try to find a trace starting from current pAddr and merge
-    if (mergeTraces(entry, i, pAddr)) break;
+    if (remainingInPage >= 15) // avoid merging with page split trace
+      if (mergeTraces(entry, i, pAddr)) break;
   }
+
+//BX_INFO(("commit trace %08x len=%d mask %08x", (Bit32u) entry->pAddr, entry->tlen, pageWriteStampTable.getFineGranularityMapping(entry->pAddr)));
+
+  entry->traceMask |= traceMask;
+
+  pageWriteStampTable.markICacheMask(pAddr, entry->traceMask);
 
   BX_CPU_THIS_PTR iCache.commit_trace(entry->tlen);
 }
@@ -122,7 +143,7 @@ bx_bool BX_CPU_C::mergeTraces(bxICacheEntry_c *entry, bxInstruction_c *i, bx_phy
 {
   bxICacheEntry_c *e = BX_CPU_THIS_PTR iCache.get_entry(pAddr, BX_CPU_THIS_PTR fetchModeMask);
 
-  if ((e->pAddr == pAddr) && (e->writeStamp == entry->writeStamp))
+  if (e->pAddr == pAddr)
   {
     // determine max amount of instruction to take from another entry
     unsigned max_length = e->tlen;
@@ -133,6 +154,8 @@ bx_bool BX_CPU_C::mergeTraces(bxICacheEntry_c *entry, bxInstruction_c *i, bx_phy
     memcpy(i, e->i, sizeof(bxInstruction_c)*max_length);
     entry->tlen += max_length;
     BX_ASSERT(entry->tlen <= BX_MAX_TRACE_LENGTH);
+
+    entry->traceMask |= e->traceMask;
 
     return 1;
   }
@@ -172,12 +195,12 @@ bx_bool BX_CPU_C::fetchInstruction(bxInstruction_c *iStorage, Bit32u eipBiased)
 void BX_CPU_C::serveICacheMiss(bxICacheEntry_c *entry, Bit32u eipBiased, bx_phy_address pAddr)
 {
   // The entry will be marked valid if fetchdecode will succeed
-  entry->writeStamp = ICacheWriteStampInvalid;
-
   if (fetchInstruction(entry->i, eipBiased)) {
     entry->pAddr = pAddr;
-    entry->writeStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
-    pageWriteStampTable.markICache(pAddr);
+    pageWriteStampTable.markICache(pAddr, entry->i->ilen());
+  }
+  else {
+    entry->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
   }
 }
 

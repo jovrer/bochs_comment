@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.cc,v 1.123 2010/03/02 07:07:57 sshwarts Exp $
+// $Id: floppy.cc,v 1.133 2011/01/18 21:04:44 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2011  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -49,6 +49,7 @@ extern "C" {
 }
 #endif
 #include "iodev.h"
+#include "hdimage.h"
 #include "floppy.h"
 // windows.h included by bochs.h
 #ifdef WIN32
@@ -128,14 +129,18 @@ bx_floppy_ctrl_c::bx_floppy_ctrl_c()
 
 bx_floppy_ctrl_c::~bx_floppy_ctrl_c()
 {
+  for (int i = 0; i < 4; i++) {
+    close_media(&BX_FD_THIS s.media[i]);
+  }
   BX_DEBUG(("Exit"));
 }
 
 void bx_floppy_ctrl_c::init(void)
 {
   Bit8u i, devtype, cmos_value;
+  char pname[10];
 
-  BX_DEBUG(("Init $Id: floppy.cc,v 1.123 2010/03/02 07:07:57 sshwarts Exp $"));
+  BX_DEBUG(("Init $Id: floppy.cc,v 1.133 2011/01/18 21:04:44 vruppert Exp $"));
   DEV_dma_register_8bit_channel(2, dma_read, dma_write, "Floppy Drive");
   DEV_register_irq(6, "Floppy Drive");
   for (unsigned addr=0x03F2; addr<=0x03F7; addr++) {
@@ -155,6 +160,7 @@ void bx_floppy_ctrl_c::init(void)
     BX_FD_THIS s.media[i].heads             = 0;
     BX_FD_THIS s.media[i].sectors           = 0;
     BX_FD_THIS s.media[i].fd                = -1;
+    BX_FD_THIS s.media[i].vvfat_floppy      = 0;
     BX_FD_THIS s.media_present[i]           = 0;
     BX_FD_THIS s.device_type[i]             = FDRIVE_NONE;
   }
@@ -175,13 +181,16 @@ void bx_floppy_ctrl_c::init(void)
 
   if (SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->get() != BX_FLOPPY_NONE) {
     if (SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->get()) {
+      BX_FD_THIS s.media[0].write_protected = SIM->get_param_bool(BXPN_FLOPPYA_READONLY)->get();
       if (evaluate_media(BX_FD_THIS s.device_type[0], SIM->get_param_enum(BXPN_FLOPPYA_TYPE)->get(),
                          SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), & BX_FD_THIS s.media[0])) {
         BX_FD_THIS s.media_present[0] = 1;
 #define MED (BX_FD_THIS s.media[0])
         BX_INFO(("fd0: '%s' ro=%d, h=%d,t=%d,spt=%d",
-        SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(),
-        MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+          SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(),
+          MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+        if (MED.write_protected)
+          SIM->get_param_bool(BXPN_FLOPPYA_READONLY)->set(1);
 #undef MED
       } else {
         SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->set(0);
@@ -205,13 +214,16 @@ void bx_floppy_ctrl_c::init(void)
 
   if (SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->get() != BX_FLOPPY_NONE) {
     if (SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->get()) {
+      BX_FD_THIS s.media[1].write_protected = SIM->get_param_bool(BXPN_FLOPPYB_READONLY)->get();
       if (evaluate_media(BX_FD_THIS s.device_type[1], SIM->get_param_enum(BXPN_FLOPPYB_TYPE)->get(),
                          SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr(), & BX_FD_THIS s.media[1])) {
         BX_FD_THIS s.media_present[1] = 1;
 #define MED (BX_FD_THIS s.media[1])
         BX_INFO(("fd1: '%s' ro=%d, h=%d,t=%d,spt=%d",
-        SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr(),
-        MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+          SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr(),
+          MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+        if (MED.write_protected)
+          SIM->get_param_bool(BXPN_FLOPPYB_READONLY)->set(1);
 #undef MED
       } else {
         SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->set(0);
@@ -238,6 +250,18 @@ void bx_floppy_ctrl_c::init(void)
   BX_FD_THIS s.SRT = 0;
   BX_FD_THIS s.HUT = 0;
   BX_FD_THIS s.HLT = 0;
+
+  // runtime parameters
+  for (i = 0; i < 2; i++) {
+    sprintf(pname, "floppy.%d", i);
+    bx_list_c *floppy = (bx_list_c*)SIM->get_param(pname);
+    SIM->get_param_string("path", floppy)->set_handler(floppy_param_string_handler);
+    SIM->get_param_string("path", floppy)->set_runtime_param(1);
+    SIM->get_param_bool("readonly", floppy)->set_handler(floppy_param_handler);
+    SIM->get_param_bool("readonly", floppy)->set_runtime_param(1);
+    SIM->get_param_bool("status", floppy)->set_handler(floppy_param_handler);
+    SIM->get_param_bool("status", floppy)->set_runtime_param(1);
+  }
 }
 
 void bx_floppy_ctrl_c::reset(unsigned type)
@@ -1012,25 +1036,28 @@ void bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
   if (strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
 #endif
   {
-    // don't need to seek the file if we are using Win95 type direct access
-    if (!BX_FD_THIS s.media[drive].raw_floppy_win95) {
+    if (BX_FD_THIS s.media[drive].vvfat_floppy) {
+      ret = (int)BX_FD_THIS s.media[drive].vvfat->lseek(offset, SEEK_SET);
+    } else if (!BX_FD_THIS s.media[drive].raw_floppy_win95) {
+      // don't need to seek the file if we are using Win95 type direct access
       ret = (int)lseek(BX_FD_THIS s.media[drive].fd, offset, SEEK_SET);
-      if (ret < 0) {
-        BX_PANIC(("could not perform lseek() to %d on floppy image file", offset));
-        return;
-      }
+    }
+    if (ret < 0) {
+      BX_PANIC(("could not perform lseek() to %d on floppy image file", offset));
+      return;
     }
   }
 
   if (direction == FROM_FLOPPY) {
+    if (BX_FD_THIS s.media[drive].vvfat_floppy) {
+      ret = BX_FD_THIS s.media[drive].vvfat->read(buffer, bytes);
 #if BX_WITH_MACOS
-    if (!strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
+    } else if (!strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
       ret = fd_read((char *) buffer, offset, bytes);
-    else
 #endif
-#ifdef WIN32
-    // if using Win95 direct access
-    if (BX_FD_THIS s.media[drive].raw_floppy_win95) {
+#if defined(WIN32) && !defined(_WIN64)
+    } else if (BX_FD_THIS s.media[drive].raw_floppy_win95) {
+      // if using Win95 direct access
       DWORD ret_cnt = 0;
       DIOC_REGISTERS reg;
       HANDLE hFile = CreateFile("\\\\.\\vwin32", 0, 0, NULL, 0, FILE_FLAG_DELETE_ON_CLOSE, NULL);
@@ -1046,12 +1073,10 @@ void bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
       // I don't know why this returns 28 instead of 512, but it works
       if (ret_cnt == 28)
         ret = 512;
+#endif
     } else {
-#endif
       ret = ::read(BX_FD_THIS s.media[drive].fd, (bx_ptr_t) buffer, bytes);
-#ifdef WIN32
     }
-#endif
     if (ret < int(bytes)) {
       /* ??? */
       if (ret > 0) {
@@ -1068,14 +1093,15 @@ void bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
 
   else { // TO_FLOPPY
     BX_ASSERT (!BX_FD_THIS s.media[drive].write_protected);
+    if (BX_FD_THIS s.media[drive].vvfat_floppy) {
+      ret = BX_FD_THIS s.media[drive].vvfat->write(buffer, bytes);
 #if BX_WITH_MACOS
-    if (!strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
+    } else if (!strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
       ret = fd_write((char *) buffer, offset, bytes);
-    else
 #endif
-#ifdef WIN32
-    // if using Win95 direct access
-    if (BX_FD_THIS s.media[drive].raw_floppy_win95) {
+#if defined(WIN32) && !defined(_WIN64)
+    } else if (BX_FD_THIS s.media[drive].raw_floppy_win95) {
+      // if using Win95 direct access
       DWORD ret_cnt = 0;
       DIOC_REGISTERS reg;
       HANDLE hFile = CreateFile("\\\\.\\vwin32", 0, 0, NULL, 0, FILE_FLAG_DELETE_ON_CLOSE, NULL);
@@ -1091,12 +1117,10 @@ void bx_floppy_ctrl_c::floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer,
       // I don't know why this returns 28 instead of 512, but it works
       if (ret_cnt == 28)
         ret = 512;
+#endif
     } else {
-#endif
       ret = ::write(BX_FD_THIS s.media[drive].fd, (bx_ptr_t) buffer, bytes);
-#ifdef WIN32
     }
-#endif
     if (ret < int(bytes)) {
       BX_PANIC(("could not perform write() on floppy image file"));
     }
@@ -1389,7 +1413,7 @@ void bx_floppy_ctrl_c::increment_sector(void)
   }
 }
 
-unsigned bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
+unsigned bx_floppy_ctrl_c::set_media_status(unsigned drive, bx_bool status)
 {
   char *path;
   unsigned type;
@@ -1406,10 +1430,7 @@ unsigned bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
 
   if (status == 0) {
     // eject floppy
-    if (BX_FD_THIS s.media[drive].fd >= 0) {
-      close(BX_FD_THIS s.media[drive].fd);
-      BX_FD_THIS s.media[drive].fd = -1;
-    }
+    close_media(&BX_FD_THIS s.media[drive]);
     BX_FD_THIS s.media_present[drive] = 0;
     if (drive == 0) {
       SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->set(0);
@@ -1431,14 +1452,20 @@ unsigned bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
       BX_FD_THIS s.media_present[drive] = 1;
       if (drive == 0) {
 #define MED (BX_FD_THIS s.media[0])
-        BX_INFO(("fd0: '%s' ro=%d, h=%d,t=%d,spt=%d", SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(),
-        MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+        BX_INFO(("fd0: '%s' ro=%d, h=%d,t=%d,spt=%d",
+          SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(),
+          MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+        if (MED.write_protected)
+          SIM->get_param_bool(BXPN_FLOPPYA_READONLY)->set(1);
 #undef MED
         SIM->get_param_bool(BXPN_FLOPPYA_STATUS)->set(1);
       } else {
 #define MED (BX_FD_THIS s.media[1])
-        BX_INFO(("fd1: '%s' ro=%d, h=%d,t=%d,spt=%d", SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr(),
-        MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+        BX_INFO(("fd1: '%s' ro=%d, h=%d,t=%d,spt=%d",
+          SIM->get_param_string(BXPN_FLOPPYB_PATH)->getptr(),
+          MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+        if (MED.write_protected)
+          SIM->get_param_bool(BXPN_FLOPPYB_READONLY)->set(1);
 #undef MED
         SIM->get_param_bool(BXPN_FLOPPYB_STATUS)->set(1);
       }
@@ -1455,11 +1482,6 @@ unsigned bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
       return(0);
     }
   }
-}
-
-unsigned bx_floppy_ctrl_c::get_media_status(unsigned drive)
-{
-  return BX_FD_THIS s.media_present[drive];
 }
 
 #ifdef O_BINARY
@@ -1488,10 +1510,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
 #endif
 
   //If media file is already open, close it before reopening.
-  if(media->fd >=0) {
-    close(media->fd);
-    media->fd=-1;
-  }
+  close_media(media);
 
   // check media type
   if (type == BX_FLOPPY_NONE) {
@@ -1509,8 +1528,23 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
     return 0;
   }
 
+  // use virtual VFAT support if requested
+  if (!strncmp(path, "vvfat:", 6) && (devtype == FDRIVE_350HD)) {
+    media->vvfat = DEV_hdimage_init_image(BX_HDIMAGE_MODE_VVFAT, 1474560, "");
+    if (media->vvfat != NULL) {
+      if (media->vvfat->open(path + 6) == 0) {
+        media->type              = BX_FLOPPY_1_44;
+        media->tracks            = media->vvfat->cylinders;
+        media->heads             = media->vvfat->heads;
+        media->sectors_per_track = media->vvfat->sectors;
+        media->sectors           = 2880;
+        media->vvfat_floppy = 1;
+        media->fd = 0;
+      }
+    }
+    if (media->vvfat_floppy) return 1;
+  }
   // open media file (image file or device)
-  media->write_protected = 0;
   media->raw_floppy_win95 = 0;
 #ifdef macintosh
   media->fd = 0;
@@ -1523,6 +1557,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
       hFile = CreateFile(sTemp, GENERIC_READ, FILE_SHARE_WRITE, NULL,
                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
       if (hFile == INVALID_HANDLE_VALUE) {
+#ifndef _WIN64
         // try to open it with Win95 style
         hFile = CreateFile("\\\\.\\vwin32", 0, 0, NULL, 0, FILE_FLAG_DELETE_ON_CLOSE, NULL);
         if (hFile == INVALID_HANDLE_VALUE) {
@@ -1531,7 +1566,12 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
         }
         media->raw_floppy_win95 = 1;
         media->raw_floppy_win95_drv = toupper(path[0]) - 'A';
+#else
+        BX_ERROR(("Cannot open floppy drive"));
+        return(0);
+#endif
       }
+#ifndef _WIN64
       // if using Win95 direct access, get params this way
       if (media->raw_floppy_win95) {
         DWORD ret_cnt = 0;
@@ -1547,11 +1587,14 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
           tracks = params.cylinders;
           heads  = params.num_heads;
           spt    = params.sects_per_track;
-        } else {				
+        } else {
           CloseHandle(hFile);
           return(0);
         }
-      } else {
+      }
+      else
+#endif
+      {
         if (!DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &dg, sizeof(dg), &bytes, NULL)) {
           BX_ERROR(("No media in floppy drive"));
           CloseHandle(hFile);
@@ -1564,18 +1607,25 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
       }
       CloseHandle(hFile);
       // if using Win95 direct access, don't open the file
-      if (!media->raw_floppy_win95)
-        media->fd = open(sTemp, BX_RDWR);
-    } else {
-      media->fd = open(path, BX_RDWR);
+      if (!media->raw_floppy_win95) {
+        if (!media->write_protected)
+          media->fd = open(sTemp, BX_RDWR);
+        else
+          media->fd = open(sTemp, BX_RDONLY);
+      }
     }
-#else
-    media->fd = open(path, BX_RDWR);
+    else
 #endif
+    {
+      if (!media->write_protected)
+        media->fd = open(path, BX_RDWR);
+      else
+        media->fd = open(path, BX_RDONLY);
+    }
 
   // Don't open the handle if using Win95 style direct access
   if (!media->raw_floppy_win95) {
-    if (media->fd < 0) {
+    if (!media->write_protected && (media->fd < 0)) {
       BX_INFO(("tried to open '%s' read/write: %s",path,strerror(errno)));
       // try opening the file read-only
       media->write_protected = 1;
@@ -1584,14 +1634,12 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
       if (strcmp(SIM->get_param_string(BXPN_FLOPPYA_PATH)->getptr(), SuperDrive))
 #endif
 #ifdef WIN32
-      if (raw_floppy == 1) {
+      if (raw_floppy == 1)
         media->fd = open(sTemp, BX_RDONLY);
-      } else {
-        media->fd = open(path, BX_RDONLY);
-      }
-#else
-      media->fd = open(path, BX_RDONLY);
+      else
 #endif
+        media->fd = open(path, BX_RDONLY);
+
       if (media->fd < 0) {
         // failed to open read-only too
         BX_INFO(("tried to open '%s' read only: %s",path,strerror(errno)));
@@ -1611,13 +1659,12 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
     memset (&stat_buf, 0, sizeof(stat_buf));
     stat_buf.st_mode = S_IFCHR;
     ret = 0;
-  } else {
+  }
+  else
+#endif
+  { // unix
     ret = fstat(media->fd, &stat_buf);
   }
-#else
-  // unix
-  ret = fstat(media->fd, &stat_buf);
-#endif
   if (ret) {
     BX_PANIC(("fstat floppy 0 drive image file returns error: %s", strerror(errno)));
     return(0);
@@ -1640,7 +1687,7 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
         media->heads             = floppy_type[type_idx].hd;
         media->sectors_per_track = floppy_type[type_idx].spt;
         media->sectors           = floppy_type[type_idx].sectors;
-        if (stat_buf.st_size > (media->sectors * 512)) {
+        if (stat_buf.st_size > (int)(media->sectors * 512)) {
           BX_ERROR(("evaluate_media: size of file '%s' (%lu) too large for selected type",
                    path, (unsigned long) stat_buf.st_size));
           return 0;
@@ -1721,6 +1768,20 @@ bx_bool bx_floppy_ctrl_c::evaluate_media(Bit8u devtype, Bit8u type, char *path, 
     // unknown file type
     BX_ERROR(("unknown mode type"));
     return 0;
+  }
+}
+
+void bx_floppy_ctrl_c::close_media(floppy_t *media)
+{
+  if (media->fd >= 0) {
+    if (media->vvfat_floppy) {
+      media->vvfat->close();
+      delete media->vvfat;
+      media->vvfat_floppy = 0;
+    } else if (!media->raw_floppy_win95) {
+      close(media->fd);
+    }
+    media->fd = -1;
   }
 }
 
@@ -1861,4 +1922,62 @@ bx_bool bx_floppy_ctrl_c::get_tc(void)
     terminal_count = DEV_dma_get_tc();
   }
   return terminal_count;
+}
+
+Bit64s bx_floppy_ctrl_c::floppy_param_handler(bx_param_c *param, int set, Bit64s val)
+{
+  if (set) {
+    char pname[BX_PATHNAME_LEN];
+    param->get_param_path(pname, BX_PATHNAME_LEN);
+    if (!strcmp(pname, BXPN_FLOPPYA_STATUS)) {
+      BX_FD_THIS set_media_status(0, (bx_bool)val);
+      bx_gui->update_drive_status_buttons();
+    } else if (!strcmp(pname, BXPN_FLOPPYB_STATUS)) {
+      BX_FD_THIS set_media_status(1, (bx_bool)val);
+      bx_gui->update_drive_status_buttons();
+    } else if (!strcmp(pname, BXPN_FLOPPYA_READONLY)) {
+      BX_FD_THIS s.media[0].write_protected = (bx_bool)val;
+    } else if (!strcmp(pname, BXPN_FLOPPYB_READONLY)) {
+      BX_FD_THIS s.media[1].write_protected = (bx_bool)val;
+    }
+  }
+  return val;
+}
+
+const char* bx_floppy_ctrl_c::floppy_param_string_handler(bx_param_string_c *param,
+                                int set, const char *oldval, const char *val, int maxlen)
+{
+  char pname[BX_PATHNAME_LEN];
+  Bit8u device;
+
+  bx_list_c *base = (bx_list_c*) param->get_parent();
+  int empty = 0;
+  if ((strlen(val) < 1) || !strcmp ("none", val)) {
+    empty = 1;
+    val = "none";
+  }
+  param->get_param_path(pname, BX_PATHNAME_LEN);
+  if ((!strcmp(pname, BXPN_FLOPPYA_PATH)) ||
+      (!strcmp(pname, BXPN_FLOPPYB_PATH))) {
+    if (set==1) {
+      device = atoi(base->get_name());
+      if (empty) {
+        BX_FD_THIS set_media_status(device, 0);
+        bx_gui->update_drive_status_buttons();
+      } else {
+        if (SIM->get_param_enum("devtype", base)->get() == BX_FDD_NONE) {
+          BX_ERROR(("Cannot add a floppy drive at runtime"));
+          SIM->get_param_string("path", base)->set("none");
+        }
+      }
+      if (SIM->get_param_bool("status", base)->get() == 1) {
+        // tell the device model that we removed, then inserted the disk
+        BX_FD_THIS set_media_status(device, 0);
+        BX_FD_THIS set_media_status(device, 1);
+      }
+    }
+  } else {
+    BX_PANIC(("floppy_param_string_handler called with unknown parameter '%s'", pname));
+  }
+  return val;
 }

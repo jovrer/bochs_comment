@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_common.h,v 1.11 2009/12/04 13:01:41 sshwarts Exp $
+// $Id: usb_common.h,v 1.16 2011/02/12 14:00:34 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin D Lunt (fys at frontiernet net)
@@ -40,6 +40,7 @@
 #define USB_SPEED_LOW   0
 #define USB_SPEED_FULL  1
 #define USB_SPEED_HIGH  2
+#define USB_SPEED_SUPER 3
 
 #define USB_STATE_NOTATTACHED 0
 #define USB_STATE_ATTACHED    1
@@ -126,12 +127,23 @@ enum usbdev_type {
   USB_DEV_TYPE_PRINTER
 };
 
-usbdev_type usb_init_device(const char *devname, logfunctions *hc, usb_device_c **device);
+class bx_usb_devctl_c : public bx_usb_devctl_stub_c {
+public:
+  bx_usb_devctl_c() {}
+  virtual ~bx_usb_devctl_c() {}
+  virtual int init_device(bx_list_c *portconf, logfunctions *hub, void **dev, bx_list_c *sr_list);
+  virtual void usb_send_msg(void *dev, int msg);
+private:
+  void parse_port_options(usb_device_c *dev, bx_list_c *portconf);
+};
 
 class usb_device_c : public logfunctions {
 public:
   usb_device_c(void);
   virtual ~usb_device_c() {}
+
+  virtual bx_bool init() {return 1;}
+  virtual const char* get_info() {return NULL;}
 
   virtual int handle_packet(USBPacket *p);
   virtual void handle_reset() {}
@@ -141,10 +153,14 @@ public:
   virtual void register_state_specific(bx_list_c *parent) {}
   virtual void after_restore_state() {}
   virtual void cancel_packet(USBPacket *p) {}
+  virtual bx_bool set_option(const char *option) {return 0;}
+  virtual void timer() {}
 
   bx_bool get_connected() {return d.connected;}
   usbdev_type get_type() {return d.type;}
+  int get_maxspeed() {return d.maxspeed;}
   int get_speed() {return d.speed;}
+  void set_speed(int speed) {d.speed = speed;}
   Bit8u get_address() {return d.addr;}
 
   void usb_send_msg(int msg);
@@ -153,6 +169,7 @@ protected:
   struct {
     enum usbdev_type type;
     bx_bool connected;
+    int maxspeed;
     int speed;
     Bit8u addr;
     Bit8u config;

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_pfp.cc,v 1.66 2010/04/14 20:20:17 sshwarts Exp $
+// $Id: sse_pfp.cc,v 1.81 2011/02/13 06:10:11 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2003-2009 Stanislav Shwartsman
+//   Copyright (c) 2003-2011 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,6 +28,7 @@
 
 #if BX_CPU_LEVEL >= 6
 
+#include "fpu/softfloat-compare.h"
 #include "fpu/softfloat-specialize.h"
 
 void BX_CPU_C::check_exceptionsSSE(int exceptions_flags)
@@ -59,19 +60,27 @@ BX_CPP_INLINE void mxcsr_to_softfloat_status_word(float_status_t &status, bx_mxc
 }
 
 /* Comparison predicate for CMPSS/CMPPS instructions */
-static float32_compare_method compare32[4] = {
-  float32_eq,
-  float32_lt,
-  float32_le,
-  float32_unordered
+static float32_compare_method compare32[8] = {
+  float32_eq_ordered_quiet,
+  float32_lt_ordered_signalling,
+  float32_le_ordered_signalling,
+  float32_unordered_quiet,
+  float32_neq_unordered_quiet,
+  float32_nlt_unordered_signalling,
+  float32_nle_unordered_signalling,
+  float32_ordered_quiet
 };
 
 /* Comparison predicate for CMPSD/CMPPD instructions */
-static float64_compare_method compare64[4] = {
-  float64_eq,
-  float64_lt,
-  float64_le,
-  float64_unordered
+static float64_compare_method compare64[8] = {
+  float64_eq_ordered_quiet,
+  float64_lt_ordered_signalling,
+  float64_le_ordered_signalling,
+  float64_unordered_quiet,
+  float64_neq_unordered_quiet,
+  float64_nlt_unordered_signalling,
+  float64_nle_unordered_signalling,
+  float64_ordered_quiet
 };
 
 #endif // BX_CPU_LEVEL >= 6
@@ -86,10 +95,6 @@ static float64_compare_method compare64[4] = {
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQqR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister result;
-
   /* check floating point status word for a pending FPU exceptions */
   FPU_check_pending_exceptions();
 
@@ -98,22 +103,19 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQqR(bxInstruction_c *i)
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  result.xmm32u(0) = int32_to_float32(MMXUD0(op), status_word);
-  result.xmm32u(1) = int32_to_float32(MMXUD1(op), status_word);
+  MMXUD0(op) = int32_to_float32(MMXUD0(op), status_word);
+  MMXUD1(op) = int32_to_float32(MMXUD1(op), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   prepareFPU2MMX(); /* cause FPU2MMX state transition */
-  BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result.xmm64u(0));
+  BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), MMXUQ(op));
 #endif
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQqM(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   BxPackedMmxRegister op;
-  BxPackedXmmRegister result;
 
   // do not cause transition to MMX state if no MMX register touched
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -122,11 +124,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQqM(bxInstruction_c *i)
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  result.xmm32u(0) = int32_to_float32(MMXUD0(op), status_word);
-  result.xmm32u(1) = int32_to_float32(MMXUD1(op), status_word);
+  MMXUD0(op) = int32_to_float32(MMXUD0(op), status_word);
+  MMXUD1(op) = int32_to_float32(MMXUD1(op), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
-  BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result.xmm64u(0));
+  BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), MMXUQ(op));
 #endif
 }
 
@@ -138,8 +140,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PS_VpsQqM(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PD_VpdQqR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   BxPackedXmmRegister result;
 
   /* check floating point status word for a pending FPU exceptions */
@@ -158,8 +158,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PD_VpdQqR(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PD_VpdQqM(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   BxPackedMmxRegister op;
   BxPackedXmmRegister result;
 
@@ -182,52 +180,23 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPI2PD_VpdQqM(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float_status_t status_word;
-  mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  float64 result;
-
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size */
-    result = int64_to_float64(BX_READ_64BIT_REG(i->rm()), status_word);
-  else
-#endif
-    result = int32_to_float64(BX_READ_32BIT_REG(i->rm()));
-
-  check_exceptionsSSE(status_word.float_exception_flags);
+  float64 result = int32_to_float64(BX_READ_32BIT_REG(i->rm()));
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
 #endif
 }
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEdM(bxInstruction_c *i)
+#if BX_SUPPORT_X86_64
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEqR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  float64 result;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size */
-  {
-    Bit64u op = read_virtual_qword_64(i->seg(), eaddr);
-    result = int64_to_float64(op, status_word);
-  }
-  else
-#endif
-  {
-    Bit32u op = read_virtual_dword(i->seg(), eaddr);
-    result = int32_to_float64(op);
-  }
+  float64 result = int64_to_float64(BX_READ_64BIT_REG(i->rm()), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
-#endif
 }
+#endif
 
 /*
  * Opcode: F3 0F 2A
@@ -239,52 +208,28 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SD_VsdEdM(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  float32 result;
 
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size */
-    result = int64_to_float32(BX_READ_64BIT_REG(i->rm()), status_word);
-  else
-#endif
-    result = int32_to_float32(BX_READ_32BIT_REG(i->rm()), status_word);
+  float32 result = int32_to_float32(BX_READ_32BIT_REG(i->rm()), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
 #endif
 }
 
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEdM(bxInstruction_c *i)
+#if BX_SUPPORT_X86_64
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEqR(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  float32 result;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size */
-  {
-    Bit64u op = read_virtual_qword_64(i->seg(), eaddr);
-    result = int64_to_float32(op, status_word);
-  }
-  else
-#endif
-  {
-    Bit32u op = read_virtual_dword(i->seg(), eaddr);
-    result = int32_to_float32(op, status_word);
-  }
+  float32 result = int64_to_float32(BX_READ_64BIT_REG(i->rm()), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
-#endif
 }
+#endif
 
 /*
  * Opcode: 0F 2C
@@ -295,41 +240,35 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSI2SS_VssEdM(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2PI_PqWps(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   /* check floating point status word for a pending FPU exceptions */
   FPU_check_pending_exceptions();
 
-  Bit64u op;
-  BxPackedMmxRegister result;
+  BxPackedMmxRegister op;
 
   /* op is a register or memory reference */
   if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
+    MMXUQ(op) = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
     bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
+    MMXUQ(op) = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  float32 r0 = (float32)(op & 0xFFFFFFFF);
-  float32 r1 = (float32)(op >> 32);
-
   if (MXCSR.get_DAZ()) {
-    r0 = float32_denormal_to_zero(r0);
-    r1 = float32_denormal_to_zero(r1);
+    MMXUD0(op) = float32_denormal_to_zero(MMXUD0(op));
+    MMXUD1(op) = float32_denormal_to_zero(MMXUD1(op));
   }
 
-  MMXUD0(result) = float32_to_int32_round_to_zero(r0, status_word);
-  MMXUD1(result) = float32_to_int32_round_to_zero(r1, status_word);
+  MMXUD0(op) = float32_to_int32_round_to_zero(MMXUD0(op), status_word);
+  MMXUD1(op) = float32_to_int32_round_to_zero(MMXUD1(op), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   prepareFPU2MMX(); /* cause FPU2MMX state transition */
-  BX_WRITE_MMX_REG(i->nnn(), result);
+  BX_WRITE_MMX_REG(i->nnn(), op);
 #endif
 }
 
@@ -342,8 +281,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2PI_PqWps(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   /* check floating point status word for a pending FPU exceptions */
   FPU_check_pending_exceptions();
 
@@ -356,8 +293,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
   }
   else {
     bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
+
+#if BX_SUPPORT_MISALIGNED_SSE
+    if (BX_CPU_THIS_PTR mxcsr.get_MM())
+      read_virtual_dqword(i->seg(), eaddr, (Bit8u *) &op);
+    else
+#endif
+      read_virtual_dqword_aligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -383,44 +325,39 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2PI_PqWpd(bxInstruction_c *i)
  * truncation if the conversion is inexact
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSD2SI_GdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSD2SI_GdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
-  float64 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
+  Bit32u result = float64_to_int32_round_to_zero(op, status_word);
 
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size mode */
-  {
-    Bit64u result = float64_to_int64_round_to_zero(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_64BIT_REG(i->nnn(), result);
-  }
-  else
-#endif
-  {
-    Bit32u result = float64_to_int32_round_to_zero(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_32BIT_REGZ(i->nnn(), result);
-  }
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result);
 #endif
 }
+
+#if BX_SUPPORT_X86_64
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSD2SI_GqWsdR(bxInstruction_c *i)
+{
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
+
+  if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
+
+  float_status_t status_word;
+  mxcsr_to_softfloat_status_word(status_word, MXCSR);
+
+  Bit64u result = float64_to_int64_round_to_zero(op, status_word);
+
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_64BIT_REG(i->nnn(), result);
+}
+#endif
 
 /*
  * Opcode: F3 0F 2C
@@ -428,44 +365,39 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSD2SI_GdWsd(bxInstruction_c *i)
  * truncation if the conversion is inexact
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSS2SI_GdWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSS2SI_GdWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
-  float32 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), eaddr);
-  }
+  if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
+  Bit32u result = float32_to_int32_round_to_zero(op, status_word);
 
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size mode */
-  {
-    Bit64u result = float32_to_int64_round_to_zero(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_64BIT_REG(i->nnn(), result);
-  }
-  else
-#endif
-  {
-    Bit32u result = float32_to_int32_round_to_zero(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_32BIT_REGZ(i->nnn(), result);
-  }
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result);
 #endif
 }
+
+#if BX_SUPPORT_X86_64
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSS2SI_GqWssR(bxInstruction_c *i)
+{
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
+
+  if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
+
+  float_status_t status_word;
+  mxcsr_to_softfloat_status_word(status_word, MXCSR);
+
+  Bit64u result = float32_to_int64_round_to_zero(op, status_word);
+
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_64BIT_REG(i->nnn(), result);
+}
+#endif
 
 /*
  * Opcode: 0F 2D
@@ -477,41 +409,35 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTSS2SI_GdWss(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PI_PqWps(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   /* check floating point status word for a pending FPU exceptions */
   FPU_check_pending_exceptions();
 
-  Bit64u op;
-  BxPackedMmxRegister result;
+  BxPackedMmxRegister op;
 
   /* op is a register or memory reference */
   if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
+    MMXUQ(op) = BX_READ_XMM_REG_LO_QWORD(i->rm());
   }
   else {
     bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
     /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
+    MMXUQ(op) = read_virtual_qword(i->seg(), eaddr);
   }
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  float32 r0 = (float32)(op & 0xFFFFFFFF);
-  float32 r1 = (float32)(op >> 32);
-
   if (MXCSR.get_DAZ()) {
-    r0 = float32_denormal_to_zero(r0);
-    r1 = float32_denormal_to_zero(r1);
+    MMXUD0(op) = float32_denormal_to_zero(MMXUD0(op));
+    MMXUD1(op) = float32_denormal_to_zero(MMXUD1(op));
   }
 
-  MMXUD0(result) = float32_to_int32(r0, status_word);
-  MMXUD1(result) = float32_to_int32(r1, status_word);
+  MMXUD0(op) = float32_to_int32(MMXUD0(op), status_word);
+  MMXUD1(op) = float32_to_int32(MMXUD1(op), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   prepareFPU2MMX(); /* cause FPU2MMX state transition */
-  BX_WRITE_MMX_REG(i->nnn(), result);
+  BX_WRITE_MMX_REG(i->nnn(), op);
 #endif
 }
 
@@ -525,8 +451,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PI_PqWps(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
   /* check floating point status word for a pending FPU exceptions */
   FPU_check_pending_exceptions();
 
@@ -539,8 +463,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
   }
   else {
     bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
+
+#if BX_SUPPORT_MISALIGNED_SSE
+    if (BX_CPU_THIS_PTR mxcsr.get_MM())
+      read_virtual_dqword(i->seg(), eaddr, (Bit8u *) &op);
+    else
+#endif
+      read_virtual_dqword_aligned(i->seg(), eaddr, (Bit8u *) &op);
   }
 
   float_status_t status_word;
@@ -567,43 +496,39 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PI_PqWpd(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SI_GdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SI_GdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
-  float64 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
 
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size mode */
-  {
-    Bit64u result = float64_to_int64(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_64BIT_REG(i->nnn(), result);
-  }
-  else
-#endif
-  {
-    Bit32u result = float64_to_int32(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_32BIT_REGZ(i->nnn(), result);
-  }
+  Bit32u result = float64_to_int32(op, status_word);
+
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result);
 #endif
 }
+
+#if BX_SUPPORT_X86_64
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SI_GqWsdR(bxInstruction_c *i)
+{
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
+
+  if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
+
+  float_status_t status_word;
+  mxcsr_to_softfloat_status_word(status_word, MXCSR);
+
+  Bit64u result = float64_to_int64(op, status_word);
+
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_64BIT_REG(i->nnn(), result);
+}
+#endif
 
 /*
  * Opcode: F3 0F 2D
@@ -612,80 +537,64 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SI_GdWsd(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SI_GdWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SI_GdWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
-  float32 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), eaddr);
-  }
+  if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
 
-#if BX_SUPPORT_X86_64
-  if (i->os64L())   /* 64 bit operand size mode */
-  {
-    Bit64u result = float32_to_int64(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_64BIT_REG(i->nnn(), result);
-  }
-  else
-#endif
-  {
-    Bit32u result = float32_to_int32(op, status_word);
-    check_exceptionsSSE(status_word.float_exception_flags);
-    BX_WRITE_32BIT_REGZ(i->nnn(), result);
-  }
+  Bit32u result = float32_to_int32(op, status_word);
+
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result);
 #endif
 }
+
+#if BX_SUPPORT_X86_64
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SI_GqWssR(bxInstruction_c *i)
+{
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
+
+  if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
+
+  float_status_t status_word;
+  mxcsr_to_softfloat_status_word(status_word, MXCSR);
+
+  Bit64u result = float32_to_int64(op, status_word);
+
+  check_exceptionsSSE(status_word.float_exception_flags);
+  BX_WRITE_64BIT_REG(i->nnn(), result);
+}
+#endif
 
 /*
  * Opcode: 0F 5A
  * Convert two single precision FP numbers to two double precision FP numbers
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PD_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PD_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  Bit64u op;
   BxPackedXmmRegister result;
+  BxPackedMmxRegister op;
 
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  // use MMX register as 64-bit value with convinient accessors
+  MMXUQ(op) = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
 
-  float32 r0 = (float32)(op & 0xFFFFFFFF);
-  float32 r1 = (float32)(op >> 32);
-
   if (MXCSR.get_DAZ()) {
-    r0 = float32_denormal_to_zero(r0);
-    r1 = float32_denormal_to_zero(r1);
+    MMXUD0(op) = float32_denormal_to_zero(MMXUD0(op));
+    MMXUD1(op) = float32_denormal_to_zero(MMXUD1(op));
   }
 
-  result.xmm64u(0) = float32_to_float64(r0, status_word);
-  result.xmm64u(1) = float32_to_float64(r1, status_word);
+  result.xmm64u(0) = float32_to_float64(MMXUD0(op), status_word);
+  result.xmm64u(1) = float32_to_float64(MMXUD1(op), status_word);
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), result);
@@ -699,22 +608,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2PD_VpsWps(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #I, #D, #O, #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PS_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PS_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op, result;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -725,12 +622,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PS_VpdWpd(bxInstruction_c *i)
     op.xmm64u(1) = float64_denormal_to_zero(op.xmm64u(1));
   }
 
-  result.xmm32u(0) = float64_to_float32(op.xmm64u(0), status_word);
-  result.xmm32u(1) = float64_to_float32(op.xmm64u(1), status_word);
-  result.xmm64u(1) = 0;
+  op.xmm32u(0) = float64_to_float32(op.xmm64u(0), status_word);
+  op.xmm32u(1) = float64_to_float32(op.xmm64u(1), status_word);
+  op.xmm64u(1) = 0;
 
   check_exceptionsSSE(status_word.float_exception_flags);
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op);
 #endif
 }
 
@@ -741,28 +638,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2PS_VpdWpd(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #I, #D, #O, #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SS_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SS_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op;
-  float32 result;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   if (MXCSR.get_DAZ()) op = float64_denormal_to_zero(op);
-  result = float64_to_float32(op, status_word);
+  float32 result = float64_to_float32(op, status_word);
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
 #endif
@@ -773,28 +657,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSD2SS_VsdWsd(bxInstruction_c *i)
  * Convert one single precision FP number to one double precision FP.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SD_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SD_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op;
-  float64 result;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
   if (MXCSR.get_DAZ()) op = float32_denormal_to_zero(op);
-  result = float32_to_float64(op, status_word);
+  float64 result = float32_to_float64(op, status_word);
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
 #endif
@@ -807,22 +678,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTSS2SD_VssWss(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PS_VpsWdq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PS_VpsWdqR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -844,22 +703,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PS_VpsWdq(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2DQ_VdqWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2DQ_VdqWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -887,22 +734,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPS2DQ_VdqWps(bxInstruction_c *i)
  * truncation if the conversion is inexact.
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2DQ_VdqWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2DQ_VdqWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -930,22 +765,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPS2DQ_VdqWps(bxInstruction_c *i)
  * truncation if the conversion is inexact.
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2DQ_VqWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2DQ_VqWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op, result;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -955,12 +778,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2DQ_VqWpd(bxInstruction_c *i)
     op.xmm64u(1) = float64_denormal_to_zero(op.xmm64u(1));
   }
 
-  result.xmm32u(0) = float64_to_int32_round_to_zero(op.xmm64u(0), status_word);
-  result.xmm32u(1) = float64_to_int32_round_to_zero(op.xmm64u(1), status_word);
-  result.xmm64u(1) = 0;
+  op.xmm32u(0) = float64_to_int32_round_to_zero(op.xmm64u(0), status_word);
+  op.xmm32u(1) = float64_to_int32_round_to_zero(op.xmm64u(1), status_word);
+  op.xmm64u(1) = 0;
 
   check_exceptionsSSE(status_word.float_exception_flags);
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op);
 #endif
 }
 
@@ -971,22 +794,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTTPD2DQ_VqWpd(bxInstruction_c *i)
  * to rounding control bits in MXCSR register.
  * Possible floating point exceptions: #I, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2DQ_VqWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2DQ_VqWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op, result;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -996,12 +807,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2DQ_VqWpd(bxInstruction_c *i)
     op.xmm64u(1) = float64_denormal_to_zero(op.xmm64u(1));
   }
 
-  result.xmm32u(0) = float64_to_int32(op.xmm64u(0), status_word);
-  result.xmm32u(1) = float64_to_int32(op.xmm64u(1), status_word);
-  result.xmm64u(1) = 0;
+  op.xmm32u(0) = float64_to_int32(op.xmm64u(0), status_word);
+  op.xmm32u(1) = float64_to_int32(op.xmm64u(1), status_word);
+  op.xmm64u(1) = 0;
 
   check_exceptionsSSE(status_word.float_exception_flags);
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op);
 #endif
 }
 
@@ -1010,29 +821,17 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTPD2DQ_VqWpd(bxInstruction_c *i)
  * Convert two 32bit signed integers from XMM/MEM to two double precision FP
  * Possible floating point exceptions: -
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PD_VpdWq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PD_VpdWqR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  Bit64u op;
   BxPackedXmmRegister result;
+  BxPackedMmxRegister op;
 
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  // use MMX register as 64-bit value with convinient accessors
+  MMXUQ(op) = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
-  Bit32u r0 = (Bit32u)(op & 0xFFFFFFFF);
-  Bit32u r1 = (Bit32u)(op >> 32);
-
-  result.xmm64u(0) = int32_to_float64(r0);
-  result.xmm64u(1) = int32_to_float64(r1);
+  result.xmm64u(0) = int32_to_float64(MMXUD0(op));
+  result.xmm64u(1) = int32_to_float64(MMXUD1(op));
 
   BX_WRITE_XMM_REG(i->nnn(), result);
 #endif
@@ -1043,22 +842,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CVTDQ2PD_VpdWq(bxInstruction_c *i)
  * Compare two single precision FP numbers and set EFLAGS accordintly.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1080,22 +867,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISS_VssWss(bxInstruction_c *i)
  * Compare two double precision FP numbers and set EFLAGS accordintly.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISD_VsdWsd(bxInstruction_c *i)            	
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISD_VsdWsdR(bxInstruction_c *i)            	
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1117,22 +892,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UCOMISD_VsdWsd(bxInstruction_c *i)
  * Compare two single precision FP numbers and set EFLAGS accordintly.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1154,22 +917,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISS_VpsWps(bxInstruction_c *i)
  * Compare two double precision FP numbers and set EFLAGS accordintly.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1191,22 +942,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::COMISD_VpdWpd(bxInstruction_c *i)
  * Square Root packed single precision.
  * Possible floating point exceptions: #I, #D, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1234,22 +973,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPS_VpsWps(bxInstruction_c *i)
  * Square Root packed double precision.
  * Possible floating point exceptions: #I, #D, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1273,22 +1000,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTPD_VpdWpd(bxInstruction_c *i)
  * Square Root scalar double precision.
  * Possible floating point exceptions: #I, #D, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1304,22 +1019,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSD_VsdWsd(bxInstruction_c *i)
  * Square Root scalar single precision.
  * Possible floating point exceptions: #I, #D, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1335,22 +1038,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SQRTSS_VssWss(bxInstruction_c *i)
  * Add packed single precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1382,22 +1073,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPS_VpsWps(bxInstruction_c *i)
  * Add packed double precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1423,22 +1102,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDPD_VpdWpd(bxInstruction_c *i)
  * Add the lower double precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1460,22 +1127,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSD_VsdWsd(bxInstruction_c *i)
  * Add the lower single precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1497,22 +1152,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSS_VssWss(bxInstruction_c *i)
  * Multiply packed single precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1544,22 +1187,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPS_VpsWps(bxInstruction_c *i)
  * Multiply packed double precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1585,22 +1216,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULPD_VpdWpd(bxInstruction_c *i)
  * Multiply the lower double precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1622,22 +1241,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSD_VsdWsd(bxInstruction_c *i)
  * Multiply the lower single precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1659,22 +1266,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MULSS_VssWss(bxInstruction_c *i)
  * Subtract packed single precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1706,22 +1301,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPS_VpsWps(bxInstruction_c *i)
  * Subtract packed double precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1747,22 +1330,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBPD_VpdWpd(bxInstruction_c *i)
  * Subtract the lower double precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1784,22 +1355,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSD_VsdWsd(bxInstruction_c *i)
  * Subtract the lower single precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1821,22 +1380,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SUBSS_VssWss(bxInstruction_c *i)
  * Calculate the minimum single precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1873,22 +1420,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPS_VpsWps(bxInstruction_c *i)
  * Calculate the minimum double precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1917,22 +1452,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINPD_VpdWpd(bxInstruction_c *i)
  * Calculate the minimum scalar double precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1955,22 +1478,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSD_VsdWsd(bxInstruction_c *i)
  * Calculate the minimum scalar single precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -1993,22 +1504,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MINSS_VssWss(bxInstruction_c *i)
  * Divide packed single precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #Z, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2040,22 +1539,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPS_VpsWps(bxInstruction_c *i)
  * Divide packed double precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #Z, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2081,22 +1568,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVPD_VpdWpd(bxInstruction_c *i)
  * Divide the lower double precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #Z, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2118,22 +1593,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSD_VsdWsd(bxInstruction_c *i)
  * Divide the lower single precision FP number from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #Z, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2155,22 +1618,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DIVSS_VssWss(bxInstruction_c *i)
  * Calculate the maximum single precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2207,22 +1658,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPS_VpsWps(bxInstruction_c *i)
  * Calculate the maximum double precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2251,22 +1690,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXPD_VpdWpd(bxInstruction_c *i)
  * Calculate the maximum scalar double precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSD_VsdWsd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSD_VsdWsdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2289,22 +1716,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSD_VsdWsd(bxInstruction_c *i)
  * Calculate the maxumim scalar single precision FP between XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSS_VssWss(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSS_VssWssR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2327,22 +1742,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MAXSS_VssWss(bxInstruction_c *i)
  * Add horizontally packed double precision FP in XMM2/MEM from XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2368,22 +1771,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPD_VpdWpd(bxInstruction_c *i)
  * Add horizontally packed single precision FP in XMM2/MEM from XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2415,22 +1806,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HADDPS_VpsWps(bxInstruction_c *i)
  * Subtract horizontally packed double precision FP in XMM2/MEM from XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2456,22 +1835,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPD_VpdWpd(bxInstruction_c *i)
  * Subtract horizontally packed single precision FP in XMM2/MEM from XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2503,32 +1870,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::HSUBPS_VpsWps(bxInstruction_c *i)
  * Compare packed single precision FP values using Ib as comparison predicate.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPS_VpsWpsIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPS_VpsWpsIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status;
   mxcsr_to_softfloat_status_word(status, MXCSR);
-  int ib = i->Ib();
-
-  /* mask used bits, ignore reserved */
-  if (ib > 7) {
-    BX_ERROR(("CMPPS_VpsWpsIb: unrecognized predicate %u", i->Ib()));
-  }
-  ib &= 7;
+  int ib = i->Ib() & 7;
 
   if (MXCSR.get_DAZ()) {
     op1.xmm32u(0) = float32_denormal_to_zero(op1.xmm32u(0));
@@ -2542,30 +1891,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPS_VpsWpsIb(bxInstruction_c *i)
     op2.xmm32u(3) = float32_denormal_to_zero(op2.xmm32u(3));
   }
 
-  if(ib < 4)
-  {
-    op1.xmm32u(0) =
-        compare32[ib](op1.xmm32u(0), op2.xmm32u(0), status) ? 0xFFFFFFFF : 0;
-    op1.xmm32u(1) =
-        compare32[ib](op1.xmm32u(1), op2.xmm32u(1), status) ? 0xFFFFFFFF : 0;
-    op1.xmm32u(2) =
-        compare32[ib](op1.xmm32u(2), op2.xmm32u(2), status) ? 0xFFFFFFFF : 0;
-    op1.xmm32u(3) =
-        compare32[ib](op1.xmm32u(3), op2.xmm32u(3), status) ? 0xFFFFFFFF : 0;
-  }
-  else
-  {
-    ib -= 4;
-
-    op1.xmm32u(0) =
-        compare32[ib](op1.xmm32u(0), op2.xmm32u(0), status) ? 0 : 0xFFFFFFFF;
-    op1.xmm32u(1) =
-        compare32[ib](op1.xmm32u(1), op2.xmm32u(1), status) ? 0 : 0xFFFFFFFF;
-    op1.xmm32u(2) =
-        compare32[ib](op1.xmm32u(2), op2.xmm32u(2), status) ? 0 : 0xFFFFFFFF;
-    op1.xmm32u(3) =
-        compare32[ib](op1.xmm32u(3), op2.xmm32u(3), status) ? 0 : 0xFFFFFFFF;
-  }
+  op1.xmm32u(0) = compare32[ib](op1.xmm32u(0), op2.xmm32u(0), status) ? 0xFFFFFFFF : 0;
+  op1.xmm32u(1) = compare32[ib](op1.xmm32u(1), op2.xmm32u(1), status) ? 0xFFFFFFFF : 0;
+  op1.xmm32u(2) = compare32[ib](op1.xmm32u(2), op2.xmm32u(2), status) ? 0xFFFFFFFF : 0;
+  op1.xmm32u(3) = compare32[ib](op1.xmm32u(3), op2.xmm32u(3), status) ? 0xFFFFFFFF : 0;
 
   check_exceptionsSSE(status.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
@@ -2577,32 +1906,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPS_VpsWpsIb(bxInstruction_c *i)
  * Compare packed double precision FP values using Ib as comparison predicate.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPD_VpdWpdIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPD_VpdWpdIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status;
   mxcsr_to_softfloat_status_word(status, MXCSR);
-  int ib = i->Ib();
-
-  /* mask used bits, ignore reserved */
-  if (ib > 7) {
-    BX_ERROR(("CMPPD_VpdWpdIb: unrecognized predicate %u", i->Ib()));
-  }
-  ib &= 7;
+  int ib = i->Ib() & 7;
 
   if (MXCSR.get_DAZ())
   {
@@ -2612,22 +1923,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPD_VpdWpdIb(bxInstruction_c *i)
     op2.xmm64u(1) = float64_denormal_to_zero(op2.xmm64u(1));
   }
 
-  if(ib < 4)
-  {
-    op1.xmm64u(0) = compare64[ib](op1.xmm64u(0), op2.xmm64u(0), status) ?
-       BX_CONST64(0xFFFFFFFFFFFFFFFF) : 0;
-    op1.xmm64u(1) = compare64[ib](op1.xmm64u(1), op2.xmm64u(1), status) ?
-       BX_CONST64(0xFFFFFFFFFFFFFFFF) : 0;
-  }
-  else
-  {
-    ib -= 4;
-
-    op1.xmm64u(0) = compare64[ib](op1.xmm64u(0), op2.xmm64u(0), status) ?
-       0 : BX_CONST64(0xFFFFFFFFFFFFFFFF);
-    op1.xmm64u(1) = compare64[ib](op1.xmm64u(1), op2.xmm64u(1), status) ?
-       0 : BX_CONST64(0xFFFFFFFFFFFFFFFF);
-  }
+  op1.xmm64u(0) = compare64[ib](op1.xmm64u(0), op2.xmm64u(0), status) ?
+     BX_CONST64(0xFFFFFFFFFFFFFFFF) : 0;
+  op1.xmm64u(1) = compare64[ib](op1.xmm64u(1), op2.xmm64u(1), status) ?
+     BX_CONST64(0xFFFFFFFFFFFFFFFF) : 0;
 
   check_exceptionsSSE(status.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op1);
@@ -2639,32 +1938,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPPD_VpdWpdIb(bxInstruction_c *i)
  * Compare double precision FP values using Ib as comparison predicate.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSD_VsdWsdIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2, result = 0;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op1 = BX_READ_XMM_REG_LO_QWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  int ib = i->Ib();
-
-  /* mask used bits, ignore reserved */
-  if (ib > 7) {
-    BX_ERROR(("CMPSD_VsdWsdIb: unrecognized predicate %u", i->Ib()));
-  }
-  ib &= 7;
+  int ib = i->Ib() & 7;
 
   if (MXCSR.get_DAZ())
   {
@@ -2672,22 +1953,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
     op2 = float64_denormal_to_zero(op2);
   }
 
-  if(ib < 4) {
-     if(compare64[ib](op1, op2, status_word)) {
-        result = BX_CONST64(0xFFFFFFFFFFFFFFFF);
-     } else {
-        result = 0;
-     }
+  if(compare64[ib](op1, op2, status_word)) {
+    op1 = BX_CONST64(0xFFFFFFFFFFFFFFFF);
   } else {
-     if(compare64[ib-4](op1, op2, status_word)) {
-        result = 0;
-     } else {
-        result = BX_CONST64(0xFFFFFFFFFFFFFFFF);
-     }
+    op1 = 0;
   }
 
   check_exceptionsSSE(status_word.float_exception_flags);
-  BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), result);
+  BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op1);
 #endif
 }
 
@@ -2696,32 +1969,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSD_VsdWsdIb(bxInstruction_c *i)
  * Compare single precision FP values using Ib as comparison predicate.
  * Possible floating point exceptions: #I, #D
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSS_VssWssIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2, result = 0;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op2 = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op1 = BX_READ_XMM_REG_LO_DWORD(i->nnn()), op2 = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
-  int ib = i->Ib();
-
-  /* mask used bits, ignore reserved */
-  if (ib > 7) {
-    BX_ERROR(("CMPSS_VssWssIb: unrecognized predicate %u", i->Ib()));
-  }
-  ib &= 7;
+  int ib = i->Ib() & 7;
 
   if (MXCSR.get_DAZ())
   {
@@ -2729,22 +1984,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
     op2 = float32_denormal_to_zero(op2);
   }
 
-  if(ib < 4) {
-     if(compare32[ib](op1, op2, status_word)) {
-        result = 0xFFFFFFFF;
-     } else {
-        result = 0;
-     }
-  } else {
-     if(compare32[ib-4](op1, op2, status_word)) {
-        result = 0;
-     } else {
-        result = 0xFFFFFFFF;
-     }
-  }
+  op1 = compare32[ib](op1, op2, status_word) ? 0xFFFFFFFF : 0;
 
   check_exceptionsSSE(status_word.float_exception_flags);
-  BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), result);
+  BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op1);
 #endif
 }
 
@@ -2753,22 +1996,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CMPSS_VssWssIb(bxInstruction_c *i)
  * Add/Subtract packed double precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPD_VpdWpd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPD_VpdWpdR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2794,22 +2025,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPD_VpdWpd(bxInstruction_c *i)
  * Add/Substract packed single precision FP numbers from XMM2/MEM to XMM1.
  * Possible floating point exceptions: #I, #D, #O, #U, #P
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPS_VpsWps(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPS_VpsWpsR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2 = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2837,22 +2056,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ADDSUBPS_VpsWps(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 08 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPS_VpsWpsIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPS_VpsWpsIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2876,7 +2083,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPS_VpsWpsIb(bxInstruction_c *i)
 
   // ignore precision exception result
   if (control & 0x8)
-      status_word.float_exception_flags &= ~float_flag_inexact;
+    status_word.float_exception_flags &= ~float_flag_inexact;
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op);
@@ -2884,22 +2091,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPS_VpsWpsIb(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 09 */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPD_VpdWpdIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPD_VpdWpdIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op);
-  }
+  BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2919,7 +2114,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPD_VpdWpdIb(bxInstruction_c *i)
 
   // ignore precision exception result
   if (control & 0x8)
-      status_word.float_exception_flags &= ~float_flag_inexact;
+    status_word.float_exception_flags &= ~float_flag_inexact;
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG(i->nnn(), op);
@@ -2927,22 +2122,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDPD_VpdWpdIb(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 0A */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSS_VssWssIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSS_VssWssIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float32 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_DWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_dword(i->seg(), eaddr);
-  }
+  float32 op = BX_READ_XMM_REG_LO_DWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2958,7 +2141,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSS_VssWssIb(bxInstruction_c *i)
 
   // ignore precision exception result
   if (control & 0x8)
-      status_word.float_exception_flags &= ~float_flag_inexact;
+    status_word.float_exception_flags &= ~float_flag_inexact;
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_DWORD(i->nnn(), op);
@@ -2966,22 +2149,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSS_VssWssIb(bxInstruction_c *i)
 }
 
 /* 66 0F 3A 0B */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSD_VsdWsdIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSD_VsdWsdIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  float64 op;
-
-  /* op is a register or memory reference */
-  if (i->modC0()) {
-    op = BX_READ_XMM_REG_LO_QWORD(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    op = read_virtual_qword(i->seg(), eaddr);
-  }
+  float64 op = BX_READ_XMM_REG_LO_QWORD(i->rm());
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -2997,7 +2168,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSD_VsdWsdIb(bxInstruction_c *i)
 
   // ignore precision exception result
   if (control & 0x8)
-      status_word.float_exception_flags &= ~float_flag_inexact;
+    status_word.float_exception_flags &= ~float_flag_inexact;
 
   check_exceptionsSSE(status_word.float_exception_flags);
   BX_WRITE_XMM_REG_LO_QWORD(i->nnn(), op);
@@ -3009,23 +2180,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROUNDSD_VsdWsdIb(bxInstruction_c *i)
  * packed SP floating-point values from xmm2, add and selectively
  * store the packed SP floating-point values or zero values to xmm1
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPS_VpsWpsIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPS_VpsWpsIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, tmp;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn());
+  BxPackedXmmRegister op2 = BX_READ_XMM_REG(i->rm()), tmp;
   Bit8u mask = i->Ib();
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);
@@ -3074,23 +2234,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPS_VpsWpsIb(bxInstruction_c *i)
  * packed DP floating-point values from xmm2, add and selectively
  * store the packed DP floating-point values or zero values to xmm1
  */
-void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPD_VpdWpdIb(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::DPPD_VpdWpdIbR(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
-  BX_CPU_THIS_PTR prepareSSE();
-
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, tmp;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn());
+  BxPackedXmmRegister op2 = BX_READ_XMM_REG(i->rm()), tmp;
   Bit8u mask = i->Ib();
-
-  /* op2 is a register or memory reference */
-  if (i->modC0()) {
-    op2 = BX_READ_XMM_REG(i->rm());
-  }
-  else {
-    bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-    /* pointer, segment address pair */
-    readVirtualDQwordAligned(i->seg(), eaddr, (Bit8u *) &op2);
-  }
 
   float_status_t status_word;
   mxcsr_to_softfloat_status_word(status_word, MXCSR);

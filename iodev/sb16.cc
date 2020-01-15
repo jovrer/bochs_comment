@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.70 2010/02/26 14:18:19 sshwarts Exp $
+// $Id: sb16.cc,v 1.74 2011/02/14 21:14:20 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2011  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -20,7 +20,7 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-// This file (SB16.CC) written and donated by Josef Drexler
+// The original version of the SB16 support written and donated by Josef Drexler
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
@@ -28,11 +28,11 @@
 #define BX_PLUGGABLE
 
 #include "iodev.h"
-#include "param_names.h"
 
 #if BX_SUPPORT_SB16
 
 #include "sb16.h"
+#include "soundmod.h"
 #include "soundlnx.h"
 #include "soundwin.h"
 #include "soundosx.h"
@@ -63,7 +63,7 @@ void libsb16_LTX_plugin_fini(void)
 #define EMUL            BX_SB16_THIS emuldata
 #define OPL             BX_SB16_THIS opl
 
-#define BX_SB16_OUTPUT  BX_SB16_THIS output
+#define BX_SB16_OUTPUT  BX_SB16_THIS soundmod
 
 // here's a safe way to print out null pointeres
 #define MIGHT_BE_NULL(x)  ((x==NULL)? "(null)" : x)
@@ -152,7 +152,7 @@ void bx_sb16_c::init(void)
   BX_SB16_THIS loglevel = SIM->get_param_num("loglevel", base)->get();
 
   // let the output functions initialize
-  BX_SB16_OUTPUT = new BX_SOUND_OUTPUT_C(BX_SB16_THISP);
+  DEV_sound_init_module("default", &BX_SB16_OUTPUT, BX_SB16_THISP);
 
   if (BX_SB16_OUTPUT == NULL)
   {
@@ -437,7 +437,7 @@ void bx_sb16_c::dsp_dmatimer(void *this_ptr)
   if ((BX_SB16_THIS wavemode != 1) ||
        ((This->dsp.dma.chunkindex + 1 < BX_SOUND_OUTPUT_WAVEPACKETSIZE) &&
         (This->dsp.dma.count > 0)) ||
-       (This->output->waveready() == BX_SOUND_OUTPUT_OK)) {
+       (BX_SB16_OUTPUT->waveready() == BX_SOUND_OUTPUT_OK)) {
     if ((DSP.dma.bits == 8) || (BX_SB16_DMAH == 0)) {
       DEV_dma_set_drq(BX_SB16_DMAL, 1);
     } else {
@@ -3666,78 +3666,6 @@ bx_bool bx_sb16_buffer::hascommand(void)
 int bx_sb16_buffer::commandbytes(void)
 {
   return bytesneeded;
-}
-
-// The dummy output functions. They don't do anything
-bx_sound_output_c::bx_sound_output_c(bx_sb16_c *sb16)
-{
-  UNUSED(sb16);
-}
-
-bx_sound_output_c::~bx_sound_output_c()
-{
-}
-
-int bx_sound_output_c::waveready()
-{
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::midiready()
-{
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::openmidioutput(char *device)
-{
-  UNUSED(device);
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::sendmidicommand(int delta, int command, int length, Bit8u data[])
-{
-  UNUSED(delta);
-  UNUSED(command);
-  UNUSED(length);
-  UNUSED(data);
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::closemidioutput()
-{
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::openwaveoutput(char *device)
-{
-  UNUSED(device);
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::startwaveplayback(int frequency, int bits, int stereo, int format)
-{
-  UNUSED(frequency);
-  UNUSED(bits);
-  UNUSED(stereo);
-  UNUSED(format);
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::sendwavepacket(int length, Bit8u data[])
-{
-  UNUSED(length);
-  UNUSED(data);
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::stopwaveplayback()
-{
-  return BX_SOUND_OUTPUT_OK;
-}
-
-int bx_sound_output_c::closewaveoutput()
-{
-  return BX_SOUND_OUTPUT_OK;
 }
 
 // runtime parameter handler

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware3.cc,v 1.22 2009/02/08 09:05:52 vruppert Exp $
+// $Id: vmware3.cc,v 1.26 2011/01/24 20:35:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -31,13 +31,13 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
-#define NO_DEVICE_INCLUDES
 #include "iodev.h"
 #include "hdimage.h"
 #include "vmware3.h"
 
 const off_t vmware3_image_t::INVALID_OFFSET=(off_t)-1;
-#define LOG_THIS bx_devices.pluginHardDrive->
+
+#define LOG_THIS bx_devices.pluginHDImageCtl->
 
 #define DTOH32_HEADER(field) (header.field = (dtoh32(header.field)))
 #define HTOD32_HEADER(field) (header.field = (htod32(header.field)))
@@ -163,7 +163,7 @@ char * vmware3_image_t::generate_cow_name(const char * filename, unsigned chain)
 {
     char * name = new char[strlen(filename) + 4];
     if(name == NULL)
-        BX_PANIC(("unable to allocate %u bytes for vmware3 COW file name (base: %s, chain: %u)", strlen(filename) + 4, filename, chain));
+      BX_PANIC(("unable to allocate %u bytes for vmware3 COW file name (base: %s, chain: %u)", (unsigned)strlen(filename) + 4, filename, chain));
     strcpy(name, filename);
     if(chain != 0)
     {
@@ -358,7 +358,7 @@ ssize_t vmware3_image_t::read(void * buf, size_t count)
         off_t offset = perform_seek();
         if(offset == INVALID_OFFSET)
         {
-            BX_DEBUG(("vmware3 COW read failed on %u bytes", count));
+            BX_DEBUG(("vmware3 COW read failed on %u bytes", (unsigned)count));
             return -1;
         }
         unsigned bytes_remaining = (unsigned)(tlb_size - offset);
@@ -467,7 +467,7 @@ ssize_t vmware3_image_t::write(const void * buf, size_t count)
             memcpy(current->tlb + offset, buf, bytes_remaining);
             if(!sync())
             {
-                BX_DEBUG(("failed to sync when writing %u bytes", count));
+                BX_DEBUG(("failed to sync when writing %u bytes", (unsigned)count));
                 return -1;
             }
             amount = bytes_remaining;
@@ -518,4 +518,9 @@ void vmware3_image_t::close()
         }
     }
     current = 0;
+}
+
+Bit32u vmware3_image_t::get_capabilities(void)
+{
+  return HDIMAGE_HAS_GEOMETRY;
 }

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: hdimage.h,v 1.13 2009/12/04 19:50:28 sshwarts Exp $
+// $Id: hdimage.h,v 1.19 2011/01/21 16:00:38 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2005-2009  The Bochs Project
+//  Copyright (C) 2005-2011  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -20,6 +20,11 @@
 
 #ifndef BX_HDIMAGE_H
 #define BX_HDIMAGE_H
+
+// hdimage capabilities
+#define HDIMAGE_READONLY      1
+#define HDIMAGE_HAS_GEOMETRY  2
+#define HDIMAGE_AUTO_GEOMETRY 4
 
 // SPARSE IMAGES HEADER
 #define SPARSE_HEADER_MAGIC  (0x02468ace)
@@ -144,6 +149,9 @@ class device_image_t
       // Write count bytes from buf. Return the number of bytes
       // written (count).
       virtual ssize_t write(const void* buf, size_t count) = 0;
+
+      // Get image capabilities
+      virtual Bit32u get_capabilities();
 
       unsigned cylinders;
       unsigned heads;
@@ -360,8 +368,10 @@ class redolog_t
       Bit32u           extent_offset;
       Bit32u           extent_next;
 
-      Bit32u           bitmap_blocs;
-      Bit32u           extent_blocs;
+      Bit32u           bitmap_blocks;
+      Bit32u           extent_blocks;
+
+      Bit64s           imagepos;
 };
 
 // GROWING MODE
@@ -566,6 +576,14 @@ class z_volatile_image_t : public device_image_t
 };
 
 #endif
+
+class bx_hdimage_ctl_c : public bx_hdimage_ctl_stub_c {
+public:
+  bx_hdimage_ctl_c();
+  virtual ~bx_hdimage_ctl_c() {}
+  virtual device_image_t *init_image(Bit8u image_mode, Bit64u disk_size, const char *journal);
+};
+
 
 #endif // HDIMAGE_HEADERS_ONLY
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.247 2010/04/04 19:33:50 sshwarts Exp $
+// $Id: rombios.c,v 1.257 2011/01/26 09:52:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -27,7 +27,7 @@
 // ROM BIOS for use with Bochs/Plex86/QEMU emulation environment
 
 
-// ROM BIOS compatability entry points:
+// ROM BIOS compatibility entry points:
 // ===================================
 // $e05b ; POST Entry Point
 // $e2c3 ; NMI Handler Entry Point
@@ -72,7 +72,7 @@
 //   - Current code is only able to boot mono-session cds
 //   - Current code can not boot and emulate a hard-disk
 //     the bios will panic otherwise
-//   - Current code also use memory in EBDA segement.
+//   - Current code also use memory in EBDA segment.
 //   - I used cmos byte 0x3D to store extended information on boot-device
 //   - Code has to be modified modified to handle multiple cdrom drives
 //   - Here are the cdrom boot failure codes:
@@ -648,9 +648,16 @@ typedef struct {
   // EBDA must be at most 768 bytes; it lives at EBDA_SEG, and the boot
   // device tables are at IPL_SEG
   typedef struct {
-    unsigned char filler1[0x3D];
+    Bit8u size;
+    unsigned char filler0[0x21];
+    Bit16u mouse_driver_offset;
+    Bit16u mouse_driver_seg;
+    Bit8u mouse_flag1;
+    Bit8u mouse_flag2;
+    Bit8u mouse_data[0x08];
+    unsigned char filler1[0x0D];
 
-    // FDPT - Can be splitted in data members if needed
+    // FDPT - Can be split into data members if needed
     unsigned char fdpt0[0x10];
     unsigned char fdpt1[0x10];
 
@@ -692,16 +699,32 @@ typedef struct {
     Bit16u  blksize;
     Bit16u  dpte_offset;
     Bit16u  dpte_segment;
-    Bit16u  key;
-    Bit8u   dpi_length;
-    Bit8u   reserved1;
-    Bit16u  reserved2;
-    Bit8u   host_bus[4];
-    Bit8u   iface_type[8];
-    Bit8u   iface_path[8];
-    Bit8u   device_path[8];
-    Bit8u   reserved3;
-    Bit8u   checksum;
+    union {
+      struct {
+        Bit16u  key;
+        Bit8u   dpi_length;
+        Bit8u   reserved1;
+        Bit16u  reserved2;
+        Bit8u   host_bus[4];
+        Bit8u   iface_type[8];
+        Bit8u   iface_path[8];
+        Bit8u   device_path[8];
+        Bit8u   reserved3;
+        Bit8u   checksum;
+      } phoenix;
+      struct {
+        Bit16u  key;
+        Bit8u   dpi_length;
+        Bit8u   reserved1;
+        Bit16u  reserved2;
+        Bit8u   host_bus[4];
+        Bit8u   iface_type[8];
+        Bit8u   iface_path[8];
+        Bit8u   device_path[16];
+        Bit8u   reserved3;
+        Bit8u   checksum;
+      } t13;
+    } dpi;
   } dpt_t;
 
   #define Int13DPT ((dpt_t *) 0)
@@ -869,7 +892,7 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.247 $ $Date: 2010/04/04 19:33:50 $";
+static char bios_cvs_version_string[] = "$Revision: 1.257 $ $Date: 2011/01/26 09:52:02 $";
 
 #define BIOS_COPYRIGHT_STRING "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
@@ -1141,9 +1164,9 @@ ASM_START
   mov  bp, sp
 
     mov  al, 4[bp] ;; cmos_reg
-    out  0x70, al
+    out  PORT_CMOS_INDEX, al
     mov  al, 6[bp] ;; val
-    out  0x71, al
+    out  PORT_CMOS_DATA, al
 
   pop  bp
 ASM_END
@@ -1158,8 +1181,8 @@ ASM_START
   mov  bp, sp
 
     mov  al, 4[bp] ;; cmos_reg
-    out 0x70, al
-    in  al, 0x71
+    out PORT_CMOS_INDEX, al
+    in  al, PORT_CMOS_DATA
 
   pop  bp
 ASM_END
@@ -1680,14 +1703,14 @@ keyboard_init()
     /* ------------------- Flush buffers ------------------------*/
     /* Wait until buffer is empty */
     max=0xffff;
-    while ( (inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x00);
+    while ( (inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x00);
 
     /* flush incoming keys */
     max=0x2000;
     while (--max > 0) {
-        outb(0x80, 0x00);
-        if (inb(0x64) & 0x01) {
-            inb(0x60);
+        outb(PORT_DIAG, 0x00);
+        if (inb(PORT_PS2_STATUS) & 0x01) {
+            inb(PORT_PS2_DATA);
             max = 0x2000;
         }
     }
@@ -1699,127 +1722,127 @@ keyboard_init()
 
     /* ------------------- controller side ----------------------*/
     /* send cmd = 0xAA, self test 8042 */
-    outb(0x64, 0xaa);
+    outb(PORT_PS2_STATUS, 0xaa);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ( (inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x00);
+    while ( (inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x00);
     if (max==0x0) keyboard_panic(00);
 
     /* Wait for data */
     max=0xffff;
-    while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x01);
+    while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x01);
     if (max==0x0) keyboard_panic(01);
 
     /* read self-test result, 0x55 should be returned from 0x60 */
-    if ((inb(0x60) != 0x55)){
+    if ((inb(PORT_PS2_DATA) != 0x55)){
         keyboard_panic(991);
     }
 
     /* send cmd = 0xAB, keyboard interface test */
-    outb(0x64,0xab);
+    outb(PORT_PS2_STATUS,0xab);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ((inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x10);
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x10);
     if (max==0x0) keyboard_panic(10);
 
     /* Wait for data */
     max=0xffff;
-    while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x11);
+    while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x11);
     if (max==0x0) keyboard_panic(11);
 
     /* read keyboard interface test result, */
     /* 0x00 should be returned form 0x60 */
-    if ((inb(0x60) != 0x00)) {
+    if ((inb(PORT_PS2_DATA) != 0x00)) {
         keyboard_panic(992);
     }
 
     /* Enable Keyboard clock */
-    outb(0x64,0xae);
-    outb(0x64,0xa8);
+    outb(PORT_PS2_STATUS,0xae);
+    outb(PORT_PS2_STATUS,0xa8);
 
     /* ------------------- keyboard side ------------------------*/
-    /* reset kerboard and self test  (keyboard side) */
-    outb(0x60, 0xff);
+    /* reset keyboard and self test  (keyboard side) */
+    outb(PORT_PS2_DATA, 0xff);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ((inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x20);
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x20);
     if (max==0x0) keyboard_panic(20);
 
     /* Wait for data */
     max=0xffff;
-    while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x21);
+    while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x21);
     if (max==0x0) keyboard_panic(21);
 
     /* keyboard should return ACK */
-    if ((inb(0x60) != 0xfa)) {
+    if ((inb(PORT_PS2_DATA) != 0xfa)) {
         keyboard_panic(993);
     }
 
     /* Wait for data */
     max=0xffff;
-    while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x31);
+    while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x31);
     if (max==0x0) keyboard_panic(31);
 
-    if ((inb(0x60) != 0xaa)) {
+    if ((inb(PORT_PS2_DATA) != 0xaa)) {
         keyboard_panic(994);
     }
 
     /* Disable keyboard */
-    outb(0x60, 0xf5);
+    outb(PORT_PS2_DATA, 0xf5);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ((inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x40);
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x40);
     if (max==0x0) keyboard_panic(40);
 
     /* Wait for data */
     max=0xffff;
-    while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x41);
+    while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x41);
     if (max==0x0) keyboard_panic(41);
 
     /* keyboard should return ACK */
-    if ((inb(0x60) != 0xfa)) {
+    if ((inb(PORT_PS2_DATA) != 0xfa)) {
         keyboard_panic(995);
     }
 
     /* Write Keyboard Mode */
-    outb(0x64, 0x60);
+    outb(PORT_PS2_STATUS, 0x60);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ((inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x50);
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x50);
     if (max==0x0) keyboard_panic(50);
 
     /* send cmd: scan code convert, disable mouse, enable IRQ 1 */
-    outb(0x60, 0x61);
+    outb(PORT_PS2_DATA, 0x61);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ((inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x60);
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x60);
     if (max==0x0) keyboard_panic(60);
 
     /* Enable keyboard */
-    outb(0x60, 0xf4);
+    outb(PORT_PS2_DATA, 0xf4);
 
     /* Wait until buffer is empty */
     max=0xffff;
-    while ((inb(0x64) & 0x02) && (--max>0)) outb(0x80, 0x70);
+    while ((inb(PORT_PS2_STATUS) & 0x02) && (--max>0)) outb(PORT_DIAG, 0x70);
     if (max==0x0) keyboard_panic(70);
 
     /* Wait for data */
     max=0xffff;
-    while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x71);
+    while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x71);
     if (max==0x0) keyboard_panic(70);
 
     /* keyboard should return ACK */
-    if ((inb(0x60) != 0xfa)) {
+    if ((inb(PORT_PS2_DATA) != 0xfa)) {
         keyboard_panic(996);
     }
 
-    outb(0x80, 0x77);
+    outb(PORT_DIAG, 0x77);
 }
 
 //--------------------------------------------------------------------------
@@ -1837,7 +1860,7 @@ keyboard_panic(status)
 
 //--------------------------------------------------------------------------
 // shutdown_status_panic
-//   called when the shutdown statsu is not implemented, displays the status
+//   called when the shutdown status is not implemented, displays the status
 //--------------------------------------------------------------------------
   void
 shutdown_status_panic(status)
@@ -2113,13 +2136,13 @@ set_enable_a20(val)
   // Use PS2 System Control port A to set A20 enable
 
   // get current setting first
-  oldval = inb(0x92);
+  oldval = inb(PORT_A20);
 
   // change A20 status
   if (val)
-    outb(0x92, oldval | 0x02);
+    outb(PORT_A20, oldval | 0x02);
   else
-    outb(0x92, oldval & 0xfd);
+    outb(PORT_A20, oldval & 0xfd);
 
   return((oldval & 0x02) != 0);
 }
@@ -2230,7 +2253,7 @@ ASM_END
 #define ATA_CB_DC_SRST   0x04  // soft reset
 #define ATA_CB_DC_NIEN   0x02  // disable interrupts
 
-// Most mandtory and optional ATA commands (from ATA-3),
+// Most mandatory and optional ATA commands (from ATA-3),
 #define ATA_CMD_CFA_ERASE_SECTORS            0xC0
 #define ATA_CMD_CFA_REQUEST_EXT_ERR_CODE     0x03
 #define ATA_CMD_CFA_TRANSLATE_SECTOR         0x87
@@ -2416,13 +2439,13 @@ void ata_detect( )
 
 #if BX_MAX_ATA_INTERFACES > 0
   write_byte(ebda_seg,&EbdaData->ata.channels[0].iface,ATA_IFACE_ISA);
-  write_word(ebda_seg,&EbdaData->ata.channels[0].iobase1,0x1f0);
+  write_word(ebda_seg,&EbdaData->ata.channels[0].iobase1,PORT_ATA1_CMD_BASE);
   write_word(ebda_seg,&EbdaData->ata.channels[0].iobase2,0x3f0);
   write_byte(ebda_seg,&EbdaData->ata.channels[0].irq,14);
 #endif
 #if BX_MAX_ATA_INTERFACES > 1
   write_byte(ebda_seg,&EbdaData->ata.channels[1].iface,ATA_IFACE_ISA);
-  write_word(ebda_seg,&EbdaData->ata.channels[1].iobase1,0x170);
+  write_word(ebda_seg,&EbdaData->ata.channels[1].iobase1,PORT_ATA2_CMD_BASE);
   write_word(ebda_seg,&EbdaData->ata.channels[1].iobase2,0x370);
   write_byte(ebda_seg,&EbdaData->ata.channels[1].irq,15);
 #endif
@@ -2886,12 +2909,12 @@ ata_in_no_adjust:
 
 ata_in_16:
         rep
-          insw ;; CX words transfered from port(DX) to ES:[DI]
+          insw ;; CX words transferred from port(DX) to ES:[DI]
         jmp ata_in_done
 
 ata_in_32:
         rep
-          insd ;; CX dwords transfered from port(DX) to ES:[DI]
+          insd ;; CX dwords transferred from port(DX) to ES:[DI]
 
 ata_in_done:
         mov  _ata_cmd_data_in.offset + 2[bp], di
@@ -3038,13 +3061,13 @@ ata_out_no_adjust:
 ata_out_16:
         seg ES
         rep
-          outsw ;; CX words transfered from port(DX) to ES:[SI]
+          outsw ;; CX words transferred from port(DX) to ES:[SI]
         jmp ata_out_done
 
 ata_out_32:
         seg ES
         rep
-          outsd ;; CX dwords transfered from port(DX) to ES:[SI]
+          outsd ;; CX dwords transferred from port(DX) to ES:[SI]
 
 ata_out_done:
         mov  _ata_cmd_data_out.offset + 2[bp], si
@@ -3172,7 +3195,7 @@ ASM_START
 
       seg ES
       rep
-        outsw ;; CX words transfered from port(DX) to ES:[SI]
+        outsw ;; CX words transferred from port(DX) to ES:[SI]
 
       pop  bp
 ASM_END
@@ -3304,12 +3327,12 @@ ata_packet_no_before:
 
 ata_packet_in_16:
         rep
-          insw ;; CX words transfered tp port(DX) to ES:[DI]
+          insw ;; CX words transferred to port(DX) to ES:[DI]
         jmp ata_packet_after
 
 ata_packet_in_32:
         rep
-          insd ;; CX dwords transfered to port(DX) to ES:[DI]
+          insd ;; CX dwords transferred to port(DX) to ES:[DI]
 
 ata_packet_after:
         mov  cx, _ata_cmd_packet.lafter + 2[bp]
@@ -3782,7 +3805,7 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
           regs.u.r8.ah = 0;
           break;
         case 0x02:
-          regs.u.r8.al = (inb(0x92) >> 1) & 0x01;
+          regs.u.r8.al = (inb(PORT_A20) >> 1) & 0x01;
           CLEAR_CF();
           regs.u.r8.ah = 0;
           break;
@@ -3825,8 +3848,8 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
           write_word( 0x40, 0x9C, regs.u.r16.dx ); // Low word, delay
           write_word( 0x40, 0x9E, regs.u.r16.cx ); // High word, delay.
           CLEAR_CF( );
-          irqDisable = inb( 0xA1 );
-          outb( 0xA1, irqDisable & 0xFE );
+          irqDisable = inb( PORT_PIC2_DATA );
+          outb( PORT_PIC2_DATA, irqDisable & 0xFE );
           bRegister = inb_cmos( 0xB );  // Unmask IRQ8 so INT70 will get through.
           outb_cmos( 0xB, bRegister | 0x40 ); // Turn on the Periodic Interrupt timer
         } else {
@@ -4034,22 +4057,22 @@ ASM_START
 
       // Program PICs
       mov al, #0x11 ; send initialisation commands
-      out 0x20, al
-      out 0xa0, al
+      out PORT_PIC1_CMD, al
+      out PORT_PIC2_CMD, al
       mov al, bh
-      out 0x21, al
+      out PORT_PIC1_DATA, al
       mov al, bl
-      out 0xa1, al
+      out PORT_PIC2_DATA, al
       mov al, #0x04
-      out 0x21, al
+      out PORT_PIC1_DATA, al
       mov al, #0x02
-      out 0xa1, al
+      out PORT_PIC2_DATA, al
       mov al, #0x01
-      out 0x21, al
-      out 0xa1, al
+      out PORT_PIC1_DATA, al
+      out PORT_PIC2_DATA, al
       mov  al, #0xff ; mask all IRQs, user must re-enable
-      out  0x21, al
-      out  0xa1, al
+      out  PORT_PIC1_DATA, al
+      out  PORT_PIC2_DATA, al
 
       // Load GDT and IDT from supplied data
       SEG ES
@@ -4194,7 +4217,7 @@ BX_DEBUG_INT15("case 0: disable mouse\n");
 
             case 1: // Enable Mouse
 BX_DEBUG_INT15("case 1: enable mouse\n");
-              mouse_flags_2 = read_byte(ebda_seg, 0x0027);
+              mouse_flags_2 = read_byte(ebda_seg, &EbdaData->mouse_flag2);
               if ( (mouse_flags_2 & 0x80) == 0 ) {
                 BX_DEBUG_INT15("INT 15h C2 Enable Mouse, no far call handler\n");
                 SET_CF();  // error
@@ -4233,11 +4256,11 @@ BX_DEBUG_INT15("case 1 or 5:\n");
               regs.u.r8.ah = 0x02; // invalid input
               return;
             }
-            mouse_flags_2 = read_byte(ebda_seg, 0x0027);
+            mouse_flags_2 = read_byte(ebda_seg, &EbdaData->mouse_flag2);
             mouse_flags_2 = (mouse_flags_2 & 0x00) | regs.u.r8.bh;
             mouse_flags_1 = 0x00;
-            write_byte(ebda_seg, 0x0026, mouse_flags_1);
-            write_byte(ebda_seg, 0x0027, mouse_flags_2);
+            write_byte(ebda_seg, &EbdaData->mouse_flag1, mouse_flags_1);
+            write_byte(ebda_seg, &EbdaData->mouse_flag2, mouse_flags_2);
           }
 
           inhibit_mouse_int_and_events(); // disable IRQ12 and packets
@@ -4423,9 +4446,9 @@ BX_DEBUG_INT15("case 6:\n");
 BX_DEBUG_INT15("case 7:\n");
           mouse_driver_seg = ES;
           mouse_driver_offset = regs.u.r16.bx;
-          write_word(ebda_seg, 0x0022, mouse_driver_offset);
-          write_word(ebda_seg, 0x0024, mouse_driver_seg);
-          mouse_flags_2 = read_byte(ebda_seg, 0x0027);
+          write_word(ebda_seg, &EbdaData->mouse_driver_offset, mouse_driver_offset);
+          write_word(ebda_seg, &EbdaData->mouse_driver_seg, mouse_driver_seg);
+          mouse_flags_2 = read_byte(ebda_seg, &EbdaData->mouse_flag2);
           if (mouse_driver_offset == 0 && mouse_driver_seg == 0) {
             /* remove handler */
             if ( (mouse_flags_2 & 0x80) != 0 ) {
@@ -4437,7 +4460,7 @@ BX_DEBUG_INT15("case 7:\n");
             /* install handler */
             mouse_flags_2 |= 0x80;
           }
-          write_byte(ebda_seg, 0x0027, mouse_flags_2);
+          write_byte(ebda_seg, &EbdaData->mouse_flag2, mouse_flags_2);
           CLEAR_CF();
           regs.u.r8.ah = 0;
           break;
@@ -4523,14 +4546,14 @@ ASM_START
       mov ecx, eax
 
       ;; wait for ecx number of refresh requests
-      in al, #0x61
+      in al, PORT_PS2_CTRLB
       and al,#0x10
       mov ah, al
 
       or ecx, ecx
       je int1586_tick_end
 int1586_tick:
-      in al, #0x61
+      in al, PORT_PS2_CTRLB
       and al,#0x10
       cmp al, ah
       je  int1586_tick
@@ -4634,7 +4657,7 @@ ASM_END
                             regs.u.r32.ebx = 0;
                         break;
                     case 7:
-                        /* Maping of memory above 4 GB */
+                        /* Mapping of memory above 4 GB */
                         set_e820_range(ES, regs.u.r16.di, 0x00000000L,
                             extra_lowbits_memory_size, 1, extra_highbits_memory_size
                                        + 1, E820_RAM);
@@ -4712,14 +4735,14 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
 ASM_START
     cli
 ASM_END
-    outb(0x60, 0xed);
-    while ((inb(0x64) & 0x01) == 0) outb(0x80, 0x21);
-    if ((inb(0x60) == 0xfa)) {
+    outb(PORT_PS2_DATA, 0xed);
+    while ((inb(PORT_PS2_STATUS) & 0x01) == 0) outb(PORT_DIAG, 0x21);
+    if ((inb(PORT_PS2_DATA) == 0xfa)) {
       led_flags &= 0xf8;
       led_flags |= ((shift_flags >> 4) & 0x07);
-      outb(0x60, led_flags & 0x07);
-      while ((inb(0x64) & 0x01) == 0) outb(0x80, 0x21);
-      inb(0x60);
+      outb(PORT_PS2_DATA, led_flags & 0x07);
+      while ((inb(PORT_PS2_STATUS) & 0x01) == 0) outb(PORT_DIAG, 0x21);
+      inb(PORT_PS2_DATA);
       write_byte(0x0040, 0x97, led_flags);
     }
 ASM_START
@@ -4780,18 +4803,18 @@ ASM_END
     case 0x0A: /* GET KEYBOARD ID */
       count = 2;
       kbd_code = 0x0;
-      outb(0x60, 0xf2);
+      outb(PORT_PS2_DATA, 0xf2);
       /* Wait for data */
       max=0xffff;
-      while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x00);
+      while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x00);
       if (max>0x0) {
-        if ((inb(0x60) == 0xfa)) {
+        if ((inb(PORT_PS2_DATA) == 0xfa)) {
           do {
             max=0xffff;
-            while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x00);
+            while ( ((inb(PORT_PS2_STATUS) & 0x01) == 0) && (--max>0) ) outb(PORT_DIAG, 0x00);
             if (max>0x0) {
               kbd_code >>= 8;
-              kbd_code |= (inb(0x60) << 8);
+              kbd_code |= (inb(PORT_PS2_DATA) << 8);
             }
           } while (--count>0);
         }
@@ -4888,19 +4911,19 @@ inhibit_mouse_int_and_events()
   Bit8u command_byte, prev_command_byte;
 
   // Turn off IRQ generation and aux data line
-  if ( inb(0x64) & 0x02 )
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"inhibmouse");
-  outb(0x64, 0x20); // get command byte
-  while ( (inb(0x64) & 0x01) != 0x01 );
-  prev_command_byte = inb(0x60);
+  outb(PORT_PS2_STATUS, 0x20); // get command byte
+  while ( (inb(PORT_PS2_STATUS) & 0x01) != 0x01 );
+  prev_command_byte = inb(PORT_PS2_DATA);
   command_byte = prev_command_byte;
-  //while ( (inb(0x64) & 0x02) );
-  if ( inb(0x64) & 0x02 )
+  //while ( (inb(PORT_PS2_STATUS) & 0x02) );
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"inhibmouse");
   command_byte &= 0xfd; // turn off IRQ 12 generation
   command_byte |= 0x20; // disable mouse serial clock line
-  outb(0x64, 0x60); // write command byte
-  outb(0x60, command_byte);
+  outb(PORT_PS2_STATUS, 0x60); // write command byte
+  outb(PORT_PS2_DATA, command_byte);
   return(prev_command_byte);
 }
 
@@ -4910,18 +4933,18 @@ enable_mouse_int_and_events()
   Bit8u command_byte;
 
   // Turn on IRQ generation and aux data line
-  if ( inb(0x64) & 0x02 )
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"enabmouse");
-  outb(0x64, 0x20); // get command byte
-  while ( (inb(0x64) & 0x01) != 0x01 );
-  command_byte = inb(0x60);
-  //while ( (inb(0x64) & 0x02) );
-  if ( inb(0x64) & 0x02 )
+  outb(PORT_PS2_STATUS, 0x20); // get command byte
+  while ( (inb(PORT_PS2_STATUS) & 0x01) != 0x01 );
+  command_byte = inb(PORT_PS2_DATA);
+  //while ( (inb(PORT_PS2_STATUS) & 0x02) );
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"enabmouse");
   command_byte |= 0x02; // turn on IRQ 12 generation
   command_byte &= 0xdf; // enable mouse serial clock line
-  outb(0x64, 0x60); // write command byte
-  outb(0x60, command_byte);
+  outb(PORT_PS2_STATUS, 0x60); // write command byte
+  outb(PORT_PS2_DATA, command_byte);
 }
 
   Bit8u
@@ -4931,10 +4954,10 @@ send_to_mouse_ctrl(sendbyte)
   Bit8u response;
 
   // wait for chance to write to ctrl
-  if ( inb(0x64) & 0x02 )
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"sendmouse");
-  outb(0x64, 0xD4);
-  outb(0x60, sendbyte);
+  outb(PORT_PS2_STATUS, 0xD4);
+  outb(PORT_PS2_DATA, sendbyte);
   return(0);
 }
 
@@ -4946,9 +4969,9 @@ get_mouse_data(data)
   Bit8u response;
   Bit16u ss;
 
-  while ((inb(0x64) & 0x21) != 0x21) { }
+  while ((inb(PORT_PS2_STATUS) & 0x21) != 0x21) { }
 
-  response = inb(0x60);
+  response = inb(PORT_PS2_DATA);
 
   ss = get_SS();
   write_byte(ss, data, response);
@@ -4959,12 +4982,12 @@ get_mouse_data(data)
 set_kbd_command_byte(command_byte)
   Bit8u command_byte;
 {
-  if ( inb(0x64) & 0x02 )
+  if ( inb(PORT_PS2_STATUS) & 0x02 )
     BX_PANIC(panic_msg_keyb_buffer_full,"setkbdcomm");
-  outb(0x64, 0xD4);
+  outb(PORT_PS2_STATUS, 0xD4);
 
-  outb(0x64, 0x60); // write command byte
-  outb(0x60, command_byte);
+  outb(PORT_PS2_STATUS, 0x60); // write command byte
+  outb(PORT_PS2_DATA, command_byte);
 }
 
   void
@@ -5189,16 +5212,16 @@ int74_function(make_farcall, Z, Y, X, status)
 BX_DEBUG_INT74("entering int74_function\n");
   make_farcall = 0;
 
-  in_byte = inb(0x64);
+  in_byte = inb(PORT_PS2_STATUS);
   if ((in_byte & 0x21) != 0x21) {
     return;
   }
 
-  in_byte = inb(0x60);
+  in_byte = inb(PORT_PS2_DATA);
 BX_DEBUG_INT74("int74: read byte %02x\n", in_byte);
 
-  mouse_flags_1 = read_byte(ebda_seg, 0x0026);
-  mouse_flags_2 = read_byte(ebda_seg, 0x0027);
+  mouse_flags_1 = read_byte(ebda_seg, &EbdaData->mouse_flag1);
+  mouse_flags_2 = read_byte(ebda_seg, &EbdaData->mouse_flag2);
 
   if ((mouse_flags_2 & 0x80) != 0x80) {
       return;
@@ -5206,13 +5229,13 @@ BX_DEBUG_INT74("int74: read byte %02x\n", in_byte);
 
   package_count = mouse_flags_2 & 0x07;
   index = mouse_flags_1 & 0x07;
-  write_byte(ebda_seg, 0x28 + index, in_byte);
+  write_byte(ebda_seg, &EbdaData->mouse_data[index], in_byte);
 
   if ( (index+1) >= package_count ) {
 BX_DEBUG_INT74("int74_function: make_farcall=1\n");
-    status = read_byte(ebda_seg, 0x0028 + 0);
-    X      = read_byte(ebda_seg, 0x0028 + 1);
-    Y      = read_byte(ebda_seg, 0x0028 + 2);
+    status = read_byte(ebda_seg, &EbdaData->mouse_data[0]);
+    X      = read_byte(ebda_seg, &EbdaData->mouse_data[1]);
+    Y      = read_byte(ebda_seg, &EbdaData->mouse_data[2]);
     Z      = 0;
     mouse_flags_1 = 0;
     // check if far call handler installed
@@ -5222,12 +5245,207 @@ BX_DEBUG_INT74("int74_function: make_farcall=1\n");
   else {
     mouse_flags_1++;
   }
-  write_byte(ebda_seg, 0x0026, mouse_flags_1);
+  write_byte(ebda_seg, &EbdaData->mouse_flag1, mouse_flags_1);
 }
 
 #define SET_DISK_RET_STATUS(status) write_byte(0x0040, 0x0074, status)
 
 #if BX_USE_ATADRV
+
+  int
+int13_edd(DS, SI, device)
+  Bit16u DS, SI;
+  Bit8u device;
+{
+  Bit32u lba_low, lba_high;
+  Bit16u npc, nph, npspt, size, t13;
+  Bit16u ebda_seg=read_word(0x0040,0x000E);
+  Bit8u type=read_byte(ebda_seg,&EbdaData->ata.devices[device].type);
+
+  size=read_word(DS,SI+(Bit16u)&Int13DPT->size);
+  t13 = size == 74;
+
+  // Buffer is too small
+  if(size < 26)
+    return 1;
+
+  // EDD 1.x
+  if(size >= 26) {
+    Bit16u   blksize, infos;
+
+    write_word(DS, SI+(Bit16u)&Int13DPT->size, 26);
+
+    blksize = read_word(ebda_seg, &EbdaData->ata.devices[device].blksize);
+
+    if (type == ATA_TYPE_ATA)
+    {
+      npc     = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.cylinders);
+      nph     = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.heads);
+      npspt   = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.spt);
+      lba_low = read_dword(ebda_seg, &EbdaData->ata.devices[device].sectors_low);
+      lba_high = read_dword(ebda_seg, &EbdaData->ata.devices[device].sectors_high);
+
+      if (lba_high || (lba_low/npspt)/nph > 0x3fff)
+      {
+        infos = 0 << 1; // geometry is invalid
+        npc = 0x3fff;
+      }
+      else
+      {
+        infos = 1 << 1; // geometry is valid
+      }
+    }
+
+    if (type == ATA_TYPE_ATAPI)
+    {
+      npc     = 0xffffffff;
+      nph     = 0xffffffff;
+      npspt   = 0xffffffff;
+      lba_low = 0xffffffff;
+      lba_high = 0xffffffff;
+
+      infos =  1 << 2 /* removable */ | 1 << 4 /* media change */ |
+               1 << 5 /* lockable */ | 1 << 6; /* max values */
+    }
+
+    write_word(DS, SI+(Bit16u)&Int13DPT->infos, infos);
+    write_dword(DS, SI+(Bit16u)&Int13DPT->cylinders, (Bit32u)npc);
+    write_dword(DS, SI+(Bit16u)&Int13DPT->heads, (Bit32u)nph);
+    write_dword(DS, SI+(Bit16u)&Int13DPT->spt, (Bit32u)npspt);
+    write_dword(DS, SI+(Bit16u)&Int13DPT->sector_count1, lba_low);
+    write_dword(DS, SI+(Bit16u)&Int13DPT->sector_count2, lba_high);
+    write_word(DS, SI+(Bit16u)&Int13DPT->blksize, blksize);
+  }
+
+  // EDD 2.x
+  if(size >= 30) {
+    Bit8u  channel, dev, irq, mode, checksum, i, translation;
+    Bit16u iobase1, iobase2, options;
+
+    write_word(DS, SI+(Bit16u)&Int13DPT->size, 30);
+
+    write_word(DS, SI+(Bit16u)&Int13DPT->dpte_segment, ebda_seg);
+    write_word(DS, SI+(Bit16u)&Int13DPT->dpte_offset, &EbdaData->ata.dpte);
+
+    // Fill in dpte
+    channel = device / 2;
+    iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
+    iobase2 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase2);
+    irq = read_byte(ebda_seg, &EbdaData->ata.channels[channel].irq);
+    mode = read_byte(ebda_seg, &EbdaData->ata.devices[device].mode);
+    translation = read_byte(ebda_seg, &EbdaData->ata.devices[device].translation);
+
+    options = (1<<4); // lba translation
+    options |= (mode==ATA_MODE_PIO32?1:0)<<7;
+
+    if (type == ATA_TYPE_ATA)
+    {
+      options |= (translation==ATA_TRANSLATION_NONE?0:1)<<3; // chs translation
+      options |= (translation==ATA_TRANSLATION_LBA?1:0)<<9;
+      options |= (translation==ATA_TRANSLATION_RECHS?3:0)<<9;
+    }
+
+    if (type == ATA_TYPE_ATAPI)
+    {
+      options |= (1<<5); // removable device
+      options |= (1<<6); // atapi device
+    }
+
+    write_word(ebda_seg, &EbdaData->ata.dpte.iobase1, iobase1);
+    write_word(ebda_seg, &EbdaData->ata.dpte.iobase2, iobase2 + ATA_CB_DC);
+    write_byte(ebda_seg, &EbdaData->ata.dpte.prefix, (0xe | (device % 2))<<4 );
+    write_byte(ebda_seg, &EbdaData->ata.dpte.unused, 0xcb );
+    write_byte(ebda_seg, &EbdaData->ata.dpte.irq, irq );
+    write_byte(ebda_seg, &EbdaData->ata.dpte.blkcount, 1 );
+    write_byte(ebda_seg, &EbdaData->ata.dpte.dma, 0 );
+    write_byte(ebda_seg, &EbdaData->ata.dpte.pio, 0 );
+    write_word(ebda_seg, &EbdaData->ata.dpte.options, options);
+    write_word(ebda_seg, &EbdaData->ata.dpte.reserved, 0);
+    write_byte(ebda_seg, &EbdaData->ata.dpte.revision, 0x11);
+
+    checksum=0;
+    for (i=0; i<15; i++) checksum+=read_byte(ebda_seg, ((Bit8u*)(&EbdaData->ata.dpte)) + i);
+    checksum = -checksum;
+    write_byte(ebda_seg, &EbdaData->ata.dpte.checksum, checksum);
+  }
+
+  // EDD 3.x
+  if(size >= 66) {
+    Bit8u channel, iface, checksum, i;
+    Bit16u iobase1;
+
+    channel = device / 2;
+    iface = read_byte(ebda_seg, &EbdaData->ata.channels[channel].iface);
+    iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
+
+    write_word(DS, SI+(Bit16u)&Int13DPT->dpi.t13.key, 0xbedd);
+    write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.dpi_length, t13 ? 44 : 36);
+    write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.reserved1, 0);
+    write_word(DS, SI+(Bit16u)&Int13DPT->dpi.t13.reserved2, 0);
+
+    if (iface==ATA_IFACE_ISA) {
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.host_bus[0], 'I');
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.host_bus[1], 'S');
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.host_bus[2], 'A');
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.host_bus[3], ' ');
+    }
+    else {
+      // FIXME PCI
+    }
+
+    if (type == ATA_TYPE_ATA) {
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[0], 'A');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[1], 'T');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[2], 'A');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[3], ' ');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[4], ' ');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[5], ' ');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[6], ' ');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[7], ' ');
+    } else if (type == ATA_TYPE_ATAPI) {
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[0], 'A');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[1], 'T');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[2], 'A');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[3], 'P');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[4], 'I');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[5], ' ');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[6], ' ');
+        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_type[7], ' ');
+    }
+
+    if (iface==ATA_IFACE_ISA) {
+      write_word(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_path[0], iobase1);
+      write_word(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_path[2], 0);
+      write_dword(DS, SI+(Bit16u)&Int13DPT->dpi.t13.iface_path[4], 0L);
+    }
+    else {
+      // FIXME PCI
+    }
+    write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.device_path[0], device%2);
+    write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.device_path[1], 0);
+    write_word(DS, SI+(Bit16u)&Int13DPT->dpi.t13.device_path[2], 0);
+    write_dword(DS, SI+(Bit16u)&Int13DPT->dpi.t13.device_path[4], 0L);
+    if (t13) {
+      write_dword(DS, SI+(Bit16u)&Int13DPT->dpi.t13.device_path[8], 0L);
+      write_dword(DS, SI+(Bit16u)&Int13DPT->dpi.t13.device_path[12], 0L);
+    }
+
+    if (t13)
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.reserved3, 0);
+    else
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.phoenix.reserved3, 0);
+
+    checksum = 0;
+    for (i = 30; i < (t13 ? 73 : 65); i++) checksum += read_byte(DS, SI + i);
+    checksum = -checksum;
+    if (t13)
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.t13.checksum, checksum);
+    else
+      write_byte(DS, SI+(Bit16u)&Int13DPT->dpi.phoenix.checksum, checksum);
+  }
+
+  return 0;
+}
 
   void
 int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
@@ -5454,133 +5672,8 @@ int13_harddisk(EHAX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
       break;
 
     case 0x48: // IBM/MS get drive parameters
-      size=read_word(DS,SI+(Bit16u)&Int13DPT->size);
-
-      // Buffer is too small
-      if(size < 0x1a)
+      if (int13_edd(DS, SI, device))
         goto int13_fail;
-
-      // EDD 1.x
-      if(size >= 0x1a) {
-        Bit16u   blksize;
-
-        npc     = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.cylinders);
-        nph     = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.heads);
-        npspt   = read_word(ebda_seg, &EbdaData->ata.devices[device].pchs.spt);
-        lba_low = read_dword(ebda_seg, &EbdaData->ata.devices[device].sectors_low);
-        lba_high = read_dword(ebda_seg, &EbdaData->ata.devices[device].sectors_high);
-        blksize = read_word(ebda_seg, &EbdaData->ata.devices[device].blksize);
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->size, 0x1a);
-        if (lba_high || (lba_low/npspt)/nph > 0x3fff)
-        {
-          write_word(DS, SI+(Bit16u)&Int13DPT->infos, 0x00); // geometry is invalid
-          write_dword(DS, SI+(Bit16u)&Int13DPT->cylinders, 0x3fff);
-        }
-        else
-        {
-          write_word(DS, SI+(Bit16u)&Int13DPT->infos, 0x02); // geometry is valid
-          write_dword(DS, SI+(Bit16u)&Int13DPT->cylinders, (Bit32u)npc);
-        }
-        write_dword(DS, SI+(Bit16u)&Int13DPT->heads, (Bit32u)nph);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->spt, (Bit32u)npspt);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->sector_count1, lba_low);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->sector_count2, lba_high);
-        write_word(DS, SI+(Bit16u)&Int13DPT->blksize, blksize);
-      }
-
-      // EDD 2.x
-      if(size >= 0x1e) {
-        Bit8u  channel, dev, irq, mode, checksum, i, translation;
-        Bit16u iobase1, iobase2, options;
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->size, 0x1e);
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->dpte_segment, ebda_seg);
-        write_word(DS, SI+(Bit16u)&Int13DPT->dpte_offset, &EbdaData->ata.dpte);
-
-        // Fill in dpte
-        channel = device / 2;
-        iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
-        iobase2 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase2);
-        irq = read_byte(ebda_seg, &EbdaData->ata.channels[channel].irq);
-        mode = read_byte(ebda_seg, &EbdaData->ata.devices[device].mode);
-        translation = read_byte(ebda_seg, &EbdaData->ata.devices[device].translation);
-
-        options  = (translation==ATA_TRANSLATION_NONE?0:1)<<3; // chs translation
-        options |= (1<<4); // lba translation
-        options |= (mode==ATA_MODE_PIO32?1:0)<<7;
-        options |= (translation==ATA_TRANSLATION_LBA?1:0)<<9;
-        options |= (translation==ATA_TRANSLATION_RECHS?3:0)<<9;
-
-        write_word(ebda_seg, &EbdaData->ata.dpte.iobase1, iobase1);
-        write_word(ebda_seg, &EbdaData->ata.dpte.iobase2, iobase2 + ATA_CB_DC);
-        write_byte(ebda_seg, &EbdaData->ata.dpte.prefix, (0xe | (device % 2))<<4 );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.unused, 0xcb );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.irq, irq );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.blkcount, 1 );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.dma, 0 );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.pio, 0 );
-        write_word(ebda_seg, &EbdaData->ata.dpte.options, options);
-        write_word(ebda_seg, &EbdaData->ata.dpte.reserved, 0);
-        if (size >=0x42)
-          write_byte(ebda_seg, &EbdaData->ata.dpte.revision, 0x11);
-        else
-          write_byte(ebda_seg, &EbdaData->ata.dpte.revision, 0x10);
-
-        checksum=0;
-        for (i=0; i<15; i++) checksum+=read_byte(ebda_seg, ((Bit8u*)(&EbdaData->ata.dpte)) + i);
-        checksum = ~checksum;
-        write_byte(ebda_seg, &EbdaData->ata.dpte.checksum, checksum);
-      }
-
-      // EDD 3.x
-      if(size >= 0x42) {
-        Bit8u channel, iface, checksum, i;
-        Bit16u iobase1;
-
-        channel = device / 2;
-        iface = read_byte(ebda_seg, &EbdaData->ata.channels[channel].iface);
-        iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->size, 0x42);
-        write_word(DS, SI+(Bit16u)&Int13DPT->key, 0xbedd);
-        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi_length, 0x24);
-        write_byte(DS, SI+(Bit16u)&Int13DPT->reserved1, 0);
-        write_word(DS, SI+(Bit16u)&Int13DPT->reserved2, 0);
-
-        if (iface==ATA_IFACE_ISA) {
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[0], 'I');
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[1], 'S');
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[2], 'A');
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[3], 0);
-        }
-        else {
-          // FIXME PCI
-        }
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[0], 'A');
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[1], 'T');
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[2], 'A');
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[3], 0);
-
-        if (iface==ATA_IFACE_ISA) {
-          write_word(DS, SI+(Bit16u)&Int13DPT->iface_path[0], iobase1);
-          write_word(DS, SI+(Bit16u)&Int13DPT->iface_path[2], 0);
-          write_dword(DS, SI+(Bit16u)&Int13DPT->iface_path[4], 0L);
-        }
-        else {
-          // FIXME PCI
-        }
-        write_byte(DS, SI+(Bit16u)&Int13DPT->device_path[0], device%2);
-        write_byte(DS, SI+(Bit16u)&Int13DPT->device_path[1], 0);
-        write_word(DS, SI+(Bit16u)&Int13DPT->device_path[2], 0);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->device_path[4], 0L);
-
-        checksum=0;
-        for (i=30; i<64; i++) checksum+=read_byte(DS, SI + i);
-        checksum = ~checksum;
-        write_byte(DS, SI+(Bit16u)&Int13DPT->checksum, checksum);
-      }
 
       goto int13_success;
       break;
@@ -5819,116 +5912,8 @@ int13_cdrom_rme_end:
       break;
 
     case 0x48: // IBM/MS get drive parameters
-      size = read_word(DS,SI+(Bit16u)&Int13Ext->size);
-
-      // Buffer is too small
-      if(size < 0x1a)
+      if (int13_edd(DS, SI, device))
         goto int13_fail;
-
-      // EDD 1.x
-      if(size >= 0x1a) {
-        Bit16u   cylinders, heads, spt, blksize;
-
-        blksize   = read_word(ebda_seg, &EbdaData->ata.devices[device].blksize);
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->size, 0x1a);
-        write_word(DS, SI+(Bit16u)&Int13DPT->infos, 0x74); // removable, media change, lockable, max values
-        write_dword(DS, SI+(Bit16u)&Int13DPT->cylinders, 0xffffffff);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->heads, 0xffffffff);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->spt, 0xffffffff);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->sector_count1, 0xffffffff);  // FIXME should be Bit64
-        write_dword(DS, SI+(Bit16u)&Int13DPT->sector_count2, 0xffffffff);
-        write_word(DS, SI+(Bit16u)&Int13DPT->blksize, blksize);
-      }
-
-      // EDD 2.x
-      if(size >= 0x1e) {
-        Bit8u  channel, dev, irq, mode, checksum, i;
-        Bit16u iobase1, iobase2, options;
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->size, 0x1e);
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->dpte_segment, ebda_seg);
-        write_word(DS, SI+(Bit16u)&Int13DPT->dpte_offset, &EbdaData->ata.dpte);
-
-        // Fill in dpte
-        channel = device / 2;
-        iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
-        iobase2 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase2);
-        irq = read_byte(ebda_seg, &EbdaData->ata.channels[channel].irq);
-        mode = read_byte(ebda_seg, &EbdaData->ata.devices[device].mode);
-
-        // FIXME atapi device
-        options  = (1<<4); // lba translation
-        options |= (1<<5); // removable device
-        options |= (1<<6); // atapi device
-        options |= (mode==ATA_MODE_PIO32?1:0<<7);
-
-        write_word(ebda_seg, &EbdaData->ata.dpte.iobase1, iobase1);
-        write_word(ebda_seg, &EbdaData->ata.dpte.iobase2, iobase2 + ATA_CB_DC);
-        write_byte(ebda_seg, &EbdaData->ata.dpte.prefix, (0xe | (device % 2))<<4 );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.unused, 0xcb );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.irq, irq );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.blkcount, 1 );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.dma, 0 );
-        write_byte(ebda_seg, &EbdaData->ata.dpte.pio, 0 );
-        write_word(ebda_seg, &EbdaData->ata.dpte.options, options);
-        write_word(ebda_seg, &EbdaData->ata.dpte.reserved, 0);
-        write_byte(ebda_seg, &EbdaData->ata.dpte.revision, 0x11);
-
-        checksum=0;
-        for (i=0; i<15; i++) checksum+=read_byte(ebda_seg, ((Bit8u*)(&EbdaData->ata.dpte)) + i);
-        checksum = ~checksum;
-        write_byte(ebda_seg, &EbdaData->ata.dpte.checksum, checksum);
-      }
-
-      // EDD 3.x
-      if(size >= 0x42) {
-        Bit8u channel, iface, checksum, i;
-        Bit16u iobase1;
-
-        channel = device / 2;
-        iface = read_byte(ebda_seg, &EbdaData->ata.channels[channel].iface);
-        iobase1 = read_word(ebda_seg, &EbdaData->ata.channels[channel].iobase1);
-
-        write_word(DS, SI+(Bit16u)&Int13DPT->size, 0x42);
-        write_word(DS, SI+(Bit16u)&Int13DPT->key, 0xbedd);
-        write_byte(DS, SI+(Bit16u)&Int13DPT->dpi_length, 0x24);
-        write_byte(DS, SI+(Bit16u)&Int13DPT->reserved1, 0);
-        write_word(DS, SI+(Bit16u)&Int13DPT->reserved2, 0);
-
-        if (iface==ATA_IFACE_ISA) {
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[0], 'I');
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[1], 'S');
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[2], 'A');
-          write_byte(DS, SI+(Bit16u)&Int13DPT->host_bus[3], 0);
-        }
-        else {
-          // FIXME PCI
-        }
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[0], 'A');
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[1], 'T');
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[2], 'A');
-        write_byte(DS, SI+(Bit16u)&Int13DPT->iface_type[3], 0);
-
-        if (iface==ATA_IFACE_ISA) {
-          write_word(DS, SI+(Bit16u)&Int13DPT->iface_path[0], iobase1);
-          write_word(DS, SI+(Bit16u)&Int13DPT->iface_path[2], 0);
-          write_dword(DS, SI+(Bit16u)&Int13DPT->iface_path[4], 0L);
-        }
-        else {
-          // FIXME PCI
-        }
-        write_byte(DS, SI+(Bit16u)&Int13DPT->device_path[0], device%2);
-        write_byte(DS, SI+(Bit16u)&Int13DPT->device_path[1], 0);
-        write_word(DS, SI+(Bit16u)&Int13DPT->device_path[2], 0);
-        write_dword(DS, SI+(Bit16u)&Int13DPT->device_path[4], 0L);
-
-        checksum=0;
-        for (i=30; i<64; i++) checksum+=read_byte(DS, SI + i);
-        checksum = ~checksum;
-        write_byte(DS, SI+(Bit16u)&Int13DPT->checksum, checksum);
-      }
 
       goto int13_success;
       break;
@@ -6435,26 +6420,26 @@ BX_DEBUG_INT13_HD("int13_f01\n");
         return;
       }
 
-      status = inb(0x1f7);
+      status = inb(PORT_ATA1_CMD_BASE + 7);
       if (status & 0x80) {
         BX_PANIC("hard drive BIOS:(read/verify) BUSY bit set\n");
       }
-      outb(0x01f2, num_sectors);
+      outb(PORT_ATA1_CMD_BASE + 2, num_sectors);
       /* activate LBA? (tomv) */
       if (hd_heads > 16) {
 BX_DEBUG_INT13_HD("CHS: %x %x %x\n", cylinder, head, sector);
         outLBA(cylinder,hd_heads,head,hd_sectors,sector,drive);
       }
       else {
-        outb(0x01f3, sector);
-        outb(0x01f4, cylinder & 0x00ff);
-        outb(0x01f5, cylinder >> 8);
-        outb(0x01f6, 0xa0 | ((drive & 0x01)<<4) | (head & 0x0f));
+        outb(PORT_ATA1_CMD_BASE + 3, sector);
+        outb(PORT_ATA1_CMD_BASE + 4, cylinder & 0x00ff);
+        outb(PORT_ATA1_CMD_BASE + 5, cylinder >> 8);
+        outb(PORT_ATA1_CMD_BASE + 6, 0xa0 | ((drive & 0x01)<<4) | (head & 0x0f));
       }
-      outb(0x01f7, 0x20);
+      outb(PORT_ATA1_CMD_BASE + 7, 0x20);
 
       while (1) {
-        status = inb(0x1f7);
+        status = inb(PORT_ATA1_CMD_BASE + 7);
         if (!(status & 0x80)) break;
       }
 
@@ -6494,7 +6479,7 @@ i13_f02_no_adjust:
         mov  dx, #0x01f0  ;; AT data read port
 
         rep
-          insw ;; CX words transfered from port(DX) to ES:[DI]
+          insw ;; CX words transferred from port(DX) to ES:[DI]
 
 i13_f02_done:
         ;; store real DI register back to temp bx
@@ -6507,13 +6492,13 @@ ASM_END
         sector_count++;
         num_sectors--;
         if (num_sectors == 0) {
-          status = inb(0x1f7);
+          status = inb(PORT_ATA1_CMD_BASE + 7);
           if ((status & 0xc9) != 0x40)
             BX_PANIC("no sectors left to read/verify, status is %02x\n", (unsigned) status);
           break;
         }
         else {
-          status = inb(0x1f7);
+          status = inb(PORT_ATA1_CMD_BASE + 7);
           if ((status & 0xc9) != 0x48)
             BX_PANIC("more sectors left to read/verify, status is %02x\n", (unsigned) status);
           continue;
@@ -6573,12 +6558,12 @@ BX_DEBUG_INT13_HD("int13_f03\n");
       if (head > 15)
         BX_PANIC("hard drive BIOS:(read) head > 15\n");
 
-      status = inb(0x1f7);
+      status = inb(PORT_ATA1_CMD_BASE + 7);
       if (status & 0x80) {
         BX_PANIC("hard drive BIOS:(read) BUSY bit set\n");
       }
 // should check for Drive Ready Bit also in status reg
-      outb(0x01f2, num_sectors);
+      outb(PORT_ATA1_CMD_BASE + 2, num_sectors);
 
       /* activate LBA? (tomv) */
       if (hd_heads > 16) {
@@ -6586,16 +6571,16 @@ BX_DEBUG_INT13_HD("CHS (write): %x %x %x\n", cylinder, head, sector);
         outLBA(cylinder,hd_heads,head,hd_sectors,sector,GET_ELDL());
       }
       else {
-        outb(0x01f3, sector);
-        outb(0x01f4, cylinder & 0x00ff);
-        outb(0x01f5, cylinder >> 8);
-        outb(0x01f6, 0xa0 | ((GET_ELDL() & 0x01)<<4) | (head & 0x0f));
+        outb(PORT_ATA1_CMD_BASE + 3, sector);
+        outb(PORT_ATA1_CMD_BASE + 4, cylinder & 0x00ff);
+        outb(PORT_ATA1_CMD_BASE + 5, cylinder >> 8);
+        outb(PORT_ATA1_CMD_BASE + 6, 0xa0 | ((GET_ELDL() & 0x01)<<4) | (head & 0x0f));
       }
-      outb(0x01f7, 0x30);
+      outb(PORT_ATA1_CMD_BASE + 7, 0x30);
 
       // wait for busy bit to turn off after seeking
       while (1) {
-        status = inb(0x1f7);
+        status = inb(PORT_ATA1_CMD_BASE + 7);
         if (!(status & 0x80)) break;
       }
 
@@ -6634,7 +6619,7 @@ i13_f03_no_adjust:
 
         seg ES
         rep
-          outsw ;; CX words tranfered from ES:[SI] to port(DX)
+          outsw ;; CX words tranferred from ES:[SI] to port(DX)
 
         ;; store real SI register back to temp bx
         push bp
@@ -6646,13 +6631,13 @@ ASM_END
         sector_count++;
         num_sectors--;
         if (num_sectors == 0) {
-          status = inb(0x1f7);
+          status = inb(PORT_ATA1_CMD_BASE + 7);
           if ((status & 0xe9) != 0x40)
             BX_PANIC("no sectors left to write, status is %02x\n", (unsigned) status);
           break;
         }
         else {
-          status = inb(0x1f7);
+          status = inb(PORT_ATA1_CMD_BASE + 7);
           if ((status & 0xc9) != 0x48)
             BX_PANIC("more sectors left to write, status is %02x\n", (unsigned) status);
           continue;
@@ -6760,7 +6745,7 @@ BX_DEBUG_INT13_HD("int13_f10\n");
       //break;
 
       // should look at 40:8E also???
-      status = inb(0x01f7);
+      status = inb(PORT_ATA1_CMD_BASE + 7);
       if ((status & 0xc0) == 0x40) {
         SET_AH(0);
         SET_DISK_RET_STATUS(0);
@@ -6895,13 +6880,13 @@ void floppy_reset_controller()
   Bit8u val8;
 
   // Reset controller
-  val8 = inb(0x03f2);
-  outb(0x03f2, val8 & ~0x04);
-  outb(0x03f2, val8 | 0x04);
+  val8 = inb(PORT_FD_DOR);
+  outb(PORT_FD_DOR, val8 & ~0x04);
+  outb(PORT_FD_DOR, val8 | 0x04);
 
   // Wait for controller to come out of reset
   do {
-    val8 = inb(0x3f4);
+    val8 = inb(PORT_FD_STATUS);
   } while ((val8 & 0xc0) != 0x80);
 }
 
@@ -6916,21 +6901,21 @@ void floppy_prepare_controller(drive)
   write_byte(0x0040, 0x003e, val8);
 
   // turn on motor of selected drive, DMA & int enabled, normal operation
-  prev_reset = inb(0x03f2) & 0x04;
+  prev_reset = inb(PORT_FD_DOR) & 0x04;
   if (drive)
     dor = 0x20;
   else
     dor = 0x10;
   dor |= 0x0c;
   dor |= drive;
-  outb(0x03f2, dor);
+  outb(PORT_FD_DOR, dor);
 
   // reset the disk motor timeout value of INT 08
   write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
 
   // wait for drive readiness
   do {
-    val8 = inb(0x3f4);
+    val8 = inb(PORT_FD_STATUS);
   } while ( (val8 & 0xc0) != 0x80 );
 
   if (prev_reset == 0) {
@@ -7103,8 +7088,8 @@ floppy_drive_recal(drive)
   floppy_prepare_controller(drive);
 
   // send Recalibrate command (2 bytes) to controller
-  outb(0x03f5, 0x07);  // 07: Recalibrate
-  outb(0x03f5, drive); // 0=drive0, 1=drive1
+  outb(PORT_FD_DATA, 0x07);  // 07: Recalibrate
+  outb(PORT_FD_DATA, drive); // 0=drive0, 1=drive1
 
   // turn on interrupts
 ASM_START
@@ -7278,32 +7263,32 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         }
 
         BX_DEBUG_INT13_FL("masking DMA-1 c2\n");
-        outb(0x000a, 0x06);
+        outb(PORT_DMA1_MASK_REG, 0x06);
 
   BX_DEBUG_INT13_FL("clear flip-flop\n");
-        outb(0x000c, 0x00); // clear flip-flop
-        outb(0x0004, base_address);
-        outb(0x0004, base_address>>8);
+        outb(PORT_DMA1_CLEAR_FF_REG, 0x00); // clear flip-flop
+        outb(PORT_DMA_ADDR_2, base_address);
+        outb(PORT_DMA_ADDR_2, base_address>>8);
   BX_DEBUG_INT13_FL("clear flip-flop\n");
-        outb(0x000c, 0x00); // clear flip-flop
-        outb(0x0005, base_count);
-        outb(0x0005, base_count>>8);
+        outb(PORT_DMA1_CLEAR_FF_REG, 0x00); // clear flip-flop
+        outb(PORT_DMA_CNT_2, base_count);
+        outb(PORT_DMA_CNT_2, base_count>>8);
 
         // port 0b: DMA-1 Mode Register
         mode_register = 0x46; // single mode, increment, autoinit disable,
                               // transfer type=write, channel 2
   BX_DEBUG_INT13_FL("setting mode register\n");
-        outb(0x000b, mode_register);
+        outb(PORT_DMA1_MODE_REG, mode_register);
 
   BX_DEBUG_INT13_FL("setting page register\n");
         // port 81: DMA-1 Page Register, channel 2
-        outb(0x0081, page);
+        outb(PORT_DMA_PAGE_2, page);
 
   BX_DEBUG_INT13_FL("unmask chan 2\n");
-        outb(0x000a, 0x02); // unmask channel 2
+        outb(PORT_DMA1_MASK_REG, 0x02); // unmask channel 2
 
         BX_DEBUG_INT13_FL("unmasking DMA-1 c2\n");
-        outb(0x000a, 0x02);
+        outb(PORT_DMA1_MASK_REG, 0x02);
 
         //--------------------------------------
         // set up floppy controller for transfer
@@ -7311,15 +7296,15 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         floppy_prepare_controller(drive);
 
         // send read-normal-data command (9 bytes) to controller
-        outb(0x03f5, 0xe6); // e6: read normal data
-        outb(0x03f5, (head << 2) | drive); // HD DR1 DR2
-        outb(0x03f5, track);
-        outb(0x03f5, head);
-        outb(0x03f5, sector);
-        outb(0x03f5, 2); // 512 byte sector size
-        outb(0x03f5, sector + num_sectors - 1); // last sector to read on track
-        outb(0x03f5, 0); // Gap length
-        outb(0x03f5, 0xff); // Gap length
+        outb(PORT_FD_DATA, 0xe6); // e6: read normal data
+        outb(PORT_FD_DATA, (head << 2) | drive); // HD DR1 DR2
+        outb(PORT_FD_DATA, track);
+        outb(PORT_FD_DATA, head);
+        outb(PORT_FD_DATA, sector);
+        outb(PORT_FD_DATA, 2); // 512 byte sector size
+        outb(PORT_FD_DATA, sector + num_sectors - 1); // last sector to read on track
+        outb(PORT_FD_DATA, 0); // Gap length
+        outb(PORT_FD_DATA, 0xff); // Gap length
 
         // turn on interrupts
   ASM_START
@@ -7352,19 +7337,19 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         write_byte(0x0040, 0x003e, val8);
 
         // check port 3f4 for accessibility to status bytes
-        val8 = inb(0x3f4);
+        val8 = inb(PORT_FD_STATUS);
         if ( (val8 & 0xc0) != 0xc0 )
           BX_PANIC("int13_diskette: ctrl not ready\n");
 
         // read 7 return status bytes from controller
         // using loop index broken, have to unroll...
-        return_status[0] = inb(0x3f5);
-        return_status[1] = inb(0x3f5);
-        return_status[2] = inb(0x3f5);
-        return_status[3] = inb(0x3f5);
-        return_status[4] = inb(0x3f5);
-        return_status[5] = inb(0x3f5);
-        return_status[6] = inb(0x3f5);
+        return_status[0] = inb(PORT_FD_DATA);
+        return_status[1] = inb(PORT_FD_DATA);
+        return_status[2] = inb(PORT_FD_DATA);
+        return_status[3] = inb(PORT_FD_DATA);
+        return_status[4] = inb(PORT_FD_DATA);
+        return_status[5] = inb(PORT_FD_DATA);
+        return_status[6] = inb(PORT_FD_DATA);
         // record in BIOS Data Area
         write_byte(0x0040, 0x0042, return_status[0]);
         write_byte(0x0040, 0x0043, return_status[1]);
@@ -7419,25 +7404,25 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         }
 
         BX_DEBUG_INT13_FL("masking DMA-1 c2\n");
-        outb(0x000a, 0x06);
+        outb(PORT_DMA1_MASK_REG, 0x06);
 
-        outb(0x000c, 0x00); // clear flip-flop
-        outb(0x0004, base_address);
-        outb(0x0004, base_address>>8);
-        outb(0x000c, 0x00); // clear flip-flop
-        outb(0x0005, base_count);
-        outb(0x0005, base_count>>8);
+        outb(PORT_DMA1_CLEAR_FF_REG, 0x00); // clear flip-flop
+        outb(PORT_DMA_ADDR_2, base_address);
+        outb(PORT_DMA_ADDR_2, base_address>>8);
+        outb(PORT_DMA1_CLEAR_FF_REG, 0x00); // clear flip-flop
+        outb(PORT_DMA_CNT_2, base_count);
+        outb(PORT_DMA_CNT_2, base_count>>8);
 
         // port 0b: DMA-1 Mode Register
         mode_register = 0x4a; // single mode, increment, autoinit disable,
                               // transfer type=read, channel 2
-        outb(0x000b, mode_register);
+        outb(PORT_DMA1_MODE_REG, mode_register);
 
         // port 81: DMA-1 Page Register, channel 2
-        outb(0x0081, page);
+        outb(PORT_DMA_PAGE_2, page);
 
         BX_DEBUG_INT13_FL("unmasking DMA-1 c2\n");
-        outb(0x000a, 0x02);
+        outb(PORT_DMA1_MASK_REG, 0x02);
 
         //--------------------------------------
         // set up floppy controller for transfer
@@ -7445,15 +7430,15 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         floppy_prepare_controller(drive);
 
         // send write-normal-data command (9 bytes) to controller
-        outb(0x03f5, 0xc5); // c5: write normal data
-        outb(0x03f5, (head << 2) | drive); // HD DR1 DR2
-        outb(0x03f5, track);
-        outb(0x03f5, head);
-        outb(0x03f5, sector);
-        outb(0x03f5, 2); // 512 byte sector size
-        outb(0x03f5, sector + num_sectors - 1); // last sector to write on track
-        outb(0x03f5, 0); // Gap length
-        outb(0x03f5, 0xff); // Gap length
+        outb(PORT_FD_DATA, 0xc5); // c5: write normal data
+        outb(PORT_FD_DATA, (head << 2) | drive); // HD DR1 DR2
+        outb(PORT_FD_DATA, track);
+        outb(PORT_FD_DATA, head);
+        outb(PORT_FD_DATA, sector);
+        outb(PORT_FD_DATA, 2); // 512 byte sector size
+        outb(PORT_FD_DATA, sector + num_sectors - 1); // last sector to write on track
+        outb(PORT_FD_DATA, 0); // Gap length
+        outb(PORT_FD_DATA, 0xff); // Gap length
 
         // turn on interrupts
   ASM_START
@@ -7486,19 +7471,19 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         write_byte(0x0040, 0x003e, val8);
 
         // check port 3f4 for accessibility to status bytes
-        val8 = inb(0x3f4);
+        val8 = inb(PORT_FD_STATUS);
         if ( (val8 & 0xc0) != 0xc0 )
           BX_PANIC("int13_diskette: ctrl not ready\n");
 
         // read 7 return status bytes from controller
         // using loop index broken, have to unroll...
-        return_status[0] = inb(0x3f5);
-        return_status[1] = inb(0x3f5);
-        return_status[2] = inb(0x3f5);
-        return_status[3] = inb(0x3f5);
-        return_status[4] = inb(0x3f5);
-        return_status[5] = inb(0x3f5);
-        return_status[6] = inb(0x3f5);
+        return_status[0] = inb(PORT_FD_DATA);
+        return_status[1] = inb(PORT_FD_DATA);
+        return_status[2] = inb(PORT_FD_DATA);
+        return_status[3] = inb(PORT_FD_DATA);
+        return_status[4] = inb(PORT_FD_DATA);
+        return_status[5] = inb(PORT_FD_DATA);
+        return_status[6] = inb(PORT_FD_DATA);
         // record in BIOS Data Area
         write_byte(0x0040, 0x0042, return_status[0]);
         write_byte(0x0040, 0x0043, return_status[1]);
@@ -7594,30 +7579,30 @@ BX_DEBUG_INT13_FL("floppy f05\n");
         return;
       }
 
-      outb(0x000a, 0x06);
-      outb(0x000c, 0x00); // clear flip-flop
-      outb(0x0004, base_address);
-      outb(0x0004, base_address>>8);
-      outb(0x000c, 0x00); // clear flip-flop
-      outb(0x0005, base_count);
-      outb(0x0005, base_count>>8);
+      outb(PORT_DMA1_MASK_REG, 0x06);
+      outb(PORT_DMA1_CLEAR_FF_REG, 0x00); // clear flip-flop
+      outb(PORT_DMA_ADDR_2, base_address);
+      outb(PORT_DMA_ADDR_2, base_address>>8);
+      outb(PORT_DMA1_CLEAR_FF_REG, 0x00); // clear flip-flop
+      outb(PORT_DMA_CNT_2, base_count);
+      outb(PORT_DMA_CNT_2, base_count>>8);
       mode_register = 0x4a; // single mode, increment, autoinit disable,
                             // transfer type=read, channel 2
-      outb(0x000b, mode_register);
+      outb(PORT_DMA1_MODE_REG, mode_register);
       // port 81: DMA-1 Page Register, channel 2
-      outb(0x0081, page);
-      outb(0x000a, 0x02);
+      outb(PORT_DMA_PAGE_2, page);
+      outb(PORT_DMA1_MASK_REG, 0x02);
 
       // set up floppy controller for transfer
       floppy_prepare_controller(drive);
 
       // send format-track command (6 bytes) to controller
-      outb(0x03f5, 0x4d); // 4d: format track
-      outb(0x03f5, (head << 2) | drive); // HD DR1 DR2
-      outb(0x03f5, 2); // 512 byte sector size
-      outb(0x03f5, num_sectors); // number of sectors per track
-      outb(0x03f5, 0); // Gap length
-      outb(0x03f5, 0xf6); // Fill byte
+      outb(PORT_FD_DATA, 0x4d); // 4d: format track
+      outb(PORT_FD_DATA, (head << 2) | drive); // HD DR1 DR2
+      outb(PORT_FD_DATA, 2); // 512 byte sector size
+      outb(PORT_FD_DATA, num_sectors); // number of sectors per track
+      outb(PORT_FD_DATA, 0); // Gap length
+      outb(PORT_FD_DATA, 0xf6); // Fill byte
       // turn on interrupts
   ASM_START
       sti
@@ -7646,19 +7631,19 @@ BX_DEBUG_INT13_FL("floppy f05\n");
       val8 &= 0x7f;
       write_byte(0x0040, 0x003e, val8);
       // check port 3f4 for accessibility to status bytes
-      val8 = inb(0x3f4);
+      val8 = inb(PORT_FD_STATUS);
       if ( (val8 & 0xc0) != 0xc0 )
         BX_PANIC("int13_diskette: ctrl not ready\n");
 
       // read 7 return status bytes from controller
       // using loop index broken, have to unroll...
-      return_status[0] = inb(0x3f5);
-      return_status[1] = inb(0x3f5);
-      return_status[2] = inb(0x3f5);
-      return_status[3] = inb(0x3f5);
-      return_status[4] = inb(0x3f5);
-      return_status[5] = inb(0x3f5);
-      return_status[6] = inb(0x3f5);
+      return_status[0] = inb(PORT_FD_DATA);
+      return_status[1] = inb(PORT_FD_DATA);
+      return_status[2] = inb(PORT_FD_DATA);
+      return_status[3] = inb(PORT_FD_DATA);
+      return_status[4] = inb(PORT_FD_DATA);
+      return_status[5] = inb(PORT_FD_DATA);
+      return_status[6] = inb(PORT_FD_DATA);
       // record in BIOS Data Area
       write_byte(0x0040, 0x0042, return_status[0]);
       write_byte(0x0040, 0x0043, return_status[1]);
@@ -7924,7 +7909,7 @@ determine_floppy_media(drive)
 
 #if 0
   // check Main Status Register for readiness
-  val8 = inb(0x03f4) & 0x80; // Main Status Register
+  val8 = inb(PORT_FD_STATUS) & 0x80; // Main Status Register
   if (val8 != 0x80)
     BX_PANIC("d_f_m: MRQ bit not set\n");
 
@@ -7933,7 +7918,7 @@ determine_floppy_media(drive)
   // existing BDA values
 
   // turn on drive motor
-  outb(0x03f2, DOR); // Digital Output Register
+  outb(PORT_FD_DOR, DOR); // Digital Output Register
   //
 #endif
   BX_PANIC("d_f_m: OK so far\n");
@@ -8002,7 +7987,7 @@ Bit16u seq_nr;
 
   // if BX_ELTORITO_BOOT is not defined, old behavior
   //   check bit 5 in CMOS reg 0x2d.  load either 0x00 or 0x80 into DL
-  //   in preparation for the intial INT 13h (0=floppy A:, 0x80=C:)
+  //   in preparation for the initial INT 13h (0=floppy A:, 0x80=C:)
   //     0: system boot sequence, first drive C: then A:
   //     1: system boot sequence, first drive A: then C:
   // else BX_ELTORITO_BOOT is defined
@@ -8319,7 +8304,7 @@ int1a_function(regs, ds, iret_addr)
       outb_cmos(0x01, regs.u.r8.dh); // Seconds alarm
       outb_cmos(0x03, regs.u.r8.cl); // Minutes alarm
       outb_cmos(0x05, regs.u.r8.ch); // Hours alarm
-      outb(0xa1, inb(0xa1) & 0xfe); // enable IRQ 8
+      outb(PORT_PIC2_DATA, inb(PORT_PIC2_DATA) & 0xfe); // enable IRQ 8
       // enable Status Reg B alarm bit, clear halt clock bit
       outb_cmos(0x0b, (val8 & 0x7f) | 0x20);
       ClearCF(iret_addr.flags); // OK
@@ -8722,8 +8707,8 @@ floppy_drive_post:
   ;; (048F) diskette controller information
   ;;
   mov  al, #0x10   ;; get CMOS diskette drive type
-  out  0x70, AL
-  in   AL, 0x71
+  out  PORT_CMOS_INDEX, AL
+  in   AL, PORT_CMOS_DATA
   mov  ah, al      ;; save byte to AH
 
 look_drive0:
@@ -8758,7 +8743,7 @@ f1_missing:
   mov  0x0495, al  ;; diskette 1 current cylinder
 
   mov  al, #0x02
-  out  #0x0a, al   ;; clear DMA-1 channel 2 mask bit
+  out  PORT_DMA1_MASK_REG, al   ;; clear DMA-1 channel 2 mask bit
 
   SET_INT_VECTOR(0x1E, #0xF000, #diskette_param_table2)
   SET_INT_VECTOR(0x40, #0xF000, #int13_diskette)
@@ -8799,16 +8784,16 @@ hard_drive_post:
 
   ;; move disk geometry data from CMOS to EBDA disk parameter table(s)
   mov  al, #0x12
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   and  al, #0xf0
   cmp  al, #0xf0
   je   post_d0_extended
   jmp check_for_hd1
 post_d0_extended:
   mov  al, #0x19
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   cmp  al, #47  ;; decimal 47 - user definable
   je   post_d0_type47
   HALT(__LINE__)
@@ -8829,45 +8814,45 @@ post_d0_type47:
 
   ;;; Filling EBDA table for hard disk 0.
   mov  al, #0x1f
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  ah, al
   mov  al, #0x1e
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov   (0x003d + 0x05), ax ;; write precomp word
 
   mov  al, #0x20
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov   (0x003d + 0x08), al ;; drive control byte
 
   mov  al, #0x22
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  ah, al
   mov  al, #0x21
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov   (0x003d + 0x0C), ax ;; landing zone word
 
   mov  al, #0x1c   ;; get cylinders word in AX
-  out  #0x70, al
-  in   al, #0x71   ;; high byte
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA   ;; high byte
   mov  ah, al
   mov  al, #0x1b
-  out  #0x70, al
-  in   al, #0x71   ;; low byte
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA   ;; low byte
   mov  bx, ax      ;; BX = cylinders
 
   mov  al, #0x1d
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  cl, al      ;; CL = heads
 
   mov  al, #0x23
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  dl, al      ;; DL = sectors
 
   cmp  bx, #1024
@@ -8939,8 +8924,8 @@ hd0_post_checksum_loop:
 check_for_hd1:
   ;; is there really a second hard disk?  if not, return now
   mov  al, #0x12
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   and  al, #0x0f
   jnz   post_d1_exists
   ret
@@ -8952,8 +8937,8 @@ post_d1_exists:
 post_d1_extended:
   ;; check that the extended type is 47 - user definable
   mov  al, #0x1a
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   cmp  al, #47  ;; decimal 47 - user definable
   je   post_d1_type47
   HALT(__LINE__)
@@ -8973,45 +8958,45 @@ post_d1_type47:
   mov  ax, #EBDA_SEG
   mov  ds, ax
   mov  al, #0x28
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  ah, al
   mov  al, #0x27
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov   (0x004d + 0x05), ax ;; write precomp word
 
   mov  al, #0x29
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov   (0x004d + 0x08), al ;; drive control byte
 
   mov  al, #0x2b
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  ah, al
   mov  al, #0x2a
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov   (0x004d + 0x0C), ax ;; landing zone word
 
   mov  al, #0x25   ;; get cylinders word in AX
-  out  #0x70, al
-  in   al, #0x71   ;; high byte
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA   ;; high byte
   mov  ah, al
   mov  al, #0x24
-  out  #0x70, al
-  in   al, #0x71   ;; low byte
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA   ;; low byte
   mov  bx, ax      ;; BX = cylinders
 
   mov  al, #0x26
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  cl, al      ;; CL = heads
 
   mov  al, #0x2c
-  out  #0x70, al
-  in   al, #0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  dl, al      ;; DL = sectors
 
   cmp  bx, #1024
@@ -9102,31 +9087,31 @@ ebda_post:
 ; relocated here because the primary POST area isnt big enough.
 eoi_jmp_post:
   mov al, #0x11 ; send initialisation commands
-  out 0x20, al
-  out 0xa0, al
+  out PORT_PIC1_CMD, al
+  out PORT_PIC2_CMD, al
   mov al, #0x08
-  out 0x21, al
+  out PORT_PIC1_DATA, al
   mov al, #0x70
-  out 0xa1, al
+  out PORT_PIC2_DATA, al
   mov al, #0x04
-  out 0x21, al
+  out PORT_PIC1_DATA, al
   mov al, #0x02
-  out 0xa1, al
+  out PORT_PIC2_DATA, al
   mov al, #0x01
-  out 0x21, al
-  out 0xa1, al
+  out PORT_PIC1_DATA, al
+  out PORT_PIC2_DATA, al
   mov  al, #0xb8
-  out  0x21, AL ;master pic: unmask IRQ 0, 1, 2, 6
+  out  PORT_PIC1_DATA, AL ;master pic: unmask IRQ 0, 1, 2, 6
 #if BX_USE_PS2_MOUSE
   mov  al, #0x8f
 #else
   mov  al, #0x9f
 #endif
-  out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
+  out  PORT_PIC2_DATA, AL ;slave  pic: unmask IRQ 12, 13, 14
   mov   al, #0x20
-  out   #0xA0, al ;; slave  PIC EOI
+  out   PORT_PIC2_CMD, al ;; slave  PIC EOI
   mov   al, #0x20
-  out   #0x20, al ;; master PIC EOI
+  out   PORT_PIC1_CMD, al ;; master PIC EOI
 
 jmp_post_0x467:
   xor ax, ax
@@ -9164,10 +9149,10 @@ s3_post:
 ;--------------------
 eoi_both_pics:
   mov   al, #0x20
-  out   #0xA0, al ;; slave  PIC EOI
+  out   PORT_PIC2_CMD, al ;; slave  PIC EOI
 eoi_master_pic:
   mov   al, #0x20
-  out   #0x20, al ;; master PIC EOI
+  out   PORT_PIC1_CMD, al ;; master PIC EOI
   ret
 
 ;--------------------
@@ -9199,7 +9184,7 @@ timer_tick_post:
   ;; divided down by 65536 to 18.2hz.
   ;;
   ;; 14,318,180 Hz clock
-  ;;   /3 = 4,772,726 Hz fed to orginal 5Mhz CPU
+  ;;   /3 = 4,772,726 Hz fed to original 5Mhz CPU
   ;;   /4 = 1,193,181 Hz fed to timer
   ;;   /65536 (maximum timer count) = 18.20650736 ticks/second
   ;; 1 second = 18.20650736 ticks
@@ -9212,7 +9197,7 @@ timer_tick_post:
   ;;           (BcdToBin(minutes) * 1092.3904)
   ;;           (BcdToBin(hours)   * 65543.427)
   ;; To get a little more accuracy, since Im using integer
-  ;; arithmatic, I use:
+  ;; arithmetic, I use:
   ;;   ticks = (BcdToBin(seconds) * 18206507) / 1000000 +
   ;;           (BcdToBin(minutes) * 10923904) / 10000 +
   ;;           (BcdToBin(hours)   * 65543427) / 1000
@@ -9222,8 +9207,8 @@ timer_tick_post:
   ;; get CMOS seconds
   xor  eax, eax ;; clear EAX
   mov  al, #0x00
-  out  #0x70, al
-  in   al, #0x71 ;; AL has CMOS seconds in BCD
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA ;; AL has CMOS seconds in BCD
   call BcdToBin  ;; EAX now has seconds in binary
   mov  edx, #18206507
   mul  eax, edx
@@ -9235,8 +9220,8 @@ timer_tick_post:
   ;; get CMOS minutes
   xor  eax, eax ;; clear EAX
   mov  al, #0x02
-  out  #0x70, al
-  in   al, #0x71 ;; AL has CMOS minutes in BCD
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA ;; AL has CMOS minutes in BCD
   call BcdToBin  ;; EAX now has minutes in binary
   mov  edx, #10923904
   mul  eax, edx
@@ -9248,8 +9233,8 @@ timer_tick_post:
   ;; get CMOS hours
   xor  eax, eax ;; clear EAX
   mov  al, #0x04
-  out  #0x70, al
-  in   al, #0x71 ;; AL has CMOS hours in BCD
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA ;; AL has CMOS hours in BCD
   call BcdToBin  ;; EAX now has hours in binary
   mov  edx, #65543427
   mul  eax, edx
@@ -10037,10 +10022,10 @@ pci_init_end:
 #if BX_ROMBIOS32
 rombios32_init:
   ;; save a20 and enable it
-  in al, 0x92
+  in al, PORT_A20
   push ax
   or al, #0x02
-  out 0x92, al
+  out PORT_A20, al
 
   ;; save SS:SP to the BDA
   xor ax, ax
@@ -10128,7 +10113,7 @@ rombios32_real_mode:
   mov sp, 0x0467
   ;; restore a20
   pop ax
-  out 0x92, al
+  out PORT_A20, al
   ret
 
 rombios32_gdt_48:
@@ -10415,27 +10400,27 @@ rom_scan_increment:
 
 post_init_pic:
   mov al, #0x11 ; send initialisation commands
-  out 0x20, al
-  out 0xa0, al
+  out PORT_PIC1_CMD, al
+  out PORT_PIC2_CMD, al
   mov al, #0x08
-  out 0x21, al
+  out PORT_PIC1_DATA, al
   mov al, #0x70
-  out 0xa1, al
+  out PORT_PIC2_DATA, al
   mov al, #0x04
-  out 0x21, al
+  out PORT_PIC1_DATA, al
   mov al, #0x02
-  out 0xa1, al
+  out PORT_PIC2_DATA, al
   mov al, #0x01
-  out 0x21, al
-  out 0xa1, al
+  out PORT_PIC1_DATA, al
+  out PORT_PIC2_DATA, al
   mov  al, #0xb8
-  out  0x21, AL ;master pic: unmask IRQ 0, 1, 2, 6
+  out  PORT_PIC1_DATA, AL ;master pic: unmask IRQ 0, 1, 2, 6
 #if BX_USE_PS2_MOUSE
   mov  al, #0x8f
 #else
   mov  al, #0x9f
 #endif
-  out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
+  out  PORT_PIC2_DATA, AL ;slave  pic: unmask IRQ 12, 13, 14
   ret
 
 post_init_ivt:
@@ -10482,7 +10467,7 @@ post_default_ints:
     stosw
 
   ;; set vector 0x79 to zero
-  ;; this is used by 'gardian angel' protection system
+  ;; this is used by 'guardian angel' protection system
   SET_INT_VECTOR(0x79, #0, #0)
 
   ret
@@ -10502,28 +10487,28 @@ post:
   xor ax, ax
 
   ;; first reset the DMA controllers
-  out 0x0d,al
-  out 0xda,al
+  out PORT_DMA1_MASTER_CLEAR,al
+  out PORT_DMA2_MASTER_CLEAR,al
 
   ;; then initialize the DMA controllers
   mov al, #0xC0
-  out 0xD6, al ; cascade mode of channel 4 enabled
+  out PORT_DMA2_MODE_REG, al ; cascade mode of channel 4 enabled
   mov al, #0x00
-  out 0xD4, al ; unmask channel 4
+  out PORT_DMA2_MASK_REG, al ; unmask channel 4
 
   ;; Examine CMOS shutdown status.
   mov AL, #0x0f
-  out 0x70, AL
-  in  AL, 0x71
+  out PORT_CMOS_INDEX, AL
+  in  AL, PORT_CMOS_DATA
 
   ;; backup status
   mov bl, al
 
   ;; Reset CMOS shutdown status.
   mov AL, #0x0f
-  out 0x70, AL          ; select CMOS register Fh
+  out PORT_CMOS_INDEX, AL          ; select CMOS register Fh
   mov AL, #0x00
-  out 0x71, AL          ; set shutdown action to normal
+  out PORT_CMOS_DATA, AL          ; set shutdown action to normal
 
   ;; Examine CMOS shutdown status.
   mov al, bl
@@ -10560,7 +10545,7 @@ post:
   ;
   ;#if 0
   ;  0xb0, 0x20,       /* mov al, #0x20 */
-  ;  0xe6, 0x20,       /* out 0x20, al    ;send EOI to PIC */
+  ;  0xe6, 0x20,       /* out PORT_PIC1_CMD, al    ;send EOI to PIC */
   ;#endif
   ;
   pop es
@@ -10615,10 +10600,10 @@ normal_post:
   SET_INT_VECTOR(0x08, #0xF000, #int08_handler)
   ;; int 1C already points at dummy_iret_handler (above)
   mov al, #0x34 ; timer0: binary count, 16bit count, mode 2
-  out 0x43, al
+  out PORT_PIT_MODE, al
   mov al, #0x00 ; maximum count of 0000H = 18.2Hz
-  out 0x40, al
-  out 0x40, al
+  out PORT_PIT_COUNTER0, al
+  out PORT_PIT_COUNTER0, al
 
   ;; Keyboard
   SET_INT_VECTOR(0x09, #0xF000, #int09_handler)
@@ -10656,8 +10641,8 @@ normal_post:
   ;; mov CMOS Equipment Byte to BDA Equipment Word
   mov  ax, 0x0410
   mov  al, #0x14
-  out  0x70, al
-  in   al, 0x71
+  out  PORT_CMOS_INDEX, al
+  in   al, PORT_CMOS_DATA
   mov  0x0410, ax
 
 
@@ -10672,7 +10657,7 @@ normal_post:
   mov dx, #0x278 ; Parallel I/O address, port 2
   call detect_parport
   shl bx, #0x0e
-  mov ax, 0x410   ; Equipment word bits 14..15 determing # parallel ports
+  mov ax, 0x410   ; Equipment word bits 14..15 determine # parallel ports
   and ax, #0x3fff
   or  ax, bx ; set number of parallel ports
   mov 0x410, ax
@@ -10691,7 +10676,7 @@ normal_post:
   mov dx, #0x02e8 ; Serial I/O address, port 4
   call detect_serial
   shl bx, #0x09
-  mov ax, 0x410   ; Equipment word bits 9..11 determing # serial ports
+  mov ax, 0x410   ; Equipment word bits 9..11 determine # serial ports
   and ax, #0xf1ff
   or  ax, bx ; set number of serial port
   mov 0x410, ax
@@ -10975,15 +10960,15 @@ int09_handler:
   push ax
 
   mov al, #0xAD      ;;disable keyboard
-  out #0x64, al
+  out PORT_PS2_STATUS, al
 
   mov al, #0x0B
-  out #0x20, al
-  in  al, #0x20
+  out PORT_PIC1_CMD, al
+  in  al, PORT_PIC1_CMD
   and al, #0x02
   jz  int09_finish
 
-  in  al, #0x60             ;;read key from keyboard controller
+  in  al, PORT_PS2_DATA             ;;read key from keyboard controller
   sti
   push  ds
   pusha
@@ -11027,7 +11012,7 @@ int09_done:
 
 int09_finish:
   mov al, #0xAE      ;;enable keyboard
-  out #0x64, al
+  out PORT_PS2_STATUS, al
   pop ax
   iret
 

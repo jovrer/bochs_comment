@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.h,v 1.68 2010/03/07 09:16:24 sshwarts Exp $
+// $Id: memory.h,v 1.75 2011/02/11 15:33:08 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -36,10 +36,13 @@
 
 class BX_CPU_C;
 
-#define BIOSROMSZ ((Bit32u)(1 << 19))  // 512KB BIOS ROM @0xfff80000, must be a power of 2
+                                       // 512K BIOS ROM @0xfff80000
+#define BIOSROMSZ ((Bit32u)(1 << 21))  //   2M BIOS ROM @0xffe00000, must be a power of 2
 #define EXROMSIZE  (0x20000)           // ROMs 0xc0000-0xdffff (area 0xe0000-0xfffff=bios mapped)
 #define BIOS_MASK (BIOSROMSZ-1)
 #define EXROM_MASK (EXROMSIZE-1)
+
+#define BIOS_MAP_LAST128K(addr) (((addr) | 0xfff00000) & BIOS_MASK)
 
 typedef bx_bool (*memory_handler_t)(bx_phy_address addr, unsigned len, void *data, void *param);
 
@@ -58,7 +61,6 @@ struct memory_handler_struct {
 class BOCHSAPI BX_MEM_C : public logfunctions {
 private:
   struct memory_handler_struct **memory_handlers;
-  bx_bool rom_present[65];
   bx_bool pci_enabled;
   bx_bool smram_available;
   bx_bool smram_enable;
@@ -71,6 +73,7 @@ private:
   Bit8u   *rom;      // 512k BIOS rom space + 128k expansion rom space
   Bit8u   *bogus;    // 4k for unexisting memory
   unsigned used_blocks;
+  bx_bool rom_present[65];
 
 public:
   BX_MEM_C();
@@ -129,7 +132,7 @@ BX_CPP_INLINE Bit8u* BX_MEM_C::get_vector(bx_phy_address addr)
 
 BX_CPP_INLINE Bit8u* BX_MEM_C::get_vector(bx_phy_address addr)
 {
-  Bit32u block = addr / BX_MEM_BLOCK_LEN;
+  Bit32u block = (Bit32u)(addr / BX_MEM_BLOCK_LEN);
   if (! BX_MEM_THIS blocks[block]) allocate_block(block);
   return BX_MEM_THIS blocks[block] + (Bit32u)(addr & (BX_MEM_BLOCK_LEN-1));
 }

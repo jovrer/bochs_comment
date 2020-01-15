@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc,v 1.87 2010/04/04 11:28:33 vruppert Exp $
+// $Id: textconfig.cc,v 1.89 2011/02/12 17:50:48 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  The Bochs Project
@@ -294,7 +294,7 @@ static const char *startup_options_prompt =
 "8. PCI options\n"
 "9. Bochs Display & Interface options\n"
 "10. Keyboard & Mouse options\n"
-"11. Disk options\n"
+"11. Disk & Boot options\n"
 "12. Serial / Parallel / USB options\n"
 "13. Network card options\n"
 "14. Sound Blaster 16 options\n"
@@ -472,7 +472,7 @@ int bx_config_interface(int menu)
           case 1: do_menu("log"); break;
           case 4: do_menu("cpu"); break;
           case 5: do_menu("cpuid"); break;
-          case 6: do_menu(BXPN_MENU_MEMORY); break;
+          case 6: do_menu("memory"); break;
           case 7: do_menu("clock_cmos"); break;
           case 8: do_menu("pci"); break;
           case 9: do_menu("display"); break;
@@ -786,7 +786,7 @@ void bx_param_string_c::text_print(FILE *fp)
     for (int i=0; i<maxsize; i++) {
       char eachbyte[16];
       sprintf(eachbyte, "%s%02x", (i>0)?sep_string : "", (unsigned int)0xff&val[i]);
-      strncat(buffer, eachbyte, sizeof(buffer));
+      strncat(buffer, eachbyte, sizeof(eachbyte));
     }
     if (strlen(buffer) > sizeof(buffer)-4) {
       assert(0); // raw byte print buffer is probably overflowing. increase the max or make it dynamic

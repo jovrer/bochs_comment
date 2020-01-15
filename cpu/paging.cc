@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paging.cc,v 1.220 2010/04/24 09:36:04 sshwarts Exp $
+// $Id: paging.cc,v 1.229 2011/02/19 08:31:05 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2010  The Bochs Project
@@ -477,10 +477,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::INVLPG(bxInstruction_c* i)
 #endif
 
 #if BX_SUPPORT_X86_64
-  if (! IsCanonical(laddr)) {
-    BX_ERROR(("INVLPG: non-canonical access !"));
-    exception(int_number(i->seg()), 0);
-  }
+  if (! IsCanonical(laddr)) return;
 #endif
 
   BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_INVLPG, laddr);
@@ -524,6 +521,8 @@ void BX_CPU_C::page_fault(unsigned fault, bx_address laddr, unsigned user, unsig
 #define BX_LEVEL_PDPE 2
 #define BX_LEVEL_PDE  1
 #define BX_LEVEL_PTE  0
+
+static const char *bx_paging_level[4] = { "PTE", "PDE", "PDPE", "PML4" };
 
 #if BX_CPU_LEVEL >= 6
 
@@ -647,8 +646,6 @@ int BX_CPU_C::check_entry_PAE(const char *s, Bit64u entry, Bit64u reserved, unsi
 
 #if BX_SUPPORT_X86_64
 
-static const char *bx_paging_level[4] = { "PTE", "PDE", "PDPE", "PML4" };
-
 // Translate a linear address to a physical address in long mode
 bx_phy_address BX_CPU_C::translate_linear_long_mode(bx_address laddr, Bit32u &lpf_mask, Bit32u &combined_access, unsigned curr_pl, unsigned rw)
 {
@@ -665,7 +662,7 @@ bx_phy_address BX_CPU_C::translate_linear_long_mode(bx_address laddr, Bit32u &lp
 #if BX_SUPPORT_VMX >= 2
     if (BX_CPU_THIS_PTR in_vmx_guest) {
       if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE))
-        entry_addr[leaf] = translate_guest_physical(entry_addr[leaf], laddr, 1, 1, rw);
+        entry_addr[leaf] = translate_guest_physical(entry_addr[leaf], laddr, 1, 1, BX_READ);
     }
 #endif
     access_read_physical(entry_addr[leaf], 8, &entry[leaf]);
@@ -682,7 +679,7 @@ bx_phy_address BX_CPU_C::translate_linear_long_mode(bx_address laddr, Bit32u &lp
     if (leaf == BX_LEVEL_PTE) break;
 
     if (curr_entry & 0x80) {
-      if (leaf > (BX_LEVEL_PDE + bx_cpuid_support_1g_paging())) {
+      if (leaf > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging())) {
         BX_DEBUG(("%s: PS bit set !"));
         page_fault(ERROR_RESERVED | ERROR_PROTECTION, laddr, pl, rw);
       }
@@ -845,7 +842,7 @@ bx_phy_address BX_CPU_C::translate_linear_PAE(bx_address laddr, Bit32u &lpf_mask
 #if BX_SUPPORT_VMX >= 2
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE))
-      entry_addr[BX_LEVEL_PDE] = translate_guest_physical(entry_addr[BX_LEVEL_PDE], laddr, 1, 1, rw);
+      entry_addr[BX_LEVEL_PDE] = translate_guest_physical(entry_addr[BX_LEVEL_PDE], laddr, 1, 1, BX_READ);
   }
 #endif
   access_read_physical(entry_addr[BX_LEVEL_PDE], 8, &entry[BX_LEVEL_PDE]);
@@ -875,7 +872,7 @@ bx_phy_address BX_CPU_C::translate_linear_PAE(bx_address laddr, Bit32u &lpf_mask
 #if BX_SUPPORT_VMX >= 2
     if (BX_CPU_THIS_PTR in_vmx_guest) {
       if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE))
-        entry_addr[BX_LEVEL_PTE] = translate_guest_physical(entry_addr[BX_LEVEL_PTE], laddr, 1, 1, rw);
+        entry_addr[BX_LEVEL_PTE] = translate_guest_physical(entry_addr[BX_LEVEL_PTE], laddr, 1, 1, BX_READ);
     }
 #endif
     access_read_physical(entry_addr[BX_LEVEL_PTE], 8, &entry[BX_LEVEL_PTE]);
@@ -997,13 +994,13 @@ bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned curr_pl, un
 #endif 
     {
       // CR4.PAE==0 (and EFER.LMA==0)
-      Bit32u pde, pte, cr3_masked = BX_CPU_THIS_PTR cr3 & BX_CR3_PAGING_MASK;
+      Bit32u pde, pte, cr3_masked = (Bit32u) BX_CPU_THIS_PTR cr3 & BX_CR3_PAGING_MASK;
 
       bx_phy_address pde_addr = (bx_phy_address) (cr3_masked | ((laddr & 0xffc00000) >> 20));
 #if BX_SUPPORT_VMX >= 2
       if (BX_CPU_THIS_PTR in_vmx_guest) {
         if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE))
-          pde_addr = translate_guest_physical(pde_addr, laddr, 1, 1, rw);
+          pde_addr = translate_guest_physical(pde_addr, laddr, 1, 1, BX_READ);
       }
 #endif
       access_read_physical(pde_addr, 4, &pde);
@@ -1060,7 +1057,7 @@ bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned curr_pl, un
 #if BX_SUPPORT_VMX >= 2
         if (BX_CPU_THIS_PTR in_vmx_guest) {
           if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE))
-            pte_addr = translate_guest_physical(pte_addr, laddr, 1, 1, rw);
+            pte_addr = translate_guest_physical(pte_addr, laddr, 1, 1, BX_READ);
         }
 #endif
         access_read_physical(pte_addr, 4, &pte);
@@ -1198,6 +1195,20 @@ bx_phy_address BX_CPU_C::translate_linear(bx_address laddr, unsigned curr_pl, un
 #define BX_EPT_ENTRY_WRITE_EXECUTE      0x06
 #define BX_EPT_ENTRY_READ_WRITE_EXECUTE 0x07
 
+//                   Format of a EPT Entry
+// -----------------------------------------------------------
+// 00    | Read access
+// 01    | Write access
+// 02    | Execute Access
+// 05-03 | EPT Memory type (for leaf entries, reserved otherwise)
+// 06    | Ignore PAT memory type (for leaf entries, reserved otherwise)
+// 07    | Page Size, must be 1 to indicate a Large Page
+// 11-08 | (ignored)
+// PA-12 | Physical address
+// 51-PA | Reserved (must be zero)
+// 63-52 | (ignored)
+// -----------------------------------------------------------
+
 #define PAGING_EPT_RESERVED_BITS (BX_PAGING_PHY_ADDRESS_RESERVED_BITS)
 
 bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx_address guest_laddr, bx_bool guest_laddr_valid, bx_bool is_page_walk, unsigned rw)
@@ -1263,7 +1274,7 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
     }
 
     if (curr_entry & 0x80) {
-      if (leaf > (BX_LEVEL_PDE + bx_cpuid_support_1g_paging())) {
+      if (leaf > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging())) {
         BX_DEBUG(("EPT %s: PS bit set !"));
         vmexit_reason = VMX_VMEXIT_EPT_VIOLATION;
         break;
@@ -1319,8 +1330,60 @@ bx_phy_address BX_CPU_C::translate_guest_physical(bx_phy_address guest_paddr, bx
 
 #if BX_DEBUGGER || BX_DISASM || BX_INSTRUMENTATION || BX_GDBSTUB
 
+#if BX_DEBUGGER
+
+void dbg_print_paging_pte(int level, Bit64u entry)
+{
+  dbg_printf("%4s: 0x%08x%08x", bx_paging_level[level], GET32H(entry), GET32L(entry));
+
+  if (level == BX_LEVEL_PTE) {
+    dbg_printf("    %s %s %s",
+      (entry & 0x0100) ? "G" : "g",
+      (entry & 0x0080) ? "PAT" : "pat",
+      (entry & 0x0040) ? "D" : "d");
+  }
+  else {
+    if (entry & 0x80) {
+      dbg_printf(" PS %s %s %s",
+        (entry & 0x0100) ? "G" : "g",
+        (entry & 0x1000) ? "PAT" : "pat",
+        (entry & 0x0040) ? "D" : "d");
+    }
+    else {
+      dbg_printf(" ps        ");
+    }
+  }
+
+  dbg_printf(" %s %s %s %s %s %s\n",
+    (entry & 0x20) ? "A" : "a",
+    (entry & 0x10) ? "PCD" : "pcd",
+    (entry & 0x08) ? "PWT" : "pwt",
+    (entry & 0x04) ? "U" : "S",
+    (entry & 0x02) ? "W" : "R",
+    (entry & 0x01) ? "P" : "p");
+}
+
 #if BX_SUPPORT_VMX >= 2
-bx_bool BX_CPU_C::dbg_translate_guest_physical(bx_phy_address guest_paddr, bx_phy_address *phy)
+void dbg_print_ept_paging_pte(int level, Bit64u entry)
+{
+  dbg_printf("EPT %4s: 0x%08x%08x", bx_paging_level[level], GET32H(entry), GET32L(entry));
+
+  if (level != BX_LEVEL_PTE && (entry & 0x80))
+    dbg_printf(" PS");
+  else
+    dbg_printf("   ");
+
+  dbg_printf(" %s %s %s\n",
+    (entry & 0x04) ? "E" : "e",
+    (entry & 0x02) ? "W" : "w",
+    (entry & 0x01) ? "R" : "r");
+}
+#endif
+
+#endif // BX_DEBUGGER
+
+#if BX_SUPPORT_VMX >= 2
+bx_bool BX_CPU_C::dbg_translate_guest_physical(bx_phy_address guest_paddr, bx_phy_address *phy, bx_bool verbose)
 {
   VMCS_CACHE *vm = &BX_CPU_THIS_PTR vmcs;
   bx_phy_address pt_address = LPFOf(vm->eptptr);
@@ -1329,9 +1392,12 @@ bx_bool BX_CPU_C::dbg_translate_guest_physical(bx_phy_address guest_paddr, bx_ph
   for (int level = 3; level >= 0; --level) {
     Bit64u pte;
     pt_address += ((guest_paddr >> (9 + 9*level)) & 0xff8);
-    BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, pt_address, 8, &pte);
     offset_mask >>= 9;
-
+    BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, pt_address, 8, &pte);
+#if BX_DEBUGGER
+    if (verbose)
+      dbg_print_ept_paging_pte(level, pte);
+#endif
     switch(pte & 7) {
     case BX_EPT_ENTRY_NOT_PRESENT:
     case BX_EPT_ENTRY_WRITE_ONLY:
@@ -1346,7 +1412,7 @@ bx_bool BX_CPU_C::dbg_translate_guest_physical(bx_phy_address guest_paddr, bx_ph
     if (level == BX_LEVEL_PTE) break;
 
     if (pte & 0x80) {
-       if (level > (BX_LEVEL_PDE + bx_cpuid_support_1g_paging()))
+       if (level > (BX_LEVEL_PDE + !!bx_cpuid_support_1g_paging()))
          return 0;
 
         pt_address &= BX_CONST64(0x000fffffffffe000);
@@ -1360,7 +1426,7 @@ bx_bool BX_CPU_C::dbg_translate_guest_physical(bx_phy_address guest_paddr, bx_ph
 }
 #endif
 
-bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy)
+bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy, bx_bool verbose)
 {
   if (! BX_CPU_THIS_PTR cr0.get_PG()) {
     *phy = (bx_phy_address) laddr;
@@ -1371,14 +1437,16 @@ bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy)
   bx_phy_address pt_address = BX_CPU_THIS_PTR cr3 & BX_CR3_PAGING_MASK;
 
   // see if page is in the TLB first
-  bx_address lpf = LPFOf(laddr);
-  unsigned TLB_index = BX_TLB_INDEX_OF(lpf, 0);
-  bx_TLB_entry *tlbEntry  = &BX_CPU_THIS_PTR TLB.entry[TLB_index];
+  if (! verbose) {
+    bx_address lpf = LPFOf(laddr);
+    unsigned TLB_index = BX_TLB_INDEX_OF(lpf, 0);
+    bx_TLB_entry *tlbEntry  = &BX_CPU_THIS_PTR TLB.entry[TLB_index];
 
-  if (TLB_LPFOf(tlbEntry->lpf) == lpf) {
-    paddress = tlbEntry->ppf | PAGE_OFFSET(laddr);
-    *phy = paddress;
-    return 1;
+    if (TLB_LPFOf(tlbEntry->lpf) == lpf) {
+      paddress = tlbEntry->ppf | PAGE_OFFSET(laddr);
+      *phy = paddress;
+      return 1;
+    }
   }
 
 #if BX_CPU_LEVEL >= 6
@@ -1401,12 +1469,16 @@ bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy)
 #if BX_SUPPORT_VMX >= 2
       if (BX_CPU_THIS_PTR in_vmx_guest) {
         if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE)) {
-          if (! dbg_translate_guest_physical(pt_address, &pt_address))
+          if (! dbg_translate_guest_physical(pt_address, &pt_address, verbose))
             goto page_fault;
         }
       }
 #endif
       BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, pt_address, 8, &pte);
+#if BX_DEBUGGER
+      if (verbose)
+        dbg_print_paging_pte(level, pte);
+#endif
       if(!(pte & 1))
         goto page_fault;
       if (pte & BX_PAGING_PHY_ADDRESS_RESERVED_BITS)
@@ -1443,22 +1515,29 @@ bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy)
 #if BX_SUPPORT_VMX >= 2
       if (BX_CPU_THIS_PTR in_vmx_guest) {
         if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE)) {
-          if (! dbg_translate_guest_physical(pt_address, &pt_address))
+          if (! dbg_translate_guest_physical(pt_address, &pt_address, verbose))
             goto page_fault;
         }
       }
 #endif
       BX_MEM(0)->readPhysicalPage(BX_CPU_THIS, pt_address, 4, &pte);
-      if (!(pte & 1))
+#if BX_DEBUGGER
+      if (verbose)
+        dbg_print_paging_pte(level, pte);
+#endif
+      if (!(pte & 1)) 
         goto page_fault;
       pt_address = pte & 0xfffff000;
-      if (level == BX_LEVEL_PDE && (pte & 0x80)) { // PSE page
+#if BX_CPU_LEVEL >= 6
+      if (level == BX_LEVEL_PDE && (pte & 0x80) != 0 && BX_CPU_THIS_PTR cr4.get_PSE()) {
         offset_mask = 0x3fffff;
+        pt_address = pte & 0xffc00000;
 #if BX_PHY_ADDRESS_WIDTH > 32
         pt_address += ((bx_phy_address)(pte & 0x003fe000)) << 19;
 #endif
         break;
       }
+#endif
     }
     paddress = pt_address + (bx_phy_address)(laddr & offset_mask);
   }
@@ -1466,7 +1545,7 @@ bx_bool BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, bx_phy_address *phy)
 #if BX_SUPPORT_VMX >= 2
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_EPT_ENABLE)) {
-      if (! dbg_translate_guest_physical(paddress, &paddress))
+      if (! dbg_translate_guest_physical(paddress, &paddress, verbose))
         goto page_fault;
     }
   }
@@ -1479,7 +1558,6 @@ page_fault:
   *phy = 0;
   return 0;
 }
-
 #endif
 
 void BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr_pl, void *data)

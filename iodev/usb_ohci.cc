@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_ohci.cc,v 1.35 2009/04/29 18:16:31 vruppert Exp $
+// $Id: usb_ohci.cc,v 1.43 2011/01/22 16:49:00 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009  Benjamin D Lunt (fys at frontiernet net)
@@ -35,9 +35,6 @@
 
 #include "pci.h"
 #include "usb_common.h"
-#include "usb_hid.h"
-#include "usb_hub.h"
-#include "usb_msd.h"
 #include "usb_ohci.h"
 
 #define LOG_THIS theUSB_OHCI->
@@ -95,13 +92,13 @@ bx_usb_ohci_c::bx_usb_ohci_c()
 
 bx_usb_ohci_c::~bx_usb_ohci_c()
 {
-  char pname[6];
+  char pname[16];
 
   if (BX_OHCI_THIS device_buffer != NULL)
     delete [] BX_OHCI_THIS device_buffer;
 
   for (int i=0; i<BX_N_USB_OHCI_PORTS; i++) {
-    sprintf(pname, "port%d", i+1);
+    sprintf(pname, "port%d.device", i+1);
     SIM->get_param_string(pname, SIM->get_param(BXPN_USB_OHCI))->set_handler(NULL);
     remove_device(i);
   }
@@ -113,7 +110,8 @@ void bx_usb_ohci_c::init(void)
 {
   unsigned i;
   char pname[6];
-  bx_param_string_c *port;
+  bx_list_c *port;
+  bx_param_string_c *device, *options;
 
   BX_OHCI_THIS device_buffer = new Bit8u[65536];
 
@@ -140,14 +138,18 @@ void bx_usb_ohci_c::init(void)
 
   bx_list_c *usb_rt = (bx_list_c*)SIM->get_param(BXPN_MENU_RUNTIME_USB);
   bx_list_c *ohci = (bx_list_c*)SIM->get_param(BXPN_USB_OHCI);
-  ohci->set_options(ohci->SHOW_PARENT | ohci->USE_BOX_TITLE);
+  ohci->set_options(ohci->SHOW_PARENT);
   ohci->set_runtime_param(1);
   usb_rt->add(ohci);
   for (i=0; i<BX_N_USB_OHCI_PORTS; i++) {
     sprintf(pname, "port%d", i+1);
-    port = SIM->get_param_string(pname, ohci);
-    port->set_handler(usb_param_handler);
+    port = (bx_list_c*)SIM->get_param(pname, ohci);
     port->set_runtime_param(1);
+    device = (bx_param_string_c*)port->get_by_name("device");
+    device->set_handler(usb_param_handler);
+    device->set_runtime_param(1);
+    options = (bx_param_string_c*)port->get_by_name("options");
+    options->set_runtime_param(1);
     BX_OHCI_THIS hub.usb_port[i].device = NULL;
     BX_OHCI_THIS hub.usb_port[i].HcRhPortStatus.ccs = 0;
     BX_OHCI_THIS hub.usb_port[i].HcRhPortStatus.csc = 0;
@@ -162,6 +164,7 @@ void bx_usb_ohci_c::init(void)
       DEV_register_timer(this, iolight_timer_handler, 5000, 0,0, "OHCI i/o light");
   }
   BX_OHCI_THIS hub.iolight_counter = 0;
+  BX_OHCI_THIS hub.device_change = 0;
 
   BX_INFO(("USB OHCI initialized"));
 }
@@ -324,7 +327,7 @@ void bx_usb_ohci_c::reset_hc()
     reset_port(i);
     if (BX_OHCI_THIS hub.usb_port[i].device == NULL) {
       sprintf(pname, "port%d", i+1);
-      init_device(i, SIM->get_param_string(pname, SIM->get_param(BXPN_USB_OHCI))->getptr());
+      init_device(i, (bx_list_c*)SIM->get_param(pname, SIM->get_param(BXPN_USB_OHCI)));
     } else {
       usb_set_connect_status(i, BX_OHCI_THIS hub.usb_port[i].device->get_type(), 1);
     }
@@ -447,22 +450,24 @@ void bx_usb_ohci_c::after_restore_state(void)
   }
 }
 
-void bx_usb_ohci_c::init_device(Bit8u port, const char *devname)
+void bx_usb_ohci_c::init_device(Bit8u port, bx_list_c *portconf)
 {
   usbdev_type type;
   char pname[BX_PATHNAME_LEN];
+  const char *devname = NULL;
 
+  devname = ((bx_param_string_c*)portconf->get_by_name("device"))->getptr();
+  if (devname == NULL) return;
   if (!strlen(devname) || !strcmp(devname, "none")) return;
 
   if (BX_OHCI_THIS hub.usb_port[port].device != NULL) {
     BX_ERROR(("init_device(): port%d already in use", port+1));
     return;
   }
-  type = usb_init_device(devname, BX_OHCI_THIS_PTR, &BX_OHCI_THIS hub.usb_port[port].device);
+  sprintf(pname, "usb_ohci.hub.port%d.device", port+1);
+  bx_list_c *sr_list = (bx_list_c*)SIM->get_param(pname, SIM->get_bochs_root());
+  type = DEV_usb_init_device(portconf, BX_OHCI_THIS_PTR, &BX_OHCI_THIS hub.usb_port[port].device, sr_list);
   if (BX_OHCI_THIS hub.usb_port[port].device != NULL) {
-    sprintf(pname, "usb_ohci.hub.port%d.device", port+1);
-    bx_list_c *devlist = (bx_list_c*)SIM->get_param(pname, SIM->get_bochs_root());
-    BX_OHCI_THIS hub.usb_port[port].device->register_state(devlist);
     usb_set_connect_status(port, type, 1);
   }
 }
@@ -504,15 +509,15 @@ bx_bool bx_usb_ohci_c::read_handler(bx_phy_address addr, unsigned len, void *dat
   int p = 0;
 
   if (len != 4) {
-    BX_INFO(("Read at 0x%08X with len != 4 (%i)", addr, len));
+    BX_INFO(("Read at 0x%08X with len != 4 (%i)", (Bit32u)addr, len));
     return 1;
   }
   if (addr & 3) {
-    BX_INFO(("Misaligned read at 0x%08X", addr));
+    BX_INFO(("Misaligned read at 0x%08X", (Bit32u)addr));
     return 1;
   }
 
-  Bit32u  offset = addr - BX_OHCI_THIS hub.base_addr;
+  Bit32u  offset = (Bit32u)(addr - BX_OHCI_THIS hub.base_addr);
   switch (offset) {
     case 0x00: // HcRevision
       val = BX_OHCI_THIS hub.op_regs.HcRevision;
@@ -666,7 +671,7 @@ bx_bool bx_usb_ohci_c::read_handler(bx_phy_address addr, unsigned len, void *dat
       break;
 
     default:
-      BX_ERROR(("unsupported read from address=0x%08X!", addr));
+      BX_ERROR(("unsupported read from address=0x%08X!", (Bit32u)addr));
       break;
   }
 
@@ -682,7 +687,7 @@ bx_bool bx_usb_ohci_c::read_handler(bx_phy_address addr, unsigned len, void *dat
 bx_bool bx_usb_ohci_c::write_handler(bx_phy_address addr, unsigned len, void *data, void *param)
 {
   Bit32u value = *((Bit32u *) data);
-  Bit32u  offset = addr - BX_OHCI_THIS hub.base_addr;
+  Bit32u  offset = (Bit32u)addr - BX_OHCI_THIS hub.base_addr;
   int p, org_state;
 
   int name = offset >> 2;
@@ -691,11 +696,11 @@ bx_bool bx_usb_ohci_c::write_handler(bx_phy_address addr, unsigned len, void *da
   //BX_INFO(("register write to  address 0x%04X (%s):  0x%08X (len=%i)", (unsigned) addr, usb_ohci_port_name[name], (unsigned) value, len));
 
   if (len != 4) {
-    BX_INFO(("Write at 0x%08X with len != 4 (%i)", addr, len));
+    BX_INFO(("Write at 0x%08X with len != 4 (%i)", (Bit32u)addr, len));
     return 1;
   }
   if (addr & 3) {
-    BX_INFO(("Misaligned write at 0x%08X", addr));
+    BX_INFO(("Misaligned write at 0x%08X", (Bit32u)addr));
     return 1;
   }
 
@@ -738,7 +743,7 @@ bx_bool bx_usb_ohci_c::write_handler(bx_phy_address addr, unsigned len, void *da
         BX_OHCI_THIS hub.op_regs.HcControl.hcfs = 3;      // suspend state
         for (unsigned i=0; i<BX_N_USB_OHCI_PORTS; i++)
           if (BX_OHCI_THIS hub.usb_port[i].HcRhPortStatus.ccs && (BX_OHCI_THIS hub.usb_port[i].device != NULL))
-            BX_OHCI_THIS hub.usb_port[i].device->usb_send_msg(USB_MSG_RESET);
+            DEV_usb_send_msg(BX_OHCI_THIS hub.usb_port[i].device, USB_MSG_RESET);
       }
       break;
 
@@ -941,7 +946,7 @@ bx_bool bx_usb_ohci_c::write_handler(bx_phy_address addr, unsigned len, void *da
             BX_OHCI_THIS hub.usb_port[p].HcRhPortStatus.lsda =
               (BX_OHCI_THIS hub.usb_port[p].device->get_speed() == USB_SPEED_LOW);
             usb_set_connect_status(p, BX_OHCI_THIS hub.usb_port[p].device->get_type(), 1);
-            BX_OHCI_THIS hub.usb_port[p].device->usb_send_msg(USB_MSG_RESET);
+            DEV_usb_send_msg(BX_OHCI_THIS hub.usb_port[p].device, USB_MSG_RESET);
           }
           set_interrupt(OHCI_INTR_RHSC);
         }
@@ -964,7 +969,7 @@ bx_bool bx_usb_ohci_c::write_handler(bx_phy_address addr, unsigned len, void *da
     }
 
     default:
-      BX_ERROR(("unsupported write to address=0x%08X, val = 0x%08X!", addr, value));
+      BX_ERROR(("unsupported write to address=0x%08X, val = 0x%08X!", (Bit32u)addr, value));
       break;
   }
 
@@ -997,6 +1002,8 @@ void bx_usb_ohci_c::usb_frame_timer(void)
   struct OHCI_ED cur_ed;
   Bit32u address, ed_address;
   Bit16u zero = 0;
+  int i;
+  char pname[6];
 
   if (BX_OHCI_THIS hub.op_regs.HcControl.hcfs == 2) {
     // set remaining to the interval amount.
@@ -1098,6 +1105,19 @@ do_iso_eds:
     }
 
   }  // end run schedule
+
+  for (i = 0; i < BX_N_USB_OHCI_PORTS; i++) {
+    // forward timer tick
+    if (BX_OHCI_THIS hub.usb_port[i].device != NULL) {
+      BX_OHCI_THIS hub.usb_port[i].device->timer();
+    }
+    // device change support
+    if ((BX_OHCI_THIS hub.device_change & (1 << i)) != 0) {
+      sprintf(pname, "port%d", i + 1);
+      init_device(i, (bx_list_c*)SIM->get_param(pname, SIM->get_param(BXPN_USB_OHCI)));
+      BX_OHCI_THIS hub.device_change &= ~(1 << i);
+    }
+  }
 }
 
 void bx_usb_ohci_c::process_ed(struct OHCI_ED *ed, const Bit32u ed_address)
@@ -1432,13 +1452,12 @@ void bx_usb_ohci_c::usb_set_connect_status(Bit8u port, int type, bx_bool connect
         BX_OHCI_THIS hub.usb_port[port].HcRhPortStatus.lsda =
           (device->get_speed() == USB_SPEED_LOW);
         BX_OHCI_THIS hub.usb_port[port].HcRhPortStatus.ccs = 1;
-        if (((type == USB_DEV_TYPE_DISK) || (type == USB_DEV_TYPE_CDROM)) &&
-            (!device->get_connected())) {
-          if (!((usb_msd_device_c*)device)->init()) {
+        if (!device->get_connected()) {
+          if (!device->init()) {
             usb_set_connect_status(port, type, 0);
+            BX_ERROR(("port #%d: connect failed", port+1));
           } else {
-            BX_INFO(("%s on USB port #%d: '%s'", (type == USB_DEV_TYPE_DISK) ? "HD":"CD",
-                     port+1, ((usb_msd_device_c*)device)->get_path()));
+            BX_INFO(("port #%d: connect: %s", port+1, device->get_info()));
           }
         }
       } else { // not connected
@@ -1464,7 +1483,7 @@ const char *bx_usb_ohci_c::usb_param_handler(bx_param_string_c *param, int set,
   int portnum;
 
   if (set) {
-    portnum = atoi(param->get_name()+4) - 1;
+    portnum = atoi((param->get_parent())->get_name()+4) - 1;
     bx_bool empty = ((strlen(val) == 0) || (!strcmp(val, "none")));
     if ((portnum >= 0) && (portnum < BX_N_USB_OHCI_PORTS)) {
       BX_INFO(("USB port #%d experimental device change", portnum+1));
@@ -1474,7 +1493,7 @@ const char *bx_usb_ohci_c::usb_param_handler(bx_param_string_c *param, int set,
         }
         usb_set_connect_status(portnum, type, 0);
       } else if (!empty && !BX_OHCI_THIS hub.usb_port[portnum].HcRhPortStatus.ccs) {
-        init_device(portnum, val);
+        BX_OHCI_THIS hub.device_change |= (1 << portnum);
       }
     } else {
       BX_PANIC(("usb_param_handler called with unexpected parameter '%s'", param->get_name()));

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack32.cc,v 1.64 2009/12/04 16:53:12 sshwarts Exp $
+// $Id: stack32.cc,v 1.67 2010/12/06 21:45:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -38,7 +38,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EdM(bxInstruction_c *i)
   // Note: there is one little weirdism here.  It is possible to use
   // ESP in the modrm addressing. If used, the value of ESP after the
   // pop is used to calculate the address.
-  Bit32u eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
 
   write_virtual_dword_32(i->seg(), eaddr, val32);
 
@@ -47,42 +47,102 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_EdM(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH_ERX(bxInstruction_c *i)
 {
-  push_32(BX_READ_32BIT_REG(i->opcodeReg()));
+  push_32(BX_READ_32BIT_REG(i->rm()));
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP_ERX(bxInstruction_c *i)
 {
-  BX_WRITE_32BIT_REGZ(i->opcodeReg(), pop_32());
+  BX_WRITE_32BIT_REGZ(i->rm(), pop_32());
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_CS(bxInstruction_c *i)
 {
-  push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
+  Bit16u val_16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit32u) (ESP-4), val_16);
+    ESP -= 4;
+  }
+  else
+  {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit16u) (SP-4), val_16);
+    SP -= 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_DS(bxInstruction_c *i)
 {
-  push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value);
+  Bit16u val_16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector.value;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit32u) (ESP-4), val_16);
+    ESP -= 4;
+  }
+  else
+  {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit16u) (SP-4), val_16);
+    SP -= 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_ES(bxInstruction_c *i)
 {
-  push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value);
+  Bit16u val_16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES].selector.value;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit32u) (ESP-4), val_16);
+    ESP -= 4;
+  }
+  else
+  {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit16u) (SP-4), val_16);
+    SP -= 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_FS(bxInstruction_c *i)
 {
-  push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value);
+  Bit16u val_16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit32u) (ESP-4), val_16);
+    ESP -= 4;
+  }
+  else
+  {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit16u) (SP-4), val_16);
+    SP -= 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_GS(bxInstruction_c *i)
 {
-  push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value);
+  Bit16u val_16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit32u) (ESP-4), val_16);
+    ESP -= 4;
+  }
+  else
+  {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit16u) (SP-4), val_16);
+    SP -= 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::PUSH32_SS(bxInstruction_c *i)
 {
-  push_32(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value);
+  Bit16u val_16 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
+
+  if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b) {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit32u) (ESP-4), val_16);
+    ESP -= 4;
+  }
+  else
+  {
+    write_virtual_word_32(BX_SEG_REG_SS, (Bit16u) (SP-4), val_16);
+    SP -= 4;
+  }
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POP32_DS(bxInstruction_c *i)

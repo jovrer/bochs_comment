@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer16.cc,v 1.68 2010/03/14 15:51:26 sshwarts Exp $
+// $Id: data_xfer16.cc,v 1.70 2010/12/06 21:45:56 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -26,14 +26,14 @@
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RXIw(bxInstruction_c *i)
 {
-  BX_WRITE_16BIT_REG(i->opcodeReg(), i->Iw());
+  BX_WRITE_16BIT_REG(i->rm(), i->Iw());
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XCHG_RXAX(bxInstruction_c *i)
 {
   Bit16u temp16 = AX;
-  AX = BX_READ_16BIT_REG(i->opcodeReg());
-  BX_WRITE_16BIT_REG(i->opcodeReg(), temp16);
+  AX = BX_READ_16BIT_REG(i->rm());
+  BX_WRITE_16BIT_REG(i->rm(), temp16);
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EwGwM(bxInstruction_c *i)
@@ -143,7 +143,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_EwIwM(bxInstruction_c *i)
   write_virtual_word(i->seg(), eaddr, i->Iw());
 }
 
-#if BX_CPU_LEVEL >= 3
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVZX_GwEbM(bxInstruction_c *i)
 {
   bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
@@ -179,7 +178,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOVSX_GwEbR(bxInstruction_c *i)
   /* sign extend byte op2 into word op1 */
   BX_WRITE_16BIT_REG(i->nnn(), (Bit8s) op2_8);
 }
-#endif
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::XCHG_EwGwM(bxInstruction_c *i)
 {
