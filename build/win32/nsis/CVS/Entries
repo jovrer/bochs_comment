@@ -1,10 +1,10 @@
-/.cvsignore/1.1/Thu Nov 21 08:02:57 2002//TREL_2_0_1_FINAL
-/Makefile.in/1.2/Thu Nov 21 08:01:54 2002//TREL_2_0_1_FINAL
-/ModernUI.nsh/1.1/Thu Nov 21 03:08:35 2002//TREL_2_0_1_FINAL
-/WinMessages.NSH/1.1/Thu Nov 21 03:08:35 2002//TREL_2_0_1_FINAL
-/bochs.ico/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_1_FINAL
-/bochs.nsi.in/1.5/Sat Dec 21 19:31:00 2002//TREL_2_0_1_FINAL
-/modern.bmp/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_1_FINAL
-/modern2.exe/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_1_FINAL
-/penguin.ico/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_1_FINAL
+/.cvsignore/1.1/Thu Nov 21 08:02:57 2002//TREL_2_0_2_FINAL
+/Makefile.in/1.2/Thu Nov 21 08:01:54 2002//TREL_2_0_2_FINAL
+/ModernUI.nsh/1.1/Thu Nov 21 03:08:35 2002//TREL_2_0_2_FINAL
+/WinMessages.NSH/1.1/Thu Nov 21 03:08:35 2002//TREL_2_0_2_FINAL
+/bochs.ico/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_2_FINAL
+/bochs.nsi.in/1.5.2.1/Wed Jan 22 13:18:30 2003//TREL_2_0_2_FINAL
+/modern.bmp/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_2_FINAL
+/modern2.exe/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_2_FINAL
+/penguin.ico/1.1/Thu Nov 21 03:08:35 2002/-kb/TREL_2_0_2_FINAL
 D

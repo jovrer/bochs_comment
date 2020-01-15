@@ -1,7 +1,6 @@
 D/bios////
 D/build////
 D/cpu////
-D/cpu64////
 D/debug////
 D/disasm////
 D/doc////
@@ -16,52 +15,52 @@ D/memory////
 D/misc////
 D/patches////
 D/plex86////
-/.bochsrc/1.64/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/.conf.AIX.4.3.1/1.1/Wed Apr 11 09:07:55 2001//TREL_2_0_1_FINAL
-/.conf.amigaos/1.4/Thu Mar  7 15:58:05 2002//TREL_2_0_1_FINAL
-/.conf.beos/1.6/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/.conf.everything/1.5/Thu Nov 21 20:57:34 2002//TREL_2_0_1_FINAL
-/.conf.linux/1.8/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/.conf.macos/1.4/Sat Dec 14 21:29:30 2002//TREL_2_0_1_FINAL
-/.conf.macosx/1.14/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/.conf.sparc/1.3/Sat Nov 23 00:52:05 2002//TREL_2_0_1_FINAL
-/.conf.win32/1.2/Thu Mar  7 15:58:05 2002//TREL_2_0_1_FINAL
-/.conf.win32-cygwin/1.8/Tue Nov 19 20:48:07 2002//TREL_2_0_1_FINAL
-/.conf.win32-vcpp/1.10/Tue Nov 19 20:48:07 2002//TREL_2_0_1_FINAL
-/.cvsignore/1.4/Tue Sep 10 18:52:12 2002//TREL_2_0_1_FINAL
-/CHANGES/1.47.2.4/Sat Jan  4 20:25:04 2003//TREL_2_0_1_FINAL
-/COPYING/1.1/Tue Apr 10 01:04:08 2001//TREL_2_0_1_FINAL
-/Makefile.in/1.142/Sat Jan  4 20:25:04 2003//TREL_2_0_1_FINAL
-/README/1.20.2.2/Sat Jan  4 20:25:04 2003//TREL_2_0_1_FINAL
-/README-plugins/1.6/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/README-wxWindows/1.13.2.1/Sat Jan  4 20:25:04 2003//TREL_2_0_1_FINAL
-/TESTFORM.txt/1.7/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/aclocal.m4/1.3/Thu Oct 24 21:03:50 2002//TREL_2_0_1_FINAL
-/bochs.h/1.115/Sat Dec 21 19:30:48 2002//TREL_2_0_1_FINAL
-/bxversion.h.in/1.1/Sat Nov 10 03:45:53 2001//TREL_2_0_1_FINAL
-/config.guess/1.2/Thu Mar  7 16:00:39 2002//TREL_2_0_1_FINAL
-/config.h.in/1.99/Sat Jan  4 20:25:04 2003//TREL_2_0_1_FINAL
-/config.sub/1.2/Thu Mar  7 16:00:39 2002//TREL_2_0_1_FINAL
-/configure/1.194.2.2/Sat Jan  4 20:25:08 2003/-kb/TREL_2_0_1_FINAL
-/configure.in/1.194.2.2/Sat Jan  4 20:25:08 2003//TREL_2_0_1_FINAL
-/extplugin.h/1.4/Sat Dec 14 21:29:34 2002//TREL_2_0_1_FINAL
-/gdbstub.cc/1.8/Fri Nov  8 21:29:16 2002//TREL_2_0_1_FINAL
-/install-sh/1.2/Thu Mar  7 16:00:39 2002//TREL_2_0_1_FINAL
-/install-x11-fonts.in/1.9/Mon Nov 18 19:30:34 2002//TREL_2_0_1_FINAL
-/load32bitOShack.cc/1.13/Fri Sep 13 00:15:23 2002//TREL_2_0_1_FINAL
-/logio.cc/1.40/Sat Dec 21 19:30:52 2002//TREL_2_0_1_FINAL
-/ltdl.c/1.4/Fri Nov  1 13:02:15 2002//TREL_2_0_1_FINAL
-/ltdl.h/1.2/Thu Oct 24 21:04:37 2002//TREL_2_0_1_FINAL
-/ltdlconf.h.in/1.2/Thu Oct 24 21:04:38 2002//TREL_2_0_1_FINAL
-/ltmain.sh/1.2/Thu Oct 24 21:04:40 2002//TREL_2_0_1_FINAL
-/main.cc/1.214.2.1/Sat Jan  4 20:25:08 2003//TREL_2_0_1_FINAL
-/osdep.cc/1.11/Sat Dec 14 21:29:34 2002//TREL_2_0_1_FINAL
-/osdep.h/1.14/Sat Dec 14 21:29:34 2002//TREL_2_0_1_FINAL
-/pc_system.cc/1.31/Fri Oct 25 11:44:33 2002//TREL_2_0_1_FINAL
-/pc_system.h/1.23/Sat Dec 21 19:30:52 2002//TREL_2_0_1_FINAL
-/plugin.cc/1.5/Thu Nov 14 18:45:41 2002//TREL_2_0_1_FINAL
-/plugin.h/1.11.2.1/Sat Jan  4 20:25:08 2003//TREL_2_0_1_FINAL
-/state_file.cc/1.9/Fri Dec 21 19:33:18 2001//TREL_2_0_1_FINAL
-/state_file.h/1.5/Thu Oct 24 21:05:00 2002//TREL_2_0_1_FINAL
-/test-x11-fonts/1.1/Sun Sep 30 14:53:57 2001//TREL_2_0_1_FINAL
-/wxbochs.rc/1.2/Sat Jan  4 20:25:08 2003//TREL_2_0_1_FINAL
+/.bochsrc/1.64/Sat Dec 21 19:30:48 2002//TREL_2_0_2_FINAL
+/.conf.AIX.4.3.1/1.1/Wed Apr 11 09:07:55 2001//TREL_2_0_2_FINAL
+/.conf.amigaos/1.4/Thu Mar  7 15:58:05 2002//TREL_2_0_2_FINAL
+/.conf.beos/1.6/Sat Dec 21 19:30:48 2002//TREL_2_0_2_FINAL
+/.conf.everything/1.5/Thu Nov 21 20:57:34 2002//TREL_2_0_2_FINAL
+/.conf.linux/1.8/Sat Dec 21 19:30:48 2002//TREL_2_0_2_FINAL
+/.conf.macos/1.4/Sat Dec 14 21:29:30 2002//TREL_2_0_2_FINAL
+/.conf.macosx/1.14/Sat Dec 21 19:30:48 2002//TREL_2_0_2_FINAL
+/.conf.sparc/1.3/Sat Nov 23 00:52:05 2002//TREL_2_0_2_FINAL
+/.conf.win32/1.2/Thu Mar  7 15:58:05 2002//TREL_2_0_2_FINAL
+/.conf.win32-cygwin/1.8/Tue Nov 19 20:48:07 2002//TREL_2_0_2_FINAL
+/.conf.win32-vcpp/1.10/Tue Nov 19 20:48:07 2002//TREL_2_0_2_FINAL
+/.cvsignore/1.4/Tue Sep 10 18:52:12 2002//TREL_2_0_2_FINAL
+/CHANGES/1.47.2.8/Wed Jan 22 13:18:24 2003//TREL_2_0_2_FINAL
+/COPYING/1.1/Tue Apr 10 01:04:08 2001//TREL_2_0_2_FINAL
+/Makefile.in/1.142/Wed Jan 22 13:18:24 2003//TREL_2_0_2_FINAL
+/README/1.20.2.3/Wed Jan 22 13:18:24 2003//TREL_2_0_2_FINAL
+/README-plugins/1.6/Sat Dec 21 19:30:48 2002//TREL_2_0_2_FINAL
+/README-wxWindows/1.13.2.1/Wed Jan 22 13:18:24 2003//TREL_2_0_2_FINAL
+/TESTFORM.txt/1.7/Sat Dec 21 19:30:48 2002//TREL_2_0_2_FINAL
+/aclocal.m4/1.3/Thu Oct 24 21:03:50 2002//TREL_2_0_2_FINAL
+/bochs.h/1.115/Wed Jan 22 13:18:24 2003//TREL_2_0_2_FINAL
+/bxversion.h.in/1.1/Sat Nov 10 03:45:53 2001//TREL_2_0_2_FINAL
+/config.guess/1.2/Thu Mar  7 16:00:39 2002//TREL_2_0_2_FINAL
+/config.h.in/1.99/Wed Jan 22 13:18:24 2003//TREL_2_0_2_FINAL
+/config.sub/1.2/Thu Mar  7 16:00:39 2002//TREL_2_0_2_FINAL
+/configure/1.194.2.3/Wed Jan 22 13:18:28 2003/-kb/TREL_2_0_2_FINAL
+/configure.in/1.194.2.3/Wed Jan 22 13:18:28 2003//TREL_2_0_2_FINAL
+/extplugin.h/1.4/Sat Dec 14 21:29:34 2002//TREL_2_0_2_FINAL
+/gdbstub.cc/1.8/Fri Nov  8 21:29:16 2002//TREL_2_0_2_FINAL
+/install-sh/1.2/Thu Mar  7 16:00:39 2002//TREL_2_0_2_FINAL
+/install-x11-fonts.in/1.9/Mon Nov 18 19:30:34 2002//TREL_2_0_2_FINAL
+/load32bitOShack.cc/1.13/Fri Sep 13 00:15:23 2002//TREL_2_0_2_FINAL
+/logio.cc/1.40/Sat Dec 21 19:30:52 2002//TREL_2_0_2_FINAL
+/ltdl.c/1.4/Fri Nov  1 13:02:15 2002//TREL_2_0_2_FINAL
+/ltdl.h/1.2/Thu Oct 24 21:04:37 2002//TREL_2_0_2_FINAL
+/ltdlconf.h.in/1.2/Thu Oct 24 21:04:38 2002//TREL_2_0_2_FINAL
+/ltmain.sh/1.2/Thu Oct 24 21:04:40 2002//TREL_2_0_2_FINAL
+/main.cc/1.214.2.3/Wed Jan 22 13:18:28 2003//TREL_2_0_2_FINAL
+/osdep.cc/1.11/Wed Jan 22 13:18:28 2003//TREL_2_0_2_FINAL
+/osdep.h/1.14/Wed Jan 22 13:18:28 2003//TREL_2_0_2_FINAL
+/pc_system.cc/1.31/Fri Oct 25 11:44:33 2002//TREL_2_0_2_FINAL
+/pc_system.h/1.23/Sat Dec 21 19:30:52 2002//TREL_2_0_2_FINAL
+/plugin.cc/1.5/Thu Nov 14 18:45:41 2002//TREL_2_0_2_FINAL
+/plugin.h/1.11.2.1/Wed Jan 22 13:18:28 2003//TREL_2_0_2_FINAL
+/state_file.cc/1.9/Fri Dec 21 19:33:18 2001//TREL_2_0_2_FINAL
+/state_file.h/1.5/Thu Oct 24 21:05:00 2002//TREL_2_0_2_FINAL
+/test-x11-fonts/1.1/Sun Sep 30 14:53:57 2001//TREL_2_0_2_FINAL
+/wxbochs.rc/1.2/Wed Jan 22 13:18:28 2003//TREL_2_0_2_FINAL

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.214.2.1 2003/01/01 22:37:41 cbothamy Exp $
+// $Id: main.cc,v 1.214.2.3 2003/01/16 21:57:05 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -2393,6 +2393,7 @@ parse_line_unformatted(char *context, char *line)
   char *params[MAX_PARAMS_LEN];
   int num_params;
   bx_bool inquotes = 0;
+  bx_bool comment = 0;
 
   memset(params, 0, sizeof(params));
   if (line == NULL) return 0;
@@ -2410,12 +2411,15 @@ parse_line_unformatted(char *context, char *line)
     ptr = strtok(line, " ");
   else
     ptr = strtok(line, ":");
-  while (ptr) {
+  while ((ptr) && (!comment)) {
     string_i = 0;
     for (i=0; i<strlen(ptr); i++) {
       if (ptr[i] == '"')
         inquotes = !inquotes;
-      else {
+      else if ((ptr[i] == '#') && (strncmp(line+i, "#include", 8)) && !inquotes) {
+        comment = 1;
+        break;
+      } else {
 #if BX_HAVE_GETENV
         // substitute environment variables.
         if (ptr[i] == '$') {
@@ -2449,6 +2453,7 @@ parse_line_unformatted(char *context, char *line)
       }
     }
     string[string_i] = '\0';
+    if (string_i == 0) break;
     if ( params[num_params] != NULL )
     {
         free(params[num_params]);
@@ -2686,9 +2691,13 @@ parse_line_formatted(char *context, int num_params, char *params[])
       slave = 1;
       }
 
-    if (bx_options.atadevice[channel][slave].Opresent->get()) {
-      PARSE_ERR(("%s: %s device of ata channel %d already defined.", context, slave?"slave":"master",channel));
-      }
+    // This was originally meant to warn users about both diskc
+    // and ata0-master defined, but it also prevent users to
+    // override settings on the command line 
+    // (see [ 661010 ] cannot override ata-settings from cmdline)
+    // if (bx_options.atadevice[channel][slave].Opresent->get()) {
+    //   BX_INFO(("%s: %s device of ata channel %d already defined.", context, slave?"slave":"master",channel));
+    //   }
 
     for (i=1; i<num_params; i++) {
       if (!strcmp(params[i], "type=disk")) {
