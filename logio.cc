@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.16 2002/01/07 16:10:11 bdenney Exp $
+// $Id: logio.cc,v 1.40 2002/12/17 05:58:43 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -30,11 +30,12 @@
 #include <assert.h>
 #include "state_file.h"
 
-static char *divider = "========================================================================";
+#if BX_WITH_CARBON
+#include <Carbon/Carbon.h>
+#endif
 
 // Just for the iofunctions
 
-#define LOG_THIS this->log->
 
 int Allocio=0;
 
@@ -50,13 +51,15 @@ iofunctions::init(void) {
 	// iofunctions methods must not be called before this magic
 	// number is set.
 	magic=MAGIC_LOGNUM;
-	showtick = 1;
+
+	// sets the default logprefix
+	strcpy(logprefix,"%t%e%d");
 	n_logfn = 0;
 	init_log(stderr);
 	log = new logfunc_t(this);
-	LOG_THIS put("IO");
-	LOG_THIS settype(IOLOG);
-	BX_DEBUG(("Init(log file: '%s').",logfn));
+	log->put("IO");
+	log->settype(IOLOG);
+	log->ldebug ("Init(log file: '%s').",logfn);
 }
 
 void
@@ -85,9 +88,11 @@ iofunctions::init_log(const char *fn)
 		newfd = fopen(fn, "w");
 		if(newfd != NULL) {
 			newfn = strdup(fn);
-			BX_DEBUG(("Opened log file '%s'.", fn ));
+			log->ldebug ("Opened log file '%s'.", fn );
 		} else {
-		  	BX_PANIC(("Couldn't open log file: %s", fn));
+			// in constructor, genlog might not exist yet, so do it the safe way.
+		  	log->error("Couldn't open log file: %s, using stderr instead", fn);
+		  	newfd = stderr;
 		}
 	}
 	logfd = newfd;
@@ -107,6 +112,7 @@ iofunctions::init_log(FILE *fs)
 	} else {
 		logfn = "(unknown)";
 	}
+
 }
 
 void
@@ -115,13 +121,24 @@ iofunctions::init_log(int fd)
 	assert (magic==MAGIC_LOGNUM);
 	FILE *tmpfd;
 	if( (tmpfd = fdopen(fd,"w")) == NULL ) {
-	  BX_PANIC(("Couldn't open fd %d as a stream for writing", fd));
+	  log->panic("Couldn't open fd %d as a stream for writing", fd);
 	  return;
 	}
 
 	init_log(tmpfd);
 	return;
 };
+
+// all other functions may use genlog safely.
+#define LOG_THIS genlog->
+
+// This converts the option string to a printf style string with the following args:
+// 1. timer, 2. event, 3. cpu0 eip, 4. device
+void 
+iofunctions::set_log_prefix(const char* prefix) {
+	
+	strcpy(logprefix,prefix);
+}
 
 //  iofunctions::out( class, level, prefix, fmt, ap)
 //  DO NOT nest out() from ::info() and the like.
@@ -130,28 +147,65 @@ iofunctions::init_log(int fd)
 void
 iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list ap)
 {
-	char c=' ';
+	char c=' ', *s;
 	assert (magic==MAGIC_LOGNUM);
 	assert (this != NULL);
 	assert (logfd != NULL);
 
-	if( showtick )
-		fprintf(logfd, "%011lld", bx_pc_system.time_ticks());
+	//if( showtick )
+	//	fprintf(logfd, "%011lld", bx_pc_system.time_ticks());
 
 	switch(l) {
 		case LOGLEV_INFO: c='i'; break;
 		case LOGLEV_PANIC: c='p'; break;
+		case LOGLEV_PASS: c='s'; break;
 		case LOGLEV_ERROR: c='e'; break;
 		case LOGLEV_DEBUG: c='d'; break;
 		default: break;
 	}
-	fprintf(logfd, "%c",c);
+	//fprintf(logfd, "-%c",c);
 
-	if(prefix != NULL)
-		fprintf(logfd, "%s ", prefix);
+	//if(prefix != NULL)
+	//	fprintf(logfd, "%s ", prefix);
+
+	s=logprefix;
+	while(*s) {
+	  switch(*s) {
+	    case '%':
+	      if(*(s+1))s++;
+	      else break;
+	      switch(*s) {
+		case 'd':
+                  fprintf(logfd, "%s", prefix==NULL?"":prefix);
+		  break;
+		case 't':
+                  fprintf(logfd, "%011lld", bx_pc_system.time_ticks());
+		  break;
+		case 'i':
+                  fprintf(logfd, "%08x", BX_CPU(0)->dword.eip);
+		  break;
+		case 'e':
+                  fprintf(logfd, "%c", c);
+		  break;
+		case '%':
+                  fprintf(logfd,"%%");
+		  break;
+		default:
+                  fprintf(logfd,"%%%c",*s);
+	        }
+              break;
+	    default :
+              fprintf(logfd,"%c",*s);
+	    }
+	  s++;
+          }
+
+        fprintf(logfd," ");
 
 	if(l==LOGLEV_PANIC)
 		fprintf(logfd, ">>PANIC<< ");
+	if(l==LOGLEV_PASS)
+		fprintf(logfd, ">>PASS<< ");
 
 	vfprintf(logfd, fmt, ap);
 	fprintf(logfd, "\n");
@@ -190,8 +244,19 @@ iofunctions::~iofunctions(void)
 	this->magic=0;
 }
 
-#undef LOG_THIS
 #define LOG_THIS genlog->
+
+int logfunctions::default_onoff[N_LOGLEV] = {
+  ACT_IGNORE,  // ignore debug
+  ACT_REPORT,  // report info
+  ACT_REPORT,  // report error
+#if BX_WITH_WX
+  ACT_ASK,      // on panic, ask user what to do
+#else
+  ACT_FATAL,    // on panic, quit
+#endif
+  ACT_FATAL
+};
 
 logfunctions::logfunctions(void)
 {
@@ -206,7 +271,7 @@ logfunctions::logfunctions(void)
 	// BUG: unfortunately this can be called before the bochsrc is read,
 	// which means that the bochsrc has no effect on the actions.
 	for (int i=0; i<N_LOGLEV; i++)
-	  onoff[i] = bx_options.log.actions[i];
+	  onoff[i] = get_default_action(i);
 }
 
 logfunctions::logfunctions(iofunc_t *iofunc)
@@ -218,7 +283,7 @@ logfunctions::logfunctions(iofunc_t *iofunc)
 	// BUG: unfortunately this can be called before the bochsrc is read,
 	// which means that the bochsrc has no effect on the actions.
 	for (int i=0; i<N_LOGLEV; i++)
-	  onoff[i] = bx_options.log.actions[i];
+	  onoff[i] = get_default_action(i);
 }
 
 logfunctions::~logfunctions(void)
@@ -292,7 +357,7 @@ logfunctions::info(const char *fmt, ...)
 	if (onoff[LOGLEV_INFO] == ACT_ASK) 
 	  ask (LOGLEV_INFO, this->prefix, fmt, ap);
 	if (onoff[LOGLEV_INFO] == ACT_FATAL) 
-	  fatal (this->prefix, fmt, ap);
+	  fatal (this->prefix, fmt, ap, 1);
 	va_end(ap);
 
 }
@@ -312,7 +377,7 @@ logfunctions::error(const char *fmt, ...)
 	if (onoff[LOGLEV_ERROR] == ACT_ASK) 
 	  ask (LOGLEV_ERROR, this->prefix, fmt, ap);
 	if (onoff[LOGLEV_ERROR] == ACT_FATAL) 
-	  fatal (this->prefix, fmt, ap);
+	  fatal (this->prefix, fmt, ap, 1);
 	va_end(ap);
 }
 
@@ -330,10 +395,41 @@ logfunctions::panic(const char *fmt, ...)
 
 	va_start(ap, fmt);
 	this->logio->out(this->type,LOGLEV_PANIC,this->prefix, fmt, ap);
+
+	// This fixes a funny bug on linuxppc where va_list is no pointer but a struct
+	va_end(ap);
+	va_start(ap, fmt);
+
 	if (onoff[LOGLEV_PANIC] == ACT_ASK) 
 	  ask (LOGLEV_PANIC, this->prefix, fmt, ap);
 	if (onoff[LOGLEV_PANIC] == ACT_FATAL) 
-	  fatal (this->prefix, fmt, ap);
+	  fatal (this->prefix, fmt, ap, 1);
+	va_end(ap);
+}
+
+void
+logfunctions::pass(const char *fmt, ...)
+{
+	va_list ap;
+
+	assert (this != NULL);
+	assert (this->logio != NULL);
+
+	// Special case for panics since they are so important.  Always print
+	// the panic to the log, no matter what the log action says.
+	//if(!onoff[LOGLEV_PASS]) return;
+
+	va_start(ap, fmt);
+	this->logio->out(this->type,LOGLEV_PASS,this->prefix, fmt, ap);
+
+	// This fixes a funny bug on linuxppc where va_list is no pointer but a struct
+	va_end(ap);
+	va_start(ap, fmt);
+
+	if (onoff[LOGLEV_PASS] == ACT_ASK) 
+	  ask (LOGLEV_PASS, this->prefix, fmt, ap);
+	if (onoff[LOGLEV_PASS] == ACT_FATAL) 
+	  fatal (this->prefix, fmt, ap, 101);
 	va_end(ap);
 }
 
@@ -352,28 +448,52 @@ logfunctions::ldebug(const char *fmt, ...)
 	if (onoff[LOGLEV_DEBUG] == ACT_ASK) 
 	  ask (LOGLEV_DEBUG, this->prefix, fmt, ap);
 	if (onoff[LOGLEV_DEBUG] == ACT_FATAL) 
-	  fatal (this->prefix, fmt, ap);
+	  fatal (this->prefix, fmt, ap, 1);
 	va_end(ap);
 }
 
 void
 logfunctions::ask (int level, const char *prefix, const char *fmt, va_list ap)
 {
-  char buf1[1024], buf2[1024];
+  // Guard against reentry on ask() function.  The danger is that some
+  // function that's called within ask() could trigger another
+  // BX_PANIC that could call ask() again, leading to infinite
+  // recursion and infinite asks.
+  static char in_ask_already = 0;
+  char buf1[1024];
+  if (in_ask_already) {
+    fprintf (stderr, "logfunctions::ask() should not reenter!!\n");
+    return;
+  }
+  in_ask_already = 1;
   vsprintf (buf1, fmt, ap);
-  sprintf (buf2, "%s %s", prefix, buf1);
   // FIXME: facility set to 0 because it's unknown.
-  int val = SIM->LOCAL_log_msg (prefix, level, buf2);
+
+  // update vga screen.  This is useful because sometimes useful messages
+  // are printed on the screen just before a panic.  It's also potentially
+  // dangerous if this function calls ask again...  That's why I added
+  // the reentry check above.
+  if (SIM->get_init_done()) DEV_vga_refresh();
+
+#if !BX_EXTERNAL_DEBUGGER
+  // ensure the text screen is showing
+  SIM->set_display_mode (DISP_MODE_CONFIG);
+  int val = SIM->log_msg (prefix, level, buf1);
   switch (val)
   {
-    case 0:   // user chose continue
+    case BX_LOG_ASK_CHOICE_CONTINUE:
       break;
-    case 1:   // user said continue, and don't ask for this facility again.
+    case BX_LOG_ASK_CHOICE_CONTINUE_ALWAYS:
+      // user said continue, and don't "ask" for this facility again.
       setonoff (level, ACT_REPORT);
       break;
-    case 2:   // user chose die
-      fatal (prefix, fmt, ap);
-    case 3: // user chose abort
+    case BX_LOG_ASK_CHOICE_DIE:
+      in_ask_already = 0;  // because fatal will longjmp out
+      fatal (prefix, fmt, ap, 1);
+      // should never get here
+      BX_PANIC (("in ask(), fatal() should never return!"));
+      break;
+    case BX_LOG_ASK_CHOICE_DUMP_CORE:
       fprintf (stderr, "User chose to dump core...\n");
 #if BX_HAVE_ABORT
       abort ();
@@ -387,7 +507,7 @@ logfunctions::ask (int level, const char *prefix, const char *fmt, va_list ap)
       exit (0);
 #endif
 #if BX_DEBUGGER
-    case 4:
+    case BX_LOG_ASK_CHOICE_ENTER_DEBUG:
       // user chose debugger.  To "drop into the debugger" we just set the
       // interrupt_requested bit and continue execution.  Before the next
       // instruction, it should notice the user interrupt and return to
@@ -398,24 +518,79 @@ logfunctions::ask (int level, const char *prefix, const char *fmt, va_list ap)
     default:
       // this happens if panics happen before the callback is initialized
       // in gui/control.cc.
-      fprintf (stderr, "WARNING: LOCAL_log_msg returned unexpected value %d\n", val);
+      fprintf (stderr, "WARNING: log_msg returned unexpected value %d\n", val);
   }
+#else
+  // external debugger ask code goes here
+#endif
+  // return to simulation mode
+  SIM->set_display_mode (DISP_MODE_SIM);
+  in_ask_already = 0;
 }
 
-void
-logfunctions::fatal (const char *prefix, const char *fmt, va_list ap)
+#if BX_WITH_CARBON
+/* Panic button to display fatal errors.
+  Completely self contained, can't rely on carbon.cc being available */
+static void carbonFatalDialog(const char *error, const char *exposition)
 {
-  static int fatal_reentry = 0;
-  if (fatal_reentry) return;
-  fatal_reentry++;
+  DialogRef                     alertDialog;
+  CFStringRef                   cfError;
+  CFStringRef                   cfExposition;
+  DialogItemIndex               index;
+  AlertStdCFStringAlertParamRec alertParam = {0};
+  
+  // Init libraries
+  InitCursor();
+  // Assemble dialog
+  cfError = CFStringCreateWithCString(NULL, error, kCFStringEncodingASCII);
+  if(exposition != NULL)
+  {
+    cfExposition = CFStringCreateWithCString(NULL, exposition, kCFStringEncodingASCII);
+  }
+  else { cfExposition = NULL; }
+  alertParam.version       = kStdCFStringAlertVersionOne;
+  alertParam.defaultText   = CFSTR("Quit");
+  alertParam.position      = kWindowDefaultPosition;
+  alertParam.defaultButton = kAlertStdAlertOKButton;
+  // Display Dialog
+  CreateStandardAlert(
+    kAlertStopAlert,
+    cfError,
+    cfExposition,       /* can be NULL */
+    &alertParam,             /* can be NULL */
+    &alertDialog);
+  RunStandardAlert( alertDialog, NULL, &index);
+  // Cleanup
+  CFRelease( cfError );
+  if( cfExposition != NULL ) { CFRelease( cfExposition ); }
+}
+#endif
+
+void
+logfunctions::fatal (const char *prefix, const char *fmt, va_list ap, int exit_status)
+{
   bx_atexit();
+#if BX_WITH_CARBON
+  if(!isatty(STDIN_FILENO) && !SIM->get_init_done())
+  {
+    char buf1[1024];
+    char buf2[1024];
+    vsprintf (buf1, fmt, ap);
+    sprintf (buf2, "Bochs startup error\n%s", buf1);
+    carbonFatalDialog(buf2,
+      "For more information, try running Bochs within Terminal by clicking on \"bochs.scpt\".");
+  }
+#endif
+#if !BX_WITH_WX
+  static char *divider = "========================================================================";
   fprintf (stderr, "%s\n", divider);
   fprintf (stderr, "Bochs is exiting with the following message:\n");
   fprintf (stderr, "%s ", prefix);
   vfprintf (stderr, fmt, ap);
   fprintf (stderr, "\n%s\n", divider);
+#endif
 #if 0 && defined(WIN32)
-#error disabled because it  is not working yet!
+#error disabled because it is not working yet!
   // wait for a keypress before quitting.  Depending on how bochs is
   // installed, the console window can disappear before the user has
   // a chance to read the final message.
@@ -424,15 +599,16 @@ logfunctions::fatal (const char *prefix, const char *fmt, va_list ap)
   fgets (buf, 8, stdin);
 #endif
 #if !BX_DEBUGGER
-  exit(1);
+  BX_EXIT(exit_status);
 #else
-  static Boolean dbg_exit_called = 0;
+  static bx_bool dbg_exit_called = 0;
   if (dbg_exit_called == 0) {
     dbg_exit_called = 1;
-    bx_dbg_exit(1);
+    bx_dbg_exit(exit_status);
     }
 #endif
-  fatal_reentry--;
+  // not safe to use BX_* log functions in here.
+  fprintf (stderr, "fatal() should never return, but it just did\n");
 }
 
 iofunc_t *io = NULL;
@@ -441,7 +617,10 @@ logfunc_t *genlog = NULL;
 void bx_center_print (FILE *file, char *line, int maxwidth)
 {
   int imax;
-  imax = (maxwidth - strlen(line)) >> 1;
+  int len = strlen(line);
+  if (len > maxwidth)
+    BX_PANIC (("bx_center_print: line is too long: '%s'", line));
+  imax = (maxwidth - len) >> 1;
   for (int i=0; i<imax; i++) fputc (' ', file);
   fputs (line, file);
 }

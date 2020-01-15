@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soundwin.cc,v 1.8 2002/03/05 17:22:59 bdenney Exp $
+// $Id: soundwin.cc,v 1.12 2002/11/19 05:47:45 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,10 +26,15 @@
 
 // This file (SOUNDWIN.CC) written and donated by Josef Drexler
 
-#if defined(WIN32)
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
 
 #include "bochs.h"
-#define LOG_THIS bx_sb16.
+#if defined(WIN32) && BX_SUPPORT_SB16
+
+#define LOG_THIS bx_devices.pluginSB16Device->
 
 bx_sound_windows_c::bx_sound_windows_c(bx_sb16_c *sb16)
   :bx_sound_output_c(sb16)
@@ -331,7 +336,7 @@ int bx_sound_windows_c::playnextbuffer()
 
 int bx_sound_windows_c::startwaveplayback(int frequency, int bits, int stereo, int format)
 {
-  UINT ret;
+  // UINT ret;
 
   WRITELOG( WAVELOG(4), "startwaveplayback(%d, %d, %d, %x)", frequency, bits, stereo, format);
 
@@ -374,7 +379,7 @@ int bx_sound_windows_c::startwaveplayback(int frequency, int bits, int stereo, i
 
 int bx_sound_windows_c::sendwavepacket(int length, Bit8u data[])
 {
-  UINT ret;
+//  UINT ret;
   int bufnum;
 
   WRITELOG( WAVELOG(4), "sendwavepacket(%d, %p)", length, data);
@@ -451,7 +456,7 @@ int bx_sound_windows_c::stopwaveplayback()
 
 int bx_sound_windows_c::closewaveoutput()
 {
-  int bufnum;
+//  int bufnum;
 
   WRITELOG( WAVELOG(4), "closewaveoutput");
 

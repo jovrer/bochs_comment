@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom.h,v 1.7 2002/02/01 16:46:27 vruppert Exp $
+// $Id: cdrom.h,v 1.11 2002/10/25 11:44:38 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -35,13 +35,13 @@ public:
   void init(void);
 
   // Load CD-ROM. Returns false if CD is not ready.
-  bool insert_cdrom(char *dev = NULL);
+  bx_bool insert_cdrom(char *dev = NULL);
 
   // Logically eject the CD.
   void eject_cdrom();
 
   // Read CD TOC. Returns false if start track is out of bounds.
-  bool read_toc(uint8* buf, int* length, bool msf, int start_track);
+  bx_bool read_toc(uint8* buf, int* length, bx_bool msf, int start_track);
 
   // Return CD-ROM capacity (in 2048 byte frames)
   uint32 capacity();
@@ -54,5 +54,11 @@ private:
   char *path;
 
   int using_file;
+#ifdef WIN32
+  HANDLE hFile;
+  int hid;
+  int tid;
+  int lun;
+#endif
   };
 

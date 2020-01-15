@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keymap.h,v 1.4 2002/03/24 09:11:04 bdenney Exp $
+// $Id: keymap.h,v 1.8 2002/10/25 11:44:37 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  Christophe Bothamy
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -36,34 +36,35 @@
 // - convertStringToBXKey
 //   convert a null-terminate string to a BX_KEY code
 //
-// - getKeyXwin(Bit32u key)
-// - getKeyASCII(Bit8u ch)
+// - findHostKey(Bit32u key)
+// - findAsciiChar(Bit8u ch)
 //   Each of these methods returns a pointer to a BXKeyEntry structure
-//   corresponding to a key.  getKeyXwin() uses an X windows keysym to find the
-//   structure, and getKeyASCII() uses an ASCII code to find the structure.
+//   corresponding to a key.  findHostKey() finds an entry whose hostKey
+//   value matches the target value, and findAsciiChar() finds an entry
+//   whose ASCII code matches the search value.
 
 // In case of unknown symbol
 #define BX_KEYMAP_UNKNOWN   0xFFFFFFFF
 
 // Structure of an element of the keymap table
-typedef struct { 
+typedef struct BOCHSAPI { 
   Bit32u baseKey;   // base key
   Bit32u modKey;   // modifier key that must be held down
   Bit32s ascii;    // ascii equivalent, if any
-  Bit32u xwinKey;  // X windows value
+  Bit32u hostKey;  // value that the host's OS or library recognizes
   } BXKeyEntry;
 
-class bx_keymap_c : public logfunctions {
+class BOCHSAPI bx_keymap_c : public logfunctions {
 public:
   bx_keymap_c(void);
   ~bx_keymap_c(void);
 
   void   loadKeymap(Bit32u(*)(const char*));
   void   loadKeymap(Bit32u(*)(const char*),const char *filename);
-  Boolean isKeymapLoaded ();
+  bx_bool isKeymapLoaded ();
 
-  BXKeyEntry *getKeyXwin(Bit32u xwin_key);
-  BXKeyEntry *getKeyASCII(Bit8u ascii);
+  BXKeyEntry *findHostKey(Bit32u hostkeynum);
+  BXKeyEntry *findAsciiChar(Bit8u ascii);
 
 private:
   Bit32u convertStringToBXKey(const char *);
@@ -72,4 +73,4 @@ private:
   Bit16u   keymapCount;
   };
 
-extern bx_keymap_c bx_keymap;
+BOCHSAPI extern bx_keymap_c bx_keymap;

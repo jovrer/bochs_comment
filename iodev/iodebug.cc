@@ -1,8 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodebug.cc,v 1.9 2001/10/03 19:54:29 instinc Exp $
+// $Id: iodebug.cc,v 1.15 2002/11/19 05:47:45 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 #include "bochs.h"
+#if BX_IODEBUG_SUPPORT
 
 
 
@@ -10,7 +11,7 @@ bx_iodebug_c bx_iodebug;
 bx_iodebug_c *bx_iodebug_ptr;
 
   struct bx_iodebug_s_type {
-    Boolean enabled;
+    bx_bool enabled;
     unsigned int register_select;
     Bit32u registers[2];
     Bit32u monitored_mem_areas_start[BX_IODEBUG_MAX_AREAS];
@@ -41,14 +42,13 @@ bx_iodebug_c::~bx_iodebug_c( void )
 
 
 
-int bx_iodebug_c::init( bx_devices_c *d )
+void bx_iodebug_c::init(void)
 {
   int i;
 
-  BX_IODEBUG_THIS devices = d;
-  BX_IODEBUG_THIS devices->register_io_read_handler(this, read_handler, 0x8A00,"BOCHS IODEBUG");
-  BX_IODEBUG_THIS devices->register_io_write_handler(this, write_handler, 0x8A00,"BOCHS IODEBUG");
-  BX_IODEBUG_THIS devices->register_io_write_handler(this, write_handler, 0x8A01,"BOCHS IODEBUG");
+  DEV_register_ioread_handler(this, read_handler, 0x8A00,"BOCHS IODEBUG", 7);
+  DEV_register_iowrite_handler(this, write_handler, 0x8A00,"BOCHS IODEBUG", 7);
+  DEV_register_iowrite_handler(this, write_handler, 0x8A01,"BOCHS IODEBUG", 7);
 //  fprintf( stderr, "IODEBUG initialized\n");
 
   bx_iodebug_s.enabled = 0;
@@ -57,11 +57,11 @@ int bx_iodebug_c::init( bx_devices_c *d )
     bx_iodebug_s.monitored_mem_areas_start[i] = 0;
     bx_iodebug_s.monitored_mem_areas_end[i] = 0;
   }
-
-  return(1);
 }
 
-
+void bx_iodebug_c::reset(unsigned type)
+{
+}
 
 
 Bit32u bx_iodebug_c::read_handler(void *this_ptr, Bit32u addr, unsigned io_len)
@@ -211,13 +211,13 @@ void bx_iodebug_c::mem_write( BX_CPU_C *cpu, Bit32u addr, unsigned len, void *da
   {
     area--;
 #if BX_DEBUGGER
-  fprintf( stdout, "%s @ eip: %08X wrote at monitored memory location %8X\n", cpu->name, cpu->eip, addr);
+  fprintf( stdout, "%s @ eip: %08X wrote at monitored memory location %8X\n", cpu->name, cpu->get_EIP(), addr);
   bx_guard.interrupt_requested=1;
 #else
     fprintf( stderr,
              "IODEBUG write to monitored memory area: %2i\tby EIP:\t\t%08X\n\trange start: \t\t%08X\trange end:\t%08X\n\taddress accessed:\t%08X\tdata written:\t",
 	     area,
-	     cpu->eip,
+	     cpu->get_EIP(),
 	     bx_iodebug_s.monitored_mem_areas_start[area],
 	     bx_iodebug_s.monitored_mem_areas_end[area],
 	     (unsigned int)addr);
@@ -269,13 +269,13 @@ void bx_iodebug_c::mem_read( BX_CPU_C *cpu, Bit32u addr, unsigned len, void *dat
   {
     area--;
 #if BX_DEBUGGER
-  fprintf( stdout, "%s @ eip: %8X wrote at monitored memory location %8X\n", cpu->name, cpu->eip, addr);
+  fprintf( stdout, "%s @ eip: %8X wrote at monitored memory location %8X\n", cpu->name, cpu->get_EIP(), addr);
   bx_guard.interrupt_requested=1;
 #else
     fprintf( stderr,
              "IODEBUG read to monitored memory area: %2i\tby EIP:\t\t%08X\n\trange start: \t\t%08X\trange end:\t%08X\n\taddress accessed:\t%08X\tdata written:\t",
 	     area,
-	     cpu->eip,
+	     cpu->get_EIP(),
 	     bx_iodebug_s.monitored_mem_areas_start[area],
 	     bx_iodebug_s.monitored_mem_areas_end[area],
 	     (unsigned int)addr);
@@ -351,3 +351,4 @@ void bx_iodebug_c::add_range( Bit32u addr_start, Bit32u addr_end )
   }
 //  fprintf(stderr, "IODEBUG unable to register memory range, all slots taken\n");
 }
+#endif /* if BX_IODEBUG_SUPPORT */

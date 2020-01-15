@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc,v 1.13 2002/03/16 11:30:06 vruppert Exp $
+// $Id: term.cc,v 1.25 2002/11/20 12:23:40 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -26,7 +26,14 @@
 
 
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+
 #include "bochs.h"
+#if BX_WITH_TERM
+
 #include "icon_bochs.h"
 
 extern "C" {
@@ -34,7 +41,35 @@ extern "C" {
 #include <signal.h>
 };
 
-#define LOG_THIS bx_gui.
+class bx_term_gui_c : public bx_gui_c {
+public:
+  bx_term_gui_c (void) {}
+  DECLARE_GUI_VIRTUAL_METHODS()
+
+  virtual Bit32u get_sighandler_mask ();
+  // called when registered signal arrives
+  virtual void sighandler (int sig);
+};
+
+// declare one instance of the gui object and call macro to insert the
+// plugin code
+static bx_term_gui_c *theGui = NULL;
+IMPLEMENT_GUI_PLUGIN_CODE(term)
+
+#define LOG_THIS theGui->
+
+bx_bool initialized = 0;
+
+static short curses_color[8] = {
+  /* 0 */ COLOR_BLACK,
+  /* 1 */ COLOR_BLUE,
+  /* 2 */ COLOR_GREEN,
+  /* 3 */ COLOR_CYAN,
+  /* 4 */ COLOR_RED,
+  /* 5 */ COLOR_MAGENTA,
+  /* 6 */ COLOR_YELLOW,
+  /* 7 */ COLOR_WHITE
+};
 
 static void
 do_scan(int key_event, int shift, int ctrl, int alt)
@@ -43,28 +78,66 @@ do_scan(int key_event, int shift, int ctrl, int alt)
 		 changes do we simulate a press or release, to cut down on
 		 keyboard input to the simulated machine */
 
-	if(bx_dbg.keyboard)
-		BX_INFO(("[TERM] key_event %d/0x%x %s%s%s",
-			key_event,key_event,
-			shift?"(shift)":"",
-			ctrl?"(ctrl)":"",
-			alt?"(alt)":""));
+	BX_DEBUG(("key_event %d/0x%x %s%s%s",
+		  key_event,key_event,
+		  shift?"(shift)":"",
+		  ctrl?"(ctrl)":"",
+		  alt?"(alt)":""));
 	if(shift)
-		bx_devices.keyboard->gen_scancode(BX_KEY_SHIFT_L);
+		DEV_kbd_gen_scancode(BX_KEY_SHIFT_L);
 	if(ctrl)
-		bx_devices.keyboard->gen_scancode(BX_KEY_CTRL_L);
+		DEV_kbd_gen_scancode(BX_KEY_CTRL_L);
 	if(alt)
-		bx_devices.keyboard->gen_scancode(BX_KEY_ALT_L);
-	bx_devices.keyboard->gen_scancode(key_event);
+		DEV_kbd_gen_scancode(BX_KEY_ALT_L);
+	DEV_kbd_gen_scancode(key_event);
 	key_event |= BX_KEY_RELEASED;
 
-	bx_devices.keyboard->gen_scancode(key_event);
+	DEV_kbd_gen_scancode(key_event);
 	if(alt)
-		bx_devices.keyboard->gen_scancode(BX_KEY_ALT_L|BX_KEY_RELEASED);
+		DEV_kbd_gen_scancode(BX_KEY_ALT_L|BX_KEY_RELEASED);
 	if(ctrl)
-		bx_devices.keyboard->gen_scancode(BX_KEY_CTRL_L|BX_KEY_RELEASED);
+		DEV_kbd_gen_scancode(BX_KEY_CTRL_L|BX_KEY_RELEASED);
 	if(shift)
-		bx_devices.keyboard->gen_scancode(BX_KEY_SHIFT_L|BX_KEY_RELEASED);
+		DEV_kbd_gen_scancode(BX_KEY_SHIFT_L|BX_KEY_RELEASED);
+}
+
+Bit32u 
+bx_term_gui_c::get_sighandler_mask ()
+{
+  return 
+    (1<<SIGHUP)
+    | (1<<SIGINT)
+    | (1<<SIGQUIT)
+#ifdef SIGSTOP
+    | (1<<SIGSTOP)
+#endif
+#ifdef SIGTSTP
+    | (1<<SIGTSTP)
+#endif
+    | (1<<SIGTERM);
+}
+
+void
+bx_term_gui_c::sighandler(int signo)
+{
+	switch(signo) {
+	case SIGINT:
+		do_scan(BX_KEY_C,0,1,0);
+		break;
+#ifdef SIGSTOP
+	case SIGSTOP:
+		do_scan(BX_KEY_S,0,1,0);
+		break;
+#endif
+#ifdef SIGTSTP
+	case SIGTSTP:
+		do_scan(BX_KEY_Z,0,1,0);
+		break;
+#endif
+	default:
+		BX_INFO(("sig %d caught",signo));
+		break;
+	}
 }
 
 // ::SPECIFIC_INIT()
@@ -72,8 +145,6 @@ do_scan(int key_event, int shift, int ctrl, int alt)
 // Called from gui.cc, once upon program startup, to allow for the
 // specific GUI code (X11, BeOS, ...) to be initialized.
 //
-// th: a 'this' pointer to the gui class.  If a function external to the
-//     class needs access, store this pointer and use later.
 // argc, argv: not used right now, but the intention is to pass native GUI
 //     specific options from the command line.  (X11 options, BeOS options,...)
 //
@@ -85,43 +156,11 @@ do_scan(int key_event, int shift, int ctrl, int alt)
 //     always assumes the width of the current VGA mode width, but
 //     it's height is defined by this parameter.
 
-Bit32u 
-bx_gui_c::get_sighandler_mask ()
-{
-  return 
-    (1<<SIGHUP)
-    | (1<<SIGINT)
-    | (1<<SIGQUIT)
-    | (1<<SIGSTOP)
-    | (1<<SIGTSTP)
-    | (1<<SIGTERM);
-}
-
-void
-bx_gui_c::sighandler(int signo)
-{
-	switch(signo) {
-	case SIGINT:
-		do_scan(BX_KEY_C,0,1,0);
-		break;
-	case SIGSTOP:
-		do_scan(BX_KEY_S,0,1,0);
-		break;
-	case SIGTSTP:
-		do_scan(BX_KEY_Z,0,1,0);
-		break;
-	default:
-		BX_INFO(("sig %d caught",signo));
-		break;
-	}
-}
-
 	void
-bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth, unsigned tileheight,
+bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight,
 	unsigned headerbar_y)
 {
-	th->put("TGUI");
-	UNUSED(th);
+	put("TGUI");
 	UNUSED(argc);
 	UNUSED(argv);
 	UNUSED(tilewidth);
@@ -130,22 +169,32 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth,
 
 	UNUSED(bochs_icon_bits);  // global variable
 
-	// XXX log should be different from stderr, otherwise terminal mode really
-	//     ends up having fun
-	//BX_INFO(("[TERM] Moving Log to another tty"));
-	//bio->init_log("/dev/ttyp5");
-	//BX_INFO(("[TERM] Moved Log to another tty"));
+	// the ask menu causes trouble
+	io->set_log_action(LOGLEV_PANIC, ACT_FATAL);
+	// logfile should be different from stderr, otherwise terminal mode
+	// really ends up having fun
+	if (!strcmp(bx_options.log.Ofilename->getptr(), "-"))
+		BX_PANIC(("cannot log to stderr in term mode"));
 
 	initscr();
+	start_color();
 	cbreak();
 	curs_set(2);
 	keypad(stdscr,TRUE);
 	nodelay(stdscr, TRUE);
 	noecho();
 
+	if (has_colors()) {
+		for (int i=0; i<COLORS; i++) {
+			for (int j=0; j<COLORS; j++) {
+				if ((i!=0)||(j!=0)) init_pair(i * COLORS + j, j, i);
+			}
+		}
+	}
+
 	if (bx_options.Oprivate_colormap->get ())
-		if(bx_dbg.video)
-			BX_INFO(("#TERM] WARNING: private_colormap option ignored."));
+		BX_ERROR(("WARNING: private_colormap option ignored."));
+	initialized = 1;
 }
 
 
@@ -154,13 +203,10 @@ void
 do_char(int character,int alt)
 {
 	switch (character) {
+	// control keys
 	case   0x9: do_scan(BX_KEY_TAB,0,0,alt); break;
 	case   0xa: do_scan(BX_KEY_KP_ENTER,0,0,alt); break;
 	case   0xd: do_scan(BX_KEY_KP_DELETE,0,0,alt); break;
-	//case  '-': do_scan(BX_KEY_KP_SUBTRACT,0,0,alt); break;
-	//case  '+': do_scan(BX_KEY_KP_ADD,0,0,alt); break;
-	//case  '*': do_scan(BX_KEY_KP_MULTIPLY,0,0,alt); break;
-	//case  '/': do_scan(BX_KEY_KP_DIVIDE,0,0,alt); break;
 	case   0x1: do_scan(BX_KEY_A,0,1,alt); break;
 	case   0x2: do_scan(BX_KEY_B,0,1,alt); break;
 	case   0x3: do_scan(BX_KEY_C,0,1,alt); break;
@@ -169,11 +215,8 @@ do_char(int character,int alt)
 	case   0x6: do_scan(BX_KEY_F,0,1,alt); break;
 	case   0x7: do_scan(BX_KEY_G,0,1,alt); break;
 	case   0x8: do_scan(BX_KEY_H,0,1,alt); break;
-//	case   0x9: do_scan(BX_KEY_I,0,1,alt); break;
-//	case   0xa: do_scan(BX_KEY_J,0,1,alt); break;
 	case   0xb: do_scan(BX_KEY_K,0,1,alt); break;
 	case   0xc: do_scan(BX_KEY_L,0,1,alt); break;
-//	case   0xd: do_scan(BX_KEY_M,0,1,alt); break;
 	case   0xe: do_scan(BX_KEY_N,0,1,alt); break;
 	case   0xf: do_scan(BX_KEY_O,0,1,alt); break;
 	case  0x10: do_scan(BX_KEY_P,0,1,alt); break;
@@ -198,8 +241,8 @@ do_char(int character,int alt)
 	case 0x106: do_scan(BX_KEY_HOME,0,0,alt); break;
 	case 0x168: do_scan(BX_KEY_END,0,0,alt); break;
 	case 0x14b: do_scan(BX_KEY_INSERT,0,0,alt); break;
-	case  0x7f: do_scan(BX_KEY_DELETE,0,0,alt); break;
-	case  0x1b:      do_scan(BX_KEY_ESC,0,0,alt); break;
+	case 0x7f:  do_scan(BX_KEY_DELETE,0,0,alt); break;
+	case 0x1b:  do_scan(BX_KEY_ESC,0,0,alt); break;
 	case '!': do_scan(BX_KEY_1,1,0,alt); break;
 	case '\'': do_scan(BX_KEY_SINGLE_QUOTE,0,0,alt); break;
 	case '#': do_scan(BX_KEY_3,1,0,alt); break;
@@ -318,13 +361,38 @@ do_char(int character,int alt)
 	case '\\': do_scan(BX_KEY_BACKSLASH,0,0,alt); break;
 	case ']': do_scan(BX_KEY_RIGHT_BRACKET,0,0,alt); break;
 	case '~': do_scan(BX_KEY_GRAVE,1,0,alt); break;
+
+	// function keys
+	case KEY_F(1): do_scan(BX_KEY_F1,0,0,alt); break;
+	case KEY_F(2): do_scan(BX_KEY_F2,0,0,alt); break;
+	case KEY_F(3): do_scan(BX_KEY_F3,0,0,alt); break;
+	case KEY_F(4): do_scan(BX_KEY_F4,0,0,alt); break;
+	case KEY_F(5): do_scan(BX_KEY_F5,0,0,alt); break;
+	case KEY_F(6): do_scan(BX_KEY_F6,0,0,alt); break;
+	case KEY_F(7): do_scan(BX_KEY_F7,0,0,alt); break;
+	case KEY_F(8): do_scan(BX_KEY_F8,0,0,alt); break;
+	case KEY_F(9): do_scan(BX_KEY_F9,0,0,alt); break;
+	case KEY_F(10): do_scan(BX_KEY_F10,0,0,alt); break;
+	case KEY_F(11): do_scan(BX_KEY_F11,0,0,alt); break;
+	case KEY_F(12): do_scan(BX_KEY_F12,0,0,alt); break;
+
+	// shifted function keys
+	case KEY_F(13): do_scan(BX_KEY_F1,1,0,alt); break;
+	case KEY_F(14): do_scan(BX_KEY_F2,1,0,alt); break;
+	case KEY_F(15): do_scan(BX_KEY_F3,1,0,alt); break;
+	case KEY_F(16): do_scan(BX_KEY_F4,1,0,alt); break;
+	case KEY_F(17): do_scan(BX_KEY_F5,1,0,alt); break;
+	case KEY_F(18): do_scan(BX_KEY_F6,1,0,alt); break;
+	case KEY_F(19): do_scan(BX_KEY_F7,1,0,alt); break;
+	case KEY_F(20): do_scan(BX_KEY_F8,1,0,alt); break;
+
 	default:
 		if(character > 0x79) {
 			do_char(character - 0x80,1);
 			break;
 		}
 
-		BX_INFO(("[TERM] character unhandled: 0x%x",character));
+		BX_INFO(("character unhandled: 0x%x",character));
 		break;
 	}
 }
@@ -337,12 +405,11 @@ do_char(int character,int alt)
 // relevant events.
 
 	void
-bx_gui_c::handle_events(void)
+bx_term_gui_c::handle_events(void)
 {
-	unsigned int character;
+	int character;
 	while((character = getch()) != ERR) {
-		if(bx_dbg.keyboard)
-			BX_INFO(("[TERM] scancode(0x%x)",character));
+		BX_DEBUG(("scancode(0x%x)",character));
 		do_char(character,0);
 	}
 }
@@ -355,9 +422,10 @@ bx_gui_c::handle_events(void)
 // screen update requests.
 
 	void
-bx_gui_c::flush(void)
+bx_term_gui_c::flush(void)
 {
-	refresh();
+	if (initialized)
+	  refresh();
 }
 
 
@@ -367,10 +435,65 @@ bx_gui_c::flush(void)
 // clear the area that defines the headerbar.
 
 	void
-bx_gui_c::clear_screen(void)
+bx_term_gui_c::clear_screen(void)
 {
-	if(bx_dbg.video)
-		BX_INFO(("[TERM] Ignored clear_screeen()"));
+	clear();
+}
+
+int
+get_color_pair(Bit8u vga_attr)
+{
+	int term_attr;
+
+	term_attr = curses_color[vga_attr & 0x07];
+	term_attr |= (curses_color[(vga_attr & 0x70) >> 4] << 3);
+	return term_attr;
+}
+
+chtype
+get_term_char(Bit8u vga_char[])
+{
+	int term_char;
+
+	if ((vga_char[1] & 0x0f) == ((vga_char[1] >> 4) & 0x0f)) {
+		return ' ';
+	}
+	switch (vga_char[0]) {
+		case 0x00: term_char = ' '; break;
+		case 0x04: term_char = ACS_DIAMOND; break;
+		case 0x18: term_char = ACS_UARROW; break;
+		case 0x19: term_char = ACS_DARROW; break;
+		case 0x1a: term_char = ACS_RARROW; break;
+		case 0x1b: term_char = ACS_LARROW; break;
+		case 0xc4:
+		case 0xcd: term_char = ACS_HLINE; break;
+		case 0xb3:
+		case 0xba: term_char = ACS_VLINE; break;
+		case 0xc9:
+		case 0xda: term_char = ACS_ULCORNER; break;
+		case 0xbb:
+		case 0xbf: term_char = ACS_URCORNER; break;
+		case 0xc0:
+		case 0xc8: term_char = ACS_LLCORNER; break;
+		case 0xbc:
+		case 0xd9: term_char = ACS_LRCORNER; break;
+		case 0xc3:
+		case 0xcc: term_char = ACS_LTEE; break;
+		case 0xb4:
+		case 0xb9: term_char = ACS_RTEE; break;
+		case 0xc2:
+		case 0xcb: term_char = ACS_TTEE; break;
+		case 0xc1:
+		case 0xca: term_char = ACS_BTEE; break;
+		case 0xc5:
+		case 0xce: term_char = ACS_PLUS; break;
+		case 0xb0:
+		case 0xb1: term_char = ACS_CKBOARD; break;
+		case 0xb2: term_char = ACS_BOARD; break;
+		case 0xdb: term_char = ACS_BLOCK; break;
+		default: term_char = vga_char[0];
+	}
+	return term_char;
 }
 
 // ::TEXT_UPDATE()
@@ -393,21 +516,29 @@ bx_gui_c::clear_screen(void)
 // cursor_y: new y location of cursor
 
 	void
-bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
+bx_term_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 	unsigned long cursor_x, unsigned long cursor_y,
 	Bit16u cursor_state, unsigned nrows)
 {
 	UNUSED(cursor_state);
+	chtype ch;
 
 	unsigned ncols = 4000/nrows/2;
 	// XXX There has GOT to be a better way of doing this
 	for(int i=0;i<4001;i+=2) {
-		if( old_text[i] != new_text[i] ) {
-			mvaddch((i/2)/ncols,(i/2)%ncols,new_text[i]);
+		if ((old_text[i] != new_text[i]) ||
+		    (old_text[i+1] != new_text[i+1])) {
+#if BX_HAVE_COLOR_SET
+			if (has_colors()) {
+				color_set(get_color_pair(new_text[i+1]), NULL);
+			}
+#endif
+			ch = get_term_char(&new_text[i]);
+			if ((new_text[i+1] & 0x08) > 0) ch |= A_BOLD;
+			if ((new_text[i+1] & 0x80) > 0) ch |= A_REVERSE;
+			mvaddch((i/2)/ncols,(i/2)%ncols, ch);
 		}
 	}
-
-	//mvcur(0,0,cursor_y,cursor_x);
 
 	if(cursor_x>0)
 		cursor_x--;
@@ -415,17 +546,25 @@ bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 		cursor_x=79;
 		cursor_y--;
 	}
-	mvaddch(cursor_y,cursor_x,new_text[(cursor_y*80+cursor_x)*2]);
+#if BX_HAVE_COLOR_SET
+	if (has_colors()) {
+		color_set(get_color_pair(new_text[(cursor_y*80+cursor_x)*2+1]), NULL);
+	}
+#endif
+	ch = get_term_char(&new_text[(cursor_y*80+cursor_x)*2]);
+	if ((new_text[(cursor_y*80+cursor_x)*2+1] & 0x08) > 0) ch |= A_BOLD;
+	if ((new_text[(cursor_y*80+cursor_x)*2+1] & 0x80) > 0) ch |= A_REVERSE;
+	mvaddch(cursor_y, cursor_x, ch);
 }
 
   int
-bx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+bx_term_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
 {
   return 0;
 }
 
   int
-bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+bx_term_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 {
   return 0;
 }
@@ -438,12 +577,11 @@ bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 // returns: 0=no screen update needed (color map change has direct effect)
 //          1=screen updated needed (redraw using current colormap)
 
-	Boolean
-bx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+	bx_bool
+bx_term_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
 {
-	if(bx_dbg.video)
-		BX_INFO(("[TERM] color pallete request (%d,%d,%d,%d) ignored",
-			index,red,green,blue));
+	BX_DEBUG(("color pallete request (%d,%d,%d,%d) ignored",
+		  index,red,green,blue));
 	return(0);
 }
 
@@ -464,7 +602,7 @@ bx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned 
 //       left of the window.
 
 	void
-bx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
+bx_term_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
 	UNUSED(tile);
 	UNUSED(x0);
@@ -483,10 +621,11 @@ bx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 // y: new VGA y size (add headerbar_y parameter from ::specific_init().
 
 	void
-bx_gui_c::dimension_update(unsigned x, unsigned y)
+bx_term_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
 {
 	UNUSED(x);
 	UNUSED(y);
+	UNUSED(fheight);
 }
 
 
@@ -502,7 +641,7 @@ bx_gui_c::dimension_update(unsigned x, unsigned y)
 // ydim: y dimension of bitmap
 
 	unsigned
-bx_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
+bx_term_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
 {
 	UNUSED(bmap);
 	UNUSED(xdim);
@@ -526,7 +665,7 @@ bx_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
 //     the boundaries of this bitmap.
 
 	unsigned
-bx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
+bx_term_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
 {
 	UNUSED(bmap_id);
 	UNUSED(alignment);
@@ -541,7 +680,7 @@ bx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void)
 // currently installed bitmaps.
 
 	void
-bx_gui_c::show_headerbar(void)
+bx_term_gui_c::show_headerbar(void)
 {
 }
 
@@ -560,7 +699,7 @@ bx_gui_c::show_headerbar(void)
 // bmap_id: bitmap ID
 
 	void
-bx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
+bx_term_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
 	UNUSED(hbar_id);
 	UNUSED(bmap_id);
@@ -573,16 +712,17 @@ bx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 // exit from the native GUI mechanism.
 
 	void
-bx_gui_c::exit(void)
+bx_term_gui_c::exit(void)
 {
+	if (!initialized) return;
+	clear();
 	flush();
-	echo();
-	nocbreak();
-	if(bx_dbg.video)
-		BX_INFO(("[TERM] exiting"));
+	endwin();
+	BX_DEBUG(("exiting"));
 }
 
   void
-bx_gui_c::mouse_enabled_changed_specific (Boolean val)
+bx_term_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
 }
+#endif /* if BX_WITH_TERM */

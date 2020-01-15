@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: lazy_flags.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+// $Id: lazy_flags.cc,v 1.12 2002/10/25 11:44:35 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,32 +37,38 @@
 
 
 
-  Boolean
-BX_CPU_C::get_CF(void)
+  bx_bool
+BX_CPU_C::get_CFLazy(void)
 {
-  switch ( BX_CPU_THIS_PTR lf_flags_status & 0x00000f ) {
-    case BX_LF_INDEX_KNOWN:
-      return(BX_CPU_THIS_PTR eflags.cf);
+  unsigned cf;
 
+  switch ( BX_CPU_THIS_PTR lf_flags_status & 0x00000f ) {
     case BX_LF_INDEX_OSZAPC:
       switch (BX_CPU_THIS_PTR oszapc.instr) {
         case BX_INSTR_ADD8:
         case BX_INSTR_XADD8:
-          BX_CPU_THIS_PTR eflags.cf = (BX_CPU_THIS_PTR oszapc.result_8 <
+          cf = (BX_CPU_THIS_PTR oszapc.result_8 <
                               BX_CPU_THIS_PTR oszapc.op1_8);
           break;
         case BX_INSTR_ADD16:
         case BX_INSTR_XADD16:
-          BX_CPU_THIS_PTR eflags.cf = (BX_CPU_THIS_PTR oszapc.result_16 <
+          cf = (BX_CPU_THIS_PTR oszapc.result_16 <
                               BX_CPU_THIS_PTR oszapc.op1_16);
           break;
         case BX_INSTR_ADD32:
         case BX_INSTR_XADD32:
-          BX_CPU_THIS_PTR eflags.cf = (BX_CPU_THIS_PTR oszapc.result_32 <
+          cf = (BX_CPU_THIS_PTR oszapc.result_32 <
                               BX_CPU_THIS_PTR oszapc.op1_32);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADD64:
+        case BX_INSTR_XADD64:
+          cf = (BX_CPU_THIS_PTR oszapc.result_64 <
+                              BX_CPU_THIS_PTR oszapc.op1_64);
+          break;
+#endif
         case BX_INSTR_ADC8:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.result_8 <
              BX_CPU_THIS_PTR oszapc.op1_8) ||
             (BX_CPU_THIS_PTR oszapc.prev_CF &&
@@ -70,7 +76,7 @@ BX_CPU_C::get_CF(void)
              BX_CPU_THIS_PTR oszapc.op1_8);
           break;
         case BX_INSTR_ADC16:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.result_16 <
              BX_CPU_THIS_PTR oszapc.op1_16) ||
             (BX_CPU_THIS_PTR oszapc.prev_CF &&
@@ -78,70 +84,106 @@ BX_CPU_C::get_CF(void)
              BX_CPU_THIS_PTR oszapc.op1_16);
           break;
         case BX_INSTR_ADC32:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.result_32 <
              BX_CPU_THIS_PTR oszapc.op1_32) ||
             (BX_CPU_THIS_PTR oszapc.prev_CF &&
              BX_CPU_THIS_PTR oszapc.result_32 ==
              BX_CPU_THIS_PTR oszapc.op1_32);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADC64:
+          cf =
+            (BX_CPU_THIS_PTR oszapc.result_64 <
+             BX_CPU_THIS_PTR oszapc.op1_64) ||
+            (BX_CPU_THIS_PTR oszapc.prev_CF &&
+             BX_CPU_THIS_PTR oszapc.result_64 ==
+             BX_CPU_THIS_PTR oszapc.op1_64);
+          break;
+#endif
         case BX_INSTR_SUB8:
         case BX_INSTR_CMP8:
         case BX_INSTR_CMPS8:
         case BX_INSTR_SCAS8:
-          BX_CPU_THIS_PTR eflags.cf = (BX_CPU_THIS_PTR oszapc.op1_8 <
+          cf = (BX_CPU_THIS_PTR oszapc.op1_8 <
                               BX_CPU_THIS_PTR oszapc.op2_8);
           break;
         case BX_INSTR_SUB16:
         case BX_INSTR_CMP16:
         case BX_INSTR_CMPS16:
         case BX_INSTR_SCAS16:
-          BX_CPU_THIS_PTR eflags.cf = (BX_CPU_THIS_PTR oszapc.op1_16 <
+          cf = (BX_CPU_THIS_PTR oszapc.op1_16 <
                               BX_CPU_THIS_PTR oszapc.op2_16);
           break;
         case BX_INSTR_SUB32:
         case BX_INSTR_CMP32:
         case BX_INSTR_CMPS32:
         case BX_INSTR_SCAS32:
-          BX_CPU_THIS_PTR eflags.cf = (BX_CPU_THIS_PTR oszapc.op1_32 <
+          cf = (BX_CPU_THIS_PTR oszapc.op1_32 <
                               BX_CPU_THIS_PTR oszapc.op2_32);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SUB64:
+        case BX_INSTR_CMP64:
+        case BX_INSTR_CMPS64:
+        case BX_INSTR_SCAS64:
+          cf = (BX_CPU_THIS_PTR oszapc.op1_64 <
+                              BX_CPU_THIS_PTR oszapc.op2_64);
+          break;
+#endif
         case BX_INSTR_SBB8:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.op1_8 <
              BX_CPU_THIS_PTR oszapc.result_8) ||
             ((BX_CPU_THIS_PTR oszapc.op2_8==0xff) &&
              BX_CPU_THIS_PTR oszapc.prev_CF);
           break;
         case BX_INSTR_SBB16:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf = 
             (BX_CPU_THIS_PTR oszapc.op1_16 <
              BX_CPU_THIS_PTR oszapc.result_16) ||
             ((BX_CPU_THIS_PTR oszapc.op2_16==0xffff) &&
              BX_CPU_THIS_PTR oszapc.prev_CF);
           break;
         case BX_INSTR_SBB32:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf = 
             (BX_CPU_THIS_PTR oszapc.op1_32 <
              BX_CPU_THIS_PTR oszapc.result_32) ||
             ((BX_CPU_THIS_PTR oszapc.op2_32==0xffffffff) &&
              BX_CPU_THIS_PTR oszapc.prev_CF);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SBB64:
+          cf = 
+            (BX_CPU_THIS_PTR oszapc.op1_64 <
+             BX_CPU_THIS_PTR oszapc.result_64) ||
+            ((BX_CPU_THIS_PTR oszapc.op2_64==BX_CONST64(0xffffffffffffffff)) &&
+             BX_CPU_THIS_PTR oszapc.prev_CF);
+          break;
+#endif
         case BX_INSTR_NEG8:
-          BX_CPU_THIS_PTR eflags.cf =
-            BX_CPU_THIS_PTR oszapc.op1_8 != 0;
+          cf = BX_CPU_THIS_PTR oszapc.op1_8 != 0;
           break;
         case BX_INSTR_NEG16:
-          BX_CPU_THIS_PTR eflags.cf =
-            BX_CPU_THIS_PTR oszapc.op1_16 != 0;
+          cf = BX_CPU_THIS_PTR oszapc.op1_16 != 0;
           break;
         case BX_INSTR_NEG32:
-          BX_CPU_THIS_PTR eflags.cf =
-            BX_CPU_THIS_PTR oszapc.op1_32 != 0;
+          cf = BX_CPU_THIS_PTR oszapc.op1_32 != 0;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_NEG64:
+          cf = BX_CPU_THIS_PTR oszapc.op1_64 != 0;
+          break;
+#endif
         case BX_INSTR_OR8:
         case BX_INSTR_OR16:
         case BX_INSTR_OR32:
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_OR64:
+        case BX_INSTR_AND64:
+        case BX_INSTR_TEST64:
+        case BX_INSTR_XOR64:
+#endif
         case BX_INSTR_AND8:
         case BX_INSTR_AND16:
         case BX_INSTR_AND32:
@@ -151,54 +193,71 @@ BX_CPU_C::get_CF(void)
         case BX_INSTR_XOR8:
         case BX_INSTR_XOR16:
         case BX_INSTR_XOR32:
-          BX_CPU_THIS_PTR eflags.cf = 0;
+          cf = 0;
           break;
         case BX_INSTR_SHR8:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.op1_8 >>
               (BX_CPU_THIS_PTR oszapc.op2_8 - 1)) & 0x01;
           break;
         case BX_INSTR_SHR16:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.op1_16 >>
               (BX_CPU_THIS_PTR oszapc.op2_16 - 1)) & 0x01;
           break;
         case BX_INSTR_SHR32:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.op1_32 >>
               (BX_CPU_THIS_PTR oszapc.op2_32 - 1)) & 0x01;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SHR64:
+          cf =
+            (BX_CPU_THIS_PTR oszapc.op1_64 >>
+              (BX_CPU_THIS_PTR oszapc.op2_64 - 1)) & 0x01;
+          break;
+#endif
         case BX_INSTR_SHL8:
           if (BX_CPU_THIS_PTR oszapc.op2_8 <= 8) {
-            BX_CPU_THIS_PTR eflags.cf =
+            cf =
               (BX_CPU_THIS_PTR oszapc.op1_8 >>
                 (8 - BX_CPU_THIS_PTR oszapc.op2_8)) & 0x01;
             }
           else {
-            BX_CPU_THIS_PTR eflags.cf = 0;
+            cf = 0;
             }
           break;
         case BX_INSTR_SHL16:
           if (BX_CPU_THIS_PTR oszapc.op2_16 <= 16) {
-            BX_CPU_THIS_PTR eflags.cf =
+            cf =
               (BX_CPU_THIS_PTR oszapc.op1_16 >>
                 (16 - BX_CPU_THIS_PTR oszapc.op2_16)) & 0x01;
             }
           else {
-            BX_CPU_THIS_PTR eflags.cf = 0;
+            cf = 0;
             }
           break;
         case BX_INSTR_SHL32:
-          BX_CPU_THIS_PTR eflags.cf =
+          cf =
             (BX_CPU_THIS_PTR oszapc.op1_32 >>
               (32 - BX_CPU_THIS_PTR oszapc.op2_32)) & 0x01;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SHL64:
+          cf =
+            (BX_CPU_THIS_PTR oszapc.op1_64 >>
+              (32 - BX_CPU_THIS_PTR oszapc.op2_64)) & 0x01;
+          break;
+#endif
         default:
+          cf = 0; // Keep compiler quiet.
           BX_PANIC(("get_CF: OSZAPC: unknown instr %u",
             (unsigned) BX_CPU_THIS_PTR oszapc.instr));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xfffff0;
-      return(BX_CPU_THIS_PTR eflags.cf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<0);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!cf)<<0;
+      return(cf);
 
     default:
       BX_PANIC(("get_CF: unknown case"));
@@ -207,13 +266,12 @@ BX_CPU_C::get_CF(void)
 }
 
 
-  Boolean
-BX_CPU_C::get_AF(void)
+  bx_bool
+BX_CPU_C::get_AFLazy(void)
 {
-  switch ( (BX_CPU_THIS_PTR lf_flags_status>>8) & 0x00000f ) {
-    case BX_LF_INDEX_KNOWN:
-      return(BX_CPU_THIS_PTR eflags.af);
+  unsigned af;
 
+  switch ( (BX_CPU_THIS_PTR lf_flags_status>>8) & 0x00000f ) {
     case BX_LF_INDEX_OSZAPC:
       switch (BX_CPU_THIS_PTR oszapc.instr) {
         case BX_INSTR_ADD8:
@@ -224,7 +282,7 @@ BX_CPU_C::get_AF(void)
         case BX_INSTR_XADD8:
         case BX_INSTR_CMPS8:
         case BX_INSTR_SCAS8:
-          BX_CPU_THIS_PTR eflags.af =
+          af =
             ((BX_CPU_THIS_PTR oszapc.op1_8 ^
               BX_CPU_THIS_PTR oszapc.op2_8) ^
              BX_CPU_THIS_PTR oszapc.result_8) & 0x10;
@@ -237,7 +295,7 @@ BX_CPU_C::get_AF(void)
         case BX_INSTR_XADD16:
         case BX_INSTR_CMPS16:
         case BX_INSTR_SCAS16:
-          BX_CPU_THIS_PTR eflags.af =
+          af =
             ((BX_CPU_THIS_PTR oszapc.op1_16 ^
               BX_CPU_THIS_PTR oszapc.op2_16) ^
              BX_CPU_THIS_PTR oszapc.result_16) & 0x10;
@@ -250,26 +308,51 @@ BX_CPU_C::get_AF(void)
         case BX_INSTR_XADD32:
         case BX_INSTR_CMPS32:
         case BX_INSTR_SCAS32:
-          BX_CPU_THIS_PTR eflags.af =
+          af =
             ((BX_CPU_THIS_PTR oszapc.op1_32 ^
               BX_CPU_THIS_PTR oszapc.op2_32) ^
              BX_CPU_THIS_PTR oszapc.result_32) & 0x10;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADD64:
+        case BX_INSTR_ADC64:
+        case BX_INSTR_SUB64:
+        case BX_INSTR_SBB64:
+        case BX_INSTR_CMP64:
+        case BX_INSTR_XADD64:
+        case BX_INSTR_CMPS64:
+        case BX_INSTR_SCAS64:
+          af =
+            ((BX_CPU_THIS_PTR oszapc.op1_64 ^
+              BX_CPU_THIS_PTR oszapc.op2_64) ^
+             BX_CPU_THIS_PTR oszapc.result_64) & 0x10;
+          break;
+#endif
         case BX_INSTR_NEG8:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszapc.op1_8 & 0x0f) > 0;
+          af = (BX_CPU_THIS_PTR oszapc.op1_8 & 0x0f) > 0;
           break;
         case BX_INSTR_NEG16:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszapc.op1_16 & 0x0f) > 0;
+          af = (BX_CPU_THIS_PTR oszapc.op1_16 & 0x0f) > 0;
           break;
         case BX_INSTR_NEG32:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszapc.op1_32 & 0x0f) > 0;
+          af = (BX_CPU_THIS_PTR oszapc.op1_32 & 0x0f) > 0;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_NEG64:
+          af = (BX_CPU_THIS_PTR oszapc.op1_64 & 0x0f) > 0;
+          break;
+#endif
         case BX_INSTR_OR8:
         case BX_INSTR_OR16:
         case BX_INSTR_OR32:
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_OR64:
+        case BX_INSTR_AND64:
+        case BX_INSTR_TEST64:
+        case BX_INSTR_XOR64:
+        case BX_INSTR_SHR64:
+        case BX_INSTR_SHL64:
+#endif
         case BX_INSTR_AND8:
         case BX_INSTR_AND16:
         case BX_INSTR_AND32:
@@ -285,48 +368,58 @@ BX_CPU_C::get_AF(void)
         case BX_INSTR_SHL8:
         case BX_INSTR_SHL16:
         case BX_INSTR_SHL32:
-          BX_CPU_THIS_PTR eflags.af = 0;
+          af = 0;
           /* undefined */
           break;
         default:
+          af = 0; // Keep compiler quiet.
           BX_PANIC(("get_AF: OSZAPC: unknown instr %u",
             (unsigned) BX_CPU_THIS_PTR oszapc.instr));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xfff0ff;
-      return(BX_CPU_THIS_PTR eflags.af);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<4);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!af)<<4;
+      return(af);
 
     case BX_LF_INDEX_OSZAP:
       switch (BX_CPU_THIS_PTR oszap.instr) {
         case BX_INSTR_INC8:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszap.result_8 & 0x0f) == 0;
+          af = (BX_CPU_THIS_PTR oszap.result_8 & 0x0f) == 0;
           break;
         case BX_INSTR_INC16:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszap.result_16 & 0x0f) == 0;
+          af = (BX_CPU_THIS_PTR oszap.result_16 & 0x0f) == 0;
           break;
         case BX_INSTR_INC32:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszap.result_32 & 0x0f) == 0;
+          af = (BX_CPU_THIS_PTR oszap.result_32 & 0x0f) == 0;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_INC64:
+          af = (BX_CPU_THIS_PTR oszap.result_64 & 0x0f) == 0;
+          break;
+#endif
         case BX_INSTR_DEC8:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszap.result_8 & 0x0f) == 0x0f;
+          af = (BX_CPU_THIS_PTR oszap.result_8 & 0x0f) == 0x0f;
           break;
         case BX_INSTR_DEC16:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszap.result_16 & 0x0f) == 0x0f;
+          af = (BX_CPU_THIS_PTR oszap.result_16 & 0x0f) == 0x0f;
           break;
         case BX_INSTR_DEC32:
-          BX_CPU_THIS_PTR eflags.af =
-            (BX_CPU_THIS_PTR oszap.result_32 & 0x0f) == 0x0f;
+          af = (BX_CPU_THIS_PTR oszap.result_32 & 0x0f) == 0x0f;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_DEC64:
+          af = (BX_CPU_THIS_PTR oszap.result_64 & 0x0f) == 0x0f;
+          break;
+#endif
         default:
+          af = 0; // Keep compiler quiet.
           BX_PANIC(("get_AF: OSZAP: unknown instr %u",
             (unsigned) BX_CPU_THIS_PTR oszap.instr));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xfff0ff;
-      return(BX_CPU_THIS_PTR eflags.af);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<4);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!af)<<4;
+      return(af);
 
     default:
       BX_PANIC(("get_AF: unknown case"));
@@ -335,13 +428,12 @@ BX_CPU_C::get_AF(void)
 }
 
 
-  Boolean
-BX_CPU_C::get_ZF(void)
+  bx_bool
+BX_CPU_C::get_ZFLazy(void)
 {
-  switch ( (BX_CPU_THIS_PTR lf_flags_status>>12) & 0x00000f ) {
-    case BX_LF_INDEX_KNOWN:
-      return(BX_CPU_THIS_PTR eflags.zf);
+  unsigned zf;
 
+  switch ( (BX_CPU_THIS_PTR lf_flags_status>>12) & 0x00000f ) {
     case BX_LF_INDEX_OSZAPC:
       switch (BX_CPU_THIS_PTR oszapc.instr) {
         case BX_INSTR_ADD8:
@@ -359,7 +451,7 @@ BX_CPU_C::get_ZF(void)
         case BX_INSTR_SCAS8:
         case BX_INSTR_SHR8:
         case BX_INSTR_SHL8:
-          BX_CPU_THIS_PTR eflags.zf = (BX_CPU_THIS_PTR oszapc.result_8 == 0);
+          zf = (BX_CPU_THIS_PTR oszapc.result_8 == 0);
           break;
         case BX_INSTR_ADD16:
         case BX_INSTR_ADC16:
@@ -376,7 +468,7 @@ BX_CPU_C::get_ZF(void)
         case BX_INSTR_SCAS16:
         case BX_INSTR_SHR16:
         case BX_INSTR_SHL16:
-          BX_CPU_THIS_PTR eflags.zf = (BX_CPU_THIS_PTR oszapc.result_16 == 0);
+          zf = (BX_CPU_THIS_PTR oszapc.result_16 == 0);
           break;
         case BX_INSTR_ADD32:
         case BX_INSTR_ADC32:
@@ -393,33 +485,64 @@ BX_CPU_C::get_ZF(void)
         case BX_INSTR_SCAS32:
         case BX_INSTR_SHR32:
         case BX_INSTR_SHL32:
-          BX_CPU_THIS_PTR eflags.zf = (BX_CPU_THIS_PTR oszapc.result_32 == 0);
+          zf = (BX_CPU_THIS_PTR oszapc.result_32 == 0);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADD64:
+        case BX_INSTR_ADC64:
+        case BX_INSTR_SUB64:
+        case BX_INSTR_SBB64:
+        case BX_INSTR_CMP64:
+        case BX_INSTR_NEG64:
+        case BX_INSTR_XADD64:
+        case BX_INSTR_OR64:
+        case BX_INSTR_AND64:
+        case BX_INSTR_TEST64:
+        case BX_INSTR_XOR64:
+        case BX_INSTR_CMPS64:
+        case BX_INSTR_SCAS64:
+        case BX_INSTR_SHR64:
+        case BX_INSTR_SHL64:
+          zf = (BX_CPU_THIS_PTR oszapc.result_64 == 0);
+          break;
+#endif
         default:
+          zf = 0;
           BX_PANIC(("get_ZF: OSZAPC: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xff0fff;
-      return(BX_CPU_THIS_PTR eflags.zf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<6);
+      BX_CPU_THIS_PTR eflags.val32 |= zf<<6; // zf always exactly 0 or 1.
+      return(zf);
 
     case BX_LF_INDEX_OSZAP:
       switch (BX_CPU_THIS_PTR oszap.instr) {
         case BX_INSTR_INC8:
         case BX_INSTR_DEC8:
-          BX_CPU_THIS_PTR eflags.zf = (BX_CPU_THIS_PTR oszap.result_8 == 0);
+          zf = (BX_CPU_THIS_PTR oszap.result_8 == 0);
           break;
         case BX_INSTR_INC16:
         case BX_INSTR_DEC16:
-          BX_CPU_THIS_PTR eflags.zf = (BX_CPU_THIS_PTR oszap.result_16 == 0);
+          zf = (BX_CPU_THIS_PTR oszap.result_16 == 0);
           break;
         case BX_INSTR_INC32:
         case BX_INSTR_DEC32:
-          BX_CPU_THIS_PTR eflags.zf = (BX_CPU_THIS_PTR oszap.result_32 == 0);
+          zf = (BX_CPU_THIS_PTR oszap.result_32 == 0);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_INC64:
+        case BX_INSTR_DEC64:
+          zf = (BX_CPU_THIS_PTR oszap.result_64 == 0);
+          break;
+#endif
         default:
+          zf = 0;
           BX_PANIC(("get_ZF: OSZAP: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xff0fff;
-      return(BX_CPU_THIS_PTR eflags.zf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<6);
+      BX_CPU_THIS_PTR eflags.val32 |= zf<<6; // zf always exactly 0 or 1.
+      return(zf);
 
     default:
       BX_PANIC(("get_ZF: unknown case"));
@@ -428,13 +551,12 @@ BX_CPU_C::get_ZF(void)
 }
 
 
-  Boolean
-BX_CPU_C::get_SF(void)
+  bx_bool
+BX_CPU_C::get_SFLazy(void)
 {
-  switch ( (BX_CPU_THIS_PTR lf_flags_status>>16) & 0x00000f ) {
-    case BX_LF_INDEX_KNOWN:
-      return(BX_CPU_THIS_PTR eflags.sf);
+  unsigned sf;
 
+  switch ( (BX_CPU_THIS_PTR lf_flags_status>>16) & 0x00000f ) {
     case BX_LF_INDEX_OSZAPC:
       switch (BX_CPU_THIS_PTR oszapc.instr) {
         case BX_INSTR_ADD8:
@@ -452,8 +574,7 @@ BX_CPU_C::get_SF(void)
         case BX_INSTR_SCAS8:
         case BX_INSTR_SHR8:
         case BX_INSTR_SHL8:
-          BX_CPU_THIS_PTR eflags.sf =
-            (BX_CPU_THIS_PTR oszapc.result_8 >= 0x80);
+          sf = (BX_CPU_THIS_PTR oszapc.result_8 >= 0x80);
           break;
         case BX_INSTR_ADD16:
         case BX_INSTR_ADC16:
@@ -470,8 +591,7 @@ BX_CPU_C::get_SF(void)
         case BX_INSTR_SCAS16:
         case BX_INSTR_SHR16:
         case BX_INSTR_SHL16:
-          BX_CPU_THIS_PTR eflags.sf =
-            (BX_CPU_THIS_PTR oszapc.result_16 >= 0x8000);
+          sf = (BX_CPU_THIS_PTR oszapc.result_16 >= 0x8000);
           break;
         case BX_INSTR_ADD32:
         case BX_INSTR_ADC32:
@@ -488,37 +608,64 @@ BX_CPU_C::get_SF(void)
         case BX_INSTR_SCAS32:
         case BX_INSTR_SHR32:
         case BX_INSTR_SHL32:
-          BX_CPU_THIS_PTR eflags.sf =
-            (BX_CPU_THIS_PTR oszapc.result_32 >= 0x80000000);
+          sf = (BX_CPU_THIS_PTR oszapc.result_32 >= 0x80000000);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADD64:
+        case BX_INSTR_ADC64:
+        case BX_INSTR_SUB64:
+        case BX_INSTR_SBB64:
+        case BX_INSTR_CMP64:
+        case BX_INSTR_NEG64:
+        case BX_INSTR_XADD64:
+        case BX_INSTR_OR64:
+        case BX_INSTR_AND64:
+        case BX_INSTR_TEST64:
+        case BX_INSTR_XOR64:
+        case BX_INSTR_CMPS64:
+        case BX_INSTR_SCAS64:
+        case BX_INSTR_SHR64:
+        case BX_INSTR_SHL64:
+          sf = (BX_CPU_THIS_PTR oszapc.result_64 >= BX_CONST64(0x8000000000000000));
+          break;
+#endif
         default:
+          sf = 0; // Keep compiler quiet.
           BX_PANIC(("get_SF: OSZAPC: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xf0ffff;
-      return(BX_CPU_THIS_PTR eflags.sf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<7);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!sf)<<7;
+      return(sf);
 
     case BX_LF_INDEX_OSZAP:
       switch (BX_CPU_THIS_PTR oszap.instr) {
         case BX_INSTR_INC8:
         case BX_INSTR_DEC8:
-          BX_CPU_THIS_PTR eflags.sf =
-            (BX_CPU_THIS_PTR oszap.result_8 >= 0x80);
+          sf = (BX_CPU_THIS_PTR oszap.result_8 >= 0x80);
           break;
         case BX_INSTR_INC16:
         case BX_INSTR_DEC16:
-          BX_CPU_THIS_PTR eflags.sf =
-            (BX_CPU_THIS_PTR oszap.result_16 >= 0x8000);
+          sf = (BX_CPU_THIS_PTR oszap.result_16 >= 0x8000);
           break;
         case BX_INSTR_INC32:
         case BX_INSTR_DEC32:
-          BX_CPU_THIS_PTR eflags.sf =
-            (BX_CPU_THIS_PTR oszap.result_32 >= 0x80000000);
+          sf = (BX_CPU_THIS_PTR oszap.result_32 >= 0x80000000);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_INC64:
+        case BX_INSTR_DEC64:
+          sf = (BX_CPU_THIS_PTR oszap.result_64 >= BX_CONST64(0x8000000000000000));
+          break;
+#endif
         default:
+          sf = 0; // Keep compiler quiet.
           BX_PANIC(("get_SF: OSZAP: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xf0ffff;
-      return(BX_CPU_THIS_PTR eflags.sf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<7);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!sf)<<7;
+      return(sf);
 
     default:
       BX_PANIC(("get_SF: unknown case"));
@@ -526,17 +673,18 @@ BX_CPU_C::get_SF(void)
     }
 }
 
-  Boolean
-BX_CPU_C::get_OF(void)
+  bx_bool
+BX_CPU_C::get_OFLazy(void)
 {
   Bit8u op1_b7, op2_b7, result_b7;
   Bit16u op1_b15, op2_b15, result_b15;
   Bit32u op1_b31, op2_b31, result_b31;
+#if BX_SUPPORT_X86_64
+  Bit64u op1_b63, op2_b63, result_b63;
+#endif
+  unsigned of;
 
   switch ( (BX_CPU_THIS_PTR lf_flags_status>>20) & 0x00000f ) {
-    case BX_LF_INDEX_KNOWN:
-      return(BX_CPU_THIS_PTR eflags.of);
-
     case BX_LF_INDEX_OSZAPC:
       switch (BX_CPU_THIS_PTR oszapc.instr) {
         case BX_INSTR_ADD8:
@@ -546,7 +694,7 @@ BX_CPU_C::get_OF(void)
           op2_b7 = BX_CPU_THIS_PTR oszapc.op2_8 & 0x80;
           result_b7 = BX_CPU_THIS_PTR oszapc.result_8 & 0x80;
 
-          BX_CPU_THIS_PTR eflags.of =  (op1_b7 == op2_b7) && (result_b7 ^ op2_b7);
+          of =  (op1_b7 == op2_b7) && (result_b7 ^ op2_b7);
           break;
         case BX_INSTR_ADD16:
         case BX_INSTR_ADC16:
@@ -555,7 +703,7 @@ BX_CPU_C::get_OF(void)
           op2_b15 = BX_CPU_THIS_PTR oszapc.op2_16 & 0x8000;
           result_b15 = BX_CPU_THIS_PTR oszapc.result_16 & 0x8000;
 
-          BX_CPU_THIS_PTR eflags.of =  (op1_b15 == op2_b15) && (result_b15 ^ op2_b15);
+          of =  (op1_b15 == op2_b15) && (result_b15 ^ op2_b15);
           break;
         case BX_INSTR_ADD32:
         case BX_INSTR_ADC32:
@@ -564,8 +712,19 @@ BX_CPU_C::get_OF(void)
           op2_b31 = BX_CPU_THIS_PTR oszapc.op2_32 & 0x80000000;
           result_b31 = BX_CPU_THIS_PTR oszapc.result_32 & 0x80000000;
 
-          BX_CPU_THIS_PTR eflags.of =  (op1_b31 == op2_b31) && (result_b31 ^ op2_b31);
+          of =  (op1_b31 == op2_b31) && (result_b31 ^ op2_b31);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADD64:
+        case BX_INSTR_ADC64:
+        case BX_INSTR_XADD64:
+          op1_b63 = BX_CPU_THIS_PTR oszapc.op1_64 & BX_CONST64(0x8000000000000000);
+          op2_b63 = BX_CPU_THIS_PTR oszapc.op2_64 & BX_CONST64(0x8000000000000000);
+          result_b63 = BX_CPU_THIS_PTR oszapc.result_64 & BX_CONST64(0x8000000000000000);
+
+          of =  (op1_b63 == op2_b63) && (result_b63 ^ op2_b63);
+          break;
+#endif
         case BX_INSTR_SUB8:
         case BX_INSTR_SBB8:
         case BX_INSTR_CMP8:
@@ -575,7 +734,7 @@ BX_CPU_C::get_OF(void)
           op2_b7 = BX_CPU_THIS_PTR oszapc.op2_8 & 0x80;
           result_b7 = BX_CPU_THIS_PTR oszapc.result_8 & 0x80;
 
-          BX_CPU_THIS_PTR eflags.of =  (op1_b7 ^ op2_b7) && (op1_b7 ^ result_b7);
+          of =  (op1_b7 ^ op2_b7) && (op1_b7 ^ result_b7);
           break;
         case BX_INSTR_SUB16:
         case BX_INSTR_SBB16:
@@ -586,7 +745,7 @@ BX_CPU_C::get_OF(void)
           op2_b15 = BX_CPU_THIS_PTR oszapc.op2_16 & 0x8000;
           result_b15 = BX_CPU_THIS_PTR oszapc.result_16 & 0x8000;
 
-          BX_CPU_THIS_PTR eflags.of =  (op1_b15 ^ op2_b15) && (op1_b15 ^ result_b15);
+          of =  (op1_b15 ^ op2_b15) && (op1_b15 ^ result_b15);
           break;
         case BX_INSTR_SUB32:
         case BX_INSTR_SBB32:
@@ -597,23 +756,44 @@ BX_CPU_C::get_OF(void)
           op2_b31 = BX_CPU_THIS_PTR oszapc.op2_32 & 0x80000000;
           result_b31 = BX_CPU_THIS_PTR oszapc.result_32 & 0x80000000;
 
-          BX_CPU_THIS_PTR eflags.of =  (op1_b31 ^ op2_b31) && (op1_b31 ^ result_b31);
+          of =  (op1_b31 ^ op2_b31) && (op1_b31 ^ result_b31);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SUB64:
+        case BX_INSTR_SBB64:
+        case BX_INSTR_CMP64:
+        case BX_INSTR_CMPS64:
+        case BX_INSTR_SCAS64:
+          op1_b63 = BX_CPU_THIS_PTR oszapc.op1_64 & BX_CONST64(0x8000000000000000);
+          op2_b63 = BX_CPU_THIS_PTR oszapc.op2_64 & BX_CONST64(0x8000000000000000);
+          result_b63 = BX_CPU_THIS_PTR oszapc.result_64 & BX_CONST64(0x8000000000000000);
+
+          of =  (op1_b63 ^ op2_b63) && (op1_b63 ^ result_b63);
+          break;
+#endif
         case BX_INSTR_NEG8:
-          BX_CPU_THIS_PTR eflags.of =
-            (BX_CPU_THIS_PTR oszapc.op1_8 == 0x80);
+          of = (BX_CPU_THIS_PTR oszapc.op1_8 == 0x80);
           break;
         case BX_INSTR_NEG16:
-          BX_CPU_THIS_PTR eflags.of =
-            (BX_CPU_THIS_PTR oszapc.op1_16 == 0x8000);
+          of = (BX_CPU_THIS_PTR oszapc.op1_16 == 0x8000);
           break;
         case BX_INSTR_NEG32:
-          BX_CPU_THIS_PTR eflags.of =
-            (BX_CPU_THIS_PTR oszapc.op1_32 == 0x80000000);
+          of = (BX_CPU_THIS_PTR oszapc.op1_32 == 0x80000000);
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_NEG64:
+          of = (BX_CPU_THIS_PTR oszapc.op1_64 == BX_CONST64(0x8000000000000000));
+          break;
+#endif
         case BX_INSTR_OR8:
         case BX_INSTR_OR16:
         case BX_INSTR_OR32:
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_OR64:
+        case BX_INSTR_AND64:
+        case BX_INSTR_TEST64:
+        case BX_INSTR_XOR64:
+#endif
         case BX_INSTR_AND8:
         case BX_INSTR_AND16:
         case BX_INSTR_AND32:
@@ -623,78 +803,111 @@ BX_CPU_C::get_OF(void)
         case BX_INSTR_XOR8:
         case BX_INSTR_XOR16:
         case BX_INSTR_XOR32:
-          BX_CPU_THIS_PTR eflags.of = 0;
+          of = 0;
           break;
         case BX_INSTR_SHR8:
           if (BX_CPU_THIS_PTR oszapc.op2_8 == 1)
-            BX_CPU_THIS_PTR eflags.of =
-              (BX_CPU_THIS_PTR oszapc.op1_8 >= 0x80);
+            of = (BX_CPU_THIS_PTR oszapc.op1_8 >= 0x80);
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
           break;
         case BX_INSTR_SHR16:
           if (BX_CPU_THIS_PTR oszapc.op2_16 == 1)
-            BX_CPU_THIS_PTR eflags.of =
-              (BX_CPU_THIS_PTR oszapc.op1_16 >= 0x8000);
+            of = (BX_CPU_THIS_PTR oszapc.op1_16 >= 0x8000);
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
           break;
         case BX_INSTR_SHR32:
           if (BX_CPU_THIS_PTR oszapc.op2_32 == 1)
-            BX_CPU_THIS_PTR eflags.of =
-              (BX_CPU_THIS_PTR oszapc.op1_32 >= 0x80000000);
+            of = (BX_CPU_THIS_PTR oszapc.op1_32 >= 0x80000000);
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SHR64:
+          if (BX_CPU_THIS_PTR oszapc.op2_64 == 1)
+            of = (BX_CPU_THIS_PTR oszapc.op1_64 >= BX_CONST64(0x8000000000000000));
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
+          break;
+#endif
         case BX_INSTR_SHL8:
           if (BX_CPU_THIS_PTR oszapc.op2_8 == 1)
-            BX_CPU_THIS_PTR eflags.of =
-              ((BX_CPU_THIS_PTR oszapc.op1_8 ^
+            of = ((BX_CPU_THIS_PTR oszapc.op1_8 ^
                 BX_CPU_THIS_PTR oszapc.result_8) & 0x80) > 0;
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
           break;
         case BX_INSTR_SHL16:
           if (BX_CPU_THIS_PTR oszapc.op2_16 == 1)
-            BX_CPU_THIS_PTR eflags.of =
-              ((BX_CPU_THIS_PTR oszapc.op1_16 ^
+            of = ((BX_CPU_THIS_PTR oszapc.op1_16 ^
                 BX_CPU_THIS_PTR oszapc.result_16) & 0x8000) > 0;
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
           break;
         case BX_INSTR_SHL32:
           if (BX_CPU_THIS_PTR oszapc.op2_32 == 1)
-            BX_CPU_THIS_PTR eflags.of =
-              ((BX_CPU_THIS_PTR oszapc.op1_32 ^
+            of = ((BX_CPU_THIS_PTR oszapc.op1_32 ^
                 BX_CPU_THIS_PTR oszapc.result_32) & 0x80000000) > 0;
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_SHL64:
+          if (BX_CPU_THIS_PTR oszapc.op2_64 == 1)
+            of = ((BX_CPU_THIS_PTR oszapc.op1_64 ^
+                BX_CPU_THIS_PTR oszapc.result_64) & BX_CONST64(0x8000000000000000)) > 0;
+          else
+            of = (BX_CPU_THIS_PTR eflags.val32 >> 11) & 1; // Old val
+          break;
+#endif
         default:
+          of = 0; // Keep compiler happy.
           BX_PANIC(("get_OF: OSZAPC: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0x0fffff;
-      return(BX_CPU_THIS_PTR eflags.of);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<11);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!of)<<11;
+      return(of);
 
     case BX_LF_INDEX_OSZAP:
       switch (BX_CPU_THIS_PTR oszap.instr) {
         case BX_INSTR_INC8:
-          BX_CPU_THIS_PTR eflags.of =
-            BX_CPU_THIS_PTR oszap.result_8 == 0x80;
+          of = BX_CPU_THIS_PTR oszap.result_8 == 0x80;
           break;
         case BX_INSTR_INC16:
-          BX_CPU_THIS_PTR eflags.of =
-            BX_CPU_THIS_PTR oszap.result_16 == 0x8000;
+          of = BX_CPU_THIS_PTR oszap.result_16 == 0x8000;
           break;
         case BX_INSTR_INC32:
-          BX_CPU_THIS_PTR eflags.of =
-            BX_CPU_THIS_PTR oszap.result_32 == 0x80000000;
+          of = BX_CPU_THIS_PTR oszap.result_32 == 0x80000000;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_INC64:
+          of = BX_CPU_THIS_PTR oszap.result_64 == BX_CONST64(0x8000000000000000);
+          break;
+#endif
         case BX_INSTR_DEC8:
-          BX_CPU_THIS_PTR eflags.of =
-            BX_CPU_THIS_PTR oszap.result_8 == 0x7F;
+          of = BX_CPU_THIS_PTR oszap.result_8 == 0x7F;
           break;
         case BX_INSTR_DEC16:
-          BX_CPU_THIS_PTR eflags.of =
-            BX_CPU_THIS_PTR oszap.result_16 == 0x7FFF;
+          of = BX_CPU_THIS_PTR oszap.result_16 == 0x7FFF;
           break;
         case BX_INSTR_DEC32:
-          BX_CPU_THIS_PTR eflags.of =
-            BX_CPU_THIS_PTR oszap.result_32 == 0x7FFFFFFF;
+          of = BX_CPU_THIS_PTR oszap.result_32 == 0x7FFFFFFF;
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_DEC64:
+          of = BX_CPU_THIS_PTR oszap.result_64 == BX_CONST64(0x7FFFFFFFFFFFFFFF);
+          break;
+#endif
         default:
+          of = 0; // Keep compiler happy.
           BX_PANIC(("get_OF: OSZAP: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0x0fffff;
-      return(BX_CPU_THIS_PTR eflags.of);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<11);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!of)<<11;
+      return(of);
 
     default:
       BX_PANIC(("get_OF: unknown case"));
@@ -702,12 +915,12 @@ BX_CPU_C::get_OF(void)
     }
 }
 
-  Boolean
-BX_CPU_C::get_PF(void)
+  bx_bool
+BX_CPU_C::get_PFLazy(void)
 {
+  unsigned pf;
+
   switch ( (BX_CPU_THIS_PTR lf_flags_status>>4) & 0x00000f ) {
-    case BX_LF_INDEX_KNOWN:
-      return(BX_CPU_THIS_PTR lf_pf);
     case BX_LF_INDEX_OSZAPC:
       switch (BX_CPU_THIS_PTR oszapc.instr) {
         case BX_INSTR_ADD8:
@@ -725,8 +938,7 @@ BX_CPU_C::get_PF(void)
         case BX_INSTR_SCAS8:
         case BX_INSTR_SHR8:
         case BX_INSTR_SHL8:
-          BX_CPU_THIS_PTR lf_pf =
-            bx_parity_lookup[BX_CPU_THIS_PTR oszapc.result_8];
+          pf = bx_parity_lookup[BX_CPU_THIS_PTR oszapc.result_8];
           break;
         case BX_INSTR_ADD16:
         case BX_INSTR_ADC16:
@@ -743,8 +955,7 @@ BX_CPU_C::get_PF(void)
         case BX_INSTR_SCAS16:
         case BX_INSTR_SHR16:
         case BX_INSTR_SHL16:
-          BX_CPU_THIS_PTR lf_pf =
-            bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszapc.result_16];
+          pf = bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszapc.result_16];
           break;
         case BX_INSTR_ADD32:
         case BX_INSTR_ADC32:
@@ -761,42 +972,64 @@ BX_CPU_C::get_PF(void)
         case BX_INSTR_SCAS32:
         case BX_INSTR_SHR32:
         case BX_INSTR_SHL32:
-          BX_CPU_THIS_PTR lf_pf =
-            bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszapc.result_32];
+          pf = bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszapc.result_32];
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_ADD64:
+        case BX_INSTR_ADC64:
+        case BX_INSTR_SUB64:
+        case BX_INSTR_SBB64:
+        case BX_INSTR_CMP64:
+        case BX_INSTR_NEG64:
+        case BX_INSTR_XADD64:
+        case BX_INSTR_OR64:
+        case BX_INSTR_AND64:
+        case BX_INSTR_TEST64:
+        case BX_INSTR_XOR64:
+        case BX_INSTR_CMPS64:
+        case BX_INSTR_SCAS64:
+        case BX_INSTR_SHR64:
+        case BX_INSTR_SHL64:
+          pf = bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszapc.result_64];
+          break;
+#endif
         default:
+          pf = 0; // Keep compiler quiet.
           BX_PANIC(("get_PF: OSZAPC: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xffff0f;
-      return(BX_CPU_THIS_PTR lf_pf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<2);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!pf)<<2;
+      return(pf);
 
     case BX_LF_INDEX_OSZAP:
       switch (BX_CPU_THIS_PTR oszap.instr) {
         case BX_INSTR_INC8:
         case BX_INSTR_DEC8:
-          BX_CPU_THIS_PTR lf_pf =
-            bx_parity_lookup[BX_CPU_THIS_PTR oszap.result_8];
+          pf = bx_parity_lookup[BX_CPU_THIS_PTR oszap.result_8];
           break;
         case BX_INSTR_INC16:
         case BX_INSTR_DEC16:
-          BX_CPU_THIS_PTR lf_pf =
-            bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszap.result_16];
+          pf = bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszap.result_16];
           break;
         case BX_INSTR_INC32:
         case BX_INSTR_DEC32:
-          BX_CPU_THIS_PTR lf_pf =
-            bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszap.result_32];
+          pf = bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszap.result_32];
           break;
+#if BX_SUPPORT_X86_64
+        case BX_INSTR_INC64:
+        case BX_INSTR_DEC64:
+          pf = bx_parity_lookup[(Bit8u) BX_CPU_THIS_PTR oszap.result_64];
+          break;
+#endif
         default:
+          pf = 0; // Keep compiler quiet.
           BX_PANIC(("get_PF: OSZAP: unknown instr"));
         }
       BX_CPU_THIS_PTR lf_flags_status &= 0xffff0f;
-      return(BX_CPU_THIS_PTR lf_pf);
-
-    case BX_LF_INDEX_P:
-      BX_CPU_THIS_PTR lf_pf = bx_parity_lookup[BX_CPU_THIS_PTR eflags.pf_byte];
-      BX_CPU_THIS_PTR lf_flags_status &= 0xffff0f;
-      return(BX_CPU_THIS_PTR lf_pf);
+      BX_CPU_THIS_PTR eflags.val32 &= ~(1<<2);
+      BX_CPU_THIS_PTR eflags.val32 |= (!!pf)<<2;
+      return(pf);
 
     default:
       BX_PANIC(("get_PF: unknown case"));

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_fbsd.cc,v 1.19 2001/11/06 17:14:34 fries Exp $
+// $Id: eth_fbsd.cc,v 1.26 2002/11/20 19:06:22 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -48,9 +48,15 @@
 //  ne2k: ioaddr=0x280, irq=9, mac=00:a:b:c:1:2, ethmod=fbsd, ethdev=fxp0
 //
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+ 
 #include "bochs.h"
-#ifdef ETH_FBSD
-#define LOG_THIS this->
+#if BX_NE2K_SUPPORT && defined(ETH_FBSD)
+
+#define LOG_THIS bx_devices.pluginNE2kDevice->
 
 extern "C" {
 #include <fcntl.h>
@@ -149,7 +155,6 @@ bx_fbsd_pktmover_c::bx_fbsd_pktmover_c(const char *netif,
   struct bpf_program bp;
   u_int v;
 
-  put("BPF");
   memcpy(fbsd_macaddr, macaddr, 6);
 
   do {
@@ -255,7 +260,7 @@ bx_fbsd_pktmover_c::bx_fbsd_pktmover_c(const char *netif,
   // Start the rx poll 
   this->rx_timer_index = 
     bx_pc_system.register_timer(this, this->rx_timer_handler, BX_BPF_POLL,
-				1, 1); // continuous, active
+				1, 1, "eth_fbsd"); // continuous, active
 
   this->rxh   = rxh;
   this->rxarg = rxarg;
@@ -375,5 +380,6 @@ bx_fbsd_pktmover_c::rx_timer(void)
 	bhdr = (struct bpf_hdr*) ((char*) bhdr + BPF_WORDALIGN(bhdr->bh_hdrlen + bhdr->bh_caplen));
   }  
 }
-#endif
+
+#endif /* if BX_NE2K_SUPPORT && defined(ETH_FBSD) */
 

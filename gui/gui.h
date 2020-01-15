@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h,v 1.26 2002/03/17 20:57:54 vruppert Exp $
+// $Id: gui.h,v 1.36 2002/12/12 06:21:43 yakovlev Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,54 +24,69 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+BOCHSAPI extern class bx_gui_c *bx_gui;
 
-class bx_gui_c : public logfunctions {
+
+// The bx_gui_c class provides data and behavior that is common to
+// all guis.  Each gui implementation will override the abstract methods.
+class BOCHSAPI bx_gui_c : public logfunctions {
 public:
   bx_gui_c (void);
-  // Define the following functions in the module for your
-  // particular GUI (x.cc, beos.cc, ...)
-  static void specific_init(bx_gui_c *th, int argc, char **argv,
-                 unsigned x_tilesize, unsigned y_tilesize, unsigned header_bar_y);
-  static void text_update(Bit8u *old_text, Bit8u *new_text,
+  virtual ~bx_gui_c ();
+  // Define the following functions in the module for your particular GUI
+  // (x.cc, beos.cc, ...)
+  virtual void specific_init(int argc, char **argv,
+                 unsigned x_tilesize, unsigned y_tilesize, unsigned header_bar_y) = 0;
+  virtual void text_update(Bit8u *old_text, Bit8u *new_text,
                           unsigned long cursor_x, unsigned long cursor_y,
-                          Bit16u cursor_state, unsigned rows);
-  static void graphics_update(Bit8u *snapshot);
-  static void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y);
-  static void handle_events(void);
-  static void flush(void);
-  static void clear_screen(void);
-  static Boolean palette_change(unsigned index, unsigned red, unsigned green, unsigned blue);
-  static void dimension_update(unsigned x, unsigned y);
-  static unsigned create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim);
-  static unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void));
-  static void replace_bitmap(unsigned hbar_id, unsigned bmap_id);
-  static void show_headerbar(void);
-  static int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes);
-  static int set_clipboard_text(char *snapshot, Bit32u len);
+                          Bit16u cursor_state, unsigned rows) = 0;
+  virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y) = 0;
+  virtual void handle_events(void) = 0;
+  virtual void flush(void) = 0;
+  virtual void clear_screen(void) = 0;
+  virtual bx_bool palette_change(unsigned index, unsigned red, unsigned green, unsigned blue) = 0;
+  virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0) = 0;
+  virtual unsigned create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim) = 0;
+  virtual unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void)) = 0;
+  virtual void replace_bitmap(unsigned hbar_id, unsigned bmap_id) = 0;
+  virtual void show_headerbar(void) = 0;
+  virtual int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)  = 0;
+  virtual int set_clipboard_text(char *snapshot, Bit32u len) = 0;
+  virtual void mouse_enabled_changed_specific (bx_bool val) = 0;
+  virtual void exit(void) = 0;
+  // set_display_mode() changes the mode between the configuration interface
+  // and the simulation.  This is primarily intended for display libraries
+  // which have a full-screen mode such as SDL, term, and svgalib.  The display
+  // mode is set to DISP_MODE_CONFIG before displaying any configuration menus,
+  // for panics that requires user input, when entering the debugger, etc.  It
+  // is set to DISP_MODE_SIM when the Bochs simulation resumes.  The
+  // enum is defined in gui/siminterface.h.
+  virtual void set_display_mode (disp_mode_t newmode) { /* default=no action*/ }
+  // These are only needed for the term gui. For all other guis they will
+  // have no effect.
+  // returns 32-bit bitmask in which 1 means the GUI should handle that signal
+  virtual Bit32u get_sighandler_mask () {return 0;}
+  // called when registered signal arrives
+  virtual void sighandler (int sig) {}
+#if BX_USE_IDLE_HACK
+  // this is called from the CPU model when the HLT instruction is executed.
+  virtual void sim_is_idle(void) {}
+#endif
 
   // The following function(s) are defined already, and your
   // GUI code calls them
   static void key_event(Bit32u key);
+  static void set_text_charmap(Bit8u *fbuffer);
+  static void set_text_charbyte(Bit16u address, Bit8u data);
 
-  static void init(int argc, char **argv,
+  void init(int argc, char **argv,
                  unsigned x_tilesize, unsigned y_tilesize);
   void update_drive_status_buttons (void);
-  static void     mouse_enabled_changed (Boolean val);
-  static void     mouse_enabled_changed_specific (Boolean val);
-  static void     exit(void);
+  static void     mouse_enabled_changed (bx_bool val);
   static void init_signal_handlers ();
-#if BX_GUI_SIGHANDLER
-  // returns 32-bit bitmask in which 1 means the GUI should handle that signal
-  static Bit32u get_sighandler_mask ();
-  // called when registered signal arrives
-  static void sighandler (int sig);
-#endif
-#if BX_USE_IDLE_HACK
-  static void sim_is_idle(void);
-#endif
 
 
-private:
+protected:
   // And these are defined and used privately in gui.cc
   static void floppyA_handler(void);
   static void floppyB_handler(void);
@@ -81,13 +96,15 @@ private:
   static void copy_handler(void);
   static void paste_handler(void);
   static void snapshot_handler(void);
+  static void snapshot_checker(void *);
   static void config_handler(void);
   static void toggle_mouse_enable(void);
+  static void userbutton_handler(void);
   static Bit32s make_text_snapshot (char **snapshot, Bit32u *length);
 
-  Boolean floppyA_status;
-  Boolean floppyB_status;
-  Boolean cdromD_status;
+  bx_bool floppyA_status;
+  bx_bool floppyB_status;
+  bx_bool cdromD_status;
   unsigned floppyA_bmap_id, floppyA_eject_bmap_id, floppyA_hbar_id;
   unsigned floppyB_bmap_id, floppyB_eject_bmap_id, floppyB_hbar_id;
   unsigned cdromD_bmap_id, cdromD_eject_bmap_id, cdromD_hbar_id;
@@ -98,11 +115,52 @@ private:
   unsigned snapshot_bmap_id, snapshot_hbar_id;
   unsigned config_bmap_id, config_hbar_id;
   unsigned mouse_bmap_id, nomouse_bmap_id, mouse_hbar_id;
+  unsigned user_bmap_id, user_hbar_id;
+
+  unsigned char vga_charmap[0x2000];
+  bx_bool charmap_updated;
+  bx_bool char_changed[256];
+  disp_mode_t disp_mode;
   };
 
 
+// Add this macro in the class declaration of each GUI, to define all the
+// required virtual methods.  Example:
+//   
+//    class bx_rfb_gui_c : public bx_gui_c {
+//    public:
+//      bx_rfb_gui_c (void) {}
+//      DECLARE_GUI_VIRTUAL_METHODS()
+//    };
+// Then, each method must be defined later in the file.
+#define DECLARE_GUI_VIRTUAL_METHODS()                                         \
+  virtual void specific_init(int argc, char **argv,                           \
+                 unsigned x_tilesize, unsigned y_tilesize,                    \
+		 unsigned header_bar_y);                                      \
+  virtual void text_update(Bit8u *old_text, Bit8u *new_text,                  \
+                          unsigned long cursor_x, unsigned long cursor_y,     \
+                          Bit16u cursor_state, unsigned rows);                \
+  virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y); \
+  virtual void handle_events(void);                                           \
+  virtual void flush(void);                                                   \
+  virtual void clear_screen(void);                                            \
+  virtual bx_bool palette_change(unsigned index,                              \
+      unsigned red, unsigned green, unsigned blue);                           \
+  virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0);  \
+  virtual unsigned create_bitmap(const unsigned char *bmap,                   \
+      unsigned xdim, unsigned ydim);                                          \
+  virtual unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment,     \
+      void (*f)(void));                                                       \
+  virtual void replace_bitmap(unsigned hbar_id, unsigned bmap_id);            \
+  virtual void show_headerbar(void);                                          \
+  virtual int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes);              \
+  virtual int set_clipboard_text(char *snapshot, Bit32u len);                 \
+  virtual void mouse_enabled_changed_specific (bx_bool val);                  \
+  virtual void exit(void);                                                    \
+  /* end of DECLARE_GUI_VIRTUAL_METHODS */
+
 #define BX_MAX_PIXMAPS 16
-#define BX_MAX_HEADERBAR_ENTRIES 10
+#define BX_MAX_HEADERBAR_ENTRIES 11
 #define BX_HEADER_BAR_Y 32
 
 // align pixmaps towards left or right side of header bar
@@ -257,3 +315,26 @@ private:
 // - BX_KEY_NBKEYS
 // - the scancodes table in the file iodev/scancodes.cc
 // - the bx_key_symbol table in the file gui/keymap.cc
+
+
+/////////////// GUI plugin support
+
+// Define macro to supply gui plugin code.  This macro is called once in GUI to
+// supply the plugin initialization methods.  Since it is nearly identical for
+// each gui module, the macro is easier to maintain than pasting the same code
+// in each one.
+//
+// Each gui should declare a class pointer called "theGui" which is derived
+// from bx_gui_c, before calling this macro.  For example, the SDL port
+// says:
+//   static bx_sdl_gui_c *theGui;
+
+#define IMPLEMENT_GUI_PLUGIN_CODE(gui_name)                           \
+  int lib##gui_name##_LTX_plugin_init(plugin_t *plugin,               \
+          plugintype_t type, int argc, char *argv[]) {                \
+    genlog->info("installing %s module as the Bochs GUI", #gui_name); \
+    theGui = new bx_##gui_name##_gui_c ();                            \
+    bx_gui = theGui;                                                  \
+    return(0); /* Success */                                          \
+  }                                                                   \
+  void lib##gui_name##_LTX_plugin_fini(void) { }

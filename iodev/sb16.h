@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.h,v 1.6 2001/10/03 13:10:38 bdenney Exp $
+// $Id: sb16.h,v 1.11 2002/11/13 18:39:41 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -29,8 +29,8 @@
 
 #if BX_USE_SB16_SMF
 #  define BX_SB16_SMF   static
-#  define BX_SB16_THIS  bx_sb16.
-#  define BX_SB16_THISP (&bx_sb16)
+#  define BX_SB16_THIS  theSB16Device->
+#  define BX_SB16_THISP (theSB16Device)
 #else
 #  define BX_SB16_SMF
 #  define BX_SB16_THIS  this->
@@ -59,10 +59,10 @@
 #define BX_SB16_IOMPULEN 4          // number of addresses covered
 #define BX_SB16_IOADLIB 0x388       // equivalent to 0x220..0x223 and 0x228..0x229
 #define BX_SB16_IOADLIBLEN 4        // number of addresses covered
-#define BX_SB16_IRQ     bx_sb16.currentirq
+#define BX_SB16_IRQ     theSB16Device->currentirq
 #define BX_SB16_IRQMPU  BX_SB16_IRQ // IRQ for the MPU401 part - same value
-#define BX_SB16_DMAL    bx_sb16.currentdma8
-#define BX_SB16_DMAH    bx_sb16.currentdma16
+#define BX_SB16_DMAL    theSB16Device->currentdma8
+#define BX_SB16_DMAH    theSB16Device->currentdma16
 
 /*
    A few notes:
@@ -132,11 +132,11 @@ typedef struct {
   int opnum[4];     // operator numbers
   Bit16u freq;      // frequency (in a special code)
   Bit32u afreq;     // actual frequency in milli-Hertz (10^-3 Hz)
-  Boolean freqch;   // byte of the frequency that has changed recently
+  bx_bool freqch;   // byte of the frequency that has changed recently
   Bit8u midichan;   // assigned midi channel
-  Boolean needprogch;  // has the instrument changed
+  bx_bool needprogch;  // has the instrument changed
   Bit8u midinote;   // currently playing midi note
-  Boolean midion;     // is the note on
+  bx_bool midion;     // is the note on
   Bit16u midibend;  // current value of the pitch bender
   Bit8u outputlevel[4];// 6-bit output level attenuations
   Bit8u midivol;    // current midi volume (velocity)
@@ -155,13 +155,13 @@ public:
   BX_SB16_BUFINL void reset();
 
       /* These functions return 1 on success and 0 on error */
-  BX_SB16_BUFINL Boolean put(Bit8u data);    // write one byte in the buffer
-  BX_SB16_BUFINL Boolean puts(char *data, ...);  // write a formatted string to the buffer
-  BX_SB16_BUFINL Boolean get(Bit8u *data);   // read the next available byte
-  BX_SB16_BUFINL Boolean getw(Bit16u *data); // get word, in order lo/hi
-  BX_SB16_BUFINL Boolean getw1(Bit16u *data);// get word, in order hi/lo
-  BX_SB16_BUFINL Boolean full(void);         // is the buffer full?
-  BX_SB16_BUFINL Boolean empty(void);        // is it empty?
+  BX_SB16_BUFINL bx_bool put(Bit8u data);    // write one byte in the buffer
+  BX_SB16_BUFINL bx_bool puts(char *data, ...);  // write a formatted string to the buffer
+  BX_SB16_BUFINL bx_bool get(Bit8u *data);   // read the next available byte
+  BX_SB16_BUFINL bx_bool getw(Bit16u *data); // get word, in order lo/hi
+  BX_SB16_BUFINL bx_bool getw1(Bit16u *data);// get word, in order hi/lo
+  BX_SB16_BUFINL bx_bool full(void);         // is the buffer full?
+  BX_SB16_BUFINL bx_bool empty(void);        // is it empty?
 
   BX_SB16_BUFINL void flush(void);           // empty the buffer
   BX_SB16_BUFINL int bytes(void);            // return number of bytes in the buffer
@@ -171,8 +171,8 @@ public:
   BX_SB16_BUFINL void newcommand(Bit8u newcmd, int bytes);   // start a new command with length bytes
   BX_SB16_BUFINL Bit8u currentcommand(void); // return the current command
   BX_SB16_BUFINL void clearcommand(void);    // clear the command
-  BX_SB16_BUFINL Boolean commanddone(void);  // return if all bytes have arrived
-  BX_SB16_BUFINL Boolean hascommand(void);   // return if there is a pending command
+  BX_SB16_BUFINL bx_bool commanddone(void);  // return if all bytes have arrived
+  BX_SB16_BUFINL bx_bool hascommand(void);   // return if there is a pending command
   BX_SB16_BUFINL int commandbytes(void);     // return the length of the command
 
 
@@ -180,7 +180,7 @@ private:
   Bit8u *buffer;
   int head,tail,length;
   Bit8u command;
-  Boolean havecommand;
+  bx_bool havecommand;
   int bytesneeded;
 };
 
@@ -189,28 +189,16 @@ private:
 class BX_SOUND_OUTPUT_C_DEF;
 
 // The actual emulator class, emulating the sound blaster ports
-class bx_sb16_c : public logfunctions {
+class bx_sb16_c : public bx_devmodel_c {
 public:
 
   bx_sb16_c(void);
   ~bx_sb16_c(void);
-  BX_SB16_SMF void init(bx_devices_c *);
-
-      /* DMA input and output, 8 and 16 bit, have to be public */
-  BX_SB16_SMF void   dma_write8(Bit8u *data_byte);
-  BX_SB16_SMF void   dma_read8(Bit8u *data_byte);
-  BX_SB16_SMF void   dma_write16(Bit16u *data_word);
-  BX_SB16_SMF void   dma_read16(Bit16u *data_word);
-
-      /* the OPL timer event handler has to be called by the timer */
-  BX_SB16_SMF void   opl_timerevent();
+  virtual void init(void);
+  virtual void reset(unsigned type);
 
       /* Make writelog available to output functions */
   BX_SB16_SMF void   writelog(int loglevel, const char *str, ...);
-
-      // DMA8 and DMA16 also public, they're read in devices.cc
-  int currentdma8;
-  int currentdma16;
 
 private:
 
@@ -218,11 +206,13 @@ private:
   FILE *midifile,*wavefile;     // the output files or devices
   BX_SOUND_OUTPUT_C_DEF *output;// the output class
   int currentirq;
+  int currentdma8;
+  int currentdma16;
 
   // the MPU 401 relevant variables
   struct bx_sb16_mpu_struct {
     bx_sb16_buffer datain, dataout, cmd, midicmd;
-    Boolean uartmode, irqpending, forceuartmode, singlecommand;
+    bx_bool uartmode, irqpending, forceuartmode, singlecommand;
 
     int banklsb[BX_SB16_PATCHTABLESIZE];
     int bankmsb[BX_SB16_PATCHTABLESIZE];   // current patch lists
@@ -238,8 +228,8 @@ private:
     bx_sb16_buffer datain, dataout;
     Bit8u resetport;                           // last value written to the reset port
     Bit8u speaker,prostereo;                   // properties of the sound input/output
-    Boolean irqpending;                        // Is an IRQ pending (not ack'd)
-    Boolean midiuartmode;                      // Is the DSP in MIDI UART mode
+    bx_bool irqpending;                        // Is an IRQ pending (not ack'd)
+    bx_bool midiuartmode;                      // Is the DSP in MIDI UART mode
     struct bx_sb16_dsp_dma_struct {
       // Properties of the current DMA transfer:
       // mode= 0: no transfer, 1: single-cycle transfer, 2: auto-init DMA
@@ -302,7 +292,11 @@ private:
     int remaps;
   } emuldata;
 
-  bx_devices_c *devices;
+      /* DMA input and output, 8 and 16 bit */
+  BX_SB16_SMF void   dma_write8(Bit8u *data_byte);
+  BX_SB16_SMF void   dma_read8(Bit8u *data_byte);
+  BX_SB16_SMF void   dma_write16(Bit16u *data_word);
+  BX_SB16_SMF void   dma_read16(Bit16u *data_word);
 
       /* the MPU 401 part of the emulator */
   BX_SB16_SMF Bit32u mpu_status();                   // read status port   3x1
@@ -346,6 +340,7 @@ private:
   BX_SB16_SMF void   opl_index(Bit32u value, int chipid);
   BX_SB16_SMF void   opl_data(Bit32u value, int chipid);
   static void   opl_timer(void *);
+  BX_SB16_SMF void   opl_timerevent(void);
   BX_SB16_SMF void   opl_changeop(int channum, int opernum, int byte, int value);
   BX_SB16_SMF void   opl_settimermask(int value, int chipid);
   BX_SB16_SMF void   opl_set4opmode(int new4opmode);
@@ -353,12 +348,12 @@ private:
   BX_SB16_SMF void   opl_setpercussion(Bit8u value, int chipid);
   BX_SB16_SMF void   opl_setvolume(int channel, int opnum, int outlevel);
   BX_SB16_SMF void   opl_setfreq(int channel);
-  BX_SB16_SMF void   opl_keyonoff(int channel, Boolean onoff);
+  BX_SB16_SMF void   opl_keyonoff(int channel, bx_bool onoff);
   BX_SB16_SMF void   opl_midichannelinit(int channel);
 
       /* several high level sound handlers */
   BX_SB16_SMF int    currentdeltatime();
-  BX_SB16_SMF void   processmidicommand(Boolean force);
+  BX_SB16_SMF void   processmidicommand(bx_bool force);
   BX_SB16_SMF void   midiremapprogram(int channel);  // remap program change
   BX_SB16_SMF int    converttodeltatime(Bit32u deltatime, Bit8u value[4]);
   BX_SB16_SMF void   writemidicommand(int command, int length, Bit8u data[]);
@@ -408,8 +403,6 @@ public:
   BX_SOUND_VIRTUAL int    stopwaveplayback();
   BX_SOUND_VIRTUAL int    closewaveoutput();
 };
-
-extern bx_sb16_c bx_sb16;
 
 #define WRITELOG        sb16->writelog
 #define BOTHLOG(x)      (x)

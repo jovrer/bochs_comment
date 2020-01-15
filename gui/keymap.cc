@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keymap.cc,v 1.5 2002/03/11 16:35:41 bdenney Exp $
+// $Id: keymap.cc,v 1.14 2002/10/25 11:44:37 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  Christophe Bothamy
+//  Copyright (C) 2002 MandrakeSoft S.A.
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -103,7 +103,7 @@ bx_keymap_c::loadKeymap(Bit32u stringToSymbol(const char*))
 }
 
 
-Boolean 
+bx_bool 
 bx_keymap_c::isKeymapLoaded ()
 {
   return (keymapCount > 0);
@@ -154,7 +154,7 @@ get_next_word (char *output)
 }
 
 static Bit32s
-get_next_keymap_line (FILE *fp, char *bxsym, char *modsym, Bit32s *ascii, char *xwinsym)
+get_next_keymap_line (FILE *fp, char *bxsym, char *modsym, Bit32s *ascii, char *hostsym)
 {
   char line[256];
   char buf[256];
@@ -171,9 +171,12 @@ get_next_keymap_line (FILE *fp, char *bxsym, char *modsym, Bit32s *ascii, char *
 	p++;  // move one char beyond the +
 	strcpy (modsym, p);  // copy the rest to modsym
       }
-      BX_ASSERT (get_next_word (buf) >= 0);
+      if (get_next_word (buf) < 0) {
+	BX_PANIC (("keymap line %d: expected 3 columns", lineCount));
+	return -1;
+      }
       if (buf[0] == '\'' && buf[2] == '\'' && buf[3]==0) {
-	*ascii = (Bit32s) buf[1];
+	*ascii = (Bit8u) buf[1];
       } else if (!strcmp(buf, "space")) {
 	*ascii = ' ';
       } else if (!strcmp(buf, "return")) {
@@ -189,7 +192,10 @@ get_next_keymap_line (FILE *fp, char *bxsym, char *modsym, Bit32s *ascii, char *
       } else {
 	BX_PANIC (("keymap line %d: ascii equivalent is \"%s\" but it must be char constant like 'x', or one of space,tab,return,none", lineCount, buf));
       }
-      BX_ASSERT (get_next_word (xwinsym) >= 0);
+      if (get_next_word (hostsym) < 0) {
+        BX_PANIC (("keymap line %d: expected 3 columns", lineCount));
+	return -1;
+      }
       return 0;
     }
     // no words on this line, keep reading.
@@ -200,10 +206,18 @@ get_next_keymap_line (FILE *fp, char *bxsym, char *modsym, Bit32s *ascii, char *
 bx_keymap_c::loadKeymap(Bit32u stringToSymbol(const char*), const char* filename)
 {
     FILE   *keymapFile;
-    char   line[256], c, *p;
-    char baseSym[256], modSym[256], xwinSym[256];
+    char baseSym[256], modSym[256], hostSym[256]; 
     Bit32s ascii;
-    Bit32u baseKey, modKey, xwinKey;
+    Bit32u baseKey, modKey, hostKey;
+    struct stat status;
+
+    if (stat(filename, &status)) {
+      BX_PANIC(("Can not stat keymap file '%s'.",filename));
+      }
+
+    if (!(S_ISREG(status.st_mode))) {
+      BX_PANIC(("Keymap file '%s' is not a file",filename));
+      }
 
     if((keymapFile = fopen(filename,"r"))==NULL) {
       BX_PANIC(("Can not open keymap file '%s'.",filename));
@@ -215,28 +229,26 @@ bx_keymap_c::loadKeymap(Bit32u stringToSymbol(const char*), const char* filename
     // Read keymap file one line at a time
     while(1) {
       if (get_next_keymap_line (keymapFile, 
-	    baseSym, modSym, &ascii, xwinSym) < 0) { break; }
+            baseSym, modSym, &ascii, hostSym) < 0) { break; }
 
-      BX_DEBUG (("bxsym='%s', modSym='%s', ascii=%d, guisym='%s'", baseSym, modSym, ascii, xwinSym));
 
       // convert X_KEY_* symbols to values
       baseKey = convertStringToBXKey(baseSym);
-      if (strncmp ("XK_", xwinSym, 3) != 0) {
-	BX_PANIC (("keymap line %d: X windows symbol '%s' must start with XK_", lineCount, xwinSym));
-      }
       modKey = convertStringToBXKey(modSym);
-	  xwinKey = 0;
-	  if (stringToSymbol != NULL)
-        xwinKey = stringToSymbol(xwinSym + 3);  // skip over the "XK_"
-	       
+      hostKey = 0;
+      if (stringToSymbol != NULL)
+        hostKey = stringToSymbol(hostSym);
+
+      BX_DEBUG (("baseKey='%s' (%d), modSym='%s' (%d), ascii=%d, guisym='%s' (%d)", baseSym, baseKey, modSym, modKey, ascii, hostSym, hostKey));
+       
       // Check if data is valid
       if( baseKey==BX_KEYMAP_UNKNOWN ) {
         BX_PANIC (("line %d: unknown BX_KEY constant '%s'",lineCount,baseSym));
         continue;
         }
 
-      if( xwinKey==BX_KEYMAP_UNKNOWN ) {
-        BX_PANIC (("line %d: unknown GUI constant '%s'",lineCount,xwinSym));
+      if( hostKey==BX_KEYMAP_UNKNOWN ) {
+        BX_PANIC (("line %d: unknown host key name '%s'",lineCount,hostSym));
         continue;
         }
 
@@ -248,7 +260,7 @@ bx_keymap_c::loadKeymap(Bit32u stringToSymbol(const char*), const char* filename
       keymapTable[keymapCount].baseKey=baseKey;
       keymapTable[keymapCount].modKey=modKey;
       keymapTable[keymapCount].ascii=ascii;
-      keymapTable[keymapCount].xwinKey=xwinKey;
+      keymapTable[keymapCount].hostKey=hostKey;
       
       keymapCount++;
       }
@@ -275,14 +287,14 @@ bx_keymap_c::convertStringToBXKey(const char* string)
 }
 
     BXKeyEntry *
-bx_keymap_c::getKeyXwin(Bit32u key)
+bx_keymap_c::findHostKey(Bit32u key)
 {
     Bit16u i;
 
     // We look through the keymap table to find the searched key
     for (i=0; i<keymapCount; i++) {
-      if (keymapTable[i].xwinKey == key) {
-	BX_DEBUG (("key 0x%02x matches xwinKey for entry #%d", key, i));
+      if (keymapTable[i].hostKey == key) {
+	BX_DEBUG (("key 0x%02x matches hostKey for entry #%d", key, i));
         return &keymapTable[i];
         }
       }
@@ -293,10 +305,10 @@ bx_keymap_c::getKeyXwin(Bit32u key)
 }
 
     BXKeyEntry *
-bx_keymap_c::getKeyASCII(Bit8u ch)
+bx_keymap_c::findAsciiChar(Bit8u ch)
 {
     Bit16u i;
-    BX_DEBUG (("getKeyASCII (0x%02x)", ch));
+    BX_DEBUG (("findAsciiChar (0x%02x)", ch));
 
     // We look through the keymap table to find the searched key
     for (i=0; i<keymapCount; i++) {

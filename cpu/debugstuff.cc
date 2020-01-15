@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc,v 1.11 2001/10/09 21:15:14 bdenney Exp $
+// $Id: debugstuff.cc,v 1.28 2002/10/27 15:15:12 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -40,15 +40,15 @@ BX_CPU_C::debug(Bit32u offset)
   BX_INFO(("| ESP=%08x  EBP=%08x  ESI=%08x  EDI=%08x",
           (unsigned) ESP, (unsigned) EBP, (unsigned) ESI, (unsigned) EDI));
   BX_INFO(("| IOPL=%1u %s %s %s %s %s %s %s %s",
-    BX_CPU_THIS_PTR eflags.iopl,
-    BX_CPU_THIS_PTR get_OF()       ? "OV" : "NV",
-    BX_CPU_THIS_PTR eflags.df  ? "DW" : "UP",
-    BX_CPU_THIS_PTR eflags.if_ ? "EI" : "DI",
-    BX_CPU_THIS_PTR get_SF()       ? "NG" : "PL",
-    BX_CPU_THIS_PTR get_ZF()       ? "ZR" : "NZ",
-    BX_CPU_THIS_PTR get_AF()       ? "AC" : "NA",
-    BX_CPU_THIS_PTR get_PF()       ? "PE" : "PO",
-    BX_CPU_THIS_PTR get_CF()       ? "CY" : "NC"));
+    BX_CPU_THIS_PTR get_IOPL (),
+    BX_CPU_THIS_PTR get_OF()          ? "OV" : "NV",
+    BX_CPU_THIS_PTR get_DF()   ? "DW" : "UP",
+    BX_CPU_THIS_PTR get_IF()   ? "EI" : "DI",
+    BX_CPU_THIS_PTR get_SF()          ? "NG" : "PL",
+    BX_CPU_THIS_PTR get_ZF()          ? "ZR" : "NZ",
+    BX_CPU_THIS_PTR get_AF()          ? "AC" : "NA",
+    BX_CPU_THIS_PTR get_PF()          ? "PE" : "PO",
+    BX_CPU_THIS_PTR get_CF()          ? "CY" : "NC"));
   BX_INFO(("| SEG selector     base    limit G D"));
   BX_INFO(("| SEG sltr(index|ti|rpl)     base    limit G D"));
   BX_INFO(("|  DS:%04x( %04x| %01u|  %1u) %08x %08x %1u %1u",
@@ -105,24 +105,40 @@ BX_CPU_C::debug(Bit32u offset)
     (unsigned) BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit,
     (unsigned) BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g,
     (unsigned) BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b));
-  BX_INFO(("| EIP=%08x (%08x)", (unsigned) BX_CPU_THIS_PTR eip,
+  BX_INFO(("| EIP=%08x (%08x)", (unsigned) EIP,
     (unsigned) BX_CPU_THIS_PTR prev_eip));
+#if BX_CPU_LEVEL >= 2 && BX_CPU_LEVEL < 4
+  BX_INFO(("| CR0=0x%08x CR1=0x%08x CR2=0x%08x CR3=0x%08x",
+    BX_CPU_THIS_PTR cr0.val32,
+    0,
+    BX_CPU_THIS_PTR cr2,
+    BX_CPU_THIS_PTR cr3));
+#elif BX_CPU_LEVEL >= 4
+  BX_INFO(("| CR0=0x%08x CR1=0x%08x CR2=0x%08x",
+    BX_CPU_THIS_PTR cr0.val32,
+    0,
+    BX_CPU_THIS_PTR cr2));
+  BX_INFO(("| CR3=0x%08x CR4=0x%08x",
+    BX_CPU_THIS_PTR cr3,
+    BX_CPU_THIS_PTR cr4.getRegister()));
+#endif
+
 
 #if 0
   /* (mch) Hack to display the area round EIP and prev_EIP */
   char buf[100];
-  sprintf(buf, "%04x:%08x  ", BX_CPU_THIS_PTR sregs[BX_SREG_CS].selector.value, BX_CPU_THIS_PTR eip);
+  sprintf(buf, "%04x:%08x  ", BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
   for (int i = 0; i < 8; i++) {
     Bit8u data;
-    BX_CPU_THIS_PTR read_virtual_byte(BX_SREG_CS, BX_CPU_THIS_PTR eip + i, &data);
+    BX_CPU_THIS_PTR read_virtual_byte(BX_SEG_REG_CS, EIP + i, &data);
     sprintf(buf+strlen(buf), "%02x ", data);
     }
   BX_INFO((buf));
 
-  sprintf(buf, "%04x:%08x  ", BX_CPU_THIS_PTR sregs[BX_SREG_CS].selector.value, BX_CPU_THIS_PTR prev_eip);
+  sprintf(buf, "%04x:%08x  ", BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR prev_eip);
   for (int i = 0; i < 8; i++) {
     Bit8u data;
-    BX_CPU_THIS_PTR read_virtual_byte(BX_SREG_CS, BX_CPU_THIS_PTR prev_eip + i, &data);
+    BX_CPU_THIS_PTR read_virtual_byte(BX_SEG_REG_CS, BX_CPU_THIS_PTR prev_eip + i, &data);
     sprintf(buf+strlen(buf), "%02x ", data);
     }
   BX_INFO((buf));
@@ -130,7 +146,7 @@ BX_CPU_C::debug(Bit32u offset)
 
 
 #if BX_DISASM
-  Boolean valid;
+  bx_bool valid;
   Bit32u  phy_addr;
   Bit8u   instr_buf[32];
   char    char_buf[256];
@@ -138,10 +154,11 @@ BX_CPU_C::debug(Bit32u offset)
 
   dbg_xlate_linear2phy(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base + offset,
                        &phy_addr, &valid);
-  if (valid) {
+  if (valid && BX_CPU_THIS_PTR mem!=NULL) {
     BX_CPU_THIS_PTR mem->dbg_fetch_mem(phy_addr, 16, instr_buf);
-    isize = bx_disassemble.disasm(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
-                        instr_buf, char_buf);
+    isize = bx_disassemble.disasm(
+        BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
+        EIP, instr_buf, char_buf);
     for (unsigned j=0; j<isize; j++)
       BX_INFO((">> %02x", (unsigned) instr_buf[j]));
     BX_INFO((">> : %s", char_buf));
@@ -186,7 +203,7 @@ BX_CPU_C::dbg_get_reg(unsigned reg)
     }
 }
 
-  Boolean
+  bx_bool
 BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
 {
   // returns 1=OK, 0=can't change
@@ -210,9 +227,9 @@ BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
         return(0);
         }
       // make sure none of the system bits are being changed
-      current_sys_bits = (BX_CPU_THIS_PTR eflags.nt << 14) |
-                         (BX_CPU_THIS_PTR eflags.iopl << 12) |
-                         (BX_CPU_THIS_PTR eflags.tf << 8);
+      current_sys_bits = ((BX_CPU_THIS_PTR getB_NT()) << 14) |
+                         (BX_CPU_THIS_PTR get_IOPL () << 12) |
+                         ((BX_CPU_THIS_PTR getB_TF()) << 8);
       if ( current_sys_bits != (val & 0x0000f100) ) {
         BX_INFO(("dbg_set_reg: can not modify NT, IOPL, or TF."));
         return(0);
@@ -222,10 +239,10 @@ BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
       BX_CPU_THIS_PTR set_AF(val & 0x01); val >>= 2;
       BX_CPU_THIS_PTR set_ZF(val & 0x01); val >>= 1;
       BX_CPU_THIS_PTR set_SF(val & 0x01); val >>= 2;
-      BX_CPU_THIS_PTR eflags.if_ = val & 0x01; val >>= 1;
-      BX_CPU_THIS_PTR eflags.df  = val & 0x01; val >>= 1;
+      BX_CPU_THIS_PTR set_IF (val & 0x01); val >>= 1;
+      BX_CPU_THIS_PTR set_DF (val & 0x01); val >>= 1;
       BX_CPU_THIS_PTR set_OF(val & 0x01);
-      if (BX_CPU_THIS_PTR eflags.if_)
+      if (BX_CPU_THIS_PTR get_IF ())
         BX_CPU_THIS_PTR async_event = 1;
       return(1);
     case BX_DBG_REG_CS:
@@ -287,7 +304,7 @@ BX_CPU_C::dbg_query_pending(void)
     ret |= BX_DBG_PENDING_DMA;
     }
 
-  if ( BX_CPU_THIS_PTR INTR && BX_CPU_THIS_PTR eflags.if_ ) {
+  if ( BX_CPU_THIS_PTR INTR && BX_CPU_THIS_PTR get_IF () ) {
     ret |= BX_DBG_PENDING_IRQ;
     }
 
@@ -299,33 +316,7 @@ BX_CPU_C::dbg_query_pending(void)
   Bit32u
 BX_CPU_C::dbg_get_eflags(void)
 {
-  Bit32u val32;
-
-  val32 =
-    (BX_CPU_THIS_PTR get_CF()) |
-    (BX_CPU_THIS_PTR eflags.bit1 << 1) |
-    ((BX_CPU_THIS_PTR get_PF()) << 2) |
-    (BX_CPU_THIS_PTR eflags.bit3 << 3) |
-    ((BX_CPU_THIS_PTR get_AF()>0) << 4) |
-    (BX_CPU_THIS_PTR eflags.bit5 << 5) |
-    ((BX_CPU_THIS_PTR get_ZF()>0) << 6) |
-    ((BX_CPU_THIS_PTR get_SF()>0) << 7) |
-    (BX_CPU_THIS_PTR eflags.tf << 8) |
-    (BX_CPU_THIS_PTR eflags.if_ << 9) |
-    (BX_CPU_THIS_PTR eflags.df << 10) |
-    ((BX_CPU_THIS_PTR get_OF()>0) << 11) |
-    (BX_CPU_THIS_PTR eflags.iopl << 12) |
-    (BX_CPU_THIS_PTR eflags.nt << 14) |
-    (BX_CPU_THIS_PTR eflags.bit15 << 15) |
-    (BX_CPU_THIS_PTR eflags.rf << 16) |
-    (BX_CPU_THIS_PTR eflags.vm << 17);
-#if BX_CPU_LEVEL >= 4
-  val32 |= (BX_CPU_THIS_PTR eflags.ac << 18);
-  //val32 |= (BX_CPU_THIS_PTR eflags.vif << 19);
-  //val32 |= (BX_CPU_THIS_PTR eflags.vip << 20);
-  val32 |= (BX_CPU_THIS_PTR eflags.id << 21);
-#endif
-  return(val32);
+  return(BX_CPU_THIS_PTR eflags.val32);
 }
 
 
@@ -435,7 +426,7 @@ BX_CPU_C::dbg_get_descriptor_h(bx_descriptor_t *d)
     }
 }
 
-  Boolean
+  bx_bool
 BX_CPU_C::dbg_get_sreg(bx_dbg_sreg_t *sreg, unsigned sreg_no)
 {
   if (sreg_no > 5)
@@ -447,7 +438,7 @@ BX_CPU_C::dbg_get_sreg(bx_dbg_sreg_t *sreg, unsigned sreg_no)
   return(1);
 }
 
-  Boolean
+  bx_bool
 BX_CPU_C::dbg_get_cpu(bx_dbg_cpu_t *cpu)
 {
   cpu->eax = EAX;
@@ -461,7 +452,7 @@ BX_CPU_C::dbg_get_cpu(bx_dbg_cpu_t *cpu)
   cpu->esp = ESP;
 
   cpu->eflags = dbg_get_eflags();
-  cpu->eip    = BX_CPU_THIS_PTR eip;
+  cpu->eip    = EIP;
 
   cpu->cs.sel   = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
   cpu->cs.des_l = dbg_get_descriptor_l(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache);
@@ -523,19 +514,23 @@ BX_CPU_C::dbg_get_cpu(bx_dbg_cpu_t *cpu)
   cpu->tr6 = 0;
   cpu->tr7 = 0;
 
+#if BX_CPU_LEVEL >= 2
   // cr0:32=pg,cd,nw,am,wp,ne,ts,em,mp,pe
   cpu->cr0 = BX_CPU_THIS_PTR cr0.val32;
   cpu->cr1 = 0;
   cpu->cr2 = BX_CPU_THIS_PTR cr2;
   cpu->cr3 = BX_CPU_THIS_PTR cr3;
-  cpu->cr4 = 0;
+#endif
+#if BX_CPU_LEVEL >= 4
+  cpu->cr4 = BX_CPU_THIS_PTR cr4.getRegister();
+#endif
 
   cpu->inhibit_mask = BX_CPU_THIS_PTR inhibit_mask;
 
   return(1);
 }
 
-  Boolean
+  bx_bool
 BX_CPU_C::dbg_set_cpu(bx_dbg_cpu_t *cpu)
 {
   // returns 1=OK, 0=Error
@@ -641,24 +636,24 @@ BX_CPU_C::dbg_set_cpu(bx_dbg_cpu_t *cpu)
   BX_CPU_THIS_PTR set_AF(val & 0x01); val >>= 2;
   BX_CPU_THIS_PTR set_ZF(val & 0x01); val >>= 1;
   BX_CPU_THIS_PTR set_SF(val & 0x01); val >>= 1;
-  BX_CPU_THIS_PTR eflags.tf  = val & 0x01; val >>= 1;
-  BX_CPU_THIS_PTR eflags.if_ = val & 0x01; val >>= 1;
-  BX_CPU_THIS_PTR eflags.df  = val & 0x01; val >>= 1;
+  BX_CPU_THIS_PTR set_TF (val & 0x01); val >>= 1;
+  BX_CPU_THIS_PTR set_IF (val & 0x01); val >>= 1;
+  BX_CPU_THIS_PTR set_DF (val & 0x01); val >>= 1;
   BX_CPU_THIS_PTR set_OF(val & 0x01); val >>= 1;
-  BX_CPU_THIS_PTR eflags.iopl = val & 0x03; val >>= 2;
-  BX_CPU_THIS_PTR eflags.nt   = val & 0x01; val >>= 2;
-  BX_CPU_THIS_PTR eflags.rf   = val & 0x01; val >>= 1;
-  BX_CPU_THIS_PTR eflags.vm   = val & 0x01; val >>= 1;
+  BX_CPU_THIS_PTR set_IOPL (val & 0x03); val >>= 2;
+  BX_CPU_THIS_PTR set_NT (val & 0x01); val >>= 2;
+  BX_CPU_THIS_PTR set_RF (val & 0x01); val >>= 1;
+  BX_CPU_THIS_PTR set_VM (val & 0x01); val >>= 1;
 #if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR eflags.ac   = val & 0x01; val >>= 1;
-  //BX_CPU_THIS_PTR eflags.vif  = val & 0x01;
+  BX_CPU_THIS_PTR set_AC (val & 0x01); val >>= 1;
+  //BX_CPU_THIS_PTR eflags.set_VIF (val & 0x01);
   val >>= 1;
-  //BX_CPU_THIS_PTR eflags.vip  = val & 0x01;
+  //BX_CPU_THIS_PTR eflags.set_VIP (val & 0x01);
   val >>= 1;
-  BX_CPU_THIS_PTR eflags.id   = val & 0x01;
+  BX_CPU_THIS_PTR set_ID (val & 0x01);
 #endif
 
-  BX_CPU_THIS_PTR eip = cpu->eip;
+  EIP = cpu->eip;
 
 
 
@@ -916,13 +911,15 @@ BX_CPU_C::dbg_set_cpu(bx_dbg_cpu_t *cpu)
   // BX_CPU_THIS_PTR tr7 = cpu->tr7;
 
 
+#if BX_CPU_LEVEL >= 2
   // cr0, cr1, cr2, cr3, cr4
   SetCR0(cpu->cr0);
   BX_CPU_THIS_PTR cr1 = cpu->cr1;
   BX_CPU_THIS_PTR cr2 = cpu->cr2;
   BX_CPU_THIS_PTR cr3 = cpu->cr3;
-#if BX_CPU_LEVEL >= 5
-  BX_CPU_THIS_PTR cr4 = cpu->cr4;
+#endif
+#if BX_CPU_LEVEL >= 4
+  BX_CPU_THIS_PTR cr4.setRegister(cpu->cr4);
 #endif
 
   BX_CPU_THIS_PTR inhibit_mask = cpu->inhibit_mask;
@@ -962,7 +959,9 @@ bx_dbg_init_cpu_mem_env1(bx_dbg_callback_t *callback, int argc, char *argv[])
   UNUSED(argv);
 
 #if 0
+#ifdef __GNUC__
 #warning hardcoding BX_CPU_THIS_PTR mem[0] and cpu[0]
+#endif
   callback->setphymem           = BX_MEM(0)->dbg_set_mem;
   callback->getphymem           = BX_MEM(0)->dbg_fetch_mem;
   callback->xlate_linear2phy    = BX_CPU(0)->dbg_xlate_linear2phy;
@@ -1009,9 +1008,9 @@ BX_CPU_C::atexit(void)
   else if (v8086_mode()) BX_INFO(("v8086 mode"));
   else BX_INFO(("real mode"));
   BX_INFO(("CS.d_b = %u bit",
-    BX_CPU_THIS_PTR sregs[BX_SREG_CS].cache.u.segment.d_b ? 32 : 16));
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b ? 32 : 16));
   BX_INFO(("SS.d_b = %u bit",
-    BX_CPU_THIS_PTR sregs[BX_SREG_SS].cache.u.segment.d_b ? 32 : 16));
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b ? 32 : 16));
 
   debug(BX_CPU_THIS_PTR prev_eip);
 }

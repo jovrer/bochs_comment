@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_arpback.cc,v 1.6 2001/10/03 13:10:38 bdenney Exp $
+// $Id: eth_arpback.cc,v 1.11 2002/11/20 19:06:22 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,13 +31,18 @@
 // rfc0826: arp
 // rfc0903: rarp
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+ 
 #include "bochs.h"
 
-#ifdef ETH_ARPBACK
+#if BX_NE2K_SUPPORT && defined(ETH_ARPBACK)
 
 #include "crc32.h"
 #include "eth_packetmaker.h"
-#define LOG_THIS bx_ne2k.
+#define LOG_THIS bx_devices.pluginNE2kDevice->
 
 
 //static const Bit8u external_mac[]={0xB0, 0xC4, 0x20, 0x20, 0x00, 0x00, 0x00};
@@ -64,7 +69,7 @@ private:
   FILE *txlog, *txlog_txt;
   //Bit8u arpbuf[MAX_FRAME_SIZE];
   //Bit32u buflen;
-  //Boolean bufvalid;
+  //bx_bool bufvalid;
   //CRC_Generator mycrc;
   eth_ETHmaker packetmaker;
 };
@@ -98,7 +103,7 @@ bx_arpback_pktmover_c::bx_arpback_pktmover_c(const char *netif,
 {
   this->rx_timer_index = 
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
-				1, 1); // continuous, active
+				1, 1, "eth_arpback"); // continuous, active
   this->rxh   = rxh;
   this->rxarg = rxarg;
   //bufvalid=0;
@@ -205,5 +210,5 @@ void bx_arpback_pktmover_c::rx_timer (void)
   }
 }
 
-#endif
+#endif /* if BX_NE2K_SUPPORT && defined(ETH_ARPBACK) */
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: unmapped.h,v 1.5 2001/10/03 13:10:38 bdenney Exp $
+// $Id: unmapped.h,v 1.10 2002/10/24 21:07:52 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,12 +27,9 @@
 
 
 
-#define BX_BIOS_MESSAGE_SIZE 80
-
-
 #if BX_USE_UM_SMF
 #  define BX_UM_SMF  static
-#  define BX_UM_THIS bx_unmapped.
+#  define BX_UM_THIS theUnmappedDevice->
 #else
 #  define BX_UM_SMF
 #  define BX_UM_THIS this->
@@ -40,11 +37,13 @@
 
 
 
-class bx_unmapped_c : public logfunctions {
+class bx_unmapped_c : public bx_devmodel_c {
 public:
   bx_unmapped_c(void);
   ~bx_unmapped_c(void);
-  BX_UM_SMF void   init(bx_devices_c *d);
+
+  virtual void init(void);
+  virtual void reset (unsigned type);
 
 private:
 
@@ -55,15 +54,11 @@ private:
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
 
+
   struct {
     Bit8u port80;
     Bit8u port8e;
-
-    char bios_message[BX_BIOS_MESSAGE_SIZE];
-    unsigned int bios_message_i;
+    Bit8u shutdown;
     } s;  // state information
 
-  bx_devices_c *devices;
   };
-
-extern bx_unmapped_c bx_unmapped;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tap.cc,v 1.5 2002/03/11 13:59:38 bdenney Exp $
+// $Id: eth_tap.cc,v 1.11 2002/11/20 19:06:23 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -79,8 +79,15 @@
 // host, you should be able to get Bochs talking to anyone on the internet.
 // 
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+ 
 #include "bochs.h"
-#define LOG_THIS bx_ne2k.
+#if BX_NE2K_SUPPORT
+
+#define LOG_THIS bx_devices.pluginNE2kDevice->
 
 #include <signal.h>
 #include <sys/param.h>
@@ -205,7 +212,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
   // Start the rx poll 
   this->rx_timer_index = 
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
-				1, 1); // continuous, active
+				1, 1, "eth_tap"); // continuous, active
   this->rxh   = rxh;
   this->rxarg = rxarg;
   // eventually Bryce wants txlog to dump in pcap format so that
@@ -255,7 +262,7 @@ bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
   // dump raw bytes to a file, eventually dump in pcap format so that
   // tcpdump -r FILE can interpret them for us.
   int n = fwrite (buf, io_len, 1, txlog);
-  if (n != 1) BX_ERROR (("fwrite to txlog failed", io_len));
+  if (n != 1) BX_ERROR (("fwrite to txlog failed, io_len = %u", io_len));
   // dump packet in hex into an ascii log file
   fprintf (txlog_txt, "NE2K transmitting a packet, length %u\n", io_len);
   Bit8u *charbuf = (Bit8u *)buf;
@@ -307,7 +314,7 @@ void bx_tap_pktmover_c::rx_timer ()
     // dump raw bytes to a file, eventually dump in pcap format so that
     // tcpdump -r FILE can interpret them for us.
     int n = fwrite (rxbuf, nbytes, 1, rxlog);
-    if (n != 1) BX_ERROR (("fwrite to rxlog failed", nbytes));
+    if (n != 1) BX_ERROR (("fwrite to rxlog failed, nbytes = %d", nbytes));
     // dump packet in hex into an ascii log file
     fprintf (rxlog_txt, "NE2K received a packet, length %u\n", nbytes);
     for (n=0; n<nbytes; n++) {
@@ -328,3 +335,5 @@ void bx_tap_pktmover_c::rx_timer ()
   }
   (*rxh)(rxarg, rxbuf, nbytes);
 }
+
+#endif /* if BX_NE2K_SUPPORT */

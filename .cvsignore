@@ -1,0 +1,10 @@
+Makefile
+bochs
+bximage
+bxversion.h
+config.h
+config.log
+config.status
+install-x11-fonts
+bochsout.txt
+config.cache

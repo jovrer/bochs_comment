@@ -1,9 +1,10 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ioapic.cc,v 1.7 2002/03/20 02:41:19 bdenney Exp $
+// $Id: ioapic.cc,v 1.11 2002/11/19 05:47:45 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 #include <stdio.h>
 #include  "bochs.h"
+#if BX_SUPPORT_APIC
 
 class bx_ioapic_c bx_ioapic;
 #define LOG_THIS  bx_ioapic.
@@ -52,6 +53,11 @@ bx_ioapic_c::init ()
     ioredtbl[i].set_odd_word  (0x00000000);
   }
   irr = 0;
+}
+
+void 
+bx_ioapic_c::reset (unsigned type) 
+{
 }
 
 void 
@@ -159,9 +165,11 @@ void bx_ioapic_c::service_ioapic ()
       bx_io_redirect_entry_t *entry = ioredtbl + bit;
       if (!entry->masked) {
 	// clear irr bit and deliver
-	Boolean done = deliver (entry->dest, entry->dest_mode, entry->delivery_mode, entry->vector, entry->polarity, entry->trig_mode);
+	bx_bool done = deliver (entry->dest, entry->dest_mode, entry->delivery_mode, entry->vector, entry->polarity, entry->trig_mode);
 	if (done) irr &= ~(1<<bit);
       }
     }
   }
 }
+
+#endif /* if BX_SUPPORT_APIC */

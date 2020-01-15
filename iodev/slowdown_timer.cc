@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: slowdown_timer.cc,v 1.9 2002/03/06 01:19:50 instinc Exp $
+// $Id: slowdown_timer.cc,v 1.13 2002/10/24 21:07:52 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 #include "bochs.h"
@@ -32,8 +32,8 @@ bx_slowdown_timer_c::bx_slowdown_timer_c() {
   s.timer_handle=BX_NULL_TIMER_HANDLE;
 }
 
-int
-bx_slowdown_timer_c::init() {
+void
+bx_slowdown_timer_c::init(void) {
   s.MAXmultiplier=MAXMULT;
   s.Q=Qval;
 
@@ -43,10 +43,17 @@ bx_slowdown_timer_c::init() {
   s.start_time=sectousec(time(NULL));
   s.start_emulated_time = bx_pc_system.time_usec();
   s.lasttime=0;
-  s.timer_handle=bx_pc_system.register_timer(this, timer_handler, 100 , 1, 1);
+  if (s.timer_handle == BX_NULL_TIMER_HANDLE) {
+    s.timer_handle=bx_pc_system.register_timer(this, timer_handler, 100 , 1, 1,
+	"slowdown_timer");
+  }
   bx_pc_system.deactivate_timer(s.timer_handle);
   bx_pc_system.activate_timer(s.timer_handle,(Bit32u)s.Q,0);
-  return 0;
+}
+
+void
+bx_slowdown_timer_c::reset(unsigned type)
+{
 }
 
 void

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: arith16.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+// $Id: arith16.cc,v 1.28 2002/10/25 18:26:26 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -34,466 +34,477 @@
 
 
   void
-BX_CPU_C::INC_RX(BxInstruction_t *i)
+BX_CPU_C::INC_RX(bxInstruction_c *i)
 {
-  Bit16u rx;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-  rx = ++ BX_CPU_THIS_PTR gen_reg[i->b1 & 0x07].word.rx;
+  asmInc16(BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx, flags32);
+  setEFlagsOSZAP(flags32);
+#else
+  Bit16u rx;
+  rx = ++ BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx;
+
   SET_FLAGS_OSZAP_16(0, 0, rx, BX_INSTR_INC16);
+#endif
 }
 
   void
-BX_CPU_C::DEC_RX(BxInstruction_t *i)
+BX_CPU_C::DEC_RX(bxInstruction_c *i)
 {
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
+
+  asmDec16(BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx, flags32);
+  setEFlagsOSZAP(flags32);
+#else
   Bit16u rx;
 
-  rx = -- BX_CPU_THIS_PTR gen_reg[i->b1 & 0x07].word.rx;
+  rx = -- BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx;
+
   SET_FLAGS_OSZAP_16(0, 0, rx, BX_INSTR_DEC16);
+#endif
 }
 
 
   void
-BX_CPU_C::ADD_EwGw(BxInstruction_t *i)
+BX_CPU_C::ADD_EwGw(bxInstruction_c *i)
 {
-    Bit16u op2_16, op1_16, sum_16;
-
-
-    /* op2_16 is a register, i->rm_addr is an index of a register */
-    op2_16 = BX_READ_16BIT_REG(i->nnn);
-
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
-    sum_16 = op1_16 + op2_16;
-
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, sum_16);
-      }
-    else {
-      write_virtual_word(i->seg, i->rm_addr, &sum_16);
-      }
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
-}
-
-
-  void
-BX_CPU_C::ADD_GwEw(BxInstruction_t *i)
-{
-    Bit16u op1_16, op2_16, sum_16;
-
-
-    /* op1_16 is a register, i->rm_addr is an index of a register */
-    op1_16 = BX_READ_16BIT_REG(i->nnn);
-
-    /* op2_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op2_16);
-      }
-
-    sum_16 = op1_16 + op2_16;
-    /* now write sum back to destination */
-
-    BX_WRITE_16BIT_REG(i->nnn, sum_16);
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
-}
-
-
-  void
-BX_CPU_C::ADD_AXIw(BxInstruction_t *i)
-{
-    Bit16u op1_16, op2_16, sum_16;
-
-    op1_16 = AX;
-
-    op2_16 = i->Iw;
-
-    sum_16 = op1_16 + op2_16;
-
-    /* now write sum back to destination */
-    AX = sum_16;
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
-}
-
-  void
-BX_CPU_C::ADC_EwGw(BxInstruction_t *i)
-{
-  Boolean temp_CF;
   Bit16u op2_16, op1_16, sum_16;
 
-  temp_CF = get_CF();
+  op2_16 = BX_READ_16BIT_REG(i->nnn());
 
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
+    sum_16 = op1_16 + op2_16;
+    BX_WRITE_16BIT_REG(i->rm(), sum_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    sum_16 = op1_16 + op2_16;
+    Write_RMW_virtual_word(sum_16);
+    }
 
-
-
-    /* op2_16 is a register, i->rm_addr is an index of a register */
-    op2_16 = BX_READ_16BIT_REG(i->nnn);
-
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
-    sum_16 = op1_16 + op2_16 + temp_CF;
-
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, sum_16);
-      }
-    else {
-      write_RMW_virtual_word(sum_16);
-      }
-
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
-                              temp_CF);
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
 }
 
 
   void
-BX_CPU_C::ADC_GwEw(BxInstruction_t *i)
+BX_CPU_C::ADD_GwEEw(bxInstruction_c *i)
 {
-  Boolean temp_CF;
+  Bit16u op1_16, op2_16, sum_16;
+  unsigned nnn = i->nnn();
+
+  op1_16 = BX_READ_16BIT_REG(nnn);
+
+  read_virtual_word(i->seg(), RMAddr(i), &op2_16);
+
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
+
+  asmAdd16(sum_16, op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  sum_16 = op1_16 + op2_16;
+#endif
+
+  BX_WRITE_16BIT_REG(nnn, sum_16);
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
+#endif
+}
+
+  void
+BX_CPU_C::ADD_GwEGw(bxInstruction_c *i)
+{
+  Bit16u op1_16, op2_16, sum_16;
+  unsigned nnn = i->nnn();
+
+  op1_16 = BX_READ_16BIT_REG(nnn);
+  op2_16 = BX_READ_16BIT_REG(i->rm());
+
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
+
+  asmAdd16(sum_16, op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  sum_16 = op1_16 + op2_16;
+#endif
+
+  BX_WRITE_16BIT_REG(nnn, sum_16);
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
+#endif
+}
+
+
+  void
+BX_CPU_C::ADD_AXIw(bxInstruction_c *i)
+{
   Bit16u op1_16, op2_16, sum_16;
 
-  temp_CF = get_CF();
+  op1_16 = AX;
+  op2_16 = i->Iw();
 
+  sum_16 = op1_16 + op2_16;
 
-    /* op1_16 is a register, i->rm_addr is an index of a register */
-    op1_16 = BX_READ_16BIT_REG(i->nnn);
+  AX = sum_16;
 
-    /* op2_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op2_16);
-      }
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
+}
 
+  void
+BX_CPU_C::ADC_EwGw(bxInstruction_c *i)
+{
+  bx_bool temp_CF;
+  Bit16u op2_16, op1_16, sum_16;
+
+  temp_CF = getB_CF();
+
+  op2_16 = BX_READ_16BIT_REG(i->nnn());
+
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     sum_16 = op1_16 + op2_16 + temp_CF;
+    BX_WRITE_16BIT_REG(i->rm(), sum_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    sum_16 = op1_16 + op2_16 + temp_CF;
+    Write_RMW_virtual_word(sum_16);
+    }
 
-    /* now write sum back to destination */
-    BX_WRITE_16BIT_REG(i->nnn, sum_16);
-
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
-                             temp_CF);
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
+                         temp_CF);
 }
 
 
   void
-BX_CPU_C::ADC_AXIw(BxInstruction_t *i)
+BX_CPU_C::ADC_GwEw(bxInstruction_c *i)
 {
-  Boolean temp_CF;
+  bx_bool temp_CF;
   Bit16u op1_16, op2_16, sum_16;
 
-  temp_CF = get_CF();
+  temp_CF = getB_CF();
 
-    op1_16 = AX;
 
-    op2_16 = i->Iw;
+  op1_16 = BX_READ_16BIT_REG(i->nnn());
 
-    sum_16 = op1_16 + op2_16 + temp_CF;
+  if (i->modC0()) {
+    op2_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &op2_16);
+    }
 
-    /* now write sum back to destination */
-    AX = sum_16;
+  sum_16 = op1_16 + op2_16 + temp_CF;
 
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
-                           temp_CF);
+  BX_WRITE_16BIT_REG(i->nnn(), sum_16);
+
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
+                         temp_CF);
+}
+
+
+  void
+BX_CPU_C::ADC_AXIw(bxInstruction_c *i)
+{
+  bx_bool temp_CF;
+  Bit16u op1_16, op2_16, sum_16;
+
+  temp_CF = getB_CF();
+
+  op1_16 = AX;
+  op2_16 = i->Iw();
+
+  sum_16 = op1_16 + op2_16 + temp_CF;
+
+  AX = sum_16;
+
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
+                         temp_CF);
 }
 
 
 
 
   void
-BX_CPU_C::SBB_EwGw(BxInstruction_t *i)
+BX_CPU_C::SBB_EwGw(bxInstruction_c *i)
 {
-  Boolean temp_CF;
+  bx_bool temp_CF;
   Bit16u op2_16, op1_16, diff_16;
 
+  temp_CF = getB_CF();
 
-  temp_CF = get_CF();
+  op2_16 = BX_READ_16BIT_REG(i->nnn());
 
-
-    /* op2_16 is a register, i->rm_addr is an index of a register */
-    op2_16 = BX_READ_16BIT_REG(i->nnn);
-
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     diff_16 = op1_16 - (op2_16 + temp_CF);
+    BX_WRITE_16BIT_REG(i->rm(), diff_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    diff_16 = op1_16 - (op2_16 + temp_CF);
+    Write_RMW_virtual_word(diff_16);
+    }
 
-    /* now write diff back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, diff_16);
-      }
-    else {
-      write_RMW_virtual_word(diff_16);
-      }
-
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
-                              temp_CF);
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
+                         temp_CF);
 }
 
 
   void
-BX_CPU_C::SBB_GwEw(BxInstruction_t *i)
+BX_CPU_C::SBB_GwEw(bxInstruction_c *i)
 {
-  Boolean temp_CF;
+  bx_bool temp_CF;
 
-  temp_CF = get_CF();
+  temp_CF = getB_CF();
 
-
-    Bit16u op1_16, op2_16, diff_16;
-
-
-    /* op1_16 is a register, i->rm_addr is an index of a register */
-    op1_16 = BX_READ_16BIT_REG(i->nnn);
-
-    /* op2_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op2_16);
-      }
-
-    diff_16 = op1_16 - (op2_16 + temp_CF);
-
-    /* now write diff back to destination */
-    BX_WRITE_16BIT_REG(i->nnn, diff_16);
-
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
-                              temp_CF);
-}
-
-
-  void
-BX_CPU_C::SBB_AXIw(BxInstruction_t *i)
-{
-  Boolean temp_CF;
   Bit16u op1_16, op2_16, diff_16;
 
-  temp_CF = get_CF();
+  op1_16 = BX_READ_16BIT_REG(i->nnn());
+
+  if (i->modC0()) {
+    op2_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &op2_16);
+    }
+
+  diff_16 = op1_16 - (op2_16 + temp_CF);
+
+  BX_WRITE_16BIT_REG(i->nnn(), diff_16);
+
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
+                         temp_CF);
+}
 
 
-    op1_16 = AX;
+  void
+BX_CPU_C::SBB_AXIw(bxInstruction_c *i)
+{
+  bx_bool temp_CF;
+  Bit16u op1_16, op2_16, diff_16;
 
-    op2_16 = i->Iw;
+  temp_CF = getB_CF();
 
-    diff_16 = op1_16 - (op2_16 + temp_CF);
+  op1_16 = AX;
+  op2_16 = i->Iw();
 
-    /* now write diff back to destination */
-    AX = diff_16;
+  diff_16 = op1_16 - (op2_16 + temp_CF);
 
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
-                              temp_CF);
+  AX = diff_16;
+
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
+                         temp_CF);
 }
 
 
 
   void
-BX_CPU_C::SBB_EwIw(BxInstruction_t *i)
+BX_CPU_C::SBB_EwIw(bxInstruction_c *i)
 {
-  Boolean temp_CF;
+  bx_bool temp_CF;
   Bit16u op2_16, op1_16, diff_16;
 
-  temp_CF = get_CF();
+  temp_CF = getB_CF();
 
+  op2_16 = i->Iw();
 
-
-
-    op2_16 = i->Iw;
-
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     diff_16 = op1_16 - (op2_16 + temp_CF);
+    BX_WRITE_16BIT_REG(i->rm(), diff_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    diff_16 = op1_16 - (op2_16 + temp_CF);
+    Write_RMW_virtual_word(diff_16);
+    }
 
-    /* now write diff back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, diff_16);
-      }
-    else {
-      write_RMW_virtual_word(diff_16);
-      }
-
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
-                              temp_CF);
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, diff_16, BX_INSTR_SBB16,
+                         temp_CF);
 }
 
 
   void
-BX_CPU_C::SUB_EwGw(BxInstruction_t *i)
+BX_CPU_C::SUB_EwGw(bxInstruction_c *i)
 {
-    Bit16u op2_16, op1_16, diff_16;
+  Bit16u op2_16, op1_16, diff_16;
 
+  op2_16 = BX_READ_16BIT_REG(i->nnn());
 
-    /* op2_16 is a register, i->rm_addr is an index of a register */
-    op2_16 = BX_READ_16BIT_REG(i->nnn);
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+    asmSub16(diff_16, op1_16, op2_16, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
     diff_16 = op1_16 - op2_16;
+#endif
+    BX_WRITE_16BIT_REG(i->rm(), diff_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
-    /* now write diff back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, diff_16);
-      }
-    else {
-      write_RMW_virtual_word(diff_16);
-      }
+    asmSub16(diff_16, op1_16, op2_16, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
+    diff_16 = op1_16 - op2_16;
+#endif
+    Write_RMW_virtual_word(diff_16);
+    }
 
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#endif
 }
 
 
   void
-BX_CPU_C::SUB_GwEw(BxInstruction_t *i)
+BX_CPU_C::SUB_GwEw(bxInstruction_c *i)
 {
-    Bit16u op1_16, op2_16, diff_16;
+  Bit16u op1_16, op2_16, diff_16;
+  unsigned nnn = i->nnn();
 
+  op1_16 = BX_READ_16BIT_REG(nnn);
 
-    /* op1_16 is a register, i->rm_addr is an index of a register */
-    op1_16 = BX_READ_16BIT_REG(i->nnn);
+  if (i->modC0()) {
+    op2_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &op2_16);
+    }
 
-    /* op2_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op2_16);
-      }
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    diff_16 = op1_16 - op2_16;
+  asmSub16(diff_16, op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  diff_16 = op1_16 - op2_16;
+#endif
 
-    /* now write diff back to destination */
-    BX_WRITE_16BIT_REG(i->nnn, diff_16);
+  BX_WRITE_16BIT_REG(nnn, diff_16);
 
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#endif
 }
 
   void
-BX_CPU_C::SUB_AXIw(BxInstruction_t *i)
+BX_CPU_C::SUB_AXIw(bxInstruction_c *i)
 {
-    Bit16u op1_16, op2_16, diff_16;
+  Bit16u op1_16, op2_16, diff_16;
 
-    op1_16 = AX;
+  op1_16 = AX;
+  op2_16 = i->Iw();
 
-    op2_16 = i->Iw;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    diff_16 = op1_16 - op2_16;
+  asmSub16(diff_16, op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  diff_16 = op1_16 - op2_16;
+#endif
 
+  AX = diff_16;
 
-    /* now write diff back to destination */
-    AX = diff_16;
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#endif
 }
 
 
   void
-BX_CPU_C::CMP_EwGw(BxInstruction_t *i)
+BX_CPU_C::CMP_EwGw(bxInstruction_c *i)
 {
-    Bit16u op2_16, op1_16, diff_16;
+  Bit16u op2_16, op1_16;
 
+  op2_16 = BX_READ_16BIT_REG(i->nnn());
 
-    /* op2_16 is a register, i->rm_addr is an index of a register */
-    op2_16 = BX_READ_16BIT_REG(i->nnn);
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    }
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    diff_16 = op1_16 - op2_16;
+  asmCmp16(op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit16u diff_16;
+  diff_16 = op1_16 - op2_16;
 
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+#endif
 }
 
 
   void
-BX_CPU_C::CMP_GwEw(BxInstruction_t *i)
+BX_CPU_C::CMP_GwEw(bxInstruction_c *i)
 {
-    Bit16u op1_16, op2_16, diff_16;
+  Bit16u op1_16, op2_16;
 
+  op1_16 = BX_READ_16BIT_REG(i->nnn());
 
-    /* op1_16 is a register, i->rm_addr is an index of a register */
-    op1_16 = BX_READ_16BIT_REG(i->nnn);
+  if (i->modC0()) {
+    op2_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &op2_16);
+    }
 
-    /* op2_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op2_16);
-      }
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    diff_16 = op1_16 - op2_16;
+  asmCmp16(op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit16u diff_16;
+  diff_16 = op1_16 - op2_16;
 
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+#endif
 }
 
 
   void
-BX_CPU_C::CMP_AXIw(BxInstruction_t *i)
+BX_CPU_C::CMP_AXIw(bxInstruction_c *i)
 {
-    Bit16u op1_16, op2_16, diff_16;
+  Bit16u op1_16, op2_16;
 
-    op1_16 = AX;
+  op1_16 = AX;
+  op2_16 = i->Iw();
 
-    op2_16 = i->Iw;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    diff_16 = op1_16 - op2_16;
+  asmCmp16(op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit16u diff_16;
+  diff_16 = op1_16 - op2_16;
 
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+#endif
 }
 
 
   void
-BX_CPU_C::CBW(BxInstruction_t *i)
+BX_CPU_C::CBW(bxInstruction_c *i)
 {
   /* CBW: no flags are effected */
 
@@ -501,63 +512,53 @@ BX_CPU_C::CBW(BxInstruction_t *i)
 }
 
   void
-BX_CPU_C::CWD(BxInstruction_t *i)
+BX_CPU_C::CWD(bxInstruction_c *i)
 {
   /* CWD: no flags are affected */
 
-    if (AX & 0x8000) {
-      DX = 0xFFFF;
-      }
-    else {
-      DX = 0x0000;
-      }
+  if (AX & 0x8000) {
+    DX = 0xFFFF;
+    }
+  else {
+    DX = 0x0000;
+    }
 }
 
 
   void
-BX_CPU_C::XADD_EwGw(BxInstruction_t *i)
+BX_CPU_C::XADD_EwGw(bxInstruction_c *i)
 {
 #if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
 
-    Bit16u op2_16, op1_16, sum_16;
+  Bit16u op2_16, op1_16, sum_16;
 
-    /* XADD dst(r/m), src(r)
-     * temp <-- src + dst         | sum = op2 + op1
-     * src  <-- dst               | op2 = op1
-     * dst  <-- tmp               | op1 = sum
-     */
+  /* XADD dst(r/m), src(r)
+   * temp <-- src + dst         | sum = op2 + op1
+   * src  <-- dst               | op2 = op1
+   * dst  <-- tmp               | op1 = sum
+   */
 
-    /* op2 is a register, i->rm_addr is an index of a register */
-    op2_16 = BX_READ_16BIT_REG(i->nnn);
+  op2_16 = BX_READ_16BIT_REG(i->nnn());
 
-    /* op1 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     sum_16 = op1_16 + op2_16;
+    // and write destination into source
+    // Note: if both op1 & op2 are registers, the last one written
+    //       should be the sum, as op1 & op2 may be the same register.
+    //       For example:  XADD AL, AL
+    BX_WRITE_16BIT_REG(i->nnn(), op1_16);
+    BX_WRITE_16BIT_REG(i->rm(), sum_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    sum_16 = op1_16 + op2_16;
+    Write_RMW_virtual_word(sum_16);
+    /* and write destination into source */
+    BX_WRITE_16BIT_REG(i->nnn(), op1_16);
+    }
 
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      // and write destination into source
-      // Note: if both op1 & op2 are registers, the last one written
-      //       should be the sum, as op1 & op2 may be the same register.
-      //       For example:  XADD AL, AL
-      BX_WRITE_16BIT_REG(i->nnn, op1_16);
-      BX_WRITE_16BIT_REG(i->rm, sum_16);
-      }
-    else {
-      write_RMW_virtual_word(sum_16);
-      /* and write destination into source */
-      BX_WRITE_16BIT_REG(i->nnn, op1_16);
-      }
-
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_XADD16);
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_XADD16);
 #else
   BX_PANIC(("XADD_EvGv: not supported on < 80486"));
 #endif
@@ -566,248 +567,260 @@ BX_CPU_C::XADD_EwGw(BxInstruction_t *i)
 
 
   void
-BX_CPU_C::ADD_EwIw(BxInstruction_t *i)
+BX_CPU_C::ADD_EEwIw(bxInstruction_c *i)
 {
-    Bit16u op2_16, op1_16, sum_16;
-
-
-    op2_16 = i->Iw;
-
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
-    sum_16 = op1_16 + op2_16;
-
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, sum_16);
-      }
-    else {
-      write_RMW_virtual_word(sum_16);
-      }
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
-}
-
-  void
-BX_CPU_C::ADC_EwIw(BxInstruction_t *i)
-{
-  Boolean temp_CF;
   Bit16u op2_16, op1_16, sum_16;
 
-  temp_CF = get_CF();
+  op2_16 = i->Iw();
 
+  read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
 
-    op2_16 = i->Iw;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
+  asmAdd16(sum_16, op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  sum_16 = op1_16 + op2_16;
+#endif
+  Write_RMW_virtual_word(sum_16);
 
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
+#endif
+}
+
+  void
+BX_CPU_C::ADD_EGwIw(bxInstruction_c *i)
+{
+  Bit16u op2_16, op1_16, sum_16;
+
+  op2_16 = i->Iw();
+
+  op1_16 = BX_READ_16BIT_REG(i->rm());
+
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
+
+  asmAdd16(sum_16, op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  sum_16 = op1_16 + op2_16;
+#endif
+  BX_WRITE_16BIT_REG(i->rm(), sum_16);
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, sum_16, BX_INSTR_ADD16);
+#endif
+}
+
+  void
+BX_CPU_C::ADC_EwIw(bxInstruction_c *i)
+{
+  bx_bool temp_CF;
+  Bit16u op2_16, op1_16, sum_16;
+
+  temp_CF = getB_CF();
+
+  op2_16 = i->Iw();
+
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     sum_16 = op1_16 + op2_16 + temp_CF;
+    BX_WRITE_16BIT_REG(i->rm(), sum_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    sum_16 = op1_16 + op2_16 + temp_CF;
+    Write_RMW_virtual_word(sum_16);
+    }
 
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, sum_16);
-      }
-    else {
-      write_RMW_virtual_word(sum_16);
-      }
-
-    SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
-                              temp_CF);
+  SET_FLAGS_OSZAPC_16_CF(op1_16, op2_16, sum_16, BX_INSTR_ADC16,
+                         temp_CF);
 }
 
 
   void
-BX_CPU_C::SUB_EwIw(BxInstruction_t *i)
+BX_CPU_C::SUB_EwIw(bxInstruction_c *i)
 {
-    Bit16u op2_16, op1_16, diff_16;
+  Bit16u op2_16, op1_16, diff_16;
 
 
-    op2_16 = i->Iw;
+  op2_16 = i->Iw();
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
+    asmSub16(diff_16, op1_16, op2_16, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
     diff_16 = op1_16 - op2_16;
+#endif
+    BX_WRITE_16BIT_REG(i->rm(), diff_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
-    /* now write diff back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, diff_16);
-      }
-    else {
-      write_RMW_virtual_word(diff_16);
-      }
-
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
-}
-
-  void
-BX_CPU_C::CMP_EwIw(BxInstruction_t *i)
-{
-    Bit16u op2_16, op1_16, diff_16;
-
-
-    op2_16 = i->Iw;
-
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+    asmSub16(diff_16, op1_16, op2_16, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
     diff_16 = op1_16 - op2_16;
+#endif
+    Write_RMW_virtual_word(diff_16);
+    }
 
-    SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_SUB16);
+#endif
+}
+
+  void
+BX_CPU_C::CMP_EwIw(bxInstruction_c *i)
+{
+  Bit16u op2_16, op1_16;
+
+  op2_16 = i->Iw();
+
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    }
+
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
+
+  asmCmp16(op1_16, op2_16, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit16u diff_16;
+  diff_16 = op1_16 - op2_16;
+
+  SET_FLAGS_OSZAPC_16(op1_16, op2_16, diff_16, BX_INSTR_CMP16);
+#endif
 }
 
 
 
   void
-BX_CPU_C::NEG_Ew(BxInstruction_t *i)
+BX_CPU_C::NEG_Ew(bxInstruction_c *i)
 {
-    Bit16u op1_16, diff_16;
+  Bit16u op1_16, diff_16;
 
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     diff_16 = 0 - op1_16;
+    BX_WRITE_16BIT_REG(i->rm(), diff_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    diff_16 = 0 - op1_16;
+    Write_RMW_virtual_word(diff_16);
+    }
 
-    /* now write diff back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, diff_16);
-      }
-    else {
-      write_RMW_virtual_word(diff_16);
-      }
-
-    SET_FLAGS_OSZAPC_16(op1_16, 0, diff_16, BX_INSTR_NEG16);
+  SET_FLAGS_OSZAPC_16(op1_16, 0, diff_16, BX_INSTR_NEG16);
 }
 
 
   void
-BX_CPU_C::INC_Ew(BxInstruction_t *i)
+BX_CPU_C::INC_Ew(bxInstruction_c *i)
 {
-    Bit16u op1_16;
+  Bit16u op1_16;
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
-
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     op1_16++;
+    BX_WRITE_16BIT_REG(i->rm(), op1_16);
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    op1_16++;
+    Write_RMW_virtual_word(op1_16);
+    }
 
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, op1_16);
-      }
-    else {
-      write_RMW_virtual_word(op1_16);
-      }
-
-    SET_FLAGS_OSZAP_16(0, 0, op1_16, BX_INSTR_INC16);
+  SET_FLAGS_OSZAP_16(0, 0, op1_16, BX_INSTR_INC16);
 }
 
 
   void
-BX_CPU_C::DEC_Ew(BxInstruction_t *i)
+BX_CPU_C::DEC_Ew(bxInstruction_c *i)
 {
-    Bit16u op1_16;
+  Bit16u op1_16;
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
-      }
+  if (i->modC0()) {
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
+    asmDec16(BX_CPU_THIS_PTR gen_reg[i->rm()].word.rx, flags32);
+    setEFlagsOSZAP(flags32);
+#else
+    op1_16 = BX_READ_16BIT_REG(i->rm());
     op1_16--;
+    BX_WRITE_16BIT_REG(i->rm(), op1_16);
+#endif
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
-    /* now write sum back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_16BIT_REG(i->rm, op1_16);
-      }
-    else {
-      write_RMW_virtual_word(op1_16);
-      }
+    asmDec16(op1_16, flags32);
+    setEFlagsOSZAP(flags32);
+#else
+    op1_16--;
+#endif
+    Write_RMW_virtual_word(op1_16);
+    }
 
-    SET_FLAGS_OSZAP_16(0, 0, op1_16, BX_INSTR_DEC16);
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAP_16(0, 0, op1_16, BX_INSTR_DEC16);
+#endif
 }
 
 
   void
-BX_CPU_C::CMPXCHG_EwGw(BxInstruction_t *i)
+BX_CPU_C::CMPXCHG_EwGw(bxInstruction_c *i)
 {
 #if (BX_CPU_LEVEL >= 4) || (BX_CPU_LEVEL_HACKED >= 4)
 
-    Bit16u op2_16, op1_16, diff_16;
+  Bit16u op2_16, op1_16, diff_16;
 
-    /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
+  if (i->modC0()) {
+    op1_16 = BX_READ_16BIT_REG(i->rm());
+    }
+  else {
+    read_RMW_virtual_word(i->seg(), RMAddr(i), &op1_16);
+    }
+
+  diff_16 = AX - op1_16;
+
+  SET_FLAGS_OSZAPC_16(AX, op1_16, diff_16, BX_INSTR_CMP16);
+
+  if (diff_16 == 0) {  // if accumulator == dest
+    // ZF = 1
+    set_ZF(1);
+    // dest <-- src
+    op2_16 = BX_READ_16BIT_REG(i->nnn());
+
+    if (i->modC0()) {
+      BX_WRITE_16BIT_REG(i->rm(), op2_16);
       }
     else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_word(i->seg, i->rm_addr, &op1_16);
+      Write_RMW_virtual_word(op2_16);
       }
-
-    diff_16 = AX - op1_16;
-
-    SET_FLAGS_OSZAPC_16(AX, op1_16, diff_16, BX_INSTR_CMP16);
-
-    if (diff_16 == 0) {  // if accumulator == dest
-      // ZF = 1
-      set_ZF(1);
-      // dest <-- src
-      op2_16 = BX_READ_16BIT_REG(i->nnn);
-
-      if (i->mod == 0xc0) {
-        BX_WRITE_16BIT_REG(i->rm, op2_16);
-        }
-      else {
-        write_RMW_virtual_word(op2_16);
-        }
-      }
-    else {
-      // ZF = 0
-      set_ZF(0);
-      // accumulator <-- dest
-      AX = op1_16;
-      }
+    }
+  else {
+    // ZF = 0
+    set_ZF(0);
+    // accumulator <-- dest
+    AX = op1_16;
+    }
 
 #else
   BX_PANIC(("CMPXCHG_EwGw:"));

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: resolve16.cc,v 1.5 2001/10/03 13:10:37 bdenney Exp $
+// $Id: resolve16.cc,v 1.8 2002/09/19 19:17:20 kevinlawton Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -36,78 +36,83 @@
 
 
   void
-BX_CPU_C::Resolve16Mod0Rm0(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm0(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BX + SI);
+  RMAddr(i) = (Bit16u) (BX + SI);
 }
   void
-BX_CPU_C::Resolve16Mod0Rm1(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm1(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BX + DI);
+  RMAddr(i) = (Bit16u) (BX + DI);
 }
   void
-BX_CPU_C::Resolve16Mod0Rm2(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm2(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BP + SI);
+  RMAddr(i) = (Bit16u) (BP + SI);
 }
   void
-BX_CPU_C::Resolve16Mod0Rm3(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm3(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BP + DI);
+  RMAddr(i) = (Bit16u) (BP + DI);
 }
   void
-BX_CPU_C::Resolve16Mod0Rm4(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm4(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) SI;
+  RMAddr(i) = (Bit16u) SI;
 }
   void
-BX_CPU_C::Resolve16Mod0Rm5(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm5(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) DI;
+  RMAddr(i) = (Bit16u) DI;
 }
   void
-BX_CPU_C::Resolve16Mod0Rm7(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod0Rm6(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) BX;
+  RMAddr(i) = i->displ16u();
+}
+  void
+BX_CPU_C::Resolve16Mod0Rm7(bxInstruction_c *i)
+{
+  RMAddr(i) = (Bit16u) BX;
 }
 
   void
-BX_CPU_C::Resolve16Mod1or2Rm0(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm0(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BX + SI + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (BX + SI + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm1(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm1(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BX + DI + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (BX + DI + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm2(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm2(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BP + SI + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (BP + SI + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm3(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm3(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BP + DI + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (BP + DI + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm4(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm4(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (SI + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (SI + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm5(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm5(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (DI + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (DI + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm6(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm6(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BP + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (BP + (Bit16s) i->displ16u());
 }
   void
-BX_CPU_C::Resolve16Mod1or2Rm7(BxInstruction_t *i)
+BX_CPU_C::Resolve16Mod1or2Rm7(bxInstruction_c *i)
 {
-  i->rm_addr = (Bit16u) (BX + (Bit16s) i->displ16u);
+  RMAddr(i) = (Bit16u) (BX + (Bit16s) i->displ16u());
 }

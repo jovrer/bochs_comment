@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit.cc,v 1.10 2001/10/03 13:10:38 bdenney Exp $
+// $Id: pit.cc,v 1.14 2002/10/26 03:57:19 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -158,22 +158,20 @@ bx_pit_c::~bx_pit_c( void )
 
 
   int
-bx_pit_c::init( bx_devices_c *d )
+bx_pit_c::init( void )
 {
-  BX_PIT_THIS devices = d;
+  DEV_register_irq(0, "8254 PIT");
+  DEV_register_ioread_handler(this, read_handler, 0x0040, "8254 PIT", 7);
+  DEV_register_ioread_handler(this, read_handler, 0x0041, "8254 PIT", 7);
+  DEV_register_ioread_handler(this, read_handler, 0x0042, "8254 PIT", 7);
+  DEV_register_ioread_handler(this, read_handler, 0x0043, "8254 PIT", 7);
+  DEV_register_ioread_handler(this, read_handler, 0x0061, "8254 PIT", 7);
 
-  BX_PIT_THIS devices->register_irq(0, "8254 PIT");
-  BX_PIT_THIS devices->register_io_read_handler(this, read_handler, 0x0040, "8254 PIT");
-  BX_PIT_THIS devices->register_io_read_handler(this, read_handler, 0x0041, "8254 PIT");
-  BX_PIT_THIS devices->register_io_read_handler(this, read_handler, 0x0042, "8254 PIT");
-  BX_PIT_THIS devices->register_io_read_handler(this, read_handler, 0x0043, "8254 PIT");
-  BX_PIT_THIS devices->register_io_read_handler(this, read_handler, 0x0061, "8254 PIT");
-
-  BX_PIT_THIS devices->register_io_write_handler(this, write_handler, 0x0040, "8254 PIT");
-  BX_PIT_THIS devices->register_io_write_handler(this, write_handler, 0x0041, "8254 PIT");
-  BX_PIT_THIS devices->register_io_write_handler(this, write_handler, 0x0042, "8254 PIT");
-  BX_PIT_THIS devices->register_io_write_handler(this, write_handler, 0x0043, "8254 PIT");
-  BX_PIT_THIS devices->register_io_write_handler(this, write_handler, 0x0061, "8254 PIT");
+  DEV_register_iowrite_handler(this, write_handler, 0x0040, "8254 PIT", 7);
+  DEV_register_iowrite_handler(this, write_handler, 0x0041, "8254 PIT", 7);
+  DEV_register_iowrite_handler(this, write_handler, 0x0042, "8254 PIT", 7);
+  DEV_register_iowrite_handler(this, write_handler, 0x0043, "8254 PIT", 7);
+  DEV_register_iowrite_handler(this, write_handler, 0x0061, "8254 PIT", 7);
 
   BX_PIT_THIS s.speaker_data_on = 0;
   BX_PIT_THIS s.refresh_clock_div2 = 0;
@@ -223,10 +221,8 @@ bx_pit_c::init( bx_devices_c *d )
   return(1);
 }
 
-
-
-
-
+void bx_pit_c::reset(unsigned type) {
+}
 
   // static IO port read callback handler
   // redirects to non-static class handler to avoid virtual functions
@@ -449,7 +445,7 @@ BX_INFO(("timer 0-2 mode control: comm:%02x mode:%02x bcd_mode:%u",
   void
 bx_pit_c::write_count_reg( Bit8u   value, unsigned timerid )
 {
-  Boolean xfer_complete;
+  bx_bool xfer_complete;
 
   switch ( BX_PIT_THIS s.timer[timerid].latch_mode ) {
     case BX_PIT_LATCH_MODE_16BIT: /* write1=LSB, write2=MSB */
@@ -608,7 +604,7 @@ bx_pit_c::latch( unsigned timerid )
   BX_PIT_THIS s.timer[timerid].output_latch_value = BX_PIT_THIS s.timer[timerid].counter;
 
   if (bx_dbg.pit)
-    BX_INFO(("pit: latch_value = %lu", BX_PIT_THIS s.timer[timerid].output_latch_value));
+    BX_INFO(("pit: latch_value = %u", (unsigned) BX_PIT_THIS s.timer[timerid].output_latch_value));
   BX_PIT_THIS s.timer[timerid].output_latch_toggle = 0;
   BX_PIT_THIS s.timer[timerid].output_latch_full   = 1;
 }
@@ -756,10 +752,10 @@ bx_kbd_port61h_write(Bit8u   value)
 #endif
 
 
-  Boolean
+  bx_bool
 bx_pit_c::periodic( Bit32u   usec_delta )
 {
-  Boolean prev_timer0_out;
+  bx_bool prev_timer0_out;
 
   prev_timer0_out = BX_PIT_THIS s.timer[0].OUT;
 

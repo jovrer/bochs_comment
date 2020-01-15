@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h,v 1.9 2002/02/06 18:51:48 vruppert Exp $
+// $Id: floppy.h,v 1.16 2002/11/30 09:39:29 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -31,7 +31,7 @@
 
 #if BX_USE_FD_SMF
 #  define BX_FD_SMF  static
-#  define BX_FD_THIS bx_floppy.
+#  define BX_FD_THIS theFloppyController->
 #else
 #  define BX_FD_SMF
 #  define BX_FD_THIS this->
@@ -47,17 +47,15 @@ typedef struct {
   unsigned write_protected;
   } floppy_t;
 
-class bx_floppy_ctrl_c : public logfunctions {
+class bx_floppy_ctrl_c : public bx_floppy_stub_c {
 public:
 
   bx_floppy_ctrl_c(void);
   ~bx_floppy_ctrl_c(void);
-  BX_FD_SMF void   init(bx_devices_c *d, bx_cmos_c *cmos);
-  BX_FD_SMF void   reset(unsigned source);
-  BX_FD_SMF void   dma_write(Bit8u *data_byte);
-  BX_FD_SMF void   dma_read(Bit8u *data_byte);
-  BX_FD_SMF unsigned set_media_status(unsigned drive, unsigned status);
-  BX_FD_SMF unsigned get_media_status(unsigned drive);
+  virtual void   init(void);
+  virtual void   reset(unsigned type);
+  virtual unsigned set_media_status(unsigned drive, unsigned status);
+  virtual unsigned get_media_status(unsigned drive);
 
 private:
 
@@ -67,11 +65,11 @@ private:
     Bit8u   command[10]; /* largest command size ??? */
     Bit8u   command_index;
     Bit8u   command_size;
-    Boolean command_complete;
+    bx_bool command_complete;
     Bit8u   pending_command;
 
-    Boolean multi_track;
-    Boolean pending_irq;
+    bx_bool multi_track;
+    bx_bool pending_irq;
     Bit8u   reset_sensei;
     Bit8u   format_count;
     Bit8u   format_fillbyte;
@@ -111,13 +109,12 @@ private:
     Bit8u    floppy_buffer[512+2]; // 2 extra for good measure
     unsigned floppy_buffer_index;
     int      floppy_timer_index;
-    Boolean  media_present[2];
-    Bit8u    DIR; // Digital Input Register:
+    bx_bool  media_present[2];
+    Bit8u    device_type[4];
+    Bit8u    DIR[4]; // Digital Input Register:
                   // b7: 0=diskette is present and has not been changed
                   //     1=diskette missing or changed
     } s;  // state information
-
-  bx_devices_c *devices;
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -125,15 +122,17 @@ private:
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
+  BX_FD_SMF void   dma_write(Bit8u *data_byte);
+  BX_FD_SMF void   dma_read(Bit8u *data_byte);
   BX_FD_SMF void   floppy_command(void);
   BX_FD_SMF void   floppy_xfer(Bit8u drive, Bit32u offset, Bit8u *buffer, Bit32u bytes, Bit8u direction);
   BX_FD_SMF void   raise_interrupt(void);
+  BX_FD_SMF void   enter_idle_phase(void);
+  BX_FD_SMF void   enter_result_phase(void);
   static void   timer_handler(void *);
 
 public:
   BX_FD_SMF void   timer(void);
   BX_FD_SMF void   increment_sector(void);
-  BX_FD_SMF Boolean evaluate_media(unsigned type, char *path, floppy_t *floppy);
+  BX_FD_SMF bx_bool evaluate_media(unsigned type, char *path, floppy_t *floppy);
   };
-
-extern bx_floppy_ctrl_c bx_floppy;

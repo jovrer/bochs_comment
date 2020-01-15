@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: guest2host.h,v 1.4 2001/10/03 13:10:38 bdenney Exp $
+// $Id: guest2host.h,v 1.8 2002/12/06 18:48:08 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -46,9 +46,10 @@ class bx_g2h_c : public logfunctions {
 public:
   bx_g2h_c(void);
   ~bx_g2h_c(void);
-  static void   init(bx_devices_c *d);
-  unsigned aquire_channel(bx_g2h_callback_t);
-  unsigned deaquire_channel(unsigned channel);
+  static void   init(void);
+  void reset (unsigned type);
+  unsigned acquire_channel(bx_g2h_callback_t);
+  unsigned deacquire_channel(unsigned channel);
 
 private:
 
@@ -59,7 +60,7 @@ private:
   struct {
     struct {
       bx_g2h_callback_t f;
-      Boolean used;
+      bx_bool used;
       } callback[BX_MAX_G2H_CHANNELS];
 
     // Define the data received from the guest OS.

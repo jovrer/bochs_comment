@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logical32.cc,v 1.5 2001/10/03 13:10:37 bdenney Exp $
+// $Id: logical32.cc,v 1.19 2002/10/25 18:26:28 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,403 +37,421 @@
 
 
   void
-BX_CPU_C::XOR_EdGd(BxInstruction_t *i)
+BX_CPU_C::XOR_EdGd(bxInstruction_c *i)
 {
-    /* for 32 bit operand size mode */
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32, result_32;
 
-    /* op2_32 is a register, op2_addr is an index of a register */
-    op2_32 = BX_READ_32BIT_REG(i->nnn);
+  op2_32 = BX_READ_32BIT_REG(i->nnn());
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
-
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
     result_32 = op1_32 ^ op2_32;
-
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
-
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_XOR32);
-}
-
-
-  void
-BX_CPU_C::XOR_GdEd(BxInstruction_t *i)
-{
-    /* for 32 bit operand size mode */
-    Bit32u op1_32, op2_32, result_32;
-
-    op1_32 = BX_READ_32BIT_REG(i->nnn);
-
-    /* op2_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_dword(i->seg, i->rm_addr, &op2_32);
-      }
-
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = op1_32 ^ op2_32;
+    Write_RMW_virtual_dword(result_32);
+    }
 
-    /* now write result back to destination */
-    BX_WRITE_32BIT_REG(i->nnn, result_32);
-
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_XOR32);
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_XOR32);
 }
 
 
   void
-BX_CPU_C::XOR_EAXId(BxInstruction_t *i)
+BX_CPU_C::XOR_GdEd(bxInstruction_c *i)
 {
-    /* for 32 bit operand size mode */
-    Bit32u op1_32, op2_32, sum_32;
+  Bit32u op1_32, op2_32, result_32;
+  unsigned nnn = i->nnn();
 
-    op1_32 = EAX;
+  op1_32 = BX_READ_32BIT_REG(nnn);
 
-    op2_32 = i->Id;
+  if (i->modC0()) {
+    op2_32 = BX_READ_32BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_dword(i->seg(), RMAddr(i), &op2_32);
+    }
 
-    sum_32 = op1_32 ^ op2_32;
+  result_32 = op1_32 ^ op2_32;
 
-    /* now write sum back to destination */
-    EAX = sum_32;
+  BX_WRITE_32BIT_REGZ(nnn, result_32);
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_XOR32);
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_XOR32);
+}
+
+
+  void
+BX_CPU_C::XOR_EAXId(bxInstruction_c *i)
+{
+  Bit32u op1_32, op2_32, sum_32;
+
+  op1_32 = EAX;
+  op2_32 = i->Id();
+
+  sum_32 = op1_32 ^ op2_32;
+
+#if BX_SUPPORT_X86_64
+  RAX = sum_32;
+#else
+  EAX = sum_32;
+#endif
+
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_XOR32);
 }
 
   void
-BX_CPU_C::XOR_EdId(BxInstruction_t *i)
+BX_CPU_C::XOR_EdId(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32, result_32;
 
-    op2_32 = i->Id;
+  op2_32 = i->Id();
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
-
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
     result_32 = op1_32 ^ op2_32;
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
+    result_32 = op1_32 ^ op2_32;
+    Write_RMW_virtual_dword(result_32);
+    }
 
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
-
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_XOR32);
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_XOR32);
 }
 
 
   void
-BX_CPU_C::OR_EdId(BxInstruction_t *i)
+BX_CPU_C::OR_EdId(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32, result_32;
 
-    op2_32 = i->Id;
+  op2_32 = i->Id();
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
-
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
     result_32 = op1_32 | op2_32;
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
+    result_32 = op1_32 | op2_32;
+    Write_RMW_virtual_dword(result_32);
+    }
 
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
-
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_OR32);
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_OR32);
 }
 
   void
-BX_CPU_C::NOT_Ed(BxInstruction_t *i)
+BX_CPU_C::NOT_Ed(bxInstruction_c *i)
 {
-    Bit32u op1_32, result_32;
+  Bit32u op1_32, result_32;
 
-    /* op1 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
-
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
     result_32 = ~op1_32;
-
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
+    result_32 = ~op1_32;
+    Write_RMW_virtual_dword(result_32);
+    }
 }
 
 
   void
-BX_CPU_C::OR_EdGd(BxInstruction_t *i)
+BX_CPU_C::OR_EdGd(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32, result_32;
 
-    /* op2_32 is a register, op2_addr is an index of a register */
-    op2_32 = BX_READ_32BIT_REG(i->nnn);
+  op2_32 = BX_READ_32BIT_REG(i->nnn());
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
-
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
     result_32 = op1_32 | op2_32;
-
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
-
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_OR32);
-}
-
-
-  void
-BX_CPU_C::OR_GdEd(BxInstruction_t *i)
-{
-    Bit32u op1_32, op2_32, result_32;
-
-    op1_32 = BX_READ_32BIT_REG(i->nnn);
-
-    /* op2_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_dword(i->seg, i->rm_addr, &op2_32);
-      }
-
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
     result_32 = op1_32 | op2_32;
+    Write_RMW_virtual_dword(result_32);
+    }
 
-    /* now write result back to destination */
-    BX_WRITE_32BIT_REG(i->nnn, result_32);
-
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_OR32);
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_OR32);
 }
 
 
   void
-BX_CPU_C::OR_EAXId(BxInstruction_t *i)
+BX_CPU_C::OR_GdEd(bxInstruction_c *i)
 {
-    Bit32u op1_32, op2_32, sum_32;
+  Bit32u op1_32, op2_32, result_32;
 
-    op1_32 = EAX;
+  op1_32 = BX_READ_32BIT_REG(i->nnn());
 
-    op2_32 = i->Id;
+  if (i->modC0()) {
+    op2_32 = BX_READ_32BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_dword(i->seg(), RMAddr(i), &op2_32);
+    }
 
-    sum_32 = op1_32 | op2_32;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    /* now write sum back to destination */
-    EAX = sum_32;
+  asmOr32(result_32, op1_32, op2_32, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  result_32 = op1_32 | op2_32;
+#endif
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_OR32);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result_32);
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_OR32);
+#endif
+}
+
+
+  void
+BX_CPU_C::OR_EAXId(bxInstruction_c *i)
+{
+  Bit32u op1_32, op2_32, sum_32;
+
+  op1_32 = EAX;
+  op2_32 = i->Id();
+
+  sum_32 = op1_32 | op2_32;
+
+#if BX_SUPPORT_X86_64
+  RAX = sum_32;
+#else
+  EAX = sum_32;
+#endif
+
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_OR32);
 }
 
 
 
   void
-BX_CPU_C::AND_EdGd(BxInstruction_t *i)
+BX_CPU_C::AND_EdGd(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32, result_32;
 
-    /* op2_32 is a register, op2_addr is an index of a register */
-    op2_32 = BX_READ_32BIT_REG(i->nnn);
+  op2_32 = BX_READ_32BIT_REG(i->nnn());
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
 
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
+
+    asmAnd32(result_32, op1_32, op2_32, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
     result_32 = op1_32 & op2_32;
+#endif
 
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
-}
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
 
-
-  void
-BX_CPU_C::AND_GdEd(BxInstruction_t *i)
-{
-    Bit32u op1_32, op2_32, result_32;
-
-    op1_32 = BX_READ_32BIT_REG(i->nnn);
-
-    /* op2_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op2_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_dword(i->seg, i->rm_addr, &op2_32);
-      }
-
+    asmAnd32(result_32, op1_32, op2_32, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
     result_32 = op1_32 & op2_32;
+#endif
 
-    /* now write result back to destination */
-    BX_WRITE_32BIT_REG(i->nnn, result_32);
+    Write_RMW_virtual_dword(result_32);
+    }
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
+#endif
 }
 
 
   void
-BX_CPU_C::AND_EAXId(BxInstruction_t *i)
+BX_CPU_C::AND_GdEd(bxInstruction_c *i)
 {
-    Bit32u op1_32, op2_32, sum_32;
+  Bit32u op1_32, op2_32, result_32;
 
-    op1_32 = EAX;
+  op1_32 = BX_READ_32BIT_REG(i->nnn());
 
-    op2_32 = i->Id;
+  if (i->modC0()) {
+    op2_32 = BX_READ_32BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_dword(i->seg(), RMAddr(i), &op2_32);
+    }
 
-    sum_32 = op1_32 & op2_32;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    /* now write sum back to destination */
-    EAX = sum_32;
+  asmAnd32(result_32, op1_32, op2_32, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  result_32 = op1_32 & op2_32;
+#endif
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, sum_32, BX_INSTR_AND32);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result_32);
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
+#endif
+}
+
+
+  void
+BX_CPU_C::AND_EAXId(bxInstruction_c *i)
+{
+  Bit32u op1_32, op2_32, result_32;
+
+  op1_32 = EAX;
+  op2_32 = i->Id();
+
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
+
+  asmAnd32(result_32, op1_32, op2_32, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  result_32 = op1_32 & op2_32;
+#endif
+
+#if BX_SUPPORT_X86_64
+  RAX = result_32;
+#else
+  EAX = result_32;
+#endif
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
+#endif
 }
 
   void
-BX_CPU_C::AND_EdId(BxInstruction_t *i)
+BX_CPU_C::AND_EdId(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32, result_32;
 
-    op2_32 = i->Id;
+  op2_32 = i->Id();
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_RMW_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
 
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
+
+    asmAnd32(result_32, op1_32, op2_32, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
     result_32 = op1_32 & op2_32;
+#endif
 
-    /* now write result back to destination */
-    if (i->mod == 0xc0) {
-      BX_WRITE_32BIT_REG(i->rm, result_32);
-      }
-    else {
-      write_RMW_virtual_dword(result_32);
-      }
+    BX_WRITE_32BIT_REGZ(i->rm(), result_32);
+    }
+  else {
+    read_RMW_virtual_dword(i->seg(), RMAddr(i), &op1_32);
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+    Bit32u flags32;
+
+    asmAnd32(result_32, op1_32, op2_32, flags32);
+    setEFlagsOSZAPC(flags32);
+#else
+    result_32 = op1_32 & op2_32;
+#endif
+
+    Write_RMW_virtual_dword(result_32);
+    }
+
+#if !(defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_AND32);
+#endif
 }
 
 
   void
-BX_CPU_C::TEST_EdGd(BxInstruction_t *i)
+BX_CPU_C::TEST_EdGd(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32;
 
-    /* op2_32 is a register, op2_addr is an index of a register */
-    op2_32 = BX_READ_32BIT_REG(i->nnn);
+  op2_32 = BX_READ_32BIT_REG(i->nnn());
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
+    }
 
-    result_32 = op1_32 & op2_32;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_TEST32);
+  asmTest32(op1_32, op2_32, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit32u result_32;
+  result_32 = op1_32 & op2_32;
+
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_TEST32);
+#endif
 }
 
 
 
   void
-BX_CPU_C::TEST_EAXId(BxInstruction_t *i)
+BX_CPU_C::TEST_EAXId(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32;
 
-    /* op1 is EAX register */
-    op1_32 = EAX;
+  op1_32 = EAX;
+  op2_32 = i->Id();
 
-    /* op2 is imm32 */
-    op2_32 = i->Id;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    result_32 = op1_32 & op2_32;
+  asmTest32(op1_32, op2_32, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit32u result_32;
+  result_32 = op1_32 & op2_32;
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_TEST32);
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_TEST32);
+#endif
 }
 
 
   void
-BX_CPU_C::TEST_EdId(BxInstruction_t *i)
+BX_CPU_C::TEST_EdId(bxInstruction_c *i)
 {
-    Bit32u op2_32, op1_32, result_32;
+  Bit32u op2_32, op1_32;
 
-    /* op2 is imm32 */
-    op2_32 = i->Id;
+  op2_32 = i->Id();
 
-    /* op1_32 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_32 = BX_READ_32BIT_REG(i->rm);
-      }
-    else {
-      /* pointer, segment address pair */
-      read_virtual_dword(i->seg, i->rm_addr, &op1_32);
-      }
+  if (i->modC0()) {
+    op1_32 = BX_READ_32BIT_REG(i->rm());
+    }
+  else {
+    read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
+    }
 
-    result_32 = op1_32 & op2_32;
+#if (defined(__i386__) && defined(__GNUC__) && BX_SupportHostAsms)
+  Bit32u flags32;
 
-    SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_TEST32);
+  asmTest32(op1_32, op2_32, flags32);
+  setEFlagsOSZAPC(flags32);
+#else
+  Bit32u result_32;
+  result_32 = op1_32 & op2_32;
+
+  SET_FLAGS_OSZAPC_32(op1_32, op2_32, result_32, BX_INSTR_TEST32);
+#endif
 }

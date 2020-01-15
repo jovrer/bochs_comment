@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit_wrap.h,v 1.8 2002/02/07 21:22:55 yakovlev Exp $
+// $Id: pit_wrap.h,v 1.16 2002/12/07 20:01:10 yakovlev Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -49,8 +49,9 @@ class bx_pit_c : public logfunctions {
 public:
   bx_pit_c( void );
   ~bx_pit_c( void );
-  BX_PIT_SMF int init( bx_devices_c *);
-  BX_PIT_SMF Boolean periodic( Bit32u   usec_delta );
+  BX_PIT_SMF int init( void );
+  BX_PIT_SMF void reset( unsigned type);
+  BX_PIT_SMF bx_bool periodic( Bit32u   usec_delta );
 
   BX_PIT_SMF int SaveState( class state_file *fd );
   BX_PIT_SMF int LoadState( class state_file *fd );
@@ -67,23 +68,24 @@ private:
   struct s_type {
     pit_82C54 timer;
     Bit8u   speaker_data_on;
-    Boolean refresh_clock_div2;
+    bx_bool refresh_clock_div2;
     int  timer_handle[3];
     Bit64u last_usec;
     Bit32u last_next_event_time;
     Bit64u total_ticks;
-#if BX_USE_REALTIME_PIT
     Bit64u usec_per_second;
     Bit64u ticks_per_second;
     Bit64u total_sec;
     Bit64u last_time;
     Bit64u last_sec_usec;
-#else
+    Bit64u max_ticks;
+    Bit64u stored_delta;
     Bit64u total_usec;
-#endif
+    Bit64u use_realtime;
+    Bit64u em_last_realtime;
+    Bit64u last_realtime_delta;
+    Bit64u last_realtime_ticks;
     } s;
-
-  bx_devices_c *devices;
 
   static void timer_handler(void *this_ptr);
   BX_PIT_SMF void handle_timer();

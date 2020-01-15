@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_linux.cc,v 1.6 2002/03/06 15:56:27 bdenney Exp $
+// $Id: eth_linux.cc,v 1.13 2002/11/20 19:06:23 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -40,9 +40,14 @@
 //  ne2k: ioaddr=0x280, irq=10, mac=00:a:b:c:1:2, ethmod=linux, ethdev=eth0
 //
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+ 
 #include "bochs.h"
-#ifdef ETH_LINUX
-#define LOG_THIS this->
+#if BX_NE2K_SUPPORT && defined (ETH_LINUX)
+#define LOG_THIS bx_devices.pluginNE2kDevice->
 
 extern "C" {
 #include <errno.h>
@@ -207,7 +212,7 @@ bx_linux_pktmover_c::bx_linux_pktmover_c(const char *netif,
   this->filter[3].k = (macaddr[0] & 0xff) << 8 | (macaddr[1] & 0xff);
   fp.len = BX_LSF_ICNT;
   fp.filter = this->filter;
-  BX_INFO(("eth_linux: fp.len=%d fp.filter=%lx", fp.len, fp.filter));
+  BX_INFO(("eth_linux: fp.len=%d fp.filter=%x", fp.len, (unsigned) fp.filter));
   if (setsockopt(this->fd, SOL_SOCKET, SO_ATTACH_FILTER, &fp, sizeof(fp)) < 0) {
     BX_PANIC(("eth_linux: could not set socket filter: %s", strerror(errno)));
     close(this->fd);
@@ -218,7 +223,7 @@ bx_linux_pktmover_c::bx_linux_pktmover_c(const char *netif,
   // Start the rx poll 
   this->rx_timer_index = 
     bx_pc_system.register_timer(this, this->rx_timer_handler, BX_PACKET_POLL,
-				1, 1); // continuous, active
+				1, 1, "eth_linux"); // continuous, active
 
   this->rxh   = rxh;
   this->rxarg = rxarg;
@@ -277,4 +282,4 @@ bx_linux_pktmover_c::rx_timer(void)
     (*rxh)(rxarg, rxbuf, nbytes);
 //  }
 }
-#endif
+#endif /* if BX_NE2K_SUPPORT && defined ETH_LINUX */

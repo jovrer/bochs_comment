@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: parallel.h,v 1.7 2001/12/18 21:58:59 vruppert Exp $
+// $Id: parallel.h,v 1.11 2002/10/25 11:44:40 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -27,7 +27,7 @@
 
 #if BX_USE_PAR_SMF
 #  define BX_PAR_SMF  static
-#  define BX_PAR_THIS bx_parallel.
+#  define BX_PAR_THIS theParallelDevice->
 #else
 #  define BX_PAR_SMF
 #  define BX_PAR_THIS this->
@@ -36,39 +36,36 @@
 typedef struct {
   Bit8u data;
   struct {
-    Boolean error;
-    Boolean slct;
-    Boolean pe;
-    Boolean ack;
-    Boolean busy;
+    bx_bool error;
+    bx_bool slct;
+    bx_bool pe;
+    bx_bool ack;
+    bx_bool busy;
   } STATUS;
   struct {
-    Boolean strobe;
-    Boolean autofeed;
-    Boolean init;
-    Boolean slct_in;
-    Boolean irq;
-    Boolean input;
+    bx_bool strobe;
+    bx_bool autofeed;
+    bx_bool init;
+    bx_bool slct_in;
+    bx_bool irq;
+    bx_bool input;
   } CONTROL;
+  FILE *output;
+  bx_bool initmode;
 } bx_par_t;
 
 
 
-class bx_parallel_c : public logfunctions {
+class bx_parallel_c : public bx_devmodel_c {
 public:
 
   bx_parallel_c(void);
   ~bx_parallel_c(void);
-  BX_PAR_SMF void   init(bx_devices_c *);
+  virtual void   init(void);
+  virtual void   reset(unsigned type);
 
 private:
-  FILE *output;
-
-  Boolean initmode;
-
   bx_par_t s;
-
-  bx_devices_c *devices;
 
   static void   virtual_printer();
 
@@ -79,6 +76,3 @@ private:
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
   };
-
-
-extern bx_parallel_c bx_parallel;

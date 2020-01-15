@@ -1,6 +1,6 @@
 /* 
  * misc/bximage.c
- * $Id: bximage.c,v 1.6 2001/12/08 17:46:02 bdenney Exp $
+ * $Id: bximage.c,v 1.17 2002/11/26 11:21:31 cbothamy Exp $
  *
  * Create empty hard disk or floppy disk images for bochs.
  *
@@ -11,10 +11,13 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#ifdef WIN32
+#  include <conio.h>
+#endif
 #include "config.h"
 
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bximage.c,v 1.6 2001/12/08 17:46:02 bdenney Exp $";
+char *rcsid = "$Id: bximage.c,v 1.17 2002/11/26 11:21:31 cbothamy Exp $";
 char *divider = "========================================================================";
 
 /* menu data for choosing floppy/hard disk */
@@ -23,9 +26,18 @@ char *fdhd_choices[] = { "fd", "hd" };
 int fdhd_n_choices = 2;
 
 /* menu data for choosing floppy size */
-char *fdsize_menu = "\nChoose the size of floppy disk image to create, in megabytes.\nPlease type 0.72, 1.2, 1.44, or 2.88. [1.44] ";
-char *fdsize_choices[] = { "0.72","1.2","1.44","2.88" };
-int fdsize_n_choices = 4;
+char *fdsize_menu = "\nChoose the size of floppy disk image to create, in megabytes.\nPlease type 0.36, 0.72, 1.2, 1.44, or 2.88. [1.44] ";
+char *fdsize_choices[] = { "0.36","0.72","1.2","1.44","2.88" };
+int fdsize_n_choices = 5;
+
+void myexit (int code)
+{
+#ifdef WIN32
+  printf ("\nPress any key to continue\n");
+  getch();
+#endif
+  exit(code);
+}
 
 /* stolen from main.cc */
 void bx_center_print (FILE *file, char *line, int maxwidth)
@@ -51,7 +63,7 @@ print_banner ()
 void fatal (char *c)
 {
   printf ("%s\n", c);
-  exit (1);
+  myexit (1);
 }
 
 /* remove leading spaces, newline junk at end.  returns pointer to 
@@ -179,12 +191,10 @@ ask_string (char *prompt, char *the_default, char *out)
 }
 
 /* produce the image file */
-int make_image (int sec, char *filename)
+int make_image (Bit64u sec, char *filename)
 {
   FILE *fp;
   char buffer[1024];
-  int i;
-  unsigned int n;
 
   // check if it exists before trashing someone's disk image
   fp = fopen (filename, "r");
@@ -208,23 +218,31 @@ int make_image (int sec, char *filename)
 #endif
     fatal ("ERROR: Could not write disk image");
   }
-  // clear the buffer
-  for (i=0; i<512; i++)
-    buffer[i] = 0;
-  // write it however many times
+
   printf ("\nWriting: [");
-  for (i=0; i<sec; i++) {
-    n = (unsigned int) fwrite (buffer, 512, 1, fp);
-    if (n != 1) {
-      printf ("\nWrite failed with %d sectors written\n", i);
-      fclose (fp);
-      fatal ("ERROR: The disk image is not complete!");
-    }
-    if ((i%2048) == 0) {
-      printf (".");
-      fflush (stdout);
-    }
+
+  /*
+   * seek to sec*512-1 and write a single character.
+   * can't just do: fseek(fp, 512*sec-1, SEEK_SET)
+   * because 512*sec may be too large for signed int.
+   */
+  while (sec > 0)
+  {
+    /* temp <-- min(sec, 4194303)
+     * 4194303 is (int)(0x7FFFFFFF/512)
+     */
+    long temp = ((sec < 4194303) ? sec : 4194303);
+    fseek(fp, 512*temp, SEEK_CUR);
+    sec -= temp;
   }
+
+  fseek(fp, -1, SEEK_CUR);
+  if (fputc('\0', fp) == EOF)
+  {
+    fclose (fp);
+    fatal ("ERROR: The disk image is not complete!");
+  }
+
   printf ("] Done.\n");
   fclose (fp);
   return 0;
@@ -233,7 +251,7 @@ int make_image (int sec, char *filename)
 int main()
 {
   int hd;
-  int sectors = 0;
+  Bit64s sectors = 0;
   char filename[256];
   char bochsrc_line[256];
   print_banner ();
@@ -251,21 +269,22 @@ int main()
     printf ("  cyl=%d\n", cyl);
     printf ("  heads=%d\n", heads);
     printf ("  sectors per track=%d\n", spt);
-    printf ("  total sectors=%d\n", sectors);
+    printf ("  total sectors=%lld\n", sectors);
     printf ("  total size=%.2f megabytes\n", (float)sectors*512.0/1024.0/1024.0);
     if (ask_string ("\nWhat should I name the image?\n[c.img] ", "c.img", filename) < 0)
       fatal (EOF_ERR);
-    sprintf (bochsrc_line, "diskc: file=\"%s\", cyl=%d, heads=%d, spt=%d", filename, cyl, heads, spt);
+    sprintf (bochsrc_line, "ata0-master: type=disk, path=\"%s\", cylinders=%d, heads=%d, spt=%d", filename, cyl, heads, spt);
   } else {
     int fdsize, cyl=0, heads=0, spt=0;
     char *name = NULL;
-    if (ask_menu (fdsize_menu, fdsize_n_choices, fdsize_choices, 2, &fdsize) < 0)
+    if (ask_menu (fdsize_menu, fdsize_n_choices, fdsize_choices, 3, &fdsize) < 0)
       fatal (EOF_ERR);
     switch (fdsize) {
-    case 0: name="720k"; cyl=80; heads=2; spt=9; break;   /* 0.72 meg */
-    case 1: name="1_2"; cyl=80; heads=2; spt=15; break;   /* 1.2 meg */
-    case 2: name="1_44"; cyl=80; heads=2; spt=18; break;   /* 1.44 meg */
-    case 3: name="2_88"; cyl=80; heads=2; spt=36; break;   /* 2.88 meg */
+    case 0: name="360k"; cyl=40; heads=2; spt=9; break;   /* 0.36 meg */
+    case 1: name="720k"; cyl=80; heads=2; spt=9; break;   /* 0.72 meg */
+    case 2: name="1_2"; cyl=80; heads=2; spt=15; break;   /* 1.2 meg */
+    case 3: name="1_44"; cyl=80; heads=2; spt=18; break;   /* 1.44 meg */
+    case 4: name="2_88"; cyl=80; heads=2; spt=36; break;   /* 2.88 meg */
     default: 
       fatal ("ERROR: fdsize out of range");
     }
@@ -274,8 +293,8 @@ int main()
     printf ("  cyl=%d\n", cyl);
     printf ("  heads=%d\n", heads);
     printf ("  sectors per track=%d\n", spt);
-    printf ("  total sectors=%d\n", sectors);
-    printf ("  total bytes=%d\n", sectors*512);
+    printf ("  total sectors=%lld\n", sectors);
+    printf ("  total bytes=%lld\n", sectors*512);
     if (ask_string ("\nWhat should I name the image?\n[a.img] ", "a.img", filename) < 0)
       fatal (EOF_ERR);
     sprintf (bochsrc_line, "floppya: %s=\"%s\", status=inserted", name, filename);
@@ -285,8 +304,12 @@ int main()
   if (strlen (filename) < 1)
     fatal ("ERROR: Illegal filename");
   make_image (sectors, filename);
-  printf ("\nI wrote %d bytes to %s.\n", sectors*512, filename);
+  printf ("\nI wrote %lld bytes to %s.\n", sectors*512, filename);
   printf ("\nThe following line should appear in your bochsrc:\n");
   printf ("  %s\n", bochsrc_line);
+  myexit(0);
+
+  // make picky compilers (c++, gcc) happy,
+  // even though we leave via 'myexit' just above 
   return 0;
 }

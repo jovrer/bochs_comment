@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.38 2002/03/19 23:38:08 bdenney Exp $
+// $Id: x.cc,v 1.55 2002/12/05 19:19:34 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -27,6 +27,14 @@
 #define XK_PUBLISHING
 #define XK_TECHNICAL
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+
+#include "bochs.h"
+#if BX_WITH_X11
+
 extern "C" {
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
@@ -35,11 +43,23 @@ extern "C" {
 #include <X11/keysym.h>
 }
 
-#include "bochs.h"
 #include "icon_bochs.h"
 
-#define LOG_THIS bx_gui.
+class bx_x_gui_c : public bx_gui_c {
+public:
+  bx_x_gui_c (void);
+  DECLARE_GUI_VIRTUAL_METHODS()
+#if BX_USE_IDLE_HACK
+  virtual void sim_is_idle(void);
+#endif
+};
 
+// declare one instance of the gui object and call macro to insert the
+// plugin code
+static bx_x_gui_c *theGui = NULL;
+IMPLEMENT_GUI_PLUGIN_CODE(x)
+
+#define LOG_THIS theGui->
 
 #define MAX_MAPPED_STRING_LENGTH 10
 
@@ -59,6 +79,7 @@ static Window win;
 static GC gc, gc_inv, gc_headerbar, gc_headerbar_inv;
 static XFontStruct *font_info;
 static unsigned font_width, font_height;
+static unsigned font_height_orig = 16;
 static Bit8u blank_line[80];
 static unsigned dimension_x=0, dimension_y=0;
 
@@ -259,11 +280,11 @@ static unsigned x_tilesize, y_tilesize;
 // up the color cells so that we don't add to the problem!)  This is used
 // to determine whether Bochs should use a private colormap even when the
 // user did not specify it.
-static Boolean
+static bx_bool
 test_alloc_colors (Colormap cmap, Bit32u n_tries) {
   XColor color;
   unsigned long pixel[MAX_VGA_COLORS];
-  Boolean pixel_valid[MAX_VGA_COLORS];
+  bx_bool pixel_valid[MAX_VGA_COLORS];
   Bit32u n_allocated = 0;
   Bit32u i;
   color.flags = DoRed | DoGreen | DoBlue;
@@ -288,9 +309,11 @@ test_alloc_colors (Colormap cmap, Bit32u n_tries) {
   return (n_allocated == n_tries);
 }
 
+bx_x_gui_c::bx_x_gui_c () {
+}
 
   void
-bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth, unsigned tileheight,
+bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned tileheight,
                      unsigned headerbar_y)
 {
   unsigned i;
@@ -321,8 +344,7 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth,
   unsigned long plane_masks_return[1];
   XColor color;
 
-  th->put("XGUI");
-  UNUSED(th);
+  put("XGUI");
 
   x_tilesize = tilewidth;
   y_tilesize = tileheight;
@@ -400,7 +422,7 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth,
                                    default_visual, AllocNone);
     if (XAllocColorCells(bx_x_display, default_cmap, False,
                          plane_masks_return, 0, col_vals, MAX_VGA_COLORS) == 0) {
-      BX_PANIC(("XAllocColorCells returns error."));
+      BX_PANIC(("XAllocColorCells returns error. Maybe your screen does not support a private colormap?"));
       }
 
     win_attr.colormap = default_cmap;
@@ -570,10 +592,10 @@ bx_gui_c::specific_init(bx_gui_c *th, int argc, char **argv, unsigned tilewidth,
 
 // This is called whenever the mouse_enabled parameter changes.  It
 // can change because of a gui event such as clicking on the mouse-enable
-// bitmap or pressing the middle button, or from the control panel.
+// bitmap or pressing the middle button, or from the configuration interface.
 // In all those cases, setting the parameter value will get you here.
   void
-bx_gui_c::mouse_enabled_changed_specific (Boolean val)
+bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
   BX_DEBUG (("mouse_enabled=%d, x11 specific code", val?1:0));
   if (val) {
@@ -596,14 +618,16 @@ load_font(void)
   /* Load font and get font information structure. */
   if ((font_info = XLoadQueryFont(bx_x_display,"bochsvga")) == NULL) {
     if ((font_info = XLoadQueryFont(bx_x_display,"vga")) == NULL) {
-      BX_PANIC(("Could not open vga font. See docs-html/install.html"));
+      if ((font_info = XLoadQueryFont(bx_x_display,"-*-vga-*")) == NULL) {
+	BX_PANIC(("Could not open vga font. See docs-html/install.html"));
+      }
     }
   }
 }
 
 
   void
-bx_gui_c::handle_events(void)
+bx_x_gui_c::handle_events(void)
 {
   XEvent report;
   XKeyEvent *key_event;
@@ -612,7 +636,7 @@ bx_gui_c::handle_events(void)
   char buffer[MAX_MAPPED_STRING_LENGTH];
   int bufsize = MAX_MAPPED_STRING_LENGTH;
   int charcount;
-  Boolean mouse_update;
+  bx_bool mouse_update;
 
 
   XPointerMovedEvent *pointer_event;
@@ -635,7 +659,7 @@ bx_gui_c::handle_events(void)
        * don't draw the window */
       expose_event = (XExposeEvent *) &report;
 
-      bx_devices.vga->redraw_area(
+      DEV_vga_redraw_area(
         (unsigned) expose_event->x,
         (unsigned) expose_event->y,
         (unsigned) expose_event->width,
@@ -813,7 +837,7 @@ send_keyboard_mouse_status(void)
     warp_cursor(warp_home_x-current_x, warp_home_y-current_y);
 
 //BX_INFO(("xxx: MOUSE_MOTION: dx=%d, dy=%d", (int) dx, (int) dy));
-    bx_devices.keyboard->mouse_motion( dx, dy, mouse_button_state);
+    DEV_mouse_motion (dx, dy, mouse_button_state);
     //if (warped) {
     //  prev_x = current_x = -1;
     //  prev_y = current_y = -1;
@@ -836,9 +860,10 @@ send_keyboard_mouse_status(void)
 }
 
   void
-bx_gui_c::flush(void)
+bx_x_gui_c::flush(void)
 {
-  XFlush(bx_x_display);
+  if (bx_x_display)
+    XFlush(bx_x_display);
 }
 
 
@@ -882,6 +907,9 @@ xkeypress(KeySym keysym, int press_release)
         key_event = BX_KEY_KP_LEFT; break;
 
       case XK_KP_5:
+#ifdef XK_KP_Begin
+      case XK_KP_Begin:
+#endif
         key_event = BX_KEY_KP_5; break;
 
       case XK_KP_6:
@@ -921,8 +949,7 @@ xkeypress(KeySym keysym, int press_release)
         key_event = BX_KEY_KP_DELETE; break;
 
 #ifdef XK_KP_Enter
-      case XK_KP_Enter:
-        key_event = BX_KEY_KP_ENTER; break;
+      case XK_KP_Enter:    key_event = BX_KEY_KP_ENTER; break;
 #endif
 
       case XK_KP_Subtract: key_event = BX_KEY_KP_SUBTRACT; break;
@@ -941,6 +968,9 @@ xkeypress(KeySym keysym, int press_release)
       case XK_Delete:      key_event = BX_KEY_DELETE; break;
       case XK_BackSpace:   key_event = BX_KEY_BACKSPACE; break;
       case XK_Tab:         key_event = BX_KEY_TAB; break;
+#ifdef XK_ISO_Left_Tab
+      case XK_ISO_Left_Tab: key_event = BX_KEY_TAB; break;
+#endif
       case XK_Return:      key_event = BX_KEY_ENTER; break;
       case XK_Escape:      key_event = BX_KEY_ESC; break;
       case XK_F1:          key_event = BX_KEY_F1; break;
@@ -956,11 +986,26 @@ xkeypress(KeySym keysym, int press_release)
       case XK_F11:         key_event = BX_KEY_F11; break;
       case XK_F12:         key_event = BX_KEY_F12; break;
       case XK_Control_L:   key_event = BX_KEY_CTRL_L; break;
+#ifdef XK_Control_R
+      case XK_Control_R:   key_event = BX_KEY_CTRL_R; break;
+#endif
       case XK_Shift_L:     key_event = BX_KEY_SHIFT_L; break;
       case XK_Shift_R:     key_event = BX_KEY_SHIFT_R; break;
+      case XK_Alt_L:       key_event = BX_KEY_ALT_L; break;
+#ifdef XK_Alt_R
+      case XK_Alt_R:       key_event = BX_KEY_ALT_R; break;
+#endif
       case XK_Caps_Lock:   key_event = BX_KEY_CAPS_LOCK; break;
       case XK_Num_Lock:    key_event = BX_KEY_NUM_LOCK; break;
-      case XK_Alt_L:       key_event = BX_KEY_ALT_L; break;
+#ifdef XK_Scroll_Lock
+      case XK_Scroll_Lock: key_event = BX_KEY_SCRL_LOCK; break;
+#endif
+#ifdef XK_Print
+      case XK_Print:       key_event = BX_KEY_PRINT; break;
+#endif
+#ifdef XK_Pause
+      case XK_Pause:       key_event = BX_KEY_PAUSE; break;
+#endif
 
       case XK_Insert:      key_event = BX_KEY_INSERT; break;
       case XK_Home:        key_event = BX_KEY_HOME; break;
@@ -976,7 +1021,7 @@ xkeypress(KeySym keysym, int press_release)
     }
   else {
    /* use mapping */
-   BXKeyEntry *entry = bx_keymap.getKeyXwin (keysym);
+   BXKeyEntry *entry = bx_keymap.findHostKey (keysym);
    if (!entry) {
      BX_ERROR(( "xkeypress(): keysym %x unhandled!", (unsigned) keysym ));
      return;
@@ -987,12 +1032,12 @@ xkeypress(KeySym keysym, int press_release)
   if (press_release)
     key_event |= BX_KEY_RELEASED;
 
-  bx_devices.keyboard->gen_scancode(key_event);
+  DEV_kbd_gen_scancode(key_event);
 }
 
 
   void
-bx_gui_c::clear_screen(void)
+bx_x_gui_c::clear_screen(void)
 {
   XClearArea(bx_x_display, win, 0, bx_headerbar_y, dimension_x, dimension_y-bx_headerbar_y, 0);
 }
@@ -1001,35 +1046,34 @@ bx_gui_c::clear_screen(void)
 
 
   void
-bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
+bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
                       Bit16u cursor_state, unsigned nrows)
 {
-  int font_height;
   unsigned i, x, y, curs;
   unsigned new_foreground, new_background;
   Bit8u string[1];
   Bit8u cs_start, cs_end;
   unsigned nchars;
 
-  cs_start = (cursor_state >> 8) & 0x3f;
-  cs_end = cursor_state & 0x1f;
+  UNUSED(nrows);
 
-  font_height = font_info->ascent + font_info->descent;
+  cs_start = ((cursor_state >> 8) & 0x3f) * font_height / font_height_orig;
+  cs_end = (cursor_state & 0x1f) * font_height / font_height_orig;
 
   // Number of characters on screen, variable number of rows
-  nchars = 80*nrows;
+  nchars = columns*rows;
 
   // first draw over character at original block cursor location
-  if ( (prev_block_cursor_y*80 + prev_block_cursor_x) < nchars ) {
-    curs = (prev_block_cursor_y*80 + prev_block_cursor_x)*2;
+  if ( (prev_block_cursor_y*columns + prev_block_cursor_x) < nchars ) {
+    curs = (prev_block_cursor_y*columns + prev_block_cursor_x)*2;
     string[0] = new_text[curs];
     if (string[0] == 0) string[0] = ' '; // convert null to space
     XSetForeground(bx_x_display, gc, col_vals[new_text[curs+1] & 0x0f]);
     XSetBackground(bx_x_display, gc, col_vals[(new_text[curs+1] & 0xf0) >> 4]);
     XDrawImageString(bx_x_display, win,
       gc,
-      prev_block_cursor_x * font_info->max_bounds.width,
+      prev_block_cursor_x * font_width,
       prev_block_cursor_y * font_height + font_info->max_bounds.ascent + bx_headerbar_y,
       (char *) string,
       1);
@@ -1050,12 +1094,12 @@ bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 //XSetForeground(bx_x_display, gc, white_pixel);
 //XSetBackground(bx_x_display, gc, black_pixel);
 
-      x = (i/2) % 80;
-      y = (i/2) / 80;
+      x = (i/2) % columns;
+      y = (i/2) / columns;
 
       XDrawImageString(bx_x_display, win,
         gc,
-        x * font_info->max_bounds.width,
+        x * font_width,
         y * font_height + font_info->max_bounds.ascent + bx_headerbar_y,
         (char *) string,
         1);
@@ -1069,13 +1113,13 @@ bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   XSetBackground(bx_x_display, gc, black_pixel);
 
   // now draw character at new block cursor location in reverse
-  if ( ( (cursor_y*80 + cursor_x) < nchars ) && (cs_start <= cs_end) ) {
+  if ( ( (cursor_y*columns + cursor_x) < nchars ) && (cs_start <= cs_end) ) {
     for (unsigned i = cs_start; i <= cs_end; i++)
       XDrawLine(bx_x_display, win,
 	gc_inv,
-	cursor_x * font_info->max_bounds.width,
+	cursor_x * font_width,
 	cursor_y * font_height + bx_headerbar_y + i,
-	(cursor_x + 1) * font_info->max_bounds.width - 1,
+	(cursor_x + 1) * font_width - 1,
 	cursor_y * font_height + bx_headerbar_y + i
       );
     }
@@ -1084,14 +1128,23 @@ bx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 }
 
   int
-bx_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
+bx_x_gui_c::get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)
 {
-  *bytes = (Bit8u *)XFetchBytes (bx_x_display, nbytes);
+  int len;
+  Bit8u *tmp = (Bit8u *)XFetchBytes (bx_x_display, &len);
+  // according to man XFetchBytes, tmp must be freed by XFree().  So allocate
+  // a new buffer with "new".  The keyboard code will free it with delete []
+  // when the paste is done.
+  Bit8u *buf = new Bit8u[len];
+  memcpy (buf, tmp, len);
+  *bytes = buf;
+  *nbytes = len;
+  XFree (tmp);
   return 1;
 }
 
   int
-bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
+bx_x_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 {
   // this writes data to the clipboard.
   BX_INFO (("storing %d bytes to X windows clipboard", len));
@@ -1102,7 +1155,7 @@ bx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 
 
   void
-bx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
+bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
   unsigned x, y;
   unsigned color, offset;
@@ -1179,8 +1232,8 @@ bx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 }
 
 
-  Boolean
-bx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+  bx_bool
+bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
 {
   // returns: 0=no screen update needed (color map change has direct effect)
   //          1=screen updated needed (redraw using current colormap)
@@ -1206,8 +1259,19 @@ bx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned 
 
 
   void
-bx_gui_c::dimension_update(unsigned x, unsigned y)
+bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
 {
+  if (fheight > 0) {
+    font_height_orig = fheight;
+    rows = y / fheight;
+    columns = x / 8;
+    if (fheight != font_height) {
+      y = rows * font_height;
+    }
+    if (font_width != 8) {
+      x = columns * font_width;
+    }
+  }
   if ( (x != dimension_x) || (y != (dimension_y-bx_headerbar_y)) ) {
     XSizeHints hints;
     long supplied_return;
@@ -1226,18 +1290,26 @@ bx_gui_c::dimension_update(unsigned x, unsigned y)
 
 
   void
-bx_gui_c::show_headerbar(void)
+bx_x_gui_c::show_headerbar(void)
 {
   unsigned xorigin;
+  int xleft, xright;
 
   // clear header bar area to white
   XFillRectangle(bx_x_display, win, gc_headerbar_inv, 0,0, dimension_x, bx_headerbar_y);
 
+  xleft = 0;
+  xright = dimension_x;
   for (unsigned i=0; i<bx_headerbar_entries; i++) {
-    if (bx_headerbar_entry[i].alignment == BX_GRAVITY_LEFT)
+    if (bx_headerbar_entry[i].alignment == BX_GRAVITY_LEFT) {
       xorigin = bx_headerbar_entry[i].xorigin;
-    else
+      xleft += bx_headerbar_entry[i].xdim;
+      }
+    else {
       xorigin = dimension_x - bx_headerbar_entry[i].xorigin;
+      xright = xorigin;
+      }
+    if (xright < xleft) break;
     XCopyPlane(bx_x_display, bx_headerbar_entry[i].bitmap, win, gc_headerbar,
       0,0, bx_headerbar_entry[i].xdim, bx_headerbar_entry[i].ydim,
               xorigin, 0, 1);
@@ -1246,7 +1318,7 @@ bx_gui_c::show_headerbar(void)
 
 
   unsigned
-bx_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
+bx_x_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
 {
   if (bx_bitmap_entries >= BX_MAX_PIXMAPS) {
     BX_PANIC(("x: too many pixmaps, increase BX_MAX_PIXMAPS"));
@@ -1265,7 +1337,7 @@ bx_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
 
 
   unsigned
-bx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
+bx_x_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
 {
   unsigned hb_index;
 
@@ -1294,7 +1366,7 @@ bx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void)
 }
 
   void
-bx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
+bx_x_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
   unsigned xorigin;
 
@@ -1330,8 +1402,10 @@ headerbar_click(int x, int y)
 }
 
   void
-bx_gui_c::exit(void)
+bx_x_gui_c::exit(void)
 {
+  if (bx_x_display)
+    XCloseDisplay (bx_x_display);
   BX_INFO(("Exit."));
 }
 
@@ -1403,7 +1477,9 @@ static void enable_cursor ()
  */
 static Bit32u convertStringToXKeysym (const char *string)
 {
-    KeySym keysym=XStringToKeysym(string);
+    if (strncmp ("XK_", string, 3) != 0)
+      return BX_KEYMAP_UNKNOWN;
+    KeySym keysym=XStringToKeysym(string+3);
 
     // failure, return unknown
     if(keysym==NoSymbol) return BX_KEYMAP_UNKNOWN;
@@ -1474,12 +1550,15 @@ Bool XPeekEventTimeout( Display *display, XEvent *event_return, struct timeval *
     return(True);
 }
 
-
-void bx_gui_c::sim_is_idle () {
+#if BX_USE_IDLE_HACK
+void bx_x_gui_c::sim_is_idle () {
   XEvent dummy;
   struct timeval   timeout;   
   timeout.tv_sec  = 0;
   timeout.tv_usec = 1000; /* 1/1000 s */  
   XPeekEventTimeout(bx_x_display, &dummy, &timeout);
 }
+#endif
 #endif /* BX_USE_IDLE_HACK */  
+
+#endif /* if BX_WITH_X11 */

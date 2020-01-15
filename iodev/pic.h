@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pic.h,v 1.7 2002/03/25 01:31:59 bdenney Exp $
+// $Id: pic.h,v 1.10 2002/10/25 11:44:40 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -27,7 +27,7 @@
 
 #if BX_USE_PIC_SMF
 #  define BX_PIC_SMF  static
-#  define BX_PIC_THIS bx_pic.
+#  define BX_PIC_THIS thePic->
 #else
 #  define BX_PIC_SMF
 #  define BX_PIC_THIS this->
@@ -53,36 +53,35 @@ typedef struct {
   Bit8u read_reg_select;   /* 0=IRR, 1=ISR */
   Bit8u irq;               /* current IRQ number */
   Bit8u lowest_priority;   /* current lowest priority irq */
-  Boolean INT;             /* INT request pin of PIC */
-  Boolean IRQ_line[8];     /* IRQ pins of PIC */
+  bx_bool INT;             /* INT request pin of PIC */
+  bx_bool IRQ_line[8];     /* IRQ pins of PIC */
   struct {
-    Boolean    in_init;
-    Boolean    requires_4;
+    bx_bool    in_init;
+    bx_bool    requires_4;
     int        byte_expected;
     } init;
-  Boolean special_mask;
-  Boolean polled;            /* Set when poll command is issued. */
-  Boolean rotate_on_autoeoi; /* Set when should rotate in auto-eoi mode. */
+  bx_bool special_mask;
+  bx_bool polled;            /* Set when poll command is issued. */
+  bx_bool rotate_on_autoeoi; /* Set when should rotate in auto-eoi mode. */
   } bx_pic_t;
 
 
-class bx_pic_c : public logfunctions {
+class bx_pic_c : public bx_pic_stub_c {
 
 public:
   bx_pic_c(void);
   ~bx_pic_c(void);
-  BX_PIC_SMF void   init(bx_devices_c *);
-  BX_PIC_SMF void   lower_irq(unsigned irq_no);
-  BX_PIC_SMF void   raise_irq(unsigned irq_no);
-  BX_PIC_SMF Bit8u  IAC(void);
+  virtual void   init(void);
+  virtual void   reset(unsigned type);
+  virtual void   lower_irq(unsigned irq_no);
+  virtual void   raise_irq(unsigned irq_no);
+  virtual Bit8u  IAC(void);
 
 private:
   struct {
     bx_pic_t master_pic;
     bx_pic_t slave_pic;
     } s;
-
-  bx_devices_c *devices;
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -96,5 +95,3 @@ private:
   BX_PIC_SMF void   show_pic_state(void);
   BX_PIC_SMF void   clear_highest_interrupt(bx_pic_t *pic);
   };
-
-extern bx_pic_c bx_pic;

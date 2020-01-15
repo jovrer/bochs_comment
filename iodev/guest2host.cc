@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: guest2host.cc,v 1.9 2001/10/03 13:10:38 bdenney Exp $
+// $Id: guest2host.cc,v 1.13 2002/12/06 18:48:07 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -50,22 +50,26 @@ bx_g2h_c::~bx_g2h_c(void)
 }
 
   void
-bx_g2h_c::init(bx_devices_c *d)
+bx_g2h_c::init(void)
 {
-  BX_DEBUG(("Init $Id: guest2host.cc,v 1.9 2001/10/03 13:10:38 bdenney Exp $"));
+  BX_DEBUG(("Init $Id: guest2host.cc,v 1.13 2002/12/06 18:48:07 bdenney Exp $"));
   // Reserve a dword port for this interface
   for (Bit32u addr=BX_G2H_PORT; addr<=(BX_G2H_PORT+3); addr++) {
-    d->register_io_read_handler(&bx_g2h,
+    bx_devices.register_io_read_handler(&bx_g2h,
       inp_handler, addr, "g2h");
-    d->register_io_write_handler(&bx_g2h,
+    bx_devices.register_io_write_handler(&bx_g2h,
       outp_handler, addr, "g2h");
     }
   memset(&bx_g2h.s, 0, sizeof(bx_g2h.s));
 }
 
+  void
+bx_g2h_c::reset(unsigned type)
+{
+}
 
   unsigned
-bx_g2h_c::aquire_channel(bx_g2h_callback_t f)
+bx_g2h_c::acquire_channel(bx_g2h_callback_t f)
 {
   unsigned i;
 
@@ -77,16 +81,16 @@ bx_g2h_c::aquire_channel(bx_g2h_callback_t f)
       }
     }
 
-  BX_INFO(("g2h: attempt to aquire channel: maxed out");
+  BX_INFO(("g2h: attempt to acquire channel: maxed out"));
   return(BX_G2H_ERROR); // No more free channels
 }
 
   unsigned
-bx_g2h_c::deaquire_channel(unsigned channel)
+bx_g2h_c::deacquire_channel(unsigned channel)
 {
   if ( (channel >= BX_MAX_G2H_CHANNELS) ||
        (bx_g2h.s.callback[channel].used==0) ) {
-    BX_PANIC(("g2h: attempt to deaquire channel %u: not aquired",
+    BX_PANIC(("g2h: attempt to deacquire channel %u: not acquired",
       channel));
     }
   bx_g2h.s.callback[channel].used = 0;
@@ -126,7 +130,7 @@ bx_g2h_c::outp_handler(void *this_ptr, Bit32u addr,
     BX_PANIC(("g2h: IO write not dword."));
 
   if ( (bx_g2h.s.packet_count==0) && (val32!=BX_G2H_MAGIC) ) {
-    BX_INFO(("g2h: IO W: Not magic header.");
+    BX_INFO(("g2h: IO W: Not magic header."));
     return;
     }
   bx_g2h.s.guest_packet[bx_g2h.s.packet_count++] = val32;

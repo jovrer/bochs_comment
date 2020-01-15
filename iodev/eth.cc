@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth.cc,v 1.11 2002/03/09 04:18:08 bdenney Exp $
+// $Id: eth.cc,v 1.14 2002/11/20 19:06:22 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -29,7 +29,14 @@
 // Peter Grehan (grehan@iprg.nokia.com) coded all of this
 // NE2000/ether stuff.
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+ 
 #include "bochs.h"
+#if BX_NE2K_SUPPORT
+
 #define LOG_THIS /* not needed */
 
 eth_locator_c *eth_locator_c::all;
@@ -59,6 +66,9 @@ extern class bx_win32_locator_c bx_win32_match;
 #endif
 #if HAVE_ETHERTAP
 extern class bx_tap_locator_c bx_tap_match;
+#endif
+#if HAVE_TUNTAP
+extern class bx_tuntap_locator_c bx_tuntap_match;
 #endif
 #ifdef ETH_TEST
 extern bx_test_match;
@@ -108,6 +118,12 @@ eth_locator_c::create(const char *type, const char *netif,
       ptr = (eth_locator_c *) &bx_linux_match;
   }
 #endif
+#if HAVE_TUNTAP
+  {
+    if (!strcmp(type, "tuntap"))    
+      ptr = (eth_locator_c *) &bx_tuntap_match;
+  }
+#endif
 #if HAVE_ETHERTAP
   {
     if (!strcmp(type, "tap"))    
@@ -132,3 +148,5 @@ eth_locator_c::create(const char *type, const char *netif,
 
   return (NULL);
 }
+
+#endif /* if BX_NE2K_SUPPORT */

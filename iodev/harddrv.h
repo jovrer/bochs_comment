@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.h,v 1.9 2002/02/03 20:49:44 vruppert Exp $
+// $Id: harddrv.h,v 1.18 2002/10/25 11:44:40 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -23,7 +23,6 @@
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
-
 
 typedef enum _sense {
       SENSE_NONE = 0, SENSE_NOT_READY = 2, SENSE_ILLEGAL_REQUEST = 5,
@@ -95,6 +94,9 @@ class default_image_t : public device_image_t
 class concat_image_t : public device_image_t
 {
   public:
+      // Default constructor
+      concat_image_t();
+      
       // Open a image. Returns non-negative if successful.
       int open (const char* pathname);
 
@@ -116,8 +118,8 @@ class concat_image_t : public device_image_t
   private:
 #define BX_CONCAT_MAX_IMAGES 8
       int fd_table[BX_CONCAT_MAX_IMAGES];
-      ssize_t start_offset_table[BX_CONCAT_MAX_IMAGES];
-      ssize_t length_table[BX_CONCAT_MAX_IMAGES];
+      off_t start_offset_table[BX_CONCAT_MAX_IMAGES];
+      off_t length_table[BX_CONCAT_MAX_IMAGES];
       void increment_string (char *str);
       int maxfd;  // number of entries in tables that are valid
 
@@ -131,7 +133,7 @@ class concat_image_t : public device_image_t
       // the next read and write.
       int index;  // index into table
       int fd;     // fd to use for reads and writes
-      int thismin, thismax; // byte offset boundary of this image
+      off_t thismin, thismax; // byte offset boundary of this image
 };
 #endif /* BX_SPLIT_HD_SUPPORT */
 
@@ -139,20 +141,48 @@ class concat_image_t : public device_image_t
 #include "external-disk-simulator.h"
 #endif
 
+#if DLL_HD_SUPPORT
+class dll_image_t : public device_image_t
+{
+  public:
+      // Open a image. Returns non-negative if successful.
+      int open (const char* pathname);
+
+      // Close the image.
+      void close ();
+
+      // Position ourselves. Return the resulting offset from the
+      // beginning of the file.
+      off_t lseek (off_t offset, int whence);
+
+      // Read count bytes to the buffer buf. Return the number of
+      // bytes read (count).
+      ssize_t read (void* buf, size_t count);
+
+      // Write count bytes from buf. Return the number of bytes
+      // written (count).
+      ssize_t write (const void* buf, size_t count);
+
+  private:
+      int vunit,vblk;
+
+};
+#endif
+
+
 typedef struct {
   struct {
-    Boolean busy;
-    Boolean drive_ready;
-    Boolean write_fault;
-    Boolean seek_complete;
-    Boolean drq;
-    Boolean corrected_data;
-    Boolean index_pulse;
+    bx_bool busy;
+    bx_bool drive_ready;
+    bx_bool write_fault;
+    bx_bool seek_complete;
+    bx_bool drq;
+    bx_bool corrected_data;
+    bx_bool index_pulse;
     unsigned index_pulse_count;
-    Boolean err;
+    bx_bool err;
     } status;
   Bit8u    error_register;
-  // Bit8u    drive_select; this field was moved :^(
   Bit8u    head_no;
   union {
     Bit8u    sector_count;
@@ -176,13 +206,14 @@ typedef struct {
     Bit16u   byte_count;
   };
   Bit8u    buffer[2048];
-  unsigned buffer_index;
+  Bit32u   buffer_index;
+  Bit32u   drq_index;
   Bit8u    current_command;
   Bit8u    sectors_per_block;
   Bit8u    lba_mode;
   struct {
-    Boolean reset;       // 0=normal, 1=reset controller
-    Boolean disable_irq; // 0=allow irq, 1=disable irq
+    bx_bool reset;       // 0=normal, 1=reset controller
+    bx_bool disable_irq; // 0=allow irq, 1=disable irq
     } control;
   Bit8u    reset_in_progress;
   Bit8u    features;
@@ -221,8 +252,8 @@ uint32 read_32bit(const uint8* buf);
 
 struct cdrom_t
 {
-  Boolean ready;
-  Boolean locked;
+  bx_bool ready;
+  bx_bool locked;
 #ifdef LOWLEVEL_CDROM
   LOWLEVEL_CDROM* cd;
 #endif
@@ -243,30 +274,37 @@ struct atapi_t
 
 #if BX_USE_HD_SMF
 #  define BX_HD_SMF  static
-#  define BX_HD_THIS bx_hard_drive.
+#  define BX_HD_THIS theHardDrive->
 #else
 #  define BX_HD_SMF
 #  define BX_HD_THIS this->
 #endif
 
-#define BX_SELECTED_HD BX_HD_THIS s[BX_HD_THIS drive_select]
-#define CDROM_SELECTED (BX_HD_THIS s[BX_HD_THIS drive_select].device_type == IDE_CDROM)
-#define DEVICE_TYPE_STRING ((CDROM_SELECTED) ? "CD-ROM" : "DISK")
-
 typedef enum {
-      IDE_DISK, IDE_CDROM
+      IDE_NONE, IDE_DISK, IDE_CDROM
 } device_type_t;
 
-class bx_hard_drive_c : public logfunctions {
+class bx_hard_drive_c : public bx_hard_drive_stub_c {
 public:
 
   bx_hard_drive_c(void);
-  ~bx_hard_drive_c(void);
-  BX_HD_SMF void   close_harddrive(void);
-  BX_HD_SMF void   init(bx_devices_c *d, bx_cmos_c *cmos);
-  BX_HD_SMF unsigned get_cd_media_status(void);
-  BX_HD_SMF unsigned set_cd_media_status(unsigned status);
+  virtual ~bx_hard_drive_c(void);
+  virtual void   close_harddrive(void);
+  virtual void   init();
+  virtual void   reset(unsigned type);
+  virtual Bit32u   get_device_handle(Bit8u channel, Bit8u device);
+  virtual Bit32u   get_first_cd_handle(void);
+  virtual unsigned get_cd_media_status(Bit32u handle);
+  virtual unsigned set_cd_media_status(Bit32u handle, unsigned status);
 
+  virtual Bit32u virt_read_handler(Bit32u address, unsigned io_len) {
+    return read_handler (this, address, io_len);
+  }
+  virtual void virt_write_handler(Bit32u address, 
+      Bit32u value, unsigned io_len)
+  {
+    write_handler(this, address, value, io_len);
+  }
 #if !BX_USE_HD_SMF
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
@@ -277,38 +315,55 @@ public:
 
 private:
 
-  BX_HD_SMF Boolean calculate_logical_address(Bit32u *sector);
-  BX_HD_SMF void increment_address();
-  BX_HD_SMF void identify_drive(unsigned drive);
-  BX_HD_SMF void identify_ATAPI_drive(unsigned drive);
-  BX_HD_SMF void command_aborted(unsigned command);
+  BX_HD_SMF bx_bool calculate_logical_address(Bit8u channel, off_t *sector);
+  BX_HD_SMF void increment_address(Bit8u channel);
+  BX_HD_SMF void identify_drive(Bit8u channel);
+  BX_HD_SMF void identify_ATAPI_drive(Bit8u channel);
+  BX_HD_SMF void command_aborted(Bit8u channel, unsigned command);
 
-  BX_HD_SMF void init_send_atapi_command(Bit8u command, int req_length, int alloc_length, bool lazy = false);
-  BX_HD_SMF void ready_to_send_atapi();
-  BX_HD_SMF void raise_interrupt();
-  BX_HD_SMF void atapi_cmd_error(sense_t sense_key, asc_t asc);
-  BX_HD_SMF void init_mode_sense_single(const void* src, int size);
-  BX_HD_SMF void atapi_cmd_nop();
+  BX_HD_SMF void init_send_atapi_command(Bit8u channel, Bit8u command, int req_length, int alloc_length, bool lazy = false);
+  BX_HD_SMF void ready_to_send_atapi(Bit8u channel);
+  BX_HD_SMF void raise_interrupt(Bit8u channel);
+  BX_HD_SMF void atapi_cmd_error(Bit8u channel, sense_t sense_key, asc_t asc);
+  BX_HD_SMF void init_mode_sense_single(Bit8u channel, const void* src, int size);
+  BX_HD_SMF void atapi_cmd_nop(Bit8u channel);
 
-  struct sStruct {
-    device_image_t* hard_drive;
-    device_type_t device_type;
-    // 512 byte buffer for ID drive command
-    // These words are stored in native word endian format, as
-    // they are fetched and returned via a return(), so
-    // there's no need to keep them in x86 endian format.
-    Bit16u id_drive[256];
+  // FIXME:
+  // For each ATA channel we should have one controller struct
+  // and an array of two drive structs
+  struct channel_t {
+    struct drive_t {
+      device_image_t* hard_drive;
+      device_type_t device_type;
+      // 512 byte buffer for ID drive command
+      // These words are stored in native word endian format, as
+      // they are fetched and returned via a return(), so
+      // there's no need to keep them in x86 endian format.
+      Bit16u id_drive[256];
 
-    controller_t controller;
-    cdrom_t cdrom;
-    sense_info_t sense;
-    atapi_t atapi;
+      controller_t controller;
+      cdrom_t cdrom;
+      sense_info_t sense;
+      atapi_t atapi;
 
-    } s[2];
+      Bit8u model_no[41];
+      } drives[2];
+    unsigned drive_select;
 
-  unsigned drive_select;
+    Bit16u ioaddr1;
+    Bit16u ioaddr2;
+    Bit8u  irq;
 
-  bx_devices_c *devices;
+    } channels[BX_MAX_ATA_CHANNEL];
+
+#if BX_PDC20230C_VLBIDE_SUPPORT
+// pdc20630c is only available for 1st ata channel
+  struct pdc20630c_t {
+    bx_bool prog_mode;
+    Bit8u   prog_count;
+    Bit32u  p1f3_value;
+    Bit32u  p1f4_value;
+    } pdc20230c;
+#endif
+
   };
-
-extern bx_hard_drive_c bx_hard_drive;

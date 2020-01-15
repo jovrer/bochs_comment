@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.15 2002/03/27 16:04:05 bdenney Exp $
+// $Id: init.cc,v 1.44 2002/11/22 09:36:28 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -48,9 +48,127 @@ BX_CPU_C::BX_CPU_C()
   settype (CPU0LOG);
 }
 
+
+#if BX_WITH_WX
+
+#if BX_SMP_PROCESSORS!=1
+#ifdef __GNUC__
+#warning cpu_param_handler only supports parameters for one processor.
+#endif
+// To fix this, I think I will need to change bx_param_num_c::set_handler
+// so that I pass in a void* data value.  The void* will be passed to each
+// handler.  In this case, I would pass a pointer to the BX_CPU_C object
+// in the void*, then in the handler I'd cast it back to BX_CPU_C and call
+// BX_CPU_C::cpu_param_handler() which then could be a member function. -BBD
+#endif
+
+#define CASE_SEG_REG_GET(x) \
+  case BXP_CPU_SEG_##x: \
+    return BX_CPU(0)->sregs[BX_SEG_REG_##x].selector.value;
+#define CASE_SEG_REG_SET(reg, val) \
+  case BXP_CPU_SEG_##reg: \
+    BX_CPU(0)->load_seg_reg (&BX_CPU(0)->sregs[BX_SEG_REG_##reg],val); \
+    break;
+#define CASE_LAZY_EFLAG_GET(flag) \
+    case BXP_CPU_EFLAGS_##flag: \
+      return BX_CPU(0)->get_##flag ();
+#define CASE_LAZY_EFLAG_SET(flag, val) \
+    case BXP_CPU_EFLAGS_##flag: \
+      BX_CPU(0)->set_##flag(val); \
+      break;
+#define CASE_EFLAG_GET(flag) \
+    case BXP_CPU_EFLAGS_##flag: \
+      return BX_CPU(0)->get_##flag ();
+#define CASE_EFLAG_SET(flag, val) \
+    case BXP_CPU_EFLAGS_##flag: \
+      BX_CPU(0)->set_##flag(val); \
+      break;
+
+
+// implement get/set handler for parameters that need unusual set/get
+static Bit64s
+cpu_param_handler (bx_param_c *param, int set, Bit64s val)
+{
+  bx_id id = param->get_id ();
+  if (set) {
+    switch (id) {
+      CASE_SEG_REG_SET (CS, val);
+      CASE_SEG_REG_SET (DS, val);
+      CASE_SEG_REG_SET (SS, val);
+      CASE_SEG_REG_SET (ES, val);
+      CASE_SEG_REG_SET (FS, val);
+      CASE_SEG_REG_SET (GS, val);
+      case BXP_CPU_SEG_LDTR:
+        BX_CPU(0)->panic("setting LDTR not implemented");
+        break;
+      case BXP_CPU_SEG_TR:
+        BX_CPU(0)->panic ("setting TR not implemented");
+        break;
+      CASE_LAZY_EFLAG_SET (OF, val);
+      CASE_LAZY_EFLAG_SET (SF, val);
+      CASE_LAZY_EFLAG_SET (ZF, val);
+      CASE_LAZY_EFLAG_SET (AF, val);
+      CASE_LAZY_EFLAG_SET (PF, val);
+      CASE_LAZY_EFLAG_SET (CF, val);
+      CASE_EFLAG_SET (ID,   val);
+      //CASE_EFLAG_SET (VIP,  val);
+      //CASE_EFLAG_SET (VIF,  val);
+      CASE_EFLAG_SET (AC,   val);
+      CASE_EFLAG_SET (VM,   val);
+      CASE_EFLAG_SET (RF,   val);
+      CASE_EFLAG_SET (NT,   val);
+      CASE_EFLAG_SET (IOPL, val);
+      CASE_EFLAG_SET (DF,   val);
+      CASE_EFLAG_SET (IF,   val);
+      CASE_EFLAG_SET (TF,   val);
+      default:
+        BX_CPU(0)->panic ("cpu_param_handler set id %d not handled", id);
+    }
+  } else {
+    switch (id) {
+      CASE_SEG_REG_GET (CS);
+      CASE_SEG_REG_GET (DS);
+      CASE_SEG_REG_GET (SS);
+      CASE_SEG_REG_GET (ES);
+      CASE_SEG_REG_GET (FS);
+      CASE_SEG_REG_GET (GS);
+      case BXP_CPU_SEG_LDTR:
+        return BX_CPU(0)->ldtr.selector.value;
+        break;
+      case BXP_CPU_SEG_TR:
+        return BX_CPU(0)->tr.selector.value;
+        break;
+      CASE_LAZY_EFLAG_GET (OF);
+      CASE_LAZY_EFLAG_GET (SF);
+      CASE_LAZY_EFLAG_GET (ZF);
+      CASE_LAZY_EFLAG_GET (AF);
+      CASE_LAZY_EFLAG_GET (PF);
+      CASE_LAZY_EFLAG_GET (CF);
+      CASE_EFLAG_GET (ID);
+      //CASE_EFLAG_GET (VIP);
+      //CASE_EFLAG_GET (VIF);
+      CASE_EFLAG_GET (AC);
+      CASE_EFLAG_GET (VM);
+      CASE_EFLAG_GET (RF);
+      CASE_EFLAG_GET (NT);
+      CASE_EFLAG_GET (IOPL);
+      CASE_EFLAG_GET (DF);
+      CASE_EFLAG_GET (IF);
+      CASE_EFLAG_GET (TF);
+      default:
+        BX_CPU(0)->panic ("cpu_param_handler get id %d ('%s') not handled", id, param->get_name ());
+    }
+  }
+  return val;
+}
+#undef CASE_SEG_REG_GET
+#undef CASE_SEG_REG_SET
+
+#endif
+
 void BX_CPU_C::init(BX_MEM_C *addrspace)
 {
-  BX_DEBUG(( "Init $Id: init.cc,v 1.15 2002/03/27 16:04:05 bdenney Exp $"));
+  BX_DEBUG(( "Init $Id: init.cc,v 1.44 2002/11/22 09:36:28 sshwarts Exp $"));
   // BX_CPU_C constructor
   BX_CPU_THIS_PTR set_INTR (0);
 #if BX_SUPPORT_APIC
@@ -127,6 +245,16 @@ void BX_CPU_C::init(BX_MEM_C *addrspace)
   sreg_mod01_rm32[5] = BX_SEG_REG_SS;
   sreg_mod01_rm32[6] = BX_SEG_REG_DS;
   sreg_mod01_rm32[7] = BX_SEG_REG_DS;
+#if BX_SUPPORT_X86_64
+  sreg_mod01_rm32[8] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[9] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[10] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[11] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[12] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[13] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[14] = BX_SEG_REG_DS;
+  sreg_mod01_rm32[15] = BX_SEG_REG_DS;
+#endif
 
   // the default segment to use for a one-byte modrm with mod==10b
   // and rm==i
@@ -141,6 +269,16 @@ void BX_CPU_C::init(BX_MEM_C *addrspace)
   sreg_mod10_rm32[5] = BX_SEG_REG_SS;
   sreg_mod10_rm32[6] = BX_SEG_REG_DS;
   sreg_mod10_rm32[7] = BX_SEG_REG_DS;
+#if BX_SUPPORT_X86_64
+  sreg_mod10_rm32[8] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[9] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[10] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[11] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[12] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[13] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[14] = BX_SEG_REG_DS;
+  sreg_mod10_rm32[15] = BX_SEG_REG_DS;
+#endif
 
 
   // the default segment to use for a two-byte modrm with mod==00b
@@ -154,6 +292,16 @@ void BX_CPU_C::init(BX_MEM_C *addrspace)
   sreg_mod0_base32[5] = BX_SEG_REG_DS;
   sreg_mod0_base32[6] = BX_SEG_REG_DS;
   sreg_mod0_base32[7] = BX_SEG_REG_DS;
+#if BX_SUPPORT_X86_64
+  sreg_mod0_base32[8] = BX_SEG_REG_DS;
+  sreg_mod0_base32[9] = BX_SEG_REG_DS;
+  sreg_mod0_base32[10] = BX_SEG_REG_DS;
+  sreg_mod0_base32[11] = BX_SEG_REG_DS;
+  sreg_mod0_base32[12] = BX_SEG_REG_DS;
+  sreg_mod0_base32[13] = BX_SEG_REG_DS;
+  sreg_mod0_base32[14] = BX_SEG_REG_DS;
+  sreg_mod0_base32[15] = BX_SEG_REG_DS;
+#endif
 
   // the default segment to use for a two-byte modrm with
   // mod==01b or mod==10b and base==i
@@ -165,37 +313,162 @@ void BX_CPU_C::init(BX_MEM_C *addrspace)
   sreg_mod1or2_base32[5] = BX_SEG_REG_SS;
   sreg_mod1or2_base32[6] = BX_SEG_REG_DS;
   sreg_mod1or2_base32[7] = BX_SEG_REG_DS;
-
-#if BX_DYNAMIC_TRANSLATION
-  DTWrite8vShim = NULL;
-  DTWrite16vShim = NULL;
-  DTWrite32vShim = NULL;
-  DTRead8vShim = NULL;
-  DTRead16vShim = NULL;
-  DTRead32vShim = NULL;
-  DTReadRMW8vShim = (BxDTShim_t) DTASReadRMW8vShim;
-  BX_DEBUG(( "DTReadRMW8vShim is %x", (unsigned) DTReadRMW8vShim ));
-  BX_DEBUG(( "&DTReadRMW8vShim is %x", (unsigned) &DTReadRMW8vShim ));
-  DTReadRMW16vShim = NULL;
-  DTReadRMW32vShim = NULL;
-  DTWriteRMW8vShim = (BxDTShim_t) DTASWriteRMW8vShim;
-  DTWriteRMW16vShim = NULL;
-  DTWriteRMW32vShim = NULL;
-  DTSetFlagsOSZAPCPtr = (BxDTShim_t) DTASSetFlagsOSZAPC;
-  DTIndBrHandler = (BxDTShim_t) DTASIndBrHandler;
-  DTDirBrHandler = (BxDTShim_t) DTASDirBrHandler;
+#if BX_SUPPORT_X86_64
+  sreg_mod1or2_base32[8] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[9] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[10] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[11] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[12] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[13] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[14] = BX_SEG_REG_DS;
+  sreg_mod1or2_base32[15] = BX_SEG_REG_DS;
 #endif
 
   mem = addrspace;
   sprintf (name, "CPU %p", this);
 
-  BX_INSTR_INIT();
+#if BX_WITH_WX
+  static bx_bool first_time = 1;
+  if (first_time) {
+    first_time = 0;
+    // Register some of the CPUs variables as shadow parameters so that
+    // they can be visible in the config interface.
+    // (Experimental, obviously not a complete list)
+    bx_param_num_c *param;
+    const char *fmt16 = "%04X";
+    const char *fmt32 = "%08X";
+    Bit32u oldbase = bx_param_num_c::set_default_base (16);
+    const char *oldfmt = bx_param_num_c::set_default_format (fmt32);
+    bx_list_c *list = new bx_list_c (BXP_CPU_PARAMETERS, "CPU State", "", 60);
+#define DEFPARAM_NORMAL(name,field) \
+    list->add (new bx_shadow_num_c (BXP_CPU_##name, #name, "", &(field)))
+
+
+      DEFPARAM_NORMAL (EAX, EAX);
+      DEFPARAM_NORMAL (EBX, EBX);
+      DEFPARAM_NORMAL (ECX, ECX);
+      DEFPARAM_NORMAL (EDX, EDX);
+      DEFPARAM_NORMAL (ESP, ESP);
+      DEFPARAM_NORMAL (EBP, EBP);
+      DEFPARAM_NORMAL (ESI, ESI);
+      DEFPARAM_NORMAL (EDI, EDI);
+      DEFPARAM_NORMAL (EIP, EIP);
+      DEFPARAM_NORMAL (DR0, dr0);
+      DEFPARAM_NORMAL (DR1, dr1);
+      DEFPARAM_NORMAL (DR2, dr2);
+      DEFPARAM_NORMAL (DR3, dr3);
+      DEFPARAM_NORMAL (DR6, dr6);
+      DEFPARAM_NORMAL (DR7, dr7);
+#if BX_SUPPORT_X86_64==0
+#if BX_CPU_LEVEL >= 2
+      DEFPARAM_NORMAL (CR0, cr0.val32);
+      DEFPARAM_NORMAL (CR1, cr1);
+      DEFPARAM_NORMAL (CR2, cr2);
+      DEFPARAM_NORMAL (CR3, cr3);
+#endif
+#if BX_CPU_LEVEL >= 4
+      DEFPARAM_NORMAL (CR4, cr4.registerValue);
+#endif
+#endif  // #if BX_SUPPORT_X86_64==0
+
+    // segment registers require a handler function because they have
+    // special get/set requirements.
+#define DEFPARAM_SEG_REG(x) \
+    list->add (param = new bx_param_num_c (BXP_CPU_SEG_##x, \
+      #x, "", 0, 0xffff, 0)); \
+    param->set_handler (cpu_param_handler); \
+    param->set_format (fmt16);
+#define DEFPARAM_GLOBAL_SEG_REG(name,field) \
+    list->add (param = new bx_shadow_num_c (BXP_CPU_##name##_BASE,  \
+        #name" base", "", \
+        & BX_CPU_THIS_PTR field.base)); \
+    list->add (param = new bx_shadow_num_c (BXP_CPU_##name##_LIMIT, \
+        #name" limit", "", \
+        & BX_CPU_THIS_PTR field.limit));
+
+    DEFPARAM_SEG_REG(CS);
+    DEFPARAM_SEG_REG(DS);
+    DEFPARAM_SEG_REG(SS);
+    DEFPARAM_SEG_REG(ES);
+    DEFPARAM_SEG_REG(FS);
+    DEFPARAM_SEG_REG(GS);
+    DEFPARAM_SEG_REG(LDTR);
+    DEFPARAM_SEG_REG(TR);
+    DEFPARAM_GLOBAL_SEG_REG(GDTR, gdtr);
+    DEFPARAM_GLOBAL_SEG_REG(IDTR, idtr);
+#undef DEFPARAM_SEGREG
+
+#if BX_SUPPORT_X86_64==0
+    list->add (param = new bx_shadow_num_c (BXP_CPU_EFLAGS, "EFLAGS", "",
+        &BX_CPU_THIS_PTR eflags.val32));
+#endif
+
+    // flags implemented in lazy_flags.cc must be done with a handler
+    // that calls their get function, to force them to be computed.
+#define DEFPARAM_EFLAG(name) \
+    list->add ( \
+        param = new bx_param_bool_c ( \
+            BXP_CPU_EFLAGS_##name, \
+            #name, "", get_##name())); \
+    param->set_handler (cpu_param_handler);
+#define DEFPARAM_LAZY_EFLAG(name) \
+    list->add ( \
+        param = new bx_param_bool_c ( \
+            BXP_CPU_EFLAGS_##name, \
+            #name, "", get_##name())); \
+    param->set_handler (cpu_param_handler);
+
+#if BX_CPU_LEVEL >= 4
+    DEFPARAM_EFLAG(ID);
+    //DEFPARAM_EFLAG(VIP);
+    //DEFPARAM_EFLAG(VIF);
+    DEFPARAM_EFLAG(AC);
+#endif
+#if BX_CPU_LEVEL >= 3
+    DEFPARAM_EFLAG(VM);
+    DEFPARAM_EFLAG(RF);
+#endif
+#if BX_CPU_LEVEL >= 2
+    DEFPARAM_EFLAG(NT);
+    // IOPL is a special case because it is 2 bits wide.
+    list->add (
+        param = new bx_shadow_num_c (
+            BXP_CPU_EFLAGS_IOPL,
+            "IOPL", "", 
+            &eflags.val32,
+            12, 13));
+    param->set_range (0, 3);
+#if BX_SUPPORT_X86_64==0
+    param->set_format ("%d");
+#endif
+#endif
+    DEFPARAM_LAZY_EFLAG(OF);
+    DEFPARAM_EFLAG(DF);
+    DEFPARAM_EFLAG(IF);
+    DEFPARAM_EFLAG(TF);
+    DEFPARAM_LAZY_EFLAG(SF);
+    DEFPARAM_LAZY_EFLAG(ZF);
+    DEFPARAM_LAZY_EFLAG(AF);
+    DEFPARAM_LAZY_EFLAG(PF);
+    DEFPARAM_LAZY_EFLAG(CF);
+
+
+    // restore defaults
+    bx_param_num_c::set_default_base (oldbase);
+    bx_param_num_c::set_default_format (oldfmt);
+  }
+#endif
+
+#if BX_SupportICache
+  iCache.alloc(mem->len);
+  iCache.fetchModeMask = 0; // KPL: fixme!!!
+#endif
 }
 
 
 BX_CPU_C::~BX_CPU_C(void)
 {
-  BX_INSTR_SHUTDOWN();
+  BX_INSTR_SHUTDOWN(CPU_ID);
   BX_DEBUG(( "Exit."));
 }
 
@@ -218,32 +491,16 @@ BX_CPU_C::reset(unsigned source)
 
   // all status flags at known values, use BX_CPU_THIS_PTR eflags structure
   BX_CPU_THIS_PTR lf_flags_status = 0x000000;
-  BX_CPU_THIS_PTR lf_pf = 0;
 
   // status and control flags register set
-  BX_CPU_THIS_PTR set_CF(0);
-  BX_CPU_THIS_PTR eflags.bit1 = 1;
-  BX_CPU_THIS_PTR set_PF(0);
-  BX_CPU_THIS_PTR eflags.bit3 = 0;
-  BX_CPU_THIS_PTR set_AF(0);
-  BX_CPU_THIS_PTR eflags.bit5 = 0;
-  BX_CPU_THIS_PTR set_ZF(0);
-  BX_CPU_THIS_PTR set_SF(0);
-  BX_CPU_THIS_PTR eflags.tf = 0;
-  BX_CPU_THIS_PTR eflags.if_ = 0;
-  BX_CPU_THIS_PTR eflags.df = 0;
-  BX_CPU_THIS_PTR set_OF(0);
-#if BX_CPU_LEVEL >= 2
-  BX_CPU_THIS_PTR eflags.iopl = 0;
-  BX_CPU_THIS_PTR eflags.nt = 0;
-#endif
-  BX_CPU_THIS_PTR eflags.bit15 = 0;
+  BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
+  BX_CPU_THIS_PTR clear_IF ();
 #if BX_CPU_LEVEL >= 3
-  BX_CPU_THIS_PTR eflags.rf = 0;
-  BX_CPU_THIS_PTR eflags.vm = 0;
+  BX_CPU_THIS_PTR clear_RF ();
+  BX_CPU_THIS_PTR clear_VM ();
 #endif
 #if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR eflags.ac = 0;
+  BX_CPU_THIS_PTR clear_AC ();
 #endif
 
   BX_CPU_THIS_PTR inhibit_mask = 0;
@@ -252,12 +509,25 @@ BX_CPU_C::reset(unsigned source)
   /* instruction pointer */
 #if BX_CPU_LEVEL < 2
   BX_CPU_THIS_PTR prev_eip =
-  BX_CPU_THIS_PTR eip = 0x00000000;
+  EIP = 0x00000000;
 #else /* from 286 up */
   BX_CPU_THIS_PTR prev_eip =
-  BX_CPU_THIS_PTR eip = 0x0000FFF0;
+#if BX_SUPPORT_X86_64
+  RIP = 0x0000FFF0;
+#else
+  EIP = 0x0000FFF0;
+#endif
 #endif
 
+#if BX_SUPPORT_SSE >= 1
+  for(unsigned index=0; index < BX_XMM_REGISTERS; index++)
+  {
+    BX_CPU_THIS_PTR xmm[index].xmm64u(0) = 0;
+    BX_CPU_THIS_PTR xmm[index].xmm64u(1) = 0;
+  }
+
+  BX_CPU_THIS_PTR mxcsr.mxcsr = MXCSR_RESET;
+#endif
 
   /* CS (Code Segment) and descriptor cache */
   /* Note: on a real cpu, CS initially points to upper memory.  After
@@ -525,6 +795,9 @@ BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR cr0.pg = 0; // paging disabled
   // no change to cr0.val32
 #endif
+  BX_CPU_THIS_PTR protectedMode = 0;
+  BX_CPU_THIS_PTR v8086Mode = 0;
+  BX_CPU_THIS_PTR realMode = 1;
 
 #if BX_CPU_LEVEL >= 4
   BX_CPU_THIS_PTR cr0.cd = 1; // caching disabled
@@ -551,13 +824,21 @@ BX_CPU_C::reset(unsigned source)
   BX_CPU_THIS_PTR cr3 = 0;
 #endif
 #if BX_CPU_LEVEL >= 4
-  BX_CPU_THIS_PTR cr4 = 0;
+  BX_CPU_THIS_PTR cr4.setRegister(0);
 #endif
+
+#if BX_SUPPORT_X86_64
+  BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32;
+#endif
+
 
 /* initialise MSR registers to defaults */
 #if BX_CPU_LEVEL >= 5
   /* APIC Address, APIC enabled and BSP is default, we'll fill in the rest later */
   BX_CPU_THIS_PTR msr.apicbase = (APIC_BASE_ADDR << 12) + 0x900;
+#if BX_SUPPORT_X86_64
+  BX_CPU_THIS_PTR msr.lme = BX_CPU_THIS_PTR msr.lma = 0;
+#endif
 #endif
 
   BX_CPU_THIS_PTR EXT = 0;
@@ -569,11 +850,9 @@ BX_CPU_C::reset(unsigned source)
 #endif // BX_USE_TLB
 #endif // BX_SUPPORT_PAGING
 
-  BX_CPU_THIS_PTR bytesleft = 0;
-  BX_CPU_THIS_PTR fetch_ptr = NULL;
-  BX_CPU_THIS_PTR prev_linear_page = 0;
-  BX_CPU_THIS_PTR prev_phy_page = 0;
-  BX_CPU_THIS_PTR max_phy_addr = 0;
+  BX_CPU_THIS_PTR eipPageBias = 0;
+  BX_CPU_THIS_PTR eipPageWindowSize = 0;
+  BX_CPU_THIS_PTR eipFetchPtr = NULL;
 
 #if BX_DEBUGGER
 #ifdef MAGIC_BREAKPOINT
@@ -581,14 +860,11 @@ BX_CPU_C::reset(unsigned source)
 #endif
   BX_CPU_THIS_PTR stop_reason = STOP_NO_REASON;
   BX_CPU_THIS_PTR trace = 0;
+  BX_CPU_THIS_PTR trace_reg = 0;
 #endif
 
   // Init the Floating Point Unit
   fpu_init();
-
-#if BX_DYNAMIC_TRANSLATION
-  dynamic_init();
-#endif
 
 #if (BX_SMP_PROCESSORS > 1)
   // notice if I'm the bootstrap processor.  If not, do the equivalent of
@@ -598,17 +874,22 @@ BX_CPU_C::reset(unsigned source)
   {
     // boot normally
     BX_CPU_THIS_PTR bsp = 1;
-    BX_CPU_THIS_PTR msr.apicbase |= 0x0100;	/* set bit 8 BSP */
+    BX_CPU_THIS_PTR msr.apicbase |= 0x0100; /* set bit 8 BSP */
     BX_INFO(("CPU[%d] is the bootstrap processor", apic_id));
   } else {
     // it's an application processor, halt until IPI is heard.
     BX_CPU_THIS_PTR bsp = 0;
-    BX_CPU_THIS_PTR msr.apicbase &= ~0x0100;	/* clear bit 8 BSP */
+    BX_CPU_THIS_PTR msr.apicbase &= ~0x0100; /* clear bit 8 BSP */
     BX_INFO(("CPU[%d] is an application processor. Halting until IPI.", apic_id));
     debug_trap |= 0x80000000;
     async_event = 1;
   }
+#else
+    BX_CPU_THIS_PTR async_event=2;
 #endif
+  BX_CPU_THIS_PTR kill_bochs_request = 0;
+
+  BX_INSTR_RESET(CPU_ID);
 }
 
 
@@ -645,7 +926,7 @@ BX_CPU_C::sanity_checks(void)
        ch != ((ECX >> 8) & 0xFF) ||
        dh != ((EDX >> 8) & 0xFF) ||
        bh != ((EBX >> 8) & 0xFF) ) {
-    BX_PANIC(("problems using BX_READ_8BIT_REG()!"));
+    BX_PANIC(("problems using BX_READ_8BIT_REGx()!"));
     }
 
   ax = AX;
@@ -691,7 +972,7 @@ BX_CPU_C::sanity_checks(void)
 
 
   void
-BX_CPU_C::set_INTR(Boolean value)
+BX_CPU_C::set_INTR(bx_bool value)
 {
   BX_CPU_THIS_PTR INTR = value;
   BX_CPU_THIS_PTR async_event = 1;

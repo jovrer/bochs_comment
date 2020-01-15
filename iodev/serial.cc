@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial.cc,v 1.19.2.1 2002/06/10 21:23:44 cbothamy Exp $
+// $Id: serial.cc,v 1.32 2002/10/25 11:44:41 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -36,8 +36,14 @@
 // define USE_TTY_HACK to connect an xterm or similar (depends on tty.c)
 // to the serial port /AM
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
+
 #include "bochs.h"
-#define LOG_THIS bx_serial.
+
+#define LOG_THIS theSerialDevice->
 
 #if USE_RAW_SERIAL
 #include <signal.h>
@@ -61,27 +67,43 @@ extern "C" {
 };
 #endif
 
-bx_serial_c bx_serial;
-#if BX_USE_SER_SMF
-#define this (&bx_serial)
-#endif
-
 #ifdef SERIAL_ENABLE
 static struct termios term_orig, term_new;
 #endif
 
 static int tty_id;
 
+bx_serial_c *theSerialDevice = NULL;
+
+  int
+libserial_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+{
+  theSerialDevice = new bx_serial_c ();
+  bx_devices.pluginSerialDevice = theSerialDevice;
+  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theSerialDevice, BX_PLUGIN_SERIAL);
+  return(0); // Success
+}
+
+  void
+libserial_LTX_plugin_fini(void)
+{
+}
+
 bx_serial_c::bx_serial_c(void)
 {
   put("SER");
   settype(SERLOG);
+  tty_id = -1;
+  for (int i=0; i<BX_SERIAL_MAXDEV; i++) {
+    s[i].tx_timer_index = BX_NULL_TIMER_HANDLE;
+    s[i].rx_timer_index = BX_NULL_TIMER_HANDLE;
+  }
 }
 
 bx_serial_c::~bx_serial_c(void)
 {
 #ifdef SERIAL_ENABLE
-  if (bx_options.com1.Opresent->get ())
+  if ((bx_options.com[0].Oenabled->get ()) && (tty_id >= 0))
     tcsetattr(tty_id, TCSAFLUSH, &term_orig);
 #endif
   // nothing for now
@@ -89,48 +111,48 @@ bx_serial_c::~bx_serial_c(void)
 
 
   void
-bx_serial_c::init(bx_devices_c *d)
+bx_serial_c::init(void)
 {
-  if (!bx_options.com1.Opresent->get ())
+  if (!bx_options.com[0].Oenabled->get ())
     return;
 
 #ifdef SERIAL_ENABLE
-  tty_id = open(bx_options.com1.Odev->getptr (), O_RDWR|O_NONBLOCK,600);
-  if (tty_id < 0)
-    BX_PANIC(("open of %s (%s) failed\n",
-	      "com1", bx_options.com1.Odev->getptr ()));
-  BX_DEBUG(("tty_id: %d",tty_id));
-  tcgetattr(tty_id, &term_orig);
-  bcopy((caddr_t) &term_orig, (caddr_t) &term_new, sizeof(struct termios));
-  cfmakeraw(&term_new);
-  term_new.c_oflag |= OPOST | ONLCR;  // Enable NL to CR-NL translation
+  if (strlen(bx_options.com[0].Odev->getptr ()) > 0) {
+    tty_id = open(bx_options.com[0].Odev->getptr (), O_RDWR|O_NONBLOCK,600);
+    if (tty_id < 0)
+      BX_PANIC(("open of %s (%s) failed\n",
+                "com1", bx_options.com[0].Odev->getptr ()));
+    BX_DEBUG(("tty_id: %d",tty_id));
+    tcgetattr(tty_id, &term_orig);
+    bcopy((caddr_t) &term_orig, (caddr_t) &term_new, sizeof(struct termios));
+    cfmakeraw(&term_new);
+    term_new.c_oflag |= OPOST | ONLCR;  // Enable NL to CR-NL translation
 #ifndef TRUE_CTLC
-  // ctl-C will exit Bochs, or trap to the debugger
-  term_new.c_iflag &= ~IGNBRK;
-  term_new.c_iflag |= BRKINT;
-  term_new.c_lflag |= ISIG;
+    // ctl-C will exit Bochs, or trap to the debugger
+    term_new.c_iflag &= ~IGNBRK;
+    term_new.c_iflag |= BRKINT;
+    term_new.c_lflag |= ISIG;
 #else
-  // ctl-C will be delivered to the serial port
-  term_new.c_iflag |= IGNBRK;
-  term_new.c_iflag &= ~BRKINT;
+    // ctl-C will be delivered to the serial port
+    term_new.c_iflag |= IGNBRK;
+    term_new.c_iflag &= ~BRKINT;
 #endif    /* !def TRUE_CTLC */
-  term_new.c_iflag = 0;
-  term_new.c_oflag = 0;
-  term_new.c_cflag = CS8|CREAD|CLOCAL;
-  term_new.c_lflag = 0;
-  term_new.c_cc[VMIN] = 1;
-  term_new.c_cc[VTIME] = 0;
-  //term_new.c_iflag |= IXOFF;
-  tcsetattr(tty_id, TCSAFLUSH, &term_new);
+    term_new.c_iflag = 0;
+    term_new.c_oflag = 0;
+    term_new.c_cflag = CS8|CREAD|CLOCAL;
+    term_new.c_lflag = 0;
+    term_new.c_cc[VMIN] = 1;
+    term_new.c_cc[VTIME] = 0;
+    //term_new.c_iflag |= IXOFF;
+    tcsetattr(tty_id, TCSAFLUSH, &term_new);
+  }
 #endif   /* def SERIAL_ENABLE */
   // nothing for now
 #if USE_RAW_SERIAL
   this->raw = new serial_raw("/dev/cua0", SIGUSR1);
 #endif // USE_RAW_SERIAL
 
-  BX_SER_THIS devices = d;
-
-  BX_SER_THIS devices->register_irq(4, "Serial Port 1");
+  DEV_register_irq(4, "Serial Port 1");
 
 #if defined (USE_TTY_HACK)
   tty_id = tty_alloc("Bx Serial Console, Your Window to the 8250");
@@ -158,13 +180,17 @@ bx_serial_c::init(bx_devices_c *d)
     BX_SER_THIS s[i].rx_interrupt = 0;
     BX_SER_THIS s[i].tx_interrupt = 0;
 
-    BX_SER_THIS s[i].tx_timer_index =
-      bx_pc_system.register_timer(this, tx_timer_handler, 0,
-				  0,0); // one-shot, inactive
+    if (BX_SER_THIS s[i].tx_timer_index == BX_NULL_TIMER_HANDLE) {
+      BX_SER_THIS s[i].tx_timer_index =
+	bx_pc_system.register_timer(this, tx_timer_handler, 0,
+				    0,0, "serial.tx"); // one-shot, inactive
+    }
 
-    BX_SER_THIS s[i].rx_timer_index =
-      bx_pc_system.register_timer(this, rx_timer_handler, 0,
-				  0,0); // one-shot, inactive
+    if (BX_SER_THIS s[i].rx_timer_index == BX_NULL_TIMER_HANDLE) {
+      BX_SER_THIS s[i].rx_timer_index =
+	bx_pc_system.register_timer(this, rx_timer_handler, 0,
+				    0,0, "serial.rx"); // one-shot, inactive
+    }
     BX_SER_THIS s[i].rx_pollstate = BX_SER_RXIDLE;
 
     /* int enable: b0000 0000 */
@@ -227,20 +253,19 @@ bx_serial_c::init(bx_devices_c *d)
   }
 
   for (unsigned addr=0x03F8; addr<=0x03FF; addr++) {
-	BX_DEBUG(("register read/write: 0x%x",addr));
-    BX_SER_THIS devices->register_io_read_handler(this,
-       read_handler,
-       addr, "Serial Port 1");
-    BX_SER_THIS devices->register_io_write_handler(this,
-       write_handler,
-       addr, "Serial Port 1");
+	BX_DEBUG(("register read/write: 0x%04x",addr));
+    DEV_register_ioread_handler(this, read_handler, addr, "Serial Port 1", 7);
+    DEV_register_iowrite_handler(this, write_handler, addr, "Serial Port 1", 7);
     }
 
   BX_INFO(( "com1 at 0x3f8/8 irq 4" ));
 
 }
 
-
+  void
+bx_serial_c::reset(unsigned type)
+{
+}
 
   // static IO port read callback handler
   // redirects to non-static class handler to avoid virtual functions
@@ -267,11 +292,11 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
   /* SERIAL PORT 1 */
 
   if (io_len > 1)
-    BX_PANIC(("io read from port %04x, bad len=%u",
+    BX_PANIC(("io read from port 0x%04x, bad len=%u",
 	     (unsigned) address,
              (unsigned) io_len));
 
-  BX_DEBUG(("register read from address 0x%x - ", (unsigned) address));
+  BX_DEBUG(("register read from address 0x%04x - ", (unsigned) address));
 
   switch (address) {
     case 0x03F8: /* receive buffer, or divisor latch LSB if DLAB set */
@@ -286,7 +311,7 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
         if ((BX_SER_THIS s[0].tx_interrupt == 0) &&
             (BX_SER_THIS s[0].ls_interrupt == 0) &&
             (BX_SER_THIS s[0].ms_interrupt == 0)) {
-          BX_SER_THIS devices->pic->lower_irq(4);
+          DEV_pic_lower_irq(4);
         }
         BX_SER_THIS s[0].rx_interrupt = 0;
         BX_SER_THIS s[0].rx_ipending = 0;
@@ -329,7 +354,7 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
       if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
           (BX_SER_THIS s[0].ls_interrupt == 0) &&
           (BX_SER_THIS s[0].ms_interrupt == 0)) {
-        BX_SER_THIS devices->pic->lower_irq(4);
+        DEV_pic_lower_irq(4);
       }
 
       BX_SER_THIS s[0].tx_interrupt = 0;
@@ -373,7 +398,7 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
       if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
           (BX_SER_THIS s[0].tx_interrupt == 0) &&
           (BX_SER_THIS s[0].ms_interrupt == 0)) {
-        BX_SER_THIS devices->pic->lower_irq(4);
+        DEV_pic_lower_irq(4);
       }
       BX_SER_THIS s[0].ls_interrupt = 0;
       BX_SER_THIS s[0].ls_ipending = 0;
@@ -396,7 +421,7 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
       if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
           (BX_SER_THIS s[0].tx_interrupt == 0) &&
           (BX_SER_THIS s[0].ls_interrupt == 0)) {
-        BX_SER_THIS devices->pic->lower_irq(4);
+        DEV_pic_lower_irq(4);
       }
       BX_SER_THIS s[0].ms_interrupt = 0;
       BX_SER_THIS s[0].ms_ipending = 0;
@@ -408,12 +433,12 @@ bx_serial_c::read(Bit32u address, unsigned io_len)
 
     default:
       val = 0; // keep compiler happy
-      BX_PANIC(("unsupported io read from address=%0x%x!",
+      BX_PANIC(("unsupported io read from address=0x%04x!",
         (unsigned) address));
       break;
   }
 
-  BX_DEBUG(("val =  0x%x", (unsigned) val));
+  BX_DEBUG(("val =  0x%02x", (unsigned) val));
 
   return(val);
 }
@@ -437,18 +462,16 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
 #else
   UNUSED(this_ptr);
 #endif  // !BX_USE_SER_SMF
-  Boolean prev_cts, prev_dsr, prev_ri, prev_dcd;
-  Boolean gen_int = 0;
-
-  BX_DEBUG(("write: 0x%x <- %d",address,value));
+  bx_bool prev_cts, prev_dsr, prev_ri, prev_dcd;
+  bx_bool gen_int = 0;
 
   /* SERIAL PORT 1 */
 
   if (io_len > 1)
-    BX_PANIC(("io write to address %08x len=%u",
+    BX_PANIC(("io write to address 0x%04x len=%u",
              (unsigned) address, (unsigned) io_len));
 
-  BX_DEBUG(("write to address: 0x%x = 0x%x",
+  BX_DEBUG(("write to address: 0x%04x = 0x%02x",
 	      (unsigned) address, (unsigned) value));
 
   switch (address) {
@@ -473,7 +496,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
           if ((BX_SER_THIS s[0].rx_interrupt == 0) &&
               (BX_SER_THIS s[0].ls_interrupt == 0) &&
               (BX_SER_THIS s[0].ms_interrupt == 0)) {
-            BX_SER_THIS devices->pic->lower_irq(4);
+            DEV_pic_lower_irq(4);
           }
           BX_SER_THIS s[0].tx_interrupt = 0;
           BX_SER_THIS s[0].tx_ipending = 0;
@@ -530,7 +553,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
         }
         }
         if (gen_int == 1)
-          BX_SER_THIS devices->pic->raise_irq(4);
+          DEV_pic_raise_irq(4);
       }
       break;
 
@@ -655,7 +678,7 @@ bx_serial_c::write(Bit32u address, Bit32u value, unsigned io_len)
       break;
 
     default:
-      BX_PANIC(("unsupported io write to address=0x%x, value = 0x%x!",
+      BX_PANIC(("unsupported io write to address=0x%04x, value = 0x%02x!",
         (unsigned) address, (unsigned) value));
       break;
   }
@@ -714,15 +737,13 @@ bx_serial_c::tx_timer(void)
     BX_SER_THIS raw->transmit(BX_SER_THIS s[0].txbuffer);
 #endif
 #if defined(SERIAL_ENABLE)
-    { char *s = (char *)(BX_SER_THIS s[0].txbuffer);
-	BX_DEBUG(("write: '%c'",(bx_ptr_t) & s));
-	}
-    write(tty_id, (bx_ptr_t) & BX_SER_THIS s[0].txbuffer, 1);
+    BX_DEBUG(("write: '%c'", BX_SER_THIS s[0].txbuffer));
+    if (tty_id >= 0) write(tty_id, (bx_ptr_t) & BX_SER_THIS s[0].txbuffer, 1);
 #endif
   }
 
   if (gen_int) {
-    BX_SER_THIS devices->pic->raise_irq(4);
+    DEV_pic_raise_irq(4);
   }
 }
 
@@ -740,7 +761,7 @@ void
 bx_serial_c::rx_timer(void)
 {
 #if BX_HAVE_SELECT
-#if BX_WITH_BEOS == 0
+#ifndef __BEOS__
   struct timeval tval;
   fd_set fds;
 #endif
@@ -749,7 +770,7 @@ bx_serial_c::rx_timer(void)
   unsigned char chbuf = 0;
 
 #if BX_HAVE_SELECT
-#if BX_WITH_BEOS == 0
+#ifndef __BEOS__
   tval.tv_sec  = 0;
   tval.tv_usec = 0;
 
@@ -759,14 +780,14 @@ bx_serial_c::rx_timer(void)
 // leaving it commented out for the moment.
 
   FD_ZERO(&fds);
-  FD_SET(tty_id, &fds);
+  if (tty_id >= 0) FD_SET(tty_id, &fds);
 
   if (BX_SER_THIS s[0].line_status.rxdata_ready == 0) {
 #if defined (USE_TTY_HACK)
     if (tty_prefetch_char(tty_id)) {
       tty(tty_id, 1, &chbuf);
 #elif USE_RAW_SERIAL
-    Boolean rdy;
+    bx_bool rdy;
     uint16 data;
     if ((rdy = BX_SER_THIS raw->ready_receive())) {
       data = BX_SER_THIS raw->receive();
@@ -779,7 +800,7 @@ bx_serial_c::rx_timer(void)
     if (rdy) {
 	  chbuf = data;
 #elif defined(SERIAL_ENABLE)
-    if (select(tty_id + 1, &fds, NULL, NULL, &tval) == 1) {
+    if ((tty_id >= 0) && (select(tty_id + 1, &fds, NULL, NULL, &tval) == 1)) {
       (void) read(tty_id, &chbuf, 1);
 	  BX_DEBUG(("read: '%c'",chbuf));
 #else
@@ -792,7 +813,7 @@ bx_serial_c::rx_timer(void)
         BX_SER_THIS s[0].rx_empty = 0;
         if (BX_SER_THIS s[0].int_enable.rxdata_enable) {
           BX_SER_THIS s[0].rx_interrupt = 1;
-          BX_SER_THIS devices->pic->raise_irq(4);
+          DEV_pic_raise_irq(4);
         } else {
           BX_SER_THIS s[0].rx_ipending = 1;
         }

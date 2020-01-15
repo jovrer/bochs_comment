@@ -1,12 +1,15 @@
 %{
 /////////////////////////////////////////////////////////////////////////
-// $Id: lexer.l,v 1.8 2001/11/28 18:39:19 instinc Exp $
+// $Id: lexer.l,v 1.10 2002/11/19 05:47:44 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 
 #include <stdlib.h>
 #include <string.h>
 #include "debug.h"
+#if BX_DEBUGGER
+
 #include "parser.h"
+
 
 int bx_yyinput(char *buf, int max_size);
 #undef YY_INPUT
@@ -120,6 +123,7 @@ fs              { bxlval.sval = strdup(bxtext); return(BX_TOKEN_FS); }
 gs              { bxlval.sval = strdup(bxtext); return(BX_TOKEN_GS); }
 force-check     { bxlval.sval = strdup(bxtext); return(BX_TOKEN_ALWAYS_CHECK); }
 v2l             { bxlval.sval = strdup(bxtext); return(BX_TOKEN_V2L); }
+help            { bxlval.sval = strdup(bxtext); return(BX_TOKEN_HELP); }
 \"[^\"\n]*\"    { bxlval.sval = strdup(bxtext); return(BX_TOKEN_STRING); }
 \/[0-9]*[xduotcsibhwg][xduotcsibhwg] { bxlval.sval = strdup(bxtext); return(BX_TOKEN_XFORMAT); }
 \/[0-9]*[xduotcsibhwg]              { bxlval.sval = strdup(bxtext); return(BX_TOKEN_XFORMAT); }
@@ -169,3 +173,5 @@ bx_add_lex_input(char *buf)
 
   bx_flush_buffer( YY_CURRENT_BUFFER );
 }
+
+#endif /* if BX_DEBUGGER */

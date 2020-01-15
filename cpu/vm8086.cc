@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vm8086.cc,v 1.9 2002/03/01 17:27:25 bdenney Exp $
+// $Id: vm8086.cc,v 1.15 2002/09/18 05:36:48 kevinlawton Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -116,56 +116,60 @@ BX_CPU_C::stack_return_to_v86(Bit32u new_eip, Bit32u raw_cs_selector,
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS].selector.value = raw_fs_selector;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].selector.value = raw_gs_selector;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value = raw_ss_selector;
+#if BX_SUPPORT_X86_64
+  RSP = new_esp;
+#else
   ESP = new_esp; // Full 32bits are loaded.
+#endif
 
   init_v8086_mode();
 }
 
 
   void
-BX_CPU_C::stack_return_from_v86(BxInstruction_t *i)
+BX_CPU_C::stack_return_from_v86(bxInstruction_c *i)
 {
-  static Bit32u times = 0;
-  times++;
-  if (times<100) {
-    BX_ERROR(("stack_return_from_v86 may not be implemented right!"));
-  } else if (times==100) {
-    BX_ERROR(("stack_return_from_v86 called 100 times. I won't print this error any more"));
-  }
-  //exception(BX_GP_EXCEPTION, 0, 0);
-
-#if 1
-  if (IOPL != 3) {
+  if (BX_CPU_THIS_PTR get_IOPL() != 3) {
     // trap to virtual 8086 monitor
-    BX_ERROR(("stack_return_from_v86: IOPL != 3"));
+    BX_DEBUG(("IRET in vm86 with IOPL != 3"));
     exception(BX_GP_EXCEPTION, 0, 0);
+    return;
     }
 
-  if (i->os_32) {
-    Bit32u eip, ecs_raw, eflags;
+  if (i->os32L()) {
+    Bit32u eip, ecs_raw, eflags_tmp;
 
-// ??? should be some stack checks here
+    if( !can_pop(12) )
+    {
+      exception(BX_SS_EXCEPTION, 0, 0);
+      return;
+    }
+  
     pop_32(&eip);
     pop_32(&ecs_raw);
-    pop_32(&eflags);
+    pop_32(&eflags_tmp);
 
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) ecs_raw);
-    BX_CPU_THIS_PTR eip = eip;
-    write_eflags(eflags, /*IOPL*/ CPL==0, /*IF*/ 1, /*VM*/ 0, /*RF*/ 1);
+    EIP = eip;
+    write_eflags(eflags_tmp, /*IOPL*/ 0, /*IF*/ 1, /*VM*/ 0, /*RF*/ 1);
     }
   else {
     Bit16u ip, cs_raw, flags;
 
-// ??? should be some stack checks here
+    if( !can_pop(6) )
+    {
+      exception(BX_SS_EXCEPTION, 0, 0);
+      return;
+    }
+
     pop_16(&ip);
     pop_16(&cs_raw);
     pop_16(&flags);
 
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
-    BX_CPU_THIS_PTR eip = (Bit32u) ip;
-    write_flags(flags, /*IOPL*/ CPL==0, /*IF*/ 1);
+    EIP = (Bit32u) ip;
+    write_flags(flags, /*IOPL*/ 0, /*IF*/ 1);
     }
-#endif
 }
 
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: stack16.cc,v 1.7 2001/10/03 13:10:37 bdenney Exp $
+// $Id: stack16.cc,v 1.13 2002/09/20 23:17:51 kevinlawton Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,44 +37,44 @@
 
 
   void
-BX_CPU_C::PUSH_RX(BxInstruction_t *i)
+BX_CPU_C::PUSH_RX(bxInstruction_c *i)
 {
-  push_16( BX_CPU_THIS_PTR gen_reg[i->b1 & 0x07].word.rx );
+  push_16( BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx );
 }
 
   void
-BX_CPU_C::POP_RX(BxInstruction_t *i)
+BX_CPU_C::POP_RX(bxInstruction_c *i)
 {
   Bit16u rx;
 
   pop_16(&rx);
-  BX_CPU_THIS_PTR gen_reg[i->b1 & 0x07].word.rx = rx;
+  BX_CPU_THIS_PTR gen_reg[i->opcodeReg()].word.rx = rx;
 }
 
   void
-BX_CPU_C::POP_Ew(BxInstruction_t *i)
+BX_CPU_C::POP_Ew(bxInstruction_c *i)
 {
   Bit16u val16;
 
   pop_16(&val16);
 
-  if (i->mod == 0xc0) {
-    BX_WRITE_16BIT_REG(i->rm, val16);
+  if (i->modC0()) {
+    BX_WRITE_16BIT_REG(i->rm(), val16);
     }
   else {
     // Note: there is one little weirdism here.  When 32bit addressing
     // is used, it is possible to use ESP in the modrm addressing.
     // If used, the value of ESP after the pop is used to calculate
     // the address.
-    if (i->as_32 && (i->mod!=0xc0) && (i->rm==4) && (i->base==4)) {
+    if (i->as32L() && (!i->modC0()) && (i->rm()==4) && (i->sibBase()==4)) {
       BX_CPU_CALL_METHOD (i->ResolveModrm, (i));
       }
-    write_virtual_word(i->seg, i->rm_addr, &val16);
+    write_virtual_word(i->seg(), RMAddr(i), &val16);
     }
 }
 
   void
-BX_CPU_C::PUSHAD16(BxInstruction_t *i)
+BX_CPU_C::PUSHAD16(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL < 2
   BX_PANIC(("PUSHAD: not supported on an 8086"));
@@ -118,7 +118,7 @@ BX_CPU_C::PUSHAD16(BxInstruction_t *i)
 }
 
   void
-BX_CPU_C::POPAD16(BxInstruction_t *i)
+BX_CPU_C::POPAD16(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL < 2
   BX_PANIC(("POPAD not supported on an 8086"));
@@ -155,7 +155,7 @@ BX_CPU_C::POPAD16(BxInstruction_t *i)
 }
 
   void
-BX_CPU_C::PUSH_Iw(BxInstruction_t *i)
+BX_CPU_C::PUSH_Iw(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL < 2
   BX_PANIC(("PUSH_Iv: not supported on 8086!"));
@@ -163,24 +163,24 @@ BX_CPU_C::PUSH_Iw(BxInstruction_t *i)
 
     Bit16u imm16;
 
-    imm16 = i->Iw;
+    imm16 = i->Iw();
 
     push_16(imm16);
 #endif
 }
 
   void
-BX_CPU_C::PUSH_Ew(BxInstruction_t *i)
+BX_CPU_C::PUSH_Ew(bxInstruction_c *i)
 {
     Bit16u op1_16;
 
     /* op1_16 is a register or memory reference */
-    if (i->mod == 0xc0) {
-      op1_16 = BX_READ_16BIT_REG(i->rm);
+    if (i->modC0()) {
+      op1_16 = BX_READ_16BIT_REG(i->rm());
       }
     else {
       /* pointer, segment address pair */
-      read_virtual_word(i->seg, i->rm_addr, &op1_16);
+      read_virtual_word(i->seg(), RMAddr(i), &op1_16);
       }
 
     push_16(op1_16);

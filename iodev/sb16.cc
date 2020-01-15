@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.18 2002/01/29 17:20:12 vruppert Exp $
+// $Id: sb16.cc,v 1.30 2002/11/19 05:47:45 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -26,9 +26,31 @@
 
 // This file (SB16.CC) written and donated by Josef Drexler
 
+// Define BX_PLUGGABLE in files that can be compiled into plugins.  For
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// is used to know when we are exporting symbols and when we are importing.
+#define BX_PLUGGABLE
 
 #include "bochs.h"
-#define LOG_THIS bx_sb16.
+#if BX_SUPPORT_SB16
+
+#define LOG_THIS theSB16Device->
+
+bx_sb16_c *theSB16Device = NULL;
+
+  int
+libsb16_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+{
+  theSB16Device = new bx_sb16_c ();
+  bx_devices.pluginSB16Device = theSB16Device;
+  BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theSB16Device, BX_PLUGIN_SB16);
+  return(0); // Success
+}
+
+  void
+libsb16_LTX_plugin_fini(void)
+{
+}
 
 // some shortcuts to save typing
 #define LOGFILE         BX_SB16_THIS logfile
@@ -45,15 +67,13 @@
 // here's a safe way to print out null pointeres
 #define MIGHT_BE_NULL(x)  ((x==NULL)? "(null)" : x)
 
-bx_sb16_c bx_sb16;
-#if BX_USE_SB16_SMF
-#define this ((void *)&bx_sb16)
-#endif
-
 bx_sb16_c::bx_sb16_c(void)
 {
   put("SB16");
   settype(SB16LOG);
+  mpu401.timer_handle = BX_NULL_TIMER_HANDLE;
+  dsp.timer_handle = BX_NULL_TIMER_HANDLE;
+  opl.timer_handle = BX_NULL_TIMER_HANDLE;
 }
 
 bx_sb16_c::~bx_sb16_c(void)
@@ -61,44 +81,45 @@ bx_sb16_c::~bx_sb16_c(void)
   switch (bx_options.sb16.Omidimode->get ())
     {
     case 2:
-      finishmidifile();
+      if (MIDIDATA != NULL)
+        finishmidifile();
       break;
     case 1:
       if (MPU.outputinit != 0)
-	BX_SB16_OUTPUT->closemidioutput();
+        BX_SB16_OUTPUT->closemidioutput();
       break;
     case 3:
       if (MIDIDATA != NULL)
-	fclose(MIDIDATA);
+        fclose(MIDIDATA);
       break;
     }
 
   switch (bx_options.sb16.Owavemode->get ())
     {
     case 2:
-      finishvocfile();
+      if (WAVEDATA != NULL)
+        finishvocfile();
       break;
     case 1:
       if (DSP.outputinit != 0)
-	BX_SB16_OUTPUT->closewaveoutput();
+        BX_SB16_OUTPUT->closewaveoutput();
       break;
     case 3:
       if (WAVEDATA != NULL)
-	fclose(WAVEDATA);
+        fclose(WAVEDATA);
       break;
     }
 
   delete(BX_SB16_OUTPUT);
 
-  delete(DSP.dma.chunk);
+  delete [] DSP.dma.chunk;
 
   if ((bx_options.sb16.Ologlevel->get () > 0) && LOGFILE)
     fclose(LOGFILE);
 }
 
-void bx_sb16_c::init(bx_devices_c *d)
+void bx_sb16_c::init(void)
 {
-  BX_SB16_THIS devices = d;
   unsigned addr;
 
   if ( (strlen(bx_options.sb16.Ologfile->getptr ()) < 1) )
@@ -209,22 +230,22 @@ void bx_sb16_c::init(bx_devices_c *d)
 
   // Allocate the IO addresses, 2x0..2xf, 3x0..3x4 and 388..38b
   for (addr=BX_SB16_IO; addr<BX_SB16_IO+BX_SB16_IOLEN; addr++) {
-    BX_SB16_THIS devices->register_io_read_handler(this,
-       &read_handler, addr, "SB16");
-    BX_SB16_THIS devices->register_io_write_handler(this,
-       &write_handler, addr, "SB16");
+    DEV_register_ioread_handler(this,
+       &read_handler, addr, "SB16", 7);
+    DEV_register_iowrite_handler(this,
+       &write_handler, addr, "SB16", 7);
     }
   for (addr=BX_SB16_IOMPU; addr<BX_SB16_IOMPU+BX_SB16_IOMPULEN; addr++) {
-    BX_SB16_THIS devices->register_io_read_handler(this,
-       &read_handler, addr, "SB16");
-    BX_SB16_THIS devices->register_io_write_handler(this,
-       &write_handler, addr, "SB16");
+    DEV_register_ioread_handler(this,
+       &read_handler, addr, "SB16", 7);
+    DEV_register_iowrite_handler(this,
+       &write_handler, addr, "SB16", 7);
     }
   for (addr=BX_SB16_IOADLIB; addr<BX_SB16_IOADLIB+BX_SB16_IOADLIBLEN; addr++) {
-    BX_SB16_THIS devices->register_io_read_handler(this,
-       read_handler, addr, "SB16");
-    BX_SB16_THIS devices->register_io_write_handler(this,
-       write_handler, addr, "SB16");
+    DEV_register_ioread_handler(this,
+       read_handler, addr, "SB16", 7);
+    DEV_register_iowrite_handler(this,
+       write_handler, addr, "SB16", 7);
     }
 
   writelog(BOTHLOG(3),
@@ -233,21 +254,31 @@ void bx_sb16_c::init(bx_devices_c *d)
 	   BX_SB16_DMAL, BX_SB16_DMAH);
 
   // initialize the timers
-  MPU.timer_handle = bx_pc_system.register_timer
-    (BX_SB16_THISP, mpu_timer, 500000 / 384, 1, 1);
-      // midi timer: active, continuous, 500000 / 384 seconds (384 = delta time, 500000 = sec per beat at 120 bpm. Don't change this!)
+  if (MPU.timer_handle == BX_NULL_TIMER_HANDLE) {
+    MPU.timer_handle = bx_pc_system.register_timer
+      (BX_SB16_THISP, mpu_timer, 500000 / 384, 1, 1, "sb16.mpu");
+    // midi timer: active, continuous, 500000 / 384 seconds (384 = delta time, 500000 = sec per beat at 120 bpm. Don't change this!)
+  }
 
-  DSP.timer_handle = bx_pc_system.register_timer
-    (BX_SB16_THISP, dsp_dmatimer, 1, 1, 0);
-      // dma timer: inactive, continous, frequency variable
+  if (DSP.timer_handle == BX_NULL_TIMER_HANDLE) {
+    DSP.timer_handle = bx_pc_system.register_timer
+      (BX_SB16_THISP, dsp_dmatimer, 1, 1, 0, "sb16.dsp");
+	// dma timer: inactive, continous, frequency variable
+  }
 
-  OPL.timer_handle = bx_pc_system.register_timer
-    (BX_SB16_THISP, opl_timer, 80, 1, 0);
-      // opl timer: inactive, continuous, frequency 80us
+  if (OPL.timer_handle == BX_NULL_TIMER_HANDLE) {
+    OPL.timer_handle = bx_pc_system.register_timer
+      (BX_SB16_THISP, opl_timer, 80, 1, 0, "sb16.opl");
+	// opl timer: inactive, continuous, frequency 80us
+  }
 
   writelog(MIDILOG(4), "Timers initialized, midi %d, dma %d, opl %d",
 	   MPU.timer_handle, DSP.timer_handle, OPL.timer_handle );
   MPU.current_timer = 0;
+}
+
+void bx_sb16_c::reset(unsigned type)
+{
 }
 
   // the timer functions
@@ -270,9 +301,9 @@ void bx_sb16_c::dsp_dmatimer (void *this_ptr)
 	 (This->dsp.dma.count > 0) ) ||
        (This->output->waveready() == BX_SOUND_OUTPUT_OK) ) {
     if (DSP.dma.bits == 8)
-      bx_pc_system.set_DRQ(BX_SB16_DMAL, 1);
+      DEV_dma_set_drq(BX_SB16_DMAL, 1);
     else
-      bx_pc_system.set_DRQ(BX_SB16_DMAH, 1);
+      DEV_dma_set_drq(BX_SB16_DMAH, 1);
     }
 }
 
@@ -321,7 +352,7 @@ void bx_sb16_c::dsp_reset(Bit32u value)
 
       if (DSP.irqpending != 0)
 	{
-	  BX_SB16_THIS devices->pic->lower_irq(BX_SB16_IRQ);
+	  DEV_pic_lower_irq(BX_SB16_IRQ);
 	  writelog(WAVELOG(4), "DSP reset: IRQ untriggered");
 	}
       if (DSP.dma.mode != 0)
@@ -855,7 +886,7 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
 	  DSP.dataout.put(0xaa);
 	  DSP.irqpending = 1;
 	  MIXER.reg[0x82] |= 1; // reg 82 shows the kind of IRQ
-	  BX_SB16_THIS devices->pic->raise_irq(BX_SB16_IRQ);
+	  DEV_pic_raise_irq(BX_SB16_IRQ);
 	  break;
 
 	  // unknown command
@@ -997,7 +1028,7 @@ Bit32u bx_sb16_c::dsp_status()
       writelog( WAVELOG(4), "8-bit DMA or SBMIDI IRQ acknowledged");
       if (MIXER.reg[0x82] == 0) {
         DSP.irqpending = 0;
-        BX_SB16_THIS devices->pic->lower_irq(BX_SB16_IRQ);
+        DEV_pic_lower_irq(BX_SB16_IRQ);
       }
     }
 
@@ -1020,7 +1051,7 @@ Bit32u bx_sb16_c::dsp_irq16ack()
       MIXER.reg[0x82] &= (~0x02);
       if (MIXER.reg[0x82] == 0) {
         DSP.irqpending = 0;
-        BX_SB16_THIS devices->pic->lower_irq(BX_SB16_IRQ);
+        DEV_pic_lower_irq(BX_SB16_IRQ);
       }
       writelog( WAVELOG(4), "16-bit DMA IRQ acknowledged");
     }
@@ -1145,7 +1176,7 @@ void bx_sb16_c::dsp_dmadone()
  else
     MIXER.reg[0x82] |= 2;
 
-  BX_SB16_THIS devices->pic->raise_irq(BX_SB16_IRQ);
+  DEV_pic_raise_irq(BX_SB16_IRQ);
   DSP.irqpending = 1;
 
   //if auto-DMA, reinitialize
@@ -1166,7 +1197,7 @@ void bx_sb16_c::dsp_dmadone()
 // and write = from soundcard to application (input)
 void bx_sb16_c::dma_read8(Bit8u *data_byte)
 {
-  bx_pc_system.set_DRQ(BX_SB16_DMAL, 0);  // the timer will raise it again
+  DEV_dma_set_drq(BX_SB16_DMAL, 0);  // the timer will raise it again
 
   if (DSP.dma.count % 100 == 0) // otherwise it's just too many lines of log
     writelog( WAVELOG(5), "Received 8-bit DMA %2x, %d remaining ",
@@ -1181,7 +1212,7 @@ void bx_sb16_c::dma_read8(Bit8u *data_byte)
 
 void bx_sb16_c::dma_write8(Bit8u *data_byte)
 {
-  bx_pc_system.set_DRQ(BX_SB16_DMAL, 0);  // the timer will raise it again
+  DEV_dma_set_drq(BX_SB16_DMAL, 0);  // the timer will raise it again
 
   DSP.dma.count--;
 
@@ -1197,7 +1228,7 @@ void bx_sb16_c::dma_write8(Bit8u *data_byte)
 
 void bx_sb16_c::dma_read16(Bit16u *data_word)
 {
-  bx_pc_system.set_DRQ(BX_SB16_DMAH, 0);  // the timer will raise it again
+  DEV_dma_set_drq(BX_SB16_DMAH, 0);  // the timer will raise it again
 
   if (DSP.dma.count % 100 == 0) // otherwise it's just too many lines of log
     writelog( WAVELOG(5), "Received 16-bit DMA %4x, %d remaining ",
@@ -1216,7 +1247,7 @@ void bx_sb16_c::dma_write16(Bit16u *data_word)
 {
   Bit8u byte1, byte2;
 
-  bx_pc_system.set_DRQ(BX_SB16_DMAH, 0);  // the timer will raise it again
+  DEV_dma_set_drq(BX_SB16_DMAH, 0);  // the timer will raise it again
 
   DSP.dma.count--;
 
@@ -1286,7 +1317,9 @@ void bx_sb16_c::mixer_writeregister(Bit32u value)
 
 void bx_sb16_c::set_irq_dma()
 {
+  static bx_bool isInitialized=0;
   int newirq;
+  int oldDMA8, oldDMA16;
 
   // set the IRQ according to the value in mixer register 0x80
   switch (MIXER.reg[0x80]) 
@@ -1312,13 +1345,14 @@ void bx_sb16_c::set_irq_dma()
   if (newirq != BX_SB16_IRQ)   // a different IRQ was set
     {
       if (BX_SB16_IRQ > 0)
-	BX_SB16_THIS devices->unregister_irq(BX_SB16_IRQ, "SB16");
+	DEV_unregister_irq(BX_SB16_IRQ, "SB16");
 
       BX_SB16_IRQ = newirq;
-      BX_SB16_THIS devices->register_irq(BX_SB16_IRQ, "SB16");
+      DEV_register_irq(BX_SB16_IRQ, "SB16");
     }
 
   // set the 8 bit DMA
+  oldDMA8=BX_SB16_DMAL;
   switch (MIXER.reg[0x81] & 0x0f)
     {
     case 1: 
@@ -1338,7 +1372,18 @@ void bx_sb16_c::set_irq_dma()
       MIXER.reg[0x81] |= (1 << BX_SB16_DMAL);
     }
 
+  // Unregister the previous DMA if initialized
+  if ( (isInitialized) && (oldDMA8 != BX_SB16_DMAL) ) {
+    DEV_dma_unregister_channel(oldDMA8);
+  }
+
+  // And register the new 8bits DMA Channel
+  if ( (!isInitialized) || (oldDMA8 != BX_SB16_DMAL) ) {
+    DEV_dma_register_8bit_channel(BX_SB16_DMAL, dma_read8, dma_write8, "SB16");
+  }
+
   // and the 16 bit DMA
+  oldDMA16=BX_SB16_DMAH;
   switch (MIXER.reg[0x81] >> 4)
     {
     case 0:
@@ -1361,6 +1406,21 @@ void bx_sb16_c::set_irq_dma()
       // MIXER.reg[0x81] |= (1 << BX_SB16_DMAH);
       // no default 16 bit channel!
     }
+
+  // Unregister the previous DMA if initialized
+  if ( (isInitialized) && (oldDMA16 != 0) && (oldDMA16 != BX_SB16_DMAH) ) {
+    DEV_dma_unregister_channel(oldDMA16);
+  }
+
+  // And register the new 16bits DMA Channel
+  if ( (BX_SB16_DMAH != 0) && (oldDMA16 != BX_SB16_DMAH) ) {
+    DEV_dma_register_16bit_channel(BX_SB16_DMAH, dma_read16, dma_write16, "SB16");
+  }
+
+  // If not already initialized
+  if(!isInitialized) {
+    isInitialized=1;
+  }
 
   writelog(BOTHLOG(4), "Resources set to I%d D%d H%d", 
 	   BX_SB16_IRQ, BX_SB16_DMAL, BX_SB16_DMAH);
@@ -1430,7 +1490,7 @@ void bx_sb16_c::mpu_command(Bit32u value)
 	  if (BX_SB16_IRQMPU != -1)
 	    {
 	      MIXER.reg[0x82] |= 4;
-	      BX_SB16_THIS devices->pic->raise_irq(BX_SB16_IRQMPU);
+	      DEV_pic_raise_irq(BX_SB16_IRQMPU);
 	    }
 	  break;
 
@@ -1493,7 +1553,7 @@ Bit32u bx_sb16_c::mpu_dataread()
 	MPU.irqpending = 0;
 	MIXER.reg[0x82] &= (~4);
 	if (MIXER.reg[0x82] == 0)
-	  BX_SB16_THIS devices->pic->lower_irq(BX_SB16_IRQMPU);
+	  DEV_pic_lower_irq(BX_SB16_IRQMPU);
 	writelog(MIDILOG(4), "MPU IRQ acknowledged");
       }
 
@@ -1542,7 +1602,7 @@ void bx_sb16_c::mpu_datawrite(Bit32u value)
 void bx_sb16_c::mpu_mididata(Bit32u value)
 {
   // first, find out if it is a midi command or midi data
-  Boolean ismidicommand = 0;
+  bx_bool ismidicommand = 0;
   if (value >= 0x80)
     {  // bit 8 usually denotes a midi command...
       ismidicommand = 1;
@@ -2482,7 +2542,7 @@ void bx_sb16_c::opl_setfreq(int channel)
 }
 
 // called when a note is possibly turned on or off
-void bx_sb16_c::opl_keyonoff(int channel, Boolean onoff)
+void bx_sb16_c::opl_keyonoff(int channel, bx_bool onoff)
 {
   int i;
 
@@ -2632,11 +2692,11 @@ int bx_sb16_c::currentdeltatime()
 
 // process the midi command stored in MPU.midicmd.to the midi driver
 
-void bx_sb16_c::processmidicommand(Boolean force)
+void bx_sb16_c::processmidicommand(bx_bool force)
 {
   int i, channel;
   Bit8u value;
-  Boolean needremap = 0;
+  bx_bool needremap = 0;
 
   channel = MPU.midicmd.currentcommand() & 0xf;
 
@@ -3185,7 +3245,7 @@ void bx_sb16_buffer::reset()
 bx_sb16_buffer::~bx_sb16_buffer(void)
 {
   if (buffer != NULL)
-    delete buffer;
+    delete [] buffer;
 
   buffer = NULL;
   length = 0;
@@ -3204,7 +3264,7 @@ int bx_sb16_buffer::bytes(void)
 }
 
 // This puts one byte into the buffer
-Boolean bx_sb16_buffer::put(Bit8u data)
+bx_bool bx_sb16_buffer::put(Bit8u data)
 {
   if (full() != 0)
     return 0;	// buffer full
@@ -3216,7 +3276,7 @@ Boolean bx_sb16_buffer::put(Bit8u data)
 }
 
 // This writes a formatted string to the buffer
-Boolean bx_sb16_buffer::puts(char *data, ...)
+bx_bool bx_sb16_buffer::puts(char *data, ...)
 {
 
   if (data == NULL)
@@ -3246,7 +3306,7 @@ Boolean bx_sb16_buffer::puts(char *data, ...)
 }
 
 // This returns if the buffer is full, i.e. if a put will fail
-Boolean bx_sb16_buffer::full(void)
+bx_bool bx_sb16_buffer::full(void)
 {
   if (length == 0)
     return 1;   // not initialized
@@ -3258,7 +3318,7 @@ Boolean bx_sb16_buffer::full(void)
 }
 
 // This reads the next available byte from the buffer
-Boolean bx_sb16_buffer::get(Bit8u *data)
+bx_bool bx_sb16_buffer::get(Bit8u *data)
 {
   if (empty() != 0)
     { 
@@ -3276,7 +3336,7 @@ Boolean bx_sb16_buffer::get(Bit8u *data)
 }
 
 // Read a word in lo/hi order
-Boolean bx_sb16_buffer::getw(Bit16u *data)
+bx_bool bx_sb16_buffer::getw(Bit16u *data)
 {
   Bit8u dummy;
   if (bytes() < 2)
@@ -3298,7 +3358,7 @@ Boolean bx_sb16_buffer::getw(Bit16u *data)
 }
 
 // Read a word in hi/lo order
-Boolean bx_sb16_buffer::getw1(Bit16u *data)
+bx_bool bx_sb16_buffer::getw1(Bit16u *data)
 {
   Bit8u dummy;
   if (bytes() < 2)
@@ -3320,7 +3380,7 @@ Boolean bx_sb16_buffer::getw1(Bit16u *data)
 }
 
 // This returns if the buffer is empty, i.e. if a get will fail
-Boolean bx_sb16_buffer::empty(void)
+bx_bool bx_sb16_buffer::empty(void)
 {
   if (length == 0)
     return 1;   // not inialized
@@ -3369,7 +3429,7 @@ void bx_sb16_buffer::clearcommand(void)
 }
 
 // return if the command has received all necessary bytes
-Boolean bx_sb16_buffer::commanddone(void)
+bx_bool bx_sb16_buffer::commanddone(void)
 {
   if (hascommand() == 0)
     return 0;  // no command pending - not done then
@@ -3381,7 +3441,7 @@ Boolean bx_sb16_buffer::commanddone(void)
 }
 
 // return if there is a command pending
-Boolean bx_sb16_buffer::hascommand(void)
+bx_bool bx_sb16_buffer::hascommand(void)
 {
   return havecommand;
 }
@@ -3451,3 +3511,5 @@ int bx_sound_output_c::closewaveoutput()
 {
   return BX_SOUND_OUTPUT_OK;
 }
+
+#endif /* if BX_SUPPORT_SB16 */

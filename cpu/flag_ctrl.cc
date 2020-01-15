@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl.cc,v 1.6 2001/10/03 13:10:37 bdenney Exp $
+// $Id: flag_ctrl.cc,v 1.14 2002/10/24 21:05:42 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
+//  Copyright (C) 2002  MandrakeSoft S.A.
 //
 //    MandrakeSoft S.A.
 //    43, rue d'Aboukir
@@ -38,7 +38,7 @@
 
 
   void
-BX_CPU_C::SAHF(BxInstruction_t *i)
+BX_CPU_C::SAHF(bxInstruction_c *i)
 {
   set_SF((AH & 0x80) >> 7);
   set_ZF((AH & 0x40) >> 6);
@@ -48,7 +48,7 @@ BX_CPU_C::SAHF(BxInstruction_t *i)
 }
 
   void
-BX_CPU_C::LAHF(BxInstruction_t *i)
+BX_CPU_C::LAHF(bxInstruction_c *i)
 {
   AH = (get_SF() ? 0x80 : 0) |
        (get_ZF() ? 0x40 : 0) |
@@ -59,23 +59,23 @@ BX_CPU_C::LAHF(BxInstruction_t *i)
 }
 
   void
-BX_CPU_C::CLC(BxInstruction_t *i)
+BX_CPU_C::CLC(bxInstruction_c *i)
 {
   set_CF(0);
 }
 
   void
-BX_CPU_C::STC(BxInstruction_t *i)
+BX_CPU_C::STC(bxInstruction_c *i)
 {
   set_CF(1);
 }
 
   void
-BX_CPU_C::CLI(BxInstruction_t *i)
+BX_CPU_C::CLI(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 2
   if (protected_mode()) {
-    if (CPL > IOPL) {
+    if (CPL > BX_CPU_THIS_PTR get_IOPL ()) {
       //BX_INFO(("CLI: CPL > IOPL")); /* ??? */
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
@@ -83,7 +83,7 @@ BX_CPU_C::CLI(BxInstruction_t *i)
     }
 #if BX_CPU_LEVEL >= 3
   else if (v8086_mode()) {
-    if (IOPL != 3) {
+    if (BX_CPU_THIS_PTR get_IOPL () != 3) {
       //BX_INFO(("CLI: IOPL != 3")); /* ??? */
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
@@ -92,15 +92,15 @@ BX_CPU_C::CLI(BxInstruction_t *i)
 #endif
 #endif
 
-  BX_CPU_THIS_PTR eflags.if_ = 0;
+  BX_CPU_THIS_PTR clear_IF ();
 }
 
   void
-BX_CPU_C::STI(BxInstruction_t *i)
+BX_CPU_C::STI(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 2
   if (protected_mode()) {
-    if (CPL > IOPL) {
+    if (CPL > BX_CPU_THIS_PTR get_IOPL ()) {
       //BX_INFO(("STI: CPL > IOPL")); /* ??? */
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
@@ -108,7 +108,7 @@ BX_CPU_C::STI(BxInstruction_t *i)
     }
 #if BX_CPU_LEVEL >= 3
   else if (v8086_mode()) {
-    if (IOPL != 3) {
+    if (BX_CPU_THIS_PTR get_IOPL () != 3) {
       //BX_INFO(("STI: IOPL != 3")); /* ??? */
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
@@ -117,41 +117,47 @@ BX_CPU_C::STI(BxInstruction_t *i)
 #endif
 #endif
 
-  if (!BX_CPU_THIS_PTR eflags.if_) {
-    BX_CPU_THIS_PTR eflags.if_ = 1;
+  if (!BX_CPU_THIS_PTR get_IF ()) {
+    BX_CPU_THIS_PTR assert_IF ();
     BX_CPU_THIS_PTR inhibit_mask |= BX_INHIBIT_INTERRUPTS;
     BX_CPU_THIS_PTR async_event = 1;
     }
 }
 
   void
-BX_CPU_C::CLD(BxInstruction_t *i)
+BX_CPU_C::CLD(bxInstruction_c *i)
 {
-  BX_CPU_THIS_PTR eflags.df = 0;
+  BX_CPU_THIS_PTR clear_DF ();
 }
 
   void
-BX_CPU_C::STD(BxInstruction_t *i)
+BX_CPU_C::STD(bxInstruction_c *i)
 {
-  BX_CPU_THIS_PTR eflags.df = 1;
+  BX_CPU_THIS_PTR assert_DF ();
 }
 
   void
-BX_CPU_C::CMC(BxInstruction_t *i)
+BX_CPU_C::CMC(bxInstruction_c *i)
 {
   set_CF( !get_CF() );
 }
 
   void
-BX_CPU_C::PUSHF_Fv(BxInstruction_t *i)
+BX_CPU_C::PUSHF_Fv(bxInstruction_c *i)
 {
-  if (v8086_mode() && (IOPL<3)) {
+  if (v8086_mode() && (BX_CPU_THIS_PTR get_IOPL ()<3)) {
     exception(BX_GP_EXCEPTION, 0, 0);
     return;
     }
 
 #if BX_CPU_LEVEL >= 3
-  if (i->os_32) {
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    push_64(read_eflags() & 0x00fcffff);
+    }
+  else
+#endif
+  if (i->os32L()) {
     push_32(read_eflags() & 0x00fcffff);
     }
   else
@@ -163,55 +169,94 @@ BX_CPU_C::PUSHF_Fv(BxInstruction_t *i)
 
 
   void
-BX_CPU_C::POPF_Fv(BxInstruction_t *i)
+BX_CPU_C::POPF_Fv(bxInstruction_c *i)
 {
+  Bit32u changeMask = 0x004dd5;
+  Bit32u flags32;
 
 #if BX_CPU_LEVEL >= 3
-  if (v8086_mode()) {
-    if (IOPL < 3) {
-      //BX_INFO(("popf_fv: IOPL < 3"));
+  if (protected_mode()) {
+#if BX_SUPPORT_X86_64
+    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+      Bit64u flags64;
+
+      pop_64(&flags64);
+      flags32 = flags64;
+      changeMask |= 0x240000; // ID,AC
+      if (CPL==0)
+        changeMask |= (3<<12); // IOPL
+      if (CPL <= BX_CPU_THIS_PTR get_IOPL())
+        changeMask |= (1<<9); // IF
+      }
+    else
+#endif  // #if BX_SUPPORT_X86_64
+    if (i->os32L()) {
+
+      pop_32(&flags32);
+      changeMask |= 0x240000; // ID,AC
+      if (CPL==0)
+        changeMask |= (3<<12); // IOPL
+      if (CPL <= BX_CPU_THIS_PTR get_IOPL())
+        changeMask |= (1<<9); // IF
+      }
+    else
+#endif  // BX_CPU_LEVEL >= 3
+      {
+      Bit16u flags16;
+
+      pop_16(&flags16);
+      flags32 = flags16;
+      if (CPL==0)
+        changeMask |= (3<<12); // IOPL
+      if (CPL <= BX_CPU_THIS_PTR get_IOPL())
+        changeMask |= (1<<9); // IF
+      }
+
+    // Protected-mode: VIP/VIF cleared, VM unaffected.
+    // Does this happen for 16 bit case?  fixme!
+    flags32 &= ~( (1<<20) | (1<<19) ); // Clear VIP/VIF
+    }
+
+  else if (v8086_mode()) {
+    if (BX_CPU_THIS_PTR get_IOPL() < 3) {
       exception(BX_GP_EXCEPTION, 0, 0);
       return;
       }
-    if (i->os_32) {
-      BX_PANIC(("POPFD(): not supported in virtual mode"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-      return;
+    if (i->os32L()) {
+      pop_32(&flags32);
+      changeMask |= 0x240000; // ID,AC
       }
+    else {
+      Bit16u flags16;
+      pop_16(&flags16);
+      flags32 = flags16;
+      }
+    // v8086-mode: VM,RF,IOPL,VIP,VIF are unaffected.
+    changeMask |= (1<<9); // IF
     }
 
-  if (i->os_32) {
-    Bit32u eflags;
-
-    pop_32(&eflags);
-
-    eflags &= 0x00277fd7;
-    if (!real_mode()) {
-      write_eflags(eflags, /* change IOPL? */ CPL==0, /* change IF? */ CPL<=IOPL, 0, 0);
+  else { // Real-mode
+    if (i->os32L()) {
+      pop_32(&flags32);
+      changeMask |= 0x243200; // ID,AC,IOPL,IF
       }
-    else { /* real mode */
-      write_eflags(eflags, /* change IOPL? */ 1, /* change IF? */ 1, 0, 0);
+    else { /* 16 bit opsize */
+      Bit16u flags16;
+
+      pop_16(&flags16);
+      flags32 = flags16;
+      changeMask |= 0x3200; // IOPL,IF
       }
+    // Real-mode: VIP/VIF cleared, VM unaffected.
+    flags32 &= ~( (1<<20) | (1<<19) ); // Clear VIP/VIF
     }
-  else
-#endif /* BX_CPU_LEVEL >= 3 */
-    { /* 16 bit opsize */
-    Bit16u flags;
 
-    pop_16(&flags);
-
-    if (!real_mode()) {
-      write_flags(flags, /* change IOPL? */ CPL==0, /* change IF? */ CPL<=IOPL);
-      }
-    else { /* real mode */
-      write_flags(flags, /* change IOPL? */ 1, /* change IF? */ 1);
-      }
-    }
+  writeEFlags(flags32, changeMask);
 }
 
 
   void
-BX_CPU_C::SALC(BxInstruction_t *i)
+BX_CPU_C::SALC(bxInstruction_c *i)
 {
   if ( get_CF() ) {
     AL = 0xff;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h,v 1.11 2002/03/08 04:45:00 bdenney Exp $
+// $Id: osdep.h,v 1.14 2002/12/12 15:29:39 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -59,9 +59,6 @@ extern "C" {
 #  define S_ISREG(m)      (((m) & S_IFMT) == S_IFREG)
 #  define S_ISCHR(m)      (((m) & S_IFMT) == S_IFCHR)
 
-  // VCPP includes also are missing these
-#  define off_t long
-
 // win32 has snprintf though with different name.
 #define snprintf _snprintf
 #endif  /* ifnndef __MINGW32__ */
@@ -117,6 +114,19 @@ typedef int socklen_t;
 int fd_read(char *buffer, Bit32u offset, Bit32u bytes);
 int fd_write(char *buffer, Bit32u offset, Bit32u bytes);
 int fd_stat(struct stat *buf);
+FILE *  fdopen(int fd, const char *type);
+
+typedef long ssize_t ;
+#endif
+
+//////////////////////////////////////////////////////////////////////
+// New functions to replace library functions
+//   with OS-independent versions
+//////////////////////////////////////////////////////////////////////
+
+#if BX_HAVE_REALTIME_USEC
+// 64-bit time in useconds.
+extern Bit64u bx_get_realtime64_usec (void);
 #endif
 
 #ifdef __cplusplus

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl_pro.cc,v 1.11 2001/11/13 05:11:41 bdenney Exp $
+// $Id: segment_ctrl_pro.cc,v 1.23 2002/10/25 11:44:35 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -36,6 +36,7 @@
 
 
 
+
   void
 BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
 {
@@ -48,8 +49,13 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
     seg->cache.p = 1;
     seg->cache.dpl = 3;
     seg->cache.segment = 1; /* regular segment */
-    if (seg == &BX_CPU_THIS_PTR sregs[BX_SREG_CS])
+    if (seg == &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS]) {
       seg->cache.u.segment.executable = 1; /* code segment */
+#if BX_SupportICache
+      BX_CPU_THIS_PTR iCache.fetchModeMask =
+          BX_CPU_THIS_PTR iCache.createFetchModeMask(BX_CPU_THIS);
+#endif
+      }
     else
       seg->cache.u.segment.executable = 0; /* data segment */
     seg->cache.u.segment.c_ed = 0; /* expand up */
@@ -60,6 +66,9 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
     seg->cache.u.segment.limit_scaled = 0xffff;
     seg->cache.u.segment.g     = 0; /* byte granular */
     seg->cache.u.segment.d_b   = 0; /* default 16bit size */
+#if BX_SUPPORT_X86_64
+    seg->cache.u.segment.l     = 0; /* default 16bit size */
+#endif
     seg->cache.u.segment.avl   = 0;
 
     return;
@@ -68,7 +77,7 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
 
 #if BX_CPU_LEVEL >= 2
   if (protected_mode()) {
-    if (seg == &BX_CPU_THIS_PTR sregs[BX_SREG_SS]) {
+    if (seg == &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS]) {
       Bit16u index;
       Bit8u ti;
       Bit8u rpl;
@@ -172,11 +181,11 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
 
       return;
       }
-    else if ( (seg==&BX_CPU_THIS_PTR sregs[BX_SREG_DS]) ||
-              (seg==&BX_CPU_THIS_PTR sregs[BX_SREG_ES])
+    else if ( (seg==&BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS]) ||
+              (seg==&BX_CPU_THIS_PTR sregs[BX_SEG_REG_ES])
 #if BX_CPU_LEVEL >= 3
-           || (seg==&BX_CPU_THIS_PTR sregs[BX_SREG_FS]) ||
-              (seg==&BX_CPU_THIS_PTR sregs[BX_SREG_GS])
+           || (seg==&BX_CPU_THIS_PTR sregs[BX_SEG_REG_FS]) ||
+              (seg==&BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS])
 #endif
             ) {
       Bit16u index;
@@ -302,7 +311,7 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
   /* something about honoring previous values */
 
   /* ??? */
-  if (seg == &BX_CPU_THIS_PTR sregs[BX_SREG_CS]) {
+  if (seg == &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS]) {
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value = new_value;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p = 1;
@@ -318,7 +327,15 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
 #if BX_CPU_LEVEL >= 3
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.g     = 0; /* byte granular */
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b   = 0; /* default 16bit size */
+#if BX_SUPPORT_X86_64
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.l     = 0; /* default 16bit size */
+#endif
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.avl   = 0;
+#endif
+
+#if BX_SupportICache
+      BX_CPU_THIS_PTR iCache.fetchModeMask =
+          BX_CPU_THIS_PTR iCache.createFetchModeMask(BX_CPU_THIS);
 #endif
     }
   else { /* SS, DS, ES, FS, GS */
@@ -337,7 +354,25 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
 #endif
 }
 
+#if BX_SUPPORT_X86_64
+  void
+BX_CPU_C::loadSRegLMNominal(unsigned segI, unsigned selector, bx_address base,
+                            unsigned dpl)
+{
+  bx_segment_reg_t *seg = & BX_CPU_THIS_PTR sregs[segI];
 
+  // Load a segment register in long-mode with nominal values,
+  // so descriptor cache values are compatible with existing checks.
+  seg->cache.u.segment.base = base;
+  // (KPL) I doubt we need limit_scaled.  If we do, it should be
+  // of type bx_addr and be maxed to 64bits, not 32.
+  seg->cache.u.segment.limit_scaled = 0xffffffff;
+  seg->cache.valid = 1;
+  seg->cache.dpl = dpl; // (KPL) Not sure if we need this.
+
+  seg->selector.value        = selector;
+}
+#endif
 
 
 #if BX_CPU_LEVEL >= 2
@@ -378,8 +413,12 @@ BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
     temp->u.segment.limit        |= (dword2 & 0x000F0000);
     temp->u.segment.g            =  (dword2 & 0x00800000) > 0;
     temp->u.segment.d_b          =  (dword2 & 0x00400000) > 0;
+#if BX_SUPPORT_X86_64
+    temp->u.segment.l            =  (dword2 & 0x00200000) > 0;
+#endif
     temp->u.segment.avl          =  (dword2 & 0x00100000) > 0;
     temp->u.segment.base         |= (dword2 & 0xFF000000);
+
     if (temp->u.segment.g) {
       if ( (temp->u.segment.executable==0) && (temp->u.segment.c_ed) )
         temp->u.segment.limit_scaled = (temp->u.segment.limit << 12);
@@ -501,6 +540,23 @@ BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor,
   // (BW) Added cpl to the selector value.
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value =
     (0xfffc & BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value) | cpl;
+
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR msr.lma) {
+    if (descriptor->u.segment.l) {
+      BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_64;
+      loadSRegLMNominal(BX_SEG_REG_CS, selector->value, 0, cpl);
+      }
+    else {
+      BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_COMPAT;
+      }
+    }
+#endif
+
+#if BX_SupportICache
+  BX_CPU_THIS_PTR iCache.fetchModeMask =
+      BX_CPU_THIS_PTR iCache.createFetchModeMask(BX_CPU_THIS);
+#endif
 }
 
   void
@@ -510,6 +566,12 @@ BX_CPU_C::load_ss(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache = *descriptor;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.rpl = cpl;
 
+#if BX_SUPPORT_X86_64
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    loadSRegLMNominal(BX_SEG_REG_SS, selector->value, 0, cpl);
+    return;
+    }
+#endif
   if ( (BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value & 0xfffc) == 0 )
     BX_PANIC(("load_ss(): null selector passed"));
 
@@ -517,8 +579,6 @@ BX_CPU_C::load_ss(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
     BX_PANIC(("load_ss(): invalid selector/descriptor passed."));
     }
 }
-
-
 
 #if BX_CPU_LEVEL >= 2
   void
@@ -546,7 +606,9 @@ BX_INFO(("-----------------------------------"));
       BX_PANIC(("fetch_raw_descriptor: LDTR.valid=0"));
       }
     if ((selector->index*8 + 7) > BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit) {
-      BX_PANIC(("fetch_raw_descriptor: LDT: index > limit"));
+      BX_PANIC(("fetch_raw_descriptor: LDT: index (%x)%x > limit (%x)",
+          (selector->index*8 + 7), selector->index,
+          BX_CPU_THIS_PTR ldtr.cache.u.ldt.limit));
       exception(exception_no, selector->value & 0xfffc, 0);
       return;
       }
@@ -562,7 +624,7 @@ BX_INFO(("-----------------------------------"));
 
 
 
-  Boolean
+  bx_bool
 BX_CPU_C::fetch_raw_descriptor2(bx_selector_t *selector,
                         Bit32u *dword1, Bit32u *dword2)
 {
