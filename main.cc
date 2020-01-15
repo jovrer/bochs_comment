@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: main.cc,v 1.289.2.1 2005/07/06 20:26:50 vruppert Exp $
+// $Id: main.cc,v 1.298 2005/11/26 21:36:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -51,12 +51,6 @@
 #include <Carbon/Carbon.h>
 #undef Float32
 #undef Float64
-#endif
-
-// BX_SHARE_PATH should be defined by the makefile.  If not, give it
-// a value of NULL to avoid compile problems.
-#ifndef BX_SHARE_PATH
-#define BX_SHARE_PATH NULL
 #endif
 
 
@@ -393,6 +387,9 @@ int main (int argc, char *argv[])
   // if SDL/win32, try to create a console window.
   RedirectIOToConsole ();
 #endif
+#if defined(WIN32)
+  SetConsoleTitle("Bochs for Windows - Console");
+#endif
   return bxmain ();
 }
 #endif
@@ -439,7 +436,11 @@ int bx_init_main (int argc, char *argv[])
   int arg = 1, load_rcfile=1;
   while (arg < argc) {
     // parse next arg
-    if (!strcmp ("--help", argv[arg]) || !strncmp ("-h", argv[arg], 2)) {
+    if (!strcmp ("--help", argv[arg]) || !strncmp ("-h", argv[arg], 2)
+#if defined(WIN32)
+        || !strncmp ("/?", argv[arg], 2)
+#endif
+       ) {
       print_usage();
       SIM->quit_sim (0);
     }
@@ -573,11 +574,6 @@ int bx_init_main (int argc, char *argv[])
   // we don't have getenv or setenv.  Do nothing.
 #endif
 #endif  /* if BX_PLUGINS */
-
-#if !BX_USE_CONFIG_INTERFACE
-  // this allows people to get quick start behavior by default
-  SIM->get_param_enum(BXP_BOCHS_START)->set (BX_QUICK_START);
-#endif
 
   int norcfile = 1;
 
@@ -790,9 +786,6 @@ int bx_init_hardware()
   if (SIM->get_param_enum(BXP_BOCHS_START)->get ()==BX_QUICK_START) {
     for (int level=0; level<N_LOGLEV; level++) {
       int action = SIM->get_default_log_action (level);
-#if !BX_USE_CONFIG_INTERFACE
-      if (action == ACT_ASK) action = ACT_FATAL;
-#endif
       io->set_log_action (level, action);
     }
   }
@@ -806,7 +799,7 @@ int bx_init_hardware()
 
   io->set_log_prefix(bx_options.log.Oprefix->getptr());
 
-  // Output to the log file the cpu settings
+  // Output to the log file the cpu and device settings
   // This will by handy for bug reports
   BX_INFO(("Bochs x86 Emulator %s", VER_STRING));
   BX_INFO(("  %s", REL_STRING));
@@ -821,9 +814,10 @@ int bx_init_hardware()
   BX_INFO(("  mmx support: %s",BX_SUPPORT_MMX?"yes":"no"));
   BX_INFO(("  sse support: %s",BX_SUPPORT_SSE==2?"2":BX_SUPPORT_SSE==1?"1":"no"));
   BX_INFO(("  v8086 mode support: %s",BX_SUPPORT_V8086_MODE?"yes":"no"));
+  BX_INFO(("  VME support: %s",BX_SUPPORT_VME?"yes":"no"));
   BX_INFO(("  3dnow! support: %s",BX_SUPPORT_3DNOW?"yes":"no"));
-  BX_INFO(("  PAE support: %s",BX_SupportPAE?"yes":"no"));
-  BX_INFO(("  PGE support: %s",BX_SupportGlobalPages?"yes":"no"));
+  BX_INFO(("  PAE support: %s",BX_SUPPORT_PAE?"yes":"no"));
+  BX_INFO(("  PGE support: %s",BX_SUPPORT_GLOBAL_PAGES?"yes":"no"));
   BX_INFO(("  PSE support: %s",BX_SUPPORT_4MEG_PAGES?"yes":"no"));
   BX_INFO(("  x86-64 support: %s",BX_SUPPORT_X86_64?"yes":"no"));
   BX_INFO(("  SEP support: %s",BX_SUPPORT_SEP?"yes":"no"));
@@ -833,6 +827,13 @@ int bx_init_hardware()
   BX_INFO(("  Icache support: %s",BX_SUPPORT_ICACHE?"yes":"no"));
   BX_INFO(("  Host Asm support: %s",BX_SupportHostAsms?"yes":"no"));
   BX_INFO(("  Fast function calls: %s",BX_FAST_FUNC_CALL?"yes":"no"));
+  BX_INFO(("Devices configuration"));
+  BX_INFO(("  NE2000 support: %s",BX_SUPPORT_NE2K?"yes":"no"));
+  BX_INFO(("  PCI support: %s",BX_SUPPORT_PCI?"yes":"no"));
+  BX_INFO(("  SB16 support: %s",BX_SUPPORT_SB16?"yes":"no"));
+  BX_INFO(("  USB support: %s",BX_SUPPORT_PCIUSB?"yes":"no"));
+  BX_INFO(("  VGA extension support: %s %s",BX_SUPPORT_VBE?"vbe":"",
+           BX_SUPPORT_CLGD54XX?"cirrus":""));
 
   // set up memory and CPU objects
 #if BX_SUPPORT_APIC
@@ -867,8 +868,17 @@ int bx_init_hardware()
   if (strcmp(bx_options.optrom[3].Opath->getptr (),"") !=0 )
     BX_MEM(0)->load_ROM(bx_options.optrom[3].Opath->getptr (), bx_options.optrom[3].Oaddress->get (), 2);
 
-  BX_CPU(0)->init (BX_MEM(0));
-  BX_CPU(0)->set_cpu_id(0);
+  // Then load the optional RAM images
+  if (strcmp(bx_options.optram[0].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[0].Opath->getptr (), bx_options.optram[0].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[1].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[1].Opath->getptr (), bx_options.optram[1].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[2].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[2].Opath->getptr (), bx_options.optram[2].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[3].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[3].Opath->getptr (), bx_options.optram[3].Oaddress->get (), 2);
+
+  BX_CPU(0)->initialize(BX_MEM(0));
 #if BX_SUPPORT_APIC
   BX_CPU(0)->local_apic.set_id (0);
 #endif
@@ -894,12 +904,21 @@ int bx_init_hardware()
   if (strcmp(bx_options.optrom[3].Opath->getptr (),"") !=0 )
     bx_mem_array[0]->load_ROM(bx_options.optrom[3].Opath->getptr (), bx_options.optrom[3].Oaddress->get (), 2);
 
+  // Then load the optional RAM images
+  if (strcmp(bx_options.optram[0].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[0].Opath->getptr (), bx_options.optram[0].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[1].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[1].Opath->getptr (), bx_options.optram[1].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[2].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[2].Opath->getptr (), bx_options.optram[2].Oaddress->get (), 2);
+  if (strcmp(bx_options.optram[3].Opath->getptr (),"") !=0 )
+    BX_MEM(0)->load_RAM(bx_options.optram[3].Opath->getptr (), bx_options.optram[3].Oaddress->get (), 2);
+
   for (int i=0; i<BX_SMP_PROCESSORS; i++) {
-    BX_CPU(i) = new BX_CPU_C;
-    BX_CPU(i)->init (bx_mem_array[0]);
+    BX_CPU(i) = new BX_CPU_C(i);
+    BX_CPU(i)->initialize(bx_mem_array[0]);
     // assign apic ID from the index of this loop
     // if !BX_SUPPORT_APIC, this will not compile.
-    BX_CPU(i)->set_cpu_id(i);
     BX_CPU(i)->local_apic.set_id(i);
     BX_CPU(i)->sanity_checks();
     BX_INSTR_INIT(i);
@@ -1040,7 +1059,7 @@ void bx_signal_handler(int signum)
     // amount of system ticks passed from last time the handler was called
     Bit64u ips_count = bx_pc_system.time_ticks() - ticks_count;
     if (ips_count) {
-      BX_INFO(("ips = %lu", (unsigned long) ips_count));
+      bx_gui->show_ips((Bit32u) ips_count);
       ticks_count = bx_pc_system.time_ticks();
     }
 #ifndef __MINGW32__
@@ -1054,7 +1073,7 @@ void bx_signal_handler(int signum)
 #if BX_GUI_SIGHANDLER
   if (bx_gui_sighandler) {
     if ((1<<signum) & bx_gui->get_sighandler_mask ()) {
-      bx_gui->sighandler (signum);
+      bx_gui->sighandler(signum);
       return;
     }
   }

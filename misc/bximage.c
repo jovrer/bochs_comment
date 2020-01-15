@@ -1,6 +1,6 @@
 /*
  * misc/bximage.c
- * $Id: bximage.c,v 1.25.2.1 2005/07/06 20:40:00 vruppert Exp $
+ * $Id: bximage.c,v 1.31 2005/11/20 20:26:35 vruppert Exp $
  *
  * Create empty hard disk or floppy disk images for bochs.
  *
@@ -25,8 +25,8 @@
 
 #include "../osdep.h"
 
-#define INCLUDE_ONLY_HD_HEADERS 1
-#include "../iodev/harddrv.h"
+#define HDIMAGE_HEADERS_ONLY 1
+#include "../iodev/hdimage.h"
 
 int bx_hdimage;
 int bx_fdsize_idx;
@@ -41,7 +41,7 @@ typedef int (*WRITE_IMAGE_WIN32)(HANDLE, Bit64u);
 #endif
 
 char *EOF_ERR = "ERROR: End of input";
-char *rcsid = "$Id: bximage.c,v 1.25.2.1 2005/07/06 20:40:00 vruppert Exp $";
+char *rcsid = "$Id: bximage.c,v 1.31 2005/11/20 20:26:35 vruppert Exp $";
 char *divider = "========================================================================";
 
 /* menu data for choosing floppy/hard disk */
@@ -50,9 +50,9 @@ char *fdhd_choices[] = { "fd", "hd" };
 int fdhd_n_choices = 2;
 
 /* menu data for choosing floppy size */
-char *fdsize_menu = "\nChoose the size of floppy disk image to create, in megabytes.\nPlease type 0.36, 0.72, 1.2, 1.44, 1.68, 1.72, or 2.88. ";
-char *fdsize_choices[] = { "0.36","0.72","1.2","1.44","1.68","1.72","2.88" };
-int fdsize_n_choices = 7;
+char *fdsize_menu = "\nChoose the size of floppy disk image to create, in megabytes.\nPlease type 0.16, 0.18, 0.32, 0.36, 0.72, 1.2, 1.44, 1.68, 1.72, or 2.88.\n ";
+char *fdsize_choices[] = { "0.16","0.18","0.32","0.36","0.72","1.2","1.44","1.68","1.72","2.88" };
+int fdsize_n_choices = 10;
 
 /* menu data for choosing disk mode */
 char *hdmode_menu = "\nWhat kind of image should I create?\nPlease type flat, sparse or growing. ";
@@ -304,7 +304,7 @@ void make_redolog_header(redolog_header_t *header, const char* type, Bit64u size
 int make_flat_image_win32(HANDLE hFile, Bit64u sec)
 {
   LARGE_INTEGER pos;
-  DWORD dwCount;
+  DWORD dwCount, errCode;
   USHORT mode;
   char buffer[1024];
 
@@ -321,8 +321,14 @@ int make_flat_image_win32(HANDLE hFile, Bit64u sec)
   memset(buffer, 0, 512);
   if ((pos.u.LowPart == 0xffffffff && GetLastError() != NO_ERROR) || !WriteFile(hFile, buffer, 512, &dwCount, NULL) || dwCount != 512)
   {
+    errCode = GetLastError();
     CloseHandle(hFile);
-    fatal ("ERROR: The disk image is not complete!");
+    if (errCode == ERROR_DISK_FULL) {
+      fatal ("\nERROR: Not enough space on disk for image!");
+    } else {
+      sprintf(buffer, "\nERROR: Disk image creation failed with error code %i!", errCode);
+      fatal (buffer);
+    }
   }
   return 0;
 }
@@ -349,7 +355,7 @@ int make_flat_image(FILE *fp, Bit64u sec)
    if (fputc('\0', fp) == EOF)
    {
      fclose (fp);
-     fatal ("ERROR: The disk image is not complete!");
+     fatal ("\nERROR: The disk image is not complete! (image larger then free space?)");
    }
    return 0;
 }
@@ -583,7 +589,7 @@ int parse_cmdline (int argc, char *argv[])
   }
   if (bx_hdimage == -1) {
     bx_hdimage = 1;
-    bx_fdsize_idx = 3;
+    bx_fdsize_idx = 6;
     bx_interactive = 1;
   }
   if (bx_hdimage == 1) {
@@ -597,7 +603,7 @@ int parse_cmdline (int argc, char *argv[])
     }
   } else {
     if (bx_fdsize_idx == -1) {
-      bx_fdsize_idx = 3;
+      bx_fdsize_idx = 6;
       bx_interactive = 1;
     }
   }
@@ -627,20 +633,21 @@ int main (int argc, char *argv[])
       fatal (EOF_ERR);
   }
   if (bx_hdimage) {
-    int hdsize, cyl, heads=16, spt=63;
+    unsigned int cyl;
+    int hdsize, heads=16, spt=63;
     int mode;
 
     if (bx_interactive) {
       if (ask_menu (hdmode_menu, hdmode_n_choices, hdmode_choices, bx_hdimagemode, &mode) < 0)
         fatal (EOF_ERR);
-      if (ask_int ("\nEnter the hard disk size in megabytes, between 1 and 32255\n", 1, 32255, bx_hdsize, &hdsize) < 0)
+      if (ask_int ("\nEnter the hard disk size in megabytes, between 1 and 129023\n", 1, 129023, bx_hdsize, &hdsize) < 0)
         fatal (EOF_ERR);
     } else {
       mode = bx_hdimagemode;
       hdsize = bx_hdsize;
     }
-    cyl = (int) (hdsize*1024.0*1024.0/16.0/63.0/512.0);
-    assert (cyl < 65536);
+    cyl = (unsigned int) (hdsize*1024.0*1024.0/16.0/63.0/512.0);
+    assert (cyl < 262144);
     sectors = cyl*heads*spt;
     printf ("\nI will create a '%s' hard disk image with\n", hdmode_choices[mode]);
     printf ("  cyl=%d\n", cyl);
@@ -674,7 +681,6 @@ int main (int argc, char *argv[])
       }
   } else {
     int fdsize, cyl=0, heads=0, spt=0;
-    char *name = NULL;
     if (bx_interactive) {
       if (ask_menu (fdsize_menu, fdsize_n_choices, fdsize_choices, bx_fdsize_idx, &fdsize) < 0)
         fatal (EOF_ERR);
@@ -682,15 +688,18 @@ int main (int argc, char *argv[])
       fdsize = bx_fdsize_idx;
     }
     switch (fdsize) {
-    case 0: name="360k"; cyl=40; heads=2; spt=9; break;   /* 0.36 meg */
-    case 1: name="720k"; cyl=80; heads=2; spt=9; break;   /* 0.72 meg */
-    case 2: name="1_2"; cyl=80; heads=2; spt=15; break;   /* 1.2 meg */
-    case 3: name="1_44"; cyl=80; heads=2; spt=18; break;   /* 1.44 meg */
-    case 4: name="1_44"; cyl=80; heads=2; spt=21; break;   /* 1.68 meg */
-    case 5: name="1_44"; cyl=82; heads=2; spt=21; break;   /* 1.72 meg */
-    case 6: name="2_88"; cyl=80; heads=2; spt=36; break;   /* 2.88 meg */
-    default:
-      fatal ("ERROR: fdsize out of range");
+      case 0: cyl=40; heads=1; spt=8; break;  /* 0.16 meg */
+      case 1: cyl=40; heads=1; spt=9; break;  /* 0.18 meg */
+      case 2: cyl=40; heads=2; spt=8; break;  /* 0.32 meg */
+      case 3: cyl=40; heads=2; spt=9; break;  /* 0.36 meg */
+      case 4: cyl=80; heads=2; spt=9; break;  /* 0.72 meg */
+      case 5: cyl=80; heads=2; spt=15; break; /* 1.2 meg */
+      case 6: cyl=80; heads=2; spt=18; break; /* 1.44 meg */
+      case 7: cyl=80; heads=2; spt=21; break; /* 1.68 meg */
+      case 8: cyl=82; heads=2; spt=21; break; /* 1.72 meg */
+      case 9: cyl=80; heads=2; spt=36; break; /* 2.88 meg */
+      default:
+        fatal ("ERROR: fdsize out of range");
     }
     sectors = cyl*heads*spt;
     printf ("I will create a floppy image with\n");
@@ -706,7 +715,7 @@ int main (int argc, char *argv[])
     } else {
       strcpy(filename, bx_filename);
     }
-    sprintf (bochsrc_line, "floppya: %s=\"%s\", status=inserted", name, filename);
+    sprintf (bochsrc_line, "floppya: image=\"%s\", status=inserted", filename);
 
     write_function=make_flat_image;
   }

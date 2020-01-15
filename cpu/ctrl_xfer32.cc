@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer32.cc,v 1.41 2005/05/20 20:06:50 sshwarts Exp $
+// $Id: ctrl_xfer32.cc,v 1.44 2005/10/17 13:06:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -124,8 +124,6 @@ done:
 
 void BX_CPU_C::CALL_Ad(bxInstruction_c *i)
 {
-BailBigRSP("CALL_Ad");
-
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
 #endif
@@ -263,11 +261,8 @@ void BX_CPU_C::JCC_Jd(bxInstruction_c *i)
     case 0x0B: /* JNP */ condition = !get_PF(); break;
     case 0x0C: /* JL */ condition = getB_SF() != getB_OF(); break;
     case 0x0D: /* JNL */ condition = getB_SF() == getB_OF(); break;
-    case 0x0E: /* JLE */ condition = get_ZF() || (getB_SF() != getB_OF());
-      break;
-    case 0x0F: /* JNLE */ condition = (getB_SF() == getB_OF()) &&
-                            !get_ZF();
-      break;
+    case 0x0E: /* JLE */ condition = get_ZF() || (getB_SF() != getB_OF()); break;
+    case 0x0F: /* JNLE */ condition = (getB_SF() == getB_OF()) && !get_ZF(); break;
     default:
       condition = 0; // For compiler...all targets should set condition.
       break;
@@ -309,7 +304,7 @@ void BX_CPU_C::JNZ_Jd(bxInstruction_c *i)
 #if BX_INSTRUMENTATION
   else {
     BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
-    }
+  }
 #endif
 }
 
@@ -348,11 +343,11 @@ void BX_CPU_C::JMP_Ed(bxInstruction_c *i)
   /* op1_32 is a register or memory reference */
   if (i->modC0()) {
     new_EIP = BX_READ_32BIT_REG(i->rm());
-    }
+  }
   else {
     /* pointer, segment address pair */
     read_virtual_dword(i->seg(), RMAddr(i), &new_EIP);
-    }
+  }
 
   branch_near32(new_EIP); // includes revalidate_prefetch_q()
 
@@ -403,7 +398,7 @@ void BX_CPU_C::IRET32(bxInstruction_c *i)
 
   if (v8086_mode()) {
     // IOPL check in stack_return_from_v86()
-    stack_return_from_v86(i);
+    iret32_stack_return_from_v86(i);
     goto done;
   }
 
@@ -419,24 +414,21 @@ void BX_CPU_C::IRET32(bxInstruction_c *i)
     exception(BX_SS_EXCEPTION, 0, 0);
   }
 
-  access_linear(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_SS) + ESP, 
-                4, CPL == 3, BX_READ, &eip);
+  pop_32(&eip);
 
-  // still need to be validated !
-  if (eip > 0xffff) { 
+  // CS.LIMIT in real mode is 0xffff
+  if (eip > 0xffff) {
     BX_PANIC(("IRETD: instruction pointer not within code segment limits"));
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  pop_32(&eip);
   pop_32(&ecs);
   pop_32(&eflags);
   ecs &= 0xffff;
-  eflags = (eflags & 0x257fd5) | (read_eflags() & 0x1a0000);
-  
+
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u)ecs);
   EIP = eip;
-  writeEFlags(eflags, 0xffffffff);
+  writeEFlags(eflags, 0x00257fd5); // VIF, VIP, VM unchanged
 
 done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,

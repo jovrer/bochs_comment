@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode.h,v 1.17 2005/05/12 18:07:41 sshwarts Exp $
+// $Id: fetchdecode.h,v 1.19 2005/12/12 19:44:06 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -159,7 +159,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDB[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FILD_DWORD_INTEGER  },
   /* 1 */  { 0,  &BX_CPU_C::FISTTP32            },
   /* 2 */  { 0,  &BX_CPU_C::FIST_DWORD_INTEGER  },
-  /* 3 */  { 0,  &BX_CPU_C::FIST_DWORD_INTEGER  },	// FISTP
+  /* 3 */  { 0,  &BX_CPU_C::FIST_DWORD_INTEGER  },	// FISTP_DWORD_INTEGER
   /* 4 */  { 0,  &BX_CPU_C::BxError             },
   /* 5 */  { 0,  &BX_CPU_C::FLD_EXTENDED_REAL   },
   /* 6 */  { 0,  &BX_CPU_C::BxError             },
@@ -195,7 +195,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDE[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FIADD_WORD_INTEGER  },
   /* 1 */  { 0,  &BX_CPU_C::FIMUL_WORD_INTEGER  },
   /* 2 */  { 0,  &BX_CPU_C::FICOM_WORD_INTEGER  },
-  /* 3 */  { 0,  &BX_CPU_C::FICOM_WORD_INTEGER  },	// FISTP_WORD_INTEGER
+  /* 3 */  { 0,  &BX_CPU_C::FICOM_WORD_INTEGER  },	// FICOMP_WORD_INTEGER
   /* 4 */  { 0,  &BX_CPU_C::FISUB_WORD_INTEGER  },
   /* 5 */  { 0,  &BX_CPU_C::FISUBR_WORD_INTEGER },
   /* 6 */  { 0,  &BX_CPU_C::FIDIV_WORD_INTEGER  },
@@ -207,7 +207,7 @@ static BxOpcodeInfo_t BxOpcodeInfo_FPGroupDF[8] = {
   /* 0 */  { 0,  &BX_CPU_C::FILD_WORD_INTEGER   },
   /* 1 */  { 0,  &BX_CPU_C::FISTTP16            },
   /* 2 */  { 0,  &BX_CPU_C::FIST_WORD_INTEGER   },
-  /* 3 */  { 0,  &BX_CPU_C::FIST_WORD_INTEGER  	},	// FISTP
+  /* 3 */  { 0,  &BX_CPU_C::FIST_WORD_INTEGER  	},	// FISTP_WORD_INTEGER
   /* 4 */  { 0,  &BX_CPU_C::FBLD_PACKED_BCD     },
   /* 5 */  { 0,  &BX_CPU_C::FILD_QWORD_INTEGER  },
   /* 6 */  { 0,  &BX_CPU_C::FBSTP_PACKED_BCD    },
@@ -1092,7 +1092,7 @@ static BxOpcodeInfo_t BxOpcodeGroupSSE_0f29[4] = {
 
 static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2a[4] = {
   /* -- */  { 0, &BX_CPU_C::CVTPI2PS_VpsQq },
-  /* 66 */  { 0, &BX_CPU_C::CVTPI2PD_VpdQd },
+  /* 66 */  { 0, &BX_CPU_C::CVTPI2PD_VpdQq },
   /* F2 */  { 0, &BX_CPU_C::CVTSI2SD_VsdEd },
   /* F3 */  { 0, &BX_CPU_C::CVTSI2SS_VssEd }
   };
@@ -1134,7 +1134,7 @@ static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2f[4] = {
 
 static BxOpcodeInfo_t BxOpcodeGroupSSE_0f50[4] = {
   /* -- */  { 0, &BX_CPU_C::MOVMSKPS_GdVRps },
-  /* 66 */  { 0, &BX_CPU_C::MOVMSKPD_EdVRpd },
+  /* 66 */  { 0, &BX_CPU_C::MOVMSKPD_GdVRpd },
   /* F2 */  { 0, &BX_CPU_C::BxError },
   /* F3 */  { 0, &BX_CPU_C::BxError }
   };
@@ -1434,8 +1434,8 @@ static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc4[4] = {
   };
 
 static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc5[4] = {
-  /* -- */  { BxImmediate_Ib, &BX_CPU_C::PEXTRW_PqEdIb  },
-  /* 66 */  { BxImmediate_Ib, &BX_CPU_C::PEXTRW_VdqEdIb },
+  /* -- */  { BxImmediate_Ib, &BX_CPU_C::PEXTRW_GdPqIb   },
+  /* 66 */  { BxImmediate_Ib, &BX_CPU_C::PEXTRW_GdVRdqIb },
   /* F2 */  { 0, &BX_CPU_C::BxError },
   /* F3 */  { 0, &BX_CPU_C::BxError }
   };

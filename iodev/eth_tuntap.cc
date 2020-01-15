@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tuntap.cc,v 1.21 2005/05/21 07:38:29 vruppert Exp $
+// $Id: eth_tuntap.cc,v 1.23 2005/12/10 18:37:35 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,7 +31,9 @@
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
  
+#define NO_DEVICE_INCLUDES
 #include "iodev.h"
+
 #if BX_NETWORKING && defined(HAVE_TUNTAP)
 
 #include "eth.h"
@@ -228,7 +230,7 @@ void
 bx_tuntap_pktmover_c::sendpkt(void *buf, unsigned io_len)
 {
 #ifdef __APPLE__	//FIXME
-  unsigned int size = write (fd, buf+14, io_len-14);
+  unsigned int size = write (fd, (char*)buf+14, io_len-14);
   if (size != io_len-14) {
     BX_PANIC (("write on tuntap device: %s", strerror (errno)));
   } else {

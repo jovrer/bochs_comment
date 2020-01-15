@@ -137,13 +137,17 @@ Bit32u BX_CPU_C::get_std_cpuid_features()
   Bit32u features = 0;
 
 #if BX_SUPPORT_FPU
-      features |= 0x01;
+      features |= (1<<0);
+#endif
+
+#if BX_SUPPORT_VME
+      features |= (1<<1);
 #endif
 
 #if (BX_CPU_LEVEL >= 5)
-      features |= (1<< 8);  // Support CMPXCHG8B instruction
-      features |= (1<< 4);  // implement TSC
-      features |= (1<< 5);  // support RDMSR/WRMSR
+      features |= (1<<4);   // implement TSC
+      features |= (1<<5);   // support RDMSR/WRMSR
+      features |= (1<<8);   // Support CMPXCHG8B instruction
 
 #if BX_SUPPORT_MMX
       features |= (1<<23);  // support MMX
@@ -161,7 +165,7 @@ Bit32u BX_CPU_C::get_std_cpuid_features()
       // if MSR_APICBASE APIC Global Enable bit has been cleared,
       // the CPUID feature flag for the APIC is set to 0.
       if (BX_CPU_THIS_PTR msr.apicbase & 0x800)
-        features |= (1<< 9);  // APIC on chip
+        features |= (1<<9); // APIC on chip
 #endif
 #if BX_SUPPORT_SSE >= 1
       features |= (1<<25);  // support SSE
@@ -174,11 +178,11 @@ Bit32u BX_CPU_C::get_std_cpuid_features()
 #if BX_SUPPORT_4MEG_PAGES
       features |= (1<< 3);  // Support Page-Size Extension (4M pages)
 #endif
-#if BX_SupportGlobalPages
-      features |= (1<<13);  // Support Global pages.
+#if BX_SUPPORT_GLOBAL_PAGES
+      features |= (1<<13);  // Support Global pages
 #endif
-#if BX_SupportPAE
-      features |= (1<< 6);  // Support PAE.
+#if BX_SUPPORT_PAE
+      features |= (1<<6);   // Support PAE
 #endif
 
 #if BX_SUPPORT_SEP
@@ -325,12 +329,16 @@ void BX_CPU_C::CPUID(bxInstruction_c *i)
       //     [21:21] Reserved
       //     [22:22] AMD MMX Extensions
       //     [25:25] Fast FXSAVE/FXRSTOR mode support
-      //     [25:28] Reserved
+      //     [26:26] Reserved
+      //     [27:27] Support RDTSCP Instruction
+      //     [28:28] Reserved
       //     [29:29] Long Mode
       //     [30:30] AMD 3DNow! Extensions
       //     [31:31] AMD 3DNow! Instructions
       features = features & 0x00003F3FF;
-      RDX = features | (1 << 29) | (1 << 25) | (1 << 22) | (1 << 20) | (1 << 11);
+
+      RDX = features | (1 << 29) | (1 << 27) | (1 << 25) | 
+                       (1 << 22) | (1 << 20) | (1 << 11);
       RBX = 0;
       RCX = 0;
       break;

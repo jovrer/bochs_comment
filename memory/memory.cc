@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: memory.cc,v 1.40 2005/04/10 19:42:48 sshwarts Exp $
+// $Id: memory.cc,v 1.43 2005/10/13 16:22:21 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -43,15 +43,6 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data
 #endif
 
   a20addr = A20ADDR(addr);
-  struct memory_handler_struct *memory_handler = memory_handlers[a20addr >> 20];
-  while (memory_handler) {
-	  if (memory_handler->begin <= a20addr &&
-		memory_handler->end >= a20addr &&
-	  	memory_handler->write_handler(a20addr, len, data, memory_handler->write_param))
-		  return;
-	  memory_handler = memory_handler->next;
-  }
-  
   BX_INSTR_PHY_WRITE(cpu->which_cpu(), a20addr, len);
 
 #if BX_DEBUGGER
@@ -65,22 +56,33 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data
         }
 #endif
 
+  struct memory_handler_struct *memory_handler = memory_handlers[a20addr >> 20];
+  while (memory_handler) {
+    if (memory_handler->begin <= a20addr &&
+          memory_handler->end >= a20addr &&
+          memory_handler->write_handler(a20addr, len, data, memory_handler->write_param))
+    {
+      return;
+    }
+    memory_handler = memory_handler->next;
+  }
+
 #if BX_SUPPORT_ICACHE
   if (a20addr < BX_MEM_THIS len)
     pageWriteStampTable.decWriteStamp(a20addr);
 #endif
 
 #if BX_SUPPORT_APIC
-    bx_generic_apic_c *local_apic = &cpu->local_apic;
-    bx_generic_apic_c *ioapic = bx_devices.ioapic;
-    if (local_apic->is_selected (a20addr, len)) {
-      local_apic->write (a20addr, (Bit32u *)data, len);
-      return;
-    }
-    if (ioapic->is_selected (a20addr, len)) {
-      ioapic->write (a20addr, (Bit32u *)data, len);
-      return;
-    }
+  bx_generic_apic_c *local_apic = &cpu->local_apic;
+  bx_generic_apic_c *ioapic = bx_devices.ioapic;
+  if (local_apic->is_selected (a20addr, len)) {
+    local_apic->write (a20addr, (Bit32u *)data, len);
+    return;
+  }
+  if (ioapic->is_selected (a20addr, len)) {
+    ioapic->write (a20addr, (Bit32u *)data, len);
+    return;
+  }
 #endif
 
   if ( (a20addr + len) <= BX_MEM_THIS len ) {
@@ -102,7 +104,7 @@ BX_MEM_C::writePhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data
         return;
       }
       // len == other, just fall thru to special cases handling
-      }
+    }
 
 #ifdef BX_LITTLE_ENDIAN
   data_ptr = (Bit8u *) data;
@@ -186,10 +188,8 @@ inc_one:
       data_ptr--;
 #endif
     }
-    return;
   }
 }
-
 
   void BX_CPP_AttrRegparmN(3)
 BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data)
@@ -202,15 +202,6 @@ BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data)
 #endif
  
   a20addr = A20ADDR(addr);
-  struct memory_handler_struct *memory_handler = memory_handlers[a20addr >> 20];
-  while (memory_handler) {
-	  if (memory_handler->begin <= a20addr &&
-		memory_handler->end >= a20addr &&
-	  	memory_handler->read_handler(a20addr, len, data, memory_handler->read_param))
-		  return;
-	  memory_handler = memory_handler->next;
-  }
-  
   BX_INSTR_PHY_READ(cpu->which_cpu(), a20addr, len);
 
 #if BX_DEBUGGER
@@ -224,17 +215,28 @@ BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data)
         }
 #endif
 
+  struct memory_handler_struct *memory_handler = memory_handlers[a20addr >> 20];
+  while (memory_handler) {
+    if (memory_handler->begin <= a20addr &&
+          memory_handler->end >= a20addr &&
+          memory_handler->read_handler(a20addr, len, data, memory_handler->read_param))
+    {
+      return;
+    }
+    memory_handler = memory_handler->next;
+  }
+
 #if BX_SUPPORT_APIC
   bx_generic_apic_c *local_apic = &cpu->local_apic;
   bx_generic_apic_c *ioapic = bx_devices.ioapic;
-    if (local_apic->is_selected (addr, len)) {
-      local_apic->read (addr, data, len);
-      return;
-    }
-    if (ioapic->is_selected (addr, len)) {
-      ioapic->read (addr, data, len);
-      return;
-    }
+  if (local_apic->is_selected (addr, len)) {
+    local_apic->read (addr, data, len);
+    return;
+  }
+  if (ioapic->is_selected (addr, len)) {
+    ioapic->read (addr, data, len);
+    return;
+  }
 #endif
 
   if ( (a20addr + len) <= BX_MEM_THIS len ) {
@@ -249,7 +251,7 @@ BX_MEM_C::readPhysicalPage(BX_CPU_C *cpu, Bit32u addr, unsigned len, void *data)
         return;
       }
       if (len == 1) {
-        * (Bit8u *) data =  * ((Bit8u *) (&vector[a20addr]));
+        * (Bit8u *) data = * ((Bit8u *) (&vector[a20addr]));
         return;
       }
       // len == 3 case can just fall thru to special cases handling
@@ -285,7 +287,14 @@ inc_one:
     {
       switch (DEV_pci_rd_memtype (a20addr)) {
         case 0x0:  // Read from ROM
-          *data_ptr = rom[a20addr - 0xc0000];
+          if ( (a20addr & 0xfffe0000) == 0x000e0000 )
+          {
+            *data_ptr = rom[a20addr & BIOS_MASK];
+          }
+          else
+          {
+            *data_ptr = rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
+          }
           goto inc_one;
         case 0x1:  // Read from ShadowRAM
           *data_ptr = vector[a20addr];
@@ -298,12 +307,16 @@ inc_one:
     else
 #endif  // #if BX_SUPPORT_PCI
     {
-      if ( (a20addr & 0xfffc0000) == 0x000c0000 ) {
-        *data_ptr = rom[a20addr - 0xc0000];
+      if ( (a20addr & 0xfffc0000) != 0x000c0000 ) {
+        *data_ptr = vector[a20addr];
+      }
+      else if ( (a20addr & 0xfffe0000) == 0x000e0000 )
+      {
+        *data_ptr = rom[a20addr & BIOS_MASK];
       }
       else
       {
-        *data_ptr = vector[a20addr];
+        *data_ptr = rom[(a20addr & EXROM_MASK) + BIOSROMSZ];
       }
       goto inc_one;
     }
@@ -320,8 +333,8 @@ inc_one:
     for (unsigned i = 0; i < len; i++) {
       if (a20addr < BX_MEM_THIS len)
         *data_ptr = vector[a20addr];
-      else if (a20addr >= 0xfffe0000)
-        *data_ptr = rom[a20addr & 0x3ffff];
+      else if (a20addr >= (Bit32u)~BIOS_MASK)
+        *data_ptr = rom[a20addr & BIOS_MASK];
       else
         *data_ptr = 0xff;
       addr++;
@@ -332,7 +345,6 @@ inc_one:
       data_ptr--;
 #endif
     }
-    return;
   }
 }
 

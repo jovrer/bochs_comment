@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.cc,v 1.10 2005/03/24 19:19:19 vruppert Exp $
+// $Id: pci_ide.cc,v 1.19 2005/11/15 17:19:28 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -62,11 +62,18 @@ bx_pci_ide_c::bx_pci_ide_c(void)
   settype(PCIIDELOG);
   s.bmdma[0].timer_index = BX_NULL_TIMER_HANDLE;
   s.bmdma[1].timer_index = BX_NULL_TIMER_HANDLE;
+  s.bmdma[0].buffer = NULL;
+  s.bmdma[1].buffer = NULL;
 }
 
 bx_pci_ide_c::~bx_pci_ide_c(void)
 {
-  // nothing for now
+  if (s.bmdma[0].buffer != NULL) {
+    delete [] s.bmdma[0].buffer;
+  }
+  if (s.bmdma[1].buffer != NULL) {
+    delete [] s.bmdma[1].buffer;
+  }
   BX_DEBUG(("Exit."));
 }
 
@@ -88,6 +95,9 @@ bx_pci_ide_c::init(void)
     }
   }
 
+  BX_PIDE_THIS s.bmdma[0].buffer = new Bit8u[0x20000];
+  BX_PIDE_THIS s.bmdma[1].buffer = new Bit8u[0x20000];
+
   for (i=0; i<256; i++)
     BX_PIDE_THIS s.pci_conf[i] = 0x0;
   // readonly registers
@@ -99,6 +109,7 @@ bx_pci_ide_c::init(void)
   BX_PIDE_THIS s.pci_conf[0x0a] = 0x01;
   BX_PIDE_THIS s.pci_conf[0x0b] = 0x01;
   BX_PIDE_THIS s.pci_conf[0x0e] = 0x00;
+  BX_PIDE_THIS s.pci_conf[0x20] = 0x01;
   BX_PIDE_THIS s.bmdma_addr = 0;
 }
 
@@ -106,7 +117,6 @@ bx_pci_ide_c::init(void)
 bx_pci_ide_c::reset(unsigned type)
 {
   BX_PIDE_THIS s.pci_conf[0x04] = 0x01;
-  BX_PIDE_THIS s.pci_conf[0x05] = 0x00;
   BX_PIDE_THIS s.pci_conf[0x06] = 0x80;
   BX_PIDE_THIS s.pci_conf[0x07] = 0x02;
   if (bx_options.ata[0].Opresent->get ()) {
@@ -124,19 +134,23 @@ bx_pci_ide_c::reset(unsigned type)
     BX_PIDE_THIS s.bmdma[i].status = 0;
     BX_PIDE_THIS s.bmdma[i].dtpr = 0;
     BX_PIDE_THIS s.bmdma[i].prd_current = 0;
+    BX_PIDE_THIS s.bmdma[i].buffer_top = BX_PIDE_THIS s.bmdma[i].buffer;
+    BX_PIDE_THIS s.bmdma[i].buffer_idx = BX_PIDE_THIS s.bmdma[i].buffer;
   }
-  // This should be done by the PCI BIOS
-  WriteHostDWordToLittleEndian(&BX_PIDE_THIS s.pci_conf[0x20], 0x0000);
-  DEV_pci_set_base_io(this, read_handler, write_handler,
-                      &BX_PIDE_THIS s.bmdma_addr, &BX_PIDE_THIS s.pci_conf[0x20],
-                      16, &bmdma_iomask[0], "PIIX3 PCI IDE controller");
 }
 
   bx_bool
 bx_pci_ide_c::bmdma_present(void)
 {
-//  return (BX_PIDE_THIS s.bmdma_addr > 0);
-  return 0; // For now
+  return (BX_PIDE_THIS s.bmdma_addr > 0);
+}
+
+  void
+bx_pci_ide_c::bmdma_set_irq(Bit8u channel)
+{
+  if (channel < 2) {
+    BX_PIDE_THIS s.bmdma[channel].status |= 0x04;
+  }
 }
 
   void
@@ -152,9 +166,7 @@ bx_pci_ide_c::timer()
 {
   int timer_id, count;
   Bit8u channel;
-  Bit32u size;
-  Bit8u buffer[0x10000];
-  Bit8u *bufptr;
+  Bit32u size, sector_size = 0;
   struct {
     Bit32u addr;
     Bit32u size;
@@ -175,37 +187,39 @@ bx_pci_ide_c::timer()
   if (size == 0) {
     size = 0x10000;
   }
-  count = size;
-  bufptr = &buffer[0];
   if (BX_PIDE_THIS s.bmdma[channel].cmd_rwcon) {
-    BX_INFO(("READ DMA to addr=0x%08x, size=0x%08x", prd.addr, size));
-    do {
-      if (DEV_hd_bmdma_read_sector(channel, bufptr)) {
-        bufptr += 512;
-        count -= 512;
+    BX_DEBUG(("READ DMA to addr=0x%08x, size=0x%08x", prd.addr, size));
+    count = size - (BX_PIDE_THIS s.bmdma[channel].buffer_top - BX_PIDE_THIS s.bmdma[channel].buffer_idx);
+    while (count > 0) {
+      if (DEV_hd_bmdma_read_sector(channel, BX_PIDE_THIS s.bmdma[channel].buffer_top, &sector_size)) {
+        BX_PIDE_THIS s.bmdma[channel].buffer_top += sector_size;
+        count -= sector_size;
       } else {
         break;
       }
-    } while (count > 0);
+    };
     if (count > 0) {
       BX_PIDE_THIS s.bmdma[channel].status &= ~0x01;
       BX_PIDE_THIS s.bmdma[channel].status |= 0x06;
       return;
     } else {
-      BX_MEM_WRITE_PHYSICAL(prd.addr, size, &buffer);
+      BX_MEM_WRITE_PHYSICAL(prd.addr, size, BX_PIDE_THIS s.bmdma[channel].buffer_idx);
+      BX_PIDE_THIS s.bmdma[channel].buffer_idx += size;
     }
   } else {
-    BX_INFO(("WRITE DMA from addr=0x%08x, size=0x%08x", prd.addr, size));
-    BX_MEM_READ_PHYSICAL(prd.addr, size, &buffer);
-    do {
-      if (DEV_hd_bmdma_write_sector(channel, bufptr)) {
-        bufptr += 512;
+    BX_DEBUG(("WRITE DMA from addr=0x%08x, size=0x%08x", prd.addr, size));
+    BX_MEM_READ_PHYSICAL(prd.addr, size, BX_PIDE_THIS s.bmdma[channel].buffer_top);
+    BX_PIDE_THIS s.bmdma[channel].buffer_top += size;
+    count = BX_PIDE_THIS s.bmdma[channel].buffer_top - BX_PIDE_THIS s.bmdma[channel].buffer_idx;
+    while (count > 511) {
+      if (DEV_hd_bmdma_write_sector(channel, BX_PIDE_THIS s.bmdma[channel].buffer_idx)) {
+        BX_PIDE_THIS s.bmdma[channel].buffer_idx += 512;
         count -= 512;
       } else {
         break;
       }
-    } while (count > 0);
-    if (count > 0) {
+    };
+    if (count > 511) {
       BX_PIDE_THIS s.bmdma[channel].status &= ~0x01;
       BX_PIDE_THIS s.bmdma[channel].status |= 0x06;
       return;
@@ -218,7 +232,12 @@ bx_pci_ide_c::timer()
     DEV_hd_bmdma_complete(channel);
   } else {
     BX_PIDE_THIS s.bmdma[channel].prd_current += 8;
-    bx_pc_system.activate_timer( BX_PIDE_THIS s.bmdma[channel].timer_index, 1000, 0 );
+    BX_MEM_READ_PHYSICAL(BX_PIDE_THIS s.bmdma[channel].prd_current, 8, (Bit8u *)&prd);
+    size = prd.size & 0xfffe;
+    if (size == 0) {
+      size = 0x10000;
+    }
+    bx_pc_system.activate_timer(BX_PIDE_THIS s.bmdma[channel].timer_index, (size >> 4) | 0x10, 0);
   }
 }
 
@@ -293,13 +312,15 @@ bx_pci_ide_c::write(Bit32u address, Bit32u value, unsigned io_len)
   offset &= 0x07;
   switch (offset) {
     case 0x00:
-      BX_INFO(("BM-DMA write command register, channel %d, value = 0x%02x", channel, value));
+      BX_DEBUG(("BM-DMA write command register, channel %d, value = 0x%02x", channel, value));
       BX_PIDE_THIS s.bmdma[channel].cmd_rwcon = (value >> 3) & 1;
       if ((value & 0x01) && !BX_PIDE_THIS s.bmdma[channel].cmd_ssbm) {
         BX_PIDE_THIS s.bmdma[channel].cmd_ssbm = 1;
         BX_PIDE_THIS s.bmdma[channel].status |= 0x01;
         BX_PIDE_THIS s.bmdma[channel].prd_current = BX_PIDE_THIS s.bmdma[channel].dtpr;
-        bx_pc_system.activate_timer( BX_PIDE_THIS s.bmdma[channel].timer_index, 1000, 0 );
+        BX_PIDE_THIS s.bmdma[channel].buffer_top = BX_PIDE_THIS s.bmdma[channel].buffer;
+        BX_PIDE_THIS s.bmdma[channel].buffer_idx = BX_PIDE_THIS s.bmdma[channel].buffer;
+        bx_pc_system.activate_timer(BX_PIDE_THIS s.bmdma[channel].timer_index, 1000, 0);
       } else if (!(value & 0x01) && BX_PIDE_THIS s.bmdma[channel].cmd_ssbm) {
         BX_PIDE_THIS s.bmdma[channel].cmd_ssbm = 0;
         BX_PIDE_THIS s.bmdma[channel].status &= ~0x01;
@@ -309,11 +330,11 @@ bx_pci_ide_c::write(Bit32u address, Bit32u value, unsigned io_len)
       BX_PIDE_THIS s.bmdma[channel].status = (value & 0x60)
         | (BX_PIDE_THIS s.bmdma[channel].status & 0x01)
         | (BX_PIDE_THIS s.bmdma[channel].status & (~value & 0x06));
-      BX_INFO(("BM-DMA write status register, channel %d, value = 0x%02x", channel, value));
+      BX_DEBUG(("BM-DMA write status register, channel %d, value = 0x%02x", channel, value));
       break;
     case 0x04:
       BX_PIDE_THIS s.bmdma[channel].dtpr = value & 0xfffffffc;
-      BX_INFO(("BM-DMA write DTP register, channel %d, value = 0x%04x", channel, value));
+      BX_DEBUG(("BM-DMA write DTP register, channel %d, value = 0x%04x", channel, value));
       break;
   }
 }
@@ -347,9 +368,9 @@ bx_pci_ide_c::pci_read(Bit8u address, unsigned io_len)
     }
     BX_DEBUG(("PIIX3 PCI IDE read register 0x%02x value 0x%08x", address, value));
     return value;
-    }
-  else
+  } else {
     return(0xffffffff);
+  }
 }
 
 
@@ -375,6 +396,9 @@ bx_pci_ide_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
   Bit8u value8, oldval;
   bx_bool bmdma_change = 0;
 
+  if (((address >= 0x10) && (address < 0x20)) ||
+      ((address > 0x23) && (address < 0x40)))
+    return;
   if (io_len <= 4) {
     for (unsigned i=0; i<io_len; i++) {
       oldval = BX_PIDE_THIS s.pci_conf[address+i];
@@ -382,26 +406,28 @@ bx_pci_ide_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
       switch (address+i) {
         case 0x05:
         case 0x06:
-        case 0x22:
-        case 0x23:
           break;
         case 0x04:
           BX_PIDE_THIS s.pci_conf[address+i] = value8 & 0x05;
           break;
         case 0x20:
+          value8 = (value8 & 0xfc) | 0x01;
         case 0x21:
+        case 0x22:
+        case 0x23:
           bmdma_change |= (value8 != oldval);
         default:
           BX_PIDE_THIS s.pci_conf[address+i] = value8;
-          BX_DEBUG(("PIIX3 PCI IDE write register 0x%02x value 0x%02x", address,
+          BX_DEBUG(("PIIX3 PCI IDE write register 0x%02x value 0x%02x", address+i,
                     value8));
       }
     }
     if (bmdma_change) {
-      DEV_pci_set_base_io(BX_PIDE_THIS_PTR, read_handler, write_handler,
-                          &BX_PIDE_THIS s.bmdma_addr, &BX_PIDE_THIS s.pci_conf[0x20],
-                          16, &bmdma_iomask[0], "PIIX3 PCI IDE controller");
-      BX_INFO(("new BM-DMA address: 0x%04x", BX_PIDE_THIS s.bmdma_addr));
+      if (DEV_pci_set_base_io(BX_PIDE_THIS_PTR, read_handler, write_handler,
+                              &BX_PIDE_THIS s.bmdma_addr, &BX_PIDE_THIS s.pci_conf[0x20],
+                              16, &bmdma_iomask[0], "PIIX3 PCI IDE controller")) {
+        BX_INFO(("new BM-DMA address: 0x%04x", BX_PIDE_THIS s.bmdma_addr));
+      }
     }
   }
 }

@@ -1,7 +1,7 @@
 <!--
 ================================================================
 doc/docbook/user/user.dbk
-$Id: user.dbk,v 1.175.2.1 2005/07/07 07:25:32 vruppert Exp $
+$Id: user.dbk,v 1.192 2005/12/29 19:51:00 vruppert Exp $
 
 This is the top level file for the Bochs Users Manual.
 ================================================================
@@ -373,8 +373,8 @@ currently work with.
   <row>
     <entry>Enhanced BIOS</entry>
     <entry>Yes</entry>
-    <entry>Implements ElTorito, EDD v3.0, basic PCIBIOS features and the
-    PCI interrupt routing table.
+    <entry>Implements ElTorito, EDD v3.0, basic APM features, basic PCIBIOS features
+    and the PCI interrupt routing table.
     </entry>
   </row>
   <row>
@@ -392,10 +392,17 @@ currently work with.
     </entry>
   </row>
   <row>
+    <entry>Cirrus Logic video card</entry>
+    <entry>Yes</entry>
+    <entry>Cirrus Logic CL-GD5430 ISA or CL-GD5446 PCI video card support.
+      For more information see <xref linkend="cirrus-notes">.</entry>
+  </row>
+  <row>
     <entry>Floppy disk</entry>
     <entry>Yes</entry>
-    <entry>Supports floppy disk images on all platforms: 2.88M 3.5", 1.44M 3.5", 1.2M 5.25", and 720K 3.5".  
-    On Unix and Windows XP/NT/2000, Bochs can access the physical floppy drive.
+    <entry>Supports floppy disk images on all platforms: 2.88M 3.5", 1.44M 3.5", 1.2M 5.25",
+    720K 3.5" and 360K 5.25". On Unix and Windows 9x/NT/2000/XP, Bochs can access the
+    physical floppy drive.
     </entry>
   </row>
   <row>
@@ -411,8 +418,8 @@ currently work with.
     <entry>Hard disk</entry>
     <entry>Yes</entry>
     <entry>Emulates ATA-2/IDE hard drives via image files.  Physical
-    hard disk access is supported on some architecture, but NOT recommended, primarily for safety reasons.  
-    Hard disk up to 32GB are supported, on any platform that support large files access. 
+    hard disk access is supported on some architecture, but NOT recommended, primarily for safety reasons.
+    Hard disk up to 127GB are supported, on any platform that support large files access.
     </entry>
   </row>
   <row>
@@ -488,18 +495,18 @@ currently work with.
   </row>
   <row>
     <entry>PCI</entry>
-    <entry>incomplete</entry>
+    <entry>Yes</entry>
     <entry>Emulates most of the i440FX PCI chipset. The Host-to-PCI bridge
     (PMC/DBX), the PCI-to-ISA bridge and the PCI IDE controller (PIIX3) are
-    available. For PCI cards there are 5 PCI slots supported. PCI IDE currently
-    does not support Busmaster-DMA.
+    available. For PCI cards there are 5 PCI slots supported.
     </entry>
   </row>
   <row>
     <entry>USB</entry>
     <entry>incomplete</entry>
-    <entry>The USB root hub is available, USB devices are under construction.
-    Access to real hardware is not implemented yet.
+    <entry>The USB root hub is available, USB mouse and keypad are implemented,
+    other devices are under construction. Access to real hardware and runtime
+    options to plug in or remove devices are not implemented yet.
     </entry>
   </row>
   <row>
@@ -555,9 +562,9 @@ currently work with.
   <row>
     <entry>Copy and Paste</entry>
     <entry>Yes</entry>
-    <entry>Text-mode screen text
-    can be exported to the clipboard. Text in the clipboard can also be pasted, through Bochs,
-    to the guest OS, as simulated keystrokes.
+    <entry>Depending on the host platform, the text-mode screen text can be
+    exported to the clipboard. Text in the clipboard can also be pasted, through
+    Bochs, to the guest OS, as simulated keystrokes.
     </entry>
   </row>
 </tbody>
@@ -1152,6 +1159,10 @@ The tag tells which release you want, and it can be one of the following:
     </thead>
     <tbody>
       <row>
+        <entry>2.2.1 (bugfix1)</entry>
+        <entry>REL_2_2_1_FINAL</entry>
+      </row>
+      <row>
         <entry>2.2</entry>
         <entry>REL_2_2_FINAL</entry>
       </row>
@@ -1287,7 +1298,7 @@ you are a Bochs expert.
 If you choose the ZIP package you need a tool like WinZip to unpack the archive.
 Note that you have to create a registry key for Bochs if you want to use the
 environment variable $BXSHARE in your config file. The name of the key is
-<varname>HKEY_LOCAL_MACHINE\Software\Bochs 2.2.pre3</varname> (the Bochs version may differ).
+<varname>HKEY_LOCAL_MACHINE\Software\Bochs 2.2.1</varname> (the Bochs version may differ).
 Edit the default value of this key and enter the path to your Bochs installation.
 For more information on environment variables see the section <link
 linkend="bochsrc">bochsrc</link>.
@@ -2022,12 +2033,11 @@ turn it off.
       <entry>--enable-sb16={<option>dummy</option>}</entry>
       <entry>no</entry>
       <entry>
-      Enable Sound Blaster emulation. SB16 output to the host sound interface is
-      currently supported on Windows, Linux, FreeBSD, MacOS 9 and MacOSX host systems.
+      Enable Sound Blaster emulation.
       The <constant>dummy</constant> option means to support an SB16, but don't
-      use an output device. By default the lowlevel sound interface is autodetected.
+      use an output device. By default (without a parameter) the lowlevel sound interface is autodetected.
       See section <link linkend="sb16-emulation">Sound Blaster 16 Emulation</link>
-      for more info. This option also enables the standard PC gameport which is a
+      for supported platforms and more info. This option also enables the standard PC gameport which is a
       part of the SB16. If you don't want to use it, you might use
       <option>--disable-gameport</option>.
       </entry>
@@ -2070,9 +2080,9 @@ turn it off.
       Enables Roland Mainz's experimental idle code, which is intended to
       keep Bochs from always using 100% of CPU time.  When Bochs is waiting
       around for an interrupt, the idle code uses a select() loop and some
-      X11 tricks to wait until user input arrives.  This is designed to 
+      X11 tricks to wait until user input arrives.  This is designed to
       keep Bochs responsive while still yielding to other processes when
-      Bochs is idle.
+      Bochs is idle. It only works with X11 or term GUI.
       </entry>
     </row>
     <row>
@@ -2303,13 +2313,14 @@ turn it off.
     <row>
       <entry>--enable-usb</entry>
       <entry>no</entry>
-      <entry>Enable limited i440FX PCI USB support. This is not complete.
-          Don't use this option yet.</entry>
+      <entry>
+        Enable limited i440FX PCI USB support. This is not yet complete.
+      </entry>
     </row>
     <row>
       <entry>--enable-4meg-pages</entry>
       <entry>no (yes for <link linkend="configure-enable-cpu-level">CPU</link> > 4)</entry>
-      <entry>support 4 megabyte page extensions</entry>
+      <entry>support 4 megabyte page extensions (PSE, page size extension)</entry>
     </row>
     <row>
       <entry>--enable-pae</entry>
@@ -2386,22 +2397,6 @@ turn it off.
       Number of CPU simulators.  The default of 1 is likely what you want, so
       don't use this option.  It is for assigning an ID to the simulator, for
       cosimulation described above.
-      </entry>
-    </row>
-    <row>
-      <entry>--enable-time0=n</entry>
-      <entry>no</entry>
-      <entry>
-      Start CMOS clock at at time0 of <replaceable>n</replaceable> instead of using time(). You likely
-      don't want this option.  When debugging, it is very helpful to have
-      deterministic execution, and the clock is something that can skew
-      determinism.  If you supply this option, pass it a value returned by the
-      time(NULL) call, relating to the time you want bochs to start the CMOS
-      clock from.  For instance, '--enable-time0=917385580'.  If you use this
-      option but don't provide a value, configure uses a default value.  Note
-      that the <link linkend="bochsopt-time0">time0 option</link> in <filename>bochsrc</filename> will override this value.  Without this
-      option, the CMOS clock uses a time0 based on the value of time(NULL),
-      which is probably what you want.
       </entry>
     </row>
     <row>
@@ -2931,7 +2926,8 @@ as <link linkend="bochsopt-boot">boot option</link>.
 If your keyboard output inside of Bochs is wrong, you may also need a keymap file
 to remap your keyboard layout to the U.S. layout. A set of keymap files for the
 X window system and SDL (Linux port) is distributed with Bochs. If your
-keyboard layout is not supported yet, you should have a look at <xref linkend="keymap">.
+keyboard layout is not supported yet, you can create your own one by following the
+instructions given in <xref linkend="keymap">.
 </para>
 
 <para>
@@ -2952,15 +2948,17 @@ images are the size of a floppy disk (1 meg compressed) and others are gigantic
     - grab one from a real hard disk
 </screen>
 </para>
-
 </section>
+
+
 <section id="bochsrc">
 <title>bochsrc</title>
 <para>
 Bochs uses a configuration file called <filename>bochsrc</filename> to know
 where to look for disk images, how the Bochs emulation layer should work, etc.
-When you first start up Bochs, it looks around for its configuration file, and
-parses it.  Here are a few lines from a sample file:
+When you first start up Bochs, it looks around for its configuration file
+(see <xref linkend="search-order">), and parses it.
+Here are a few lines from a sample file:
 <screen>
   ata0-master: type=disk, path="30M.sample", cylinders=615, heads=6, spt=17
   boot: disk
@@ -2976,7 +2974,7 @@ settings you need to change.
 </para>
 
 <para>
-The syntax used for bochsrc can also be used as command line arguments for Bochs.
+The syntax used for <filename>bochsrc</filename> can also be used as command line arguments for Bochs.
 If you have any spaces in your command line arguments, they should be enclosed
 in single quotes, for example:
 <screen>
@@ -3044,11 +3042,18 @@ Due to limitations in the host OS, Bochs fails to allocated even 1024MB on most 
 Example:
 <screen>
   romimage: file=bios/BIOS-bochs-latest, address=0xf0000
+  romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
+  romimage: file=mybios.bin, address=0xfff80000
+  romimage: file=mybios.bin
 </screen>
 The ROM BIOS controls what the PC does when it first powers on.  Normally, you
 can use a precompiled BIOS in the source or binary distribution called
 <filename>BIOS-bochs-latest</filename>.  The ROM BIOS is usually loaded
 starting at address 0xf0000, and it is exactly 64k long.
+You can also use the environment variable $BXSHARE to specify the location of the BIOS.
+The usage of external large BIOS images (up to 512k) at memory top is
+now supported, but we still recommend to use the BIOS distributed with Bochs.
+Now the start address can be calculated from image size.
 </para>
 </section>
 
@@ -3068,11 +3073,11 @@ ROM images should not overwrite the rombios (located at
 F0000-FFFFF) and the videobios (located at C0000-C7FFF).
 </para>
 <para>
-Those ROM images will be initialized by the bios if they contain
+Those ROM images will be initialized by the BIOS if they contain
 the right signature (0x55AA).
 </para>
 <para>
-It can also be a convenient way to upload some arbitary code/data
+It can also be a convenient way to upload some arbitrary code/data
 in the simulation, that can be retrieved by the boot loader
 </para>
 </section>
@@ -3158,7 +3163,7 @@ ata3: enabled=1, ioaddr1=0x168, ioaddr2=0x360, irq=9
 
 These options enables up to 4 ata channels. For each channel
 the two base io addresses and the irq must be specified.
-ata0 is enabled by default, with ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
+ata0 and ata1 areenabled by default, with the values shown above.
 
 </para>
 </section>
@@ -3201,7 +3206,7 @@ This defines the type and characteristics of all attached ata devices:
 <row> <entry> spt </entry> <entry> only valid for disks </entry> </row>
 <row> <entry> status </entry> <entry> only valid for cdroms </entry> <entry> [inserted | ejected] </entry> </row>
 <row> <entry> biosdetect </entry> <entry> type of biosdetection </entry> <entry> [none | auto], only for disks on ata0 [cmos] </entry> </row>
-<row> <entry> translation </entry> <entry> type of translation done by the bios (legacy int13), only for disks </entry> <entry> [none | lba | large | rechs | auto] </entry> </row>
+<row> <entry> translation </entry> <entry> type of translation done by the BIOS (legacy int13), only for disks </entry> <entry> [none | lba | large | rechs | auto] </entry> </row>
 <row> <entry> model </entry> <entry> string returned by identify device ATA command </entry> </row>
 </tbody>
 </tgroup>
@@ -3227,15 +3232,17 @@ but <emphasis>we don't recommend it</emphasis> for safety reasons. In Windows, t
 </para>
 
 <para>
-The path, cylinders, heads, and spt are mandatory for type=disk
+The path is always mandatory.
 </para>
 <para>
-The path is mandatory for type=cdrom
+For flat hard disk images created with bximage geometry autodetection can
+be used (cylinders are calculated using heads=16 and spt=63). For other
+hard disk images and modes the cylinders, heads, and spt are mandatory.
 </para>
 
 <para>
 The disk translation scheme 
-(implemented in legacy int13 bios functions, and used by
+(implemented in legacy int13 BIOS functions, and used by
 older operating systems like MS-DOS), can be defined as:
 <itemizedlist>
 <listitem><para>
@@ -3565,6 +3572,7 @@ Examples:
   com1: enabled=1, mode=term, dev=/dev/ttyp9
   com2: enabled=1, mode=file, dev=serial.out
   com3: enabled=1, mode=raw, dev=com1
+  com3: enabled=1, mode=socket, dev=localhost:8888
 </screen>
   This defines a serial port (UART type 16550A).
 </para>
@@ -3581,9 +3589,9 @@ Examples:
 <para>
   Other serial modes are 'null' (no input/output), 'file' (output to a file
   specified as the 'dev' parameter), 'raw' (use the real serial port - under
-  construction for win32) and 'mouse' (standard serial mouse - requires
+  construction for win32), 'mouse' (standard serial mouse - requires
   <link linkend="bochsopt-mouse">mouse option</link> setting 'type=serial'
-  or 'type=serial_wheel').
+  or 'type=serial_wheel') and 'socket' (connect a networking socket).
 </para>
 </section>
 
@@ -3661,7 +3669,7 @@ are in the usual "property=value" format.
    loglevel: 
    <screen>
    0 = No log.
-   1 = Only midi program and bank changes.
+   1 = Resource changes, midi program and bank changes.
    2 = Severe errors.
    3 = All errors.
    4 = All errors plus all port accesses.
@@ -3684,11 +3692,11 @@ are in the usual "property=value" format.
 <para>
 Examples:
 <screen>
+  vga_update_interval: 40000 # default
   vga_update_interval: 250000
 </screen>
 Video memory is scanned for updates and screen updated every so many virtual
-seconds. The default is 300000, about 3Hz. This is generally plenty.
-Keep in mind that you must tweak the <link linkend="bochsopt-ips">ips option</link>
+microseconds. Keep in mind that you must tweak the <link linkend="bochsopt-ips">ips option</link>
 to be as close to the number of emulated instructions-per-second your workstation
 can do, for this to be accurate.
 </para>
@@ -3698,7 +3706,7 @@ can do, for this to be accurate.
 <para>
 Example:
 <screen>
-  keyboard_serial_delay: 200
+  keyboard_serial_delay: 250 # default
 </screen>
 Approximate time in microseconds that it takes one character to be
 transfered from the keyboard to controller over the serial path.
@@ -3709,7 +3717,7 @@ transfered from the keyboard to controller over the serial path.
 <para>
 Example:
 <screen>
-  keyboard_paste_delay: 100000
+  keyboard_paste_delay: 100000 # default
 </screen>
 Approximate time in microseconds between attempts to paste
 characters to the keyboard controller. This leaves time for the
@@ -3720,23 +3728,12 @@ consistently in Windows.
 </para>
 </section>
 
-<section><title>floppy_command_delay</title>
-<para>
-Examples:
-<screen>
-  floppy_command_delay: 50000
-</screen>
-Time in microseconds to wait before completing some  floppy  commands  such  as
-read,  write, seek,  etc.,   which  normally  have  a  delay associated.  This
-was  once  hardwired  to 50000 but now you can adjust it.
-</para>
-</section>
-
 <section id="bochsopt-ips"><title>ips</title>
 <para>
 Examples:
 <screen>
-  ips: 1000000
+  ips: 2000000 # default
+  ips: 10000000
 </screen>
 Emulated Instructions Per Second.  This is the number of IPS that Bochs is
 capable of running on your machine.  You can recompile Bochs with
@@ -3745,13 +3742,13 @@ Measured IPS value will then be logged into your <link linkend="bochsopt-log">lo
 </para>
 
 <para>
-IPS is used to calibrate  many  time-dependent events   within   the  bochs
+IPS is used to calibrate many time-dependent events within the Bochs
 simulation.  For example, changing IPS affects the frequency of VGA updates,
 the duration of time before a key starts to autorepeat, and the measurement
-of BogoMips and other benchmarks.  The table below lists some typical 
+of BogoMips and other benchmarks.  The table below lists some typical
 IPS settings for different machines<footnote><para>IPS measurements depend on
-OS and compiler configuration  in addition  to processor clock
-speed.</para></footnote>.  
+OS and compiler configuration in addition to processor clock
+speed.</para></footnote>.
 </para>
 
 <table><title>Example IPS Settings</title>
@@ -3794,7 +3791,7 @@ the simulation will be started at the current utc time.
 <para>
 <screen>
 Syntax:
-  clock: sync=[none|slowdown|realtime], time0=[timeValue|local|utc]
+  clock: sync=[none|slowdown|realtime|both], time0=[timeValue|local|utc]
 
 Examples:
   clock: sync=none,     time0=local       # Now (localtime)
@@ -3839,16 +3836,16 @@ mouse usage at runtime (see <link linkend="headerbar">headerbar</link>).
 </para>
 </section>
 
-<section><title>private_colormap</title>
+<section id="bochsopt-private-colormap"><title>private_colormap</title>
 <para>
-Examples:
+Example:
 <screen>
   private_colormap: enabled=1
 </screen>
-Requests that the GUI create and use its  own non-shared colormap.  This
-colormap  will  be used when in the bochs window. If not enabled, a shared
-colormap  scheme  may be used.  Once again, enabled=1  turns on this feature
-and 0 turns it off.
+Requests that the GUI creates and uses its own non-shared colormap. This
+colormap will be used when in the Bochs window. If not enabled, a shared
+colormap scheme may be used. Once again, <varname>enabled=1</varname>
+turns on this feature and 0 turns it off.
 </para>
 </section>
 
@@ -3856,7 +3853,7 @@ and 0 turns it off.
 <para>
 Examples:
 <screen>
-  i440fxsupport: enabled=1
+  i440fxsupport: enabled=1 # default if compiled with PCI support
   i440fxsupport: enabled=1, slot1=pcivga, slot2=ne2k
 </screen>
 This option controls the presence of the i440FX PCI chipset. You can also
@@ -3896,10 +3893,10 @@ located in the <constant>bochs/host/linux/pcidev/</constant> directory.
 <para>
 Example:
 <screen>
-  usb1: enabled=1, ioaddr=0xFF80, port1=mouse, port2=keypad
+  usb1: enabled=1, port1=mouse, port2=keypad
 </screen>
-This option controls the presence of the USB root hub which is a part of the i440FX PCI
-chipset.
+This option controls the presence of the USB root hub which is a part of the
+i440FX PCI chipset.
 </para>
 <para>
 With the port<replaceable>X</replaceable> option you can connect devices
@@ -3940,12 +3937,14 @@ ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xl0
 ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=en0 #macosx
 ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
 ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=<replaceable>MYCARD</replaceable>
+ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
 ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
 ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
 ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
 
 ioaddr, irq: You probably won't need to change ioaddr and irq, unless there
-are IRQ conflicts.
+are IRQ conflicts. These parameters are ignored if the NE2000 is assigned to
+a PCI slot.
 
 mac: The MAC address MUST NOT match the address of any machine on the net.
 Also, the first byte must be an even number (bit 0 set means a multicast
@@ -3964,7 +3963,7 @@ Windows machines, you must run niclist to get the name of the ethdev.
 Niclist source code is in misc/niclist.c and it is included in Windows 
 binary releases.
 
-script: The script value is optionnal, and is the name of a script that
+script: The script value is optional, and is the name of a script that
 is executed after bochs initialize the network interface. You can use
 this script to configure this network interface, or enable masquerading.
 This is mainly useful for the tun/tap devices that only exist during
@@ -4043,7 +4042,7 @@ version where this module was added.
   </row>
   <row>
     <entry>vde</entry>
-    <entry>VDE packetmover - disabled by default.
+    <entry>Virtual Distributed Ethernet packetmover.
     </entry>
     <entry>Yes</entry>
     <entry>Yes</entry>
@@ -4107,13 +4106,22 @@ exception is French macs, that do have a "at"-like keyboard.
 <para>
 Examples:
 <screen>
-  user_shortcut: keys=ctrlaltdel
-  user_shortcut: keys=ctrlaltesc
+  user_shortcut: keys=ctrl-alt-del
+  user_shortcut: keys=ctrl-alt-esc
 </screen>
-This defines the keyboard shortcut to be sent when you press the "user"
-button in the <link linkend="headerbar">headerbar</link>. The shortcut string can be a combination of
-these key names: "alt", "bksp", "ctrl", "del", "esc", "f1", "f4", "tab", "win".
-Up to 3 keys can be pressed at a time.
+This defines the keyboard shortcut to be sent when you press the "user" button
+in the <link linkend="headerbar">headerbar</link>. The shortcut string is a
+combination of maximum 3 key names (listed below) separated with a '-' character.
+The old-style syntax (without the '-') still works for the key combinations
+supported in Bochs 2.2.1.
+</para>
+<para>
+Valid key names:
+</para>
+<para>
+"alt", "bksp", "ctrl", "del", "down", "end", "enter", "esc", "f1", ... "f12",
+"home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus", "right",
+"shift", "space", "tab", "up", and "win".
 </para>
 </section>
 
@@ -4121,44 +4129,13 @@ Up to 3 keys can be pressed at a time.
 <para>
 Example:
 <screen>
-  cmosimage: cmos.img
+  cmosimage: file=cmos.img, rtc_init=time0
 </screen>
 This defines image file that can be loaded into the CMOS RAM at startup.
-</para>
-</section>
-
-<section><title>pit</title>
-<para>
-The pit option is deprecated. Use the <link linkend="bochsopt-clock">clock option</link> instead.
-</para>
-<para>
-Examples:
-<screen>
-  pit: realtime=0
-  pit: realtime=1
-</screen>
-The PIT is the programmable interval timer.  Bochs' PIT model was written by
-Greg Alexander.  It has a real-time option that tries to keep the PIT in sync
-with the host time.  This feature is still experimental, but it may be useful
-if you want to prevent Bochs from running too fast, for example a DOS video
-game.  Be aware that with the realtime pit option, your simulation will not be
-repeatable; this can a problem if you are debugging.
-</para>
-</section>
-
-<section id="bochsopt-time0"><title>time0</title>
-<para>
-The time0 option is deprecated. Use the <link linkend="bochsopt-clock">clock option</link> instead.
-</para>
-<para>
-Example:
-<screen>
-  time0: 938581955
-</screen>
-Specifies the start (boot) time of the virtual machine. Use a
-time value as returned by the time(2) system call. Time
-equal to 1 is a special case which starts the virtual machine at the
-current time of the simulator host.
+The rtc_init parameter controls whether initialize the RTC with values stored
+in the image. By default the time0 argument given to the
+<link linkend="bochsopt-clock">clock option</link> is used. With 'rtc_init=image'
+the image is the source for the initial time.
 </para>
 </section>
 
@@ -4801,6 +4778,8 @@ behavoiur of Bochs at runtime if you click on one of these buttons:
 <para>
   Press this button if you want to send the keyboard shortcut defined with the
   <link linkend="bochsopt-user-shortcut">user_shortcut option</link> to the guest.
+  Depending on the used <link linkend="bochsopt-displaylibrary">display_library option</link>,
+  it may even be possible to edit the shortcut before sending it.
 </para>
 </listitem>
 <listitem>
@@ -5396,6 +5375,11 @@ mformat c:
 And you now have a formatted disk image containing a single DOS
 partition.
 </para>
+<note><para>
+The mpartition command doesn't handle images larger than 1024 cylinders properly.
+The partition size reported by fdisk is okay, but mformat reports only 504 MB
+(tested with mtools 3.9.9).
+</para></note>
 </section>
 </section> <!-- end of Unix: How to make a disk image -->
 
@@ -5458,8 +5442,8 @@ Ben Lunt wrote a set of utilities for Dos/Win32 to manipulate flat disk images.
 </para>
 <para>
 You can find it at 
-<ulink url="http://www.cybertrails.com/~fys/mtools.htm">
-http://www.cybertrails.com/~fys/mtools.htm</ulink>
+<ulink url="http://www.frontiernet.net/~fys/mtools.htm">
+http://www.frontiernet.net/~fys/mtools.htm</ulink>
 </para>
 <para>
 These utilities includes :
@@ -5512,14 +5496,15 @@ These utilities includes :
 <para>
 One common problem in X windows is that the screen colors can be abnormal
 if other X programs have already allocated all the colors.  If the colors
-don't look right, try quitting colorful applications such as netscape,
-clearing any complex images in the background, etc. so that Bochs has a 
+don't look right, try quitting colorful applications such as Netscape,
+clearing any complex images in the background, etc. so that Bochs has a
 chance to allocate the colors it needs.
 </para>
 <para>
 If Bochs continues to have problems, or you want Bochs to have perfect
 colors without having to quit any other application, you can try turning
-on the private_colormap option in the configuration file.  Using a private 
+on the <link linkend="bochsopt-private-colormap">private_colormap option</link>
+in the configuration file.  Using a private
 colormap causes the Bochs window to have its own set of 256 colors to work
 with.  When the cursor is over the Bochs display, Bochs will look correct
 and other parts of the screen may change to very strange colors.  When the
@@ -5842,7 +5827,7 @@ your name server as shown.
 
 <section id="config-tuntap"><title>Configuring and using a tuntap network interface</title>
 <para>
-If you use linux (optionnaly FreeBSD and Solaris, not tested), 
+If you use linux (optionally FreeBSD and Solaris, not tested), 
 you may want to access the network through a tuntap interface. The main
 advantage of this interface, is that the guest has access to the host. The guest can even
 have access to the whole network if the host routes or masquerades the guest requests.
@@ -6815,7 +6800,7 @@ in the "<command>ataX-xxxx: ..., translation='algorithm'</command>" section.
     multiplying/dividing the cylinder/head count by a power of 2
     (2, 4 or 8).
     (a factor of 16 could not be used because the
-    head count would become 256, and MS-Dos thought this was 0)
+    head count would become 256, and MS-DOS thought this was 0)
     Note that the number of sectors per track is not changed, so
     a lower spt value will lead to a lower maximum disk size.
     </entry>
@@ -6907,7 +6892,7 @@ Upward compatibility will be maintained.
 
 <note>
 <para>
-This translation applies only to int13h bios disk accesses. Older OSes (ie MS-Dos)
+This translation applies only to int13h BIOS disk accesses. Older OSes (e.g. MS-DOS)
 tend to use them a lot.  On modern OSes, disk accesses through BIOS int13h are 
 limited to boot loaders.
 The usual rules and tricks of the installed OS still apply (ie 1024 cylinders boot limit).
@@ -6928,12 +6913,14 @@ move your mouse cursor outside of the Bochs window.  Release them, move
 the cursor back in the Bochs window and press <keycap>delete</keycap>.
 </para>
 <para>
-This should work for any key combination. 
+This should work for any key combination.
 </para>
 <para>
 If you need one key combination frequently, set it up as <link linkend="bochsopt-user-shortcut">user key combination</link>
 in your configuration file.  This key combination is sent to the guest OS
 when you press the user button in the <link linkend="headerbar">headerbar</link>.
+Depending on the used <link linkend="bochsopt-displaylibrary">display_library option</link>,
+it may even be possible to edit the shortcut before sending it.
 </para>
 </section>
 
@@ -6977,7 +6964,7 @@ Current limitations:
 <para>
 Interesting Facts:
 <itemizedlist>
-	<listitem> <para> You need a display driver capable of using the VESA bios for this to work 
+	<listitem> <para> You need a display driver capable of using the VESA BIOS for this to work 
 	                  (a recent XFree86 will do, Windows 9x/NT/2K/XP probably will not work 'out of the box'. </para> </listitem>
 	<listitem> <para> Currently the VBE2 extension should be supported ok </para> </listitem>
 </itemizedlist>
@@ -7897,10 +7884,10 @@ Known problems
     <title>Getting Knoppix</title>
 
     <para>
-      Knoppix is a live CD (700M) based on Debian GNU/Linux, with lots of ready-to-run programs
-      (web browser, office suite, a few games, and more), using <abbrev>KDE</abbrev> as desktop
-      environment. It can be booted directly from CD, without any installation needed. You can
-      download it from <ulink url="http://www.knoppix.org/">knoppix.org</ulink>.
+      Knoppix is a live CD (700M) or live DVD (3.2G) based on Debian GNU/Linux, with lots of
+      ready-to-run programs (web browser, office suite, a few games, and more), using
+      <abbrev>KDE</abbrev> as desktop environment. It can be booted directly from CD, without
+      any installation needed. You can download it from <ulink url="http://www.knoppix.org/">knoppix.org</ulink>.
     </para>
   </section>
 
@@ -7908,7 +7895,7 @@ Known problems
     <title>Preparing Bochs</title>
 
     <para>
-      As Knoppix runs completely from CD, you don't need to setup a hard disk. You just need to set up
+      As Knoppix runs completely from CD/DVD, you don't need to setup a hard disk. You just need to set up
       the location of the downloaded ISO image in your <filename>bochsrc</filename>, and make Bochs boot
       from it. Because Knoppix contains a graphical user interface, and has no other storage space but
       the emulated RAM, it needs at least 128MB of it, see
@@ -8293,7 +8280,6 @@ debug: action=ignore
 vga_update_interval: 300000
 keyboard_serial_delay: 250
 keyboard_paste_delay: 100000
-floppy_command_delay: 500
 ips: 1000000
 mouse: enabled=0
 private_colormap: enabled=0
@@ -8450,7 +8436,7 @@ or any later version published by the Free Software Foundation.
 
           <section id="guest-dos"><title>DOS</title>
 <para>You must read the message regarding software licenses in 
-<xref linkend="thirdparty"> before you install or use MS-DOS, OS/2, DR-DOS, or any other DOS as a guest OS in Bochs.</para>
+<xref linkend="thirdparty"> before you install or use MS-DOS, OS/2, DR-DOS, or any other DOS as a guest operating system in Bochs.</para>
 <section><title>Accessing your CDROM</title>
 <para>
 To access your CDROM in DOS, you must download an IDE CDROM driver.  
@@ -8503,7 +8489,7 @@ pathname, like <filename>c:\windows\himem.sys</filename>.
 
   <para>
     You must read the message regarding software licenses in <xref linkend="thirdparty">
-    before you install Windows 95 as a guest OS in Bochs.
+    before you install Windows 95 as a guest operating system in Bochs.
   </para>
 
   <tip><para>
@@ -8608,7 +8594,6 @@ Setup your <filename>bochsrc</filename> file. For example:
   log: ./bochs.out
   vga_update_interval: 300000
   keyboard_serial_delay: 200
-  floppy_command_delay: 500
 </programlisting>
 
 <para>
@@ -9193,7 +9178,7 @@ will trap this key combination. You can either use the trick described in
 (callable through the user short-cut gui button)
 in you configuration file, for example:
 <programlisting>
-user_shortcut: keys=ctrlaltdel
+user_shortcut: keys=ctrl-alt-del
 </programlisting>
 </para>
 </listitem>
@@ -9206,9 +9191,15 @@ user_shortcut: keys=ctrlaltdel
 <section id="guest-win98"><title>Windows 98</title>
 
 <para>
-You must read the message regarding software licenses in 
+You must read the message regarding software licenses in
 <xref linkend="thirdparty"> before you install Windows 98 as a guest operating system in Bochs.
 </para>
+
+<tip><para>
+If you want to use higher screen resolutions than 640x480 with more than 16 colours,
+you should enable the Cirrus video card, see <xref linkend="cirrus-notes">, as Windows 98
+comes with drivers for that video card.
+</para></tip>
 
 <para>
 There are two ways to get Windows 98 running as a guest operating system in Bochs:
@@ -10073,6 +10064,13 @@ You can also use <command>setup /is</command> to bypass scandisk.
 </para>
 </tip>
 
+<tip><para>
+If Windows 98 setup complains about the (emulated) computer being too slow or about
+a missing co-processor (in case you compiled Bochs without support for that), you can
+use the undocumented <option>/nm</option> switch to bypass the hardware check:
+<command>setup /nm</command>.
+</para></tip>
+
 <para>
 Answer the question of the Windows 98 installer. You can either supply
 answers with the keyboard including the arrow keys, or activate the 
@@ -10125,7 +10123,7 @@ some space.
         
                 <section><title>Installing Windows ME</title>
 <para>You must read the message regarding software licenses in 
-<xref linkend="thirdparty"> before you install Windows ME as a guest OS in Bochs.</para>
+<xref linkend="thirdparty"> before you install Windows ME as a guest operating system in Bochs.</para>
 <para>
 This has been contributed by Sancho Roberto :
 </para>
@@ -10369,7 +10367,7 @@ Some bugs i've found
 <section id="guest-win2k">
         <title>Windows 2000</title>
 <para>You must read the message regarding software licenses in 
-<xref linkend="thirdparty"> before you install Windows 2000 as a guest OS in Bochs.</para>
+<xref linkend="thirdparty"> before you install Windows 2000 as a guest operating system in Bochs.</para>
         <para>
         </para>
 
@@ -10377,13 +10375,13 @@ Some bugs i've found
 <section id="guest-win2k-server">
 <title>Windows 2000 Server</title>
 <para>You must read the message regarding software licenses in 
-<xref linkend="thirdparty"> before you install Windows 2000 Server as a guest OS in Bochs.</para>
+<xref linkend="thirdparty"> before you install Windows 2000 Server as a guest operating system in Bochs.</para>
 </section>
 
 <section id="guest-winxp">
         <title>Windows XP</title>
 <para>You must read the message regarding software licenses in 
-<xref linkend="thirdparty"> before you install Windows XP as a guest OS in Bochs.</para>
+<xref linkend="thirdparty"> before you install Windows XP as a guest operating system in Bochs.</para>
         <para>
         Windows XP has been reported to install from the cd, and run inside Bochs. 
         The only known issue is to set the IPS to, at least, a value of 10000000.
@@ -10504,7 +10502,6 @@ floppy_bootsig_check: disabled=0
 vga_update_interval: 300000
 keyboard_serial_delay: 250
 keyboard_paste_delay: 100000
-floppy_command_delay: 500
 ips: 3000000
 clock: sync=realtime, time0=0
 text_snapshot_check: 0

@@ -2,15 +2,15 @@ dnl // Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.50)
 AC_INIT(bochs.h)
-AC_REVISION([[$Id: configure.in,v 1.286.2.3 2005/07/08 07:28:07 vruppert Exp $]])
+AC_REVISION([[$Id: configure.in,v 1.305 2005/12/30 08:35:01 vruppert Exp $]])
 AC_CONFIG_HEADER(config.h)
 AC_CONFIG_HEADER(ltdlconf.h)
 
 dnl // Put Bochs version information right here so that it gets substituted
 dnl // into all the right places.
-VERSION="2.2.1"
-VER_STRING="2.2.1"
-REL_STRING="Build from CVS snapshot on July 8, 2005"
+VERSION="2.2.5"
+VER_STRING="2.2.5"
+REL_STRING="Build from CVS snapshot on December 30, 2005"
 
 changequote(<<, >>)
 changequote([, ])
@@ -386,29 +386,6 @@ if test "$with_all_libs" = yes; then
     with_nogui=yes
   fi
 fi    # end of if $with_all_libs = yes
-
-use_config_interface=1
-AC_MSG_CHECKING(for configuration interface)
-AC_ARG_ENABLE(config-interface,
-  [  --enable-config-interface        turns on/off configuration interface],
-  [if test "$enableval" = yes; then
-    AC_MSG_RESULT(yes)
-	use_config_interface=1
-   else
-    AC_MSG_RESULT(no)
-	use_config_interface=0
-   fi],
-  [
-    AC_MSG_RESULT(yes)
-	use_config_interface=1
-    ]
-  )
-
-if test "$use_config_interface" = 1; then
-  AC_DEFINE(BX_USE_CONFIG_INTERFACE, 1)
-else
-  AC_DEFINE(BX_USE_CONFIG_INTERFACE, 0)
-fi
 
 AC_MSG_CHECKING(for new PIT model)
 AC_ARG_ENABLE(new-pit,
@@ -882,8 +859,9 @@ if test "$networking" = yes; then
     ])
 
     if test "$use_ethertap" = yes; then
-      NETLOW_OBJS="$NETLOW_OBJS eth_tap.o"
+      NETLOW_OBJS="$NETLOW_OBJS eth_tap.o eth_vde.o"
       AC_DEFINE(HAVE_ETHERTAP, 1)
+      AC_DEFINE(HAVE_VDE, 1)
     fi
 
     AC_CHECK_HEADER(net/if_tun.h, [
@@ -922,17 +900,21 @@ AC_ARG_ENABLE(4meg-pages,
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
     AC_DEFINE(BX_SUPPORT_4MEG_PAGES, 1)
+    support_4M_pages=1
    else
     AC_MSG_RESULT(no)
     AC_DEFINE(BX_SUPPORT_4MEG_PAGES, 0)
+    support_4M_pages=0
    fi],
   [
     if test "$bx_cpu_level" -gt 4; then
       AC_MSG_RESULT(yes)
       AC_DEFINE(BX_SUPPORT_4MEG_PAGES, 1)
+      support_4M_pages=1
     else
       AC_MSG_RESULT(no)
       AC_DEFINE(BX_SUPPORT_4MEG_PAGES, 0)
+      support_4M_pages=0
     fi
     ]
   )
@@ -943,22 +925,63 @@ AC_ARG_ENABLE(pae,
   [  --enable-pae                      support Physical Address Extensions],
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
-    AC_DEFINE(BX_SupportPAE, 1)
+    AC_DEFINE(BX_SUPPORT_PAE, 1)
+    support_pae=1
    else
     AC_MSG_RESULT(no)
-    AC_DEFINE(BX_SupportPAE, 0)
+    AC_DEFINE(BX_SUPPORT_PAE, 0)
+    support_pae=0
    fi],
   [
     if test "$bx_cpu_level" -gt 5; then
       AC_MSG_RESULT(yes)
-      AC_DEFINE(BX_SupportPAE, 1)
+      AC_DEFINE(BX_SUPPORT_PAE, 1)
+      support_pae=1
     else
       AC_MSG_RESULT(no)
-      AC_DEFINE(BX_SupportPAE, 0)
+      AC_DEFINE(BX_SUPPORT_PAE, 0)
+      support_pae=0
     fi
     ]
   )
 
+AC_MSG_CHECKING(for global pages support)
+AC_ARG_ENABLE(global-pages,
+  [  --enable-global-pages             support for global pages in PDE/PTE],
+  [if test "$enableval" = yes; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_SUPPORT_GLOBAL_PAGES, 1)
+    support_global_pages=1
+   else
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_GLOBAL_PAGES, 0)
+    support_global_pages=0
+   fi],
+  [
+    if test "$bx_cpu_level" -gt 5; then
+      # enable by default
+      AC_MSG_RESULT(yes)
+      AC_DEFINE(BX_SUPPORT_GLOBAL_PAGES, 1)
+      support_global_pages=1
+    else
+      AC_MSG_RESULT(no)
+      AC_DEFINE(BX_SUPPORT_GLOBAL_PAGES, 0)
+      support_global_pages=0
+    fi
+    ]
+  )
+
+if test "$bx_cpu_level" -lt 4 -a "$support_4M_pages" = 1; then
+  AC_MSG_ERROR([for 4M paging support the CPU level must be >= 4])
+fi
+
+if test "$bx_cpu_level" -lt 5 -a "$support_pae" = 1; then
+  AC_MSG_ERROR([for PAE support the CPU level must be >= 5])
+fi
+
+if test "$bx_cpu_level" -lt 5 -a "$support_global_pages" = 1; then
+  AC_MSG_ERROR([for Global Pages support the CPU level must be >= 5])
+fi
 
 AC_MSG_CHECKING(for guest to host TLB support)
 AC_ARG_ENABLE(guest2host-tlb,
@@ -1021,28 +1044,6 @@ AC_ARG_ENABLE(fast-function-calls,
   [
     AC_MSG_RESULT(no)
     speedup_fastcall=0
-    ]
-  )
-
-AC_MSG_CHECKING(for global pages support)
-AC_ARG_ENABLE(global-pages,
-  [  --enable-global-pages             support for global pages in PDE/PTE],
-  [if test "$enableval" = yes; then
-    AC_MSG_RESULT(yes)
-    AC_DEFINE(BX_SupportGlobalPages, 1)
-   else
-    AC_MSG_RESULT(no)
-    AC_DEFINE(BX_SupportGlobalPages, 0)
-   fi],
-  [
-    if test "$bx_cpu_level" -gt 5; then
-      # enable by default
-      AC_MSG_RESULT(yes)
-      AC_DEFINE(BX_SupportGlobalPages, 1)
-    else
-      AC_MSG_RESULT(no)
-      AC_DEFINE(BX_SupportGlobalPages, 0)
-    fi
     ]
   )
 
@@ -1458,20 +1459,17 @@ AC_ARG_ENABLE(num-sim,
     ]
   )
 
-AC_ARG_ENABLE(time0,
-  [  --enable-time0=n                  start at n instead of using time()],
-  [if test "$enableval" = yes; then
-    AC_DEFINE(BX_USE_SPECIFIED_TIME0, 917385580)
-   elif test "$enableval" = no; then
-    AC_DEFINE(BX_USE_SPECIFIED_TIME0, 0)
-   else
-    AC_DEFINE_UNQUOTED(BX_USE_SPECIFIED_TIME0, $enableval)
-   fi],
-  [
-    AC_DEFINE(BX_USE_SPECIFIED_TIME0, 0)
-    ]
-  )
-
+dnl // serial mode 'socket' needs wsock32.dll in non-plugin mode
+if test "$bx_plugins" = 0; then
+  case $target in
+    *-pc-windows*)
+      DEVICE_LINK_OPTS="$DEVICE_LINK_OPTS wsock32.lib"
+      ;;
+    *-cygwin* | *-mingw32*)
+      DEVICE_LINK_OPTS="$DEVICE_LINK_OPTS -lwsock32"
+      ;;
+  esac
+fi
 
 AC_MSG_CHECKING(for raw serial support)
 AC_ARG_ENABLE(raw-serial,
@@ -1557,6 +1555,19 @@ AC_ARG_ENABLE(fpu,
   )
 AC_SUBST(FPU_VAR)
 AC_SUBST(FPU_GLUE_OBJ)
+
+AC_MSG_CHECKING(for VME support)
+AC_ARG_ENABLE(vme,
+  [  --enable-vme                      virtual 8086 mode extensions],
+  [if test "$enableval" = yes; then
+    AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_SUPPORT_VME, 1)
+   elif test "$enableval" = no; then
+    AC_MSG_RESULT(no)
+    AC_DEFINE(BX_SUPPORT_VME, 0)
+   fi
+   ],
+  )
 
 AC_MSG_CHECKING(for MMX support)
 AC_ARG_ENABLE(mmx,
@@ -1773,7 +1784,6 @@ AC_ARG_ENABLE(sb16,
   [if test "$enableval" = no; then
      AC_MSG_RESULT(no)
      AC_DEFINE(BX_SUPPORT_SB16, 0)
-     AC_DEFINE(BX_SUPPORT_GAME, 0)
    else
      case "$enableval" in
        dummy)
@@ -1846,14 +1856,12 @@ AC_ARG_ENABLE(sb16,
      SB16_OBJS='sb16.o'
      AC_DEFINE(BX_SUPPORT_SB16, 1)
      GAME_OBJS='gameport.o'
-     AC_DEFINE(BX_SUPPORT_GAME, 1)
      gameport_present=1
    fi],
 
   [
     AC_MSG_RESULT(no)
     AC_DEFINE(BX_SUPPORT_SB16, 0)
-    AC_DEFINE(BX_SUPPORT_GAME, 0)
     ]
   )
 AC_SUBST(SB16_OBJS)
@@ -1865,9 +1873,9 @@ AC_ARG_ENABLE(gameport,
   [  --enable-gameport                 enable standard PC gameport support],
   [if test "$enableval" = yes; then
     AC_MSG_RESULT(yes)
+    AC_DEFINE(BX_SUPPORT_GAME, 1)
     if test "$gameport_present" = 0; then
       GAME_OBJS='gameport.o'
-      AC_DEFINE(BX_SUPPORT_GAME, 1)
       case $target in
         *-cygwin* | *-mingw32*)
            DEVICE_LINK_OPTS="$DEVICE_LINK_OPTS -lwinmm"
@@ -1881,8 +1889,10 @@ AC_ARG_ENABLE(gameport,
    fi],
   [
     if test "$gameport_present" = 1; then
+      AC_DEFINE(BX_SUPPORT_GAME, 1)
       AC_MSG_RESULT(yes)
     else
+      AC_DEFINE(BX_SUPPORT_GAME, 0)
       AC_MSG_RESULT(no)
     fi]
   )
@@ -2083,6 +2093,7 @@ wx_needs_gtk2=0
 AC_MSG_CHECKING(for wxWidgets library version)
 if test x$WX_CONFIG != xnot_found; then
   WX_VERSION=`$WX_CONFIG --version`
+  WX_BASENAME=`$WX_CONFIG --basename`
   [
   # test that version >= 2.3.2.  Anybody have a better way to do this? Yuck.
   case x$WX_VERSION in 
@@ -2090,7 +2101,12 @@ if test x$WX_CONFIG != xnot_found; then
     x2.3.[01]) ;; # less than version 2.3.2
     x2.3.[2-4]*) ok_wx_version=1 ;;  # 2.3.2 or greater
     x2.[4-5]*) ok_wx_version=1 ;;  # version 2.4 / 2.5
-    x2.[6-9]*) ok_wx_version=1 wx_needs_gtk2=1 ;;  # version 2.6 or greater
+    x2.[6-9]*)  # version 2.6 or greater
+      ok_wx_version=1
+      if test "$WX_BASENAME" = "wx_gtk2"; then
+        wx_needs_gtk2=1
+      fi
+      ;;
     x[3-9]*) ok_wx_version=1 ;;  # version 3 or greater
     *) ;; # who knows?
   esac
@@ -2360,6 +2376,13 @@ AC_SUBST(WX_CONFIG)
 AC_SUBST(WX_CFLAGS)
 AC_SUBST(WX_CXXFLAGS)
 
+AC_CHECK_PROGS(WGET, wget curl fetch, not_found)
+if test "$WGET" = not_found; then 
+  AC_MSG_WARN([cannot find wget (or equivalent) command])
+fi
+# everybody has to re-invent the wheel. differently.
+test "${WGET}" = "curl" && WGET="curl -O"
+
 # modify settings based on target platform
 case "$target" in
   *-macosx*)
@@ -2426,6 +2449,7 @@ case "$target" in
     AC_DEFINE(BX_HAVE_USLEEP, 0)
     AC_DEFINE(HAVE_ETHERTAP, 0)
     AC_DEFINE(BX_HAVE_SELECT, 1)
+    AC_DEFINE(BX_HAVE_SOCKLEN_T, 0)
     ;;
   *-pc-cygwin*)
     EXE=".exe"
@@ -2458,6 +2482,10 @@ case $target in
       PRIMARY_TARGET=".win32_dll_plugin_target"
       PLUGIN_LIBNAME_TRANSFORMATION='%.o=bx_%.dll'
       INSTALL_PLUGINS_VAR=install_dll_plugins
+    else
+      if test "$with_win32" != yes; then
+        LIBS="$LIBS -lcomctl32"
+      fi
     fi
     DIALOG_OBJS="win32dialog.o"
     EXPORT_DYNAMIC=""
@@ -2735,6 +2763,48 @@ if test "$with_rfb" = yes -a "$cross_configure" = 0; then
     esac
   fi
 fi
+
+dnl // DEPRECATED configure options - force users to remove them
+
+AC_MSG_CHECKING(for specified CMOS start time (deprecated))
+AC_ARG_ENABLE(time0,
+  [  --enable-time0=n                  start at n (deprecated)],
+  [AC_MSG_RESULT($enableval)
+   AC_MSG_ERROR([deprecated option - use runtime option 'clock' instead])
+  ],
+  [
+   AC_MSG_RESULT(no)
+  ])
+
+AC_MSG_CHECKING(for configuration interface (deprecated))
+AC_ARG_ENABLE(config-interface,
+  [  --enable-config-interface         turns on/off configuration interface (deprecated)],
+  [AC_MSG_RESULT($enableval)
+   AC_MSG_ERROR([deprecated option - configuration interface is always enabled])
+  ],
+  [
+   AC_MSG_RESULT(no)
+  ])
+
+AC_MSG_CHECKING(for control panel (deprecated))
+AC_ARG_ENABLE(control-panel,
+  [  --enable-control-panel            turns on/off contol panel (deprecated)],
+  [AC_MSG_RESULT($enableval)
+   AC_MSG_ERROR([deprecated option - configuration interface is always enabled])
+  ],
+  [
+   AC_MSG_RESULT(no)
+  ])
+
+AC_MSG_CHECKING(for VGA emulation (deprecated))
+AC_ARG_ENABLE(vga,
+  [  --enable-vga                      use VGA emulation (deprecated)],
+  [AC_MSG_RESULT($enableval)
+   AC_MSG_ERROR([deprecated option - standard VGA emulation is always enabled])
+  ],
+  [
+   AC_MSG_RESULT(no)
+  ])
 
 # Create some subdirectories for when you run configure from some other 
 # directory.

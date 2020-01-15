@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.80 2004/08/15 19:27:14 vruppert Exp $
+// $Id: gui.cc,v 1.87 2005/11/12 16:09:55 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -48,6 +48,52 @@ bx_gui_c *bx_gui = NULL;
 #define BX_GUI_THIS bx_gui->
 #define LOG_THIS BX_GUI_THIS
 
+#define BX_KEY_UNKNOWN 0x7fffffff
+#define N_USER_KEYS 34
+
+typedef struct {
+  char *key;
+  Bit32u symbol;
+} user_key_t;
+
+static user_key_t user_keys[N_USER_KEYS] =
+{
+  { "f1",    BX_KEY_F1 },
+  { "f2",    BX_KEY_F2 },
+  { "f3",    BX_KEY_F3 },
+  { "f4",    BX_KEY_F4 },
+  { "f5",    BX_KEY_F5 },
+  { "f6",    BX_KEY_F6 },
+  { "f7",    BX_KEY_F7 },
+  { "f8",    BX_KEY_F8 },
+  { "f9",    BX_KEY_F9 },
+  { "f10",   BX_KEY_F10 },
+  { "f11",   BX_KEY_F11 },
+  { "f12",   BX_KEY_F12 },
+  { "alt",   BX_KEY_ALT_L },
+  { "bksp",  BX_KEY_BACKSPACE },
+  { "ctrl",  BX_KEY_CTRL_L },
+  { "del",   BX_KEY_DELETE },
+  { "down",  BX_KEY_DOWN },
+  { "end",   BX_KEY_END },
+  { "enter", BX_KEY_ENTER },
+  { "esc",   BX_KEY_ESC },
+  { "home",  BX_KEY_HOME },
+  { "ins",   BX_KEY_INSERT },
+  { "left",  BX_KEY_LEFT },
+  { "menu",  BX_KEY_MENU },
+  { "minus", BX_KEY_MINUS },
+  { "pgdwn", BX_KEY_PAGE_DOWN },
+  { "pgup",  BX_KEY_PAGE_UP },
+  { "plus",  BX_KEY_KP_ADD },
+  { "right", BX_KEY_RIGHT },
+  { "shift", BX_KEY_SHIFT_L },
+  { "space", BX_KEY_SPACE },
+  { "tab",   BX_KEY_TAB },
+  { "up",    BX_KEY_UP },
+  { "win",   BX_KEY_WIN_L }
+};
+
 bx_gui_c::bx_gui_c(void)
 {
   put("GUI"); // Init in specific_init
@@ -70,6 +116,7 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
   BX_GUI_THIS host_xres = 640;
   BX_GUI_THIS host_yres = 480;
   BX_GUI_THIS host_bpp = 8;
+  BX_GUI_THIS dialog_caps = BX_GUI_DLG_RUNTIME;
 
   specific_init(argc, argv, tilewidth, tileheight, BX_HEADER_BAR_Y);
 
@@ -228,9 +275,7 @@ bx_gui_c::floppyA_handler(void)
 {
   if (bx_options.floppya.Odevtype->get() == BX_FLOPPY_NONE)
     return; // no primary floppy device present
-#ifdef WIN32
-  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
-              "rfb")) {
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
     int ret = SIM->ask_param (BXP_FLOPPYA_PATH);
@@ -239,7 +284,6 @@ bx_gui_c::floppyA_handler(void)
     }
     return;
   }
-#endif
   BX_GUI_THIS floppyA_status = !BX_GUI_THIS floppyA_status;
   DEV_floppy_set_media_status(0, BX_GUI_THIS floppyA_status);
   BX_GUI_THIS update_drive_status_buttons ();
@@ -250,9 +294,7 @@ bx_gui_c::floppyB_handler(void)
 {
   if (bx_options.floppyb.Odevtype->get() == BX_FLOPPY_NONE)
     return; // no secondary floppy device present
-#ifdef WIN32
-  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
-              "rfb")) {
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_FLOPPY) {
     // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
     int ret = SIM->ask_param (BXP_FLOPPYB_PATH);
@@ -261,7 +303,6 @@ bx_gui_c::floppyB_handler(void)
     }
     return;
   }
-#endif
   BX_GUI_THIS floppyB_status = !BX_GUI_THIS floppyB_status;
   DEV_floppy_set_media_status(1, BX_GUI_THIS floppyB_status);
   BX_GUI_THIS update_drive_status_buttons ();
@@ -271,9 +312,7 @@ bx_gui_c::floppyB_handler(void)
 bx_gui_c::cdromD_handler(void)
 {
   Bit32u handle = DEV_hd_get_first_cd_handle();
-#ifdef WIN32
-  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
-              "rfb")) {
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_CDROM) {
     // instead of just toggling the status, call win32dialog to bring up 
     // a dialog asking what disk image you want to switch to.
     // This code handles the first cdrom only. The cdrom drives #2, #3 and
@@ -287,7 +326,6 @@ bx_gui_c::cdromD_handler(void)
     }
     return;
   }
-#endif
   BX_GUI_THIS cdromD_status =
     DEV_hd_set_cd_media_status(handle, !BX_GUI_THIS cdromD_status);
   BX_GUI_THIS update_drive_status_buttons ();
@@ -423,13 +461,7 @@ bx_gui_c::snapshot_handler(void)
   }
   //FIXME
   char filename[BX_PATHNAME_LEN];
-#ifdef WIN32
-  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
-              "rfb")) {
-#else
-  if (!strcmp(bx_options.Osel_config->get_choice(bx_options.Osel_config->get()),
-              "wx")) {
-#endif
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_SNAPSHOT) {
     int ret = SIM->ask_filename (filename, sizeof(filename),
                                  "Save snapshot as...", "snapshot.txt",
                                  bx_param_string_c::SAVE_FILE_DIALOG);
@@ -469,8 +501,7 @@ bx_gui_c::paste_handler(void)
   void
 bx_gui_c::config_handler(void)
 {
-  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
-              "rfb")) {
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_RUNTIME) {
     SIM->configuration_interface (NULL, CI_RUNTIME_CONFIG);
   }
 }
@@ -483,59 +514,77 @@ bx_gui_c::toggle_mouse_enable(void)
   bx_options.Omouse_enabled->set (!old);
 }
 
+Bit32u get_user_key(char *key)
+{
+  int i = 0;
+
+  while (i < N_USER_KEYS) {
+    if (!strcmp(key, user_keys[i].key))
+      return user_keys[i].symbol;
+    i++;
+  }
+  return BX_KEY_UNKNOWN;
+}
+
   void
 bx_gui_c::userbutton_handler(void)
 {
-  unsigned shortcut[4];
-  unsigned p;
-  char *user_shortcut;
-  int i, len, ret = 1;
+  Bit32u shortcut[4];
+  Bit32u symbol;
+  char user_shortcut[512];
+  char *ptr;
+  int i, len = 0, ret = 1;
 
-  len = 0;
-#ifdef WIN32
-  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
-              "rfb")) {
-#else
-  if (!strcmp(bx_options.Osel_config->get_choice(bx_options.Osel_config->get()),
-              "wx")) {
-#endif
+  if (BX_GUI_THIS dialog_caps & BX_GUI_DLG_USER) {
     ret = SIM->ask_param (BXP_USER_SHORTCUT);
   }
-  user_shortcut = bx_options.Ouser_shortcut->getptr();
+  strcpy(user_shortcut, bx_options.Ouser_shortcut->getptr());
   if ((ret > 0) && user_shortcut[0] && (strcmp(user_shortcut, "none"))) {
-    len = 0;
-    p = 0;
-    while ((p < strlen(user_shortcut)) && (len < 3)) {
-      if (!strncmp(user_shortcut+p, "alt", 3)) {
-        shortcut[len++] = BX_KEY_ALT_L;
-        p += 3;
-      } else if (!strncmp(user_shortcut+p, "ctrl", 4)) {
-        shortcut[len++] = BX_KEY_CTRL_L;
-        p += 4;
-      } else if (!strncmp(user_shortcut+p, "del", 3)) {
-        shortcut[len++] = BX_KEY_DELETE;
-        p += 3;
-      } else if (!strncmp(user_shortcut+p, "esc", 3)) {
-        shortcut[len++] = BX_KEY_ESC;
-        p += 3;
-      } else if (!strncmp(user_shortcut+p, "f1", 2)) {
-        shortcut[len++] = BX_KEY_F1;
-        p += 2;
-      } else if (!strncmp(user_shortcut+p, "f4", 2)) {
-        shortcut[len++] = BX_KEY_F4;
-        p += 2;
-      } else if (!strncmp(user_shortcut+p, "tab", 3)) {
-        shortcut[len++] = BX_KEY_TAB;
-        p += 3;
-      } else if (!strncmp(user_shortcut+p, "win", 3)) {
-        shortcut[len++] = BX_KEY_WIN_L;
-        p += 3;
-      } else if (!strncmp(user_shortcut+p, "bksp", 4)) {
-        shortcut[len++] = BX_KEY_BACKSPACE;
-        p += 4;
-      } else {
-        BX_ERROR(("Unknown shortcut %s ignored", user_shortcut));
-        return;
+    ptr = strtok(user_shortcut, "-");
+    if ((strcmp(ptr, bx_options.Ouser_shortcut->getptr())) ||
+        (strlen(bx_options.Ouser_shortcut->getptr()) < 6)) {
+      while (ptr) {
+        symbol = get_user_key(ptr);
+        if (symbol == BX_KEY_UNKNOWN) {
+          BX_ERROR(("Unknown shortcut %s ignored", ptr));
+          return;
+        }
+        shortcut[len++] = symbol;
+        ptr = strtok(NULL, "-");
+      }
+    } else {
+      while ((ptr[0]) && (len < 3)) {
+        if (!strncmp(ptr, "alt", 3)) {
+          shortcut[len++] = BX_KEY_ALT_L;
+          ptr += 3;
+        } else if (!strncmp(ptr, "ctrl", 4)) {
+          shortcut[len++] = BX_KEY_CTRL_L;
+          ptr += 4;
+        } else if (!strncmp(ptr, "del", 3)) {
+          shortcut[len++] = BX_KEY_DELETE;
+          ptr += 3;
+        } else if (!strncmp(ptr, "esc", 3)) {
+          shortcut[len++] = BX_KEY_ESC;
+          ptr += 3;
+        } else if (!strncmp(ptr, "f1", 2)) {
+          shortcut[len++] = BX_KEY_F1;
+          ptr += 2;
+        } else if (!strncmp(ptr, "f4", 2)) {
+          shortcut[len++] = BX_KEY_F4;
+          ptr += 2;
+        } else if (!strncmp(ptr, "tab", 3)) {
+          shortcut[len++] = BX_KEY_TAB;
+          ptr += 3;
+        } else if (!strncmp(ptr, "win", 3)) {
+          shortcut[len++] = BX_KEY_WIN_L;
+          ptr += 3;
+        } else if (!strncmp(ptr, "bksp", 4)) {
+          shortcut[len++] = BX_KEY_BACKSPACE;
+          ptr += 4;
+        } else {
+          BX_ERROR(("Unknown shortcut %s ignored", user_shortcut));
+          return;
+        }
       }
     }
     i = 0;
@@ -737,4 +786,12 @@ bx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
       BX_GUI_THIS graphics_tile_update(tile, xc, yc);
     }
   }
+}
+
+  void 
+bx_gui_c::show_ips(Bit32u ips_count)
+{
+#if BX_SHOW_IPS
+  BX_INFO(("ips = %u", ips_count));
+#endif
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci.cc,v 1.37 2004/08/06 15:49:54 vruppert Exp $
+// $Id: pci.cc,v 1.41 2005/11/15 17:19:28 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -333,12 +333,15 @@ bx_pci_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
     for (unsigned i=0; i<io_len; i++) {
       value8 = (value >> (i*8)) & 0xFF;
       switch (address+i) {
+        case 0x04:
+          BX_PCI_THIS s.i440fx.pci_conf[address+i] = (value8 & 0x40) | 0x06;
+          break;
         case 0x06:
         case 0x0c:
           break;
         default:
           BX_PCI_THIS s.i440fx.pci_conf[address+i] = value8;
-          BX_DEBUG(("440FX PMC write register 0x%02x value 0x%02x", address,
+          BX_DEBUG(("440FX PMC write register 0x%02x value 0x%02x", address+i,
                     value8));
         }
       }
@@ -514,58 +517,70 @@ bx_pci_c::is_pci_device(const char *name)
   return 0;
 }
 
-  void
+  bx_bool
 bx_pci_c::pci_set_base_mem(void *this_ptr, memory_handler_t f1, memory_handler_t f2,
                            Bit32u *addr, Bit8u *pci_conf, unsigned size)
 {
-  Bit32u baseaddr = *addr;
-  if (baseaddr > 0) {
-    DEV_unregister_memory_handlers(f1, f2, baseaddr, baseaddr + size - 1);
-  }
+  Bit32u newbase;
+
+  Bit32u oldbase = *addr;
   Bit32u mask = ~(size - 1);
+  Bit8u pci_flags = pci_conf[0x00] & 0x0f;
   pci_conf[0x00] &= (mask & 0xf0);
   pci_conf[0x01] &= (mask >> 8) & 0xff;
   pci_conf[0x02] &= (mask >> 16) & 0xff;
   pci_conf[0x03] &= (mask >> 24) & 0xff;
-  ReadHostDWordFromLittleEndian(pci_conf, baseaddr);
-  if (baseaddr > 0) {
-    DEV_register_memory_handlers(f1, this_ptr, f2, this_ptr, baseaddr, baseaddr + size - 1);
+  ReadHostDWordFromLittleEndian(pci_conf, newbase);
+  pci_conf[0x00] |= pci_flags;
+  if ((newbase != mask) && (newbase != oldbase)) { // skip PCI probe
+    if (oldbase > 0) {
+      DEV_unregister_memory_handlers(f1, f2, oldbase, oldbase + size - 1);
+    }
+    if (newbase > 0) {
+      DEV_register_memory_handlers(f1, this_ptr, f2, this_ptr, newbase, newbase + size - 1);
+    }
+    *addr = newbase;
+    return 1;
   }
-  *addr = baseaddr;
+  return 0;
 }
 
-  void
+  bx_bool
 bx_pci_c::pci_set_base_io(void *this_ptr, bx_read_handler_t f1, bx_write_handler_t f2,
                           Bit32u *addr, Bit8u *pci_conf, unsigned size,
                           const Bit8u *iomask, const char *name)
 {
   unsigned i;
+  Bit32u newbase;
 
-  Bit32u baseaddr = *addr;
-  if (baseaddr > 0) {
-    for (i=0; i<size; i++) {
-      if (iomask[i] > 0) {
-        DEV_unregister_ioread_handler(this_ptr, f1, baseaddr + i, iomask[i]);
-        DEV_unregister_iowrite_handler(this_ptr, f2, baseaddr + i, iomask[i]);
-      }
-    }
-  }
+  Bit32u oldbase = *addr;
   Bit16u mask = ~(size - 1);
-  pci_conf[0x00] &= (mask & 0xfe);
+  Bit8u pci_flags = pci_conf[0x00] & 0x03;
+  pci_conf[0x00] &= (mask & 0xfc);
   pci_conf[0x01] &= (mask >> 8);
-  pci_conf[0x02] = 0x00;
-  pci_conf[0x03] = 0x00;
-  ReadHostDWordFromLittleEndian(pci_conf, baseaddr);
-  pci_conf[0x00] |= 0x01;
-  if (baseaddr > 0) {
-    for (i=0; i<size; i++) {
-      if (iomask[i] > 0) {
-        DEV_register_ioread_handler(this_ptr, f1, baseaddr + i, name, iomask[i]);
-        DEV_register_iowrite_handler(this_ptr, f2, baseaddr + i, name, iomask[i]);
+  ReadHostDWordFromLittleEndian(pci_conf, newbase);
+  pci_conf[0x00] |= pci_flags;
+  if (((newbase & 0xfffc) != mask) && (newbase != oldbase)) { // skip PCI probe
+    if (oldbase > 0) {
+      for (i=0; i<size; i++) {
+        if (iomask[i] > 0) {
+          DEV_unregister_ioread_handler(this_ptr, f1, oldbase + i, iomask[i]);
+          DEV_unregister_iowrite_handler(this_ptr, f2, oldbase + i, iomask[i]);
+        }
       }
     }
+    if (newbase > 0) {
+      for (i=0; i<size; i++) {
+        if (iomask[i] > 0) {
+          DEV_register_ioread_handler(this_ptr, f1, newbase + i, name, iomask[i]);
+          DEV_register_iowrite_handler(this_ptr, f2, newbase + i, name, iomask[i]);
+        }
+      }
+    }
+    *addr = newbase;
+    return 1;
   }
-  *addr = baseaddr;
+  return 0;
 }
 
 #endif /* BX_SUPPORT_PCI */

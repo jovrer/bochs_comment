@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.57.2.1 2005/07/07 07:22:38 vruppert Exp $
+// $Id: sdl.cc,v 1.62 2005/11/12 16:09:55 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -42,6 +42,9 @@
 
 #include "icon_bochs.h"
 #include "sdl.h"
+#ifdef WIN32
+#include "win32dialog.h"
+#endif
 
 class bx_sdl_gui_c : public bx_gui_c {
 public:
@@ -297,6 +300,10 @@ void bx_sdl_gui_c::specific_init(
   }
 
   new_gfx_api = 1;
+#ifdef WIN32
+  win32_init_notify_callback();
+  dialog_caps = BX_GUI_DLG_ALL;
+#endif
 }
 
 void sdl_set_status_text(int element, const char *text, bx_bool active)
@@ -963,6 +970,7 @@ void bx_sdl_gui_c::handle_events(void)
 	  headerbar_click(sdl_event.button.x);
 	  break;
 	}
+#ifdef SDL_BUTTON_WHEELUP
         // get the wheel status
         if (sdl_event.button.button == SDL_BUTTON_WHEELUP) {
           wheel_status = 1;
@@ -970,6 +978,7 @@ void bx_sdl_gui_c::handle_events(void)
         if (sdl_event.button.button == SDL_BUTTON_WHEELDOWN) {
           wheel_status = -1;
         }
+#endif
       case SDL_MOUSEBUTTONUP:
 	// figure out mouse state
 	new_mousex = (int)(sdl_event.button.x);

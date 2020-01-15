@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h,v 1.54 2004/10/03 09:11:28 vruppert Exp $
+// $Id: wxdialog.h,v 1.56 2005/11/25 16:24:47 vruppert Exp $
 ////////////////////////////////////////////////////////////////////
 //
 // wxWidgets dialogs for Bochs
@@ -171,7 +171,8 @@ public:
 #define FLOPPY_CONFIG_TITLE "Configure %s"
 #define FLOPPY_CONFIG_INSTRS "Select the device or image to use when simulating %s."
 #define FLOPPY_CONFIG_CAP "What is the capacity of this disk?"
-#define FLOPPY_CONFIG_HINT "To create a disk image, choose the file name and capacity, then click on \"Create Image\"."
+#define FLOPPY_CONFIG_HINT "To create a disk image, choose the file name and capacity, then click on \"Create Image\".\n\n" \
+                           "Clicking OK signals a media change for this drive."
 #define FLOPPY_CONFIG_DISKIMG "Disk image: "
 private:
   void Init ();  // called automatically by ShowModal()
@@ -181,6 +182,7 @@ private:
   wxRadioButton *rbtn[FLOPPY_MAX_RBTNS];
   wxString equivalentFilename[FLOPPY_MAX_RBTNS];
   int n_rbtns;
+  wxButton *CreateBtn;
   wxRadioButton *diskImageRadioBtn;
   wxTextCtrl *filename;
   wxChoice *capacity;
@@ -197,7 +199,7 @@ public:
   // Use char* instead of wxString because the array we use is already
   // expressed as a char *[].
   void SetCapacityChoices (int n, char *choices[]);
-  void SetCapacity (int cap) { capacity->SetSelection (cap); }
+  void SetCapacity (int cap);
   int GetRadio ();
   int GetCapacity () { return capacity->GetSelection (); }
   wxString GetFilename ();

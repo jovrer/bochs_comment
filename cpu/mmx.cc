@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: mmx.cc,v 1.45 2005/05/12 18:07:42 sshwarts Exp $
+// $Id: mmx.cc,v 1.49 2005/09/23 16:45:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2002 Stanislav Shwartsman
@@ -777,7 +777,7 @@ void BX_CPU_C::PINSRW_PqEdIb(bxInstruction_c *i)
 }
 
 /* 0F C5 */
-void BX_CPU_C::PEXTRW_PqEdIb(bxInstruction_c *i)
+void BX_CPU_C::PEXTRW_GdPqIb(bxInstruction_c *i)
 {
 #if BX_SUPPORT_3DNOW || BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareMMX();
@@ -785,9 +785,9 @@ void BX_CPU_C::PEXTRW_PqEdIb(bxInstruction_c *i)
   BxPackedMmxRegister op = BX_READ_MMX_REG(i->rm());
   Bit32u result = (Bit32u) op.mmx16u(i->Ib() & 0x3);
 
-  BX_WRITE_32BIT_REG(i->nnn(), result);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result);
 #else
-  BX_INFO(("PEXTRW_PqEdIb: required SSE or 3DNOW, use --enable-sse or --enable-3dnow options"));
+  BX_INFO(("PEXTRW_GdPqIb: required SSE or 3DNOW, use --enable-sse or --enable-3dnow options"));
   UndefinedOpcode(i);
 #endif
 }
@@ -975,7 +975,7 @@ void BX_CPU_C::PMOVMSKB_GdPRq(bxInstruction_c *i)
   if(MMXUB7(op) & 0x80) result |= 0x80;
 
   /* now write result back to destination */
-  BX_WRITE_32BIT_REG(i->nnn(), result);
+  BX_WRITE_32BIT_REGZ(i->nnn(), result);
   
 #else
   BX_INFO(("PMOVMSKB_GdPRq: required SSE or 3DNOW, use --enable-sse or --enable-3dnow options"));
@@ -1951,7 +1951,7 @@ void BX_CPU_C::MASKMOVQ_PqPRq(bxInstruction_c *i)
     mask = BX_READ_MMX_REG(i->rm());
 
 #if BX_SUPPORT_X86_64
-  if (i->os64L()) { 	/* 64 bit operand size mode */
+  if (i->as64L()) { 	/* 64 bit address mode */
       rdi = RDI;
   } 
   else

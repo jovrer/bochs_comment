@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom_amigaos.cc,v 1.6.4.1 2005/07/07 07:13:34 vruppert Exp $
+// $Id: cdrom_amigaos.cc,v 1.12 2005/12/27 13:21:25 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -32,7 +32,7 @@
 // for your OS if it is not supported yet.
 
 
-#include "iodev.h"
+#include "bochs.h"
 #include "scsi_commands.h"
 #include "cdrom.h"
 
@@ -218,8 +218,8 @@ cdrom_interface::capacity()
       BX_PANIC (("Couldn't get media capacity"));
 }
 
-  void
-cdrom_interface::read_block(Bit8u* buf, int lba)
+  bx_bool
+cdrom_interface::read_block(Bit8u* buf, int lba, int blocksize)
 {
   CDIO->iotd_Req.io_Data    = buf;
   CDIO->iotd_Req.io_Command = CMD_READ;
@@ -229,19 +229,21 @@ cdrom_interface::read_block(Bit8u* buf, int lba)
 
   if (CDIO->iotd_Req.io_Error != 0) {
     BX_PANIC(("Error %d reading CD data sector: %ld\n", CDIO->iotd_Req.io_Error, lba));
+    return 0;
   }
+  return 1;
 }
 
-  int
+  bx_bool
 cdrom_interface::start_cdrom()
 {
   // Spin up the cdrom drive.
 
   if (fd >= 0) {
     BX_INFO(("start_cdrom: your OS is not supported yet."));
-    return(false); // OS not supported yet, return false always.
+    return 0; // OS not supported yet, return 0 always.
   }
-  return(false);
+  return 0;
 }
 
 
@@ -270,4 +272,11 @@ int DoSCSI(UBYTE *data, int datasize, Bit8u *cmd,int cmdsize, UBYTE direction)
   }
 
   return CDIO->iotd_Req.io_Error;
+}
+
+void cdrom_interface::seek(int lba)
+{
+  unsigned char buffer[BX_CD_FRAMESIZE];
+
+  read_block(buffer, lba, BX_CD_FRAMESIZE);
 }

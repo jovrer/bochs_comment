@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: descriptor.h,v 1.7 2005/05/19 19:46:20 sshwarts Exp $
+// $Id: descriptor.h,v 1.9 2005/08/01 21:40:14 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -39,6 +39,7 @@ typedef struct { /* bx_selector_t */
 #endif
 } bx_selector_t;
 
+#define BX_SELECTOR_RPL(selector) ((selector) & 0x03)
 #define BX_SELECTOR_RPL_MASK (0xfffc)
 
 typedef struct
@@ -148,6 +149,7 @@ union {
 
 } bx_descriptor_t;
 
+#define IS_PRESENT(descriptor) (descriptor.p)
 
 #if BX_SUPPORT_X86_64
   #define IS_LONG64_SEGMENT(descriptor)  (descriptor.u.segment.l)

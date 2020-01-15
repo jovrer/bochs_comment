@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: textconfig.cc,v 1.29.2.1 2005/07/07 07:20:19 vruppert Exp $
+// $Id: textconfig.cc,v 1.32 2005/11/06 09:11:09 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This is code for a text-mode configuration interface.  Note that this file
@@ -644,11 +644,6 @@ int log_action_n_choices = 4 + (BX_DEBUGGER||BX_GDBSTUB?1:0);
 BxEvent *
 config_interface_notify_callback (void *unused, BxEvent *event)
 {
-#ifdef WIN32
-  int opts;
-  bx_param_c *param;
-  bx_param_string_c *sparam;
-#endif
   event->retcode = -1;
   switch (event->type)
   {
@@ -656,34 +651,10 @@ config_interface_notify_callback (void *unused, BxEvent *event)
       event->retcode = 0;
       return event;
     case BX_SYNC_EVT_ASK_PARAM:
-#ifdef WIN32
-      param = event->u.param.param;
-      if (param->get_type() == BXT_PARAM_STRING) {
-        sparam = (bx_param_string_c *)param;
-        opts = sparam->get_options()->get();
-        if (opts & sparam->IS_FILENAME) {
-          if (param->get_id() == BXP_NULL) {
-            event->retcode = AskFilename(GetBochsWindow(), (bx_param_filename_c *)sparam, "txt");
-          } else {
-            event->retcode = FloppyDialog((bx_param_filename_c *)sparam);
-          }
-          return event;
-        } else {
-          event->retcode = AskString(sparam);
-          return event;
-        }
-      } else if (param->get_type() == BXT_LIST) {
-        event->retcode = Cdrom1Dialog();
-        return event;
-      }
-#endif
       event->u.param.param->text_ask (stdin, stderr);
       return event;
     case BX_SYNC_EVT_LOG_ASK:
     {
-#ifdef WIN32
-      LogAskDialog(event);
-#else
       int level = event->u.logmsg.level;
       fprintf (stderr, "========================================================================\n");
       fprintf (stderr, "Event type: %s\n", SIM->get_log_level_name (level));
@@ -713,7 +684,6 @@ ask:
       fflush(stdout);
       fflush(stderr);
       event->retcode = choice;
-#endif
     }
     return event;
   case BX_ASYNC_EVT_REFRESH:
@@ -957,8 +927,11 @@ bx_list_c::text_ask (FILE *fpin, FILE *fpout)
   fprintf (fpout, "\n"); //fprintf (fp, "options=%s\n", options->get ());
   if (options->get () & SERIES_ASK) {
     for (int i=0; i<size; i++) {
-      if (list[i]->get_enabled ())
-        list[i]->text_ask (fpin, fpout);
+      if (list[i]->get_enabled()) {
+        if (!SIM->get_init_done() || list[i]->get_runtime_param()) {
+          list[i]->text_ask (fpin, fpout);
+        }
+      }
     }
   } else {
     if (options->get () & SHOW_PARENT)

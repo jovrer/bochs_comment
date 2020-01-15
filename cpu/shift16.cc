@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: shift16.cc,v 1.26 2005/02/16 21:27:20 sshwarts Exp $
+// $Id: shift16.cc,v 1.28 2005/10/13 20:21:35 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -130,17 +130,9 @@ void BX_CPU_C::SHRD_EwGw(bxInstruction_c *i)
   }
 
   /* set eflags:
-   * SHRD count affects the following flags: S,Z,P,C,O
+   * SHRD count affects the following flags: O,S,Z,A,P,C
    */
-
-  set_CF((op1_16 >> (count - 1)) & 0x01);
-  set_ZF(result_16 == 0);
-  set_SF(result_16 >> 15);
-  set_AF(0);
-  /* for shift of 1, OF set if sign change occurred. */
-  if (count == 1)
-    set_OF(((op1_16 ^ result_16) & 0x8000) > 0);
-  set_PF_base((Bit8u) result_16);
+  SET_FLAGS_OSZAPC_16(op1_16, count, result_16, BX_INSTR_SHRD16);
 }
 
 void BX_CPU_C::ROL_Ew(bxInstruction_c *i)
@@ -178,7 +170,7 @@ void BX_CPU_C::ROL_Ew(bxInstruction_c *i)
   /* now write result back to destination */
   if (i->modC0()) {
     BX_WRITE_16BIT_REG(i->rm(), result_16);
-    }
+  }
   else {
     Write_RMW_virtual_word(result_16);
   }
@@ -236,10 +228,10 @@ void BX_CPU_C::ROR_Ew(bxInstruction_c *i)
    * ROR count affects the following flags: C, O
    */
   bx_bool result_b15 = (result_16 & 0x8000) != 0;
+  bx_bool result_b14 = (result_16 & 0x4000) != 0;
 
   set_CF(result_b15);
-  if (count == 1)
-    set_OF(((op1_16 ^ result_16) & 0x8000) > 0);
+  set_OF(result_b15 ^ result_b14);
 }
 
 void BX_CPU_C::RCL_Ew(bxInstruction_c *i)
@@ -337,8 +329,7 @@ void BX_CPU_C::RCR_Ew(bxInstruction_c *i)
    */
 
   set_CF((op1_16 >> (count - 1)) & 0x01);
-  if (count == 1)
-    set_OF(((op1_16 ^ result_16) & 0x8000) > 0);
+  set_OF((((result_16 << 1) ^ result_16) & 0x8000) > 0);
 }
 
 void BX_CPU_C::SHL_Ew(bxInstruction_c *i)

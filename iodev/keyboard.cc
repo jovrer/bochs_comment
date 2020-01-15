@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc,v 1.103 2005/03/14 20:43:45 vruppert Exp $
+// $Id: keyboard.cc,v 1.106 2005/12/02 17:27:19 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -125,7 +125,7 @@ bx_keyb_c::resetinternals(bx_bool powerup)
   void
 bx_keyb_c::init(void)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc,v 1.103 2005/03/14 20:43:45 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: keyboard.cc,v 1.106 2005/12/02 17:27:19 vruppert Exp $"));
   Bit32u   i;
 
   DEV_register_irq(1, "8042 Keyboard controller");
@@ -173,6 +173,7 @@ bx_keyb_c::init(void)
   BX_KEY_THIS s.kbd_controller.irq1_requested = 0;
   BX_KEY_THIS s.kbd_controller.irq12_requested = 0;
   BX_KEY_THIS s.kbd_controller.expecting_mouse_parameter = 0;
+  BX_KEY_THIS s.kbd_controller.bat_in_progress = 0;
 
   BX_KEY_THIS s.kbd_controller.timer_pending = 0;
 
@@ -198,7 +199,7 @@ bx_keyb_c::init(void)
   BX_KEY_THIS pastebuf = NULL;
   BX_KEY_THIS pastebuf_len = 0;
   BX_KEY_THIS pastebuf_ptr = 0;
-  BX_KEY_THIS paste_delay_changed ();
+  BX_KEY_THIS paste_delay_changed(bx_options.Okeyboard_paste_delay->get());
   BX_KEY_THIS stop_paste = 0;
 
   // mouse port installed on system board
@@ -250,6 +251,12 @@ bx_keyb_c::init(void)
 	&BX_KEY_THIS s.kbd_controller.outb));
   }
 #endif
+
+  // init runtime parameters
+  bx_options.Omouse_enabled->set_handler(kbd_param_handler);
+  bx_options.Omouse_enabled->set_runtime_param(1);
+  bx_options.Okeyboard_paste_delay->set_handler(kbd_param_handler);
+  bx_options.Okeyboard_paste_delay->set_runtime_param(1);
 }
 
   void
@@ -260,10 +267,29 @@ bx_keyb_c::reset(unsigned type)
   }
 }
 
-  void
-bx_keyb_c::paste_delay_changed()
+Bit64s bx_keyb_c::kbd_param_handler(bx_param_c *param, int set, Bit64s val)
 {
-  BX_KEY_THIS pastedelay = bx_options.Okeyboard_paste_delay->get()/BX_IODEV_HANDLER_PERIOD;
+  if (set) {
+    bx_id id = param->get_id ();
+    switch (id) {
+      case BXP_MOUSE_ENABLED:
+        bx_gui->mouse_enabled_changed(val!=0);
+        BX_KEY_THIS mouse_enabled_changed(val!=0);
+        break;
+      case BXP_KBD_PASTE_DELAY:
+        BX_KEY_THIS paste_delay_changed(val);
+        break;
+      default:
+        BX_PANIC(("kbd_param_handler called with unexpected parameter %d", id));
+    }
+  }
+  return val;
+}
+
+  void
+bx_keyb_c::paste_delay_changed(Bit32u value)
+{
+  BX_KEY_THIS pastedelay = value / BX_IODEV_HANDLER_PERIOD;
   BX_INFO(("will paste characters every %d keyboard ticks",BX_KEY_THIS pastedelay));
 }
 
@@ -319,8 +345,7 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
 
       DEV_pic_lower_irq(12);
       activate_timer();
-      BX_DEBUG(("READ(%02x) (from mouse) = %02x", (unsigned) address,
-          (unsigned) val));
+      BX_DEBUG(("[mouse] read from 0x%02x returns 0x%02x", address, val));
       return val;
       }
     else if (BX_KEY_THIS s.kbd_controller.outb) { /* kbd byte available */
@@ -328,6 +353,7 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
       BX_KEY_THIS s.kbd_controller.outb = 0;
       BX_KEY_THIS s.kbd_controller.auxb = 0;
       BX_KEY_THIS s.kbd_controller.irq1_requested = 0;
+      BX_KEY_THIS s.kbd_controller.bat_in_progress = 0;
 
       if (BX_KEY_THIS s.controller_Qsize) {
         unsigned i;
@@ -587,8 +613,8 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
             BX_PANIC(("kbd: OUTB set and command 0x%02x encountered", value));
             break;
           }
-          // keyboard power normal
-          controller_enQ(0x00, 0);
+          // keyboard not inhibited
+          controller_enQ(0x80, 0);
           break;
         case 0xd0: // read output port: next byte read from port 60h
           BX_DEBUG(("io write to port 64h, command d0h (partial)"));
@@ -598,8 +624,8 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
             break;
           }
           controller_enQ(
-              (BX_KEY_THIS s.kbd_controller.auxb << 5) |
-              (BX_KEY_THIS s.kbd_controller.outb << 4) |
+              (BX_KEY_THIS s.kbd_controller.irq12_requested << 5) |
+              (BX_KEY_THIS s.kbd_controller.irq1_requested << 4) |
               (BX_GET_ENABLE_A20() << 1) |
               0x01, 0);
           break;
@@ -935,7 +961,7 @@ bx_keyb_c::mouse_enQ(Bit8u   mouse_data)
   BX_DEBUG(("mouse_enQ(%02x)", (unsigned) mouse_data));
 
   if (BX_KEY_THIS s.mouse_internal_buffer.num_elements >= BX_MOUSE_BUFF_SIZE) {
-    BX_ERROR(("mouse: internal mouse buffer full, ignoring mouse data.(%02x)",
+    BX_ERROR(("[mouse] internal mouse buffer full, ignoring mouse data.(%02x)",
       (unsigned) mouse_data));
     return;
   }
@@ -1010,32 +1036,27 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
   switch (value) {
     case 0x00: // ??? ignore and let OS timeout with no response
       kbd_enQ(0xFA); // send ACK %%%
-      return;
       break;
 
     case 0x05: // ???
       // (mch) trying to get this to work...
       BX_KEY_THIS s.kbd_controller.sysf = 1;
       kbd_enQ_imm(0xfe);
-      return;
       break;
 
     case 0xed: // LED Write
       BX_KEY_THIS s.kbd_internal_buffer.expecting_led_write = 1;
       kbd_enQ_imm(0xFA); // send ACK %%%
-      return;
       break;
 
     case 0xee: // echo
       kbd_enQ(0xEE); // return same byte (EEh) as echo diagnostic
-      return;
       break;
 
     case 0xf0: // Select alternate scan code set
       BX_KEY_THIS s.kbd_controller.expecting_scancodes_set = 1;
       BX_DEBUG(("Expecting scancode set info..."));
       kbd_enQ(0xFA); // send ACK
-      return;
       break;
 
     case 0xf2:  // identify keyboard
@@ -1055,20 +1076,17 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
             kbd_enQ(0x83);
         }
       }
-      return;
       break;
 
     case 0xf3:  // typematic info
       BX_KEY_THIS s.kbd_internal_buffer.expecting_typematic = 1;
       BX_INFO(("setting typematic info"));
       kbd_enQ(0xFA); // send ACK
-      return;
       break;
 
     case 0xf4:  // enable keyboard
       BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled = 1;
       kbd_enQ(0xFA); // send ACK
-      return;
       break;
 
     case 0xf5:  // reset keyboard to power-up settings and disable scanning
@@ -1076,7 +1094,6 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
       kbd_enQ(0xFA); // send ACK
       BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled = 0;
       BX_INFO(("reset-disable command received"));
-      return;
       break;
 
     case 0xf6:  // reset keyboard to power-up settings and enable scanning
@@ -1084,7 +1101,22 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
       kbd_enQ(0xFA); // send ACK
       BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled = 1;
       BX_INFO(("reset-enable command received"));
-      return;
+      break;
+
+    case 0xfe:  // resend. aiiee.
+      BX_PANIC( ("got 0xFE (resend)"));
+      break;
+
+    case 0xff:  // reset: internal keyboard reset and afterwards the BAT
+      BX_DEBUG(("reset command received"));
+      resetinternals(1);
+      kbd_enQ(0xFA); // send ACK
+      BX_KEY_THIS s.kbd_controller.bat_in_progress = 1;
+      kbd_enQ(0xAA); // BAT test passed
+      break;
+
+    case 0xd3:
+      kbd_enQ(0xfa);
       break;
 
     case 0xf7:  // PS/2 Set All Keys To Typematic
@@ -1094,38 +1126,9 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
     case 0xfb:  // PS/2 Set Key Type to Typematic
     case 0xfc:  // PS/2 Set Key Type to Make/Break
     case 0xfd:  // PS/2 Set Key Type to Make
-      // Silently ignore and let the OS timeout, for now.
-      // If anyone has code around that makes use of that, I can
-      // provide documentation on their behavior (ask core@ggi-project.org)
-      return;
-      break;
-
-    case 0xfe:  // resend. aiiee.
-      BX_PANIC( ("got 0xFE (resend)"));
-      return;
-      break;
-
-    case 0xff:  // reset: internal keyboard reset and afterwards the BAT
-      BX_DEBUG(("reset command received"));
-      resetinternals(1);
-      kbd_enQ(0xFA); // send ACK
-      kbd_enQ(0xAA); // BAT test passed
-      return;
-      break;
-
-    case 0xd3:
-      kbd_enQ(0xfa);
-      return;
-
     default:
-     /* XXX fix this properly:
-        http://panda.cs.ndsu.nodak.edu/~achapwes/PICmicro/mouse/mouse.html
-        http://sourceforge.net/tracker/index.php?func=detail&aid=422457&group_id=12580&atid=112580
-      */
-      BX_ERROR(("kbd_ctrl_to_kbd(): got value of %02x",
-        (unsigned) value));
-      kbd_enQ(0xFA); /* send ACK ??? */
-      return;
+      BX_ERROR(("kbd_ctrl_to_kbd(): got value of 0x%02x", value));
+      kbd_enQ(0xFE); /* send NACK */
       break;
   }
 }
@@ -1183,7 +1186,8 @@ bx_keyb_c::periodic( Bit32u   usec_delta )
   }
 
   /* nothing in outb, look for possible data xfer from keyboard or mouse */
-  if (BX_KEY_THIS s.kbd_controller.kbd_clock_enabled && BX_KEY_THIS s.kbd_internal_buffer.num_elements) {
+  if (BX_KEY_THIS s.kbd_internal_buffer.num_elements &&
+      (BX_KEY_THIS s.kbd_controller.kbd_clock_enabled || BX_KEY_THIS s.kbd_controller.bat_in_progress)) {
     BX_DEBUG(("service_keyboard: key in internal buffer waiting"));
     BX_KEY_THIS s.kbd_controller.kbd_output_buffer =
       BX_KEY_THIS s.kbd_internal_buffer.buffer[BX_KEY_THIS s.kbd_internal_buffer.head];
@@ -1457,8 +1461,11 @@ bx_keyb_c::kbd_ctrl_to_mouse(Bit8u   value)
        break;
 
       default:
-        //FEh Resend
-        BX_PANIC(("MOUSE: kbd_ctrl_to_mouse(%02xh)", (unsigned) value));
+        // If PS/2 mouse present, send NACK for unknown commands, otherwise ignore
+        if (is_ps2) {
+          BX_ERROR(("[mouse] kbd_ctrl_to_mouse(): got value of 0x%02x", value));
+          kbd_enQ(0xFE); /* send NACK */
+        }
     }
   }
 }
@@ -1530,7 +1537,7 @@ bx_keyb_c::create_mouse_packet(bool force_enq) {
 
 
 void
-bx_keyb_c::mouse_enabled_changed(bool enabled)
+bx_keyb_c::mouse_enabled_changed(bx_bool enabled)
 {
 #if BX_SUPPORT_PCIUSB
   // if type == usb, connect or disconnect the USB mouse
@@ -1544,9 +1551,9 @@ bx_keyb_c::mouse_enabled_changed(bool enabled)
       BX_KEY_THIS s.mouse.delayed_dz) {
     create_mouse_packet(1);
   }
-  s.mouse.delayed_dx=0;
-  s.mouse.delayed_dy=0;
-  s.mouse.delayed_dz=0;
+  BX_KEY_THIS s.mouse.delayed_dx=0;
+  BX_KEY_THIS s.mouse.delayed_dy=0;
+  BX_KEY_THIS s.mouse.delayed_dz=0;
   BX_DEBUG(("PS/2 mouse %s", enabled?"enabled":"disabled"));
 }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.h,v 1.6.2.1 2005/07/07 08:01:51 vruppert Exp $
+// $Id: icache.h,v 1.10 2005/12/13 14:18:34 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,11 +31,11 @@
 // bit31: 1=CS is 32/64-bit, 0=CS is 16-bit.
 // bit30: 1=Long Mode, 0=not Long Mode.
 // bit29: 1=iCache page, 0=Data.
-#define ICacheWriteStampInvalid   0x1fffffff
-#define ICacheWriteStampMax       0x1fffffff // Decrements from here.
-#define ICacheWriteStampMask      0x1fffffff
-#define ICacheFetchModeMask       (~ICacheWriteStampMask)
-#define iCachePageDataMask        0x20000000
+const Bit32u ICacheWriteStampInvalid = 0x1fffffff;
+const Bit32u ICacheWriteStampMax     = 0x1fffffff;
+const Bit32u ICacheWriteStampMask    = 0x1fffffff;
+const Bit32u ICacheFetchModeMask     = ~ICacheWriteStampMask;
+const Bit32u iCachePageDataMask      = 0x20000000;
 
 class bxPageWriteStampTable
 {
@@ -65,6 +65,14 @@ public:
        return pageWriteStampTable[pAddr>>12];
     else 
        return ICacheWriteStampInvalid;
+  }
+
+  BX_CPP_INLINE const Bit32u *getPageWriteStampPtr(Bit32u pAddr) const
+  {
+    if (pAddr < memSizeInBytes) 
+       return &pageWriteStampTable[pAddr>>12];
+    else 
+       return &ICacheWriteStampInvalid;
   }
 
   BX_CPP_INLINE void setPageWriteStamp(Bit32u pAddr, Bit32u pageWriteStamp)
@@ -131,16 +139,24 @@ public:
   }
 
   BX_CPP_INLINE void purgeICacheEntries(void);
+  BX_CPP_INLINE void flushICacheEntries(void);
 };
 
+BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
+{   bxICacheEntry_c* e = entry;
+    for (unsigned i=0; i<BxICacheEntries; i++, e++) {
+      e->writeStamp = ICacheWriteStampInvalid;
+    }
+}
+
 BX_CPP_INLINE void bxICache_c::purgeICacheEntries(void)
-{
+{ bxICacheEntry_c* e = entry;
+    
   // Since the write stamps may overflow if we always simply decrese them,
   // this function has to be called often enough that we can reset them
   // (without invalidating the cache).
-  for (unsigned i=0;i<BxICacheEntries;i++)
+  for (unsigned i=0;i<BxICacheEntries;i++, e++)
   {
-    bxICacheEntry_c *e = &entry[i];
     Bit32u pageWriteStamp = pageWriteStampTable.getPageWriteStamp(e->pAddr);
     if (e->writeStamp != pageWriteStamp)
       e->writeStamp = ICacheWriteStampInvalid;	// invalidate entry
@@ -149,6 +165,7 @@ BX_CPP_INLINE void bxICache_c::purgeICacheEntries(void)
   }
 }
 
-extern void purgeICache(void);
+extern void purgeICaches(void);
+extern void flushICaches(void);
 
 #endif

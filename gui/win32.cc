@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.94.2.1 2005/07/07 07:18:36 vruppert Exp $
+// $Id: win32.cc,v 1.99 2005/11/12 16:09:55 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -38,6 +38,7 @@
 #if BX_WITH_WIN32
 
 #include "zmouse.h"
+#include "win32dialog.h"
 #include "win32res.h"
 #include "font/vga.bitmap.h"
 // windows.h is included by bochs.h
@@ -678,8 +679,10 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   // load keymap tables
   if(bx_options.keyboard.OuseMapping->get()) {
     bx_keymap.loadKeymap(NULL);  // I have no function to convert X windows symbols
-    }
+  }
 
+  win32_init_notify_callback();
+  dialog_caps = BX_GUI_DLG_ALL;
 }
 
 void resize_main_window()
@@ -1130,42 +1133,66 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
 void enq_key_event(Bit32u key, Bit32u press_release)
 {
-  static BOOL alt_pressed = FALSE;
-  static BOOL ctrl_pressed = FALSE;
-  static BOOL shift_pressed = FALSE;
+  static BOOL alt_pressed_l = FALSE;
+  static BOOL alt_pressed_r = FALSE;
+  static BOOL ctrl_pressed_l = FALSE;
+  static BOOL ctrl_pressed_r = FALSE;
+  static BOOL shift_pressed_l = FALSE;
+  static BOOL shift_pressed_r = FALSE;
 
+  // Windows generates multiple keypresses when holding down these keys
   if (press_release == BX_KEY_PRESSED) {
     switch (key) {
       case 0x1d:
-        if (ctrl_pressed)
+        if (ctrl_pressed_l)
           return;
-        else
-          ctrl_pressed = TRUE;
+        ctrl_pressed_l = TRUE;
         break;
       case 0x2a:
-        if (shift_pressed)
+        if (shift_pressed_l)
           return;
-        else
-          shift_pressed = TRUE;
+        shift_pressed_l = TRUE;
+        break;
+      case 0x36:
+        if (shift_pressed_r)
+          return;
+        shift_pressed_r = TRUE;
         break;
       case 0x38:
-        if (alt_pressed)
+        if (alt_pressed_l)
           return;
-        else
-          alt_pressed = TRUE;
+        alt_pressed_l = TRUE;
+        break;
+      case 0x011d:
+        if (ctrl_pressed_r)
+          return;
+        ctrl_pressed_r = TRUE;
+        break;
+      case 0x0138:
+        if (alt_pressed_r)
+          return;
+        alt_pressed_r = TRUE;
         break;
     }
-  }
-  if (press_release == BX_KEY_RELEASED) {
+  } else {
     switch (key) {
       case 0x1d:
-        ctrl_pressed = FALSE;
+        ctrl_pressed_l = FALSE;
         break;
       case 0x2a:
-        shift_pressed = FALSE;
+        shift_pressed_l = FALSE;
+        break;
+      case 0x36:
+        shift_pressed_r = FALSE;
         break;
       case 0x38:
-        alt_pressed = FALSE;
+        alt_pressed_l = FALSE;
+        break;
+      case 0x011d:
+        ctrl_pressed_r = FALSE;
+        break;
+      case 0x0138:
+        alt_pressed_r = FALSE;
         break;
     }
   }

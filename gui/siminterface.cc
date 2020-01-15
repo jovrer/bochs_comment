@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc,v 1.109 2005/01/05 19:50:54 vruppert Exp $
+// $Id: siminterface.cc,v 1.112 2005/11/20 17:22:43 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // See siminterface.h for description of the siminterface concept.
@@ -437,9 +437,9 @@ bx_real_sim_c::get_cdrom_options (int level, bx_atadevice_options *out, int *whe
 char *bochs_start_names[] = { "quick", "load", "edit", "run" };
 int n_bochs_start_names = 3;
 
-char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", NULL };
-int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8 };
-int n_floppy_type_names = 9;
+char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", "auto", NULL };
+int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8, -1 };
+int n_floppy_type_names = 10;
 
 char *floppy_status_names[] = { "ejected", "inserted", NULL };
 int n_floppy_status_names = 2;
@@ -1200,14 +1200,15 @@ bx_param_string_c::bx_param_string_c (bx_id id,
 {
   set_type (BXT_PARAM_STRING);
   if (maxsize < 0) 
-    maxsize = strlen(initial_val) + 1;
-  this->val = new char[maxsize];
-  this->initial_val = new char[maxsize];
+    maxsize = strlen(initial_val);
+  this->val = new char[maxsize + 1];
+  this->initial_val = new char[maxsize + 1];
   this->handler = NULL;
   this->enable_handler = NULL;
   this->maxsize = maxsize;
   strncpy (this->val, initial_val, maxsize);
   strncpy (this->initial_val, initial_val, maxsize);
+  this->val[maxsize] = 0;
   this->options = new bx_param_num_c (BXP_NULL,
       "stringoptions", NULL, 0, BX_MAX_BIT64S, 0);
   set (initial_val);
@@ -1307,6 +1308,14 @@ bx_param_string_c::equals (const char *buf)
     return (memcmp (val, buf, maxsize) == 0);
   else
     return (strncmp (val, buf, maxsize) == 0);
+}
+
+void bx_param_string_c::set_initial_val (char *buf) { 
+  if (options->get () & RAW_BYTES)
+    memcpy (initial_val, buf, maxsize);
+  else
+    strncpy (initial_val, buf, maxsize);
+  set (initial_val);
 }
 
 bx_list_c::bx_list_c (bx_id id, int maxsize)

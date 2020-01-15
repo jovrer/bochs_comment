@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.154.2.1 2005/07/06 20:01:38 vruppert Exp $
+// $Id: bochs.h,v 1.163 2005/11/20 20:33:31 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -98,8 +98,19 @@ extern "C" {
 
 #include "gui/siminterface.h"
 
+// BX_SHARE_PATH should be defined by the makefile.  If not, give it
+// a value of NULL to avoid compile problems.
+#ifndef BX_SHARE_PATH
+#define BX_SHARE_PATH NULL
+#endif
+
 // prototypes
 int bx_begin_simulation (int argc, char *argv[]);
+char *bx_find_bochsrc (void);
+int bx_parse_cmdline (int arg, int argc, char *argv[]);
+int bx_read_configuration (char *rcfile);
+int bx_write_configuration (char *rcfile, int overwrite);
+void bx_reset_options (void);
 
 //
 // some macros to interface the CPU and memory to external environment
@@ -394,6 +405,10 @@ BOCHSAPI extern logfunc_t *genlog;
 #define FMT_ADDRX "%08x"
 #endif
 
+#if BX_DISASM
+#  include "disasm/disasm.h"
+#endif
+
 #if BX_PROVIDE_CPU_MEMORY==1
 #  include "cpu/cpu.h"
 #endif
@@ -415,10 +430,6 @@ int bx_gdbstub_check(unsigned int eip);
 // BX_CPU(n)->dword.eip, etc.
 #endif
 
-#endif
-
-#if BX_DISASM
-#  include "disasm/disasm.h"
 #endif
 
 typedef struct {
@@ -503,12 +514,6 @@ extern bx_bool bx_gui_sighandler;
 #define BX_IODEV_HANDLER_PERIOD 100    // microseconds
 //#define BX_IODEV_HANDLER_PERIOD 10    // microseconds
 
-char *bx_find_bochsrc (void);
-int bx_parse_cmdline (int arg, int argc, char *argv[]);
-int bx_read_configuration (char *rcfile);
-int bx_write_configuration (char *rcfile, int overwrite);
-void bx_reset_options (void);
-
 #define BX_PATHNAME_LEN 512
 
 typedef struct {
@@ -537,9 +542,10 @@ typedef struct {
 } bx_parport_options;
 
 typedef struct {
+  bx_param_bool_c *Oenabled;
   bx_param_string_c *Opath;
-  bx_param_bool_c *OcmosImage;
-  } bx_cmos_options;
+  bx_param_bool_c *Ortc_init;
+} bx_cmosimage_options;
 
 typedef struct {
   bx_param_num_c   *Otime0;
@@ -624,6 +630,7 @@ typedef struct BOCHSAPI {
   bx_rom_options    rom;
   bx_vgarom_options vgarom;
   bx_rom_options    optrom[BX_N_OPTROM_IMAGES]; // Optional rom images 
+  bx_rom_options    optram[BX_N_OPTROM_IMAGES]; // Optional ram images 
   bx_mem_options    memory;
   bx_parport_options par[BX_N_PARALLEL_PORTS]; // parallel ports
   bx_sb16_options   sb16;
@@ -634,7 +641,6 @@ typedef struct BOCHSAPI {
   bx_param_num_c    *Okeyboard_serial_delay;
   bx_param_num_c    *Okeyboard_paste_delay;
   bx_param_enum_c   *Okeyboard_type;
-  bx_param_num_c    *Ofloppy_command_delay;
   bx_param_num_c    *Oips;
   bx_param_bool_c   *Orealtime_pit;
   bx_param_bool_c   *Otext_snapshot_check;
@@ -647,10 +653,9 @@ typedef struct BOCHSAPI {
 #endif
   bx_param_bool_c   *Oi440FXSupport;
   bx_pcidev_options pcidev;
-  bx_cmos_options   cmos;
+  bx_cmosimage_options   cmosimage;
   bx_clock_options  clock;
   bx_ne2k_options   ne2k;
-  bx_param_bool_c   *OnewHardDriveSupport;
   bx_load32bitOSImage_t load32bitOSImage;
   bx_log_options    log;
   bx_keyboard_options keyboard;
@@ -659,7 +664,7 @@ typedef struct BOCHSAPI {
   bx_param_enum_c *Osel_config;
   bx_param_enum_c *Osel_displaylib;
   bx_param_string_c *Odisplaylib_options;
-  } bx_options_t;
+} bx_options_t;
 
 BOCHSAPI extern bx_options_t bx_options;
 
@@ -667,10 +672,6 @@ void bx_init_options();
 
 void bx_center_print (FILE *file, char *line, int maxwidth);
 
-#if BX_PROVIDE_CPU_MEMORY==1
-#else
-// #  include "external_interface.h"
-#endif
 
 #define BX_USE_PS2_MOUSE 1
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc,v 1.107.2.2 2005/07/08 07:10:41 vruppert Exp $
+// $Id: proc_ctrl.cc,v 1.127 2005/12/12 19:54:48 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -64,13 +64,13 @@ void BX_CPU_C::HLT(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value == 0xf000)
     BX_PANIC(("HALT instruction encountered in the BIOS ROM"));
 
-  if (CPL!=0) {
+  if (!real_mode() && CPL!=0) {
     exception(BX_GP_EXCEPTION, 0, 0);
     return;
   }
 
   if (! BX_CPU_THIS_PTR get_IF ()) {
-    BX_PANIC(("WARNING: HLT instruction with IF=0!"));
+    BX_INFO(("WARNING: HLT instruction with IF=0!"));
   }
 
   // stops instruction execution and places the processor in a
@@ -95,12 +95,8 @@ void BX_CPU_C::HLT(bxInstruction_c *i)
 
 void BX_CPU_C::CLTS(bxInstruction_c *i)
 {
-#if BX_CPU_LEVEL < 2
-  BX_PANIC(("CLTS: not implemented for < 286"));
-#else
-
   // #GP(0) if CPL is not 0
-  if ((v8086_mode() || protected_mode()) && CPL!=0) {
+  if (!real_mode() && CPL!=0) {
     BX_INFO(("CLTS: #GP(0) if CPL is not 0"));
     exception(BX_GP_EXCEPTION, 0, 0);
     return;
@@ -108,15 +104,10 @@ void BX_CPU_C::CLTS(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR cr0.ts = 0;
   BX_CPU_THIS_PTR cr0.val32 &= ~0x08;
-#endif
 }
 
 void BX_CPU_C::INVD(bxInstruction_c *i)
 {
-  BX_INFO(("---------------"));
-  BX_INFO(("- INVD called -"));
-  BX_INFO(("---------------"));
-
 #if BX_CPU_LEVEL >= 4
   invalidate_prefetch_q();
 
@@ -127,8 +118,16 @@ void BX_CPU_C::INVD(bxInstruction_c *i)
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
+
+  BX_DEBUG(("INVD: Flush caches and TLB !"));
   BX_INSTR_CACHE_CNTRL(BX_CPU_ID, BX_INSTR_INVD);
+  TLB_flush(1); // 1 = Flush Global entries too
+#if BX_SUPPORT_ICACHE
+  flushICaches();
+#endif
+
 #else
+  BX_INFO(("INVD: required 486 support, use --enable-cpu-level=4 option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -144,8 +143,16 @@ void BX_CPU_C::WBINVD(bxInstruction_c *i)
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
+
+  BX_DEBUG(("WBINVD: Flush caches and TLB !"));
   BX_INSTR_CACHE_CNTRL(BX_CPU_ID, BX_INSTR_WBINVD);
+  TLB_flush(1); // 1 = Flush Global entries too
+#if BX_SUPPORT_ICACHE
+  flushICaches();
+#endif
+
 #else
+  BX_INFO(("WBINVD: required 486 support, use --enable-cpu-level=4 option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -549,77 +556,6 @@ void BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
 }
 #endif // #if BX_SUPPORT_X86_64
 
-#endif // #if BX_CPU_LEVEL >= 3
-
-void BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL < 2
-  BX_PANIC(("LMSW_Ew(): not supported on 8086!"));
-#else
-  Bit16u msw;
-  Bit32u cr0;
-
-  invalidate_prefetch_q();
-
-  if (protected_mode() || v8086_mode()) {
-    if (CPL != 0) {
-      BX_INFO(("LMSW: CPL != 0, CPL=%u", (unsigned) CPL));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
-  }
-
-  if (i->modC0()) {
-    msw = BX_READ_16BIT_REG(i->rm());
-  }
-  else {
-    read_virtual_word(i->seg(), RMAddr(i), &msw);
-  }
-
-  // LMSW does not affect PG,CD,NW,AM,WP,NE,ET bits, and cannot clear PE
-
-  // LMSW cannot clear PE
-  if (BX_CPU_THIS_PTR cr0.pe)
-    msw |= 0x0001; // adjust PE bit to current value of 1
-
-  msw &= 0x000f; // LMSW only affects last 4 flags
-  cr0 = (BX_CPU_THIS_PTR cr0.val32 & 0xfffffff0) | msw;
-  SetCR0(cr0);
-#endif /* BX_CPU_LEVEL < 2 */
-}
-
-void BX_CPU_C::SMSW_Ew(bxInstruction_c *i)
-{
-#if BX_CPU_LEVEL < 2
-  BX_PANIC(("SMSW_Ew: not supported yet!"));
-#else
-  Bit16u msw;
-
-#if BX_CPU_LEVEL == 2
-  msw = 0xfff0; /* 80286 init value */
-  msw |= (BX_CPU_THIS_PTR cr0.ts << 3) |
-         (BX_CPU_THIS_PTR cr0.em << 2) |
-         (BX_CPU_THIS_PTR cr0.mp << 1) |
-         (BX_CPU_THIS_PTR cr0.pe);
-#else /* 386+ */
-  msw = BX_CPU_THIS_PTR cr0.val32 & 0xffff;
-#endif
-
-  if (i->modC0()) {
-    if (i->os32L()) {
-      BX_WRITE_32BIT_REGZ(i->rm(), msw);  // zeros out high 16bits
-    }
-    else {
-      BX_WRITE_16BIT_REG(i->rm(), msw);
-    }
-  }
-  else {
-    write_virtual_word(i->seg(), RMAddr(i), &msw);
-  }
-
-#endif
-}
-
-#if BX_CPU_LEVEL >= 3
 void BX_CPU_C::MOV_CdRd(bxInstruction_c *i)
 {
   // mov general register data to control register
@@ -752,7 +688,7 @@ void BX_CPU_C::MOV_RdCd(bxInstruction_c *i)
       BX_INFO(("MOV_RdCd: read of CR4 causes #UD"));
       UndefinedOpcode(i);
 #else
-      BX_INFO(("MOV_RdCd: read of CR4"));
+      BX_DEBUG(("MOV_RdCd: read of CR4"));
       val_32 = BX_CPU_THIS_PTR cr4.getRegister();
 #endif
       break;
@@ -898,7 +834,7 @@ void BX_CPU_C::MOV_RqCq(bxInstruction_c *i)
       val_64 = BX_CPU_THIS_PTR cr3;
       break;
     case 4: // CR4
-      BX_INFO(("MOV_RqCq: read of CR4"));
+      BX_DEBUG(("MOV_RqCq: read of CR4"));
       val_64 = BX_CPU_THIS_PTR cr4.getRegister();
       break;
 #if BX_SUPPORT_APIC
@@ -921,6 +857,67 @@ void BX_CPU_C::MOV_RqCq(bxInstruction_c *i)
 #endif // #if BX_SUPPORT_X86_64
 
 #endif // #if BX_CPU_LEVEL >= 3
+
+#if BX_CPU_LEVEL >= 2
+void BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
+{
+  Bit16u msw;
+  Bit32u cr0;
+
+  invalidate_prefetch_q();
+
+  if (protected_mode() || v8086_mode()) {
+    if (CPL != 0) {
+      BX_INFO(("LMSW: CPL != 0, CPL=%u", (unsigned) CPL));
+      exception(BX_GP_EXCEPTION, 0, 0);
+    }
+  }
+
+  if (i->modC0()) {
+    msw = BX_READ_16BIT_REG(i->rm());
+  }
+  else {
+    read_virtual_word(i->seg(), RMAddr(i), &msw);
+  }
+
+  // LMSW does not affect PG,CD,NW,AM,WP,NE,ET bits, and cannot clear PE
+
+  // LMSW cannot clear PE
+  if (BX_CPU_THIS_PTR cr0.pe)
+    msw |= 0x0001; // adjust PE bit to current value of 1
+
+  msw &= 0x000f; // LMSW only affects last 4 flags
+  cr0 = (BX_CPU_THIS_PTR cr0.val32 & 0xfffffff0) | msw;
+  SetCR0(cr0);
+}
+
+void BX_CPU_C::SMSW_Ew(bxInstruction_c *i)
+{
+  Bit16u msw;
+
+#if BX_CPU_LEVEL == 2
+  msw = 0xfff0; /* 80286 init value */
+  msw |= (BX_CPU_THIS_PTR cr0.ts << 3) |
+         (BX_CPU_THIS_PTR cr0.em << 2) |
+         (BX_CPU_THIS_PTR cr0.mp << 1) |
+         (BX_CPU_THIS_PTR cr0.pe);
+#else /* 386+ */
+  msw = BX_CPU_THIS_PTR cr0.val32 & 0xffff;
+#endif
+
+  if (i->modC0()) {
+    if (i->os32L()) {
+      BX_WRITE_32BIT_REGZ(i->rm(), msw);  // zeros out high 16bits
+    }
+    else {
+      BX_WRITE_16BIT_REG(i->rm(), msw);
+    }
+  }
+  else {
+    write_virtual_word(i->seg(), RMAddr(i), &msw);
+  }
+}
+#endif
 
 void BX_CPU_C::MOV_TdRd(bxInstruction_c *i)
 {
@@ -1310,6 +1307,12 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
 #endif
   BX_CPU_THIS_PTR cr0.pg = pg;
 
+#if BX_CPU_LEVEL >= 4
+  if (BX_CPU_THIS_PTR cr0.am) {
+    BX_ERROR(("WARNING: Aligment check enabled but not implemented !"));
+  }
+#endif
+
   // handle reserved bits behaviour
 #if BX_CPU_LEVEL == 3
   newCR0 = val_32 | 0x7ffffff0;
@@ -1339,15 +1342,15 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
   if (prev_pg==0 && BX_CPU_THIS_PTR cr0.pg) {
     if (BX_CPU_THIS_PTR msr.lme) {
       if (!BX_CPU_THIS_PTR cr4.get_PAE()) {
-        BX_PANIC(("SetCR0: attempt to enter x86-64 LONG mode without enabling CR4.PAE !!!"));
+        BX_ERROR(("SetCR0: attempt to enter x86-64 LONG mode without enabling CR4.PAE !"));
         exception(BX_GP_EXCEPTION, 0, 0);
       }
       BX_CPU_THIS_PTR msr.lma = 1;
       BX_DEBUG(("Enter Compatibility Mode"));
       BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_COMPAT;
-#if BX_EXTERNAL_DEBUGGER
+//#if BX_EXTERNAL_DEBUGGER
       //trap_debugger(0);
-#endif
+//#endif
     }
   }
   else if (prev_pg==1 && BX_CPU_THIS_PTR cr0.pg==0) {
@@ -1364,9 +1367,9 @@ void BX_CPU_C::SetCR0(Bit32u val_32)
         BX_DEBUG(("Enter Real Mode"));
         BX_CPU_THIS_PTR cpu_mode = BX_MODE_IA32_REAL;
       }
-#if BX_EXTERNAL_DEBUGGER
+//#if BX_EXTERNAL_DEBUGGER
       //trap_debugger(0);
-#endif
+//#endif
     }
   }
 #endif  // #if BX_SUPPORT_X86_64
@@ -1396,6 +1399,10 @@ void BX_CPU_C::SetCR4(Bit32u val_32)
   //   [1]     PVI: Protected-Mode Virtual Interrupts R/W
   //   [0]     VME: Virtual-8086 Mode Extensions R/W
 
+#if BX_SUPPORT_VME
+  allowMask |= (1<<0) | (1<<1);  /* VME */
+#endif
+
 #if BX_CPU_LEVEL >= 5
   allowMask |= (1<<2);   /* TSD */
 #endif
@@ -1406,7 +1413,7 @@ void BX_CPU_C::SetCR4(Bit32u val_32)
   allowMask |= (1<<4);
 #endif
 
-#if BX_SupportPAE
+#if BX_SUPPORT_PAE
   allowMask |= (1<<5);
 #endif
 
@@ -1415,7 +1422,7 @@ void BX_CPU_C::SetCR4(Bit32u val_32)
   allowMask |= (1<<6);   /* MCE */
 #endif
 
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
   allowMask |= (1<<7);
 #endif
 
@@ -1516,16 +1523,24 @@ void BX_CPU_C::RDTSC(bxInstruction_c *i)
     Bit64u ticks = bx_pc_system.time_ticks ();
     RAX = (Bit32u) (ticks & 0xffffffff);
     RDX = (Bit32u) ((ticks >> 32) & 0xffffffff);
-    //BX_INFO(("RDTSC: returning EDX:EAX = %08x:%08x", EDX, EAX));
   } else {
     // not allowed to use RDTSC!
+    BX_ERROR(("RDTSC: incorrect usage of RDTSC instruction !"));
     exception (BX_GP_EXCEPTION, 0, 0);
   }
 #else
-  BX_INFO(("RDTSC: Pentium CPU required"));
+  BX_INFO(("RDTSC: Pentium CPU required, use --enable-cpu=5"));
   UndefinedOpcode(i);
 #endif
 }
+
+#if BX_SUPPORT_X86_64
+void BX_CPU_C::RDTSCP(bxInstruction_c *i)
+{
+  RDTSC(i);
+  RCX = MSR_TSC_AUX;
+}
+#endif
 
 void BX_CPU_C::RDMSR(bxInstruction_c *i)
 {
@@ -1534,21 +1549,32 @@ void BX_CPU_C::RDMSR(bxInstruction_c *i)
 
   if (v8086_mode()) {
     BX_INFO(("RDMSR: Invalid in virtual 8086 mode"));
-    goto do_exception;
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  if (CPL!= 0) {
+  if (protected_mode() && CPL != 0) {
     BX_INFO(("RDMSR: CPL != 0"));
-    goto do_exception;
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   /* We have the requested MSR register in ECX */
   switch(ECX) {
 
 #if BX_SUPPORT_SEP
-    case BX_MSR_SYSENTER_CS:  { EAX = BX_CPU_THIS_PTR sysenter_cs_msr;  EDX = 0; return; }
-    case BX_MSR_SYSENTER_ESP: { EAX = BX_CPU_THIS_PTR sysenter_esp_msr; EDX = 0; return; }
-    case BX_MSR_SYSENTER_EIP: { EAX = BX_CPU_THIS_PTR sysenter_eip_msr; EDX = 0; return; }
+    case BX_MSR_SYSENTER_CS:
+      RAX = BX_CPU_THIS_PTR sysenter_cs_msr;  
+      RDX = 0; 
+      return;
+
+    case BX_MSR_SYSENTER_ESP: 
+      RAX = BX_CPU_THIS_PTR sysenter_esp_msr; 
+      RDX = 0; 
+      return;
+
+    case BX_MSR_SYSENTER_EIP: 
+      RAX = BX_CPU_THIS_PTR sysenter_eip_msr; 
+      RDX = 0; 
+      return;
 #endif 
 
 #if BX_CPU_LEVEL == 5
@@ -1575,8 +1601,11 @@ void BX_CPU_C::RDMSR(bxInstruction_c *i)
       goto do_exception;
 #endif  /* BX_CPU_LEVEL == 5 */
 
-    case BX_MSR_TSC:
-      RDTSC(i);
+    case BX_MSR_TSC: {
+        Bit64u ticks = bx_pc_system.time_ticks ();
+        RAX = (Bit32u) (ticks & 0xffffffff);
+        RDX = (Bit32u) ((ticks >> 32) & 0xffffffff);
+      }
       return;
 
     /* MSR_APICBASE
@@ -1595,47 +1624,50 @@ void BX_CPU_C::RDMSR(bxInstruction_c *i)
       return;
 
 #if BX_SUPPORT_X86_64
-                case BX_MSR_EFER:
-                        RAX = (BX_CPU_THIS_PTR msr.sce << 0)
-                            | (BX_CPU_THIS_PTR msr.lme << 8)
-                            | (BX_CPU_THIS_PTR msr.lma << 10);
-                        RDX = 0;
-                        return;
+    case BX_MSR_EFER:
+      RAX = (Bit64u) BX_CPU_THIS_PTR get_EFER();
+      RDX = 0;
+      return;
 
-                case BX_MSR_STAR:
-                        RAX = MSR_STAR;
-                        RDX = MSR_STAR >> 32;
-                        return;
+    case BX_MSR_STAR:
+      RAX = MSR_STAR & 0xffffffff;
+      RDX = MSR_STAR >> 32;
+      return;
 
-                case BX_MSR_LSTAR:
-                        RAX = MSR_LSTAR;
-                        RDX = MSR_LSTAR >> 32;
-                        return;
+    case BX_MSR_LSTAR:
+      RAX = MSR_LSTAR & 0xffffffff;
+      RDX = MSR_LSTAR >> 32;
+      return;
 
-                case BX_MSR_CSTAR:
-                        RAX = MSR_CSTAR;
-                        RDX = MSR_CSTAR >> 32;
-                        return;
+    case BX_MSR_CSTAR:
+      RAX = MSR_CSTAR & 0xffffffff;
+      RDX = MSR_CSTAR >> 32;
+      return;
 
-                case BX_MSR_FMASK:
-                        RAX = MSR_FMASK;
-                        RDX = MSR_FMASK >> 32;
-                        return;
+    case BX_MSR_FMASK:
+      RAX = MSR_FMASK & 0xffffffff;
+      RDX = MSR_FMASK >> 32;
+      return;
 
-                case BX_MSR_FSBASE:
-                        RAX = MSR_FSBASE;
-                        RDX = MSR_FSBASE >> 32;
-                        return;
+    case BX_MSR_FSBASE:
+      RAX = MSR_FSBASE & 0xffffffff;
+      RDX = MSR_FSBASE >> 32;
+      return;
 
-                case BX_MSR_GSBASE:
-                        RAX = MSR_GSBASE;
-                        RDX = MSR_GSBASE >> 32;
-                        return;
+    case BX_MSR_GSBASE:
+      RAX = MSR_GSBASE & 0xffffffff;
+      RDX = MSR_GSBASE >> 32;
+      return;
 
-                case BX_MSR_KERNELGSBASE:
-                        RAX = MSR_KERNELGSBASE;
-                        RDX = MSR_KERNELGSBASE >> 32;
-                        return;
+    case BX_MSR_KERNELGSBASE:
+      RAX = MSR_KERNELGSBASE & 0xffffffff;
+      RDX = MSR_KERNELGSBASE >> 32;
+      return;
+
+    case BX_MSR_TSC_AUX:
+      RAX = MSR_TSC_AUX;   // 32 bit MSR
+      RDX = 0;
+      return;
 #endif  // #if BX_SUPPORT_X86_64
 
     default:
@@ -1663,12 +1695,12 @@ void BX_CPU_C::WRMSR(bxInstruction_c *i)
 
   if (v8086_mode()) {
     BX_INFO(("WRMSR: Invalid in virtual 8086 mode"));
-    goto do_exception;
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  if (CPL!= 0) {
+  if (protected_mode() && CPL != 0) {
     BX_INFO(("WDMSR: CPL != 0"));
-    goto do_exception;
+    exception(BX_GP_EXCEPTION, 0, 0);
   }
 
   BX_INSTR_WRMSR(BX_CPU_ID, ECX, ((Bit64u) EDX << 32) + EAX);
@@ -1677,13 +1709,20 @@ void BX_CPU_C::WRMSR(bxInstruction_c *i)
   switch(ECX) {
 
 #if BX_SUPPORT_SEP
-    case BX_MSR_SYSENTER_CS:  {
-      if (EAX & 3) BX_PANIC (("writing sysenter_cs_msr with non-kernel mode selector %X", EAX));  // not a bug according to book
-      BX_CPU_THIS_PTR sysenter_cs_msr  = EAX;                                                     // ... but very stOOpid
+    case BX_MSR_SYSENTER_CS: {
+      // not a bug according to book ... but very stOOpid
+      if (EAX & 3) BX_PANIC(("writing sysenter_cs_msr with non-kernel mode selector %X", EAX));
+      BX_CPU_THIS_PTR sysenter_cs_msr  = EAX;
       return;
     }
-    case BX_MSR_SYSENTER_ESP: { BX_CPU_THIS_PTR sysenter_esp_msr = EAX; return; }
-    case BX_MSR_SYSENTER_EIP: { BX_CPU_THIS_PTR sysenter_eip_msr = EAX; return; }
+
+    case BX_MSR_SYSENTER_ESP:
+      BX_CPU_THIS_PTR sysenter_esp_msr = EAX; 
+      return;
+
+    case BX_MSR_SYSENTER_EIP: 
+      BX_CPU_THIS_PTR sysenter_eip_msr = EAX; 
+      return;
 #endif
 
 #if BX_CPU_LEVEL == 5
@@ -1734,38 +1773,51 @@ void BX_CPU_C::WRMSR(bxInstruction_c *i)
 #endif
 
 #if BX_SUPPORT_X86_64
-                case BX_MSR_EFER:
-                        // GPF #0 if lme 0->1 and cr0.pg = 1
-                        // GPF #0 if lme 1->0 and cr0.pg = 1
-                        if ((BX_CPU_THIS_PTR msr.lme != ((EAX >> 8) & 1)) &&
-                            (BX_CPU_THIS_PTR cr0.pg == 1))
-                        {
-                          exception(BX_GP_EXCEPTION, 0, 0);
-                        }
-                        BX_CPU_THIS_PTR msr.sce = (EAX >> 0) & 1;
-                        BX_CPU_THIS_PTR msr.lme = (EAX >> 8) & 1;
-                        return;
-                case BX_MSR_STAR:
-                        MSR_STAR   = ((Bit64u) EDX << 32) + EAX;
-                        return;
-                case BX_MSR_LSTAR:
-                        MSR_LSTAR  = ((Bit64u) EDX << 32) + EAX;
-                        return;
-                case BX_MSR_CSTAR:
-                        MSR_CSTAR  = ((Bit64u) EDX << 32) + EAX;
-                        return;
-                case BX_MSR_FMASK:
-                        MSR_FMASK  = ((Bit64u) EDX << 32) + EAX;
-                        return;
-                case BX_MSR_FSBASE:
-                        MSR_FSBASE = ((Bit64u) EDX << 32) + EAX;
-                        return;
-                case BX_MSR_GSBASE:
-                        MSR_GSBASE = ((Bit64u) EDX << 32) + EAX;
-                        return;
-                case BX_MSR_KERNELGSBASE:
-                        MSR_KERNELGSBASE = ((Bit64u) EDX << 32) + EAX;
-                        return;
+    case BX_MSR_EFER:
+      // GPF #0 if lme 0->1 and cr0.pg = 1
+      // GPF #0 if lme 1->0 and cr0.pg = 1
+      if ((BX_CPU_THIS_PTR msr.lme != ((EAX >> 8) & 1)) &&
+          (BX_CPU_THIS_PTR cr0.pg == 1))
+      {
+        exception(BX_GP_EXCEPTION, 0, 0);
+      }
+      BX_CPU_THIS_PTR msr.sce   = (EAX >> 0)  & 1;
+      BX_CPU_THIS_PTR msr.lme   = (EAX >> 8)  & 1;
+      BX_CPU_THIS_PTR msr.nxe   = (EAX >> 11) & 1;
+      BX_CPU_THIS_PTR msr.ffxsr = (EAX >> 14) & 1;
+      return;
+
+     case BX_MSR_STAR:
+      MSR_STAR   = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_LSTAR:
+      MSR_LSTAR  = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_CSTAR:
+      MSR_CSTAR  = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_FMASK:
+      MSR_FMASK  = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_FSBASE:
+      MSR_FSBASE = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_GSBASE:
+      MSR_GSBASE = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_KERNELGSBASE:
+      MSR_KERNELGSBASE = ((Bit64u) EDX << 32) + EAX;
+      return;
+
+    case BX_MSR_TSC_AUX:
+      MSR_TSC_AUX = EAX;
+      return;
 #endif  // #if BX_SUPPORT_X86_64
 
     default:
@@ -1792,7 +1844,7 @@ void BX_CPU_C::SYSENTER (bxInstruction_c *i)
     exception (BX_GP_EXCEPTION, 0, 0);
     return;
   }
-  if (BX_CPU_THIS_PTR sysenter_cs_msr == 0) {
+  if ((BX_CPU_THIS_PTR sysenter_cs_msr & BX_SELECTOR_RPL_MASK) == 0) {
     BX_INFO (("sysenter with zero sysenter_cs_msr"));
     exception (BX_GP_EXCEPTION, 0, 0);
     return;
@@ -1800,9 +1852,9 @@ void BX_CPU_C::SYSENTER (bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
-  BX_CPU_THIS_PTR set_VM(0);           // do this just like the book says to do
-  BX_CPU_THIS_PTR set_IF(0);
-  BX_CPU_THIS_PTR set_RF(0);
+  BX_CPU_THIS_PTR clear_VM();       // do this just like the book says to do
+  BX_CPU_THIS_PTR clear_IF();
+  BX_CPU_THIS_PTR clear_RF();
 
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value = BX_CPU_THIS_PTR sysenter_cs_msr & BX_SELECTOR_RPL_MASK;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.index = BX_CPU_THIS_PTR sysenter_cs_msr >> 3;
@@ -1850,17 +1902,14 @@ void BX_CPU_C::SYSEXIT (bxInstruction_c *i)
   if (!protected_mode ()) {
     BX_INFO (("sysexit not from protected mode"));
     exception (BX_GP_EXCEPTION, 0, 0);
-    return;
   }
-  if (BX_CPU_THIS_PTR sysenter_cs_msr == 0) {
+  if ((BX_CPU_THIS_PTR sysenter_cs_msr & BX_SELECTOR_RPL_MASK) == 0) {
     BX_INFO (("sysexit with zero sysenter_cs_msr"));
     exception (BX_GP_EXCEPTION, 0, 0);
-    return;
   }
   if (CPL != 0) {
     BX_INFO (("sysexit at non-zero cpl %u", CPL));
     exception (BX_GP_EXCEPTION, 0, 0);
-    return;
   }
 
   invalidate_prefetch_q();
@@ -1981,7 +2030,7 @@ SYSCALL_LEGACY_MODE:
   Bit32u dword1, dword2;
 
   if (!BX_CPU_THIS_PTR msr.sce) {
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   invalidate_prefetch_q();
@@ -1989,10 +2038,7 @@ SYSCALL_LEGACY_MODE:
   if (BX_CPU_THIS_PTR msr.lma)
   {
     RCX = RIP;
-#ifdef __GNUC__
-#warning - PRT: SYSCALL --  do we reset RF/VM before saving to R11?
-#endif
-    R11 = read_eflags();
+    R11 = read_eflags() & ~(EFlagsRFMask);
 
     if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
       temp_RIP = MSR_LSTAR;
@@ -2011,8 +2057,8 @@ SYSCALL_LEGACY_MODE:
     parse_descriptor(dword1, dword2, &ss_descriptor);
     load_ss(&ss_selector, &ss_descriptor, 0);
 
-    write_eflags(read_eflags() & (~MSR_FMASK),1,1,1,0);
-    BX_CPU_THIS_PTR clear_RF ();
+    writeEFlags(read_eflags() & (~MSR_FMASK), EFlagsValidMask);
+    BX_CPU_THIS_PTR clear_RF();
     RIP = temp_RIP;
   }
   else {
@@ -2101,7 +2147,7 @@ SYSRET_NON_64BIT_MODE:
   Bit32u  dword1, dword2;
 
   if (!BX_CPU_THIS_PTR msr.sce) {
-    exception(BX_GP_EXCEPTION, 0, 0);
+    exception(BX_UD_EXCEPTION, 0, 0);
   }
 
   if(real_mode() || CPL != 0) {
@@ -2137,7 +2183,7 @@ SYSRET_NON_64BIT_MODE:
     load_ss(&ss_selector, &ss_descriptor, 0);
 
     // SS base, limit, attributes unchanged.
-    write_eflags(R11,1,1,1,1);
+    writeEFlags(R11, EFlagsValidMask);
 
     RIP = temp_RIP;
   }

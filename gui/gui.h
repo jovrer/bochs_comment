@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h,v 1.46 2005/04/29 19:06:24 sshwarts Exp $
+// $Id: gui.h,v 1.49 2005/11/12 16:09:55 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -25,6 +25,13 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 #define BX_MAX_STATUSITEMS 10
+
+#define BX_GUI_DLG_FLOPPY   0x01
+#define BX_GUI_DLG_CDROM    0x02
+#define BX_GUI_DLG_SNAPSHOT 0x04
+#define BX_GUI_DLG_RUNTIME  0x08
+#define BX_GUI_DLG_USER     0x10
+#define BX_GUI_DLG_ALL      0x1F
 
 typedef struct {
   Bit16u  start_address;
@@ -83,7 +90,7 @@ public:
   virtual int get_clipboard_text(Bit8u **bytes, Bit32s *nbytes)  = 0;
   virtual int set_clipboard_text(char *snapshot, Bit32u len) = 0;
   virtual void mouse_enabled_changed_specific (bx_bool val) = 0;
-  virtual void statusbar_setitem(int element, bx_bool active) {};
+  virtual void statusbar_setitem(int element, bx_bool active) {}
   virtual void exit(void) = 0;
   // set_display_mode() changes the mode between the configuration interface
   // and the simulation.  This is primarily intended for display libraries
@@ -103,6 +110,7 @@ public:
   // this is called from the CPU model when the HLT instruction is executed.
   virtual void sim_is_idle(void) {}
 #endif
+  virtual void show_ips(Bit32u ips_count);
   virtual void beep_on(float frequency);
   virtual void beep_off();
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
@@ -164,7 +172,8 @@ protected:
   Bit16u host_pitch;
   Bit8u host_bpp;
   Bit8u *framebuffer;
-  };
+  Bit32u dialog_caps;
+};
 
 
 // Add this macro in the class declaration of each GUI, to define all the

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_vnet.cc,v 1.15.2.1 2005/07/07 07:06:22 vruppert Exp $
+// $Id: eth_vnet.cc,v 1.18 2005/12/10 18:37:35 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // virtual Ethernet locator
@@ -17,7 +17,9 @@
 
 #define BX_PLUGGABLE
 
+#define NO_DEVICE_INCLUDES
 #include "iodev.h"
+
 #if BX_NETWORKING
 
 #include "eth.h"

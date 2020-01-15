@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode.cc,v 1.79.2.1 2005/07/07 08:07:53 vruppert Exp $
+// $Id: fetchdecode.cc,v 1.87 2005/11/11 21:09:02 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -305,16 +305,26 @@ static BxOpcodeInfo_t BxOpcodeInfoG7[8] = {
   /* 7 */  { 0, &BX_CPU_C::INVLPG }
   }; 
 
-
-static BxOpcodeInfo_t BxOpcodeInfoG8EvIb[8] = {
+static BxOpcodeInfo_t BxOpcodeInfoG8EwIb[8] = {
   /* 0 */  { 0, &BX_CPU_C::BxError },
   /* 1 */  { 0, &BX_CPU_C::BxError },
   /* 2 */  { 0, &BX_CPU_C::BxError },
   /* 3 */  { 0, &BX_CPU_C::BxError },
-  /* 4 */  { BxImmediate_Ib,              &BX_CPU_C::BT_EvIb },
-  /* 5 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTS_EvIb },
-  /* 6 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTR_EvIb },
-  /* 7 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTC_EvIb }
+  /* 4 */  { BxImmediate_Ib,              &BX_CPU_C::BT_EwIb },
+  /* 5 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTS_EwIb },
+  /* 6 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTR_EwIb },
+  /* 7 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTC_EwIb }
+  }; 
+
+static BxOpcodeInfo_t BxOpcodeInfoG8EdIb[8] = {
+  /* 0 */  { 0, &BX_CPU_C::BxError },
+  /* 1 */  { 0, &BX_CPU_C::BxError },
+  /* 2 */  { 0, &BX_CPU_C::BxError },
+  /* 3 */  { 0, &BX_CPU_C::BxError },
+  /* 4 */  { BxImmediate_Ib,              &BX_CPU_C::BT_EdIb },
+  /* 5 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTS_EdIb },
+  /* 6 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTR_EdIb },
+  /* 7 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTC_EdIb }
   }; 
 
 static BxOpcodeInfo_t BxOpcodeInfoG9[8] = {
@@ -397,15 +407,15 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 03 */  { BxAnother | BxSplitMod11b, NULL, opcodesADD_GwEw },
   /* 04 */  { BxImmediate_Ib, &BX_CPU_C::ADD_ALIb },
   /* 05 */  { BxImmediate_Iv, &BX_CPU_C::ADD_AXIw },
-  /* 06 */  { 0, &BX_CPU_C::PUSH_ES },
-  /* 07 */  { 0, &BX_CPU_C::POP_ES },
+  /* 06 */  { 0, &BX_CPU_C::PUSH16_ES },
+  /* 07 */  { 0, &BX_CPU_C::POP16_ES },
   /* 08 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EbGb },
   /* 09 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EwGw },
   /* 0A */  { BxAnother, &BX_CPU_C::OR_GbEb },
   /* 0B */  { BxAnother, &BX_CPU_C::OR_GwEw },
   /* 0C */  { BxImmediate_Ib, &BX_CPU_C::OR_ALIb },
   /* 0D */  { BxImmediate_Iv, &BX_CPU_C::OR_AXIw },
-  /* 0E */  { 0, &BX_CPU_C::PUSH_CS },
+  /* 0E */  { 0, &BX_CPU_C::PUSH16_CS },
   /* 0F */  { BxAnother, &BX_CPU_C::BxError }, // 2-byte escape
   /* 10 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EbGb },
   /* 11 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EwGw },
@@ -413,16 +423,16 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 13 */  { BxAnother, &BX_CPU_C::ADC_GwEw },
   /* 14 */  { BxImmediate_Ib, &BX_CPU_C::ADC_ALIb },
   /* 15 */  { BxImmediate_Iv, &BX_CPU_C::ADC_AXIw },
-  /* 16 */  { 0, &BX_CPU_C::PUSH_SS },
-  /* 17 */  { 0, &BX_CPU_C::POP_SS },
+  /* 16 */  { 0, &BX_CPU_C::PUSH16_SS },
+  /* 17 */  { 0, &BX_CPU_C::POP16_SS },
   /* 18 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EbGb },
   /* 19 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EwGw },
   /* 1A */  { BxAnother, &BX_CPU_C::SBB_GbEb },
   /* 1B */  { BxAnother, &BX_CPU_C::SBB_GwEw },
   /* 1C */  { BxImmediate_Ib, &BX_CPU_C::SBB_ALIb },
   /* 1D */  { BxImmediate_Iv, &BX_CPU_C::SBB_AXIw },
-  /* 1E */  { 0, &BX_CPU_C::PUSH_DS },
-  /* 1F */  { 0, &BX_CPU_C::POP_DS },
+  /* 1E */  { 0, &BX_CPU_C::PUSH16_DS },
+  /* 1F */  { 0, &BX_CPU_C::POP16_DS },
   /* 20 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EbGb },
   /* 21 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EwGw },
   /* 22 */  { BxAnother, &BX_CPU_C::AND_GbEb },
@@ -547,8 +557,8 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 99 */  { 0, &BX_CPU_C::CWD },
   /* 9A */  { BxImmediate_IvIw, &BX_CPU_C::CALL16_Ap },
   /* 9B */  { 0, &BX_CPU_C::FWAIT },
-  /* 9C */  { 0, &BX_CPU_C::PUSHF_Fv },
-  /* 9D */  { 0, &BX_CPU_C::POPF_Fv },
+  /* 9C */  { 0, &BX_CPU_C::PUSHF_Fw },
+  /* 9D */  { 0, &BX_CPU_C::POPF_Fw },
   /* 9E */  { 0, &BX_CPU_C::SAHF },
   /* 9F */  { 0, &BX_CPU_C::LAHF },
   /* A0 */  { BxImmediate_O, &BX_CPU_C::MOV_ALOb },
@@ -683,12 +693,15 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 0A */  { 0, &BX_CPU_C::BxError },
   /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
+#if BX_SUPPORT_X86_64 || BX_SUPPORT_3DNOW
+  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP },     // 3DNow! PREFETCH on AMD, NOP on Intel
+#else
+  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
+#endif
 #if BX_SUPPORT_3DNOW
-  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP   },   // 3DNow! PREFETCH
   /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
   /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
 #else
-  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
   /* 0F 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F 0F */  { 0, &BX_CPU_C::BxError },
 #endif
@@ -836,16 +849,16 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 9D */  { BxAnother, &BX_CPU_C::SETNL_Eb },
   /* 0F 9E */  { BxAnother, &BX_CPU_C::SETLE_Eb },
   /* 0F 9F */  { BxAnother, &BX_CPU_C::SETNLE_Eb },
-  /* 0F A0 */  { 0, &BX_CPU_C::PUSH_FS },
-  /* 0F A1 */  { 0, &BX_CPU_C::POP_FS },
+  /* 0F A0 */  { 0, &BX_CPU_C::PUSH16_FS },
+  /* 0F A1 */  { 0, &BX_CPU_C::POP16_FS },
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
   /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EwGw },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EwGw },
   /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EwGw },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
   /* 0F A7 */  { 0, &BX_CPU_C::CMPXCHG_IBTS },
-  /* 0F A8 */  { 0, &BX_CPU_C::PUSH_GS },
-  /* 0F A9 */  { 0, &BX_CPU_C::POP_GS },
+  /* 0F A8 */  { 0, &BX_CPU_C::PUSH16_GS },
+  /* 0F A9 */  { 0, &BX_CPU_C::POP16_GS },
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
   /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EwGw },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EwGw },
@@ -859,15 +872,15 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F B4 */  { BxAnother, &BX_CPU_C::LFS_GvMp },
   /* 0F B5 */  { BxAnother, &BX_CPU_C::LGS_GvMp },
   /* 0F B6 */  { BxAnother, &BX_CPU_C::MOVZX_GwEb },
-  /* 0F B7 */  { BxAnother, &BX_CPU_C::MOVZX_GwEw },
+  /* 0F B7 */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_GwEw }, // MOVZX_GwEw
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
   /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
-  /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfoG8EvIb },
+  /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfoG8EwIb },
   /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EwGw },
   /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GwEw },
   /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GwEw },
   /* 0F BE */  { BxAnother, &BX_CPU_C::MOVSX_GwEb },
-  /* 0F BF */  { BxAnother, &BX_CPU_C::MOVSX_GwEw },
+  /* 0F BF */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_GwEw }, // MOVSX_GwEw
   /* 0F C0 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EbGb },
   /* 0F C1 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EwGw },
   /* 0F C2 */  { BxAnother | BxImmediate_Ib | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc2 },
@@ -940,15 +953,15 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 03 */  { BxAnother | BxSplitMod11b, NULL, opcodesADD_GdEd },
   /* 04 */  { BxImmediate_Ib, &BX_CPU_C::ADD_ALIb },
   /* 05 */  { BxImmediate_Iv, &BX_CPU_C::ADD_EAXId },
-  /* 06 */  { 0, &BX_CPU_C::PUSH_ES },
-  /* 07 */  { 0, &BX_CPU_C::POP_ES },
+  /* 06 */  { 0, &BX_CPU_C::PUSH32_ES },
+  /* 07 */  { 0, &BX_CPU_C::POP32_ES },
   /* 08 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EbGb },
   /* 09 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EdGd },
   /* 0A */  { BxAnother, &BX_CPU_C::OR_GbEb },
   /* 0B */  { BxAnother, &BX_CPU_C::OR_GdEd },
   /* 0C */  { BxImmediate_Ib, &BX_CPU_C::OR_ALIb },
   /* 0D */  { BxImmediate_Iv, &BX_CPU_C::OR_EAXId },
-  /* 0E */  { 0, &BX_CPU_C::PUSH_CS },
+  /* 0E */  { 0, &BX_CPU_C::PUSH32_CS },
   /* 0F */  { BxAnother, &BX_CPU_C::BxError }, // 2-byte escape
   /* 10 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EbGb },
   /* 11 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EdGd },
@@ -956,16 +969,16 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 13 */  { BxAnother, &BX_CPU_C::ADC_GdEd },
   /* 14 */  { BxImmediate_Ib, &BX_CPU_C::ADC_ALIb },
   /* 15 */  { BxImmediate_Iv, &BX_CPU_C::ADC_EAXId },
-  /* 16 */  { 0, &BX_CPU_C::PUSH_SS },
-  /* 17 */  { 0, &BX_CPU_C::POP_SS },
+  /* 16 */  { 0, &BX_CPU_C::PUSH32_SS },
+  /* 17 */  { 0, &BX_CPU_C::POP32_SS },
   /* 18 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EbGb },
   /* 19 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EdGd },
   /* 1A */  { BxAnother, &BX_CPU_C::SBB_GbEb },
   /* 1B */  { BxAnother, &BX_CPU_C::SBB_GdEd },
   /* 1C */  { BxImmediate_Ib, &BX_CPU_C::SBB_ALIb },
   /* 1D */  { BxImmediate_Iv, &BX_CPU_C::SBB_EAXId },
-  /* 1E */  { 0, &BX_CPU_C::PUSH_DS },
-  /* 1F */  { 0, &BX_CPU_C::POP_DS },
+  /* 1E */  { 0, &BX_CPU_C::PUSH32_DS },
+  /* 1F */  { 0, &BX_CPU_C::POP32_DS },
   /* 20 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EbGb },
   /* 21 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EdGd },
   /* 22 */  { BxAnother, &BX_CPU_C::AND_GbEb },
@@ -1090,8 +1103,8 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 99 */  { 0, &BX_CPU_C::CDQ },
   /* 9A */  { BxImmediate_IvIw, &BX_CPU_C::CALL32_Ap },
   /* 9B */  { 0, &BX_CPU_C::FWAIT },
-  /* 9C */  { 0, &BX_CPU_C::PUSHF_Fv },
-  /* 9D */  { 0, &BX_CPU_C::POPF_Fv },
+  /* 9C */  { 0, &BX_CPU_C::PUSHF_Fd },
+  /* 9D */  { 0, &BX_CPU_C::POPF_Fd },
   /* 9E */  { 0, &BX_CPU_C::SAHF },
   /* 9F */  { 0, &BX_CPU_C::LAHF },
   /* A0 */  { BxImmediate_O, &BX_CPU_C::MOV_ALOb },
@@ -1226,12 +1239,15 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 0A */  { 0, &BX_CPU_C::BxError },
   /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
+#if BX_SUPPORT_X86_64 || BX_SUPPORT_3DNOW
+  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP },     // 3DNow! PREFETCH on AMD, NOP on Intel
+#else
+  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
+#endif
 #if BX_SUPPORT_3DNOW
-  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP   },   // 3DNow! PREFETCH
   /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
   /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
 #else
-  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
   /* 0F 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F 0F */  { 0, &BX_CPU_C::BxError },
 #endif
@@ -1379,16 +1395,16 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F 9D */  { BxAnother, &BX_CPU_C::SETNL_Eb },
   /* 0F 9E */  { BxAnother, &BX_CPU_C::SETLE_Eb },
   /* 0F 9F */  { BxAnother, &BX_CPU_C::SETNLE_Eb },
-  /* 0F A0 */  { 0, &BX_CPU_C::PUSH_FS },
-  /* 0F A1 */  { 0, &BX_CPU_C::POP_FS },
+  /* 0F A0 */  { 0, &BX_CPU_C::PUSH32_FS },
+  /* 0F A1 */  { 0, &BX_CPU_C::POP32_FS },
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
   /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EdGd },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EdGd },
   /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EdGd },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
   /* 0F A7 */  { 0, &BX_CPU_C::CMPXCHG_IBTS },
-  /* 0F A8 */  { 0, &BX_CPU_C::PUSH_GS },
-  /* 0F A9 */  { 0, &BX_CPU_C::POP_GS },
+  /* 0F A8 */  { 0, &BX_CPU_C::PUSH32_GS },
+  /* 0F A9 */  { 0, &BX_CPU_C::POP32_GS },
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
   /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EdGd },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EdGd },
@@ -1405,7 +1421,7 @@ static BxOpcodeInfo_t BxOpcodeInfo[512*2] = {
   /* 0F B7 */  { BxAnother, &BX_CPU_C::MOVZX_GdEw },
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
   /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
-  /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfoG8EvIb },
+  /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfoG8EdIb },
   /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EdGd },
   /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GdEd },
   /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GdEd },
@@ -1969,7 +1985,7 @@ modrm_done:
   void
 BX_CPU_C::BxError(bxInstruction_c *i)
 {
-  BX_INFO(("BxError: instruction with op1=0x%x", i->b1()));
+  BX_INFO(("BxError: instruction with opcode=0x%x", i->b1()));
   BX_INFO(("mod was %x, nnn was %u, rm was %u", i->mod(), i->nnn(), i->rm()));
 
   BX_INFO(("WARNING: Encountered an unknown instruction (signalling illegal instruction)"));

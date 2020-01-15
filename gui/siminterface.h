@@ -1,6 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.135 2005/02/01 19:16:19 vruppert Exp $
+// $Id: siminterface.h,v 1.149 2005/11/20 17:22:44 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
+//
+// Intro to siminterface by Bryce Denney:
 //
 // Before I can describe what this file is for, I have to make the
 // distinction between a configuration interface (CI) and the VGA display
@@ -39,25 +41,25 @@
 // Only the CI code uses library specific graphics and I/O functions; the
 // siminterface deals in portable abstractions and callback functions.
 // The first CI implementation was a series of text mode menus implemented in
-// control.cc.
+// textconfig.cc.
 //
 // The configuration interface MUST use the siminterface methods to access the
 // simulator.  It should not modify settings in some device with code like
 // bx_floppy.s.media[2].heads = 17.  If such access is needed, then a
 // siminterface method should be written to make the change on the CI's behalf.
 // This separation is enforced by the fact that the CI does not even include
-// bochs.h.  You'll notice that control.cc include osdep.h, control.h, and
-// siminterface.h, so it doesn't know what bx_floppy or bx_cpu_c are.  I'm sure
-// some people will say is overly restrictive and/or annoying.  When I set it
-// up this way, we were still talking about making the CI in a seperate
+// bochs.h.  You'll notice that textconfig.cc includes osdep.h, textconfig.h,
+// and siminterface.h, so it doesn't know what bx_floppy or bx_cpu_c are.
+// I'm sure some people will say is overly restrictive and/or annoying.  When I
+// set it up this way, we were still talking about making the CI in a seperate
 // process, where direct method calls would be impossible.  Also, we have been
-// considering turning devices into plugin modules which are dynamically 
+// considering turning devices into plugin modules which are dynamically
 // linked.  Any direct references to something like bx_floppy.s.media[2].heads
 // would have to be reworked before a plugin interface was possible as well.
 //
 // The siminterface is the glue between the CI and the simulator.  There is
 // just one global instance of the siminterface object, which can be referred
-// to by the global variable bx_simulator_interface_c *SIM; The base class
+// to by the global variable bx_simulator_interface_c *SIM.  The base class
 // bx_simulator_interface_c, contains only virtual functions and it defines the
 // interface that the CI is allowed to use.  In siminterface.cc, a class
 // called bx_real_sim_c is defined with bx_simulator_interface_c as its parent
@@ -139,10 +141,17 @@ typedef enum {
   BXP_OPTROM3_ADDRESS,
   BXP_OPTROM4_ADDRESS,
   BXP_OPTROM_LIST,
+  BXP_OPTRAM1_PATH,
+  BXP_OPTRAM2_PATH,
+  BXP_OPTRAM3_PATH,
+  BXP_OPTRAM4_PATH,
+  BXP_OPTRAM1_ADDRESS,
+  BXP_OPTRAM2_ADDRESS,
+  BXP_OPTRAM3_ADDRESS,
+  BXP_OPTRAM4_ADDRESS,
   BXP_KBD_SERIAL_DELAY,
   BXP_KBD_PASTE_DELAY,
   BXP_KBD_TYPE,
-  BXP_FLOPPY_CMD_DELAY,
   BXP_FLOPPYA_DEVTYPE,
   BXP_FLOPPYA_PATH,
   BXP_FLOPPYA_TYPE,
@@ -330,22 +339,23 @@ typedef enum {
   BXP_COM4_ENABLED,
   BXP_COM4_MODE,
   BXP_COM4_PATH,
-#define BXP_PARAMS_PER_USB_HUB 4
+#define BXP_PARAMS_PER_USB_HUB 5
   BXP_USB1_ENABLED,
-  BXP_USB1_IOADDR,
   BXP_USB1_PORT1,
+  BXP_USB1_OPTION1,
   BXP_USB1_PORT2,
+  BXP_USB1_OPTION2,
   BXP_PRIVATE_COLORMAP,
   BXP_FULLSCREEN,
   BXP_SCREENMODE,
   BXP_I440FX_SUPPORT,
   BXP_PCI,
-  BXP_NEWHARDDRIVESUPPORT,
   BXP_LOG_FILENAME,
   BXP_LOG_PREFIX,
   BXP_DEBUGGER_LOG_FILENAME,
-  BXP_CMOS_PATH,
-  BXP_CMOS_IMAGE,
+  BXP_CMOSIMAGE_ENABLED,
+  BXP_CMOSIMAGE_PATH,
+  BXP_CMOSIMAGE_RTC_INIT,
   BXP_CLOCK,
   BXP_CLOCK_TIME0,
   BXP_CLOCK_SYNC,
@@ -379,8 +389,6 @@ typedef enum {
   BXP_NE2K_SCRIPT,
   BXP_NE2K,
   BXP_PNIC_ENABLED,
-  BXP_PNIC_IOADDR,
-  BXP_PNIC_IRQ,
   BXP_PNIC_MACADDR,
   BXP_PNIC_ETHMOD,
   BXP_PNIC_ETHDEV,
@@ -513,12 +521,14 @@ typedef enum {
 // use x=1
 #define BXP_USBx_ENABLED(x) \
    (bx_id)(BXP_USB1_ENABLED + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
-#define BXP_USBx_IOADDR(x) \
-   (bx_id)(BXP_USB1_IOADDR + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
 #define BXP_USBx_PORT1(x) \
    (bx_id)(BXP_USB1_PORT1 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+#define BXP_USBx_OPTION1(x) \
+   (bx_id)(BXP_USB1_OPTION1 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
 #define BXP_USBx_PORT2(x) \
    (bx_id)(BXP_USB1_PORT2 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+#define BXP_USBx_OPTION2(x) \
+   (bx_id)(BXP_USB1_OPTION2 + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
 
 // use x=1,2
 #define BXP_PARPORTx_ENABLED(x) \
@@ -981,7 +991,7 @@ public:
 // a bx_shadow_num_c is like a bx_param_num_c except that it doesn't
 // store the actual value with its data. Instead, it uses val.p32bit
 // to keep a pointer to the actual data.  This is used to register
-// existing variables as parameters, without have to access it via
+// existing variables as parameters, without having to access it via
 // set/get methods.
 class BOCHSAPI bx_shadow_num_c : public bx_param_num_c {
   Bit8u varsize;   // must be 64, 32, 16, or 8
@@ -1124,6 +1134,7 @@ public:
   void set_separator (char sep) {separator = sep; }
   char get_separator () {return separator; }
   int get_maxsize () {return maxsize; }
+  void set_initial_val (char *buf);
 #if BX_USE_TEXTCONFIG
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
@@ -1251,6 +1262,7 @@ enum {
 #define BX_FLOPPY_320K   18 // 320K  5.25"
 #define BX_FLOPPY_LAST   18 // last legal value of floppy type
 
+#define BX_FLOPPY_AUTO     19 // autodetect image size
 #define BX_FLOPPY_UNKNOWN  20 // image size doesn't match one of the types above
 
 #define BX_ATA_DEVICE_DISK      0
@@ -1277,10 +1289,9 @@ enum {
 #define BX_ATA_MODE_UNDOABLE    6
 #define BX_ATA_MODE_GROWING     7
 #define BX_ATA_MODE_VOLATILE    8
-#define BX_ATA_MODE_LAST        8
-//#define BX_ATA_MODE_Z_UNDOABLE  9
-//#define BX_ATA_MODE_Z_VOLATILE  10
-//#define BX_ATA_MODE_SPLIT       6
+#define BX_ATA_MODE_Z_UNDOABLE  9
+#define BX_ATA_MODE_Z_VOLATILE  10
+#define BX_ATA_MODE_LAST        10
 
 #define BX_CLOCK_SYNC_NONE     0
 #define BX_CLOCK_SYNC_REALTIME 1
@@ -1322,7 +1333,7 @@ typedef struct {
   bx_param_string_c *Opath;
   bx_param_enum_c *Otype;
   bx_param_enum_c *Ostatus;
-  } bx_floppy_options;
+} bx_floppy_options;
 
 typedef struct {
   bx_list_c *Omenu;
@@ -1338,35 +1349,34 @@ typedef struct {
   bx_param_string_c *Omodel;
   bx_param_enum_c *Obiosdetect;
   bx_param_enum_c *Otranslation;
-  } bx_atadevice_options;
+} bx_atadevice_options;
 
 typedef struct {
   bx_param_bool_c *Oenabled;
   bx_param_enum_c *Omode;
   bx_param_string_c *Odev;
-  } bx_serial_options;
+} bx_serial_options;
 
 typedef struct {
   bx_param_bool_c *Oenabled;
-  bx_param_num_c *Oioaddr;
   bx_param_string_c *Oport1;
+  bx_param_string_c *Ooption1;
   bx_param_string_c *Oport2;
-  } bx_usb_options;
+  bx_param_string_c *Ooption2;
+} bx_usb_options;
 
 typedef struct {
   bx_param_bool_c *Oenabled;
-  bx_param_num_c *Oioaddr;
-  bx_param_num_c *Oirq;
   bx_param_string_c *Omacaddr;
   bx_param_enum_c *Oethmod;
   bx_param_string_c *Oethdev;
   bx_param_string_c *Oscript;
-  } bx_pnic_options;
+} bx_pnic_options;
 
 typedef struct {
   bx_param_bool_c *Oused;
   bx_param_string_c *Odevname;
-  } bx_pcislot_options;
+} bx_pcislot_options;
 
 ////////////////////////////////////////////////////////////////////
 // base class simulator interface, contains just virtual functions.
@@ -1381,6 +1391,7 @@ enum ci_return_t {
   CI_ERR_NO_TEXT_CONSOLE  // err: can't work because there's no text console
   };
 typedef int (*config_interface_callback_t)(void *userdata, ci_command_t command);
+typedef BxEvent* (*bxevent_handler)(void *theclass, BxEvent *event);
 
 // bx_gui->set_display_mode() changes the mode between the configuration
 // interface and the simulation.  This is primarily intended for display
@@ -1449,7 +1460,6 @@ public:
   // etc.) are displayed and handled by gui.cc, not by the CI or siminterface.
   // gui.cc uses its own callback functions to implement the behavior of
   // the buttons.  Some of these implementations call the siminterface.
-  typedef BxEvent* (*bxevent_handler)(void *theclass, BxEvent *event);
   virtual void set_notify_callback (bxevent_handler func, void *arg) {}
   virtual void get_notify_callback (bxevent_handler *func, void **arg) {}
 

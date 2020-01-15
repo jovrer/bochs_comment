@@ -1,5 +1,5 @@
-.\Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com
-.TH bochsrc 5 "26 Mar 2005" "bochsrc" "The Bochs Project"
+.\"Document Author:  Timothy R. Butler   -   tbutler@uninetsolutions.com"
+.TH bochsrc 5 "29 Dec 2005" "bochsrc" "The Bochs Project"
 .\"SKIP_SECTION"
 .SH NAME
 bochsrc \- Configuration file for Bochs.
@@ -90,26 +90,26 @@ Example:
 
 .TP
 .I "romimage:"
-You need to load  a ROM BIOS into F0000-FFFFF. The BIOS controls
-what  the PC does when it first  powers  on.  Normally, you can use a
-precompiled BIOS in the
-.B bios/
-directory of the source tree, named BIOS-bochs-latest. You can also use
-the environment variable $BXSHARE to specify the location of the BIOS.
+The ROM BIOS controls what the PC does when it first powers on.  Normally, you
+can use a precompiled BIOS in the source or binary distribution called
+.B BIOS-bochs-latest.
+The ROM BIOS is usually loaded starting at address 0xf0000, and it is exactly 64k long.
+You can also use the environment variable $BXSHARE to specify the location of the BIOS.
+The usage of external large BIOS images (up to 512k) at memory top is
+now supported, but we still recommend to use the BIOS distributed with Bochs.
+Now the start address can be calculated from image size.
 
 Examples:
   romimage: file=bios/BIOS-bochs-latest, address=0xf0000
   romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
+  romimage: file=mybios.bin, address=0xfff80000
+  romimage: file=mybios.bin
 
 .TP
 .I "megs:"
-Set this to the default number of Megabytes of
-memory you want to emulate.  You may also pass
-the
-.B 'megs:N'
-option to bochs.  The  default
-is 32MB, since  most OS's won't need more than
-that.
+Set the number of Megabytes of physical memory you want to emulate. 
+The default is 32MB, most OS's won't need more than that.
+The maximum amount of memory supported is 2048Mb.
 
 Example:
   megs: 32
@@ -122,7 +122,7 @@ ROM images should not overwrite the rombios (located at
 F0000-FFFFF) and the videobios (located at C0000-C7FFF).
 Those ROM images will be initialized by the bios if they contain
 the right signature (0x55AA).
-It can also be a convenient way to upload some arbitary code/data
+It can also be a convenient way to upload some arbitrary code/data
 in the simulation, that can be retrieved by the boot loader
 
 Example:
@@ -157,7 +157,7 @@ booting from a floppy, floppya should point to
 a bootable disk.
 
 You can set the initial status of the media to
-'ejected' or 'inserted'. Usually you will want
+\&'ejected' or 'inserted'. Usually you will want
 to use 'inserted'.
 
 Example:
@@ -177,12 +177,15 @@ Example:
 360K  5.25" Floppy:
   floppya: 360k=path, status=inserted
 
+Autodetect Floppy type:
+  floppya: image=path, status=inserted
+
 .TP
 .I "ata0: \fP, \fIata1: \fP, \fIata2: \fPor \fIata3:"
 
 These options enables up to 4 ata channels. For each channel
 the two base io addresses and the irq must be specified.
-ata0 is enabled by default, with ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
+ata0 and ata1 are enabled by default, with the values shown below.
 
 Examples:
    ata0: enabled=1, ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
@@ -202,7 +205,7 @@ This defines the type and characteristics of all attached ata devices:
    spt=        only valid for disks
    status=     only valid for cdroms [inserted|ejected]
    biosdetect= type of biosdetection [none|auto], only for disks on ata0 [cmos]
-   translation=type of transation of the bios, only for disks [none|lba|large|rechs|auto]
+   translation=type of translation of the bios, only for disks [none|lba|large|rechs|auto]
    model=      string returned by identify device command
    journal=    optional filename of the redolog for undoable and volatile disks
    
@@ -215,8 +218,10 @@ works with it.
 In UNIX it is possible to use a raw device as a Bochs hard disk, 
 but WE DON'T RECOMMEND IT.
 
-The path, cylinders, heads, and spt are mandatory for type=disk
-The path is mandatory for type=cdrom
+The path is always mandatory. For flat hard disk images created with bximage
+geometry autodetection can be used (cylinders=0 -> cylinders are calculated
+using heads=16 and spt=63). For other hard disk images and modes the cylinders,
+heads, and spt are mandatory.
 
 The mode option defines how the disk image is handled. Disks can be defined as:
   - flat : one file flat layout
@@ -457,21 +462,23 @@ The file to write the sb16 emulator messages to.
 loglevel:
 
  0 = No log.
- 1 = Only midi program and bank changes.
+ 1 = Resource changes, midi program and bank changes.
  2 = Severe errors.
  3 = All errors.
  4 = All errors plus all port accesses.
  5 = All  errors and port  accesses plus a lot
  of extra information.
 
+It is possible to change the loglevel at runtime.
+
 dmatimer:
 
 Microseconds per second for a DMA cycle.  Make
-it smaller to fix non-continous sound.  750000
+it smaller to fix non-continuous sound.  750000
 is  usually  a  good  value.    This  needs  a
 reasonably  correct   setting  for  IPS   (see
-below).
-
+below). It is possible to adjust the dmatimer
+at runtime.
 
 Example:
   sb16: midimode=1, midi=/dev/midi00,
@@ -485,14 +492,12 @@ one line in the actual bochsrc file.
 
 .TP
 .I "vga_update_interval:"
-Video memory is scanned for updates and screen
-updated  every so many virtual  seconds.   The
-default  is  300000,   about  3Hz.    This  is
-generally plenty.  Keep in mind that you  must
-tweak  the 'ips:' directive to be as close  to
-the number of emulated instructions-per-second
-your  workstation  can  do,  for  this  to  be
-accurate.
+Video memory is scanned for updates and screen updated
+every so many virtual seconds. The default value is
+40000, about 25Hz. Keep in mind that you  must tweak
+the 'ips:' directive to be as close  to the number of
+emulated instructions-per-second your  workstation can
+do, for this to be accurate.
 
 Example:
   vga_update_interval: 250000
@@ -521,17 +526,6 @@ delay until it stops losing characters.
 
 Example:
   keyboard_paste_delay: 100000
-
-.TP
-.I "floppy_command_delay:"
-Time in microseconds to wait before completing
-some  floppy  commands  such  as read,  write,
-seek,  etc.,   which  normally  have  a  delay
-associated.  This was  previous  hardwired  to
-50,000.
-
-Example:
-  floppy_command_delay: 50000
 
 .TP
 .I "ips:"
@@ -570,7 +564,7 @@ This defines the parameters of the clock inside Bochs.
 
 sync
 
-TO BE COMPLETED (see Greg explaination in bug #536329)
+TO BE COMPLETED (see Greg explanation in feature request #536329)
 
 time0
 
@@ -582,7 +576,7 @@ If time0 equal to 2 (special case) or if time0 equal 'utc',
 the simulation will be started at the current utc time.
 
 Syntax:
-  clock: sync=[none|slowdown|realtime], time0=[timeValue|local|utc]
+  clock: sync=[none|slowdown|realtime|both], time0=[timeValue|local|utc]
 
 Default value are sync=none, time0=local
 
@@ -658,6 +652,7 @@ Defines the characteristics of an attached ne2000 isa card :
 
 ioaddr, irq:
 You probably won't need to change ioaddr and irq, unless there are IRQ conflicts.
+These parameters are ignored if the NE2000 is assigned to a PCI slot.
 
 mac:
 The MAC address MUST NOT match the address of any machine on the net.
@@ -668,7 +663,7 @@ be other restrictions too.  To be safe, just use the b0:c4... address.
 
 ethmod:
 The ethmod value defines which low level OS specific module to be used
-to access pysical ethernet interface. Current implemented values include
+to access physical ethernet interface. Current implemented values include
  - fbsd   : ethernet on freebsd and openbsd
  - linux  : ethernet on linux
  - win32  : ethernet on win32
@@ -679,9 +674,12 @@ If you don't want to make connections to any physical networks,
 you can use the following 'ethmod's to simulate a virtual network.
  - null   : All packets are discarded, but logged to a few files
  - arpback: ARP is simulated (disabled by default)
- - vnet   : ARP, ICMP-echo(ping) and DHCP are simulated
+ - vde    : Virtual Distributed Ethernet
+ - vnet   : ARP, ICMP-echo(ping), DHCP and TFTP are simulated
             The virtual host uses 192.168.10.1
             DHCP assignes 192.168.10.2 to the guest
+            The TFTP server use ethdev for the root directory and doesn't
+            overwrite files
 
 ethdev:
 The ethdev value is the name of the network interface on your host
@@ -691,7 +689,7 @@ Niclist source code is in misc/niclist.c and it is included in Windows
 binary releases.
 
 script:
-The script value is optionnal, and is the name of a script that
+The script value is optional, and is the name of a script that
 is executed after bochs initialize the network interface. You can use
 this script to configure this network interface, or enable masquerading.
 This is mainly useful for the tun/tap devices that only exist during
@@ -704,6 +702,8 @@ Examples:
   ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
   ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
   ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=/dev/net/tun0, script=./tunconfig
+  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vde, ethdev="/tmp/vde.ctl"
+  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=vnet, ethdev="c:/temp"
 
 .TP
 .I "keyboard_mapping:"
@@ -726,19 +726,29 @@ Example:
 .TP
 .I "user_shortcut:"
 This defines the keyboard shortcut to be sent when you press the "user"
-button in the headerbar. The shortcut string can be a combination of
-these key names: "alt", "bksp", "ctrl", "del", "esc", "f1", "f4", "tab",
-"win". Up to 3 keys can be pressed at a time.
+button in the headerbar. The shortcut string is a combination of maximum
+3 key names (listed below) separated with a '-' character. The old-style
+syntax (without the '-') still works for the key combinations supported
+in Bochs 2.2.1.
+
+Valid key names:
+
+"alt", "bksp", "ctrl", "del", "down", "end", "enter", "esc", "f1", ... "f12",
+"home", "ins", "left", "menu", "minus", "pgdwn", "pgup", "plus", "right",
+"shift", "space", "tab", "up", and "win".
 
 Example:
-  user_shortcut: keys=ctrlaltdel
+  user_shortcut: keys=ctrl-alt-del
 
 .TP
 .I "cmosimage:"
 This defines image file that can be loaded into the CMOS RAM at startup.
+The rtc_init parameter controls whether initialize the RTC with values stored
+in the image. By default the time0 argument given to the clock option is used.
+With 'rtc_init=image' the image is the source for the initial time.
 
 Example:
-  cmosimage: cmos.img
+  cmosimage: file=cmos.img, rtc_init=time0
 
 .TP
 .I "usb1:"
@@ -749,32 +759,7 @@ the mouse to one of the ports and use the mouse option 'type=usb' you'll
 have a 3-button USB mouse.
 
 Example:
-  usb1: enabled=1, ioaddr=0xFF80, port1=mouse, port2=keypad
-
-.TP
-.I "pit:"
-The \fBpit\fR option is deprecated. Use the \fBclock\fR option instead.
-
-The PIT is the programmable interval timer.  It has an option that tries to
-keep the PIT in sync with real time.  This feature is still experimental,
-but it may be useful if you want to prevent Bochs from running too fast, for
-example a DOS video game.  Be aware that with the realtime pit option, your
-simulation will not be repeatable; this can a problem if you are debugging.
-
-Example:
-  pit: realtime=1
-
-.TP
-.I "time0:"
-The \fBtime0\fR option is deprecated. Use the \fBclock\fR option instead.
-
-Specifies the start (boot) time of the virtual machine. Use a
-time value as returned by the time(2) system call. Time
-equal to 1 is a special case which starts the virtual machine at the
-current time of the simulator host.
-
-Example:
-  time0: 938581955
+  usb1: enabled=1, port1=mouse, port2=keypad
 
 .\"SKIP_SECTION"
 .SH LICENSE
@@ -782,7 +767,7 @@ This program  is distributed  under the terms of the  GNU
 Lesser General Public License as published  by  the  Free
 Software  Foundation.  See  the  COPYING file located  in
 /usr/local/share/doc/bochs/ for details on the license and
-the lack of warrantee.
+the lack of warranty.
 .\"SKIP_SECTION"
 .SH AVAILABILITY
 The latest version of this program can be found at:

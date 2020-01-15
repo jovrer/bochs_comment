@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.43 2005/02/04 19:50:50 vruppert Exp $
+// $Id: sb16.cc,v 1.45 2005/10/23 07:17:01 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -268,8 +268,8 @@ void bx_sb16_c::init(void)
        write_handler, addr, "SB16", 1);
     }
 
-  writelog(BOTHLOG(3),
-	   "driver initialised, IRQ %d, IO %03x/%03x/%03x, DMA %d/%d",
+  writelog(BOTHLOG(1),
+	   "SB16 emulation initialised, IRQ %d, IO %03x/%03x/%03x, DMA %d/%d",
 	   BX_SB16_IRQ, BX_SB16_IO, BX_SB16_IOMPU, BX_SB16_IOADLIB,
 	   BX_SB16_DMAL, BX_SB16_DMAH);
 
@@ -283,13 +283,13 @@ void bx_sb16_c::init(void)
   if (DSP.timer_handle == BX_NULL_TIMER_HANDLE) {
     DSP.timer_handle = bx_pc_system.register_timer
       (BX_SB16_THISP, dsp_dmatimer, 1, 1, 0, "sb16.dsp");
-	// dma timer: inactive, continous, frequency variable
+    // dma timer: inactive, continuous, frequency variable
   }
 
   if (OPL.timer_handle == BX_NULL_TIMER_HANDLE) {
     OPL.timer_handle = bx_pc_system.register_timer
       (BX_SB16_THISP, opl_timer, 80, 1, 0, "sb16.opl");
-	// opl timer: inactive, continuous, frequency 80us
+    // opl timer: inactive, continuous, frequency 80us
   }
 
   writelog(MIDILOG(4), "Timers initialized, midi %d, dma %d, opl %d",
@@ -320,11 +320,12 @@ void bx_sb16_c::dsp_dmatimer (void *this_ptr)
        ( (This->dsp.dma.chunkindex + 1 < BX_SOUND_OUTPUT_WAVEPACKETSIZE) &&
 	 (This->dsp.dma.count > 0) ) ||
        (This->output->waveready() == BX_SOUND_OUTPUT_OK) ) {
-    if (DSP.dma.bits == 8)
+    if ((DSP.dma.bits == 8) || (BX_SB16_DMAH == 0)) {
       DEV_dma_set_drq(BX_SB16_DMAL, 1);
-    else
+    } else {
       DEV_dma_set_drq(BX_SB16_DMAH, 1);
     }
+  }
 }
 
 void bx_sb16_c::opl_timer (void *this_ptr)
@@ -1578,11 +1579,10 @@ void bx_sb16_c::set_irq_dma()
   // If not already initialized
   if(!isInitialized) {
     isInitialized=1;
+  } else {
+    writelog(BOTHLOG(1), "Resources set to I%d D%d H%d", 
+             BX_SB16_IRQ, BX_SB16_DMAL, BX_SB16_DMAH);
   }
-
-  writelog(BOTHLOG(4), "Resources set to I%d D%d H%d", 
-	   BX_SB16_IRQ, BX_SB16_DMAL, BX_SB16_DMAH);
-
 }
 
 
@@ -3209,7 +3209,7 @@ Bit32u bx_sb16_c::read(Bit32u address, unsigned io_len)
     }
 
   // If we get here, the port wasn't valid
-  writelog(3, "Read access to %03x for %d: unsupported port!", address, io_len);
+  writelog(3, "Read access to 0x%04x: unsupported port!", address);
 
   return(0xff);
 }
@@ -3336,8 +3336,8 @@ void bx_sb16_c::write(Bit32u address, Bit32u value, unsigned io_len)
     }
 
   // if we arrive here, the port is unsupported
-  writelog(3, "Write access to %03x for %d to %02x: unsupported port!",
-	   address, io_len, value);
+  writelog(3, "Write access to 0x%04x (value = 0x%02x): unsupported port!",
+	   address, value);
 
   return;
 }

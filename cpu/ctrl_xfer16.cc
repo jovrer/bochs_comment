@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer16.cc,v 1.29 2005/03/20 18:01:01 sshwarts Exp $
+// $Id: ctrl_xfer16.cc,v 1.31 2005/10/17 13:06:09 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -292,11 +292,8 @@ void BX_CPU_C::JCC_Jw(bxInstruction_c *i)
     case 0x0B: /* JNP */ condition = !get_PF(); break;
     case 0x0C: /* JL */ condition = getB_SF() != getB_OF(); break;
     case 0x0D: /* JNL */ condition = getB_SF() == getB_OF(); break;
-    case 0x0E: /* JLE */ condition = get_ZF() || (getB_SF() != getB_OF());
-      break;
-    case 0x0F: /* JNLE */ condition = (getB_SF() == getB_OF()) &&
-                            !get_ZF();
-      break;
+    case 0x0E: /* JLE */ condition = get_ZF() || (getB_SF() != getB_OF()); break;
+    case 0x0F: /* JNLE */ condition = (getB_SF() == getB_OF()) && !get_ZF(); break;
     default:
       condition = 0; // For compiler...all targets should set condition.
       break;
@@ -407,7 +404,7 @@ void BX_CPU_C::IRET16(bxInstruction_c *i)
 
   if (v8086_mode()) {
     // IOPL check in stack_return_from_v86()
-    stack_return_from_v86(i);
+    iret16_stack_return_from_v86(i);
     goto done;
   }
 

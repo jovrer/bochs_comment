@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: paging.cc,v 1.59.2.1 2005/07/07 07:55:21 vruppert Exp $
+// $Id: paging.cc,v 1.63 2005/11/26 21:36:51 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -445,7 +445,7 @@ BX_CPU_C::pagingCR4Changed(Bit32u oldCR4, Bit32u newCR4)
   if (bx_dbg.paging)
     BX_INFO(("pagingCR4Changed(0x%x -> 0x%x):", oldCR4, newCR4));
 
-#if BX_SupportPAE
+#if BX_SUPPORT_PAE
   if ( (oldCR4 & 0x00000020) != (newCR4 & 0x00000020) ) {
     if (BX_CPU_THIS_PTR cr4.get_PAE())
       BX_CPU_THIS_PTR cr3_masked = BX_CPU_THIS_PTR cr3 & 0xffffffe0;
@@ -466,7 +466,7 @@ BX_CPU_C::CR3_change(bx_address value)
   // flush TLB even if value does not change
   TLB_flush(0); // 0 = Don't flush Global entries.
   BX_CPU_THIS_PTR cr3 = value;
-#if BX_SupportPAE
+#if BX_SUPPORT_PAE
   if (BX_CPU_THIS_PTR cr4.get_PAE())
     BX_CPU_THIS_PTR cr3_masked = value & 0xffffffe0;
   else
@@ -549,7 +549,7 @@ BX_CPU_C::TLB_flush(bx_bool invalidateGlobal)
     // write to (invalidate) entries which need it.
     bx_TLB_entry *tlbEntry = &BX_CPU_THIS_PTR TLB.entry[i];
     if (tlbEntry->lpf != BX_INVALID_TLB_ENTRY) {
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
       if ( invalidateGlobal || !(tlbEntry->accessBits & TLB_GlobalPage) )
 #endif
       {
@@ -582,12 +582,22 @@ void BX_CPU_C::INVLPG(bxInstruction_c* i)
     // ----------------------------------------------------
     //  MOD <> 11  7   --- |     INVLPG      |   INVLPG
     //  MOD == 11  7    0  |      #UD        |   SWAPGS
-    //  MOD == 11  7   1-7 |      #UD        |    #UD
+    //  MOD == 11  7    1  |      #UD        |   RDTSCP
+    //  MOD == 11  7   2-7 |      #UD        |    #UD
 
     if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-      if ((i->rm() == 0) && (i->nnn() == 7)) {
-        BX_CPU_THIS_PTR SWAPGS(i);
-        return;
+      if (i->nnn() == 7) {
+        switch(i->rm()) {
+        case 0:
+          BX_CPU_THIS_PTR SWAPGS(i);
+          return;
+        case 1:
+          BX_CPU_THIS_PTR RDTSCP(i);
+          return;
+        default:
+          BX_INFO(("INVLPG: 0F 01 /7 RM=%d opcode is undefined !", i->rm()));
+          UndefinedOpcode(i);
+        }
       }
     }
 
@@ -604,7 +614,6 @@ void BX_CPU_C::INVLPG(bxInstruction_c* i)
   // Protected instruction: CPL0 only
   if (BX_CPU_THIS_PTR cr0.pe) {
     if (CPL!=0) {
-      BX_INFO(("INVLPG: CPL!=0"));
       exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
@@ -620,6 +629,7 @@ void BX_CPU_C::INVLPG(bxInstruction_c* i)
 
 #else
   // not supported on < 486
+  BX_INFO(("INVLPG: required i486, use --enable-cpu=4 option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -646,7 +656,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
 
   bx_bool isWrite = (rw >= BX_WRITE); // write or r-m-w
 
-#if BX_SupportPAE
+#if BX_SUPPORT_PAE
   if (BX_CPU_THIS_PTR cr4.get_PAE())
   {
     bx_address pde, pdp;
@@ -703,8 +713,8 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       }
 
       // Get PDP entry
-      pdp_addr =  (pml4 & 0xfffff000) |
-                  ((laddr & BX_CONST64(0x0000007fc0000000)) >> 27);
+      pdp_addr = (pml4 & 0xfffff000) |
+                 ((laddr & BX_CONST64(0x0000007fc0000000)) >> 27);
     }
     else
 #endif
@@ -762,7 +772,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       // Make up the physical page frame address.
       ppf = (pde & 0xffe00000) | (laddr & 0x001ff000);
 
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
       if (BX_CPU_THIS_PTR cr4.get_PGE()) { // PGE==1
         combined_access |= (pde & TLB_GlobalPage);  // G
       }
@@ -813,7 +823,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       // Make up the physical page frame address.
       ppf = pte & 0xfffff000;
 
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
       if (BX_CPU_THIS_PTR cr4.get_PGE()) { // PGE==1
         combined_access |= (pte & TLB_GlobalPage);  // G
       }
@@ -844,7 +854,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
     }
   }
   else
-#endif  // #if BX_SupportPAE
+#endif  // #if BX_SUPPORT_PAE
   {
     // CR4.PAE==0 (and MSR.LMA==0)
 
@@ -897,7 +907,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       // make up the physical frame number
       ppf = (pde & 0xFFC00000) | (laddr & 0x003FF000);
 
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
       if (BX_CPU_THIS_PTR cr4.get_PGE()) { // PGE==1
         combined_access |= pde & TLB_GlobalPage;    // {G}
       }
@@ -949,7 +959,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       combined_access |= (pde & pte) & 0x02; // R/W
 #else // 486+
       combined_access  = (pde & pte) & 0x06; // U/S and R/W
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
       if (BX_CPU_THIS_PTR cr4.get_PGE()) {
         combined_access |= (pte & TLB_GlobalPage); // G
       }
@@ -1017,7 +1027,7 @@ BX_CPU_C::translate_linear(bx_address laddr, unsigned pl, unsigned rw, unsigned 
       accessBits |= TLB_WriteSysOK; // write from {sys} OK.
     }
   }
-#if BX_SupportGlobalPages
+#if BX_SUPPORT_GLOBAL_PAGES
   accessBits |= combined_access & TLB_GlobalPage; // Global bit
 #endif
 #if BX_USE_TLB
@@ -1117,6 +1127,7 @@ void BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, Bit32u *phy, bx_bool *vali
   }
 #endif
 
+#if BX_SUPPORT_PAE
   if (BX_CPU_THIS_PTR cr4.get_PAE()) {
     Bit64u pt_address;
     int levels = 3;
@@ -1139,9 +1150,11 @@ void BX_CPU_C::dbg_xlate_linear2phy(bx_address laddr, Bit32u *phy, bx_bool *vali
       }
     }
     paddress = pt_address + (laddr & offset_mask);
-  } else { // not PAE
-    Bit32u pt_address;
-    pt_address = BX_CPU_THIS_PTR cr3_masked;
+  } 
+  else   // not PAE
+#endif
+  {
+    Bit32u pt_address = BX_CPU_THIS_PTR cr3_masked;
     Bit32u offset_mask = 0xfff;
     for (int level = 1; level >= 0; --level) {
       Bit32u pte;
@@ -1284,7 +1297,6 @@ BX_CPU_C::access_linear(bx_address laddr, unsigned length, unsigned pl,
                               BX_CPU_THIS_PTR address_xlation.len2, data);
       }
 #endif
-
       return;
     }
   }

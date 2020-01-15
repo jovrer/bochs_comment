@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.h,v 1.5 2005/02/08 18:32:27 vruppert Exp $
+// $Id: pci_ide.h,v 1.7 2005/10/29 12:35:01 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2004  MandrakeSoft S.A.
@@ -44,6 +44,7 @@ public:
   virtual void   init(void);
   virtual void   reset(unsigned type);
   virtual bx_bool bmdma_present(void);
+  virtual void   bmdma_set_irq(Bit8u channel);
 
   static void timer_handler(void *);
   BX_PIDE_SMF void timer(void);
@@ -60,6 +61,9 @@ private:
       Bit32u dtpr;
       Bit32u prd_current;
       int timer_index;
+      Bit8u *buffer;
+      Bit8u *buffer_top;
+      Bit8u *buffer_idx;
     } bmdma[2];
   } s;
 

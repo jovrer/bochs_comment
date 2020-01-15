@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: speaker.cc,v 1.6 2005/02/12 08:59:47 vruppert Exp $
+// $Id: speaker.cc,v 1.8 2005/12/10 18:37:35 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright 2003 by David N. Welton <davidw@dedasys.com>.
@@ -20,6 +20,7 @@
 
 #define BX_PLUGGABLE
 
+#define NO_DEVICE_INCLUDES
 #include "iodev.h"
 #include "speaker.h"
 
@@ -34,6 +35,11 @@
 #include <linux/kd.h>
 #endif
 
+#if defined(__APPLE__) || defined(macintosh)
+#define Float32 KLUDGE_Float32  // Carbon headers define Float32 and Float64 
+#define Float64 KLUDGE_Float64  // and conflict with bochs definitions
+#include <Carbon/Carbon.h>      // but this code doesn't need them.
+#endif
 
 #define LOG_THIS theSpeaker->
 
@@ -105,6 +111,8 @@ void bx_speaker_c::beep_on(float frequency)
   }
 #elif defined(WIN32)
   usec_start = bx_pc_system.time_usec();
+#elif defined(__APPLE__) || defined(macintosh)
+  AlertSoundPlay();
 #endif
    
   // give the gui a chance to signal beep off

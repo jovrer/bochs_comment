@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////////
-// $Id: virt_timer.cc,v 1.21.4.1 2005/07/06 20:46:34 vruppert Exp $
+// $Id: virt_timer.cc,v 1.23 2005/12/10 18:37:35 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -62,7 +62,8 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-#include "iodev.h"
+#include "bochs.h"
+#include "virt_timer.h"
 
 #define BX_USE_VIRTUAL_TIMERS 1
 #define BX_VIRTUAL_TIMERS_REALTIME 1

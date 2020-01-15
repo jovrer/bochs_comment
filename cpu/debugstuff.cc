@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc,v 1.39 2005/05/20 20:06:50 sshwarts Exp $
+// $Id: debugstuff.cc,v 1.48 2005/12/23 14:24:47 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,11 +25,39 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
+
+#if BX_DISASM
+void BX_CPU_C::debug_disasm_instruction(bx_address offset)
+{
+  bx_bool valid;
+  Bit32u  phy_addr;
+  Bit8u   instr_buf[16];
+  char    char_buf[256];
+  unsigned isize;
+
+  static disassembler bx_disassemble;
+
+  dbg_xlate_linear2phy(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + offset,
+                       &phy_addr, &valid);
+  if (valid && BX_CPU_THIS_PTR mem!=NULL) {
+    BX_CPU_THIS_PTR mem->dbg_fetch_mem(phy_addr, 16, instr_buf);
+    isize = bx_disassemble.disasm(
+        BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
+        BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64,
+        BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS), offset,
+        instr_buf, char_buf);
+    for (unsigned j=0; j<isize; j++)
+      BX_INFO((">> %02x", (unsigned) instr_buf[j]));
+    BX_INFO((">> : %s", char_buf));
+  }
+  else {
+    BX_INFO(("(instruction unavailable) page not present"));
+  }
+}
+#endif  // #if BX_DISASM
 
 
 void BX_CPU_C::debug(bx_address offset)
@@ -48,8 +76,9 @@ void BX_CPU_C::debug(bx_address offset)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b ? 32 : 16));
   BX_INFO(("SS.d_b = %u bit",
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.d_b ? 32 : 16));
-
 #if BX_SUPPORT_X86_64
+  BX_INFO(("EFER   = 0x%08x", BX_CPU_THIS_PTR get_EFER()));
+
   BX_INFO(("| RAX=%08x%08x  RBX=%08x%08x",
           (unsigned) (RAX >> 32), (unsigned) EAX,
           (unsigned) (RBX >> 32), (unsigned) EBX));
@@ -68,16 +97,22 @@ void BX_CPU_C::debug(bx_address offset)
   BX_INFO(("| ESP=%08x  EBP=%08x  ESI=%08x  EDI=%08x",
           (unsigned) ESP, (unsigned) EBP, (unsigned) ESI, (unsigned) EDI));
 #endif
-  BX_INFO(("| IOPL=%1u %s %s %s %s %s %s %s %s",
-    BX_CPU_THIS_PTR get_IOPL (),
-    BX_CPU_THIS_PTR get_OF()          ? "OV" : "NV",
-    BX_CPU_THIS_PTR get_DF()   ? "DW" : "UP",
-    BX_CPU_THIS_PTR get_IF()   ? "EI" : "DI",
-    BX_CPU_THIS_PTR get_SF()          ? "NG" : "PL",
-    BX_CPU_THIS_PTR get_ZF()          ? "ZR" : "NZ",
-    BX_CPU_THIS_PTR get_AF()          ? "AC" : "NA",
-    BX_CPU_THIS_PTR get_PF()          ? "PE" : "PO",
-    BX_CPU_THIS_PTR get_CF()          ? "CY" : "NC"));
+  BX_INFO(("| IOPL=%1u %s %s %s %s %s %s %s %s %s %s %s %s %s",
+    BX_CPU_THIS_PTR get_IOPL(),
+    BX_CPU_THIS_PTR get_VM() ? "VM" : "vm",
+    BX_CPU_THIS_PTR get_RF() ? "RF" : "rf",
+    BX_CPU_THIS_PTR get_AC() ? "AC" : "ac",
+    BX_CPU_THIS_PTR get_NT() ? "NT" : "nt",
+    BX_CPU_THIS_PTR get_OF() ? "OF" : "of",
+    BX_CPU_THIS_PTR get_DF() ? "DF" : "df",
+    BX_CPU_THIS_PTR get_IF() ? "IF" : "if",
+    BX_CPU_THIS_PTR get_TF() ? "TF" : "tf",
+    BX_CPU_THIS_PTR get_SF() ? "SF" : "sf",
+    BX_CPU_THIS_PTR get_ZF() ? "ZF" : "zf",
+    BX_CPU_THIS_PTR get_AF() ? "AF" : "af",
+    BX_CPU_THIS_PTR get_PF() ? "PF" : "pf",
+    BX_CPU_THIS_PTR get_CF() ? "CF" : "cf"));
+
   BX_INFO(("| SEG selector     base    limit G D"));
   BX_INFO(("| SEG sltr(index|ti|rpl)     base    limit G D"));
   BX_INFO(("|  CS:%04x( %04x| %01u|  %1u) %08x %08x %1u %1u",
@@ -169,63 +204,8 @@ void BX_CPU_C::debug(bx_address offset)
 #endif // BX_SUPPORT_X86_64
 
 
-#if 0
-  /* (mch) Hack to display the area round EIP and prev_EIP */
-  char buf[100];
-  sprintf(buf, "%04x:%08x  ", BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
-  for (int i = 0; i < 8; i++) {
-    Bit8u data;
-    BX_CPU_THIS_PTR read_virtual_byte(BX_SEG_REG_CS, EIP + i, &data);
-    sprintf(buf+strlen(buf), "%02x ", data);
-  }
-  BX_INFO((buf));
-
-  sprintf(buf, "%04x:%08x  ", BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR prev_eip);
-  for (int i = 0; i < 8; i++) {
-    Bit8u data;
-    BX_CPU_THIS_PTR read_virtual_byte(BX_SEG_REG_CS, BX_CPU_THIS_PTR prev_eip + i, &data);
-    sprintf(buf+strlen(buf), "%02x ", data);
-  }
-  BX_INFO((buf));
-#endif
-
-
 #if BX_DISASM
-  bx_bool valid;
-  Bit32u  phy_addr, Base;
-  Bit8u   instr_buf[32];
-  char    char_buf[256];
-  unsigned isize;
-
-  static disassembler bx_disassemble;
-
-  if (BX_CPU_THIS_PTR protected_mode()) { // 16bit & 32bit protected mode
-    Base=BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS);
-  }
-  else {
-    Base=BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value<<4;
-  }
-
-  dbg_xlate_linear2phy(BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + offset,
-                       &phy_addr, &valid);
-  if (valid && BX_CPU_THIS_PTR mem!=NULL) {
-    BX_CPU_THIS_PTR mem->dbg_fetch_mem(phy_addr, 16, instr_buf);
-    isize = bx_disassemble.disasm(
-        BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
-        Base, 
-        EIP, instr_buf, char_buf);
-#if BX_SUPPORT_X86_64
-    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) isize = 16;
-#endif
-    for (unsigned j=0; j<isize; j++)
-      BX_INFO((">> %02x", (unsigned) instr_buf[j]));
-    BX_INFO((">> : %s", char_buf));
-  }
-  else {
-    BX_INFO(("(instruction unavailable) page not present"));
-  }
-#else
-  UNUSED(offset);
+  debug_disasm_instruction(offset);
 #endif  // #if BX_DISASM
 }
 
@@ -324,7 +304,7 @@ bx_bool BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
       return(0);
   }
 
-  if (BX_CPU_THIS_PTR real_mode()) {
+  if (real_mode()) {
     seg->selector.value = val;
     seg->cache.valid = 1;
     seg->cache.p = 1;

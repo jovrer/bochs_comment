@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.cc,v 1.73 2005/05/26 09:24:28 vruppert Exp $
+// $Id: ne2k.cc,v 1.78 2005/12/24 22:35:04 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,7 +24,7 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
-// Peter Grehan (grehan@iprg.nokia.com) coded all of this
+// Peter Grehan (grehan@iprg.nokia.com) coded the initial version of this
 // NE2000/ether stuff.
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -122,16 +122,6 @@ bx_ne2k_c::reset(unsigned type)
   BX_NE2K_THIS s.ISR.reset    = 1;
   BX_NE2K_THIS s.DCR.longaddr = 1;
 
-#if BX_SUPPORT_PCI
-  if ((type == BX_RESET_HARDWARE) && (BX_NE2K_THIS s.pci_enabled)) {
-    // This should be done by the PCI BIOS
-    Bit32u baseaddr = bx_options.ne2k.Oioaddr->get ();
-    WriteHostDWordToLittleEndian(&BX_NE2K_THIS s.pci_conf[0x10], baseaddr);
-    DEV_pci_set_base_io(this, read_handler, write_handler,
-                        &BX_NE2K_THIS s.base_address, &BX_NE2K_THIS s.pci_conf[0x10],
-                        32, &ne2k_iomask[0], "NE2000 PCI NIC");
-  }
-#endif
   set_irq_level(0);
 }
 
@@ -499,14 +489,22 @@ bx_ne2k_c::page0_read(Bit32u offset, unsigned int io_len)
     return (BX_NE2K_THIS s.remote_dma >> 8);
     break;
 
-  case 0xa:  // reserved
-    BX_INFO(("reserved read - page 0, 0xa"));
-    return (0xff);
+  case 0xa:  // reserved / RTL8029ID0
+    if (BX_NE2K_THIS s.pci_enabled) {
+      return (0x50);
+    } else {
+      BX_INFO(("reserved read - page 0, 0xa"));
+      return (0xff);
+    }
     break;
 
-  case 0xb:  // reserved
-    BX_INFO(("reserved read - page 0, 0xb"));
-    return (0xff);
+  case 0xb:  // reserved / RTL8029ID1
+    if (BX_NE2K_THIS s.pci_enabled) {
+      return (0x43);
+    } else {
+      BX_INFO(("reserved read - page 0, 0xb"));
+      return (0xff);
+    }
     break;
     
   case 0xc:  // RSR
@@ -978,8 +976,22 @@ bx_ne2k_c::page2_write(Bit32u offset, Bit32u value, unsigned io_len)
 Bit32u
 bx_ne2k_c::page3_read(Bit32u offset, unsigned int io_len)
 {
-  BX_ERROR(("page 3 read register 0x%02x attempted", offset));
-  return (0);
+  if (BX_NE2K_THIS s.pci_enabled) {
+    switch (offset) {
+      case 0x3:  // CONFIG0
+        return (0);
+      case 0x5:  // CONFIG2
+        return (0x40);
+      case 0x6:  // CONFIG3
+        return (0x40);
+      default:
+        BX_ERROR(("page 3 read register 0x%02x attempted", offset));
+        return (0);
+    }
+  } else {
+    BX_ERROR(("page 3 read register 0x%02x attempted", offset));
+    return (0);
+  }
 }
 
 void
@@ -1303,7 +1315,7 @@ bx_ne2k_c::init(void)
 {
   char devname[16];
 
-  BX_DEBUG(("Init $Id: ne2k.cc,v 1.73 2005/05/26 09:24:28 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: ne2k.cc,v 1.78 2005/12/24 22:35:04 vruppert Exp $"));
 
   // Read in values from config file
   memcpy(BX_NE2K_THIS s.physaddr, bx_options.ne2k.Omacaddr->getptr (), 6);
@@ -1330,6 +1342,7 @@ bx_ne2k_c::init(void)
     BX_NE2K_THIS s.pci_conf[0x0a] = 0x00;
     BX_NE2K_THIS s.pci_conf[0x0b] = 0x02;
     BX_NE2K_THIS s.pci_conf[0x0e] = 0x00;
+    BX_NE2K_THIS s.pci_conf[0x10] = 0x01;
     BX_NE2K_THIS s.pci_conf[0x3d] = BX_PCI_INTA;
     BX_NE2K_THIS s.base_address = 0x0;
   }
@@ -1371,6 +1384,15 @@ bx_ne2k_c::init(void)
     BX_INFO(("port 0x%x/32 irq %d mac %02x:%02x:%02x:%02x:%02x:%02x",
              BX_NE2K_THIS s.base_address,
              BX_NE2K_THIS s.base_irq,
+             BX_NE2K_THIS s.physaddr[0],
+             BX_NE2K_THIS s.physaddr[1],
+             BX_NE2K_THIS s.physaddr[2],
+             BX_NE2K_THIS s.physaddr[3],
+             BX_NE2K_THIS s.physaddr[4],
+             BX_NE2K_THIS s.physaddr[5]));
+  } else {
+    BX_INFO(("%s initialized mac %02x:%02x:%02x:%02x:%02x:%02x",
+             devname,
              BX_NE2K_THIS s.physaddr[0],
              BX_NE2K_THIS s.physaddr[1],
              BX_NE2K_THIS s.physaddr[2],
@@ -1466,9 +1488,9 @@ bx_ne2k_c::pci_read(Bit8u address, unsigned io_len)
     }
     BX_DEBUG(("NE2000 PCI NIC read register 0x%02x value 0x%08x", address, value));
     return value;
-    }
-  else
+  } else {
     return(0xffffffff);
+  }
 }
 
 
@@ -1494,7 +1516,7 @@ bx_ne2k_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
   Bit8u value8, oldval;
   bx_bool baseaddr_change = 0;
 
-  if ((address > 0x11) && (address < 0x34))
+  if ((address > 0x13) && (address < 0x34))
     return;
   if (io_len <= 4) {
     for (unsigned i=0; i<io_len; i++) {
@@ -1506,7 +1528,7 @@ bx_ne2k_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
         case 0x3d:
           break;
         case 0x04:
-          BX_NE2K_THIS s.pci_conf[address+i] = value8 & 0x01;
+          BX_NE2K_THIS s.pci_conf[address+i] = value8 & 0x03;
           break;
         case 0x3c:
           if (value8 != oldval) {
@@ -1515,20 +1537,24 @@ bx_ne2k_c::pci_write(Bit8u address, Bit32u value, unsigned io_len)
           }
           break;
         case 0x10:
+          value8 = (value8 & 0xfc) | 0x01;
         case 0x11:
+        case 0x12:
+        case 0x13:
           baseaddr_change |= (value8 != oldval);
         default:
           BX_NE2K_THIS s.pci_conf[address+i] = value8;
-          BX_DEBUG(("NE2000 PCI NIC write register 0x%02x value 0x%02x", address,
+          BX_DEBUG(("NE2000 PCI NIC write register 0x%02x value 0x%02x", address+i,
                     value8));
       }
     }
     if (baseaddr_change) {
-      DEV_pci_set_base_io(BX_NE2K_THIS_PTR, read_handler, write_handler,
-                          &BX_NE2K_THIS s.base_address,
-                          &BX_NE2K_THIS s.pci_conf[0x10],
-                          32, &ne2k_iomask[0], "NE2000 PCI NIC");
-      BX_INFO(("new base address: 0x%04x", BX_NE2K_THIS s.base_address));
+      if (DEV_pci_set_base_io(BX_NE2K_THIS_PTR, read_handler, write_handler,
+                              &BX_NE2K_THIS s.base_address,
+                              &BX_NE2K_THIS s.pci_conf[0x10],
+                              32, &ne2k_iomask[0], "NE2000 PCI NIC")) {
+        BX_INFO(("new base address: 0x%04x", BX_NE2K_THIS s.base_address));
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.cc,v 1.104.2.1 2005/07/07 08:19:48 vruppert Exp $
+// $Id: cpu.cc,v 1.119 2005/12/28 19:18:50 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -31,30 +31,6 @@
 #include "iodev/iodev.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-#if BX_SIM_ID == 0   // only need to define once
-// This array defines a look-up table for the even parity-ness
-// of an 8bit quantity, for optimal assignment of the parity bit
-// in the EFLAGS register
-const bx_bool bx_parity_lookup[256] = {
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  0, 1, 1, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0, 1, 1, 0,
-  1, 0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1, 0, 0, 1
-  };
-#endif
-
 #if BX_SMP_PROCESSORS==1
 // single processor simulation, so there's one of everything
 BOCHSAPI BX_CPU_C    bx_cpu;
@@ -69,13 +45,25 @@ BOCHSAPI BX_MEM_C    *bx_mem_array[BX_ADDRESS_SPACES];
 
 bxPageWriteStampTable pageWriteStampTable;
 
-void purgeICache(void)
+void purgeICaches(void)
 {
 #if BX_SMP_PROCESSORS == 1
   BX_CPU(0)->iCache.purgeICacheEntries();
 #else
   for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
     BX_CPU(i)->iCache.purgeICacheEntries();
+#endif
+
+  pageWriteStampTable.resetWriteStamps();
+}
+
+void flushICaches(void)
+{
+#if BX_SMP_PROCESSORS == 1
+  BX_CPU(0)->iCache.flushICacheEntries();
+#else
+  for (unsigned i=0; i<BX_SMP_PROCESSORS; i++)
+    BX_CPU(i)->iCache.flushICacheEntries();
 #endif
 
   pageWriteStampTable.resetWriteStamps();
@@ -222,7 +210,7 @@ void BX_CPU_C::cpu_loop(Bit32s max_instr_count)
   bxICacheEntry_c *cache_entry = &(BX_CPU_THIS_PTR iCache.entry[iCacheHash]);
   i = &(cache_entry->i);
 
-  Bit32u pageWriteStamp = pageWriteStampTable.getPageWriteStamp(pAddr);
+  Bit32u pageWriteStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
 
 #if BX_SUPPORT_ICACHE
   InstrICache_Increment(iCacheLookups);
@@ -238,7 +226,7 @@ void BX_CPU_C::cpu_loop(Bit32s max_instr_count)
 #if BX_INSTRUMENTATION
     // An instruction was found in the iCache.
     BX_INSTR_OPCODE(BX_CPU_ID, BX_CPU_THIS_PTR eipFetchPtr + eipBiased,
-          i->ilen(), BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b);
+       i->ilen(), BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, Is64BitMode());
 #endif
   }
   else
@@ -292,8 +280,16 @@ void BX_CPU_C::cpu_loop(Bit32s max_instr_count)
 #if BX_INSTRUMENTATION
       // An instruction was either fetched, or found in the iCache.
       BX_INSTR_OPCODE(BX_CPU_ID, fetchPtr, i->ilen(),
-                  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b);
+           BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, Is64BitMode());
 #endif
+    }
+  }
+
+  bx_address next_RIP = RIP + i->ilen();
+  if (! Is64BitMode()) {
+    if (((Bit32u) next_RIP - 1) > BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled) {
+      BX_ERROR(("GP(0): instruction cross segment boundary !"));
+      exception(BX_GP_EXCEPTION, 0, 0);
     }
   }
 
@@ -316,120 +312,122 @@ void BX_CPU_C::cpu_loop(Bit32s max_instr_count)
   // decoding instruction compeleted -> continue with execution
   BX_INSTR_BEFORE_EXECUTION(BX_CPU_ID, i);
 
-    if ( !(i->repUsedL() && i->repeatableL()) ) {
-      // non repeating instruction
-      RIP += i->ilen();
-      BX_CPU_CALL_METHOD(execute, (i));
-      BX_CPU_THIS_PTR prev_eip = RIP; // commit new EIP
-      BX_CPU_THIS_PTR prev_esp = RSP; // commit new ESP
+  if ( !(i->repUsedL() && i->repeatableL()) ) {
+    // non repeating instruction
+    RIP = next_RIP;
+    BX_CPU_CALL_METHOD(execute, (i));
+    BX_CPU_THIS_PTR prev_eip = RIP; // commit new EIP
+    BX_CPU_THIS_PTR prev_esp = RSP; // commit new ESP
 
-      BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
-      BX_TICK1_IF_SINGLE_PROCESSOR();
-    }
-    else {
+    BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
+    BX_TICK1_IF_SINGLE_PROCESSOR();
+  }
+  else {
 
 repeat_loop:
-      if (i->repeatableZFL()) {
+
+    if (i->repeatableZFL()) {
 #if BX_SUPPORT_X86_64
-        if (i->as64L()) {
-          if (RCX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            RCX --;
-          }
-          if ((i->repUsedValue()==3) && (get_ZF()==0)) goto repeat_done;
-          if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto repeat_done;
-          if (RCX == 0) goto repeat_done;
-          goto repeat_not_done;
+      if (i->as64L()) {
+        if (RCX != 0) {
+          BX_CPU_CALL_METHOD(execute, (i));
+          RCX --;
         }
-        else
-#endif
-        if (i->as32L()) {
-          if (ECX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            ECX --;
-          }
-          if ((i->repUsedValue()==3) && (get_ZF()==0)) goto repeat_done;
-          if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto repeat_done;
-          if (ECX == 0) goto repeat_done;
-          goto repeat_not_done;
-        }
-        else {
-          if (CX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            CX --;
-          }
-          if ((i->repUsedValue()==3) && (get_ZF()==0)) goto repeat_done;
-          if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto repeat_done;
-          if (CX == 0) goto repeat_done;
-          goto repeat_not_done;
-        }
+        if ((i->repUsedValue()==3) && (get_ZF()==0)) goto repeat_done;
+        if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto repeat_done;
+        if (RCX == 0) goto repeat_done;
+        goto repeat_not_done;
       }
-      else { // normal repeat, no concern for ZF
+      else
+#endif
+      if (i->as32L()) {
+        if (ECX != 0) {
+          BX_CPU_CALL_METHOD(execute, (i));
+          ECX --;
+        }
+        if ((i->repUsedValue()==3) && (get_ZF()==0)) goto repeat_done;
+        if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto repeat_done;
+        if (ECX == 0) goto repeat_done;
+        goto repeat_not_done;
+      }
+      else {
+        if (CX != 0) {
+          BX_CPU_CALL_METHOD(execute, (i));
+          CX --;
+        }
+        if ((i->repUsedValue()==3) && (get_ZF()==0)) goto repeat_done;
+        if ((i->repUsedValue()==2) && (get_ZF()!=0)) goto repeat_done;
+        if (CX == 0) goto repeat_done;
+        goto repeat_not_done;
+      }
+    }
+    else { // normal repeat, no concern for ZF
 #if BX_SUPPORT_X86_64
-        if (i->as64L()) {
-          if (RCX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            RCX --;
-          }
-          if (RCX == 0) goto repeat_done;
-          goto repeat_not_done;
+      if (i->as64L()) {
+        if (RCX != 0) {
+          BX_CPU_CALL_METHOD(execute, (i));
+          RCX --;
         }
-        else
-#endif
-        if (i->as32L()) {
-          if (ECX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            ECX --;
-          }
-          if (ECX == 0) goto repeat_done;
-          goto repeat_not_done;
-        }
-        else { // 16bit addrsize
-          if (CX != 0) {
-            BX_CPU_CALL_METHOD(execute, (i));
-            CX --;
-          }
-          if (CX == 0) goto repeat_done;
-          goto repeat_not_done;
-        }
+        if (RCX == 0) goto repeat_done;
+        goto repeat_not_done;
       }
-      // shouldn't get here from above
+      else
+#endif
+      if (i->as32L()) {
+        if (ECX != 0) {
+          BX_CPU_CALL_METHOD(execute, (i));
+          ECX --;
+        }
+        if (ECX == 0) goto repeat_done;
+        goto repeat_not_done;
+      }
+      else { // 16bit addrsize
+        if (CX != 0) {
+          BX_CPU_CALL_METHOD(execute, (i));
+          CX --;
+        }
+        if (CX == 0) goto repeat_done;
+        goto repeat_not_done;
+      }
+    }
+
+    // shouldn't get here from above
 repeat_not_done:
-      BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-      BX_TICK1_IF_SINGLE_PROCESSOR();
+    BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+    BX_TICK1_IF_SINGLE_PROCESSOR();
 
 #if BX_DEBUGGER == 0
-      if (BX_CPU_THIS_PTR async_event) {
-        invalidate_prefetch_q();
-        goto debugger_check;
-      }
-      goto repeat_loop;
-#else  /* if BX_DEBUGGER == 1 */
+    if (BX_CPU_THIS_PTR async_event) {
       invalidate_prefetch_q();
       goto debugger_check;
+    }
+    goto repeat_loop;
+#else  /* if BX_DEBUGGER == 1 */
+    invalidate_prefetch_q();
+    goto debugger_check;
 #endif
 
 repeat_done:
-      RIP += i->ilen();
-      BX_CPU_THIS_PTR prev_eip = RIP; // commit new EIP
-      BX_CPU_THIS_PTR prev_esp = RSP; // commit new ESP
-      BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
-      BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
-      BX_TICK1_IF_SINGLE_PROCESSOR();
-    }
+    RIP = next_RIP;
+    BX_CPU_THIS_PTR prev_eip = RIP; // commit new EIP
+    BX_CPU_THIS_PTR prev_esp = RSP; // commit new ESP
+    BX_INSTR_REPEAT_ITERATION(BX_CPU_ID, i);
+    BX_INSTR_AFTER_EXECUTION(BX_CPU_ID, i);
+    BX_TICK1_IF_SINGLE_PROCESSOR();
+  }
 
 debugger_check:
-    // inform instrumentation about new instruction
-    BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
+  // inform instrumentation about new instruction
+  BX_INSTR_NEW_INSTRUCTION(BX_CPU_ID);
 
 #if (BX_SMP_PROCESSORS>1 && BX_DEBUGGER==0)
-    // The CHECK_MAX_INSTRUCTIONS macro allows cpu_loop to execute a few
-    // instructions and then return so that the other processors have a chance
-    // to run.  This is used only when simulating multiple processors.  If only
-    // one processor, don't waste any cycles on it!  Also, it is not needed
-    // with the debugger because its guard mechanism provides the same
-    // functionality.
-    CHECK_MAX_INSTRUCTIONS(max_instr_count);
+  // The CHECK_MAX_INSTRUCTIONS macro allows cpu_loop to execute a few
+  // instructions and then return so that the other processors have a chance
+  // to run.  This is used only when simulating multiple processors.  If only
+  // one processor, don't waste any cycles on it!  Also, it is not needed
+  // with the debugger because its guard mechanism provides the same
+  // functionality.
+  CHECK_MAX_INSTRUCTIONS(max_instr_count);
 #endif
 
 #if BX_DEBUGGER
@@ -473,13 +471,13 @@ debugger_check:
 
     {
       // check for icount or control-C.  If found, set guard reg and return.
-    Bit32u debug_eip = BX_CPU_THIS_PTR prev_eip;
-    if ( dbg_is_end_instr_bpoint(
+      Bit32u debug_eip = BX_CPU_THIS_PTR prev_eip;
+      if ( dbg_is_end_instr_bpoint(
            BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
            debug_eip,
            BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + debug_eip,
            BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b) ) {
-      return;
+        return;
       }
     }
 #endif  // #if BX_DEBUGGER
@@ -724,21 +722,20 @@ unsigned BX_CPU_C::handleAsyncEvent(void)
 
 void BX_CPU_C::prefetch(void)
 {
-  // cs:eIP
   // prefetch QSIZE byte quantity aligned on corresponding boundary
-  bx_address laddr;
   Bit32u pAddr;
-  bx_address temp_rip;
-  Bit32u temp_limit;
   bx_address laddrPageOffset0, eipPageOffset0;
 
-  temp_rip   = RIP;
-  temp_limit = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled;
-  laddr = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + temp_rip;
+  bx_address temp_rip = RIP;
+  bx_address laddr = BX_CPU_THIS_PTR get_segment_base(BX_SEG_REG_CS) + temp_rip;
 
-  if (((Bit32u)temp_rip) > temp_limit) {
-    BX_PANIC(("prefetch: RIP > CS.limit"));
-    exception(BX_GP_EXCEPTION, 0, 0);
+  if (! Is64BitMode()) {
+    Bit32u temp_limit = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.limit_scaled;
+
+    if (((Bit32u) temp_rip) > temp_limit) {
+      BX_PANIC(("prefetch: RIP > CS.limit"));
+      exception(BX_GP_EXCEPTION, 0, 0);
+    }
   }
 
 #if BX_SUPPORT_PAGING
@@ -752,10 +749,6 @@ void BX_CPU_C::prefetch(void)
   {
     pAddr = A20ADDR(laddr);
   }
-
-  // check if segment boundary comes into play
-  //if ((temp_limit - (Bit32u)temp_rip) < 4096) {
-  //  }
 
   // Linear address at the beginning of the page.
 #if BX_SUPPORT_X86_64
@@ -782,7 +775,8 @@ void BX_CPU_C::prefetch(void)
   }
 
 #if BX_SUPPORT_ICACHE
-  Bit32u pageWriteStamp = pageWriteStampTable.getPageWriteStamp(pAddr);
+  BX_CPU_THIS_PTR currPageWriteStampPtr = pageWriteStampTable.getPageWriteStampPtr(pAddr);
+  Bit32u pageWriteStamp = *(BX_CPU_THIS_PTR currPageWriteStampPtr);
   Bit32u fetchModeMask  = BX_CPU_THIS_PTR iCache.fetchModeMask;
   if ((pageWriteStamp & ICacheFetchModeMask) != fetchModeMask)
   {
@@ -797,54 +791,54 @@ void BX_CPU_C::prefetch(void)
 
 void BX_CPU_C::boundaryFetch(Bit8u *fetchPtr, unsigned remainingInPage, bxInstruction_c *i)
 {
-    unsigned j;
-    Bit8u fetchBuffer[16]; // Really only need 15
-    unsigned ret;
+  unsigned j;
+  Bit8u fetchBuffer[16]; // Really only need 15
+  unsigned ret;
 
-    if (remainingInPage >= 15) {
-      BX_INFO(("fetchDecode #GP(0): too many instruction prefixes"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (remainingInPage >= 15) {
+    BX_INFO(("fetchDecode #GP(0): too many instruction prefixes"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
-    // Read all leftover bytes in current page up to boundary.
-    for (j=0; j<remainingInPage; j++) {
-      fetchBuffer[j] = *fetchPtr++;
-    }
+  // Read all leftover bytes in current page up to boundary.
+  for (j=0; j<remainingInPage; j++) {
+    fetchBuffer[j] = *fetchPtr++;
+  }
 
-    // The 2nd chunk of the instruction is on the next page.
-    // Set RIP to the 0th byte of the 2nd page, and force a
-    // prefetch so direct access of that physical page is possible, and
-    // all the associated info is updated.
-    RIP += remainingInPage;
-    prefetch();
-    if (BX_CPU_THIS_PTR eipPageWindowSize < 15) {
-      BX_PANIC(("fetch_decode: small window size after prefetch"));
-    }
+  // The 2nd chunk of the instruction is on the next page.
+  // Set RIP to the 0th byte of the 2nd page, and force a
+  // prefetch so direct access of that physical page is possible, and
+  // all the associated info is updated.
+  RIP += remainingInPage;
+  prefetch();
+  if (BX_CPU_THIS_PTR eipPageWindowSize < 15) {
+    BX_PANIC(("fetch_decode: small window size after prefetch"));
+  }
 
-    // We can fetch straight from the 0th byte, which is eipFetchPtr;
-    fetchPtr = BX_CPU_THIS_PTR eipFetchPtr;
+  // We can fetch straight from the 0th byte, which is eipFetchPtr;
+  fetchPtr = BX_CPU_THIS_PTR eipFetchPtr;
 
-    // read leftover bytes in next page
-    for (; j<15; j++) {
-      fetchBuffer[j] = *fetchPtr++;
-    }
+  // read leftover bytes in next page
+  for (; j<15; j++) {
+    fetchBuffer[j] = *fetchPtr++;
+  }
 #if BX_SUPPORT_X86_64
-    if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-      ret = fetchDecode64(fetchBuffer, i, 15);
-    }
-    else
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    ret = fetchDecode64(fetchBuffer, i, 15);
+  }
+  else
 #endif
-    {
-      ret = fetchDecode(fetchBuffer, i, 15);
-    }
+  {
+    ret = fetchDecode(fetchBuffer, i, 15);
+  }
 
-    if (ret==0) {
-      BX_INFO(("fetchDecode #GP(0): cross boundary"));
-      exception(BX_GP_EXCEPTION, 0, 0);
-    }
+  if (ret==0) {
+    BX_INFO(("fetchDecode #GP(0): cross boundary"));
+    exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
-    // Restore EIP since we fudged it to start at the 2nd page boundary.
-    RIP = BX_CPU_THIS_PTR prev_eip;
+  // Restore EIP since we fudged it to start at the 2nd page boundary.
+  RIP = BX_CPU_THIS_PTR prev_eip;
 
 // Since we cross an instruction boundary, note that we need a prefetch()
 // again on the next instruction.  Perhaps we can optimize this to
@@ -853,14 +847,13 @@ void BX_CPU_C::boundaryFetch(Bit8u *fetchPtr, unsigned remainingInPage, bxInstru
 BX_CPU_THIS_PTR eipPageWindowSize = 0; // Fixme
 
   BX_INSTR_OPCODE(BX_CPU_ID, fetchBuffer, i->ilen(),
-                  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b);
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b, Is64BitMode());
 }
 
 
 #if BX_EXTERNAL_DEBUGGER
 
-  void
-BX_CPU_C::ask (int level, const char *prefix, const char *fmt, va_list ap)
+void BX_CPU_C::ask (int level, const char *prefix, const char *fmt, va_list ap)
 {
   char buf1[1024];
   vsprintf (buf1, fmt, ap);
@@ -868,8 +861,7 @@ BX_CPU_C::ask (int level, const char *prefix, const char *fmt, va_list ap)
   trap_debugger(1);
 }
 
-  void
-BX_CPU_C::trap_debugger (bx_bool callnow)
+void BX_CPU_C::trap_debugger (bx_bool callnow)
 {
   regs.debug_state = debug_step;
   if (callnow) {
@@ -883,10 +875,10 @@ BX_CPU_C::trap_debugger (bx_bool callnow)
 #if BX_DEBUGGER
 extern unsigned int dbg_show_mask;
 
-  bx_bool
-BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
-                                    Bit32u is_32)
-{
+bx_bool BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr, Bit32u is_32)
+{ 
+  Bit64u tt = bx_pc_system.time_ticks();
+
   //fprintf (stderr, "begin_instr_bp: checking cs:eip %04x:%08x\n", cs, eip);
   BX_CPU_THIS_PTR guard_found.cs  = cs;
   BX_CPU_THIS_PTR guard_found.eip = eip;
@@ -916,13 +908,16 @@ BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
   if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_ALL) {
 #if BX_DBG_SUPPORT_VIR_BPOINT
     if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_VIR) {
-      if (BX_CPU_THIS_PTR guard_found.icount!=0) {
+      if ((BX_CPU_THIS_PTR guard_found.icount!=0) ||
+          (tt != BX_CPU_THIS_PTR guard_found.time_tick))
+      {
         for (unsigned i=0; i<bx_guard.iaddr.num_virtual; i++) {
           if ( bx_guard.iaddr.vir[i].enabled &&
                (bx_guard.iaddr.vir[i].cs  == cs) &&
                (bx_guard.iaddr.vir[i].eip == eip) ) {
             BX_CPU_THIS_PTR guard_found.guard_found = BX_DBG_GUARD_IADDR_VIR;
             BX_CPU_THIS_PTR guard_found.iaddr_index = i;
+	    BX_CPU_THIS_PTR guard_found.time_tick = tt;
             return(1); // on a breakpoint
           }
         }
@@ -931,12 +926,15 @@ BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
 #endif
 #if BX_DBG_SUPPORT_LIN_BPOINT
     if (bx_guard.guard_for & BX_DBG_GUARD_IADDR_LIN) {
-      if (BX_CPU_THIS_PTR guard_found.icount!=0) {
+      if ((BX_CPU_THIS_PTR guard_found.icount!=0) ||
+          (tt != BX_CPU_THIS_PTR guard_found.time_tick))
+      {
         for (unsigned i=0; i<bx_guard.iaddr.num_linear; i++) {
           if (bx_guard.iaddr.lin[i].enabled && 
               (bx_guard.iaddr.lin[i].addr == BX_CPU_THIS_PTR guard_found.laddr) ) {
             BX_CPU_THIS_PTR guard_found.guard_found = BX_DBG_GUARD_IADDR_LIN;
             BX_CPU_THIS_PTR guard_found.iaddr_index = i;
+	    BX_CPU_THIS_PTR guard_found.time_tick = tt;
             return(1); // on a breakpoint
           }
         }
@@ -953,12 +951,15 @@ BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
       // continue beyond a breakpoint.  Bryce tried removing it once,
       // and once you get to a breakpoint you are stuck there forever.
       // Not pretty.
-      if (valid && (BX_CPU_THIS_PTR guard_found.icount!=0)) {
+      if (valid && ((BX_CPU_THIS_PTR guard_found.icount!=0) ||
+          (tt != BX_CPU_THIS_PTR guard_found.time_tick)))
+      {
         for (unsigned i=0; i<bx_guard.iaddr.num_physical; i++) {
-          if ( bx_guard.iaddr.phy[i].enabled && 
-               (bx_guard.iaddr.phy[i].addr == phy) ) {
+          if (bx_guard.iaddr.phy[i].enabled && (bx_guard.iaddr.phy[i].addr == phy))
+          {
             BX_CPU_THIS_PTR guard_found.guard_found = BX_DBG_GUARD_IADDR_PHY;
             BX_CPU_THIS_PTR guard_found.iaddr_index = i;
+	    BX_CPU_THIS_PTR guard_found.time_tick = tt;
             return(1); // on a breakpoint
           }
         }
@@ -966,9 +967,9 @@ BX_CPU_C::dbg_is_begin_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
     }
 #endif
   }
+
   return(0); // not on a breakpoint
 }
-
 
   bx_bool
 BX_CPU_C::dbg_is_end_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
@@ -1011,9 +1012,7 @@ BX_CPU_C::dbg_is_end_instr_bpoint(Bit32u cs, Bit32u eip, Bit32u laddr,
   return(0); // no breakpoint
 }
 
-
-  void
-BX_CPU_C::dbg_take_irq(void)
+void BX_CPU_C::dbg_take_irq(void)
 {
   unsigned vector;
 
@@ -1031,8 +1030,7 @@ BX_CPU_C::dbg_take_irq(void)
   }
 }
 
-  void
-BX_CPU_C::dbg_force_interrupt(unsigned vector)
+void BX_CPU_C::dbg_force_interrupt(unsigned vector)
 {
   // Used to force slave simulator to take an interrupt, without
   // regard to IF
@@ -1046,8 +1044,7 @@ BX_CPU_C::dbg_force_interrupt(unsigned vector)
   }
 }
 
-  void
-BX_CPU_C::dbg_take_dma(void)
+void BX_CPU_C::dbg_take_dma(void)
 {
   // NOTE: similar code in ::cpu_loop()
   if ( BX_HRQ ) {

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: flag_ctrl_pro.cc,v 1.16.4.1 2005/07/07 08:05:45 vruppert Exp $
+// $Id: flag_ctrl_pro.cc,v 1.22 2005/11/21 21:10:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -30,16 +30,34 @@
 #define LOG_THIS BX_CPU_THIS_PTR
 
 
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::setEFlags(Bit32u val)
+{
+  // VM flag could not be set from long mode
+#if BX_SUPPORT_X86_64
+  if (IsLongMode()) {
+    if (get_VM()) BX_PANIC(("VM is set in long mode !"));
+    val &= ~EFlagsVMMask;
+  }
+#endif
+
+  BX_CPU_THIS_PTR eflags.val32 = val;
+  BX_CPU_THIS_PTR lf_flags_status = 0; // OSZAPC flags are known.
+  set_VM(val & EFlagsVMMask);
+}
+
   void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::writeEFlags(Bit32u flags, Bit32u changeMask)
 {
   Bit32u supportMask, newEFlags;
   
   // Build a mask of the non-reserved bits:
-  // x,x,x,x,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
+  // ID,VIP,VIF,AC,VM,RF,x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
   supportMask = 0x00037fd5;
 #if BX_CPU_LEVEL >= 4
-  supportMask |= ((1<<21) | (1<<18)); // ID/AC
+  supportMask |= (EFlagsIDMask | EFlagsACMask); // ID/AC
+#endif
+#if BX_SUPPORT_VME
+  supportMask |= (EFlagsVPMask | EFlagsVFMask); // VIP/VIF
 #endif
 
   // Screen out changing of any unsupported bits.
@@ -47,52 +65,31 @@ BX_CPU_C::writeEFlags(Bit32u flags, Bit32u changeMask)
 
   newEFlags = (BX_CPU_THIS_PTR eflags.val32 & ~changeMask) |
               (flags & changeMask);
-  BX_CPU_THIS_PTR setEFlags( newEFlags );
-  BX_CPU_THIS_PTR lf_flags_status = 0; // OSZAPC flags are known.
+  BX_CPU_THIS_PTR setEFlags(newEFlags);
+  // OSZAPC flags are known - done in setEFlags(newEFlags)
 
-  if (newEFlags & (1 << 8)) {
+  if (newEFlags & EFlagsTFMask) {
     BX_CPU_THIS_PTR async_event = 1; // TF = 1
-    }
+  }
 }
 
   void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_flags(Bit16u flags, bx_bool change_IOPL, bx_bool change_IF)
 {
+  // Build a mask of the following bits:
+  // x,NT,IOPL,OF,DF,IF,TF,SF,ZF,x,AF,x,PF,x,CF
   Bit32u changeMask = 0x0dd5;
 
 #if BX_CPU_LEVEL >= 3
-  changeMask |= (1<<14); // NT is modified as requested.
+  changeMask |= EFlagsNTMask;     // NT is modified as requested.
   if (change_IOPL)
-    changeMask |= (3<<12); // IOPL is modified as requested.
+    changeMask |= EFlagsIOPLMask; // IOPL is modified as requested.
 #endif
   if (change_IF)
-    changeMask |= (1<<9);
+    changeMask |= EFlagsIFMask;
 
   writeEFlags(Bit32u(flags), changeMask);
 }
-
-
-#if BX_CPU_LEVEL >= 3
-void BX_CPU_C::write_eflags(Bit32u eflags_raw, bx_bool change_IOPL, 
-                bx_bool change_IF, bx_bool change_VM, bx_bool change_RF)
-{
-  Bit32u changeMask = 0x4dd5;
-
-#if BX_CPU_LEVEL >= 4
-  changeMask |= ((1<<21) | (1<<18)); // ID/AC
-#endif
-  if (change_IOPL)
-    changeMask |= (3<<12);
-  if (change_IF)
-    changeMask |= (1<<9);
-  if (change_VM)
-    changeMask |= (1<<17);
-  if (change_RF)
-    changeMask |= (1<<16);
-
-  writeEFlags(eflags_raw, changeMask);
-}
-#endif /* BX_CPU_LEVEL >= 3 */
 
 // Cause arithmetic flags to be in known state and cached in val32.
 Bit32u BX_CPU_C::force_flags(void)
@@ -135,12 +132,10 @@ Bit32u BX_CPU_C::read_eflags(void)
 {
   Bit32u flags32 = BX_CPU_THIS_PTR force_flags();
 
-#if 0
   /*
    * 386+: real-mode: bit15 cleared, bits 14..12 are last loaded value
    *       protected-mode: bit 15 clear, bit 14 = last loaded, IOPL?
    */
-#endif
 
   return(flags32);
 }

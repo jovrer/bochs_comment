@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h,v 1.19 2005/03/11 21:12:54 vruppert Exp $
+// $Id: floppy.h,v 1.26 2005/11/22 18:34:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -87,6 +87,8 @@ private:
     Bit8u   cylinder[4]; // really only using 2 drives
     Bit8u   head[4];     // really only using 2 drives
     Bit8u   sector[4];   // really only using 2 drives
+    Bit8u   eot[4];      // really only using 2 drives
+    bx_bool TC;          // Terminal Count status from DMA controller
 
     /* MAIN STATUS REGISTER
      * b7: MRQ: main request 1=data register ready     0=data register not ready
@@ -113,14 +115,22 @@ private:
     Bit8u    floppy_buffer[512+2]; // 2 extra for good measure
     unsigned floppy_buffer_index;
     int      floppy_timer_index;
-    bx_bool  media_present[2];
+    bx_bool  media_present[4];
     Bit8u    device_type[4];
     Bit8u    DIR[4]; // Digital Input Register:
                   // b7: 0=diskette is present and has not been changed
                   //     1=diskette missing or changed
-    bx_bool  non_dma;
+    bx_bool  non_dma;   // non-DMA mode
+    bx_bool  lock;      // FDC lock status
+    Bit8u    SRT;       // step rate time
+    Bit8u    HUT;       // head unload time
+    Bit8u    HLT;       // head load time
+    Bit8u    config;    // configure byte #1
+    Bit8u    pretrk;    // precompensation track
+    Bit8u    perp_mode; // perpendicular mode
+
     int      statusbar_id[2]; // IDs of the status LEDs
-    } s;  // state information
+  } s;  // state information
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -136,13 +146,15 @@ private:
   BX_FD_SMF void   lower_interrupt(void);
   BX_FD_SMF void   enter_idle_phase(void);
   BX_FD_SMF void   enter_result_phase(void);
+  BX_FD_SMF Bit32u calculate_step_delay(Bit8u drive, Bit8u new_cylinder);
+  BX_FD_SMF void   reset_changeline(void);
   static void      timer_handler(void *);
 
 public:
   BX_FD_SMF void   timer(void);
   BX_FD_SMF void   increment_sector(void);
-  BX_FD_SMF bx_bool evaluate_media(unsigned type, char *path, floppy_t *floppy);
-  };
+  BX_FD_SMF bx_bool evaluate_media(Bit8u devtype, Bit8u type, char *path, floppy_t *floppy);
+};
 
 
 #ifdef WIN32

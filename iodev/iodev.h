@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.61 2005/04/02 11:30:08 vruppert Exp $
+// $Id: iodev.h,v 1.68 2005/12/10 18:37:35 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -109,12 +109,6 @@ class BOCHSAPI bx_keyb_stub_c : public bx_devmodel_c {
   virtual void paste_bytes(Bit8u *data, Bit32s length) {
     STUBFUNC(keyboard, paste_bytes);
   }
-  virtual void paste_delay_changed () {
-    STUBFUNC(keyboard, paste_delay_changed);
-  }
-  virtual void mouse_enabled_changed(bool enabled) {
-    STUBFUNC(keyboard, mouse_enabled_changed);
-  }
 };
 
 class BOCHSAPI bx_hard_drive_stub_c : public bx_devmodel_c {
@@ -149,7 +143,7 @@ class BOCHSAPI bx_hard_drive_stub_c : public bx_devmodel_c {
   {
     STUBFUNC(HD, virt_write_handler);
   }
-  virtual bx_bool bmdma_read_sector(Bit8u channel, Bit8u *buffer) {
+  virtual bx_bool bmdma_read_sector(Bit8u channel, Bit8u *buffer, Bit32u *sector_size) {
     STUBFUNC(HD, bmdma_read_sector); return 0;
   }
   virtual bx_bool bmdma_write_sector(Bit8u channel, Bit8u *buffer) {
@@ -179,11 +173,13 @@ class BOCHSAPI bx_cmos_stub_c : public bx_devmodel_c {
     STUBFUNC(cmos, set_reg);
   }
   virtual time_t get_timeval() {
-    // STUBFUNC(cmos, get_timeval); 
     return 0;
   }
   virtual void checksum_cmos(void) {
     STUBFUNC(cmos, checksum);
+  }
+  virtual void save_image(void) {
+    STUBFUNC(cmos, save_image);
   }
 };
 
@@ -257,9 +253,6 @@ class BOCHSAPI bx_vga_stub_c : public bx_devmodel_c {
   virtual void trigger_timer(void *this_ptr) {
     STUBFUNC(vga, trigger_timer); 
   }
-  virtual void set_update_interval (unsigned interval) {
-    STUBFUNC(vga, set_update_interval); 
-  }
   virtual Bit8u get_actl_palette_idx(Bit8u index) {
     return 0;
   }
@@ -278,15 +271,17 @@ class BOCHSAPI bx_pci_stub_c : public bx_devmodel_c {
   virtual bx_bool is_pci_device (const char *name) {
     return 0;
   }
-  virtual void pci_set_base_mem(void *this_ptr, memory_handler_t f1, memory_handler_t f2,
-                                Bit32u *addr, Bit8u *pci_conf, unsigned size) {
+  virtual bx_bool pci_set_base_mem(void *this_ptr, memory_handler_t f1, memory_handler_t f2,
+                                   Bit32u *addr, Bit8u *pci_conf, unsigned size) {
     STUBFUNC(pci, pci_set_base_mem);
+    return 0;
   }
 
-  virtual void pci_set_base_io(void *this_ptr, bx_read_handler_t f1, bx_write_handler_t f2,
-                              Bit32u *addr, Bit8u *pci_conf, unsigned size,
-                              const Bit8u *iomask, const char *name) {
+  virtual bx_bool pci_set_base_io(void *this_ptr, bx_read_handler_t f1, bx_write_handler_t f2,
+                                  Bit32u *addr, Bit8u *pci_conf, unsigned size,
+                                  const Bit8u *iomask, const char *name) {
     STUBFUNC(pci, pci_set_base_io);
+    return 0;
   }
 
   virtual Bit8u rd_memType (Bit32u addr) {
@@ -307,9 +302,10 @@ class BOCHSAPI bx_pci2isa_stub_c : public bx_devmodel_c {
 
 class BOCHSAPI bx_pci_ide_stub_c : public bx_devmodel_c {
   public:
-  virtual bx_bool bmdma_present (void) {
+  virtual bx_bool bmdma_present(void) {
     return 0;
   }
+  virtual void bmdma_set_irq(Bit8u channel) {}
 };
 
 class BOCHSAPI bx_ne2k_stub_c : public bx_devmodel_c {
@@ -504,7 +500,7 @@ private:
   bx_bool is_parallel_enabled ();
   };
 
-
+#ifndef NO_DEVICE_INCLUDES
 
 #if BX_SUPPORT_PCI
 #include "iodev/pci.h"
@@ -554,6 +550,8 @@ private:
 #include "iodev/slowdown_timer.h"
 #include "iodev/extfpuirq.h"
 #include "iodev/gameport.h"
+
+#endif /* NO_DEVICE_INCLUDES */
 
 #if ( BX_PROVIDE_DEVICE_MODELS==1 )
 BOCHSAPI extern bx_devices_c   bx_devices;

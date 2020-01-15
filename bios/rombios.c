@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.138.2.1 2005/07/06 19:30:36 vruppert Exp $
+// $Id: rombios.c,v 1.158 2005/12/26 10:35:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -22,7 +22,7 @@
 //
 //  You should have received a copy of the GNU Lesser General Public
 //  License along with this library; if not, write to the Free Software
-//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301 USA
 
 // ROM BIOS for use with Bochs/Plex x86 emulation environment
 
@@ -202,6 +202,11 @@
 #define PANIC_PORT2 0x401
 #define INFO_PORT   0x402
 #define DEBUG_PORT  0x403
+
+// define this if you want to make PCIBIOS working on a specific bridge only
+// undef enables PCIBIOS when at least one PCI device is found
+// i440FX is emulated by Bochs and QEMU
+#define PCI_FIXED_HOST_BRIDGE 0x12378086 ;; i440FX PCI bridge
 
 // #20  is dec 20
 // #$20 is hex 20 = 32
@@ -717,7 +722,7 @@ typedef struct {
   
   // for access to EBDA area
   //     The EBDA structure should conform to 
-  //     http://www.cybertrails.com/~fys/rombios.htm document
+  //     http://www.frontiernet.net/~fys/rombios.htm document
   //     I made the ata and cdemu structs begin at 0x121 in the EBDA seg
   typedef struct {
     unsigned char filler1[0x3D];
@@ -880,8 +885,6 @@ static void           int1a_function();
 static void           int70_function();
 static void           int74_function();
 static Bit16u         get_CS();
-//static Bit16u         get_DS();
-//static void           set_DS();
 static Bit16u         get_SS();
 static unsigned int   enqueue_key();
 static unsigned int   dequeue_key();
@@ -934,13 +937,9 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.138.2.1 $";
-static char bios_date_string[] = "$Date: 2005/07/06 19:30:36 $";
+static char bios_cvs_version_string[] = "$Revision: 1.158 $ $Date: 2005/12/26 10:35:51 $";
 
-static char CVSID[] = "$Id: rombios.c,v 1.138.2.1 2005/07/06 19:30:36 vruppert Exp $";
-
-/* Offset to skip the CVS $Id: prefix */ 
-#define bios_version_string  (CVSID + 4)
+#define BIOS_COPYRIGHT_STRING "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
 #define BIOS_PRINTF_HALT     1
 #define BIOS_PRINTF_SCREEN   2
@@ -1392,31 +1391,6 @@ ASM_START
 ASM_END
 }
 
-//  Bit16u
-//get_DS()
-//{
-//ASM_START
-//  mov  ax, ds
-//ASM_END
-//}
-//
-//  void
-//set_DS(ds_selector)
-//  Bit16u ds_selector;
-//{
-//ASM_START
-//  push bp
-//  mov  bp, sp
-//
-//    push ax
-//    mov  ax, 4[bp] ; ds_selector
-//    mov  ds, ax
-//    pop  ax
-//
-//  pop  bp
-//ASM_END
-//}
-
   Bit16u
 get_SS()
 {
@@ -1546,6 +1520,23 @@ put_uint(action, val, width, neg)
   send(action, val - (nval * 10) + '0');
 }
 
+  void
+put_luint(action, val, width, neg)
+  Bit16u action;
+  unsigned long val;
+  short width;
+  bx_bool neg;
+{
+  unsigned long nval = val / 10;
+  if (nval)
+    put_luint(action, nval, width - 1, neg);
+  else {
+    while (--width > 0) send(action, ' ');
+    if (neg) send(action, '-');
+  }
+  send(action, val - (nval * 10) + '0');
+}
+
 //--------------------------------------------------------------------------
 // bios_printf()
 //   A compact variable argument printf function which prints its output via
@@ -1564,7 +1555,7 @@ bios_printf(action, s)
   bx_bool  in_format;
   short i;
   Bit16u  *arg_ptr;
-  Bit16u   arg_seg, arg, nibble, shift_count, format_width;
+  Bit16u   arg_seg, arg, nibble, hibyte, shift_count, format_width;
 
   arg_ptr = &s;
   arg_seg = get_SS();
@@ -1601,6 +1592,12 @@ bios_printf(action, s)
           }
         else if (c == 'u') {
           put_uint(action, arg, format_width, 0);
+          }
+        else if (c == 'l') {
+          s++;
+          arg_ptr++; /* increment to next arg */
+          hibyte = read_word(arg_seg, arg_ptr);
+          put_luint(action, ((Bit32u) hibyte << 16) | arg, format_width, 0);
           }
         else if (c == 'd') {
           if (arg & 0x8000)
@@ -1822,9 +1819,24 @@ shutdown_status_panic(status)
 void
 print_bios_banner()
 {
-  printf(BX_APPNAME" BIOS, %d cpu%s, ", BX_SMP_PROCESSORS, BX_SMP_PROCESSORS>1?"s":"");
-  printf("%s %s\n", bios_cvs_version_string, bios_date_string);
-  printf("\n");
+  printf(BX_APPNAME" BIOS - build: %s\n%s\nOptions: ",
+    BIOS_BUILD_DATE, bios_cvs_version_string);
+#if BX_SMP_PROCESSORS > 1
+  printf("smp (%d cpus) ", BX_SMP_PROCESSORS);
+#else
+  printf("1 cpu ");
+#endif
+  printf(
+#ifdef BX_APM
+  "apmbios "
+#endif
+#ifdef BX_PCIBIOS
+  "pcibios "
+#endif
+#ifdef BX_ELTORITO_BOOT
+  "eltorito "
+#endif
+  "\n\n");
 }
 
 //--------------------------------------------------------------------------
@@ -1912,7 +1924,7 @@ log_bios_start()
 #if BX_DEBUG_SERIAL
   outb(BX_DEBUG_PORT+UART_LCR, 0x03); /* setup for serial logging: 8N1 */
 #endif
-  BX_INFO("%s\n", bios_version_string);
+  BX_INFO("%s\n", bios_cvs_version_string);
 }
 
   bx_bool
@@ -2390,7 +2402,7 @@ void ata_detect( )
         case ATA_TYPE_ATA:
           printf("ata%d %s: ",channel,slave?" slave":"master");
           i=0; while(c=read_byte(get_SS(),model+i++)) printf("%c",c);
-          printf(" ATA-%d Hard-Disk (%d MBytes)\n",version,(Bit16u)sizeinmb);
+          printf(" ATA-%d Hard-Disk (%lu MBytes)\n", version, sizeinmb);
           break;
         case ATA_TYPE_ATAPI:
           printf("ata%d %s: ",channel,slave?" slave":"master");
@@ -4279,7 +4291,8 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
     case 0x12: /* get extended keyboard status */
       shift_flags = read_byte(0x0040, 0x17);
       SET_AL(shift_flags);
-      shift_flags = read_byte(0x0040, 0x18);
+      shift_flags = read_byte(0x0040, 0x18) & 0x73;
+      shift_flags |= read_byte(0x0040, 0x96) & 0x0c;
       SET_AH(shift_flags);
       BX_DEBUG_INT16("int16: func 12 sending %04x\n",AX);
       break;
@@ -4461,8 +4474,8 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       shift_flags ^= 0x40;
       write_byte(0x0040, 0x17, shift_flags);
       mf2_flags |= 0x40;
-      write_byte(0x0040, 0x18, mf2_flags);
       led_flags ^= 0x04;
+      write_byte(0x0040, 0x18, mf2_flags);
       write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xba: /* Caps Lock release */
@@ -4471,11 +4484,8 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     case 0x2a: /* L Shift press */
-      /*shift_flags &= ~0x40;*/
       shift_flags |= 0x02;
       write_byte(0x0040, 0x17, shift_flags);
-      led_flags &= ~0x04;
-      write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xaa: /* L Shift release */
       shift_flags &= ~0x02;
@@ -4483,11 +4493,8 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     case 0x36: /* R Shift press */
-      /*shift_flags &= ~0x40;*/
       shift_flags |= 0x01;
       write_byte(0x0040, 0x17, shift_flags);
-      led_flags &= ~0x04;
-      write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xb6: /* R Shift release */
       shift_flags &= ~0x01;
@@ -4495,62 +4502,70 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     case 0x1d: /* Ctrl press */
-      shift_flags |= 0x04;
-      write_byte(0x0040, 0x17, shift_flags);
-      if (mf2_state & 0x01) {
-        mf2_flags |= 0x04;
-      } else {
-        mf2_flags |= 0x01;
+      if ((mf2_state & 0x01) == 0) {
+        shift_flags |= 0x04;
+        write_byte(0x0040, 0x17, shift_flags);
+        if (mf2_state & 0x02) {
+          mf2_state |= 0x04;
+          write_byte(0x0040, 0x96, mf2_state);
+        } else {
+          mf2_flags |= 0x01;
+          write_byte(0x0040, 0x18, mf2_flags);
         }
-      write_byte(0x0040, 0x18, mf2_flags);
+      }
       break;
     case 0x9d: /* Ctrl release */
-      shift_flags &= ~0x04;
-      write_byte(0x0040, 0x17, shift_flags);
-      if (mf2_state & 0x01) {
-        mf2_flags &= ~0x04;
-      } else {
-        mf2_flags &= ~0x01;
+      if ((mf2_state & 0x01) == 0) {
+        shift_flags &= ~0x04;
+        write_byte(0x0040, 0x17, shift_flags);
+        if (mf2_state & 0x02) {
+          mf2_state &= ~0x04;
+          write_byte(0x0040, 0x96, mf2_state);
+        } else {
+          mf2_flags &= ~0x01;
+          write_byte(0x0040, 0x18, mf2_flags);
         }
-      write_byte(0x0040, 0x18, mf2_flags);
+      }
       break;
 
     case 0x38: /* Alt press */
       shift_flags |= 0x08;
       write_byte(0x0040, 0x17, shift_flags);
-      if (mf2_state & 0x01) {
-        mf2_flags |= 0x08;
+      if (mf2_state & 0x02) {
+        mf2_state |= 0x08;
+        write_byte(0x0040, 0x96, mf2_state);
       } else {
         mf2_flags |= 0x02;
-        }
-      write_byte(0x0040, 0x18, mf2_flags);
+        write_byte(0x0040, 0x18, mf2_flags);
+      }
       break;
     case 0xb8: /* Alt release */
       shift_flags &= ~0x08;
       write_byte(0x0040, 0x17, shift_flags);
-      if (mf2_state & 0x01) {
-        mf2_flags &= ~0x08;
+      if (mf2_state & 0x02) {
+        mf2_state &= ~0x08;
+        write_byte(0x0040, 0x96, mf2_state);
       } else {
         mf2_flags &= ~0x02;
-        }
-      write_byte(0x0040, 0x18, mf2_flags);
+        write_byte(0x0040, 0x18, mf2_flags);
+      }
       break;
 
     case 0x45: /* Num Lock press */
-      if ((mf2_state & 0x01) == 0) {
+      if ((mf2_state & 0x03) == 0) {
         mf2_flags |= 0x20;
         write_byte(0x0040, 0x18, mf2_flags);
         shift_flags ^= 0x20;
         led_flags ^= 0x02;
         write_byte(0x0040, 0x17, shift_flags);
         write_byte(0x0040, 0x97, led_flags);
-        }
+      }
       break;
     case 0xc5: /* Num Lock release */
-      if ((mf2_state & 0x01) == 0) {
+      if ((mf2_state & 0x03) == 0) {
         mf2_flags &= ~0x20;
         write_byte(0x0040, 0x18, mf2_flags);
-        }
+      }
       break;
 
     case 0x46: /* Scroll Lock press */
@@ -4568,50 +4583,51 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     default:
-      if (scancode & 0x80) return; /* toss key releases ... */
+      if (scancode & 0x80) {
+        break; /* toss key releases ... */
+      }
       if (scancode > MAX_SCAN_CODE) {
         BX_INFO("KBD: int09h_handler(): unknown scancode read: 0x%02x!\n", scancode);
         return;
-        }
+      }
       if (shift_flags & 0x08) { /* ALT */
         asciicode = scan_to_scanascii[scancode].alt;
         scancode = scan_to_scanascii[scancode].alt >> 8;
-        }
-      else if (shift_flags & 0x04) { /* CONTROL */
+      } else if (shift_flags & 0x04) { /* CONTROL */
         asciicode = scan_to_scanascii[scancode].control;
         scancode = scan_to_scanascii[scancode].control >> 8;
-        }
-      else if (shift_flags & 0x03) { /* LSHIFT + RSHIFT */
+      } else if (shift_flags & 0x03) { /* LSHIFT + RSHIFT */
         /* check if lock state should be ignored 
          * because a SHIFT key are pressed */
-         
+
         if (shift_flags & scan_to_scanascii[scancode].lock_flags) {
           asciicode = scan_to_scanascii[scancode].normal;
           scancode = scan_to_scanascii[scancode].normal >> 8;
-          }
-        else {
+        } else {
           asciicode = scan_to_scanascii[scancode].shift;
           scancode = scan_to_scanascii[scancode].shift >> 8;
-          }
         }
-      else {
+      } else {
         /* check if lock is on */
         if (shift_flags & scan_to_scanascii[scancode].lock_flags) {
           asciicode = scan_to_scanascii[scancode].shift;
           scancode = scan_to_scanascii[scancode].shift >> 8;
-          }
-        else {
+        } else {
           asciicode = scan_to_scanascii[scancode].normal;
           scancode = scan_to_scanascii[scancode].normal >> 8;
-          }
         }
+      }
       if (scancode==0 && asciicode==0) {
         BX_INFO("KBD: int09h_handler(): scancode & asciicode are zero?\n");
-        }
+      }
       enqueue_key(scancode, asciicode);
       break;
-    }
-  mf2_state &= ~0x01;
+  }
+  if ((scancode & 0x7f) != 0x1d) {
+    mf2_state &= ~0x01;
+  }
+  mf2_state &= ~0x02;
+  write_byte(0x0040, 0x96, mf2_state);
 }
 
   unsigned int
@@ -4619,9 +4635,6 @@ enqueue_key(scan_code, ascii_code)
   Bit8u scan_code, ascii_code;
 {
   Bit16u buffer_start, buffer_end, buffer_head, buffer_tail, temp_tail;
-
-  //BX_INFO("KBD:   enqueue_key() called scan:%02x, ascii:%02x\n",
-  //    scan_code, ascii_code);
 
 #if BX_CPU < 2
   buffer_start = 0x001E;
@@ -4672,9 +4685,8 @@ BX_DEBUG_INT74("int74: read byte %02x\n", in_byte);
   mouse_flags_2 = read_byte(ebda_seg, 0x0027);
 
   if ( (mouse_flags_2 & 0x80) != 0x80 ) {
-      //    BX_PANIC("int74_function:\n");
       return;
-    }
+  }
 
   package_count = mouse_flags_2 & 0x07;
   index = mouse_flags_1 & 0x07;
@@ -5107,7 +5119,6 @@ int13_cdrom(EHBX, DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
   Bit16u count, segment, offset, i, size;
 
   BX_DEBUG_INT13_CD("int13_cdrom: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
-  // BX_DEBUG_INT13_CD("int13_cdrom: SS=%04x DS=%04x ES=%04x DI=%04x SI=%04x\n",get_SS(), DS, ES, DI, SI);
   
   SET_DISK_RET_STATUS(0x00);
 
@@ -5534,7 +5545,6 @@ int13_cdemu(DS, ES, DI, SI, BP, SP, BX, DX, CX, AX, IP, CS, FLAGS)
   Bit8u  atacmd[12];
 
   BX_DEBUG_INT13_ET("int13_cdemu: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
-  //BX_DEBUG_INT13_ET("int13_cdemu: SS=%04x ES=%04x DI=%04x SI=%04x\n", get_SS(), ES, DI, SI);
   
   /* at this point, we are emulating a floppy/harddisk */
   
@@ -6355,6 +6365,66 @@ get_hd_geometry(drive, hd_cylinders, hd_heads, hd_sectors)
 // FLOPPY functions //
 //////////////////////
 
+void floppy_reset_controller()
+{
+  Bit8u val8;
+
+  // Reset controller
+  val8 = inb(0x03f2);
+  outb(0x03f2, val8 & ~0x04);
+  outb(0x03f2, val8 | 0x04);
+
+  // Wait for controller to come out of reset  
+  do {
+    val8 = inb(0x3f4);
+  } while ( (val8 & 0xc0) != 0x80 );
+}
+
+void floppy_prepare_controller(drive)
+  Bit16u drive;
+{
+  Bit8u  val8, dor, prev_reset;
+
+  // set 40:3e bit 7 to 0
+  val8 = read_byte(0x0040, 0x003e);
+  val8 &= 0x7f;
+  write_byte(0x0040, 0x003e, val8);
+
+  // turn on motor of selected drive, DMA & int enabled, normal operation
+  prev_reset = inb(0x03f2) & 0x04;
+  if (drive)
+    dor = 0x20;
+  else
+    dor = 0x10;
+  dor |= 0x0c;
+  dor |= drive;
+  outb(0x03f2, dor);
+
+  // reset the disk motor timeout value of INT 08
+  write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
+
+  // wait for drive readiness
+  do {
+    val8 = inb(0x3f4);
+  } while ( (val8 & 0xc0) != 0x80 );
+
+  if (prev_reset == 0) {
+    // turn on interrupts
+ASM_START
+    sti
+ASM_END
+    // wait on 40:3e bit 7 to become 1
+    do {
+      val8 = read_byte(0x0040, 0x003e);
+    } while ( (val8 & 0x80) == 0 );
+    val8 &= 0x7f;
+ASM_START
+    cli
+ASM_END
+    write_byte(0x0040, 0x003e, val8);
+  }
+}
+
   bx_bool
 floppy_media_known(drive)
   Bit16u drive;
@@ -6502,63 +6572,41 @@ floppy_media_sense(drive)
 floppy_drive_recal(drive)
   Bit16u drive;
 {
-  Bit8u  val8, dor;
+  Bit8u  val8;
   Bit16u curr_cyl_offset;
 
-  // set 40:3e bit 7 to 0
-  val8 = read_byte(0x0000, 0x043e);
-  val8 &= 0x7f;
-  write_byte(0x0000, 0x043e, val8);
-
-  // turn on motor of selected drive, DMA & int enabled, normal operation
-  if (drive)
-    dor = 0x20;
-  else
-    dor = 0x10;
-  dor |= 0x0c;
-  dor |= drive;
-  outb(0x03f2, dor);
-
-  // reset the disk motor timeout value of INT 08
-  write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
-
-  // check port 3f4 for drive readiness
-  val8 = inb(0x3f4);
-  if ( (val8 & 0xf0) != 0x80 )
-    BX_PANIC("floppy recal:f07: ctrl not ready\n");
+  floppy_prepare_controller(drive);
 
   // send Recalibrate command (2 bytes) to controller
   outb(0x03f5, 0x07);  // 07: Recalibrate
   outb(0x03f5, drive); // 0=drive0, 1=drive1
 
- // turn on interrupts
+  // turn on interrupts
 ASM_START
   sti
 ASM_END
 
   // wait on 40:3e bit 7 to become 1
-  val8 = (read_byte(0x0000, 0x043e) & 0x80);
-  while ( val8 == 0 ) {
-    val8 = (read_byte(0x0000, 0x043e) & 0x80);
-    }
+  do {
+    val8 = (read_byte(0x0040, 0x003e) & 0x80);
+  } while ( val8 == 0 );
 
- val8 = 0; // separate asm from while() loop
- // turn off interrupts
+  val8 = 0; // separate asm from while() loop
+  // turn off interrupts
 ASM_START
   cli
 ASM_END
 
   // set 40:3e bit 7 to 0, and calibrated bit
-  val8 = read_byte(0x0000, 0x043e);
+  val8 = read_byte(0x0040, 0x003e);
   val8 &= 0x7f;
   if (drive) {
     val8 |= 0x02; // Drive 1 calibrated
     curr_cyl_offset = 0x0095;
-    }
-  else {
+  } else {
     val8 |= 0x01; // Drive 0 calibrated
     curr_cyl_offset = 0x0094;
-    }
+  }
   write_byte(0x0040, 0x003e, val8);
   write_byte(0x0040, curr_cyl_offset, 0); // current cylinder is 0
 
@@ -6598,7 +6646,6 @@ int13_diskette_function(DS, ES, DI, SI, BP, ELDX, BX, DX, CX, AX, IP, CS, FLAGS)
   Bit16u es, last_addr;
 
   BX_DEBUG_INT13_FL("int13_diskette: AX=%04x BX=%04x CX=%04x DX=%04x ES=%04x\n", AX, BX, CX, DX, ES);
-  // BX_DEBUG_INT13_FL("int13_diskette: SS=%04x DS=%04x ES=%04x DI=%04x SI=%04x\n",get_SS(), get_DS(), ES, DI, SI);
 
   ah = GET_AH();
 
@@ -6611,7 +6658,7 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         set_diskette_ret_status(1);
         SET_CF();
         return;
-        }
+      }
       drive_type = inb_cmos(0x10);
 
       if (drive == 0)
@@ -6623,7 +6670,7 @@ BX_DEBUG_INT13_FL("floppy f00\n");
         set_diskette_ret_status(0x80);
         SET_CF();
         return;
-        }
+      }
       SET_AH(0);
       set_diskette_ret_status(0);
       CLEAR_CF(); // successful
@@ -6636,7 +6683,7 @@ BX_DEBUG_INT13_FL("floppy f00\n");
       SET_AH(val8);
       if (val8) {
         SET_CF();
-        }
+      }
       return;
 
     case 0x02: // Read Diskette Sectors
@@ -6656,7 +6703,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         SET_AL(0); // no sectors read
         SET_CF(); // error occurred
         return;
-        }
+      }
 
       // see if drive exists
       if (floppy_drive_exists(drive) == 0) {
@@ -6665,7 +6712,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         SET_AL(0); // no sectors read
         SET_CF(); // error occurred
         return;
-        }
+      }
 
       // see if media in drive, and type is known
       if (floppy_media_known(drive) == 0) {
@@ -6675,8 +6722,8 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
           SET_AL(0); // no sectors read
           SET_CF(); // error occurred
           return;
-          }
         }
+      }
 
       if (ah == 0x02) {
         // Read Diskette Sectors
@@ -6695,7 +6742,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         if ( base_address < base_es ) {
           // in case of carry, adjust page by 1
           page++;
-          }
+        }
         base_count = (num_sectors * 512) - 1;
 
         // check for 64K boundary overrun
@@ -6706,7 +6753,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
           SET_AL(0); // no sectors read
           SET_CF(); // error occurred
           return;
-          }
+        }
 
         BX_DEBUG_INT13_FL("masking DMA-1 c2\n");
         outb(0x000a, 0x06);
@@ -6739,28 +6786,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         //--------------------------------------
         // set up floppy controller for transfer
         //--------------------------------------
-
-        // set 40:3e bit 7 to 0
-        val8 = read_byte(0x0000, 0x043e);
-        val8 &= 0x7f;
-        write_byte(0x0000, 0x043e, val8);
-
-        // turn on motor of selected drive, DMA & int enabled, normal operation
-        if (drive)
-          dor = 0x20;
-        else
-          dor = 0x10;
-        dor |= 0x0c;
-        dor |= drive;
-        outb(0x03f2, dor);
-
-        // reset the disk motor timeout value of INT 08
-        write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
-
-        // check port 3f4 for drive readiness
-        val8 = inb(0x3f4);
-        if ( (val8 & 0xf0) != 0x80 )
-          BX_PANIC("int13_diskette:f02: ctrl not ready\n");
+        floppy_prepare_controller(drive);
 
         // send read-normal-data command (9 bytes) to controller
         outb(0x03f5, 0xe6); // e6: read normal data
@@ -6769,31 +6795,39 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         outb(0x03f5, head);
         outb(0x03f5, sector);
         outb(0x03f5, 2); // 512 byte sector size
-        outb(0x03f5, 0); // last sector number possible on track
+        outb(0x03f5, sector + num_sectors - 1); // last sector to read on track
         outb(0x03f5, 0); // Gap length
         outb(0x03f5, 0xff); // Gap length
 
-       // turn on interrupts
+        // turn on interrupts
   ASM_START
         sti
   ASM_END
 
         // wait on 40:3e bit 7 to become 1
-        val8 = (read_byte(0x0000, 0x043e) & 0x80);
-        while ( val8 == 0 ) {
-          val8 = (read_byte(0x0000, 0x043e) & 0x80);
+        do {
+          val8 = read_byte(0x0040, 0x0040);
+          if (val8 == 0) {
+            floppy_reset_controller();
+            SET_AH(0x80); // drive not ready (timeout)
+            set_diskette_ret_status(0x80);
+            SET_AL(0); // no sectors read
+            SET_CF(); // error occurred
+            return;
           }
+          val8 = (read_byte(0x0040, 0x003e) & 0x80);
+        } while ( val8 == 0 );
 
-       val8 = 0; // separate asm from while() loop
-       // turn off interrupts
+        val8 = 0; // separate asm from while() loop
+        // turn off interrupts
   ASM_START
         cli
   ASM_END
 
         // set 40:3e bit 7 to 0
-        val8 = read_byte(0x0000, 0x043e);
+        val8 = read_byte(0x0040, 0x003e);
         val8 &= 0x7f;
-        write_byte(0x0000, 0x043e, val8);
+        write_byte(0x0040, 0x003e, val8);
 
         // check port 3f4 for accessibility to status bytes
         val8 = inb(0x3f4);
@@ -6824,7 +6858,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
           SET_AL(0); // no sectors read
           SET_CF(); // error occurred
           return;
-          }
+        }
 
         // ??? should track be new val from return_status[3] ?
         set_diskette_current_cyl(drive, track);
@@ -6832,8 +6866,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         SET_AH(0x00); // success
         CLEAR_CF();   // success
         return;
-        }
-      else if (ah == 0x03) {
+      } else if (ah == 0x03) {
         // Write Diskette Sectors
 
         //-----------------------------------
@@ -6850,7 +6883,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         if ( base_address < base_es ) {
           // in case of carry, adjust page by 1
           page++;
-          }
+        }
         base_count = (num_sectors * 512) - 1;
 
         // check for 64K boundary overrun
@@ -6861,7 +6894,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
           SET_AL(0); // no sectors read
           SET_CF(); // error occurred
           return;
-          }
+        }
 
         BX_DEBUG_INT13_FL("masking DMA-1 c2\n");
         outb(0x000a, 0x06);
@@ -6887,61 +6920,48 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         //--------------------------------------
         // set up floppy controller for transfer
         //--------------------------------------
+        floppy_prepare_controller(drive);
 
-        // set 40:3e bit 7 to 0
-        val8 = read_byte(0x0000, 0x043e);
-        val8 &= 0x7f;
-        write_byte(0x0000, 0x043e, val8);
-
-        // turn on motor of selected drive, DMA & int enabled, normal operation
-        if (drive)
-          dor = 0x20;
-        else
-          dor = 0x10;
-        dor |= 0x0c;
-        dor |= drive;
-        outb(0x03f2, dor);
-
-        // reset the disk motor timeout value of INT 08
-        write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
-
-        // check port 3f4 for drive readiness
-        val8 = inb(0x3f4);
-        if ( (val8 & 0xf0) != 0x80 )
-          BX_PANIC("int13_diskette:f03: ctrl not ready\n");
-
-        // send read-normal-data command (9 bytes) to controller
+        // send write-normal-data command (9 bytes) to controller
         outb(0x03f5, 0xc5); // c5: write normal data
         outb(0x03f5, (head << 2) | drive); // HD DR1 DR2
         outb(0x03f5, track);
         outb(0x03f5, head);
         outb(0x03f5, sector);
         outb(0x03f5, 2); // 512 byte sector size
-        outb(0x03f5, 0); // last sector number possible on track
+        outb(0x03f5, sector + num_sectors - 1); // last sector to write on track
         outb(0x03f5, 0); // Gap length
         outb(0x03f5, 0xff); // Gap length
 
-       // turn on interrupts
+        // turn on interrupts
   ASM_START
         sti
   ASM_END
 
         // wait on 40:3e bit 7 to become 1
-        val8 = (read_byte(0x0000, 0x043e) & 0x80);
-        while ( val8 == 0 ) {
-          val8 = (read_byte(0x0000, 0x043e) & 0x80);
+        do {
+          val8 = read_byte(0x0040, 0x0040);
+          if (val8 == 0) {
+            floppy_reset_controller();
+            SET_AH(0x80); // drive not ready (timeout)
+            set_diskette_ret_status(0x80);
+            SET_AL(0); // no sectors written
+            SET_CF(); // error occurred
+            return;
           }
+          val8 = (read_byte(0x0040, 0x003e) & 0x80);
+        } while ( val8 == 0 );
 
-       val8 = 0; // separate asm from while() loop
-       // turn off interrupts
+        val8 = 0; // separate asm from while() loop
+        // turn off interrupts
   ASM_START
         cli
   ASM_END
 
         // set 40:3e bit 7 to 0
-        val8 = read_byte(0x0000, 0x043e);
+        val8 = read_byte(0x0040, 0x003e);
         val8 &= 0x7f;
-        write_byte(0x0000, 0x043e, val8);
+        write_byte(0x0040, 0x003e, val8);
 
         // check port 3f4 for accessibility to status bytes
         val8 = inb(0x3f4);
@@ -6985,8 +7005,7 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         SET_AH(0x00); // success
         CLEAR_CF();   // success
         return;
-        }
-      else {  // if (ah == 0x04)
+      } else {  // if (ah == 0x04)
         // Verify Diskette Sectors
 
         // ??? should track be new val from return_status[3] ?
@@ -6995,8 +7014,8 @@ BX_INFO("floppy: drive>1 || head>1 ...\n");
         CLEAR_CF();   // success
         SET_AH(0x00); // success
         return;
-        }
-
+      }
+      break;
 
     case 0x05: // format diskette track
 BX_DEBUG_INT13_FL("floppy f05\n");
@@ -7011,7 +7030,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
         SET_AH(1);
         set_diskette_ret_status(1);
         SET_CF(); // error occurred
-        }
+      }
 
       // see if drive exists
       if (floppy_drive_exists(drive) == 0) {
@@ -7019,7 +7038,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
         set_diskette_ret_status(0x80);
         SET_CF(); // error occurred
         return;
-        }
+      }
 
       // see if media in drive, and type is known
       if (floppy_media_known(drive) == 0) {
@@ -7029,8 +7048,8 @@ BX_DEBUG_INT13_FL("floppy f05\n");
           SET_AL(0); // no sectors read
           SET_CF(); // error occurred
           return;
-          }
         }
+      }
 
       // set up DMA controller for transfer
       page = (ES >> 12);   // upper 4 bits
@@ -7040,7 +7059,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
       if ( base_address < base_es ) {
         // in case of carry, adjust page by 1
         page++;
-        }
+      }
       base_count = (num_sectors * 4) - 1;
 
       // check for 64K boundary overrun
@@ -7051,7 +7070,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
         SET_AL(0); // no sectors read
         SET_CF(); // error occurred
         return;
-        }
+      }
 
       outb(0x000a, 0x06);
       outb(0x000c, 0x00); // clear flip-flop
@@ -7068,27 +7087,9 @@ BX_DEBUG_INT13_FL("floppy f05\n");
       outb(0x000a, 0x02);
 
       // set up floppy controller for transfer
-      val8 = read_byte(0x0000, 0x043e);
-      val8 &= 0x7f;
-      write_byte(0x0000, 0x043e, val8);
-      // turn on motor of selected drive, DMA & int enabled, normal operation
-      if (drive)
-        dor = 0x20;
-      else
-        dor = 0x10;
-      dor |= 0x0c;
-      dor |= drive;
-      outb(0x03f2, dor);
+      floppy_prepare_controller(drive);
 
-      // reset the disk motor timeout value of INT 08
-      write_byte(0x40,0x40, BX_FLOPPY_ON_CNT);
-
-      // check port 3f4 for drive readiness
-      val8 = inb(0x3f4);
-      if ( (val8 & 0xf0) != 0x80 )
-        BX_PANIC("int13_diskette:f05: ctrl not ready\n");
-
-      // send read-normal-data command (6 bytes) to controller
+      // send format-track command (6 bytes) to controller
       outb(0x03f5, 0x4d); // 4d: format track
       outb(0x03f5, (head << 2) | drive); // HD DR1 DR2
       outb(0x03f5, 2); // 512 byte sector size
@@ -7099,20 +7100,29 @@ BX_DEBUG_INT13_FL("floppy f05\n");
   ASM_START
       sti
   ASM_END
+
       // wait on 40:3e bit 7 to become 1
-      val8 = (read_byte(0x0000, 0x043e) & 0x80);
-      while ( val8 == 0 ) {
-        val8 = (read_byte(0x0000, 0x043e) & 0x80);
+      do {
+        val8 = read_byte(0x0040, 0x0040);
+        if (val8 == 0) {
+          floppy_reset_controller();
+          SET_AH(0x80); // drive not ready (timeout)
+          set_diskette_ret_status(0x80);
+          SET_CF(); // error occurred
+          return;
         }
-     val8 = 0; // separate asm from while() loop
-     // turn off interrupts
+        val8 = (read_byte(0x0040, 0x003e) & 0x80);
+      } while ( val8 == 0 );
+
+      val8 = 0; // separate asm from while() loop
+      // turn off interrupts
   ASM_START
       cli
   ASM_END
       // set 40:3e bit 7 to 0
-      val8 = read_byte(0x0000, 0x043e);
+      val8 = read_byte(0x0040, 0x003e);
       val8 &= 0x7f;
-      write_byte(0x0000, 0x043e, val8);
+      write_byte(0x0040, 0x003e, val8);
       // check port 3f4 for accessibility to status bytes
       val8 = inb(0x3f4);
       if ( (val8 & 0xc0) != 0xc0 )
@@ -7826,11 +7836,11 @@ ASM_END
           // Done waiting.
           Bit16u segment, offset;
 
-          offset = read_word( 0x40, 0x98 );
-          segment = read_word( 0x40, 0x9A );
+          segment = read_word( 0x40, 0x98 );
+          offset = read_word( 0x40, 0x9A );
           write_byte( 0x40, 0xA0, 0 );  // Turn of status byte.
           outb_cmos( 0xB, registerB & 0x37 ); // Clear the Periodic Interrupt.
-          write_byte( segment, offset, 0x80 );  // Write to specified flag byte.
+          write_byte(segment, offset, read_byte(segment, offset) | 0x80 );  // Write to specified flag byte.
         } else {
           // Continue waiting.
           time -= 0x3D1;
@@ -8689,15 +8699,21 @@ bios32_structure:
 .align 16
 bios32_entry_point:
   pushf
-  cmp eax, #0x49435024
+  cmp eax, #0x49435024 ;; "$PCI"
   jne unknown_service
   mov eax, #0x80000000
   mov dx, #0x0cf8
   out dx, eax
   mov dx, #0x0cfc
   in  eax, dx
-  cmp eax, #0x12378086
+#ifdef PCI_FIXED_HOST_BRIDGE
+  cmp eax, #PCI_FIXED_HOST_BRIDGE
   jne unknown_service
+#else
+  ;; say ok if a device is present
+  cmp eax, #0xffffffff
+  je unknown_service
+#endif
   mov ebx, #0x000f0000
   mov ecx, #0
   mov edx, #pcibios_protected
@@ -8719,7 +8735,7 @@ pcibios_protected:
   jne pci_pro_f02
   mov bx, #0x0210
   mov cx, #0
-  mov edx, #0x20494350
+  mov edx, #0x20494350 ;; "PCI "
   mov al, #0x01
   jmp pci_pro_ok
 pci_pro_f02: ;; find pci device
@@ -8853,8 +8869,14 @@ pcibios_real:
   out dx, eax
   mov dx, #0x0cfc
   in  eax, dx
-  cmp eax, #0x12378086
+#ifdef PCI_FIXED_HOST_BRIDGE
+  cmp eax, #PCI_FIXED_HOST_BRIDGE
   je  pci_present
+#else
+  ;; say ok if a device is present
+  cmp eax, #0xffffffff
+  jne  pci_present
+#endif
   pop dx
   pop eax
   mov ah, #0xff
@@ -8868,7 +8890,7 @@ pci_present:
   mov ax, #0x0001
   mov bx, #0x0210
   mov cx, #0
-  mov edx, #0x20494350
+  mov edx, #0x20494350 ;; "PCI "
   mov edi, #0xf0000
   mov di, #pcibios_protected
   clc
@@ -9101,6 +9123,89 @@ pcibios_init_sel_reg:
   pop eax
   ret
   
+pcibios_init_iomem_bases:
+  push bp
+  mov  bp, sp
+  mov  eax, #0xe0000000 ;; base for memory init
+  push eax
+  mov  ax, #0xc000 ;; base for i/o init
+  push ax
+  mov  ax, #0x0010 ;; start at base address #0
+  push ax
+  mov  bx, #0x0008
+pci_init_io_loop1:
+  mov  dl, #0x00
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  in   ax, dx
+  cmp  ax, #0xffff
+  jz   next_pci_dev
+  mov  dl, #0x04 ;; disable i/o and memory space access
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  in   al, dx
+  and  al, #0xfc
+  out  dx, al
+pci_init_io_loop2:
+  mov  dl, [bp-8]
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  in   eax, dx
+  test al, #0x01
+  jnz  init_io_base
+  mov  ecx, eax
+  mov  eax, #0xffffffff
+  out  dx, eax
+  in   eax, dx
+  cmp  eax, ecx
+  je   next_pci_base
+  xor  eax, #0xffffffff
+  mov  ecx, eax
+  mov  eax, [bp-4]
+  out  dx, eax
+  add  eax, ecx ;; calculate next free mem base
+  add  eax, #0x01000000
+  and  eax, #0xff000000
+  mov  [bp-4], eax
+  jmp  next_pci_base
+init_io_base:
+  mov  cx, ax
+  mov  ax, #0xffff
+  out  dx, ax
+  in   ax, dx
+  cmp  ax, cx
+  je   next_pci_base
+  xor  ax, #0xfffe
+  mov  cx, ax
+  mov  ax, [bp-6]
+  out  dx, ax
+  add  ax, cx ;; calculate next free i/o base
+  add  ax, #0x0100
+  and  ax, #0xff00
+  mov  [bp-6], ax
+next_pci_base:
+  mov  al, [bp-8]
+  add  al, #0x04
+  cmp  al, #0x28
+  je   enable_iomem_space
+  mov  byte ptr[bp-8], al
+  jmp  pci_init_io_loop2
+enable_iomem_space:
+  mov  dl, #0x04 ;; enable i/o and memory space access if available
+  call pcibios_init_sel_reg
+  mov  dx, #0x0cfc
+  in   al, dx
+  or   al, #0x07
+  out  dx, al
+next_pci_dev:
+  mov  byte ptr[bp-8], #0x10
+  inc  bx
+  cmp  bx, #0x0100
+  jne  pci_init_io_loop1
+  mov  sp, bp
+  pop  bp
+  ret
+
 pcibios_init_set_elcr:
   push ax
   push cx
@@ -9120,7 +9225,7 @@ is_master_pic:
   pop  ax
   ret
 
-pcibios_init:
+pcibios_init_irqs:
   push ds
   push bp
   mov  ax, #0xf000
@@ -9158,10 +9263,10 @@ pcibios_init:
   push ax
   xor  ax, ax
   push ax
-pci_init_loop1:
+pci_init_irq_loop1:
   mov  bh, [si]
   mov  bl, [si+1]
-pci_init_loop2:
+pci_init_irq_loop2:
   mov  dl, #0x00
   call pcibios_init_sel_reg
   mov  dx, #0x0cfc
@@ -9212,11 +9317,11 @@ next_pci_func:
   inc  byte ptr[bp-3]
   inc  bl
   test bl, #0x07
-  jnz  pci_init_loop2
+  jnz  pci_init_irq_loop2
 next_pir_entry:
   add  si, #0x10
   mov  byte ptr[bp-3], #0x00
-  loop pci_init_loop1
+  loop pci_init_irq_loop1
   mov  sp, bp
   pop  bx
 pci_init_end:
@@ -9622,7 +9727,8 @@ post_default_ints:
 #endif
   out  0xa1, AL ;slave  pic: unmask IRQ 12, 13, 14
 
-  call pcibios_init
+  call pcibios_init_iomem_bases
+  call pcibios_init_irqs
 
   call rom_scan
 
@@ -9664,7 +9770,6 @@ post_default_ints:
 #endif // BX_ELTORITO_BOOT
  
   int  #0x19
-  //JMP_EP(0x0064) ; INT 19h location
 
 
 .org 0xe2c3 ; NMI Handler Entry Point
@@ -9879,26 +9984,7 @@ int09_handler:
   jz  int09_finish
 
   in  al, #0x60             ;;read key from keyboard controller
-  //test al, #0x80            ;;look for key release
-  //jnz  int09_process_key    ;; dont pass releases to intercept?
-
-  ;; check for extended key
-  cmp  al, #0xe0
-  jne int09_call_int15_4f
-  
-  push ds
-  xor  ax, ax
-  mov  ds, ax
-  mov  al, BYTE [0x496]     ;; mf2_state |= 0x01
-  or   al, #0x01
-  mov  BYTE [0x496], al
-  pop  ds
-  
-  in  al, #0x60             ;;read another key from keyboard controller
-
   sti
-
-int09_call_int15_4f:
   push  ds
   pusha
 #ifdef BX_CALL_INT15_4F
@@ -9908,8 +9994,27 @@ int09_call_int15_4f:
   jnc  int09_done
 #endif
 
+  ;; check for extended key
+  cmp  al, #0xe0
+  jne int09_check_pause
+  xor  ax, ax
+  mov  ds, ax
+  mov  al, BYTE [0x496]     ;; mf2_state |= 0x02
+  or   al, #0x02
+  mov  BYTE [0x496], al
+  jmp int09_done
 
-//int09_process_key:
+int09_check_pause:  ;; check for pause key
+  cmp  al, #0xe1
+  jne int09_process_key
+  xor  ax, ax
+  mov  ds, ax
+  mov  al, BYTE [0x496]     ;; mf2_state |= 0x01
+  or   al, #0x01
+  mov  BYTE [0x496], al
+  jmp int09_done
+
+int09_process_key:
   mov   bx, #0xf000
   mov   ds, bx
   call  _int09_function
@@ -9925,8 +10030,6 @@ int09_finish:
   out #0x64, al
   pop ax
   iret
-
-
 
 
 ;----------------------------------------
@@ -10179,11 +10282,11 @@ int1a_callfunction:
 ;;
 int70_handler:
   push ds
-  pusha
+  pushad
   xor  ax, ax
   mov  ds, ax
   call _int70_function
-  popa
+  popad
   pop  ds
   iret
 
@@ -10241,7 +10344,7 @@ int08_store_ticks:
 
 
 .org 0xff00
-.ascii "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
+.ascii BIOS_COPYRIGHT_STRING
 
 ;------------------------------------------------
 ;- IRET Instruction for Dummy Interrupt Handler -

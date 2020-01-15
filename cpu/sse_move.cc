@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_move.cc,v 1.36.2.1 2005/07/07 07:49:06 vruppert Exp $
+// $Id: sse_move.cc,v 1.46 2005/09/24 16:56:20 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2003 Stanislav Shwartsman
@@ -213,13 +213,12 @@ void BX_CPU_C::FXRSTOR(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 1
   /* If the OSFXSR bit in CR4 is not set, the FXRSTOR instruction does
      not restore the states of the XMM and MXCSR registers. */
-  if(! (BX_CPU_THIS_PTR cr4.get_OSFXSR())) 
+  if(BX_CPU_THIS_PTR cr4.get_OSFXSR())
   {
     readVirtualDQwordAligned(i->seg(), RMAddr(i) + 16, (Bit8u *) &xmm);
 
-    Bit32u new_mxcsr = xmm.xmm32u(2), mxcsr_mask = xmm.xmm32u(3);
-    if(! mxcsr_mask) mxcsr_mask = MXCSR_MASK;
-    if(new_mxcsr & ~mxcsr_mask)
+    Bit32u new_mxcsr = xmm.xmm32u(2);
+    if(new_mxcsr & ~MXCSR_MASK)
        exception(BX_GP_EXCEPTION, 0, 0);
 
     BX_MXCSR_REGISTER = new_mxcsr;
@@ -289,7 +288,7 @@ void BX_CPU_C::FXRSTOR(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 1
   /* If the OSFXSR bit in CR4 is not set, the FXRSTOR instruction does
      not restore the states of the XMM and MXCSR registers. */
-  if(! (BX_CPU_THIS_PTR cr4.get_OSFXSR())) 
+  if(BX_CPU_THIS_PTR cr4.get_OSFXSR())
   {
     /* load XMM register file */
     for(index=0; index < BX_XMM_REGISTERS; index++)
@@ -753,7 +752,7 @@ void BX_CPU_C::MASKMOVDQU_VdqVRdq(bxInstruction_c *i)
     mask = BX_READ_XMM_REG(i->rm());
 
 #if BX_SUPPORT_X86_64
-  if (i->os64L()) { 	/* 64 bit operand size mode */
+  if (i->as64L()) { 	/* 64 bit address mode */
       rdi = RDI;
   } 
   else
@@ -761,7 +760,7 @@ void BX_CPU_C::MASKMOVDQU_VdqVRdq(bxInstruction_c *i)
   if (i->as32L()) {
       rdi = EDI;
   }
-  else {   /* 16 bit address mode */
+  else {                /* 16 bit address mode */
       rdi = DI;
   }
 
@@ -792,7 +791,7 @@ void BX_CPU_C::MOVMSKPS_GdVRps(bxInstruction_c *i)
   if(op.xmm32u(2) & 0x80000000) val32 |= 0x4;
   if(op.xmm32u(3) & 0x80000000) val32 |= 0x8;
 
-  BX_WRITE_32BIT_REG(i->rm(), val32);
+  BX_WRITE_32BIT_REGZ(i->rm(), val32);
 #else
   BX_INFO(("MOVMSKPS_GdVRps: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
@@ -800,7 +799,7 @@ void BX_CPU_C::MOVMSKPS_GdVRps(bxInstruction_c *i)
 }
 
 /* 66 0F 50 */
-void BX_CPU_C::MOVMSKPD_EdVRpd(bxInstruction_c *i)
+void BX_CPU_C::MOVMSKPD_GdVRpd(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
@@ -811,9 +810,9 @@ void BX_CPU_C::MOVMSKPD_EdVRpd(bxInstruction_c *i)
   if(op.xmm32u(1) & 0x80000000) val32 |= 0x1;
   if(op.xmm32u(3) & 0x80000000) val32 |= 0x2;
  
-  BX_WRITE_32BIT_REG(i->rm(), val32);
+  BX_WRITE_32BIT_REGZ(i->rm(), val32);
 #else
-  BX_INFO(("MOVMSKPD_EdVRpd: required SSE2, use --enable-sse option"));
+  BX_INFO(("MOVMSKPD_GdVRpd: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }

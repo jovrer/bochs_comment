@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc,v 1.34 2005/05/19 18:13:07 sshwarts Exp $
+// $Id: ctrl_xfer64.cc,v 1.40 2005/11/11 22:02:42 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -58,7 +58,7 @@ void BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
   RIP = return_RIP;
   RSP += 8 + imm16;
 
-  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, BX_CPU_THIS_PTR rip);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, RIP);
 }
 
 void BX_CPU_C::RETnear64(bxInstruction_c *i)
@@ -85,67 +85,48 @@ void BX_CPU_C::RETnear64(bxInstruction_c *i)
   RIP = return_RIP;
   RSP += 8;
 
-  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, BX_CPU_THIS_PTR rip);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, RIP);
 }
 
 void BX_CPU_C::RETfar64_Iw(bxInstruction_c *i)
 {
-  Bit64u rip, rcs_raw;
-
   invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  Bit16u imm16 = i->Iw();
+  BX_ASSERT(protected_mode());
 
-  if (protected_mode()) {
-    BX_PANIC(("Return protected is not implemented in x86-64 mode !"));
-    BX_CPU_THIS_PTR return_protected(i, imm16);
-    goto done;
-  }
+  BX_INFO(("RETfar64_Iw instruction executed ..."));
 
-  pop_64(&rip);
-  pop_64(&rcs_raw);
-  RIP = rip;
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) rcs_raw);
-  RSP += imm16;
+  return_protected(i, i->Iw());
 
-done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
 
 void BX_CPU_C::RETfar64(bxInstruction_c *i)
 {
-  Bit64u rip, rcs_raw;
-
   invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
 #endif
 
-  if ( protected_mode() ) {
-    BX_PANIC(("Return protected is not implemented in x86-64 mode !"));
-    BX_CPU_THIS_PTR return_protected(i, 0);
-    goto done;
-  }
+  BX_ASSERT(protected_mode());
 
-  pop_64(&rip);
-  pop_64(&rcs_raw); /* 64bit pop, upper 48 bits discarded */
-  RIP = rip;
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) rcs_raw);
+  BX_INFO(("RETfar64 instruction executed ..."));
 
-done:
+  return_protected(i, 0);
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
 
 void BX_CPU_C::CALL_Aq(bxInstruction_c *i)
 {
-  Bit64u new_RIP = RIP + (Bit32s) i->Id();;
+  Bit64u new_RIP = RIP + (Bit32s) i->Id();
 
   //invalidate_prefetch_q();
 
@@ -160,10 +141,10 @@ void BX_CPU_C::CALL_Aq(bxInstruction_c *i)
   }
 
   /* push 64 bit EA of next instruction */
-  push_64(BX_CPU_THIS_PTR rip);
+  push_64(RIP);
   RIP = new_RIP;
 
-  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, BX_CPU_THIS_PTR rip);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, RIP);
 }
 
 void BX_CPU_C::CALL_Eq(bxInstruction_c *i)
@@ -189,16 +170,16 @@ void BX_CPU_C::CALL_Eq(bxInstruction_c *i)
     exception(BX_GP_EXCEPTION, 0, 0);
   }
 
-  push_64(BX_CPU_THIS_PTR rip);
+  push_64(RIP);
   RIP = op1_64;
 
-  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, BX_CPU_THIS_PTR rip);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, RIP);
 }
 
 void BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
 {
   Bit16u cs_raw;
-  Bit64u op1_64;
+  Bit32u op1_32;
 
   invalidate_prefetch_q();
 
@@ -213,24 +194,16 @@ void BX_CPU_C::CALL64_Ep(bxInstruction_c *i)
   }
 
   /* pointer, segment address pair */
-  read_virtual_qword(i->seg(), RMAddr(i), &op1_64);
+  read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
   read_virtual_word(i->seg(), RMAddr(i)+8, &cs_raw);
 
-  if ( protected_mode() ) {
-    BX_PANIC(("Call protected is not implemented in x86-64 mode !"));
-    BX_CPU_THIS_PTR call_protected(i, cs_raw, op1_64);
-    goto done;
-  }
+  BX_ASSERT(protected_mode());
 
-  push_64(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value);
-  push_64(BX_CPU_THIS_PTR rip);
+  BX_INFO(("call far instruction executed ..."));
+  BX_CPU_THIS_PTR call_protected(i, cs_raw, op1_32);
 
-  RIP = op1_64;
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
-
-done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
 
 void BX_CPU_C::JMP_Jq(bxInstruction_c *i)
@@ -318,15 +291,11 @@ void BX_CPU_C::JMP64_Ep(bxInstruction_c *i)
   read_virtual_dword(i->seg(), RMAddr(i), &op1_32);
   read_virtual_word(i->seg(), RMAddr(i)+4, &cs_raw);
 
-  if ( protected_mode() ) {
-    BX_CPU_THIS_PTR jump_protected(i, cs_raw, op1_32);
-    goto done;
-  }
+  BX_INFO(("JMPF64 instruction executed ..."));
 
-  RIP = op1_32;
-  load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
+  BX_ASSERT(protected_mode());
+  BX_CPU_THIS_PTR jump_protected(i, cs_raw, op1_32);
 
-done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
@@ -337,17 +306,14 @@ void BX_CPU_C::IRET64(bxInstruction_c *i)
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_iret;
-  BX_CPU_THIS_PTR show_eip = BX_CPU_THIS_PTR rip;
+  BX_CPU_THIS_PTR show_eip = RIP;
 #endif
 
-  if (BX_CPU_THIS_PTR cr0.pe) {
-    iret_protected(i);
-    goto done;
-  }
+  BX_ASSERT(protected_mode());
+  iret_protected(i);
 
-done:
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, BX_CPU_THIS_PTR rip);
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 }
 
 void BX_CPU_C::JCXZ64_Jb(bxInstruction_c *i)

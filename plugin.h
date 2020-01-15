@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.40 2005/02/08 18:31:48 vruppert Exp $
+// $Id: plugin.h,v 1.46 2005/12/26 17:16:32 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file provides macros and types needed for plugins.  It is based on
@@ -101,6 +101,8 @@ extern "C" {
 #define DEV_cmos_set_reg(a,b) (bx_devices.pluginCmosDevice->set_reg(a,b))
 #define DEV_cmos_checksum() (bx_devices.pluginCmosDevice->checksum_cmos())
 #define DEV_cmos_get_timeval() (bx_devices.pluginCmosDevice->get_timeval())
+#define DEV_cmos_save_image() (bx_devices.pluginCmosDevice->save_image())
+#define DEV_cmos_present() (bx_devices.pluginCmosDevice != &bx_devices.stubCmos)
 
 ///////// keyboard macros
 #define DEV_mouse_motion(dx, dy, state) \
@@ -111,10 +113,6 @@ extern "C" {
     (bx_devices.pluginKeyboard->gen_scancode(key))
 #define DEV_kbd_paste_bytes(bytes, count) \
     (bx_devices.pluginKeyboard->paste_bytes(bytes,count))
-#define DEV_kbd_paste_delay_changed() \
-    (bx_devices.pluginKeyboard->paste_delay_changed())
-#define DEV_mouse_enabled_changed(val) \
-    (bx_devices.pluginKeyboard->mouse_enabled_changed(val))
 
 ///////// hard drive macros
 #define DEV_hd_read_handler(a, b, c) \
@@ -131,7 +129,7 @@ extern "C" {
     (bx_devices.pluginHardDrive->set_cd_media_status(handle, status))
 #define DEV_hd_close_harddrive()  bx_devices.pluginHardDrive->close_harddrive()
 #define DEV_hd_present() (bx_devices.pluginHardDrive != &bx_devices.stubHardDrive)
-#define DEV_hd_bmdma_read_sector(a,b) bx_devices.pluginHardDrive->bmdma_read_sector(a,b)
+#define DEV_hd_bmdma_read_sector(a,b,c) bx_devices.pluginHardDrive->bmdma_read_sector(a,b,c)
 #define DEV_hd_bmdma_write_sector(a,b) bx_devices.pluginHardDrive->bmdma_write_sector(a,b)
 #define DEV_hd_bmdma_complete(a) bx_devices.pluginHardDrive->bmdma_complete(a)
 
@@ -174,8 +172,6 @@ extern "C" {
   (bx_devices.pluginVgaDevice->get_text_snapshot(rawsnap, height, width))
 #define DEV_vga_refresh() \
   (bx_devices.pluginVgaDevice->trigger_timer(bx_devices.pluginVgaDevice))
-#define DEV_vga_set_update_interval(val) \
-  (bx_devices.pluginVgaDevice->set_update_interval(val))
 #define DEV_vga_get_actl_pal_idx(index) (bx_devices.pluginVgaDevice->get_actl_palette_idx(index))
 #define DEV_vga_dump_status() (bx_devices.pluginVgaDevice->dump_status())
 
@@ -192,6 +188,7 @@ extern "C" {
 #define DEV_pci_wr_memtype(addr) bx_devices.pluginPciBridge->wr_memType(addr)
 #define DEV_pci_print_i440fx_state() bx_devices.pluginPciBridge->print_i440fx_state()
 #define DEV_ide_bmdma_present() bx_devices.pluginPciIdeController->bmdma_present()
+#define DEV_ide_bmdma_set_irq(a) bx_devices.pluginPciIdeController->bmdma_set_irq(a)
 
 ///////// NE2000 macro
 #define DEV_ne2k_print_info(file,page,reg,brief) \
