@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: unmapped.cc,v 1.19.2.1 2003/01/03 00:39:39 cbothamy Exp $
+// $Id: unmapped.cc,v 1.22 2003/08/10 17:19:49 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -204,7 +204,6 @@ bx_unmapped_c::write(Bit32u address, Bit32u value, unsigned io_len)
 
 // ???
 
-
   if (address >= 0x02e0 && address <= 0x02ef)
 	goto return_from_write;
 
@@ -233,6 +232,7 @@ bx_unmapped_c::write(Bit32u address, Bit32u value, unsigned io_len)
       fflush(stdout);
       break;
 #endif
+
     case 0xed: // Dummy port used as I/O delay
 	  break;
     case 0xee: // ???
@@ -264,11 +264,17 @@ bx_unmapped_c::write(Bit32u address, Bit32u value, unsigned io_len)
         case 'o': if (BX_UM_THIS s.shutdown == 5) BX_UM_THIS s.shutdown = 6; break;
         case 'w': if (BX_UM_THIS s.shutdown == 6) BX_UM_THIS s.shutdown = 7; break;
         case 'n': if (BX_UM_THIS s.shutdown == 7) BX_UM_THIS s.shutdown = 8; break;
+#if BX_DEBUGGER 
+        // Very handy for debugging:
+	// output 'D' to port 8900, and bochs quits to debugger
+        case 'D': bx_debug_break (); break;
+#endif
 	default :  BX_UM_THIS s.shutdown = 0; break;
         }
       if (BX_UM_THIS s.shutdown == 8) {
-        BX_INFO(("Shutdown port: shutdown requested"));
-        BX_CPU(0)->kill_bochs_request = 2;
+        bx_user_quit = 1;
+        LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
+        BX_PANIC(("Shutdown port: shutdown requested"));
         }
       break;
 

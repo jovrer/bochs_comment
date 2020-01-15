@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.cc,v 1.72.2.1 2003/01/03 00:33:50 cbothamy Exp $
+// $Id: keyboard.cc,v 1.82 2003/11/11 18:18:36 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -125,20 +125,20 @@ bx_keyb_c::resetinternals(bx_bool powerup)
   void
 bx_keyb_c::init(void)
 {
-  BX_DEBUG(("Init $Id: keyboard.cc,v 1.72.2.1 2003/01/03 00:33:50 cbothamy Exp $"));
+  BX_DEBUG(("Init $Id: keyboard.cc,v 1.82 2003/11/11 18:18:36 vruppert Exp $"));
   Bit32u   i;
 
   DEV_register_irq(1, "8042 Keyboard controller");
   DEV_register_irq(12, "8042 Keyboard controller (PS/2 mouse)");
 
   DEV_register_ioread_handler(this, read_handler,
-                                      0x0060, "8042 Keyboard controller", 3);
+                                      0x0060, "8042 Keyboard controller", 1);
   DEV_register_ioread_handler(this, read_handler,
-                                      0x0064, "8042 Keyboard controller", 3);
+                                      0x0064, "8042 Keyboard controller", 1);
   DEV_register_iowrite_handler(this, write_handler,
-                                      0x0060, "8042 Keyboard controller", 3);
+                                      0x0060, "8042 Keyboard controller", 1);
   DEV_register_iowrite_handler(this, write_handler,
-                                      0x0064, "8042 Keyboard controller", 3);
+                                      0x0064, "8042 Keyboard controller", 1);
   BX_KEY_THIS timer_handle = bx_pc_system.register_timer( this, timer_handler,
                                  bx_options.Okeyboard_serial_delay->get(), 1, 1,
 				 "8042 Keyboard controller");
@@ -288,11 +288,6 @@ bx_keyb_c::read(Bit32u   address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_KEY_SMF
 
-  if (io_len > 1)
-    BX_PANIC(("kbd: io read to address %08x, len=%u",
-             (unsigned) address, (unsigned) io_len));
-
-
 //BX_DEBUG(( "read from port 0x%04x", (unsigned) address));
 
   if (address == 0x60) { /* output buffer */
@@ -414,15 +409,7 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
   Bit8u   command_byte;
   static int kbd_initialized=0;
 
-  if (io_len > 1)
-    BX_PANIC(("kbd: io write to address %08x, len=%u",
-             (unsigned) address, (unsigned) io_len));
-
   BX_DEBUG(("keyboard: 8-bit write to %04x = %02x", (unsigned)address, (unsigned)value));
-
-
-//BX_DEBUG(("WRITE(%02x) = %02x", (unsigned) address,
-//      (unsigned) value));
 
   switch (address) {
     case 0x60: // input buffer
@@ -536,8 +523,12 @@ bx_keyb_c::write( Bit32u   address, Bit32u   value, unsigned io_len)
           BX_KEY_THIS s.kbd_controller.expecting_port60h = 1;
           break;
 
+        case 0xa0:
+          BX_DEBUG(("keyboard BIOS name not supported"));
+          break;
+
         case 0xa1:
-          BX_ERROR(("Dummy out Green PC for now : 0xa1"));
+          BX_DEBUG(("keyboard BIOS version not supported"));
           break;
 
         case 0xa7: // disable the aux device
@@ -734,17 +725,15 @@ bx_keyb_c::paste_bytes (Bit8u *bytes, Bit32s length)
 }
 
   void
-bx_keyb_c::gen_scancode(Bit32u   key)
+bx_keyb_c::gen_scancode(Bit32u key)
 {
   unsigned char *scancode;
   Bit8u  i;
 
-  BX_DEBUG(( "gen_scancode %lld %x", bx_pc_system.time_ticks(), key));
+  BX_DEBUG(( "gen_scancode(): %s %s", bx_keymap.getBXKeyName(key), (key >> 31)?"released":"pressed"));
 
   if (!BX_KEY_THIS s.kbd_controller.scancodes_translate)
 	BX_DEBUG(("keyboard: gen_scancode with scancode_translate cleared"));
-
-  BX_DEBUG(("gen_scancode(): scancode: %08x", (unsigned) key));
 
   // Ignore scancode if keyboard clock is driven low
   if (BX_KEY_THIS s.kbd_controller.kbd_clock_enabled==0)
@@ -768,8 +757,8 @@ bx_keyb_c::gen_scancode(Bit32u   key)
       if (scancode[i] == 0xF0)
         escaped=0x80;
       else {
+	BX_DEBUG(("gen_scancode(): writing translated %02x",translation8042[scancode[i] ] | escaped));
         kbd_enQ(translation8042[scancode[i] ] | escaped );
-	BX_DEBUG(("keyboard: writing translated %02x",translation8042[scancode[i] ] | escaped));
         escaped=0x00;
       }
     }
@@ -777,15 +766,15 @@ bx_keyb_c::gen_scancode(Bit32u   key)
   else {
     // Send raw data
     for (i=0; i<strlen( (const char *)scancode ); i++) {
+      BX_DEBUG(("gen_scancode(): writing raw %02x",scancode[i]));
       kbd_enQ( scancode[i] );
-      BX_DEBUG(("keyboard: writing raw %02x",scancode[i]));
     }
   }
 }
 
 
 
-  void
+  void BX_CPP_AttrRegparmN(1)
 bx_keyb_c::set_kbd_clock_enable(Bit8u   value)
 {
   bx_bool prev_kbd_clock_enabled;
@@ -898,11 +887,11 @@ bx_keyb_c::kbd_enQ_imm(Bit8u val)
 
 
   void
-bx_keyb_c::kbd_enQ(Bit8u   scancode)
+bx_keyb_c::kbd_enQ(Bit8u scancode)
 {
   int tail;
 
-  BX_DEBUG(("enQ(%02x)", (unsigned) scancode));
+  BX_DEBUG(("kbd_enQ(0x%02x)", (unsigned) scancode));
 
   if (BX_KEY_THIS s.kbd_internal_buffer.num_elements >= BX_KBD_ELEMENTS) {
     BX_INFO(("internal keyboard buffer full, ignoring scancode.(%02x)",
@@ -911,7 +900,7 @@ bx_keyb_c::kbd_enQ(Bit8u   scancode)
     }
 
   /* enqueue scancode in multibyte internal keyboard buffer */
-  BX_DEBUG(("enQ: putting scancode %02x in internal buffer",
+  BX_DEBUG(("kbd_enQ: putting scancode 0x%02x in internal buffer",
       (unsigned) scancode));
   tail = (BX_KEY_THIS s.kbd_internal_buffer.head + BX_KEY_THIS s.kbd_internal_buffer.num_elements) %
    BX_KBD_ELEMENTS;
@@ -920,7 +909,7 @@ bx_keyb_c::kbd_enQ(Bit8u   scancode)
 
   if (!BX_KEY_THIS s.kbd_controller.outb && BX_KEY_THIS s.kbd_controller.kbd_clock_enabled) {
     activate_timer();
-	BX_DEBUG(("activating timer..."));
+    BX_DEBUG(("activating timer..."));
     return;
     }
 //BX_DEBUG(( "# not activating timer...");
@@ -930,7 +919,7 @@ bx_keyb_c::kbd_enQ(Bit8u   scancode)
 //BX_DEBUG(( "#   out_buffer = %u", (unsigned) BX_KEY_THIS s.kbd_controller.kbd_output_buffer);
 }
 
-  bx_bool
+  bx_bool BX_CPP_AttrRegparmN(3)
 bx_keyb_c::mouse_enQ_packet(Bit8u   b1, Bit8u   b2, Bit8u   b3)
 {
   if ((BX_KEY_THIS s.mouse_internal_buffer.num_elements + 3) >= BX_MOUSE_BUFF_SIZE) {
@@ -1017,7 +1006,7 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
       if( value<4 ) {
         BX_KEY_THIS s.kbd_controller.current_scancodes_set = (value-1);
         BX_INFO(("Switched to scancode set %d\n",
-          (unsigned) BX_KEY_THIS s.kbd_controller.current_scancodes_set));
+          (unsigned) BX_KEY_THIS s.kbd_controller.current_scancodes_set + 1));
         kbd_enQ(0xFA);
         } 
       else {
@@ -1090,10 +1079,9 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
       return;
       break;
 
-    case 0xf4:  // flush scancodes buffer and modes, then enable keyboard
-      resetinternals(0);
-      kbd_enQ(0xFA); // send ACK
+    case 0xf4:  // enable keyboard
       BX_KEY_THIS s.kbd_internal_buffer.scanning_enabled = 1;
+      kbd_enQ(0xFA); // send ACK
       return;
       break;
 
@@ -1133,6 +1121,7 @@ bx_keyb_c::kbd_ctrl_to_kbd(Bit8u   value)
 
     case 0xff:  // reset: internal keyboard reset and afterwards the BAT
       BX_DEBUG(("reset command received"));
+      resetinternals(1);
       kbd_enQ(0xFA); // send ACK
       kbd_enQ(0xAA); // BAT test passed
       return;
@@ -1173,7 +1162,7 @@ bx_keyb_c::timer_handler(void *this_ptr)
   unsigned
 bx_keyb_c::periodic( Bit32u   usec_delta )
 {
-  static int multiple=0;
+/*  static int multiple=0; */
   static unsigned count_before_paste=0;
   Bit8u   retval;
 
@@ -1598,17 +1587,6 @@ bx_keyb_c::mouse_motion(int delta_x, int delta_y, unsigned button_state)
   }
 
   create_mouse_packet(force_enq);
-}
-
-
-  void
-bx_keyb_c::put_scancode( unsigned char *code, int count )
-{
-  for ( int i = 0 ; i < count ; i++ ) {
-    kbd_enQ( code[i] );
-    }
-
-  return;
 }
 
 

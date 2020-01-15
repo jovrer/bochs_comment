@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.h,v 1.11.2.1 2003/01/03 00:29:33 cbothamy Exp $
+// $Id: plugin.h,v 1.20 2003/08/04 16:03:08 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file provides macros and types needed for plugins.  It is based on
@@ -21,23 +21,27 @@ BOCHSAPI extern logfunctions  *pluginlog;
 extern "C" {
 #endif
 
-#define BX_PLUGIN_UNMAPPED "unmapped"
-#define BX_PLUGIN_BIOSDEV  "biosdev"
-#define BX_PLUGIN_CMOS     "cmos"
-#define BX_PLUGIN_VGA      "vga"
-#define BX_PLUGIN_FLOPPY   "floppy"
-#define BX_PLUGIN_PARALLEL "parallel"
-#define BX_PLUGIN_SERIAL   "serial"
-#define BX_PLUGIN_KEYBOARD "keyboard"
-#define BX_PLUGIN_HARDDRV  "harddrv"
-#define BX_PLUGIN_DMA      "dma"
-#define BX_PLUGIN_PIC      "pic"
-#define BX_PLUGIN_PCI      "pci"
-#define BX_PLUGIN_PCI2ISA  "pci2isa"
-#define BX_PLUGIN_SB16     "sb16"
-#define BX_PLUGIN_NE2K     "ne2k"
+#define BX_PLUGIN_UNMAPPED  "unmapped"
+#define BX_PLUGIN_BIOSDEV   " biosdev"
+#define BX_PLUGIN_CMOS      "cmos"
+#define BX_PLUGIN_VGA       "vga"
+#define BX_PLUGIN_FLOPPY    "floppy"
+#define BX_PLUGIN_PARALLEL  "parallel"
+#define BX_PLUGIN_SERIAL    "serial"
+#define BX_PLUGIN_KEYBOARD  "keyboard"
+#define BX_PLUGIN_HARDDRV   "harddrv"
+#define BX_PLUGIN_DMA       "dma"
+#define BX_PLUGIN_PIC       "pic"
+#define BX_PLUGIN_PCI       "pci"
+#define BX_PLUGIN_PCI2ISA   "pci2isa"
+#define BX_PLUGIN_SB16      "sb16"
+#define BX_PLUGIN_NE2K      "ne2k"
+#define BX_PLUGIN_EXTFPUIRQ "extfpuirq"
+#define BX_PLUGIN_PCIVGA    "pcivga"
+#define BX_PLUGIN_PCIUSB    "pciusb"
+#define BX_PLUGIN_GAMEPORT  "gameport"
 
-#define BX_REGISTER_DEVICE pluginRegisterDevice
+
 #define BX_REGISTER_DEVICE_DEVMODEL(a,b,c,d) pluginRegisterDeviceDevmodel(a,b,c,d)
 
 #if BX_PLUGINS
@@ -61,10 +65,10 @@ extern "C" {
 // When plugins are off, PLUG_load_plugin will call the plugin_init function
 // directly.
 #define PLUG_load_plugin(name,type) {lib##name##_LTX_plugin_init(NULL,type,0,NULL);}
-#define DEV_register_ioread_handler(b,c,d,e,f) bx_devices.register_io_read_handler(b,c,d,e)
-#define DEV_register_iowrite_handler(b,c,d,e,f) bx_devices.register_io_write_handler(b,c,d,e)
-#define DEV_register_default_ioread_handler(b,c,d,e) bx_devices.register_default_io_read_handler(b,c,d)
-#define DEV_register_default_iowrite_handler(b,c,d,e) bx_devices.register_default_io_write_handler(b,c,d)
+#define DEV_register_ioread_handler(b,c,d,e,f) bx_devices.register_io_read_handler(b,c,d,e,f)
+#define DEV_register_iowrite_handler(b,c,d,e,f) bx_devices.register_io_write_handler(b,c,d,e,f)
+#define DEV_register_default_ioread_handler(b,c,d,e) bx_devices.register_default_io_read_handler(b,c,d,e)
+#define DEV_register_default_iowrite_handler(b,c,d,e) bx_devices.register_default_io_write_handler(b,c,d,e)
 #define DEV_register_irq(b,c) bx_devices.register_irq(b,c)
 #define DEV_unregister_irq(b,c) bx_devices.unregister_irq(b,c)
 
@@ -84,10 +88,8 @@ extern "C" {
 ///////// keyboard macros
 #define DEV_mouse_motion(dx, dy, state) \
     (bx_devices.pluginKeyboard->mouse_motion(dx, dy, state))
-#define DEV_kbd_gen_scancode(scancode) \
-    (bx_devices.pluginKeyboard->gen_scancode(scancode))
-#define DEV_kbd_put_scancode(scancode, count) \
-    (bx_devices.pluginKeyboard->put_scancode(scancode, count))
+#define DEV_kbd_gen_scancode(key) \
+    (bx_devices.pluginKeyboard->gen_scancode(key))
 #define DEV_kbd_paste_bytes(bytes, count) \
     (bx_devices.pluginKeyboard->paste_bytes(bytes,count))
 #define DEV_kbd_paste_delay_changed() \
@@ -138,6 +140,7 @@ extern "C" {
 #define DEV_pic_lower_irq(b)  (bx_devices.pluginPicDevice->lower_irq(b))
 #define DEV_pic_raise_irq(b)  (bx_devices.pluginPicDevice->raise_irq(b))
 #define DEV_pic_iac()         (bx_devices.pluginPicDevice->IAC())
+#define DEV_pic_show_pic_state() (bx_devices.pluginPicDevice->show_pic_state())
 
 ///////// VGA macros
 #define DEV_vga_mem_read(addr) (bx_devices.pluginVgaDevice->mem_read(addr))
@@ -205,21 +208,18 @@ typedef void (*deviceReset_t)(unsigned);
 typedef void (*deviceLoad_t)(void);
 typedef void (*deviceSave_t)(void);
 
-BOCHSAPI void pluginRegisterDevice(deviceInitMem_t init_mem, deviceInitDev_t init_dev,
-                          deviceReset_t reset, deviceLoad_t load, 
-                          deviceSave_t save, char *name);
 BOCHSAPI void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmodel_c *dev, char *name);
 BOCHSAPI bx_bool pluginDevicePresent(char *name);
 
 /* === IO port stuff === */
 BOCHSAPI extern int (*pluginRegisterIOReadHandler)(void *thisPtr, ioReadHandler_t callback,
-                                unsigned base, const char *name, unsigned len);
+                                unsigned base, const char *name, Bit8u mask);
 BOCHSAPI extern int (*pluginRegisterIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
-                                 unsigned base, const char *name, unsigned len);
+                                 unsigned base, const char *name, Bit8u mask);
 BOCHSAPI extern int (*pluginRegisterDefaultIOReadHandler)(void *thisPtr, ioReadHandler_t callback,
-                                const char *name, unsigned len);
+                                const char *name, Bit8u mask);
 BOCHSAPI extern int (*pluginRegisterDefaultIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
-                                 const char *name, unsigned len);
+                                 const char *name, Bit8u mask);
 
 /* === A20 enable line stuff === */
 BOCHSAPI extern unsigned (*pluginGetA20E)(void);
@@ -269,8 +269,6 @@ BOCHSAPI extern Bit8u    (*pluginWr_memType)(Bit32u addr);
 
 void plugin_abort (void);
 
-// called from bochs main (hack)
-extern int bx_load_plugins ();
 int bx_load_plugin (const char *name, plugintype_t type);
 extern void bx_init_plugins (void);
 extern void bx_reset_plugins (unsigned);
@@ -298,8 +296,12 @@ DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(floppy)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(parallel)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pci2isa)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pcivga)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(pciusb)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(sb16)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(ne2k)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(extfpuirq)
+DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(gameport)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(amigaos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(beos)
 DECLARE_PLUGIN_INIT_FINI_FOR_MODULE(carbon)

@@ -18,12 +18,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 //
 
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
 
 /* ********************************************** */
 /* SSE Integer Operations (128bit MMX extensions) */
@@ -67,7 +64,7 @@ void BX_CPU_C::PACKSSWB_VdqWq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PACKSSWB_VdqWq: SSE2 not supported in current configuration"));
+  BX_INFO(("PACKSSWB_VdqWq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -78,7 +75,7 @@ void BX_CPU_C::PCMPGTB_VdqWq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -89,15 +86,14 @@ void BX_CPU_C::PCMPGTB_VdqWq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
-    result.xmmsbyte(j) = (op1.xmmsbyte(j) > op2.xmmsbyte(j)) ? 0xff : 0;
+  for(unsigned j=0; j<16; j++) {
+    op1.xmmsbyte(j) = (op1.xmmsbyte(j) > op2.xmmsbyte(j)) ? 0xff : 0;
   }
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PCMPGTB_VdqWq: SSE2 not supported in current configuration"));
+  BX_INFO(("PCMPGTB_VdqWq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -108,7 +104,7 @@ void BX_CPU_C::PCMPGTW_VdqWq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -119,19 +115,19 @@ void BX_CPU_C::PCMPGTW_VdqWq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  result.xmm16s(0) = (op1.xmm16s(0) > op2.xmm16s(0)) ? 0xffff : 0;
-  result.xmm16s(1) = (op1.xmm16s(1) > op2.xmm16s(1)) ? 0xffff : 0;
-  result.xmm16s(2) = (op1.xmm16s(2) > op2.xmm16s(2)) ? 0xffff : 0;
-  result.xmm16s(3) = (op1.xmm16s(3) > op2.xmm16s(3)) ? 0xffff : 0;
-  result.xmm16s(4) = (op1.xmm16s(4) > op2.xmm16s(4)) ? 0xffff : 0;
-  result.xmm16s(5) = (op1.xmm16s(5) > op2.xmm16s(5)) ? 0xffff : 0;
-  result.xmm16s(6) = (op1.xmm16s(6) > op2.xmm16s(6)) ? 0xffff : 0;
-  result.xmm16s(7) = (op1.xmm16s(7) > op2.xmm16s(7)) ? 0xffff : 0;
+  op1.xmm16s(0) = (op1.xmm16s(0) > op2.xmm16s(0)) ? 0xffff : 0;
+  op1.xmm16s(1) = (op1.xmm16s(1) > op2.xmm16s(1)) ? 0xffff : 0;
+  op1.xmm16s(2) = (op1.xmm16s(2) > op2.xmm16s(2)) ? 0xffff : 0;
+  op1.xmm16s(3) = (op1.xmm16s(3) > op2.xmm16s(3)) ? 0xffff : 0;
+  op1.xmm16s(4) = (op1.xmm16s(4) > op2.xmm16s(4)) ? 0xffff : 0;
+  op1.xmm16s(5) = (op1.xmm16s(5) > op2.xmm16s(5)) ? 0xffff : 0;
+  op1.xmm16s(6) = (op1.xmm16s(6) > op2.xmm16s(6)) ? 0xffff : 0;
+  op1.xmm16s(7) = (op1.xmm16s(7) > op2.xmm16s(7)) ? 0xffff : 0;
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PCMPGTW_VdqWq: SSE2 not supported in current configuration"));
+  BX_INFO(("PCMPGTW_VdqWq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -142,7 +138,7 @@ void BX_CPU_C::PCMPGTD_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -153,15 +149,15 @@ void BX_CPU_C::PCMPGTD_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  result.xmm32s(0) = (op1.xmm32s(0) > op2.xmm32s(0)) ? 0xffffffff : 0;
-  result.xmm32s(1) = (op1.xmm32s(1) > op2.xmm32s(1)) ? 0xffffffff : 0;
-  result.xmm32s(2) = (op1.xmm32s(2) > op2.xmm32s(2)) ? 0xffffffff : 0;
-  result.xmm32s(3) = (op1.xmm32s(3) > op2.xmm32s(3)) ? 0xffffffff : 0;
+  op1.xmm32s(0) = (op1.xmm32s(0) > op2.xmm32s(0)) ? 0xffffffff : 0;
+  op1.xmm32s(1) = (op1.xmm32s(1) > op2.xmm32s(1)) ? 0xffffffff : 0;
+  op1.xmm32s(2) = (op1.xmm32s(2) > op2.xmm32s(2)) ? 0xffffffff : 0;
+  op1.xmm32s(3) = (op1.xmm32s(3) > op2.xmm32s(3)) ? 0xffffffff : 0;
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PCMPGTD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PCMPGTD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -204,7 +200,7 @@ void BX_CPU_C::PACKUSWB_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PACKUSWB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PACKUSWB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -239,7 +235,7 @@ void BX_CPU_C::PACKSSDW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PACKSSDW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PACKSSDW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -250,7 +246,7 @@ void BX_CPU_C::PCMPEQB_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -261,15 +257,14 @@ void BX_CPU_C::PCMPEQB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++)
-  {
-    result.xmmubyte(j) = (op1.xmmubyte(j) == op2.xmmubyte(j)) ? 0xff : 0;
+  for(unsigned j=0; j<16; j++) {
+    op1.xmmubyte(j) = (op1.xmmubyte(j) == op2.xmmubyte(j)) ? 0xff : 0;
   }
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PCMPEQB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PCMPEQB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -280,7 +275,7 @@ void BX_CPU_C::PCMPEQW_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -291,19 +286,19 @@ void BX_CPU_C::PCMPEQW_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  result.xmm16u(0) = (op1.xmm16u(0) == op2.xmm16u(0)) ? 0xffff : 0;
-  result.xmm16u(1) = (op1.xmm16u(1) == op2.xmm16u(1)) ? 0xffff : 0;
-  result.xmm16u(2) = (op1.xmm16u(2) == op2.xmm16u(2)) ? 0xffff : 0;
-  result.xmm16u(3) = (op1.xmm16u(3) == op2.xmm16u(3)) ? 0xffff : 0;
-  result.xmm16u(4) = (op1.xmm16u(4) == op2.xmm16u(4)) ? 0xffff : 0;
-  result.xmm16u(5) = (op1.xmm16u(5) == op2.xmm16u(5)) ? 0xffff : 0;
-  result.xmm16u(6) = (op1.xmm16u(6) == op2.xmm16u(6)) ? 0xffff : 0;
-  result.xmm16u(7) = (op1.xmm16u(7) == op2.xmm16u(7)) ? 0xffff : 0;
+  op1.xmm16u(0) = (op1.xmm16u(0) == op2.xmm16u(0)) ? 0xffff : 0;
+  op1.xmm16u(1) = (op1.xmm16u(1) == op2.xmm16u(1)) ? 0xffff : 0;
+  op1.xmm16u(2) = (op1.xmm16u(2) == op2.xmm16u(2)) ? 0xffff : 0;
+  op1.xmm16u(3) = (op1.xmm16u(3) == op2.xmm16u(3)) ? 0xffff : 0;
+  op1.xmm16u(4) = (op1.xmm16u(4) == op2.xmm16u(4)) ? 0xffff : 0;
+  op1.xmm16u(5) = (op1.xmm16u(5) == op2.xmm16u(5)) ? 0xffff : 0;
+  op1.xmm16u(6) = (op1.xmm16u(6) == op2.xmm16u(6)) ? 0xffff : 0;
+  op1.xmm16u(7) = (op1.xmm16u(7) == op2.xmm16u(7)) ? 0xffff : 0;
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PCMPEQW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PCMPEQW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -314,7 +309,7 @@ void BX_CPU_C::PCMPEQD_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -325,15 +320,15 @@ void BX_CPU_C::PCMPEQD_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  result.xmm32u(0) = (op1.xmm32u(0) == op2.xmm32u(0)) ? 0xffffffff : 0;
-  result.xmm32u(1) = (op1.xmm32u(1) == op2.xmm32u(1)) ? 0xffffffff : 0;
-  result.xmm32u(2) = (op1.xmm32u(2) == op2.xmm32u(2)) ? 0xffffffff : 0;
-  result.xmm32u(3) = (op1.xmm32u(3) == op2.xmm32u(3)) ? 0xffffffff : 0;
+  op1.xmm32u(0) = (op1.xmm32u(0) == op2.xmm32u(0)) ? 0xffffffff : 0;
+  op1.xmm32u(1) = (op1.xmm32u(1) == op2.xmm32u(1)) ? 0xffffffff : 0;
+  op1.xmm32u(2) = (op1.xmm32u(2) == op2.xmm32u(2)) ? 0xffffffff : 0;
+  op1.xmm32u(3) = (op1.xmm32u(3) == op2.xmm32u(3)) ? 0xffffffff : 0;
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PCMPEQD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PCMPEQD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -362,7 +357,7 @@ void BX_CPU_C::PINSRW_VdqEdIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PINSRW_VdqEdIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PINSRW_VdqEdIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -379,7 +374,7 @@ void BX_CPU_C::PEXTRW_VdqEdIb(bxInstruction_c *i)
 
   BX_WRITE_32BIT_REG(i->nnn(), result);
 #else
-  BX_INFO(("PEXTRW_VdqEdIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PEXTRW_VdqEdIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -423,7 +418,7 @@ void BX_CPU_C::PSRLW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSRLW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -463,7 +458,7 @@ void BX_CPU_C::PSRLD_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSRLD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -501,7 +496,7 @@ void BX_CPU_C::PSRLQ_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSRLQ_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLQ_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -529,7 +524,7 @@ void BX_CPU_C::PADDQ_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PADDQ_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDQ_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -572,7 +567,7 @@ void BX_CPU_C::PMULLW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PMULLW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMULLW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -607,7 +602,7 @@ void BX_CPU_C::PMOVMSKB_GdVRdq(bxInstruction_c *i)
   BX_WRITE_32BIT_REG(i->nnn(), result);
   
 #else
-  BX_INFO(("PMOVMSKB_GdVRdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMOVMSKB_GdVRdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -642,7 +637,7 @@ void BX_CPU_C::PSUBUSB_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSUBUSB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBUSB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -677,7 +672,7 @@ void BX_CPU_C::PSUBUSW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSUBUSW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBUSW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -699,15 +694,14 @@ void BX_CPU_C::PMINUB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     if(op2.xmmubyte(j) < op1.xmmubyte(j)) op1.xmmubyte(j) = op2.xmmubyte(j);
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PMINUB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMINUB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -738,7 +732,7 @@ void BX_CPU_C::PAND_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PAND_VdqWdq: SSE not supported in current configuration"));
+  BX_INFO(("PAND_VdqWdq: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -760,15 +754,14 @@ void BX_CPU_C::PADDUSB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     result.xmmubyte(j) = SaturateWordSToByteU(Bit16s(op1.xmmubyte(j)) + Bit16s(op2.xmmubyte(j)));
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PADDUSB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDUSB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -802,7 +795,7 @@ void BX_CPU_C::PADDUSW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PADDUSW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDUSW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -824,15 +817,14 @@ void BX_CPU_C::PMAXUB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     if(op2.xmmubyte(j) > op1.xmmubyte(j)) op1.xmmubyte(j) = op2.xmmubyte(j);
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PMAXUB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMAXUB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -846,7 +838,7 @@ void BX_CPU_C::PANDN_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 1
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -857,13 +849,13 @@ void BX_CPU_C::PANDN_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  result.xmm64u(0) = ~(op1.xmm64u(0)) & op2.xmm64u(0);
-  result.xmm64u(1) = ~(op1.xmm64u(1)) & op2.xmm64u(1);
+  op1.xmm64u(0) = ~(op1.xmm64u(0)) & op2.xmm64u(0);
+  op1.xmm64u(1) = ~(op1.xmm64u(1)) & op2.xmm64u(1);
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PANDN_VdqWdq: SSE not supported in current configuration"));
+  BX_INFO(("PANDN_VdqWdq: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -874,7 +866,7 @@ void BX_CPU_C::PAVGB_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -885,15 +877,14 @@ void BX_CPU_C::PAVGB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++)
-  {
-    result.xmmubyte(j) = (op1.xmmubyte(j) + op2.xmmubyte(j) + 1) >> 1;
+  for(unsigned j=0; j<16; j++) {
+    op1.xmmubyte(j) = (op1.xmmubyte(j) + op2.xmmubyte(j) + 1) >> 1;
   }
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PAVGB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PAVGB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -958,7 +949,7 @@ void BX_CPU_C::PSRAW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSRAW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRAW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1011,7 +1002,7 @@ void BX_CPU_C::PSRAD_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSRAD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRAD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1022,7 +1013,7 @@ void BX_CPU_C::PAVGW_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
 
   /* op2 is a register or memory reference */
   if (i->modC0()) {
@@ -1033,19 +1024,19 @@ void BX_CPU_C::PAVGW_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  result.xmm16u(0) = (op1.xmm16u(0) + op2.xmm16u(0) + 1) >> 1;
-  result.xmm16u(1) = (op1.xmm16u(1) + op2.xmm16u(1) + 1) >> 1;
-  result.xmm16u(2) = (op1.xmm16u(2) + op2.xmm16u(2) + 1) >> 1;
-  result.xmm16u(3) = (op1.xmm16u(3) + op2.xmm16u(3) + 1) >> 1;
-  result.xmm16u(4) = (op1.xmm16u(4) + op2.xmm16u(4) + 1) >> 1;
-  result.xmm16u(5) = (op1.xmm16u(5) + op2.xmm16u(5) + 1) >> 1;
-  result.xmm16u(6) = (op1.xmm16u(6) + op2.xmm16u(6) + 1) >> 1;
-  result.xmm16u(7) = (op1.xmm16u(7) + op2.xmm16u(7) + 1) >> 1;
+  op1.xmm16u(0) = (op1.xmm16u(0) + op2.xmm16u(0) + 1) >> 1;
+  op1.xmm16u(1) = (op1.xmm16u(1) + op2.xmm16u(1) + 1) >> 1;
+  op1.xmm16u(2) = (op1.xmm16u(2) + op2.xmm16u(2) + 1) >> 1;
+  op1.xmm16u(3) = (op1.xmm16u(3) + op2.xmm16u(3) + 1) >> 1;
+  op1.xmm16u(4) = (op1.xmm16u(4) + op2.xmm16u(4) + 1) >> 1;
+  op1.xmm16u(5) = (op1.xmm16u(5) + op2.xmm16u(5) + 1) >> 1;
+  op1.xmm16u(6) = (op1.xmm16u(6) + op2.xmm16u(6) + 1) >> 1;
+  op1.xmm16u(7) = (op1.xmm16u(7) + op2.xmm16u(7) + 1) >> 1;
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PAVGW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PAVGW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1088,7 +1079,7 @@ void BX_CPU_C::PMULHUW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else                                        
-  BX_INFO(("PMULHUW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMULHUW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1131,7 +1122,7 @@ void BX_CPU_C::PMULHW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PMULHW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMULHW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1153,15 +1144,14 @@ void BX_CPU_C::PSUBSB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     result.xmmsbyte(j) = SaturateWordSToByteS(Bit16s(op1.xmmsbyte(j)) - Bit16s(op2.xmmsbyte(j)));
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSUBSB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBSB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1195,7 +1185,7 @@ void BX_CPU_C::PSUBSW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PSUBSW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBSW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1229,7 +1219,7 @@ void BX_CPU_C::PMINSW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PMINSW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMINSW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1260,7 +1250,7 @@ void BX_CPU_C::POR_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("POR_VdqWdq: SSE not supported in current configuration"));
+  BX_INFO(("POR_VdqWdq: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1282,15 +1272,14 @@ void BX_CPU_C::PADDSB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     result.xmmsbyte(j) = SaturateWordSToByteS(Bit16s(op1.xmmsbyte(j)) + Bit16s(op2.xmmsbyte(j)));
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PADDSB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDSB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1324,7 +1313,7 @@ void BX_CPU_C::PADDSW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PADDSW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDSW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1358,7 +1347,7 @@ void BX_CPU_C::PMAXSW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PMAXSW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMAXSW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1389,7 +1378,7 @@ void BX_CPU_C::PXOR_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PXOR_VdqWdq: SSE not supported in current configuration"));
+  BX_INFO(("PXOR_VdqWdq: required SSE, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1433,7 +1422,7 @@ void BX_CPU_C::PSLLW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSLLW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1473,7 +1462,7 @@ void BX_CPU_C::PSLLD_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSLLD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1511,7 +1500,7 @@ void BX_CPU_C::PSLLQ_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSLLQ_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLQ_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1539,7 +1528,7 @@ void BX_CPU_C::PMULUDQ_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PMULUDQ_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMULUDQ_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1564,18 +1553,18 @@ void BX_CPU_C::PMADDWD_VdqWdq(bxInstruction_c *i)
   for(unsigned j=0; j<4; j++)
   {
     if(op1.xmm32u(j) == 0x80008000 && op2.xmm32u(j) == 0x80008000) {
-      result.xmm32u(j) = 0x80000000;
+        result.xmm32u(j) = 0x80000000;
     }
     else
       result.xmm32u(j) = 
-		Bit32s(op1.xmm16s(2*j))   * Bit32s(op2.xmm16s(2*j)) +
-		Bit32s(op1.xmm16s(2*j+1)) * Bit32s(op2.xmm16s(2*j+1));
+        Bit32s(op1.xmm16s(2*j+0)) * Bit32s(op2.xmm16s(2*j+0)) +
+        Bit32s(op1.xmm16s(2*j+1)) * Bit32s(op2.xmm16s(2*j+1));
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), result);
 #else
-  BX_INFO(("PMADDWD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PMADDWD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1586,7 +1575,7 @@ void BX_CPU_C::PSADBW_VdqWdq(bxInstruction_c *i)
 #if BX_SUPPORT_SSE >= 2
   BX_CPU_THIS_PTR prepareSSE();
 
-  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2, result;
+  BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->nnn()), op2;
   Bit16u temp1 = 0, temp2 = 0;
 
   /* op2 is a register or memory reference */
@@ -1616,13 +1605,13 @@ void BX_CPU_C::PSADBW_VdqWdq(bxInstruction_c *i)
   temp2 += abs(op1.xmmubyte(0xE) - op2.xmmubyte(0xE));
   temp2 += abs(op1.xmmubyte(0xF) - op2.xmmubyte(0xF));
 
-  result.xmm64u(0) = Bit64u(temp1);
-  result.xmm64u(1) = Bit64u(temp2);
+  op1.xmm64u(0) = Bit64u(temp1);
+  op1.xmm64u(1) = Bit64u(temp2);
 
   /* now write result back to destination */
-  BX_WRITE_XMM_REG(i->nnn(), result);
+  BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSADBW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSADBW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1644,15 +1633,14 @@ void BX_CPU_C::PSUBB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     op1.xmmubyte(j) -= op2.xmmubyte(j);
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSUBB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1686,7 +1674,7 @@ void BX_CPU_C::PSUBW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSUBW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1716,7 +1704,7 @@ void BX_CPU_C::PSUBD_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSUBD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1744,7 +1732,7 @@ void BX_CPU_C::PSUBQ_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PSUBQ_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PSUBQ_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1766,15 +1754,14 @@ void BX_CPU_C::PADDB_VdqWdq(bxInstruction_c *i)
     readVirtualDQwordAligned(i->seg(), RMAddr(i), (Bit8u *) &op2);
   }
 
-  for(unsigned j=0; j<16; j++) 
-  {
+  for(unsigned j=0; j<16; j++) {
     op1.xmmubyte(j) += op2.xmmubyte(j);
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PADDB_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDB_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1808,7 +1795,7 @@ void BX_CPU_C::PADDW_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PADDW_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDW_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1838,7 +1825,7 @@ void BX_CPU_C::PADDD_VdqWdq(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->nnn(), op1);
 #else
-  BX_INFO(("PADDD_VdqWdq: SSE2 not supported in current configuration"));
+  BX_INFO(("PADDD_VdqWdq: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1852,13 +1839,11 @@ void BX_CPU_C::PSRLW_PdqIb(bxInstruction_c *i)
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
   Bit8u shift = i->Ib();
 
-  if(shift > 15)
-  {
+  if(shift > 15) {
     op.xmm64u(0) = 0;
     op.xmm64u(1) = 0;
   }
-  else
-  {
+  else {
     op.xmm16u(0) >>= shift;
     op.xmm16u(1) >>= shift;
     op.xmm16u(2) >>= shift;
@@ -1872,7 +1857,7 @@ void BX_CPU_C::PSRLW_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), op);
 #else
-  BX_INFO(("PSRLW_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLW_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1925,7 +1910,7 @@ void BX_CPU_C::PSRAW_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), result);
 #else
-  BX_INFO(("PSRAW_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRAW_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1939,13 +1924,11 @@ void BX_CPU_C::PSLLW_PdqIb(bxInstruction_c *i)
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
   Bit8u shift = i->Ib();
 
-  if(shift > 15)
-  {
+  if(shift > 15) {
     op.xmm64u(0) = 0;
     op.xmm64u(1) = 0;
   }
-  else
-  {
+  else {
     op.xmm16u(0) <<= shift;
     op.xmm16u(1) <<= shift;
     op.xmm16u(2) <<= shift;
@@ -1959,7 +1942,7 @@ void BX_CPU_C::PSLLW_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), op);
 #else
-  BX_INFO(("PSLLW_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLW_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -1973,13 +1956,11 @@ void BX_CPU_C::PSRLD_PdqIb(bxInstruction_c *i)
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
   Bit8u shift = i->Ib();
 
-  if(shift > 31)
-  {
+  if(shift > 31) {
     op.xmm64u(0) = 0;
     op.xmm64u(1) = 0;
   }
-  else
-  {
+  else {
     op.xmm32u(0) >>= shift;
     op.xmm32u(1) >>= shift;
     op.xmm32u(2) >>= shift;
@@ -1989,7 +1970,7 @@ void BX_CPU_C::PSRLD_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), op);
 #else
-  BX_INFO(("PSRLD_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLD_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -2030,7 +2011,7 @@ void BX_CPU_C::PSRAD_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), result);
 #else
-  BX_INFO(("PSRAD_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRAD_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -2044,13 +2025,11 @@ void BX_CPU_C::PSLLD_PdqIb(bxInstruction_c *i)
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
   Bit8u shift = i->Ib();
 
-  if(shift > 31)
-  {
+  if(shift > 31) {
     op.xmm64u(0) = 0;
     op.xmm64u(1) = 0;
   }
-  else
-  {
+  else {
     op.xmm32u(0) <<= shift;
     op.xmm32u(1) <<= shift;
     op.xmm32u(2) <<= shift;
@@ -2060,7 +2039,7 @@ void BX_CPU_C::PSLLD_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), op);
 #else
-  BX_INFO(("PSLLD_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLD_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -2074,13 +2053,11 @@ void BX_CPU_C::PSRLQ_PdqIb(bxInstruction_c *i)
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
   Bit8u shift = i->Ib();
 
-  if(shift > 63)
-  {
+  if(shift > 63) {
     op.xmm64u(0) = 0;
     op.xmm64u(1) = 0;
   }
-  else
-  {
+  else {
     op.xmm64u(0) >>= shift;
     op.xmm64u(1) >>= shift;
   }
@@ -2088,7 +2065,7 @@ void BX_CPU_C::PSRLQ_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), op);
 #else
-  BX_INFO(("PSRLQ_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLQ_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -2104,15 +2081,14 @@ void BX_CPU_C::PSRLDQ_WdqIb(bxInstruction_c *i)
   result.xmm64u(0) = 0;
   result.xmm64u(1) = 0;
 
-  for(unsigned j=shift; j<16; j++)
-  {
+  for(unsigned j=shift; j<16; j++) {
     result.xmmubyte(j-shift) = op.xmmubyte(j);
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), result);
 #else
-  BX_INFO(("PSRLDQ_WdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSRLDQ_WdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -2126,13 +2102,11 @@ void BX_CPU_C::PSLLQ_PdqIb(bxInstruction_c *i)
   BxPackedXmmRegister op = BX_READ_XMM_REG(i->rm());
   Bit8u shift = i->Ib();
 
-  if(shift > 63)
-  {
+  if(shift > 63) {
     op.xmm64u(0) = 0;
     op.xmm64u(1) = 0;
   }
-  else
-  {
+  else {
     op.xmm64u(0) <<= shift;
     op.xmm64u(1) <<= shift;
   }
@@ -2140,7 +2114,7 @@ void BX_CPU_C::PSLLQ_PdqIb(bxInstruction_c *i)
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), op);
 #else
-  BX_INFO(("PSLLQ_PdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLQ_PdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }
@@ -2157,15 +2131,14 @@ void BX_CPU_C::PSLLDQ_WdqIb(bxInstruction_c *i)
   result.xmm64u(0) = 0;
   result.xmm64u(1) = 0;
 
-  for(unsigned j=shift; j<16; j++)
-  {
+  for(unsigned j=shift; j<16; j++) {
     result.xmmubyte(j) = op.xmmubyte(j-shift);
   }
 
   /* now write result back to destination */
   BX_WRITE_XMM_REG(i->rm(), result);
 #else
-  BX_INFO(("PSLLDQ_WdqIb: SSE2 not supported in current configuration"));
+  BX_INFO(("PSLLDQ_WdqIb: required SSE2, use --enable-sse option"));
   UndefinedOpcode(i);
 #endif
 }

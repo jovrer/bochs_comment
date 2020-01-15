@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------+
  |  poly_2xm1.c                                                              |
- |  $Id: poly_2xm1.c,v 1.4 2001/10/06 03:53:46 bdenney Exp $
+ |  $Id: poly_2xm1.c,v 1.6 2003/10/05 12:26:11 sshwarts Exp $
  |                                                                           |
  | Function to compute 2^x-1 by a polynomial approximation.                  |
  |                                                                           |
@@ -65,7 +65,7 @@ int	poly_2xm1(u_char sign, FPU_REG *arg, FPU_REG *result)
   if ( exponent >= 0 )    	/* Don't want a |number| >= 1.0 */
     {
       /* Number negative, too large, or not Valid. */
-      EXCEPTION(EX_INTERNAL|0x127);
+      INTERNAL(0x127);
       return 1;
     }
 #endif /* PARANOID */
@@ -147,7 +147,7 @@ int	poly_2xm1(u_char sign, FPU_REG *arg, FPU_REG *result)
   significand(result) = XSIG_LL(accumulator);
   setexponent16(result, exponent);
 
-  tag = FPU_round(result, 1, 0, FULL_PRECISION, sign);
+  tag = FPU_round(result, 1, FULL_PRECISION, sign);
 
   setsign(result, sign);
   FPU_settag0(tag);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: logio.cc,v 1.40 2002/12/17 05:58:43 bdenney Exp $
+// $Id: logio.cc,v 1.42 2003/08/24 10:30:07 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -182,7 +182,7 @@ iofunctions::out(int f, int l, const char *prefix, const char *fmt, va_list ap)
                   fprintf(logfd, "%011lld", bx_pc_system.time_ticks());
 		  break;
 		case 'i':
-                  fprintf(logfd, "%08x", BX_CPU(0)->dword.eip);
+                  fprintf(logfd, "%08x", BX_CPU(0)==NULL?0:BX_CPU(0)->dword.eip);
 		  break;
 		case 'e':
                   fprintf(logfd, "%c", c);
@@ -488,6 +488,7 @@ logfunctions::ask (int level, const char *prefix, const char *fmt, va_list ap)
       setonoff (level, ACT_REPORT);
       break;
     case BX_LOG_ASK_CHOICE_DIE:
+      bx_user_quit = 1;
       in_ask_already = 0;  // because fatal will longjmp out
       fatal (prefix, fmt, ap, 1);
       // should never get here

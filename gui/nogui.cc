@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: nogui.cc,v 1.18 2002/10/25 11:44:37 bdenney Exp $
+// $Id: nogui.cc,v 1.21 2003/06/28 08:04:31 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -149,13 +149,13 @@ bx_nogui_gui_c::clear_screen(void)
   void
 bx_nogui_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-                      Bit16u cursor_state, unsigned nrows)
+                      bx_vga_tminfo_t tm_info, unsigned nrows)
 {
   UNUSED(old_text);
   UNUSED(new_text);
   UNUSED(cursor_x);
   UNUSED(cursor_y);
-  UNUSED(cursor_state);
+  UNUSED(tm_info);
   UNUSED(nrows);
 }
 
@@ -227,13 +227,18 @@ bx_nogui_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 //
 // x: new VGA x size
 // y: new VGA y size (add headerbar_y parameter from ::specific_init().
+// fheight: new VGA character height in text mode
+// fwidth : new VGA character width in text mode
+// bpp : bits per pixel in graphics mode
 
   void
-bx_nogui_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+bx_nogui_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   UNUSED(x);
   UNUSED(y);
   UNUSED(fheight);
+  UNUSED(fwidth);
+  UNUSED(bpp);
 }
 
 

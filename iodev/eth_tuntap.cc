@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tuntap.cc,v 1.7 2002/11/20 19:06:23 bdenney Exp $
+// $Id: eth_tuntap.cc,v 1.9 2003/04/26 14:48:45 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -113,7 +113,6 @@
 #define BX_PACKET_BUFSIZ 2048	// Enough for an ether frame
 
 int tun_alloc(char *dev);
-int execute_script(char *name, char* arg1);
 
 //
 //  Define the class. This is private to this module
@@ -160,11 +159,11 @@ bx_tuntap_pktmover_c::bx_tuntap_pktmover_c(const char *netif,
 				       void *rxarg)
 {
   int flags;
-  char filename[BX_PATHNAME_LEN];
   if (strncmp (netif, "tun", 3) != 0) {
     BX_PANIC (("eth_tuntap: interface name (%s) must be tun", netif));
   }
 #ifdef NEVERDEF
+  char filename[BX_PATHNAME_LEN];
   sprintf (filename, "/dev/net/%s", netif);
 
   // check if the TUN/TAP devices is running, and turn on ARP.  This is based
@@ -398,35 +397,5 @@ void bx_tuntap_pktmover_c::rx_timer ()
 
       return fd;
   }              
-
-int execute_script( char* scriptname, char* arg1 )
-{
-  int pid,status;
-
-  if (!(pid=fork())) {
-    char filename[BX_PATHNAME_LEN];
-    if ( scriptname[0]=='/' ) {
-      strcpy (filename, scriptname);
-    }
-    else {
-      getcwd (filename, BX_PATHNAME_LEN);
-      strcat (filename, "/");
-      strcat (filename, scriptname);
-    }
-
-    // execute the script
-    BX_INFO(("Executing script '%s %s'",filename,arg1));
-    execle(filename, scriptname, arg1, NULL, NULL);
-
-    // if we get here there has been a problem
-    exit(-1);
-  }
-
-  wait (&status);
-  if (!WIFEXITED(status)) {
-    return -1;
-  }
-  return WEXITSTATUS(status);
-}
 
 #endif /* if BX_NE2K_SUPPORT */

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cmos.cc,v 1.33 2002/12/07 15:53:02 vruppert Exp $
+// $Id: cmos.cc,v 1.44 2003/12/27 13:43:41 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -65,6 +65,15 @@ bx_cmos_c *theCmosDevice = NULL;
 #define  REG_IBM_CENTURY_BYTE        0x32  /* alternatives */
 #define  REG_IBM_PS2_CENTURY_BYTE    0x37  /* alternatives */
 
+// Bochs CMOS map (to be completed)
+//
+// Idx  Len   Description
+// 0x15   2   Base memory in 1k
+// 0x17   2   Memory size above 1M in 1k
+// 0x30   2   Memory size above 1M in 1k
+// 0x34   2   Memory size above 16M in 64k
+//
+
 // check that BX_NUM_CMOS_REGS is 64 or 128
 #if (BX_NUM_CMOS_REGS == 64)
 #elif (BX_NUM_CMOS_REGS == 128)
@@ -97,6 +106,7 @@ bx_cmos_c::bx_cmos_c(void)
     s.reg[i] = 0;
   s.periodic_timer_index = BX_NULL_TIMER_HANDLE;
   s.one_second_timer_index = BX_NULL_TIMER_HANDLE;
+  s.uip_timer_index = BX_NULL_TIMER_HANDLE;
 }
 
 bx_cmos_c::~bx_cmos_c(void)
@@ -108,13 +118,13 @@ bx_cmos_c::~bx_cmos_c(void)
   void
 bx_cmos_c::init(void)
 {
-  BX_DEBUG(("Init $Id: cmos.cc,v 1.33 2002/12/07 15:53:02 vruppert Exp $"));
+  BX_DEBUG(("Init $Id: cmos.cc,v 1.44 2003/12/27 13:43:41 vruppert Exp $"));
   // CMOS RAM & RTC
 
-  DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 7);
-  DEV_register_ioread_handler(this, read_handler, 0x0071, "CMOS RAM", 7);
-  DEV_register_iowrite_handler(this, write_handler, 0x0070, "CMOS RAM", 7);
-  DEV_register_iowrite_handler(this, write_handler, 0x0071, "CMOS RAM", 7);
+  DEV_register_ioread_handler(this, read_handler, 0x0070, "CMOS RAM", 1);
+  DEV_register_ioread_handler(this, read_handler, 0x0071, "CMOS RAM", 1);
+  DEV_register_iowrite_handler(this, write_handler, 0x0070, "CMOS RAM", 1);
+  DEV_register_iowrite_handler(this, write_handler, 0x0071, "CMOS RAM", 1);
   DEV_register_irq(8, "CMOS RTC"); 
   if (BX_CMOS_THIS s.periodic_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_CMOS_THIS s.periodic_timer_index =
@@ -126,20 +136,56 @@ bx_cmos_c::init(void)
       DEV_register_timer(this, one_second_timer_handler,
         1000000, 1,0, "cmos"); // continuous, not-active
   }
+  if (BX_CMOS_THIS s.uip_timer_index == BX_NULL_TIMER_HANDLE) {
+    BX_CMOS_THIS s.uip_timer_index =
+      DEV_register_timer(this, uip_timer_handler,
+        244, 0, 0, "cmos"); // one-shot, not-active
+  }
 
-#if BX_USE_SPECIFIED_TIME0 == 0
+#if BX_USE_SPECIFIED_TIME0 != 0
   // ??? this will not be correct for using an image file.
   // perhaps take values in CMOS and work backwards to find
   // s.timeval from values read in.
-  BX_CMOS_THIS s.timeval = time(NULL);
-#else
   BX_CMOS_THIS s.timeval = BX_USE_SPECIFIED_TIME0;
-#endif
 
-  if (bx_options.cmos.Otime0->get () == 1)
+#else // BX_USE_SPECIFIED_TIME0 != 0
+
+  // localtime
+  if (bx_options.clock.Otime0->get () == BX_CLOCK_TIME0_LOCAL) {
+       BX_INFO(("Using local time for initial clock"));
        BX_CMOS_THIS s.timeval = time(NULL);
-  else if (bx_options.cmos.Otime0->get () != 0)
-       BX_CMOS_THIS s.timeval = bx_options.cmos.Otime0->get ();
+  }
+  // utc
+  else if (bx_options.clock.Otime0->get () == BX_CLOCK_TIME0_UTC) {
+       bx_bool utc_ok = 0;
+
+       BX_INFO(("Using utc time for initial clock"));
+       
+       BX_CMOS_THIS s.timeval = time(NULL);
+
+#if BX_HAVE_GMTIME
+#if BX_HAVE_MKTIME
+       struct tm *utc_holder = gmtime(&BX_CMOS_THIS s.timeval);
+       utc_holder->tm_isdst = -1;
+       utc_ok = 1;
+       BX_CMOS_THIS s.timeval = mktime(utc_holder);
+#elif BX_HAVE_TIMELOCAL
+       struct tm *utc_holder = gmtime(&BX_CMOS_THIS s.timeval);
+       utc_holder->tm_isdst = 0;	// XXX Is this correct???
+       utc_ok = 1;
+       BX_CMOS_THIS s.timeval = timelocal(utc_holder);
+#endif //BX_HAVE_MKTIME
+#endif //BX_HAVE_GMTIME
+
+       if (!utc_ok) {
+           BX_ERROR(("UTC time is not supported on your platform. Using current time(NULL)"));
+       }
+  }
+  else {
+       BX_INFO(("Using specified time for initial clock"));
+       BX_CMOS_THIS s.timeval = bx_options.clock.Otime0->get ();
+  }
+#endif // BX_USE_SPECIFIED_TIME0 != 0
 
   char *tmptime;
   while( (tmptime =  strdup(ctime(&(BX_CMOS_THIS s.timeval)))) == NULL) {
@@ -265,10 +311,6 @@ bx_cmos_c::read(Bit32u address, unsigned io_len)
 #endif
   Bit8u ret8;
 
-  if (io_len > 1)
-    BX_PANIC(("io read from address 0x%04x len=%u",
-        (unsigned) address, (unsigned) io_len));
-
   if (bx_dbg.cmos)
     BX_INFO(("CMOS read of CMOS register 0x%02x",
       (unsigned) BX_CMOS_THIS s.cmos_mem_address));
@@ -324,10 +366,6 @@ bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_CMOS_SMF
 
-  if (io_len > 1)
-    BX_PANIC(("io write to address 0x%04x len=%u",
-        (unsigned) address, (unsigned) io_len));
-
   if (bx_dbg.cmos)
     BX_INFO(("CMOS write to address: 0x%04x = 0x%02x",
       (unsigned) address, (unsigned) value));
@@ -370,6 +408,9 @@ bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
        //BX_INFO(("write reg 0x%02x: value = 0x%02x",
        //    (unsigned) BX_CMOS_THIS s.cmos_mem_address, (unsigned) value);
        BX_CMOS_THIS s.reg[BX_CMOS_THIS s.cmos_mem_address] = value;
+       if (BX_CMOS_THIS s.cmos_mem_address == REG_IBM_PS2_CENTURY_BYTE) {
+         BX_CMOS_THIS s.reg[REG_IBM_CENTURY_BYTE] = value;
+       }
        if (BX_CMOS_THIS s.reg[REG_STAT_B] & 0x80) {
          BX_CMOS_THIS s.timeval_change = 1;
        } else {
@@ -412,10 +453,13 @@ bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
 
        unsigned dcc;
        dcc = (value >> 4) & 0x07;
-       if (dcc != 0x02) {
-       BX_PANIC(("CRA: divider chain control 0x%02x", dcc));
+       if ((dcc & 0x06) == 0x06) {
+         BX_INFO(("CRA: divider chain RESET"));
+       } else if (dcc != 0x02) {
+         BX_PANIC(("CRA: divider chain control 0x%02x", dcc));
        }
-       BX_CMOS_THIS s.reg[REG_STAT_A] = value & 0x7f;
+       BX_CMOS_THIS s.reg[REG_STAT_A] &= 0x80;
+       BX_CMOS_THIS s.reg[REG_STAT_A] |= (value & 0x7f);
        BX_CMOS_THIS CRA_change();
        return;
        break;
@@ -491,13 +535,13 @@ bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
        break;
 
      case REG_DIAGNOSTIC_STATUS:
-       BX_DEBUG(("write register 0x0e: 0x%02x", (unsigned) value));;
+       BX_DEBUG(("write register 0x0e: 0x%02x", (unsigned) value));
        break;
 
      case REG_SHUTDOWN_STATUS:
        switch (value) {
        case 0x00: /* proceed with normal POST (soft reset) */
-         BX_DEBUG(("Reg 0Fh(00): shutdown action = normal POST"));;
+         BX_DEBUG(("Reg 0Fh(00): shutdown action = normal POST"));
          break;
        case 0x01: /* shutdown after memory size check */
          BX_DEBUG(("Reg 0Fh(01): request to change shutdown action"
@@ -519,7 +563,7 @@ bx_cmos_c::write(Bit32u address, Bit32u value, unsigned io_len)
                         "to flush keyboard (issue EOI) and jump via 40h:0067h."));
          break;
        case 0x06:
-         BX_DEBUG(("Reg 0Fh(06): Shutdown after memory test !"));;
+         BX_DEBUG(("Reg 0Fh(06): Shutdown after memory test !"));
          break;
        case 0x07: /* reset (after failed test in virtual mode) */
          BX_DEBUG(("Reg 0Fh(07): request to change shutdown action "
@@ -609,6 +653,10 @@ bx_cmos_c::one_second_timer_handler(void *this_ptr)
   void
 bx_cmos_c::one_second_timer()
 {
+  // divider chain reset - RTC stopped
+  if ((BX_CMOS_THIS s.reg[REG_STAT_A] & 0x60) == 0x60)
+    return;
+
   // update internal time/date buffer
   BX_CMOS_THIS s.timeval++;
 
@@ -617,6 +665,24 @@ bx_cmos_c::one_second_timer()
   if (BX_CMOS_THIS s.reg[REG_STAT_B] & 0x80)
     return;
 
+  BX_CMOS_THIS s.reg[REG_STAT_A] |= 0x80; // set UIP bit
+
+  // UIP timer for updating clock & alarm functions
+  bx_pc_system.activate_timer(BX_CMOS_THIS s.uip_timer_index,
+                         244, 0);
+}
+
+  void
+bx_cmos_c::uip_timer_handler(void *this_ptr)
+{
+  bx_cmos_c *class_ptr = (bx_cmos_c *) this_ptr;
+
+  class_ptr->uip_timer();
+}
+
+  void
+bx_cmos_c::uip_timer()
+{
   update_clock();
 
   // if update interrupts are enabled, trip IRQ 8, and
@@ -650,6 +716,7 @@ bx_cmos_c::one_second_timer()
       DEV_pic_raise_irq(8);
       }
     }
+  BX_CMOS_THIS s.reg[REG_STAT_A] &= 0x7f; // clear UIP bit
 }
 
 
@@ -710,5 +777,48 @@ bx_cmos_c::update_clock()
   void
 bx_cmos_c::update_timeval()
 {
-  BX_ERROR(("changing time and date not supported yet"));
+  struct tm time_calendar;
+  Bit8u val_bin;
+
+  // update seconds
+  val_bin =
+     ((BX_CMOS_THIS s.reg[REG_SEC] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_SEC] & 0x0f);
+  time_calendar.tm_sec = val_bin;
+
+  // update minutes
+  val_bin =
+     ((BX_CMOS_THIS s.reg[REG_MIN] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_MIN] & 0x0f);
+  time_calendar.tm_min = val_bin;
+
+  // update hours
+  val_bin =
+     ((BX_CMOS_THIS s.reg[REG_HOUR] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_HOUR] & 0x0f);
+  time_calendar.tm_hour = val_bin;
+
+  // update day of the month
+  val_bin =
+     ((BX_CMOS_THIS s.reg[REG_MONTH_DAY] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_MONTH_DAY] & 0x0f);
+  time_calendar.tm_mday = val_bin;
+
+  // update month
+  val_bin =
+     ((BX_CMOS_THIS s.reg[REG_MONTH] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_MONTH] & 0x0f);
+  time_calendar.tm_mon = val_bin - 1;
+
+  // update year
+  val_bin =
+     ((BX_CMOS_THIS s.reg[REG_IBM_CENTURY_BYTE] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_IBM_CENTURY_BYTE] & 0x0f);
+  val_bin = (val_bin - 19) * 100;
+  val_bin +=
+     (((BX_CMOS_THIS s.reg[REG_YEAR] >> 4) * 10) +
+     (BX_CMOS_THIS s.reg[REG_YEAR] & 0x0f));
+  time_calendar.tm_year = val_bin;
+
+  BX_CMOS_THIS s.timeval = mktime(& time_calendar);
 }

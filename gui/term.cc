@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: term.cc,v 1.25 2002/11/20 12:23:40 bdenney Exp $
+// $Id: term.cc,v 1.31 2003/08/17 23:40:38 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2000  MandrakeSoft S.A.
@@ -59,6 +59,7 @@ IMPLEMENT_GUI_PLUGIN_CODE(term)
 #define LOG_THIS theGui->
 
 bx_bool initialized = 0;
+static unsigned int text_cols = 80, text_rows = 25;
 
 static short curses_color[8] = {
   /* 0 */ COLOR_BLACK,
@@ -69,6 +70,25 @@ static short curses_color[8] = {
   /* 5 */ COLOR_MAGENTA,
   /* 6 */ COLOR_YELLOW,
   /* 7 */ COLOR_WHITE
+};
+
+static chtype vga_to_term[128] = {
+  0xc7, 0xfc, 0xe9, 0xe2, 0xe4, 0xe0, 0xe5, 0xe7,
+  0xea, 0xeb, 0xe8, 0xef, 0xee, 0xec, 0xc4, 0xc5,
+  0xc9, 0xe6, 0xc6, 0xf4, 0xf6, 0xf2, 0xfb, 0xf9,
+  0xff, 0xd6, 0xdc, 0xe7, 0xa3, 0xa5, ' ',  ' ',
+  0xe1, 0xed, 0xf3, 0xfa, 0xf1, 0xd1, 0xaa, 0xba,
+  0xbf, ' ',  0xac, ' ',  ' ',  0xa1, 0xab, 0xbb,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, ' ',  ' ',  ' ',  ' ',
+  ' ',  ' ',  ' ',  ' ',  ' ',  ' ',  0xb5, ' ',
+  ' ',  ' ',  ' ',  ' ',  ' ',  ' ',  ' ',  ' ',
+  ' ',  0xb1, ' ',  ' ',  ' ',  ' ',  0xf7, ' ',
+  0xb0, ' ',  ' ',  ' ',  ' ',  0xb2, ' ',  ' '
 };
 
 static void
@@ -184,6 +204,7 @@ bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned
 	nodelay(stdscr, TRUE);
 	noecho();
 
+#if BX_HAVE_COLOR_SET
 	if (has_colors()) {
 		for (int i=0; i<COLORS; i++) {
 			for (int j=0; j<COLORS; j++) {
@@ -191,6 +212,7 @@ bx_term_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned
 			}
 		}
 	}
+#endif
 
 	if (bx_options.Oprivate_colormap->get ())
 		BX_ERROR(("WARNING: private_colormap option ignored."));
@@ -437,7 +459,23 @@ bx_term_gui_c::flush(void)
 	void
 bx_term_gui_c::clear_screen(void)
 {
-	clear();
+  clear();
+#if BX_HAVE_COLOR_SET
+  color_set(7, NULL);
+#endif
+#if BX_HAVE_MVHLINE
+  if (LINES > (int)text_rows) {
+    mvhline(text_rows, 0, ACS_HLINE, text_cols);
+  }
+#endif
+#if BX_HAVE_MVVLINE
+  if (COLS > (int)text_cols) {
+    mvvline(0, text_cols, ACS_VLINE, text_rows);
+  }
+#endif
+  if ((LINES > (int)text_rows) && (COLS > (int)text_cols)) {
+    mvaddch(text_rows, text_cols, ACS_LRCORNER);
+  }
 }
 
 int
@@ -453,47 +491,71 @@ get_color_pair(Bit8u vga_attr)
 chtype
 get_term_char(Bit8u vga_char[])
 {
-	int term_char;
+  int term_char;
 
-	if ((vga_char[1] & 0x0f) == ((vga_char[1] >> 4) & 0x0f)) {
-		return ' ';
-	}
-	switch (vga_char[0]) {
-		case 0x00: term_char = ' '; break;
-		case 0x04: term_char = ACS_DIAMOND; break;
-		case 0x18: term_char = ACS_UARROW; break;
-		case 0x19: term_char = ACS_DARROW; break;
-		case 0x1a: term_char = ACS_RARROW; break;
-		case 0x1b: term_char = ACS_LARROW; break;
-		case 0xc4:
-		case 0xcd: term_char = ACS_HLINE; break;
-		case 0xb3:
-		case 0xba: term_char = ACS_VLINE; break;
-		case 0xc9:
-		case 0xda: term_char = ACS_ULCORNER; break;
-		case 0xbb:
-		case 0xbf: term_char = ACS_URCORNER; break;
-		case 0xc0:
-		case 0xc8: term_char = ACS_LLCORNER; break;
-		case 0xbc:
-		case 0xd9: term_char = ACS_LRCORNER; break;
-		case 0xc3:
-		case 0xcc: term_char = ACS_LTEE; break;
-		case 0xb4:
-		case 0xb9: term_char = ACS_RTEE; break;
-		case 0xc2:
-		case 0xcb: term_char = ACS_TTEE; break;
-		case 0xc1:
-		case 0xca: term_char = ACS_BTEE; break;
-		case 0xc5:
-		case 0xce: term_char = ACS_PLUS; break;
-		case 0xb0:
-		case 0xb1: term_char = ACS_CKBOARD; break;
-		case 0xb2: term_char = ACS_BOARD; break;
-		case 0xdb: term_char = ACS_BLOCK; break;
-		default: term_char = vga_char[0];
-	}
-	return term_char;
+  if ((vga_char[1] & 0x0f) == ((vga_char[1] >> 4) & 0x0f)) {
+    return ' ';
+  }
+  switch (vga_char[0]) {
+    case 0x04: term_char = ACS_DIAMOND; break;
+    case 0x18: term_char = ACS_UARROW; break;
+    case 0x19: term_char = ACS_DARROW; break;
+    case 0x1a: term_char = ACS_RARROW; break;
+    case 0x1b: term_char = ACS_LARROW; break;
+    case 0xc4:
+    case 0xcd: term_char = ACS_HLINE; break;
+    case 0xb3:
+    case 0xba: term_char = ACS_VLINE; break;
+    case 0xc9:
+    case 0xd5:
+    case 0xd6:
+    case 0xda: term_char = ACS_ULCORNER; break;
+    case 0xb7:
+    case 0xb8:
+    case 0xbb:
+    case 0xbf: term_char = ACS_URCORNER; break;
+    case 0xc0:
+    case 0xc8:
+    case 0xd3:
+    case 0xd4: term_char = ACS_LLCORNER; break;
+    case 0xbc:
+    case 0xbd:
+    case 0xbe:
+    case 0xd9: term_char = ACS_LRCORNER; break;
+    case 0xc3:
+    case 0xc6:
+    case 0xc7:
+    case 0xcc: term_char = ACS_LTEE; break;
+    case 0xb4:
+    case 0xb5:
+    case 0xb6:
+    case 0xb9: term_char = ACS_RTEE; break;
+    case 0xc2:
+    case 0xcb:
+    case 0xd1:
+    case 0xd2: term_char = ACS_TTEE; break;
+    case 0xc1:
+    case 0xca:
+    case 0xcf:
+    case 0xd0: term_char = ACS_BTEE; break;
+    case 0xc5:
+    case 0xce:
+    case 0xd7:
+    case 0xd8: term_char = ACS_PLUS; break;
+    case 0xb0:
+    case 0xb1: term_char = ACS_CKBOARD; break;
+    case 0xb2: term_char = ACS_BOARD; break;
+    case 0xdb: term_char = ACS_BLOCK; break;
+    default:
+      if (vga_char[0] > 0x7f) {
+        term_char = vga_to_term[vga_char[0]-0x80];
+      } else if (vga_char[0] > 0x1f) {
+        term_char = vga_char[0];
+      } else {
+        term_char = ' ';
+      }
+  }
+  return term_char;
 }
 
 // ::TEXT_UPDATE()
@@ -518,43 +580,73 @@ get_term_char(Bit8u vga_char[])
 	void
 bx_term_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 	unsigned long cursor_x, unsigned long cursor_y,
-	Bit16u cursor_state, unsigned nrows)
+	bx_vga_tminfo_t tm_info, unsigned nrows)
 {
-	UNUSED(cursor_state);
-	chtype ch;
+  unsigned char *old_line, *new_line, *new_start;
+  unsigned char cAttr;
+  unsigned int hchars, rows, x, y;
+  chtype ch;
+  bx_bool force_update = 0;
 
-	unsigned ncols = 4000/nrows/2;
-	// XXX There has GOT to be a better way of doing this
-	for(int i=0;i<4001;i+=2) {
-		if ((old_text[i] != new_text[i]) ||
-		    (old_text[i+1] != new_text[i+1])) {
-#if BX_HAVE_COLOR_SET
-			if (has_colors()) {
-				color_set(get_color_pair(new_text[i+1]), NULL);
-			}
-#endif
-			ch = get_term_char(&new_text[i]);
-			if ((new_text[i+1] & 0x08) > 0) ch |= A_BOLD;
-			if ((new_text[i+1] & 0x80) > 0) ch |= A_REVERSE;
-			mvaddch((i/2)/ncols,(i/2)%ncols, ch);
-		}
-	}
+  UNUSED(nrows);
 
-	if(cursor_x>0)
-		cursor_x--;
-	else {
-		cursor_x=79;
-		cursor_y--;
-	}
+  if(charmap_updated) {
+    force_update = 1;
+    charmap_updated = 0;
+  }
+
+  new_start = new_text;
+  rows = text_rows;
+  y = 0;
+  do {
+    hchars = text_cols;
+    new_line = new_text;
+    old_line = old_text;
+    x = 0;
+    do {
+      if (force_update || (old_text[0] != new_text[0])
+          || (old_text[1] != new_text[1])) {
 #if BX_HAVE_COLOR_SET
-	if (has_colors()) {
-		color_set(get_color_pair(new_text[(cursor_y*80+cursor_x)*2+1]), NULL);
-	}
+        if (has_colors()) {
+          color_set(get_color_pair(new_text[1]), NULL);
+        }
 #endif
-	ch = get_term_char(&new_text[(cursor_y*80+cursor_x)*2]);
-	if ((new_text[(cursor_y*80+cursor_x)*2+1] & 0x08) > 0) ch |= A_BOLD;
-	if ((new_text[(cursor_y*80+cursor_x)*2+1] & 0x80) > 0) ch |= A_REVERSE;
-	mvaddch(cursor_y, cursor_x, ch);
+        ch = get_term_char(&new_text[0]);
+        if ((new_text[1] & 0x08) > 0) ch |= A_BOLD;
+        if ((new_text[1] & 0x80) > 0) ch |= A_BLINK;
+        mvaddch(y, x, ch);
+      }
+      x++;
+      new_text+=2;
+      old_text+=2;
+    } while (--hchars);
+    y++;
+    new_text = new_line + tm_info.line_offset;
+    old_text = old_line + tm_info.line_offset;
+  } while (--rows);
+
+  if ((cursor_x<text_cols) && (cursor_y<text_rows)
+      && (tm_info.cs_start <= tm_info.cs_end)) {
+    if(cursor_x>0)
+      cursor_x--;
+    else {
+      cursor_x=COLS-1;
+      cursor_y--;
+    }
+    cAttr = new_start[cursor_y*tm_info.line_offset+cursor_x*2+1];
+#if BX_HAVE_COLOR_SET
+    if (has_colors()) {
+      color_set(get_color_pair(cAttr), NULL);
+    }
+#endif
+    ch = get_term_char(&new_start[cursor_y*tm_info.line_offset+cursor_x*2]);
+    if ((cAttr & 0x08) > 0) ch |= A_BOLD;
+    if ((cAttr & 0x80) > 0) ch |= A_REVERSE;
+    mvaddch(cursor_y, cursor_x, ch);
+    curs_set(2);
+  } else {
+    curs_set(0);
+  }
 }
 
   int
@@ -619,13 +711,36 @@ bx_term_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 //
 // x: new VGA x size
 // y: new VGA y size (add headerbar_y parameter from ::specific_init().
+// fheight: new VGA character height in text mode
+// fwidth : new VGA character width in text mode
+// bpp : bits per pixel in graphics mode
 
 	void
-bx_term_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+bx_term_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
-	UNUSED(x);
-	UNUSED(y);
-	UNUSED(fheight);
+  if (bpp > 8) {
+    BX_PANIC(("%d bpp graphics mode not supported", bpp));
+  }
+  if (fheight > 0) {
+    text_cols = x / fwidth;
+    text_rows = y / fheight;
+#if BX_HAVE_COLOR_SET
+    color_set(7, NULL);
+#endif
+#if BX_HAVE_MVHLINE
+    if (LINES > (int)text_rows) {
+      mvhline(text_rows, 0, ACS_HLINE, text_cols);
+    }
+#endif
+#if BX_HAVE_MVVLINE
+    if (COLS > (int)text_cols) {
+      mvvline(0, text_cols, ACS_VLINE, text_rows);
+    }
+#endif
+    if ((LINES > (int)text_rows) && (COLS > (int)text_cols)) {
+      mvaddch(text_rows, text_cols, ACS_LRCORNER);
+    }
+  }
 }
 
 

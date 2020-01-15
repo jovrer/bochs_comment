@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.cc,v 1.60 2002/12/11 15:45:10 bdenney Exp $
+// $Id: floppy.cc,v 1.69 2003/12/18 20:04:49 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -45,8 +45,20 @@
 extern "C" {
 #include <errno.h>
 }
+
+#ifdef __linux__
+extern "C" {
+#include <sys/ioctl.h>
+#include <linux/fd.h>
+}
+#endif
 #include "bochs.h"
 // windows.h included by bochs.h
+#ifdef WIN32
+extern "C" {
+#include <winioctl.h>
+}
+#endif
 #define LOG_THIS theFloppyController->
 
 bx_floppy_ctrl_c *theFloppyController;
@@ -65,6 +77,25 @@ bx_floppy_ctrl_c *theFloppyController;
 #define TO_FLOPPY   11
 
 #define FLOPPY_DMA_CHAN 2
+
+typedef struct {
+  unsigned id;
+  Bit8u trk;
+  Bit8u hd;
+  Bit8u spt;
+  unsigned sectors;
+} floppy_type_t;
+
+static floppy_type_t floppy_type[8] = {
+  {BX_FLOPPY_160K, 40, 1, 8, 320},
+  {BX_FLOPPY_180K, 40, 1, 9, 360},
+  {BX_FLOPPY_320K, 40, 2, 8, 640},
+  {BX_FLOPPY_360K, 40, 2, 9, 720},
+  {BX_FLOPPY_720K, 80, 2, 9, 1440},
+  {BX_FLOPPY_1_2,  80, 2, 15, 2400},
+  {BX_FLOPPY_1_44, 80, 2, 18, 2880},
+  {BX_FLOPPY_2_88, 80, 2, 36, 5760}
+};
 
 
   int
@@ -101,12 +132,12 @@ bx_floppy_ctrl_c::init(void)
 {
   Bit8u i;
 
-  BX_DEBUG(("Init $Id: floppy.cc,v 1.60 2002/12/11 15:45:10 bdenney Exp $"));
+  BX_DEBUG(("Init $Id: floppy.cc,v 1.69 2003/12/18 20:04:49 vruppert Exp $"));
   DEV_dma_register_8bit_channel(2, dma_read, dma_write, "Floppy Drive");
   DEV_register_irq(6, "Floppy Drive");
   for (unsigned addr=0x03F2; addr<=0x03F7; addr++) {
-    DEV_register_ioread_handler(this, read_handler, addr, "Floppy Drive", 7);
-    DEV_register_iowrite_handler(this, write_handler, addr, "Floppy Drive", 7);
+    DEV_register_ioread_handler(this, read_handler, addr, "Floppy Drive", 1);
+    DEV_register_iowrite_handler(this, write_handler, addr, "Floppy Drive", 1);
     }
 
 
@@ -149,6 +180,21 @@ bx_floppy_ctrl_c::init(void)
     case BX_FLOPPY_2_88:
       DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0x0f) | 0x50);
       break;
+
+    // use CMOS reserved types
+    case BX_FLOPPY_160K:
+      DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0x0f) | 0x60);
+      BX_INFO(("WARNING: 1st floppy uses of reserved CMOS floppy drive type 6"));
+      break;
+    case BX_FLOPPY_180K:
+      DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0x0f) | 0x70);
+      BX_INFO(("WARNING: 1st floppy uses of reserved CMOS floppy drive type 7"));
+      break;
+    case BX_FLOPPY_320K:
+      DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0x0f) | 0x80);
+      BX_INFO(("WARNING: 1st floppy uses of reserved CMOS floppy drive type 8"));
+      break;
+
     default:
       BX_PANIC(("unknown floppya type"));
     }
@@ -200,6 +246,21 @@ bx_floppy_ctrl_c::init(void)
     case BX_FLOPPY_2_88:
       DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0xf0) | 0x05);
       break;
+
+    // use CMOS reserved types
+    case BX_FLOPPY_160K:
+      DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0xf0) | 0x06);
+      BX_INFO(("WARNING: 2nd floppy uses of reserved CMOS floppy drive type 6"));
+      break;
+    case BX_FLOPPY_180K:
+      DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0xf0) | 0x07);
+      BX_INFO(("WARNING: 2nd floppy uses of reserved CMOS floppy drive type 7"));
+      break;
+    case BX_FLOPPY_320K:
+      DEV_cmos_set_reg(0x10, (DEV_cmos_get_reg(0x10) & 0xf0) | 0x08);
+      BX_INFO(("WARNING: 2nd floppy uses of reserved CMOS floppy drive type 8"));
+      break;
+
     default:
       BX_PANIC(("unknown floppyb type"));
     }
@@ -223,9 +284,10 @@ bx_floppy_ctrl_c::init(void)
 
 
   /* CMOS Equipment Byte register */
-  if (BX_FD_THIS s.num_supported_floppies > 0)
+  if (BX_FD_THIS s.num_supported_floppies > 0) {
     DEV_cmos_set_reg(0x14, (DEV_cmos_get_reg(0x14) & 0x3e) |
                           ((BX_FD_THIS s.num_supported_floppies-1) << 6) | 1);
+  }
   else
     DEV_cmos_set_reg(0x14, (DEV_cmos_get_reg(0x14) & 0x3e));
 
@@ -304,10 +366,6 @@ bx_floppy_ctrl_c::read(Bit32u address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_FD_SMF
   Bit8u status, value;
-
-  if (io_len > 1)
-    BX_PANIC(("io read from address %08x, len=%u",
-             (unsigned) address, (unsigned) io_len));
 
   if (bx_dbg.floppy)
     BX_INFO(("read access to port %04x", (unsigned) address));
@@ -403,10 +461,6 @@ bx_floppy_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
   Bit8u normal_operation, prev_normal_operation;
   Bit8u drive_select;
   Bit8u motor_on_drive0, motor_on_drive1;
-
-  if (io_len > 1)
-    BX_PANIC(("io write to address %08x, len=%u",
-             (unsigned) address, (unsigned) io_len));
 
   if (bx_dbg.floppy)
     BX_INFO(("write access to port %04x, value=%02x",
@@ -744,10 +798,11 @@ bx_floppy_ctrl_c::floppy_command(void)
           BX_PANIC(("floppy_command(): format track: bad drive #%d", drive));
 
         if (sector_size != 0x02) { // 512 bytes
-          BX_PANIC(("format track: sector_size not 512"));
+          BX_PANIC(("format track: sector size %d not supported", 128<<sector_size));
           }
         if (BX_FD_THIS s.format_count != BX_FD_THIS s.media[drive].sectors_per_track) {
-          BX_PANIC(("format track: wrong number of sectors/track"));
+          BX_PANIC(("format track: %d sectors/track requested (%d expected)",
+                    BX_FD_THIS s.format_count, BX_FD_THIS s.media[drive].sectors_per_track));
           }
         if ( BX_FD_THIS s.media_present[drive] == 0 ) {
           // media not in drive, return error
@@ -829,7 +884,7 @@ bx_floppy_ctrl_c::floppy_command(void)
 
         BX_INFO(("attempt to read/write sector %u,"
                      " sectors/track=%u with media not present", 
-		     (unsigned) sector,
+                     (unsigned) sector,
                      (unsigned) BX_FD_THIS s.media[drive].sectors_per_track));
         BX_FD_THIS s.status_reg0 = 0x40 | (BX_FD_THIS s.head[drive]<<2) | drive; // abnormal termination
         BX_FD_THIS s.status_reg1 = 0x25; // 0010 0101
@@ -839,7 +894,7 @@ bx_floppy_ctrl_c::floppy_command(void)
         }
 
       if (sector_size != 0x02) { // 512 bytes
-        BX_PANIC(("sector_size not 512"));
+        BX_PANIC(("read/write command: sector size %d not supported", 128<<sector_size));
         }
       if ( cylinder >= BX_FD_THIS s.media[drive].tracks ) {
         BX_PANIC(("io: norm r/w parms out of range: sec#%02xh cyl#%02xh eot#%02xh head#%02xh",
@@ -872,7 +927,8 @@ bx_floppy_ctrl_c::floppy_command(void)
       if (cylinder != BX_FD_THIS s.cylinder[drive])
         BX_DEBUG(("io: cylinder request != current cylinder"));
 
-      logical_sector = (cylinder * 2 * BX_FD_THIS s.media[drive].sectors_per_track) +
+        // original assumed all floppies had two sides...now it does not  *delete this comment line*
+        logical_sector = (cylinder * BX_FD_THIS s.media[drive].heads * BX_FD_THIS s.media[drive].sectors_per_track) +
                        (head * BX_FD_THIS s.media[drive].sectors_per_track) +
                        (sector - 1);
 
@@ -1072,11 +1128,14 @@ bx_floppy_ctrl_c::dma_write(Bit8u *data_byte)
       }
     else { // more data to transfer
       Bit32u logical_sector;
-      logical_sector = (BX_FD_THIS s.cylinder[drive] * 2 *
+
+      // original assumed all floppies had two sides...now it does not  *delete this comment line*
+      logical_sector = (BX_FD_THIS s.cylinder[drive] * BX_FD_THIS s.media[drive].heads *
                         BX_FD_THIS s.media[drive].sectors_per_track) +
                        (BX_FD_THIS s.head[drive] *
                         BX_FD_THIS s.media[drive].sectors_per_track) +
                        (BX_FD_THIS s.sector[drive] - 1);
+
       floppy_xfer(drive, logical_sector*512, BX_FD_THIS s.floppy_buffer,
                   512, FROM_FLOPPY);
       }
@@ -1108,14 +1167,15 @@ bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
         BX_FD_THIS s.sector[drive] = *data_byte;
         break;
       case 3:
-        if (*data_byte != 2) BX_ERROR(("sector size code not 2"));
+        if (*data_byte != 2) BX_ERROR(("dma_read: sector size %d not supported", 128<<(*data_byte)));
         BX_DEBUG(("formatting cylinder %u head %u sector %u",
                   BX_FD_THIS s.cylinder[drive], BX_FD_THIS s.head[drive],
                   BX_FD_THIS s.sector[drive]));
         for (unsigned i = 0; i < 512; i++) {
           BX_FD_THIS s.floppy_buffer[i] = BX_FD_THIS s.format_fillbyte;
           }
-        logical_sector = (BX_FD_THIS s.cylinder[drive] * 2 * BX_FD_THIS s.media[drive].sectors_per_track) +
+        // original assumed all floppies had two sides...now it does not *delete this comment line*
+        logical_sector = (BX_FD_THIS s.cylinder[drive] * BX_FD_THIS s.media[drive].heads * BX_FD_THIS s.media[drive].sectors_per_track) +
                          (BX_FD_THIS s.head[drive] * BX_FD_THIS s.media[drive].sectors_per_track) +
                          (BX_FD_THIS s.sector[drive] - 1);
         floppy_xfer(drive, logical_sector*512, BX_FD_THIS s.floppy_buffer,
@@ -1134,7 +1194,8 @@ bx_floppy_ctrl_c::dma_read(Bit8u *data_byte)
   BX_FD_THIS s.floppy_buffer[BX_FD_THIS s.floppy_buffer_index++] = *data_byte;
 
   if (BX_FD_THIS s.floppy_buffer_index >= 512) {
-    logical_sector = (BX_FD_THIS s.cylinder[drive] * 2 * BX_FD_THIS s.media[drive].sectors_per_track) +
+    // original assumed all floppies had two sides...now it does not *delete this comment line*
+    logical_sector = (BX_FD_THIS s.cylinder[drive] * BX_FD_THIS s.media[drive].heads * BX_FD_THIS s.media[drive].sectors_per_track) +
                      (BX_FD_THIS s.head[drive] * BX_FD_THIS s.media[drive].sectors_per_track) +
                      (BX_FD_THIS s.sector[drive] - 1);
   if ( BX_FD_THIS s.media[drive].write_protected ) {
@@ -1254,11 +1315,21 @@ bx_floppy_ctrl_c::set_media_status(unsigned drive, unsigned status)
     else {
       path = bx_options.floppyb.Opath->getptr ();
       }
+    if (!strcmp(path, "none"))
+      return(0);
     if (evaluate_media(type, path, & BX_FD_THIS s.media[drive])) {
       BX_FD_THIS s.media_present[drive] = 1;
       if (drive == 0) {
+#define MED (BX_FD_THIS s.media[0])
+        BX_INFO(("fd0: '%s' ro=%d, h=%d,t=%d,spt=%d", bx_options.floppya.Opath->getptr(),
+        MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+#undef MED
         bx_options.floppya.Ostatus->set(BX_INSERTED);
       } else {
+#define MED (BX_FD_THIS s.media[1])
+        BX_INFO(("fd1: '%s' ro=%d, h=%d,t=%d,spt=%d", bx_options.floppyb.Opath->getptr(),
+        MED.write_protected, MED.heads, MED.tracks, MED.sectors_per_track));
+#undef MED
         bx_options.floppyb.Ostatus->set(BX_INSERTED);
       }
       BX_FD_THIS s.DIR[drive] |= 0x80; // disk changed line
@@ -1294,9 +1365,18 @@ bx_floppy_ctrl_c::get_media_status(unsigned drive)
 bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
 {
   struct stat stat_buf;
-  int ret;
+  int i, ret;
+  int idx = -1;
+#ifdef __linux__
+  struct floppy_struct floppy_geom;
+#endif
 #ifdef WIN32
   char sTemp[1024];
+  bx_bool raw_floppy = 0;
+  HANDLE hFile;
+  DWORD bytes;
+  DISK_GEOMETRY dg;
+  unsigned tracks, heads, spt;
 #endif
 
   if (type == BX_FLOPPY_NONE)
@@ -1315,8 +1395,26 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
   if (strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
 #endif
 #ifdef WIN32
-    if ( (path[1] == ':') && (strlen(path) == 2) ) {
+    if ( (isalpha(path[0])) && (path[1] == ':') && (strlen(path) == 2) ) {
+      raw_floppy = 1;
       wsprintf(sTemp, "\\\\.\\%s", path);
+      hFile = CreateFile(sTemp, GENERIC_READ, FILE_SHARE_WRITE, NULL,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (hFile == INVALID_HANDLE_VALUE) {
+        BX_ERROR(("Cannot open floppy drive"));
+        return(0);
+      } else {
+        if (!DeviceIoControl(hFile, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &dg, sizeof(dg), &bytes, NULL)) {
+          BX_ERROR(("No media in floppy drive"));
+          CloseHandle(hFile);
+          return(0);
+        } else {
+          tracks = (unsigned)dg.Cylinders.QuadPart;
+          heads  = (unsigned)dg.TracksPerCylinder;
+          spt    = (unsigned)dg.SectorsPerTrack;
+        }
+        CloseHandle(hFile);
+      }
       media->fd = open(sTemp, BX_RDWR);
     } else {
       media->fd = open(path, BX_RDWR);
@@ -1326,7 +1424,7 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
 #endif
 
   if (media->fd < 0) {
-    BX_INFO(( "tried to open %s read/write: %s",path,strerror(errno) ));
+    BX_INFO(( "tried to open '%s' read/write: %s",path,strerror(errno) ));
     // try opening the file read-only
     media->write_protected = 1;
 #ifdef macintosh
@@ -1334,8 +1432,7 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
   if (strcmp(bx_options.floppya.Opath->getptr (), SuperDrive))
 #endif
 #ifdef WIN32
-    if ( (path[1] == ':') && (strlen(path) == 2) ) {
-      wsprintf(sTemp, "\\\\.\\%s", path);
+    if (raw_floppy == 1) {
       media->fd = open(sTemp, BX_RDONLY);
     } else {
       media->fd = open(path, BX_RDONLY);
@@ -1345,7 +1442,7 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
 #endif
     if (media->fd < 0) {
       // failed to open read-only too
-      BX_INFO(( "tried to open %s read only: %s",path,strerror(errno) ));
+      BX_INFO(( "tried to open '%s' read only: %s",path,strerror(errno) ));
       media->type = type;
       return(0);
     }
@@ -1357,14 +1454,13 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
   else
     ret = fstat(media->fd, &stat_buf);
 #elif defined(WIN32)
-//  if ( (path[1] == ':') && (strlen(path) == 2) ) {
+  if (raw_floppy) {
+    memset (&stat_buf, 0, sizeof(stat_buf));
     stat_buf.st_mode = S_IFCHR;
-    // maybe replace with code that sets ret to -1 if the disk is not available
     ret = 0;
-//  } else {
-	// put code here for disk images
-//	ret = fstat(media->fd, &stat_buf);
-//  }
+  } else {
+    ret = fstat(media->fd, &stat_buf);
+  }
 #else
   // unix
   ret = fstat(media->fd, &stat_buf);
@@ -1374,33 +1470,42 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
     return(0);
     }
 
+  for (i = 0; i < 8; i++) {
+    if (type == floppy_type[i].id) idx = i;
+  }
+  if (idx == -1 ) {
+    BX_PANIC(("evaluate_media: unknown media type"));
+    return(0);
+  }
   if ( S_ISREG(stat_buf.st_mode) ) {
     // regular file
     switch (type) {
+      // use CMOS reserved types
+      case BX_FLOPPY_160K: // 160K 5.25"
+      case BX_FLOPPY_180K: // 180K 5.25"
+      case BX_FLOPPY_320K: // 320K 5.25"
+      // standard floppy types
       case BX_FLOPPY_360K: // 360K 5.25"
-        media->type              = BX_FLOPPY_360K;
-        media->sectors_per_track = 9;
-        media->tracks            = 40;
-        media->heads             = 2;
-        break;
       case BX_FLOPPY_720K: // 720K 3.5"
-        media->type              = BX_FLOPPY_720K;
-        media->sectors_per_track = 9;
-        media->tracks            = 80;
-        media->heads             = 2;
-        break;
       case BX_FLOPPY_1_2: // 1.2M 5.25"
-        media->type              = BX_FLOPPY_1_2;
-        media->sectors_per_track = 15;
-        media->tracks            = 80;
-        media->heads             = 2;
+      case BX_FLOPPY_2_88: // 2.88M 3.5"
+        media->type              = type;
+        media->tracks            = floppy_type[idx].trk;
+        media->heads             = floppy_type[idx].hd;
+        media->sectors_per_track = floppy_type[idx].spt;
+        media->sectors           = floppy_type[idx].sectors;
+        if (stat_buf.st_size > (media->sectors * 512)) {
+          BX_INFO(("evaluate_media: size of file '%s' (%lu) too large for selected type",
+                   path, (unsigned long) stat_buf.st_size));
+          return(0);
+        }
         break;
-      case BX_FLOPPY_1_44: // 1.44M 3.5"
-        media->type              = BX_FLOPPY_1_44;
+      default: // 1.44M 3.5"
+        media->type              = type;
         if (stat_buf.st_size <= 1474560) {
-          media->sectors_per_track = 18;
-          media->tracks            = 80;
-          media->heads             = 2;
+          media->tracks            = floppy_type[idx].trk;
+          media->heads             = floppy_type[idx].hd;
+          media->sectors_per_track = floppy_type[idx].spt;
           }
         else if (stat_buf.st_size == 1720320) {
           media->sectors_per_track = 21;
@@ -1417,17 +1522,8 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
             path, (unsigned long) stat_buf.st_size));
           return(0);
           }
-        break;
-      case BX_FLOPPY_2_88: // 2.88M 3.5"
-        media->type              = BX_FLOPPY_2_88;
-        media->sectors_per_track = 36;
-        media->tracks            = 80;
-        media->heads             = 2;
-        break;
-      default:
-        BX_PANIC(("evaluate_media: unknown media type"));
+        media->sectors = media->heads * media->tracks * media->sectors_per_track;
       }
-    media->sectors = media->heads * media->tracks * media->sectors_per_track;
     return(1); // success
     }
 
@@ -1440,41 +1536,27 @@ bx_floppy_ctrl_c::evaluate_media(unsigned type, char *path, floppy_t *media)
            ) {
     // character or block device
     // assume media is formatted to typical geometry for drive
-    switch (type) {
-      case BX_FLOPPY_360K: // 360K 5.25"
-        media->type              = BX_FLOPPY_360K;
-        media->sectors_per_track = 9;
-        media->tracks            = 40;
-        media->heads             = 2;
-        break;
-      case BX_FLOPPY_720K: // 720K 3.5"
-        media->type              = BX_FLOPPY_720K;
-        media->sectors_per_track = 9;
-        media->tracks            = 80;
-        media->heads             = 2;
-        break;
-      case BX_FLOPPY_1_2: // 1.2M 5.25"
-        media->type              = BX_FLOPPY_1_2;
-        media->sectors_per_track = 15;
-        media->tracks            = 80;
-        media->heads             = 2;
-        break;
-      case BX_FLOPPY_1_44: // 1.44M 3.5"
-        media->type              = BX_FLOPPY_1_44;
-        media->sectors_per_track = 18;
-        media->tracks            = 80;
-        media->heads             = 2;
-        break;
-      case BX_FLOPPY_2_88: // 2.88M 3.5"
-        media->type              = BX_FLOPPY_2_88;
-        media->sectors_per_track = 36;
-        media->tracks            = 80;
-        media->heads             = 2;
-        break;
-      default:
-        BX_PANIC(("evaluate_media: unknown media type"));
-      }
+    media->type              = type;
+#ifdef __linux__
+    if (ioctl(media->fd, FDGETPRM, &floppy_geom) < 0) {
+      BX_ERROR(("cannot determine media geometry"));
+      return(0);
+    }
+    media->tracks            = floppy_geom.track;
+    media->heads             = floppy_geom.head;
+    media->sectors_per_track = floppy_geom.sect;
+    media->sectors           = floppy_geom.size;
+#elif defined(WIN32)
+    media->tracks            = tracks;
+    media->heads             = heads;
+    media->sectors_per_track = spt;
     media->sectors = media->heads * media->tracks * media->sectors_per_track;
+#else
+    media->tracks            = floppy_type[idx].trk;
+    media->heads             = floppy_type[idx].hd;
+    media->sectors_per_track = floppy_type[idx].spt;
+    media->sectors           = floppy_type[idx].sectors;
+#endif
     return(1); // success
     }
   else {

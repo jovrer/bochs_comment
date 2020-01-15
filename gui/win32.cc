@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc,v 1.47.2.2 2003/01/03 00:36:01 cbothamy Exp $
+// $Id: win32.cc,v 1.71 2003/12/14 09:51:58 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -36,7 +36,7 @@
 #include "bochs.h"
 #if BX_WITH_WIN32
 
-#include "icon_bochs.h"
+#include "win32res.h"
 #include "font/vga.bitmap.h"
 // windows.h is included by bochs.h
 #include <commctrl.h>
@@ -67,6 +67,9 @@ IMPLEMENT_GUI_PLUGIN_CODE(win32)
 #define EXIT_FONT_BITMAP_ERROR   3
 #define EXIT_NORMAL              4
 #define EXIT_HEADER_BITMAP_ERROR 5
+
+/*  FIXME: Should we add a bochsrc option to control the font usage? */
+#define BX_USE_WINDOWS_FONTS 0
 
 // Keyboard/mouse stuff
 #define SCANCODE_BUFSIZE    20
@@ -103,11 +106,8 @@ static HDC MemoryDC = NULL;
 static RECT updated_area;
 static BOOL updated_area_valid = FALSE;
 
-// Textmode cursor
-HBITMAP cursorBmp;
-
 // Headerbar stuff
-HWND hwndTB;
+HWND hwndTB, hwndSB;
 unsigned bx_bitmap_entries;
 struct {
   HBITMAP bmap;
@@ -121,20 +121,27 @@ static struct {
 } bx_headerbar_entry[BX_MAX_HEADERBAR_ENTRIES];
 
 static unsigned bx_headerbar_y = 0;
+static unsigned bx_statusbar_y = 0;
 static int bx_headerbar_entries;
 static unsigned bx_hb_separator;
 
 // Misc stuff
-static unsigned dimension_x, dimension_y;
+static unsigned dimension_x, dimension_y, current_bpp;
 static unsigned stretched_x, stretched_y;
 static unsigned stretch_factor=1;
-static unsigned prev_block_cursor_x = 0;
-static unsigned prev_block_cursor_y = 0;
+static unsigned prev_cursor_x = 0;
+static unsigned prev_cursor_y = 0;
 static HBITMAP vgafont[256];
 static unsigned x_edge=0, y_edge=0, y_caption=0;
-static int yChar = 16;
+static int xChar = 8, yChar = 16;
+static unsigned int text_rows=25, text_cols=80;
+static BOOL BxTextMode = TRUE;
+#if !BX_USE_WINDOWS_FONTS
+static Bit8u h_panning = 0, v_panning = 0;
+#else
 static HFONT hFont[3];
 static int FontId = 2;
+#endif
 
 static char szAppName[] = "Bochs for Windows";
 static char szWindowName[] = "Bochs for Windows - Display";
@@ -160,13 +167,278 @@ VOID UIThread(PVOID);
 void terminateEmul(int);
 void create_vga_font(void);
 static unsigned char reverse_bitorder(unsigned char);
-void DrawBitmap (HDC, HBITMAP, int, int, DWORD, unsigned char cColor);
+void DrawBitmap (HDC, HBITMAP, int, int, int, int, int, int, DWORD, unsigned char);
 void DrawChar (HDC, unsigned char, int, int, unsigned char cColor, int, int);
 void updateUpdated(int,int,int,int);
 static void headerbar_click(int x);
+#if BX_USE_WINDOWS_FONTS
 void InitFont(void);
 void DestroyFont(void);
+#endif
 
+
+Bit32u win32_to_bx_key[2][0x100] =
+{
+  { /* normal-keys */
+    /* 0x00 - 0x0f */
+    0,
+    BX_KEY_ESC,
+    BX_KEY_1,
+    BX_KEY_2,
+    BX_KEY_3,
+    BX_KEY_4,
+    BX_KEY_5,
+    BX_KEY_6,
+    BX_KEY_7,
+    BX_KEY_8,
+    BX_KEY_9,
+    BX_KEY_0,
+    BX_KEY_MINUS,
+    BX_KEY_EQUALS,
+    BX_KEY_BACKSPACE,
+    BX_KEY_TAB,
+    /* 0x10 - 0x1f */
+    BX_KEY_Q,
+    BX_KEY_W,
+    BX_KEY_E,
+    BX_KEY_R,
+    BX_KEY_T,
+    BX_KEY_Y,
+    BX_KEY_U,
+    BX_KEY_I,
+    BX_KEY_O,
+    BX_KEY_P,
+    BX_KEY_LEFT_BRACKET,
+    BX_KEY_RIGHT_BRACKET,
+    BX_KEY_ENTER,
+    BX_KEY_CTRL_L,
+    BX_KEY_A,
+    BX_KEY_S,
+    /* 0x20 - 0x2f */
+    BX_KEY_D,
+    BX_KEY_F,
+    BX_KEY_G,
+    BX_KEY_H,
+    BX_KEY_J,
+    BX_KEY_K,
+    BX_KEY_L,
+    BX_KEY_SEMICOLON,
+    BX_KEY_SINGLE_QUOTE,
+    BX_KEY_GRAVE,
+    BX_KEY_SHIFT_L,
+    BX_KEY_BACKSLASH,
+    BX_KEY_Z,
+    BX_KEY_X,
+    BX_KEY_C,
+    BX_KEY_V,
+    /* 0x30 - 0x3f */
+    BX_KEY_B,
+    BX_KEY_N,
+    BX_KEY_M,
+    BX_KEY_COMMA,
+    BX_KEY_PERIOD,
+    BX_KEY_SLASH,
+    BX_KEY_SHIFT_R,
+    BX_KEY_KP_MULTIPLY,
+    BX_KEY_ALT_L,
+    BX_KEY_SPACE,
+    BX_KEY_CAPS_LOCK,
+    BX_KEY_F1,
+    BX_KEY_F2,
+    BX_KEY_F3,
+    BX_KEY_F4,
+    BX_KEY_F5,
+    /* 0x40 - 0x4f */
+    BX_KEY_F6,
+    BX_KEY_F7,
+    BX_KEY_F8,
+    BX_KEY_F9,
+    BX_KEY_F10,
+    BX_KEY_PAUSE,
+    BX_KEY_SCRL_LOCK,
+    BX_KEY_KP_HOME,
+    BX_KEY_KP_UP,
+    BX_KEY_KP_PAGE_UP,
+    BX_KEY_KP_SUBTRACT,
+    BX_KEY_KP_LEFT,
+    BX_KEY_KP_5,
+    BX_KEY_KP_RIGHT,
+    BX_KEY_KP_ADD,
+    BX_KEY_KP_END,
+    /* 0x50 - 0x5f */
+    BX_KEY_KP_DOWN,
+    BX_KEY_KP_PAGE_DOWN,
+    BX_KEY_KP_INSERT,
+    BX_KEY_KP_DELETE,
+    0,
+    0,
+    BX_KEY_LEFT_BACKSLASH,
+    BX_KEY_F11,
+    BX_KEY_F12,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    /* 0x60 - 0x6f */
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    /* 0x70 - 0x7f */
+    0,                  /* Todo: "Katakana" key ( ibm 133 ) for Japanese 106 keyboard */
+    0,
+    0,
+    0,                  /* Todo: "Ro" key ( ibm 56 ) for Japanese 106 keyboard */
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,                  /* Todo: "convert" key ( ibm 132 ) for Japanese 106 keyboard */
+    0,
+    0,                  /* Todo: "non-convert" key ( ibm 131 ) for Japanese 106 keyboard */
+    0,
+    0,                  /* Todo: "Yen" key ( ibm 14 ) for Japanese 106 keyboard */
+    0,
+    0,
+  },
+  { /* extended-keys */
+    /* 0x00 - 0x0f */
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    /* 0x10 - 0x1f */
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    BX_KEY_KP_ENTER,
+    BX_KEY_CTRL_R,
+    0,
+    0,
+    /* 0x20 - 0x2f */
+    0,
+    BX_KEY_POWER_CALC,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    /* 0x30 - 0x3f */
+    0,
+    0,
+    BX_KEY_INT_HOME,
+    0,
+    0,
+    BX_KEY_KP_DIVIDE,
+    0,
+    0,                  /* ?? BX_KEY_PRINT ( ibm 124 ) ?? */
+    BX_KEY_ALT_R,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    /* 0x40 - 0x4f */
+    0,
+    0,
+    0,
+    0,
+    0,
+    BX_KEY_NUM_LOCK,
+    0,
+    BX_KEY_HOME,
+    BX_KEY_UP,
+    BX_KEY_PAGE_UP,
+    0,
+    BX_KEY_LEFT,
+    0,
+    BX_KEY_RIGHT,
+    0,
+    BX_KEY_END,
+    /* 0x50 - 0x5f */
+    BX_KEY_DOWN,
+    BX_KEY_PAGE_DOWN,
+    BX_KEY_INSERT,
+    BX_KEY_DELETE,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    BX_KEY_WIN_L,
+    BX_KEY_WIN_R,
+    BX_KEY_MENU,
+    BX_KEY_POWER_POWER,
+    BX_KEY_POWER_SLEEP,
+    /* 0x60 - 0x6f */
+    0,
+    0,
+    0,
+    BX_KEY_POWER_WAKE,
+    0,
+    BX_KEY_INT_SEARCH,
+    BX_KEY_INT_FAV,
+    0,
+    BX_KEY_INT_STOP,
+    BX_KEY_INT_FORWARD,
+    BX_KEY_INT_BACK,
+    BX_KEY_POWER_MYCOMP,
+    BX_KEY_INT_MAIL,
+    0,
+    0,
+    0,
+  }
+};
 
 /* Macro to convert WM_ button state to BX button state */
 
@@ -251,7 +523,6 @@ void terminateEmul(int reason) {
     if (bx_bitmaps[b].bmap) DeleteObject(bx_bitmaps[b].bmap);
   for (unsigned c=0; c<256; c++)
     if (vgafont[c]) DeleteObject(vgafont[c]);
-  if (cursorBmp) DeleteObject(cursorBmp);
 
   LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
 
@@ -314,14 +585,13 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   UNUSED(headerbar_y);
   dimension_x = 640;
   dimension_y = 480;
+  current_bpp = 8;
   stretched_x = dimension_x;
   stretched_y = dimension_y;
   stretch_factor = 1;
 
   for(unsigned c=0; c<256; c++) vgafont[c] = NULL;
   create_vga_font();
-  cursorBmp = CreateBitmap(8,32,1,1,NULL);
-  if (!cursorBmp) terminateEmul(EXIT_FONT_BITMAP_ERROR);
 
   bitmap_info=(BITMAPINFO*)new char[sizeof(BITMAPINFOHEADER)+
     256*sizeof(RGBQUAD)];
@@ -332,7 +602,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
   bitmap_info->bmiHeader.biPlanes=1;
   bitmap_info->bmiHeader.biBitCount=8;
   bitmap_info->bmiHeader.biCompression=BI_RGB;
-  bitmap_info->bmiHeader.biSizeImage=x_tilesize*y_tilesize;
+  bitmap_info->bmiHeader.biSizeImage=x_tilesize*y_tilesize*4;
   // I think these next two figures don't matter; saying 45 pixels/centimeter
   bitmap_info->bmiHeader.biXPelsPerMeter=4500;
   bitmap_info->bmiHeader.biYPelsPerMeter=4500;
@@ -376,40 +646,37 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned
 VOID UIThread(PVOID pvoid) {
   MSG msg;
   HDC hdc;
-  WNDCLASSEX wndclass;
+  WNDCLASS wndclass;
   RECT wndRect, wndRect2;
+  long Edges[1];
 
   workerThreadID = GetCurrentThreadId();
 
-  wndclass.cbSize = sizeof (wndclass);
   wndclass.style = CS_HREDRAW | CS_VREDRAW;
   wndclass.lpfnWndProc = mainWndProc;
   wndclass.cbClsExtra = 0;
   wndclass.cbWndExtra = 0;
   wndclass.hInstance = stInfo.hInstance;
-  wndclass.hIcon = LoadIcon (NULL, IDI_APPLICATION);
+  wndclass.hIcon = LoadIcon (stInfo.hInstance, MAKEINTRESOURCE(ICON_BOCHS));
   wndclass.hCursor = LoadCursor (NULL, IDC_ARROW);
   wndclass.hbrBackground = (HBRUSH) GetStockObject (BLACK_BRUSH);
   wndclass.lpszMenuName = NULL;
   wndclass.lpszClassName = szAppName;
-  wndclass.hIconSm = LoadIcon (NULL, IDI_APPLICATION);
 
-  RegisterClassEx (&wndclass);
+  RegisterClass (&wndclass);
 
-  wndclass.cbSize = sizeof (wndclass);
   wndclass.style = CS_HREDRAW | CS_VREDRAW;
   wndclass.lpfnWndProc = simWndProc;
   wndclass.cbClsExtra = 0;
   wndclass.cbWndExtra = 0;
   wndclass.hInstance = stInfo.hInstance;
-  wndclass.hIcon = LoadIcon (NULL, IDI_APPLICATION);
+  wndclass.hIcon = NULL;
   wndclass.hCursor = LoadCursor (NULL, IDC_ARROW);
   wndclass.hbrBackground = (HBRUSH) GetStockObject (BLACK_BRUSH);
   wndclass.lpszMenuName = NULL;
   wndclass.lpszClassName = "SIMWINDOW";
-  wndclass.hIconSm = NULL;
 
-  RegisterClassEx (&wndclass);
+  RegisterClass (&wndclass);
 
   stInfo.mainWnd = CreateWindow (szAppName,
                      szWindowName,
@@ -433,25 +700,49 @@ VOID UIThread(PVOID pvoid) {
     SendMessage(hwndTB, TB_BUTTONSTRUCTSIZE, (WPARAM) sizeof(TBBUTTON), 0);
     SendMessage(hwndTB, TB_SETBITMAPSIZE, 0, (LPARAM)MAKELONG(32, 32));
     ShowWindow(hwndTB, SW_SHOW);
-    GetClientRect(stInfo.mainWnd, &wndRect);
+    hwndSB = CreateStatusWindow(WS_CHILD | WS_VISIBLE, "F12 enables mouse",
+                                stInfo.mainWnd, 0x7712);
+    if (hwndSB) {
+      Edges[0] = -1;
+      SendMessage(hwndSB, SB_SETPARTS, 1, (long)&Edges);
+    }
     GetClientRect(hwndTB, &wndRect2);
-    bx_headerbar_y = wndRect2.bottom - wndRect2.top;
+    bx_headerbar_y = wndRect2.bottom;
+    GetClientRect(hwndSB, &wndRect2);
+    bx_statusbar_y = wndRect2.bottom;
     SetWindowPos(stInfo.mainWnd, NULL, 0, 0, stretched_x + x_edge * 2,
-                  stretched_y + bx_headerbar_y + y_edge * 2 + y_caption,
-                  SWP_NOMOVE|SWP_NOZORDER);
+                  stretched_y + bx_headerbar_y + bx_statusbar_y + y_edge * 2
+                  + y_caption, SWP_NOMOVE | SWP_NOZORDER);
     UpdateWindow (stInfo.mainWnd);
+    GetClientRect(stInfo.mainWnd, &wndRect);
+    MoveWindow(hwndSB, 0, wndRect.bottom - bx_statusbar_y, wndRect.right,
+               bx_statusbar_y, TRUE);
 
     stInfo.simWnd = CreateWindow("SIMWINDOW",
                       "",
                       WS_CHILD,
                       0,
                       bx_headerbar_y,
-                      wndRect.right - wndRect.left,
-                      wndRect.bottom - wndRect.top - bx_headerbar_y,
+                      wndRect.right,
+                      wndRect.bottom - bx_headerbar_y - bx_statusbar_y,
                       stInfo.mainWnd,
                       NULL,
                       stInfo.hInstance,
                       NULL);
+
+    /* needed for the Japanese versions of Windows */
+    if (stInfo.simWnd) {
+      HMODULE hm;
+      hm = GetModuleHandle("USER32");
+      if (hm) {
+        BOOL (WINAPI *enableime)(HWND, BOOL);
+        enableime = (BOOL (WINAPI *)(HWND, BOOL))GetProcAddress(hm, "WINNLSEnableIME");
+        if (enableime) {
+          enableime(stInfo.simWnd, FALSE);
+          BX_INFO(("IME disabled"));
+        }
+      }
+    }
 
     ShowWindow(stInfo.simWnd, SW_SHOW);
     UpdateWindow (stInfo.simWnd);
@@ -470,6 +761,8 @@ VOID UIThread(PVOID pvoid) {
     if (MemoryBitmap && MemoryDC) {
       stInfo.UIinited = TRUE;
 
+      bx_gui->clear_screen();
+
       while (GetMessage (&msg, NULL, 0, 0)) {
         TranslateMessage (&msg);
         DispatchMessage (&msg);
@@ -483,15 +776,28 @@ VOID UIThread(PVOID pvoid) {
 }
 
 
+void SetStatusText(int Num, const char *Text)
+{
+  char StatText[MAX_PATH];
+
+  if (Num < 1) {
+    StatText[0] = ' ';  // Add space to text in first item
+  } else {
+    StatText[0] = 9;  // Center the rest
+  }
+  lstrcpy(StatText+1, Text);
+  SendMessage(hwndSB, SB_SETTEXT, Num, (long)StatText);
+}
+
 LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) {
 
   switch (iMsg) {
   case WM_CREATE:
     bx_options.Omouse_enabled->set (mouseCaptureMode);
     if (mouseCaptureMode)
-      SetWindowText(hwnd, "Bochs for Windows      [F12 to release mouse]");
+      SetStatusText(0, "Press F12 to release mouse");
     else
-      SetWindowText(hwnd, "Bochs for Windows      [F12 enables mouse]");
+      SetStatusText(0, "F12 enables mouse");
     return 0;
 
   case WM_COMMAND:
@@ -514,6 +820,10 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     PostQuitMessage (0);
     return 0;
 
+  case WM_SIZE:
+    SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
+    break;
+
   }
   return DefWindowProc (hwnd, iMsg, wParam, lParam);
 }
@@ -526,7 +836,9 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
 
   switch (iMsg) {
   case WM_CREATE:
+#if BX_USE_WINDOWS_FONTS
     InitFont();
+#endif
     SetTimer (hwnd, 1, 330, NULL);
     return 0;
 
@@ -549,12 +861,19 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
     hdcMem = CreateCompatibleDC (hdc);
     SelectObject (hdcMem, MemoryBitmap);
 
-    StretchBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
-           ps.rcPaint.right - ps.rcPaint.left + 1,
-           ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
-           ps.rcPaint.left/stretch_factor, ps.rcPaint.top/stretch_factor,
-            (ps.rcPaint.right - ps.rcPaint.left+1)/stretch_factor, (ps.rcPaint.bottom - ps.rcPaint.top+1)/stretch_factor,SRCCOPY);
-
+    if (stretch_factor == 1) {
+      BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
+             ps.rcPaint.right - ps.rcPaint.left + 1,
+             ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
+             ps.rcPaint.left, ps.rcPaint.top, SRCCOPY);
+    } else {
+      StretchBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
+                 ps.rcPaint.right - ps.rcPaint.left + 1,
+                 ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
+                 ps.rcPaint.left/stretch_factor, ps.rcPaint.top,
+                 (ps.rcPaint.right - ps.rcPaint.left+1)/stretch_factor,
+                 (ps.rcPaint.bottom - ps.rcPaint.top+1), SRCCOPY);
+    }
     DeleteDC (hdcMem);
     EndPaint (hwnd, &ps);
     LeaveCriticalSection(&stInfo.drawCS);
@@ -581,7 +900,9 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
   case WM_DESTROY:
     KillTimer (hwnd, 1);
     stInfo.UIinited = FALSE;
+#if BX_USE_WINDOWS_FONTS
     DestroyFont();
+#endif
     return 0;
 
   case WM_KEYDOWN:
@@ -595,9 +916,9 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam) 
       SetCursorPos(wndRect.left + stretched_x/2, wndRect.top + stretched_y/2);
       cursorWarped();
       if (mouseCaptureMode)
-        SetWindowText(stInfo.mainWnd, "Bochs for Windows      [Press F12 to release mouse capture]");
+        SetStatusText(0, "Press F12 to release mouse");
       else
-        SetWindowText(stInfo.mainWnd, "Bochs for Windows      [F12 enables the mouse in Bochs]");
+        SetStatusText(0, "F12 enables mouse");
     } else {
       EnterCriticalSection(&stInfo.keyCS);
       enq_key_event(HIWORD (lParam) & 0x01FF, BX_KEY_PRESSED);
@@ -674,7 +995,7 @@ QueueEvent* deq_key_event(void) {
 
 void bx_win32_gui_c::handle_events(void) {
   Bit32u key;
-  unsigned char scancode;
+  Bit32u key_event;
 
   // printf("# Hey!!!\n");
 
@@ -689,9 +1010,6 @@ void bx_win32_gui_c::handle_events(void) {
     QueueEvent* queue_event=deq_key_event();
     if ( ! queue_event)
       break;
-    // Bypass DEV_kbd_gen_scancode so we may enter
-    //  a scancode directly
-    // DEV_kbd_gen_scancode(deq_key_event());
     key = queue_event->key_event;
     if ( key==MOUSE_MOTION)
     {
@@ -707,23 +1025,18 @@ void bx_win32_gui_c::handle_events(void) {
       headerbar_click(LOWORD(key));
     }
     else {
-      // Swap the scancodes of "numlock" and "pause"
-      if ((key & 0xff)==0x45) key ^= 0x100;
       if (key & 0x0100) {
-        // This makes the "AltGr" key on European keyboards work
-	if (key==0x138) {
-          scancode = 0x9d; // left control key released
-          DEV_kbd_put_scancode(&scancode, 1);
-	}
-        // Its an extended key
-        scancode = 0xE0;
-        DEV_kbd_put_scancode(&scancode, 1);
+        // It's an extended key
+        switch (key & 0xff) {
+          case 0x38:
+            // This makes the "AltGr" key on European keyboards work
+            DEV_kbd_gen_scancode(BX_KEY_CTRL_L | BX_KEY_RELEASED);
+            break;
+        }
       }
-      // Its a key
-      scancode = LOBYTE(LOWORD(key));
-      // printf("# key = %d, scancode = %d\n",key,scancode);
-      if (key & BX_KEY_RELEASED) scancode |= 0x80;
-      DEV_kbd_put_scancode(&scancode, 1);
+      key_event = win32_to_bx_key[(key & 0x100) ? 1 : 0][key & 0xff];
+      if (key & BX_KEY_RELEASED) key_event |= BX_KEY_RELEASED;
+      DEV_kbd_gen_scancode(key_event);
     }
   }
   LeaveCriticalSection(&stInfo.keyCS);
@@ -780,32 +1093,44 @@ void bx_win32_gui_c::clear_screen(void) {
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is 80*nrows*2 bytes long.
-//     This represents 80 characters wide by 'nrows' high, with
-//     each character being 2 bytes.  The first by is the
-//     character value, the second is the attribute byte.
-//     I currently don't handle the attribute byte.
+// format of old_text & new_text: each is tm_info.line_offset*text_rows
+//     bytes long. Each character consists of 2 bytes.  The first by is
+//     the character value, the second is the attribute byte.
 //
 // cursor_x: new x location of cursor
 // cursor_y: new y location of cursor
+// tm_info:  this structure contains information for additional
+//           features in text mode (cursor shape, line offset,...)
+// nrows:    number of text rows (unused here)
 
 void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 			   unsigned long cursor_x, unsigned long cursor_y,
-                           Bit16u cursor_state, unsigned nrows) {
+                           bx_vga_tminfo_t tm_info, unsigned nrows)
+{
   HDC hdc;
-  unsigned char cChar;
-  unsigned i, x, y;
-  Bit8u cs_start, cs_end;
-  unsigned nchars, ncols;
   unsigned char data[64];
+  unsigned char *old_line, *new_line;
+  unsigned char cAttr, cChar;
+  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2;
+  Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
   BOOL forceUpdate = FALSE;
 
+  if (!stInfo.UIinited) return;
+
+  EnterCriticalSection(&stInfo.drawCS);
+
+  UNUSED(nrows);
   if (charmap_updated) {
     for (unsigned c = 0; c<256; c++) {
       if (char_changed[c]) {
         memset(data, 0, sizeof(data));
-        for (unsigned i=0; i<32; i++)
+        BOOL gfxchar = tm_info.line_graphics && ((c & 0xE0) == 0xC0);
+        for (unsigned i=0; i<32; i++) {
           data[i*2] = vga_charmap[c*32+i];
+          if (gfxchar) {
+            data[i*2+1] = (data[i*2] << 7);
+          }
+        }
         SetBitmapBits(vgafont[c], 64, data);
         char_changed[c] = 0;
       }
@@ -814,71 +1139,149 @@ void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
     charmap_updated = 0;
   }
 
-  cs_start = (cursor_state >> 8) & 0x3f;
-  cs_end = cursor_state & 0x1f;
-
-  if (!stInfo.UIinited) return;
-
-  EnterCriticalSection(&stInfo.drawCS);
-
   hdc = GetDC(stInfo.simWnd);
 
-  ncols = dimension_x/8;
+#if !BX_USE_WINDOWS_FONTS
+  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
+    forceUpdate = 1;
+    h_panning = tm_info.h_panning;
+    v_panning = tm_info.v_panning;
+  }
+#endif
 
-  // Number of characters on screen, variable number of rows
-  nchars = ncols*nrows;
-
-  if ( (prev_block_cursor_y*ncols + prev_block_cursor_x) < nchars) {
-    cChar = new_text[(prev_block_cursor_y*ncols + prev_block_cursor_x)*2];
-    if (yChar >= 14) {
-      DrawBitmap(hdc, vgafont[cChar], prev_block_cursor_x*8,
-	              prev_block_cursor_y*yChar, SRCCOPY,
-				  new_text[((prev_block_cursor_y*ncols + prev_block_cursor_x)*2)+1]);
-    } else {
-      DrawChar(hdc, cChar, prev_block_cursor_x*8,
-               prev_block_cursor_y*yChar,
-               new_text[((prev_block_cursor_y*ncols + prev_block_cursor_x)*2)+1], 1, 0);
-    }
+  // first invalidate character at previous and new cursor location
+  if((prev_cursor_y < text_rows) && (prev_cursor_x < text_cols)) {
+    curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  }
+  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < yChar) &&
+     (cursor_y < text_rows) && (cursor_x < text_cols)) {
+    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  } else {
+    curs = 0xffff;
   }
 
-  for (i=0; i<nchars*2; i+=2) {
-    if (forceUpdate || (old_text[i] != new_text[i]) ||
-	(old_text[i+1] != new_text[i+1])) {
-
-      cChar = new_text[i];
-
-      x = (i/2) % ncols;
-      y = (i/2) / ncols;
-      if(yChar>=14) {
-        DrawBitmap(hdc, vgafont[cChar], x*8, y*yChar, SRCCOPY, new_text[i+1]);
+#if !BX_USE_WINDOWS_FONTS
+  rows = text_rows;
+  if (v_panning) rows++;
+  y = 0;
+  do {
+    hchars = text_cols;
+    if (h_panning) hchars++;
+    if (v_panning) {
+      if (y == 0) {
+        yc = 0;
+        font_row = v_panning;
+        cfheight = yChar - v_panning;
       } else {
-        DrawChar(hdc, cChar, x*8, y*yChar, new_text[i+1], 1, 0);
+        yc = y * yChar - v_panning;
+        font_row = 0;
+        if (rows == 1) {
+          cfheight = v_panning;
+        } else {
+          cfheight = yChar;
+        }
       }
-    }
-  }
-
-  prev_block_cursor_x = cursor_x;
-  prev_block_cursor_y = cursor_y;
-
-  // now draw character at new block cursor location in reverse
-  if (((cursor_y*ncols + cursor_x) < nchars ) && (cs_start <= cs_end)) {
-    cChar = new_text[(cursor_y*ncols + cursor_x)*2];
-    if (yChar>=14)
-    {
-      memset(data, 0, sizeof(data));
-      for (unsigned i=0; i<32; i++) {
-        data[i*2] = reverse_bitorder(bx_vgafont[cChar].data[i]);
-        if ((i >= cs_start) && (i <= cs_end))
-          data[i*2] = 255 - data[i*2];
-      }
-      SetBitmapBits(cursorBmp, 64, data);
-      DrawBitmap(hdc, cursorBmp, cursor_x*8, cursor_y*yChar,
-	         SRCCOPY, new_text[((cursor_y*ncols + cursor_x)*2)+1]);
     } else {
-      char cAttr = new_text[((cursor_y*ncols + cursor_x)*2)+1];
-      DrawChar(hdc, cChar, cursor_x*8, cursor_y*yChar, cAttr, cs_start, cs_end);
+      yc = y * yChar;
+      font_row = 0;
+      cfheight = yChar;
     }
-  }
+    new_line = new_text;
+    old_line = old_text;
+    x = 0;
+    offset = y * tm_info.line_offset;
+    do {
+      if (h_panning) {
+        if (hchars > text_cols) {
+          xc = 0;
+          font_col = h_panning;
+          cfwidth = xChar - h_panning;
+        } else {
+          xc = x * xChar - h_panning;
+          font_col = 0;
+          if (hchars == 1) {
+            cfwidth = h_panning;
+          } else {
+            cfwidth = xChar;
+          }
+        }
+      } else {
+        xc = x * xChar;
+        font_col = 0;
+        cfwidth = xChar;
+      }
+      if (forceUpdate || (old_text[0] != new_text[0])
+          || (old_text[1] != new_text[1])) {
+        cChar = new_text[0];
+        cAttr = new_text[1];
+        DrawBitmap(hdc, vgafont[cChar], xc, yc, cfwidth, cfheight, font_col,
+                   font_row, SRCCOPY, cAttr);
+        if (offset == curs) {
+          if (font_row == 0) {
+            yc2 = yc + tm_info.cs_start;
+            font_row2 = tm_info.cs_start;
+            cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+          } else {
+            if (v_panning > tm_info.cs_start) {
+              yc2 = yc;
+              font_row2 = font_row;
+              cfheight2 = tm_info.cs_end - v_panning + 1;
+            } else {
+              yc2 = yc + tm_info.cs_start - v_panning;
+              font_row2 = tm_info.cs_start;
+              cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            }
+          }
+          cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
+          DrawBitmap(hdc, vgafont[cChar], xc, yc2, cfwidth, cfheight2, font_col,
+                     font_row2, SRCCOPY, cAttr);
+        }
+      }
+      x++;
+      new_text+=2;
+      old_text+=2;
+      offset+=2;
+    } while (--hchars);
+    y++;
+    new_text = new_line + tm_info.line_offset;
+    old_text = old_line + tm_info.line_offset;
+  } while (--rows);
+#else
+  rows = text_rows;
+  y = 0;
+  do {
+    hchars = text_cols;
+    yc = y * yChar;
+    new_line = new_text;
+    old_line = old_text;
+    x = 0;
+    offset = y * tm_info.line_offset;
+    do {
+      xc = x * xChar;
+      if (forceUpdate || (old_text[0] != new_text[0])
+          || (old_text[1] != new_text[1])) {
+        cChar = new_text[0];
+        cAttr = new_text[1];
+        DrawChar(hdc, cChar, xc, yc, cAttr, 1, 0);
+        if (offset == curs) {
+          DrawChar(hdc, cChar, xc, yc, cAttr, tm_info.cs_start, tm_info.cs_end);
+        }
+      }
+      x++;
+      new_text+=2;
+      old_text+=2;
+      offset+=2;
+    } while (--hchars);
+    y++;
+    new_text = new_line + tm_info.line_offset;
+    old_text = old_line + tm_info.line_offset;
+  } while (--rows);
+#endif
+
+  prev_cursor_x = cursor_x;
+  prev_cursor_y = cursor_y;
 
   ReleaseDC(stInfo.simWnd, hdc);
 
@@ -986,42 +1389,86 @@ void bx_win32_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 //
 // x: new VGA x size
 // y: new VGA y size (add headerbar_y parameter from ::specific_init().
+// fheight: new VGA character height in text mode
+// fwidth : new VGA character width in text mode
+// bpp : bits per pixel in graphics mode
 
-void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
-  if (fheight > 0) {
+  RECT R;
+
+  BxTextMode = (fheight > 0);
+  if (BxTextMode) {
+    text_cols = x / fwidth;
+    text_rows = y / fheight;
+#if BX_USE_WINDOWS_FONTS
     if (fheight >= 14) {
       FontId = 2;
-      yChar = fheight;
-    } else if (fheight > 12) {
+      xChar = 8;
+      yChar = 16;
+    } else if (fheight >= 12) {
       FontId = 1;
+      xChar = 8;
       yChar = 14;
     } else {
       FontId = 0;
+      xChar = 8;
       yChar = 12;
     }
-    y = y * yChar / fheight;
+    if (fwidth != xChar) {
+      x = x * 8 / fwidth;
+    }
+    if (fheight != yChar) {
+      y = y * yChar / fheight;
+    }
+#else
+    xChar = fwidth;
+    yChar = fheight;
+#endif
   }
 
-  if ( x==dimension_x && y==dimension_y)
+  if ( x==dimension_x && y==dimension_y && bpp==current_bpp)
     return;
   dimension_x = x;
   dimension_y = y;
+  current_bpp = bpp;
   stretched_x = dimension_x;
   stretched_y = dimension_y;
   stretch_factor = 1;
-  while ( stretched_x<400)
-  {
+  if (BxTextMode && (stretched_x<400)) {
     stretched_x *= 2;
-    stretched_y *= 2;
     stretch_factor *= 2;
+  }
+  
+  bitmap_info->bmiHeader.biBitCount = bpp;
+  if (bpp == 16)
+  {
+    bitmap_info->bmiHeader.biCompression = BI_BITFIELDS;
+    static RGBQUAD red_mask   = {0x00, 0xF8, 0x00, 0x00};
+    static RGBQUAD green_mask = {0xE0, 0x07, 0x00, 0x00};
+    static RGBQUAD blue_mask  = {0x1F, 0x00, 0x00, 0x00};
+    bitmap_info->bmiColors[0] = red_mask;
+    bitmap_info->bmiColors[1] = green_mask;
+    bitmap_info->bmiColors[2] = blue_mask;
+  }
+  else
+  {
+    bitmap_info->bmiHeader.biCompression = BI_RGB;
+    if (bpp == 15)
+    {
+      bitmap_info->bmiHeader.biBitCount = 16;
+    }
   }
 
   SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, stretched_x + x_edge * 2,
-              stretched_y + bx_headerbar_y + y_edge * 2 + y_caption,
-               SWP_NOMOVE | SWP_NOZORDER);
-  MoveWindow(hwndTB, 0, 0, stretched_x, bx_headerbar_y, TRUE);
+               stretched_y + bx_headerbar_y + bx_statusbar_y + y_edge * 2
+               + y_caption, SWP_NOMOVE | SWP_NOZORDER);
+  GetClientRect(stInfo.mainWnd, &R);
+  MoveWindow(hwndSB, 0, R.bottom-bx_statusbar_y, stretched_x,
+             bx_statusbar_y, TRUE);
   MoveWindow(stInfo.simWnd, 0, bx_headerbar_y, stretched_x, stretched_y, TRUE);
+
+  BX_INFO (("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
 }
 
 
@@ -1085,7 +1532,6 @@ unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
 				    void (*f)(void)) {
   unsigned hb_index;
   TBBUTTON tbb[1];
-  RECT R;
 
   if ( (bx_headerbar_entries+1) > BX_MAX_HEADERBAR_ENTRIES )
     terminateEmul(EXIT_HEADER_BITMAP_ERROR);
@@ -1111,11 +1557,6 @@ unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
   } else { // BX_GRAVITY_RIGHT
     SendMessage(hwndTB, TB_INSERTBUTTON, bx_hb_separator+1, (LPARAM)(LPTBBUTTON)&tbb);
   }
-  if (hb_index==0) {
-    SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
-    GetWindowRect(hwndTB, &R);
-    bx_headerbar_y = R.bottom - R.top + 1;
-  }
 
   bx_headerbar_entry[hb_index].bmap_id = bmap_id;
   bx_headerbar_entry[hb_index].f = f;
@@ -1131,6 +1572,20 @@ unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
 
 void bx_win32_gui_c::show_headerbar(void)
 {
+  RECT R;
+
+  SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
+  GetWindowRect(hwndTB, &R);
+  if (bx_headerbar_y != (R.bottom - R.top + 1)) {
+    bx_headerbar_y = R.bottom - R.top + 1;
+    SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, stretched_x + x_edge * 2,
+                 stretched_y + bx_headerbar_y + bx_statusbar_y + y_edge * 2
+                 + y_caption, SWP_NOMOVE | SWP_NOZORDER);
+    GetClientRect(stInfo.mainWnd, &R);
+    MoveWindow(hwndSB, 0, R.bottom - bx_statusbar_y, stretched_x,
+               bx_statusbar_y, TRUE);
+    MoveWindow(stInfo.simWnd, 0, bx_headerbar_y, stretched_x, stretched_y, TRUE);
+  }
 }
 
 
@@ -1177,9 +1632,9 @@ void bx_win32_gui_c::exit(void) {
 void create_vga_font(void) {
   unsigned char data[64];
 
-  // VGA font is 8wide x 16high
+  // VGA font is 8 or 9 wide and up to 32 high
   for (unsigned c = 0; c<256; c++) {
-    vgafont[c] = CreateBitmap(8,32,1,1,NULL);
+    vgafont[c] = CreateBitmap(9,32,1,1,NULL);
     if (!vgafont[c]) terminateEmul(EXIT_FONT_BITMAP_ERROR);
     memset(data, 0, sizeof(data));
     for (unsigned i=0; i<16; i++)
@@ -1208,8 +1663,8 @@ COLORREF GetColorRef(unsigned char attr)
 }
 
 
-void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart,
-		 DWORD dwRop, unsigned char cColor) {
+void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart, int width,
+                 int height, int fcol, int frow, DWORD dwRop, unsigned char cColor) {
   BITMAP bm;
   HDC hdcMem;
   POINT ptSize, ptOrg;
@@ -1221,21 +1676,17 @@ void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart,
 
   GetObject (hBitmap, sizeof (BITMAP), (LPVOID) &bm);
 
-  ptSize.x = bm.bmWidth;
-  ptSize.y = yChar;
+  ptSize.x = width;
+  ptSize.y = height;
 
   DPtoLP (hdc, &ptSize, 1);
 
-  ptOrg.x = 0;
-  ptOrg.y = 0;
+  ptOrg.x = fcol;
+  ptOrg.y = frow;
   DPtoLP (hdcMem, &ptOrg, 1);
 
-  // BitBlt (hdc, xStart, yStart, ptSize.x, ptSize.y, hdcMem, ptOrg.x,
-  // 	    ptOrg.y, dwRop);
-
   oldObj = SelectObject(MemoryDC, MemoryBitmap);
-//	BitBlt(MemoryDC, xStart, yStart, ptSize.x, ptSize.y, hdcMem, ptOrg.x,
-//		  ptOrg.y, dwRop);
+
 //Colors taken from Ralf Browns interrupt list.
 //(0=black, 1=blue, 2=red, 3=purple, 4=green, 5=cyan, 6=yellow, 7=white)
 //The highest background bit usually means blinking characters. No idea
@@ -1260,9 +1711,7 @@ void DrawBitmap (HDC hdc, HBITMAP hBitmap, int xStart, int yStart,
 
 void updateUpdated(int x1, int y1, int x2, int y2) {
   x1*=stretch_factor;
-  y1*=stretch_factor;
   x2*=stretch_factor;
-  y2*=stretch_factor;
   if (!updated_area_valid) {
     updated_area.left = x1 ;
     updated_area.top = y1 ;
@@ -1306,6 +1755,8 @@ bx_win32_gui_c::mouse_enabled_changed_specific (bx_bool val)
 {
 }
 
+#if BX_USE_WINDOWS_FONTS
+
 void DrawChar (HDC hdc, unsigned char c, int xStart, int yStart,
                unsigned char cColor, int cs_start, int cs_end) {
   HDC hdcMem;
@@ -1316,7 +1767,7 @@ void DrawChar (HDC hdc, unsigned char c, int xStart, int yStart,
 
   hdcMem = CreateCompatibleDC (hdc);
   SetMapMode (hdcMem, GetMapMode (hdc));
-  ptSize.x = 8;
+  ptSize.x = xChar;
   ptSize.y = yChar;
 
   DPtoLP (hdc, &ptSize, 1);
@@ -1350,7 +1801,7 @@ void DrawChar (HDC hdc, unsigned char c, int xStart, int yStart,
     SetBkColor(MemoryDC, GetColorRef(cColor&0xf));
     SetTextColor(MemoryDC, GetColorRef((cColor>>4)&0xf));
     rc.left = xStart+0;
-    rc.right = xStart+8;
+    rc.right = xStart+xChar;
     if (cs_end >= y)
       cs_end = y-1;
     rc.top = yStart+cs_start*yChar/y;
@@ -1403,4 +1854,7 @@ void DestroyFont(void)
     DeleteObject(hFont[i]);
   }
 }
+
+#endif /* if BX_USE_WINDOWS_FONTS */
+
 #endif /* if BX_WITH_WIN32 */

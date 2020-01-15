@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.h,v 1.97 2002/12/17 05:58:45 bdenney Exp $
+// $Id: siminterface.h,v 1.113 2004/01/05 22:18:01 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // Before I can describe what this file is for, I have to make the
@@ -151,30 +151,38 @@ typedef enum {
   BXP_FLOPPYB_TYPE,
   BXP_FLOPPYB_STATUS,
   BXP_FLOPPYB,
+
   BXP_ATA0_MENU,
   BXP_ATA1_MENU,
   BXP_ATA2_MENU,
   BXP_ATA3_MENU,
+#define BXP_ATAx_MENU(i) (BXP_ATA0_MENU + (i))
   BXP_ATA0,
   BXP_ATA1,
   BXP_ATA2,
   BXP_ATA3,
+#define BXP_ATAx(i) (BXP_ATA0 + (i))
   BXP_ATA0_PRESENT,
   BXP_ATA1_PRESENT,
   BXP_ATA2_PRESENT,
   BXP_ATA3_PRESENT,
+#define BXP_ATAx_PRESENT(i) (BXP_ATA0_PRESENT + (i))
   BXP_ATA0_IOADDR1,
   BXP_ATA1_IOADDR1,
   BXP_ATA2_IOADDR1,
   BXP_ATA3_IOADDR1,
+#define BXP_ATAx_IOADDR1(i) (BXP_ATA0_IOADDR1 + (i))
   BXP_ATA0_IOADDR2,
   BXP_ATA1_IOADDR2,
   BXP_ATA2_IOADDR2,
   BXP_ATA3_IOADDR2,
+#define BXP_ATAx_IOADDR2(i) (BXP_ATA0_IOADDR2 + (i))
   BXP_ATA0_IRQ,
   BXP_ATA1_IRQ,
   BXP_ATA2_IRQ,
   BXP_ATA3_IRQ,
+#define BXP_ATAx_IRQ(i) (BXP_ATA0_IRQ + (i))
+
   BXP_ATA0_MASTER,
   BXP_ATA0_SLAVE,
   BXP_ATA1_MASTER,
@@ -183,6 +191,10 @@ typedef enum {
   BXP_ATA2_SLAVE,
   BXP_ATA3_MASTER,
   BXP_ATA3_SLAVE,
+#define BXP_ATAx_DEVICE(i, s) (BXP_ATA0_MASTER + (2*(i)) + (s))
+
+#define BXP_PARAMS_PER_ATA_DEVICE 12
+
   BXP_ATA0_MASTER_PRESENT,
   BXP_ATA0_SLAVE_PRESENT,
   BXP_ATA1_MASTER_PRESENT,
@@ -191,6 +203,8 @@ typedef enum {
   BXP_ATA2_SLAVE_PRESENT,
   BXP_ATA3_MASTER_PRESENT,
   BXP_ATA3_SLAVE_PRESENT,
+#define BXP_ATAx_DEVICE_PRESENT(i, s) (BXP_ATA0_MASTER_PRESENT + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_TYPE,
   BXP_ATA0_SLAVE_TYPE,
   BXP_ATA1_MASTER_TYPE,
@@ -199,6 +213,18 @@ typedef enum {
   BXP_ATA2_SLAVE_TYPE,
   BXP_ATA3_MASTER_TYPE,
   BXP_ATA3_SLAVE_TYPE,
+#define BXP_ATAx_DEVICE_TYPE(i, s) (BXP_ATA0_MASTER_TYPE + (2*(i)) + (s))
+
+  BXP_ATA0_MASTER_MODE,
+  BXP_ATA0_SLAVE_MODE,
+  BXP_ATA1_MASTER_MODE,
+  BXP_ATA1_SLAVE_MODE,
+  BXP_ATA2_MASTER_MODE,
+  BXP_ATA2_SLAVE_MODE,
+  BXP_ATA3_MASTER_MODE,
+  BXP_ATA3_SLAVE_MODE,
+#define BXP_ATAx_DEVICE_MODE(i, s) (BXP_ATA0_MASTER_MODE + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_PATH,
   BXP_ATA0_SLAVE_PATH,
   BXP_ATA1_MASTER_PATH,
@@ -207,6 +233,8 @@ typedef enum {
   BXP_ATA2_SLAVE_PATH,
   BXP_ATA3_MASTER_PATH,
   BXP_ATA3_SLAVE_PATH,
+#define BXP_ATAx_DEVICE_PATH(i, s) (BXP_ATA0_MASTER_PATH + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_CYLINDERS,
   BXP_ATA0_SLAVE_CYLINDERS,
   BXP_ATA1_MASTER_CYLINDERS,
@@ -215,6 +243,8 @@ typedef enum {
   BXP_ATA2_SLAVE_CYLINDERS,
   BXP_ATA3_MASTER_CYLINDERS,
   BXP_ATA3_SLAVE_CYLINDERS,
+#define BXP_ATAx_DEVICE_CYLINDERS(i, s) (BXP_ATA0_MASTER_CYLINDERS + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_HEADS,
   BXP_ATA0_SLAVE_HEADS,
   BXP_ATA1_MASTER_HEADS,
@@ -223,6 +253,8 @@ typedef enum {
   BXP_ATA2_SLAVE_HEADS,
   BXP_ATA3_MASTER_HEADS,
   BXP_ATA3_SLAVE_HEADS,
+#define BXP_ATAx_DEVICE_HEADS(i, s) (BXP_ATA0_MASTER_HEADS + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_SPT,
   BXP_ATA0_SLAVE_SPT,
   BXP_ATA1_MASTER_SPT,
@@ -231,6 +263,8 @@ typedef enum {
   BXP_ATA2_SLAVE_SPT,
   BXP_ATA3_MASTER_SPT,
   BXP_ATA3_SLAVE_SPT,
+#define BXP_ATAx_DEVICE_SPT(i, s) (BXP_ATA0_MASTER_SPT + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_STATUS,
   BXP_ATA0_SLAVE_STATUS,
   BXP_ATA1_MASTER_STATUS,
@@ -239,6 +273,8 @@ typedef enum {
   BXP_ATA2_SLAVE_STATUS,
   BXP_ATA3_MASTER_STATUS,
   BXP_ATA3_SLAVE_STATUS,
+#define BXP_ATAx_DEVICE_STATUS(i, s) (BXP_ATA0_MASTER_STATUS + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_MODEL,
   BXP_ATA0_SLAVE_MODEL,
   BXP_ATA1_MASTER_MODEL,
@@ -247,6 +283,8 @@ typedef enum {
   BXP_ATA2_SLAVE_MODEL,
   BXP_ATA3_MASTER_MODEL,
   BXP_ATA3_SLAVE_MODEL,
+#define BXP_ATAx_DEVICE_MODEL(i, s) (BXP_ATA0_MASTER_MODEL + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_BIOSDETECT,
   BXP_ATA0_SLAVE_BIOSDETECT,
   BXP_ATA1_MASTER_BIOSDETECT,
@@ -255,6 +293,8 @@ typedef enum {
   BXP_ATA2_SLAVE_BIOSDETECT,
   BXP_ATA3_MASTER_BIOSDETECT,
   BXP_ATA3_SLAVE_BIOSDETECT,
+#define BXP_ATAx_DEVICE_BIOSDETECT(i, s) (BXP_ATA0_MASTER_BIOSDETECT + (2*(i)) + (s))
+
   BXP_ATA0_MASTER_TRANSLATION,
   BXP_ATA0_SLAVE_TRANSLATION,
   BXP_ATA1_MASTER_TRANSLATION,
@@ -263,6 +303,18 @@ typedef enum {
   BXP_ATA2_SLAVE_TRANSLATION,
   BXP_ATA3_MASTER_TRANSLATION,
   BXP_ATA3_SLAVE_TRANSLATION,
+#define BXP_ATAx_DEVICE_TRANSLATION(i, s) (BXP_ATA0_MASTER_TRANSLATION + (2*(i)) + (s))
+
+  BXP_ATA0_MASTER_JOURNAL,
+  BXP_ATA0_SLAVE_JOURNAL,
+  BXP_ATA1_MASTER_JOURNAL,
+  BXP_ATA1_SLAVE_JOURNAL,
+  BXP_ATA2_MASTER_JOURNAL,
+  BXP_ATA2_SLAVE_JOURNAL,
+  BXP_ATA3_MASTER_JOURNAL,
+  BXP_ATA3_SLAVE_JOURNAL,
+#define BXP_ATAx_DEVICE_JOURNAL(i, s) (BXP_ATA0_MASTER_JOURNAL + (2*(i)) + (s))
+
 #define BXP_PARAMS_PER_SERIAL_PORT 2
   BXP_COM1_ENABLED,
   BXP_COM1_PATH,
@@ -272,6 +324,10 @@ typedef enum {
   BXP_COM3_PATH,
   BXP_COM4_ENABLED,
   BXP_COM4_PATH,
+#define BXP_PARAMS_PER_USB_HUB 3
+  BXP_USB1_ENABLED,
+  BXP_USB1_IOADDR,
+  BXP_USB1_IRQ,
   BXP_PRIVATE_COLORMAP,
   BXP_FULLSCREEN,
   BXP_SCREENMODE,
@@ -282,7 +338,9 @@ typedef enum {
   BXP_DEBUGGER_LOG_FILENAME,
   BXP_CMOS_PATH,
   BXP_CMOS_IMAGE,
-  BXP_CMOS_TIME0,
+  BXP_CLOCK,
+  BXP_CLOCK_TIME0,
+  BXP_CLOCK_SYNC,
   BXP_LOAD32BITOS_WHICH,
   BXP_LOAD32BITOS_PATH,
   BXP_LOAD32BITOS_IOLOG,
@@ -296,9 +354,10 @@ typedef enum {
   BXP_MENU_DISK,
   BXP_MENU_SERIAL_PARALLEL,
   BXP_MENU_SOUND,
+  BXP_MENU_KEYBOARD,
   BXP_MENU_MISC,
+  BXP_MENU_MISC_2,
   BXP_MENU_RUNTIME,
-  BXP_SYSTEM_CLOCK_SYNC,
   BXP_MAX_IPS,
   BXP_NE2K_PRESENT,
   BXP_NE2K_IOADDR,
@@ -413,6 +472,15 @@ typedef enum {
    (bx_id)(BXP_COM1_ENABLED + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
 #define BXP_COMx_PATH(x) \
   (bx_id)(BXP_COM1_PATH + (((x)-1)*BXP_PARAMS_PER_SERIAL_PORT))
+
+// use x=1
+#define BXP_USBx_ENABLED(x) \
+   (bx_id)(BXP_USB1_ENABLED + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+#define BXP_USBx_IOADDR(x) \
+   (bx_id)(BXP_USB1_IOADDR + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+#define BXP_USBx_IRQ(x) \
+   (bx_id)(BXP_USB1_IRQ + (((x)-1)*BXP_PARAMS_PER_USB_HUB))
+
 // use x=1,2
 #define BXP_PARPORTx_ENABLED(x) \
   (bx_id)(BXP_PARPORT1_ENABLED + (((x)-1)*BXP_PARAMS_PER_PARALLEL_PORT))
@@ -457,6 +525,11 @@ typedef enum {
 #define BX_BOOT_DISKC   1
 #define BX_BOOT_CDROM   2
 
+// loader hack
+#define Load32bitOSNone        0
+#define Load32bitOSLinux       1
+#define Load32bitOSNullKernel  2 // being developed for plex86
+#define Load32bitOSLast        2
 
 ///////////////////////////////////////////////////////////////////
 // event structures for communication between simulator and CI
@@ -766,6 +839,7 @@ class BOCHSAPI bx_param_c : public bx_object_c {
 protected:
   char *name;
   char *description;
+  char *label; // label string for text menus and gui dialogs
   const char *text_format;  // printf format string. %d for ints, %s for strings, etc.
   char *ask_format;  // format string for asking for a new value
   int runtime_param;
@@ -776,7 +850,10 @@ public:
   const char *get_format () {return text_format;}
   void set_ask_format (char *format) {ask_format = format; }
   char *get_ask_format () {return ask_format;}
+  void set_label (char *text) {label = text;}
+  char *get_label () {return label;}
   void set_runtime_param (int val) { runtime_param = val; }
+  int get_runtime_param () { return runtime_param; }
   char *get_name () { return name; }
   char *get_description () { return description; }
   int get_enabled () { return enabled; }
@@ -793,6 +870,7 @@ public:
 };
 
 typedef Bit64s (*param_event_handler)(class bx_param_c *, int set, Bit64s val);
+typedef int (*param_enable_handler)(class bx_param_c *, int en);
 
 class BOCHSAPI bx_param_num_c : public bx_param_c {
   BOCHSAPI_CYGONLY static Bit32u default_base;
@@ -813,14 +891,22 @@ protected:
     bx_bool *pbool;  // used by bx_shadow_bool_c
   } val;
   param_event_handler handler;
+  param_enable_handler enable_handler;
   int base;
+  Bit32u options;
 public:
+  enum {
+    // When a bx_param_num_c is displayed in dialog, USE_SPIN_CONTROL controls
+    // whether a spin control should be used instead of a simple text control.
+    USE_SPIN_CONTROL = (1<<0),
+  } bx_numopt_bits;
   bx_param_num_c (bx_id id,
       char *name,
       char *description,
       Bit64s min, Bit64s max, Bit64s initial_val);
   void reset ();
   void set_handler (param_event_handler handler);
+  void set_enable_handler (param_enable_handler handler);
   virtual bx_list_c *get_dependent_list () { return dependent_list; }
   void set_dependent_list (bx_list_c *l);
   virtual void set_enabled (int enabled);
@@ -835,6 +921,8 @@ public:
   Bit64s get_max () { return max; }
   static Bit32u set_default_base (Bit32u val);
   static Bit32u get_default_base () { return default_base; }
+  void set_options (Bit32u options) { this->options = options; }
+  Bit32u get_options () { return options; }
 #if BX_UI_TEXT
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
@@ -958,6 +1046,7 @@ class BOCHSAPI bx_param_string_c : public bx_param_c {
   int maxsize;
   char *val, *initial_val;
   param_string_event_handler handler;
+  param_enable_handler enable_handler;
   bx_param_num_c *options;
   char separator;
 public:
@@ -976,12 +1065,16 @@ public:
   virtual ~bx_param_string_c ();
   void reset ();
   void set_handler (param_string_event_handler handler);
+  void set_enable_handler (param_enable_handler handler);
+  virtual void set_enabled (int enabled);
   Bit32s get (char *buf, int len);
   char *getptr () {return val; }
   void set (char *buf);
   bx_bool equals (const char *buf);
   bx_param_num_c *get_options () { return options; }
   void set_separator (char sep) {separator = sep; }
+  char get_separator () {return separator; }
+  int get_maxsize () {return maxsize; }
 #if BX_UI_TEXT
   virtual void text_print (FILE *fp);
   virtual int text_ask (FILE *fpin, FILE *fpout);
@@ -1030,11 +1123,15 @@ public:
     // related questions.  This bit suggests to the CI that the series of
     // questions format is preferred.
     SERIES_ASK = (1<<1),
-    // When a bx_list_c is displayed in a dialog, BX_USE_TAB_WINDOW suggests
+    // When a bx_list_c is displayed in a dialog, USE_TAB_WINDOW suggests
     // to the CI that each item in the list should be shown as a separate
     // tab.  This would be most appropriate when each item is another list
     // of parameters.
-    USE_TAB_WINDOW = (1<<2)
+    USE_TAB_WINDOW = (1<<2),
+    // When a bx_list_c is displayed in a dialog, the list name is used as the
+    // label of the group box if USE_BOX_TITLE is set. This is only necessary if
+    // more than one list appears in a dialog box.
+    USE_BOX_TITLE = (1<<3)
   } bx_listopt_bits;
   bx_list_c (bx_id id, int maxsize);
   bx_list_c (bx_id id, char *name, char *description, bx_param_c **init_list);
@@ -1082,7 +1179,11 @@ enum {
 #define BX_FLOPPY_2_88   13 // 2.88M 3.5"
 #define BX_FLOPPY_720K   14 // 720K  3.5"
 #define BX_FLOPPY_360K   15 // 360K  5.25"
-#define BX_FLOPPY_LAST   15 // last legal value of floppy type
+#define BX_FLOPPY_160K   16 // 160K  5.25"
+#define BX_FLOPPY_180K   17 // 180K  5.25"
+#define BX_FLOPPY_320K   18 // 320K  5.25"
+#define BX_FLOPPY_LAST   18 // last legal value of floppy type
+
 #define BX_FLOPPY_GUESS  20 // decide based on image size
 
 #define BX_ATA_DEVICE_DISK      0
@@ -1100,6 +1201,29 @@ enum {
 #define BX_ATA_TRANSLATION_AUTO      4
 #define BX_ATA_TRANSLATION_LAST      4
 
+#define BX_ATA_MODE_FLAT        0
+#define BX_ATA_MODE_CONCAT      1
+#define BX_ATA_MODE_EXTDISKSIM  2
+#define BX_ATA_MODE_DLL_HD      3
+#define BX_ATA_MODE_SPARSE      4
+#define BX_ATA_MODE_VMWARE3     5
+#define BX_ATA_MODE_UNDOABLE    6
+#define BX_ATA_MODE_GROWING     7
+#define BX_ATA_MODE_VOLATILE    8
+#define BX_ATA_MODE_LAST        8
+//#define BX_ATA_MODE_Z_UNDOABLE  9
+//#define BX_ATA_MODE_Z_VOLATILE  10
+//#define BX_ATA_MODE_SPLIT       6
+
+#define BX_CLOCK_SYNC_NONE     0
+#define BX_CLOCK_SYNC_REALTIME 1
+#define BX_CLOCK_SYNC_SLOWDOWN 2
+#define BX_CLOCK_SYNC_BOTH     3
+#define BX_CLOCK_SYNC_LAST     3
+
+#define BX_CLOCK_TIME0_LOCAL     1
+#define BX_CLOCK_TIME0_UTC       2
+
 BOCHSAPI extern char *bochs_start_names[];
 BOCHSAPI extern int n_bochs_start_names;
 BOCHSAPI extern char *floppy_type_names[];
@@ -1115,12 +1239,16 @@ BOCHSAPI extern char *keyboard_type_names[];
 BOCHSAPI extern int n_keyboard_type_names;
 BOCHSAPI extern char *atadevice_type_names[];
 BOCHSAPI extern int n_atadevice_type_names;
+BOCHSAPI extern char *atadevice_mode_names[];
+BOCHSAPI extern int n_atadevice_mode_names;
 BOCHSAPI extern char *atadevice_status_names[];
 BOCHSAPI extern int n_atadevice_status_names;
 BOCHSAPI extern char *atadevice_biosdetect_names[];
 BOCHSAPI extern int n_atadevice_biosdetect_names;
 BOCHSAPI extern char *atadevice_translation_names[];
 BOCHSAPI extern int n_atadevice_translation_names;
+BOCHSAPI extern char *clock_sync_names[];
+BOCHSAPI extern int clock_sync_n_names;
 
 typedef struct {
   bx_param_enum_c *Odevtype;
@@ -1133,7 +1261,9 @@ typedef struct {
   bx_list_c *Omenu;
   bx_param_bool_c *Opresent;
   bx_param_enum_c *Otype;
+  bx_param_enum_c *Omode;
   bx_param_string_c *Opath;
+  bx_param_string_c *Ojournal;
   bx_param_num_c *Ocylinders;
   bx_param_num_c *Oheads;
   bx_param_num_c *Ospt;
@@ -1147,6 +1277,12 @@ typedef struct {
   bx_param_bool_c *Oenabled;
   bx_param_string_c *Odev;
   } bx_serial_options;
+
+typedef struct {
+  bx_param_bool_c *Oenabled;
+  bx_param_num_c *Oioaddr;
+  bx_param_num_c *Oirq;
+  } bx_usb_options;
 
 
 ////////////////////////////////////////////////////////////////////
@@ -1318,3 +1454,4 @@ typedef struct BOCHSAPI {
 } bx_startup_flags_t;
 
 BOCHSAPI extern bx_startup_flags_t bx_startup_flags;
+BOCHSAPI extern bx_bool bx_user_quit;

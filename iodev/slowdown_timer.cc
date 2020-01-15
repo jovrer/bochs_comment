@@ -1,11 +1,32 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: slowdown_timer.cc,v 1.13 2002/10/24 21:07:52 bdenney Exp $
+// $Id: slowdown_timer.cc,v 1.17 2003/10/01 02:06:14 bdenney Exp $
 /////////////////////////////////////////////////////////////////////////
 //
+//  Copyright (C) 2002  MandrakeSoft S.A.
+//
+//    MandrakeSoft S.A.
+//    43, rue d'Aboukir
+//    75002 Paris - France
+//    http://www.linux-mandrake.com/
+//    http://www.mandrakesoft.com/
+//
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+//
+
 #include "bochs.h"
 #include <errno.h>
-
-#if BX_USE_SLOWDOWN_TIMER
 
 //These need to stay printfs because they are useless in the log file.
 #define BX_SLOWDOWN_PRINTF_FEEDBACK 0
@@ -14,6 +35,9 @@
 #define usectosec(a) ((a)/SECINUSEC)
 #define sectousec(a) ((a)*SECINUSEC)
 #define nsectousec(a) ((a)/1000)
+
+#define MSECINUSEC 1000
+#define usectomsec(a) ((a)/MSECINUSEC)
 
 #if BX_HAVE_USLEEP
 #  define Qval 1000
@@ -24,9 +48,15 @@
 #define MAXMULT 1.5
 #define REALTIME_Q SECINUSEC
 
+#define LOG_THIS bx_slowdown_timer.
+
 bx_slowdown_timer_c bx_slowdown_timer;
 
 bx_slowdown_timer_c::bx_slowdown_timer_c() {
+  put("STIMER");
+  settype(STIMERLOG);
+
+
   s.start_time=0;
   s.start_emulated_time=0;
   s.timer_handle=BX_NULL_TIMER_HANDLE;
@@ -34,6 +64,13 @@ bx_slowdown_timer_c::bx_slowdown_timer_c() {
 
 void
 bx_slowdown_timer_c::init(void) {
+
+  // Return early if slowdown timer not selected
+  if ( (bx_options.clock.Osync->get () != BX_CLOCK_SYNC_SLOWDOWN)
+    && (bx_options.clock.Osync->get () != BX_CLOCK_SYNC_BOTH) )
+    return;
+
+  BX_INFO(("using 'slowdown' timer synchronization method"));
   s.MAXmultiplier=MAXMULT;
   s.Q=Qval;
 
@@ -79,8 +116,7 @@ bx_slowdown_timer_c::handle_timer() {
   if(totaltime > total_emu_time) {
     bx_pc_system.deactivate_timer(s.timer_handle);
     bx_pc_system.activate_timer(s.timer_handle,
-				(Bit32u)((Bit64u)
-					 (s.MAXmultiplier * (float)s.Q)),
+				(Bit32u)(s.MAXmultiplier * (float)((Bit64s)s.Q)),
 				0);
 #if BX_SLOWDOWN_PRINTF_FEEDBACK
     printf("running at MAX speed\n");
@@ -109,10 +145,13 @@ bx_slowdown_timer_c::handle_timer() {
   if(wanttime > (totaltime+REALTIME_Q)) {
 #if BX_HAVE_USLEEP
     usleep(s.Q);
-#else
+#elif BX_HAVE_MSLEEP
+    msleep(usectomsec(s.Q));
+#elif BX_HAVE_SLEEP
     sleep(usectosec(s.Q));
-#endif
-    //delay(wanttime-totaltime);
+#else
+#error do not know have to sleep
+#endif    //delay(wanttime-totaltime);
     /*alternatively: delay(Q);
      * This works okay because we share the delay between
      * two time quantums.
@@ -140,6 +179,4 @@ bx_slowdown_timer_c::handle_timer() {
   }
 #endif // Diagnostic info
 }
-
-#endif
 

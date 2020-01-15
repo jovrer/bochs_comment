@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.h,v 1.9 2002/10/25 11:44:37 bdenney Exp $
+// $Id: instrument.h,v 1.11 2003/10/09 19:05:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -131,6 +131,9 @@ void bx_instr_mem_data(unsigned cpu, bx_address lin, unsigned size, unsigned rw)
 #  define BX_INSTR_TLB_CNTRL(cpu_id, what, newval)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
 
+/* execution */
+#  define BX_INSTR_BEFORE_EXECUTION(cpu_id)
+#  define BX_INSTR_AFTER_EXECUTION(cpu_id)
 #  define BX_INSTR_REPEAT_ITERATION(cpu_id)
 
 /* memory access */
@@ -141,8 +144,8 @@ void bx_instr_mem_data(unsigned cpu, bx_address lin, unsigned size, unsigned rw)
 #  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)  bx_instr_mem_data(cpu_id, linear, size, rw)
 
 /* called from memory object */
-#  define BX_INSTR_PHY_WRITE(addr, len)
-#  define BX_INSTR_PHY_READ(addr, len)
+#  define BX_INSTR_PHY_WRITE(cpu_id, addr, len)
+#  define BX_INSTR_PHY_READ(cpu_id, addr, len)
 
 /* feedback from device units */
 #  define BX_INSTR_INP(addr, len)
@@ -198,6 +201,9 @@ void bx_instr_mem_data(unsigned cpu, bx_address lin, unsigned size, unsigned rw)
 #  define BX_INSTR_TLB_CNTRL(cpu_id, what, newval)
 #  define BX_INSTR_PREFETCH_HINT(cpu_id, what, seg, offset)
 
+/* execution */
+#  define BX_INSTR_BEFORE_EXECUTION(cpu_id)
+#  define BX_INSTR_AFTER_EXECUTION(cpu_id)
 #  define BX_INSTR_REPEAT_ITERATION(cpu_id)
 
 /* memory access */
@@ -208,8 +214,8 @@ void bx_instr_mem_data(unsigned cpu, bx_address lin, unsigned size, unsigned rw)
 #  define BX_INSTR_MEM_DATA(cpu_id, linear, size, rw)
 
 /* called from memory object */
-#  define BX_INSTR_PHY_WRITE(addr, len)
-#  define BX_INSTR_PHY_READ(addr, len)
+#  define BX_INSTR_PHY_WRITE(cpu_id, addr, len)
+#  define BX_INSTR_PHY_READ(cpu_id, addr, len)
 
 /* feedback from device units */
 #  define BX_INSTR_INP(addr, len)

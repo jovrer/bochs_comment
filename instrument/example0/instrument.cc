@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc,v 1.8 2002/11/20 17:55:40 bdenney Exp $
+// $Id: instrument.cc,v 1.11 2003/08/04 16:03:09 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,7 +26,6 @@
 
 
 #include "bochs.h"
-#include "cpu/cpu.h"
 
 
 // maximum size of an instruction
@@ -51,7 +50,7 @@ static struct instruction_t {
   struct {
     bx_address laddr; // linear address
     bx_address paddr; // physical address
-    unsigned op;      // BX_READ or BX_WRITE
+    unsigned op;      // BX_READ, BX_WRITE or BX_RW
     unsigned size;    // 1 .. 8
   } data_access[MAX_DATA_ACCESSES];
   bx_bool is_branch;
@@ -85,7 +84,7 @@ void bx_instr_new_instruction(unsigned cpu)
     char disasm_tbuf[512];	// buffer for instruction disassembly
     unsigned length = i->opcode_size, n;
 
-    bx_disassemble.disasm(i->is32, 0, i->opcode, disasm_tbuf);
+    bx_disassemble.disasm(i->is32, 0, 0, i->opcode, disasm_tbuf);
  
     if(length != 0)	
     {

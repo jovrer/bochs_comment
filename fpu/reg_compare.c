@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------+
  |  reg_compare.c                                                            |
- |  $Id: reg_compare.c,v 1.3 2001/10/06 03:53:46 bdenney Exp $
+ |  $Id: reg_compare.c,v 1.6 2003/10/04 12:32:56 sshwarts Exp $
  |                                                                           |
  | Compare two floating point registers                                      |
  |                                                                           |
@@ -201,7 +201,7 @@ int FPU_compare_st_data(FPU_REG const *loaded_data, u_char loaded_tag)
 	break;
 #ifdef PARANOID
       default:
-	EXCEPTION(EX_INTERNAL|0x121);
+	INTERNAL(0x121);
 	f = SW_C3 | SW_C2 | SW_C0;
 	break;
 #endif /* PARANOID */
@@ -225,7 +225,7 @@ static int compare_st_st(int nr)
       setcc(SW_C3 | SW_C2 | SW_C0);
       /* Stack fault */
       EXCEPTION(EX_StackUnder);
-      return !(control_word & CW_Invalid);
+      return !(FPU_control_word & CW_Invalid);
     }
 
   st_ptr = &st(nr);
@@ -234,7 +234,7 @@ static int compare_st_st(int nr)
     {
       setcc(SW_C3 | SW_C2 | SW_C0);
       EXCEPTION(EX_Invalid);
-      return !(control_word & CW_Invalid);
+      return !(FPU_control_word & CW_Invalid);
     }
   else
     switch (c & 7)
@@ -253,7 +253,7 @@ static int compare_st_st(int nr)
 	break;
 #ifdef PARANOID
       default:
-	EXCEPTION(EX_INTERNAL|0x122);
+	INTERNAL(0x122);
 	f = SW_C3 | SW_C2 | SW_C0;
 	break;
 #endif /* PARANOID */
@@ -277,7 +277,7 @@ static int compare_u_st_st(int nr)
       setcc(SW_C3 | SW_C2 | SW_C0);
       /* Stack fault */
       EXCEPTION(EX_StackUnder);
-      return !(control_word & CW_Invalid);
+      return !(FPU_control_word & CW_Invalid);
     }
 
   st_ptr = &st(nr);
@@ -289,7 +289,7 @@ static int compare_u_st_st(int nr)
 				  un-ordered and ordinary comparisons */
 	{
 	  EXCEPTION(EX_Invalid);
-	  return !(control_word & CW_Invalid);
+	  return !(FPU_control_word & CW_Invalid);
 	}
       return 0;
     }
@@ -310,7 +310,7 @@ static int compare_u_st_st(int nr)
 	break;
 #ifdef PARANOID
       default:
-	EXCEPTION(EX_INTERNAL|0x123);
+	INTERNAL(0x123);
 	f = SW_C3 | SW_C2 | SW_C0;
 	break;
 #endif /* PARANOID */
@@ -348,8 +348,11 @@ void fcompp()
       FPU_illegal();
       return;
     }
-  if ( !compare_st_st(1) )
-      poppop();
+  if (!compare_st_st(1))
+  {
+      FPU_pop();
+      FPU_pop();
+  }
 }
 
 
@@ -374,8 +377,11 @@ void fucompp()
   /* fucompp */
   if (FPU_rm == 1)
     {
-      if ( !compare_u_st_st(1) )
-	poppop();
+      if (!compare_u_st_st(1))
+      {
+          FPU_pop();
+          FPU_pop();
+      }
     }
   else
     FPU_illegal();

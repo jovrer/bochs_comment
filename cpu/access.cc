@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: access.cc,v 1.35 2002/11/13 21:00:03 sshwarts Exp $
+// $Id: access.cc,v 1.42 2003/10/24 20:06:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -39,28 +39,39 @@
 #if BX_SUPPORT_X86_64
 #define IsLongMode() (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
 #define LPFOf(laddr) ((laddr) & BX_CONST64(0xfffffffffffff000))
+#define BX_CANONICAL_BITS     48
+#define IsCanonical(offset)   ((Bit64u)((((Bit64s)(offset)) >> (BX_CANONICAL_BITS-1)) + 1) < 2)
+
+//#define BX_CANONICAL_LO       BX_CONST64(0xffff800000000000)
+//#define BX_CANONICAL_HI       BX_CONST64(0x0000800000000000)
+//#define IsCanonical(offset)   ((Bit64u)(offset-BX_CANONICAL_LO) < (Bit64u)(BX_CANONICAL_HI-BX_CANONICAL_LO))
+
 #else
 #define IsLongMode() (0)
 #define LPFOf(laddr) ((laddr) & 0xfffff000)
+#define IsCanonical(offset) (0)
 #endif
 
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
                                unsigned length)
 {
   Bit32u upper_limit;
 
-
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    // do canonical checks
+    if (!IsCanonical(offset)) {
+      BX_ERROR(("Canonical Address Failure %08x%08x",(Bit32u)(offset >> 32),(Bit32u)(offset & 0xffffffff)));
+      exception(BX_GP_EXCEPTION, 0, 0);
+      }
     seg->cache.valid |= SegAccessWOK;
     return;
     }
 #endif
-  if ( protected_mode() ) {
-    if ( seg->cache.valid==0 ) {
+  if (protected_mode()) {
+    if (seg->cache.valid==0) {
       BX_ERROR(("seg = %s", BX_CPU_THIS_PTR strseg(seg)));
       BX_ERROR(("seg->selector.value = %04x", (unsigned) seg->selector.value));
       BX_ERROR(("write_virtual_checks: valid bit = 0"));
@@ -75,7 +86,7 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
       exception(int_number(seg), 0, 0);
       return;
       }
-    switch ( seg->cache.type ) {
+    switch (seg->cache.type) {
       case 0: case 1:   // read only
       case 4: case 5:   // read only, expand down
       case 8: case 9:   // execute only
@@ -111,9 +122,9 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
           upper_limit = 0xffffffff;
         else
           upper_limit = 0x0000ffff;
-        if ( (offset <= seg->cache.u.segment.limit_scaled) ||
+        if ((offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) ||
-             ((upper_limit - offset) < (length - 1)) ) {
+             ((upper_limit - offset) < (length - 1))) {
                   BX_INFO(("write_virtual_checks(): write beyond limit, r/w ED"));
           exception(int_number(seg), 0, 0);
           return;
@@ -139,21 +150,25 @@ BX_CPU_C::write_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
     }
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
                               unsigned length)
 {
   Bit32u upper_limit;
 
-
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
+    // do canonical checks
+    if (!IsCanonical(offset)) {
+      BX_ERROR(("Canonical Address Failure %08x%08x",(Bit32u)(offset >> 32),(Bit32u)(offset & 0xffffffff)));
+      exception(BX_GP_EXCEPTION, 0, 0);
+      }
     seg->cache.valid |= SegAccessROK;
     return;
     }
 #endif
-  if ( protected_mode() ) {
-    if ( seg->cache.valid==0 ) {
+  if (protected_mode()) {
+    if (seg->cache.valid==0) {
       BX_ERROR(("seg = %s", BX_CPU_THIS_PTR strseg(seg)));
       BX_ERROR(("seg->selector.value = %04x", (unsigned) seg->selector.value));
       //BX_ERROR(("read_virtual_checks: valid bit = 0"));
@@ -171,7 +186,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
       return;
       }
 
-    switch ( seg->cache.type ) {
+    switch (seg->cache.type) {
       case 0: case 1: /* read only */
       case 10: case 11: /* execute/read */
       case 14: case 15: /* execute/read-only, conforming */
@@ -207,9 +222,9 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
           upper_limit = 0xffffffff;
         else
           upper_limit = 0x0000ffff;
-        if ( (offset <= seg->cache.u.segment.limit_scaled) ||
+        if ((offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) ||
-             ((upper_limit - offset) < (length - 1)) ) {
+             ((upper_limit - offset) < (length - 1))) {
                   BX_INFO(("read_virtual_checks(): write beyond limit"));
           exception(int_number(seg), 0, 0);
           return;
@@ -221,9 +236,9 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
           upper_limit = 0xffffffff;
         else
           upper_limit = 0x0000ffff;
-        if ( (offset <= seg->cache.u.segment.limit_scaled) ||
+        if ((offset <= seg->cache.u.segment.limit_scaled) ||
              (offset > upper_limit) ||
-             ((upper_limit - offset) < (length - 1)) ) {
+             ((upper_limit - offset) < (length - 1))) {
                   BX_INFO(("read_virtual_checks(): write beyond limit"));
           exception(int_number(seg), 0, 0);
           return;
@@ -258,10 +273,7 @@ BX_CPU_C::read_virtual_checks(bx_segment_reg_t *seg, bx_address offset,
     }
 }
 
-
-
-
-  char *
+  char * BX_CPP_AttrRegparmN(1)
 BX_CPU_C::strseg(bx_segment_reg_t *seg)
 {
   if (seg == &BX_CPU_THIS_PTR sregs[0]) return("ES");
@@ -276,8 +288,7 @@ BX_CPU_C::strseg(bx_segment_reg_t *seg)
     }
 }
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_virtual_byte(unsigned s, bx_address offset, Bit8u *data)
 {
   bx_address laddr;
@@ -285,11 +296,12 @@ BX_CPU_C::write_virtual_byte(unsigned s, bx_address offset, Bit8u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset <= seg->cache.u.segment.limit_scaled) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset <= seg->cache.u.segment.limit_scaled)) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 1, BX_WRITE);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 1, BX_WRITE);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -300,10 +312,10 @@ accessOK:
       pageOffset = laddr & 0xfff;
       tlbIndex = BX_TLB_INDEX_OF(laddr);
       lpf = LPFOf(laddr);
-      if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf)))
+      if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf)))
         {
         Bit32u accessBits;
-        Bit32u hostPageAddr;
+        bx_hostpageaddr_t hostPageAddr;
         Bit8u *hostAddr;
 
         // See if the TLB entry privilege level allows us write access
@@ -311,7 +323,7 @@ accessOK:
         hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
         hostAddr = (Bit8u*) (hostPageAddr | pageOffset);
         accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-        if ( accessBits & (1 << (2 | pl)) ) {
+        if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
           Bit32u *pageStamp;
           pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -322,7 +334,7 @@ accessOK:
 #if BX_SupportICache
            && (*pageStamp & ICacheWriteStampMask)
 #endif
-              ) {
+             ) {
             *hostAddr = *data;
 #if BX_SupportICache
             (*pageStamp)--;
@@ -342,7 +354,7 @@ accessOK:
   goto accessOK;
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_virtual_word(unsigned s, bx_address offset, Bit16u *data)
 {
   bx_address laddr;
@@ -350,11 +362,12 @@ BX_CPU_C::write_virtual_word(unsigned s, bx_address offset, Bit16u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset < seg->cache.u.segment.limit_scaled) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset < seg->cache.u.segment.limit_scaled)) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 2, BX_WRITE);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 2, BX_WRITE);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -366,10 +379,10 @@ accessOK:
       if (pageOffset <= 0xffe) { // Make sure access does not span 2 pages.
         tlbIndex = BX_TLB_INDEX_OF(laddr);
         lpf = LPFOf(laddr);
-        if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-             ) {
+        if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+            ) {
           Bit32u accessBits;
-          Bit32u  hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit16u *hostAddr;
 
           // See if the TLB entry privilege level allows us write access
@@ -377,7 +390,7 @@ accessOK:
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1 << (2 | pl)) ) {
+          if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
             Bit32u *pageStamp;
             pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -388,7 +401,7 @@ accessOK:
 #if BX_SupportICache
               && (*pageStamp & ICacheWriteStampMask)
 #endif
-                ) {
+               ) {
               WriteHostWordToLittleEndian(hostAddr, *data);
 #if BX_SupportICache
               (*pageStamp)--;
@@ -409,7 +422,7 @@ accessOK:
   goto accessOK;
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_virtual_dword(unsigned s, bx_address offset, Bit32u *data)
 {
   bx_address laddr;
@@ -417,11 +430,12 @@ BX_CPU_C::write_virtual_dword(unsigned s, bx_address offset, Bit32u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset < (seg->cache.u.segment.limit_scaled-2)) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset < (seg->cache.u.segment.limit_scaled-2))) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 4, BX_WRITE);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 4, BX_WRITE);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -433,10 +447,10 @@ accessOK:
       if (pageOffset <= 0xffc) { // Make sure access does not span 2 pages.
         tlbIndex = BX_TLB_INDEX_OF(laddr);
         lpf = LPFOf(laddr);
-        if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-             ) {
+        if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+            ) {
           Bit32u accessBits;
-          Bit32u  hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit32u *hostAddr;
 
           // See if the TLB entry privilege level allows us write access
@@ -444,7 +458,7 @@ accessOK:
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1 << (2 | pl)) ) {
+          if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
             Bit32u *pageStamp;
             pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -455,7 +469,7 @@ accessOK:
 #if BX_SupportICache
              && (*pageStamp & ICacheWriteStampMask)
 #endif
-                ) {
+               ) {
               WriteHostDWordToLittleEndian(hostAddr, *data);
 #if BX_SupportICache
               (*pageStamp)--;
@@ -476,8 +490,7 @@ accessOK:
   goto accessOK;
 }
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_virtual_byte(unsigned s, bx_address offset, Bit8u *data)
 {
   bx_address laddr;
@@ -485,11 +498,12 @@ BX_CPU_C::read_virtual_byte(unsigned s, bx_address offset, Bit8u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessROK) {
-    if ( IsLongMode() || (offset <= seg->cache.u.segment.limit_scaled) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset <= seg->cache.u.segment.limit_scaled)) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 1, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 1, BX_READ);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -504,13 +518,13 @@ accessOK:
         // See if the TLB entry privilege level allows us read access
         // from this CPL.
         Bit32u accessBits;
-        Bit32u hostPageAddr;
+        bx_hostpageaddr_t hostPageAddr;
         Bit8u *hostAddr;
 
         hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
         hostAddr = (Bit8u*) (hostPageAddr | pageOffset);
         accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-        if ( accessBits & (1<<pl) ) { // Read this pl OK.
+        if (accessBits & (1<<pl)) { // Read this pl OK.
           if (hostPageAddr) {
             *data = *hostAddr;
             return;
@@ -528,8 +542,7 @@ accessOK:
   goto accessOK;
 }
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_virtual_word(unsigned s, bx_address offset, Bit16u *data)
 {
   bx_address laddr;
@@ -537,11 +550,12 @@ BX_CPU_C::read_virtual_word(unsigned s, bx_address offset, Bit16u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessROK) {
-    if ( IsLongMode() || (offset < seg->cache.u.segment.limit_scaled) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset < seg->cache.u.segment.limit_scaled)) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 2, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 2, BX_READ);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -557,13 +571,13 @@ accessOK:
           // See if the TLB entry privilege level allows us read access
           // from this CPL.
           Bit32u accessBits;
-          Bit32u hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit16u *hostAddr;
 
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1<<pl) ) { // Read this pl OK.
+          if (accessBits & (1<<pl)) { // Read this pl OK.
             if (hostPageAddr) {
               ReadHostWordFromLittleEndian(hostAddr, *data);
               return;
@@ -582,8 +596,7 @@ accessOK:
   goto accessOK;
 }
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_virtual_dword(unsigned s, bx_address offset, Bit32u *data)
 {
   bx_address laddr;
@@ -591,11 +604,12 @@ BX_CPU_C::read_virtual_dword(unsigned s, bx_address offset, Bit32u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessROK) {
-    if ( IsLongMode() || (offset < (seg->cache.u.segment.limit_scaled-2)) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset < (seg->cache.u.segment.limit_scaled-2))) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 4, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 4, BX_READ);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -611,13 +625,13 @@ accessOK:
           // See if the TLB entry privilege level allows us read access
           // from this CPL.
           Bit32u accessBits;
-          Bit32u hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit32u *hostAddr;
 
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1<<pl) ) { // Read this pl OK.
+          if (accessBits & (1<<pl)) { // Read this pl OK.
             if (hostPageAddr) {
               ReadHostDWordFromLittleEndian(hostAddr, *data);
               return;
@@ -636,13 +650,12 @@ accessOK:
   goto accessOK;
 }
 
-
 //////////////////////////////////////////////////////////////
 // special Read-Modify-Write operations                     //
 // address translation info is kept across read/write calls //
 //////////////////////////////////////////////////////////////
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_RMW_virtual_byte(unsigned s, bx_address offset, Bit8u *data)
 {
   bx_address laddr;
@@ -650,11 +663,12 @@ BX_CPU_C::read_RMW_virtual_byte(unsigned s, bx_address offset, Bit8u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset <= seg->cache.u.segment.limit_scaled) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset <= seg->cache.u.segment.limit_scaled)) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 1, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 1, BX_RW);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -665,10 +679,10 @@ accessOK:
       pageOffset = laddr & 0xfff;
       tlbIndex = BX_TLB_INDEX_OF(laddr);
       lpf = LPFOf(laddr);
-      if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-           ) {
+      if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+          ) {
         Bit32u accessBits;
-        Bit32u hostPageAddr;
+        bx_hostpageaddr_t hostPageAddr;
         Bit8u *hostAddr;
 
         // See if the TLB entry privilege level allows us write access
@@ -676,7 +690,7 @@ accessOK:
         hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
         hostAddr = (Bit8u*) (hostPageAddr | pageOffset);
         accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-        if ( accessBits & (1 << (2 | pl)) ) {
+        if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
           Bit32u *pageStamp;
           pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -687,9 +701,9 @@ accessOK:
 #if BX_SupportICache
             && (*pageStamp & ICacheWriteStampMask)
 #endif
-              ) {
+             ) {
             *data = *hostAddr;
-            BX_CPU_THIS_PTR address_xlation.pages = (Bit32u) hostAddr;
+            BX_CPU_THIS_PTR address_xlation.pages = (bx_ptr_equiv_t) hostAddr;
 #if BX_SupportICache
             (*pageStamp)--;
 #endif
@@ -711,7 +725,7 @@ accessOK:
 }
 
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_RMW_virtual_word(unsigned s, bx_address offset, Bit16u *data)
 {
   bx_address laddr;
@@ -719,11 +733,12 @@ BX_CPU_C::read_RMW_virtual_word(unsigned s, bx_address offset, Bit16u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset < seg->cache.u.segment.limit_scaled) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset < seg->cache.u.segment.limit_scaled)) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 2, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 2, BX_RW);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -735,10 +750,10 @@ accessOK:
       if (pageOffset <= 0xffe) { // Make sure access does not span 2 pages.
         tlbIndex = BX_TLB_INDEX_OF(laddr);
         lpf = LPFOf(laddr);
-        if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-             ) {
+        if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+            ) {
           Bit32u accessBits;
-          Bit32u  hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit16u *hostAddr;
 
           // See if the TLB entry privilege level allows us write access
@@ -746,7 +761,7 @@ accessOK:
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1 << (2 | pl)) ) {
+          if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
             Bit32u *pageStamp;
             pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -757,9 +772,9 @@ accessOK:
 #if BX_SupportICache
              && (*pageStamp & ICacheWriteStampMask)
 #endif
-                ) {
+               ) {
               ReadHostWordFromLittleEndian(hostAddr, *data);
-              BX_CPU_THIS_PTR address_xlation.pages = (Bit32u) hostAddr;
+              BX_CPU_THIS_PTR address_xlation.pages = (bx_ptr_equiv_t) hostAddr;
 #if BX_SupportICache
               (*pageStamp)--;
 #endif
@@ -779,7 +794,7 @@ accessOK:
   goto accessOK;
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_RMW_virtual_dword(unsigned s, bx_address offset, Bit32u *data)
 {
   bx_address laddr;
@@ -787,11 +802,12 @@ BX_CPU_C::read_RMW_virtual_dword(unsigned s, bx_address offset, Bit32u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset < (seg->cache.u.segment.limit_scaled-2)) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset < (seg->cache.u.segment.limit_scaled-2))) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 4, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 4, BX_RW);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -803,10 +819,10 @@ accessOK:
       if (pageOffset <= 0xffc) { // Make sure access does not span 2 pages.
         tlbIndex = BX_TLB_INDEX_OF(laddr);
         lpf = LPFOf(laddr);
-        if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-             ) {
+        if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+            ) {
           Bit32u accessBits;
-          Bit32u  hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit32u *hostAddr;
 
           // See if the TLB entry privilege level allows us write access
@@ -814,7 +830,7 @@ accessOK:
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1 << (2 | pl)) ) {
+          if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
             Bit32u *pageStamp;
             pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -825,9 +841,9 @@ accessOK:
 #if BX_SupportICache
              && (*pageStamp & ICacheWriteStampMask)
 #endif
-                ) {
+               ) {
               ReadHostDWordFromLittleEndian(hostAddr, *data);
-              BX_CPU_THIS_PTR address_xlation.pages = (Bit32u) hostAddr;
+              BX_CPU_THIS_PTR address_xlation.pages = (bx_ptr_equiv_t) hostAddr;
 #if BX_SupportICache
               (*pageStamp)--;
 #endif
@@ -847,11 +863,9 @@ accessOK:
   goto accessOK;
 }
 
-  void
+  void BX_CPP_AttrRegparmN(1)
 BX_CPU_C::write_RMW_virtual_byte(Bit8u val8)
 {
-  BX_INSTR_MEM_DATA(CPU_ID, BX_CPU_THIS_PTR address_xlation.paddress1, 1, BX_WRITE);
-
   if (BX_CPU_THIS_PTR address_xlation.pages > 2) {
     // Pages > 2 means it stores a host address for direct access.
     Bit8u * hostAddr = (Bit8u *) BX_CPU_THIS_PTR address_xlation.pages;
@@ -864,11 +878,9 @@ BX_CPU_C::write_RMW_virtual_byte(Bit8u val8)
     }
 }
 
-  void
+  void BX_CPP_AttrRegparmN(1)
 BX_CPU_C::write_RMW_virtual_word(Bit16u val16)
 {
-  BX_INSTR_MEM_DATA(CPU_ID, BX_CPU_THIS_PTR address_xlation.paddress1, 2, BX_WRITE);
-
   if (BX_CPU_THIS_PTR address_xlation.pages > 2) {
     // Pages > 2 means it stores a host address for direct access.
     Bit16u *hostAddr = (Bit16u *) BX_CPU_THIS_PTR address_xlation.pages;
@@ -896,8 +908,6 @@ BX_CPU_C::write_RMW_virtual_word(Bit16u val16)
   void
 BX_CPU_C::write_RMW_virtual_dword(Bit32u val32)
 {
-  BX_INSTR_MEM_DATA(CPU_ID, BX_CPU_THIS_PTR address_xlation.paddress1, 4, BX_WRITE);
-
   if (BX_CPU_THIS_PTR address_xlation.pages > 2) {
     // Pages > 2 means it stores a host address for direct access.
     Bit32u *hostAddr = (Bit32u *) BX_CPU_THIS_PTR address_xlation.pages;
@@ -930,8 +940,7 @@ BX_CPU_C::write_RMW_virtual_dword(Bit32u val32)
     }
 }
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_virtual_qword(unsigned s, bx_address offset, Bit64u *data)
 {
   bx_address laddr;
@@ -939,11 +948,12 @@ BX_CPU_C::write_virtual_qword(unsigned s, bx_address offset, Bit64u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset <= (seg->cache.u.segment.limit_scaled-7)) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset <= (seg->cache.u.segment.limit_scaled-7))) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 8, BX_WRITE);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 8, BX_WRITE);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -955,10 +965,10 @@ accessOK:
       if (pageOffset <= 0xff8) { // Make sure access does not span 2 pages.
         tlbIndex = BX_TLB_INDEX_OF(laddr);
         lpf = LPFOf(laddr);
-        if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-             ) {
+        if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+            ) {
           Bit32u accessBits;
-          Bit32u  hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit64u *hostAddr;
 
           // See if the TLB entry privilege level allows us write access
@@ -966,7 +976,7 @@ accessOK:
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1 << (2 | pl)) ) {
+          if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
             Bit32u *pageStamp;
             pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -977,7 +987,7 @@ accessOK:
 #if BX_SupportICache
              && (*pageStamp & ICacheWriteStampMask)
 #endif
-                ) {
+               ) {
               WriteHostQWordToLittleEndian(hostAddr, *data);
 #if BX_SupportICache
               (*pageStamp)--;
@@ -998,8 +1008,7 @@ accessOK:
   goto accessOK;
 }
 
-
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_virtual_qword(unsigned s, bx_address offset, Bit64u *data)
 {
   bx_address laddr;
@@ -1007,11 +1016,12 @@ BX_CPU_C::read_virtual_qword(unsigned s, bx_address offset, Bit64u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessROK) {
-    if ( IsLongMode() || (offset <= (seg->cache.u.segment.limit_scaled-7)) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset <= (seg->cache.u.segment.limit_scaled-7))) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 8, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 8, BX_READ);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -1027,13 +1037,13 @@ accessOK:
           // See if the TLB entry privilege level allows us read access
           // from this CPL.
           Bit32u accessBits;
-          Bit32u hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit64u *hostAddr;
 
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1<<pl) ) { // Read this pl OK.
+          if (accessBits & (1<<pl)) { // Read this pl OK.
             if (hostPageAddr) {
               ReadHostQWordFromLittleEndian(hostAddr, *data);
               return;
@@ -1055,8 +1065,6 @@ accessOK:
   void
 BX_CPU_C::write_RMW_virtual_qword(Bit64u val64)
 {
-  BX_INSTR_MEM_DATA(CPU_ID, BX_CPU_THIS_PTR address_xlation.paddress1, 8, BX_WRITE);
-
   if (BX_CPU_THIS_PTR address_xlation.pages > 2) {
     // Pages > 2 means it stores a host address for direct access.
     Bit64u *hostAddr = (Bit64u *) BX_CPU_THIS_PTR address_xlation.pages;
@@ -1089,7 +1097,7 @@ BX_CPU_C::write_RMW_virtual_qword(Bit64u val64)
     }
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::read_RMW_virtual_qword(unsigned s, bx_address offset, Bit64u *data)
 {
   bx_address laddr;
@@ -1097,11 +1105,12 @@ BX_CPU_C::read_RMW_virtual_qword(unsigned s, bx_address offset, Bit64u *data)
 
   seg = &BX_CPU_THIS_PTR sregs[s];
   if (seg->cache.valid & SegAccessWOK) {
-    if ( IsLongMode() || (offset <= (seg->cache.u.segment.limit_scaled-7)) ) {
+    if ((IsLongMode() && IsCanonical(offset))
+     || (offset <= (seg->cache.u.segment.limit_scaled-7))) {
       unsigned pl;
 accessOK:
       laddr = seg->cache.u.segment.base + offset;
-      BX_INSTR_MEM_DATA(CPU_ID, laddr, 8, BX_READ);
+      BX_INSTR_MEM_DATA(BX_CPU_ID, laddr, 8, BX_RW);
       pl = (CPL==3);
 
 #if BX_SupportGuest2HostTLB
@@ -1113,10 +1122,10 @@ accessOK:
       if (pageOffset <= 0xff8) { // Make sure access does not span 2 pages.
         tlbIndex = BX_TLB_INDEX_OF(laddr);
         lpf = LPFOf(laddr);
-        if ( (BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
-             ) {
+        if ((BX_CPU_THIS_PTR TLB.entry[tlbIndex].lpf == BX_TLB_LPF_VALUE(lpf))
+            ) {
           Bit32u accessBits;
-          Bit32u  hostPageAddr;
+          bx_hostpageaddr_t hostPageAddr;
           Bit32u *hostAddr;
 
           // See if the TLB entry privilege level allows us write access
@@ -1124,7 +1133,7 @@ accessOK:
           hostPageAddr = BX_CPU_THIS_PTR TLB.entry[tlbIndex].hostPageAddr;
           hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
           accessBits = BX_CPU_THIS_PTR TLB.entry[tlbIndex].accessBits;
-          if ( accessBits & (1 << (2 | pl)) ) {
+          if (accessBits & (1 << (2 | pl))) {
 #if BX_SupportICache
             Bit32u *pageStamp;
             pageStamp = & BX_CPU_THIS_PTR iCache.pageWriteStampTable[
@@ -1135,9 +1144,9 @@ accessOK:
 #if BX_SupportICache
              && (*pageStamp & ICacheWriteStampMask)
 #endif
-                ) {
+               ) {
               ReadHostQWordFromLittleEndian(hostAddr, *data);
-              BX_CPU_THIS_PTR address_xlation.pages = (Bit32u) hostAddr;
+              BX_CPU_THIS_PTR address_xlation.pages = (bx_ptr_equiv_t) hostAddr;
 #if BX_SupportICache
               (*pageStamp)--;
 #endif
@@ -1157,9 +1166,7 @@ accessOK:
   goto accessOK;
 }
 
-
-#if BX_SUPPORT_SSE != 0
-
+//
 // Some macro defs to make things cleaner for endian-ness issues.
 // The following routines access a double qword, ie 16-bytes.
 // For the moment, I redirect these to use the single qword routines
@@ -1174,6 +1181,8 @@ accessOK:
 // are different across big an little endian machines.  The memory
 // accessing routines take care of the access endian issues when accessing
 // the physical memory image.
+//
+
 
 #ifdef BX_LITTLE_ENDIAN
 #  define Host1stDWordOffset 0
@@ -1184,8 +1193,8 @@ accessOK:
 #endif
 
 
-  void
-BX_CPU_C::readVirtualDQword(unsigned s, bx_address offset, Bit8u *data)
+  void BX_CPP_AttrRegparmN(3)
+BX_CPU_C::read_virtual_dqword(unsigned s, bx_address offset, Bit8u *data)
 {
   // Read Double Quadword.
   Bit64u *qwords = (Bit64u*) data;
@@ -1194,22 +1203,19 @@ BX_CPU_C::readVirtualDQword(unsigned s, bx_address offset, Bit8u *data)
   read_virtual_qword(s, offset+Host2ndDWordOffset, &qwords[1]);
 }
 
-  void
-BX_CPU_C::readVirtualDQwordAligned(unsigned s, bx_address offset, Bit8u *data)
+  void BX_CPP_AttrRegparmN(3)
+BX_CPU_C::read_virtual_dqword_aligned(unsigned s, bx_address offset, Bit8u *data)
 {
-  // Read Double Quadword; access must be aligned on 16-byte boundary.
-  Bit64u *qwords = (Bit64u*) data;
-
   // If double quadword access is unaligned, #GP(0).
-  if (offset & 0xf)
+  if (offset & 0xf) {
     exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
-  read_virtual_qword(s, offset+Host1stDWordOffset, &qwords[0]);
-  read_virtual_qword(s, offset+Host2ndDWordOffset, &qwords[1]);
+  read_virtual_dqword(s, offset, data);
 }
 
-  void
-BX_CPU_C::writeVirtualDQword(unsigned s, bx_address offset, Bit8u *data)
+  void BX_CPP_AttrRegparmN(3)
+BX_CPU_C::write_virtual_dqword(unsigned s, bx_address offset, Bit8u *data)
 {
   // Write Double Quadword.
   Bit64u *qwords = (Bit64u*) data;
@@ -1218,19 +1224,13 @@ BX_CPU_C::writeVirtualDQword(unsigned s, bx_address offset, Bit8u *data)
   write_virtual_qword(s, offset+Host2ndDWordOffset, &qwords[1]);
 }
 
-
-  void
-BX_CPU_C::writeVirtualDQwordAligned(unsigned s, bx_address offset, Bit8u *data)
+  void BX_CPP_AttrRegparmN(3)
+BX_CPU_C::write_virtual_dqword_aligned(unsigned s, bx_address offset, Bit8u *data)
 {
-  // Write Double Quadword; access must be aligned on 16-byte boundary.
-  Bit64u *qwords = (Bit64u*) data;
-
   // If double quadword access is unaligned, #GP(0).
-  if (offset & 0xf)
+  if (offset & 0xf) {
     exception(BX_GP_EXCEPTION, 0, 0);
+  }
 
-  write_virtual_qword(s, offset+Host1stDWordOffset, &qwords[0]);
-  write_virtual_qword(s, offset+Host2ndDWordOffset, &qwords[1]);
+  write_virtual_dqword(s, offset, data);
 }
-
-#endif  // #if BX_SUPPORT_SSE

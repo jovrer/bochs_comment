@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------+
  |  reg_constant.c                                                           |
- |  $Id: reg_constant.c,v 1.3 2001/10/06 03:53:46 bdenney Exp $
+ |  $Id: reg_constant.c,v 1.6 2003/10/04 16:47:57 sshwarts Exp $
  |                                                                           |
  | All of the constant FPU_REGs                                              |
  |                                                                           |
@@ -17,17 +17,15 @@
 #include "reg_constant.h"
 #include "control_w.h"
 
-
-
 FPU_REG const CONST_1    = MAKE_REG(POS, 0, 0x00000000, 0x80000000);
 FPU_REG const CONST_2    = MAKE_REG(POS, 1, 0x00000000, 0x80000000);
 FPU_REG const CONST_HALF = MAKE_REG(POS, -1, 0x00000000, 0x80000000);
 FPU_REG const CONST_L2T  = MAKE_REG(POS, 1, 0xcd1b8afe, 0xd49a784b);
 FPU_REG const CONST_L2E  = MAKE_REG(POS, 0, 0x5c17f0bc, 0xb8aa3b29);
 FPU_REG const CONST_PI   = MAKE_REG(POS, 1, 0x2168c235, 0xc90fdaa2);
-// bbd: make CONST_PI2 non-const so that you can write "&CONST_PI2" when
-// calling a function.  Otherwise you get const warnings.  Surely there's
-// a better way.
+/* bbd: make CONST_PI2 non-const so that you can write "&CONST_PI2" when
+   calling a function.  Otherwise you get const warnings.  Surely there's
+   a better way. */
 FPU_REG CONST_PI2  = MAKE_REG(POS, 0, 0x2168c235, 0xc90fdaa2);
 FPU_REG const CONST_PI4  = MAKE_REG(POS, -1, 0x2168c235, 0xc90fdaa2);
 FPU_REG const CONST_LG2  = MAKE_REG(POS, -2, 0xfbcff799, 0x9a209a84);
@@ -55,12 +53,12 @@ static void fld_const(FPU_REG const *c, int adj, u_char tag)
 {
   FPU_REG *st_new_ptr;
 
-  if ( STACK_OVERFLOW )
+  if (FPU_stackoverflow(&st_new_ptr))
     {
       FPU_stack_overflow();
       return;
     }
-  push();
+  FPU_push();
   reg_copy(c, st_new_ptr);
   st_new_ptr->sigl += adj;  /* For all our fldxxx constants, we don't need to
 			       borrow or carry. */
@@ -116,5 +114,5 @@ static FUNC_RC constants_table[] = {
 
 void fconst(void)
 {
-  (constants_table[FPU_rm])(control_word & CW_RC);
+  (constants_table[FPU_rm])(FPU_control_word & CW_RC);
 }

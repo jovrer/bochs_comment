@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.cc,v 1.11 2002/12/12 15:29:33 cbothamy Exp $
+// $Id: osdep.cc,v 1.14 2003/05/06 20:28:12 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -218,6 +218,35 @@ char *bx_strdup(const char *str)
 }
 #endif  /* !BX_HAVE_STRDUP */
 
+#if !BX_HAVE_STRREV
+char *bx_strrev(char *str)
+{
+  char *p1, *p2;
+
+  if (! str || ! *str)
+    return str;
+
+  for (p1 = str, p2 = str + strlen(str) - 1; p2 > p1; ++p1, --p2) {
+    *p1 ^= *p2;
+    *p2 ^= *p1;
+    *p1 ^= *p2;
+  }
+  return str;
+}
+#endif  /* !BX_HAVE_STRREV */
+
+#if !BX_HAVE_MKSTEMP
+int bx_mkstemp(char *tpl)
+{
+  mktemp(tpl);
+  return ::open(tpl, O_RDWR | O_CREAT | O_TRUNC
+#  ifdef O_BINARY
+            | O_BINARY
+#  endif
+              , S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP);
+}
+#endif // !BX_HAVE_MKSTEMP
+
 //////////////////////////////////////////////////////////////////////
 // Missing library functions, implemented for MacOS only
 //////////////////////////////////////////////////////////////////////
@@ -290,8 +319,7 @@ Bit64u bx_get_realtime64_usec (void) {
   mytime=(Bit64u)thetime.tv_sec*(Bit64u)1000000+(Bit64u)thetime.tv_usec;
   return mytime;
 }
-#  else
-#    if BX_WITH_WIN32
+#  elif defined(WIN32)
 Bit64u last_realtime64_top = 0;
 Bit64u last_realtime64_bottom = 0;
 Bit64u bx_get_realtime64_usec (void) {
@@ -305,6 +333,5 @@ Bit64u bx_get_realtime64_usec (void) {
     (new_bottom          & BX_CONST64(0x00000000FFFFFFFF));
   return interim_realtime64*(BX_CONST64(1000));
 }
-#    endif
 #  endif
 #endif

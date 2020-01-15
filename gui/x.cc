@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: x.cc,v 1.55.2.1 2003/01/03 00:29:34 cbothamy Exp $
+// $Id: x.cc,v 1.76 2003/08/11 19:27:57 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -41,9 +41,18 @@ extern "C" {
 #include <X11/Xos.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#if BX_HAVE_XPM_H
+#include <X11/xpm.h>
+#endif
 }
 
+#if BX_HAVE_XPM_H
+#include "icon_bochs.xpm"
+#else
 #include "icon_bochs.h"
+#endif
+
+#include "font/vga.bitmap.h"
 
 class bx_x_gui_c : public bx_gui_c {
 public:
@@ -73,15 +82,14 @@ static unsigned long white_pixel=0, black_pixel=0;
 
 static char *progname; /* name this program was invoked by */
 
-static int rows=25, columns=80;
+static unsigned int text_rows=25, text_cols=80;
+static Bit8u h_panning = 0, v_panning = 0;
 
 static Window win;
 static GC gc, gc_inv, gc_headerbar, gc_headerbar_inv;
-static XFontStruct *font_info;
 static unsigned font_width, font_height;
-static unsigned font_height_orig = 16;
-static Bit8u blank_line[80];
 static unsigned dimension_x=0, dimension_y=0;
+static unsigned vga_bpp=8;
 
 static XImage *ximage = NULL;
 static unsigned imDepth, imWide, imBPP;
@@ -91,8 +99,8 @@ static int prev_x=-1, prev_y=-1;
 static int current_x=-1, current_y=-1;
 static unsigned mouse_button_state = 0;
 
-static unsigned prev_block_cursor_x=0;
-static unsigned prev_block_cursor_y=0;
+static unsigned prev_cursor_x=0;
+static unsigned prev_cursor_y=0;
 
 static int warp_home_x = 200;
 static int warp_home_y = 200;
@@ -106,6 +114,10 @@ static void disable_cursor();
 static void enable_cursor();
 
 static Bit32u convertStringToXKeysym (const char *string);
+
+static bx_bool x_init_done = false;
+
+static Pixmap vgafont[256];
 
 struct {
   Pixmap bmap;
@@ -260,7 +272,7 @@ Bit32u ascii_to_key_event[0x5f] = {
 extern Bit8u graphics_snapshot[32 * 1024];
 
 
-static void load_font(void);
+static void create_internal_vga_font(void);
 static void xkeypress(KeySym keysym, int press_release);
 // extern "C" void select_visual(void);
 
@@ -332,6 +344,9 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
 #endif
   char *icon_name = "Bochs";
   Pixmap icon_pixmap;
+#if BX_HAVE_XPM_H
+  Pixmap icon_mask;
+#endif
   XSizeHints size_hints;
   char *display_name = NULL;
   /* create GC for text and drawing */
@@ -349,10 +364,6 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   x_tilesize = tilewidth;
   y_tilesize = tileheight;
   bx_headerbar_y = headerbar_y;
-
-  for (i=0; i<80; i++) {
-    blank_line[i] = ' ';
-    }
 
   progname = argv[0];
 
@@ -372,15 +383,12 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   x = y = 0;
 
 
-  load_font();
+  // Temporary values so we can create the window
+  font_width = 8;
+  font_height = 16;
 
-  font_width = font_info->max_bounds.width;
-  font_height = (font_info->max_bounds.ascent +
-    font_info->max_bounds.descent);
-
-  dimension_x = columns * font_width;
-  dimension_y = rows * font_height + headerbar_y;
-
+  dimension_x = text_cols * font_width;
+  dimension_y = text_rows * font_height + headerbar_y;
 
   /* create opaque window */
   win = XCreateSimpleWindow(bx_x_display, RootWindow(bx_x_display,bx_x_screen_num),
@@ -458,9 +466,14 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
 
   /* Get available icon sizes from Window manager */
 
+#if BX_HAVE_XPM_H
+  /* Create pixmap from XPM for icon */
+  XCreatePixmapFromData(bx_x_display, win, icon_bochs_xpm, &icon_pixmap, &icon_mask, NULL);
+#else
   /* Create pixmap of depth 1 (bitmap) for icon */
   icon_pixmap = XCreateBitmapFromData(bx_x_display, win,
     (char *) bochs_icon_bits, bochs_icon_width, bochs_icon_height);
+#endif
 
   /* Set size hints for window manager.  The window manager may
    * override these settings.  Note that in a real
@@ -499,8 +512,12 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   wm_hints.initial_state = NormalState;
   wm_hints.input = True;
   wm_hints.icon_pixmap = icon_pixmap;
+#if BX_HAVE_XPM_H
+  wm_hints.icon_mask = icon_mask;
+  wm_hints.flags = StateHint | IconPixmapHint | IconMaskHint | InputHint;
+#else
   wm_hints.flags = StateHint | IconPixmapHint | InputHint;
-
+#endif
   class_hints.res_name = progname;
   class_hints.res_class = "Bochs";
 
@@ -521,9 +538,6 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   gc_headerbar     = XCreateGC(bx_x_display, win, valuemask, &values);
   gc_headerbar_inv = XCreateGC(bx_x_display, win, valuemask, &values);
 
-  /* specify font */
-  XSetFont(bx_x_display, gc, font_info->fid);
-
   XSetState(bx_x_display, gc, white_pixel, black_pixel, GXcopy,AllPlanes);
 
   XSetState(bx_x_display, gc_inv, black_pixel, white_pixel, GXinvert,AllPlanes);
@@ -543,6 +557,10 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
     if (report.type == MapNotify) break;
     }
   BX_DEBUG(("MapNotify found."));
+
+  // Create the VGA font
+  create_internal_vga_font();
+
 
 {
   char *imagedata;
@@ -570,6 +588,8 @@ bx_x_gui_c::specific_init(int argc, char **argv, unsigned tilewidth, unsigned ti
   if (imBPP < imDepth) {
     BX_PANIC(("vga_x: bits_per_pixel < depth ?"));
     }
+
+  x_init_done = true;
 
 }
 
@@ -613,18 +633,19 @@ bx_x_gui_c::mouse_enabled_changed_specific (bx_bool val)
 }
 
   void
-load_font(void)
+create_internal_vga_font(void)
 {
-  /* Load font and get font information structure. */
-  if ((font_info = XLoadQueryFont(bx_x_display,"bochsvga")) == NULL) {
-    if ((font_info = XLoadQueryFont(bx_x_display,"vga")) == NULL) {
-      if ((font_info = XLoadQueryFont(bx_x_display,"-*-vga-*")) == NULL) {
-	BX_PANIC(("Could not open vga font. See docs-html/install.html"));
-      }
-    }
+  // Default values
+  font_width=8;
+  font_height=16;
+
+  for(int i=0; i<256; i++) {
+    vgafont[i]=XCreateBitmapFromData(bx_x_display, win, (const char*)bx_vgafont[i].data,
+                                     font_width, font_height);
+    if(vgafont[i] == None)
+      BX_PANIC(("Can't create vga font [%d]", i));
   }
 }
-
 
   void
 bx_x_gui_c::handle_events(void)
@@ -637,6 +658,7 @@ bx_x_gui_c::handle_events(void)
   int bufsize = MAX_MAPPED_STRING_LENGTH;
   int charcount;
   bx_bool mouse_update;
+  int y, height;
 
 
   XPointerMovedEvent *pointer_event;
@@ -655,26 +677,34 @@ bx_x_gui_c::handle_events(void)
     switch  (report.type) {
 
     case Expose:
-      /* unless this is the last contiguous expose,
-       * don't draw the window */
-      expose_event = (XExposeEvent *) &report;
+      expose_event = &report.xexpose;
+      /* Adjust y, and reduce height if it overlaps headerbar. */
+      y = expose_event->y - BX_HEADER_BAR_Y;
+      height = expose_event->height;
+      if (y < 0) {
+	height += y;
+	y = 0;
+      }
 
       DEV_vga_redraw_area(
         (unsigned) expose_event->x,
-        (unsigned) expose_event->y,
+        y,
         (unsigned) expose_event->width,
-        (unsigned) expose_event->height);
+        height);
 
+      /* Always draw headerbar, even if not touched by expose event.
+       * As a small optimization, only do it on last contigous expose.
+       */
+      if (expose_event->count == 0) {
       show_headerbar();
-
-      //if (report.xexpose.count != 0) {
-      //  break;
-      //  }
-
+      }
       break;
 
     case ConfigureNotify:
       BX_DEBUG(("ConfigureNotify Xevent"));
+      /* FIXME: It's not clear why we have to show the headerbar here.
+       * This should be forced by the following expose events.
+       */
       show_headerbar();
       break;
 
@@ -1048,81 +1078,166 @@ bx_x_gui_c::clear_screen(void)
   void
 bx_x_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-                      Bit16u cursor_state, unsigned nrows)
+                      bx_vga_tminfo_t tm_info, unsigned nrows)
 {
-  unsigned i, x, y, curs;
+  unsigned char *old_line, *new_line;
+  unsigned char cChar;
+  unsigned int curs, hchars, i, j, offset, rows, x, y, xc, yc, yc2;
   unsigned new_foreground, new_background;
-  Bit8u string[1];
-  Bit8u cs_start, cs_end;
-  unsigned nchars;
+  Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
+  bx_bool force_update=0;
+  unsigned char cell[64];
 
   UNUSED(nrows);
+  if (charmap_updated) {
+    BX_INFO(("charmap update. Font Height is %d",font_height));
+    for (unsigned c = 0; c<256; c++) {
+      if (char_changed[c]) {
+        XFreePixmap(bx_x_display, vgafont[c]);
+        bx_bool gfxchar = tm_info.line_graphics && ((c & 0xE0) == 0xC0);
+        j = 0;
+        memset(cell, 0, sizeof(cell));
+        for(i=0; i<font_height*2; i+=2) {
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x01)<<7);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x02)<<5);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x04)<<3);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x08)<<1);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x10)>>1);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x20)>>3);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x40)>>5);
+          cell[i] |= ((vga_charmap[(c<<5)+j] & 0x80)>>7);
+          if (gfxchar) {
+            cell[i+1] = (vga_charmap[(c<<5)+j] & 0x01);
+          }
+          j++;
+        }
 
-  cs_start = ((cursor_state >> 8) & 0x3f) * font_height / font_height_orig;
-  cs_end = (cursor_state & 0x1f) * font_height / font_height_orig;
-
-  // Number of characters on screen, variable number of rows
-  nchars = columns*rows;
-
-  // first draw over character at original block cursor location
-  if ( (prev_block_cursor_y*columns + prev_block_cursor_x) < nchars ) {
-    curs = (prev_block_cursor_y*columns + prev_block_cursor_x)*2;
-    string[0] = new_text[curs];
-    if (string[0] == 0) string[0] = ' '; // convert null to space
-    XSetForeground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_text[curs+1] & 0x0f)]);
-    XSetBackground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx((new_text[curs+1] & 0xf0) >> 4)]);
-    XDrawImageString(bx_x_display, win,
-      gc,
-      prev_block_cursor_x * font_width,
-      prev_block_cursor_y * font_height + font_info->max_bounds.ascent + bx_headerbar_y,
-      (char *) string,
-      1);
-    }
-
-  for (i=0; i<nchars*2; i+=2) {
-    if ( (old_text[i]!=new_text[i]) ||
-         (old_text[i+1]!=new_text[i+1]) ) {
-
-      string[0] = new_text[i];
-      if (string[0] == 0) string[0] = ' '; // convert null to space
-      new_foreground = new_text[i+1] & 0x0f;
-      new_background = (new_text[i+1] & 0xf0) >> 4;
-
-      XSetForeground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_foreground)]);
-      XSetBackground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_background)]);
-
-//XSetForeground(bx_x_display, gc, white_pixel);
-//XSetBackground(bx_x_display, gc, black_pixel);
-
-      x = (i/2) % columns;
-      y = (i/2) / columns;
-
-      XDrawImageString(bx_x_display, win,
-        gc,
-        x * font_width,
-        y * font_height + font_info->max_bounds.ascent + bx_headerbar_y,
-        (char *) string,
-        1);
+        vgafont[c]=XCreateBitmapFromData(bx_x_display, win, 
+                        (const char*)cell,
+                        font_width, font_height);
+            if(vgafont[c] == None)
+              BX_PANIC(("Can't create vga font [%d]", c));
+        char_changed[c] = 0;
       }
     }
+    force_update = 1;
+    charmap_updated = 0;
+  }
 
-  prev_block_cursor_x = cursor_x;
-  prev_block_cursor_y = cursor_y;
+  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
+    force_update = 1;
+    h_panning = tm_info.h_panning;
+    v_panning = tm_info.v_panning;
+  }
 
-  XSetForeground(bx_x_display, gc, white_pixel);
-  XSetBackground(bx_x_display, gc, black_pixel);
+  // first invalidate character at previous and new cursor location
+  if ( (prev_cursor_y < text_rows) && (prev_cursor_x < text_cols) ) {
+    curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  }
+  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < font_height) &&
+     (cursor_y < text_rows) && (cursor_x < text_cols)) {
+    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  } else {
+    curs = 0xffff;
+  }
 
-  // now draw character at new block cursor location in reverse
-  if ( ( (cursor_y*columns + cursor_x) < nchars ) && (cs_start <= cs_end) ) {
-    for (unsigned i = cs_start; i <= cs_end; i++)
-      XDrawLine(bx_x_display, win,
-	gc_inv,
-	cursor_x * font_width,
-	cursor_y * font_height + bx_headerbar_y + i,
-	(cursor_x + 1) * font_width - 1,
-	cursor_y * font_height + bx_headerbar_y + i
-      );
+  rows = text_rows;
+  if (v_panning) rows++;
+  y = 0;
+  do {
+    hchars = text_cols;
+    if (h_panning) hchars++;
+    if (v_panning) {
+      if (y == 0) {
+        yc = bx_headerbar_y;
+        font_row = v_panning;
+        cfheight = font_height - v_panning;
+      } else {
+        yc = y * font_height + bx_headerbar_y - v_panning;
+        font_row = 0;
+        if (rows == 1) {
+          cfheight = v_panning;
+        } else {
+          cfheight = font_height;
+        }
+      }
+    } else {
+      yc = y * font_height + bx_headerbar_y;
+      font_row = 0;
+      cfheight = font_height;
     }
+    new_line = new_text;
+    old_line = old_text;
+    x = 0;
+    offset = y * tm_info.line_offset;
+    do {
+      if (h_panning) {
+        if (hchars > text_cols) {
+          xc = 0;
+          font_col = h_panning;
+          cfwidth = font_width - h_panning;
+        } else {
+          xc = x * font_width - h_panning;
+          font_col = 0;
+          if (hchars == 1) {
+            cfwidth = h_panning;
+          } else {
+            cfwidth = font_width;
+          }
+        }
+      } else {
+        xc = x * font_width;
+        font_col = 0;
+        cfwidth = font_width;
+      }
+      if ( force_update || (old_text[0] != new_text[0])
+          || (old_text[1] != new_text[1]) ) {
+
+        cChar = new_text[0];
+        new_foreground = new_text[1] & 0x0f;
+        new_background = (new_text[1] & 0xf0) >> 4;
+
+        XSetForeground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_foreground)]);
+        XSetBackground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_background)]);
+
+        XCopyPlane(bx_x_display, vgafont[cChar], win, gc, font_col, font_row, cfwidth, cfheight,
+                   xc, yc, 1);
+        if (offset == curs) {
+          XSetForeground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_background)]);
+          XSetBackground(bx_x_display, gc, col_vals[DEV_vga_get_actl_pal_idx(new_foreground)]);
+          if (font_row == 0) {
+            yc2 = yc + tm_info.cs_start;
+            font_row2 = tm_info.cs_start;
+            cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+          } else {
+            if (v_panning > tm_info.cs_start) {
+              yc2 = yc;
+              font_row2 = font_row;
+              cfheight2 = tm_info.cs_end - v_panning + 1;
+            } else {
+              yc2 = yc + tm_info.cs_start - v_panning;
+              font_row2 = tm_info.cs_start;
+              cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            }
+          }
+          XCopyPlane(bx_x_display, vgafont[cChar], win, gc, font_col, font_row2, cfwidth,
+                     cfheight2, xc, yc2, 1);
+        }
+      }
+      x++;
+      new_text+=2;
+      old_text+=2;
+      offset+=2;
+    } while (--hchars);
+    y++;
+    new_text = new_line + tm_info.line_offset;
+    old_text = old_line + tm_info.line_offset;
+  } while (--rows);
+
+  prev_cursor_x = cursor_x;
+  prev_cursor_y = cursor_y;
 
   XFlush(bx_x_display);
 }
@@ -1161,71 +1276,232 @@ bx_x_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
   unsigned color, offset;
   Bit8u b0, b1, b2, b3;
 
-  for (y=0; y<y_tilesize; y++) {
-    for (x=0; x<x_tilesize; x++) {
-      //XPutPixel(ximage, x, y, col_vals[tile[y*x_tilesize + x]]);
-      color = col_vals[tile[y*x_tilesize + x]];
-      switch (imBPP) {
-        case 8:  // 8 bits per pixel
-          ximage->data[imWide*y + x] = color;
-          break;
-
-        case 16: // 16 bits per pixel
-          offset = imWide*y + 2*x;
-          b0 = color >> 0;
-          b1 = color >> 8;
-          if (ximage->byte_order == LSBFirst) {
-            ximage->data[offset + 0] = b0;
-            ximage->data[offset + 1] = b1;
-            }
-          else { // MSBFirst
-            ximage->data[offset + 0] = b1;
-            ximage->data[offset + 1] = b0;
-            }
-          break;
-
-        case 24: // 24 bits per pixel
-          offset = imWide*y + 3*x;
-          b0 = color >> 0;
-          b1 = color >> 8;
-          b2 = color >> 16;
-          if (ximage->byte_order == LSBFirst) {
-            ximage->data[offset + 0] = b0;
-            ximage->data[offset + 1] = b1;
-            ximage->data[offset + 2] = b2;
-            }
-          else { // MSBFirst
-            ximage->data[offset + 0] = b2;
-            ximage->data[offset + 1] = b1;
-            ximage->data[offset + 2] = b0;
-            }
-          break;
-
-        case 32: // 32 bits per pixel
-          offset = imWide*y + 4*x;
-          b0 = color >> 0;
-          b1 = color >> 8;
-          b2 = color >> 16;
-          b3 = color >> 24;
-          if (ximage->byte_order == LSBFirst) {
-            ximage->data[offset + 0] = b0;
-            ximage->data[offset + 1] = b1;
-            ximage->data[offset + 2] = b2;
-            ximage->data[offset + 3] = b3;
-            }
-          else { // MSBFirst
-            ximage->data[offset + 0] = b3;
-            ximage->data[offset + 1] = b2;
-            ximage->data[offset + 2] = b1;
-            ximage->data[offset + 3] = b0;
-            }
-          break;
-        default:
-          BX_PANIC(("X_graphics_tile_update: bits_per_pixel %u not implemented",
-            (unsigned) imBPP));
-          break;
+  Bit16u *tile16 = (Bit16u *)tile;
+  switch (vga_bpp) {
+    case 32:  // 32 bits per pixel
+      if (ximage->byte_order == LSBFirst) {
+        memcpy(&ximage->data[0], tile, x_tilesize*y_tilesize*4);
         }
-      }
+      else { // MSBFirst
+        for (y=0; y<y_tilesize; y++) {
+          for (x=0; x<x_tilesize; x++) {
+            offset = imWide*y + 4*x;
+            ximage->data[offset + 0] = tile[(y*x_tilesize + x)*4 + 3];
+            ximage->data[offset + 1] = tile[(y*x_tilesize + x)*4 + 2];
+            ximage->data[offset + 2] = tile[(y*x_tilesize + x)*4 + 1];
+            ximage->data[offset + 3] = tile[(y*x_tilesize + x)*4];
+            }
+          }
+        }
+      break;
+    case 24:  // 24 bits per pixel
+      for (y=0; y<y_tilesize; y++) {
+        for (x=0; x<x_tilesize; x++) {
+          switch (imBPP) {
+            case 24:  // 24 bits per pixel
+              offset = imWide*y + 3*x;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*3];
+                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 1];
+                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3 + 2];
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*3 + 2];
+                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 1];
+                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3];
+                }
+              break;
+            case 32:  // 32 bits per pixel
+              offset = imWide*y + 4*x;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*3];
+                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 1];
+                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3 + 2];
+                ximage->data[offset + 3] = 0;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = 0;
+                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*3 + 2];
+                ximage->data[offset + 2] = tile[(y*x_tilesize + x)*3 + 1];
+                ximage->data[offset + 3] = tile[(y*x_tilesize + x)*3];
+                }
+              break;
+            }
+          }
+        }
+      break;
+    case 16:  // 16 bits per pixel
+      for (y=0; y<y_tilesize; y++) {
+        for (x=0; x<x_tilesize; x++) {
+          switch (imBPP) {
+            case 16:  // 16 bits per pixel
+              offset = imWide*y + 2*x;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*2];
+                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*2 + 1];
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = tile[(y*x_tilesize + x)*2 + 1];
+                ximage->data[offset + 1] = tile[(y*x_tilesize + x)*2];
+                }
+              break;
+            case 24:  // 24 bits per pixel
+              offset = imWide*y + 3*x;
+              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
+              b1 = (tile16[y*x_tilesize + x] & 0x07e0) >> 3;
+              b2 = (tile16[y*x_tilesize + x] & 0xF800) >> 8;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b2;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = b2;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b0;
+                }
+              break;
+            case 32:  // 32 bits per pixel
+              offset = imWide*y + 4*x;
+              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
+              b1 = (tile16[y*x_tilesize + x] & 0x07e0) >> 3;
+              b2 = (tile16[y*x_tilesize + x] & 0xF800) >> 8;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b2;
+                ximage->data[offset + 3] = 0;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = 0;
+                ximage->data[offset + 1] = b2;
+                ximage->data[offset + 2] = b1;
+                ximage->data[offset + 3] = b0;
+                }
+              break;
+            }
+          }
+        }
+      break;
+    case 15:  // 15 bits per pixel
+      for (y=0; y<y_tilesize; y++) {
+        for (x=0; x<x_tilesize; x++) {
+          switch (imBPP) {
+            case 16:  // 16 bits per pixel
+              offset = imWide*y + 2*x;
+              b0 = (tile16[y*x_tilesize + x] & 0x001f);
+              b0 |= (tile16[y*x_tilesize + x] & 0x0060) << 1;
+              b1 = (tile16[y*x_tilesize + x] & 0x7f80) >> 7;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = b1;
+                ximage->data[offset + 1] = b0;
+                }
+              break;
+            case 24:  // 24 bits per pixel
+              offset = imWide*y + 3*x;
+              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
+              b1 = (tile16[y*x_tilesize + x] & 0x03e0) >> 2;
+              b2 = (tile16[y*x_tilesize + x] & 0x7c00) >> 7;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b2;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = b2;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b0;
+                }
+              break;
+            case 32:  // 32 bits per pixel
+              offset = imWide*y + 4*x;
+              b0 = (tile16[y*x_tilesize + x] & 0x001f) << 3;
+              b1 = (tile16[y*x_tilesize + x] & 0x03e0) >> 2;
+              b2 = (tile16[y*x_tilesize + x] & 0x7c00) >> 7;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b2;
+                ximage->data[offset + 3] = 0;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = 0;
+                ximage->data[offset + 1] = b2;
+                ximage->data[offset + 2] = b1;
+                ximage->data[offset + 3] = b0;
+                }
+              break;
+            }
+          }
+        }
+      break;
+    default:  // 8 bits per pixel
+      for (y=0; y<y_tilesize; y++) {
+        for (x=0; x<x_tilesize; x++) {
+          color = col_vals[tile[y*x_tilesize + x]];
+          switch (imBPP) {
+            case 8:  // 8 bits per pixel
+              ximage->data[imWide*y + x] = color;
+              break;
+            case 16: // 16 bits per pixel
+              offset = imWide*y + 2*x;
+              b0 = color >> 0;
+              b1 = color >> 8;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = b1;
+                ximage->data[offset + 1] = b0;
+                }
+              break;
+            case 24: // 24 bits per pixel
+              offset = imWide*y + 3*x;
+              b0 = color >> 0;
+              b1 = color >> 8;
+              b2 = color >> 16;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b2;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = b2;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b0;
+                }
+              break;
+            case 32: // 32 bits per pixel
+              offset = imWide*y + 4*x;
+              b0 = color >> 0;
+              b1 = color >> 8;
+              b2 = color >> 16;
+              b3 = color >> 24;
+              if (ximage->byte_order == LSBFirst) {
+                ximage->data[offset + 0] = b0;
+                ximage->data[offset + 1] = b1;
+                ximage->data[offset + 2] = b2;
+                ximage->data[offset + 3] = b3;
+                }
+              else { // MSBFirst
+                ximage->data[offset + 0] = b3;
+                ximage->data[offset + 1] = b2;
+                ximage->data[offset + 2] = b1;
+                ximage->data[offset + 3] = b0;
+                }
+              break;
+            default:
+              BX_PANIC(("X_graphics_tile_update: bits_per_pixel %u not implemented",
+                (unsigned) imBPP));
+              break;
+            }
+          }
+        }
     }
   XPutImage(bx_x_display, win, gc, ximage, 0, 0, x0, y0+bx_headerbar_y,
             x_tilesize, y_tilesize);
@@ -1259,18 +1535,18 @@ bx_x_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigne
 
 
   void
-bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+bx_x_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
+  if ((bpp <= imBPP) && ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32))) {
+    vga_bpp = bpp;
+  } else {
+    BX_PANIC(("%d bpp graphics mode not supported", bpp));
+  }
   if (fheight > 0) {
-    font_height_orig = fheight;
-    rows = y / fheight;
-    columns = x / 8;
-    if (fheight != font_height) {
-      y = rows * font_height;
-    }
-    if (font_width != 8) {
-      x = columns * font_width;
-    }
+    font_height = fheight;
+    font_width = fwidth;
+    text_cols = x / font_width;
+    text_rows = y / font_height;
   }
   if ( (x != dimension_x) || (y != (dimension_y-bx_headerbar_y)) ) {
     XSizeHints hints;
@@ -1404,6 +1680,14 @@ headerbar_click(int x, int y)
   void
 bx_x_gui_c::exit(void)
 {
+  if (!x_init_done) return;
+
+  // Delete the font bitmaps
+  for (int i=0; i<256; i++) {
+    //if (vgafont[i] != NULL) 
+      XFreePixmap(bx_x_display,vgafont[i]);
+  }
+
   if (bx_x_display)
     XCloseDisplay (bx_x_display);
   BX_INFO(("Exit."));

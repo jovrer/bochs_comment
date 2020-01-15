@@ -13,6 +13,22 @@ for bochsrc  can also be used as command line  arguments
 for Bochs. The .bochsrc  file should be placed either in
 the current  directory  before running  Bochs or in your
 home directory.
+
+Starting with Bochs 1.3, you can use environment variables in
+the bochsrc file, for example: 
+
+  diskc: file="$IMAGES/30M.sample", cyl=615, heads=6, spt=17
+
+Starting with version 2.0, two environment variables have a built-in
+default value which is set at compile time.  $BXSHARE points to the
+"share" directory which is typically /usr/local/share/bochs on UNIX
+machines.  See the $(sharedir) variable in the Makefile for the exact
+value.  $BXSHARE is used by disk images to locate the directory where 
+the BIOS images and keymaps can be found.  If $BXSHARE is not defined, Bochs
+will supply the default value.  Also, $LTDL_LIBRARY_PATH points to a list of
+directories (separated by colons if more than one) to search in for Bochs
+plugins.  A compile-time default is provided if this variable is not defined
+by the user.
 .\".\"DONT_SPLIT"
 .SH OPTIONS
 
@@ -74,16 +90,16 @@ Example:
 
 .TP
 .I "romimage:"
-You need to load  a ROM BIOS into  F0000-FFFFF.
-The  BIOS  controls  what  the PC does when it
-first  powers  on.  Normally,  you  can use  a
+You need to load  a ROM BIOS into F0000-FFFFF. The BIOS controls
+what  the PC does when it first  powers  on.  Normally, you can use a
 precompiled BIOS in the
 .B bios/
-directory, named
-BIOS-bochs-latest.
+directory of the source tree, named BIOS-bochs-latest. You can also use
+the environment variable $BXSHARE to specify the location of the BIOS.
 
-Example:
-  romimage: file=bios/BIOS-bochs-latest
+Examples:
+  romimage: file=bios/BIOS-bochs-latest, address=0xf0000
+  romimage: file=$BXSHARE/BIOS-bochs-latest, address=0xf0000
 
 .TP
 .I "megs:"
@@ -120,6 +136,7 @@ C0000.
 Examples:
   vgaromimage: bios/VGABIOS-elpin-2.40
   vgaromimage: bios/VGABIOS-lgpl-latest
+  vgaromimage: $BXSHARE/VGABIOS-lgpl-latest
 
 .TP
 .I "floppya: \fPor \fIfloppyb:"
@@ -161,8 +178,8 @@ ata0 is enabled by default, with ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
 Examples:
    ata0: enabled=1, ioaddr1=0x1f0, ioaddr2=0x3f0, irq=14
    ata1: enabled=1, ioaddr1=0x170, ioaddr2=0x370, irq=15
-   ata2: enabled=1, ioaddr1=0x1e8, ioaddr2=0x3e8, irq=11
-   ata3: enabled=1, ioaddr1=0x168, ioaddr2=0x368, irq=9
+   ata2: enabled=1, ioaddr1=0x1e8, ioaddr2=0x3e0, irq=11
+   ata3: enabled=1, ioaddr1=0x168, ioaddr2=0x360, irq=9
 
 .TP
 .I "ata\fR[\fB0-3\fR]\fI-master: \fPor \fIata\fR[\fB0-3\fR]\fI-slave:"
@@ -170,6 +187,7 @@ Examples:
 This defines the type and characteristics of all attached ata devices:
    type=       type of attached device [disk|cdrom] 
    path=       path of the image
+   mode=       image mode [flat|concat|external|dll|sparse|vmware3|undoable|growing|volatile], only valid for disks
    cylinders=  only valid for disks
    heads=      only valid for disks
    spt=        only valid for disks
@@ -177,6 +195,7 @@ This defines the type and characteristics of all attached ata devices:
    biosdetect= type of biosdetection [none|auto], only for disks on ata0 [cmos]
    translation=type of transation of the bios, only for disks [none|lba|large|rechs|auto]
    model=      string returned by identify device command
+   journal=    optional filename of the redolog for undoable and volatile disks
    
 Point this at a hard disk image file, cdrom iso file,
 or a physical cdrom device.  
@@ -190,6 +209,17 @@ but WE DON'T RECOMMEND IT.
 The path, cylinders, heads, and spt are mandatory for type=disk
 The path is mandatory for type=cdrom
 
+The mode option defines how the disk image is handled. Disks can be defined as:
+  - flat : one file flat layout
+  - concat : multiple files layout
+  - external : developer's specific, through a C++ class
+  - dll : developer's specific, through a DLL
+  - sparse : stackable, commitable, rollbackable 
+  - vmware3 : vmware3 disk support
+  - undoable : flat file with commitable redolog
+  - growing : growing file
+  - volatile : flat file with volatile redolog
+
 The disk translation scheme (implemented in legacy int13 bios functions, and used by
 older operating systems like MS-DOS), can be defined as:
   - none : no translation, for disks up to 528MB (1032192 sectors)
@@ -199,7 +229,7 @@ older operating systems like MS-DOS), can be defined as:
   - auto : autoselection of best translation scheme. (it should be changed if system does not boot)
 
 Default values are:
-   biosdetect=auto, translation=auto, model="Generic 1234"
+   mode=flat, biosdetect=auto, translation=auto, model="Generic 1234"
 
 The biosdetect option has currently no effect on the bios
 
@@ -212,29 +242,6 @@ Examples:
    ata2-slave:  type=disk, path=112M.sample, cylinders=900, heads=15, spt=17
    ata3-master: type=disk, path=483M.sample, cylinders=1024, heads=15, spt=63
    ata3-slave:  type=cdrom, path=iso.sample, status=inserted
-
-.TP
-.I "diskc:"
-or
-.I "diskd:"
-
-The \fBdiskc\fR and \fBdiskd\fR options are deprecated. Use \fBata*\fR
-options instead.
-
-Point  this at the disk image you want to  use
-as for a hard disk. If you  use bximage(1)  to
-create   the  image,  it  will  give  you  the
-required  cyl,  head, and spt information.
-diskc is the first hard drive, and diskd is the
-second hard drive.
-
-.B NOTE:
-You cannot use both diskd and cdromd together.
-
-Example:
-  diskc: file=10M.i, cyl=306, heads=4, spt=17
-  diskc: file=112M.i, cyl=900, heads=15, spt=17
-  diskd: file=483.i, cyl=1024, heads=15, spt=63
 
 .TP
 .I "com1:"
@@ -262,22 +269,6 @@ Examples:
   parport1: enabled=1, file=parport.out
   parport1: enabled=1, file="/dev/lp0"
   parport1: enabled=0
-
-.TP
-.I "cdromd:"
-
-The \fBcdromd\fR option is deprecated. Use \fBata*\fR options instead.
-
-Point this to a pathname of a raw CD-ROM device.
-There is no cdromc option, only cdromd.
-
-.B NOTE:
-You cannot use both diskd and cdromd together.
-
-
-Example:
-  cdromd: dev=/dev/cdrom, status=inserted
-  cdromd: dev=/dev/cdrom, status=ejected
 
 .TP
 .I "newharddrivesupport:"
@@ -571,15 +562,29 @@ Example:
   ips: 1000000
 
 .TP
-.I "pit:"
-The PIT is the programmable interval timer.  It has an option that tries to
-keep the PIT in sync with real time.  This feature is still experimental,
-but it may be useful if you want to prevent Bochs from running too fast, for
-example a DOS video game.  Be aware that with the realtime pit option, your
-simulation will not be repeatable; this can a problem if you are debugging.
+.I "clock:"
+This defines the parameters of the clock inside Bochs.
+
+sync
+
+TO BE COMPLETED (see Greg explaination in bug #536329)
+
+time0
+
+Specifies the start (boot) time of the virtual machine. Use a time 
+value as returned by the time(2) system call. If no time0 value is 
+set or if time0 equal to 1 (special case) or if time0 equal 'local', 
+the simulation will be started at the current local host time.
+If time0 equal to 2 (special case) or if time0 equal 'utc',
+the simulation will be started at the current utc time.
+
+Syntax:
+  clock: sync=[none|slowdown|realtime], time0=[timeValue|local|utc]
+
+Default value are sync=none, time0=local
 
 Example:
-  pit: realtime=1
+  clock: sync=realtime, time0=938581955   # Wed Sep 29 07:12:35 1999
 
 .TP
 .I "mouse:"
@@ -616,16 +621,6 @@ Example:
   i440fxsupport: enabled=1
 
 .TP
-.I "time0:"
-Specifies the start (boot) time of the virtual machine. Use a
-time value as returned by the time(2) system call. Time
-equal to 1 is a special case which starts the virtual machine at the
-current time of the simulator host.
-
-Example:
-  time0: 938581955
-
-.TP
 .I "ne2k:"
 Defines the characteristics of an attached ne2000 isa card :
    ioaddr=IOADDR,
@@ -635,7 +630,7 @@ Defines the characteristics of an attached ne2000 isa card :
    ethdev=DEVICE, 
    script=SCRIPT
 
-.B PROPERTIES FOR sb16:
+.B PROPERTIES FOR ne2k:
 
 ioaddr, irq:
 You probably won't need to change ioaddr and irq, unless there are IRQ conflicts.
@@ -672,11 +667,11 @@ Bochs execution. The network interface name is supplied to the script
 as first parameter
 
 Examples:
-  ne2k: ioaddr=0x280, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xlo
-  ne2k: ioaddr=0x280, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
-  ne2k: ioaddr=0x280, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
-  ne2k: ioaddr=0x280, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
-  ne2k: ioaddr=0x280, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=tun0, script=./tunconfig
+  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=fbsd, ethdev=xlo
+  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:00, ethmod=linux, ethdev=eth0
+  ne2k: ioaddr=0x240, irq=9, mac=b0:c4:20:00:00:01, ethmod=win32, ethdev=MYCARD
+  ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tap, ethdev=tap0
+  ne2k: ioaddr=0x240, irq=9, mac=fe:fd:00:00:00:01, ethmod=tuntap, ethdev=tun0, script=./tunconfig
 
 .TP
 .I "keyboard_mapping:"
@@ -700,11 +695,90 @@ Example:
 .I "user_shortcut:"
 This defines the keyboard shortcut to be sent when you press the "user"
 button in the headerbar. The shortcut string can be a combination of
-these key names: "alt", "ctrl", "del", "esc", "f1", "f4", "tab", "win".
-Up to 3 keys can be pressed at a time.
+these key names: "alt", "bksp", "ctrl", "del", "esc", "f1", "f4", "tab",
+"win". Up to 3 keys can be pressed at a time.
 
 Example:
   user_shortcut: keys=ctrlaltdel
+
+.TP
+.I "cmosimage:"
+This defines image file that can be loaded into the CMOS RAM at startup.
+
+Example:
+  cmosimage: cmos.img
+
+.TP
+.I "usb1:"
+Enables the i440fx PCI USB root hub. USB devices with access to real hardware
+are not implemented yet. PCI support must be enabled, too.
+
+Example:
+  usb1: enabled=1, ioaddr=0xFF80, irq=10
+
+.TP
+.I "diskc:"
+or
+.I "diskd:"
+
+The \fBdiskc\fR and \fBdiskd\fR options are deprecated. Use \fBata*\fR
+options instead.
+
+Point  this at the disk image you want to  use
+as for a hard disk. If you  use bximage(1)  to
+create   the  image,  it  will  give  you  the
+required  cyl,  head, and spt information.
+diskc is the first hard drive, and diskd is the
+second hard drive.
+
+.B NOTE:
+You cannot use both diskd and cdromd together.
+
+Example:
+  diskc: file=10M.i, cyl=306, heads=4, spt=17
+  diskc: file=112M.i, cyl=900, heads=15, spt=17
+  diskd: file=483.i, cyl=1024, heads=15, spt=63
+
+.TP
+.I "cdromd:"
+
+The \fBcdromd\fR option is deprecated. Use \fBata*\fR options instead.
+
+Point this to a pathname of a raw CD-ROM device.
+There is no cdromc option, only cdromd.
+
+.B NOTE:
+You cannot use both diskd and cdromd together.
+
+
+Example:
+  cdromd: dev=/dev/cdrom, status=inserted
+  cdromd: dev=/dev/cdrom, status=ejected
+
+.TP
+.I "pit:"
+The \fBpit\fR option is deprecated. Use the \fBclock\fR option instead.
+
+The PIT is the programmable interval timer.  It has an option that tries to
+keep the PIT in sync with real time.  This feature is still experimental,
+but it may be useful if you want to prevent Bochs from running too fast, for
+example a DOS video game.  Be aware that with the realtime pit option, your
+simulation will not be repeatable; this can a problem if you are debugging.
+
+Example:
+  pit: realtime=1
+
+.TP
+.I "time0:"
+The \fBtime0\fR option is deprecated. Use the \fBclock\fR option instead.
+
+Specifies the start (boot) time of the virtual machine. Use a
+time value as returned by the time(2) system call. Time
+equal to 1 is a special case which starts the virtual machine at the
+current time of the simulator host.
+
+Example:
+  time0: 938581955
 
 .\"SKIP_SECTION"
 .SH LICENSE

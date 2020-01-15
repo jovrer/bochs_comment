@@ -1,5 +1,5 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h,v 1.46.2.1 2003/01/11 21:40:19 cbothamy Exp $
+// $Id: wxdialog.h,v 1.53 2003/09/09 16:41:25 vruppert Exp $
 ////////////////////////////////////////////////////////////////////
 //
 // wxWindows dialogs for Bochs
@@ -16,7 +16,6 @@
 #define BTNLABEL_CANCEL "Cancel"
 #define BTNLABEL_OK "Ok"
 #define BTNLABEL_CREATE_IMG "Create Image"
-#define BTNLABEL_ADVANCED "Advanced"
 #define BTNLABEL_BROWSE "<--Browse"
 #define BTNLABEL_DEBUG_CONTINUE "Continue"
 #define BTNLABEL_DEBUG_STOP "Stop"
@@ -208,301 +207,6 @@ public:
 DECLARE_EVENT_TABLE()
 };
 
-////////////////////////////////////////////////////////////////////
-// HDConfigDialog is a modal dialog box that asks the user
-// what physical device or disk image should be used for emulation.
-//
-// +-----Configure Hard Disk-------------------------------------------+
-// |                                                                   |
-// |  [ ] Enable                                                       |
-// |                                                                   |
-// |  Disk image: [______________________________]  [Browse]           |
-// |  Geometry:  cylinders [____]  heads [____]  sectors/track [____]  |
-// |  Size in Megabytes: 38.2    [Enter size/Compute Geometry]         |
-// |                                                                   |
-// |                       [ Help ] [ Cancel ] [ Create image ] [ Ok ] |
-// +-------------------------------------------------------------------+
-// 
-// To use this dialog:
-// After constructor, use SetFilename(), SetGeomRange(), SetGeom() to fill in
-// the fields.  Note that SetGeomRange() should be called before SetGeom()
-// or else the text field may not accept the SetGeom() value because of its
-// default min/max setting.  Call ShowModal to display.  Return value is 0=ok
-// or -1=cancel.  Use GetFilename() and GetGeom() to retrieve values.
-//////////////////////////////////////////////////////////////////////
-
-class HDConfigDialog: public wxDialog
-{
-public:
-#define HD_CONFIG_TITLE "Configure %s"
-#define HD_CONFIG_DISKIMG "Disk image: "
-private:
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
-  wxBoxSizer *vertSizer, *hsizer[3], *buttonSizer;
-  wxCheckBox *enable;
-  wxTextCtrl *filename;
-  wxSpinCtrl *geom[3];
-  wxStaticText *megs;
-  wxButton *computeGeom;
-  enum geomfields_t { CYL, HEADS, SPT };
-#define HD_CONFIG_GEOM_NAMES \
-  { "Geometry: cylinders", " heads ", " sectors/track " }
-#define HD_CONFIG_MEGS "Size in Megabytes: %.1f"
-#define HD_CONFIG_COMPUTE_TEXT "<-- Enter Size/Compute Geometry"
-#define HD_CONFIG_COMPUTE_INSTR "Enter size of the hard disk image in megabytes.  Between 1 and 32255 please!"
-#define HD_CONFIG_COMPUTE_PROMPT "Size in megs: "
-#define HD_CONFIG_COMPUTE_CAPTION "Choose Disk Size"
-public:
-  HDConfigDialog(wxWindow* parent, wxWindowID id);
-  void OnEvent (wxCommandEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void SetFilename (wxString f) { filename->SetValue (f); }
-  wxString GetFilename () { return filename->GetValue(); }
-  void SetDriveName (wxString n);
-  void SetGeom (int n, int value);
-  int GetGeom (int n) { return geom[n]->GetValue (); }
-  void SetGeomRange (int n, int min, int max);
-  float UpdateMegs ();
-  void EnableChanged ();
-  void SetEnable (bool val) { enable->SetValue (val); EnableChanged (); }
-  bool GetEnable () { return enable->GetValue (); }
-  void EnterSize ();
-DECLARE_EVENT_TABLE()
-};
-
-////////////////////////////////////////////////////////////////////
-// CdromConfigDialog is a modal dialog box that asks the user
-// what physical device or disk image should be used for cdrom 
-// emulation.
-//
-// +-----Configure CDROM-------------------------------------------+
-// |                                                               |
-// | +-- Device -----------------------------------------------+   |
-// | |                                                         |   |
-// | |  [ ] Enable Emulated CD-ROM                             |   |
-// | |                                                         |   |
-// | +---------------------------------------------------------+   |
-// |                                                               |
-// | +-- Media: Where does the data come from? ----------------+   |
-// | |                                                         |   |
-// | | Bochs can use a physical CD-ROM drive as the data       |   |
-// | | source, or use an image file.                           |   |
-// | |                                                         |   |
-// | |  [X]  Ejected                                           |   |
-// | |  [ ]  Physical CD-ROM drive /dev/cdrom                  |   |
-// | |  [ ]  Disk image: [_________________________] [Browse]  |   |
-// | |                                                         |   |
-// | +---------------------------------------------------------+   |
-// |                                                               |
-// |                                    [ Help ] [ Cancel ] [ Ok ] |
-// +---------------------------------------------------------------+
-//
-// To use this dialog:
-// After constructor, use SetEnabled(), SetFilename() to fill in the
-// disk image filename, AddRadio() to add radio buttons (the disk
-// image file radio button will be added automatically).  Then call
-// ShowModal() to display it.  Return value is wxID_OK or wxID_CANCEL.
-// After ShowModal() returns, use GetFilename() and
-// GetEnabled().
-
-class CdromConfigDialog: public wxDialog
-{
-public:
-#define CDROM_CONFIG_TITLE "Configure %s"
-#define CDROM_CONFIG_DISKIMG "Use disk image: "
-// prompt disabled because I can't figure out what text would make
-// the most sense here.  If one of the answers is "Ejected" then what
-// is the question?
-//#define CDROM_CONFIG_PROMPT "Where should the emulated CD-ROM find its data?"
-private:
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
-  wxBoxSizer *vertSizer, *fileSizer, *buttonSizer;
-  wxStaticBoxSizer *dBoxSizer, *mBoxSizer;
-  //wxStaticText *prompt;
-  wxCheckBox *enable;
-  wxTextCtrl *filename;
-  wxRadioButton *diskImageRadioBtn;
-#define CDROM_MAX_RBTNS 2
-  wxRadioButton *rbtn[CDROM_MAX_RBTNS];
-  wxString equivalentFilename[CDROM_MAX_RBTNS];
-  int n_rbtns;
-public:
-  CdromConfigDialog(wxWindow* parent, wxWindowID id);
-  void OnEvent (wxCommandEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void SetFilename (wxString f);
-  wxString GetFilename ();
-  void SetDriveName (wxString f);
-  void EnableChanged ();
-  void SetEnable (bool val) { enable->SetValue (val); EnableChanged (); }
-  bool GetEnable () { return enable->GetValue (); }
-  void AddRadio (const wxString& descr, const wxString& path);
-  // rbtn[0] will always be the "ejected" button
-  void SetEjected (bool val) { if (val) rbtn[0]->SetValue (TRUE); }
-  bool GetEjected () { return rbtn[0]->GetValue (); }
-DECLARE_EVENT_TABLE()
-};
-
-////////////////////////////////////////////////////////////////////////////
-// ConfigNetworkDialog allows the user to change the settings for 
-// the emulated NE2000 network card.
-////////////////////////////////////////////////////////////////////////////
-// +--- Configure Networking --------------------------------------+
-// |                                                               |
-// |  Bochs can emulate an NE2000-compatible network card.  Would  |
-// |  you like to enable it?                                       |
-// |                                                               |
-// |      Enable networking?  [X]                                  |
-// |                                                               |
-// |      NE2000 I/O address: [ 0x280 ]                            |
-// |                     IRQ: [   9   ]                            |
-// |             MAC address: [ b0:c4:00:00:00:00 ]                |
-// |    Connection to the OS: [ Linux Packet Filter ]              |
-// |     Physical NIC to use: [ eth0 ]                             |
-// |            Setup script: [_________________]                  |
-// |                                                               |
-// |                                    [ Help ] [ Cancel ] [ Ok ] |
-// +---------------------------------------------------------------+
-// To use this dialog:
-// After constructor, use AddConn() to add values to the choice box 
-// called "Connection to the OS".  Then use SetEnable, SetIO, SetIrq, SetMac,
-// SetConn, SetNic, and SetDebug to fill in the current values.  Then call
-// ShowModal(), which will return wxID_OK or wxID_CANCEL.  Then use the Get*
-// methods to retrieve the values that were chosen.
-class NetConfigDialog: public wxDialog
-{
-private:
-#define NET_CONFIG_TITLE "Configure Networking"
-#define NET_CONFIG_PROMPT "Bochs can emulate an NE2000-compatible network card.  Would you like to enable it?"
-#define NET_CONFIG_EN "Enable networking?"
-#define NET_CONFIG_IO "I/O address (hex): "
-#define NET_CONFIG_IRQ "IRQ: "
-#define NET_CONFIG_MAC "MAC address: "
-#define NET_CONFIG_CONN "Connection to OS: "
-#define NET_CONFIG_PHYS "Physical NIC to use: "
-#define NET_CONFIG_SCRIPT "Setup script: "
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
-  wxBoxSizer *mainSizer, *vertSizer, *buttonSizer;
-  wxCheckBox *enable;
-  wxTextCtrl *io, *mac, *phys, *script;
-  wxSpinCtrl *irq;
-  wxChoice *conn;
-  int n_conn_choices;
-  void EnableChanged ();
-public:
-  NetConfigDialog(wxWindow* parent, wxWindowID id);
-  void OnEvent (wxCommandEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void SetEnable (bool en) { enable->SetValue (en); EnableChanged (); }
-  bool GetEnable () { return enable->GetValue (); }
-  void SetIO (int addr) { SetTextCtrl (io, "0x%03x", addr); }
-  int GetIO ();
-  void SetIrq (int addr) { irq->SetValue (addr); }
-  int GetIrq () { return irq->GetValue (); }
-  void SetMac (unsigned char addr[6]);
-  bool GetMac (unsigned char addr[6]);
-  void SetConn(const char *realname);
-  int GetConn () { return conn->GetSelection (); }
-  void *GetConnData () { return conn->GetClientData (conn->GetSelection ()); }
-  void AddConn (wxString niceName, char *realName);
-  void SetPhys (wxString s) { phys->SetValue (s); }
-  wxString GetPhys () { return phys->GetValue (); }
-  void SetScript (wxString s) { script->SetValue (s); }
-  wxString GetScript () { return script->GetValue (); }
-DECLARE_EVENT_TABLE()
-};
-
-////////////////////////////////////////////////////////////////////////////
-// ConfigMemoryDialog
-////////////////////////////////////////////////////////////////////////////
-//
-//  +--- Configure Memory ----------------------------------------------+
-//  |                                                                   |
-//  | +--- Standard Options ------------------------------------------+ |
-//  | |                                                               | |
-//  | |     Memory size (megabytes): [_____]                          | |
-//  | |              ROM BIOS image: [________________] [Browse]      | |
-//  | |            ROM BIOS address: [______]                         | |
-//  | |              VGA BIOS image: [________________] [Browse]      | |
-//  | |            VGA BIOS address: 0xc0000                          | |
-//  | |                                                               | |
-//  | +---------------------------------------------------------------+ |
-//  |                                                                   |
-//  | +--- Optional ROM images ---------------------------------------+ |
-//  | |                                                               | |
-//  | |   Optional ROM image #1: [________________] [Browse]          | |
-//  | |                 Address: [______]                             | |
-//  | |                                                               | |
-//  | |   Optional ROM image #2: [________________] [Browse]          | |
-//  | |                 Address: [______]                             | |
-//  | |                                                               | |
-//  | |   Optional ROM image #3: [________________] [Browse]          | |
-//  | |                 Address: [______]                             | |
-//  | |                                                               | |
-//  | |   Optional ROM image #4: [________________] [Browse]          | |
-//  | |                 Address: [______]                             | |
-//  | |                                                               | |
-//  | +---------------------------------------------------------------+ |
-//  |                                        [ Help ] [ Cancel ] [ Ok ] |
-//  +-------------------------------------------------------------------+
-//
-// To use this dialog:
-// After constructor, use SetSize(), SetBios(), SetBiosAddr(), SetVgaBios(),
-// SetRom(), SetRomAddr() to set the initial values.  Then call ShowModal()
-// which will return wxID_OK or wxID_CANCEL.  Use the Get* equivalent methods
-// to find out the value from each field.
-class ConfigMemoryDialog: public wxDialog
-{
-private:
-#define CONFIG_MEMORY_TITLE "Configure Memory"
-#define CONFIG_MEMORY_BOX1_TITLE "Standard Options"
-#define CONFIG_MEMORY_BOX2_TITLE "Optional ROM Images"
-#define CONFIG_MEMORY_BOX1_LABELS { \
-  "Memory size (megabytes):", \
-    "ROM BIOS image:", \
-    "ROM BIOS address:", \
-    "VGA BIOS image:", \
-    "VGA BIOS address:", \
-    "0xC0000" }
-#define CONFIG_MEMORY_BOX2_LABELS { \
-  "Optional ROM image #1:", "Address:",  \
-  "Optional ROM image #2:", "Address:",  \
-  "Optional ROM image #3:", "Address:",  \
-  "Optional ROM image #4:", "Address:" \
-  }
-#define CONFIG_MEMORY_N_ROMS 4
-  void Init ();  // called automatically by ShowModal()
-  void ShowHelp ();
-  wxBoxSizer *mainSizer, *buttonSizer;
-  wxStaticBoxSizer *box1sizer, *box2sizer;
-  wxFlexGridSizer *box1gridSizer, *box2gridSizer;
-  wxSpinCtrl *megs;
-  wxTextCtrl *biosImage, *biosAddr, *vgabiosImage;
-  wxTextCtrl *rom[CONFIG_MEMORY_N_ROMS], *romAddr[CONFIG_MEMORY_N_ROMS];
-#define CONFIG_MEMORY_N_BROWSES 6
-  wxButton *browseBtn[CONFIG_MEMORY_N_BROWSES];
-public:
-  ConfigMemoryDialog(wxWindow* parent, wxWindowID id);
-  void OnEvent (wxCommandEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void SetSize (int val) { megs->SetValue (val); }
-  void SetBios (wxString filename) { biosImage->SetValue (filename); }
-  void SetVgaBios (wxString filename) { vgabiosImage->SetValue (filename); }
-  void SetRom (int n, wxString filename) { rom[n]->SetValue (filename); }
-  void SetBiosAddr (int addr) { SetTextCtrl (biosAddr, "0x%05X", addr); }
-  void SetRomAddr (int n, int addr) { SetTextCtrl (romAddr[n], "0x%05X", addr); }
-  int GetSize () { return megs->GetValue (); }
-  wxString GetBios () { return biosImage->GetValue (); }
-  wxString GetVgaBios () { return vgabiosImage->GetValue (); }
-  wxString GetRom (int n) { return rom[n]->GetValue (); }
-  int GetBiosAddr () { return GetTextCtrlInt (biosAddr); }
-  int GetRomAddr (int n) { return GetTextCtrlInt (romAddr[n]); }
-
-DECLARE_EVENT_TABLE()
-};
 
 ////////////////////////////////////////////////////////////////////////////
 // LogOptionsDialog
@@ -522,7 +226,7 @@ DECLARE_EVENT_TABLE()
 // |            Panic events: [ask   ]                       |
 // |                                                         |
 // | For additional control over how each device responds    |
-// | to events, press the "Advanced" button.                 |
+// | to events, use the menu option "Log ... By Device".     |
 // |                                                         |
 // | Debugger log file is [____________________]  [ Browse ] |
 // |                                                         |
@@ -558,7 +262,7 @@ private:
    /* can't ignore panics or errors */ \
    || (type >= 2 && choice==0) \
    )
-#define LOG_OPTS_ADV "For additional control over how each device responds to events, press the \"Advanced\" button."
+#define LOG_OPTS_ADV "For additional control over how each device responds to events, use the menu option \"Log ... By Device\"."
   void Init ();  // called automatically by ShowModal()
   void ShowHelp ();
   wxBoxSizer *vertSizer, *logfileSizer, *debuggerlogfileSizer, *buttonSizer;
@@ -697,27 +401,6 @@ DECLARE_EVENT_TABLE()
 #endif
 
 ////////////////////////////////////////////////////////////////////////////
-// ConfigSoundDialog
-////////////////////////////////////////////////////////////////////////////
-// 
-// +--- Configure Sound -------------------------------------------+
-// |                                                               |
-// |  Bochs can emulate a Sound Blaster 16.  Would you like        |
-// |  to enable it?                                                |
-// |                                                               |
-// |           Enable [X]                                          |
-// |                                                               |
-// |   DMA timer: [_________]                                      |
-// |                                                               |
-// |   Midi mode  [ 1 ]  Output file [_________________] [Browse]  |
-// |   Wave mode  [ 1 ]  Output file [_________________] [Browse]  |
-// |   Log  mode  [ 1 ]  Output file [_________________] [Browse]  |
-// |                                                               |
-// |                                    [ Help ] [ Cancel ] [ Ok ] |
-// +---------------------------------------------------------------+
-
-
-////////////////////////////////////////////////////////////////////////////
 // ParamDialog is a general purpose dialog box that displays and edits
 // any combination of parameters.  It's always made up of a
 // wxFlexGridSizer with three columns.  Each parameter takes up one row.
@@ -746,6 +429,7 @@ struct ParamStruct : public wxObject {
     wxWindow *window;
     wxChoice *choice;
     wxTextCtrl *text;
+    wxSpinCtrl *spin;
     wxCheckBox *checkbox;
     wxStaticBox *staticbox;
     wxNotebook *notebook;
@@ -780,6 +464,7 @@ private:
   bool isGeneratedId (int id);
   bool isShowing;
   int nbuttons;
+  bool runtime;
 protected:
   wxBoxSizer *mainSizer, *buttonSizer;
   // hash table that maps the ID of a wxWindows control (e.g. wxChoice,
@@ -814,6 +499,19 @@ public:
   void AddParamList (bx_id *idList, wxFlexGridSizer *sizer = NULL, bool plain = false);
   virtual void CopyParamToGui ();
   bool IsShowing () { return isShowing; }
+  void SetRuntimeFlag(bool val) { runtime = val; }
+DECLARE_EVENT_TABLE()
+};
+
+class ConfigMemoryDialog : public ParamDialog
+{
+#define CONFIG_MEMORY_TITLE "Configure Memory"
+#define CONFIG_MEMORY_BOX1_TITLE "Standard Options"
+#define CONFIG_MEMORY_BOX2_TITLE "Optional ROM Images"
+private:
+  wxFlexGridSizer *box1gridSizer, *box2gridSizer;
+public:
+  ConfigMemoryDialog(wxWindow* parent, wxWindowID id);
 DECLARE_EVENT_TABLE()
 };
 

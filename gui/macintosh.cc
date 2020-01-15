@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: macintosh.cc,v 1.18 2002/12/12 15:29:01 cbothamy Exp $
+// $Id: macintosh.cc,v 1.21 2003/06/28 08:04:31 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -811,7 +811,7 @@ void bx_macintosh_gui_c::clear_screen(void)
 
 void bx_macintosh_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
 											unsigned long cursor_x, unsigned long cursor_y,
-         Bit16u cursor_state, unsigned nrows)
+         bx_vga_tminfo_t tm_info, unsigned nrows)
 {
 	int				i;
 	unsigned char		achar;
@@ -988,10 +988,19 @@ void bx_macintosh_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned
 //
 // x: new VGA x size
 // y: new VGA y size (add headerbar_y parameter from ::specific_init().
+// fheight: new VGA character height in text mode
+// fwidth : new VGA character width in text mode
+// bpp : bits per pixel in graphics mode
 
-void bx_macintosh_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+void bx_macintosh_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
+  if (bpp > 8) {
+    BX_PANIC(("%d bpp graphics mode not supported yet", bpp));
+  }
   if (fheight > 0) {
+    if (fwidth != 8) {
+      x = x * 8 / fwidth;
+    }
     if (fheight != 16) {
       y = y * 16 / fheight;
     }

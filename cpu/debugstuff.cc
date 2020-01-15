@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc,v 1.28 2002/10/27 15:15:12 bdenney Exp $
+// $Id: debugstuff.cc,v 1.31 2003/12/24 20:32:59 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -147,10 +147,19 @@ BX_CPU_C::debug(Bit32u offset)
 
 #if BX_DISASM
   bx_bool valid;
-  Bit32u  phy_addr;
+  Bit32u  phy_addr, Base;
   Bit8u   instr_buf[32];
   char    char_buf[256];
   unsigned isize;
+
+  static disassembler bx_disassemble;
+
+  if (BX_CPU_THIS_PTR protectedMode) { // 16bit & 32bit protected mode
+   Base=BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base;
+  }
+  else {
+   Base=BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value<<4;
+  }
 
   dbg_xlate_linear2phy(BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.base + offset,
                        &phy_addr, &valid);
@@ -158,6 +167,7 @@ BX_CPU_C::debug(Bit32u offset)
     BX_CPU_THIS_PTR mem->dbg_fetch_mem(phy_addr, 16, instr_buf);
     isize = bx_disassemble.disasm(
         BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b,
+        Base, 
         EIP, instr_buf, char_buf);
     for (unsigned j=0; j<isize; j++)
       BX_INFO((">> %02x", (unsigned) instr_buf[j]));

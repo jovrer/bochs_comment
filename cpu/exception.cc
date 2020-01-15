@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: exception.cc,v 1.31 2002/10/25 12:36:42 bdenney Exp $
+// $Id: exception.cc,v 1.35 2003/08/28 00:10:40 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -67,7 +67,7 @@ BX_CPU_C::interrupt(Bit8u vector, bx_bool is_INT, bx_bool is_error_code,
 
 //BX_DEBUG(( "::interrupt(%u)", vector ));
 
-  BX_INSTR_INTERRUPT(CPU_ID, vector);
+  BX_INSTR_INTERRUPT(BX_CPU_ID, vector);
   invalidate_prefetch_q();
 
   // Discard any traps and inhibits for new context; traps will
@@ -101,6 +101,7 @@ BX_CPU_THIS_PTR save_esp = ESP;
 
     Bit16u gate_dest_selector;
     Bit64u gate_dest_offset;
+    unsigned ist;
 
     // interrupt vector must be within IDT table limits,
     // else #GP(vector number*16 + 2 + EXT)
@@ -164,6 +165,8 @@ BX_CPU_THIS_PTR save_esp = ESP;
     gate_dest_offset   = ((Bit64u)dword3 << 32) +
                          gate_descriptor.u.gate386.dest_offset;
 
+    ist = gate_descriptor.u.gate386.dword_count & 0x7;
+
     // examine CS selector and descriptor given in gate descriptor
     // selector must be non-null else #GP(EXT)
     if ( (gate_dest_selector & 0xfffc) == 0 ) {
@@ -204,17 +207,24 @@ BX_CPU_THIS_PTR save_esp = ESP;
 
     // if code segment is non-conforming and DPL < CPL then
     // INTERRUPT TO INNER PRIVILEGE:
-    if ( cs_descriptor.u.segment.c_ed==0 && cs_descriptor.dpl<CPL ) {
+    if ( (cs_descriptor.u.segment.c_ed==0 && cs_descriptor.dpl<CPL) || (ist > 0)) {
       Bit16u old_SS, old_CS;
       Bit64u RSP_for_cpl_x, old_RIP, old_RSP;
       bx_descriptor_t ss_descriptor;
       bx_selector_t   ss_selector;
       int bytes;
+      int savemode;
 
       BX_DEBUG(("interrupt(): INTERRUPT TO INNER PRIVILEGE"));
 
       // check selector and descriptor for new stack in current TSS
-      get_RSP_from_TSS(cs_descriptor.dpl,&RSP_for_cpl_x);
+      if (ist > 0) {
+        BX_DEBUG(("trap to IST, vector = %d\n",ist));
+        get_RSP_from_TSS(ist+3,&RSP_for_cpl_x);
+        }
+      else {
+        get_RSP_from_TSS(cs_descriptor.dpl,&RSP_for_cpl_x);
+      }
       // set up a null descriptor
       parse_selector(0,&ss_selector);
       parse_descriptor(0,0,&ss_descriptor);
@@ -228,9 +238,18 @@ BX_CPU_THIS_PTR save_esp = ESP;
       //  bytes = 40;
 
 
+      old_SS  = BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value;
       old_RSP = RSP;
 
       // load new RSP values from TSS
+
+
+      savemode = BX_CPU_THIS_PTR cpu_mode;
+      BX_CPU_THIS_PTR cpu_mode = BX_MODE_LONG_64;
+
+      // need to switch to 64 bit mode temporarily here.
+      // this means that any exception after here might be delivered
+      // a little insanely.  Like faults are page faults..
 
       load_ss(&ss_selector, &ss_descriptor, cs_descriptor.dpl);
 
@@ -247,7 +266,7 @@ BX_CPU_THIS_PTR save_esp = ESP;
 
       // align ESP
 
-      push_64(BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector.value);
+      push_64(old_SS);
       push_64(old_RSP);
 
       // push EFLAGS
@@ -259,7 +278,9 @@ BX_CPU_THIS_PTR save_esp = ESP;
       if ( is_error_code )
         push_64(error_code);
 
+      BX_CPU_THIS_PTR cpu_mode = savemode;
       load_cs(&cs_selector, &cs_descriptor, cs_descriptor.dpl);
+
       RIP = gate_dest_offset;
 
 
@@ -821,14 +842,14 @@ BX_CPU_C::exception(unsigned vector, Bit16u error_code, bx_bool is_INT)
 
 #if BX_EXTERNAL_DEBUGGER
 #if BX_SUPPORT_X86_64
-  printf ("Exception(%u) code=%08x @%08x%08x\n", vector, error_code,(Bit32u)(BX_CPU_THIS_PTR prev_eip >>32),(Bit32u)(BX_CPU_THIS_PTR prev_eip));
+  //printf ("Exception(%u) code=%08x @%08x%08x\n", vector, error_code,(Bit32u)(BX_CPU_THIS_PTR prev_eip >>32),(Bit32u)(BX_CPU_THIS_PTR prev_eip));
 #else
-  printf ("Exception(%u) code=%08x @%08x\n", vector, error_code,(Bit32u)(BX_CPU_THIS_PTR prev_eip));
+  //printf ("Exception(%u) code=%08x @%08x\n", vector, error_code,(Bit32u)(BX_CPU_THIS_PTR prev_eip));
 #endif
   //trap_debugger(1);
 #endif
 
-  BX_INSTR_EXCEPTION(CPU_ID, vector);
+  BX_INSTR_EXCEPTION(BX_CPU_ID, vector);
 
   BX_DEBUG(("exception(%02x h)", (unsigned) vector));
 
@@ -843,8 +864,16 @@ BX_CPU_C::exception(unsigned vector, Bit16u error_code, bx_bool is_INT)
 
   BX_CPU_THIS_PTR errorno++;
   if (BX_CPU_THIS_PTR errorno >= 3) {
+#if BX_RESET_ON_TRIPLE_FAULT
+    BX_ERROR(("exception(): 3rd (%d) exception with no resolution, shutdown status is %02xh, resetting", vector,  DEV_cmos_get_reg(0x0f)));
+    {
+    for (int i=0; i<BX_SMP_PROCESSORS; i++)
+      BX_CPU(i)->reset(BX_RESET_HARDWARE);
+    }
+#else
     BX_PANIC(("exception(): 3rd (%d) exception with no resolution", vector));
     BX_ERROR(("WARNING: Any simulation after this point is completely bogus."));
+#endif
 #if BX_DEBUGGER
     bx_guard.special_unwind_stack = true;
 #endif
@@ -856,8 +885,16 @@ BX_CPU_C::exception(unsigned vector, Bit16u error_code, bx_bool is_INT)
 
   /* if 1st was a double fault (software INT?), then shutdown */
   if ( (BX_CPU_THIS_PTR errorno==2) && (BX_CPU_THIS_PTR curr_exception[0]==BX_ET_DOUBLE_FAULT) ) {
+#if BX_RESET_ON_TRIPLE_FAULT
+    BX_INFO(("exception(): triple fault encountered, shutdown status is %02xh, resetting", DEV_cmos_get_reg(0x0f)));
+    {
+    for (int i=0; i<BX_SMP_PROCESSORS; i++)
+      BX_CPU(i)->reset(BX_RESET_HARDWARE);
+    }
+#else
     BX_PANIC(("exception(): triple fault encountered"));
     BX_ERROR(("WARNING: Any simulation after this point is completely bogus."));
+#endif
 #if BX_DEBUGGER
     bx_guard.special_unwind_stack = true;
 #endif

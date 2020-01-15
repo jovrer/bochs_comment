@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: data_xfer16.cc,v 1.20 2002/10/25 18:26:27 sshwarts Exp $
+// $Id: data_xfer16.cc,v 1.26 2003/11/13 21:57:12 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -104,7 +104,6 @@ BX_CPU_C::MOV_EwSw(bxInstruction_c *i)
   seg_reg = BX_CPU_THIS_PTR sregs[i->nnn()].selector.value;
 
   if (i->modC0()) {
-    // ??? BX_WRITE_16BIT_REG(mem_addr, seg_reg);
     if ( i->os32L() ) {
       BX_WRITE_32BIT_REGZ(i->rm(), seg_reg);
       }
@@ -121,6 +120,11 @@ BX_CPU_C::MOV_EwSw(bxInstruction_c *i)
 BX_CPU_C::MOV_SwEw(bxInstruction_c *i)
 {
   Bit16u op2_16;
+
+  /* If attempt is made to load the CS register ... */
+  if (i->nnn() == BX_SEG_REG_CS) {
+    UndefinedOpcode(i);
+  }
 
 #if BX_CPU_LEVEL < 3
   BX_PANIC(("MOV_SwEw: incomplete for CPU < 3"));
@@ -150,14 +154,13 @@ BX_CPU_C::MOV_SwEw(bxInstruction_c *i)
 BX_CPU_C::LEA_GwM(bxInstruction_c *i)
 {
   if (i->modC0()) {
-    BX_PANIC(("LEA_GvM: op2 is a register"));
+    BX_INFO(("LEA_GvM: op2 is a register"));
     UndefinedOpcode(i);
     return;
     }
 
     BX_WRITE_16BIT_REG(i->nnn(), (Bit16u) RMAddr(i));
 }
-
 
   void
 BX_CPU_C::MOV_AXOw(bxInstruction_c *i)

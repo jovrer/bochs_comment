@@ -55,14 +55,12 @@ static BX_CPU_C *fpu_cpu_ptr = NULL;
 i387_t *current_i387;
 
 extern "C" void
-math_emulate2(fpu_addr_modes addr_modes,
+math_emulate(fpu_addr_modes addr_modes,
               u_char  FPU_modrm,
               u_char byte1,
-              void *data_address,
+              bx_address data_address,
               struct address data_sel_off,
               struct address entry_sel_off);
-
-extern "C" void printfp(char *s, FPU_REG *r);
 
 
   // This is called by bochs upon reset
@@ -77,7 +75,7 @@ BX_CPU_C::fpu_init(void)
 BX_CPU_C::fpu_execute(bxInstruction_c *i)
 {
   fpu_addr_modes addr_modes;
-  void *data_address;
+  bx_address data_address;
   struct address data_sel_off;
   struct address entry_sel_off;
   bx_bool is_32;
@@ -86,14 +84,11 @@ BX_CPU_C::fpu_execute(bxInstruction_c *i)
   fpu_cpu_ptr = this;
   current_i387 = &(BX_CPU_THIS_PTR the_i387);
 
-#if 0
-  addr_modes.default_mode = VM86;
-  addr_modes.default_mode = 0; // FPU_CS == __USER_CS && FPU_DS == __USER_DS
-  addr_modes.default_mode = SEG32;
-  addr_modes.default_mode = PM16;
-#endif
+  is_32 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b;
+
   if (protected_mode()) {
-    addr_modes.default_mode = SEG32;
+    if (is_32) addr_modes.default_mode = SEG32;
+    else addr_modes.default_mode = PM16;
     }
   else if (v8086_mode()) {
     addr_modes.default_mode = VM86;
@@ -103,25 +98,16 @@ BX_CPU_C::fpu_execute(bxInstruction_c *i)
     addr_modes.default_mode = VM86;
     }
 
-
   // Mark if instruction used opsize or addrsize prefixes
-  // Actually, addr_modes.override.address_size is not used,
-  // could delete that code.
-  is_32 = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b;
   if (i->as32B() == is_32)
     addr_modes.override.address_size = 0;
   else
     addr_modes.override.address_size = ADDR_SIZE_PREFIX;
+
   if (i->os32B() == is_32)
     addr_modes.override.operand_size = 0;
   else
     addr_modes.override.operand_size = OP_SIZE_PREFIX;
-
-  // For now set access_limit to max.  It seems to be
-  // a number from 0..255 denoting how many bytes the
-  // current instruction can access according to its
-  // memory operand.  255 means >= 255.
-access_limit = 0xff;
 
   // fill in orig eip here in offset
   // fill in CS in selector
@@ -129,34 +115,33 @@ access_limit = 0xff;
   entry_sel_off.selector = BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value;
 
 // should set these fields to 0 if mem operand not used
-  data_address = (void *) RMAddr(i);
+  data_address = RMAddr(i);
   data_sel_off.offset = RMAddr(i);
   data_sel_off.selector = BX_CPU_THIS_PTR sregs[i->seg()].selector.value;
 
-  math_emulate2(addr_modes, i->modrm(), i->b1(), data_address,
+  math_emulate(addr_modes, i->modrm(), i->b1(), data_address,
                 data_sel_off, entry_sel_off);
 }
 
-static double sigh_scale_factor = pow(2.0, -31.0);
-static double sigl_scale_factor = pow(2.0, -63.0);
-
-void
-BX_CPU_C::fpu_print_regs()
+void BX_CPU_C::print_state_FPU()
 {
+  static double sigh_scale_factor = pow(2.0, -31.0);
+  static double sigl_scale_factor = pow(2.0, -63.0);
+
   Bit32u reg;
-  reg = i387.soft.cwd;
+  reg = i387.cwd;
   fprintf(stderr, "cwd            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
-  reg = i387.soft.swd;
+  reg = i387.swd;
   fprintf(stderr, "swd            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
-  reg = i387.soft.twd;
+  reg = i387.twd;
   fprintf(stderr, "twd            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
-  reg = i387.soft.fip;
+  reg = i387.fip;
   fprintf(stderr, "fip            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
-  reg = i387.soft.fcs;
+  reg = i387.fcs;
   fprintf(stderr, "fcs            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
-  reg = i387.soft.foo;
+  reg = i387.foo;
   fprintf(stderr, "foo            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
-  reg = i387.soft.fos;
+  reg = i387.fos;
   fprintf(stderr, "fos            0x%-8x\t%d\n", (unsigned) reg, (int) reg);
   // print stack too
   for (int i=0; i<8; i++) {
@@ -177,42 +162,40 @@ fpu_get_ds(void)
 }
 
   void
-fpu_set_ax(unsigned short val16)
+fpu_set_ax(Bit16u val16)
 {
-// define to set AX in the current CPU -- not ideal.
-#undef AX
-#define AX (fpu_cpu_ptr->gen_reg[0].word.rx)
-  AX = val16;
-#undef AX
-//BX_DEBUG(( "fpu_set_ax(0x%04x)", (unsigned) val16));
+  fpu_cpu_ptr->set_AX(val16);
 }
 
   void
-fpu_verify_area(unsigned what, void *ptr, unsigned n)
+fpu_set_eflags(Bit32u val32)
+{
+  fpu_cpu_ptr->writeEFlags(val32, 0xFFFFFFFF);
+}
+
+  Bit32u 
+fpu_get_eflags(void)
+{
+  return fpu_cpu_ptr->read_eflags();
+}
+
+  void BX_CPP_AttrRegparmN(3)
+fpu_verify_area(unsigned what, bx_address ptr, unsigned n)
 {
   bx_segment_reg_t *seg;
 
   seg = &fpu_cpu_ptr->sregs[fpu_iptr->seg()];
 
   if (what == VERIFY_READ) {
-    fpu_cpu_ptr->read_virtual_checks(seg, PTR2INT(ptr), n);
+    fpu_cpu_ptr->read_virtual_checks(seg, ptr, n);
     }
   else {  // VERIFY_WRITE
-    fpu_cpu_ptr->write_virtual_checks(seg, PTR2INT(ptr), n);
+    fpu_cpu_ptr->write_virtual_checks(seg, ptr, n);
     }
-//BX_DEBUG(( "verify_area: 0x%x", PTR2INT(ptr)));
 }
 
-
-  void
-FPU_printall(void)
-{
-  BX_PANIC(("FPU_printall"));
-}
-
-
-  unsigned
-fpu_get_user(void *ptr, unsigned len)
+  Bit32u BX_CPP_AttrRegparmN(2)
+fpu_get_user(bx_address ptr, unsigned len)
 {
   Bit32u val32;
   Bit16u val16;
@@ -220,15 +203,15 @@ fpu_get_user(void *ptr, unsigned len)
 
   switch (len) {
     case 1:
-      fpu_cpu_ptr->read_virtual_byte(fpu_iptr->seg(), PTR2INT(ptr), &val8);
+      fpu_cpu_ptr->read_virtual_byte(fpu_iptr->seg(), ptr, &val8);
       val32 = val8;
       break;
     case 2:
-      fpu_cpu_ptr->read_virtual_word(fpu_iptr->seg(), PTR2INT(ptr), &val16);
+      fpu_cpu_ptr->read_virtual_word(fpu_iptr->seg(), ptr, &val16);
       val32 = val16;
       break;
     case 4:
-      fpu_cpu_ptr->read_virtual_dword(fpu_iptr->seg(), PTR2INT(ptr), &val32);
+      fpu_cpu_ptr->read_virtual_dword(fpu_iptr->seg(), ptr, &val32);
       break;
     default:
       BX_PANIC(("fpu_get_user: len=%u", len));
@@ -236,8 +219,8 @@ fpu_get_user(void *ptr, unsigned len)
   return(val32);
 }
 
-  void
-fpu_put_user(unsigned val, void *ptr, unsigned len)
+  void BX_CPP_AttrRegparmN(3)
+fpu_put_user(Bit32u val, bx_address ptr, unsigned len)
 {
   Bit32u val32;
   Bit16u val16;
@@ -246,15 +229,15 @@ fpu_put_user(unsigned val, void *ptr, unsigned len)
   switch (len) {
     case 1:
       val8 = val;
-      fpu_cpu_ptr->write_virtual_byte(fpu_iptr->seg(), PTR2INT(ptr), &val8);
+      fpu_cpu_ptr->write_virtual_byte(fpu_iptr->seg(), ptr, &val8);
       break;
     case 2:
       val16 = val;
-      fpu_cpu_ptr->write_virtual_word(fpu_iptr->seg(), PTR2INT(ptr), &val16);
+      fpu_cpu_ptr->write_virtual_word(fpu_iptr->seg(), ptr, &val16);
       break;
     case 4:
       val32 = val;
-      fpu_cpu_ptr->write_virtual_dword(fpu_iptr->seg(), PTR2INT(ptr), &val32);
+      fpu_cpu_ptr->write_virtual_dword(fpu_iptr->seg(), ptr, &val32);
       break;
     default:
       BX_PANIC(("fpu_put_user: len=%u", len));
@@ -262,7 +245,7 @@ fpu_put_user(unsigned val, void *ptr, unsigned len)
 }
 
   void
-math_abort(struct info *info, unsigned int signal)
+math_abort(void *info, unsigned int signal)
 {
   UNUSED(info); // info is always passed NULL
 #if BX_CPU_LEVEL >= 4
@@ -275,14 +258,19 @@ math_abort(struct info *info, unsigned int signal)
     case SIGFPE:
       if (fpu_cpu_ptr->cr0.ne == 0) {
         // MSDOS compatibility external interrupt (IRQ13)
-        BX_PANIC (("math_abort: MSDOS compatibility not supported yet"));
+        BX_INFO (("math_abort: MSDOS compatibility FPU exception"));
+
+        DEV_pic_raise_irq(13);
+        return;
         }
       fpu_cpu_ptr->exception(BX_MF_EXCEPTION, 0, 0);
       // execution does not reach here
 
     case SIGILL:
       BX_PANIC (("math_abort: SIGILL not implemented yet."));
+      fpu_cpu_ptr->UndefinedOpcode(fpu_iptr);
       break;
+
     case SIGSEGV:
       BX_PANIC (("math_abort: SIGSEGV not implemented yet."));
       break;
@@ -294,9 +282,8 @@ math_abort(struct info *info, unsigned int signal)
 #endif
 }
 
-  int
-printk(const char * fmt, ...)
+extern "C" int printk(const char * fmt, ...)
 {
-  BX_INFO(("printk not complete: %s", fmt));
-  return(0); // for now
+  BX_INFO(("math abort: %s", fmt));
+  return 0;
 }

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.cc,v 1.85 2002/12/12 16:52:21 bdenney Exp $
+// $Id: wxmain.cc,v 1.101 2003/10/24 15:39:57 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxmain.cc implements the wxWindows frame, toolbar, menus, and dialogs.
@@ -75,6 +75,9 @@
 #include "bitmaps/mouse.xpm"
 //#include "bitmaps/configbutton.xpm"
 #include "bitmaps/userbutton.xpm"
+#ifdef __WXGTK__
+#include "icon_bochs.xpm"
+#endif
 
 // FIXME: ugly global variables that the bx_gui_c object in wx.cc can use
 // to access the MyFrame and the MyPanel.
@@ -315,9 +318,8 @@ BEGIN_EVENT_TABLE(MyFrame, wxFrame)
   EVT_MENU(ID_Edit_ATA3, MyFrame::OnEditATA)
   EVT_MENU(ID_Edit_Boot, MyFrame::OnEditBoot)
   EVT_MENU(ID_Edit_Memory, MyFrame::OnEditMemory)
-  EVT_MENU(ID_Edit_Speed, MyFrame::OnEditSpeed)
   EVT_MENU(ID_Edit_Sound, MyFrame::OnEditSound)
-  EVT_MENU(ID_Edit_Cmos, MyFrame::OnEditCmos)
+  EVT_MENU(ID_Edit_Timing, MyFrame::OnEditTiming)
   EVT_MENU(ID_Edit_Network, MyFrame::OnEditNet)
   EVT_MENU(ID_Edit_Keyboard, MyFrame::OnEditKeyboard)
   EVT_MENU(ID_Edit_Serial_Parallel, MyFrame::OnEditSerialParallel)
@@ -400,6 +402,8 @@ END_EVENT_TABLE()
 MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, const long style)
 : wxFrame((wxFrame *)NULL, -1, title, pos, size, style)
 {
+  SetIcon(wxICON(icon_bochs));
+
   // init variables
   sim_thread = NULL;
   start_bochs_times = 0;
@@ -425,9 +429,8 @@ MyFrame::MyFrame(const wxString& title, const wxPoint& pos, const wxSize& size, 
   menuEdit->Append( ID_Edit_ATA3, "ATA Channel 3..." );
   menuEdit->Append( ID_Edit_Boot, "&Boot..." );
   menuEdit->Append( ID_Edit_Memory, "&Memory..." );
-  menuEdit->Append( ID_Edit_Speed, "&Speed..." );
-  menuEdit->Append( ID_Edit_Sound, "Sound..." );
-  menuEdit->Append( ID_Edit_Cmos, "&CMOS..." );
+  menuEdit->Append( ID_Edit_Sound, "S&ound..." );
+  menuEdit->Append( ID_Edit_Timing, "&Timing..." );
   menuEdit->Append( ID_Edit_Network, "&Network..." );
   menuEdit->Append( ID_Edit_Keyboard, "&Keyboard..." );
   menuEdit->Append( ID_Edit_Serial_Parallel, "&Serial/Parallel..." );
@@ -525,7 +528,7 @@ MyFrame::~MyFrame ()
 void MyFrame::OnConfigNew(wxCommandEvent& WXUNUSED(event))
 {
   int answer = wxMessageBox ("This will reset all settings back to their default values.\nAre you sure you want to do this?",
-    "Are you sure?", wxYES_NO | wxCENTER);
+    "Are you sure?", wxYES_NO | wxCENTER, this);
   if (answer == wxYES) SIM->reset_all_param ();
 }
 
@@ -576,10 +579,11 @@ void MyFrame::OnEditBoot(wxCommandEvent& WXUNUSED(event))
     dev_id[bootDevices++] = BX_BOOT_CDROM;
   }
   if (bootDevices == 0) {
-    wxMessageBox( "All the possible boot devices are disabled right now!\nYou must enable the first floppy drive, a hard drive, or a CD-ROM.", "None enabled", wxOK | wxICON_ERROR );
+    wxMessageBox( "All the possible boot devices are disabled right now!\nYou must enable the first floppy drive, a hard drive, or a CD-ROM.",
+                  "None enabled", wxOK | wxICON_ERROR, this );
     return;
   }
-  int which = wxGetSingleChoiceIndex ("Select the device to boot from", "Boot Device", bootDevices, devices);
+  int which = wxGetSingleChoiceIndex ("Select the device to boot from", "Boot Device", bootDevices, devices, this);
   if (which<0) return;  // cancelled
   bx_param_enum_c *bootdevice = (bx_param_enum_c *) 
     SIM->get_param(BXP_BOOTDRIVE);
@@ -589,55 +593,6 @@ void MyFrame::OnEditBoot(wxCommandEvent& WXUNUSED(event))
 void MyFrame::OnEditMemory(wxCommandEvent& WXUNUSED(event))
 {
   ConfigMemoryDialog dlg (this, -1);
-  bx_param_num_c *megs = (bx_param_num_c*) SIM->get_param(BXP_MEM_SIZE);
-  bx_param_string_c *bios = (bx_param_string_c *) SIM->get_param (BXP_ROM_PATH);
-  bx_param_num_c *biosaddr = (bx_param_num_c*) SIM->get_param(BXP_ROM_ADDRESS);
-  bx_param_string_c *vgabios = (bx_param_string_c *) SIM->get_param (BXP_VGA_ROM_PATH);
-  static bx_id optRomPathParams[] = {
-    BXP_OPTROM1_PATH, BXP_OPTROM2_PATH, BXP_OPTROM3_PATH, BXP_OPTROM4_PATH
-  };
-  static bx_id optRomAddrParams[] = {
-    BXP_OPTROM1_ADDRESS, BXP_OPTROM2_ADDRESS, BXP_OPTROM3_ADDRESS, BXP_OPTROM4_ADDRESS
-  };
-  bx_param_string_c *optromPath[CONFIG_MEMORY_N_ROMS];
-  bx_param_num_c *optromAddr[CONFIG_MEMORY_N_ROMS];
-  int rom;
-  for (rom=0; rom<CONFIG_MEMORY_N_ROMS; rom++) {
-    optromPath[rom] = (bx_param_string_c *) 
-      SIM->get_param (optRomPathParams[rom]);
-    optromAddr[rom] = (bx_param_num_c *) 
-      SIM->get_param (optRomAddrParams[rom]);
-  }
-  dlg.SetSize (megs->get ());
-  dlg.SetBios (wxString (bios->getptr ()));
-  dlg.SetBiosAddr (biosaddr->get ());
-  dlg.SetVgaBios (wxString (vgabios->getptr ()));
-  for (rom=0; rom<CONFIG_MEMORY_N_ROMS; rom++) {
-    dlg.SetRom (rom, wxString (optromPath[rom]->getptr ()));
-    dlg.SetRomAddr (rom, optromAddr[rom]->get ());
-  }
-  int n = dlg.ShowModal ();
-  if (n == wxID_OK) {
-    char buf[1024];
-    megs->set (dlg.GetSize ());
-    safeWxStrcpy (buf, dlg.GetBios (), sizeof (buf));
-    bios->set (buf);
-    biosaddr->set (dlg.GetBiosAddr ());
-    safeWxStrcpy (buf, dlg.GetVgaBios (), sizeof (buf));
-    vgabios->set (buf);
-    for (rom=0; rom<CONFIG_MEMORY_N_ROMS; rom++) {
-      safeWxStrcpy (buf, dlg.GetRom (rom), sizeof (buf));
-      optromPath[rom]->set (buf);
-      optromAddr[rom]->set (dlg.GetRomAddr (rom));
-    }
-  }
-}
-
-void MyFrame::OnEditSpeed(wxCommandEvent& WXUNUSED(event))
-{
-  ParamDialog dlg (this, -1);
-  dlg.AddParam (SIM->get_param (BXP_IPS));
-  dlg.AddParam (SIM->get_param (BXP_REALTIME_PIT));
   dlg.ShowModal ();
 }
 
@@ -646,88 +601,36 @@ void MyFrame::OnEditSound(wxCommandEvent& WXUNUSED(event))
   ParamDialog dlg (this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_SB16);
   dlg.SetTitle (list->get_name ());
-  for (int i=0; i<list->get_size (); i++)
-    dlg.AddParam (list->get (i));
+  dlg.AddParam (list);
   dlg.ShowModal ();
 }
 
-void MyFrame::OnEditCmos(wxCommandEvent& WXUNUSED(event))
+void MyFrame::OnEditTiming(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg (this, -1);
-  dlg.AddParam (SIM->get_param (BXP_CMOS_IMAGE));
-  dlg.AddParam (SIM->get_param (BXP_CMOS_PATH));
-  dlg.AddParam (SIM->get_param (BXP_CMOS_TIME0));
+  dlg.AddParam (SIM->get_param (BXP_IPS));
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_CLOCK);
+  dlg.SetTitle (list->get_name ());
+  dlg.AddParam (list);
   dlg.ShowModal ();
 }
 
 void MyFrame::OnEditNet(wxCommandEvent& WXUNUSED(event))
 {
-  NetConfigDialog dlg (this, -1);
-  bx_param_bool_c *present = (bx_param_bool_c*)SIM->get_param (BXP_NE2K_PRESENT);
-  bx_param_num_c *io = (bx_param_num_c*)SIM->get_param (BXP_NE2K_IOADDR);
-  bx_param_num_c *irq = (bx_param_num_c*)SIM->get_param (BXP_NE2K_IRQ);
-  bx_param_string_c *mac = (bx_param_string_c*)
-    SIM->get_param (BXP_NE2K_MACADDR);
-  bx_param_string_c *module = (bx_param_string_c*)
-    SIM->get_param (BXP_NE2K_ETHMOD);
-  bx_param_string_c *device = (bx_param_string_c*)
-    SIM->get_param (BXP_NE2K_ETHDEV);
-  bx_param_string_c *script = (bx_param_string_c*)
-    SIM->get_param (BXP_NE2K_SCRIPT);
-  dlg.SetEnable (present->get ());
-  dlg.SetIO (io->get ());
-  dlg.SetIrq (irq->get ());
-  dlg.SetMac ((unsigned char *) mac->getptr ());
-  dlg.AddConn ("Null Packet Mover", "null");
-#if defined(ETH_LINUX)
-  dlg.AddConn ("Linux Socket Filter", "linux");
-#endif
-#if HAVE_ETHERTAP
-  dlg.AddConn ("Ethertap", "tap");
-#endif
-#if HAVE_TUNTAP
-  dlg.AddConn ("TUN/TAP", "tuntap");
-#endif
-#if defined(ETH_WIN32)
-  dlg.AddConn ("Win32 packet mover", "win32");
-#endif
-#if defined(ETH_FBSD)
-  dlg.AddConn ("Berkeley Packet Filter (FreeBSD, OpenBSD)", "fbsd");
-#endif
-#ifdef ETH_ARPBACK
-  dlg.AddConn ("ARPback packet mover", "arpback");
-#endif
-  dlg.SetConn (module->getptr ());
-  dlg.SetPhys (device->getptr ());
-  dlg.SetScript (script->getptr ());
-  int n = dlg.ShowModal ();
-  if (n==wxID_OK) {
-    present->set (dlg.GetEnable ());
-    io->set (dlg.GetIO ());
-    irq->set (dlg.GetIrq ());
-    unsigned char tmp[6];
-    dlg.GetMac (tmp);
-    mac->set ((char *)tmp);
-    module->set ((char *)dlg.GetConnData ());
-    char buf[1024];
-    wxString deviceString (dlg.GetPhys ());
-    strncpy (buf, deviceString.c_str (), sizeof(buf));
-    device->set (buf);
-    wxString scriptString (dlg.GetScript ());
-    strncpy (buf, scriptString.c_str (), sizeof(buf));
-    script->set (buf);
-  }
+  ParamDialog dlg (this, -1);
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_NE2K);
+  dlg.SetTitle (list->get_name ());
+  dlg.AddParam (list);
+  dlg.ShowModal ();
 }
 
 void MyFrame::OnEditKeyboard(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
-  dlg.SetTitle ("Configure Keyboard");
-  dlg.AddParam (SIM->get_param (BXP_KBD_TYPE));
-  dlg.AddParam (SIM->get_param (BXP_KBD_SERIAL_DELAY));
-  dlg.AddParam (SIM->get_param (BXP_KBD_PASTE_DELAY));
-  dlg.AddParam (SIM->get_param (BXP_KEYBOARD_USEMAPPING));
-  dlg.AddParam (SIM->get_param (BXP_KEYBOARD_MAP));
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_MENU_KEYBOARD);
+  dlg.SetTitle (list->get_name ());
+  dlg.AddParam (list);
+  dlg.SetRuntimeFlag (sim_thread != NULL);
   dlg.ShowModal ();
 }
 
@@ -736,8 +639,7 @@ void MyFrame::OnEditSerialParallel(wxCommandEvent& WXUNUSED(event))
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_MENU_SERIAL_PARALLEL);
   dlg.SetTitle (list->get_name ());
-  for (int i=0; i<list->get_size (); i++)
-    dlg.AddParam (list->get (i));
+  dlg.AddParam (list);
   dlg.ShowModal ();
 }
 
@@ -746,30 +648,17 @@ void MyFrame::OnEditLoadHack(wxCommandEvent& WXUNUSED(event))
   ParamDialog dlg(this, -1);
   bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_LOAD32BITOS);
   dlg.SetTitle (list->get_name ());
-  for (int i=0; i<list->get_size (); i++)
-    dlg.AddParam (list->get (i));
+  dlg.AddParam (list);
   dlg.ShowModal ();
 }
 
 void MyFrame::OnEditOther(wxCommandEvent& WXUNUSED(event))
 {
   ParamDialog dlg(this, -1);
-  dlg.SetTitle ("Other Options");
-  dlg.AddParam (SIM->get_param (BXP_SEL_DISPLAY_LIBRARY));
-  dlg.AddParam (SIM->get_param (BXP_SEL_CONFIG_INTERFACE));
-  dlg.AddParam (SIM->get_param (BXP_VGA_UPDATE_INTERVAL));
-  dlg.AddParam (SIM->get_param (BXP_LOG_PREFIX));
-  dlg.AddParam (SIM->get_param (BXP_MOUSE_ENABLED));
-  dlg.AddParam (SIM->get_param (BXP_USER_SHORTCUT));
-  dlg.AddParam (SIM->get_param (BXP_FLOPPYSIGCHECK));
-  dlg.AddParam (SIM->get_param (BXP_FLOPPY_CMD_DELAY));
-  dlg.AddParam (SIM->get_param (BXP_NEWHARDDRIVESUPPORT));
-  dlg.AddParam (SIM->get_param (BXP_PRIVATE_COLORMAP));
-#if BX_WITH_AMIGAOS
-  dlg.AddParam (SIM->get_param (BXP_FULLSCREEN));
-  dlg.AddParam (SIM->get_param (BXP_SCREENMODE));
-#endif
-  dlg.AddParam (SIM->get_param (BXP_I440FX_SUPPORT));
+  bx_list_c *list = (bx_list_c*) SIM->get_param (BXP_MENU_MISC_2);
+  dlg.SetTitle (list->get_name ());
+  dlg.AddParam (list);
+  dlg.SetRuntimeFlag (sim_thread != NULL);
   dlg.ShowModal ();
 }
 
@@ -857,7 +746,8 @@ void MyFrame::OnShowCpu(wxCommandEvent& WXUNUSED(event))
 {
   if (SIM->get_param (BXP_CPU_EAX) == NULL) {
     // if params not initialized yet, then give up
-    wxMessageBox ("Cannot show the debugger window until the simulation has begun.", "Sim not started", wxOK | wxICON_ERROR );
+    wxMessageBox ("Cannot show the debugger window until the simulation has begun.",
+                  "Sim not started", wxOK | wxICON_ERROR, this );
     return;
   }
   if (showCpu == NULL) {
@@ -876,6 +766,12 @@ void MyFrame::OnShowCpu(wxCommandEvent& WXUNUSED(event))
 
 void MyFrame::OnShowKeyboard(wxCommandEvent& WXUNUSED(event))
 {
+  if (SIM->get_param (BXP_KBD_PARAMETERS) == NULL) {
+    // if params not initialized yet, then give up
+    wxMessageBox ("Cannot show the debugger window until the simulation has begun.",
+                  "Sim not started", wxOK | wxICON_ERROR, this );
+    return;
+  }
   if (showKbd == NULL) {
     showKbd = new ParamDialog (this, -1);
     showKbd->SetTitle ("Keyboard State (incomplete, this is a demo)");
@@ -965,7 +861,7 @@ void MyFrame::OnAbout(wxCommandEvent& WXUNUSED(event))
 {
   wxString str;
   str.Printf ("Bochs x86 Emulator version %s (wxWindows port)", VER_STRING);
-  wxMessageBox( str, "About Bochs", wxOK | wxICON_INFORMATION );
+  wxMessageBox( str, "About Bochs", wxOK | wxICON_INFORMATION, this );
 }
 
 // update the menu items, status bar, etc.
@@ -988,7 +884,7 @@ void MyFrame::simStatusChanged (StatusChange change, bx_bool popupNotify) {
       // Obviously if the user asked it to stop, they don't need to be told.
       if (popupNotify)
         wxMessageBox("Bochs simulation has stopped.", "Bochs Stopped", 
-            wxOK | wxICON_INFORMATION);
+            wxOK | wxICON_INFORMATION, this);
       break;
     case Pause: // pause
       wxLogStatus ("Pausing simulation");
@@ -1002,23 +898,24 @@ void MyFrame::simStatusChanged (StatusChange change, bx_bool popupNotify) {
   bool canConfigure = (change == Stop);
   menuConfiguration->Enable (ID_Config_New, canConfigure);
   menuConfiguration->Enable (ID_Config_Read, canConfigure);
-#ifdef __GNUC__
-#warning For now, leave ATA devices so that you configure them during runtime. Otherwise you cannot change the CD image at runtime.
-#endif
-  //menuEdit->Enable (ID_Edit_ATA0, canConfigure);
-  //menuEdit->Enable (ID_Edit_ATA1, canConfigure);
-  //menuEdit->Enable (ID_Edit_ATA2, canConfigure);
-  //menuEdit->Enable (ID_Edit_ATA3, canConfigure);
+  // only enabled ATA channels with a cdrom connected are available at runtime
+  for (unsigned i=0; i<4; i++) {
+    if (!SIM->get_param_bool((bx_id)(BXP_ATA0_PRESENT+i))->get ()) {
+      menuEdit->Enable (ID_Edit_ATA0+i, canConfigure);
+    } else {
+      if ( (SIM->get_param_num((bx_id)(BXP_ATA0_MASTER_TYPE+i*2))->get () != BX_ATA_DEVICE_CDROM) &&
+           (SIM->get_param_num((bx_id)(BXP_ATA0_SLAVE_TYPE+i*2))->get () != BX_ATA_DEVICE_CDROM) ) {
+        menuEdit->Enable (ID_Edit_ATA0+i, canConfigure);
+      }
+    }
+  }
   menuEdit->Enable( ID_Edit_Boot, canConfigure);
   menuEdit->Enable( ID_Edit_Memory, canConfigure);
-  menuEdit->Enable( ID_Edit_Speed, canConfigure);
   menuEdit->Enable( ID_Edit_Sound, canConfigure);
-  menuEdit->Enable( ID_Edit_Cmos, canConfigure);
+  menuEdit->Enable( ID_Edit_Timing, canConfigure);
   menuEdit->Enable( ID_Edit_Network, canConfigure);
-  menuEdit->Enable( ID_Edit_Keyboard, canConfigure);
   menuEdit->Enable( ID_Edit_Serial_Parallel, canConfigure);
   menuEdit->Enable( ID_Edit_LoadHack, canConfigure);
-  menuEdit->Enable( ID_Edit_Other, canConfigure);
   // during simulation, certain menu options like the floppy disk
   // can be modified under some circumstances.  A floppy drive can
   // only be edited if it was enabled at boot time.
@@ -1041,7 +938,7 @@ void MyFrame::OnStartSim(wxCommandEvent& event)
   if (sim_thread != NULL) {
         wxMessageBox (
           "Can't start Bochs simulator, because it is already running",
-          "Already Running", wxOK | wxICON_ERROR);
+          "Already Running", wxOK | wxICON_ERROR, this);
         return;
   }
   // check that display library is set to wx.  If not, give a warning and
@@ -1055,7 +952,7 @@ void MyFrame::OnStartSim(wxCommandEvent& event)
     "The display library was not set to wxWindows.  When you use the\n"
     "wxWindows configuration interface, you must also select the wxWindows\n"
     "display library.  I will change it to 'wx' now.",
-    "display library error", wxOK | wxICON_WARNING);
+    "display library error", wxOK | wxICON_WARNING, this);
     if (!gui_param->set_by_name ("wx")) {
       wxASSERT (0 && "Could not set display library setting to 'wx");
     }
@@ -1065,7 +962,7 @@ void MyFrame::OnStartSim(wxCommandEvent& event)
   if (start_bochs_times>1) {
         wxMessageBox (
         "You have already started the simulator once this session. Due to memory leaks and bugs in init code, you may get unstable behavior.",
-        "2nd time warning", wxOK | wxICON_WARNING);
+        "2nd time warning", wxOK | wxICON_WARNING, this);
   }
   num_events = 0;  // clear the queue of events for bochs to handle
   sim_thread = new SimThread (this);
@@ -1123,8 +1020,7 @@ MyFrame::HandleAskParamString (bx_param_string_c *param)
   bx_param_num_c *opt = param->get_options ();
   wxASSERT (opt != NULL);
   int n_opt = opt->get ();
-  char *msg = param->get_ask_format ();
-  if (!msg) msg = param->get_description ();
+  char *msg = param->get_name ();
   char *newval = NULL;
   wxDialog *dialog = NULL;
   if (n_opt & param->IS_FILENAME) {
@@ -1132,7 +1028,7 @@ MyFrame::HandleAskParamString (bx_param_string_c *param)
         long style = 
           (n_opt & param->SAVE_FILE_DIALOG) ? wxSAVE|wxOVERWRITE_PROMPT : wxOPEN;
         wxLogDebug ("HandleAskParamString: create dialog");
-        wxFileDialog *fdialog = new wxFileDialog (this, msg, "", "", "*.*", style);
+        wxFileDialog *fdialog = new wxFileDialog (this, msg, "", wxString(param->getptr ()), "*.*", style);
         wxLogDebug ("HandleAskParamString: before showmodal");
         if (fdialog->ShowModal() == wxID_OK)
           newval = (char *)fdialog->GetPath().c_str ();
@@ -1188,7 +1084,7 @@ MyFrame::HandleAskParam (BxEvent *event)
           wxString msg;
           msg.Printf ("ask param for parameter type %d is not implemented in wxWindows",
                       param->get_type ());
-          wxMessageBox( msg, "not implemented", wxOK | wxICON_ERROR );
+          wxMessageBox( msg, "not implemented", wxOK | wxICON_ERROR, this );
           return -1;
         }
   }
@@ -1322,15 +1218,11 @@ void MyFrame::OnLogMsg (BxEvent *be) {
   dlg.SetContext (be->u.logmsg.prefix);
   dlg.SetMessage (be->u.logmsg.msg);
   int n = dlg.ShowModal ();
-  bx_bool dontAsk = dlg.GetDontAsk ();
   // turn the return value into the constant that logfunctions::ask is
   // expecting.  0=continue, 1=continue but ignore future messages from this
-  // device, 2=die, 3=dump core, 4=debugger. FIXME: yuck. replace hardcoded
-  // constants in logfunctions::ask with enum or defined constant.
-  if (n==0) {
-    n = dontAsk? 1 : 0; 
-  } else {
-    n=n+1;
+  // device, 2=die, 3=dump core, 4=debugger.
+  if (n==BX_LOG_ASK_CHOICE_CONTINUE) {
+    if (dlg.GetDontAsk ()) n = BX_LOG_ASK_CHOICE_CONTINUE_ALWAYS; 
   }
   be->retcode = n;
   wxLogDebug ("you chose %d", n);
@@ -1406,12 +1298,14 @@ void MyFrame::editFirstCdrom ()
 {
   bx_param_c *firstcd = SIM->get_first_cdrom ();
   if (!firstcd) {
-    wxMessageBox ("No CDROM drive is enabled.  Use Edit:ATA to set one up.", "No CDROM", wxOK | wxICON_ERROR );
+    wxMessageBox ("No CDROM drive is enabled.  Use Edit:ATA to set one up.",
+                  "No CDROM", wxOK | wxICON_ERROR, this );
     return;
   }
   ParamDialog dlg (this, -1);
   dlg.SetTitle ("Configure CDROM");
   dlg.AddParam (firstcd);
+  dlg.SetRuntimeFlag (sim_thread != NULL);
   dlg.ShowModal ();
 }
 
@@ -1423,6 +1317,7 @@ void MyFrame::OnEditATA (wxCommandEvent& event)
   wxString str;
   str.Printf ("Configure ATA%d", channel);
   dlg.SetTitle (str);
+  dlg.SetRuntimeFlag (sim_thread != NULL);
   dlg.AddParam (SIM->get_param ((bx_id)(BXP_ATA0_MENU+channel)));
   dlg.ShowModal ();
 }

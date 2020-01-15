@@ -1,6 +1,4 @@
-$Id: misc.txt,v 1.21 2002/12/15 18:00:28 bdenney Exp $
-
-Testing testing....
+$Id: misc.txt,v 1.30 2004/01/04 18:53:58 cbothamy Exp $
 
 This is a temporary place to paste in stuff that should go into the docs one
 day.  When it is transferred into docbook, let's remove it from misc.txt.
@@ -278,6 +276,7 @@ Thu Dec  5 14:23:20  2002
 Bryce Denney
 
 Make sure that README and configure.in have the correct version number.
+Check date, update/sumup info in CHANGES
 Run autoconf to regenerate configure and check them in.  Create a 
 CVS tag to mark which revision of each file was used in the release.
 
@@ -304,6 +303,8 @@ These instructions require cygwin and MSVC++.
 In Cygwin:
   sh .conf.win32-vcpp         # runs configure 
   make win32_snap             # unzip workspace, make a win32 source ZIP
+ 
+CB: can this zip file be the win32 src release ?
 
 Copy the source ZIP to a windows machine, if necessary.
 
@@ -311,7 +312,6 @@ Open up Visual C++ and load the workspace file Bochs.dsw.  Check
 the Build:Set Active Project Configuration is set the way you want it.
 For releases I use "Win32 Release".
 
-make install_win32 prefix=/tmp/bochs-2.0.pre3
 
 OPTIONAL: Build bochsdbg.exe.
 |  To create "bochsdbg.exe" with Bochs debugger support, manually change two
@@ -329,25 +329,20 @@ OPTIONAL: Build bochsdbg.exe.
 |	mv bochs-normal.exe bochs.exe
 +---
 
-Do make install_win32 into /tmp or someplace.
+NOTE: To get the docbook installed, you need to do  something like this
+make dl_docbook
+or copy up to date doc files
+and cd doc/docbook; touch */*.html
 
+Do make install_win32 into /tmp or someplace:
 make install_win32 prefix=/tmp/bochs-2.0.pre3
 This copies all the files into /tmp/bochs-2.0.pre3 and then creates a
 binary ZIP at /tmp/bochs-2.0.pre3.zip.  Rename that 
 bochs-2.0.pre3.win32-bin.zip
 
 
-NOTE: To get the docbook installed, you need to do  something like this
-make dl_docbook
-make install_win32 prefix=$PREFIX
-make install_docbook prefix=$PREFIX docdir=$PREFIX/docs
-make install_win32 prefix=$PREFIX
-
-This will get cleaned up some day.  I did install_win32 twice because the
-install_docbook target doesn't know to create $(prefix).  This can be fixed
-pretty easily, but not right now.
-
-Now make the NSIS installer package.
+Now make the NSIS installer package 
+(the current script is known to work with nsis 2.0rc1)
 cd build/win32/nsis
 
 Unzip the binary ZIP file into bochs-$VERSION (must match Makefile) and 
@@ -375,15 +370,16 @@ so that it sticks to the release tag.
 
 cp -a clean-anon bochs-2.0.pre3
 cd bochs-2.0.pre3
-cvs upd -r REL_2_0_pre3_FINAL
+cvs upd -P -r REL_2_0_pre3_FINAL
 cd ..
-tar czvf bochs-2.0.pre3.tar.gz bochs-2.0.pre3
+tar czvf bochs-2.0.pre3.tar.gz --exclude CVS --exclude .cvsignore bochs-2.0.pre3
 
 The source TAR file bochs-2.0.pre3.tar.gz is ready to upload.
 
 The RPM will be building using the configuration in .conf.linux with
 a few parameters from build/redhat/make-rpm.  Make any last minute changes
 to .conf.linux.  Any changes will go into the source RPM.
+WARNING : do not build in /tmp/bochs-XXX...
 
 ./build/redhat/make-rpm | tee ../build.txt
 
@@ -474,5 +470,74 @@ FDISKed, FORMATed, and then install.
 Then changed to seven 1_44m disks and installed Win16.
 Each time either OS asked for a new disk, I simply
 copied the expected image to a.img and continued.
+
+
+------------------------------------------
+WinNT4 guest network problems
+
+From: Jeremy Wilkins <jeb at jeremywilkins.freeserve.co.uk>
+To: bochs-developers@lists.sourceforge.net
+Subject: [Bochs-developers] Odd network errors with NT4 Guest OS
+
+I'm having trouble transferring files over the network to the guest OS 
+(NT4 SP1). If I'm using SMB then the it errors out early on with a 
+session cancelled. The file is 36Mb (SP6). I've tried with various file 
+sizes, 3Meg files work, 5 meg files do not.
+
+I've also tried shuffling the files over http with similar problems, 
+small files are fine (can browse websites) but large files just error out.
+
+The system is a 1Ghz Windows XP SP1 box with bochs 2.02, guest OS is 
+allocated 64Mb of RAM and running Windows NT4 SP1.
+
+Any clues, anyone experiencing similar problems?
+
+--
+
+From: didier <dgautheron at magic.fr>
+To: Jeremy Wilkins <jeb at jeremywilkins.freeserve.co.uk>
+Cc: bochs-developers@lists.sourceforge.net
+Subject: Re: [Bochs-developers] Odd network errors with NT4 Guest OS
+
+Did you try with a big IPS? start the guest clock applet and try to get 
+a more or less accurate time, with 1 Ghz should be in the 50 000 000 range.
+IIRC NT timeout and abort before it send the whole packet.
+
+--
+
+From: Jeremy Wilkins <jeb at jeremywilkins.freeserve.co.uk>
+To: didier <dgautheron at magic.fr>, bochs-developers@lists.sourceforge.net
+Subject: Re: [Bochs-developers] Odd network errors with NT4 Guest OS
+
+Thanks, 60 000 000 seems to have done the trick (I can copy sp6 across 
+anyway). My original guess of 4000000 IPS was probably a bit low :)
+
+thanks again
+
+------------------------------------------
+TAP under FreeBSD 
+
+Date: Fri, 14 Feb 2003 02:12:38 +0100
+From: Ronald Klop <ronald at echteman.nl>
+To: bochs-developers at lists.sourceforge.net
+
+I've made eth_tap.cc working under FreeBSD 4.7, because the fbsd network driver
+didn't work for me.
+It's not a very clean patch, but the changes are minimal.
+
+Some notes:
+- I found that some of the includes aren't used at all (on FreeBSD).
+- The socket which is created before /dev/tap0 is opened doesn't work, because
+tap0 is created after opening the device.
+- Maybe the eth_tap device can use a configure script like the eth_tuntap
+device, because the device must be configured after opening.
+- The padding of the ethernet frame with 2 bytes isn't needed in FreeBSD.
+- I didn't do any work to check for this in configure, because I don't know how
+configure works and don't have the time work it out now.
+- the guest os must set (maybe this can be documented somewhere):
+kldload if_tap (if tap is not compiled in the kernel)
+ifconfig tap0 inet 10.0.1.1 netmask 255.255.255.0
+sysctl net.inet.ip.forwarding=1
+sysctl net.link.ether.inet.proxyall=1
 
 

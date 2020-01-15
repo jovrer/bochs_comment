@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.h,v 1.11 2002/11/13 18:39:41 vruppert Exp $
+// $Id: sb16.h,v 1.16 2003/12/20 17:04:08 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -91,7 +91,7 @@
              // it should not be too large to avoid lag, and not too
              // small to avoid unnecessary overhead.
 
-#define BX_SB16_MIX_REG  0x90         // total number of mixer registers
+#define BX_SB16_MIX_REG  0x100        // total number of mixer registers
 
 // The array containing an instrument/bank remapping
 struct bx_sb16_ins_map {
@@ -230,6 +230,7 @@ private:
     Bit8u speaker,prostereo;                   // properties of the sound input/output
     bx_bool irqpending;                        // Is an IRQ pending (not ack'd)
     bx_bool midiuartmode;                      // Is the DSP in MIDI UART mode
+    Bit8u testreg;
     struct bx_sb16_dsp_dma_struct {
       // Properties of the current DMA transfer:
       // mode= 0: no transfer, 1: single-cycle transfer, 2: auto-init DMA
@@ -254,7 +255,7 @@ private:
     int outputinit;	// have the output functions been initialized
   } dsp;
 
-  enum bx_sb16_fm_mode {single, adlib, dual, opl3};
+  enum bx_sb16_fm_mode {single, adlib, dual, opl3, fminit};
 
   // the variables common to all FM emulations
   struct bx_sb16_opl_struct {

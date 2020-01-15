@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.cc,v 1.64 2002/12/17 05:17:41 yakovlev Exp $
+// $Id: gui.cc,v 1.73 2003/12/18 20:04:48 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -165,6 +165,8 @@ bx_gui_c::init(int argc, char **argv, unsigned tilewidth, unsigned tileheight)
     bx_pc_system.register_timer(this, bx_gui_c::snapshot_checker, (unsigned) 1000000, 1, 1, "snap_chk");
   }
 
+  BX_GUI_THIS charmap_updated = 0;
+
   show_headerbar();
 }
 
@@ -210,48 +212,44 @@ bx_gui_c::update_drive_status_buttons (void) {
   void
 bx_gui_c::floppyA_handler(void)
 {
-  if (!strcmp(bx_options.Osel_config->get_choice(bx_options.Osel_config->get()),
-              "wx")) {
-    // instead of just toggling the status, call wxWindows to bring up 
+  if (bx_options.floppya.Odevtype->get() == BX_FLOPPY_NONE)
+    return; // no primary floppy device present
+#ifdef WIN32
+  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
+              "rfb")) {
+    // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
     int ret = SIM->ask_param (BXP_FLOPPYA_PATH);
-    if (ret < 0) return;  // cancelled
-    // eject and then insert the disk.  If the new path is invalid,
-    // the status will return 0.
-    unsigned new_status = DEV_floppy_set_media_status(0, 0);
-    printf ("eject disk, new_status is %d\n", new_status);
-    new_status = DEV_floppy_set_media_status(0, 1);
-    printf ("insert disk, new_status is %d\n", new_status);
-    fflush (stdout);
-    BX_GUI_THIS floppyA_status = new_status;
-  } else {
-    BX_GUI_THIS floppyA_status = !BX_GUI_THIS floppyA_status;
-    DEV_floppy_set_media_status(0, BX_GUI_THIS floppyA_status);
+    if (ret > 0) {
+      BX_GUI_THIS update_drive_status_buttons ();
+    }
+    return;
   }
+#endif
+  BX_GUI_THIS floppyA_status = !BX_GUI_THIS floppyA_status;
+  DEV_floppy_set_media_status(0, BX_GUI_THIS floppyA_status);
   BX_GUI_THIS update_drive_status_buttons ();
 }
 
   void
 bx_gui_c::floppyB_handler(void)
 {
-  if (!strcmp(bx_options.Osel_config->get_choice(bx_options.Osel_config->get()),
-              "wx")) {
-    // instead of just toggling the status, call wxWindows to bring up 
+  if (bx_options.floppyb.Odevtype->get() == BX_FLOPPY_NONE)
+    return; // no secondary floppy device present
+#ifdef WIN32
+  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
+              "rfb")) {
+    // instead of just toggling the status, call win32dialog to bring up
     // a dialog asking what disk image you want to switch to.
     int ret = SIM->ask_param (BXP_FLOPPYB_PATH);
-    if (ret < 0) return;  // cancelled
-    // eject and then insert the disk.  If the new path is invalid,
-    // the status will return 0.
-    unsigned new_status = DEV_floppy_set_media_status(1, 0);
-    printf ("eject disk, new_status is %d\n", new_status);
-    new_status = DEV_floppy_set_media_status(1, 1);
-    printf ("insert disk, new_status is %d\n", new_status);
-    fflush (stdout);
-    BX_GUI_THIS floppyB_status = new_status;
-  } else {
-    BX_GUI_THIS floppyB_status = !BX_GUI_THIS floppyB_status;
-    DEV_floppy_set_media_status(1, BX_GUI_THIS floppyB_status);
+    if (ret > 0) {
+      BX_GUI_THIS update_drive_status_buttons ();
+    }
+    return;
   }
+#endif
+  BX_GUI_THIS floppyB_status = !BX_GUI_THIS floppyB_status;
+  DEV_floppy_set_media_status(1, BX_GUI_THIS floppyB_status);
   BX_GUI_THIS update_drive_status_buttons ();
 }
 
@@ -300,6 +298,7 @@ bx_gui_c::power_handler(void)
 {
   // the user pressed power button, so there's no doubt they want bochs
   // to quit.  Change panics to fatal for the GUI and then do a panic.
+  bx_user_quit = 1;
   LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
   BX_PANIC (("POWER button turned off."));
   // shouldn't reach this point, but if you do, QUIT!!!
@@ -377,7 +376,7 @@ bx_gui_c::snapshot_checker(void * this_ptr)
     fp=fopen(filename, "rb");
     if(fp) {
       char *mask_snapshot = (char *) malloc((len+1) * sizeof(char));
-      int i;
+      unsigned i;
       bx_bool flag = 1;
       fread(mask_snapshot, 1, len, fp);
       fclose(fp);
@@ -417,8 +416,13 @@ bx_gui_c::snapshot_handler(void)
   }
   //FIXME
   char filename[BX_PATHNAME_LEN];
+#ifdef WIN32
+  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
+              "rfb")) {
+#else
   if (!strcmp(bx_options.Osel_config->get_choice(bx_options.Osel_config->get()),
               "wx")) {
+#endif
     int ret = SIM->ask_filename (filename, sizeof(filename),
                                  "Save snapshot as...", "snapshot.txt",
                                  bx_param_string_c::SAVE_FILE_DIALOG);
@@ -458,7 +462,10 @@ bx_gui_c::paste_handler(void)
   void
 bx_gui_c::config_handler(void)
 {
-  SIM->configuration_interface (NULL, CI_RUNTIME_CONFIG);
+  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
+              "rfb")) {
+    SIM->configuration_interface (NULL, CI_RUNTIME_CONFIG);
+  }
 }
 
   void
@@ -478,8 +485,13 @@ bx_gui_c::userbutton_handler(void)
   int i, len, ret = 1;
 
   len = 0;
+#ifdef WIN32
+  if (strcmp(bx_options.Osel_displaylib->get_choice(bx_options.Osel_displaylib->get()),
+              "rfb")) {
+#else
   if (!strcmp(bx_options.Osel_config->get_choice(bx_options.Osel_config->get()),
               "wx")) {
+#endif
     ret = SIM->ask_param (BXP_USER_SHORTCUT);
   }
   user_shortcut = bx_options.Ouser_shortcut->getptr();
@@ -488,39 +500,35 @@ bx_gui_c::userbutton_handler(void)
     p = 0;
     while ((p < strlen(user_shortcut)) && (len < 3)) {
       if (!strncmp(user_shortcut+p, "alt", 3)) {
-        shortcut[len] = BX_KEY_ALT_L;
-        len++;
+        shortcut[len++] = BX_KEY_ALT_L;
         p += 3;
       } else if (!strncmp(user_shortcut+p, "ctrl", 4)) {
-        shortcut[len] = BX_KEY_CTRL_L;
-        len++;
+        shortcut[len++] = BX_KEY_CTRL_L;
         p += 4;
       } else if (!strncmp(user_shortcut+p, "del", 3)) {
-        shortcut[len] = BX_KEY_DELETE;
-        len++;
+        shortcut[len++] = BX_KEY_DELETE;
         p += 3;
       } else if (!strncmp(user_shortcut+p, "esc", 3)) {
-        shortcut[len] = BX_KEY_ESC;
-        len++;
+        shortcut[len++] = BX_KEY_ESC;
         p += 3;
       } else if (!strncmp(user_shortcut+p, "f1", 2)) {
-        shortcut[len] = BX_KEY_F1;
-        len++;
+        shortcut[len++] = BX_KEY_F1;
         p += 2;
       } else if (!strncmp(user_shortcut+p, "f4", 2)) {
-        shortcut[len] = BX_KEY_F4;
-        len++;
+        shortcut[len++] = BX_KEY_F4;
         p += 2;
       } else if (!strncmp(user_shortcut+p, "tab", 3)) {
-        shortcut[len] = BX_KEY_TAB;
-        len++;
+        shortcut[len++] = BX_KEY_TAB;
         p += 3;
       } else if (!strncmp(user_shortcut+p, "win", 3)) {
-        shortcut[len] = BX_KEY_WIN_L;
-        len++;
+        shortcut[len++] = BX_KEY_WIN_L;
         p += 3;
+      } else if (!strncmp(user_shortcut+p, "bksp", 4)) {
+        shortcut[len++] = BX_KEY_BACKSPACE;
+        p += 4;
       } else {
         BX_ERROR(("Unknown shortcut %s ignored", user_shortcut));
+        return;
       }
     }
     i = 0;

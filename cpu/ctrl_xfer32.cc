@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer32.cc,v 1.24 2002/10/25 11:44:34 bdenney Exp $
+// $Id: ctrl_xfer32.cc,v 1.28 2003/08/29 21:20:52 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -43,7 +43,7 @@ BailBigRSP("RETnear32_Iw");
   Bit32u temp_ESP;
   Bit32u return_EIP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
@@ -92,7 +92,7 @@ BailBigRSP("RETnear32_Iw");
         SP  += imm16;
       }
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_RET, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
   void
@@ -102,7 +102,7 @@ BailBigRSP("RETnear32");
   Bit32u temp_ESP;
   Bit32u return_EIP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
@@ -138,7 +138,7 @@ BailBigRSP("RETnear32");
       EIP = return_EIP;
       }
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_RET, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
   void
@@ -175,7 +175,7 @@ BailBigRSP("RETfar32_Iw");
       SP  += imm16;
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_RET,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -205,7 +205,7 @@ BailBigRSP("RETfar32");
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) ecs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_RET,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -218,7 +218,7 @@ BailBigRSP("CALL_Ad");
   Bit32u new_EIP;
   Bit32s disp32;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
@@ -239,7 +239,7 @@ BailBigRSP("CALL_Ad");
   push_32(EIP);
   EIP = new_EIP;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
 }
 
   void
@@ -268,7 +268,7 @@ BailBigRSP("CALL32_Ap");
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -279,7 +279,7 @@ BailBigRSP("CALL_Ed");
   Bit32u temp_ESP;
   Bit32u op1_32;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
@@ -308,7 +308,7 @@ BailBigRSP("CALL_Ed");
   push_32(EIP);
   EIP = op1_32;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
 }
 
   void
@@ -345,7 +345,7 @@ BailBigRSP("CALL32_Ep");
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -356,7 +356,7 @@ BX_CPU_C::JMP_Jd(bxInstruction_c *i)
 BailBigRSP("JMP_Jd");
   Bit32u new_EIP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
     new_EIP = EIP + (Bit32s) i->Id();
 
@@ -370,7 +370,7 @@ BailBigRSP("JMP_Jd");
 #endif
 
   EIP = new_EIP;
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP, new_EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
   void
@@ -419,12 +419,12 @@ BailBigRSP("JCC_Jd");
       }
 #endif
     EIP = new_EIP;
-    BX_INSTR_CNEAR_BRANCH_TAKEN(CPU_ID, new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
     revalidate_prefetch_q();
     }
 #if BX_INSTRUMENTATION
   else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(CPU_ID);
+    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
     }
 #endif
 }
@@ -447,12 +447,12 @@ BailBigRSP("JZ_Jd");
       }
 #endif
     EIP = new_EIP;
-    BX_INSTR_CNEAR_BRANCH_TAKEN(CPU_ID, new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
     revalidate_prefetch_q();
     }
 #if BX_INSTRUMENTATION
   else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(CPU_ID);
+    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
     }
 #endif
 }
@@ -475,12 +475,12 @@ BailBigRSP("JNZ_Jd");
       }
 #endif
     EIP = new_EIP;
-    BX_INSTR_CNEAR_BRANCH_TAKEN(CPU_ID, new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
     revalidate_prefetch_q();
     }
 #if BX_INSTRUMENTATION
   else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(CPU_ID);
+    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
     }
 #endif
 }
@@ -513,7 +513,7 @@ BailBigRSP("JMP_Ap");
   EIP = disp32;
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -527,7 +527,7 @@ BailBigRSP("JMP_Ed");
   Bit32u new_EIP;
   Bit32u op1_32;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
     /* op1_32 is a register or memory reference */
     if (i->modC0()) {
@@ -551,7 +551,7 @@ BailBigRSP("JMP_Ed");
 
   EIP = new_EIP;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP, new_EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
   /* Far indirect jump */
@@ -584,7 +584,7 @@ BailBigRSP("JMP32_Ep");
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -592,7 +592,6 @@ done:
 BX_CPU_C::IRET32(bxInstruction_c *i)
 {
 BailBigRSP("IRET32");
-  Bit32u eip, ecs_raw, eflags;
 
   invalidate_prefetch_q();
 
@@ -613,21 +612,16 @@ BailBigRSP("IRET32");
     goto done;
     }
 #endif
+#if BX_CPU_LEVEL >= 5
+  /*this feature discribed in pentium docs*/
+  if  (iret32_real(i))
+    goto done;
+#endif
 
-  BX_ERROR(("IRET32 called when you're not in vm8086 mode or protected mode."));
-  BX_ERROR(("IRET32 may not be implemented right, since it doesn't check anything."));
+  BX_ERROR(("IRET32 may not be implemented right."));
   BX_PANIC(("Please report that you have found a test case for BX_CPU_C::IRET32."));
 
-    pop_32(&eip);
-    pop_32(&ecs_raw);
-    pop_32(&eflags);
-
-    load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], (Bit16u) ecs_raw);
-    EIP = eip;
-    //FIXME: this should do (eflags & 0x257FD5) | (EFLAGS | 0x1A0000)
-    write_eflags(eflags, /* change IOPL? */ 1, /* change IF? */ 1, 0, 1);
-
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_IRET,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }

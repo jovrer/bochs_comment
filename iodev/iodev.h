@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodev.h,v 1.25.2.1 2003/01/03 00:29:33 cbothamy Exp $
+// $Id: iodev.h,v 1.37 2003/08/04 16:03:09 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -26,10 +26,10 @@
 
 
 
-/* maximum number of emulated devices allowed.  floppy, mda, etc...
+/* maximum number of emulated devices allowed.  floppy, vga, etc...
    you can increase this to anything below 256 since an 8-bit handle
    is used for each device */
-#define BX_MAX_IO_DEVICES 21
+#define BX_MAX_IO_DEVICES 30
 
 /* the last device in the array is the "default" I/O device */
 #define BX_DEFAULT_IO_DEVICE   (BX_MAX_IO_DEVICES-1)
@@ -95,11 +95,8 @@ class BOCHSAPI bx_keyb_stub_c : public bx_devmodel_c {
   virtual void mouse_motion(int delta_x, int delta_y, unsigned button_state) {
     STUBFUNC(keyboard, mouse_motion);
   }
-  virtual void gen_scancode(Bit32u   scancode) {
+  virtual void gen_scancode(Bit32u key) {
     STUBFUNC(keyboard, gen_scancode);
-  }
-  virtual void put_scancode( unsigned char *code, int count ) {
-    STUBFUNC(keyboard, put_scancode);
   }
   virtual void paste_bytes(Bit8u *data, Bit32s length) {
     STUBFUNC(keyboard, paste_bytes);
@@ -216,6 +213,9 @@ class BOCHSAPI bx_pic_stub_c : public bx_devmodel_c {
   virtual Bit8u IAC(void) {
     STUBFUNC(pic, IAC); return 0;
   }
+  virtual void show_pic_state(void) {
+    STUBFUNC(pic, show_pic_state);
+  }
 };
 
 class BOCHSAPI bx_vga_stub_c : public bx_devmodel_c {
@@ -280,15 +280,15 @@ public:
   // power-on, hardware, or software.
   void reset(unsigned type);
   BX_MEM_C *mem;  // address space associated with these devices
-  bx_bool register_io_read_handler(void *this_ptr, bx_read_handler_t f, Bit32u addr, const char *name );
-  bx_bool register_io_write_handler(void *this_ptr, bx_write_handler_t f, Bit32u addr, const char *name );
-  bx_bool register_default_io_read_handler(void *this_ptr, bx_read_handler_t f, const char *name );
-  bx_bool register_default_io_write_handler(void *this_ptr, bx_write_handler_t f, const char *name );
+  bx_bool register_io_read_handler(void *this_ptr, bx_read_handler_t f, Bit32u addr, const char *name, Bit8u mask );
+  bx_bool register_io_write_handler(void *this_ptr, bx_write_handler_t f, Bit32u addr, const char *name, Bit8u mask );
+  bx_bool register_default_io_read_handler(void *this_ptr, bx_read_handler_t f, const char *name, Bit8u mask );
+  bx_bool register_default_io_write_handler(void *this_ptr, bx_write_handler_t f, const char *name, Bit8u mask );
   bx_bool register_irq(unsigned irq, const char *name);
   bx_bool unregister_irq(unsigned irq, const char *name);
   void iodev_init(void);
-  Bit32u inp(Bit16u addr, unsigned io_len);
-  void   outp(Bit16u addr, Bit32u value, unsigned io_len);
+  Bit32u inp(Bit16u addr, unsigned io_len) BX_CPP_AttrRegparmN(2);
+  void   outp(Bit16u addr, Bit32u value, unsigned io_len) BX_CPP_AttrRegparmN(3);
 
   static void timer_handler(void *);
   void timer(void);
@@ -297,6 +297,8 @@ public:
   bx_ioapic_c      *ioapic;
   bx_pci_stub_c    *pluginPciBridge;
   bx_devmodel_c    *pluginPci2IsaBridge;
+  bx_devmodel_c    *pluginPciVgaAdapter;
+  bx_devmodel_c    *pluginPciUSBAdapter;
   bx_pit_c         *pit;
   bx_keyb_stub_c   *pluginKeyboard;
   bx_dma_stub_c    *pluginDmaDevice;
@@ -311,6 +313,8 @@ public:
   bx_devmodel_c    *pluginSB16Device;
   bx_ne2k_stub_c   *pluginNE2kDevice;
   bx_g2h_c         *g2h;
+  bx_devmodel_c    *pluginExtFpuIrq;
+  bx_devmodel_c    *pluginGameport;
 #if BX_IODEBUG_SUPPORT
   bx_iodebug_c	   *iodebug;
 #endif
@@ -344,6 +348,7 @@ private:
     bx_read_handler_t funct;
     void             *this_ptr;
     const char       *handler_name;  // name of device
+    Bit8u             mask;          // io_len mask
     } io_read_handler[BX_MAX_IO_DEVICES];
   unsigned              num_read_handles;
 
@@ -352,6 +357,7 @@ private:
     bx_write_handler_t funct;
     void              *this_ptr;
     const char        *handler_name;  // name of device
+    Bit8u              mask;          // io_len mask
     } io_write_handler[BX_MAX_IO_DEVICES];
   unsigned              num_write_handles;
 
@@ -369,6 +375,7 @@ private:
 
   int timer_handle;
   bx_bool is_serial_enabled ();
+  bx_bool is_usb_enabled ();
   bx_bool is_parallel_enabled ();
   };
 
@@ -377,6 +384,12 @@ private:
 #if BX_PCI_SUPPORT
 #include "iodev/pci.h"
 #include "iodev/pci2isa.h"
+#if BX_PCI_VGA_SUPPORT
+#include "iodev/pcivga.h"
+#endif
+#if BX_PCI_USB_SUPPORT
+#include "iodev/pciusb.h"
+#endif
 #endif
 #include "iodev/vga.h"
 #if BX_SUPPORT_APIC
@@ -387,6 +400,7 @@ private:
 #include "iodev/dma.h"
 #include "iodev/floppy.h"
 #include "iodev/harddrv.h"
+#include "iodev/vmware3.h"
 #if BX_IODEBUG_SUPPORT
 #   include "iodev/iodebug.h"
 #endif
@@ -395,6 +409,7 @@ private:
 #include "iodev/pic.h"
 #include "iodev/pit.h"
 #include "iodev/pit_wrap.h"
+#include "iodev/virt_timer.h"
 #include "iodev/serial.h"
 #if BX_SUPPORT_SB16
 #  include "iodev/sb16.h"
@@ -404,3 +419,5 @@ private:
 #include "iodev/ne2k.h"
 #include "iodev/guest2host.h"
 #include "iodev/slowdown_timer.h"
+#include "iodev/extfpuirq.h"
+#include "iodev/gameport.h"

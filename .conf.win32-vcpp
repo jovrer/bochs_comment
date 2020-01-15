@@ -8,13 +8,12 @@ set echo
 #./configure --with-win32-vcpp --enable-disasm
 
 ./configure --target=pentium-windows \
-            --enable-cdrom \
-	    --enable-sb16=win \
+	    --enable-cdrom \
 	    --enable-ne2000 \
 	    --enable-vbe \
-	    --enable-cpp \
-		--enable-all-optimizations \
-	    --disable-readline
+	    --enable-all-optimizations \
+	    --disable-readline \
+	    --enable-sb16=win
 
 unset echo
 

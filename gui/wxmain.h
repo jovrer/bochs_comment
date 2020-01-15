@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h,v 1.39 2002/12/12 16:31:41 bdenney Exp $
+// $Id: wxmain.h,v 1.44 2003/09/13 16:49:09 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 // This file defines variables and classes that the wxWindows .cc files 
 // share.  It should be included only by wx.cc and wxmain.cc.  
@@ -11,6 +11,9 @@ class MyPanel;
 class SimThread;
 class FloppyConfigDialog;
 class ParamDialog;
+#if BX_DEBUGGER
+class DebugLogDialog;
+#endif
 
 //hack alert; yuck; FIXME
 extern MyFrame *theFrame;
@@ -38,9 +41,8 @@ enum
   ID_Edit_Cdrom,  // for toolbar. FIXME: toolbar can't handle >1 cdrom
   ID_Edit_Boot,
   ID_Edit_Memory,
-  ID_Edit_Speed,
   ID_Edit_Sound,
-  ID_Edit_Cmos,
+  ID_Edit_Timing,
   ID_Edit_Network,
   ID_Edit_Keyboard,
   ID_Edit_Serial_Parallel,
@@ -86,13 +88,8 @@ enum
   ID_Browse,
   ID_Browse2,
   ID_Create,
-  // dialog box: HDConfigDialog
+  // dialog box: NetConfigDialog
   ID_Enable,
-  ID_Cylinders,
-  ID_Heads,
-  ID_SPT,
-  ID_Megs,
-  ID_ComputeGeometry,
   // dialog box: LogOptions
   ID_Advanced,
   // dialog box: CpuRegistersDialog
@@ -180,7 +177,7 @@ public:
   void OnEditMemory(wxCommandEvent& event);
   void OnEditSpeed(wxCommandEvent& event);
   void OnEditSound(wxCommandEvent& event);
-  void OnEditCmos(wxCommandEvent& event);
+  void OnEditTiming(wxCommandEvent& event);
   void OnEditNet(wxCommandEvent& event);
   void OnEditKeyboard(wxCommandEvent& event);
   void OnEditSerialParallel(wxCommandEvent& event);

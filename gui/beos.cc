@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: beos.cc,v 1.22 2002/11/22 15:14:39 bdenney Exp $
+// $Id: beos.cc,v 1.25 2003/06/28 08:04:31 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -346,7 +346,7 @@ bx_beos_gui_c::clear_screen(void)
   void
 bx_beos_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-                      Bit16u cursor_state, unsigned nrows)
+                      bx_vga_tminfo_t tm_info, unsigned nrows)
 {
   unsigned i, x, y;
   BPoint point;
@@ -435,9 +435,15 @@ bx_beos_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsi
 
 
   void
-bx_beos_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+bx_beos_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
+  if (bpp > 8) {
+    BX_PANIC(("%d bpp graphics mode not supported yet", bpp));
+  }
   if (fheight > 0) {
+    if (fwidth != 8) {
+      x = x * 8 / fwidth;
+    }
     if (fheight != 16) {
       y = y * 16 / fheight;
     }

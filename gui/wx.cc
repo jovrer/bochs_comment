@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc,v 1.52.2.1 2003/01/03 00:29:33 cbothamy Exp $
+// $Id: wx.cc,v 1.65 2003/08/23 17:53:27 vruppert Exp $
 /////////////////////////////////////////////////////////////////
 //
 // wxWindows VGA display for Bochs.  wx.cc implements a custom
@@ -50,11 +50,10 @@
 #include <wx/image.h>
 #include <wx/clipbrd.h>
 
-#include "gui/icon_bochs.h"
+//#include "gui/icon_bochs.h"
 #include "osdep.h"
 #include "font/vga.bitmap.h"
 
-#include "wxdialog.h"
 // shared elements between wxmain.cc and this file
 #include "wxmain.h"
 
@@ -93,7 +92,11 @@ static long wxTileX = 0;
 static long wxTileY = 0;
 static unsigned long wxCursorX = 0;
 static unsigned long wxCursorY = 0;
+static unsigned long wxFontX = 0;
 static unsigned long wxFontY = 0;
+static unsigned int text_rows=25, text_cols=80;
+static Bit8u h_panning = 0, v_panning = 0;
+static unsigned vga_bpp=8;
 struct {
   unsigned char red;
   unsigned char green;
@@ -416,6 +419,106 @@ wxAsciiKey[0x5f] = {
   BX_KEY_GRAVE
 };
 
+// copied from gui/win32.cc
+Bit32u
+wxMSW_to_bx_key[0x59] = {
+  /* 0x00 - 0x0f */
+  0,
+  BX_KEY_ESC,
+  BX_KEY_1,
+  BX_KEY_2,
+  BX_KEY_3,
+  BX_KEY_4,
+  BX_KEY_5,
+  BX_KEY_6,
+  BX_KEY_7,
+  BX_KEY_8,
+  BX_KEY_9,
+  BX_KEY_0,
+  BX_KEY_MINUS,
+  BX_KEY_EQUALS,
+  BX_KEY_BACKSPACE,
+  BX_KEY_TAB,
+  /* 0x10 - 0x1f */
+  BX_KEY_Q,
+  BX_KEY_W,
+  BX_KEY_E,
+  BX_KEY_R,
+  BX_KEY_T,
+  BX_KEY_Y,
+  BX_KEY_U,
+  BX_KEY_I,
+  BX_KEY_O,
+  BX_KEY_P,
+  BX_KEY_LEFT_BRACKET,
+  BX_KEY_RIGHT_BRACKET,
+  BX_KEY_ENTER,
+  BX_KEY_CTRL_L,
+  BX_KEY_A,
+  BX_KEY_S,
+  /* 0x20 - 0x2f */
+  BX_KEY_D,
+  BX_KEY_F,
+  BX_KEY_G,
+  BX_KEY_H,
+  BX_KEY_J,
+  BX_KEY_K,
+  BX_KEY_L,
+  BX_KEY_SEMICOLON,
+  BX_KEY_SINGLE_QUOTE,
+  BX_KEY_GRAVE,
+  BX_KEY_SHIFT_L,
+  BX_KEY_BACKSLASH,
+  BX_KEY_Z,
+  BX_KEY_X,
+  BX_KEY_C,
+  BX_KEY_V,
+  /* 0x30 - 0x3f */
+  BX_KEY_B,
+  BX_KEY_N,
+  BX_KEY_M,
+  BX_KEY_COMMA,
+  BX_KEY_PERIOD,
+  BX_KEY_SLASH,
+  BX_KEY_SHIFT_R,
+  BX_KEY_KP_MULTIPLY,
+  BX_KEY_ALT_L,
+  BX_KEY_SPACE,
+  BX_KEY_CAPS_LOCK,
+  BX_KEY_F1,
+  BX_KEY_F2,
+  BX_KEY_F3,
+  BX_KEY_F4,
+  BX_KEY_F5,
+  /* 0x40 - 0x4f */
+  BX_KEY_F6,
+  BX_KEY_F7,
+  BX_KEY_F8,
+  BX_KEY_F9,
+  BX_KEY_F10,
+  BX_KEY_PAUSE,
+  BX_KEY_SCRL_LOCK,
+  BX_KEY_KP_HOME,
+  BX_KEY_KP_UP,
+  BX_KEY_KP_PAGE_UP,
+  BX_KEY_KP_SUBTRACT,
+  BX_KEY_KP_LEFT,
+  BX_KEY_KP_5,
+  BX_KEY_KP_RIGHT,
+  BX_KEY_KP_ADD,
+  BX_KEY_KP_END,
+  /* 0x50 - 0x58 */
+  BX_KEY_KP_DOWN,
+  BX_KEY_KP_PAGE_DOWN,
+  BX_KEY_KP_INSERT,
+  BX_KEY_KP_DELETE,
+  0,
+  0,
+  BX_KEY_LEFT_BACKSLASH,
+  BX_KEY_F11,
+  BX_KEY_F12
+};
+
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXMSW__)
 // get windows specific definitions. At present the only thing needed
 // is the definition of HIWORD.
@@ -433,8 +536,6 @@ MyPanel::fillBxKeyEvent_MSW (wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool release
   Bit32u lParam = wxev.m_rawFlags;
   Bit32u key = HIWORD (lParam) & 0x01FF;
   bxev.bx_key = 0x0000;
-  // Swap the scancodes of "numlock" and "pause"
-  if ((key & 0xff)==0x45) key ^= 0x100;
   if (key & 0x0100) {
     // Its an extended key
     bxev.bx_key = 0xE000;
@@ -842,26 +943,75 @@ void bx_wx_gui_c::handle_events(void)
       case BX_ASYNC_EVT_KEY:
         bx_key = event_queue[i].u.key.bx_key;
         if (event_queue[i].u.key.raw_scancode) {
-          // event contains raw scancodes: use put_scancode
-          Bit8u scancode;
+          // event contains raw scancodes: convert to BX_KEY values first
+          bx_bool released = ((bx_key & 0x80) > 0);
           if (bx_key & 0xFF00) { // for extended keys
-            // This makes the "AltGr" key on European keyboards work
-            if (bx_key==0xE038) {
-              scancode = 0x9d; // left control key released
-              DEV_kbd_put_scancode (&scancode, 1);
+            switch (bx_key & 0x7f) {
+              case 0x1C:
+                bx_key = BX_KEY_KP_ENTER;
+                break;
+              case 0x1D:
+                bx_key = BX_KEY_CTRL_R;
+                break;
+              case 0x35:
+                bx_key = BX_KEY_KP_DIVIDE;
+                break;
+              case 0x38:
+                // This makes the "AltGr" key on European keyboards work
+                DEV_kbd_gen_scancode(BX_KEY_CTRL_L | BX_KEY_RELEASED);
+                bx_key = BX_KEY_ALT_R;
+                break;
+              case 0x45:
+                bx_key = BX_KEY_NUM_LOCK;
+                break;
+              case 0x47:
+                bx_key = BX_KEY_HOME;
+                break;
+              case 0x48:
+                bx_key = BX_KEY_UP;
+                break;
+              case 0x49:
+                bx_key = BX_KEY_PAGE_UP;
+                break;
+              case 0x4B:
+                bx_key = BX_KEY_LEFT;
+                break;
+              case 0x4D:
+                bx_key = BX_KEY_RIGHT;
+                break;
+              case 0x4F:
+                bx_key = BX_KEY_END;
+                break;
+              case 0x50:
+                bx_key = BX_KEY_DOWN;
+                break;
+              case 0x51:
+                bx_key = BX_KEY_PAGE_DOWN;
+                break;
+              case 0x52:
+                bx_key = BX_KEY_INSERT;
+                break;
+              case 0x53:
+                bx_key = BX_KEY_DELETE;
+                break;
+              case 0x5B:
+                bx_key = BX_KEY_WIN_L;
+                break;
+              case 0x5C:
+                bx_key = BX_KEY_WIN_R;
+                break;
+              case 0x5D:
+                bx_key = BX_KEY_MENU;
+                break;
             }
-            scancode = 0xFF & (bx_key>>8);
-            IFDBG_KEY (wxLogDebug (wxT ("sending raw scancode 0x%02x (extended key))", (int)scancode)));
-            DEV_kbd_put_scancode(&scancode, 1);
+          } else {
+            bx_key = wxMSW_to_bx_key[bx_key & 0x7f];
           }
-          scancode = 0xFF & bx_key;
-          IFDBG_KEY (wxLogDebug (wxT ("sending raw scancode 0x%02x", (int))scancode));
-          DEV_kbd_put_scancode(&scancode, 1);
-        } else {
-          // event contains BX_KEY_* codes: use gen_scancode
-          IFDBG_KEY (wxLogDebug (wxT ("sending key event 0x%02x", bx_key)));
-          DEV_kbd_gen_scancode(bx_key);
+          if (released) bx_key |= BX_KEY_RELEASED;
         }
+        // event contains BX_KEY_* codes: use gen_scancode
+        IFDBG_KEY (wxLogDebug (wxT ("sending key event 0x%02x", bx_key)));
+        DEV_kbd_gen_scancode(bx_key);
         break;
       case BX_ASYNC_EVT_MOUSE:
         DEV_mouse_motion(
@@ -905,18 +1055,82 @@ bx_wx_gui_c::clear_screen(void)
 static void 
 UpdateScreen(unsigned char *newBits, int x, int y, int width, int height) 
 {
+  Bit16u *newBits16 = (Bit16u *)newBits;
+
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::UpdateScreen trying to get lock. wxScreen=%p", wxScreen)));
   wxCriticalSectionLocker lock(wxScreen_lock);
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::UpdateScreen got lock. wxScreen=%p", wxScreen)));
   if(wxScreen != NULL) {
-    for(int i = 0; i < height; i++) {
-      for(int c = 0; c < width; c++) {
-        wxScreen[(y * wxScreenX * 3) + ((x+c) * 3)] = wxBochsPalette[newBits[(i * width) + c]].red;
-        wxScreen[(y * wxScreenX * 3) + ((x+c) * 3) + 1] = wxBochsPalette[newBits[(i * width) + c]].green;
-        wxScreen[(y * wxScreenX * 3) + ((x+c) * 3) + 2] = wxBochsPalette[newBits[(i * width) + c]].blue;
-      }
-      y++;
-      if(y >= wxScreenY) break;
+    switch (vga_bpp) {
+      case 32:
+        for(int i = 0; i < height; i++) {
+          char *pwxScreen = &wxScreen[(y * wxScreenX * 3) + (x * 3)];
+          for(int c = 0; c < width; c++) {
+            unsigned pixel = ((i * width) + c) * 4;
+            pwxScreen[0] = newBits[pixel+2];
+            pwxScreen[1] = newBits[pixel+1];
+            pwxScreen[2] = newBits[pixel];
+            pwxScreen += 3;
+          }
+          y++;
+          if(y >= wxScreenY) break;
+        }
+        break;
+      case 24:
+        for(int i = 0; i < height; i++) {
+          char *pwxScreen = &wxScreen[(y * wxScreenX * 3) + (x * 3)];
+          for(int c = 0; c < width; c++) {
+            unsigned pixel = ((i * width) + c) * 3;
+            pwxScreen[0] = newBits[pixel+2];
+            pwxScreen[1] = newBits[pixel+1];
+            pwxScreen[2] = newBits[pixel];
+            pwxScreen += 3;
+          }
+          y++;
+          if(y >= wxScreenY) break;
+        }
+        break;
+      case 16:
+        for(int i = 0; i < height; i++) {
+          char *pwxScreen = &wxScreen[(y * wxScreenX * 3) + (x * 3)];
+          for(int c = 0; c < width; c++) {
+            unsigned pixel = (i * width) + c;
+            pwxScreen[0] = (newBits16[pixel] & 0xF800) >> 8;
+            pwxScreen[1] = (newBits16[pixel] & 0x07e0) >> 3;
+            pwxScreen[2] = (newBits16[pixel] & 0x001f) << 3;
+            pwxScreen += 3;
+          }
+          y++;
+          if(y >= wxScreenY) break;
+        }
+        break;
+      case 15:
+        for(int i = 0; i < height; i++) {
+          char *pwxScreen = &wxScreen[(y * wxScreenX * 3) + (x * 3)];
+          for(int c = 0; c < width; c++) {
+            unsigned pixel = (i * width) + c;
+            pwxScreen[0] = (newBits16[pixel] & 0x7c00) >> 7;
+            pwxScreen[1] = (newBits16[pixel] & 0x03e0) >> 2;
+            pwxScreen[2] = (newBits16[pixel] & 0x001f) << 3;
+            pwxScreen += 3;
+          }
+          y++;
+          if(y >= wxScreenY) break;
+        }
+        break;
+      default: /* 8 bpp */
+        for(int i = 0; i < height; i++) {
+          char *pwxScreen = &wxScreen[(y * wxScreenX * 3) + (x * 3)];
+          for(int c = 0; c < width; c++) {
+            unsigned pixel = (i * width) + c;
+            pwxScreen[0] = wxBochsPalette[newBits[pixel]].red;
+            pwxScreen[1] = wxBochsPalette[newBits[pixel]].green;
+            pwxScreen[2] = wxBochsPalette[newBits[pixel]].blue;
+            pwxScreen += 3;
+          }
+          y++;
+          if(y >= wxScreenY) break;
+        }
     }
   } else {
     IFDBG_VGA (wxLogDebug (wxT ("UpdateScreen with null wxScreen")));
@@ -924,32 +1138,31 @@ UpdateScreen(unsigned char *newBits, int x, int y, int width, int height)
 }
 
 static void 
-DrawBochsBitmap(int x, int y, int width, int height, char *bmap, char color, int cs_start, int cs_end)
+DrawBochsBitmap(int x, int y, int width, int height, char *bmap, char color, int fontx, int fonty, bx_bool gfxchar)
 {
-  int j = 0;
+  static unsigned char newBits[9 * 32];
+  unsigned char mask;
+  int bytes = width * height;
   char bgcolor = DEV_vga_get_actl_pal_idx((color >> 4) & 0xF);
   char fgcolor = DEV_vga_get_actl_pal_idx(color & 0xF);
 
-  if (cs_start <= cs_end) {
-    height = cs_end - cs_start + 1;
-    y += cs_start;
-    j = cs_start * ((width - 1) / 8 + 1);
-  }
-  unsigned char *newBits = (unsigned char *)malloc(width * height);
-  memset(newBits, 0, (width * height));
-  for(int i = 0; i < (width * height) / 8; i++) {
-    newBits[i * 8 + 0] = (bmap[j] & 0x80) ? fgcolor : bgcolor;
-    newBits[i * 8 + 1] = (bmap[j] & 0x40) ? fgcolor : bgcolor;
-    newBits[i * 8 + 2] = (bmap[j] & 0x20) ? fgcolor : bgcolor;
-    newBits[i * 8 + 3] = (bmap[j] & 0x10) ? fgcolor : bgcolor;
-    newBits[i * 8 + 4] = (bmap[j] & 0x08) ? fgcolor : bgcolor;
-    newBits[i * 8 + 5] = (bmap[j] & 0x04) ? fgcolor : bgcolor;
-    newBits[i * 8 + 6] = (bmap[j] & 0x02) ? fgcolor : bgcolor;
-    newBits[i * 8 + 7] = (bmap[j] & 0x01) ? fgcolor : bgcolor;
-    j++;
+  for(int i = 0; i < bytes; i+=width) {
+    mask = 0x80 >> fontx;
+    for(int j = 0; j < width; j++) {
+      if (mask > 0) {
+        newBits[i + j] = (bmap[fonty] & mask) ? fgcolor : bgcolor;
+      } else {
+        if (gfxchar) {
+          newBits[i + j] = (bmap[fonty] & 0x01) ? fgcolor : bgcolor;
+        } else {
+          newBits[i + j] = bgcolor;
+        }
+      }
+      mask >>= 1;
+    }
+    fonty++;
   }
   UpdateScreen(newBits, x, y, width, height);
-  free(newBits);
 }
 
 
@@ -963,56 +1176,142 @@ DrawBochsBitmap(int x, int y, int width, int height, char *bmap, char color, int
 // new_text: array of character/attributes making up the current
 //           contents, which should now be displayed.  See below
 //
-// format of old_text & new_text: each is 4000 bytes long.
-//     This represents 80 characters wide by 25 high, with
-//     each character being 2 bytes.  The first by is the
-//     character value, the second is the attribute byte.
-//     I currently don't handle the attribute byte.
+// format of old_text & new_text: each is tm_info.line_offset*text_rows
+//     bytes long. Each character consists of 2 bytes.  The first by is
+//     the character value, the second is the attribute byte.
 //
 // cursor_x: new x location of cursor
 // cursor_y: new y location of cursor
+// tm_info:  this structure contains information for additional
+//           features in text mode (cursor shape, line offset,...)
+// nrows:    number of text rows (unused here)
 
 void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                       unsigned long cursor_x, unsigned long cursor_y,
-          Bit16u cursor_state, unsigned nrows)
+          bx_vga_tminfo_t tm_info, unsigned nrows)
 {
   IFDBG_VGA(wxLogDebug (wxT ("text_update")));
-  //static Bit32u counter = 0;
-  //BX_INFO (("text_update executed %d times", ++counter));
 
-  Bit8u cs_start = (cursor_state >> 8) & 0x3f;
-  Bit8u cs_end = cursor_state & 0x1f;
-  unsigned char cChar;
-  unsigned int ncols = wxScreenX / 8;
-  unsigned int nchars = ncols * nrows;
-  bx_bool forceUpdate = 0;
+  unsigned char *old_line, *new_line;
+  unsigned char cAttr, cChar;
+  unsigned int curs, hchars, offset, rows, x, y, xc, yc, yc2;
+  Bit8u cfwidth, cfheight, cfheight2, font_col, font_row, font_row2;
+  bx_bool forceUpdate = 0, gfxchar;
+
+  UNUSED(nrows);
   if(charmap_updated) {
     forceUpdate = 1;
     charmap_updated = 0;
   }
-  if((wxCursorY * ncols + wxCursorX) < nchars) {
-    cChar = new_text[(wxCursorY * ncols + wxCursorX) * 2];
-    DrawBochsBitmap(wxCursorX * 8, wxCursorY * wxFontY, 8, wxFontY, (char *)&vga_charmap[cChar<<5], new_text[((wxCursorY * ncols + wxCursorX) * 2) + 1], 1, 0);
+
+  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning)) {
+    forceUpdate = 1;
+    h_panning = tm_info.h_panning;
+    v_panning = tm_info.v_panning;
   }
-  
-  for(unsigned int i = 0; i < nchars * 2; i += 2) {
-    if(forceUpdate || (old_text[i] != new_text[i])
-       || (old_text[i+1] != new_text[i+1])) {
-      cChar = new_text[i];
-      int x = (i / 2) % ncols;
-      int y = (i / 2) / ncols;
-      DrawBochsBitmap(x * 8, y * wxFontY, 8, wxFontY, (char *)&vga_charmap[cChar<<5], new_text[i+1], 1, 0);
+
+  // first invalidate character at previous and new cursor location
+  if((wxCursorY < text_rows) && (wxCursorX < text_cols)) {
+    curs = wxCursorY * tm_info.line_offset + wxCursorX * 2;
+    old_text[curs] = ~new_text[curs];
+  }
+  if((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < wxFontY) &&
+     (cursor_y < text_rows) && (cursor_x < text_cols)) {
+    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  } else {
+    curs = 0xffff;
+  }
+
+  rows = text_rows;
+  if (v_panning) rows++;
+  y = 0;
+  do {
+    hchars = text_cols;
+    if (h_panning) hchars++;
+    if (v_panning) {
+      if (y == 0) {
+        yc = 0;
+        font_row = v_panning;
+        cfheight = wxFontY - v_panning;
+      } else {
+        yc = y * wxFontY - v_panning;
+        font_row = 0;
+        if (rows == 1) {
+          cfheight = v_panning;
+        } else {
+          cfheight = wxFontY;
+        }
+      }
+    } else {
+      yc = y * wxFontY;
+      font_row = 0;
+      cfheight = wxFontY;
     }
-  }
+    new_line = new_text;
+    old_line = old_text;
+    x = 0;
+    offset = y * tm_info.line_offset;
+    do {
+      if (h_panning) {
+        if (hchars > text_cols) {
+          xc = 0;
+          font_col = h_panning;
+          cfwidth = wxFontX - h_panning;
+        } else {
+          xc = x * wxFontX - h_panning;
+          font_col = 0;
+          if (hchars == 1) {
+            cfwidth = h_panning;
+          } else {
+            cfwidth = wxFontX;
+          }
+        }
+      } else {
+        xc = x * wxFontX;
+        font_col = 0;
+        cfwidth = wxFontX;
+      }
+      if(forceUpdate || (old_text[0] != new_text[0])
+         || (old_text[1] != new_text[1])) {
+        cChar = new_text[0];
+        cAttr = new_text[1];
+        gfxchar = tm_info.line_graphics && ((cChar & 0xE0) == 0xC0);
+        DrawBochsBitmap(xc, yc, cfwidth, cfheight, (char *)&vga_charmap[cChar<<5],
+                        cAttr, font_col, font_row, gfxchar);
+        if (offset == curs) {
+          if (font_row == 0) {
+            yc2 = yc + tm_info.cs_start;
+            font_row2 = tm_info.cs_start;
+            cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+          } else {
+            if (v_panning > tm_info.cs_start) {
+              yc2 = yc;
+              font_row2 = font_row;
+              cfheight2 = tm_info.cs_end - v_panning + 1;
+            } else {
+              yc2 = yc + tm_info.cs_start - v_panning;
+              font_row2 = tm_info.cs_start;
+              cfheight2 = tm_info.cs_end - tm_info.cs_start + 1;
+            }
+          }
+          cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
+          DrawBochsBitmap(xc, yc2, cfwidth, cfheight2, (char *)&vga_charmap[cChar<<5],
+                          cAttr, font_col, font_row2, gfxchar);
+        }
+      }
+      x++;
+      new_text+=2;
+      old_text+=2;
+      offset+=2;
+    } while (--hchars);
+    y++;
+    new_text = new_line + tm_info.line_offset;
+    old_text = old_line + tm_info.line_offset;
+  } while (--rows);
+
   wxCursorX = cursor_x;
   wxCursorY = cursor_y;
-
-  if(((cursor_y * ncols + cursor_x) < nchars) && (cs_start <= cs_end)) {
-    cChar = new_text[(cursor_y * ncols + cursor_x) * 2];
-    char cAttr = new_text[((cursor_y * ncols + cursor_x) * 2) + 1];
-    cAttr = ((cAttr >> 4) & 0xF) + ((cAttr & 0xF) << 4);
-    DrawBochsBitmap(wxCursorX * 8, wxCursorY * wxFontY, 8, wxFontY, (char *)&vga_charmap[cChar<<5], cAttr, cs_start, cs_end);
-  }
 
   thePanel->MyRefresh ();
 }
@@ -1066,17 +1365,31 @@ void bx_wx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 // Resize the window to this size, but you need to add on
 // the height of the headerbar to the Y value.
 //
-// x: new VGA x size
-// y: new VGA y size (add headerbar_y parameter from ::specific_init().
+// x:       new VGA x size
+// y:       new VGA y size
+// fheight: new VGA character height in text mode
+// fwidth : new VGA character width in text mode
+// bpp : bits per pixel in graphics mode
 
-void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
+void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::dimension_update trying to get lock. wxScreen=%p", wxScreen)));
   wxScreen_lock.Enter ();
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::dimension_update got lock. wxScreen=%p", wxScreen)));
-  BX_INFO (("dimension update x=%d y=%d fontheight=%d", x, y, fheight));
+  BX_INFO (("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
+  if ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32)) {
+    if (bpp == 32) BX_INFO(("wxWindows ignores bit 24..31 in 32bpp mode"));
+    vga_bpp = bpp;
+  }
+  else
+  {
+    BX_PANIC(("%d bpp graphics mode not supported", bpp));
+  }
   if (fheight > 0) {
-  wxFontY = fheight;
+    wxFontX = fwidth;
+    wxFontY = fheight;
+    text_cols = x / wxFontX;
+    text_rows = y / wxFontY;
   }
   wxScreenX = x;
   wxScreenY = y;
@@ -1091,7 +1404,7 @@ void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight)
   // native win32 function called by SetClientSize (below).  As with many
   // thread problems, it happened sporadically so it's hard to prove that this
   // really fixed it. -bbd
-  
+
   // this method is called from the simulation thread, so we must get the GUI
   // thread mutex first to be safe.
   wxMutexGuiEnter ();

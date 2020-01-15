@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: harddrv.cc,v 1.92 2002/12/12 18:30:03 bdenney Exp $
+// $Id: harddrv.cc,v 1.114 2003/11/25 23:00:06 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -31,11 +31,15 @@
 
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
-// platforms that require a special tag on exported symbols, BX_PLUGGABLE 
+// platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
 
 #include "bochs.h"
+
+#if BX_HAVE_SYS_MMAN_H
+#include <sys/mman.h>
+#endif
 
 #define LOG_THIS theHardDrive->
 
@@ -76,6 +80,7 @@ static unsigned curr_multiple_sectors = 0; // was 0x3f
 
 #define BX_MASTER_IS_PRESENT(c) BX_DRIVE_IS_PRESENT((c),0)
 #define BX_SLAVE_IS_PRESENT(c) BX_DRIVE_IS_PRESENT((c),1)
+#define BX_ANY_IS_PRESENT(c) (BX_DRIVE_IS_PRESENT((c),0) || BX_DRIVE_IS_PRESENT((c),1))
 
 #define BX_SELECTED_CONTROLLER(c) (BX_CONTROLLER((c),BX_HD_THIS channels[(c)].drive_select))
 #define BX_SELECTED_DRIVE(c) (BX_DRIVE((c),BX_HD_THIS channels[(c)].drive_select))
@@ -118,36 +123,15 @@ bx_hard_drive_c::bx_hard_drive_c(void)
 #if DLL_HD_SUPPORT
 #   error code must be fixed to use DLL_HD_SUPPORT and 4 ata channels
 #endif
-      
+
     for (Bit8u channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
       channels[channel].drives[0].hard_drive =  NULL;
       channels[channel].drives[1].hard_drive =  NULL;
       put("HD");
       settype(HDLOG);
-#if EXTERNAL_DISK_SIMULATOR
-      channels[channel].drives[0].hard_drive = new EXTERNAL_DISK_SIMULATOR_CLASS();
-      channels[channel].drives[1].hard_drive = new EXTERNAL_DISK_SIMULATOR_CLASS();
-#else
-
-#if BX_SPLIT_HD_SUPPORT
-      // use new concatenated image object
-      channels[channel].drives[0].hard_drive = new concat_image_t();
-#if DLL_HD_SUPPORT
-      channels[channel].drives[1].hard_drive = new dll_image_t();
-#else
-      channels[channel].drives[1].hard_drive = new concat_image_t();
-#endif
-#else
-      channels[channel].drives[0].hard_drive = new default_image_t();
-#if DLL_HD_SUPPORT
-      channels[channel].drives[1].hard_drive = new dll_image_t();
-#else
-      channels[channel].drives[1].hard_drive = new default_image_t();
-#endif
-#endif
-#endif
-      }
+    }
 }
+
 
 bx_hard_drive_c::~bx_hard_drive_c(void)
 {
@@ -175,7 +159,7 @@ bx_hard_drive_c::init(void)
   Bit8u channel;
   char  string[5];
 
-  BX_DEBUG(("Init $Id: harddrv.cc,v 1.92 2002/12/12 18:30:03 bdenney Exp $"));
+  BX_DEBUG(("Init $Id: harddrv.cc,v 1.114 2003/11/25 23:00:06 cbothamy Exp $"));
 
   for (channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
     if (bx_options.ata[channel].Opresent->get() == 1) {
@@ -208,11 +192,15 @@ bx_hard_drive_c::init(void)
       DEV_register_irq(BX_HD_THIS channels[channel].irq, strdup(string));
 
     if (BX_HD_THIS channels[channel].ioaddr1 != 0) {
-      for (unsigned addr=0x0; addr<=0x7; addr++) {
+      DEV_register_ioread_handler(this, read_handler,
+                           BX_HD_THIS channels[channel].ioaddr1, strdup(string), 6);
+      DEV_register_iowrite_handler(this, write_handler,
+                           BX_HD_THIS channels[channel].ioaddr1, strdup(string), 6);
+      for (unsigned addr=0x1; addr<=0x7; addr++) {
         DEV_register_ioread_handler(this, read_handler,
-                             BX_HD_THIS channels[channel].ioaddr1+addr, strdup(string), 7);
+                             BX_HD_THIS channels[channel].ioaddr1+addr, strdup(string), 1);
         DEV_register_iowrite_handler(this, write_handler,
-                             BX_HD_THIS channels[channel].ioaddr1+addr, strdup(string), 7);
+                             BX_HD_THIS channels[channel].ioaddr1+addr, strdup(string), 1);
         }
       }
 
@@ -220,9 +208,9 @@ bx_hard_drive_c::init(void)
     if ((BX_HD_THIS channels[channel].ioaddr2 != 0) && (BX_HD_THIS channels[channel].ioaddr2 != 0x3f0)) {
       for (unsigned addr=0x6; addr<=0x7; addr++) {
         DEV_register_ioread_handler(this, read_handler,
-                              BX_HD_THIS channels[channel].ioaddr2+addr, strdup(string), 7);
+                              BX_HD_THIS channels[channel].ioaddr2+addr, strdup(string), 1);
         DEV_register_iowrite_handler(this, write_handler,
-                              BX_HD_THIS channels[channel].ioaddr2+addr, strdup(string), 7);
+                              BX_HD_THIS channels[channel].ioaddr2+addr, strdup(string), 1);
         }
       }
      
@@ -233,7 +221,35 @@ bx_hard_drive_c::init(void)
   for (channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
     for (Bit8u device=0; device<2; device ++) {
 
-      // If not present
+	  // Initialize controller state, even if device is not present
+      BX_CONTROLLER(channel,device).status.busy           = 0;
+      BX_CONTROLLER(channel,device).status.drive_ready    = 1;
+      BX_CONTROLLER(channel,device).status.write_fault    = 0;
+      BX_CONTROLLER(channel,device).status.seek_complete  = 1;
+      BX_CONTROLLER(channel,device).status.drq            = 0;
+      BX_CONTROLLER(channel,device).status.corrected_data = 0;
+      BX_CONTROLLER(channel,device).status.index_pulse    = 0;
+      BX_CONTROLLER(channel,device).status.index_pulse_count = 0;
+      BX_CONTROLLER(channel,device).status.err            = 0;
+
+      BX_CONTROLLER(channel,device).error_register = 0x01; // diagnostic code: no error
+      BX_CONTROLLER(channel,device).head_no        = 0;
+      BX_CONTROLLER(channel,device).sector_count   = 1;
+      BX_CONTROLLER(channel,device).sector_no      = 1;
+      BX_CONTROLLER(channel,device).cylinder_no    = 0;
+      BX_CONTROLLER(channel,device).current_command = 0x00;
+      BX_CONTROLLER(channel,device).buffer_index = 0;
+
+      BX_CONTROLLER(channel,device).control.reset       = 0;
+      BX_CONTROLLER(channel,device).control.disable_irq = 0;
+      BX_CONTROLLER(channel,device).reset_in_progress   = 0;
+
+      BX_CONTROLLER(channel,device).sectors_per_block   = 0x80;
+      BX_CONTROLLER(channel,device).lba_mode            = 0;
+      
+	  BX_CONTROLLER(channel,device).features            = 0;
+	
+	  // If not present
       BX_HD_THIS channels[channel].drives[device].device_type           = IDE_NONE;
       if (!bx_options.atadevice[channel][device].Opresent->get()) {
         continue;
@@ -249,9 +265,112 @@ bx_hard_drive_c::init(void)
       if (bx_options.atadevice[channel][device].Otype->get() == BX_ATA_DEVICE_DISK) {
         BX_DEBUG(( "Hard-Disk on target %d/%d",channel,device));
         BX_HD_THIS channels[channel].drives[device].device_type           = IDE_DISK;
+
         int cyl = bx_options.atadevice[channel][device].Ocylinders->get ();
         int heads = bx_options.atadevice[channel][device].Oheads->get ();
         int spt = bx_options.atadevice[channel][device].Ospt->get ();
+        Bit64u disk_size = (Bit64u)cyl * heads * spt * 512;
+
+        /* instantiate the right class */
+        switch (bx_options.atadevice[channel][device].Omode->get()) {
+
+          case BX_ATA_MODE_FLAT:
+            BX_INFO(("HD on ata%d-%d: '%s' 'flat' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new default_image_t();
+            break;
+
+          case BX_ATA_MODE_CONCAT:
+            BX_INFO(("HD on ata%d-%d: '%s' 'concat' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new concat_image_t();
+            break;
+
+#if EXTERNAL_DISK_SIMULATOR
+          case BX_ATA_MODE_EXTDISKSIM:
+            BX_INFO(("HD on ata%d-%d: '%s' 'External Simulator' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new EXTERNAL_DISK_SIMULATOR_CLASS();
+            break;
+#endif //EXTERNAL_DISK_SIMULATOR
+
+#if DLL_HD_SUPPORT
+          case BX_ATA_MODE_DLL_HD:
+            BX_INFO(("HD on ata%d-%d: '%s' 'dll' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new dll_image_t();
+            break;
+#endif //DLL_HD_SUPPORT
+
+          case BX_ATA_MODE_SPARSE:
+            BX_INFO(("HD on ata%d-%d: '%s' 'sparse' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new sparse_image_t();
+            break;
+
+          case BX_ATA_MODE_VMWARE3:
+            BX_INFO(("HD on ata%d-%d: '%s' 'vmware3' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new vmware3_image_t();
+            break;
+
+#if 0
+          case BX_ATA_MODE_SPLIT:
+            BX_INFO(("HD on ata%d-%d: '%s' 'split' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new split_image_t();
+            break;
+#endif
+
+          case BX_ATA_MODE_UNDOABLE:
+            BX_INFO(("HD on ata%d-%d: '%s' 'undoable' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new undoable_image_t(disk_size,
+                            bx_options.atadevice[channel][device].Ojournal->getptr());
+            break;
+
+          case BX_ATA_MODE_GROWING:
+            BX_INFO(("HD on ata%d-%d: '%s' 'growing' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new growing_image_t(disk_size);
+            break;
+
+          case BX_ATA_MODE_VOLATILE:
+            BX_INFO(("HD on ata%d-%d: '%s' 'volatile' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new volatile_image_t(disk_size,
+                            bx_options.atadevice[channel][device].Ojournal->getptr());
+            break;
+
+#if BX_COMPRESSED_HD_SUPPORT
+          case BX_ATA_MODE_Z_UNDOABLE:
+            BX_PANIC(("z-undoable disk support not implemented"));
+#if 0
+            BX_INFO(("HD on ata%d-%d: '%s' 'z-undoable' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new z_undoable_image_t(disk_size,
+                            bx_options.atadevice[channel][device].Ojournal->getptr());
+#endif
+            break;
+
+          case BX_ATA_MODE_Z_VOLATILE:
+            BX_PANIC(("z-volatile disk support not implemented"));
+#if 0
+            BX_INFO(("HD on ata%d-%d: '%s' 'z-volatile' mode ", channel, device, 
+                                    bx_options.atadevice[channel][device].Opath->getptr ()));
+            channels[channel].drives[device].hard_drive = new z_volatile_image_t(disk_size,
+                            bx_options.atadevice[channel][device].Ojournal->getptr());
+#endif
+            break;
+#endif //BX_COMPRESSED_HD_SUPPORT
+
+          default:
+            BX_PANIC(("HD on ata%d-%d: '%s' unsupported HD mode : %s", channel, device, 
+                      bx_options.atadevice[channel][device].Opath->getptr (),
+                      atadevice_mode_names[bx_options.atadevice[channel][device].Omode->get()]));
+            break;
+        }
+
         BX_HD_THIS channels[channel].drives[device].hard_drive->cylinders = cyl;
         BX_HD_THIS channels[channel].drives[device].hard_drive->heads = heads;
         BX_HD_THIS channels[channel].drives[device].hard_drive->sectors = spt;
@@ -264,7 +383,6 @@ bx_hard_drive_c::init(void)
         if ((BX_HD_THIS channels[channel].drives[device].hard_drive->open(bx_options.atadevice[channel][device].Opath->getptr ())) < 0) {
           BX_PANIC(("ata%d-%d: could not open hard drive image file '%s'", channel, device, bx_options.atadevice[channel][device].Opath->getptr ()));
           }
-        BX_INFO(("HD on ata%d-%d: '%s'",channel, device, bx_options.atadevice[channel][device].Opath->getptr ()));
         }
       else if (bx_options.atadevice[channel][device].Otype->get() == BX_ATA_DEVICE_CDROM) {
         BX_DEBUG(( "CDROM on target %d/%d",channel,device));
@@ -319,34 +437,6 @@ bx_hard_drive_c::init(void)
 	}
 #endif
       }
-
-    BX_CONTROLLER(channel,device).status.busy           = 0;
-    BX_CONTROLLER(channel,device).status.drive_ready    = 1;
-    BX_CONTROLLER(channel,device).status.write_fault    = 0;
-    BX_CONTROLLER(channel,device).status.seek_complete  = 1;
-    BX_CONTROLLER(channel,device).status.drq            = 0;
-    BX_CONTROLLER(channel,device).status.corrected_data = 0;
-    BX_CONTROLLER(channel,device).status.index_pulse    = 0;
-    BX_CONTROLLER(channel,device).status.index_pulse_count = 0;
-    BX_CONTROLLER(channel,device).status.err            = 0;
-
-    BX_CONTROLLER(channel,device).error_register = 0x01; // diagnostic code: no error
-    BX_CONTROLLER(channel,device).head_no        = 0;
-    BX_CONTROLLER(channel,device).sector_count   = 1;
-    BX_CONTROLLER(channel,device).sector_no      = 1;
-    BX_CONTROLLER(channel,device).cylinder_no    = 0;
-    BX_CONTROLLER(channel,device).current_command = 0x00;
-    BX_CONTROLLER(channel,device).buffer_index = 0;
-
-    BX_CONTROLLER(channel,device).control.reset       = 0;
-    BX_CONTROLLER(channel,device).control.disable_irq = 0;
-
-    BX_CONTROLLER(channel,device).reset_in_progress   = 0;
-
-    BX_CONTROLLER(channel,device).sectors_per_block   = 0x80;
-    BX_CONTROLLER(channel,device).lba_mode            = 0;
-
-    BX_CONTROLLER(channel,device).features            = 0;
     }
   }
 
@@ -421,7 +511,6 @@ bx_hard_drive_c::init(void)
             Bit16u cylinders = bx_options.atadevice[channel][device].Ocylinders->get();
             Bit16u heads = bx_options.atadevice[channel][device].Oheads->get();
             Bit16u spt = bx_options.atadevice[channel][device].Ospt->get();
-            Bit32u size = cylinders * heads * spt;
             Bit8u  translation = bx_options.atadevice[channel][device].Otranslation->get();
 
             Bit8u reg = 0x39 + channel/2;
@@ -551,24 +640,27 @@ bx_hard_drive_c::read(Bit32u address, unsigned io_len)
   Bit32u value32;
 
   Bit8u  channel = BX_MAX_ATA_CHANNEL;
-  Bit32u port;
+  Bit32u port = 0xff; // undefined
 
   for (channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
-    if ((address >= BX_HD_THIS channels[channel].ioaddr1) 
-     && (address <= BX_HD_THIS channels[channel].ioaddr1 + 7) ) {
+    if ((address & 0xfff8) == BX_HD_THIS channels[channel].ioaddr1) {
       port = address - BX_HD_THIS channels[channel].ioaddr1;
       break;
       }
-    else if ((address >= BX_HD_THIS channels[channel].ioaddr2)
-          && (address <= BX_HD_THIS channels[channel].ioaddr2 + 7) ) {
+    else if ((address & 0xfff8) == BX_HD_THIS channels[channel].ioaddr2) {
       port = address - BX_HD_THIS channels[channel].ioaddr2 + 0x10;
       break;
       }
     }
 
   if (channel == BX_MAX_ATA_CHANNEL) {
-    BX_PANIC(("Unable to find ATA channel, ioport=0x%04x", address));
+    if ((address < 0x03f6) || (address > 0x03f7)) {
+      BX_PANIC(("read: unable to find ATA channel, ioport=0x%04x", address));
+    } else {
+      channel = 0;
+      port = address - 0x03e0;
     }
+  }
 
 #if BX_PDC20230C_VLBIDE_SUPPORT
 // pdc20230c is only available for first ata channel
@@ -628,28 +720,20 @@ if (channel == 0) {
 }
 #endif
 
-  if (io_len>1 && port!=0x00) {
-    BX_PANIC(("non-byte IO read to %04x", (unsigned) address));
-    }
-  
   switch (port) {
     case 0x00: // hard disk data (16bit) 0x1f0
       if (BX_SELECTED_CONTROLLER(channel).status.drq == 0) {
-	    BX_ERROR(("IO read(1f0h) with drq == 0: last command was %02xh",
-		     (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
+	    BX_ERROR(("IO read(0x%04x) with drq == 0: last command was %02xh",
+		     address, (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
             return(0);
       }
-      BX_DEBUG(("IO read(1f0h): current command is %02xh",
-            (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
+      BX_DEBUG(("IO read(0x%04x): current command is %02xh",
+            address, (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
       switch (BX_SELECTED_CONTROLLER(channel).current_command) {
         case 0x20: // READ SECTORS, with retries
         case 0x21: // READ SECTORS, without retries
-          if (io_len == 1) {
-            BX_PANIC(("byte IO read from %04x",
-                     (unsigned) address));
-            }
           if (BX_SELECTED_CONTROLLER(channel).buffer_index >= 512)
-            BX_PANIC(("IO read(1f0): buffer_index >= 512"));
+            BX_PANIC(("IO read(0x%04x): buffer_index >= 512", address));
 
 #if BX_SupportRepeatSpeedups
           if (DEV_bulk_io_quantum_requested()) {
@@ -657,8 +741,8 @@ if (channel == 0) {
 
             quantumsMax =
               (512 - BX_SELECTED_CONTROLLER(channel).buffer_index) / io_len;
-if ( quantumsMax == 0)
-  BX_PANIC(("IO read(1f0): not enough space for read"));
+            if ( quantumsMax == 0)
+              BX_PANIC(("IO read(0x%04x): not enough space for read", address));
             DEV_bulk_io_quantum_transferred() =
                 DEV_bulk_io_quantum_requested();
             if (quantumsMax < DEV_bulk_io_quantum_transferred())
@@ -720,7 +804,7 @@ if ( quantumsMax == 0)
 	      BX_SELECTED_CONTROLLER(channel).cylinder_no += 100000;
 #endif
 	      if (!calculate_logical_address(channel, &logical_sector)) {
-	        BX_ERROR(("multi-sector read reached invalid sector %lu, aborting", logical_sector));
+	        BX_ERROR(("multi-sector read reached invalid sector %lu, aborting", (unsigned long)logical_sector));
 		command_aborted (channel, BX_SELECTED_CONTROLLER(channel).current_command);
 	        GOTO_RETURN_VALUE ;
 	      }
@@ -732,8 +816,8 @@ if ( quantumsMax == 0)
 	      }
 	      ret = BX_SELECTED_DRIVE(channel).hard_drive->read((bx_ptr_t) BX_SELECTED_CONTROLLER(channel).buffer, 512);
               if (ret < 512) {
-                BX_ERROR(("logical sector was %lu", logical_sector));
-                BX_ERROR(("could not read() hard drive image file at byte %lu", logical_sector*512));
+                BX_ERROR(("logical sector was %lu", (unsigned long)logical_sector));
+                BX_ERROR(("could not read() hard drive image file at byte %lu", (unsigned long)logical_sector*512));
 		command_aborted (channel, BX_SELECTED_CONTROLLER(channel).current_command);
 	        GOTO_RETURN_VALUE ;
 	      }
@@ -779,7 +863,7 @@ if ( quantumsMax == 0)
             GOTO_RETURN_VALUE;
 	  }
           else
-            BX_PANIC(("IO read(1f0h): current command is %02xh",
+            BX_PANIC(("IO read(0x%04x): current command is %02xh", address,
               (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
 
 	    case 0xa0: {
@@ -959,7 +1043,7 @@ if ( quantumsMax == 0)
 	case 0xF9: BX_ERROR(("read cmd 0xF9 (SET MAX ADDRESS) not supported")); command_aborted(channel, 0xF9); break;
 
         default:
-          BX_PANIC(("IO read(1f0h): current command is %02xh",
+          BX_PANIC(("IO read(0x%04x): current command is %02xh", address,
             (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
         }
       break;
@@ -976,11 +1060,17 @@ if ( quantumsMax == 0)
     case 0x03: // sector number 0x1f3
       value8 = (!BX_SELECTED_IS_PRESENT(channel)) ? 0 : BX_SELECTED_CONTROLLER(channel).sector_no;
       goto return_value8;
-    case 0x04: // cylinder low 0x1f4
-      value8 = (!BX_SELECTED_IS_PRESENT(channel)) ? 0 : (BX_SELECTED_CONTROLLER(channel).cylinder_no & 0x00ff);
+    case 0x04: // cylinder low 0x1f4  
+               // -- WARNING : On real hardware the controller registers are shared between drives. 
+               // So we must respond even if the select device is not present. Some OS uses this fact 
+               // to detect the disks.... minix2 for example
+      value8 = (!BX_ANY_IS_PRESENT(channel)) ? 0 : (BX_SELECTED_CONTROLLER(channel).cylinder_no & 0x00ff);
       goto return_value8;
     case 0x05: // cylinder high 0x1f5
-      value8 = (!BX_SELECTED_IS_PRESENT(channel)) ? 0 : BX_SELECTED_CONTROLLER(channel).cylinder_no >> 8;
+               // -- WARNING : On real hardware the controller registers are shared between drives. 
+               // So we must respond even if the select device is not present. Some OS uses this fact 
+               // to detect the disks.... minix2 for example
+      value8 = (!BX_ANY_IS_PRESENT(channel)) ? 0 : BX_SELECTED_CONTROLLER(channel).cylinder_no >> 8;
       goto return_value8;
 
     case 0x06: // hard disk drive and head register 0x1f6
@@ -1002,7 +1092,7 @@ if ( quantumsMax == 0)
 
     case 0x07: // Hard Disk Status 0x1f7
     case 0x16: // Hard Disk Alternate Status 0x3f6
-      if (!BX_SELECTED_IS_PRESENT(channel)) {
+      if (!BX_ANY_IS_PRESENT(channel)) {
 	    // (mch) Just return zero for these registers
 	    value8 = 0;
       } else {
@@ -1086,24 +1176,27 @@ bx_hard_drive_c::write(Bit32u address, Bit32u value, unsigned io_len)
   bx_bool prev_control_reset;
 
   Bit8u  channel = BX_MAX_ATA_CHANNEL;
-  Bit32u port;
+  Bit32u port = 0xff; // undefined
 
   for (channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
-    if ((address >= BX_HD_THIS channels[channel].ioaddr1) 
-     && (address <= BX_HD_THIS channels[channel].ioaddr1 + 7) ) {
+    if ((address & 0xfff8) == BX_HD_THIS channels[channel].ioaddr1) {
       port = address - BX_HD_THIS channels[channel].ioaddr1;
       break;
       }
-    else if ((address >= BX_HD_THIS channels[channel].ioaddr2)
-          && (address <= BX_HD_THIS channels[channel].ioaddr2 + 7) ) {
+    else if ((address & 0xfff8) == BX_HD_THIS channels[channel].ioaddr2) {
       port = address - BX_HD_THIS channels[channel].ioaddr2 + 0x10;
       break;
       }
     }
 
   if (channel == BX_MAX_ATA_CHANNEL) {
-    BX_PANIC(("Unable to find ATA channel, ioport=0x%04x", address));
+    if (address != 0x03f6) {
+      BX_PANIC(("write: unable to find ATA channel, ioport=0x%04x", address));
+    } else {
+      channel = 0;
+      port = address - 0x03e0;
     }
+  }
 
 #if BX_PDC20230C_VLBIDE_SUPPORT
 // pdc20230c is only available for first ata channel
@@ -1124,10 +1217,6 @@ if (channel == 0) {
   }
 }
 #endif
-
-  if (io_len>1 && port!=0x00) {
-    BX_PANIC(("non-byte IO write to %04x", (unsigned) address));
-    }
 
   if (bx_dbg.disk || (BX_SELECTED_IS_CD(channel) && bx_dbg.cdrom)) {
 	switch (io_len) {
@@ -1153,17 +1242,14 @@ if (channel == 0) {
 	}
   }
 
-BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
+  BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
 
   switch (port) {
     case 0x00: // 0x1f0
-      if (io_len == 1) {
-        BX_PANIC(("byte IO write to 0x1f0"));
-        }
       switch (BX_SELECTED_CONTROLLER(channel).current_command) {
         case 0x30: // WRITE SECTORS
           if (BX_SELECTED_CONTROLLER(channel).buffer_index >= 512)
-            BX_PANIC(("IO write(1f0): buffer_index >= 512"));
+            BX_PANIC(("IO write(0x%04x): buffer_index >= 512", address));
 
 #if BX_SupportRepeatSpeedups
           if (DEV_bulk_io_quantum_requested()) {
@@ -1171,8 +1257,8 @@ BX_DEBUG(("IO write to %04x = %02x", (unsigned) address, (unsigned) value));
 
             quantumsMax =
               (512 - BX_SELECTED_CONTROLLER(channel).buffer_index) / io_len;
-if ( quantumsMax == 0)
-  BX_PANIC(("IO write(1f0): not enough space for write"));
+            if ( quantumsMax == 0)
+              BX_PANIC(("IO write(0x%04x): not enough space for write", address));
             DEV_bulk_io_quantum_transferred() =
                 DEV_bulk_io_quantum_requested();
             if (quantumsMax < DEV_bulk_io_quantum_transferred())
@@ -1208,7 +1294,7 @@ if ( quantumsMax == 0)
 	    BX_SELECTED_CONTROLLER(channel).cylinder_no += 100000;
 #endif
 	    if (!calculate_logical_address(channel, &logical_sector)) {
-	      BX_ERROR(("write reached invalid sector %lu, aborting", logical_sector));
+	      BX_ERROR(("write reached invalid sector %lu, aborting", (unsigned long)logical_sector));
 	      command_aborted (channel, BX_SELECTED_CONTROLLER(channel).current_command);
 	      return;
             }
@@ -1217,13 +1303,13 @@ if ( quantumsMax == 0)
 #endif
 	    ret = BX_SELECTED_DRIVE(channel).hard_drive->lseek(logical_sector * 512, SEEK_SET);
             if (ret < 0) {
-              BX_ERROR(("could not lseek() hard drive image file at byte %lu", logical_sector * 512));
+              BX_ERROR(("could not lseek() hard drive image file at byte %lu", (unsigned long)logical_sector * 512));
 	      command_aborted (channel, BX_SELECTED_CONTROLLER(channel).current_command);
 	      return;
 	    }
 	    ret = BX_SELECTED_DRIVE(channel).hard_drive->write((bx_ptr_t) BX_SELECTED_CONTROLLER(channel).buffer, 512);
             if (ret < 512) {
-              BX_ERROR(("could not write() hard drive image file at byte %lu", logical_sector*512));
+              BX_ERROR(("could not write() hard drive image file at byte %lu", (unsigned long)logical_sector*512));
 	      command_aborted (channel, BX_SELECTED_CONTROLLER(channel).current_command);
 	      return;
 	    }
@@ -1263,7 +1349,7 @@ if ( quantumsMax == 0)
 
 	    case 0xa0: // PACKET
 		  if (BX_SELECTED_CONTROLLER(channel).buffer_index >= PACKET_SIZE)
-			BX_PANIC(("IO write(1f0): buffer_index >= PACKET_SIZE"));
+			BX_PANIC(("IO write(0x%04x): buffer_index >= PACKET_SIZE", address));
 		  BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index] = value;
 		  BX_SELECTED_CONTROLLER(channel).buffer[BX_SELECTED_CONTROLLER(channel).buffer_index+1] = (value >> 8);
 		  BX_SELECTED_CONTROLLER(channel).buffer_index += 2;
@@ -1323,8 +1409,10 @@ if ( quantumsMax == 0)
 					  BX_ERROR(("FIXME: Stop disc not implemented"));
 					  atapi_cmd_nop(channel);
 					  raise_interrupt(channel);
-				    } else if (!LoEj && Start) { // start the disc and read the TOC
-					  // BX_PANIC(("Start disc not implemented"));
+				    } else if (!LoEj && Start) { // start (spin up) the disc
+#ifdef LOWLEVEL_CDROM
+					  BX_SELECTED_DRIVE(channel).cdrom.cd->start_cdrom();
+#endif
 					  BX_ERROR(("FIXME: ATAPI start disc not reading TOC"));
 					  atapi_cmd_nop(channel);
 					  raise_interrupt(channel);
@@ -1396,7 +1484,8 @@ if ( quantumsMax == 0)
 							      BX_SELECTED_CONTROLLER(channel).buffer[9] = 0x12;
 							      BX_SELECTED_CONTROLLER(channel).buffer[10] = 0x00;
 							      BX_SELECTED_CONTROLLER(channel).buffer[11] = 0x00;
-							      BX_SELECTED_CONTROLLER(channel).buffer[12] = 0x00;
+							      // Multisession, Mode 2 Form 2, Mode 2 Form 1
+							      BX_SELECTED_CONTROLLER(channel).buffer[12] = 0x70; 
 							      BX_SELECTED_CONTROLLER(channel).buffer[13] = (3 << 5);
 							      BX_SELECTED_CONTROLLER(channel).buffer[14] = (unsigned char)
 (1 |
@@ -1627,8 +1716,16 @@ if ( quantumsMax == 0)
 			      }
 			      break;
 
-			      case 0x28: { // read (10)
-				    uint32 transfer_length = read_16bit(BX_SELECTED_CONTROLLER(channel).buffer + 7);
+			      case 0x28: // read (10)
+			      case 0xa8: // read (12)
+			                 { 
+
+				    uint32 transfer_length;
+				    if (atapi_command == 0x28)
+				          transfer_length = read_16bit(BX_SELECTED_CONTROLLER(channel).buffer + 7);
+				    else
+				          transfer_length = read_32bit(BX_SELECTED_CONTROLLER(channel).buffer + 6);
+
 				    uint32 lba = read_32bit(BX_SELECTED_CONTROLLER(channel).buffer + 2);
 
 				    if (!BX_SELECTED_DRIVE(channel).cdrom.ready) {
@@ -1640,7 +1737,7 @@ if ( quantumsMax == 0)
 				    if (transfer_length == 0) {
 					  atapi_cmd_nop(channel);
 					  raise_interrupt(channel);
-					  BX_INFO(("READ(10) with transfer length 0, ok"));
+					  BX_INFO(("READ(%d) with transfer length 0, ok", atapi_command==0x28?10:12));
 					  break;
 				    }
 
@@ -1650,7 +1747,7 @@ if ( quantumsMax == 0)
 					  break;
 				    }
 
-				    //BX_INFO(("cdrom: READ LBA=%d LEN=%d", lba, transfer_length));
+				    BX_DEBUG(("cdrom: READ (%d) LBA=%d LEN=%d", atapi_command==0x28?10:12, lba, transfer_length));
 
 				    // handle command
 				    init_send_atapi_command(channel, atapi_command, transfer_length * 2048,
@@ -1732,7 +1829,6 @@ if ( quantumsMax == 0)
 			      }
 			      break;
 
-			      case 0xa8: // read (12)
 			      case 0x55: // mode select
 			      case 0xa6: // load/unload cd
 			      case 0x4b: // pause/resume
@@ -1764,7 +1860,7 @@ if ( quantumsMax == 0)
 		  break;
 
         default:
-          BX_PANIC(("IO write(1f0h): current command is %02xh",
+          BX_PANIC(("IO write(0x%04x): current command is %02xh", address,
             (unsigned) BX_SELECTED_CONTROLLER(channel).current_command));
         }
       break;
@@ -1813,11 +1909,11 @@ if ( quantumsMax == 0)
       // b3..0 HD3..HD0
       {
       if ( (value & 0xa0) != 0xa0 ) // 1x1xxxxx
-        BX_INFO(("IO write 1f6 (%02x): not 1x1xxxxxb", (unsigned) value));
+        BX_INFO(("IO write 0x%04x (%02x): not 1x1xxxxxb", address, (unsigned) value));
       Bit32u drvsel = BX_HD_THIS channels[channel].drive_select = (value >> 4) & 0x01;
       WRITE_HEAD_NO(channel,value & 0xf);
       if (BX_SELECTED_CONTROLLER(channel).lba_mode == 0 && ((value >> 6) & 1) == 1)
-        BX_INFO(("enabling LBA mode"));
+        BX_DEBUG(("enabling LBA mode"));
       WRITE_LBA_MODE(channel,(value >> 6) & 1);
       if (!BX_SELECTED_IS_PRESENT(channel)) {
         BX_ERROR (("device set to %d which does not exist",drvsel));
@@ -1899,7 +1995,7 @@ if ( quantumsMax == 0)
 	  BX_SELECTED_CONTROLLER(channel).cylinder_no += 100000;
 #endif
 	  if (!calculate_logical_address(channel, &logical_sector)) {
-	    BX_ERROR(("initial read from sector %lu out of bounds, aborting", logical_sector));
+	    BX_ERROR(("initial read from sector %lu out of bounds, aborting", (unsigned long)logical_sector));
 	    command_aborted(channel, value);
 	    break;
 	  }
@@ -1914,8 +2010,8 @@ if ( quantumsMax == 0)
 	  }
 	  ret = BX_SELECTED_DRIVE(channel).hard_drive->read((bx_ptr_t) BX_SELECTED_CONTROLLER(channel).buffer, 512);
           if (ret < 512) {
-            BX_ERROR(("logical sector was %lu", logical_sector));
-            BX_ERROR(("could not read() hard drive image file at byte %lu", logical_sector*512));
+            BX_ERROR(("logical sector was %lu", (unsigned long)logical_sector));
+            BX_ERROR(("could not read() hard drive image file at byte %lu", (unsigned long)logical_sector*512));
 	    command_aborted(channel, value);
 	    break;
 	  }
@@ -2194,7 +2290,7 @@ if ( quantumsMax == 0)
 	  if (BX_SELECTED_IS_HD(channel)) {
 	    BX_DEBUG(("write cmd 0x70 (SEEK) executing"));
             if (!calculate_logical_address(channel, &logical_sector)) {
-	      BX_ERROR(("initial seek to sector %lu out of bounds, aborting", logical_sector));
+	      BX_ERROR(("initial seek to sector %lu out of bounds, aborting", (unsigned long)logical_sector));
               command_aborted(channel, value);
 	      break;
 	    }
@@ -2202,7 +2298,7 @@ if ( quantumsMax == 0)
             BX_SELECTED_CONTROLLER(channel).status.busy  = 0;
             BX_SELECTED_CONTROLLER(channel).status.drive_ready = 1;
             BX_SELECTED_CONTROLLER(channel).status.seek_complete = 1;
-            BX_SELECTED_CONTROLLER(channel).status.drq   = 1;
+            BX_SELECTED_CONTROLLER(channel).status.drq   = 0;
             BX_SELECTED_CONTROLLER(channel).status.corrected_data = 0;
             BX_SELECTED_CONTROLLER(channel).status.err   = 0;
             BX_SELECTED_CONTROLLER(channel).buffer_index = 0;
@@ -2291,7 +2387,7 @@ if ( quantumsMax == 0)
 	case 0xF9: BX_ERROR(("write cmd 0xF9 (SET MAX ADDRESS) not supported"));command_aborted(channel, 0xF9); break;
 
 	default:
-          BX_PANIC(("IO write(1f7h): command 0x%02x", (unsigned) value));
+          BX_PANIC(("IO write(0x%04x): command 0x%02x", address, (unsigned) value));
 	  // if user foolishly decides to continue, abort the command
 	  // so that the software knows the drive didn't understand it.
           command_aborted(channel, value);
@@ -2378,13 +2474,15 @@ if ( quantumsMax == 0)
 bx_hard_drive_c::close_harddrive(void)
 {
   for (Bit8u channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
-    BX_HD_THIS channels[channel].drives[0].hard_drive->close();
-    BX_HD_THIS channels[channel].drives[1].hard_drive->close();
+    if(BX_HD_THIS channels[channel].drives[0].hard_drive != NULL)
+      BX_HD_THIS channels[channel].drives[0].hard_drive->close();
+    if(BX_HD_THIS channels[channel].drives[1].hard_drive != NULL)
+      BX_HD_THIS channels[channel].drives[1].hard_drive->close();
   }
 }
 
 
-  bx_bool
+  bx_bool BX_CPP_AttrRegparmN(2)
 bx_hard_drive_c::calculate_logical_address(Bit8u channel, off_t *sector)
 {
       off_t logical_sector;
@@ -2414,7 +2512,7 @@ bx_hard_drive_c::calculate_logical_address(Bit8u channel, off_t *sector)
       return true;
 }
 
-  void
+  void BX_CPP_AttrRegparmN(1)
 bx_hard_drive_c::increment_address(Bit8u channel)
 {
       BX_SELECTED_CONTROLLER(channel).sector_count--;
@@ -2423,9 +2521,9 @@ bx_hard_drive_c::increment_address(Bit8u channel)
 	    off_t current_address;
 	    calculate_logical_address(channel, &current_address);
 	    current_address++;
-	    BX_SELECTED_CONTROLLER(channel).head_no = (current_address >> 24) & 0xf;
-	    BX_SELECTED_CONTROLLER(channel).cylinder_no = (current_address >> 8) & 0xffff;
-	    BX_SELECTED_CONTROLLER(channel).sector_no = (current_address) & 0xff;
+	    BX_SELECTED_CONTROLLER(channel).head_no = (Bit8u)((current_address >> 24) & 0xf);
+	    BX_SELECTED_CONTROLLER(channel).cylinder_no = (Bit16u)((current_address >> 8) & 0xffff);
+	    BX_SELECTED_CONTROLLER(channel).sector_no = (Bit8u)((current_address) & 0xff);
       } else {
             BX_SELECTED_CONTROLLER(channel).sector_no++;
             if (BX_SELECTED_CONTROLLER(channel).sector_no > BX_SELECTED_DRIVE(channel).hard_drive->sectors) {
@@ -2883,7 +2981,7 @@ bx_hard_drive_c::identify_drive(Bit8u channel)
     }
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 bx_hard_drive_c::init_send_atapi_command(Bit8u channel, Bit8u command, int req_length, int alloc_length, bool lazy)
 {
       // BX_SELECTED_CONTROLLER(channel).byte_count is a union of BX_SELECTED_CONTROLLER(channel).cylinder_no;
@@ -2957,7 +3055,7 @@ bx_hard_drive_c::atapi_cmd_error(Bit8u channel, sense_t sense_key, asc_t asc)
       BX_SELECTED_DRIVE(channel).sense.ascq = 0;
 }
 
-void
+void BX_CPP_AttrRegparmN(1)
 bx_hard_drive_c::atapi_cmd_nop(Bit8u channel)
 {
       BX_SELECTED_CONTROLLER(channel).interrupt_reason.i_o = 1;
@@ -2986,13 +3084,13 @@ bx_hard_drive_c::init_mode_sense_single(Bit8u channel, const void* src, int size
       memcpy(BX_SELECTED_CONTROLLER(channel).buffer + 8, src, size);
 }
 
-  void
+  void BX_CPP_AttrRegparmN(1)
 bx_hard_drive_c::ready_to_send_atapi(Bit8u channel)
 {
       raise_interrupt(channel);
 }
 
-void
+void BX_CPP_AttrRegparmN(1)
 bx_hard_drive_c::raise_interrupt(Bit8u channel)
 {
 	BX_DEBUG(("raise_interrupt called, disable_irq = %02x", BX_SELECTED_CONTROLLER(channel).control.disable_irq));
@@ -3111,7 +3209,12 @@ bx_hard_drive_c::set_cd_media_status(Bit32u handle, unsigned status)
 
 int default_image_t::open (const char* pathname)
 {
-      fd = ::open(pathname, O_RDWR
+      return open(pathname, O_RDWR);
+}
+
+int default_image_t::open (const char* pathname, int flags)
+{
+      fd = ::open(pathname, flags
 #ifdef O_BINARY
 		  | O_BINARY
 #endif
@@ -3153,7 +3256,18 @@ ssize_t default_image_t::write (const void* buf, size_t count)
       return ::write(fd, (char*) buf, count);
 }
 
-#if BX_SPLIT_HD_SUPPORT
+char increment_string (char *str, int diff)
+{
+  // find the last character of the string, and increment it.
+  char *p = str;
+  while (*p != 0) p++;
+  BX_ASSERT (p>str);  // choke on zero length strings
+  p--;  // point to last character of the string
+  (*p) += diff;  // increment to next/previous ascii code.
+  BX_DEBUG(("increment string returning '%s'", str));
+ return (*p);
+}
+
 /*** concat_image_t function definitions ***/
 
 concat_image_t::concat_image_t ()
@@ -3163,13 +3277,7 @@ concat_image_t::concat_image_t ()
 
 void concat_image_t::increment_string (char *str)
 {
-  // find the last character of the string, and increment it.
-  char *p = str;
-  while (*p != 0) p++;
-  BX_ASSERT (p>str);  // choke on zero length strings
-  p--;  // point to last character of the string
-  ++(*p);  // increment to next ascii code.
-  BX_DEBUG(("concat_image.increment string returning '%s'", str));
+ ::increment_string(str, +1);
 }
 
 int concat_image_t::open (const char* pathname0)
@@ -3279,7 +3387,7 @@ ssize_t concat_image_t::read (void* buf, size_t count)
   // notice if anyone does sequential read or write without seek in between.
   // This can be supported pretty easily, but needs additional checks for
   // end of a partial image.
-  if (!seek_was_last_op) 
+  if (!seek_was_last_op)
     BX_PANIC( ("no seek before read"));
   return ::read(fd, (char*) buf, count);
 }
@@ -3294,7 +3402,535 @@ ssize_t concat_image_t::write (const void* buf, size_t count)
     BX_PANIC( ("no seek before write"));
   return ::write(fd, (char*) buf, count);
 }
-#endif   /* BX_SPLIT_HD_SUPPORT */
+
+/*** sparse_image_t function definitions ***/
+sparse_image_t::sparse_image_t ()
+{
+  fd = -1;
+  pathname = NULL;
+#ifdef _POSIX_MAPPED_FILES
+ mmap_header = NULL;
+#endif
+ pagetable = NULL;
+}
+
+
+/*
+void showpagetable(uint32 * pagetable, size_t numpages)
+{
+ printf("Non null pages: ");
+ for (int i = 0; i < numpages; i++)
+ {
+   if (pagetable[i] != 0xffffffff)
+   {
+     printf("%d ", i);
+   }
+ }
+ printf("\n");
+}
+*/
+
+
+void sparse_image_t::read_header()
+{
+ BX_ASSERT(sizeof(header) == SPARSE_HEADER_SIZE);
+
+ int ret = ::read(fd, &header, sizeof(header));
+
+ if (-1 == ret)
+ {
+     panic(strerror(errno));
+ }
+
+ if (sizeof(header) != ret)
+ {
+   panic("could not read entire header");
+ }
+
+ if (dtoh32(header.magic) != SPARSE_HEADER_MAGIC)
+ {
+   panic("failed header magic check");
+ }
+
+ if (dtoh32(header.version) != 1)
+ {
+   panic("unknown version in header");
+ }
+
+ pagesize = dtoh32(header.pagesize);
+ uint32 numpages = dtoh32(header.numpages);
+
+ total_size = pagesize;
+ total_size *= numpages;
+
+ pagesize_shift = 0;
+ while ((pagesize >> pagesize_shift) > 1) pagesize_shift++;
+
+ if ((uint32)(1 << pagesize_shift) != pagesize)
+ {
+   panic("failed block size header check");
+ }
+
+ pagesize_mask = pagesize - 1;
+
+ size_t  preamble_size = (sizeof(uint32) * numpages) + sizeof(header);
+ data_start = 0;
+ while (data_start < preamble_size) data_start += pagesize;
+
+ bool did_mmap = false;
+
+#ifdef _POSIX_MAPPED_FILES
+// Try to memory map from the beginning of the file (0 is trivially a page multiple)
+ void * mmap_header = mmap(NULL, preamble_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+ if (mmap_header == MAP_FAILED)
+ {
+   BX_INFO(("failed to mmap sparse disk file - using conventional file access"));
+   mmap_header = NULL;
+ }
+ else
+ {
+   mmap_length = preamble_size;
+   did_mmap = true;
+   pagetable = ((uint32 *) (((uint8 *) mmap_header) + sizeof(header)));
+
+//   system_pagesize = getpagesize();
+   system_pagesize_mask = getpagesize() - 1;
+ }
+#endif
+
+ if (!did_mmap)
+ {
+   pagetable = new uint32[numpages];
+
+   if (pagetable == NULL)
+   {
+     panic("could not allocate memory for sparse disk block table");
+   }
+
+   ret = ::read(fd, pagetable, sizeof(uint32) * numpages);
+
+   if (-1 == ret)
+   {
+       panic(strerror(errno));
+   }
+
+   if ((int)(sizeof(uint32) * numpages) != ret)
+   {
+     panic("could not read entire block table");
+   }
+ }
+}
+
+int sparse_image_t::open (const char* pathname0)
+{
+ pathname = strdup(pathname0);
+ BX_DEBUG(("sparse_image_t.open"));
+
+ fd = ::open(pathname, O_RDWR
+#ifdef O_BINARY
+   | O_BINARY
+#endif
+   );
+
+ if (fd < 0)
+ {
+   // open failed.
+   return -1;
+ }
+ BX_DEBUG(("sparse_image: open image %s", pathname));
+
+ read_header();
+
+ struct stat stat_buf;
+ if (0 != fstat(fd, &stat_buf)) panic(("fstat() returns error!"));
+
+ underlying_filesize = stat_buf.st_size;
+
+ if ((underlying_filesize % pagesize) != 0)
+   panic("size of sparse disk image is not multiple of page size");
+
+ underlying_current_filepos = 0;
+ if (-1 == ::lseek(fd, 0, SEEK_SET))
+   panic("error while seeking to start of file");
+
+ lseek(0, SEEK_SET);
+
+ //showpagetable(pagetable, header.numpages);
+
+ char * parentpathname = strdup(pathname);
+ char lastchar = ::increment_string(parentpathname, -1);
+
+ if ((lastchar >= '0') && (lastchar <= '9'))
+ {
+   struct stat stat_buf;
+   if (0 == stat(parentpathname, &stat_buf))
+   {
+     parent_image = new sparse_image_t();
+     int ret = parent_image->open(parentpathname);
+     if (ret != 0) return ret;
+     if (    (parent_image->pagesize != pagesize)
+         ||  (parent_image->total_size != total_size))
+     {
+       panic("child drive image does not have same page count/page size configuration");
+     }
+   }
+ }
+
+ if (parentpathname != NULL) free(parentpathname);
+
+ return 0; // success.
+}
+
+void sparse_image_t::close ()
+{
+  BX_DEBUG(("concat_image_t.close"));
+  if (pathname != NULL)
+  {
+   free(pathname);
+ }
+#ifdef _POSIX_MAPPED_FILES
+ if (mmap_header != NULL)
+ {
+   int ret = munmap(mmap_header, mmap_length);
+   if (ret != 0)
+     BX_INFO(("failed to un-memory map sparse disk file"));
+ }
+ pagetable = NULL; // We didn't malloc it
+#endif
+  if (fd > -1) {
+    ::close(fd);
+  }
+ if (pagetable != NULL)
+ {
+   delete [] pagetable;
+ }
+ if (parent_image != NULL)
+ {
+   delete parent_image;
+ }
+}
+
+off_t sparse_image_t::lseek (off_t offset, int whence)
+{
+ //showpagetable(pagetable, header.numpages);
+
+ if ((offset % 512) != 0)
+    BX_PANIC( ("lseek HD with offset not multiple of 512"));
+ if (whence != SEEK_SET)
+   BX_PANIC( ("lseek HD with whence not SEEK_SET"));
+
+ BX_DEBUG(("sparse_image_t.lseek(%d)", whence));
+
+ if (offset > total_size)
+ {
+   BX_PANIC(("sparse_image_t.lseek to byte %ld failed", (long)offset));
+    return -1;
+  }
+
+ //printf("Seeking to position %ld\n", (long) offset);
+
+ set_virtual_page(offset >> pagesize_shift);
+ position_page_offset = offset & pagesize_mask;
+
+ return 0;
+}
+
+inline off_t sparse_image_t::get_physical_offset()
+{
+ off_t physical_offset = data_start;
+ physical_offset += (position_physical_page << pagesize_shift);
+ physical_offset += position_page_offset;
+
+ return physical_offset;
+}
+
+inline void sparse_image_t::set_virtual_page(uint32 new_virtual_page)
+{
+ position_virtual_page = new_virtual_page;
+
+ position_physical_page = dtoh32(pagetable[position_virtual_page]);
+}
+
+ssize_t sparse_image_t::read_page_fragment(uint32 read_virtual_page, uint32 read_page_offset, size_t read_size, void * buf)
+{
+ if (read_virtual_page != position_virtual_page)
+ {
+   set_virtual_page(read_virtual_page);
+ }
+
+ position_page_offset = read_page_offset;
+
+ if (position_physical_page == SPARSE_PAGE_NOT_ALLOCATED)
+ {
+   if (parent_image != NULL)
+   {
+     return parent_image->read_page_fragment(read_virtual_page, read_page_offset, read_size, buf);
+   }
+   else
+   {
+     memset(buf, read_size, 0);
+   }
+ }
+ else
+ {
+   off_t physical_offset = get_physical_offset();
+
+   if (physical_offset != underlying_current_filepos)
+   {
+     int ret = ::lseek(fd, physical_offset, SEEK_SET);
+     // underlying_current_filepos update deferred
+     if (ret == -1)
+       panic(strerror(errno));
+   }
+
+   //printf("Reading %s at position %ld size %d\n", pathname, (long) physical_offset, (long) read_size);
+   ssize_t readret = ::read(fd, buf, read_size);
+
+   if (readret == -1)
+   {
+     panic(strerror(errno));
+   }
+
+   if ((size_t)readret != read_size)
+   {
+     panic("could not read block contents from file");
+   }
+
+   underlying_current_filepos = physical_offset + read_size;
+ }
+
+ return read_size;
+}
+
+ssize_t sparse_image_t::read(void* buf, size_t count)
+{
+ //showpagetable(pagetable, header.numpages);
+ ssize_t total_read = 0;
+
+ if (bx_dbg.disk)
+    BX_DEBUG(("sparse_image_t.read %ld bytes", (long)count));
+
+ while (count != 0)
+ {
+   size_t can_read = pagesize - position_page_offset;
+   if (count < can_read) can_read = count;
+
+   BX_ASSERT (can_read != 0);
+
+   size_t  was_read = read_page_fragment(position_virtual_page, position_page_offset, can_read, buf);
+
+   BX_ASSERT(was_read == can_read);
+
+   total_read += can_read;
+
+   position_page_offset += can_read;
+   if (position_page_offset == pagesize)
+   {
+     position_page_offset = 0;
+     set_virtual_page(position_virtual_page + 1);
+   }
+
+   BX_ASSERT(position_page_offset < pagesize);
+
+   buf = (((uint8 *) buf) + can_read);
+   count -= can_read;
+ }
+
+ return total_read;
+}
+
+void sparse_image_t::panic(const char * message)
+{
+ char buffer[1024];
+ if (message == NULL)
+ {
+   snprintf(buffer, sizeof(buffer), "error with sparse disk image %s", pathname);
+ }
+ else
+ {
+   snprintf(buffer, sizeof(buffer), "error with sparse disk image %s - %s", pathname, message);
+ }
+ BX_PANIC((buffer));
+}
+
+ssize_t sparse_image_t::write (const void* buf, size_t count)
+{
+ //showpagetable(pagetable, header.numpages);
+
+ ssize_t total_written = 0;
+
+ uint32  update_pagetable_start = position_virtual_page;
+ uint32  update_pagetable_count = 0;
+
+ if (bx_dbg.disk)
+    BX_DEBUG(("sparse_image_t.write %ld bytes", (long)count));
+
+ while (count != 0)
+ {
+   size_t can_write = pagesize - position_page_offset;
+   if (count < can_write) can_write = count;
+
+   BX_ASSERT (can_write != 0);
+
+   if (position_physical_page == SPARSE_PAGE_NOT_ALLOCATED)
+   {
+     // We just add on another page at the end of the file
+     // Reclamation, compaction etc should currently be done off-line
+
+     size_t  data_size = underlying_filesize - data_start;
+     BX_ASSERT((data_size % pagesize) == 0);
+
+
+     uint32  data_size_pages = data_size / pagesize;
+     uint32  next_data_page = data_size_pages;
+
+     pagetable[position_virtual_page] = htod32(next_data_page);
+     position_physical_page = next_data_page;
+
+     off_t page_file_start = data_start + (position_physical_page << pagesize_shift);
+
+     if (parent_image != NULL)
+     {
+       // If we have a parent, we must merge our portion with the parent
+       void * writebuffer = NULL;
+
+       if (can_write == pagesize)
+       {
+         writebuffer = (void *) buf;
+       }
+       else
+       {
+         writebuffer = malloc(pagesize);
+         if (writebuffer == NULL)
+           panic("Cannot allocate sufficient memory for page-merge in write");
+
+         // Read entire page - could optimize, but simple for now
+         parent_image->read_page_fragment(position_virtual_page, 0, pagesize, writebuffer);
+
+         void * dest_start = ((uint8 *) writebuffer) + position_page_offset;
+         memcpy(dest_start, buf, can_write);
+       }
+
+       int ret;
+       ret = ::lseek(fd, page_file_start, SEEK_SET);
+       // underlying_current_filepos update deferred
+       if (-1 == ret) panic(strerror(errno));
+
+       ret = ::write(fd, writebuffer, pagesize);
+
+       if (-1 == ret) panic(strerror(errno));
+
+       if (pagesize != (uint32)ret) panic("failed to write entire merged page to disk");
+
+       if (can_write != pagesize)
+       {
+         free(writebuffer);
+       }
+     }
+     else
+     {
+       // We need to write a zero page because read has been returning zeroes
+       // We seek as close to the page end as possible, and then write a little
+       // This produces a sparse file which has blanks
+       // Also very quick, even when pagesize is massive
+       int ret;
+       ret = ::lseek(fd, page_file_start + pagesize - 4, SEEK_SET);
+       // underlying_current_filepos update deferred
+       if (-1 == ret) panic(strerror(errno));
+
+       uint32  zero = 0;
+       ret = ::write(fd, &zero, 4);
+
+       if (-1 == ret) panic(strerror(errno));
+
+       if (4 != ret) panic("failed to write entire blank page to disk");
+     }
+
+     update_pagetable_count = (position_virtual_page - update_pagetable_start) + 1;
+     underlying_filesize = underlying_current_filepos = page_file_start + pagesize;
+   }
+
+   BX_ASSERT(position_physical_page != SPARSE_PAGE_NOT_ALLOCATED);
+
+   off_t physical_offset = get_physical_offset();
+
+   if (physical_offset != underlying_current_filepos)
+   {
+     int ret = ::lseek(fd, physical_offset, SEEK_SET);
+     // underlying_current_filepos update deferred
+     if (ret == -1)
+       panic(strerror(errno));
+   }
+
+   //printf("Writing at position %ld size %d\n", (long) physical_offset, can_write);
+   ssize_t writeret = ::write(fd, buf, can_write);
+
+   if (writeret == -1)
+   {
+     panic(strerror(errno));
+   }
+
+   if ((size_t)writeret != can_write)
+   {
+     panic("could not write block contents to file");
+   }
+
+   underlying_current_filepos = physical_offset + can_write;
+
+   total_written += can_write;
+
+   position_page_offset += can_write;
+   if (position_page_offset == pagesize)
+   {
+     position_page_offset = 0;
+     set_virtual_page(position_virtual_page + 1);
+   }
+
+   BX_ASSERT(position_page_offset < pagesize);
+
+   buf = (((uint8 *) buf) + can_write);
+   count -= can_write;
+ }
+
+ if (update_pagetable_count != 0)
+ {
+   bool done = false;
+   off_t pagetable_write_from = sizeof(header) + (sizeof(uint32) * update_pagetable_start);
+   size_t  write_bytecount = update_pagetable_count * sizeof(uint32);
+
+#ifdef _POSIX_MAPPED_FILES
+   if (mmap_header != NULL)
+   {
+     // Sync from the beginning of the page
+     size_t system_page_offset = pagetable_write_from & system_pagesize_mask;
+     void * start = ((uint8 *) mmap_header + pagetable_write_from - system_page_offset);
+
+     int ret = msync(start, system_page_offset + write_bytecount, MS_ASYNC);
+
+     if (ret != 0)
+       panic(strerror(errno));
+
+     done = true;
+   }
+#endif
+
+   if (!done)
+   {
+     int ret = ::lseek(fd, pagetable_write_from, SEEK_SET);
+     // underlying_current_filepos update deferred
+     if (ret == -1) panic(strerror(errno));
+
+     //printf("Writing header at position %ld size %ld\n", (long) pagetable_write_from, (long) write_bytecount);
+     ret = ::write(fd, &pagetable[update_pagetable_start], write_bytecount);
+     if (ret == -1) panic(strerror(errno));
+     if ((size_t)ret != write_bytecount) panic("could not write entire updated block header");
+
+     underlying_current_filepos = pagetable_write_from + write_bytecount;
+   }
+ }
+
+ return total_written;
+}
 
 #if DLL_HD_SUPPORT
 /*** dll_image_t function definitions ***/
@@ -3365,7 +4001,7 @@ ssize_t dll_image_t::write (const void* buf, size_t count)
          return -1;
       }
 }
-#endif
+#endif // DLL_HD_SUPPORT
 
 error_recovery_t::error_recovery_t ()
 {
@@ -3383,12 +4019,864 @@ error_recovery_t::error_recovery_t ()
       data[7] = 0x00;
 }
 
-uint16 read_16bit(const uint8* buf)
+uint16  BX_CPP_AttrRegparmN(1) 
+read_16bit(const uint8* buf)
 {
       return (buf[0] << 8) | buf[1];
 }
 
-uint32 read_32bit(const uint8* buf)
+uint32  BX_CPP_AttrRegparmN(1)
+read_32bit(const uint8* buf)
 {
       return (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
 }
+
+// redolog implementation
+redolog_t::redolog_t ()
+{
+        fd = -1;
+        catalog = NULL;
+        bitmap = NULL;
+        extent_index = (Bit32u)0;
+        extent_offset = (Bit32u)0;
+        extent_next = (Bit32u)0;
+}
+
+void
+redolog_t::print_header()
+{
+        BX_INFO(("redolog : Standard Header : magic='%s', type='%s', subtype='%s', version = %d.%d",
+                header.standard.magic, header.standard.type, header.standard.subtype,
+                dtoh32(header.standard.version)/0x10000,
+                dtoh32(header.standard.version)%0x10000));
+        BX_INFO(("redolog : Specific Header : #entries=%d, bitmap size=%d, exent size = %d disk size = %lld",
+                dtoh32(header.specific.catalog),
+                dtoh32(header.specific.bitmap),
+                dtoh32(header.specific.extent),
+                dtoh64(header.specific.disk)));
+}
+
+int 
+redolog_t::make_header (const char* type, Bit64u size)
+{
+        Bit32u entries, extent_size, bitmap_size;
+        Bit64u maxsize;
+        Bit32u flip=0;
+
+        // Set standard header values
+        strcpy((char*)header.standard.magic, STANDARD_HEADER_MAGIC);
+        strcpy((char*)header.standard.type, REDOLOG_TYPE);
+        strcpy((char*)header.standard.subtype, type);
+        header.standard.version = htod32(STANDARD_HEADER_VERSION);
+        header.standard.header = htod32(STANDARD_HEADER_SIZE);
+
+        entries = 512;
+        bitmap_size = 1;
+
+        // Compute #entries and extent size values
+        do {
+                extent_size = 8 * bitmap_size * 512;
+
+                header.specific.catalog = htod32(entries);
+                header.specific.bitmap = htod32(bitmap_size);
+                header.specific.extent = htod32(extent_size);
+                
+                maxsize = (Bit64u)entries * (Bit64u)extent_size;
+
+                flip++;
+
+                if(flip&0x01) bitmap_size *= 2;
+                else entries *= 2;
+        } while (maxsize < size);
+
+        header.specific.disk = htod64(size);
+        
+        print_header();
+
+        catalog = (Bit32u*)malloc(dtoh32(header.specific.catalog) * sizeof(Bit32u));
+        bitmap = (Bit8u*)malloc(dtoh32(header.specific.bitmap));
+
+        if ((catalog == NULL) || (bitmap==NULL))
+                BX_PANIC(("redolog : could not malloc catalog or bitmap"));
+
+        for (Bit32u i=0; i<dtoh32(header.specific.catalog); i++)
+                catalog[i] = htod32(REDOLOG_PAGE_NOT_ALLOCATED);
+
+        bitmap_blocs = 1 + (dtoh32(header.specific.bitmap) - 1) / 512;
+        extent_blocs = 1 + (dtoh32(header.specific.extent) - 1) / 512;
+
+        BX_DEBUG(("redolog : each bitmap is %d blocs", bitmap_blocs));
+        BX_DEBUG(("redolog : each extent is %d blocs", extent_blocs));
+
+        return 0;
+}
+
+int 
+redolog_t::create (const char* filename, const char* type, Bit64u size)
+{
+        int filedes;
+
+        BX_INFO(("redolog : creating redolog %s", filename));
+
+        filedes = ::open(filename, O_RDWR | O_CREAT | O_TRUNC
+#ifdef O_BINARY
+            | O_BINARY
+#endif
+              , S_IWUSR | S_IRUSR | S_IRGRP | S_IWGRP);
+
+        return create(filedes, type, size);
+}
+
+int 
+redolog_t::create (int filedes, const char* type, Bit64u size)
+{
+        fd = filedes;
+
+        if (fd < 0)
+        {
+                // open failed.
+                return -1;
+        }
+
+        if (make_header(type, size) < 0)
+        {
+                return -1;
+        }
+
+        // Write header
+        ::write(fd, &header, dtoh32(header.standard.header));
+
+        // Write catalog
+        // FIXME could mmap
+        ::write(fd, catalog, dtoh32(header.specific.catalog) * sizeof (Bit32u));
+
+        return 0;
+}
+
+int 
+redolog_t::open (const char* filename, const char *type, Bit64u size)
+{
+        int res;
+
+        fd = ::open(filename, O_RDWR
+#ifdef O_BINARY
+            | O_BINARY
+#endif
+              );
+        if (fd < 0)
+        {
+                BX_INFO(("redolog : could not open image %s", filename));
+                // open failed.
+                return -1;
+        }
+        BX_INFO(("redolog : open image %s", filename));
+      
+        res = ::read(fd, &header, sizeof(header));
+        if (res != STANDARD_HEADER_SIZE)
+        {
+               BX_PANIC(("redolog : could not read header")); 
+               return -1;
+        }
+
+        print_header();
+
+        if (strcmp((char*)header.standard.magic, STANDARD_HEADER_MAGIC) != 0)
+        {
+               BX_PANIC(("redolog : Bad header magic")); 
+               return -1;
+        }
+
+        if (strcmp((char*)header.standard.type, REDOLOG_TYPE) != 0)
+        {
+               BX_PANIC(("redolog : Bad header type")); 
+               return -1;
+        }
+        if (strcmp((char*)header.standard.subtype, type) != 0)
+        {
+               BX_PANIC(("redolog : Bad header subtype")); 
+               return -1;
+        }
+
+        if (dtoh32(header.standard.version) != STANDARD_HEADER_VERSION)
+        {
+               BX_PANIC(("redolog : Bad header version")); 
+               return -1;
+        }
+
+        catalog = (Bit32u*)malloc(dtoh32(header.specific.catalog) * sizeof(Bit32u));
+        
+        // FIXME could mmap
+        ::lseek(fd,dtoh32(header.standard.header),SEEK_SET);
+        res = ::read(fd, catalog, dtoh32(header.specific.catalog) * sizeof(Bit32u)) ;
+
+        if (res !=  (ssize_t)(dtoh32(header.specific.catalog) * sizeof(Bit32u)))
+        {
+               BX_PANIC(("redolog : could not read catalog %d=%d",res, dtoh32(header.specific.catalog))); 
+               return -1;
+        }
+
+        // check last used extent
+        extent_next = 0;
+        for (Bit32u i=0; i < dtoh32(header.specific.catalog); i++)
+        {
+                if (dtoh32(catalog[i]) != REDOLOG_PAGE_NOT_ALLOCATED)
+                {
+                        if (dtoh32(catalog[i]) >= extent_next)
+                                extent_next = dtoh32(catalog[i]) + 1;
+                }
+        }
+        BX_INFO(("redolog : next extent will be at index %d",extent_next));
+      
+        // memory used for storing bitmaps
+        bitmap = (Bit8u *)malloc(dtoh32(header.specific.bitmap));
+
+        bitmap_blocs = 1 + (dtoh32(header.specific.bitmap) - 1) / 512;
+        extent_blocs = 1 + (dtoh32(header.specific.extent) - 1) / 512;
+
+        BX_DEBUG(("redolog : each bitmap is %d blocs", bitmap_blocs));
+        BX_DEBUG(("redolog : each extent is %d blocs", extent_blocs));
+
+        return 0;
+}
+
+void 
+redolog_t::close ()
+{
+        if (fd >= 0)
+                ::close(fd);
+
+        if (catalog != NULL)
+                free(catalog);
+
+        if (bitmap != NULL)
+                free(bitmap);
+}
+
+off_t
+redolog_t::lseek (off_t offset, int whence)
+{
+        if ((offset % 512) != 0) {
+                BX_PANIC( ("redolog : lseek HD with offset not multiple of 512"));
+                return -1;
+        }
+        if (whence != SEEK_SET) {
+                BX_PANIC( ("redolog : lseek HD with whence not SEEK_SET"));
+                return -1;
+        }
+        if (offset > (off_t)dtoh64(header.specific.disk))
+        {
+                BX_PANIC(("redolog : lseek to byte %ld failed", (long)offset));
+                return -1;
+        }
+
+        extent_index = offset / dtoh32(header.specific.extent);
+        extent_offset = (offset % dtoh32(header.specific.extent)) / 512;
+
+        BX_DEBUG(("redolog : lseeking extent index %d, offset %d",extent_index, extent_offset));
+
+        return offset;
+}
+
+ssize_t
+redolog_t::read (void* buf, size_t count)
+{
+        off_t bloc_offset, bitmap_offset;
+
+        if (count != 512)
+                BX_PANIC( ("redolog : read HD with count not 512"));
+
+        BX_DEBUG(("redolog : reading index %d, mapping to %d", extent_index, dtoh32(catalog[extent_index])));
+
+        if (dtoh32(catalog[extent_index]) == REDOLOG_PAGE_NOT_ALLOCATED)
+        {
+                // page not allocated
+                return 0;
+        }
+
+        bitmap_offset  = (off_t)STANDARD_HEADER_SIZE + (dtoh32(header.specific.catalog) * sizeof(Bit32u));
+        bitmap_offset += (off_t)512 * dtoh32(catalog[extent_index]) * (extent_blocs + bitmap_blocs); 
+        bloc_offset    = bitmap_offset + ((off_t)512 * (bitmap_blocs + extent_offset));
+
+        BX_DEBUG(("redolog : bitmap offset is %x", (Bit32u)bitmap_offset));
+        BX_DEBUG(("redolog : bloc offset is %x", (Bit32u)bloc_offset));
+
+
+        // FIXME if same extent_index as before we can skip bitmap read
+
+        ::lseek(fd, bitmap_offset, SEEK_SET);
+
+        if (::read(fd, bitmap,  dtoh32(header.specific.bitmap)) != (ssize_t)dtoh32(header.specific.bitmap))
+        {
+                BX_PANIC(("redolog : failed to read bitmap for extent %d", extent_index));
+                return 0;
+        }
+
+        if ( ((bitmap[extent_offset/8] >> (extent_offset%8)) & 0x01) == 0x00 )
+        {
+                BX_DEBUG(("read not in redolog"));
+
+                // bitmap says bloc not in reloglog
+                return 0;
+        }
+        
+        ::lseek(fd, bloc_offset, SEEK_SET);
+
+        return (::read(fd, buf, count));
+}
+
+ssize_t
+redolog_t::write (const void* buf, size_t count)
+{
+        Bit32u i;
+        off_t bloc_offset, bitmap_offset, catalog_offset;
+        ssize_t written;
+        bx_bool update_catalog = 0;
+
+        if (count != 512)
+                BX_PANIC( ("redolog : write HD with count not 512"));
+
+        BX_DEBUG(("redolog : writing index %d, mapping to %d", extent_index, dtoh32(catalog[extent_index])));
+        if (dtoh32(catalog[extent_index]) == REDOLOG_PAGE_NOT_ALLOCATED)
+        {
+                if(extent_next >= dtoh32(header.specific.catalog))
+                {
+                        BX_PANIC(("redolog : can't allocate new extent... catalog is full"));
+                        return 0;
+                }
+
+                BX_DEBUG(("redolog : allocating new extent at %d", extent_next));
+
+                // Extent not allocated, allocate new
+                catalog[extent_index] = htod32(extent_next);
+                
+                extent_next += 1;
+
+                char *zerobuffer = (char*)malloc(512);
+                memset(zerobuffer, 0, 512);
+
+                // Write bitmap
+                bitmap_offset  = (off_t)STANDARD_HEADER_SIZE + (dtoh32(header.specific.catalog) * sizeof(Bit32u));
+                bitmap_offset += (off_t)512 * dtoh32(catalog[extent_index]) * (extent_blocs + bitmap_blocs); 
+                ::lseek(fd, bitmap_offset, SEEK_SET);
+                for(i=0; i<bitmap_blocs; i++)
+                {
+                        ::write(fd, zerobuffer, 512);
+                }
+                // Write extent
+                for(i=0; i<extent_blocs; i++)
+                {
+                        ::write(fd, zerobuffer, 512);
+                }
+
+                free(zerobuffer);
+
+                update_catalog = 1;
+        }
+
+        bitmap_offset  = (off_t)STANDARD_HEADER_SIZE + (dtoh32(header.specific.catalog) * sizeof(Bit32u));
+        bitmap_offset += (off_t)512 * dtoh32(catalog[extent_index]) * (extent_blocs + bitmap_blocs); 
+        bloc_offset    = bitmap_offset + ((off_t)512 * (bitmap_blocs + extent_offset));
+
+        BX_DEBUG(("redolog : bitmap offset is %x", (Bit32u)bitmap_offset));
+        BX_DEBUG(("redolog : bloc offset is %x", (Bit32u)bloc_offset));
+
+        // Write bloc
+        ::lseek(fd, bloc_offset, SEEK_SET);
+        written = ::write(fd, buf, count);
+
+        // Write bitmap
+        // FIXME if same extent_index as before we can skip bitmap read
+        ::lseek(fd, bitmap_offset, SEEK_SET);
+        if (::read(fd, bitmap,  dtoh32(header.specific.bitmap)) != (ssize_t)dtoh32(header.specific.bitmap))
+        {
+                BX_PANIC(("redolog : failed to read bitmap for extent %d", extent_index));
+                return 0;
+        }
+
+        // If bloc does not belong to extent yet
+        if ( ((bitmap[extent_offset/8] >> (extent_offset%8)) & 0x01) == 0x00 )
+        {
+                bitmap[extent_offset/8] |= 1 << (extent_offset%8);
+                ::lseek(fd, bitmap_offset, SEEK_SET);
+                ::write(fd, bitmap,  dtoh32(header.specific.bitmap));
+        }
+
+        // Write catalog
+        if (update_catalog)
+        {
+                // FIXME if mmap
+                catalog_offset  = (off_t)STANDARD_HEADER_SIZE + (extent_index * sizeof(Bit32u));
+
+                BX_DEBUG(("redolog : writing catalog at offset %x", (Bit32u)catalog_offset));
+
+                ::lseek(fd, catalog_offset, SEEK_SET);
+                ::write(fd, &catalog[extent_index], sizeof(Bit32u));
+        }
+
+        return written;
+}
+
+
+/*** growing_image_t function definitions ***/
+
+growing_image_t::growing_image_t(Bit64u _size)
+{
+        redolog = new redolog_t();
+        size = _size;
+}
+
+int growing_image_t::open (const char* pathname)
+{
+        int filedes = redolog->open(pathname,REDOLOG_SUBTYPE_GROWING,size);
+        BX_INFO(("'growing' disk opened, growing file is '%s'", pathname));
+        return filedes;
+}
+
+void growing_image_t::close ()
+{
+        redolog->close();
+}
+
+off_t growing_image_t::lseek (off_t offset, int whence)
+{
+      return redolog->lseek(offset, whence);
+}
+
+ssize_t growing_image_t::read (void* buf, size_t count)
+{
+      memset(buf, 0, count);
+      redolog->read((char*) buf, count);
+      return count;
+}
+
+ssize_t growing_image_t::write (const void* buf, size_t count)
+{
+      return redolog->write((char*) buf, count);
+}
+
+
+/*** undoable_image_t function definitions ***/
+
+undoable_image_t::undoable_image_t(Bit64u _size, const char* _redolog_name)
+{
+        redolog = new redolog_t();
+        ro_disk = new default_image_t();
+        size = _size;
+        redolog_name = NULL;
+        if (_redolog_name != NULL) {
+          if (strcmp(_redolog_name,"") != 0) {
+            redolog_name = strdup(_redolog_name);
+          }
+        }
+}
+
+int undoable_image_t::open (const char* pathname)
+{
+        char *logname=NULL;
+
+        if (ro_disk->open(pathname, O_RDONLY)<0)
+                return -1;
+
+        // if redolog name was set 
+        if ( redolog_name != NULL) {
+                if ( strcmp(redolog_name, "") != 0 ) {
+                        logname = (char*)malloc(strlen(redolog_name) + 1);
+                        strcpy (logname, redolog_name);
+                }
+        }
+
+        // Otherwise we make up the redolog filename from the pathname
+        if ( logname == NULL) {
+                logname = (char*)malloc(strlen(pathname) + UNDOABLE_REDOLOG_EXTENSION_LENGTH + 1);
+                sprintf (logname, "%s%s", pathname, UNDOABLE_REDOLOG_EXTENSION);
+        }
+
+        if (redolog->open(logname,REDOLOG_SUBTYPE_UNDOABLE,size) < 0)
+        {
+                if (redolog->create(logname, REDOLOG_SUBTYPE_UNDOABLE, size) < 0)
+                {
+                        BX_PANIC(("Can't open or create redolog '%s'",logname));
+                        return -1;
+                }
+        }
+
+        BX_INFO(("'undoable' disk opened: ro-file is '%s', redolog is '%s'", pathname, logname));
+        free(logname);
+
+        return 0;
+}
+
+void undoable_image_t::close ()
+{
+        redolog->close();
+        ro_disk->close();
+
+        if (redolog_name!=NULL)
+          free(redolog_name);
+}
+
+off_t undoable_image_t::lseek (off_t offset, int whence)
+{
+      redolog->lseek(offset, whence);
+      return ro_disk->lseek(offset, whence);
+}
+
+ssize_t undoable_image_t::read (void* buf, size_t count)
+{
+      // This should be fixed if count != 512
+      if ((size_t)redolog->read((char*) buf, count) != count)
+              return ro_disk->read((char*) buf, count);
+      else 
+              return count;
+}
+
+ssize_t undoable_image_t::write (const void* buf, size_t count)
+{
+      return redolog->write((char*) buf, count);
+}
+
+
+/*** volatile_image_t function definitions ***/
+
+volatile_image_t::volatile_image_t(Bit64u _size, const char* _redolog_name)
+{
+        redolog = new redolog_t();
+        ro_disk = new default_image_t();
+        size = _size;
+        redolog_temp = NULL;
+        redolog_name = NULL;
+        if (_redolog_name != NULL) {
+          if (strcmp(_redolog_name,"") != 0) {
+            redolog_name = strdup(_redolog_name);
+          }
+        }
+}
+
+int volatile_image_t::open (const char* pathname)
+{
+        int filedes;
+        const char *logname=NULL;
+
+        if (ro_disk->open(pathname, O_RDONLY)<0)
+                return -1;
+
+        // if redolog name was set 
+        if ( redolog_name != NULL) {
+                if ( strcmp(redolog_name, "") != 0 ) {
+                        logname = redolog_name;
+                }
+        }
+
+        // otherwise use pathname as template
+        if (logname == NULL) {
+                logname = pathname;
+        }
+
+        redolog_temp = (char*)malloc(strlen(logname) + VOLATILE_REDOLOG_EXTENSION_LENGTH + 1);
+        sprintf (redolog_temp, "%s%s", logname, VOLATILE_REDOLOG_EXTENSION);
+
+        filedes = mkstemp (redolog_temp);
+
+        if (filedes < 0)
+        {
+                BX_PANIC(("Can't create volatile redolog '%s'", redolog_temp));
+                return -1;
+        }
+        if (redolog->create(filedes, REDOLOG_SUBTYPE_VOLATILE, size) < 0)
+        {
+                BX_PANIC(("Can't create volatile redolog '%s'", redolog_temp));
+                return -1;
+        }
+        
+#if (!defined(WIN32)) && !BX_WITH_MACOS
+        // on unix it is legal to delete an open file
+        unlink(redolog_temp);
+#endif
+
+        BX_INFO(("'volatile' disk opened: ro-file is '%s', redolog is '%s'", pathname, redolog_temp));
+
+        return 0;
+}
+
+void volatile_image_t::close ()
+{
+        redolog->close();
+        ro_disk->close();
+
+#if defined(WIN32) || BX_WITH_MACOS
+        // on non-unix we have to wait till the file is closed to delete it
+        unlink(redolog_temp);
+#endif
+        if (redolog_temp!=NULL)
+          free(redolog_temp);
+
+        if (redolog_name!=NULL)
+          free(redolog_name);
+}
+
+off_t volatile_image_t::lseek (off_t offset, int whence)
+{
+      redolog->lseek(offset, whence);
+      return ro_disk->lseek(offset, whence);
+}
+
+ssize_t volatile_image_t::read (void* buf, size_t count)
+{
+      // This should be fixed if count != 512
+      if ((size_t)redolog->read((char*) buf, count) != count)
+              return ro_disk->read((char*) buf, count);
+      else 
+              return count;
+}
+
+ssize_t volatile_image_t::write (const void* buf, size_t count)
+{
+      return redolog->write((char*) buf, count);
+}
+
+#if BX_COMPRESSED_HD_SUPPORT
+
+/*** z_ro_image_t function definitions ***/
+
+z_ro_image_t::z_ro_image_t()
+{
+        offset = (off_t)0;
+}
+
+int z_ro_image_t::open (const char* pathname)
+{
+        fd = ::open(pathname, O_RDONLY
+#ifdef O_BINARY
+		  | O_BINARY
+#endif
+	    );
+
+        if(fd < 0)
+        {
+              BX_PANIC(("Could not open '%s' file", pathname));
+              return fd;
+        }
+
+        gzfile = gzdopen(fd, "rb");
+}
+
+void z_ro_image_t::close ()
+{
+        if (fd > -1) {
+            gzclose(gzfile);
+	    // ::close(fd);
+        }
+}
+
+off_t z_ro_image_t::lseek (off_t _offset, int whence)
+{
+        // Only SEEK_SET supported
+        if (whence != SEEK_SET)
+        {
+              BX_PANIC(("lseek on compressed images : only SEEK_SET supported"));
+        }
+
+        // Seeking is expensive on compressed files, so we do it
+        // only when necessary, at the latest moment
+        offset = _offset;
+
+        return offset;
+}
+
+ssize_t z_ro_image_t::read (void* buf, size_t count)
+{
+      gzseek(gzfile, offset, SEEK_SET);
+      return gzread(gzfile, buf, count);
+}
+
+ssize_t z_ro_image_t::write (const void* buf, size_t count)
+{
+      BX_PANIC(("z_ro_image: write not supported"));
+      return 0;
+}
+
+
+/*** z_undoable_image_t function definitions ***/
+
+z_undoable_image_t::z_undoable_image_t(Bit64u _size, const char* _redolog_name)
+{
+        redolog = new redolog_t();
+        ro_disk = new z_ro_image_t();
+        size = _size;
+
+        redolog_name = NULL;
+        if (_redolog_name != NULL) {
+          if (strcmp(_redolog_name,"") != 0) {
+            redolog_name = strdup(_redolog_name);
+          }
+        }
+}
+
+int z_undoable_image_t::open (const char* pathname)
+{
+        char *logname=NULL;
+
+        if (ro_disk->open(pathname)<0)
+                return -1;
+
+        // If redolog name was set 
+        if ( redolog_name != NULL) {
+                if ( strcmp(redolog_name, "") != 0) {
+                        logname = (char*)malloc(strlen(redolog_name) + 1);
+                        strcpy (logname, redolog_name);
+                }
+        }
+
+        // Otherwise we make up the redolog filename from the pathname
+        if ( logname == NULL) {
+                logname = (char*)malloc(strlen(pathname) + UNDOABLE_REDOLOG_EXTENSION_LENGTH + 1);
+                sprintf (logname, "%s%s", pathname, UNDOABLE_REDOLOG_EXTENSION);
+        }
+
+        if (redolog->open(logname,REDOLOG_SUBTYPE_UNDOABLE,size) < 0)
+        {
+                if (redolog->create(logname, REDOLOG_SUBTYPE_UNDOABLE, size) < 0)
+                {
+                        BX_PANIC(("Can't open or create redolog '%s'",logname));
+                        return -1;
+                }
+        }
+
+        BX_INFO(("'z-undoable' disk opened, z-ro-file is '%s', redolog is '%s'", pathname, logname));
+        free(logname);
+
+        return 0;
+}
+
+void z_undoable_image_t::close ()
+{
+        redolog->close();
+        ro_disk->close();
+
+        if (redolog_name!=NULL)
+          free(redolog_name);
+}
+
+off_t z_undoable_image_t::lseek (off_t offset, int whence)
+{
+      redolog->lseek(offset, whence);
+      return ro_disk->lseek(offset, whence);
+}
+
+ssize_t z_undoable_image_t::read (void* buf, size_t count)
+{
+      // This should be fixed if count != 512
+      if (redolog->read((char*) buf, count) != count)
+              return ro_disk->read((char*) buf, count);
+      else 
+              return count;
+}
+
+ssize_t z_undoable_image_t::write (const void* buf, size_t count)
+{
+      return redolog->write((char*) buf, count);
+}
+
+
+/*** z_volatile_image_t function definitions ***/
+
+z_volatile_image_t::z_volatile_image_t(Bit64u _size, const char* _redolog_name)
+{
+        redolog = new redolog_t();
+        ro_disk = new z_ro_image_t();
+        size = _size;
+
+        redolog_temp = NULL;
+        redolog_name = NULL;
+        if (_redolog_name != NULL) {
+          if (strcmp(_redolog_name,"") != 0) {
+            redolog_name = strdup(_redolog_name);
+          }
+        }
+}
+
+int z_volatile_image_t::open (const char* pathname)
+{
+        int filedes;
+        const char *logname=NULL;
+
+        if (ro_disk->open(pathname)<0)
+                return -1;
+
+        // if redolog name was set 
+        if ( redolog_name != NULL) {
+                if ( strcmp(redolog_name, "") !=0 ) {
+                        logname = redolog_name;
+                }
+        }
+
+        // otherwise use pathname as template
+        if (logname == NULL) {
+                logname = pathname;
+        }
+
+        redolog_temp = (char*)malloc(strlen(logname) + VOLATILE_REDOLOG_EXTENSION_LENGTH + 1);
+        sprintf (redolog_temp, "%s%s", logname, VOLATILE_REDOLOG_EXTENSION);
+
+        filedes = mkstemp (redolog_temp);
+
+        if (filedes < 0)
+        {
+                BX_PANIC(("Can't create volatile redolog '%s'", redolog_temp));
+                return -1;
+        }
+        if (redolog->create(filedes, REDOLOG_SUBTYPE_VOLATILE, size) < 0)
+        {
+                BX_PANIC(("Can't create volatile redolog '%s'", redolog_temp));
+                return -1;
+        }
+        
+#if (!defined(WIN32)) && !BX_WITH_MACOS
+        // on unix it is legal to delete an open file
+        unlink(redolog_temp);
+#endif
+
+        BX_INFO(("'z-volatile' disk opened: z-ro-file is '%s', redolog is '%s'", pathname, redolog_temp));
+
+        return 0;
+}
+
+void z_volatile_image_t::close ()
+{
+        redolog->close();
+        ro_disk->close();
+
+#if defined(WIN32) || BX_WITH_MACOS
+        // on non-unix we have to wait till the file is closed to delete it
+        unlink(redolog_temp);
+#endif
+
+        if (redolog_temp!=NULL)
+          free(redolog_temp);
+
+        if (redolog_name!=NULL)
+          free(redolog_name);
+}
+
+off_t z_volatile_image_t::lseek (off_t offset, int whence)
+{
+      redolog->lseek(offset, whence);
+      return ro_disk->lseek(offset, whence);
+}
+
+ssize_t z_volatile_image_t::read (void* buf, size_t count)
+{
+      // This should be fixed if count != 512
+      if (redolog->read((char*) buf, count) != count)
+              return ro_disk->read((char*) buf, count);
+      else 
+              return count;
+}
+
+ssize_t z_volatile_image_t::write (const void* buf, size_t count)
+{
+      return redolog->write((char*) buf, count);
+}
+
+
+#endif

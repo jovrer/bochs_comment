@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: init.cc,v 1.44 2002/11/22 09:36:28 sshwarts Exp $
+// $Id: init.cc,v 1.49 2003/12/30 22:12:45 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -36,9 +36,9 @@
 #define BX_DEVICE_ID     3
 #define BX_STEPPING_ID   0
 
-BX_CPU_C::BX_CPU_C()
+BX_CPU_C::BX_CPU_C(): bx_cpuid(0)
 #if BX_SUPPORT_APIC
-   : local_apic (this)
+   ,local_apic (this)
 #endif
 {
   // in case of SMF, you cannot reference any member data
@@ -168,7 +168,7 @@ cpu_param_handler (bx_param_c *param, int set, Bit64s val)
 
 void BX_CPU_C::init(BX_MEM_C *addrspace)
 {
-  BX_DEBUG(( "Init $Id: init.cc,v 1.44 2002/11/22 09:36:28 sshwarts Exp $"));
+  BX_DEBUG(( "Init $Id: init.cc,v 1.49 2003/12/30 22:12:45 cbothamy Exp $"));
   // BX_CPU_C constructor
   BX_CPU_THIS_PTR set_INTR (0);
 #if BX_SUPPORT_APIC
@@ -468,7 +468,7 @@ void BX_CPU_C::init(BX_MEM_C *addrspace)
 
 BX_CPU_C::~BX_CPU_C(void)
 {
-  BX_INSTR_SHUTDOWN(CPU_ID);
+  BX_INSTR_SHUTDOWN(BX_CPU_ID);
   BX_DEBUG(( "Exit."));
 }
 
@@ -822,6 +822,7 @@ BX_CPU_C::reset(unsigned source)
 #if BX_CPU_LEVEL >= 3
   BX_CPU_THIS_PTR cr2 = 0;
   BX_CPU_THIS_PTR cr3 = 0;
+  BX_CPU_THIS_PTR cr3_masked = 0;
 #endif
 #if BX_CPU_LEVEL >= 4
   BX_CPU_THIS_PTR cr4.setRegister(0);
@@ -864,7 +865,9 @@ BX_CPU_C::reset(unsigned source)
 #endif
 
   // Init the Floating Point Unit
+#if BX_SUPPORT_FPU
   fpu_init();
+#endif
 
 #if (BX_SMP_PROCESSORS > 1)
   // notice if I'm the bootstrap processor.  If not, do the equivalent of
@@ -889,7 +892,7 @@ BX_CPU_C::reset(unsigned source)
 #endif
   BX_CPU_THIS_PTR kill_bochs_request = 0;
 
-  BX_INSTR_RESET(CPU_ID);
+  BX_INSTR_RESET(BX_CPU_ID);
 }
 
 
@@ -966,6 +969,8 @@ BX_CPU_C::sanity_checks(void)
     BX_PANIC(("data type Bit16u or Bit16s is not of length 2 bytes!"));
   if (sizeof(Bit32u) != 4  ||  sizeof(Bit32s) != 4)
     BX_PANIC(("data type Bit32u or Bit32s is not of length 4 bytes!"));
+  if (sizeof(Bit64u) != 8  ||  sizeof(Bit64s) != 8)
+    BX_PANIC(("data type Bit64u or Bit64u is not of length 8 bytes!"));
 
   BX_DEBUG(( "#(%u)all sanity checks passed!", BX_SIM_ID ));
 }

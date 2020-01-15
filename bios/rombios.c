@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c,v 1.85.2.1 2003/01/16 21:58:42 cbothamy Exp $
+// $Id: rombios.c,v 1.103 2003/12/18 16:48:19 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -95,12 +95,6 @@
 //   - the translation policy is defined in cmos regs 0x39 & 0x3a
 //
 // TODO :
-//   int09
-//     - I think the extended key check should really be done in
-//       int09, and int15/4f should be empty. I did not see any
-//       bug, but maybe some code hooking int15/4f could be 
-//       disoriented when receiving extented E0 scancode.
-//       I've got a patch for this to be applied after Bochs2.0
 //
 //   int74 
 //     - needs to be reworked.  Uses direct [bp] offsets. (?)
@@ -883,7 +877,7 @@ static void           int74_function();
 //static Bit16u         get_DS();
 //static void           set_DS();
 static Bit16u         get_SS();
-static void           enqueue_key();
+static unsigned int   enqueue_key();
 static unsigned int   dequeue_key();
 static void           get_hd_geometry();
 static void           set_diskette_ret_status();
@@ -934,10 +928,10 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 1.85.2.1 $";
-static char bios_date_string[] = "$Date: 2003/01/16 21:58:42 $";
+static char bios_cvs_version_string[] = "$Revision: 1.103 $";
+static char bios_date_string[] = "$Date: 2003/12/18 16:48:19 $";
 
-static char CVSID[] = "$Id: rombios.c,v 1.85.2.1 2003/01/16 21:58:42 cbothamy Exp $";
+static char CVSID[] = "$Id: rombios.c,v 1.103 2003/12/18 16:48:19 vruppert Exp $";
 
 /* Offset to skip the CVS $Id: prefix */ 
 #define bios_version_string  (CVSID + 4)
@@ -1045,91 +1039,92 @@ static struct {
   Bit16u shift;
   Bit16u control;
   Bit16u alt;
+  Bit8u lock_flags;
   } scan_to_scanascii[MAX_SCAN_CODE + 1] = {
-      {   none,   none,   none,   none },
-      { 0x011b, 0x011b, 0x011b, 0x0100 }, /* escape */
-      { 0x0231, 0x0221,   none, 0x7800 }, /* 1! */
-      { 0x0332, 0x0340, 0x0300, 0x7900 }, /* 2@ */
-      { 0x0433, 0x0423,   none, 0x7a00 }, /* 3# */
-      { 0x0534, 0x0524,   none, 0x7b00 }, /* 4$ */
-      { 0x0635, 0x0625,   none, 0x7c00 }, /* 5% */
-      { 0x0736, 0x075e, 0x071e, 0x7d00 }, /* 6^ */
-      { 0x0837, 0x0826,   none, 0x7e00 }, /* 7& */
-      { 0x0938, 0x092a,   none, 0x7f00 }, /* 8* */
-      { 0x0a39, 0x0a28,   none, 0x8000 }, /* 9( */
-      { 0x0b30, 0x0b29,   none, 0x8100 }, /* 0) */
-      { 0x0c2d, 0x0c5f, 0x0c1f, 0x8200 }, /* -_ */
-      { 0x0d3d, 0x0d2b,   none, 0x8300 }, /* =+ */
-      { 0x0e08, 0x0e08, 0x0e7f,   none }, /* backspace */
-      { 0x0f09, 0x0f00,   none,   none }, /* tab */
-      { 0x1071, 0x1051, 0x1011, 0x1000 }, /* Q */
-      { 0x1177, 0x1157, 0x1117, 0x1100 }, /* W */
-      { 0x1265, 0x1245, 0x1205, 0x1200 }, /* E */
-      { 0x1372, 0x1352, 0x1312, 0x1300 }, /* R */
-      { 0x1474, 0x1454, 0x1414, 0x1400 }, /* T */
-      { 0x1579, 0x1559, 0x1519, 0x1500 }, /* Y */
-      { 0x1675, 0x1655, 0x1615, 0x1600 }, /* U */
-      { 0x1769, 0x1749, 0x1709, 0x1700 }, /* I */
-      { 0x186f, 0x184f, 0x180f, 0x1800 }, /* O */
-      { 0x1970, 0x1950, 0x1910, 0x1900 }, /* P */
-      { 0x1a5b, 0x1a7b, 0x1a1b,   none }, /* [{ */
-      { 0x1b5d, 0x1b7d, 0x1b1d,   none }, /* ]} */
-      { 0x1c0d, 0x1c0d, 0x1c0a,   none }, /* Enter */
-      {   none,   none,   none,   none }, /* L Ctrl */
-      { 0x1e61, 0x1e41, 0x1e01, 0x1e00 }, /* A */
-      { 0x1f73, 0x1f53, 0x1f13, 0x1f00 }, /* S */
-      { 0x2064, 0x2044, 0x2004, 0x2000 }, /* D */
-      { 0x2166, 0x2146, 0x2106, 0x2100 }, /* F */
-      { 0x2267, 0x2247, 0x2207, 0x2200 }, /* G */
-      { 0x2368, 0x2348, 0x2308, 0x2300 }, /* H */
-      { 0x246a, 0x244a, 0x240a, 0x2400 }, /* J */
-      { 0x256b, 0x254b, 0x250b, 0x2500 }, /* K */
-      { 0x266c, 0x264c, 0x260c, 0x2600 }, /* L */
-      { 0x273b, 0x273a,   none,   none }, /* ;: */
-      { 0x2827, 0x2822,   none,   none }, /* '" */
-      { 0x2960, 0x297e,   none,   none }, /* `~ */
-      {   none,   none,   none,   none }, /* L shift */
-      { 0x2b5c, 0x2b7c, 0x2b1c,   none }, /* |\ */
-      { 0x2c7a, 0x2c5a, 0x2c1a, 0x2c00 }, /* Z */
-      { 0x2d78, 0x2d58, 0x2d18, 0x2d00 }, /* X */
-      { 0x2e63, 0x2e43, 0x2e03, 0x2e00 }, /* C */
-      { 0x2f76, 0x2f56, 0x2f16, 0x2f00 }, /* V */
-      { 0x3062, 0x3042, 0x3002, 0x3000 }, /* B */
-      { 0x316e, 0x314e, 0x310e, 0x3100 }, /* N */
-      { 0x326d, 0x324d, 0x320d, 0x3200 }, /* M */
-      { 0x332c, 0x333c,   none,   none }, /* ,< */
-      { 0x342e, 0x343e,   none,   none }, /* .> */
-      { 0x352f, 0x353f,   none,   none }, /* /? */
-      {   none,   none,   none,   none }, /* R Shift */
-      { 0x372a, 0x372a,   none,   none }, /* * */
-      {   none,   none,   none,   none }, /* L Alt */
-      { 0x3920, 0x3920, 0x3920, 0x3920 }, /* space */
-      {   none,   none,   none,   none }, /* caps lock */
-      { 0x3b00, 0x5400, 0x5e00, 0x6800 }, /* F1 */
-      { 0x3c00, 0x5500, 0x5f00, 0x6900 }, /* F2 */
-      { 0x3d00, 0x5600, 0x6000, 0x6a00 }, /* F3 */
-      { 0x3e00, 0x5700, 0x6100, 0x6b00 }, /* F4 */
-      { 0x3f00, 0x5800, 0x6200, 0x6c00 }, /* F5 */
-      { 0x4000, 0x5900, 0x6300, 0x6d00 }, /* F6 */
-      { 0x4100, 0x5a00, 0x6400, 0x6e00 }, /* F7 */
-      { 0x4200, 0x5b00, 0x6500, 0x6f00 }, /* F8 */
-      { 0x4300, 0x5c00, 0x6600, 0x7000 }, /* F9 */
-      { 0x4400, 0x5d00, 0x6700, 0x7100 }, /* F10 */
-      {   none,   none,   none,   none }, /* Num Lock */
-      {   none,   none,   none,   none }, /* Scroll Lock */
-      { 0x4700, 0x4737, 0x7700,   none }, /* 7 Home */
-      { 0x4800, 0x4838,   none,   none }, /* 8 UP */
-      { 0x4900, 0x4939, 0x8400,   none }, /* 9 PgUp */
-      { 0x4a2d, 0x4a2d,   none,   none }, /* - */
-      { 0x4b00, 0x4b34, 0x7300,   none }, /* 4 Left */
-      { 0x4c00, 0x4c35,   none,   none }, /* 5 */
-      { 0x4d00, 0x4d36, 0x7400,   none }, /* 6 Right */
-      { 0x4e2b, 0x4e2b,   none,   none }, /* + */
-      { 0x4f00, 0x4f31, 0x7500,   none }, /* 1 End */
-      { 0x5000, 0x5032,   none,   none }, /* 2 Down */
-      { 0x5100, 0x5133, 0x7600,   none }, /* 3 PgDn */
-      { 0x5200, 0x5230,   none,   none }, /* 0 Ins */
-      { 0x5300, 0x532e,   none,   none }  /* Del */
+      {   none,   none,   none,   none, none },
+      { 0x011b, 0x011b, 0x011b, 0x0100, none }, /* escape */
+      { 0x0231, 0x0221,   none, 0x7800, none }, /* 1! */
+      { 0x0332, 0x0340, 0x0300, 0x7900, none }, /* 2@ */
+      { 0x0433, 0x0423,   none, 0x7a00, none }, /* 3# */
+      { 0x0534, 0x0524,   none, 0x7b00, none }, /* 4$ */
+      { 0x0635, 0x0625,   none, 0x7c00, none }, /* 5% */
+      { 0x0736, 0x075e, 0x071e, 0x7d00, none }, /* 6^ */
+      { 0x0837, 0x0826,   none, 0x7e00, none }, /* 7& */
+      { 0x0938, 0x092a,   none, 0x7f00, none }, /* 8* */
+      { 0x0a39, 0x0a28,   none, 0x8000, none }, /* 9( */
+      { 0x0b30, 0x0b29,   none, 0x8100, none }, /* 0) */
+      { 0x0c2d, 0x0c5f, 0x0c1f, 0x8200, none }, /* -_ */
+      { 0x0d3d, 0x0d2b,   none, 0x8300, none }, /* =+ */
+      { 0x0e08, 0x0e08, 0x0e7f,   none, none }, /* backspace */
+      { 0x0f09, 0x0f00,   none,   none, none }, /* tab */
+      { 0x1071, 0x1051, 0x1011, 0x1000, 0x40 }, /* Q */
+      { 0x1177, 0x1157, 0x1117, 0x1100, 0x40 }, /* W */
+      { 0x1265, 0x1245, 0x1205, 0x1200, 0x40 }, /* E */
+      { 0x1372, 0x1352, 0x1312, 0x1300, 0x40 }, /* R */
+      { 0x1474, 0x1454, 0x1414, 0x1400, 0x40 }, /* T */
+      { 0x1579, 0x1559, 0x1519, 0x1500, 0x40 }, /* Y */
+      { 0x1675, 0x1655, 0x1615, 0x1600, 0x40 }, /* U */
+      { 0x1769, 0x1749, 0x1709, 0x1700, 0x40 }, /* I */
+      { 0x186f, 0x184f, 0x180f, 0x1800, 0x40 }, /* O */
+      { 0x1970, 0x1950, 0x1910, 0x1900, 0x40 }, /* P */
+      { 0x1a5b, 0x1a7b, 0x1a1b,   none, none }, /* [{ */
+      { 0x1b5d, 0x1b7d, 0x1b1d,   none, none }, /* ]} */
+      { 0x1c0d, 0x1c0d, 0x1c0a,   none, none }, /* Enter */
+      {   none,   none,   none,   none, none }, /* L Ctrl */
+      { 0x1e61, 0x1e41, 0x1e01, 0x1e00, 0x40 }, /* A */
+      { 0x1f73, 0x1f53, 0x1f13, 0x1f00, 0x40 }, /* S */
+      { 0x2064, 0x2044, 0x2004, 0x2000, 0x40 }, /* D */
+      { 0x2166, 0x2146, 0x2106, 0x2100, 0x40 }, /* F */
+      { 0x2267, 0x2247, 0x2207, 0x2200, 0x40 }, /* G */
+      { 0x2368, 0x2348, 0x2308, 0x2300, 0x40 }, /* H */
+      { 0x246a, 0x244a, 0x240a, 0x2400, 0x40 }, /* J */
+      { 0x256b, 0x254b, 0x250b, 0x2500, 0x40 }, /* K */
+      { 0x266c, 0x264c, 0x260c, 0x2600, 0x40 }, /* L */
+      { 0x273b, 0x273a,   none,   none, none }, /* ;: */
+      { 0x2827, 0x2822,   none,   none, none }, /* '" */
+      { 0x2960, 0x297e,   none,   none, none }, /* `~ */
+      {   none,   none,   none,   none, none }, /* L shift */
+      { 0x2b5c, 0x2b7c, 0x2b1c,   none, none }, /* |\ */
+      { 0x2c7a, 0x2c5a, 0x2c1a, 0x2c00, 0x40 }, /* Z */
+      { 0x2d78, 0x2d58, 0x2d18, 0x2d00, 0x40 }, /* X */
+      { 0x2e63, 0x2e43, 0x2e03, 0x2e00, 0x40 }, /* C */
+      { 0x2f76, 0x2f56, 0x2f16, 0x2f00, 0x40 }, /* V */
+      { 0x3062, 0x3042, 0x3002, 0x3000, 0x40 }, /* B */
+      { 0x316e, 0x314e, 0x310e, 0x3100, 0x40 }, /* N */
+      { 0x326d, 0x324d, 0x320d, 0x3200, 0x40 }, /* M */
+      { 0x332c, 0x333c,   none,   none, none }, /* ,< */
+      { 0x342e, 0x343e,   none,   none, none }, /* .> */
+      { 0x352f, 0x353f,   none,   none, none }, /* /? */
+      {   none,   none,   none,   none, none }, /* R Shift */
+      { 0x372a, 0x372a,   none,   none, none }, /* * */
+      {   none,   none,   none,   none, none }, /* L Alt */
+      { 0x3920, 0x3920, 0x3920, 0x3920, none }, /* space */
+      {   none,   none,   none,   none, none }, /* caps lock */
+      { 0x3b00, 0x5400, 0x5e00, 0x6800, none }, /* F1 */
+      { 0x3c00, 0x5500, 0x5f00, 0x6900, none }, /* F2 */
+      { 0x3d00, 0x5600, 0x6000, 0x6a00, none }, /* F3 */
+      { 0x3e00, 0x5700, 0x6100, 0x6b00, none }, /* F4 */
+      { 0x3f00, 0x5800, 0x6200, 0x6c00, none }, /* F5 */
+      { 0x4000, 0x5900, 0x6300, 0x6d00, none }, /* F6 */
+      { 0x4100, 0x5a00, 0x6400, 0x6e00, none }, /* F7 */
+      { 0x4200, 0x5b00, 0x6500, 0x6f00, none }, /* F8 */
+      { 0x4300, 0x5c00, 0x6600, 0x7000, none }, /* F9 */
+      { 0x4400, 0x5d00, 0x6700, 0x7100, none }, /* F10 */
+      {   none,   none,   none,   none, none }, /* Num Lock */
+      {   none,   none,   none,   none, none }, /* Scroll Lock */
+      { 0x4700, 0x4737, 0x7700,   none, 0x20 }, /* 7 Home */
+      { 0x4800, 0x4838,   none,   none, 0x20 }, /* 8 UP */
+      { 0x4900, 0x4939, 0x8400,   none, 0x20 }, /* 9 PgUp */
+      { 0x4a2d, 0x4a2d,   none,   none, none }, /* - */
+      { 0x4b00, 0x4b34, 0x7300,   none, 0x20 }, /* 4 Left */
+      { 0x4c00, 0x4c35,   none,   none, 0x20 }, /* 5 */
+      { 0x4d00, 0x4d36, 0x7400,   none, 0x20 }, /* 6 Right */
+      { 0x4e2b, 0x4e2b,   none,   none, none }, /* + */
+      { 0x4f00, 0x4f31, 0x7500,   none, 0x20 }, /* 1 End */
+      { 0x5000, 0x5032,   none,   none, 0x20 }, /* 2 Down */
+      { 0x5100, 0x5133, 0x7600,   none, 0x20 }, /* 3 PgDn */
+      { 0x5200, 0x5230,   none,   none, 0x20 }, /* 0 Ins */
+      { 0x5300, 0x532e,   none,   none, 0x20 }  /* Del */
       };
 
   Bit8u
@@ -2080,13 +2075,13 @@ void ata_detect( )
 #if BX_MAX_ATA_INTERFACES > 2
   write_byte(ebda_seg,&EbdaData->ata.channels[2].iface,ATA_IFACE_ISA);
   write_word(ebda_seg,&EbdaData->ata.channels[2].iobase1,0x1e8);
-  write_word(ebda_seg,&EbdaData->ata.channels[2].iobase2,0x3e8);
+  write_word(ebda_seg,&EbdaData->ata.channels[2].iobase2,0x3e0);
   write_byte(ebda_seg,&EbdaData->ata.channels[2].irq,12);
 #endif
 #if BX_MAX_ATA_INTERFACES > 3
   write_byte(ebda_seg,&EbdaData->ata.channels[3].iface,ATA_IFACE_ISA);
   write_word(ebda_seg,&EbdaData->ata.channels[3].iobase1,0x168);
-  write_word(ebda_seg,&EbdaData->ata.channels[3].iobase2,0x368);
+  write_word(ebda_seg,&EbdaData->ata.channels[3].iobase2,0x360);
   write_byte(ebda_seg,&EbdaData->ata.channels[3].irq,11);
 #endif
 #if BX_MAX_ATA_INTERFACES > 4
@@ -3146,16 +3141,20 @@ cdrom_boot()
   if(buffer[0x20]!=0x88)return 11; // Bootable
 
   write_byte(ebda_seg,&EbdaData->cdemu.media,buffer[0x21]);
-  if(buffer[0x21]<4)
+  if(buffer[0x21]==0){
+    // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 0xE0. 
+    // Win2000 cd boot needs to know it booted from cd
+    write_byte(ebda_seg,&EbdaData->cdemu.emulated_drive,0xE0);
+    } 
+  else if(buffer[0x21]<4)
     write_byte(ebda_seg,&EbdaData->cdemu.emulated_drive,0x00);
   else
     write_byte(ebda_seg,&EbdaData->cdemu.emulated_drive,0x80);
 
   // FIXME ElTorito Harddisk. current code can only emulate a floppy
-  if(read_byte(ebda_seg,&EbdaData->cdemu.emulated_drive)!=0x00)
-    BX_PANIC("El-Torito: Cannot boot as a harddisk yet\n");
+  //if(read_byte(ebda_seg,&EbdaData->cdemu.emulated_drive)!=0x00)
+  //  BX_PANIC("El-Torito: Cannot boot as a harddisk yet\n");
 
-  // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 1. Should be fixed if two ide interface
   write_byte(ebda_seg,&EbdaData->cdemu.controller_index,device/2);
   write_byte(ebda_seg,&EbdaData->cdemu.device_spec,device%2);
 
@@ -3183,7 +3182,7 @@ cdrom_boot()
   if((error = ata_cmd_packet(device, 12, get_SS(), atacmd, 0, nbsectors*512L, ATA_DATA_IN, boot_segment,0)) != 0)
     return 12;
 
-  // Remeber the media type
+  // Remember the media type
   switch(read_byte(ebda_seg,&EbdaData->cdemu.media)) {
     case 0x01:  // 1.2M floppy
       write_word(ebda_seg,&EbdaData->cdemu.vdevice.spt,15);
@@ -3200,24 +3199,27 @@ cdrom_boot()
       write_word(ebda_seg,&EbdaData->cdemu.vdevice.cylinders,80);
       write_word(ebda_seg,&EbdaData->cdemu.vdevice.heads,2);
       break;
+    case 0x04:  // Harddrive
+      write_word(ebda_seg,&EbdaData->cdemu.vdevice.spt,read_byte(boot_segment,446+6)&0x3f);
+      write_word(ebda_seg,&EbdaData->cdemu.vdevice.cylinders,
+	      (read_byte(boot_segment,446+6)<<2) + read_byte(boot_segment,446+7) + 1);
+      write_word(ebda_seg,&EbdaData->cdemu.vdevice.heads,read_byte(boot_segment,446+5) + 1);
+      break;
    }
 
-  // Increase bios installed hardware number of floppy, booted from floppy
-  if(read_byte(ebda_seg,&EbdaData->cdemu.media)!=0)
+  if(read_byte(ebda_seg,&EbdaData->cdemu.media)!=0) {
+    // Increase bios installed hardware number of devices
     if(read_byte(ebda_seg,&EbdaData->cdemu.emulated_drive)==0x00)
       write_byte(0x40,0x10,read_byte(0x40,0x10)|0x41);
+    else
+      write_byte(ebda_seg, &EbdaData->ata.hdcount, read_byte(ebda_seg, &EbdaData->ata.hdcount) + 1);
+   }
+
   
   // everything is ok, so from now on, the emulation is active
   if(read_byte(ebda_seg,&EbdaData->cdemu.media)!=0)
     write_byte(ebda_seg,&EbdaData->cdemu.active,0x01);
 
-  // if we are not emulating a device
-  if(read_byte(ebda_seg,&EbdaData->cdemu.media)==0) {
-    // FIXME ElTorito Hardcoded. cdrom is hardcoded as device 0xE0. 
-    // Win2000 cd boot needs this
-    write_byte(ebda_seg,&EbdaData->cdemu.emulated_drive,0xE0);
-    }
-  
   // return the boot drive + no error
   return (read_byte(ebda_seg,&EbdaData->cdemu.emulated_drive)*0x100)+0;
 }
@@ -3320,7 +3322,7 @@ int15_function(regs, ES, DS, FLAGS)
   Bit8u   ret, mouse_data1, mouse_data2, mouse_data3;
   Bit8u   comm_byte, mf2_state;
   Bit32u  extended_memory_size=0; // 64bits long
-  Bit16u  CX;
+  Bit16u  CX,DX;
 
 BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
 
@@ -3341,11 +3343,7 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
 #if BX_CPU < 2
       regs.u.r8.ah = UNSUPPORTED_FUNCTION;
 #else
-      if (regs.u.r8.al == 0xE0) {
-        mf2_state = read_byte(0x0040, 0x96);
-        write_byte(0x0040, 0x96, mf2_state | 0x01);
-        regs.u.r8.al = inb(0x60);
-        }
+      // nop
 #endif
       SET_CF();
       break;
@@ -3353,6 +3351,47 @@ BX_DEBUG_INT15("int15 AX=%04x\n",regs.u.r16.ax);
     case 0x52:    // removable media eject
       CLEAR_CF();
       regs.u.r8.ah = 0;  // "ok ejection may proceed"
+      break;
+
+    case 0x86:
+      // Wait for CX:DX microseconds. currently using the 
+      // refresh request port 0x61 bit4, toggling every 15usec 
+
+      CX = regs.u.r16.cx;
+      DX = regs.u.r16.dx;
+
+ASM_START
+      sti
+
+      ;; Get the count in eax
+      mov  bx, sp
+      SEG SS
+        mov  ax, _int15_function.CX [bx]
+      shl  eax, #16
+      SEG SS
+        mov  ax, _int15_function.DX [bx]
+
+      ;; convert to numbers of 15usec ticks
+      mov ebx, #15
+      xor edx, edx
+      div eax, ebx
+      mov ecx, eax
+
+      ;; wait for ecx number of refresh requests
+      in al, #0x61
+      and al,#0x10
+      mov ah, al
+
+int1586_tick:
+      in al, #0x61
+      and al,#0x10
+      cmp al, ah
+      je  int1586_tick
+      mov ah, al
+      dec ecx
+      jnz int1586_tick
+ASM_END
+
       break;
 
     case 0x87:
@@ -3840,20 +3879,34 @@ BX_DEBUG_INT15("case default:\n");
 	    }
             break;
 
-        case 0x01: // coded by Hartmut Birr
-          regs.u.r8.al = inb_cmos(0x34);
-          regs.u.r8.ah = inb_cmos(0x35);
-          if(regs.u.r16.ax)
+        case 0x01: 
+          // do we have any reason to fail here ?
+          CLEAR_CF();
+
+          // my real system sets ax and bx to 0
+          // this is confirmed by Ralph Brown list
+          // but syslinux v1.48 is known to behave 
+          // strangely if ax is set to 0
+          // regs.u.r16.ax = 0;
+          // regs.u.r16.bx = 0;
+
+          // Get the amount of extended memory (above 1M)
+          regs.u.r8.cl = inb_cmos(0x30);
+          regs.u.r8.ch = inb_cmos(0x31);
+          
+          // limit to 15M
+          if(regs.u.r16.cx > 0x3c00)
           {
-            regs.u.r16.bx = regs.u.r16.ax;
-            regs.u.r16.ax = 0x3c00;
-            regs.u.r16.cx = regs.u.r16.ax;
-            regs.u.r16.dx = regs.u.r16.bx;
-            CLEAR_CF();
-            break;
+            regs.u.r16.cx = 0x3c00;
           }
-          regs.u.r8.ah = 0xe8;
-          regs.u.r8.al = 0x01;
+
+          // Get the amount of extended memory above 16M in 64k blocs
+          regs.u.r8.dl = inb_cmos(0x34);
+          regs.u.r8.dh = inb_cmos(0x35);
+
+          // Set configured memory equal to extended memory
+          regs.u.r16.ax = regs.u.r16.cx;
+          regs.u.r16.bx = regs.u.r16.dx;
           break;
 	default:  /* AH=0xE8?? but not implemented */
 	  goto int15_unimplemented;
@@ -3876,7 +3929,8 @@ BX_DEBUG_INT15("case default:\n");
 int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
   Bit16u DI, SI, BP, SP, BX, DX, CX, AX, FLAGS;
 {
-  Bit8u scan_code, ascii_code, shift_flags;
+  Bit8u scan_code, ascii_code, shift_flags, count;
+  Bit16u kbd_code, max;
 
   BX_DEBUG_INT16("int16: AX=%04x BX=%04x CX=%04x DX=%04x \n", AX, BX, CX, DX);
 
@@ -3905,6 +3959,15 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
       SET_AL(shift_flags);
       break;
 
+    case 0x05: /* store key-stroke into buffer */
+      if ( !enqueue_key(GET_CH(), GET_CL()) ) {
+        SET_AL(1);
+        }
+      else {
+        SET_AL(0);
+        }
+      break;
+
     case 0x09: /* GET KEYBOARD FUNCTIONALITY */
       // bit Bochs Description     
       //  7    0   reserved
@@ -3920,10 +3983,25 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
       break;
 
     case 0x0A: /* GET KEYBOARD ID */
-      // translated
-      BX=0x41AB;
-      // passthru (FIXME)
-      // BX=0x83AB;
+      count = 2;
+      kbd_code = 0x0;
+      outb(0x60, 0xf2);
+      /* Wait for data */
+      max=0xffff;
+      while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x00);
+      if (max>0x0) {
+        if ((inb(0x60) == 0xfa)) {
+          do {
+            max=0xffff;
+            while ( ((inb(0x64) & 0x01) == 0) && (--max>0) ) outb(0x80, 0x00);
+            if (max>0x0) {
+              kbd_code >>= 8;
+              kbd_code |= (inb(0x60) << 8);
+            }
+          } while (--count>0);
+	}
+      }
+      BX=kbd_code;
       break;
 
     case 0x10: /* read MF-II keyboard input */
@@ -3931,7 +4009,6 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
       if ( !dequeue_key(&scan_code, &ascii_code, 1) ) {
         BX_PANIC("KBD: int16h: out of keyboard input\n");
         }
-      if (ascii_code == 0) ascii_code = 0xE0;
       AX = (scan_code << 8) | ascii_code;
       break;
 
@@ -3940,7 +4017,6 @@ int16_function(DI, SI, BP, SP, BX, DX, CX, AX, FLAGS)
         SET_ZF();
         return;
         }
-      if (ascii_code == 0) ascii_code = 0xE0;
       AX = (scan_code << 8) | ascii_code;
       CLEAR_ZF();
       break;
@@ -4123,11 +4199,11 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
 
   switch (scancode) {
     case 0x3a: /* Caps Lock press */
-      shift_flags |= 0x40;
+      shift_flags ^= 0x40;
       write_byte(0x0040, 0x17, shift_flags);
       mf2_flags |= 0x40;
       write_byte(0x0040, 0x18, mf2_flags);
-      led_flags |= 0x04;
+      led_flags ^= 0x04;
       write_byte(0x0040, 0x97, led_flags);
       break;
     case 0xba: /* Caps Lock release */
@@ -4136,7 +4212,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     case 0x2a: /* L Shift press */
-      shift_flags &= ~0x40;
+      /*shift_flags &= ~0x40;*/
       shift_flags |= 0x02;
       write_byte(0x0040, 0x17, shift_flags);
       led_flags &= ~0x04;
@@ -4148,7 +4224,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       break;
 
     case 0x36: /* R Shift press */
-      shift_flags &= ~0x40;
+      /*shift_flags &= ~0x40;*/
       shift_flags |= 0x01;
       write_byte(0x0040, 0x17, shift_flags);
       led_flags &= ~0x04;
@@ -4205,13 +4281,8 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
       if ((mf2_state & 0x01) == 0) {
         mf2_flags |= 0x20;
         write_byte(0x0040, 0x18, mf2_flags);
-        if (shift_flags & 0x20) {
-          shift_flags &= ~0x20;
-          led_flags &= ~0x02;
-        } else {
-          shift_flags |= 0x20;
-          led_flags |= 0x02;
-          }
+        shift_flags ^= 0x20;
+        led_flags ^= 0x02;
         write_byte(0x0040, 0x17, shift_flags);
         write_byte(0x0040, 0x97, led_flags);
         }
@@ -4226,13 +4297,8 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
     case 0x46: /* Scroll Lock press */
       mf2_flags |= 0x10;
       write_byte(0x0040, 0x18, mf2_flags);
-      if (shift_flags & 0x10) {
-        shift_flags &= ~0x10;
-        led_flags &= ~0x01;
-      } else {
-        shift_flags |= 0x10;
-        led_flags |= 0x01;
-        }
+      shift_flags ^= 0x10;
+      led_flags ^= 0x01;
       write_byte(0x0040, 0x17, shift_flags);
       write_byte(0x0040, 0x97, led_flags);
       break;
@@ -4256,9 +4322,11 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
         asciicode = scan_to_scanascii[scancode].control;
         scancode = scan_to_scanascii[scancode].control >> 8;
         }
-      else if (shift_flags & 0x43) { /* CAPSLOCK + LSHIFT + RSHIFT */
-        /* check if both CAPSLOCK and a SHIFT key are pressed */
-        if ((shift_flags & 0x03) && (shift_flags & 0x40)) {
+      else if (shift_flags & 0x03) { /* LSHIFT + RSHIFT */
+        /* check if lock state should be ignored 
+         * because a SHIFT key are pressed */
+         
+        if (shift_flags & scan_to_scanascii[scancode].lock_flags) {
           asciicode = scan_to_scanascii[scancode].normal;
           scancode = scan_to_scanascii[scancode].normal >> 8;
           }
@@ -4268,8 +4336,15 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
           }
         }
       else {
-        asciicode = scan_to_scanascii[scancode].normal;
-        scancode = scan_to_scanascii[scancode].normal >> 8;
+        /* check if lock is on */
+        if (shift_flags & scan_to_scanascii[scancode].lock_flags) {
+          asciicode = scan_to_scanascii[scancode].shift;
+          scancode = scan_to_scanascii[scancode].shift >> 8;
+          }
+        else {
+          asciicode = scan_to_scanascii[scancode].normal;
+          scancode = scan_to_scanascii[scancode].normal >> 8;
+          }
         }
       if (scancode==0 && asciicode==0) {
         BX_INFO("KBD: int09h_handler(): scancode & asciicode are zero?");
@@ -4280,7 +4355,7 @@ int09_function(DI, SI, BP, SP, BX, DX, CX, AX)
   mf2_state &= ~0x01;
 }
 
-  void
+  unsigned int
 enqueue_key(scan_code, ascii_code)
   Bit8u scan_code, ascii_code;
 {
@@ -4306,14 +4381,13 @@ enqueue_key(scan_code, ascii_code)
     buffer_tail = buffer_start;
 
   if (buffer_tail == buffer_head) {
-    BX_PANIC("KBD: dropped key scan=%02x, ascii=%02x\n",
-      (int) scan_code, (int) ascii_code);
-    return;
+    return(0);
     }
 
    write_byte(0x0040, temp_tail, ascii_code);
    write_byte(0x0040, temp_tail+1, scan_code);
    write_word(0x0040, 0x001C, buffer_tail);
+   return(1);
 }
 
 
@@ -5203,7 +5277,6 @@ int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
   //BX_DEBUG_INT13_ET("int13_cdemu: SS=%04x ES=%04x DI=%04x SI=%04x\n", get_SS(), ES, DI, SI);
   
   /* at this point, we are emulating a floppy/harddisk */
-  // FIXME ElTorito Harddisk. Harddisk emulation is not implemented
   
   // Recompute the device number 
   device  = read_byte(ebda_seg,&EbdaData->cdemu.controller_index) * 2;
@@ -5287,11 +5360,11 @@ int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
       SET_AL(nbsectors);
 
       // start lba on cd
-      slba  = (Bit16u)vlba/4;               // FIXME ElTorito Harddisk. should allow Bit32u image size - needs compiler helper function
+      slba  = (Bit32u)vlba/4; 
       before= (Bit16u)vlba%4;
 
       // end lba on cd
-      elba = (Bit16u)(vlba+nbsectors-1)/4; // FIXME ElTorito Harddisk. should allow Bit32u image size - needs compiler helper function
+      elba = (Bit32u)(vlba+nbsectors-1)/4;
       
       memsetb(get_SS(),atacmd,0,12);
       atacmd[0]=0x28;                      // READ command
@@ -5322,6 +5395,7 @@ int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
       SET_CL((( vcylinders >> 2) & 0xc0) | ( vspt  & 0x3f ));
       SET_DH( vheads );
       SET_DL( 0x02 );   // FIXME ElTorito Various. should send the real count of drives 1 or 2
+                        // FIXME ElTorito Harddisk. should send the HD count
  
       switch(read_byte(ebda_seg,&EbdaData->cdemu.media)) {
         case 0x01: SET_BL( 0x02 ); break;
@@ -5335,7 +5409,7 @@ int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
       break;
 
     case 0x15: /* read disk drive size */
-      // FIXME ElTorito Harddisk. if we want to emulate a harddisk
+      // FIXME ElTorito Harddisk. What geometry to send ?
       SET_AH(0x03);
       goto int13_success_noah;
       break;
@@ -5345,6 +5419,7 @@ int13_cdemu(DI, SI, BP, SP, BX, DX, CX, AX, ES, FLAGS)
     case 0x0b: /* write disk sectors with ECC */
     case 0x18: /* set media type for format */
     case 0x41: // IBM/MS installation check
+      // FIXME ElTorito Harddisk. Darwin would like to use EDD
     case 0x42: // IBM/MS extended read
     case 0x43: // IBM/MS extended write
     case 0x44: // IBM/MS verify sectors
@@ -6055,6 +6130,35 @@ floppy_media_sense(drive)
 
   // for now cheat and get drive type from CMOS,
   // assume media is same as drive type
+
+  // ** config_data **
+  // Bitfields for diskette media control:
+  // Bit(s)  Description (Table M0028)
+  //  7-6  last data rate set by controller
+  //        00=500kbps, 01=300kbps, 10=250kbps, 11=1Mbps
+  //  5-4  last diskette drive step rate selected
+  //        00=0Ch, 01=0Dh, 10=0Eh, 11=0Ah
+  //  3-2  {data rate at start of operation}
+  //  1-0  reserved
+
+  // ** media_state **
+  // Bitfields for diskette drive media state:
+  // Bit(s)  Description (Table M0030)
+  //  7-6  data rate
+  //    00=500kbps, 01=300kbps, 10=250kbps, 11=1Mbps
+  //  5  double stepping required (e.g. 360kB in 1.2MB)
+  //  4  media type established
+  //  3  drive capable of supporting 4MB media
+  //  2-0  on exit from BIOS, contains
+  //    000 trying 360kB in 360kB
+  //    001 trying 360kB in 1.2MB
+  //    010 trying 1.2MB in 1.2MB
+  //    011 360kB in 360kB established
+  //    100 360kB in 1.2MB established
+  //    101 1.2MB in 1.2MB established
+  //    110 reserved
+  //    111 all other formats/drives
+
   drive_type = inb_cmos(0x10);
   if (drive == 0)
     drive_type >>= 4;
@@ -6069,7 +6173,7 @@ floppy_media_sense(drive)
   else if ( drive_type == 2 ) {
     // 1.2 MB 5.25" drive
     config_data = 0x00; // 0000 0000
-    media_state = 0x25; // 0010 0101
+    media_state = 0x25; // 0010 0101   // need double stepping??? (bit 5)
     retval = 1;
     }
   else if ( drive_type == 3 ) {
@@ -6090,6 +6194,27 @@ floppy_media_sense(drive)
     media_state = 0xD7; // 1101 0111
     retval = 1;
     }
+  //
+  // Extended floppy size uses special cmos setting 
+  else if ( drive_type == 6 ) {
+    // 160k 5.25" drive
+    config_data = 0x00; // 0000 0000
+    media_state = 0x27; // 0010 0111
+    retval = 1;
+    }
+  else if ( drive_type == 7 ) {
+    // 180k 5.25" drive
+    config_data = 0x00; // 0000 0000
+    media_state = 0x27; // 0010 0111
+    retval = 1;
+    }
+  else if ( drive_type == 8 ) {
+    // 320k 5.25" drive
+    config_data = 0x00; // 0000 0000
+    media_state = 0x27; // 0010 0111
+    retval = 1;
+    }
+
   else {
     // not recognized
     config_data = 0x00; // 0000 0000
@@ -6757,7 +6882,7 @@ BX_DEBUG_INT13_FL("floppy f05\n");
 BX_DEBUG_INT13_FL("floppy f08\n");
       drive = GET_DL();
 
-      if (drive>1) {
+      if (drive > 1) {
         AX = 0;
         BX = 0;
         CX = 0;
@@ -6780,7 +6905,6 @@ BX_DEBUG_INT13_FL("floppy f08\n");
         drive_type >>= 4;
       else
         drive_type &= 0x0f;
-
 
       SET_BH(0);
       SET_BL(drive_type);
@@ -6816,6 +6940,21 @@ BX_DEBUG_INT13_FL("floppy f08\n");
 
         case 5: // 2.88MB, 3.5"
           CX = 0x4f24; // 80 tracks, 36 sectors
+          SET_DH(1); // max head #
+          break;
+
+        case 6: // 160k, 5.25"
+          CX = 0x2708; // 40 tracks, 8 sectors
+          SET_DH(0); // max head #
+          break;
+
+        case 7: // 180k, 5.25"
+          CX = 0x2709; // 40 tracks, 9 sectors
+          SET_DH(0); // max head #
+          break;
+
+        case 8: // 320k, 5.25"
+          CX = 0x2708; // 40 tracks, 8 sectors
           SET_DH(1); // max head #
           break;
 
@@ -7387,10 +7526,7 @@ ASM_END
 
   ; //FIXME BCC BUG
 ASM_START
-  ;; send EOI to slave & master PICs
-  mov  al, #0x20
-  out  #0xA0, al ;; slave  PIC EOI
-  out  #0x20, al ;; master PIC EOI
+  call eoi_both_pics
 ASM_END
 }
 
@@ -7421,10 +7557,7 @@ int74_handler:
   call far ptr[0x22]
 int74_done:
   cli
-  mov  al, #0x20
-  ;; send EOI to slave & master PICs
-  out  #0xA0, al ;; slave  PIC EOI
-  out  #0x20, al ;; master PIC EOI
+  call eoi_both_pics
   add sp, #8     ;; pop status, x, y, z
 
   pop ds          ;; restore DS
@@ -7606,6 +7739,7 @@ int13_eltorito:
 ;- INT18h -
 ;----------
 int18_handler: ;; Boot Failure routing
+  hlt
   HALT(__LINE__)
   iret
 
@@ -7630,7 +7764,7 @@ int19_relocated: ;; Boot function, relocated
   ;; bl contains the boot drive
   ;; ax contains the boot segment or 0 if failure
 
-  test       ax, ax  ;; id ax is 0 call int18
+  test       ax, ax  ;; if ax is 0 call int18
   jz         int18_handler
 
   mov dl,    bl      ;; set drive so guest os find it
@@ -8063,14 +8197,22 @@ ebda_post:
 ;--------------------
 ; relocated here because the primary POST area isnt big enough.
 eoi_jmp_post:
-  mov al, #0x20
-  out 0xA0, al   ;; send EOI to PIC
-  out 0x20, al   ;; send EOI to PIC
+  call eoi_both_pics
 
   xor ax, ax
   mov ds, ax
 
   jmp far ptr [0x467]
+
+
+;--------------------
+eoi_both_pics:
+  mov   al, #0x20
+  out   #0xA0, al ;; slave  PIC EOI
+eoi_master_pic:
+  mov   al, #0x20
+  out   #0x20, al ;; master PIC EOI
+  ret
 
 ;--------------------
 BcdToBin:
@@ -8173,9 +8315,7 @@ int76_handler:
   mov   ax, #0x0040
   mov   ds, ax
   mov   0x008E, #0xff
-  mov   al, #0x20
-  out   #0xA0, al ;; slave  PIC EOI
-  out   #0x20, al ;; master PIC EOI
+  call  eoi_both_pics
   pop   ds
   pop   ax
   iret
@@ -8333,7 +8473,7 @@ pci_pro_select_reg:
 use16 386
 
 pcibios_real:
-  push ax
+  push eax
   push dx
   mov eax, #0x80000000
   mov dx, #0x0cf8
@@ -8343,13 +8483,13 @@ pcibios_real:
   cmp eax, #0x12378086
   je  pci_present
   pop dx
-  pop ax
+  pop eax
   mov ah, #0xff
   stc
   ret
 pci_present:
   pop dx
-  pop ax
+  pop eax
   cmp al, #0x01 ;; installation check
   jne pci_real_f02
   mov ax, #0x0001
@@ -8463,48 +8603,51 @@ pci_real_select_reg:
 #endif
 
 detect_parport:
+  push dx
   add  dx, #2
   in   al, dx
   and  al, #0xdf ; clear input mode
   out  dx, al
-  sub  dx, #2
+  pop  dx
   mov  al, #0xaa
   out  dx, al
   in   al, dx
   cmp  al, #0xaa
   jne  no_parport
+  push bx
   shl  bx, #1
   mov  [bx+0x408], dx ; Parallel I/O address
-  shr  bx, #1
+  pop  bx
   mov  [bx+0x478], cl ; Parallel printer timeout
   inc  bx
 no_parport:
   ret
 
 detect_serial:
-  add  dx, #4
-  in   al, dx
-  or   al, #0x10 ; enable loopback mode
+  push dx
+  inc  dx
+  mov  al, #0x02
   out  dx, al
-  and  al, #0xf0
-  or   al, #0x0a
-  out  dx, al
-  add  dx, #2
   in   al, dx
-  and  al, #0xf0
-  cmp  al, #0x90
+  cmp  al, #0x02
   jne  no_serial
-  sub  dx, #2
+  inc  dx
   in   al, dx
-  and  al, #0xe0
+  cmp  al, #0x02
+  jne  no_serial
+  dec  dx
+  xor  al, al
   out  dx, al
-  sub  dx, #4
+  pop  dx
+  push bx
   shl  bx, #1
   mov  [bx+0x400], dx ; Serial I/O address
-  shr  bx, #1
+  pop  bx
   mov  [bx+0x47c], cl ; Serial timeout
   inc  bx
+  ret
 no_serial:
+  pop  dx
   ret
 
 ;; for 'C' strings and other data, insert them here with
@@ -8741,6 +8884,9 @@ post_default_ints:
   ;; PS/2 mouse setup
   SET_INT_VECTOR(0x74, #0xF000, #int74_handler)
 
+  ;; IRQ13 (FPU exception) setup
+  SET_INT_VECTOR(0x75, #0xF000, #int75_handler)
+
   ;; Video setup
   SET_INT_VECTOR(0x10, #0xF000, #int10_handler)
 
@@ -8863,8 +9009,17 @@ rom_scan_increment:
 
 
 .org 0xe2c3 ; NMI Handler Entry Point
+nmi:
+  ;; FIXME the NMI handler should not panic
+  ;; but iret when called from int75 (fpu exception)
   call _nmi_handler_msg
   HALT(__LINE__)
+  iret
+
+int75_handler:
+  out  0xf0, al         // clear irq13 
+  call eoi_both_pics    // clear interrupt
+  int  2                // legacy nmi call
   iret
 
 ;-------------------------------------------
@@ -9069,8 +9224,23 @@ int09_handler:
   //test al, #0x80            ;;look for key release
   //jnz  int09_process_key    ;; dont pass releases to intercept?
 
+  ;; check for extended key
+  cmp  al, #0xe0
+  jne int09_call_int15_4f
+  
+  push ds
+  xor  ax, ax
+  mov  ds, ax
+  mov  al, BYTE [0x496]     ;; mf2_state |= 0x01
+  or   al, #0x01
+  mov  BYTE [0x496], al
+  pop  ds
+  
+  in  al, #0x60             ;;read another key from keyboard controller
+
   sti
 
+int09_call_int15_4f:
 #ifdef BX_CALL_INT15_4F
   mov  ah, #0x4f     ;; allow for keyboard intercept
   stc
@@ -9090,8 +9260,7 @@ int09_handler:
 
 int09_done:
   cli
-  mov  al, #0x20     ;; send EOI to master PIC
-  out  #0x20, al
+  call eoi_master_pic
 
 int09_finish:
   mov al, #0xAE      ;;enable keyboard
@@ -9181,8 +9350,7 @@ int0e_normal:
   push ds
   mov  ax, #0x0000 ;; segment 0000
   mov  ds, ax
-  mov  al, #0x20
-  out  0x20, al  ;; send EOI to PIC
+  call eoi_master_pic
   mov  al, 0x043e
   or   al, #0x80 ;; diskette interrupt has occurred
   mov  0x043e, al
@@ -9306,8 +9474,6 @@ dw 0x03ff  ;; limit 15:00
 dw 0x0000  ;; base  15:00
 db 0x00    ;; base  23:16
 
-.org 0xfa6e ; Character Font for 320x200 & 640x200 Graphics (lower 128 characters)
-
 
 ;----------
 ;- INT1Ah -
@@ -9386,13 +9552,16 @@ int08_store_ticks:
   //CALL_EP( 0x1c << 2 )
   int #0x1c
   cli
-  mov al, #0x20
-  out 0x20, al  ; send EOI to PIC
+  call eoi_master_pic
   pop ds
   pop eax
   iret
 
 .org 0xfef3 ; Initial Interrupt Vector Offsets Loaded by POST
+
+
+.org 0xff00
+.ascii "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
 ;------------------------------------------------
 ;- IRET Instruction for Dummy Interrupt Handler -
@@ -9405,9 +9574,6 @@ dummy_iret_handler:
   HALT(__LINE__)
   iret
 
-.org 0xff00
-.ascii "(c) 2002 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
-
 .org 0xfff0 ; Power-up Entry Point
   jmp 0xf000:post;
 
@@ -9418,6 +9584,146 @@ dummy_iret_handler:
 db SYS_MODEL_ID
 db 0x00   ; filler
 
+.org 0xfa6e ;; Character Font for 320x200 & 640x200 Graphics (lower 128 characters)
+ASM_END
+/*
+ * This font comes from the fntcol16.zip package (c) by  Joseph Gil 
+ * found at ftp://ftp.simtel.net/pub/simtelnet/msdos/screen/fntcol16.zip
+ * This font is public domain
+ */ 
+static Bit8u vgafont8[128*8]=
+{
+ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 0x7e, 0x81, 0xa5, 0x81, 0xbd, 0x99, 0x81, 0x7e,
+ 0x7e, 0xff, 0xdb, 0xff, 0xc3, 0xe7, 0xff, 0x7e,
+ 0x6c, 0xfe, 0xfe, 0xfe, 0x7c, 0x38, 0x10, 0x00,
+ 0x10, 0x38, 0x7c, 0xfe, 0x7c, 0x38, 0x10, 0x00,
+ 0x38, 0x7c, 0x38, 0xfe, 0xfe, 0x7c, 0x38, 0x7c,
+ 0x10, 0x10, 0x38, 0x7c, 0xfe, 0x7c, 0x38, 0x7c,
+ 0x00, 0x00, 0x18, 0x3c, 0x3c, 0x18, 0x00, 0x00,
+ 0xff, 0xff, 0xe7, 0xc3, 0xc3, 0xe7, 0xff, 0xff,
+ 0x00, 0x3c, 0x66, 0x42, 0x42, 0x66, 0x3c, 0x00,
+ 0xff, 0xc3, 0x99, 0xbd, 0xbd, 0x99, 0xc3, 0xff,
+ 0x0f, 0x07, 0x0f, 0x7d, 0xcc, 0xcc, 0xcc, 0x78,
+ 0x3c, 0x66, 0x66, 0x66, 0x3c, 0x18, 0x7e, 0x18,
+ 0x3f, 0x33, 0x3f, 0x30, 0x30, 0x70, 0xf0, 0xe0,
+ 0x7f, 0x63, 0x7f, 0x63, 0x63, 0x67, 0xe6, 0xc0,
+ 0x99, 0x5a, 0x3c, 0xe7, 0xe7, 0x3c, 0x5a, 0x99,
+ 0x80, 0xe0, 0xf8, 0xfe, 0xf8, 0xe0, 0x80, 0x00,
+ 0x02, 0x0e, 0x3e, 0xfe, 0x3e, 0x0e, 0x02, 0x00,
+ 0x18, 0x3c, 0x7e, 0x18, 0x18, 0x7e, 0x3c, 0x18,
+ 0x66, 0x66, 0x66, 0x66, 0x66, 0x00, 0x66, 0x00,
+ 0x7f, 0xdb, 0xdb, 0x7b, 0x1b, 0x1b, 0x1b, 0x00,
+ 0x3e, 0x63, 0x38, 0x6c, 0x6c, 0x38, 0xcc, 0x78,
+ 0x00, 0x00, 0x00, 0x00, 0x7e, 0x7e, 0x7e, 0x00,
+ 0x18, 0x3c, 0x7e, 0x18, 0x7e, 0x3c, 0x18, 0xff,
+ 0x18, 0x3c, 0x7e, 0x18, 0x18, 0x18, 0x18, 0x00,
+ 0x18, 0x18, 0x18, 0x18, 0x7e, 0x3c, 0x18, 0x00,
+ 0x00, 0x18, 0x0c, 0xfe, 0x0c, 0x18, 0x00, 0x00,
+ 0x00, 0x30, 0x60, 0xfe, 0x60, 0x30, 0x00, 0x00,
+ 0x00, 0x00, 0xc0, 0xc0, 0xc0, 0xfe, 0x00, 0x00,
+ 0x00, 0x24, 0x66, 0xff, 0x66, 0x24, 0x00, 0x00,
+ 0x00, 0x18, 0x3c, 0x7e, 0xff, 0xff, 0x00, 0x00,
+ 0x00, 0xff, 0xff, 0x7e, 0x3c, 0x18, 0x00, 0x00,
+ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 0x30, 0x78, 0x78, 0x30, 0x30, 0x00, 0x30, 0x00,
+ 0x6c, 0x6c, 0x6c, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 0x6c, 0x6c, 0xfe, 0x6c, 0xfe, 0x6c, 0x6c, 0x00,
+ 0x30, 0x7c, 0xc0, 0x78, 0x0c, 0xf8, 0x30, 0x00,
+ 0x00, 0xc6, 0xcc, 0x18, 0x30, 0x66, 0xc6, 0x00,
+ 0x38, 0x6c, 0x38, 0x76, 0xdc, 0xcc, 0x76, 0x00,
+ 0x60, 0x60, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 0x18, 0x30, 0x60, 0x60, 0x60, 0x30, 0x18, 0x00,
+ 0x60, 0x30, 0x18, 0x18, 0x18, 0x30, 0x60, 0x00,
+ 0x00, 0x66, 0x3c, 0xff, 0x3c, 0x66, 0x00, 0x00,
+ 0x00, 0x30, 0x30, 0xfc, 0x30, 0x30, 0x00, 0x00,
+ 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x30, 0x60,
+ 0x00, 0x00, 0x00, 0xfc, 0x00, 0x00, 0x00, 0x00,
+ 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x30, 0x00,
+ 0x06, 0x0c, 0x18, 0x30, 0x60, 0xc0, 0x80, 0x00,
+ 0x7c, 0xc6, 0xce, 0xde, 0xf6, 0xe6, 0x7c, 0x00,
+ 0x30, 0x70, 0x30, 0x30, 0x30, 0x30, 0xfc, 0x00,
+ 0x78, 0xcc, 0x0c, 0x38, 0x60, 0xcc, 0xfc, 0x00,
+ 0x78, 0xcc, 0x0c, 0x38, 0x0c, 0xcc, 0x78, 0x00,
+ 0x1c, 0x3c, 0x6c, 0xcc, 0xfe, 0x0c, 0x1e, 0x00,
+ 0xfc, 0xc0, 0xf8, 0x0c, 0x0c, 0xcc, 0x78, 0x00,
+ 0x38, 0x60, 0xc0, 0xf8, 0xcc, 0xcc, 0x78, 0x00,
+ 0xfc, 0xcc, 0x0c, 0x18, 0x30, 0x30, 0x30, 0x00,
+ 0x78, 0xcc, 0xcc, 0x78, 0xcc, 0xcc, 0x78, 0x00,
+ 0x78, 0xcc, 0xcc, 0x7c, 0x0c, 0x18, 0x70, 0x00,
+ 0x00, 0x30, 0x30, 0x00, 0x00, 0x30, 0x30, 0x00,
+ 0x00, 0x30, 0x30, 0x00, 0x00, 0x30, 0x30, 0x60,
+ 0x18, 0x30, 0x60, 0xc0, 0x60, 0x30, 0x18, 0x00,
+ 0x00, 0x00, 0xfc, 0x00, 0x00, 0xfc, 0x00, 0x00,
+ 0x60, 0x30, 0x18, 0x0c, 0x18, 0x30, 0x60, 0x00,
+ 0x78, 0xcc, 0x0c, 0x18, 0x30, 0x00, 0x30, 0x00,
+ 0x7c, 0xc6, 0xde, 0xde, 0xde, 0xc0, 0x78, 0x00,
+ 0x30, 0x78, 0xcc, 0xcc, 0xfc, 0xcc, 0xcc, 0x00,
+ 0xfc, 0x66, 0x66, 0x7c, 0x66, 0x66, 0xfc, 0x00,
+ 0x3c, 0x66, 0xc0, 0xc0, 0xc0, 0x66, 0x3c, 0x00,
+ 0xf8, 0x6c, 0x66, 0x66, 0x66, 0x6c, 0xf8, 0x00,
+ 0xfe, 0x62, 0x68, 0x78, 0x68, 0x62, 0xfe, 0x00,
+ 0xfe, 0x62, 0x68, 0x78, 0x68, 0x60, 0xf0, 0x00,
+ 0x3c, 0x66, 0xc0, 0xc0, 0xce, 0x66, 0x3e, 0x00,
+ 0xcc, 0xcc, 0xcc, 0xfc, 0xcc, 0xcc, 0xcc, 0x00,
+ 0x78, 0x30, 0x30, 0x30, 0x30, 0x30, 0x78, 0x00,
+ 0x1e, 0x0c, 0x0c, 0x0c, 0xcc, 0xcc, 0x78, 0x00,
+ 0xe6, 0x66, 0x6c, 0x78, 0x6c, 0x66, 0xe6, 0x00,
+ 0xf0, 0x60, 0x60, 0x60, 0x62, 0x66, 0xfe, 0x00,
+ 0xc6, 0xee, 0xfe, 0xfe, 0xd6, 0xc6, 0xc6, 0x00,
+ 0xc6, 0xe6, 0xf6, 0xde, 0xce, 0xc6, 0xc6, 0x00,
+ 0x38, 0x6c, 0xc6, 0xc6, 0xc6, 0x6c, 0x38, 0x00,
+ 0xfc, 0x66, 0x66, 0x7c, 0x60, 0x60, 0xf0, 0x00,
+ 0x78, 0xcc, 0xcc, 0xcc, 0xdc, 0x78, 0x1c, 0x00,
+ 0xfc, 0x66, 0x66, 0x7c, 0x6c, 0x66, 0xe6, 0x00,
+ 0x78, 0xcc, 0xe0, 0x70, 0x1c, 0xcc, 0x78, 0x00,
+ 0xfc, 0xb4, 0x30, 0x30, 0x30, 0x30, 0x78, 0x00,
+ 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0xfc, 0x00,
+ 0xcc, 0xcc, 0xcc, 0xcc, 0xcc, 0x78, 0x30, 0x00,
+ 0xc6, 0xc6, 0xc6, 0xd6, 0xfe, 0xee, 0xc6, 0x00,
+ 0xc6, 0xc6, 0x6c, 0x38, 0x38, 0x6c, 0xc6, 0x00,
+ 0xcc, 0xcc, 0xcc, 0x78, 0x30, 0x30, 0x78, 0x00,
+ 0xfe, 0xc6, 0x8c, 0x18, 0x32, 0x66, 0xfe, 0x00,
+ 0x78, 0x60, 0x60, 0x60, 0x60, 0x60, 0x78, 0x00,
+ 0xc0, 0x60, 0x30, 0x18, 0x0c, 0x06, 0x02, 0x00,
+ 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0x78, 0x00,
+ 0x10, 0x38, 0x6c, 0xc6, 0x00, 0x00, 0x00, 0x00,
+ 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+ 0x30, 0x30, 0x18, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 0x00, 0x00, 0x78, 0x0c, 0x7c, 0xcc, 0x76, 0x00,
+ 0xe0, 0x60, 0x60, 0x7c, 0x66, 0x66, 0xdc, 0x00,
+ 0x00, 0x00, 0x78, 0xcc, 0xc0, 0xcc, 0x78, 0x00,
+ 0x1c, 0x0c, 0x0c, 0x7c, 0xcc, 0xcc, 0x76, 0x00,
+ 0x00, 0x00, 0x78, 0xcc, 0xfc, 0xc0, 0x78, 0x00,
+ 0x38, 0x6c, 0x60, 0xf0, 0x60, 0x60, 0xf0, 0x00,
+ 0x00, 0x00, 0x76, 0xcc, 0xcc, 0x7c, 0x0c, 0xf8,
+ 0xe0, 0x60, 0x6c, 0x76, 0x66, 0x66, 0xe6, 0x00,
+ 0x30, 0x00, 0x70, 0x30, 0x30, 0x30, 0x78, 0x00,
+ 0x0c, 0x00, 0x0c, 0x0c, 0x0c, 0xcc, 0xcc, 0x78,
+ 0xe0, 0x60, 0x66, 0x6c, 0x78, 0x6c, 0xe6, 0x00,
+ 0x70, 0x30, 0x30, 0x30, 0x30, 0x30, 0x78, 0x00,
+ 0x00, 0x00, 0xcc, 0xfe, 0xfe, 0xd6, 0xc6, 0x00,
+ 0x00, 0x00, 0xf8, 0xcc, 0xcc, 0xcc, 0xcc, 0x00,
+ 0x00, 0x00, 0x78, 0xcc, 0xcc, 0xcc, 0x78, 0x00,
+ 0x00, 0x00, 0xdc, 0x66, 0x66, 0x7c, 0x60, 0xf0,
+ 0x00, 0x00, 0x76, 0xcc, 0xcc, 0x7c, 0x0c, 0x1e,
+ 0x00, 0x00, 0xdc, 0x76, 0x66, 0x60, 0xf0, 0x00,
+ 0x00, 0x00, 0x7c, 0xc0, 0x78, 0x0c, 0xf8, 0x00,
+ 0x10, 0x30, 0x7c, 0x30, 0x30, 0x34, 0x18, 0x00,
+ 0x00, 0x00, 0xcc, 0xcc, 0xcc, 0xcc, 0x76, 0x00,
+ 0x00, 0x00, 0xcc, 0xcc, 0xcc, 0x78, 0x30, 0x00,
+ 0x00, 0x00, 0xc6, 0xd6, 0xfe, 0xfe, 0x6c, 0x00,
+ 0x00, 0x00, 0xc6, 0x6c, 0x38, 0x6c, 0xc6, 0x00,
+ 0x00, 0x00, 0xcc, 0xcc, 0xcc, 0x7c, 0x0c, 0xf8,
+ 0x00, 0x00, 0xfc, 0x98, 0x30, 0x64, 0xfc, 0x00,
+ 0x1c, 0x30, 0x30, 0xe0, 0x30, 0x30, 0x1c, 0x00,
+ 0x18, 0x18, 0x18, 0x00, 0x18, 0x18, 0x18, 0x00,
+ 0xe0, 0x30, 0x30, 0x1c, 0x30, 0x30, 0xe0, 0x00,
+ 0x76, 0xdc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+ 0x00, 0x10, 0x38, 0x6c, 0xc6, 0xc6, 0xfe, 0x00,
+};
+
+ASM_START
 .org 0xd000
 // bcc-generated data will be placed here
 
@@ -9425,6 +9731,8 @@ db 0x00   ; filler
 // search for multiprocessor specification.  Note that when you change anything
 // you must update the checksum (a pain!).  It would be better to construct this
 // with C structures, or at least fill in the checksum automatically.
+//
+// Maybe this structs could be moved elsewhere than d000
 
 #if (BX_SMP_PROCESSORS==1)
   // no structure necessary.
@@ -9721,7 +10029,7 @@ mp_config_irqs:
 #endif  // if (BX_SMP_PROCESSORS==...)
 
 mp_config_end:   // this label used to find length of mp structure
-  db 0
+ db 0
 
 #if (BX_SMP_PROCESSORS>1)
 .align 16

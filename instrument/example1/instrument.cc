@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc,v 1.5 2002/11/20 17:55:41 bdenney Exp $
+// $Id: instrument.cc,v 1.7 2003/08/04 16:03:09 akrisak Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -26,7 +26,6 @@
 
 
 #include "bochs.h"
-#include "cpu/cpu.h"
 
 bxInstrumentation icpu[BX_SMP_PROCESSORS];
 
@@ -49,7 +48,7 @@ void bxInstrumentation::bx_instr_new_instruction()
   {
     char disasm_tbuf[512];	// buffer for instruction disassembly
     unsigned length = opcode_size, n;
-    bx_disassemble.disasm(is32, 0, opcode, disasm_tbuf);
+    bx_disassemble.disasm(is32, 0, 0, opcode, disasm_tbuf);
     if(length != 0)	
     {
       fprintf(stderr, "----------------------------------------------------------\n");

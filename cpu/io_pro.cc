@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: io_pro.cc,v 1.11 2002/10/25 11:44:35 bdenney Exp $
+// $Id: io_pro.cc,v 1.13 2003/08/24 23:14:52 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,7 +37,7 @@
 
 
 
-  Bit16u
+  Bit16u BX_CPP_AttrRegparmN(1)
 BX_CPU_C::inp16(Bit16u addr)
 {
   Bit16u ret16;
@@ -54,7 +54,7 @@ BX_CPU_C::inp16(Bit16u addr)
   return( ret16 );
 }
 
-  void
+  void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::outp16(Bit16u addr, Bit16u value)
 {
   /* If CPL <= IOPL, then all IO addresses are accessible.
@@ -72,7 +72,7 @@ BX_CPU_C::outp16(Bit16u addr, Bit16u value)
   BX_OUTP(addr, value, 2);
 }
 
-  Bit32u
+  Bit32u BX_CPP_AttrRegparmN(1)
 BX_CPU_C::inp32(Bit16u addr)
 {
   Bit32u ret32;
@@ -89,7 +89,7 @@ BX_CPU_C::inp32(Bit16u addr)
   return( ret32 );
 }
 
-  void
+  void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::outp32(Bit16u addr, Bit32u value)
 {
   /* If CPL <= IOPL, then all IO addresses are accessible.
@@ -107,7 +107,7 @@ BX_CPU_C::outp32(Bit16u addr, Bit32u value)
   BX_OUTP(addr, value, 4);
 }
 
-  Bit8u
+  Bit8u BX_CPP_AttrRegparmN(1)
 BX_CPU_C::inp8(Bit16u addr)
 {
   Bit8u ret8;
@@ -125,7 +125,7 @@ BX_CPU_C::inp8(Bit16u addr)
 }
 
 
-  void
+  void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::outp8(Bit16u addr, Bit8u value)
 {
   /* If CPL <= IOPL, then all IO addresses are accessible.
@@ -171,10 +171,11 @@ BX_INFO(("len is %u", len));
     BX_PANIC(("allow_io(): TR:io_base <= 103"));
     }
 
-  if (io_base > BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled) {
-    BX_INFO(("allow_io(): CPL > IOPL: no IO bitmap defined #GP(0)"));
+  if ( (Bit16s) (addr/8) > (BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled - io_base)) {
+    BX_INFO(("allow_io(): IO adr %x outside TSS IO permission map (max port=%x) #GP(0)",
+      addr, 8*(BX_CPU_THIS_PTR tr.cache.u.tss386.limit_scaled - io_base) ));
     return(0);
-    }
+   }
 
   access_linear(BX_CPU_THIS_PTR tr.cache.u.tss386.base + io_base + addr/8,
                    2, 0, BX_READ, &permission16);

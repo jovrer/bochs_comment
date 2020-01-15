@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------+
  |  reg_constant.h                                                           |
- |  $Id: reg_constant.h,v 1.3 2001/10/06 03:53:46 bdenney Exp $
+ |  $Id: reg_constant.h,v 1.5 2003/07/31 21:07:38 sshwarts Exp $
  |                                                                           |
  | Copyright (C) 1992    W. Metzenthen, 22 Parker St, Ormond, Vic 3163,      |
  |                       Australia.  E-mail   billm@vaxc.cc.monash.edu.au    |
@@ -18,9 +18,12 @@ extern FPU_REG const CONST_HALF;
 extern FPU_REG const CONST_L2T;
 extern FPU_REG const CONST_L2E;
 extern FPU_REG const CONST_PI;
-// bbd: make CONST_PI2 non-const so that you can write "&CONST_PI2" when
-// calling a function.  Otherwise you get const warnings.  Surely there's
-// a better way.
+
+/*
+ * make CONST_PI2 non-const so that you can write "&CONST_PI2" when
+ * calling a function.  Otherwise you get const warnings.  Surely there's
+ * a better way.
+ */
 extern FPU_REG CONST_PI2;
 extern FPU_REG const CONST_PI2extra;
 extern FPU_REG const CONST_PI4;

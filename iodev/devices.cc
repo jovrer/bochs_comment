@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: devices.cc,v 1.46.2.1 2003/01/11 21:59:39 cbothamy Exp $
+// $Id: devices.cc,v 1.58 2003/12/26 13:53:39 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -51,6 +51,12 @@ bx_devices_c::bx_devices_c(void)
 #if BX_PCI_SUPPORT
   pluginPciBridge = &stubPci;
   pluginPci2IsaBridge = NULL;
+#if BX_PCI_VGA_SUPPORT
+    pluginPciVgaAdapter = NULL;
+#endif
+#if BX_PCI_USB_SUPPORT
+    pluginPciUSBAdapter = NULL;
+#endif                               
 #endif
   pit = NULL;
   pluginKeyboard = &stubKeyboard;
@@ -66,6 +72,8 @@ bx_devices_c::bx_devices_c(void)
   pluginHardDrive = &stubHardDrive;
   pluginSB16Device = NULL;
   pluginNE2kDevice =&stubNE2k;
+  pluginExtFpuIrq = NULL;
+  pluginGameport = NULL;
   g2h = NULL;
 #if BX_IODEBUG_SUPPORT
   iodebug = NULL;
@@ -86,7 +94,7 @@ bx_devices_c::init(BX_MEM_C *newmem)
 {
   unsigned i;
 
-  BX_DEBUG(("Init $Id: devices.cc,v 1.46.2.1 2003/01/11 21:59:39 cbothamy Exp $"));
+  BX_DEBUG(("Init $Id: devices.cc,v 1.58 2003/12/26 13:53:39 vruppert Exp $"));
   mem = newmem;
 
   /* no read / write handlers defined */
@@ -103,9 +111,11 @@ bx_devices_c::init(BX_MEM_C *newmem)
   io_read_handler[BX_DEFAULT_IO_DEVICE].handler_name  = "Default";
   io_read_handler[BX_DEFAULT_IO_DEVICE].funct         = &default_read_handler;
   io_read_handler[BX_DEFAULT_IO_DEVICE].this_ptr      = NULL;
+  io_read_handler[BX_DEFAULT_IO_DEVICE].mask          = 7;
   io_write_handler[BX_DEFAULT_IO_DEVICE].handler_name = "Default";
   io_write_handler[BX_DEFAULT_IO_DEVICE].funct        = &default_write_handler;
   io_write_handler[BX_DEFAULT_IO_DEVICE].this_ptr     = NULL;
+  io_write_handler[BX_DEFAULT_IO_DEVICE].mask         = 7;
 
   /* set handlers to the default one */
   for (i=0; i < 0x10000; i++) {
@@ -137,6 +147,10 @@ bx_devices_c::init(BX_MEM_C *newmem)
     PLUG_load_plugin(serial, PLUGTYPE_OPTIONAL);
   if (is_parallel_enabled ()) 
     PLUG_load_plugin(parallel, PLUGTYPE_OPTIONAL);
+  PLUG_load_plugin(extfpuirq, PLUGTYPE_OPTIONAL);
+#if BX_SUPPORT_GAME
+  PLUG_load_plugin(gameport, PLUGTYPE_OPTIONAL);
+#endif
 
   // Start with registering the default (unmapped) handler
   pluginUnmapped->init ();
@@ -146,6 +160,12 @@ bx_devices_c::init(BX_MEM_C *newmem)
 #if BX_PCI_SUPPORT
     PLUG_load_plugin(pci, PLUGTYPE_OPTIONAL);
     PLUG_load_plugin(pci2isa, PLUGTYPE_OPTIONAL);
+#if BX_PCI_VGA_SUPPORT
+    PLUG_load_plugin(pcivga, PLUGTYPE_OPTIONAL);
+#endif
+#if BX_PCI_USB_SUPPORT
+    PLUG_load_plugin(pciusb, PLUGTYPE_OPTIONAL);
+#endif
 #else
     BX_ERROR(("Bochs is not compiled with PCI support"));
 #endif
@@ -188,9 +208,9 @@ bx_devices_c::init(BX_MEM_C *newmem)
   pit = & bx_pit;
   pit->init();
 
-#if BX_USE_SLOWDOWN_TIMER
+  bx_virt_timer.init();
+
   bx_slowdown_timer.init();
-#endif
 
 #if BX_IODEBUG_SUPPORT
   iodebug = &bx_iodebug;
@@ -217,24 +237,28 @@ bx_devices_c::init(BX_MEM_C *newmem)
   register_io_read_handler( this,
                             &read_handler,
                             0x0092,
-                            "Port 92h System Control" );
+                            "Port 92h System Control", 1 );
   register_io_write_handler(this,
                             &write_handler,
                             0x0092,
-                            "Port 92h System Control" );
+                            "Port 92h System Control", 1 );
 
   // misc. CMOS
-  Bit16u extended_memory_in_k = mem->get_memory_in_k() - 1024;
+  Bit32u extended_memory_in_k = mem->get_memory_in_k() > 1024 ? (mem->get_memory_in_k() - 1024) : 0;
+  if (extended_memory_in_k > 0xffff) extended_memory_in_k = 0xffff;
+
   DEV_cmos_set_reg(0x15, (Bit8u) BASE_MEMORY_IN_K);
   DEV_cmos_set_reg(0x16, (Bit8u) (BASE_MEMORY_IN_K >> 8));
-  DEV_cmos_set_reg(0x17, (Bit8u) extended_memory_in_k);
-  DEV_cmos_set_reg(0x18, (Bit8u) (extended_memory_in_k >> 8));
-  DEV_cmos_set_reg(0x30, (Bit8u) extended_memory_in_k);
-  DEV_cmos_set_reg(0x31, (Bit8u) (extended_memory_in_k >> 8));
+  DEV_cmos_set_reg(0x17, (Bit8u) (extended_memory_in_k & 0xff) );
+  DEV_cmos_set_reg(0x18, (Bit8u) ((extended_memory_in_k >> 8) & 0xff) );
+  DEV_cmos_set_reg(0x30, (Bit8u) (extended_memory_in_k & 0xff) );
+  DEV_cmos_set_reg(0x31, (Bit8u) ((extended_memory_in_k >> 8) & 0xff) );
 
-  Bit16u extended_memory_in_64k = mem->get_memory_in_k() > 16384 ? (mem->get_memory_in_k() - 16384) / 64 : 0;
-  DEV_cmos_set_reg(0x34, (Bit8u) extended_memory_in_64k);
-  DEV_cmos_set_reg(0x35, (Bit8u) (extended_memory_in_64k >> 8));
+  Bit32u extended_memory_in_64k = mem->get_memory_in_k() > 16384 ? (mem->get_memory_in_k() - 16384) / 64 : 0;
+  if (extended_memory_in_64k > 0xffff) extended_memory_in_64k = 0xffff;
+
+  DEV_cmos_set_reg(0x34, (Bit8u) (extended_memory_in_64k & 0xff) );
+  DEV_cmos_set_reg(0x35, (Bit8u) ((extended_memory_in_64k >> 8) & 0xff) );
 
   if (timer_handle != BX_NULL_TIMER_HANDLE) {
     timer_handle = bx_pc_system.register_timer( this, timer_handler,
@@ -261,6 +285,12 @@ bx_devices_c::reset(unsigned type)
   if (bx_options.Oi440FXSupport->get ()) {
     pluginPciBridge->reset(type);
     pluginPci2IsaBridge->reset(type);
+#if BX_PCI_VGA_SUPPORT
+    pluginPciVgaAdapter->reset(type);
+#endif
+#if BX_PCI_USB_SUPPORT
+    pluginPciUSBAdapter->reset(type);
+#endif
   }
 #endif
 #if BX_SUPPORT_IOAPIC
@@ -276,9 +306,7 @@ bx_devices_c::reset(unsigned type)
   pluginVgaDevice->reset(type);
   pluginPicDevice->reset(type);
   pit->reset(type);
-#if BX_USE_SLOWDOWN_TIMER
   bx_slowdown_timer.reset(type);
-#endif
 #if BX_IODEBUG_SUPPORT
   iodebug->reset(type);
 #endif
@@ -306,9 +334,6 @@ bx_devices_c::port92_read(Bit32u address, unsigned io_len)
 #else
   UNUSED(this_ptr);
 #endif  // !BX_USE_DEV_SMF
-  if (io_len > 1)
-    BX_PANIC(("port 92h: io read from address %08x, len=%u",
-             (unsigned) address, (unsigned) io_len));
 
   BX_DEBUG(("port92h read partially supported!!!"));
   BX_DEBUG(("  returning %02x", (unsigned) (BX_GET_ENABLE_A20() << 1)));
@@ -332,10 +357,6 @@ bx_devices_c::port92_write(Bit32u address, Bit32u value, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_DEV_SMF
   bx_bool bx_cpu_reset;
-
-  if (io_len > 1)
-    BX_PANIC(("port 92h: io read from address %08x, len=%u",
-             (unsigned) address, (unsigned) io_len));
 
   BX_DEBUG(("port92h write of %02x partially supported!!!",
     (unsigned) value));
@@ -447,7 +468,7 @@ bx_devices_c::unregister_irq(unsigned irq, const char *name)
 
   bx_bool
 bx_devices_c::register_io_read_handler( void *this_ptr, bx_read_handler_t f,
-                                        Bit32u addr, const char *name )
+                                        Bit32u addr, const char *name, Bit8u mask )
 {
   unsigned handle;
 
@@ -455,7 +476,8 @@ bx_devices_c::register_io_read_handler( void *this_ptr, bx_read_handler_t f,
 
   /* first find existing handle for function or create new one */
   for (handle=0; handle < num_read_handles; handle++) {
-    if (io_read_handler[handle].funct == f) break;
+    if ((io_read_handler[handle].funct == f) &&
+        (io_read_handler[handle].mask == mask)) break;
     }
 
   if (handle >= num_read_handles) {
@@ -468,6 +490,7 @@ bx_devices_c::register_io_read_handler( void *this_ptr, bx_read_handler_t f,
     io_read_handler[handle].funct          = f;
     io_read_handler[handle].this_ptr       = this_ptr;
     io_read_handler[handle].handler_name   = name;
+    io_read_handler[handle].mask           = mask;
     }
 
   /* change table to reflect new handler id for that address */
@@ -487,7 +510,7 @@ bx_devices_c::register_io_read_handler( void *this_ptr, bx_read_handler_t f,
 
   bx_bool
 bx_devices_c::register_io_write_handler( void *this_ptr, bx_write_handler_t f,
-                                        Bit32u addr, const char *name )
+                                        Bit32u addr, const char *name, Bit8u mask )
 {
   unsigned handle;
 
@@ -495,7 +518,8 @@ bx_devices_c::register_io_write_handler( void *this_ptr, bx_write_handler_t f,
 
   /* first find existing handle for function or create new one */
   for (handle=0; handle < num_write_handles; handle++) {
-    if (io_write_handler[handle].funct == f) break;
+    if ((io_write_handler[handle].funct == f) &&
+        (io_write_handler[handle].mask == mask)) break;
     }
 
   if (handle >= num_write_handles) {
@@ -508,6 +532,7 @@ bx_devices_c::register_io_write_handler( void *this_ptr, bx_write_handler_t f,
     io_write_handler[handle].funct          = f;
     io_write_handler[handle].this_ptr       = this_ptr;
     io_write_handler[handle].handler_name   = name;
+    io_write_handler[handle].mask           = mask;
     }
 
   /* change table to reflect new handler id for that address */
@@ -531,7 +556,7 @@ bx_devices_c::register_io_write_handler( void *this_ptr, bx_write_handler_t f,
 
   bx_bool
 bx_devices_c::register_default_io_read_handler( void *this_ptr, bx_read_handler_t f,
-                                        const char *name )
+                                        const char *name, Bit8u mask )
 {
   unsigned handle;
 
@@ -546,6 +571,7 @@ bx_devices_c::register_default_io_read_handler( void *this_ptr, bx_read_handler_
   io_read_handler[handle].funct          = f;
   io_read_handler[handle].this_ptr       = this_ptr;
   io_read_handler[handle].handler_name   = name;
+  io_read_handler[handle].mask           = mask;
 
   return true; 
 }
@@ -554,7 +580,7 @@ bx_devices_c::register_default_io_read_handler( void *this_ptr, bx_read_handler_
 
   bx_bool
 bx_devices_c::register_default_io_write_handler( void *this_ptr, bx_write_handler_t f,
-                                        const char *name )
+                                        const char *name, Bit8u mask )
 {
   unsigned handle;
 
@@ -569,6 +595,7 @@ bx_devices_c::register_default_io_write_handler( void *this_ptr, bx_write_handle
   io_write_handler[handle].funct          = f;
   io_write_handler[handle].this_ptr       = this_ptr;
   io_write_handler[handle].handler_name   = name;
+  io_write_handler[handle].mask           = mask;
 
   return true; 
 }
@@ -579,7 +606,7 @@ bx_devices_c::register_default_io_write_handler( void *this_ptr, bx_write_handle
  * Read a byte of data from the IO memory address space
  */
 
-  Bit32u
+  Bit32u BX_CPP_AttrRegparmN(2)
 bx_devices_c::inp(Bit16u addr, unsigned io_len)
 {
   Bit8u handle;
@@ -588,9 +615,18 @@ bx_devices_c::inp(Bit16u addr, unsigned io_len)
   BX_INSTR_INP(addr, io_len);
 
   handle = read_handler_id[addr];
-  // FIXME, we want to make sure that there is a default handler there
-  ret = (* io_read_handler[handle].funct)(io_read_handler[handle].this_ptr,
-                           (Bit32u) addr, io_len);
+  if ((io_read_handler[handle].funct != NULL) &&
+      (io_read_handler[handle].mask & io_len)) {
+    ret = (* io_read_handler[handle].funct)(io_read_handler[handle].this_ptr,
+                             (Bit32u) addr, io_len);
+  } else {
+    switch (io_len) {
+      case 1: ret = 0xff; break;
+      case 2: ret = 0xffff; break;
+      default: ret = 0xffffffff; break;
+    }
+    BX_ERROR(("read from port 0x%04x with len %d returns 0x%x", addr, io_len, ret));
+  }
   BX_INSTR_INP2(addr, io_len, ret);
   BX_DBG_IO_REPORT(addr, io_len, BX_READ, ret);
   return(ret);
@@ -601,7 +637,7 @@ bx_devices_c::inp(Bit16u addr, unsigned io_len)
  * Write a byte of data to the IO memory address space.
  */
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 bx_devices_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
 {
   Bit8u handle;
@@ -611,9 +647,13 @@ bx_devices_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
 
   BX_DBG_IO_REPORT(addr, io_len, BX_WRITE, value);
   handle = write_handler_id[addr];
-  // FIXME, we want to make sure that there is a default handler there
-  (* io_write_handler[handle].funct)(io_write_handler[handle].this_ptr,
-                     (Bit32u) addr, value, io_len);
+  if ((io_write_handler[handle].funct != NULL) &&
+      (io_write_handler[handle].mask & io_len)) {
+    (* io_write_handler[handle].funct)(io_write_handler[handle].this_ptr,
+                       (Bit32u) addr, value, io_len);
+  } else {
+    BX_ERROR(("write to port 0x%04x with len %d ignored", addr, io_len));
+  }
 }
 
 bx_bool bx_devices_c::is_serial_enabled ()
@@ -621,6 +661,15 @@ bx_bool bx_devices_c::is_serial_enabled ()
   for (int i=0; i<BX_N_SERIAL_PORTS; i++) {
     if (SIM->get_param_bool (BXP_COMx_ENABLED(i+1))->get())
       return true;
+  }
+  return false;
+}
+
+bx_bool bx_devices_c::is_usb_enabled ()
+{
+  for (int i=0; i<BX_N_USB_HUBS; i++) {
+    if (SIM->get_param_bool (BXP_USBx_ENABLED(i+1))->get())
+       return true;
   }
   return false;
 }

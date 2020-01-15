@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc,v 1.31 2002/10/25 11:44:33 bdenney Exp $
+// $Id: pc_system.cc,v 1.34 2003/06/07 19:16:51 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -78,6 +78,8 @@ bx_pc_system_c::bx_pc_system_c(void)
   currCountdown       = NullTimerInterval;
   currCountdownPeriod = NullTimerInterval;
   numTimers = 1; // So far, only the nullTimer.
+  lastTimeUsec = 0;
+  usecSinceLast = 0;
 }
 
   void
@@ -126,7 +128,7 @@ bx_pc_system_c::set_INTR(bx_bool value)
 // Read from the IO memory address space
 //
 
-  Bit32u
+  Bit32u BX_CPP_AttrRegparmN(2)
 bx_pc_system_c::inp(Bit16u addr, unsigned io_len)
 {
   Bit32u ret;
@@ -141,13 +143,13 @@ bx_pc_system_c::inp(Bit16u addr, unsigned io_len)
 // Write to the IO memory address space.
 //
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 bx_pc_system_c::outp(Bit16u addr, Bit32u value, unsigned io_len)
 {
   bx_devices.outp(addr, value, io_len);
 }
 
-  void
+  void BX_CPP_AttrRegparmN(1)
 bx_pc_system_c::set_enable_a20(Bit8u value)
 {
 #if BX_CPU_LEVEL < 2
@@ -334,7 +336,7 @@ bx_pc_system_c::countdownEvent(void)
     if (timer[i].active) {
 #if BX_TIMER_DEBUG
       if (ticksTotal > timer[i].timeToFire)
-        BX_PANIC(("countdownEvent: ticksTotal > timeToFire[%u], D %llu", i,
+        BX_PANIC(("countdownEvent: ticksTotal > timeToFire[%u], D " FMT_LL "u", i,
                   timer[i].timeToFire-ticksTotal));
 #endif
       if (ticksTotal == timer[i].timeToFire) {
@@ -394,7 +396,7 @@ bx_pc_system_c::nullTimer(void* this_ptr)
   BX_INFO(("==================================="));
   for (unsigned i=0; i < bx_pc_system.numTimers; i++) {
     if (bx_pc_system.timer[i].active) {
-      BX_INFO(("BxTimer(%s): period=%llu, continuous=%u",
+      BX_INFO(("BxTimer(%s): period=" FMT_LL "u, continuous=%u",
                bx_pc_system.timer[i].id, bx_pc_system.timer[i].period,
                bx_pc_system.timer[i].continuous));
       }
@@ -420,6 +422,21 @@ bx_pc_system_c::timebp_handler(void* this_ptr)
 #endif // BX_DEBUGGER
 
   Bit64u
+bx_pc_system_c::time_usec_sequential() {
+    Bit64u this_time_usec = time_usec();
+    if(this_time_usec != lastTimeUsec) {
+      Bit64u diff_usec = this_time_usec-lastTimeUsec;
+      lastTimeUsec = this_time_usec;
+      if(diff_usec >= usecSinceLast) {
+	usecSinceLast = 0;
+      } else {
+	usecSinceLast -= diff_usec;
+      }
+    }
+    usecSinceLast++;
+    return (this_time_usec+usecSinceLast);
+}
+  Bit64u
 bx_pc_system_c::time_usec() {
   return (Bit64u) (((double)(Bit64s)time_ticks()) / m_ips );
 }
@@ -436,7 +453,7 @@ bx_pc_system_c::activate_timer_ticks(unsigned i, Bit64u ticks, bx_bool continuou
   if (i >= numTimers)
     BX_PANIC(("activate_timer_ticks: timer %u OOB", i));
   if (timer[i].period < MinAllowableTimerPeriod)
-    BX_PANIC(("activate_timer_ticks: timer[%u].period of %llu < min of %u",
+    BX_PANIC(("activate_timer_ticks: timer[%u].period of " FMT_LL "u < min of %u",
               i, timer[i].period, MinAllowableTimerPeriod));
 #endif
 
@@ -528,8 +545,8 @@ bx_pc_system_c::unregisterTimer(int timerIndex)
 
   // Reset timer fields for good measure.
   timer[i].inUse      = 0; // No longer registered.
-  timer[i].period     = Bit64s(-1); // Max value (invalid)
-  timer[i].timeToFire = Bit64s(-1); // Max value (invalid)
+  timer[i].period     = BX_MAX_BIT64S; // Max value (invalid)
+  timer[i].timeToFire = BX_MAX_BIT64S; // Max value (invalid)
   timer[i].continuous = 0;
   timer[i].funct      = NULL;
   timer[i].this_ptr   = NULL;

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: segment_ctrl_pro.cc,v 1.23 2002/10/25 11:44:35 bdenney Exp $
+// $Id: segment_ctrl_pro.cc,v 1.26 2003/08/15 13:18:53 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -37,7 +37,7 @@
 
 
 
-  void
+  void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
 {
 #if BX_CPU_LEVEL >= 3
@@ -55,6 +55,7 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
       BX_CPU_THIS_PTR iCache.fetchModeMask =
           BX_CPU_THIS_PTR iCache.createFetchModeMask(BX_CPU_THIS);
 #endif
+      invalidate_prefetch_q();
       }
     else
       seg->cache.u.segment.executable = 0; /* data segment */
@@ -337,6 +338,7 @@ BX_CPU_C::load_seg_reg(bx_segment_reg_t *seg, Bit16u new_value)
       BX_CPU_THIS_PTR iCache.fetchModeMask =
           BX_CPU_THIS_PTR iCache.createFetchModeMask(BX_CPU_THIS);
 #endif
+    invalidate_prefetch_q();
     }
   else { /* SS, DS, ES, FS, GS */
     seg->selector.value = new_value;
@@ -376,7 +378,7 @@ BX_CPU_C::loadSRegLMNominal(unsigned segI, unsigned selector, bx_address base,
 
 
 #if BX_CPU_LEVEL >= 2
-  void
+  void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::parse_selector(Bit16u raw_selector, bx_selector_t *selector)
 {
   selector->value  = raw_selector;
@@ -386,7 +388,7 @@ BX_CPU_C::parse_selector(Bit16u raw_selector, bx_selector_t *selector)
 }
 #endif
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
 {
   Bit8u AR_byte;
@@ -460,12 +462,12 @@ BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
       case 7: // 286 trap gate
         /* word count only used for call gate */
         temp->u.gate286.word_count = dword2 & 0x1f;
-        temp->u.gate286.dest_selector = dword1 >> 16;;
+        temp->u.gate286.dest_selector = dword1 >> 16;
         temp->u.gate286.dest_offset   = dword1 & 0xffff;
         temp->valid = 1;
         break;
       case 5: // 286/386 task gate
-        temp->u.taskgate.tss_selector = dword1 >> 16;;
+        temp->u.taskgate.tss_selector = dword1 >> 16;
         temp->valid = 1;
         break;
 
@@ -491,7 +493,7 @@ BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
       case 15: // 386 trap gate
         // word count only used for call gate
         temp->u.gate386.dword_count   = dword2 & 0x1f;
-        temp->u.gate386.dest_selector = dword1 >> 16;;
+        temp->u.gate386.dest_selector = dword1 >> 16;
         temp->u.gate386.dest_offset   = (dword2 & 0xffff0000) |
                                         (dword1 & 0x0000ffff);
         temp->valid = 1;
@@ -504,7 +506,7 @@ BX_CPU_C::parse_descriptor(Bit32u dword1, Bit32u dword2, bx_descriptor_t *temp)
     }
 }
 
-  void
+  void BX_CPP_AttrRegparmN(2)
 BX_CPU_C::load_ldtr(bx_selector_t *selector, bx_descriptor_t *descriptor)
 {
   /* check for null selector, if so invalidate LDTR */
@@ -527,7 +529,7 @@ BX_CPU_C::load_ldtr(bx_selector_t *selector, bx_descriptor_t *descriptor)
   BX_CPU_THIS_PTR ldtr.cache.valid = 1;
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor,
            Bit8u cpl)
 {
@@ -557,9 +559,11 @@ BX_CPU_C::load_cs(bx_selector_t *selector, bx_descriptor_t *descriptor,
   BX_CPU_THIS_PTR iCache.fetchModeMask =
       BX_CPU_THIS_PTR iCache.createFetchModeMask(BX_CPU_THIS);
 #endif
+  // Loading CS will invalidate the EIP fetch window.
+  invalidate_prefetch_q();
 }
 
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::load_ss(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cpl)
 {
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector = *selector;
@@ -581,7 +585,7 @@ BX_CPU_C::load_ss(bx_selector_t *selector, bx_descriptor_t *descriptor, Bit8u cp
 }
 
 #if BX_CPU_LEVEL >= 2
-  void
+  void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::fetch_raw_descriptor(bx_selector_t *selector,
                         Bit32u *dword1, Bit32u *dword2, Bit8u exception_no)
 {
@@ -624,7 +628,7 @@ BX_INFO(("-----------------------------------"));
 
 
 
-  bx_bool
+  bx_bool BX_CPP_AttrRegparmN(3)
 BX_CPU_C::fetch_raw_descriptor2(bx_selector_t *selector,
                         Bit32u *dword1, Bit32u *dword2)
 {

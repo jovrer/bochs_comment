@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.cc,v 1.47 2002/12/13 18:27:07 bdenney Exp $
+// $Id: ne2k.cc,v 1.56 2003/12/25 16:58:17 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -34,6 +34,10 @@
  
 #include "bochs.h"
 #if BX_NE2K_SUPPORT
+
+//Never completely fill the ne2k ring so that we never
+// hit the unclear completely full buffer condition.
+#define BX_NE2K_NEVER_FULL_RING (1)
 
 #define LOG_THIS theNE2kDevice->
 
@@ -135,11 +139,13 @@ bx_ne2k_c::read_cr(void)
 void
 bx_ne2k_c::write_cr(Bit32u value)
 {
-    BX_DEBUG(("wrote 0x%02x to CR", value));
+  BX_DEBUG(("wrote 0x%02x to CR", value));
+
   // Validate remote-DMA
-  if ((value & 0x38) == 0x00)
-    return;
-  //  BX_PANIC(("CR write - invalid rDMA value 0"));
+  if ((value & 0x38) == 0x00) {
+    BX_DEBUG(("CR write - invalid rDMA value 0"));
+    value |= 0x20; /* dma_cmd == 4 is a safe default */
+  }
 
   // Check for s/w reset
   if (value & 0x01) {
@@ -236,7 +242,7 @@ bx_ne2k_c::write_cr(Bit32u value)
 // The first 16 bytes contains the MAC address at even locations,
 // and there is 16K of buffer memory starting at 16K
 //
-Bit32u
+Bit32u BX_CPP_AttrRegparmN(2)
 bx_ne2k_c::chipmem_read(Bit32u address, unsigned int io_len)
 {
   Bit32u retval = 0;
@@ -266,7 +272,7 @@ bx_ne2k_c::chipmem_read(Bit32u address, unsigned int io_len)
   return (0xff);
 }
 
-void
+void BX_CPP_AttrRegparmN(3)
 bx_ne2k_c::chipmem_write(Bit32u address, Bit32u value, unsigned io_len)
 {
   if ((io_len == 2) && (address & 0x1)) 
@@ -290,7 +296,7 @@ bx_ne2k_c::chipmem_write(Bit32u address, Bit32u value, unsigned io_len)
 // after that, insw/outsw instructions can be used to move
 // the appropriate number of bytes to/from the device.
 //
-Bit32u
+Bit32u BX_CPP_AttrRegparmN(2)
 bx_ne2k_c::asic_read(Bit32u offset, unsigned int io_len)
 {
   Bit32u retval = 0;
@@ -439,6 +445,8 @@ bx_ne2k_c::page0_read(Bit32u offset, unsigned int io_len)
     break;
     
   case 0x6:  // FIFO
+    // reading FIFO is only valid in loopback mode
+    BX_ERROR(("reading FIFO not supported yet"));
     return (BX_NE2K_THIS s.fifo);
     break;
 
@@ -506,10 +514,10 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
 {
   BX_DEBUG(("page 0 write to port %04x, len=%u", (unsigned) offset,
 	   (unsigned) io_len));
-    if (io_len != 1) {
-	BX_ERROR(("bad length! page 0 write to port %04x, len=%u",
-		  (unsigned) offset,
-            (unsigned) io_len));
+  // The NE2000 driver for MS-DOS writes a 16 bit value to reg 5
+  // ignoring the high-byte - is this okay ?
+  if (((io_len > 1) && (offset != 5)) || (io_len > 2)) {
+    BX_ERROR(("bad length! page 0 write to port %04x, len=%u", offset, io_len));
     return;
   }
 	
@@ -551,13 +559,13 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
   case 0x7:  // ISR
     value &= 0x7f;  // clear RST bit - status-only bit
     // All other values are cleared iff the ISR bit is 1
-    BX_NE2K_THIS s.ISR.pkt_rx    &= ~((value & 0x01) == 0x01);
-    BX_NE2K_THIS s.ISR.pkt_tx    &= ~((value & 0x02) == 0x02);
-    BX_NE2K_THIS s.ISR.rx_err    &= ~((value & 0x04) == 0x04);
-    BX_NE2K_THIS s.ISR.tx_err    &= ~((value & 0x08) == 0x08);
-    BX_NE2K_THIS s.ISR.overwrite &= ~((value & 0x10) == 0x10);
-    BX_NE2K_THIS s.ISR.cnt_oflow &= ~((value & 0x20) == 0x20);
-    BX_NE2K_THIS s.ISR.rdma_done &= ~((value & 0x40) == 0x40);
+    BX_NE2K_THIS s.ISR.pkt_rx    &= ~((bx_bool)((value & 0x01) == 0x01));
+    BX_NE2K_THIS s.ISR.pkt_tx    &= ~((bx_bool)((value & 0x02) == 0x02));
+    BX_NE2K_THIS s.ISR.rx_err    &= ~((bx_bool)((value & 0x04) == 0x04));
+    BX_NE2K_THIS s.ISR.tx_err    &= ~((bx_bool)((value & 0x08) == 0x08));
+    BX_NE2K_THIS s.ISR.overwrite &= ~((bx_bool)((value & 0x10) == 0x10));
+    BX_NE2K_THIS s.ISR.cnt_oflow &= ~((bx_bool)((value & 0x20) == 0x20));
+    BX_NE2K_THIS s.ISR.rdma_done &= ~((bx_bool)((value & 0x40) == 0x40));
     value = ((BX_NE2K_THIS s.ISR.rdma_done << 6) |
              (BX_NE2K_THIS s.ISR.cnt_oflow << 5) |
              (BX_NE2K_THIS s.ISR.overwrite << 4) |
@@ -628,7 +636,7 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
     // Test loop mode (not supported)
     if (value & 0x06) {
       BX_NE2K_THIS s.TCR.loop_cntl = (value & 0x6) >> 1;
-	    BX_INFO(("TCR write, loop mode %d not supported", BX_NE2K_THIS s.TCR.loop_cntl));
+      BX_INFO(("TCR write, loop mode %d not supported", BX_NE2K_THIS s.TCR.loop_cntl));
     } else {
       BX_NE2K_THIS s.TCR.loop_cntl = 0;
     }
@@ -646,13 +654,10 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
     break;
 
   case 0xe:  // DCR
-    // Don't allow loopback mode to be set
+    // the loopback mode is not suppported yet
     if (!(value & 0x08)) {
       BX_ERROR(("DCR write, loopback mode selected"));
-	  // XXX This is a HACK, lets fix this right!
-	  value -= 8;
-	}
-
+    }
     // It is questionable to set longaddr and auto_rx, since they
     // aren't supported on the ne2000. Print a warning and continue
     if (value & 0x04)
@@ -664,6 +669,7 @@ bx_ne2k_c::page0_write(Bit32u offset, Bit32u value, unsigned io_len)
     BX_NE2K_THIS s.DCR.wdsize   = ((value & 0x01) == 0x01);
     BX_NE2K_THIS s.DCR.endian   = ((value & 0x02) == 0x02);
     BX_NE2K_THIS s.DCR.longaddr = ((value & 0x04) == 0x04); // illegal ?
+    BX_NE2K_THIS s.DCR.loop     = ((value & 0x08) == 0x08);
     BX_NE2K_THIS s.DCR.auto_rx  = ((value & 0x10) == 0x10); // also illegal ?
     BX_NE2K_THIS s.DCR.fifo_size = (value & 0x50) >> 5;
     break;
@@ -1155,7 +1161,8 @@ bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
 
   if ((BX_NE2K_THIS s.CR.stop != 0) ||
       (BX_NE2K_THIS s.page_start == 0) ||
-      (BX_NE2K_THIS s.TCR.loop_cntl != 0)) {
+      ((BX_NE2K_THIS s.DCR.loop == 0) &&
+       (BX_NE2K_THIS s.TCR.loop_cntl != 0))) {
 
     return;
   }
@@ -1175,7 +1182,11 @@ bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
   // Avoid getting into a buffer overflow condition by not attempting
   // to do partial receives. The emulation to handle this condition
   // seems particularly painful.
-  if (avail < pages) {
+  if ((avail < pages) 
+#if BX_NE2K_NEVER_FULL_RING
+      || (avail == pages)
+#endif
+      ) {
     return;
   }
 
@@ -1262,11 +1273,7 @@ bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
 void
 bx_ne2k_c::init(void)
 {
-  BX_DEBUG(("Init $Id: ne2k.cc,v 1.47 2002/12/13 18:27:07 bdenney Exp $"));
-
-
-  // Bring the register state into power-up state
-  theNE2kDevice->reset(BX_RESET_HARDWARE);
+  BX_DEBUG(("Init $Id: ne2k.cc,v 1.56 2003/12/25 16:58:17 vruppert Exp $"));
 
   // Read in values from config file
   BX_NE2K_THIS s.base_address = bx_options.ne2k.Oioaddr->get ();
@@ -1284,8 +1291,8 @@ bx_ne2k_c::init(void)
   for (unsigned addr = BX_NE2K_THIS s.base_address; 
        addr <= BX_NE2K_THIS s.base_address + 0x20; 
        addr++) {
-    DEV_register_ioread_handler(this, read_handler, addr, "ne2000 NIC", 1);
-    DEV_register_iowrite_handler(this, write_handler, addr, "ne2000 NIC", 1);
+    DEV_register_ioread_handler(this, read_handler, addr, "ne2000 NIC", 3);
+    DEV_register_iowrite_handler(this, write_handler, addr, "ne2000 NIC", 3);
   }
   BX_INFO(("port 0x%x/32 irq %d mac %02x:%02x:%02x:%02x:%02x:%02x",
            BX_NE2K_THIS s.base_address,
@@ -1316,17 +1323,17 @@ bx_ne2k_c::init(void)
     BX_NE2K_THIS s.macaddr[i] = 0x57;
     
   // Attach to the simulated ethernet dev
-  BX_NE2K_THIS ethdev = eth_locator_c::create(bx_options.ne2k.Oethmod->getptr (), 
+  char *ethmod = bx_options.ne2k.Oethmod->get_choice(bx_options.ne2k.Oethmod->get());
+  BX_NE2K_THIS ethdev = eth_locator_c::create(ethmod,
                                               bx_options.ne2k.Oethdev->getptr (),
                                               (const char *) bx_options.ne2k.Omacaddr->getptr (),
                                               rx_handler, 
                                               this);
 
   if (BX_NE2K_THIS ethdev == NULL) {
-    BX_PANIC(("could not find eth module %s", bx_options.ne2k.Oethmod->getptr ()));
+    BX_PANIC(("could not find eth module %s", ethmod));
     // if they continue, use null.
-    BX_INFO(("could not find eth module %s - using null instead",
-             bx_options.ne2k.Oethmod->getptr ()));
+    BX_INFO(("could not find eth module %s - using null instead", ethmod));
 
     BX_NE2K_THIS ethdev = eth_locator_c::create("null", NULL,
                                                 (const char *) bx_options.ne2k.Omacaddr->getptr (),
@@ -1335,6 +1342,9 @@ bx_ne2k_c::init(void)
     if (BX_NE2K_THIS ethdev == NULL)
       BX_PANIC(("could not locate null module"));
   }
+
+  // Bring the register state into power-up state
+  theNE2kDevice->reset(BX_RESET_HARDWARE);
 }
 
 #if BX_DEBUGGER

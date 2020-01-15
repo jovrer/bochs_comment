@@ -83,6 +83,9 @@
 // adds support for the GNU readline library in the debugger command 
 // prompt.
 
+#define HAVE_LOCALE_H 0
+// Define to 1 if you have <locale.h>
+
 // I rebuilt the code which provides timers to IO devices.
 // Setting this to 1 will introduce a little code which
 // will panic out if cases which shouldn't happen occur.
@@ -173,8 +176,11 @@
 // Virtual 8086 mode emulation.
 //   1 = compile in support for v8086 mode.
 //   0 = don't compile in support for v8086 mode.
-
 #define BX_SUPPORT_V8086_MODE 1
+
+// Defines if the simulation should reset on triple fault
+// if set to 0, the simulation will panic.
+#define BX_RESET_ON_TRIPLE_FAULT 1
 
 // Support shadowing of ROM from C0000 to FFFFF.
 // This allows that region to be written to.
@@ -186,17 +192,27 @@
 
 // Use Greg Alexander's new PIT model (summer 2001) instead of the original.
 #define BX_USE_NEW_PIT 0
-#define BX_USE_REALTIME_PIT 0
 
 #define BX_USE_SLOWDOWN_TIMER 0
 #define BX_HAVE_SLEEP 0
+#define BX_HAVE_MSLEEP 0
 #define BX_HAVE_USLEEP 0
 #define BX_HAVE_NANOSLEEP 0
 #define BX_HAVE_ABORT 0
 #define BX_HAVE_SOCKLEN_T 0
 #define BX_HAVE_SOCKADDR_IN_SIN_LEN 0
 #define BX_HAVE_GETTIMEOFDAY 0
-#define BX_HAVE_REALTIME_USEC (BX_HAVE_GETTIMEOFDAY || BX_WITH_WIN32)
+#if defined(WIN32)
+#define BX_HAVE_REALTIME_USEC 1
+#else
+#define BX_HAVE_REALTIME_USEC (BX_HAVE_GETTIMEOFDAY)
+#endif
+#define BX_HAVE_MKSTEMP 0
+#define BX_HAVE_SYS_MMAN_H 0
+#define BX_HAVE_XPM_H 0
+#define BX_HAVE_TIMELOCAL 0
+#define BX_HAVE_GMTIME 0
+#define BX_HAVE_MKTIME 0
 
 // This turns on Roland Mainz's idle hack.  Presently it is specific to the X11
 // gui. If people try to enable it elsewhere, give a compile error after the
@@ -226,23 +242,27 @@
 //   0 = Use nonstatic member functions (use only if you need
 //       multiple instances of a device class
 
-#define BX_USE_HD_SMF   1  // Hard drive
-#define BX_USE_BIOS_SMF 1  // BIOS
-#define BX_USE_CMOS_SMF 1  // CMOS
-#define BX_USE_DMA_SMF  1  // DMA
-#define BX_USE_FD_SMF   1  // Floppy
-#define BX_USE_KEY_SMF  1  // Keyboard
-#define BX_USE_PAR_SMF  1  // Parallel
-#define BX_USE_PIC_SMF  1  // PIC
-#define BX_USE_PIT_SMF  1  // PIT
-#define BX_USE_SER_SMF  1  // Serial
-#define BX_USE_UM_SMF   1  // Unmapped
-#define BX_USE_VGA_SMF  1  // VGA
-#define BX_USE_SB16_SMF 1  // Sound (SB 16)
-#define BX_USE_DEV_SMF  1  // System Devices (port92)
-#define BX_USE_PCI_SMF  1  // PCI
-#define BX_USE_P2I_SMF  1  // PCI-to-ISA bridge
-#define BX_USE_NE2K_SMF 1  // NE2K
+#define BX_USE_HD_SMF      1  // Hard drive
+#define BX_USE_BIOS_SMF    1  // BIOS
+#define BX_USE_CMOS_SMF    1  // CMOS
+#define BX_USE_DMA_SMF     1  // DMA
+#define BX_USE_FD_SMF      1  // Floppy
+#define BX_USE_KEY_SMF     1  // Keyboard
+#define BX_USE_PAR_SMF     1  // Parallel
+#define BX_USE_PIC_SMF     1  // PIC
+#define BX_USE_PIT_SMF     1  // PIT
+#define BX_USE_SER_SMF     1  // Serial
+#define BX_USE_UM_SMF      1  // Unmapped
+#define BX_USE_VGA_SMF     1  // VGA
+#define BX_USE_SB16_SMF    1  // Sound (SB 16)
+#define BX_USE_DEV_SMF     1  // System Devices (port92)
+#define BX_USE_PCI_SMF     1  // PCI
+#define BX_USE_P2I_SMF     1  // PCI-to-ISA bridge
+#define BX_USE_PCIVGA_SMF  1  // PCI-VGA
+#define BX_USE_PCIUSB_SMF  1  // USB hub
+#define BX_USE_NE2K_SMF    1  // NE2K
+#define BX_USE_EFI_SMF     1  // External FPU IRQ
+#define BX_USE_GAME_SMF    1  // Gameport
 
 #define BX_PLUGINS  0
 #define BX_HAVE_DLFCN_H 0
@@ -253,11 +273,13 @@
    || !BX_USE_PAR_SMF || !BX_USE_PIC_SMF || !BX_USE_PIT_SMF \
    || !BX_USE_SER_SMF || !BX_USE_UM_SMF || !BX_USE_VGA_SMF \
    || !BX_USE_SB16_SMF || !BX_USE_DEV_SMF || !BX_USE_PCI_SMF \
-   || !BX_USE_P2I_SMF || !BX_USE_NE2K_SMF)
+   || !BX_USE_P2I_SMF || !BX_USE_PCIVGA_SMF || !BX_USE_PCIUSB_SMF \
+   || !BX_USE_NE2K_SMF || !BX_USE_EFI_SMF || !BX_USE_GAME_SMF)
 #error You must use SMF to have plugins
 #endif
 
 #define BX_SUPPORT_SB16 0
+#define BX_SUPPORT_GAME 0
 
 #if BX_SUPPORT_SB16
 // Use virtual methods for the sound output functions
@@ -282,15 +304,13 @@
 
 #define BX_GDBSTUB 0
 
-// This option enables "split hard drive" support, which means
-// that a series of partial hard disk images can be treated
-// as a single large image.  If you set up the partition sizes and
-// file sizes correctly, this allows you to store each partition
-// in a separate file, which is very convenient if you want to operate
-// on a single partition (e.g. mount with loopback, create filesystem,
-// fsck, etc.).
-// [[Provide example of partitioning]]
-#define BX_SPLIT_HD_SUPPORT 0
+// This option enables compressed (zlib) hd support
+#define BX_COMPRESSED_HD_SUPPORT 0
+#define BX_HAVE_ZLIB 0
+
+#if BX_COMPRESSED_HD_SUPPORT && !BX_HAVE_ZLIB
+#error You must have zlib to enable compressed hd support
+#endif
 
 // This option defines the number of supported ATA channels.
 // There are up to two drives per ATA channel.
@@ -308,7 +328,7 @@
 // is not used, and this section can be ignored.
 // =================================================================
 
-#define BX_MAX_DIRTY_PAGE_TABLE_MEGS 64
+#define BX_MAX_DIRTY_PAGE_TABLE_MEGS 1024
 
 // Compile in support for virtual/linear/physical breakpoints.
 // Set to 1, only those you need.  Recommend using only linear
@@ -437,7 +457,7 @@
 #ifdef __MINGW32__
   typedef unsigned long long Bit64u;
   typedef   signed long long Bit64s;
-  typedef             Bit32s ssize_t;
+#include <sys/types.h>
 #else
   typedef unsigned __int64   Bit64u;
   typedef   signed __int64   Bit64s;
@@ -649,9 +669,7 @@ typedef
 
 #define BX_PROVIDE_CPU_MEMORY    1
 #define BX_PROVIDE_DEVICE_MODELS 1
-#define BX_PROVIDE_BIOS_HOOKS    1
 
-#define BX_SUPPORT_VGA        1
 #define BX_SUPPORT_VBE        0
 
 #define BX_PROVIDE_MAIN       1
@@ -669,18 +687,28 @@ typedef
 // limited i440FX PCI support
 #define BX_PCI_SUPPORT 0
 
+// Experimental VGA on PCI
+#define BX_PCI_VGA_SUPPORT 1
+
+// limited USB on PCI
+#define BX_PCI_USB_SUPPORT 0
+
+#if (BX_PCI_USB_SUPPORT && !BX_PCI_SUPPORT)
+#error To enable USB, you must also enable PCI
+#endif
+
 // Promise VLBIDE DC2300 Support
 #define BX_PDC20230C_VLBIDE_SUPPORT 0
 
-// dynamic translation (future: not supported yet)
-#define BX_DYNAMIC_TRANSLATION 0
-#define BX_DYNAMIC_CPU_I386    0
-#define BX_DYNAMIC_CPU_SPARC   0
-
 #define BX_SUPPORT_FPU 0
 #define BX_SUPPORT_MMX 0
+#define BX_SUPPORT_3DNOW 0
 #define BX_SUPPORT_SSE 0
+#define BX_SUPPORT_DAZ 0
+#define BX_SUPPORT_PNI 0
+#define BX_SUPPORT_SEP 0
 #define BX_SUPPORT_4MEG_PAGES 0
+
 #define BX_SupportGuest2HostTLB 0
 #define BX_SupportRepeatSpeedups 0
 #define BX_SupportGlobalPages 0
@@ -726,10 +754,24 @@ typedef
 #error "MMX cannot be compiled without FPU support"
 #endif
 
-#if BX_SUPPORT_SSE
-#if (!BX_SUPPORT_FPU) || (!BX_SUPPORT_MMX)
+#if (BX_SUPPORT_3DNOW && !BX_SUPPORT_MMX)
+#error "3DNow! cannot be compiled without MMX support"
+#endif
+
+#if (BX_SUPPORT_SSE && !BX_SUPPORT_MMX)
 #error "SSE cannot be compiled without FPU+MMX support"
 #endif
+
+#if (BX_CPU_LEVEL<6 && BX_SUPPORT_SSE)
+#error SSE is only supported with CPU_LEVEL >= 6
+#endif
+
+#if (BX_SUPPORT_PNI && BX_SUPPORT_SSE <= 1)
+#error "PNI cannot be compiled without SSE/SSE2 support"
+#endif
+
+#if (BX_CPU_LEVEL<6 && BX_SUPPORT_SEP)
+#error SYSENTER/SYSEXIT only supported with CPU_LEVEL >= 6
 #endif
 
 #if BX_SUPPORT_X86_64
@@ -751,6 +793,10 @@ typedef
 #error X86-64 requires Page Size Extension (PSE)
 #endif
 
+#if BX_SUPPORT_SEP
+#error SYSENTER/SYSEXIT not implemented for X86-64
+#endif
+
 #endif
 
 #define BX_HAVE_GETENV 0
@@ -760,8 +806,14 @@ typedef
 #define BX_HAVE_STRTOULL 0
 #define BX_HAVE_STRTOUQ 0
 #define BX_HAVE_STRDUP 0
+#define BX_HAVE_STRREV 0
 #define BX_HAVE_STRUCT_TIMEVAL 0
-#define BX_HAVE_COLOR_SET 0   // used in term gui
+
+// used in term gui
+#define BX_HAVE_COLOR_SET 0  
+#define BX_HAVE_MVHLINE 0
+#define BX_HAVE_MVVLINE 0
+
 
 // set if your compiler does not permit an empty struct
 #define BX_NO_EMPTY_STRUCTS 0
@@ -774,11 +826,30 @@ typedef
 #define GCC_ATTRIBUTE __attribute__
 #endif
 
+// set to use fast function calls
+#define BX_FAST_FUNC_CALL 0
+
+// On gcc2.95+ x86 only
+#if BX_FAST_FUNC_CALL && defined(__i386__) && defined(__GNUC__) && (__GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 95))
+#  define BX_CPP_AttrRegparmN(X) __attribute__((regparm(X)))
+#else
+#  define BX_CPP_AttrRegparmN(X) /* Not defined */
+#endif
+
 // set if your compiler does not allow label at the end of a {} block
 #define BX_NO_BLANK_LABELS 0
 
-// set if you don't have <hash_map.h>, used in debug/dbg_main.c
+// set if you do have <hash_map>, used in bx_debug/dbg_main.c
 #define BX_HAVE_HASH_MAP 0
+
+// set if you do have <hash_map.h>, used in bx_debug/dbg_main.c
+#define BX_HAVE_HASH_MAP_H 0
+
+// set if you do have <set>, used in bx_debug/dbg_main.c
+#define BX_HAVE_SET 0
+
+// set if you do have <set.h>, used in bx_debug/dbg_main.c
+#define BX_HAVE_SET_H 0
 
 // Support x86 hardware debugger registers and facilites.
 // These are the debug facilites offered by the x86 architecture,
@@ -804,7 +875,7 @@ typedef
 #ifdef BX_USE_ETH_ARPBACK
 #  define ETH_ARPBACK 1
 #endif
-#if defined(__FreeBSD__) || defined(__OpenBSD__)
+#if defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__APPLE__)
 #define ETH_FBSD  1
 #endif
 #if defined(linux)
@@ -831,15 +902,9 @@ typedef
 #ifdef WIN32
 #define BX_FLOPPY0_NAME "Floppy Disk A:"
 #define BX_FLOPPY1_NAME "Floppy Disk B:"
-#define BX_HARD_DISK0_NAME "Hard Disk C:"
-#define BX_HARD_DISK1_NAME "Hard Disk D:"
-#define BX_CDROM_NAME "CD-ROM D:"
 #else
 #define BX_FLOPPY0_NAME "Floppy Disk 0"
 #define BX_FLOPPY1_NAME "Floppy Disk 1"
-#define BX_HARD_DISK0_NAME "Hard Disk 0"
-#define BX_HARD_DISK1_NAME "Hard Disk 1"
-#define BX_CDROM_NAME "CD-ROM"
 #endif
 
 // This is handy for certain performance testing purposes, but otherwise
@@ -847,5 +912,6 @@ typedef
 // in bx_pit_c::periodic that will cause Bochs to exit() after a certain number
 // of instructions.
 //#define BX_SCHEDULED_DIE_TIME 1162230000   // end of redhat6.0 boot
+
 
 #endif  // _BX_CONFIG_H

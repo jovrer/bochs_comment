@@ -57,6 +57,7 @@ and other OS's, all on your workstation.
 %defattr(-, root, root)
 	/usr/bin/bochs
 	/usr/bin/bochs-dlx
+	/usr/bin/bxcommit
 	/usr/bin/bximage
 	/usr/share/bochs/*
 	/usr/share/doc/*
@@ -67,11 +68,6 @@ and other OS's, all on your workstation.
 	rm -rf $RPM_BUILD_DIR/file.list.%{pkg_name}
 	if test "/" != $RPM_BUILD_ROOT; then
 	  rm -rf $RPM_BUILD_ROOT
-	fi
-%post
-	# for non-X-windows RPM, this script doesn't exist.
-	if test -x /usr/share/bochs/install-x11-fonts; then
-          /usr/share/bochs/install-x11-fonts
 	fi
 %preun
 	# clean up the bochsout.txt that is always produced if you 

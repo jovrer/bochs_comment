@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: fetchdecode64.cc,v 1.36.2.1 2003/01/16 23:00:16 cbothamy Exp $
+// $Id: fetchdecode64.cc,v 1.59 2003/12/28 18:19:41 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -63,7 +63,7 @@
 // is 6b imul_gvevib sign extended?  don't think
 //   I'm sign extending it properly in old decode/execute
 
-//check all the groups.  Make sure to add duplicates rather
+// check all the groups.  Make sure to add duplicates rather
 // than error.
 
 // mark instructions as changing control transfer, then
@@ -80,28 +80,15 @@
 
 // use 0F as a prefix too?
 
+// UD2 opcode (according to Intel manuals):
+// Use the 0F0B opcode (UD2 instruction) or the 0FB9H opcode when deliberately 
+// trying to generate an invalid opcode exception (#UD).
 
 
 
 void BxResolveError(bxInstruction_c *);
 
-#if BX_DYNAMIC_TRANSLATION
-// For 16-bit address mode, this matrix describes the registers
-// used to formulate the offset, indexed by the RM field.
-// This info is needed by the dynamic translation code for dataflow.
-static unsigned BxMemRegsUsed16[8] = {
-  (1<<3) | (1<<6), // BX + SI
-  (1<<3) | (1<<7), // BX + DI
-  (1<<5) | (1<<6), // BP + SI
-  (1<<5) | (1<<7), // BP + DI
-  (1<<6),          // SI
-  (1<<7),          // DI
-  (1<<5),          // BP
-  (1<<3)           // BX
-  };
-#endif
-
-static BxExecutePtr_t BxResolve32Mod0[8] = {
+static BxExecutePtr_tR BxResolve32Mod0[8] = {
   &BX_CPU_C::Resolve32Mod0Rm0,
   &BX_CPU_C::Resolve32Mod0Rm1,
   &BX_CPU_C::Resolve32Mod0Rm2,
@@ -112,7 +99,7 @@ static BxExecutePtr_t BxResolve32Mod0[8] = {
   &BX_CPU_C::Resolve32Mod0Rm7
   };
 
-static BxExecutePtr_t BxResolve32Mod1or2[8] = {
+static BxExecutePtr_tR BxResolve32Mod1or2[8] = {
   &BX_CPU_C::Resolve32Mod1or2Rm0,
   &BX_CPU_C::Resolve32Mod1or2Rm1,
   &BX_CPU_C::Resolve32Mod1or2Rm2,
@@ -123,7 +110,7 @@ static BxExecutePtr_t BxResolve32Mod1or2[8] = {
   &BX_CPU_C::Resolve32Mod1or2Rm7
   };
 
-static BxExecutePtr_t BxResolve32Mod0Base[8] = {
+static BxExecutePtr_tR BxResolve32Mod0Base[8] = {
   &BX_CPU_C::Resolve32Mod0Base0,
   &BX_CPU_C::Resolve32Mod0Base1,
   &BX_CPU_C::Resolve32Mod0Base2,
@@ -134,7 +121,7 @@ static BxExecutePtr_t BxResolve32Mod0Base[8] = {
   &BX_CPU_C::Resolve32Mod0Base7,
   };
 
-static BxExecutePtr_t BxResolve32Mod1or2Base[8] = {
+static BxExecutePtr_tR BxResolve32Mod1or2Base[8] = {
   &BX_CPU_C::Resolve32Mod1or2Base0,
   &BX_CPU_C::Resolve32Mod1or2Base1,
   &BX_CPU_C::Resolve32Mod1or2Base2,
@@ -145,7 +132,7 @@ static BxExecutePtr_t BxResolve32Mod1or2Base[8] = {
   &BX_CPU_C::Resolve32Mod1or2Base7,
   };
 
-static BxExecutePtr_t BxResolve64Mod0[16] = {
+static BxExecutePtr_tR BxResolve64Mod0[16] = {
   &BX_CPU_C::Resolve64Mod0Rm0,
   &BX_CPU_C::Resolve64Mod0Rm1,
   &BX_CPU_C::Resolve64Mod0Rm2,
@@ -164,7 +151,7 @@ static BxExecutePtr_t BxResolve64Mod0[16] = {
   &BX_CPU_C::Resolve64Mod0Rm15
   };
 
-static BxExecutePtr_t BxResolve64Mod1or2[16] = {
+static BxExecutePtr_tR BxResolve64Mod1or2[16] = {
   &BX_CPU_C::Resolve64Mod1or2Rm0,
   &BX_CPU_C::Resolve64Mod1or2Rm1,
   &BX_CPU_C::Resolve64Mod1or2Rm2,
@@ -183,7 +170,7 @@ static BxExecutePtr_t BxResolve64Mod1or2[16] = {
   &BX_CPU_C::Resolve64Mod1or2Rm15
   };
 
-static BxExecutePtr_t BxResolve64Mod0Base[16] = {
+static BxExecutePtr_tR BxResolve64Mod0Base[16] = {
   &BX_CPU_C::Resolve64Mod0Base0,
   &BX_CPU_C::Resolve64Mod0Base1,
   &BX_CPU_C::Resolve64Mod0Base2,
@@ -202,7 +189,7 @@ static BxExecutePtr_t BxResolve64Mod0Base[16] = {
   &BX_CPU_C::Resolve64Mod0Base15,
   };
 
-static BxExecutePtr_t BxResolve64Mod1or2Base[16] = {
+static BxExecutePtr_tR BxResolve64Mod1or2Base[16] = {
   &BX_CPU_C::Resolve64Mod1or2Base0,
   &BX_CPU_C::Resolve64Mod1or2Base1,
   &BX_CPU_C::Resolve64Mod1or2Base2,
@@ -227,893 +214,59 @@ typedef struct BxOpcodeInfo_t {
   struct BxOpcodeInfo_t *AnotherArray;
 } BxOpcodeInfo_t;
 
+
+// common fetchdecode32/64 opcode tables
+#include "fetchdecode.h"
+
+
 static BxOpcodeInfo_t opcodesADD_EwIw[2] = {
-  { 0,  { &BX_CPU_C::ADD_EEwIw } },
-  { 0,  { &BX_CPU_C::ADD_EGwIw } }
+  { BxLockable, &BX_CPU_C::ADD_EEwIw },
+  { 0,          &BX_CPU_C::ADD_EGwIw }
   };
 
 static BxOpcodeInfo_t opcodesADD_EdId[2] = {
-  { 0,  { &BX_CPU_C::ADD_EEdId } },
-  { 0,  { &BX_CPU_C::ADD_EGdId } }
+  { BxLockable, &BX_CPU_C::ADD_EEdId },
+  { 0,          &BX_CPU_C::ADD_EGdId }
   };
 
 static BxOpcodeInfo_t opcodesADD_GwEw[2] = {
-  { 0,  { &BX_CPU_C::ADD_GwEEw } },
-  { 0,  { &BX_CPU_C::ADD_GwEGw } }
+  { 0, &BX_CPU_C::ADD_GwEEw },
+  { 0, &BX_CPU_C::ADD_GwEGw }
   };
 
 static BxOpcodeInfo_t opcodesADD_GdEd[2] = {
-  { 0,  { &BX_CPU_C::ADD_GdEEd } },
-  { 0,  { &BX_CPU_C::ADD_GdEGd } }
+  { 0, &BX_CPU_C::ADD_GdEEd },
+  { 0, &BX_CPU_C::ADD_GdEGd }
   };
 
 static BxOpcodeInfo_t opcodesMOV_GbEb[2] = {
-  { 0,  { &BX_CPU_C::MOV_GbEEb } },
-  { 0,  { &BX_CPU_C::MOV_GbEGb } }
+  { 0, &BX_CPU_C::MOV_GbEEb },
+  { 0, &BX_CPU_C::MOV_GbEGb }
   };
 
 static BxOpcodeInfo_t opcodesMOV_GwEw[2] = {
-  { 0,  { &BX_CPU_C::MOV_GwEEw } },
-  { 0,  { &BX_CPU_C::MOV_GwEGw } }
+  { 0, &BX_CPU_C::MOV_GwEEw },
+  { 0, &BX_CPU_C::MOV_GwEGw }
   };
 
 static BxOpcodeInfo_t opcodesMOV_GdEd[2] = {
-  { 0,  { &BX_CPU_C::MOV_GdEEd } },
-  { 0,  { &BX_CPU_C::MOV_GdEGd } }
+  { 0, &BX_CPU_C::MOV_GdEEd },
+  { 0, &BX_CPU_C::MOV_GdEGd }
   };
 
 static BxOpcodeInfo_t opcodesMOV_EbGb[2] = {
-  { 0,  { &BX_CPU_C::MOV_EEbGb } },
-  { 0,  { &BX_CPU_C::MOV_EGbGb } }
+  { 0, &BX_CPU_C::MOV_EEbGb },
+  { 0, &BX_CPU_C::MOV_EGbGb }
   };
 
 static BxOpcodeInfo_t opcodesMOV_EwGw[2] = {
-  { 0,  { &BX_CPU_C::MOV_EEwGw } },
-  { 0,  { &BX_CPU_C::MOV_EGwGw } }
+  { 0, &BX_CPU_C::MOV_EEwGw },
+  { 0, &BX_CPU_C::MOV_EGwGw }
   };
 
 static BxOpcodeInfo_t opcodesMOV_EdGd[2] = {
-  { 0,  { &BX_CPU_C::MOV_EEdGd } },
-  { 0,  { &BX_CPU_C::MOV_EGdGd } }
-  };
-
-/* ********** */
-/* SSE Groups */
-/* ********** */
-
-/*** Duplicate SSE/SSE2 instructions ***/
-
-#define MOVUPD_VpdWpd  /* 66 0f 10 */ MOVUPS_VpsWps    /*    0f 10 */
-#define MOVUPD_WpdVpd  /* 66 0f 11 */ MOVUPS_WpsVps    /*    0f 11 */
-#define MOVAPD_VpdWpd  /* 66 0f 28 */ MOVAPS_VpsWps    /*    0f 28 */
-#define MOVAPD_WpdVpd  /* 66 0f 29 */ MOVAPS_WpsVps    /*    0f 29 */
-#define MOVDQU_VdqWdq  /* f3 0f 6f */ MOVUPS_VpsWps    /*    0f 10 */
-#define MOVDQU_WdqVdq  /* f3 0f 7f */ MOVUPS_WpsVps    /*    0f 11 */
-#define MOVDQA_VdqWdq  /* 66 0f 6f */ MOVAPS_VpsWps    /*    0f 28 */
-#define MOVDQA_WdqVdq  /* 66 0f 7f */ MOVAPS_WpsVps    /*    0f 29 */
-
-#define UNPCKHPS_VpsWq /*    0f 15 */ PUNPCKHDQ_VdqWq  /* 66 0f 6a */
-#define UNPCKLPS_VpsWq /*    0f 14 */ PUNPCKLDQ_VdqWq  /* 66 0f 62 */
-
-#define ANDPS_VpsWps   /*    0f 54 */ PAND_VdqWdq      /* 66 0f db */
-#define ANDPD_VpdWpd   /* 66 0f 54 */ PAND_VdqWdq      /* 66 0f db */
-#define ANDNPS_VpsWps  /*    0f 55 */ PANDN_VdqWdq     /* 66 0f df */
-#define ANDNPD_VpdWpd  /* 66 0f 55 */ PANDN_VdqWdq     /* 66 0f df */
-#define ORPS_VpsWps    /*    0f 56 */ POR_VdqWdq       /* 66 0f eb */
-#define ORPD_VpdWpd    /* 66 0f 56 */ POR_VdqWdq       /* 66 0f eb */
-#define XORPS_VpsWps   /*    0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
-#define XORPD_VpdWpd   /* 66 0f 57 */ PXOR_VdqWdq      /* 66 0f ef */
-
-#define UNPCKHPD_VpdWq /* 66 0f 15 */ PUNPCKHQDQ_VdqWq /* 66 0f 6d */
-#define UNPCKLPD_VpdWq /* 66 0f 14 */ PUNPCKLQDQ_VdqWq /* 66 0f 6c */
-
-#define MOVLPD_VsdMq   /* 66 0f 12 */ MOVLPS_VpsMq     /*    0f 12 */
-#define MOVLPD_MqVsd   /* 66 0f 13 */ MOVLPS_MqVps     /*    0f 13 */
-#define MOVHPD_VsdMq   /* 66 0f 16 */ MOVHPS_VpsMq     /*    0f 16 */
-#define MOVHPD_MqVsd   /* 66 0f 17 */ MOVHPS_MqVps     /*    0f 17 */
-
-#define MOVNTPD_MdqVpd /* 66 0f 2b */ MOVNTPS_MdqVps   /*    0f 2b */
-#define MOVNTDQ_MdqVdq /* 66 0f e7 */ MOVNTPS_MdqVps   /*    0f 2b */
-   
-                       
-
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f10[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVUPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::MOVUPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::MOVSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::MOVSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f11[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVUPS_WpsVps },
-  /* 66 */  { 0, &BX_CPU_C::MOVUPD_WpdVpd },
-  /* F2 */  { 0, &BX_CPU_C::MOVSD_WsdVsd },
-  /* F3 */  { 0, &BX_CPU_C::MOVSS_WssVss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f12[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVLPS_VpsMq },
-  /* 66 */  { 0, &BX_CPU_C::MOVLPD_VsdMq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f13[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVLPS_MqVps },
-  /* 66 */  { 0, &BX_CPU_C::MOVLPD_MqVsd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f14[4] = {
-  /* -- */  { 0, &BX_CPU_C::UNPCKLPS_VpsWq },
-  /* 66 */  { 0, &BX_CPU_C::UNPCKLPD_VpdWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f15[4] = {
-  /* -- */  { 0, &BX_CPU_C::UNPCKHPS_VpsWq },
-  /* 66 */  { 0, &BX_CPU_C::UNPCKHPD_VpdWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f16[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVHPS_VpsMq },
-  /* 66 */  { 0, &BX_CPU_C::MOVHPD_VsdMq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f17[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVHPS_MqVps },
-  /* 66 */  { 0, &BX_CPU_C::MOVHPD_MqVsd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f28[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVAPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::MOVAPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f29[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVAPS_WpsVps },
-  /* 66 */  { 0, &BX_CPU_C::MOVAPD_WpdVpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2a[4] = {
-  /* -- */  { 0, &BX_CPU_C::CVTPI2PS_VpsQq },
-  /* 66 */  { 0, &BX_CPU_C::CVTPI2PD_VpdQd },
-  /* F2 */  { 0, &BX_CPU_C::CVTSI2SD_VsdEd },
-  /* F3 */  { 0, &BX_CPU_C::CVTSI2SS_VssEd }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2b[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVNTPS_MdqVps },
-  /* 66 */  { 0, &BX_CPU_C::MOVNTPD_MdqVpd },            	
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2c[4] = {
-  /* -- */  { 0, &BX_CPU_C::CVTTPS2PI_PqWps },
-  /* 66 */  { 0, &BX_CPU_C::CVTTPD2PI_PqWpd },
-  /* F2 */  { 0, &BX_CPU_C::CVTTSD2SI_GdWsd },
-  /* F3 */  { 0, &BX_CPU_C::CVTTSS2SI_GdWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2d[4] = {
-  /* -- */  { 0, &BX_CPU_C::CVTPS2PI_PqWps },
-  /* 66 */  { 0, &BX_CPU_C::CVTPD2PI_PqWpd },
-  /* F2 */  { 0, &BX_CPU_C::CVTSD2SI_GdWsd },
-  /* F3 */  { 0, &BX_CPU_C::CVTSS2SI_GdWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2e[4] = {
-  /* -- */  { 0, &BX_CPU_C::UCOMISS_VssWss },
-  /* 66 */  { 0, &BX_CPU_C::UCOMISD_VsdWsd },            	
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f2f[4] = {
-  /* -- */  { 0, &BX_CPU_C::COMISS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::COMISD_VpdWpd },   
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f50[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVMSKPS_GdVRps },
-  /* 66 */  { 0, &BX_CPU_C::MOVMSKPD_EdVRpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f51[4] = {
-  /* -- */  { 0, &BX_CPU_C::SQRTPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::SQRTPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::SQRTSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::SQRTSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f52[4] = {
-  /* -- */  { 0, &BX_CPU_C::RSQRTPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::BxError },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::RSQRTSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f53[4] = {
-  /* -- */  { 0, &BX_CPU_C::RCPPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::BxError },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::RCPSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f54[4] = {
-  /* -- */  { 0, &BX_CPU_C::ANDPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::ANDPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f55[4] = {
-  /* -- */  { 0, &BX_CPU_C::ANDNPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::ANDNPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f56[4] = {
-  /* -- */  { 0, &BX_CPU_C::ORPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::ORPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f57[4] = {
-  /* -- */  { 0, &BX_CPU_C::XORPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::XORPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f58[4] = {
-  /* -- */  { 0, &BX_CPU_C::ADDPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::ADDPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::ADDSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::ADDSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f59[4] = {
-  /* -- */  { 0, &BX_CPU_C::MULPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::MULPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::MULSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::MULSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f5a[4] = {
-  /* -- */  { 0, &BX_CPU_C::CVTPS2PD_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::CVTPD2PS_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::CVTSD2SS_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::CVTSS2SD_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f5b[4] = {
-  /* -- */  { 0, &BX_CPU_C::CVTDQ2PS_VpsWdq  },
-  /* 66 */  { 0, &BX_CPU_C::CVTPS2DQ_VdqWps  },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::CVTTPS2DQ_VdqWps }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f5c[4] = {
-  /* -- */  { 0, &BX_CPU_C::SUBPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::SUBPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::SUBSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::SUBSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f5d[4] = {
-  /* -- */  { 0, &BX_CPU_C::MINPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::MINPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::MINSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::MINSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f5e[4] = {
-  /* -- */  { 0, &BX_CPU_C::DIVPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::DIVPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::DIVSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::DIVSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f5f[4] = {
-  /* -- */  { 0, &BX_CPU_C::MAXPS_VpsWps },
-  /* 66 */  { 0, &BX_CPU_C::MAXPD_VpdWpd },
-  /* F2 */  { 0, &BX_CPU_C::MAXSD_VsdWsd },
-  /* F3 */  { 0, &BX_CPU_C::MAXSS_VssWss }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f60[4] = {
-  /* -- */  { 0, &BX_CPU_C::PUNPCKLBW_PqQd  },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKLBW_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f61[4] = {
-  /* -- */  { 0, &BX_CPU_C::PUNPCKLWD_PqQd  },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKLWD_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f62[4] = {
-  /* -- */  { 0, &BX_CPU_C::PUNPCKLDQ_PqQd  },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKLDQ_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f63[4] = {
-  /* -- */  { 0, &BX_CPU_C::PACKSSWB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PACKSSWB_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f64[4] = {
-  /* -- */  { 0, &BX_CPU_C::PCMPGTB_PqQq  },
-  /* 66 */  { 0, &BX_CPU_C::PCMPGTB_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f65[4] = {
-  /* -- */  { 0, &BX_CPU_C::PCMPGTW_PqQq  },
-  /* 66 */  { 0, &BX_CPU_C::PCMPGTW_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f66[4] = {
-  /* -- */  { 0, &BX_CPU_C::PCMPGTD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PCMPGTD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f67[4] = {
-  /* -- */  { 0, &BX_CPU_C::PACKUSWB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PACKUSWB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f68[4] = {
-  /* -- */  { 0, &BX_CPU_C::PUNPCKHBW_PqQq  },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKHBW_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f69[4] = {
-  /* -- */  { 0, &BX_CPU_C::PUNPCKHWD_PqQq  },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKHWD_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f6a[4] = {
-  /* -- */  { 0, &BX_CPU_C::PUNPCKHDQ_PqQq  },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKHDQ_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f6b[4] = {
-  /* -- */  { 0, &BX_CPU_C::PACKSSDW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PACKSSDW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f6c[4] = {
-  /* -- */  { 0, &BX_CPU_C::BxError },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKLQDQ_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f6d[4] = {
-  /* -- */  { 0, &BX_CPU_C::BxError },
-  /* 66 */  { 0, &BX_CPU_C::PUNPCKHQDQ_VdqWq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f6e[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVD_PqEd  },
-  /* 66 */  { 0, &BX_CPU_C::MOVD_VdqEd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f6f[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVQ_PqQq     },
-  /* 66 */  { 0, &BX_CPU_C::MOVDQA_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError       },
-  /* F3 */  { 0, &BX_CPU_C::MOVDQU_VdqWdq },
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f70[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSHUFW_PqQqIb   },
-  /* 66 */  { 0, &BX_CPU_C::PSHUFD_VdqWdqIb },
-  /* F2 */  { 0, &BX_CPU_C::PSHUFHW_VqWqIb  },
-  /* F3 */  { 0, &BX_CPU_C::PSHUFLW_VqWqIb  }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f74[4] = {
-  /* -- */  { 0, &BX_CPU_C::PCMPEQB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PCMPEQB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f75[4] = {
-  /* -- */  { 0, &BX_CPU_C::PCMPEQW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PCMPEQW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f76[4] = {
-  /* -- */  { 0, &BX_CPU_C::PCMPEQD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PCMPEQD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f7e[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVD_EdPd },
-  /* 66 */  { 0, &BX_CPU_C::MOVD_EdVd },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::MOVQ_VqWq },
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0f7f[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVQ_QqPq     },
-  /* 66 */  { 0, &BX_CPU_C::MOVDQA_WdqVdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError       },
-  /* F3 */  { 0, &BX_CPU_C::MOVDQU_WdqVdq },
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc2[4] = {
-  /* -- */  { 0, &BX_CPU_C::CMPPS_VpsWpsIb },
-  /* 66 */  { 0, &BX_CPU_C::CMPPD_VpdWpdIb },
-  /* F2 */  { 0, &BX_CPU_C::CMPSD_VsdWsdIb },
-  /* F3 */  { 0, &BX_CPU_C::CMPSS_VssWssIb }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc3[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVNTI_MdGd },
-  /* 66 */  { 0, &BX_CPU_C::BxError },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc4[4] = {
-  /* -- */  { BxImmediate_Ib, &BX_CPU_C::PINSRW_PqEdIb  },
-  /* 66 */  { BxImmediate_Ib, &BX_CPU_C::PINSRW_VdqEdIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc5[4] = {
-  /* -- */  { BxImmediate_Ib, &BX_CPU_C::PEXTRW_PqEdIb  },
-  /* 66 */  { BxImmediate_Ib, &BX_CPU_C::PEXTRW_VdqEdIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fc6[4] = {
-  /* -- */  { BxImmediate_Ib, &BX_CPU_C::SHUFPS_VpsWpsIb },
-  /* 66 */  { BxImmediate_Ib, &BX_CPU_C::SHUFPD_VpdWpdIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd1[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRLW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSRLW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd2[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRLD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSRLD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd3[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRLQ_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSRLQ_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd4[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDQ_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDQ_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd5[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMULLW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMULLW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd6[4] = {
-  /* -- */  { 0, &BX_CPU_C::BxError },
-  /* 66 */  { 0, &BX_CPU_C::MOVQ_WqVq     },
-  /* F2 */  { 0, &BX_CPU_C::MOVDQ2Q_PqVRq },
-  /* F3 */  { 0, &BX_CPU_C::MOVQ2DQ_VdqQq },
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd7[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMOVMSKB_GdPRq  },
-  /* 66 */  { 0, &BX_CPU_C::PMOVMSKB_GdVRdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd8[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBUSB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBUSB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fd9[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBUSW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBUSW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fda[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMINUB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMINUB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fdb[4] = {
-  /* -- */  { 0, &BX_CPU_C::PAND_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PAND_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fdc[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDUSB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDUSB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fdd[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDUSW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDUSW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fde[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMAXUB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMAXUB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fdf[4] = {
-  /* -- */  { 0, &BX_CPU_C::PANDN_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PANDN_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe0[4] = {
-  /* -- */  { 0, &BX_CPU_C::PAVGB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PAVGB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe1[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRAW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSRAW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe2[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRAD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSRAD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe3[4] = {
-  /* -- */  { 0, &BX_CPU_C::PAVGW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PAVGW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe4[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMULHUW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMULHUW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe5[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMULHW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMULHW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe6[4] = {
-  /* -- */  { 0, &BX_CPU_C::BxError },
-  /* 66 */  { 0, &BX_CPU_C::CVTTPD2DQ_VqWpd },
-  /* F2 */  { 0, &BX_CPU_C::CVTPD2DQ_VqWpd  },
-  /* F3 */  { 0, &BX_CPU_C::CVTDQ2PD_VpdWq  }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe7[4] = {
-  /* -- */  { 0, &BX_CPU_C::MOVNTQ_MqPq    },
-  /* 66 */  { 0, &BX_CPU_C::MOVNTDQ_MdqVdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe8[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBSB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBSB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fe9[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBSW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBSW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fea[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMINSW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMINSW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0feb[4] = {
-  /* -- */  { 0, &BX_CPU_C::POR_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::POR_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fec[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDSB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDSB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fed[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDSW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDSW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fee[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMAXSW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMAXSW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0fef[4] = {
-  /* -- */  { 0, &BX_CPU_C::PXOR_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PXOR_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff1[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSLLW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSLLW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff2[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSLLD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSLLD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff3[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSLLQ_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSLLQ_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff4[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMULUDQ_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMULUDQ_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff5[4] = {
-  /* -- */  { 0, &BX_CPU_C::PMADDWD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PMADDWD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff6[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSADBW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSADBW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff7[4] = {
-  /* -- */  { 0, &BX_CPU_C::MASKMOVQ_PqPRq     },
-  /* 66 */  { 0, &BX_CPU_C::MASKMOVDQU_VdqVRdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff8[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ff9[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ffa[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ffb[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSUBQ_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PSUBQ_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ffc[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDB_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDB_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ffd[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDW_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDW_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_0ffe[4] = {
-  /* -- */  { 0, &BX_CPU_C::PADDD_PqQq   },
-  /* 66 */  { 0, &BX_CPU_C::PADDD_VdqWdq },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1202[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRLW_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSRLW_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1204[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRAW_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSRAW_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1206[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSLLW_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSLLW_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1302[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRLD_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSRLD_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1304[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRAD_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSRAD_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1306[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSLLD_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSLLD_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1402[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSRLQ_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSRLQ_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1403[4] = {
-  /* -- */  { 0, &BX_CPU_C::BxError },
-  /* 66 */  { 0, &BX_CPU_C::PSRLDQ_WdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1406[4] = {
-  /* -- */  { 0, &BX_CPU_C::PSLLQ_PqIb  },
-  /* 66 */  { 0, &BX_CPU_C::PSLLQ_PdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
-  };
-
-static BxOpcodeInfo_t BxOpcodeGroupSSE_G1407[4] = {
-  /* -- */  { 0, &BX_CPU_C::BxError },
-  /* 66 */  { 0, &BX_CPU_C::PSLLDQ_WdqIb },
-  /* F2 */  { 0, &BX_CPU_C::BxError },
-  /* F3 */  { 0, &BX_CPU_C::BxError }
+  { 0, &BX_CPU_C::MOV_EEdGd },
+  { 0, &BX_CPU_C::MOV_EGdGd }
   };
 
 
@@ -1122,50 +275,50 @@ static BxOpcodeInfo_t BxOpcodeGroupSSE_G1407[4] = {
 /* ************* */
 
 static BxOpcodeInfo_t BxOpcodeInfo64G1EbIb[8] = {
-  /* 0 */  { BxImmediate_Ib, &BX_CPU_C::ADD_EbIb },
-  /* 1 */  { BxImmediate_Ib, &BX_CPU_C::OR_EbIb },
-  /* 2 */  { BxImmediate_Ib, &BX_CPU_C::ADC_EbIb },
-  /* 3 */  { BxImmediate_Ib, &BX_CPU_C::SBB_EbIb },
-  /* 4 */  { BxImmediate_Ib, &BX_CPU_C::AND_EbIb },
-  /* 5 */  { BxImmediate_Ib, &BX_CPU_C::SUB_EbIb },
-  /* 6 */  { BxImmediate_Ib, &BX_CPU_C::XOR_EbIb },
-  /* 7 */  { BxImmediate_Ib, &BX_CPU_C::CMP_EbIb }
+  /* 0 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::ADD_EbIb },
+  /* 1 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::OR_EbIb },
+  /* 2 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::ADC_EbIb },
+  /* 3 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::SBB_EbIb },
+  /* 4 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::AND_EbIb },
+  /* 5 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::SUB_EbIb },
+  /* 6 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::XOR_EbIb },
+  /* 7 */  { BxImmediate_Ib,              &BX_CPU_C::CMP_EbIb }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G1Ew[8] = {
   // attributes defined in main area
-  /* 0 */  { BxSplitMod11b,  NULL, opcodesADD_EwIw },
-  /* 1 */  { 0, &BX_CPU_C::OR_EwIw },
-  /* 2 */  { 0, &BX_CPU_C::ADC_EwIw },
-  /* 3 */  { 0, &BX_CPU_C::SBB_EwIw },
-  /* 4 */  { 0, &BX_CPU_C::AND_EwIw },
-  /* 5 */  { 0, &BX_CPU_C::SUB_EwIw },
-  /* 6 */  { 0, &BX_CPU_C::XOR_EwIw },
-  /* 7 */  { 0, &BX_CPU_C::CMP_EwIw }
+  /* 0 */  { BxSplitMod11b, NULL, opcodesADD_EwIw },
+  /* 1 */  { BxLockable, &BX_CPU_C::OR_EwIw },
+  /* 2 */  { BxLockable, &BX_CPU_C::ADC_EwIw },
+  /* 3 */  { BxLockable, &BX_CPU_C::SBB_EwIw },
+  /* 4 */  { BxLockable, &BX_CPU_C::AND_EwIw },
+  /* 5 */  { BxLockable, &BX_CPU_C::SUB_EwIw },
+  /* 6 */  { BxLockable, &BX_CPU_C::XOR_EwIw },
+  /* 7 */  { 0,          &BX_CPU_C::CMP_EwIw }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G1Ed[8] = {
   // attributes defined in main area
-  /* 0 */  { BxSplitMod11b,  NULL, opcodesADD_EdId },
-  /* 1 */  { 0, &BX_CPU_C::OR_EdId },
-  /* 2 */  { 0, &BX_CPU_C::ADC_EdId },
-  /* 3 */  { 0, &BX_CPU_C::SBB_EdId },
-  /* 4 */  { 0, &BX_CPU_C::AND_EdId },
-  /* 5 */  { 0, &BX_CPU_C::SUB_EdId },
-  /* 6 */  { 0, &BX_CPU_C::XOR_EdId },
-  /* 7 */  { 0, &BX_CPU_C::CMP_EdId }
+  /* 0 */  { BxSplitMod11b, NULL, opcodesADD_EdId },
+  /* 1 */  { BxLockable, &BX_CPU_C::OR_EdId },
+  /* 2 */  { BxLockable, &BX_CPU_C::ADC_EdId },
+  /* 3 */  { BxLockable, &BX_CPU_C::SBB_EdId },
+  /* 4 */  { BxLockable, &BX_CPU_C::AND_EdId },
+  /* 5 */  { BxLockable, &BX_CPU_C::SUB_EdId },
+  /* 6 */  { BxLockable, &BX_CPU_C::XOR_EdId },
+  /* 7 */  { 0,          &BX_CPU_C::CMP_EdId }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G1Eq[8] = {
   // attributes defined in main area
-  /* 0 */  { 0, &BX_CPU_C::ADD_EqId },
-  /* 1 */  { 0, &BX_CPU_C::OR_EqId },
-  /* 2 */  { 0, &BX_CPU_C::ADC_EqId },
-  /* 3 */  { 0, &BX_CPU_C::SBB_EqId },
-  /* 4 */  { 0, &BX_CPU_C::AND_EqId },
-  /* 5 */  { 0, &BX_CPU_C::SUB_EqId },
-  /* 6 */  { 0, &BX_CPU_C::XOR_EqId },
-  /* 7 */  { 0, &BX_CPU_C::CMP_EqId }
+  /* 0 */  { BxLockable, &BX_CPU_C::ADD_EqId },
+  /* 1 */  { BxLockable, &BX_CPU_C::OR_EqId },
+  /* 2 */  { BxLockable, &BX_CPU_C::ADC_EqId },
+  /* 3 */  { BxLockable, &BX_CPU_C::SBB_EqId },
+  /* 4 */  { BxLockable, &BX_CPU_C::AND_EqId },
+  /* 5 */  { BxLockable, &BX_CPU_C::SUB_EqId },
+  /* 6 */  { BxLockable, &BX_CPU_C::XOR_EqId },
+  /* 7 */  { 0,          &BX_CPU_C::CMP_EqId }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G2Eb[8] = {
@@ -1219,50 +372,50 @@ static BxOpcodeInfo_t BxOpcodeInfo64G2Eq[8] = {
 static BxOpcodeInfo_t BxOpcodeInfo64G3Eb[8] = {
   /* 0 */  { BxImmediate_Ib, &BX_CPU_C::TEST_EbIb },
   /* 1 */  { BxImmediate_Ib, &BX_CPU_C::TEST_EbIb },
-  /* 2 */  { 0,             &BX_CPU_C::NOT_Eb },
-  /* 3 */  { 0,             &BX_CPU_C::NEG_Eb },
-  /* 4 */  { 0,             &BX_CPU_C::MUL_ALEb },
-  /* 5 */  { 0,             &BX_CPU_C::IMUL_ALEb },
-  /* 6 */  { 0,             &BX_CPU_C::DIV_ALEb },
-  /* 7 */  { 0,             &BX_CPU_C::IDIV_ALEb }
+  /* 2 */  { BxLockable,     &BX_CPU_C::NOT_Eb },
+  /* 3 */  { BxLockable,     &BX_CPU_C::NEG_Eb },
+  /* 4 */  { 0,              &BX_CPU_C::MUL_ALEb },
+  /* 5 */  { 0,              &BX_CPU_C::IMUL_ALEb },
+  /* 6 */  { 0,              &BX_CPU_C::DIV_ALEb },
+  /* 7 */  { 0,              &BX_CPU_C::IDIV_ALEb }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G3Ew[8] = {
   /* 0 */  { BxImmediate_Iw, &BX_CPU_C::TEST_EwIw },
   /* 1 */  { BxImmediate_Iw, &BX_CPU_C::TEST_EwIw },
-  /* 2 */  { 0,             &BX_CPU_C::NOT_Ew },
-  /* 3 */  { 0,             &BX_CPU_C::NEG_Ew },
-  /* 4 */  { 0,             &BX_CPU_C::MUL_AXEw },
-  /* 5 */  { 0,             &BX_CPU_C::IMUL_AXEw },
-  /* 6 */  { 0,             &BX_CPU_C::DIV_AXEw },
-  /* 7 */  { 0,             &BX_CPU_C::IDIV_AXEw }
+  /* 2 */  { BxLockable,     &BX_CPU_C::NOT_Ew },
+  /* 3 */  { BxLockable,     &BX_CPU_C::NEG_Ew },
+  /* 4 */  { 0,              &BX_CPU_C::MUL_AXEw },
+  /* 5 */  { 0,              &BX_CPU_C::IMUL_AXEw },
+  /* 6 */  { 0,              &BX_CPU_C::DIV_AXEw },
+  /* 7 */  { 0,              &BX_CPU_C::IDIV_AXEw }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G3Ed[8] = {
   /* 0 */  { BxImmediate_Iv, &BX_CPU_C::TEST_EdId },
   /* 1 */  { BxImmediate_Iv, &BX_CPU_C::TEST_EdId },
-  /* 2 */  { 0,             &BX_CPU_C::NOT_Ed },
-  /* 3 */  { 0,             &BX_CPU_C::NEG_Ed },
-  /* 4 */  { 0,             &BX_CPU_C::MUL_EAXEd },
-  /* 5 */  { 0,             &BX_CPU_C::IMUL_EAXEd },
-  /* 6 */  { 0,             &BX_CPU_C::DIV_EAXEd },
-  /* 7 */  { 0,             &BX_CPU_C::IDIV_EAXEd }
+  /* 2 */  { BxLockable,     &BX_CPU_C::NOT_Ed },
+  /* 3 */  { BxLockable,     &BX_CPU_C::NEG_Ed },
+  /* 4 */  { 0,              &BX_CPU_C::MUL_EAXEd },
+  /* 5 */  { 0,              &BX_CPU_C::IMUL_EAXEd },
+  /* 6 */  { 0,              &BX_CPU_C::DIV_EAXEd },
+  /* 7 */  { 0,              &BX_CPU_C::IDIV_EAXEd }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G3Eq[8] = {
   /* 0 */  { BxImmediate_Iv, &BX_CPU_C::TEST_EqId },
   /* 1 */  { BxImmediate_Iv, &BX_CPU_C::TEST_EqId },
-  /* 2 */  { 0,             &BX_CPU_C::NOT_Eq },
-  /* 3 */  { 0,             &BX_CPU_C::NEG_Eq },
-  /* 4 */  { 0,             &BX_CPU_C::MUL_RAXEq },
-  /* 5 */  { 0,             &BX_CPU_C::IMUL_RAXEq },
-  /* 6 */  { 0,             &BX_CPU_C::DIV_RAXEq },
-  /* 7 */  { 0,             &BX_CPU_C::IDIV_RAXEq }
+  /* 2 */  { BxLockable,     &BX_CPU_C::NOT_Eq },
+  /* 3 */  { BxLockable,     &BX_CPU_C::NEG_Eq },
+  /* 4 */  { 0,              &BX_CPU_C::MUL_RAXEq },
+  /* 5 */  { 0,              &BX_CPU_C::IMUL_RAXEq },
+  /* 6 */  { 0,              &BX_CPU_C::DIV_RAXEq },
+  /* 7 */  { 0,              &BX_CPU_C::IDIV_RAXEq }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G4[8] = {
-  /* 0 */  { 0, &BX_CPU_C::INC_Eb },
-  /* 1 */  { 0, &BX_CPU_C::DEC_Eb },
+  /* 0 */  { BxLockable, &BX_CPU_C::INC_Eb },
+  /* 1 */  { BxLockable, &BX_CPU_C::DEC_Eb },
   /* 2 */  { 0, &BX_CPU_C::BxError },
   /* 3 */  { 0, &BX_CPU_C::BxError },
   /* 4 */  { 0, &BX_CPU_C::BxError },
@@ -1273,8 +426,8 @@ static BxOpcodeInfo_t BxOpcodeInfo64G4[8] = {
 
 static BxOpcodeInfo_t BxOpcodeInfo64G5w[8] = {
   // attributes defined in main area
-  /* 0 */  { 0, &BX_CPU_C::INC_Ew },
-  /* 1 */  { 0, &BX_CPU_C::DEC_Ew },
+  /* 0 */  { BxLockable, &BX_CPU_C::INC_Ew },
+  /* 1 */  { BxLockable, &BX_CPU_C::DEC_Ew },
   /* 2 */  { 0, &BX_CPU_C::CALL_Ew },   // invalid??
   /* 3 */  { 0, &BX_CPU_C::CALL16_Ep }, // invalid??
   /* 4 */  { 0, &BX_CPU_C::JMP_Eq },    // invalid??
@@ -1285,8 +438,8 @@ static BxOpcodeInfo_t BxOpcodeInfo64G5w[8] = {
 
 static BxOpcodeInfo_t BxOpcodeInfo64G5d[8] = {
   // attributes defined in main area
-  /* 0 */  { 0, &BX_CPU_C::INC_Ed },
-  /* 1 */  { 0, &BX_CPU_C::DEC_Ed },
+  /* 0 */  { BxLockable, &BX_CPU_C::INC_Ed },
+  /* 1 */  { BxLockable, &BX_CPU_C::DEC_Ed },
   /* 2 */  { 0, &BX_CPU_C::CALL_Eq },
   /* 3 */  { 0, &BX_CPU_C::CALL32_Ep },
   /* 4 */  { 0, &BX_CPU_C::JMP_Eq },
@@ -1297,8 +450,8 @@ static BxOpcodeInfo_t BxOpcodeInfo64G5d[8] = {
 
 static BxOpcodeInfo_t BxOpcodeInfo64G5q[8] = {
   // attributes defined in main area
-  /* 0 */  { 0, &BX_CPU_C::INC_Eq },
-  /* 1 */  { 0, &BX_CPU_C::DEC_Eq },
+  /* 0 */  { BxLockable, &BX_CPU_C::INC_Eq },
+  /* 1 */  { BxLockable, &BX_CPU_C::DEC_Eq },
   /* 2 */  { 0, &BX_CPU_C::CALL_Eq },
   /* 3 */  { 0, &BX_CPU_C::CALL64_Ep },
   /* 4 */  { 0, &BX_CPU_C::JMP_Eq },
@@ -1336,15 +489,15 @@ static BxOpcodeInfo_t BxOpcodeInfo64G8EvIb[8] = {
   /* 1 */  { 0, &BX_CPU_C::BxError },
   /* 2 */  { 0, &BX_CPU_C::BxError },
   /* 3 */  { 0, &BX_CPU_C::BxError },
-  /* 4 */  { BxImmediate_Ib, &BX_CPU_C::BT_EvIb },
-  /* 5 */  { BxImmediate_Ib, &BX_CPU_C::BTS_EvIb },
-  /* 6 */  { BxImmediate_Ib, &BX_CPU_C::BTR_EvIb },
-  /* 7 */  { BxImmediate_Ib, &BX_CPU_C::BTC_EvIb }
+  /* 4 */  { BxImmediate_Ib,              &BX_CPU_C::BT_EvIb },
+  /* 5 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTS_EvIb },
+  /* 6 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTR_EvIb },
+  /* 7 */  { BxImmediate_Ib | BxLockable, &BX_CPU_C::BTC_EvIb }
   };
 
 static BxOpcodeInfo_t BxOpcodeInfo64G9[8] = {
   /* 0 */  { 0, &BX_CPU_C::BxError },
-  /* 1 */  { 0, &BX_CPU_C::CMPXCHG8B },
+  /* 1 */  { BxLockable, &BX_CPU_C::CMPXCHG8B },
   /* 2 */  { 0, &BX_CPU_C::BxError },
   /* 3 */  { 0, &BX_CPU_C::BxError },
   /* 4 */  { 0, &BX_CPU_C::BxError },
@@ -1414,48 +567,48 @@ static BxOpcodeInfo_t BxOpcodeInfo64G16[8] = {
 
 static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   // 512 entries for 16bit mode
-  /* 00 */  { BxAnother, &BX_CPU_C::ADD_EbGb },
-  /* 01 */  { BxAnother, &BX_CPU_C::ADD_EwGw },
+  /* 00 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EbGb },
+  /* 01 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EwGw },
   /* 02 */  { BxAnother, &BX_CPU_C::ADD_GbEb },
-  /* 03 */  { BxAnother | BxSplitMod11b,  NULL, opcodesADD_GwEw },
+  /* 03 */  { BxAnother | BxSplitMod11b, NULL, opcodesADD_GwEw },
   /* 04 */  { BxImmediate_Ib, &BX_CPU_C::ADD_ALIb },
   /* 05 */  { BxImmediate_Iv, &BX_CPU_C::ADD_AXIw },
   /* 06 */  { 0, &BX_CPU_C::BxError },
   /* 07 */  { 0, &BX_CPU_C::BxError },
-  /* 08 */  { BxAnother, &BX_CPU_C::OR_EbGb },
-  /* 09 */  { BxAnother, &BX_CPU_C::OR_EwGw },
+  /* 08 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EbGb },
+  /* 09 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EwGw },
   /* 0A */  { BxAnother, &BX_CPU_C::OR_GbEb },
   /* 0B */  { BxAnother, &BX_CPU_C::OR_GwEw },
   /* 0C */  { BxImmediate_Ib, &BX_CPU_C::OR_ALIb },
   /* 0D */  { BxImmediate_Iv, &BX_CPU_C::OR_AXIw },
   /* 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F */  { BxAnother, &BX_CPU_C::BxError }, // 2-byte escape
-  /* 10 */  { BxAnother, &BX_CPU_C::ADC_EbGb },
-  /* 11 */  { BxAnother, &BX_CPU_C::ADC_EwGw },
+  /* 10 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EbGb },
+  /* 11 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EwGw },
   /* 12 */  { BxAnother, &BX_CPU_C::ADC_GbEb },
   /* 13 */  { BxAnother, &BX_CPU_C::ADC_GwEw },
   /* 14 */  { BxImmediate_Ib, &BX_CPU_C::ADC_ALIb },
   /* 15 */  { BxImmediate_Iv, &BX_CPU_C::ADC_AXIw },
   /* 16 */  { 0, &BX_CPU_C::BxError },
   /* 17 */  { 0, &BX_CPU_C::BxError },
-  /* 18 */  { BxAnother, &BX_CPU_C::SBB_EbGb },
-  /* 19 */  { BxAnother, &BX_CPU_C::SBB_EwGw },
+  /* 18 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EbGb },
+  /* 19 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EwGw },
   /* 1A */  { BxAnother, &BX_CPU_C::SBB_GbEb },
   /* 1B */  { BxAnother, &BX_CPU_C::SBB_GwEw },
   /* 1C */  { BxImmediate_Ib, &BX_CPU_C::SBB_ALIb },
   /* 1D */  { BxImmediate_Iv, &BX_CPU_C::SBB_AXIw },
   /* 1E */  { 0, &BX_CPU_C::BxError },
   /* 1F */  { 0, &BX_CPU_C::BxError },
-  /* 20 */  { BxAnother, &BX_CPU_C::AND_EbGb },
-  /* 21 */  { BxAnother, &BX_CPU_C::AND_EwGw },
+  /* 20 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EbGb },
+  /* 21 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EwGw },
   /* 22 */  { BxAnother, &BX_CPU_C::AND_GbEb },
   /* 23 */  { BxAnother, &BX_CPU_C::AND_GwEw },
   /* 24 */  { BxImmediate_Ib, &BX_CPU_C::AND_ALIb },
   /* 25 */  { BxImmediate_Iv, &BX_CPU_C::AND_AXIw },
   /* 26 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // ES:
   /* 27 */  { 0, &BX_CPU_C::BxError },
-  /* 28 */  { BxAnother, &BX_CPU_C::SUB_EbGb },
-  /* 29 */  { BxAnother, &BX_CPU_C::SUB_EwGw },
+  /* 28 */  { BxAnother | BxLockable, &BX_CPU_C::SUB_EbGb },
+  /* 29 */  { BxAnother | BxLockable, &BX_CPU_C::SUB_EwGw },
   /* 2A */  { BxAnother, &BX_CPU_C::SUB_GbEb },
   /* 2B */  { BxAnother, &BX_CPU_C::SUB_GwEw },
   /* 2C */  { BxImmediate_Ib, &BX_CPU_C::SUB_ALIb },
@@ -1551,8 +704,8 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 83 */  { BxAnother | BxGroup1 | BxImmediate_Ib_SE, NULL, BxOpcodeInfo64G1Ew },
   /* 84 */  { BxAnother, &BX_CPU_C::TEST_EbGb },
   /* 85 */  { BxAnother, &BX_CPU_C::TEST_EwGw },
-  /* 86 */  { BxAnother, &BX_CPU_C::XCHG_EbGb },
-  /* 87 */  { BxAnother, &BX_CPU_C::XCHG_EwGw },
+  /* 86 */  { BxAnother | BxLockable, &BX_CPU_C::XCHG_EbGb },
+  /* 87 */  { BxAnother | BxLockable, &BX_CPU_C::XCHG_EwGw },
   /* 88 */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_EbGb },
   /* 89 */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_EwGw },
   /* 8A */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_GbEb },
@@ -1597,10 +750,10 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* B1 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B2 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B3 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
-  /* B4 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B5 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B6 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B7 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
+  /* B4 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B5 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B6 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B7 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B8 */  { BxImmediate_Iv, &BX_CPU_C::MOV_RXIw },
   /* B9 */  { BxImmediate_Iv, &BX_CPU_C::MOV_RXIw },
   /* BA */  { BxImmediate_Iv, &BX_CPU_C::MOV_RXIw },
@@ -1612,7 +765,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* C0 */  { BxAnother | BxGroup2 | BxImmediate_Ib, NULL, BxOpcodeInfo64G2Eb },
   /* C1 */  { BxAnother | BxGroup2 | BxImmediate_Ib, NULL, BxOpcodeInfo64G2Ew },
   /* C2 */  { BxImmediate_Iw, &BX_CPU_C::RETnear16_Iw },
-  /* C3 */  { 0,             &BX_CPU_C::RETnear16 },
+  /* C3 */  { 0,              &BX_CPU_C::RETnear16 },
   /* C4 */  { 0, &BX_CPU_C::BxError },
   /* C5 */  { 0, &BX_CPU_C::BxError },
   /* C6 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::MOV_EbIb },
@@ -1625,22 +778,23 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* CD */  { BxImmediate_Ib, &BX_CPU_C::INT_Ib },
   /* CE */  { 0, &BX_CPU_C::BxError },
   /* CF */  { 0, &BX_CPU_C::IRET16 },
-  /* D0 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eb },
-  /* D1 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Ew },
-  /* D2 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eb },
-  /* D3 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Ew },
+  /* D0 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eb },
+  /* D1 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Ew },
+  /* D2 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eb },
+  /* D3 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Ew },
   /* D4 */  { 0, &BX_CPU_C::BxError },
   /* D5 */  { 0, &BX_CPU_C::BxError },
   /* D6 */  { 0, &BX_CPU_C::BxError },
   /* D7 */  { 0, &BX_CPU_C::XLAT },
-  /* D8 */  { BxAnother, &BX_CPU_C::ESC0 },
-  /* D9 */  { BxAnother, &BX_CPU_C::ESC1 },
-  /* DA */  { BxAnother, &BX_CPU_C::ESC2 },
-  /* DB */  { BxAnother, &BX_CPU_C::ESC3 },
-  /* DC */  { BxAnother, &BX_CPU_C::ESC4 },
-  /* DD */  { BxAnother, &BX_CPU_C::ESC5 },
-  /* DE */  { BxAnother, &BX_CPU_C::ESC6 },
-  /* DF */  { BxAnother, &BX_CPU_C::ESC7 },
+  // by default we have here pointer to the group .. as if mod <> 11b
+  /* D8 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD8 },
+  /* D9 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD9 },
+  /* DA */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDA },
+  /* DB */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDB },
+  /* DC */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDC },
+  /* DD */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDD },
+  /* DE */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDE },
+  /* DF */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDF },
   /* E0 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPNE64_Jb },
   /* E1 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPE64_Jb },
   /* E2 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOP64_Jb },
@@ -1663,19 +817,19 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* F3 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // REP, REPE/REPZ
   /* F4 */  { 0, &BX_CPU_C::HLT },
   /* F5 */  { 0, &BX_CPU_C::CMC },
-  /* F6 */  { BxAnother | BxGroup3,  NULL, BxOpcodeInfo64G3Eb },
-  /* F7 */  { BxAnother | BxGroup3,  NULL, BxOpcodeInfo64G3Ew },
+  /* F6 */  { BxAnother | BxGroup3, NULL, BxOpcodeInfo64G3Eb },
+  /* F7 */  { BxAnother | BxGroup3, NULL, BxOpcodeInfo64G3Ew },
   /* F8 */  { 0, &BX_CPU_C::CLC },
   /* F9 */  { 0, &BX_CPU_C::STC },
   /* FA */  { 0, &BX_CPU_C::CLI },
   /* FB */  { 0, &BX_CPU_C::STI },
   /* FC */  { 0, &BX_CPU_C::CLD },
   /* FD */  { 0, &BX_CPU_C::STD },
-  /* FE */  { BxAnother | BxGroup4,  NULL, BxOpcodeInfo64G4 },
-  /* FF */  { BxAnother | BxGroup5,  NULL, BxOpcodeInfo64G5w },
+  /* FE */  { BxAnother | BxGroup4, NULL, BxOpcodeInfo64G4 },
+  /* FF */  { BxAnother | BxGroup5, NULL, BxOpcodeInfo64G5w },
 
-  /* 0F 00 */  { BxAnother | BxGroup6,  NULL, BxOpcodeInfo64G6 },
-  /* 0F 01 */  { BxAnother | BxGroup7,  NULL, BxOpcodeInfo64G7 },
+  /* 0F 00 */  { BxAnother | BxGroup6, NULL, BxOpcodeInfo64G6 },
+  /* 0F 01 */  { BxAnother | BxGroup7, NULL, BxOpcodeInfo64G7 },
   /* 0F 02 */  { BxAnother, &BX_CPU_C::LAR_GvEw },
   /* 0F 03 */  { BxAnother, &BX_CPU_C::LSL_GvEw },
   /* 0F 04 */  { 0, &BX_CPU_C::BxError },
@@ -1685,11 +839,17 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 08 */  { 0, &BX_CPU_C::INVD },
   /* 0F 09 */  { 0, &BX_CPU_C::WBINVD },
   /* 0F 0A */  { 0, &BX_CPU_C::BxError },
-  /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, /* UD2 opcode */
+  /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
-  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP }, // PREFETCH L1
+#if BX_SUPPORT_3DNOW
+  /* 0F 0D */  { 0, &BX_CPU_C::NOP   },           // 3DNow! PREFETCH
+  /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
+  /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
+#else
+  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
   /* 0F 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F 0F */  { 0, &BX_CPU_C::BxError },
+#endif
   /* 0F 10 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f10 },
   /* 0F 11 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f11 },
   /* 0F 12 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f12 },
@@ -1698,7 +858,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 15 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f15 },
   /* 0F 16 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f16 },
   /* 0F 17 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f17 },
-  /* 0F 18 */  { BxAnother | BxGroup16 | 0, NULL, BxOpcodeInfo64G16 },
+  /* 0F 18 */  { BxAnother | BxGroup16, NULL, BxOpcodeInfo64G16 },
   /* 0F 19 */  { 0, &BX_CPU_C::BxError },
   /* 0F 1A */  { 0, &BX_CPU_C::BxError },
   /* 0F 1B */  { 0, &BX_CPU_C::BxError },
@@ -1725,7 +885,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 30 */  { 0, &BX_CPU_C::WRMSR },
   /* 0F 31 */  { 0, &BX_CPU_C::RDTSC },
   /* 0F 32 */  { 0, &BX_CPU_C::RDMSR },
-  /* 0F 33 */  { 0, &BX_CPU_C::BxError },
+  /* 0F 33 */  { 0, &BX_CPU_C::RDPMC },
   /* 0F 34 */  { 0, &BX_CPU_C::BxError },
   /* 0F 35 */  { 0, &BX_CPU_C::BxError },
   /* 0F 36 */  { 0, &BX_CPU_C::BxError },
@@ -1798,10 +958,10 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 79 */  { 0, &BX_CPU_C::BxError },
   /* 0F 7A */  { 0, &BX_CPU_C::BxError },
   /* 0F 7B */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7C */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7D */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7E */  { BxAnother | BxPrefixSSE, NULL,  BxOpcodeGroupSSE_0f7e }, 
-  /* 0F 7F */  { BxAnother | BxPrefixSSE, NULL,  BxOpcodeGroupSSE_0f7f }, 
+  /* 0F 7C */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7c }, 
+  /* 0F 7D */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7d }, 
+  /* 0F 7E */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7e }, 
+  /* 0F 7F */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7f }, 
   /* 0F 80 */  { BxImmediate_BrOff16, &BX_CPU_C::JCC_Jq },
   /* 0F 81 */  { BxImmediate_BrOff16, &BX_CPU_C::JCC_Jq },
   /* 0F 82 */  { BxImmediate_BrOff16, &BX_CPU_C::JCC_Jq },
@@ -1839,41 +999,41 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
   /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EvGv },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EwGw },
-  /* 0F A5 */  { BxAnother,                 &BX_CPU_C::SHLD_EwGw },
+  /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EwGw },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
   /* 0F A7 */  { 0, &BX_CPU_C::CMPXCHG_IBTS },
   /* 0F A8 */  { 0, &BX_CPU_C::PUSH_GS },
   /* 0F A9 */  { 0, &BX_CPU_C::POP_GS },
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
-  /* 0F AB */  { BxAnother, &BX_CPU_C::BTS_EvGv },
+  /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EvGv },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EwGw },
-  /* 0F AD */  { BxAnother,                 &BX_CPU_C::SHRD_EwGw },
+  /* 0F AD */  { BxAnother,                  &BX_CPU_C::SHRD_EwGw },
   /* 0F AE */  { BxAnother | BxGroup15, NULL, BxOpcodeInfo64G15 },
   /* 0F AF */  { BxAnother, &BX_CPU_C::IMUL_GwEw },
-  /* 0F B0 */  { BxAnother, &BX_CPU_C::CMPXCHG_EbGb },
-  /* 0F B1 */  { BxAnother, &BX_CPU_C::CMPXCHG_EwGw },
+  /* 0F B0 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EbGb },
+  /* 0F B1 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EwGw },
   /* 0F B2 */  { BxAnother, &BX_CPU_C::LSS_GvMp },
-  /* 0F B3 */  { BxAnother, &BX_CPU_C::BTR_EvGv },
+  /* 0F B3 */  { BxAnother | BxLockable, &BX_CPU_C::BTR_EvGv },
   /* 0F B4 */  { BxAnother, &BX_CPU_C::LFS_GvMp },
   /* 0F B5 */  { BxAnother, &BX_CPU_C::LGS_GvMp },
   /* 0F B6 */  { BxAnother, &BX_CPU_C::MOVZX_GwEb },
   /* 0F B7 */  { BxAnother, &BX_CPU_C::MOVZX_GwEw },
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
-  /* 0F B9 */  { 0, &BX_CPU_C::BxError },
+  /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfo64G8EvIb },
-  /* 0F BB */  { BxAnother, &BX_CPU_C::BTC_EvGv },
+  /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EvGv },
   /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GvEv },
   /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GvEv },
   /* 0F BE */  { BxAnother, &BX_CPU_C::MOVSX_GwEb },
   /* 0F BF */  { BxAnother, &BX_CPU_C::MOVSX_GwEw },
-  /* 0F C0 */  { BxAnother, &BX_CPU_C::XADD_EbGb },
-  /* 0F C1 */  { BxAnother, &BX_CPU_C::XADD_EwGw },
+  /* 0F C0 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EbGb },
+  /* 0F C1 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EwGw },
   /* 0F C2 */  { BxAnother | BxImmediate_Ib | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc2 },
   /* 0F C3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc3 },
   /* 0F C4 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc4 },
   /* 0F C5 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc5 },
   /* 0F C6 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc6 },
-  /* 0F C7 */  { BxAnother | BxGroup9,  NULL, BxOpcodeInfo64G9 },
+  /* 0F C7 */  { BxAnother | BxGroup9, NULL, BxOpcodeInfo64G9 },
   /* 0F C8 */  { 0, &BX_CPU_C::BSWAP_EAX },
   /* 0F C9 */  { 0, &BX_CPU_C::BSWAP_ECX },
   /* 0F CA */  { 0, &BX_CPU_C::BSWAP_EDX },
@@ -1882,7 +1042,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F CD */  { 0, &BX_CPU_C::BSWAP_EBP },
   /* 0F CE */  { 0, &BX_CPU_C::BSWAP_ESI },
   /* 0F CF */  { 0, &BX_CPU_C::BSWAP_EDI },
-  /* 0F D0 */  { 0, &BX_CPU_C::BxError },
+  /* 0F D0 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd0 },
   /* 0F D1 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd1 },
   /* 0F D2 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd2 },
   /* 0F D3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd3 },
@@ -1914,7 +1074,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F ED */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fed },
   /* 0F EE */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fee },
   /* 0F EF */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fef },
-  /* 0F F0 */  { 0, &BX_CPU_C::BxError },
+  /* 0F F0 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff0 }, 
   /* 0F F1 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff1 }, 
   /* 0F F2 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff2 }, 
   /* 0F F3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff3 }, 
@@ -1932,56 +1092,56 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F FF */  { 0, &BX_CPU_C::BxError },
 
   // 512 entries for 32bit mod
-  /* 00 */  { BxAnother, &BX_CPU_C::ADD_EbGb },
-  /* 01 */  { BxAnother, &BX_CPU_C::ADD_EdGd },
+  /* 00 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EbGb },
+  /* 01 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EdGd },
   /* 02 */  { BxAnother, &BX_CPU_C::ADD_GbEb },
   /* 03 */  { BxAnother | BxSplitMod11b, NULL, opcodesADD_GdEd },
   /* 04 */  { BxImmediate_Ib, &BX_CPU_C::ADD_ALIb },
   /* 05 */  { BxImmediate_Iv, &BX_CPU_C::ADD_EAXId },
   /* 06 */  { 0, &BX_CPU_C::BxError },
   /* 07 */  { 0, &BX_CPU_C::BxError },
-  /* 08 */  { BxAnother, &BX_CPU_C::OR_EbGb },
-  /* 09 */  { BxAnother, &BX_CPU_C::OR_EdGd },
+  /* 08 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EbGb },
+  /* 09 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EdGd },
   /* 0A */  { BxAnother, &BX_CPU_C::OR_GbEb },
   /* 0B */  { BxAnother, &BX_CPU_C::OR_GdEd },
   /* 0C */  { BxImmediate_Ib, &BX_CPU_C::OR_ALIb },
   /* 0D */  { BxImmediate_Iv, &BX_CPU_C::OR_EAXId },
   /* 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F */  { BxAnother, &BX_CPU_C::BxError }, // 2-byte escape
-  /* 10 */  { BxAnother, &BX_CPU_C::ADC_EbGb },
-  /* 11 */  { BxAnother, &BX_CPU_C::ADC_EdGd },
+  /* 10 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EbGb },
+  /* 11 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EdGd },
   /* 12 */  { BxAnother, &BX_CPU_C::ADC_GbEb },
   /* 13 */  { BxAnother, &BX_CPU_C::ADC_GdEd },
   /* 14 */  { BxImmediate_Ib, &BX_CPU_C::ADC_ALIb },
   /* 15 */  { BxImmediate_Iv, &BX_CPU_C::ADC_EAXId },
   /* 16 */  { 0, &BX_CPU_C::BxError },
   /* 17 */  { 0, &BX_CPU_C::BxError },
-  /* 18 */  { BxAnother, &BX_CPU_C::SBB_EbGb },
-  /* 19 */  { BxAnother, &BX_CPU_C::SBB_EdGd },
+  /* 18 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EbGb },
+  /* 19 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EdGd },
   /* 1A */  { BxAnother, &BX_CPU_C::SBB_GbEb },
   /* 1B */  { BxAnother, &BX_CPU_C::SBB_GdEd },
   /* 1C */  { BxImmediate_Ib, &BX_CPU_C::SBB_ALIb },
   /* 1D */  { BxImmediate_Iv, &BX_CPU_C::SBB_EAXId },
   /* 1E */  { 0, &BX_CPU_C::BxError },
   /* 1F */  { 0, &BX_CPU_C::BxError },
-  /* 20 */  { BxAnother, &BX_CPU_C::AND_EbGb },
-  /* 21 */  { BxAnother, &BX_CPU_C::AND_EdGd },
+  /* 20 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EbGb },
+  /* 21 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EdGd },
   /* 22 */  { BxAnother, &BX_CPU_C::AND_GbEb },
   /* 23 */  { BxAnother, &BX_CPU_C::AND_GdEd },
   /* 24 */  { BxImmediate_Ib, &BX_CPU_C::AND_ALIb },
   /* 25 */  { BxImmediate_Iv, &BX_CPU_C::AND_EAXId },
   /* 26 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // ES:
   /* 27 */  { 0, &BX_CPU_C::BxError },
-  /* 28 */  { BxAnother, &BX_CPU_C::SUB_EbGb },
-  /* 29 */  { BxAnother, &BX_CPU_C::SUB_EdGd },
+  /* 28 */  { BxAnother | BxLockable, &BX_CPU_C::SUB_EbGb },
+  /* 29 */  { BxAnother | BxLockable, &BX_CPU_C::SUB_EdGd },
   /* 2A */  { BxAnother, &BX_CPU_C::SUB_GbEb },
   /* 2B */  { BxAnother, &BX_CPU_C::SUB_GdEd },
   /* 2C */  { BxImmediate_Ib, &BX_CPU_C::SUB_ALIb },
   /* 2D */  { BxImmediate_Iv, &BX_CPU_C::SUB_EAXId },
   /* 2E */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // CS:
   /* 2F */  { 0, &BX_CPU_C::BxError },
-  /* 30 */  { BxAnother, &BX_CPU_C::XOR_EbGb },
-  /* 31 */  { BxAnother, &BX_CPU_C::XOR_EdGd },
+  /* 30 */  { BxAnother | BxLockable, &BX_CPU_C::XOR_EbGb },
+  /* 31 */  { BxAnother | BxLockable, &BX_CPU_C::XOR_EdGd },
   /* 32 */  { BxAnother, &BX_CPU_C::XOR_GbEb },
   /* 33 */  { BxAnother, &BX_CPU_C::XOR_GdEd },
   /* 34 */  { BxImmediate_Ib, &BX_CPU_C::XOR_ALIb },
@@ -2063,14 +1223,14 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 7D */  { BxImmediate_BrOff8, &BX_CPU_C::JCC_Jq },
   /* 7E */  { BxImmediate_BrOff8, &BX_CPU_C::JCC_Jq },
   /* 7F */  { BxImmediate_BrOff8, &BX_CPU_C::JCC_Jq },
-  /* 80 */  { BxAnother | BxGroup1,  NULL, BxOpcodeInfo64G1EbIb },
+  /* 80 */  { BxAnother | BxGroup1, NULL, BxOpcodeInfo64G1EbIb },
   /* 81 */  { BxAnother | BxGroup1 | BxImmediate_Iv, NULL, BxOpcodeInfo64G1Ed },
   /* 82 */  { 0, &BX_CPU_C::BxError },
   /* 83 */  { BxAnother | BxGroup1 | BxImmediate_Ib_SE, NULL, BxOpcodeInfo64G1Ed },
   /* 84 */  { BxAnother, &BX_CPU_C::TEST_EbGb },
   /* 85 */  { BxAnother, &BX_CPU_C::TEST_EdGd },
-  /* 86 */  { BxAnother, &BX_CPU_C::XCHG_EbGb },
-  /* 87 */  { BxAnother, &BX_CPU_C::XCHG_EdGd },
+  /* 86 */  { BxAnother | BxLockable, &BX_CPU_C::XCHG_EbGb },
+  /* 87 */  { BxAnother | BxLockable, &BX_CPU_C::XCHG_EdGd },
   /* 88 */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_EbGb },
   /* 89 */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_EdGd },
   /* 8A */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_GbEb },
@@ -2115,10 +1275,10 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* B1 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B2 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B3 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
-  /* B4 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B5 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B6 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B7 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
+  /* B4 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B5 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B6 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B7 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B8 */  { BxImmediate_Iv, &BX_CPU_C::MOV_ERXId },
   /* B9 */  { BxImmediate_Iv, &BX_CPU_C::MOV_ERXId },
   /* BA */  { BxImmediate_Iv, &BX_CPU_C::MOV_ERXId },
@@ -2137,28 +1297,29 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* C7 */  { BxAnother | BxImmediate_Iv, &BX_CPU_C::MOV_EdId },
   /* C8 */  { BxImmediate_IwIb, &BX_CPU_C::ENTER64_IwIb },
   /* C9 */  { 0, &BX_CPU_C::LEAVE64 },
-  /* CA */  { BxImmediate_Iw, &BX_CPU_C::RETfar64_Iw },
-  /* CB */  { 0, &BX_CPU_C::RETfar64 },
+  /* CA */  { BxImmediate_Iw, &BX_CPU_C::RETfar32_Iw },
+  /* CB */  { 0, &BX_CPU_C::RETfar32 },
   /* CC */  { 0, &BX_CPU_C::INT3 },
   /* CD */  { BxImmediate_Ib, &BX_CPU_C::INT_Ib },
   /* CE */  { 0, &BX_CPU_C::BxError },
-  /* CF */  { 0, &BX_CPU_C::IRET64 },
-  /* D0 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eb },
-  /* D1 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Ed },
-  /* D2 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eb },
-  /* D3 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Ed },
+  /* CF */  { 0, &BX_CPU_C::IRET32 },
+  /* D0 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eb },
+  /* D1 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Ed },
+  /* D2 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eb },
+  /* D3 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Ed },
   /* D4 */  { 0, &BX_CPU_C::BxError },
   /* D5 */  { 0, &BX_CPU_C::BxError },
   /* D6 */  { 0, &BX_CPU_C::BxError },
   /* D7 */  { 0, &BX_CPU_C::XLAT },
-  /* D8 */  { BxAnother, &BX_CPU_C::ESC0 },
-  /* D9 */  { BxAnother, &BX_CPU_C::ESC1 },
-  /* DA */  { BxAnother, &BX_CPU_C::ESC2 },
-  /* DB */  { BxAnother, &BX_CPU_C::ESC3 },
-  /* DC */  { BxAnother, &BX_CPU_C::ESC4 },
-  /* DD */  { BxAnother, &BX_CPU_C::ESC5 },
-  /* DE */  { BxAnother, &BX_CPU_C::ESC6 },
-  /* DF */  { BxAnother, &BX_CPU_C::ESC7 },
+  // by default we have here pointer to the group .. as if mod <> 11b
+  /* D8 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD8 },
+  /* D9 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD9 },
+  /* DA */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDA },
+  /* DB */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDB },
+  /* DC */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDC },
+  /* DD */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDD },
+  /* DE */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDE },
+  /* DF */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDF },
   /* E0 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPNE64_Jb },
   /* E1 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPE64_Jb },
   /* E2 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOP64_Jb },
@@ -2181,19 +1342,19 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* F3 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // REP,REPE/REPZ
   /* F4 */  { 0, &BX_CPU_C::HLT },
   /* F5 */  { 0, &BX_CPU_C::CMC },
-  /* F6 */  { BxAnother | BxGroup3,  NULL, BxOpcodeInfo64G3Eb },
-  /* F7 */  { BxAnother | BxGroup3,  NULL, BxOpcodeInfo64G3Ed },
+  /* F6 */  { BxAnother | BxGroup3, NULL, BxOpcodeInfo64G3Eb },
+  /* F7 */  { BxAnother | BxGroup3, NULL, BxOpcodeInfo64G3Ed },
   /* F8 */  { 0, &BX_CPU_C::CLC },
   /* F9 */  { 0, &BX_CPU_C::STC },
   /* FA */  { 0, &BX_CPU_C::CLI },
   /* FB */  { 0, &BX_CPU_C::STI },
   /* FC */  { 0, &BX_CPU_C::CLD },
   /* FD */  { 0, &BX_CPU_C::STD },
-  /* FE */  { BxAnother | BxGroup4,  NULL, BxOpcodeInfo64G4 },
-  /* FF */  { BxAnother | BxGroup5,  NULL, BxOpcodeInfo64G5d },
+  /* FE */  { BxAnother | BxGroup4, NULL, BxOpcodeInfo64G4 },
+  /* FF */  { BxAnother | BxGroup5, NULL, BxOpcodeInfo64G5d },
 
-  /* 0F 00 */  { BxAnother | BxGroup6,  NULL, BxOpcodeInfo64G6 },
-  /* 0F 01 */  { BxAnother | BxGroup7,  NULL, BxOpcodeInfo64G7 },
+  /* 0F 00 */  { BxAnother | BxGroup6, NULL, BxOpcodeInfo64G6 },
+  /* 0F 01 */  { BxAnother | BxGroup7, NULL, BxOpcodeInfo64G7 },
   /* 0F 02 */  { BxAnother, &BX_CPU_C::LAR_GvEw },
   /* 0F 03 */  { BxAnother, &BX_CPU_C::LSL_GvEw },
   /* 0F 04 */  { 0, &BX_CPU_C::BxError },
@@ -2203,11 +1364,17 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 08 */  { 0, &BX_CPU_C::INVD },
   /* 0F 09 */  { 0, &BX_CPU_C::WBINVD },
   /* 0F 0A */  { 0, &BX_CPU_C::BxError },
-  /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, /* UD2 opcode */
+  /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
-  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP }, // PREFETCH L1
+#if BX_SUPPORT_3DNOW
+  /* 0F 0D */  { 0, &BX_CPU_C::NOP   },           // 3DNow! PREFETCH
+  /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
+  /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
+#else
+  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
   /* 0F 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F 0F */  { 0, &BX_CPU_C::BxError },
+#endif
   /* 0F 10 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f10 },
   /* 0F 11 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f11 },
   /* 0F 12 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f12 },
@@ -2216,7 +1383,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 15 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f15 },
   /* 0F 16 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f16 },
   /* 0F 17 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f17 },
-  /* 0F 18 */  { BxAnother | BxGroup16 | 0, NULL, BxOpcodeInfo64G16 },
+  /* 0F 18 */  { BxAnother | BxGroup16, NULL, BxOpcodeInfo64G16 },
   /* 0F 19 */  { 0, &BX_CPU_C::BxError },
   /* 0F 1A */  { 0, &BX_CPU_C::BxError },
   /* 0F 1B */  { 0, &BX_CPU_C::BxError },
@@ -2243,7 +1410,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 30 */  { 0, &BX_CPU_C::WRMSR },
   /* 0F 31 */  { 0, &BX_CPU_C::RDTSC },
   /* 0F 32 */  { 0, &BX_CPU_C::RDMSR },
-  /* 0F 33 */  { 0, &BX_CPU_C::BxError },
+  /* 0F 33 */  { 0, &BX_CPU_C::RDPMC },
   /* 0F 34 */  { 0, &BX_CPU_C::BxError },
   /* 0F 35 */  { 0, &BX_CPU_C::BxError },
   /* 0F 36 */  { 0, &BX_CPU_C::BxError },
@@ -2316,10 +1483,10 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 79 */  { 0, &BX_CPU_C::BxError },
   /* 0F 7A */  { 0, &BX_CPU_C::BxError },
   /* 0F 7B */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7C */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7D */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7E */  { BxAnother | BxPrefixSSE, NULL,  BxOpcodeGroupSSE_0f7e }, 
-  /* 0F 7F */  { BxAnother | BxPrefixSSE, NULL,  BxOpcodeGroupSSE_0f7f }, 
+  /* 0F 7C */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7c }, 
+  /* 0F 7D */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7d }, 
+  /* 0F 7E */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7e }, 
+  /* 0F 7F */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7f }, 
   /* 0F 80 */  { BxImmediate_BrOff32, &BX_CPU_C::JCC_Jq },
   /* 0F 81 */  { BxImmediate_BrOff32, &BX_CPU_C::JCC_Jq },
   /* 0F 82 */  { BxImmediate_BrOff32, &BX_CPU_C::JCC_Jq },
@@ -2357,41 +1524,41 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
   /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EvGv },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EdGd },
-  /* 0F A5 */  { BxAnother,                 &BX_CPU_C::SHLD_EdGd },
+  /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EdGd },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
   /* 0F A7 */  { 0, &BX_CPU_C::CMPXCHG_IBTS },
   /* 0F A8 */  { 0, &BX_CPU_C::PUSH64_GS },
   /* 0F A9 */  { 0, &BX_CPU_C::POP64_GS },
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
-  /* 0F AB */  { BxAnother, &BX_CPU_C::BTS_EvGv },
+  /* 0F AB */  { BxAnother | BxLockable, &BX_CPU_C::BTS_EvGv },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EdGd },
-  /* 0F AD */  { BxAnother,                 &BX_CPU_C::SHRD_EdGd },
+  /* 0F AD */  { BxAnother,                  &BX_CPU_C::SHRD_EdGd },
   /* 0F AE */  { BxAnother | BxGroup15, NULL, BxOpcodeInfo64G15 },
   /* 0F AF */  { BxAnother, &BX_CPU_C::IMUL_GdEd },
-  /* 0F B0 */  { BxAnother, &BX_CPU_C::CMPXCHG_EbGb },
-  /* 0F B1 */  { BxAnother, &BX_CPU_C::CMPXCHG_EdGd },
+  /* 0F B0 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EbGb },
+  /* 0F B1 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EdGd },
   /* 0F B2 */  { BxAnother, &BX_CPU_C::LSS_GvMp },
-  /* 0F B3 */  { BxAnother, &BX_CPU_C::BTR_EvGv },
+  /* 0F B3 */  { BxAnother | BxLockable, &BX_CPU_C::BTR_EvGv },
   /* 0F B4 */  { BxAnother, &BX_CPU_C::LFS_GvMp },
   /* 0F B5 */  { BxAnother, &BX_CPU_C::LGS_GvMp },
   /* 0F B6 */  { BxAnother, &BX_CPU_C::MOVZX_GdEb },
   /* 0F B7 */  { BxAnother, &BX_CPU_C::MOVZX_GdEw },
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
-  /* 0F B9 */  { 0, &BX_CPU_C::BxError },
-  /* 0F BA */  { BxAnother | BxGroup8,  NULL, BxOpcodeInfo64G8EvIb },
-  /* 0F BB */  { BxAnother, &BX_CPU_C::BTC_EvGv },
+  /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
+  /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfo64G8EvIb },
+  /* 0F BB */  { BxAnother | BxLockable, &BX_CPU_C::BTC_EvGv },
   /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GvEv },
   /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GvEv },
   /* 0F BE */  { BxAnother, &BX_CPU_C::MOVSX_GdEb },
   /* 0F BF */  { BxAnother, &BX_CPU_C::MOVSX_GdEw },
-  /* 0F C0 */  { BxAnother, &BX_CPU_C::XADD_EbGb },
-  /* 0F C1 */  { BxAnother, &BX_CPU_C::XADD_EdGd },
+  /* 0F C0 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EbGb },
+  /* 0F C1 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EdGd },
   /* 0F C2 */  { BxAnother | BxImmediate_Ib | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc2 },
   /* 0F C3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc3 },
   /* 0F C4 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc4 },
   /* 0F C5 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc5 },
   /* 0F C6 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc6 },
-  /* 0F C7 */  { BxAnother | BxGroup9,  NULL, BxOpcodeInfo64G9 },
+  /* 0F C7 */  { BxAnother | BxGroup9, NULL, BxOpcodeInfo64G9 },
   /* 0F C8 */  { 0, &BX_CPU_C::BSWAP_EAX },
   /* 0F C9 */  { 0, &BX_CPU_C::BSWAP_ECX },
   /* 0F CA */  { 0, &BX_CPU_C::BSWAP_EDX },
@@ -2400,7 +1567,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F CD */  { 0, &BX_CPU_C::BSWAP_EBP },
   /* 0F CE */  { 0, &BX_CPU_C::BSWAP_ESI },
   /* 0F CF */  { 0, &BX_CPU_C::BSWAP_EDI },
-  /* 0F D0 */  { 0, &BX_CPU_C::BxError },
+  /* 0F D0 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd0 },
   /* 0F D1 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd1 },
   /* 0F D2 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd2 },
   /* 0F D3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd3 },
@@ -2432,7 +1599,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F ED */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fed },
   /* 0F EE */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fee },
   /* 0F EF */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fef },
-  /* 0F F0 */  { 0, &BX_CPU_C::BxError },
+  /* 0F F0 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff0 }, 
   /* 0F F1 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff1 }, 
   /* 0F F2 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff2 }, 
   /* 0F F3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff3 }, 
@@ -2450,8 +1617,8 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F FF */  { 0, &BX_CPU_C::BxError },
 
   // 512 entries for 64bit mod
-  /* 00 */  { BxAnother, &BX_CPU_C::ADD_EbGb },
-  /* 01 */  { BxAnother, &BX_CPU_C::ADD_EqGq },
+  /* 00 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EbGb },
+  /* 01 */  { BxAnother | BxLockable, &BX_CPU_C::ADD_EqGq },
   /* 02 */  { BxAnother, &BX_CPU_C::ADD_GbEb },
   /* 03 */  { BxAnother, &BX_CPU_C::ADD_GqEq },
   /* 04 */  { BxImmediate_Ib, &BX_CPU_C::ADD_ALIb },
@@ -2459,47 +1626,47 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 06 */  { 0, &BX_CPU_C::BxError },
   /* 07 */  { 0, &BX_CPU_C::BxError },
   /* 08 */  { BxAnother, &BX_CPU_C::OR_EbGb },
-  /* 09 */  { BxAnother, &BX_CPU_C::OR_EqGq },
-  /* 0A */  { BxAnother, &BX_CPU_C::OR_GbEb },
+  /* 09 */  { BxAnother | BxLockable, &BX_CPU_C::OR_EqGq },
+  /* 0A */  { BxAnother | BxLockable, &BX_CPU_C::OR_GbEb },
   /* 0B */  { BxAnother, &BX_CPU_C::OR_GqEq },
   /* 0C */  { BxImmediate_Ib, &BX_CPU_C::OR_ALIb },
   /* 0D */  { BxImmediate_Iv, &BX_CPU_C::OR_RAXId },
   /* 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F */  { BxAnother, &BX_CPU_C::BxError }, // 2-byte escape
-  /* 10 */  { BxAnother, &BX_CPU_C::ADC_EbGb },
-  /* 11 */  { BxAnother, &BX_CPU_C::ADC_EqGq },
+  /* 10 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EbGb },
+  /* 11 */  { BxAnother | BxLockable, &BX_CPU_C::ADC_EqGq },
   /* 12 */  { BxAnother, &BX_CPU_C::ADC_GbEb },
   /* 13 */  { BxAnother, &BX_CPU_C::ADC_GqEq },
   /* 14 */  { BxImmediate_Ib, &BX_CPU_C::ADC_ALIb },
   /* 15 */  { BxImmediate_Iv, &BX_CPU_C::ADC_RAXId },
   /* 16 */  { 0, &BX_CPU_C::BxError },
   /* 17 */  { 0, &BX_CPU_C::BxError },
-  /* 18 */  { BxAnother, &BX_CPU_C::SBB_EbGb },
-  /* 19 */  { BxAnother, &BX_CPU_C::SBB_EqGq },
+  /* 18 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EbGb },
+  /* 19 */  { BxAnother | BxLockable, &BX_CPU_C::SBB_EqGq },
   /* 1A */  { BxAnother, &BX_CPU_C::SBB_GbEb },
   /* 1B */  { BxAnother, &BX_CPU_C::SBB_GqEq },
   /* 1C */  { BxImmediate_Ib, &BX_CPU_C::SBB_ALIb },
   /* 1D */  { BxImmediate_Iv, &BX_CPU_C::SBB_RAXId },
   /* 1E */  { 0, &BX_CPU_C::BxError },
   /* 1F */  { 0, &BX_CPU_C::BxError },
-  /* 20 */  { BxAnother, &BX_CPU_C::AND_EbGb },
-  /* 21 */  { BxAnother, &BX_CPU_C::AND_EqGq },
+  /* 20 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EbGb },
+  /* 21 */  { BxAnother | BxLockable, &BX_CPU_C::AND_EqGq },
   /* 22 */  { BxAnother, &BX_CPU_C::AND_GbEb },
   /* 23 */  { BxAnother, &BX_CPU_C::AND_GqEq },
   /* 24 */  { BxImmediate_Ib, &BX_CPU_C::AND_ALIb },
   /* 25 */  { BxImmediate_Iv, &BX_CPU_C::AND_RAXId },
   /* 26 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // ES:
   /* 27 */  { 0, &BX_CPU_C::BxError },
-  /* 28 */  { BxAnother, &BX_CPU_C::SUB_EbGb },
-  /* 29 */  { BxAnother, &BX_CPU_C::SUB_EqGq },
+  /* 28 */  { BxAnother | BxLockable, &BX_CPU_C::SUB_EbGb },
+  /* 29 */  { BxAnother | BxLockable, &BX_CPU_C::SUB_EqGq },
   /* 2A */  { BxAnother, &BX_CPU_C::SUB_GbEb },
   /* 2B */  { BxAnother, &BX_CPU_C::SUB_GqEq },
   /* 2C */  { BxImmediate_Ib, &BX_CPU_C::SUB_ALIb },
   /* 2D */  { BxImmediate_Iv, &BX_CPU_C::SUB_RAXId },
   /* 2E */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // CS:
   /* 2F */  { 0, &BX_CPU_C::BxError },
-  /* 30 */  { BxAnother, &BX_CPU_C::XOR_EbGb },
-  /* 31 */  { BxAnother, &BX_CPU_C::XOR_EqGq },
+  /* 30 */  { BxAnother | BxLockable, &BX_CPU_C::XOR_EbGb },
+  /* 31 */  { BxAnother | BxLockable, &BX_CPU_C::XOR_EqGq },
   /* 32 */  { BxAnother, &BX_CPU_C::XOR_GbEb },
   /* 33 */  { BxAnother, &BX_CPU_C::XOR_GqEq },
   /* 34 */  { BxImmediate_Ib, &BX_CPU_C::XOR_ALIb },
@@ -2578,14 +1745,14 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 7D */  { BxImmediate_BrOff8, &BX_CPU_C::JCC_Jq },
   /* 7E */  { BxImmediate_BrOff8, &BX_CPU_C::JCC_Jq },
   /* 7F */  { BxImmediate_BrOff8, &BX_CPU_C::JCC_Jq },
-  /* 80 */  { BxAnother | BxGroup1,  NULL, BxOpcodeInfo64G1EbIb },
+  /* 80 */  { BxAnother | BxGroup1, NULL, BxOpcodeInfo64G1EbIb },
   /* 81 */  { BxAnother | BxGroup1 | BxImmediate_Iv, NULL, BxOpcodeInfo64G1Eq },
   /* 82 */  { 0, &BX_CPU_C::BxError },
   /* 83 */  { BxAnother | BxGroup1 | BxImmediate_Ib_SE, NULL, BxOpcodeInfo64G1Eq },
   /* 84 */  { BxAnother, &BX_CPU_C::TEST_EbGb },
   /* 85 */  { BxAnother, &BX_CPU_C::TEST_EqGq },
-  /* 86 */  { BxAnother, &BX_CPU_C::XCHG_EbGb },
-  /* 87 */  { BxAnother, &BX_CPU_C::XCHG_EqGq },
+  /* 86 */  { BxAnother | BxLockable, &BX_CPU_C::XCHG_EbGb },
+  /* 87 */  { BxAnother | BxLockable, &BX_CPU_C::XCHG_EqGq },
   /* 88 */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_EbGb },
   /* 89 */  { BxAnother, &BX_CPU_C::MOV_EqGq },
   /* 8A */  { BxAnother | BxSplitMod11b, NULL, opcodesMOV_GbEb },
@@ -2630,10 +1797,10 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* B1 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B2 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B3 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
-  /* B4 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B5 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B6 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
-  /* B7 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RHIb },
+  /* B4 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B5 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B6 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
+  /* B7 */  { BxImmediate_Ib, &BX_CPU_C::MOV_RLIb },
   /* B8 */  { BxImmediate_Iq, &BX_CPU_C::MOV_RRXIq },
   /* B9 */  { BxImmediate_Iq, &BX_CPU_C::MOV_RRXIq },
   /* BA */  { BxImmediate_Iq, &BX_CPU_C::MOV_RRXIq },
@@ -2645,35 +1812,36 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* C0 */  { BxAnother | BxGroup2 | BxImmediate_Ib, NULL, BxOpcodeInfo64G2Eb },
   /* C1 */  { BxAnother | BxGroup2 | BxImmediate_Ib, NULL, BxOpcodeInfo64G2Eq },
   /* C2 */  { BxImmediate_Iw, &BX_CPU_C::RETnear64_Iw },
-  /* C3 */  { 0,             &BX_CPU_C::RETnear64 },
+  /* C3 */  { 0,              &BX_CPU_C::RETnear64 },
   /* C4 */  { 0, &BX_CPU_C::BxError },
   /* C5 */  { 0, &BX_CPU_C::BxError },
   /* C6 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::MOV_EbIb },
   /* C7 */  { BxAnother | BxImmediate_Iv, &BX_CPU_C::MOV_EqId },
   /* C8 */  { BxImmediate_IwIb, &BX_CPU_C::ENTER64_IwIb },
   /* C9 */  { 0, &BX_CPU_C::LEAVE64 },
-  /* CA */  { BxImmediate_Iw, &BX_CPU_C::RETfar32_Iw },
+  /* CA */  { BxImmediate_Iw, &BX_CPU_C::RETfar64_Iw },
   /* CB */  { 0, &BX_CPU_C::RETfar64 },
   /* CC */  { 0, &BX_CPU_C::INT3 },
   /* CD */  { BxImmediate_Ib, &BX_CPU_C::INT_Ib },
   /* CE */  { 0, &BX_CPU_C::BxError },
   /* CF */  { 0, &BX_CPU_C::IRET64 },
-  /* D0 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eb },
-  /* D1 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eq },
-  /* D2 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eb },
-  /* D3 */  { BxAnother | BxGroup2,  NULL, BxOpcodeInfo64G2Eq },
+  /* D0 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eb },
+  /* D1 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eq },
+  /* D2 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eb },
+  /* D3 */  { BxAnother | BxGroup2, NULL, BxOpcodeInfo64G2Eq },
   /* D4 */  { 0, &BX_CPU_C::BxError },
   /* D5 */  { 0, &BX_CPU_C::BxError },
   /* D6 */  { 0, &BX_CPU_C::BxError },
   /* D7 */  { 0, &BX_CPU_C::XLAT },
-  /* D8 */  { BxAnother, &BX_CPU_C::ESC0 },
-  /* D9 */  { BxAnother, &BX_CPU_C::ESC1 },
-  /* DA */  { BxAnother, &BX_CPU_C::ESC2 },
-  /* DB */  { BxAnother, &BX_CPU_C::ESC3 },
-  /* DC */  { BxAnother, &BX_CPU_C::ESC4 },
-  /* DD */  { BxAnother, &BX_CPU_C::ESC5 },
-  /* DE */  { BxAnother, &BX_CPU_C::ESC6 },
-  /* DF */  { BxAnother, &BX_CPU_C::ESC7 },
+  // by default we have here pointer to the group .. as if mod <> 11b
+  /* D8 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD8 },
+  /* D9 */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupD9 },
+  /* DA */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDA },
+  /* DB */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDB },
+  /* DC */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDC },
+  /* DD */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDD },
+  /* DE */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDE },
+  /* DF */  { BxAnother | BxFPGroup, NULL, BxOpcodeInfo_FPGroupDF },
   /* E0 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPNE64_Jb },
   /* E1 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOPE64_Jb },
   /* E2 */  { BxImmediate_BrOff8, &BX_CPU_C::LOOP64_Jb },
@@ -2696,19 +1864,19 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* F3 */  { BxPrefix | BxAnother, &BX_CPU_C::BxError }, // REP,REPE/REPZ
   /* F4 */  { 0, &BX_CPU_C::HLT },
   /* F5 */  { 0, &BX_CPU_C::CMC },
-  /* F6 */  { BxAnother | BxGroup3,  NULL, BxOpcodeInfo64G3Eb },
-  /* F7 */  { BxAnother | BxGroup3,  NULL, BxOpcodeInfo64G3Eq },
+  /* F6 */  { BxAnother | BxGroup3, NULL, BxOpcodeInfo64G3Eb },
+  /* F7 */  { BxAnother | BxGroup3, NULL, BxOpcodeInfo64G3Eq },
   /* F8 */  { 0, &BX_CPU_C::CLC },
   /* F9 */  { 0, &BX_CPU_C::STC },
   /* FA */  { 0, &BX_CPU_C::CLI },
   /* FB */  { 0, &BX_CPU_C::STI },
   /* FC */  { 0, &BX_CPU_C::CLD },
   /* FD */  { 0, &BX_CPU_C::STD },
-  /* FE */  { BxAnother | BxGroup4,  NULL, BxOpcodeInfo64G4 },
-  /* FF */  { BxAnother | BxGroup5,  NULL, BxOpcodeInfo64G5q },
+  /* FE */  { BxAnother | BxGroup4, NULL, BxOpcodeInfo64G4 },
+  /* FF */  { BxAnother | BxGroup5, NULL, BxOpcodeInfo64G5q },
 
-  /* 0F 00 */  { BxAnother | BxGroup6,  NULL, BxOpcodeInfo64G6 },
-  /* 0F 01 */  { BxAnother | BxGroup7,  NULL, BxOpcodeInfo64G7 },
+  /* 0F 00 */  { BxAnother | BxGroup6, NULL, BxOpcodeInfo64G6 },
+  /* 0F 01 */  { BxAnother | BxGroup7, NULL, BxOpcodeInfo64G7 },
   /* 0F 02 */  { BxAnother, &BX_CPU_C::LAR_GvEw },
   /* 0F 03 */  { BxAnother, &BX_CPU_C::LSL_GvEw },
   /* 0F 04 */  { 0, &BX_CPU_C::BxError },
@@ -2718,11 +1886,17 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 08 */  { 0, &BX_CPU_C::INVD },
   /* 0F 09 */  { 0, &BX_CPU_C::WBINVD },
   /* 0F 0A */  { 0, &BX_CPU_C::BxError },
-  /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, /* UD2 opcode */
+  /* 0F 0B */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
   /* 0F 0C */  { 0, &BX_CPU_C::BxError },
-  /* 0F 0D */  { BxAnother, &BX_CPU_C::NOP }, // PREFETCH L1
+#if BX_SUPPORT_3DNOW
+  /* 0F 0D */  { 0, &BX_CPU_C::NOP   },           // 3DNow! PREFETCH
+  /* 0F 0E */  { 0, &BX_CPU_C::EMMS },            // 3DNow! FEMMS
+  /* 0F 0F */  { BxAnother | BxImmediate_Ib, NULL, Bx3DNowOpcodeInfo },
+#else
+  /* 0F 0D */  { 0, &BX_CPU_C::BxError },
   /* 0F 0E */  { 0, &BX_CPU_C::BxError },
   /* 0F 0F */  { 0, &BX_CPU_C::BxError },
+#endif
   /* 0F 10 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f10 },
   /* 0F 11 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f11 },
   /* 0F 12 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f12 },
@@ -2731,7 +1905,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 15 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f15 },
   /* 0F 16 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f16 },
   /* 0F 17 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f17 },
-  /* 0F 18 */  { BxAnother | BxGroup16 | 0, NULL, BxOpcodeInfo64G16 },
+  /* 0F 18 */  { BxAnother | BxGroup16, NULL, BxOpcodeInfo64G16 },
   /* 0F 19 */  { 0, &BX_CPU_C::BxError },
   /* 0F 1A */  { 0, &BX_CPU_C::BxError },
   /* 0F 1B */  { 0, &BX_CPU_C::BxError },
@@ -2758,7 +1932,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 30 */  { 0, &BX_CPU_C::WRMSR },
   /* 0F 31 */  { 0, &BX_CPU_C::RDTSC },
   /* 0F 32 */  { 0, &BX_CPU_C::RDMSR },
-  /* 0F 33 */  { 0, &BX_CPU_C::BxError },
+  /* 0F 33 */  { 0, &BX_CPU_C::RDPMC },
   /* 0F 34 */  { 0, &BX_CPU_C::BxError },
   /* 0F 35 */  { 0, &BX_CPU_C::BxError },
   /* 0F 36 */  { 0, &BX_CPU_C::BxError },
@@ -2831,10 +2005,10 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F 79 */  { 0, &BX_CPU_C::BxError },
   /* 0F 7A */  { 0, &BX_CPU_C::BxError },
   /* 0F 7B */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7C */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7D */  { 0, &BX_CPU_C::BxError },
-  /* 0F 7E */  { BxAnother | BxPrefixSSE, NULL,  BxOpcodeGroupSSE_0f7e }, 
-  /* 0F 7F */  { BxAnother | BxPrefixSSE, NULL,  BxOpcodeGroupSSE_0f7f }, 
+  /* 0F 7C */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7c }, 
+  /* 0F 7D */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7d }, 
+  /* 0F 7E */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7e }, 
+  /* 0F 7F */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0f7f }, 
   /* 0F 80 */  { BxImmediate_BrOff32, &BX_CPU_C::JCC_Jq },
   /* 0F 81 */  { BxImmediate_BrOff32, &BX_CPU_C::JCC_Jq },
   /* 0F 82 */  { BxImmediate_BrOff32, &BX_CPU_C::JCC_Jq },
@@ -2872,7 +2046,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F A2 */  { 0, &BX_CPU_C::CPUID },
   /* 0F A3 */  { BxAnother, &BX_CPU_C::BT_EvGv },
   /* 0F A4 */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHLD_EqGq },
-  /* 0F A5 */  { BxAnother,                 &BX_CPU_C::SHLD_EqGq },
+  /* 0F A5 */  { BxAnother,                  &BX_CPU_C::SHLD_EqGq },
   /* 0F A6 */  { 0, &BX_CPU_C::CMPXCHG_XBTS },
   /* 0F A7 */  { 0, &BX_CPU_C::CMPXCHG_IBTS },
   /* 0F A8 */  { 0, &BX_CPU_C::PUSH64_GS },
@@ -2880,11 +2054,11 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F AA */  { 0, &BX_CPU_C::RSM },
   /* 0F AB */  { BxAnother, &BX_CPU_C::BTS_EvGv },
   /* 0F AC */  { BxAnother | BxImmediate_Ib, &BX_CPU_C::SHRD_EqGq },
-  /* 0F AD */  { BxAnother,                 &BX_CPU_C::SHRD_EqGq },
+  /* 0F AD */  { BxAnother,                  &BX_CPU_C::SHRD_EqGq },
   /* 0F AE */  { BxAnother | BxGroup15, NULL, BxOpcodeInfo64G15 },
   /* 0F AF */  { BxAnother, &BX_CPU_C::IMUL_GqEq },
-  /* 0F B0 */  { BxAnother, &BX_CPU_C::CMPXCHG_EbGb },
-  /* 0F B1 */  { BxAnother, &BX_CPU_C::CMPXCHG_EqGq },
+  /* 0F B0 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EbGb },
+  /* 0F B1 */  { BxAnother | BxLockable, &BX_CPU_C::CMPXCHG_EqGq },
   /* 0F B2 */  { BxAnother, &BX_CPU_C::LSS_GvMp },
   /* 0F B3 */  { BxAnother, &BX_CPU_C::BTR_EvGv },
   /* 0F B4 */  { BxAnother, &BX_CPU_C::LFS_GvMp },
@@ -2892,21 +2066,21 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F B6 */  { BxAnother, &BX_CPU_C::MOVZX_GqEb },
   /* 0F B7 */  { BxAnother, &BX_CPU_C::MOVZX_GqEw },
   /* 0F B8 */  { 0, &BX_CPU_C::BxError },
-  /* 0F B9 */  { 0, &BX_CPU_C::BxError },
-  /* 0F BA */  { BxAnother | BxGroup8,  NULL, BxOpcodeInfo64G8EvIb },
+  /* 0F B9 */  { 0, &BX_CPU_C::UndefinedOpcode }, // UD2 opcode
+  /* 0F BA */  { BxAnother | BxGroup8, NULL, BxOpcodeInfo64G8EvIb },
   /* 0F BB */  { BxAnother, &BX_CPU_C::BTC_EvGv },
   /* 0F BC */  { BxAnother, &BX_CPU_C::BSF_GvEv },
   /* 0F BD */  { BxAnother, &BX_CPU_C::BSR_GvEv },
   /* 0F BE */  { BxAnother, &BX_CPU_C::MOVSX_GqEb },
   /* 0F BF */  { BxAnother, &BX_CPU_C::MOVSX_GqEw },
   /* 0F C0 */  { BxAnother, &BX_CPU_C::XADD_EbGb },
-  /* 0F C1 */  { BxAnother, &BX_CPU_C::XADD_EqGq },
+  /* 0F C1 */  { BxAnother | BxLockable, &BX_CPU_C::XADD_EqGq },
   /* 0F C2 */  { BxAnother | BxImmediate_Ib | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc2 },
   /* 0F C3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc3 },
   /* 0F C4 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc4 },
   /* 0F C5 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc5 },
   /* 0F C6 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fc6 },
-  /* 0F C7 */  { BxAnother | BxGroup9,  NULL, BxOpcodeInfo64G9 },
+  /* 0F C7 */  { BxAnother | BxGroup9, NULL, BxOpcodeInfo64G9 },
   /* 0F C8 */  { 0, &BX_CPU_C::BSWAP_RAX },
   /* 0F C9 */  { 0, &BX_CPU_C::BSWAP_RCX },
   /* 0F CA */  { 0, &BX_CPU_C::BSWAP_RDX },
@@ -2915,7 +2089,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F CD */  { 0, &BX_CPU_C::BSWAP_RBP },
   /* 0F CE */  { 0, &BX_CPU_C::BSWAP_RSI },
   /* 0F CF */  { 0, &BX_CPU_C::BSWAP_RDI },
-  /* 0F D0 */  { 0, &BX_CPU_C::BxError },
+  /* 0F D0 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd0 },
   /* 0F D1 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd1 },
   /* 0F D2 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd2 },
   /* 0F D3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fd3 },
@@ -2947,7 +2121,7 @@ static BxOpcodeInfo_t BxOpcodeInfo64[512*3] = {
   /* 0F ED */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fed },
   /* 0F EE */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fee },
   /* 0F EF */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0fef },
-  /* 0F F0 */  { 0, &BX_CPU_C::BxError },
+  /* 0F F0 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff0 }, 
   /* 0F F1 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff1 }, 
   /* 0F F2 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff2 }, 
   /* 0F F3 */  { BxAnother | BxPrefixSSE, NULL, BxOpcodeGroupSSE_0ff3 }, 
@@ -2974,7 +2148,7 @@ BX_CPU_C::fetchDecode64(Bit8u *iptr, bxInstruction_c *instruction,
 {
   // remain must be at least 1
 
-  unsigned b1, b2, ilen=1, attr;
+  unsigned b1, b2, ilen=1, attr, lock=0;
   unsigned imm_mode, offset, rex_r,rex_x,rex_b;
   unsigned rm, mod, nnn;
   unsigned sse_prefix;
@@ -3014,7 +2188,7 @@ another_byte:
     if (attr & BxPrefix) {
       switch (b1) {
         case 0x66: // OpSize
-          BX_INSTR_PREFIX_OS(CPU_ID);
+          BX_INSTR_PREFIX_OS(BX_CPU_ID);
           sse_prefix |= SSE_PREFIX_66;
           if (!instruction->os64L()) {
             instruction->setOs32B(0);
@@ -3027,7 +2201,7 @@ another_byte:
           return(0);
 
         case 0x67: // AddrSize
-          BX_INSTR_PREFIX_AS(CPU_ID);
+          BX_INSTR_PREFIX_AS(BX_CPU_ID);
           instruction->setAs64B(0);
           if (ilen < remain) {
             ilen++;
@@ -3051,7 +2225,7 @@ another_byte:
         case 0x4D:
         case 0x4E:
         case 0x4F:
-          BX_INSTR_PREFIX_EXTEND8B(CPU_ID);
+          BX_INSTR_PREFIX_EXTEND8B(BX_CPU_ID);
 
           instruction->assertExtend8bit();
           //BX_DEBUG (("REX byte = %02x",b1));
@@ -3080,7 +2254,7 @@ another_byte:
           return(0);
 
         case 0xf2: // REPNE/REPNZ
-          BX_INSTR_PREFIX_REPNE(CPU_ID);
+          BX_INSTR_PREFIX_REPNE(BX_CPU_ID);
           sse_prefix |= SSE_PREFIX_F2;
           instruction->setRepUsed(b1 & 3);
           if (ilen < remain) {
@@ -3090,7 +2264,7 @@ another_byte:
           return(0);
 
         case 0xf3: // REP/REPE/REPZ
-          BX_INSTR_PREFIX_REP(CPU_ID);
+          BX_INSTR_PREFIX_REP(BX_CPU_ID);
           sse_prefix |= SSE_PREFIX_F3;
           instruction->setRepUsed(b1 & 3);
           if (ilen < remain) {
@@ -3100,7 +2274,7 @@ another_byte:
           return(0);
 
         case 0x2e: // CS:
-          BX_INSTR_PREFIX_CS(CPU_ID);
+          BX_INSTR_PREFIX_CS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_CS);
           if (ilen < remain) {
             ilen++;
@@ -3108,7 +2282,7 @@ another_byte:
             }
           return(0);
         case 0x26: // ES:
-          BX_INSTR_PREFIX_ES(CPU_ID);
+          BX_INSTR_PREFIX_ES(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_ES);
           if (ilen < remain) {
             ilen++;
@@ -3116,7 +2290,7 @@ another_byte:
             }
           return(0);
         case 0x36: // SS:
-          BX_INSTR_PREFIX_SS(CPU_ID);
+          BX_INSTR_PREFIX_SS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_SS);
           if (ilen < remain) {
             ilen++;
@@ -3124,7 +2298,7 @@ another_byte:
             }
           return(0);
         case 0x3e: // DS:
-          BX_INSTR_PREFIX_DS(CPU_ID);
+          BX_INSTR_PREFIX_DS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_DS);
           if (ilen < remain) {
             ilen++;
@@ -3132,7 +2306,7 @@ another_byte:
             }
           return(0);
         case 0x64: // FS:
-          BX_INSTR_PREFIX_FS(CPU_ID);
+          BX_INSTR_PREFIX_FS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_FS);
           if (ilen < remain) {
             ilen++;
@@ -3140,7 +2314,7 @@ another_byte:
             }
           return(0);
         case 0x65: // GS:
-          BX_INSTR_PREFIX_GS(CPU_ID);
+          BX_INSTR_PREFIX_GS(BX_CPU_ID);
           instruction->setSeg(BX_SEG_REG_GS);
           if (ilen < remain) {
             ilen++;
@@ -3148,7 +2322,8 @@ another_byte:
             }
           return(0);
         case 0xf0: // LOCK:
-          BX_INSTR_PREFIX_LOCK(CPU_ID);
+          BX_INSTR_PREFIX_LOCK(BX_CPU_ID);
+          lock = 1;
           if (ilen < remain) {
             ilen++;
             goto fetch_b1;
@@ -3194,43 +2369,25 @@ BX_PANIC(("fetch_decode: prefix default = 0x%02x", b1));
     if (instruction->as64L()) {
       // 64-bit addressing modes; note that mod==11b handled above
       if (rm != 4) { // no s-i-b byte
-#if BX_DYNAMIC_TRANSLATION
-        instruction->DTMemRegsUsed = 1<<rm; // except for mod=00b rm=100b
-#endif
         if (mod == 0x00) { // mod == 00b
           instruction->ResolveModrm = BxResolve64Mod0[rm];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod0[rm];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_SEG_REG_DS);
 ExtendedFieldCheck((rm&8) && ((rm&7)==5)); // KPL
           if (rm == 5) {
             if ((ilen+3) < remain) {
-              Bit32u imm32u;
-              imm32u = *iptr++;
-              imm32u |= (*iptr++) << 8;
-              imm32u |= (*iptr++) << 16;
-              imm32u |= (*iptr++) << 24;
+              instruction->modRMForm.displ32u = FetchDWORD(iptr);
+              iptr += 4;
               ilen += 4;
-              instruction->modRMForm.displ32u = imm32u;
-#if BX_DYNAMIC_TRANSLATION
-              instruction->DTMemRegsUsed = 0;
-#endif
               goto modrm_done;
               }
-            else {
-              return(0);
-              }
+            else return(0);
             }
           // mod==00b, rm!=4, rm!=5
           goto modrm_done;
           }
         if (mod == 0x40) { // mod == 01b
           instruction->ResolveModrm = BxResolve64Mod1or2[rm];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2[rm];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01_rm32[rm]);
 get_8bit_displ_1:
@@ -3240,31 +2397,20 @@ get_8bit_displ_1:
             ilen++;
             goto modrm_done;
             }
-          else {
-            return(0);
-            }
+          else return(0);
           }
         // (mod == 0x80) mod == 10b
         instruction->ResolveModrm = BxResolve64Mod1or2[rm];
-#if BX_DYNAMIC_TRANSLATION
-        instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2[rm];
-#endif
         if (BX_NULL_SEG_REG(instruction->seg()))
           instruction->setSeg(BX_CPU_THIS_PTR sreg_mod10_rm32[rm]);
 get_32bit_displ_1:
         if ((ilen+3) < remain) {
-          Bit32u imm32u;
-          imm32u = *iptr++;
-          imm32u |= (*iptr++) << 8;
-          imm32u |= (*iptr++) << 16;
-          imm32u |= (*iptr++) << 24;
-          instruction->modRMForm.displ32u = imm32u;
+          instruction->modRMForm.displ32u = FetchDWORD(iptr);
+          iptr += 4;
           ilen += 4;
           goto modrm_done;
           }
-        else {
-          return(0);
-          }
+        else return(0);
         }
       else { // mod!=11b, rm==4, s-i-b byte follows
         unsigned sib, base, index, scale;
@@ -3281,47 +2427,24 @@ get_32bit_displ_1:
         instruction->modRMForm.modRMData |= (base<<12);
         instruction->modRMForm.modRMData |= (index<<16);
         instruction->modRMForm.modRMData |= (scale<<4);
-#if BX_DYNAMIC_TRANSLATION
-        if (instruction->modRMForm.index == 0x04) // 100b
-          instruction->DTMemRegsUsed = 0;
-        else
-          instruction->DTMemRegsUsed = 1<<instruction->modRMForm.index;
-#endif
         if (mod == 0x00) { // mod==00b, rm==4
           instruction->ResolveModrm = BxResolve64Mod0Base[base];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod0Base[base];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod0_base32[base]);
 ExtendedFieldCheck((base&8) && ((base&7)==5)); // KPL
-          if (base == 0x05) {
+          if (base == 0x05)
             goto get_32bit_displ_1;
-            }
           // mod==00b, rm==4, base!=5
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTMemRegsUsed |= 1<<base;
-#endif
           goto modrm_done;
           }
-#if BX_DYNAMIC_TRANSLATION
-        // for remaining 32bit cases
-        instruction->DTMemRegsUsed |= 1<<base;
-#endif
         if (mod == 0x40) { // mod==01b, rm==4
           instruction->ResolveModrm = BxResolve64Mod1or2Base[base];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2Base[base];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod1or2_base32[base]);
           goto get_8bit_displ_1;
           }
         // (mod == 0x80),  mod==10b, rm==4
         instruction->ResolveModrm = BxResolve64Mod1or2Base[base];
-#if BX_DYNAMIC_TRANSLATION
-        instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2Base[base];
-#endif
         if (BX_NULL_SEG_REG(instruction->seg()))
           instruction->setSeg(BX_CPU_THIS_PTR sreg_mod1or2_base32[base]);
         goto get_32bit_displ_1;
@@ -3330,36 +2453,20 @@ ExtendedFieldCheck((base&8) && ((base&7)==5)); // KPL
     else {
      // 32-bit addressing modes; note that mod==11b handled above
       if (rm != 4) { // no s-i-b byte
-#if BX_DYNAMIC_TRANSLATION
-        instruction->DTMemRegsUsed = 1<<rm; // except for mod=00b rm=100b
-#endif
         if (mod == 0x00) { // mod == 00b
 ExtendedFieldCheck(rm&8); // KPL
           instruction->ResolveModrm = BxResolve32Mod0[rm];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod0[rm];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_SEG_REG_DS);
 ExtendedFieldCheck((rm&8) && ((rm&7)==5)); // KPL
           if (rm == 5) {
             if ((ilen+3) < remain) {
-              Bit32u imm32u;
-              imm32u = *iptr++;
-              imm32u |= (*iptr++) << 8;
-              imm32u |= (*iptr++) << 16;
-              imm32u |= (*iptr++) << 24;
-              //RMAddr(instruction) = imm32u;
-              instruction->modRMForm.displ32u = imm32u;
+              instruction->modRMForm.displ32u = FetchDWORD(iptr);
+              iptr += 4;
               ilen += 4;
-#if BX_DYNAMIC_TRANSLATION
-              instruction->DTMemRegsUsed = 0;
-#endif
               goto modrm_done;
               }
-            else {
-              return(0);
-              }
+            else return(0);
             }
           // mod==00b, rm!=4, rm!=5
           goto modrm_done;
@@ -3367,9 +2474,6 @@ ExtendedFieldCheck((rm&8) && ((rm&7)==5)); // KPL
         if (mod == 0x40) { // mod == 01b
 ExtendedFieldCheck(rm&8); // KPL
           instruction->ResolveModrm = BxResolve32Mod1or2[rm];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2[rm];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod01_rm32[rm]);
 get_8bit_displ:
@@ -3379,32 +2483,21 @@ get_8bit_displ:
             ilen++;
             goto modrm_done;
             }
-          else {
-            return(0);
-            }
+          else return(0);
           }
         // (mod == 0x80) mod == 10b
 ExtendedFieldCheck(rm&8); // KPL
         instruction->ResolveModrm = BxResolve32Mod1or2[rm];
-#if BX_DYNAMIC_TRANSLATION
-        instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2[rm];
-#endif
         if (BX_NULL_SEG_REG(instruction->seg()))
           instruction->setSeg(BX_CPU_THIS_PTR sreg_mod10_rm32[rm]);
 get_32bit_displ:
         if ((ilen+3) < remain) {
-          Bit32u imm32u;
-          imm32u = *iptr++;
-          imm32u |= (*iptr++) << 8;
-          imm32u |= (*iptr++) << 16;
-          imm32u |= (*iptr++) << 24;
-          instruction->modRMForm.displ32u = imm32u;
+          instruction->modRMForm.displ32u = FetchDWORD(iptr);
+          iptr += 4;
           ilen += 4;
           goto modrm_done;
           }
-        else {
-          return(0);
-          }
+        else return(0);
         }
       else { // mod!=11b, rm==4, s-i-b byte follows
         unsigned sib, base, index, scale;
@@ -3421,40 +2514,20 @@ get_32bit_displ:
         instruction->modRMForm.modRMData |= (base<<12);
         instruction->modRMForm.modRMData |= (index<<16);
         instruction->modRMForm.modRMData |= (scale<<4);
-#if BX_DYNAMIC_TRANSLATION
-        if (instruction->modRMForm.index == 0x04) // 100b
-          instruction->DTMemRegsUsed = 0;
-        else
-          instruction->DTMemRegsUsed = 1<<instruction->modRMForm.index;
-#endif
         if (mod == 0x00) { // mod==00b, rm==4
 ExtendedFieldCheck(base&8); // KPL
           instruction->ResolveModrm = BxResolve32Mod0Base[base];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod0Base[base];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod0_base32[base]);
 ExtendedFieldCheck((base&8) && ((base&7)==5)); // KPL
-          if (base == 0x05) {
+          if (base == 0x05)
             goto get_32bit_displ;
-            }
           // mod==00b, rm==4, base!=5
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTMemRegsUsed |= 1<<base;
-#endif
           goto modrm_done;
           }
-#if BX_DYNAMIC_TRANSLATION
-        // for remaining 32bit cases
-        instruction->DTMemRegsUsed |= 1<<base;
-#endif
         if (mod == 0x40) { // mod==01b, rm==4
 ExtendedFieldCheck(base&8); // KPL
           instruction->ResolveModrm = BxResolve32Mod1or2Base[base];
-#if BX_DYNAMIC_TRANSLATION
-          instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2Base[base];
-#endif
           if (BX_NULL_SEG_REG(instruction->seg()))
             instruction->setSeg(BX_CPU_THIS_PTR sreg_mod1or2_base32[base]);
           goto get_8bit_displ;
@@ -3462,9 +2535,6 @@ ExtendedFieldCheck(base&8); // KPL
         // (mod == 0x80),  mod==10b, rm==4
 ExtendedFieldCheck(base&8); // KPL
         instruction->ResolveModrm = BxResolve32Mod1or2Base[base];
-#if BX_DYNAMIC_TRANSLATION
-        instruction->DTResolveModrm = (BxVoidFPtr_t) BxDTResolve32Mod1or2Base[base];
-#endif
         if (BX_NULL_SEG_REG(instruction->seg()))
           instruction->setSeg(BX_CPU_THIS_PTR sreg_mod1or2_base32[base]);
         goto get_32bit_displ;
@@ -3472,6 +2542,7 @@ ExtendedFieldCheck(base&8); // KPL
       }
 
 modrm_done:
+
     /*
     BX_DEBUG (("as_64=%d os_64=%d as_32=%d os_32=%d b1=%04x b2=%04x ofs=%4d rm=%d mod=%d nnn=%d",
                      instruction->as64L(),
@@ -3484,60 +2555,58 @@ modrm_done:
                      nnn
                      ));
     */
-    if (attr & BxGroupN) {
-      BxOpcodeInfo_t *OpcodeInfoPtr = BxOpcodeInfo64[b1+offset].AnotherArray;
-ExtendedFieldCheck(nnn&8); // KPL
-      // get additional attributes from group table
-      attr |= OpcodeInfoPtr[nnn].Attr;
-      instruction->setRepAttr(attr & (BxRepeatable | BxRepeatableZF));
-#if BX_DYNAMIC_TRANSLATION
-      instruction->DTAttr = 0; // for now
-#endif
-      /* For SSE opcodes, look into another 4 entries table 
-                        with the opcode prefixes (NONE, 0x66, 0xF2, 0xF3 */
-      if (attr & BxPrefixSSE) {
-        int op = sse_prefix_index[sse_prefix];
-        if(op < 0) BX_PANIC(("fetchdecode: SSE opcode with two or more prefixes"));
-        else {
-           OpcodeInfoPtr = OpcodeInfoPtr[nnn].AnotherArray;
-           instruction->execute = OpcodeInfoPtr[op].ExecutePtr;
-           attr |= OpcodeInfoPtr[op].Attr; 
-        }
-      }
-      // For high frequency opcodes, two variants of the instruction are
-      // implemented; one for the mod=11b case (Reg-Reg), and one for
-      // the other cases (Reg-Mem).  If this is one of those cases,
-      // we need to dereference to get to the execute pointer.
-      else if (attr & BxSplitMod11b) {
-        OpcodeInfoPtr = OpcodeInfoPtr[nnn].AnotherArray;
-        instruction->execute = OpcodeInfoPtr[mod==0xc0].ExecutePtr;
-        }
-      else
-        instruction->execute = OpcodeInfoPtr[nnn].ExecutePtr;
-      }
-    else {
-#if BX_DYNAMIC_TRANSLATION
-      instruction->DTAttr = BxDTOpcodeInfo[b1+offset].DTAttr;
-      instruction->DTFPtr = BxDTOpcodeInfo[b1+offset].DTASFPtr;
-#endif
-      if (attr & BxPrefixSSE) {
-        int op = sse_prefix_index[sse_prefix];
-        if(op < 0) BX_PANIC(("fetchdecode: SSE opcode with two or more prefixes"));
-        else {
-           BxOpcodeInfo_t *OpcodeInfoPtr = BxOpcodeInfo64[b1+offset].AnotherArray;
-           instruction->execute = OpcodeInfoPtr[op].ExecutePtr;
-           attr |= OpcodeInfoPtr[op].Attr; 
-        }
-      }
-      // (See note immediately above for comment)
-      else if (attr & BxSplitMod11b) {
-        BxOpcodeInfo_t *OpcodeInfoPtr = BxOpcodeInfo64[b1+offset].AnotherArray;
-        instruction->execute = OpcodeInfoPtr[mod==0xc0].ExecutePtr;
-        }
-      else
-        instruction->execute = BxOpcodeInfo64[b1+offset].ExecutePtr;
-      }
+
+    // Resolve ExecutePtr and additional opcode Attr
+    BxOpcodeInfo_t *OpcodeInfoPtr = &(BxOpcodeInfo64[b1+offset]);
+    while(attr & BxGroupX) 
+    {
+       Bit32u Group = attr & BxGroupX;
+       attr &= ~BxGroupX;
+      
+       switch(Group) {
+         case BxGroupN:
+             OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[nnn]);
+             break;
+         case BxPrefixSSE:
+         {
+             /* For SSE opcodes, look into another 4 entries table 
+                      with the opcode prefixes (NONE, 0x66, 0xF2, 0xF3) */
+             int op = sse_prefix_index[sse_prefix];
+             if (op < 0) {
+                 BX_INFO(("fetchdecode: SSE opcode with two or more prefixes"));
+                 UndefinedOpcode(instruction);
+             }
+             OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[op]);
+             break;
+         }
+         case BxSplitMod11b:
+             /* For high frequency opcodes, two variants of the instruction are
+              * implemented; one for the mod=11b case (Reg-Reg), and one for
+              * the other cases (Reg-Mem).  If this is one of those cases,
+              * we need to dereference to get to the execute pointer.
+              */
+             OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[mod==0xc0]);
+             break;
+         case BxFPGroup:
+             if (mod != 0xc0)  // mod != 11b
+                OpcodeInfoPtr = &(OpcodeInfoPtr->AnotherArray[nnn]);
+             else
+             {
+                int index = (b1-0xD8)*64 + (0x3f & b2);
+                OpcodeInfoPtr = &(BxOpcodeInfo_FloatingPoint[index]);
+             }
+             break;
+         default:
+             BX_PANIC(("fetchdecode: Unknown opcode group"));
+       }
+
+       /* get additional attributes from group table */
+       attr |= OpcodeInfoPtr->Attr;
     }
+
+    instruction->execute = OpcodeInfoPtr->ExecutePtr;
+    instruction->setRepAttr(attr & (BxRepeatable | BxRepeatableZF));
+  }
   else {
     // Opcode does not require a MODRM byte.
     // Note that a 2-byte opcode (0F XX) will jump to before
@@ -3545,15 +2614,17 @@ ExtendedFieldCheck(nnn&8); // KPL
     // taken in all cases if a modrm byte is NOT required.
     instruction->execute = BxOpcodeInfo64[b1+offset].ExecutePtr;
     instruction->IxForm.opcodeReg = (b1 & 7) | rex_b;
-#if BX_DYNAMIC_TRANSLATION
-    instruction->DTAttr = BxDTOpcodeInfo[b1+offset].DTAttr;
-    instruction->DTFPtr = BxDTOpcodeInfo[b1+offset].DTASFPtr;
-#endif
     }
 
+  if (lock) { // lock prefix invalid opcode
+      // lock prefix not allowed or destination operand is not memory
+      if ((mod == 0xc0) || !(attr & BxLockable)) {
+        BX_INFO(("LOCK prefix unallowed (op1=0x%x, mod=%u, nnn=%u)", b1, mod, nnn));
+        UndefinedOpcode(instruction);
+      }
+  }
 
   imm_mode = attr & BxImmediate;
-
   if (imm_mode) {
     switch (imm_mode) {
       case BxImmediate_Ib:
@@ -3583,34 +2654,25 @@ ExtendedFieldCheck(nnn&8); // KPL
       case BxImmediate_IvIw: // CALL_Ap
         if (instruction->os32L()) {
           if ((ilen+3) < remain) {
-            Bit32u imm32u;
-            ReadHostDWordFromLittleEndian(iptr, imm32u);
-            instruction->modRMForm.Id = imm32u;
+            instruction->modRMForm.Id = FetchDWORD(iptr);
+            iptr += 4;
             ilen += 4;
             }
-          else {
-            return(0);
-            }
+          else return(0);
           }
         else {
           if ((ilen+1) < remain) {
-            Bit16u imm16u;
-            ReadHostWordFromLittleEndian(iptr, imm16u);
-            instruction->modRMForm.Iw = imm16u;
+            instruction->modRMForm.Iw = FetchWORD(iptr);
+            iptr += 2;
             ilen += 2;
             }
-          else {
-            return(0);
-            }
+          else return(0);
           }
         if (imm_mode != BxImmediate_IvIw)
           break;
-        iptr++;
         // Get Iw for BxImmediate_IvIw
         if ((ilen+1) < remain) {
-          Bit16u imm16u;
-          ReadHostWordFromLittleEndian(iptr, imm16u);
-          instruction->IxIxForm.Iw2 = imm16u;
+          instruction->IxIxForm.Iw2 = FetchWORD(iptr);
           ilen += 2;
           }
         else {
@@ -3619,9 +2681,7 @@ ExtendedFieldCheck(nnn&8); // KPL
         break;
       case BxImmediate_Iq: // MOV Rx,imm64
         if ((ilen+7) < remain) {
-          Bit64u imm64u;
-          ReadHostQWordFromLittleEndian(iptr, imm64u);
-          instruction->IqForm.Iq = imm64u;
+          instruction->IqForm.Iq = FetchQWORD(iptr);
           ilen += 8;
           }
         else {
@@ -3634,43 +2694,32 @@ ExtendedFieldCheck(nnn&8); // KPL
         // there is only 64/32-bit addressing available in long-mode.
         if (instruction->as64L()) {
           if ((ilen+7) < remain) {
-            Bit64u imm64u;
-            ReadHostQWordFromLittleEndian(iptr, imm64u);
-            instruction->IqForm.Iq = imm64u;
+            instruction->IqForm.Iq = FetchQWORD(iptr);
             ilen += 8;
             }
-          else {
-            return(0);
-            }
+          else return(0);
           }
         else {
           if ((ilen+3) < remain) {
-            Bit32u imm32u;
-            ReadHostDWordFromLittleEndian(iptr, imm32u);
-            // Sign extend???
-            instruction->IqForm.Iq = imm32u;
+            // Sign extend ???
+            instruction->IqForm.Iq = FetchDWORD(iptr);
             ilen += 4;
             }
-          else {
-            return(0);
-            }
+          else return(0);
           }
         break;
 
       case BxImmediate_Iw:
       case BxImmediate_IwIb:
         if ((ilen+1) < remain) {
-          Bit16u imm16u;
-          imm16u = *iptr++;
-          imm16u |= (*iptr) << 8;
-          instruction->modRMForm.Iw = imm16u;
+          instruction->modRMForm.Iw = FetchWORD(iptr);
+          iptr += 2;
           ilen += 2;
           }
         else {
           return(0);
           }
         if (imm_mode == BxImmediate_Iw) break;
-        iptr++;
         if (ilen < remain) {
           instruction->IxIxForm.Ib2 = *iptr;
           ilen++;
@@ -3692,10 +2741,7 @@ ExtendedFieldCheck(nnn&8); // KPL
         break;
       case BxImmediate_BrOff16:
         if ((ilen+1) < remain) {
-          Bit16u imm16u;
-          imm16u = *iptr++;
-          imm16u |= (*iptr) << 8;
-          instruction->modRMForm.Id = (Bit16s) imm16u;
+          instruction->modRMForm.Id = (Bit16s) FetchWORD(iptr);
           ilen += 2;
           }
         else {
@@ -3703,11 +2749,16 @@ ExtendedFieldCheck(nnn&8); // KPL
           }
         break;
       default:
-BX_INFO(("b1 was %x", b1));
+        BX_INFO(("b1 was %x", b1));
         BX_PANIC(("fetchdecode: imm_mode = %u", imm_mode));
       }
     }
 
+#if BX_SUPPORT_3DNOW
+  if(b1 == 0x10f) {		// 3DNow! instruction set
+     instruction->execute = Bx3DNowOpcodeInfo[instruction->modRMForm.Ib].ExecutePtr;
+    }
+#endif
 
   instruction->setB1(b1);
   instruction->setILen(ilen);

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h,v 1.14 2002/12/12 15:29:39 cbothamy Exp $
+// $Id: osdep.h,v 1.19 2003/08/20 06:26:27 japj Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -52,6 +52,8 @@ extern "C" {
 #  define ssize_t long
 
 #ifndef __MINGW32__
+#define FMT_LL "%I64"
+
 // Definitions that are needed for WIN32 compilers EXCEPT FOR
 // cygwin compiling with -mno-cygwin.  e.g. VC++.
 
@@ -61,8 +63,26 @@ extern "C" {
 
 // win32 has snprintf though with different name.
 #define snprintf _snprintf
+#else    /* ifnndef __MINGW32__ */
+#define FMT_LL "%ll"
 #endif  /* ifnndef __MINGW32__ */
+#else    /* WIN32 */
+#define FMT_LL "%ll"
 #endif   /* WIN32 */
+
+// Missing defines for open
+#ifndef S_IRUSR
+#define S_IRUSR 0400
+#define S_IWUSR 0200
+#endif
+#ifndef S_IRGRP
+#define S_IRGRP 0040
+#define S_IWGRP 0020
+#endif
+#ifndef S_IROTH
+#define S_IROTH 0004
+#define S_IWOTH 0002
+#endif
 
 //////////////////////////////////////////////////////////////////////
 // Missing library functions.
@@ -97,9 +117,19 @@ extern "C" {
   extern char *bx_strdup(const char *str);
 #endif
 
+#if !BX_HAVE_STRREV
+#define strrev bx_strrev
+  extern char *bx_strrev(char *str);
+#endif
+
 #if !BX_HAVE_SOCKLEN_T
 // needed on MacOS X 10.1
 typedef int socklen_t;
+#endif
+
+#if !BX_HAVE_MKSTEMP
+#define mkstemp bx_mkstemp
+  extern int bx_mkstemp(char *tpl);
 #endif
 
 //////////////////////////////////////////////////////////////////////
@@ -127,6 +157,16 @@ typedef long ssize_t ;
 #if BX_HAVE_REALTIME_USEC
 // 64-bit time in useconds.
 extern Bit64u bx_get_realtime64_usec (void);
+#endif
+
+#ifdef WIN32
+#undef BX_HAVE_MSLEEP
+#define BX_HAVE_MSLEEP 1
+#ifndef __MINGW32__
+#define msleep(msec)	_sleep(msec)
+#else
+#define msleep(msec)	Sleep(msec)
+#endif
 #endif
 
 #ifdef __cplusplus

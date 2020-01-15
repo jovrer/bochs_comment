@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer16.cc,v 1.18 2002/10/25 11:44:34 bdenney Exp $
+// $Id: ctrl_xfer16.cc,v 1.20 2003/05/10 22:25:51 kevinlawton Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -40,7 +40,7 @@ BailBigRSP("RETnear16_Iw");
   Bit16u imm16;
   Bit16u return_IP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
@@ -61,7 +61,7 @@ BailBigRSP("RETnear16_Iw");
   else
     SP  += imm16;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_RET, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
   void
@@ -70,7 +70,7 @@ BX_CPU_C::RETnear16(bxInstruction_c *i)
 BailBigRSP("RETnear16");
   Bit16u return_IP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_ret;
@@ -85,7 +85,7 @@ BailBigRSP("RETnear16");
     }
   EIP = return_IP;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_RET, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, EIP);
 }
 
   void
@@ -123,7 +123,7 @@ BailBigRSP("RETfar16_Iw");
     SP  += imm16;
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_RET,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -152,7 +152,7 @@ BailBigRSP("RETfar16");
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_RET,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -164,7 +164,7 @@ BX_CPU_C::CALL_Aw(bxInstruction_c *i)
 BailBigRSP("CALL_Aw");
   Bit32u new_EIP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
@@ -184,7 +184,7 @@ BailBigRSP("CALL_Aw");
   push_16(IP);
   EIP = new_EIP;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
 }
 
   void
@@ -216,7 +216,7 @@ BailBigRSP("CALL16_Ap");
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -226,7 +226,7 @@ BX_CPU_C::CALL_Ew(bxInstruction_c *i)
 BailBigRSP("CALL_Ew");
   Bit16u op1_16;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
 #if BX_DEBUGGER
   BX_CPU_THIS_PTR show_flag |= Flag_call;
@@ -252,7 +252,7 @@ BailBigRSP("CALL_Ew");
   push_16(IP);
   EIP = op1_16;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL, EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL, EIP);
 }
 
   void
@@ -287,7 +287,7 @@ BailBigRSP("CALL_16_Ep");
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_CALL,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_CALL,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -298,7 +298,7 @@ BX_CPU_C::JMP_Jw(bxInstruction_c *i)
 BailBigRSP("JMP_Jw");
   Bit32u new_EIP;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
   new_EIP = EIP + (Bit32s) i->Id();
   new_EIP &= 0x0000ffff;
@@ -313,7 +313,7 @@ BailBigRSP("JMP_Jw");
 #endif
 
   EIP = new_EIP;
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP, new_EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
   void
@@ -362,12 +362,12 @@ BailBigRSP("JCC_Jw");
       }
 #endif
     EIP = new_EIP;
-    BX_INSTR_CNEAR_BRANCH_TAKEN(CPU_ID, new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
     revalidate_prefetch_q();
     }
 #if BX_INSTRUMENTATION
   else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(CPU_ID);
+    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
     }
 #endif
 }
@@ -391,12 +391,12 @@ BailBigRSP("JZ_Jw");
       }
 #endif
     EIP = new_EIP;
-    BX_INSTR_CNEAR_BRANCH_TAKEN(CPU_ID, new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
     revalidate_prefetch_q();
     }
 #if BX_INSTRUMENTATION
   else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(CPU_ID);
+    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
     }
 #endif
 }
@@ -420,12 +420,12 @@ BailBigRSP("JNZ_Jw");
       }
 #endif
     EIP = new_EIP;
-    BX_INSTR_CNEAR_BRANCH_TAKEN(CPU_ID, new_EIP);
+    BX_INSTR_CNEAR_BRANCH_TAKEN(BX_CPU_ID, new_EIP);
     revalidate_prefetch_q();
     }
 #if BX_INSTRUMENTATION
   else {
-    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(CPU_ID);
+    BX_INSTR_CNEAR_BRANCH_NOT_TAKEN(BX_CPU_ID);
     }
 #endif
 }
@@ -438,7 +438,7 @@ BailBigRSP("JMP_Ew");
   Bit32u new_EIP;
   Bit16u op1_16;
 
-  invalidate_prefetch_q();
+  //invalidate_prefetch_q();
 
   if (i->modC0()) {
     op1_16 = BX_READ_16BIT_REG(i->rm());
@@ -461,7 +461,7 @@ BailBigRSP("JMP_Ew");
 
   EIP = new_EIP;
 
-  BX_INSTR_UCNEAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP, new_EIP);
+  BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP, new_EIP);
 }
 
   /* Far indirect jump */
@@ -494,7 +494,7 @@ BailBigRSP("JMP16_Ep");
   load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], cs_raw);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_JMP,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_JMP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }
 
@@ -534,6 +534,6 @@ BailBigRSP("IRET16");
   write_flags(flags, /* change IOPL? */ 1, /* change IF? */ 1);
 
 done:
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_IRET,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_IRET,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, EIP);
 }

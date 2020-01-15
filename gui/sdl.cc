@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sdl.cc,v 1.31.2.1 2003/01/03 00:29:33 cbothamy Exp $
+// $Id: sdl.cc,v 1.43 2003/07/09 20:15:38 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -94,8 +94,10 @@ unsigned half_res_x, half_res_y;
 int headerbar_height;
 static unsigned bx_bitmap_left_xorigin = 0;  // pixels from left
 static unsigned bx_bitmap_right_xorigin = 0; // pixels from right
-int textres_x, textres_y;
+static unsigned int text_cols = 80, text_rows = 25;
+Bit8u h_panning = 0, v_panning = 0;
 int fontwidth = 8, fontheight = 16;
+static unsigned vga_bpp=8;
 unsigned tilewidth, tileheight;
 unsigned char menufont[256][8];
 Uint32 palette[256];
@@ -217,6 +219,8 @@ void bx_sdl_gui_c::specific_init(
 
   put("SDL");
 
+  UNUSED(bochs_icon_bits);
+
   tilewidth = x_tilesize;
   tileheight = y_tilesize;
   headerbar_height = header_bar_y;
@@ -269,29 +273,35 @@ void bx_sdl_gui_c::text_update(
     Bit8u *new_text,
     unsigned long cursor_x,
     unsigned long cursor_y,
-    Bit16u cursor_state,
-    unsigned rows)
+    bx_vga_tminfo_t tm_info,
+    unsigned nrows)
 {
-  unsigned char font_row, *pfont_row;
+  unsigned char *pfont_row, *old_line, *new_line;
   unsigned long x,y;
-  int hchars,fontrows,fontpixels;
+  unsigned int curs, hchars, offset;
+  int rows,fontrows,fontpixels;
   int fgcolor_ndx;
   int bgcolor_ndx;
   Uint32 fgcolor;
   Uint32 bgcolor;
   Uint32 *buf, *buf_row, *buf_char;
   Uint32 disp;
-  Bit8u cs_start, cs_end, cs_line, mask;
-  bx_bool invert, forceUpdate;
+  Bit16u font_row, mask;
+  Bit8u cs_line, cfwidth, cfheight;
+  bx_bool cursor_visible, gfxcharw9, invert, forceUpdate;
 
-  cs_start = (cursor_state >> 8) & 0x3f;
-  cs_end = cursor_state & 0x1f;
-
+  UNUSED(nrows);
   forceUpdate = 0;
   if(charmap_updated)
   {
     forceUpdate = 1;
     charmap_updated = 0;
+  }
+  if((tm_info.h_panning != h_panning) || (tm_info.v_panning != v_panning))
+  {
+    forceUpdate = 1;
+    h_panning = tm_info.h_panning;
+    v_panning = tm_info.v_panning;
   }
   if( sdl_screen )
   {
@@ -303,52 +313,113 @@ void bx_sdl_gui_c::text_update(
     disp = sdl_fullscreen->pitch/4;
     buf_row = (Uint32 *)sdl_fullscreen->pixels;
   }
-  
+  // first invalidate character at previous and new cursor location
+  if ( (prev_cursor_y < text_rows) && (prev_cursor_x < text_cols) ) {
+    curs = prev_cursor_y * tm_info.line_offset + prev_cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  }
+  cursor_visible = ((tm_info.cs_start <= tm_info.cs_end) && (tm_info.cs_start < fontheight));
+  if((cursor_visible) && (cursor_y < text_rows) && (cursor_x < text_cols)) {
+    curs = cursor_y * tm_info.line_offset + cursor_x * 2;
+    old_text[curs] = ~new_text[curs];
+  } else {
+    curs = 0xffff;
+  }
+
+  rows = text_rows;
+  if (v_panning) rows++;
+  y = 0;
+
   do
   {
     buf = buf_row;
-    hchars = textres_x;
+    hchars = text_cols;
+    if (h_panning) hchars++;
+    cfheight = fontheight;
+    if (v_panning)
+    {
+      if (y == 0)
+      {
+        cfheight -= v_panning;
+      }
+      else if (rows == 1)
+      {
+        cfheight = v_panning;
+      }
+    }
+    new_line = new_text;
+    old_line = old_text;
     x = 0;
-    y = textres_y - rows;
+    offset = y * tm_info.line_offset;
     do
     {
+      cfwidth = fontwidth;
+      if (h_panning)
+      {
+        if (hchars > text_cols)
+        {
+          cfwidth -= h_panning;
+        }
+        else if (hchars == 1)
+        {
+          cfwidth = h_panning;
+        }
+      }
       // check if char needs to be updated
       if(forceUpdate || (old_text[0] != new_text[0])
-	  || (old_text[1] != new_text[1])
-	  || ((y == cursor_y) && (x == cursor_x))
-	  || ((y == prev_cursor_y) && (x == prev_cursor_x)) )
+	  || (old_text[1] != new_text[1]) )
       {
 
 	// Get Foreground/Background pixel colors
 	fgcolor_ndx = DEV_vga_get_actl_pal_idx(new_text[1] & 0x0F);
-	bgcolor_ndx = DEV_vga_get_actl_pal_idx((new_text[1] >> 4) & 0x07);
+	bgcolor_ndx = DEV_vga_get_actl_pal_idx((new_text[1] >> 4) & 0x0F);
 	fgcolor = palette[fgcolor_ndx];
 	bgcolor = palette[bgcolor_ndx];
-	invert = ( (y == cursor_y) && (x == cursor_x) && (cs_start < cs_end) );
-	
+	invert = ( (offset == curs) && (cursor_visible) );
+	gfxcharw9 = ( (tm_info.line_graphics) && ((new_text[0] & 0xE0) == 0xC0) );
+
 	// Display this one char
-	fontrows = fontheight;
-	pfont_row = &vga_charmap[(new_text[0] << 5)];
+	fontrows = cfheight;
+	if (y > 0)
+	{
+	  pfont_row = &vga_charmap[(new_text[0] << 5)];
+	}
+	else
+	{
+	  pfont_row = &vga_charmap[(new_text[0] << 5) + v_panning];
+	}
 	buf_char = buf;
 	do
 	{
 	  font_row = *pfont_row++;
-	  fontpixels = fontwidth;
+	  if (gfxcharw9)
+	  {
+	    font_row = (font_row << 1) | (font_row & 0x01);
+	  }
+	  else
+	  {
+	    font_row <<= 1;
+	  }
+	  if (hchars > text_cols)
+	  {
+	    font_row <<= h_panning;
+	  }
+	  fontpixels = cfwidth;
 	  cs_line = (fontheight - fontrows);
-	  if( (invert) && (cs_line >= cs_start) && (cs_line <= cs_end) )
-	    mask = 0x80;
+	  if( (invert) && (cs_line >= tm_info.cs_start) && (cs_line <= tm_info.cs_end) )
+	    mask = 0x100;
 	  else
 	    mask = 0x00;
 	  do
 	  {
-	    if( (font_row & 0x80) == mask )
+	    if( (font_row & 0x100) == mask )
 	      *buf = bgcolor;
 	    else
 	      *buf = fgcolor;
 	    buf++;
-	    font_row = font_row << 1;
+	    font_row <<= 1;
 	  } while( --fontpixels );
-	  buf -= fontwidth;
+	  buf -= cfwidth;
 	  buf += disp;
 	} while( --fontrows );
 
@@ -356,18 +427,22 @@ void bx_sdl_gui_c::text_update(
 	buf = buf_char;
       }
       // move to next char location on screen
-      buf += fontwidth;
-      
+      buf += cfwidth;
+
       // select next char in old/new text
       new_text+=2;
       old_text+=2;
+      offset+=2;
       x++;
-	
+
     // process one entire horizontal row
     } while( --hchars );
 
     // go to next character row location
-    buf_row += disp * fontheight;
+    buf_row += disp * cfheight;
+    new_text = new_line + tm_info.line_offset;
+    old_text = old_line + tm_info.line_offset;
+    y++;
   } while( --rows );
   prev_cursor_x = cursor_x;
   prev_cursor_y = cursor_y;
@@ -412,16 +487,91 @@ void bx_sdl_gui_c::graphics_tile_update(
   // FIXME
   if( i<=0 ) return;
 
-  do
+  switch (vga_bpp)
   {
-    buf_row = buf;
-    j = tilewidth;
-    do
-    {
-      *buf++ = palette[*snapshot++];
-    } while( --j );
-    buf = buf_row + disp;
-  } while( --i);
+    case 32:
+      {
+        Uint32 *snapshot32 = (Uint32 *)snapshot;
+        do
+        {
+          buf_row = buf;
+          j = tilewidth;
+          do
+          {
+            *buf++ = *snapshot32++;
+          } while( --j );
+          buf = buf_row + disp;
+        } while( --i);
+      }
+      break;
+    case 24:
+      {
+        do
+        {
+          buf_row = buf;
+          j = tilewidth;
+          do
+          {
+            buf[0] = snapshot[0];
+            buf[0] |= (snapshot[1] << 8);
+            buf[0] |= (snapshot[2] << 16);
+            buf++;
+            snapshot+=3;
+          } while( --j );
+          buf = buf_row + disp;
+        } while( --i);
+      }
+      break;
+    case 16:
+      {
+        Uint16 *snapshot16 = (Uint16 *)snapshot;
+        do
+        {
+          buf_row = buf;
+          j = tilewidth;
+          do
+          {
+            buf[0] = (snapshot16[0] & 0x001f) << 3;
+            buf[0] |= (snapshot16[0] & 0x07e0) << 5;
+            buf[0] |= (snapshot16[0] & 0xf800) << 8;
+            buf++;
+            snapshot16++;
+          } while( --j );
+          buf = buf_row + disp;
+        } while( --i);
+      }
+      break;
+    case 15:
+      {
+        Uint16 *snapshot16 = (Uint16 *)snapshot;
+        do
+        {
+          buf_row = buf;
+          j = tilewidth;
+          do
+          {
+            buf[0] = (snapshot16[0] & 0x001f) << 3;
+            buf[0] |= (snapshot16[0] & 0x03e0) << 6;
+            buf[0] |= (snapshot16[0] & 0x7c00) << 9;
+            buf++;
+            snapshot16++;
+          } while( --j );
+          buf = buf_row + disp;
+        } while( --i);
+      }
+      break;
+    default: /* 8 bpp */
+      do
+      {
+        buf_row = buf;
+        j = tilewidth;
+        do
+        {
+          *buf++ = palette[*snapshot++];
+        } while( --j );
+        buf = buf_row + disp;
+      } while( --i);
+  }
 }
 
 static Bit32u sdl_sym_to_bx_key (SDLKey sym)
@@ -818,15 +968,23 @@ bx_bool bx_sdl_gui_c::palette_change(
 void bx_sdl_gui_c::dimension_update(
     unsigned x,
     unsigned y,
-    unsigned fheight)
+    unsigned fheight,
+    unsigned fwidth,
+    unsigned bpp)
 {
-  // TODO: remove this stupid check whenever the vga driver is fixed
-  if( y == 208 ) y = 200;
-
+  if ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32)) {
+    vga_bpp = bpp;
+  }
+  else
+  {
+    BX_PANIC(("%d bpp graphics mode not supported", bpp));
+  }
   if( fheight > 0 )
   {
     fontheight = fheight;
-    fontwidth = 8;
+    fontwidth = fwidth;
+    text_cols = x / fontwidth;
+    text_rows = y / fontheight;
   }
 
   if( (x == res_x) && (y == res_y )) return;
@@ -874,11 +1032,6 @@ void bx_sdl_gui_c::dimension_update(
   res_y = y;
   half_res_x = x/2;
   half_res_y = y/2;
-  if( fheight > 0 )
-  {
-    textres_x = x / fontwidth;
-    textres_y = y / fontheight;
-  }
   bx_gui->show_headerbar();
 }
 

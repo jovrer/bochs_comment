@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc,v 1.13 2002/11/04 05:27:26 ptrumpet Exp $
+// $Id: soft_int.cc,v 1.18 2003/10/04 20:48:13 sshwarts Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -25,18 +25,9 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
 
-
-
-
-
-
-
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #define LOG_THIS BX_CPU_THIS_PTR
-
-
-
 
 
   void
@@ -48,7 +39,7 @@ BX_CPU_C::BOUND_GvMa(bxInstruction_c *i)
 
   if (i->modC0()) {
     /* undefined opcode exception */
-    BX_PANIC(("bound: op2 must be mem ref"));
+    BX_PANIC(("bound: op2 must be memory reference"));
     UndefinedOpcode(i);
     }
 
@@ -101,7 +92,7 @@ BX_CPU_C::INT1(bxInstruction_c *i)
 #endif
 
   interrupt(1, 1, 0, 0);
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_INT,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
 }
@@ -117,7 +108,7 @@ BX_CPU_C::INT3(bxInstruction_c *i)
 
 //BX_PANIC(("INT3: bailing"));
   interrupt(3, 1, 0, 0);
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_INT,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
 }
@@ -146,7 +137,7 @@ if ( (imm8 == 0x21) && (AH == 0x4c) ) {
 #endif
 
   interrupt(imm8, 1, 0, 0);
-  BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_INT,
+  BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                       EIP);
 }
@@ -165,7 +156,7 @@ BX_CPU_C::INTO(bxInstruction_c *i)
 
   if (get_OF()) {
     interrupt(4, 1, 0, 0);
-    BX_INSTR_FAR_BRANCH(CPU_ID, BX_INSTR_IS_INT,
+    BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
                         BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
                         EIP);
     }

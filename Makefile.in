@@ -45,15 +45,14 @@ DESTDIR =
 VERSION=@VERSION@
 VER_STRING=@VER_STRING@
 REL_STRING=@REL_STRING@
-MAN_PAGE_1_LIST=bochs bximage bochs-dlx
+MAN_PAGE_1_LIST=bochs bximage bxcommit bochs-dlx
 MAN_PAGE_5_LIST=bochsrc
 INSTALL_LIST_SHARE=bios/BIOS-* bios/VGABIOS* @INSTALL_LIST_FOR_PLATFORM@
 INSTALL_LIST_DOC=CHANGES COPYING README
-INSTALL_LIST_BIN=bochs bximage 
-INSTALL_LIST_BIN_OPTIONAL=bochsdbg
-INSTALL_LIST_WIN32=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) $(INSTALL_LIST_BIN) $(INSTALL_LIST_BIN_OPTIONAL) niclist
-INSTALL_LIST_MACOSX=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) bochs.app bochs.scpt bximage
-INSTALL_LIST_X11=install-x11-fonts test-x11-fonts font/vga.pcf
+INSTALL_LIST_BIN=bochs@EXE@ bximage@EXE@ bxcommit@EXE@
+INSTALL_LIST_BIN_OPTIONAL=bochsdbg@EXE@
+INSTALL_LIST_WIN32=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) $(INSTALL_LIST_BIN) $(INSTALL_LIST_BIN_OPTIONAL) niclist@EXE@
+INSTALL_LIST_MACOSX=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) bochs.app bochs.scpt bximage bxcommit
 # for win32 and macosx, these files get renamed to *.txt in install process
 TEXT_FILE_LIST=README CHANGES COPYING VGABIOS-elpin-LICENSE VGABIOS-lgpl-README
 CP=cp
@@ -77,6 +76,7 @@ ZIP=zip
 UNIX2DOS=unix2dos
 LIBTOOL=@LIBTOOL@
 DLLTOOL=dlltool
+RC_CMD=@RC_CMD@
 
 @SUFFIX_LINE@
 
@@ -99,7 +99,8 @@ LIBS = @LIBS@
 #   solaris needs -lreadline -lcurses
 X_LIBS = @X_LIBS@
 X_PRE_LIBS = @X_PRE_LIBS@
-GUI_LINK_OPTS_X = $(X_LIBS) $(X_PRE_LIBS) -lX11
+XPM_LIB = @XPM_LIB@
+GUI_LINK_OPTS_X = $(X_LIBS) $(X_PRE_LIBS) -lX11 $(XPM_LIB)
 GUI_LINK_OPTS_SDL = `sdl-config --cflags --libs`
 GUI_LINK_OPTS_SVGA =  -lvga -lvgagl
 GUI_LINK_OPTS_BEOS = -lbe
@@ -107,7 +108,7 @@ GUI_LINK_OPTS_RFB = @RFB_LIBS@
 GUI_LINK_OPTS_AMIGAOS = 
 GUI_LINK_OPTS_WIN32 = -luser32 -lgdi32 -lcomdlg32 -lcomctl32
 GUI_LINK_OPTS_WIN32_VCPP = user32.lib gdi32.lib winmm.lib \
-  comdlg32.lib comctl32.lib wsock32.lib
+  comdlg32.lib comctl32.lib wsock32.lib advapi.lib
 GUI_LINK_OPTS_MACOS =
 GUI_LINK_OPTS_CARBON = -framework Carbon
 GUI_LINK_OPTS_NOGUI =
@@ -121,7 +122,7 @@ CXXFLAGS_CONSOLE = @CXXFLAGS@ $(MCH_CFLAGS) $(FLA_FLAGS)
 
 BX_INCDIRS = -I. -I$(srcdir)/. -I@INSTRUMENT_DIR@ -I$(srcdir)/@INSTRUMENT_DIR@
 
-#SUBDIRS = iodev debug
+#SUBDIRS = iodev bx_debug
 
 #all install uninstall: config.h#
 #        for subdir in $(SUBDIRS); do #
@@ -151,7 +152,7 @@ EXTERN_ENVIRONMENT_OBJS = \
 	state_file.o \
 	pc_system.o
 
-DEBUGGER_LIB   = debug/libdebug.a
+DEBUGGER_LIB   = bx_debug/libdebug.a
 DISASM_LIB     = disasm/libdisasm.a
 INSTRUMENT_LIB = @INSTRUMENT_DIR@/libinstrument.a
 FPU_LIB        = fpu/libfpu.a
@@ -171,20 +172,19 @@ BX_INCLUDES = bochs.h config.h osdep.h
 	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS) $(FPU_FLAGS) $< @OFP@$@
 
 
-all: @PRIMARY_TARGET@ @PLUGIN_TARGET@ bximage@EXE@  @BUILD_DOCBOOK_VAR@
+all: @PRIMARY_TARGET@ @PLUGIN_TARGET@ bximage@EXE@ bxcommit@EXE@ @BUILD_DOCBOOK_VAR@
 
 @EXTERNAL_DEPENDENCY@
 
 bochs@EXE@: @IODEV_LIB_VAR@ @DEBUGGER_VAR@ \
            cpu/libcpu.a memory/libmemory.a gui/libgui.a \
            @DISASM_VAR@ @INSTRUMENT_VAR@ $(BX_OBJS) \
-           $(SIMX86_OBJS) $(FPU_LIB) @GDBSTUB_VAR@ @PLUGIN_VAR@
+           $(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
 	@LINK@ -export-dynamic $(BX_OBJS) $(SIMX86_OBJS) \
 		iodev/libiodev.a cpu/libcpu.a memory/libmemory.a gui/libgui.a \
 		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
-		@GDBSTUB_VAR@ \
-		$(FPU_LIB) \
-		$(GUI_LINK_OPTS) \
+		@GDBSTUB_VAR@ @FPU_VAR@ \
+		@NONPLUGIN_GUI_LINK_OPTS@ \
 		$(MCH_LINK_FLAGS) \
 		$(SIMX86_LINK_FLAGS) \
 		$(READLINE_LIB) \
@@ -197,20 +197,19 @@ bochs@EXE@: @IODEV_LIB_VAR@ @DEBUGGER_VAR@ \
 .win32_dll_plugin_target: @IODEV_LIB_VAR@ @DEBUGGER_VAR@ \
            cpu/libcpu.a memory/libmemory.a gui/libgui.a \
            @DISASM_VAR@ @INSTRUMENT_VAR@ $(BX_OBJS) \
-           $(SIMX86_OBJS) $(FPU_LIB) @GDBSTUB_VAR@ @PLUGIN_VAR@
+           $(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
 	$(DLLTOOL) --export-all-symbols --output-def bochs.def \
 		$(BX_OBJS) $(SIMX86_OBJS) \
 		@IODEV_LIB_VAR@ cpu/libcpu.a memory/libmemory.a gui/libgui.a \
 		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
-		@GDBSTUB_VAR@ $(FPU_LIB)
+		@GDBSTUB_VAR@ @FPU_VAR@
 	$(DLLTOOL) --dllname bochs.exe --def bochs.def --output-lib dllexports.a
 	$(DLLTOOL) --dllname bochs.exe --output-exp bochs.exp --def bochs.def
 	$(CXX) -o bochs.exe $(CXXFLAGS) $(LDFLAGS) -export-dynamic \
 	    $(BX_OBJS) bochs.exp $(SIMX86_OBJS) \
 		@IODEV_LIB_VAR@ cpu/libcpu.a memory/libmemory.a gui/libgui.a \
 		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
-		@GDBSTUB_VAR@ \
-		$(FPU_LIB) \
+		@GDBSTUB_VAR@ @FPU_VAR@ \
 		$(GUI_LINK_OPTS) \
 		$(MCH_LINK_FLAGS) \
 		$(SIMX86_LINK_FLAGS) \
@@ -226,9 +225,15 @@ bochs_plugins:
 bximage@EXE@: misc/bximage.o
 	@LINK_CONSOLE@ misc/bximage.o
 
+bxcommit@EXE@: misc/bxcommit.o
+	@LINK_CONSOLE@ misc/bxcommit.o
+
 # compile with console CXXFLAGS, not gui CXXFLAGS
 misc/bximage.o: $(srcdir)/misc/bximage.c
 	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) @CXXFP@$(srcdir)/misc/bximage.c @OFP@$@
+
+misc/bxcommit.o: $(srcdir)/misc/bxcommit.c
+	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) @CXXFP@$(srcdir)/misc/bxcommit.c @OFP@$@
 
 niclist@EXE@: misc/niclist.o
 	@LINK@ misc/niclist.o
@@ -238,7 +243,7 @@ $(BX_OBJS): $(BX_INCLUDES)
 bxversion.h:
 	$(RM) -f bxversion.h
 	echo '/////////////////////////////////////////////////////////////////////////' > bxversion.h
-	echo '// $$Id: Makefile.in,v 1.142 2002/12/21 19:23:08 bdenney Exp $$' >> bxversion.h
+	echo '// $$Id: Makefile.in,v 1.161 2003/12/29 21:53:03 cbothamy Exp $$' >> bxversion.h
 	echo '/////////////////////////////////////////////////////////////////////////' >> bxversion.h
 	echo '// This file is generated by "make bxversion.h"' >> bxversion.h
 	echo "#define VER_STRING \"$(VER_STRING)\"" >> bxversion.h
@@ -249,8 +254,8 @@ iodev/libiodev.a::
 	$(MAKE) $(MDEFINES) libiodev.a
 	@CD_UP_ONE@
 
-debug/libdebug.a::
-	cd debug @COMMAND_SEPARATOR@
+bx_debug/libdebug.a::
+	cd bx_debug @COMMAND_SEPARATOR@
 	$(MAKE) $(MDEFINES) libdebug.a
 	@CD_UP_ONE@
 
@@ -298,6 +303,10 @@ libbochs_cpu.a: @DEBUGGER_VAR@ $(BX_OBJS)
 wxbochs_resources.o: wxbochs.rc
 	windres $(srcdir)/wxbochs.rc -o $@ --include-dir=`@WX_CONFIG@ --prefix`/include
 
+# for win32 gui
+win32res.o: win32res.rc
+	$(RC_CMD)$@ $(srcdir)/win32res.rc
+
 #####################################################################
 # Install target for all platforms.
 #####################################################################
@@ -314,7 +323,7 @@ install: all @INSTALL_TARGET@
 install_win32: download_dlx @INSTALL_DOCBOOK_VAR@
 	-mkdir -p $(prefix)
 	cp obj-release/*.exe .
-	for i in $(INSTALL_LIST_WIN32) niclist; do if test -f $$i; then cp $$i $(prefix); else cp $(srcdir)/$$i $(prefix); fi; done
+	for i in $(INSTALL_LIST_WIN32); do if test -f $$i; then cp $$i $(prefix); else cp $(srcdir)/$$i $(prefix); fi; done
 	cp $(srcdir)/misc/sb16/sb16ctrl.example $(prefix)/sb16ctrl.txt
 	cp $(srcdir)/misc/sb16/sb16ctrl.exe $(prefix)
 	#cat $(srcdir)/build/win32/DOC-win32.htm | $(SED) -e 's/@VERSION@/$(VERSION)/g' > $(prefix)/DOC-win32.htm
@@ -339,8 +348,6 @@ install_unix: install_bin @INSTALL_PLUGINS_VAR@ install_man install_share instal
 
 install_bin::
 	for i in $(DESTDIR)$(bindir); do mkdir -p $$i && test -d $$i && test -w $$i; done
-	if test -f install-x11-fonts; then $(CHMOD) a+x install-x11-fonts; fi
-	if test -f test-x11-fonts; then $(CHMOD) a+x test-x11-fonts; fi
 	for i in $(INSTALL_LIST_BIN); do if test -f $$i; then cp $$i $(DESTDIR)$(bindir); else cp $(srcdir)/$$i $(DESTDIR)$(bindir); fi; done
 	-for i in $(INSTALL_LIST_BIN_OPTIONAL); do if test -f $$i; then cp $$i $(DESTDIR)$(bindir); else cp $(srcdir)/$$i $(DESTDIR)$(bindir); fi; done
 
@@ -407,15 +414,15 @@ install_dlx:
 uninstall::
 	$(RM) -rf $(DESTDIR)$(sharedir)
 	$(RM) -rf $(DESTDIR)$(docdir)
-	for i in bochs bximage bochs-dlx; do rm -f $(DESTDIR)$(bindir)/$$i; done
+	for i in bochs bximage bxcommit bochs-dlx; do rm -f $(DESTDIR)$(bindir)/$$i; done
 	for i in $(MAN_PAGE_1_LIST); do $(RM) -f $(man1dir)/$$i.1.gz; done
 	for i in $(MAN_PAGE_5_LIST); do $(RM) -f $(man5dir)/$$i.5.gz; done
 
 V6WORKSPACE_ZIP=build/win32/workspace.zip
 V6WORKSPACE_FILES=bochs.dsw bochs.dsp bochs.opt cpu/cpu.dsp \
 	memory/memory.dsp iodev/iodev.dsp instrument/stubs/stubs.dsp \
-	gui/gui.dsp fpu/fpu.dsp disasm/disasm.dsp debug/debug.dsp \
-	misc/niclist.dsp bximage.dsp
+	gui/gui.dsp fpu/fpu.dsp disasm/disasm.dsp bx_debug/bx_debug.dsp \
+	misc/niclist.dsp bximage.dsp bxcommit.dsp
 
 v6workspace:
 	zip $(V6WORKSPACE_ZIP) $(V6WORKSPACE_FILES)
@@ -429,23 +436,25 @@ v6workspace:
 ########
 win32_snap:
 	unzip $(V6WORKSPACE_ZIP)
+	$(SHELL) ./build/win32/cc2cpp
 	make zip
+	$(SHELL) ./build/win32/cpp2cc
 
 tar:
-	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; tar cf - $$NAME | $(GZIP) > $$NAME.tar.gz); ls -l ../$$NAME.tar.gz
+	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(RM) -f $$NAME.zip; tar cf - $$NAME | $(GZIP) > $$NAME.tar.gz); ls -l ../$$NAME.tar.gz
 
 zip:
-	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(ZIP) $$NAME.zip -r $$NAME); ls -l ../$$NAME.zip
+	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(RM) -f $$NAME.zip; $(ZIP) $$NAME.zip -r $$NAME -x \*CVS\* -x \*.cvsignore ); ls -l ../$$NAME.zip
 
 clean:
 	@RMCOMMAND@ *.o
-	@RMCOMMAND@ */*.o
 	@RMCOMMAND@ *.a
-	@RMCOMMAND@ */*.a
 	@RMCOMMAND@ bochs
 	@RMCOMMAND@ bochs.exe
 	@RMCOMMAND@ bximage
 	@RMCOMMAND@ bximage.exe
+	@RMCOMMAND@ bxcommit
+	@RMCOMMAND@ bxcommit.exe
 	@RMCOMMAND@ niclist
 	@RMCOMMAND@ niclist.exe
 	@RMCOMMAND@ bochs.out
@@ -459,8 +468,10 @@ clean:
 
 local-dist-clean: clean
 	@RMCOMMAND@ config.h config.status config.log config.cache
-	@RMCOMMAND@ .dummy `find . -name '*.dsp' -o -name '*.dsw' -o -name '*.opt'`
-	@RMCOMMAND@ bxversion.h install-x11-fonts build/linux/bochs-dlx _rpm_top *.rpm
+	@RMCOMMAND@ .dummy `find . -name '*.dsp' -o -name '*.dsw' -o -name '*.opt' -o -name '.DS_Store'`
+	@RMCOMMAND@ bxversion.h build/linux/bochs-dlx _rpm_top *.rpm
+	@RMCOMMAND@ build/win32/nsis/Makefile build/win32/nsis/bochs.nsi
+	@RMCOMMAND@ build/macosx/Info.plist build/macosx/script_compiled.rsrc
 	@RMCOMMAND@ libtool
 	@RMCOMMAND@ ltdlconf.h
 
@@ -468,7 +479,7 @@ all-clean: clean
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
-	cd debug @COMMAND_SEPARATOR@
+	cd bx_debug @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
 	cd cpu @COMMAND_SEPARATOR@
@@ -500,7 +511,7 @@ dist-clean: local-dist-clean
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@
-	cd debug @COMMAND_SEPARATOR@
+	cd bx_debug @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@
 	cd bios @COMMAND_SEPARATOR@
@@ -654,7 +665,7 @@ install_macosx: all download_dlx @INSTALL_DOCBOOK_VAR@
 # dependencies generated by
 #  gcc -MM -I. -Iinstrument/stubs *.cc | sed -e 's/\.cc/.@CPP_SUFFIX@/g' -e 's,cpu/,cpu/,g'
 ###########################################
-gdbstub.o: gdbstub.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h \
+gdbstub.o: gdbstub.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h \
  bxversion.h gui/siminterface.h state_file.h cpu/cpu.h \
  cpu/lazy_flags.h cpu/i387.h memory/memory.h pc_system.h gui/gui.h \
  gui/textconfig.h gui/keymap.h iodev/iodev.h iodev/pci.h iodev/pci2isa.h \
@@ -665,7 +676,7 @@ gdbstub.o: gdbstub.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h \
  iodev/guest2host.h iodev/slowdown_timer.h plugin.h \
  instrument/stubs/instrument.h
 load32bitOShack.o: load32bitOShack.@CPP_SUFFIX@ bochs.h config.h osdep.h \
- debug/debug.h bxversion.h gui/siminterface.h state_file.h cpu/cpu.h \
+ bx_debug/debug.h bxversion.h gui/siminterface.h state_file.h cpu/cpu.h \
  cpu/lazy_flags.h cpu/i387.h memory/memory.h pc_system.h gui/gui.h \
  gui/textconfig.h gui/keymap.h iodev/iodev.h iodev/pci.h iodev/pci2isa.h \
  iodev/vga.h iodev/biosdev.h iodev/cmos.h iodev/dma.h iodev/floppy.h \
@@ -674,7 +685,7 @@ load32bitOShack.o: load32bitOShack.@CPP_SUFFIX@ bochs.h config.h osdep.h \
  iodev/serial.h iodev/unmapped.h iodev/eth.h iodev/ne2k.h \
  iodev/guest2host.h iodev/slowdown_timer.h plugin.h \
  instrument/stubs/instrument.h
-logio.o: logio.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
+logio.o: logio.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h bxversion.h \
  gui/siminterface.h state_file.h cpu/cpu.h cpu/lazy_flags.h cpu/i387.h \
  memory/memory.h pc_system.h gui/gui.h gui/textconfig.h gui/keymap.h \
  iodev/iodev.h iodev/pci.h iodev/pci2isa.h iodev/vga.h iodev/biosdev.h \
@@ -683,7 +694,7 @@ logio.o: logio.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
  iodev/pit_wrap.h iodev/pit82c54.h iodev/serial.h iodev/unmapped.h \
  iodev/eth.h iodev/ne2k.h iodev/guest2host.h iodev/slowdown_timer.h \
  plugin.h instrument/stubs/instrument.h
-main.o: main.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
+main.o: main.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h bxversion.h \
  gui/siminterface.h state_file.h cpu/cpu.h cpu/lazy_flags.h cpu/i387.h \
  memory/memory.h pc_system.h gui/gui.h gui/textconfig.h gui/keymap.h \
  iodev/iodev.h iodev/pci.h iodev/pci2isa.h iodev/vga.h iodev/biosdev.h \
@@ -692,7 +703,7 @@ main.o: main.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
  iodev/pit_wrap.h iodev/pit82c54.h iodev/serial.h iodev/unmapped.h \
  iodev/eth.h iodev/ne2k.h iodev/guest2host.h iodev/slowdown_timer.h \
  plugin.h instrument/stubs/instrument.h
-osdep.o: osdep.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
+osdep.o: osdep.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h bxversion.h \
  gui/siminterface.h state_file.h cpu/cpu.h cpu/lazy_flags.h cpu/i387.h \
  memory/memory.h pc_system.h gui/gui.h gui/textconfig.h gui/keymap.h \
  iodev/iodev.h iodev/pci.h iodev/pci2isa.h iodev/vga.h iodev/biosdev.h \
@@ -701,7 +712,7 @@ osdep.o: osdep.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
  iodev/pit_wrap.h iodev/pit82c54.h iodev/serial.h iodev/unmapped.h \
  iodev/eth.h iodev/ne2k.h iodev/guest2host.h iodev/slowdown_timer.h \
  plugin.h instrument/stubs/instrument.h
-pc_system.o: pc_system.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h \
+pc_system.o: pc_system.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h \
  bxversion.h gui/siminterface.h state_file.h cpu/cpu.h \
  cpu/lazy_flags.h cpu/i387.h memory/memory.h pc_system.h gui/gui.h \
  gui/textconfig.h gui/keymap.h iodev/iodev.h iodev/pci.h iodev/pci2isa.h \
@@ -711,7 +722,7 @@ pc_system.o: pc_system.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h \
  iodev/serial.h iodev/unmapped.h iodev/eth.h iodev/ne2k.h \
  iodev/guest2host.h iodev/slowdown_timer.h plugin.h \
  instrument/stubs/instrument.h
-plugin.o: plugin.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h \
+plugin.o: plugin.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h bxversion.h \
  gui/siminterface.h state_file.h cpu/cpu.h cpu/lazy_flags.h cpu/i387.h \
  memory/memory.h pc_system.h gui/gui.h gui/textconfig.h gui/keymap.h \
  iodev/iodev.h iodev/pci.h iodev/pci2isa.h iodev/vga.h iodev/biosdev.h \
@@ -720,7 +731,7 @@ plugin.o: plugin.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h bxversion.h
  iodev/pit_wrap.h iodev/pit82c54.h iodev/serial.h iodev/unmapped.h \
  iodev/eth.h iodev/ne2k.h iodev/guest2host.h iodev/slowdown_timer.h \
  plugin.h instrument/stubs/instrument.h
-state_file.o: state_file.@CPP_SUFFIX@ bochs.h config.h osdep.h debug/debug.h \
+state_file.o: state_file.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h \
  bxversion.h gui/siminterface.h state_file.h cpu/cpu.h \
  cpu/lazy_flags.h cpu/i387.h memory/memory.h pc_system.h gui/gui.h \
  gui/textconfig.h gui/keymap.h iodev/iodev.h iodev/pci.h iodev/pci2isa.h \

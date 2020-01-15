@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom.cc,v 1.55.2.2 2003/01/16 21:57:39 cbothamy Exp $
+// $Id: cdrom.cc,v 1.66 2003/12/08 23:49:48 danielg4 Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -209,11 +209,11 @@ static kern_return_t FindEjectableCDMedia( io_iterator_t *mediaIterator,
     fprintf ( stderr, "IOServiceMatching returned a NULL dictionary.\n" );
   else
     {
-      // Each IOMedia object has a property with key kIOMediaEjectable
+      // Each IOMedia object has a property with key kIOMediaEjectableKey
       // which is true if the media is indeed ejectable. So add property
       // to CFDictionary for matching.
       CFDictionarySetValue( classesToMatch,
-                            CFSTR( kIOMediaEjectable ), kCFBooleanTrue );
+                            CFSTR( kIOMediaEjectableKey ), kCFBooleanTrue );
     }
   kernResult = IOServiceGetMatchingServices( *masterPort,
                                              classesToMatch, mediaIterator );
@@ -238,7 +238,7 @@ static kern_return_t GetDeviceFilePath( io_iterator_t mediaIterator,
     {
       CFTypeRef    deviceFilePathAsCFString;
       deviceFilePathAsCFString = IORegistryEntryCreateCFProperty(
-                                                                 nextMedia, CFSTR( kIOBSDName ),
+                                                                 nextMedia, CFSTR( kIOBSDNameKey ),
                                                                  kCFAllocatorDefault, 0 );
       *deviceFilePath = '\0';
       if ( deviceFilePathAsCFString )
@@ -332,7 +332,7 @@ static struct _CDTOC * ReadTOC( const char * devpath ) {
     goto Exit;
   }
 
-  data = (CFDataRef) CFDictionaryGetValue( properties, CFSTR("TOC") );
+  data = (CFDataRef) CFDictionaryGetValue( properties, CFSTR(kIOCDMediaTOCKey) );
   if ( data == NULL ) {
     fprintf( stderr, "CFDictionaryGetValue failed\n" );
     goto Exit;
@@ -468,14 +468,17 @@ cdrom_interface::cdrom_interface(char *dev)
 
 void
 cdrom_interface::init(void) {
-  BX_DEBUG(("Init $Id: cdrom.cc,v 1.55.2.2 2003/01/16 21:57:39 cbothamy Exp $"));
+  BX_DEBUG(("Init $Id: cdrom.cc,v 1.66 2003/12/08 23:49:48 danielg4 Exp $"));
   BX_INFO(("file = '%s'",path));
 }
 
 cdrom_interface::~cdrom_interface(void)
 {
+#ifdef WIN32
+#else
 	if (fd >= 0)
 		close(fd);
+#endif
 	if (path)
 		free(path);
 	BX_DEBUG(("Exit"));
@@ -520,8 +523,8 @@ cdrom_interface::insert_cdrom(char *dev)
     }
 	if(bUseASPI) {
 		DWORD d;
-		int cdr, cnt, max;
-		int i, j, k;
+		UINT cdr, cnt, max;
+		UINT i, j, k;
 		SRB_HAInquiry sh;
 		SRB_GDEVBlock sd;
 		if (!hASPI) {
@@ -625,17 +628,16 @@ cdrom_interface::insert_cdrom(char *dev)
   // I just see if I can read a sector to verify that a
   // CD is in the drive and readable.
 #ifdef WIN32
-	if(bUseASPI) {
-	  return ReadCDSector(hid, tid, lun, 0, buffer, BX_CD_FRAMESIZE);
-	} else {
-      ReadFile(hFile, (void *) buffer, BX_CD_FRAMESIZE, (unsigned long *) &ret, NULL);
-      if (ret < 0) {
+    if(bUseASPI) {
+      return ReadCDSector(hid, tid, lun, 0, buffer, BX_CD_FRAMESIZE);
+    } else {
+      if (!ReadFile(hFile, (void *) buffer, BX_CD_FRAMESIZE, (unsigned long *) &ret, NULL)) {
          CloseHandle(hFile);
          fd = -1;
          BX_DEBUG(( "insert_cdrom: read returns error." ));
          return(false);
       }
-	}
+    }
 #else
     // do fstat to determine if it's a file or a device, then set using_file.
     struct stat stat_buf;
@@ -662,6 +664,23 @@ cdrom_interface::insert_cdrom(char *dev)
     return(true);
 }
 
+  int
+cdrom_interface::start_cdrom()
+{
+  // Spin up the cdrom drive.
+
+  if (fd >= 0) {
+#if defined(__NetBSD__)
+    if (ioctl (fd, CDIOCSTART) < 0)
+       BX_DEBUG(( "start_cdrom: start returns error: %s", strerror (errno) ));
+    return(true);
+#else
+    BX_INFO(("start_cdrom: your OS is not supported yet."));
+    return(false); // OS not supported yet, return false always.
+#endif
+    }
+  return(false);
+}
 
   void
 cdrom_interface::eject_cdrom()
@@ -685,7 +704,7 @@ if (using_file == 0)
 		DeviceIoControl(hFile, IOCTL_STORAGE_EJECT_MEDIA, NULL, 0, NULL, 0, &lpBytesReturned, NULL);
 	}
 }
-#endif
+#else // WIN32
 
 #if __linux__
   if (!using_file)
@@ -693,6 +712,7 @@ if (using_file == 0)
 #endif
 
     close(fd);
+#endif // WIN32
     fd = -1;
     }
 }
@@ -1032,7 +1052,7 @@ cdrom_interface::capacity()
     if (ret) {
        BX_PANIC (("fstat on cdrom image returned err: %s", strerror(errno)));
     }
-    BX_INFO (("cdrom size is %lu bytes", stat_buf.st_size));
+    BX_INFO (("cdrom size is %lld bytes", stat_buf.st_size));
     if ((stat_buf.st_size % 2048) != 0)  {
       BX_ERROR (("expected cdrom image to be a multiple of 2048 bytes"));
     }
@@ -1171,9 +1191,15 @@ cdrom_interface::capacity()
   {
 	  if(bUseASPI) {
 		  return (GetCDCapacity(hid, tid, lun) / 2352);
-	  } else {
-	    unsigned long FileSize;
-		return (GetFileSize(hFile, &FileSize) / 2048);
+	  } else if(using_file) {
+	    ULARGE_INTEGER FileSize;
+	    FileSize.LowPart = GetFileSize(hFile, &FileSize.HighPart);
+		return (FileSize.QuadPart / 2048);
+	  } else {  /* direct device access */
+	    DWORD SectorsPerCluster;
+	    DWORD TotalNumOfClusters;
+	    GetDiskFreeSpace( path, &SectorsPerCluster, NULL, NULL, &TotalNumOfClusters);
+		return (TotalNumOfClusters * SectorsPerCluster);
 	  }
   }
 #elif defined __APPLE__
@@ -1251,12 +1277,16 @@ cdrom_interface::capacity()
 #endif
 }
 
-  void
+  void BX_CPP_AttrRegparmN(2)
 cdrom_interface::read_block(uint8* buf, int lba)
 {
   // Read a single block from the CD
 
+#ifdef WIN32
+  LARGE_INTEGER pos;
+#else
   off_t pos;
+#endif
   ssize_t n;
 
 #ifdef WIN32
@@ -1264,9 +1294,10 @@ cdrom_interface::read_block(uint8* buf, int lba)
 	  ReadCDSector(hid, tid, lun, lba, buf, BX_CD_FRAMESIZE);
 	  n = BX_CD_FRAMESIZE;
   } else {
-    pos = SetFilePointer(hFile, lba*BX_CD_FRAMESIZE, NULL, SEEK_SET);
-    if (pos == 0xffffffff) {
-      BX_PANIC(("cdrom: read_block: lseek returned error."));
+    pos.QuadPart = (LONGLONG)lba*BX_CD_FRAMESIZE;
+    pos.LowPart = SetFilePointer(hFile, pos.LowPart, &pos.HighPart, SEEK_SET);
+    if ((pos.LowPart == 0xffffffff) && (GetLastError() != NO_ERROR)) {
+      BX_PANIC(("cdrom: read_block: SetFilePointer returned error."));
 	}
 	ReadFile(hFile, (void *) buf, BX_CD_FRAMESIZE, (unsigned long *) &n, NULL);
   }

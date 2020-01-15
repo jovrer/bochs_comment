@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gui.h,v 1.36 2002/12/12 06:21:43 yakovlev Exp $
+// $Id: gui.h,v 1.40 2003/06/28 08:04:31 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -24,6 +24,17 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
 
+typedef struct {
+  Bit8u cs_start;
+  Bit8u cs_end;
+  Bit16u line_offset;
+  Bit16u line_compare;
+  Bit8u h_panning;
+  Bit8u v_panning;
+  bx_bool line_graphics;
+} bx_vga_tminfo_t;
+
+
 BOCHSAPI extern class bx_gui_c *bx_gui;
 
 
@@ -39,13 +50,13 @@ public:
                  unsigned x_tilesize, unsigned y_tilesize, unsigned header_bar_y) = 0;
   virtual void text_update(Bit8u *old_text, Bit8u *new_text,
                           unsigned long cursor_x, unsigned long cursor_y,
-                          Bit16u cursor_state, unsigned rows) = 0;
+                          bx_vga_tminfo_t tm_info, unsigned rows) = 0;
   virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y) = 0;
   virtual void handle_events(void) = 0;
   virtual void flush(void) = 0;
   virtual void clear_screen(void) = 0;
   virtual bx_bool palette_change(unsigned index, unsigned red, unsigned green, unsigned blue) = 0;
-  virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0) = 0;
+  virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0, unsigned fwidth=0, unsigned bpp=8) = 0;
   virtual unsigned create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim) = 0;
   virtual unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void)) = 0;
   virtual void replace_bitmap(unsigned hbar_id, unsigned bmap_id) = 0;
@@ -139,14 +150,15 @@ protected:
 		 unsigned header_bar_y);                                      \
   virtual void text_update(Bit8u *old_text, Bit8u *new_text,                  \
                           unsigned long cursor_x, unsigned long cursor_y,     \
-                          Bit16u cursor_state, unsigned rows);                \
+                          bx_vga_tminfo_t tm_info, unsigned rows);            \
   virtual void graphics_tile_update(Bit8u *snapshot, unsigned x, unsigned y); \
   virtual void handle_events(void);                                           \
   virtual void flush(void);                                                   \
   virtual void clear_screen(void);                                            \
   virtual bx_bool palette_change(unsigned index,                              \
       unsigned red, unsigned green, unsigned blue);                           \
-  virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0);  \
+  virtual void dimension_update(unsigned x, unsigned y, unsigned fheight=0,   \
+                                unsigned fwidth=0, unsigned bpp=8);           \
   virtual unsigned create_bitmap(const unsigned char *bmap,                   \
       unsigned xdim, unsigned ydim);                                          \
   virtual unsigned headerbar_bitmap(unsigned bmap_id, unsigned alignment,     \

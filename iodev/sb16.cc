@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sb16.cc,v 1.30 2002/11/19 05:47:45 bdenney Exp $
+// $Id: sb16.cc,v 1.39 2003/12/26 10:06:57 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -120,7 +120,7 @@ bx_sb16_c::~bx_sb16_c(void)
 
 void bx_sb16_c::init(void)
 {
-  unsigned addr;
+  unsigned addr, i;
 
   if ( (strlen(bx_options.sb16.Ologfile->getptr ()) < 1) )
     bx_options.sb16.Ologlevel->set (0);
@@ -210,14 +210,24 @@ void bx_sb16_c::init(void)
   MPU.last_delta_time = 0xffffffff;
 
   // reset the DSP
+  DSP.dma.highspeed = 0;
+  DSP.dma.mode = 0;
+  DSP.irqpending = 0;
+  DSP.midiuartmode = 0;
   DSP.resetport = 1;  // so that one call to dsp_reset is sufficient
   dsp_reset(0);       // (reset is 1 to 0 transition)
+  DSP.testreg = 0;
 
   BX_SB16_IRQ = -1; // will be initialized later by the mixer reset
 
+  for (i=0; i<BX_SB16_MIX_REG; i++)
+    MIXER.reg[i] = 0xff;
+  MIXER.reg[0x00] = 0;  // reset register
   MIXER.reg[0x80] = 2;  // IRQ 5
   MIXER.reg[0x81] = 2;  // 8-bit DMA 1, no 16-bit DMA
   MIXER.reg[0x82] = 0;  // no IRQ pending
+  MIXER.reg[0xfd] = 16; // ???
+  MIXER.reg[0xfe] = 6;  // ???
   set_irq_dma();        // set the IRQ and DMA
 
   // call the mixer reset
@@ -225,27 +235,28 @@ void bx_sb16_c::init(void)
   mixer_writedata(0x00);
 
   // reset the FM emulation
-  OPL.mode = dual;
+  OPL.mode = fminit;
+  OPL.timer_running = 0;
   opl_entermode(single);
 
   // Allocate the IO addresses, 2x0..2xf, 3x0..3x4 and 388..38b
   for (addr=BX_SB16_IO; addr<BX_SB16_IO+BX_SB16_IOLEN; addr++) {
     DEV_register_ioread_handler(this,
-       &read_handler, addr, "SB16", 7);
+       &read_handler, addr, "SB16", 1);
     DEV_register_iowrite_handler(this,
-       &write_handler, addr, "SB16", 7);
+       &write_handler, addr, "SB16", 1);
     }
   for (addr=BX_SB16_IOMPU; addr<BX_SB16_IOMPU+BX_SB16_IOMPULEN; addr++) {
     DEV_register_ioread_handler(this,
-       &read_handler, addr, "SB16", 7);
+       &read_handler, addr, "SB16", 1);
     DEV_register_iowrite_handler(this,
-       &write_handler, addr, "SB16", 7);
+       &write_handler, addr, "SB16", 1);
     }
   for (addr=BX_SB16_IOADLIB; addr<BX_SB16_IOADLIB+BX_SB16_IOADLIBLEN; addr++) {
     DEV_register_ioread_handler(this,
-       read_handler, addr, "SB16", 7);
+       read_handler, addr, "SB16", 1);
     DEV_register_iowrite_handler(this,
-       write_handler, addr, "SB16", 7);
+       write_handler, addr, "SB16", 1);
     }
 
   writelog(BOTHLOG(3),
@@ -453,6 +464,7 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
 	case 0x40:
 	case 0x38:
 	case 0xe0:
+	case 0xe4:
 	  bytesneeded = 1;
 	  break;
 	case 0x05:
@@ -468,7 +480,6 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
 	case 0x76:
 	case 0x77:
 	case 0x80:
-	case 0xe4:
 	  bytesneeded = 2;
 	  break;
 
@@ -853,16 +864,17 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
 	    }
 	  break;
 
-	  // used and expected by the CL diagnose.exe
+	  // DSP identification
 	case 0xe0:
-	  DSP.dataout.put(0x55);
+	  DSP.datain.get(&value8);
+	  DSP.dataout.put(~value8);
 	  break;
 
 	  // get version, out 2 bytes (major, minor)
 	case 0xe1:
 	  // none, o1/2: version major.minor
 	  DSP.dataout.put(4);
-	  if (DSP.dataout.put(11) == 0) 
+	  if (DSP.dataout.put(5) == 0) 
 	    {
 	      writelog(WAVELOG(3), "DSP version couldn't be written - buffer overflow");
 	    }
@@ -876,9 +888,14 @@ void bx_sb16_c::dsp_datawrite(Bit32u value)
 	  DSP.dataout.put(0);    // need extra string end
 	  break;
 
-	  // used and expected by the CL diagnose.exe
+	  // write test register
 	case 0xe4: 
-	  DSP.dataout.put(0xaa);
+	  DSP.datain.get(&DSP.testreg);
+	  break;
+
+	  // read test register
+	case 0xe8: 
+	  DSP.dataout.put(DSP.testreg);
 	  break;
 
 	  // Trigger 8-bit IRQ
@@ -1271,47 +1288,159 @@ void bx_sb16_c::mixer_writedata(Bit32u value)
 {
   int i;
 
-  if (MIXER.regindex >= BX_SB16_MIX_REG)
-    return;   // index out of range
-
-  // store the value
-  MIXER.reg[MIXER.regindex] = value;
-
   // do some action depending on what register was written
   switch (MIXER.regindex) 
     {
     case 0:  // initialize mixer
 
       writelog(BOTHLOG(4), "Initializing mixer...");
-      for (i=0; i<0x80; i++)
-	MIXER.reg[i] = 0;
+      MIXER.reg[0x04] = 0xcc;
+      MIXER.reg[0x0a] = 0x00;
+      MIXER.reg[0x22] = 0xcc;
+      MIXER.reg[0x26] = 0xcc;
+      MIXER.reg[0x28] = 0x00;
+      MIXER.reg[0x2e] = 0x00;
+      MIXER.reg[0x3c] = 0x1f;
+      MIXER.reg[0x3d] = 0x15;
+      MIXER.reg[0x3e] = 0x0b;
+      for (i=0x30; i<=0x35; i++)
+	MIXER.reg[i] = 0xc0;
+      for (i=0x36; i<=0x3b; i++)
+	MIXER.reg[i] = 0x00;
+      for (i=0x3f; i<=0x43; i++)
+	MIXER.reg[i] = 0x00;
+      for (i=0x44; i<=0x47; i++)
+	MIXER.reg[i] = 0x80;
 
       MIXER.regindex = 0;   // next mixer register read is register 0
+      return;
+      break;
+
+    case 0x04: // DAC level
+      MIXER.reg[0x32] = (value & 0xf0) | 0x08;
+      MIXER.reg[0x33] = ((value & 0x0f) << 4) | 0x08;
+      break;
+
+    case 0x0a: // microphone level
+      MIXER.reg[0x3a] = (value << 5) | 0x18;
+      break;
+
+    case 0x22: // master volume
+      MIXER.reg[0x30] = (value & 0xf0) | 0x08;
+      MIXER.reg[0x31] = ((value & 0x0f) << 4) | 0x08;
+      break;
+
+    case 0x26: // FM level
+      MIXER.reg[0x34] = (value & 0xf0) | 0x08;
+      MIXER.reg[0x35] = ((value & 0x0f) << 4) | 0x08;
+      break;
+
+    case 0x28: // CD audio level
+      MIXER.reg[0x36] = (value & 0xf0) | 0x08;
+      MIXER.reg[0x37] = ((value & 0x0f) << 4) | 0x08;
+      break;
+
+    case 0x2e: // line in level
+      MIXER.reg[0x38] = (value & 0xf0) | 0x08;
+      MIXER.reg[0x39] = ((value & 0x0f) << 4) | 0x08;
+      break;
+
+    case 0x30: // master volume left
+      MIXER.reg[0x22] &= 0x0f;
+      MIXER.reg[0x22] |= (value & 0xf0);
+      break;
+
+    case 0x31: // master volume right
+      MIXER.reg[0x22] &= 0xf0;
+      MIXER.reg[0x22] |= (value >> 4);
+      break;
+
+    case 0x32: // DAC level left
+      MIXER.reg[0x04] &= 0x0f;
+      MIXER.reg[0x04] |= (value & 0xf0);
+      break;
+
+    case 0x33: // DAC level right
+      MIXER.reg[0x04] &= 0xf0;
+      MIXER.reg[0x04] |= (value >> 4);
+      break;
+
+    case 0x34: // FM level left
+      MIXER.reg[0x26] &= 0x0f;
+      MIXER.reg[0x26] |= (value & 0xf0);
+      break;
+
+    case 0x35: // FM level right
+      MIXER.reg[0x26] &= 0xf0;
+      MIXER.reg[0x26] |= (value >> 4);
+      break;
+
+    case 0x36: // CD audio level left
+      MIXER.reg[0x28] &= 0x0f;
+      MIXER.reg[0x28] |= (value & 0xf0);
+      break;
+
+    case 0x37: // CD audio level right
+      MIXER.reg[0x28] &= 0xf0;
+      MIXER.reg[0x28] |= (value >> 4);
+      break;
+
+    case 0x38: // line in level left
+      MIXER.reg[0x2e] &= 0x0f;
+      MIXER.reg[0x2e] |= (value & 0xf0);
+      break;
+
+    case 0x39: // line in level right
+      MIXER.reg[0x2e] &= 0xf0;
+      MIXER.reg[0x2e] |= (value >> 4);
+      break;
+
+    case 0x3a: // microphone level
+      MIXER.reg[0x0a] = (value >> 5);
+      break;
+
+    case 0x3b:
+    case 0x3c:
+    case 0x3d:
+    case 0x3e:
+    case 0x3f:
+    case 0x40:
+    case 0x41:
+    case 0x42:
+    case 0x43:
+    case 0x44:
+    case 0x45:
+    case 0x46:
+    case 0x47:
       break;
 
     case 0x80: // IRQ mask
     case 0x81: // DMA mask
+      MIXER.reg[MIXER.regindex] = value;
       set_irq_dma(); // both 0x80 and 0x81 handled
+      return;
       break;
 
-    // Note: some registers are bit-mapped to others. This should be
-    // reflected here, in case somebody uses this to find out the
-    // version of the DSP
-    // These registers are 0x04, 0x0a, 0x22, 0x26, 0x28, 0x2e
-
+    default: // ignore read-only registers
+      return;
     }
+  // store the value
+  MIXER.reg[MIXER.regindex] = value;
+
+  writelog(BOTHLOG(4), "mixer register %02x set to %02x",
+	   MIXER.regindex, MIXER.reg[MIXER.regindex]);
 }
 
 Bit32u bx_sb16_c::mixer_readdata()
 {
+  writelog(BOTHLOG(4), "read from mixer register %02x returns %02x",
+	   MIXER.regindex, MIXER.reg[MIXER.regindex]);
   return(MIXER.reg[MIXER.regindex]);
 }
 
 void bx_sb16_c::mixer_writeregister(Bit32u value)
 {
   MIXER.regindex = value;
-  writelog(BOTHLOG(4), "Mixer register %02x set to %02x",
-	   MIXER.regindex, MIXER.reg[MIXER.regindex]);
 }
 
 
@@ -1939,6 +2068,7 @@ void bx_sb16_c::opl_entermode(bx_sb16_fm_mode newmode)
       OPL.chan[i].afreq = 0;
       OPL.chan[i].midichan = 0xff;
       OPL.chan[i].needprogch = 0;
+      OPL.chan[i].midion = 0;
       OPL.chan[i].midinote = 0;
       OPL.chan[i].midibend = 0;
       OPL.chan[i].midivol = 0;
@@ -1976,10 +2106,11 @@ void bx_sb16_c::opl_timerevent()
 	if ( (OPL.timer[i]--) == 0)
 	  { // overflow occured, set flags accordingly
 	    OPL.timer[i] = OPL.timerinit[i];      // reset the counter
-	    if ( (OPL.tmask[i/2] >> (5 + i % 2) ) != 0)  // set flags only if unmasked
+	    if ( (OPL.tmask[i/2] >> (6 - (i % 2)) ) == 0)  // set flags only if unmasked
 	      {
-		OPL.tflag[i/2] &= 1 << (5 + i % 2);   // set the overflow flag
-		OPL.tflag[i/2] &= 1 << 7;             // set the IRQ flag
+		writelog(WAVELOG(5), "OPL Timer Interrupt: Chip %d, Timer %d", i/2, 1 << (i % 2));
+		OPL.tflag[i/2] |= 1 << (6 - (i % 2));   // set the overflow flag
+		OPL.tflag[i/2] |= 1 << 7;             // set the IRQ flag
 	      }
 	  }
       }
@@ -1990,9 +2121,6 @@ void bx_sb16_c::opl_timerevent()
 Bit32u bx_sb16_c::opl_status(int chipid)
 {
   Bit32u status = OPL.tflag[chipid];
-
-  if ( (OPL.mode == single) || (OPL.mode == opl3) )
-    status |= 0x06;  // this is for OPL3 detections
 
   writelog( MIDILOG(5), "OPL status of chip %d is %02x", chipid, status);
 
@@ -2100,15 +2228,14 @@ break_here:
 
       // only OPL3: OPL3 enable
     case 0x05:
-      if ( ( OPL.mode == single ) || ( OPL.mode == opl3 ) )
+      if (chipid == 1)
 	{
 	  if ( (value & 1) != 0)
 	    opl_entermode(opl3);
 	  else
 	    opl_entermode(single);
-	  break;
 	}
-      // otherwise let default: catch it
+      break;
 
       // Composite Sine Wave and Note-sel (ignored)
     case 0x08:
@@ -2546,6 +2673,9 @@ void bx_sb16_c::opl_keyonoff(int channel, bx_bool onoff)
 {
   int i;
 
+  if (OPL.mode == fminit)
+    return;
+
   // first check if there really is a change in the state
   if (onoff == OPL.chan[channel].midion)
     return;
@@ -2955,14 +3085,6 @@ Bit32u bx_sb16_c::read(Bit32u address, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_SB16_SMF
 
-// we support only byte access to the port
-  if (io_len != 1)
-    {
-      writelog(3, "Read access to %03x not byte access, len=%d!",
-	       address, io_len);
-      return(0xff);
-    }
-
   switch (address) 
     {
       // 2x0: FM Music Status Port
@@ -3054,6 +3176,7 @@ Bit32u bx_sb16_c::read(Bit32u address, unsigned io_len)
       // 3x3: *Emulator* Port
     case BX_SB16_IOMPU + 0x03:
       return emul_read();
+
     }
 
   // If we get here, the port wasn't valid
@@ -3078,13 +3201,6 @@ void bx_sb16_c::write(Bit32u address, Bit32u value, unsigned io_len)
 #else
   UNUSED(this_ptr);
 #endif  // !BX_USE_SB16_SMF
-  // we only support byte access to the prot
-  if (io_len != 1)
-	{
-	  writelog(3, "Write access to %03x for %d to %02x: "
-		      "not byte access!", address, io_len, value);
-	  return;
-	}
 
   switch (address)
     {
@@ -3202,7 +3318,8 @@ void bx_sb16_c::writelog(int loglevel, const char *str, ...)
 // append a line to the log file, if desired
   if ( (int) bx_options.sb16.Ologlevel->get () >= loglevel)
     {
-        fprintf(LOGFILE, "%011lld (%d) ", bx_pc_system.time_ticks(), loglevel);
+        fprintf(LOGFILE, "%011lld", bx_pc_system.time_ticks());
+        fprintf(LOGFILE, " (%d) ", loglevel);
 	va_list ap;
 	va_start(ap, str);
 	vfprintf(LOGFILE, str, ap);

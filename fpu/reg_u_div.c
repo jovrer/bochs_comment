@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------+
  |  reg_u_div.c                                                              |
- |  $Id: reg_u_div.c,v 1.2 2001/10/06 03:53:46 bdenney Exp $
+ |  $Id: reg_u_div.c,v 1.7 2003/10/05 12:26:11 sshwarts Exp $
  |                                                                           |
  | Divide one FPU_REG by another and put the result in a destination FPU_REG.|
  |                                                                           |
@@ -22,7 +22,6 @@
 #include "exception.h"
 #include "fpu_emu.h"
 #include "control_w.h"
-#include <asm/types.h>
 
 
 int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
@@ -35,14 +34,19 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
 
   exp = (s32)a->exp - (s32)b->exp;
 
-  if ( exp < EXP_WAY_UNDER )
+  /* if the above subtraction of signed 16-bit values overflowed, substitute
+         the maximum positive exponent to force FPU_round to produce overflow */
+  if (exp > 0x7FFF) 
+    exp = 0x7FFF;
+
+  if (exp < EXP_WAY_UNDER)
     exp = EXP_WAY_UNDER;
 
   dest->exp = exp;
 #ifdef PARANOID
-  if ( !(b->sigh & 0x80000000) )
+  if (!(b->sigh & 0x80000000))
     {
-      EXCEPTION(EX_INTERNAL|0x202);
+      INTERNAL(0x202);
     }
 #endif
 
@@ -50,7 +54,7 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
 
   /* We can save a lot of time if the divisor has all its lowest
      32 bits equal to zero. */
-  if ( b->sigl == 0 )
+  if (b->sigl == 0)
     {
       divr32 = b->sigh;
       ovfl = a->sigh >= divr32;
@@ -65,13 +69,13 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
       work64 <<= 32;
       rem = work64 / divr32;
 
-      if ( ovfl )
+      if (ovfl)
 	{
 	  rem >>= 1;
-	  if ( rat2 & 1 )
+	  if (rat2 & 1)
 	    rem |= 0x80000000;
 	  rat2 >>= 1;
-	  if ( rat1 & 1 )
+	  if (rat1 & 1)
 	    rat2 |= 0x80000000;
 	  rat1 >>= 1;
 	  rat1 |= 0x80000000;
@@ -81,19 +85,18 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
       dest->sigl = rat2;
 
       dest->exp --;
-      return FPU_round(dest, rem, 0, control_w, sign);
+      return FPU_round(dest, rem, control_w, sign);
     }
 
   /* This may take a little time... */
-
   accum64 = work64;
   divr64 = significand(b);
 
-  if ( (ovfl = accum64 >= divr64) )
+  if ((ovfl = accum64 >= divr64))
     accum64 -= divr64;
   divr32 = b->sigh+1;
 
-  if ( divr32 != 0 )
+  if (divr32 != 0)
     {
       rat1 = accum64 / divr32;
     }
@@ -104,7 +107,7 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
   accum64 -= prod64;
   prod64 = rat1 * (u64)b->sigl;
   accum3 = prod64;
-  if ( accum3 )
+  if (accum3)
     {
       accum3 = -accum3;
       accum64 --;
@@ -113,27 +116,27 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
   accum64 -= prodh;
 
   work32 = accum64 >> 32;
-  if ( work32 )
+  if (work32)
     {
 #ifdef PARANOID
-      if ( work32 != 1 )
+      if (work32 != 1)
 	{
-	  EXCEPTION(EX_INTERNAL|0x203);
+	  INTERNAL(0x203);
 	}
 #endif
 
       /* Need to subtract the divisor once more. */
       work32 = accum3;
       accum3 = work32 - b->sigl;
-      if ( accum3 > work32 )
+      if (accum3 > work32)
 	accum64 --;
       rat1 ++;
       accum64 -= b->sigh;
 
 #ifdef PARANOID
-      if ( (accum64 >> 32) )
+      if ((accum64 >> 32))
 	{
-	  EXCEPTION(EX_INTERNAL|0x203);
+	  INTERNAL(0x203);
 	}
 #endif
     }
@@ -143,12 +146,12 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
 
   accum64 <<= 32;
   accum64 |= accum3;
-  if ( accum64 >= divr64 )
+  if (accum64 >= divr64)
     {
       accum64 -= divr64;
       rat1 ++;
     }
-  if ( divr32 != 0 )
+  if (divr32 != 0)
     {
       rat2 = accum64 / divr32;
     }
@@ -159,7 +162,7 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
   accum64 -= prod64;
   prod64 = rat2 * (u64)b->sigl;
   accum3 = prod64;
-  if ( accum3 )
+  if (accum3)
     {
       accum3 = -accum3;
       accum64 --;
@@ -168,29 +171,29 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
   accum64 -= prodh;
 
   work32 = accum64 >> 32;
-  if ( work32 )
+  if (work32)
     {
 #ifdef PARANOID
-      if ( work32 != 1 )
+      if (work32 != 1)
 	{
-	  EXCEPTION(EX_INTERNAL|0x203);
+	  INTERNAL(0x203);
 	}
 #endif
 
       /* Need to subtract the divisor once more. */
       work32 = accum3;
       accum3 = work32 - b->sigl;
-      if ( accum3 > work32 )
+      if (accum3 > work32)
 	accum64 --;
       rat2 ++;
-      if ( rat2 == 0 )
+      if (rat2 == 0)
 	rat1 ++;
       accum64 -= b->sigh;
 
 #ifdef PARANOID
-      if ( (accum64 >> 32) )
+      if ((accum64 >> 32))
 	{
-	  EXCEPTION(EX_INTERNAL|0x203);
+	  INTERNAL(0x203);
 	}
 #endif
     }
@@ -199,18 +202,18 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
 
   accum64 <<= 32;
   accum64 |= accum3;
-  if ( accum64 >= divr64 )
+  if (accum64 >= divr64)
     {
       accum64 -= divr64;
       rat2 ++;
-      if ( rat2 == 0 )
+      if (rat2 == 0)
 	{
 	  rat1 ++;
 #ifdef PARANOID
 	  /* No overflow should be possible here */
-	  if ( rat1 == 0 )
+	  if (rat1 == 0)
 	    {
-	      EXCEPTION(EX_INTERNAL|0x203);
+	      INTERNAL(0x203);
 	    }
 	}
 #endif
@@ -219,19 +222,19 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
   /* The basic division is done, now we must be careful with the
      remainder. */
 
-  if ( ovfl )
+  if (ovfl)
     {
-      if ( rat2 & 1 )
+      if (rat2 & 1)
 	rem = 0x80000000;
       else
 	rem = 0;
       rat2 >>= 1;
-      if ( rat1 & 1 )
+      if (rat1 & 1)
 	rat2 |= 0x80000000;
       rat1 >>= 1;
       rat1 |= 0x80000000;
 
-      if ( accum64 )
+      if (accum64)
 	rem |= 0xff0000;
 
       dest->exp ++;
@@ -240,12 +243,12 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
     {
       /* Now we just need to know how large the remainder is
 	 relative to half the divisor. */
-      if ( accum64 == 0 )
+      if (accum64 == 0)
 	rem = 0;
       else
 	{
 	  accum3 = accum64 >> 32;
-	  if ( accum3 & 0x80000000 )
+	  if (accum3 & 0x80000000)
 	    {
 	      /* The remainder is definitely larger than 1/2 divisor. */
 	      rem = 0xff000000;
@@ -253,10 +256,10 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
 	  else
 	    {
 	      accum64 <<= 1;
-	      if ( accum64 >= divr64 )
+	      if (accum64 >= divr64)
 		{
 		  accum64 -= divr64;
-		  if ( accum64 == 0 )
+		  if (accum64 == 0)
 		    rem = 0x80000000;
 		  else
 		    rem = 0xff000000;
@@ -271,7 +274,5 @@ int FPU_u_div(const FPU_REG *a, const FPU_REG *b, FPU_REG *dest,
   dest->sigl = rat2;
 
   dest->exp --;
-  return FPU_round(dest, rem, 0, control_w, sign);
-
+  return FPU_round(dest, rem, control_w, sign);
 }
-

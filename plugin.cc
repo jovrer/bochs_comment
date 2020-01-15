@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: plugin.cc,v 1.5 2002/11/14 18:45:41 bdenney Exp $
+// $Id: plugin.cc,v 1.8 2003/07/31 12:04:47 vruppert Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // This file defines the plugin and plugin-device registration functions and
@@ -38,13 +38,13 @@ void (*pluginSetHRQ)(unsigned val) = 0;
 void (*pluginSetHRQHackCallback)( void (*callback)(void) ) = 0;
 
 int (*pluginRegisterIOReadHandler)(void *thisPtr, ioReadHandler_t callback,
-                            unsigned base, const char *name, unsigned len) = 0;
+                            unsigned base, const char *name, Bit8u mask) = 0;
 int (*pluginRegisterIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
-                             unsigned base, const char *name, unsigned len) = 0;
+                             unsigned base, const char *name, Bit8u mask) = 0;
 int (*pluginRegisterDefaultIOReadHandler)(void *thisPtr, ioReadHandler_t callback,
-                            const char *name, unsigned len) = 0;
+                            const char *name, Bit8u mask) = 0;
 int (*pluginRegisterDefaultIOWriteHandler)(void *thisPtr, ioWriteHandler_t callback,
-                             const char *name, unsigned len) = 0;
+                             const char *name, Bit8u mask) = 0;
 int (*pluginRegisterTimer)(void *this_ptr, void (*funct)(void *),
 			Bit32u useconds, bx_bool continuous, 
 			bx_bool active, const char* name) = 0;
@@ -54,7 +54,9 @@ void (*pluginHRQHackCallback)(void);
 unsigned pluginHRQ = 0;
 
 plugin_t *plugins = NULL;      /* Head of the linked list of plugins  */
+#if BX_PLUGINS
 static void plugin_init_one(plugin_t *plugin);
+#endif
 
 device_t *devices = NULL;      /* Head of the linked list of registered devices  */
 
@@ -112,40 +114,40 @@ builtinResetSignal( unsigned )
 
   static int
 builtinRegisterIOReadHandler(void *thisPtr, ioReadHandler_t callback,
-                            unsigned base, const char *name, unsigned len)
+                            unsigned base, const char *name, Bit8u mask)
 {
-  BX_ASSERT (len<8);
-  bx_devices.register_io_read_handler (thisPtr, callback, base, name);
+  BX_ASSERT (mask<8);
+  bx_devices.register_io_read_handler (thisPtr, callback, base, name, mask);
   pluginlog->ldebug("plugin %s registered I/O read address at %04x", name, base);
   return 0;
 }
 
   static int
 builtinRegisterIOWriteHandler(void *thisPtr, ioWriteHandler_t callback,
-                             unsigned base, const char *name, unsigned len)
+                             unsigned base, const char *name, Bit8u mask)
 {
-  BX_ASSERT (len<8);
-  bx_devices.register_io_write_handler (thisPtr, callback, base, name);
+  BX_ASSERT (mask<8);
+  bx_devices.register_io_write_handler (thisPtr, callback, base, name, mask);
   pluginlog->ldebug("plugin %s registered I/O write address at %04x", name, base);
   return 0;
 }
 
   static int
 builtinRegisterDefaultIOReadHandler(void *thisPtr, ioReadHandler_t callback,
-                            const char *name, unsigned len)
+                            const char *name, Bit8u mask)
 {
-  BX_ASSERT (len<8);
-  bx_devices.register_default_io_read_handler (thisPtr, callback, name);
+  BX_ASSERT (mask<8);
+  bx_devices.register_default_io_read_handler (thisPtr, callback, name, mask);
   pluginlog->ldebug("plugin %s registered default I/O read ", name);
   return 0;
 }
 
   static int
 builtinRegisterDefaultIOWriteHandler(void *thisPtr, ioWriteHandler_t callback,
-                             const char *name, unsigned len)
+                             const char *name, Bit8u mask)
 {
-  BX_ASSERT (len<8);
-  bx_devices.register_default_io_write_handler (thisPtr, callback, name);
+  BX_ASSERT (mask<8);
+  bx_devices.register_default_io_write_handler (thisPtr, callback, name, mask);
   pluginlog->ldebug("plugin %s registered default I/O write ", name);
   return 0;
 }
@@ -395,6 +397,9 @@ plugin_startup(void)
   pluginActivateTimer = builtinActivateTimer;
 
 #if BX_PLUGINS
+  pluginlog = new logfunctions();
+  pluginlog->put("PLGIN");
+  pluginlog->settype(PLUGINLOG);
   int status = lt_dlinit ();
   if (status != 0) {
     BX_ERROR (("initialization error in ltdl library (for loading plugins)"));
@@ -407,66 +412,6 @@ plugin_startup(void)
 /************************************************************************/
 /* Plugin system: Device registration                                   */
 /************************************************************************/
-
-#ifdef __GNUC__
-#warning BBD: when all plugin devices are converted to the "bx_devmodel" type with virtual functions, I intend to chop this out.
-#endif
-// (and the nasty current_plugin_context hack can go too)
-
-void pluginRegisterDevice(deviceInitMem_t init1, deviceInitDev_t init2,
-			  deviceReset_t reset, deviceLoad_t load, 
-			  deviceSave_t save, char *name)
-{
-    device_t *device;
-
-    device = (device_t *)malloc (sizeof (device_t));
-    if (!device)
-    {
-        pluginlog->panic("can't allocate device_t");
-    }
-
-    device->name = name;
-    BX_ASSERT(current_plugin_context != NULL);
-    device->plugin = current_plugin_context;
-    device->use_devmodel_interface = 0;
-    device->device_init_mem = init1;
-    device->device_init_dev = init2;
-    device->device_reset = reset;
-    device->device_load_state = load;
-    device->device_save_state = save;
-    device->next = NULL;
-
-    // Don't add every kind of device to the list.
-    switch (device->plugin->type)
-    {
-      case PLUGTYPE_CORE:
-	// Core devices are present whether or not we are using plugins, so
-	// they are managed by code iodev/devices.cc and should not be
-	// managed by the plugin system.
-	return; // Do not add core devices to the devices list.
-      case PLUGTYPE_OPTIONAL:
-      case PLUGTYPE_USER:
-      default:
-	// The plugin system will manage optional and user devices only.
-	break;
-    }
-
-    if (!devices)
-    {
-        /* Empty list, this become the first entry. */
-        devices = device;
-    }
-    else
-    {
-        /* Non-empty list.  Add to end. */
-        device_t *temp = devices;
-
-        while (temp->next)
-            temp = temp->next;
-
-        temp->next = device;
-    }
-}
 
 void pluginRegisterDeviceDevmodel(plugin_t *plugin, plugintype_t type, bx_devmodel_c *devmodel, char *name)
 {
@@ -547,23 +492,6 @@ int bx_load_plugin (const char *name, plugintype_t type)
   char *namecopy = new char[1+strlen(name)];
   strcpy (namecopy, name);
   plugin_load (namecopy, "", type);
-  return 0;
-}
-
-/************************************************************************/
-/* Plugin system: Load ALL plugins                                      */
-/************************************************************************/
-
-int bx_load_plugins (void)
-{
-  pluginlog = new logfunctions();
-  pluginlog->put("PLGIN");
-  pluginlog->settype(PLUGINLOG);
-
-#if !BX_PLUGINS
-  pluginlog->info("plugins deactivated");
-#endif
-
   return 0;
 }
 #endif   /* end of #if BX_PLUGINS */

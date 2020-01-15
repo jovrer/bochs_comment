@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bochs.h,v 1.115 2002/12/19 06:05:18 bdenney Exp $
+// $Id: bochs.h,v 1.128 2003/11/28 15:07:25 danielg4 Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -49,6 +49,8 @@ extern "C" {
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <errno.h>
+
 #ifndef WIN32
 #  include <unistd.h>
 #else
@@ -75,13 +77,14 @@ extern "C" {
 #include <ctype.h>
 #include <string.h>
 #include <fcntl.h>
+#include <limits.h>
 #ifdef macintosh
 #  define SuperDrive "[fd:]"
 #endif
 }
 
 #include "osdep.h"       /* platform dependent includes and defines */ 
-#include "debug/debug.h"
+#include "bx_debug/debug.h"
 #include "bxversion.h"
 
 #include "gui/siminterface.h"
@@ -229,15 +232,7 @@ int bx_begin_simulation (int argc, char *argv[]);
 #  define BX_DBG_UCMEM_REPORT(addr, size, op, val)
 #endif  // #if BX_DEBUGGER
 
-extern Bit8u DTPageDirty[];
-#if BX_DYNAMIC_TRANSLATION
-#  define BX_DYN_DIRTY_PAGE(page) DTPageDirty[page] = 1;
-#else
-#  define BX_DYN_DIRTY_PAGE(page)
-#endif
-
 #define MAGIC_LOGNUM 0x12345678
-
 
 typedef class BOCHSAPI logfunctions {
 	char *prefix;
@@ -264,7 +259,11 @@ public:
 	void pass(const char *fmt, ...)   BX_CPP_AttrPrintf(2, 3);
 	void ldebug(const char *fmt, ...) BX_CPP_AttrPrintf(2, 3);
 	void fatal (const char *prefix, const char *fmt, va_list ap, int exit_status);
+#if BX_EXTERNAL_DEBUGGER
+	virtual void ask (int level, const char *prefix, const char *fmt, va_list ap);
+#else
 	void ask (int level, const char *prefix, const char *fmt, va_list ap);
+#endif
 	void put(char *);
 	void settype(int);
 	void setio(class iofunctions *);
@@ -298,7 +297,7 @@ enum {
   CPU2LOG, CPU3LOG, CPU4LOG, CPU5LOG, CPU6LOG, CPU7LOG, CPU8LOG, CPU9LOG,
   CPU10LOG, CPU11LOG, CPU12LOG, CPU13LOG, CPU14LOG, CPU15LOG, CTRLLOG,
   UNMAPLOG, SERRLOG, BIOSLOG, PIT81LOG, PIT82LOG, IODEBUGLOG, PCI2ISALOG,
-  PLUGINLOG 
+  PLUGINLOG, EXTFPUIRQLOG , PCIVGALOG, PCIUSBLOG, VTIMERLOG, STIMERLOG
 };
 
 class BOCHSAPI iofunctions {
@@ -328,15 +327,15 @@ public:
 	void add_logfn (logfunc_t *fn);
 	void set_log_action (int loglevel, int action);
 	const char *getlevel(int i) {
-		static const char *loglevel[5] = {
+		static const char *loglevel[N_LOGLEV] = {
 			"DEBUG",
 			"INFO",
 			"ERROR",
 			"PANIC",
 			"PASS"
 		};
-                if (i>=0 && i<4) return loglevel[i];
-		else return "?";
+                if (i>=0 && i<N_LOGLEV) return loglevel[i];
+                else return "?";
 	}
 	char *getaction(int i) {
 	   static char *name[] = { "ignore", "report", "ask", "fatal" };
@@ -421,12 +420,6 @@ int bx_gdbstub_check(unsigned int eip);
 #if BX_DISASM
 #  include "disasm/disasm.h"
 #endif
-
-#if BX_DYNAMIC_TRANSLATION
-#  include "dynamic/dynamic.h"
-#endif
-
-
 
 typedef struct {
   bx_bool floppy;
@@ -563,15 +556,19 @@ typedef struct {
 typedef struct {
   bx_param_string_c *Opath;
   bx_param_bool_c *OcmosImage;
-  bx_param_num_c *Otime0;
   } bx_cmos_options;
+
+typedef struct {
+  bx_param_num_c   *Otime0;
+  bx_param_enum_c  *Osync;
+  } bx_clock_options;
 
 typedef struct {
   bx_param_bool_c *Opresent;
   bx_param_num_c *Oioaddr;
   bx_param_num_c *Oirq;
   bx_param_string_c *Omacaddr;
-  bx_param_string_c *Oethmod;
+  bx_param_enum_c *Oethmod;
   bx_param_string_c *Oethdev;
   bx_param_string_c *Oscript;
   } bx_ne2k_options;
@@ -580,12 +577,8 @@ typedef struct {
 // These options are used for a special hack to load a
 // 32bit OS directly into memory, so it can be run without
 // any of the 16bit real mode or BIOS assistance.  This
-// is for the development of freemware, so we don't have
+// is for the development of plex86, so we don't have
 // to implement real mode up front.
-#define Load32bitOSNone        0
-#define Load32bitOSLinux       1
-#define Load32bitOSNullKernel  2 // being developed for freemware
-#define Load32bitOSLast        2
   bx_param_num_c *OwhichOS;
   bx_param_string_c *Opath;
   bx_param_string_c *Oiolog;
@@ -628,6 +621,7 @@ typedef struct {
 #define BX_N_OPTROM_IMAGES 4
 #define BX_N_SERIAL_PORTS 1
 #define BX_N_PARALLEL_PORTS 1
+#define BX_N_USB_HUBS 1
 
 typedef struct BOCHSAPI {
   bx_floppy_options floppya;
@@ -638,6 +632,7 @@ typedef struct BOCHSAPI {
   // bx_disk_options   diskd;
   // bx_cdrom_options  cdromd; 
   bx_serial_options com[BX_N_SERIAL_PORTS];
+  bx_usb_options    usb[BX_N_USB_HUBS];
   bx_rom_options    rom;
   bx_vgarom_options vgarom;
   bx_rom_options    optrom[BX_N_OPTROM_IMAGES]; // Optional rom images 
@@ -662,6 +657,7 @@ typedef struct BOCHSAPI {
 #endif
   bx_param_bool_c   *Oi440FXSupport;
   bx_cmos_options   cmos;
+  bx_clock_options  clock;
   bx_ne2k_options   ne2k;
   bx_param_bool_c   *OnewHardDriveSupport;
   bx_load32bitOSImage_t load32bitOSImage;

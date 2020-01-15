@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxdialog.cc,v 1.53.2.1 2003/01/11 21:40:19 cbothamy Exp $
+// $Id: wxdialog.cc,v 1.71 2004/01/05 22:18:01 cbothamy Exp $
 /////////////////////////////////////////////////////////////////
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
@@ -139,10 +139,10 @@ void LogMsgAskDialog::OnEvent(wxCommandEvent& event)
   int id = event.GetId ();
   int ret = -1;
   switch (id) {
-    case ID_Continue:   ret = CONT;  break;
-    case ID_Die:        ret = DIE;   break;
-    case ID_DumpCore:   ret = DUMP;  break;
-    case ID_Debugger:   ret = DEBUG; break;
+    case ID_Continue:   ret = BX_LOG_ASK_CHOICE_CONTINUE;  break;
+    case ID_Die:        ret = BX_LOG_ASK_CHOICE_DIE;   break;
+    case ID_DumpCore:   ret = BX_LOG_ASK_CHOICE_DUMP_CORE;  break;
+    case ID_Debugger:   ret = BX_LOG_ASK_CHOICE_ENTER_DEBUG; break;
     case wxID_HELP: ShowHelp (); return;
     default:
       return;  // without EndModal
@@ -153,7 +153,7 @@ void LogMsgAskDialog::OnEvent(wxCommandEvent& event)
 
 void LogMsgAskDialog::ShowHelp ()
 {
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
+  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR, this );
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -352,7 +352,7 @@ void FloppyConfigDialog::OnEvent(wxCommandEvent& event)
 	int cap = capacity->GetSelection ();
 	if (capacity->GetString (cap).Cmp ("none") == 0
 	    || !(cap>=0 && cap<n_floppy_type_names)) {
-	  wxMessageBox("You must choose a valid capacity for the new disk image", "Bad Capacity", wxOK | wxICON_ERROR );
+	  wxMessageBox("You must choose a valid capacity for the new disk image", "Bad Capacity", wxOK | wxICON_ERROR, this );
 	  return;
 	}
 	char name[1024];
@@ -362,7 +362,7 @@ void FloppyConfigDialog::OnEvent(wxCommandEvent& event)
 	  msg.Printf ("Created a %s disk image called '%s'.",
 	      capacity->GetString (cap).c_str (), 
 	      filename->GetValue ().c_str ());
-	  wxMessageBox(msg, "Image Created", wxOK | wxICON_INFORMATION);
+	  wxMessageBox(msg, "Image Created", wxOK | wxICON_INFORMATION, this);
 	}
       }
       break;
@@ -377,612 +377,7 @@ void FloppyConfigDialog::OnEvent(wxCommandEvent& event)
 
 void FloppyConfigDialog::ShowHelp ()
 {
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
-}
-
-//////////////////////////////////////////////////////////////////////
-// HDConfigDialog implementation
-//////////////////////////////////////////////////////////////////////
-// Structure:
-//   vertSizer: 
-//     enable checkbox
-//     hsizer[0]:
-//       "Disk image:"
-//       disk image text control
-//       browse button
-//     hsizer[1]:
-//       "Geometry: cylinders"
-//       geom[0] = cyl control
-//       "heads"
-//       geom[1] = heads control
-//       " sectors/track "
-//       geom[2] = spt control
-//     hsizer[2]:
-//       megs = "Size in MB: NUMBER"
-//       compute geometry button
-//     buttonSizer:
-//       help
-//       cancel
-//       ok
-
-// all events go to OnEvent method
-BEGIN_EVENT_TABLE(HDConfigDialog, wxDialog)
-  EVT_BUTTON(-1, HDConfigDialog::OnEvent)
-  EVT_CHECKBOX(-1, HDConfigDialog::OnEvent)
-  EVT_TEXT(-1, HDConfigDialog::OnEvent)
-END_EVENT_TABLE()
-
-
-HDConfigDialog::HDConfigDialog(
-    wxWindow* parent,
-    wxWindowID id)
-  : wxDialog (parent, id, "", wxDefaultPosition, wxDefaultSize, 
-    wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
-{
-  static char *geomNames[] = HD_CONFIG_GEOM_NAMES;
-  vertSizer = new wxBoxSizer (wxVERTICAL);
-  enable = new wxCheckBox (this, ID_Enable, MSG_ENABLED);
-  enable->SetValue (TRUE);
-  hsizer[0] = new wxBoxSizer (wxHORIZONTAL);
-  hsizer[1] = new wxBoxSizer (wxHORIZONTAL);
-  hsizer[2] = new wxBoxSizer (wxHORIZONTAL);
-  buttonSizer = new wxBoxSizer (wxHORIZONTAL);
-  // add top level components to vertSizer
-  vertSizer->Add (enable, 0, wxTOP|wxLEFT, 10);
-  vertSizer->Add (hsizer[0], 0, wxTOP|wxLEFT, 10);
-  vertSizer->Add (hsizer[1], 0, wxTOP|wxLEFT, 10);
-  vertSizer->Add (hsizer[2], 0, wxTOP|wxLEFT, 10);
-  vertSizer->Add (buttonSizer, 0, wxALIGN_RIGHT|wxTOP, 10);
-  // contents of hsizer[0]
-  wxStaticText *text;
-  text = new wxStaticText (this, -1, HD_CONFIG_DISKIMG);
-  hsizer[0]->Add (text);
-  filename = new wxTextCtrl (this, ID_FilenameText, "", wxDefaultPosition, longTextSize);
-  hsizer[0]->Add (filename, 1);
-  wxButton *btn = new wxButton (this, ID_Browse, BTNLABEL_BROWSE);
-  hsizer[0]->Add (btn);
-  // contents of hsizer[1]
-  for (int i=0; i<3; i++) {
-    text = new wxStaticText (this, -1, geomNames[i]);
-    hsizer[1]->Add (text);
-    geom[i] = new wxSpinCtrl (this, ID_Cylinders+i);
-    hsizer[1]->Add (geom[i]);
-  }
-  // contents of hsizer[2]
-  megs = new wxStaticText (this, ID_Megs, "");  // size in megs
-  hsizer[2]->Add (megs);
-  computeGeom = new wxButton (this, ID_ComputeGeometry, HD_CONFIG_COMPUTE_TEXT);
-  hsizer[2]->Add (computeGeom, 0, wxLEFT, 20);
-  // contents of buttonSizer
-  btn = new wxButton (this, wxID_HELP, BTNLABEL_HELP);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  // use wxID_CANCEL because pressing ESC produces this same code
-  btn = new wxButton (this, wxID_CANCEL, BTNLABEL_CANCEL);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  btn = new wxButton (this, ID_Create, BTNLABEL_CREATE_IMG);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  btn = new wxButton (this, wxID_OK, BTNLABEL_OK);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  // lay it out!
-  SetAutoLayout(TRUE);
-  SetSizer(vertSizer);
-  vertSizer->Fit (this);
-  wxSize size = vertSizer->GetMinSize ();
-  wxLogMessage ("minsize is %d,%d", size.GetWidth(), size.GetHeight ());
-  int margin = 5;
-  SetSizeHints (size.GetWidth () + margin, size.GetHeight () + margin);
-  Center ();
-}
-
-void HDConfigDialog::SetDriveName (wxString name) {
-  wxString text;
-  text.Printf (HD_CONFIG_TITLE, name.c_str ());
-  SetTitle (text);
-}
-
-void HDConfigDialog::SetGeom (int n, int value) {
-  wxLogMessage ("setting geom[%d] to %d", n, value);
-  geom[n]->SetValue (value); 
-  wxLogMessage ("now geom[%d] has value %d", n, geom[n]->GetValue ());
-  UpdateMegs ();
-}
-
-void HDConfigDialog::SetGeomRange (int n, int min, int max)
-{
-  wxLogDebug ("Setting range of geom[%d] to min=%d, max=%d", n, min, max);
-  geom[n]->SetRange (min, SPINCTRL_FIX_MAX(max)); 
-  wxLogDebug ("now min=%d, max=%d", geom[n]->GetMin (), geom[n]->GetMax ());
-}
-
-float
-HDConfigDialog::UpdateMegs () {
-  float meg = 512.0 
-    * geom[0]->GetValue () 
-    * geom[1]->GetValue () 
-    * geom[2]->GetValue ()
-    / (1024.0*1024.0);
-  wxString text;
-  text.Printf (HD_CONFIG_MEGS, meg);
-  ChangeStaticText (hsizer[2], megs, text);
-  Layout ();
-  return meg;
-}
-
-void HDConfigDialog::Init()
-{
-}
-
-void HDConfigDialog::EnableChanged ()
-{
-  bool en = enable->GetValue ();
-  filename->Enable (en);
-  for (int i=0; i<3; i++) geom[i]->Enable (en);
-  computeGeom->Enable (en);
-}
-
-void HDConfigDialog::OnEvent(wxCommandEvent& event)
-{
-  int id = event.GetId ();
-  wxLogMessage ("you pressed button id=%d", id);
-  switch (id) {
-    case ID_Cylinders:
-    case ID_Heads:
-    case ID_SPT:
-      UpdateMegs ();
-      break;
-    case ID_ComputeGeometry:
-      EnterSize ();
-      break;
-    case ID_Create:
-      {
-	int cyl = geom[0]->GetValue ();
-	int heads = geom[1]->GetValue ();
-	int spt = geom[2]->GetValue ();
-	int sectors = cyl*heads*spt;
-	char name[1024];
-	strncpy (name, filename->GetValue ().c_str (), sizeof(name));
-	if (CreateImage (1, sectors, name)) {
-	  wxString msg;
-	  msg.Printf ("Created a %d megabyte disk image called '%s'.",
-	      sectors*512, name);
-	  wxMessageBox(msg, "Image Created", wxOK | wxICON_INFORMATION);
-	}
-      }
-      break;
-    case ID_Enable:
-      EnableChanged ();
-      break;
-    case wxID_OK:
-      // probably should validate before allowing ok
-      EndModal (wxID_OK);
-      break;
-    case ID_Browse:
-      BrowseTextCtrl (filename);
-      break;
-    case wxID_CANCEL:
-      EndModal (wxID_CANCEL);
-      break;
-    case wxID_HELP:
-      ShowHelp(); 
-      break;
-    default:
-      event.Skip ();
-  }
-}
-
-void HDConfigDialog::EnterSize ()
-{
-  int initval = (int) (0.5 + UpdateMegs ());
-  int target_megs = wxGetNumberFromUser (HD_CONFIG_COMPUTE_INSTR, HD_CONFIG_COMPUTE_PROMPT, HD_CONFIG_COMPUTE_CAPTION, initval, 0, 32255);
-  if (target_megs<0) return;
-  // this calculate copied from misc/bximage.c
-  int cyl, heads=16, spt=63;
-  cyl = (int) (target_megs*1024.0*1024.0/16.0/63.0/512.0);
-  wxASSERT (cyl < 65536);
-  geom[0]->SetValue (cyl);
-  geom[1]->SetValue (heads);
-  geom[2]->SetValue (spt);
-  UpdateMegs ();
-}
-
-void HDConfigDialog::ShowHelp ()
-{
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
-}
-
-//////////////////////////////////////////////////////////////////////
-// CdromConfigDialog implementation
-//////////////////////////////////////////////////////////////////////
-// Structure:
-//   vertSizer: 
-//     box labeled "Device":
-//       enable = enable checkbox
-//     box labeled "Media":
-//       "Where should the emulated CD-ROM find its data?"
-//       ejected radio button (added by constructor)
-//       use physical radio buttons (added by calls to AddRadio)
-//       fileSizer:
-//         use disk image radio button
-//         filename = text control
-//         browse button
-//     buttonSizer:
-//       help
-//       cancel
-//       ok
-
-// all events go to OnEvent method
-BEGIN_EVENT_TABLE(CdromConfigDialog, wxDialog)
-  EVT_BUTTON(-1, CdromConfigDialog::OnEvent)
-  EVT_CHECKBOX(-1, CdromConfigDialog::OnEvent)
-  EVT_TEXT(-1, CdromConfigDialog::OnEvent)
-END_EVENT_TABLE()
-
-
-CdromConfigDialog::CdromConfigDialog(
-    wxWindow* parent,
-    wxWindowID id)
-  : wxDialog (parent, id, "", wxDefaultPosition, wxDefaultSize, 
-    wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
-{
-  n_rbtns = 0;
-  // top level objects
-  wxStaticBox *dBox = new wxStaticBox (this, -1, "Device");
-  dBoxSizer = new wxStaticBoxSizer (dBox, wxVERTICAL);
-  wxStaticBox *mBox = new wxStaticBox (this, -1, "Media");
-  mBoxSizer = new wxStaticBoxSizer (mBox, wxVERTICAL);
-  buttonSizer = new wxBoxSizer (wxHORIZONTAL);
-
-  // add top level objects to vertSizer
-  vertSizer = new wxBoxSizer (wxVERTICAL);
-  vertSizer->Add (dBoxSizer, 0, wxALL|wxGROW, 10);
-  vertSizer->Add (mBoxSizer, 0, wxALL|wxGROW, 10);
-  vertSizer->Add (buttonSizer, 0, wxALIGN_RIGHT|wxTOP, 10);
-
-  // device box contents
-  enable = new wxCheckBox (this, ID_Enable, MSG_ENABLED);
-  enable->SetValue (TRUE);
-  dBoxSizer->Add (enable, 0, wxALL, 5);
-
-  // media box contents
-  //prompt = new wxStaticText (this, -1, CDROM_CONFIG_PROMPT);
-  //mBoxSizer->Add (prompt, 0, wxTOP|wxLEFT|wxGROW, 10);
-  AddRadio ("Ejected", "none");   // that's always an option!
-  // ... wait for more calls to AddRadio before Init()
-
-  // create fileSizer & contents, but don't add yet
-  fileSizer = new wxBoxSizer (wxHORIZONTAL);
-  diskImageRadioBtn = new wxRadioButton (this, -1, CDROM_CONFIG_DISKIMG);
-  fileSizer->Add (diskImageRadioBtn, 0);
-  filename = new wxTextCtrl (this, ID_FilenameText, "", wxDefaultPosition, longTextSize);
-  fileSizer->Add (filename, 1, wxLEFT, 5);
-  wxButton *btn = new wxButton (this, ID_Browse, BTNLABEL_BROWSE);
-  fileSizer->Add (btn, 0, wxALL, 5);
-  // create buttonSizer & contents but don't add yet
-  btn = new wxButton (this, wxID_HELP, BTNLABEL_HELP);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  // use wxID_CANCEL because pressing ESC produces this same code
-  btn = new wxButton (this, wxID_CANCEL, BTNLABEL_CANCEL);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  btn = new wxButton (this, wxID_OK, BTNLABEL_OK);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-}
-
-void CdromConfigDialog::Init()
-{
-  // add top level components to vertSizer
-  mBoxSizer->Add (fileSizer, 0, wxLEFT, 20);
-  // lay it out!
-  SetAutoLayout(TRUE);
-  SetSizer(vertSizer);
-  vertSizer->Fit (this);
-  wxSize size = vertSizer->GetMinSize ();
-  wxLogMessage ("minsize is %d,%d", size.GetWidth(), size.GetHeight ());
-  int margin = 5;
-  SetSizeHints (size.GetWidth () + margin, size.GetHeight () + margin);
-  Center ();
-}
-
-void CdromConfigDialog::SetDriveName (wxString name) {
-  wxString text;
-  text.Printf (CDROM_CONFIG_TITLE, name.c_str ());
-  SetTitle (text);
-}
-
-// called from outside the object
-void CdromConfigDialog::EnableChanged ()
-{
-  bool en = enable->GetValue ();
-  //prompt->Enable (en);
-  filename->Enable (en);
-  for (int i=0; i<n_rbtns; i++)
-    rbtn[i]->Enable (en);
-  diskImageRadioBtn->Enable (en);
-}
-
-void CdromConfigDialog::SetFilename (wxString f) {
-  for (int i=0; i<n_rbtns; i++) {
-    if (!strcmp (f.c_str (), equivalentFilename[i])) {
-      rbtn[i]->SetValue (TRUE);
-      return;
-    }
-  }
-  filename->SetValue (wxString (f));
-}
-
-wxString
-CdromConfigDialog::GetFilename ()
-{
-  if (enable->GetValue ()) {
-    // check radio buttons
-    for (int i=0; i<n_rbtns; i++) {
-      if (rbtn[i]->GetValue ())
-	return equivalentFilename[i];
-    }
-    // if it wasn't any of the other radio buttons, it certainly should
-    // be the last one.  That's what radio buttons do!
-    wxASSERT (diskImageRadioBtn->GetValue ());
-  }
-  return filename->GetValue();
-}
-
-void 
-CdromConfigDialog::AddRadio (const wxString& description, const wxString& filename)
-{
-  if (n_rbtns >= CDROM_MAX_RBTNS) {
-    wxLogError ("AddRadio failed: increase CDROM_MAX_RBTNS in wxdialog.h");
-    return;
-  }
-  rbtn[n_rbtns] = new wxRadioButton (this, -1, description);
-  equivalentFilename[n_rbtns] = filename;
-  mBoxSizer->Add (rbtn[n_rbtns], 0, wxLEFT, 20);
-  n_rbtns++;
-}
-
-void CdromConfigDialog::OnEvent(wxCommandEvent& event)
-{
-  int id = event.GetId ();
-  wxLogMessage ("you pressed button id=%d", id);
-  switch (id) {
-    case ID_FilenameText:
-      // when you type into the filename field, ensure that the radio
-      // button associated with that field is chosen.
-      diskImageRadioBtn->SetValue (enable->GetValue ());
-      break;
-    case ID_Enable:
-      EnableChanged ();  // enable/disable fields that depend on this
-      break;
-    case wxID_OK:
-      // probably should validate before allowing ok
-      EndModal (wxID_OK);
-      break;
-    case ID_Browse:
-      BrowseTextCtrl (filename);
-      break;
-    case wxID_CANCEL:
-      EndModal (wxID_CANCEL);
-      break;
-    case wxID_HELP:
-      ShowHelp(); 
-      break;
-    default:
-      event.Skip ();
-  }
-}
-
-void CdromConfigDialog::ShowHelp ()
-{
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
-}
-
-
-//////////////////////////////////////////////////////////////////////
-// NetConfigDialog implementation
-//////////////////////////////////////////////////////////////////////
-// Structure:
-//   mainSizer: 
-//     vertSizer:
-//       prompt
-//       gridSizer 2 columns:
-//         "enable networking"
-//         enable = checkbox
-//         "i/o addr"
-//         io = wxTextCtrl
-//         "irq"
-//         irq = wxSpinCtrl
-//         "mac"
-//         mac = wxTextCtrl
-//         "conn"
-//         conn = wxChoice
-//         "phys"
-//         phys = wxTextCtrl
-//         "script"
-//         script = wxTextCtrl
-//     buttonSizer:
-//       help
-//       cancel
-//       ok
-
-// all events go to OnEvent method
-BEGIN_EVENT_TABLE(NetConfigDialog, wxDialog)
-  EVT_BUTTON(-1, NetConfigDialog::OnEvent)
-  EVT_CHECKBOX(-1, NetConfigDialog::OnEvent)
-  EVT_TEXT(-1, NetConfigDialog::OnEvent)
-END_EVENT_TABLE()
-
-
-NetConfigDialog::NetConfigDialog(
-    wxWindow* parent,
-    wxWindowID id)
-  : wxDialog (parent, id, "", wxDefaultPosition, wxDefaultSize, 
-    wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
-{
-  n_conn_choices = 0;
-  SetTitle (NET_CONFIG_TITLE);
-  // top level objects
-  mainSizer = new wxBoxSizer (wxVERTICAL);
-  wxBoxSizer *vertSizer = new wxBoxSizer (wxVERTICAL);
-  mainSizer->Add (vertSizer, 1, wxGROW|wxALIGN_LEFT);
-  wxBoxSizer *buttonSizer = new wxBoxSizer (wxHORIZONTAL);
-  mainSizer->Add (buttonSizer, 0, wxALIGN_RIGHT);
-
-  // vertSizer contents
-  wxStaticText *text;
-  text = new wxStaticText (this, -1, NET_CONFIG_PROMPT);
-  vertSizer->Add (text, 0, wxLEFT|wxRIGHT|wxTOP, 20);
-  wxFlexGridSizer *gridSizer = new wxFlexGridSizer (2);
-  vertSizer->Add (gridSizer, 1, wxALL|wxGROW, 30);
-
-  // gridSizer contents
-  gridSizer->AddGrowableCol (1);
-#define add(x) gridSizer->Add (x, 0, wxALL|wxADJUST_MINSIZE, 5)
-#define add_grow(x) gridSizer->Add (x, 1, wxALL|wxGROW, 5)
-#define label(x) (new wxStaticText (this, -1, x))
-  add (label (NET_CONFIG_EN));
-  add (enable = new wxCheckBox (this, ID_Enable, ""));
-  gridSizer->Add (30, 30);
-  gridSizer->Add (30, 30);
-  add (label (NET_CONFIG_IO));
-  add (io = new wxTextCtrl (this, -1, "", wxDefaultPosition, normalTextSize));
-  add (label (NET_CONFIG_IRQ));
-  add (irq = new wxSpinCtrl (this, -1));
-  add (label (NET_CONFIG_MAC));
-  add (mac = new wxTextCtrl (this, -1, "", wxDefaultPosition, normalTextSize));
-  add (label (NET_CONFIG_CONN));
-  add (conn = new wxChoice (this, -1));
-  add (label (NET_CONFIG_PHYS));
-  add (phys = new wxTextCtrl (this, -1, "", wxDefaultPosition, normalTextSize));
-  add (label (NET_CONFIG_SCRIPT));
-  add_grow (script = new wxTextCtrl (this, -1, "", wxDefaultPosition, normalTextSize));
-#undef label
-#undef add
-
-  irq->SetRange (0, 15);
-
-  // buttonSizer contents
-  wxButton *btn = new wxButton (this, wxID_HELP, BTNLABEL_HELP);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  // use wxID_CANCEL because pressing ESC produces this same code
-  btn = new wxButton (this, wxID_CANCEL, BTNLABEL_CANCEL);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  btn = new wxButton (this, wxID_OK, BTNLABEL_OK);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-}
-
-void NetConfigDialog::Init()
-{
-  EnableChanged ();
-  // lay it out!
-  SetAutoLayout(TRUE);
-  SetSizer(mainSizer);
-  mainSizer->Fit (this);
-  wxSize size = mainSizer->GetMinSize ();
-  wxLogMessage ("minsize is %d,%d", size.GetWidth(), size.GetHeight ());
-  int margin = 5;
-  SetSizeHints (size.GetWidth () + margin, size.GetHeight () + margin);
-  Center ();
-}
-
-void NetConfigDialog::EnableChanged ()
-{
-  bool en = enable->GetValue ();
-  io->Enable (en);
-  irq->Enable (en);
-  mac->Enable (en);
-  conn->Enable (en);
-  phys->Enable (en);
-  script->Enable (en);
-}
-
-// allow (encourage) use of hex addresses started with "0x"
-int NetConfigDialog::GetIO () {
-  char buf[1024];
-  wxString string(io->GetValue ());
-  string.Trim ();
-  strncpy (buf, string, sizeof(buf));
-  int n = strtol (string, NULL, 0);
-  if (n<0 || n>0xffff) {
-    wxMessageBox("I/O address out of range. Try 0 - 0xffff.", "Bad I/O address", wxOK | wxICON_ERROR );
-    return -1;
-  }
-  return n;
-}
-
-void NetConfigDialog::SetMac (unsigned char addr[6]) {
-  wxString text;
-  text.Printf ("%02x:%02x:%02x:%02x:%02x:%02x", addr[0], addr[1], addr[2], addr[3], addr[4], addr[5]);
-  mac->SetValue (text);
-}
-
-bool
-NetConfigDialog::GetMac (unsigned char addr[6]) {
-  char buf[32];
-  wxString string(mac->GetValue ());
-  string.Trim ();
-  strncpy (buf, string, sizeof(buf));
-  // expect NN:NN:NN:NN:NN:NN format
-  int part[6];
-  if (6 != sscanf (string, "%x:%x:%x:%x:%x:%x", &part[0], &part[1], &part[2],
-	&part[3], &part[4], &part[5])) 
-  {
-    wxMessageBox("MAC address must be in the form FF:FF:FF:FF:FF:FF.", "Bad MAC Address", wxOK | wxICON_ERROR );
-      return false;
-  }
-  for (int i=0; i<6; i++)
-    addr[i] = part[i];
-  return true;
-}
-
-void NetConfigDialog::AddConn (wxString niceName, char *realName) {
-  conn->Append (niceName); 
-  int index = n_conn_choices++;
-  conn->SetClientData (index, realName);
-}
-
-void NetConfigDialog::SetConn (const char *realname) {
-  // search through the choices and find the one whose clientData matches
-  // realname.
-  for (int i=0; i<n_conn_choices; i++) {
-    char *choiceRealName = (char *)conn->GetClientData (i);
-    if (!strcmp (choiceRealName, realname)) {
-      conn->SetSelection (i);
-      return;
-    }
-  }
-  wxLogError ("no choice match for '%s'", realname);
-}
-
-void NetConfigDialog::OnEvent(wxCommandEvent& event)
-{
-  int id = event.GetId ();
-  wxLogMessage ("you pressed button id=%d", id);
-  switch (id) {
-    case ID_Enable:
-      EnableChanged ();  // enable/disable fields that depend on this
-      break;
-    case wxID_OK:
-      {
-	// check for valid mac address by calling GetMac()
-	unsigned char tmp[6];
-	if (GetMac (tmp)) {
-	  // mac address was legal
-	  EndModal (wxID_OK);
-	}
-      }
-      break;
-    case wxID_CANCEL:
-      EndModal (wxID_CANCEL);
-      break;
-    case wxID_HELP:
-      ShowHelp(); 
-      break;
-    default:
-      event.Skip ();
-  }
-}
-
-void NetConfigDialog::ShowHelp ()
-{
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
+  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR, this );
 }
 
 
@@ -1010,7 +405,6 @@ void NetConfigDialog::ShowHelp ()
 //       debuggerlogfile
 //       browse button
 //     buttonSizer:
-//       advanced
 //       help
 //       cancel
 //       ok
@@ -1071,8 +465,6 @@ LogOptionsDialog::LogOptionsDialog(
   }
 
   // buttonSizer contents
-  btn = new wxButton (this, ID_Advanced, BTNLABEL_ADVANCED);
-  buttonSizer->Add (btn, 0, wxALL, 5);
   btn = new wxButton (this, wxID_HELP, BTNLABEL_HELP);
   buttonSizer->Add (btn, 0, wxALL, 5);
   // use wxID_CANCEL because pressing ESC produces this same code
@@ -1131,9 +523,6 @@ void LogOptionsDialog::OnEvent(wxCommandEvent& event)
     case ID_Browse2:
       BrowseTextCtrl (debuggerlogfile);
       break;
-    case ID_Advanced:
-      wxMessageBox ("The advanced dialog is not implemented yet.");
-      break;
     case wxID_OK:
       EndModal (wxID_OK);
       break;
@@ -1150,7 +539,7 @@ void LogOptionsDialog::OnEvent(wxCommandEvent& event)
 
 void LogOptionsDialog::ShowHelp ()
 {
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
+  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR, this );
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -1387,210 +776,9 @@ void AdvancedLogOptionsDialog::OnEvent(wxCommandEvent& event)
 
 void AdvancedLogOptionsDialog::ShowHelp ()
 {
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
+  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR, this );
 }
 
-//////////////////////////////////////////////////////////////////////
-// ConfigMemoryDialog implementation
-//////////////////////////////////////////////////////////////////////
-// Structure:
-//   mainSizer:
-//     box1 = static box "Standard Options"
-//       box1sizer:
-//         box1gridSizer, 3 columns:
-//           "memsize"
-//           megs = textfield
-//           spacer
-//           "biosimg"
-//           biosImage = textfield
-//           browse button
-//           "biosaddr"
-//           biosAddr = textfield
-//           spacer
-//           "vgabiosimg"
-//           vgabios = textfield
-//           browse button
-//           "vgabiosaddr"
-//           "0xc0000"
-//     box2 = static box "Optional ROM images"
-//       box2sizer:
-//         box2gridSizer, 3 columns:
-//           "opt rom 1"
-//           romImage[0] = textfield
-//           browse button
-//           "opt rom 2"
-//           romImage[1] = textfield
-//           browse button
-//           "opt rom 3"
-//           romImage[2] = textfield
-//           browse button
-//           "opt rom 4"
-//           romImage[3] = textfield
-//           browse button
-//     buttonSizer:
-//       help
-//       cancel
-//       ok
-//
-
-// all events go to OnEvent method
-BEGIN_EVENT_TABLE(ConfigMemoryDialog, wxDialog)
-  EVT_BUTTON(-1, ConfigMemoryDialog::OnEvent)
-  EVT_CHECKBOX(-1, ConfigMemoryDialog::OnEvent)
-  EVT_TEXT(-1, ConfigMemoryDialog::OnEvent)
-END_EVENT_TABLE()
-
-
-ConfigMemoryDialog::ConfigMemoryDialog(
-    wxWindow* parent,
-    wxWindowID id)
-  : wxDialog (parent, id, "", wxDefaultPosition, wxDefaultSize, 
-    wxDEFAULT_DIALOG_STYLE | wxRESIZE_BORDER)
-{
-  static char *box1_label[] = CONFIG_MEMORY_BOX1_LABELS;
-  static char *box2_label[] = CONFIG_MEMORY_BOX2_LABELS;
-  int n_browse = 0;
-  int insideStaticBoxMargin = 15;
-  SetTitle (CONFIG_MEMORY_TITLE);
-  mainSizer = new wxBoxSizer (wxVERTICAL);
-  wxStaticBox *box1 = new wxStaticBox (this, -1, CONFIG_MEMORY_BOX1_TITLE);
-  box1sizer = new wxStaticBoxSizer (box1, wxVERTICAL);
-  mainSizer->Add (box1sizer, 0, wxALL|wxGROW, 10);
-  wxStaticBox *box2 = new wxStaticBox (this, -1, CONFIG_MEMORY_BOX2_TITLE);
-  box2sizer = new wxStaticBoxSizer (box2, wxVERTICAL);
-  mainSizer->Add (box2sizer, 0, wxALL|wxGROW, 10);
-  buttonSizer = new wxBoxSizer (wxHORIZONTAL);
-  mainSizer->Add (buttonSizer, 0, wxALIGN_RIGHT);
-
-  // box1 contents
-  box1gridSizer = new wxFlexGridSizer (3);
-  box1sizer->Add (box1gridSizer, 0, wxALL, insideStaticBoxMargin);
-#define add(x) box1gridSizer->Add (x, 0, wxALL, 2)
-#define addrt(x) box1gridSizer->Add (x, 0, wxALL|wxALIGN_RIGHT, 2)
-#define newlabel(x) new wxStaticText (this, -1, x)
-#define spacer() box1gridSizer->Add (1, 1);
-#define newbrowse() (browseBtn[n_browse++] = new wxButton (this, ID_Browse, BTNLABEL_BROWSE))
-#define newlongtext() (new wxTextCtrl (this, -1, "", wxDefaultPosition, longTextSize))
-  addrt (newlabel (box1_label[0]));
-  add (megs = new wxSpinCtrl (this, -1));
-  spacer();
-  addrt (newlabel (box1_label[1]));
-  add (biosImage = newlongtext ());
-  add (newbrowse ());
-  addrt (newlabel (box1_label[2]));
-  add (biosAddr = new wxTextCtrl (this, -1));
-  spacer();
-  addrt (newlabel (box1_label[3]));
-  add (vgabiosImage = newlongtext ());
-  add (newbrowse ());
-  addrt (newlabel (box1_label[4]));
-  add (newlabel (box1_label[5]));
-#undef add
-#undef addrt
-#undef newlabel
-#undef spacer
-
-  // box2 contents
-  box2gridSizer = new wxFlexGridSizer (3);
-  box2sizer->Add (box2gridSizer, 0, wxALL, insideStaticBoxMargin);
-#define add(x) box2gridSizer->Add (x, 0, wxALL, 2)
-#define addrt(x) box2gridSizer->Add (x, 0, wxALL|wxALIGN_RIGHT, 2)
-#define newlabel(x) new wxStaticText (this, -1, x)
-#define spacer() box2gridSizer->Add (1, 1);
-  for (int i=0; i<CONFIG_MEMORY_N_ROMS; i++) {
-    addrt (newlabel (box2_label[2*i]));
-    add (rom[i] = newlongtext ());
-    add (newbrowse ());
-    addrt (newlabel (box2_label[2*i + 1]));
-    add (romAddr[i] = new wxTextCtrl (this, -1));
-    spacer();
-  }
-#undef add
-#undef addrt
-#undef newlabel
-#undef spacer
-#undef newbrowse
-#undef newlongtext
-
-  // buttonSizer contents
-  wxButton *btn;
-  btn = new wxButton (this, wxID_HELP, BTNLABEL_HELP);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  // use wxID_CANCEL because pressing ESC produces this same code
-  btn = new wxButton (this, wxID_CANCEL, BTNLABEL_CANCEL);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-  btn = new wxButton (this, wxID_OK, BTNLABEL_OK);
-  buttonSizer->Add (btn, 0, wxALL, 5);
-}
-
-void ConfigMemoryDialog::Init()
-{
-  // lay it out!
-  SetAutoLayout(TRUE);
-  SetSizer(mainSizer);
-  mainSizer->Fit (this);
-  wxSize size = mainSizer->GetMinSize ();
-  wxLogMessage ("minsize is %d,%d", size.GetWidth(), size.GetHeight ());
-  int margin = 5;
-  SetSizeHints (size.GetWidth () + margin, size.GetHeight () + margin);
-  Center ();
-}
-
-void ConfigMemoryDialog::OnEvent(wxCommandEvent& event)
-{
-  int id = event.GetId ();
-  wxLogMessage ("you pressed button id=%d", id);
-  switch (id) {
-    case ID_Browse:
-      {
-	// There are several browse buttons.  Figure out which one was
-	// pressed, and which text control is next to it.
-	wxTextCtrl *text = NULL;
-	wxObject *source = event.GetEventObject ();
-	for (int i=0; i<CONFIG_MEMORY_N_BROWSES; i++) {
-	  if (source == browseBtn[i]) {
-	    switch (i) {
-	      case 0: text = biosImage; break;
-	      case 1: text = vgabiosImage; break;
-	      case 2: case 3: case 4: case 5:
-		text = rom[i-2];
-		break;
-	    }
-	    break;
-	  }
-	}
-	if (!text) return;  // not recognized from browse button array
-	BrowseTextCtrl (text);
-      }
-      break;
-    case wxID_OK:
-      {
-	// test validity of the integer fields
-	bool valid;
-	GetTextCtrlInt (biosAddr, &valid, true, "Invalid ROM BIOS Address");
-	if (!valid) return;
-	for (int rom=0; rom<CONFIG_MEMORY_N_ROMS; rom++) {
-	  GetTextCtrlInt (romAddr[rom], &valid, true, "Invalid Optional ROM address");
-	  if (!valid) return;
-	}
-      }
-      EndModal (wxID_OK);
-      break;
-    case wxID_CANCEL:
-      EndModal (wxID_CANCEL);
-      break;
-    case wxID_HELP:
-      ShowHelp(); 
-      break;
-    default:
-      event.Skip ();
-  }
-}
-
-void ConfigMemoryDialog::ShowHelp ()
-{
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
-}
 
 #if BX_DEBUGGER
 //////////////////////////////////////////////////////////////////////
@@ -1686,7 +874,7 @@ void DebugLogDialog::CheckLogLength ()
   if (len > lengthMax + lengthTolerance) {
     // Truncate the string.  Start from length - lengthMax, search 
     // forward until we find the first \n.
-    for (int i = len - lengthMax; i<len-1; i++) {
+    for (int i = len - lengthMax; i<(int)(len-1); i++) {
       if (str.GetChar (i) == '\n') {
 	// remove the \n and everything before it.  Done.
 	//printf ("truncating from 0 to %d\n", i+1);
@@ -1767,6 +955,7 @@ ParamDialog::ParamDialog(
   idHash = new wxHashTable (wxKEY_INTEGER);
   paramHash = new wxHashTable (wxKEY_INTEGER);
   nbuttons = 0;
+  runtime = 0;
 
   // top level objects
   mainSizer = new wxBoxSizer (wxVERTICAL);
@@ -1888,8 +1077,9 @@ void ParamDialog::AddParam (
   pstr->u.window = NULL;
   pstr->browseButton = NULL;
   int type = param_generic->get_type ();
-  char *prompt = pstr->param->get_ask_format ();
+  char *prompt = pstr->param->get_label ();
   if (!prompt) prompt = pstr->param->get_name ();
+  char *description = pstr->param->get_description ();
   wxASSERT (prompt != NULL);
 #define ADD_LABEL(x) sizer->Add (pstr->label = new wxStaticText (context->parent, -1, wxString (x)), 0, wxALIGN_RIGHT|wxALL, 3)
   switch (type) {
@@ -1898,7 +1088,8 @@ void ParamDialog::AddParam (
 	if (!plain) ADD_LABEL (prompt);
 	wxCheckBox *ckbx = new wxCheckBox (context->parent, pstr->id, "");
 	ckbx->SetValue (param->get ());
-	sizer->Add (ckbx);
+        if (description) ckbx->SetToolTip(description);
+	sizer->Add (ckbx, 0, wxALL, 2);
 	if (!plain) sizer->Add (1, 1);  // spacer
 	pstr->u.checkbox = ckbx;
 	idHash->Put (pstr->id, pstr);
@@ -1908,14 +1099,26 @@ void ParamDialog::AddParam (
     case BXT_PARAM_NUM: {
 	bx_param_num_c *param = (bx_param_num_c*) param_generic;
 	if (!plain) ADD_LABEL (prompt);
-	wxTextCtrl *textctrl = new wxTextCtrl (context->parent, pstr->id, "", wxDefaultPosition, normalTextSize);
-	const char *format = param->get_format ();
-	if (!format)
-	  format = strdup(param->get_base () == 16 ? "0x%X" : "%d");
-	SetTextCtrl (textctrl, format, param->get ());
-	sizer->Add (textctrl);
-	if (!plain) sizer->Add (1, 1);  // spacer
-	pstr->u.text = textctrl;
+        if (param->get_options () & param->USE_SPIN_CONTROL) {
+          wxSpinCtrl *spinctrl = new wxSpinCtrl (context->parent, pstr->id);
+          spinctrl->SetValue (param->get ());
+          int max = (param->get_max () < (1<<24))?param->get_max ():(1<<24)-1;
+          spinctrl->SetRange (param->get_min (), SPINCTRL_FIX_MAX (max));
+          if (description) spinctrl->SetToolTip(description);
+          sizer->Add (spinctrl, 0, wxALL, 2);
+          if (!plain) sizer->Add (1, 1);  // spacer
+          pstr->u.spin = spinctrl;
+        } else {
+          wxTextCtrl *textctrl = new wxTextCtrl (context->parent, pstr->id, "", wxDefaultPosition, normalTextSize);
+          const char *format = param->get_format ();
+          if (!format)
+            format = strdup(param->get_base () == 16 ? "0x%X" : "%d");
+          SetTextCtrl (textctrl, format, param->get ());
+          if (description) textctrl->SetToolTip(description);
+          sizer->Add (textctrl, 0, wxALL, 2);
+          if (!plain) sizer->Add (1, 1);  // spacer
+          pstr->u.text = textctrl;
+        }
 	idHash->Put (pstr->id, pstr);
 	paramHash->Put (pstr->param->get_id (), pstr);
         break;
@@ -1924,7 +1127,8 @@ void ParamDialog::AddParam (
 	bx_param_enum_c *param = (bx_param_enum_c*) param_generic;
 	if (!plain) ADD_LABEL (prompt);
 	wxChoice *choice = new wxChoice (context->parent, pstr->id);
-	sizer->Add (choice, 0, wxADJUST_MINSIZE);
+        if (description) choice->SetToolTip(description);
+	sizer->Add (choice, 0, wxADJUST_MINSIZE, 2);
 	if (!plain) sizer->Add (1, 1);  // spacer
 	// fill in the choices
 	int i=0;
@@ -1942,15 +1146,30 @@ void ParamDialog::AddParam (
 	if (!plain) ADD_LABEL (prompt);
 	bool isFilename = param->get_options ()->get () & param->IS_FILENAME;
 	wxTextCtrl *txtctrl = new wxTextCtrl (context->parent, pstr->id, "", wxDefaultPosition, isFilename? longTextSize : normalTextSize);
-	txtctrl->SetValue (param->getptr ());
-	sizer->Add (txtctrl);
+        if (description) txtctrl->SetToolTip(description);
+        if (param->get_options()->get () & param->RAW_BYTES) {
+          char *value = param->getptr ();
+          wxString buffer;
+          char sep_string[2];
+          sep_string[0] = param->get_separator ();
+          sep_string[1] = 0;
+          for (int i=0; i<param->get_maxsize (); i++) {
+            wxString eachbyte;
+            eachbyte.Printf ("%s%02x", (i>0)?sep_string : "", (unsigned int)0xff&value[i]);
+            buffer += eachbyte;
+          }
+          txtctrl->SetValue (buffer);
+        } else {
+          txtctrl->SetValue (param->getptr ());
+        }
+	sizer->Add (txtctrl, 0, wxALL, 2);
 	if (!plain) {
 	  if (isFilename) {
 	    // create Browse button
 	    pstr->browseButtonId = genId ();
 	    pstr->browseButton = new wxButton (context->parent, 
 		pstr->browseButtonId, BTNLABEL_BROWSE);
-	    sizer->Add (pstr->browseButton, 0, wxALL, 5);
+	    sizer->Add (pstr->browseButton, 0, wxALL, 2);
 	    idHash->Put (pstr->browseButtonId, pstr);  // register under button id
 	  } else {
 	    sizer->Add (1, 1);  // spacer
@@ -2001,7 +1220,13 @@ void ParamDialog::AddParam (
 	  idHash->Put (pstr->id, pstr);
 	  paramHash->Put (pstr->param->get_id (), pstr);
 	} else {
-	  wxStaticBox *box = new wxStaticBox (context->parent, -1, prompt);
+          wxString boxTitle;
+          if (list->get_options()->get () & bx_list_c::USE_BOX_TITLE) {
+            boxTitle = prompt;
+          } else {
+            boxTitle = "";
+          }
+          wxStaticBox *box = new wxStaticBox (context->parent, -1, boxTitle);
 	  wxStaticBoxSizer *boxsz = new wxStaticBoxSizer (box, wxVERTICAL);
 	  AddParamContext newcontext;
 	  newcontext.depth = 1 + context->depth;
@@ -2049,9 +1274,18 @@ bool ParamDialog::CopyGuiToParam ()
       case BXT_PARAM_NUM: {
         bx_param_num_c *nump = (bx_param_num_c*) pstr->param;
 	bool valid;
+        int n;
 	wxString complaint;
 	complaint.Printf ("Invalid integer for %s.", pstr->param->get_name ());
-	int n = GetTextCtrlInt (pstr->u.text, &valid, true, complaint);
+        if (nump->get_options () & nump->USE_SPIN_CONTROL) {
+          n = pstr->u.spin->GetValue ();
+        } else {
+          n = GetTextCtrlInt (pstr->u.text, &valid, true, complaint);
+        }
+        if ((n < nump->get_min ()) || (n > nump->get_max ())) {
+          wxMessageBox("Numerical parameter out of range", "Error", wxOK | wxICON_ERROR, this );
+          return false;
+        }
 	if (n != nump->get ()) nump->set (n);
 	break;
         }
@@ -2065,7 +1299,29 @@ bool ParamDialog::CopyGuiToParam ()
         bx_param_string_c *stringp = (bx_param_string_c*) pstr->param;
 	char buf[1024];
 	wxString tmp(pstr->u.text->GetValue ());
-	strncpy (buf, tmp.c_str(), sizeof(buf));
+        if (stringp->get_options()->get () & stringp->RAW_BYTES) {
+          char src[1024];
+          int i, p = 0;
+          unsigned int n;
+          strcpy(src, tmp.c_str());
+          for (i=0; i<stringp->get_maxsize (); i++) 
+            buf[i] = 0;
+          for (i=0; i<stringp->get_maxsize (); i++) {
+            while (src[p] == stringp->get_separator ())
+              p++;
+            if (src[p] == 0) break;
+            // try to read a byte of hex
+            if (sscanf (src+p, "%02x", &n) == 1) {
+              buf[i] = n;
+              p+=2;
+            } else {
+              wxMessageBox("Illegal raw byte format", "Error", wxOK | wxICON_ERROR, this );
+              return false;
+            }
+          }
+        } else {
+          strncpy (buf, tmp.c_str(), sizeof(buf));
+        }
 	buf[sizeof(buf)-1] = 0;
 	if (!stringp->equals (buf)) stringp->set (buf);
 	break;
@@ -2087,6 +1343,12 @@ void ParamDialog::EnableChanged ()
     ParamStruct *pstr = (ParamStruct*) node->GetData ();
     if (pstr->param->get_type () == BXT_PARAM_BOOL)
       EnableChanged (pstr);
+    if (pstr->param->get_type () == BXT_PARAM_ENUM)
+      EnumChanged (pstr);
+    if (runtime) {
+      if ((pstr->param->get_type() != BXT_LIST) && !pstr->param->get_runtime_param ())
+        EnableParam (pstr->param->get_id (),  false);
+    }
     // special cases that can't be handled in the usual way
   }
 }
@@ -2178,19 +1440,83 @@ void ParamDialog::EnumChanged (ParamStruct *pstr)
       if (type == BX_ATA_DEVICE_DISK) {
 	// enable cylinders, heads, spt
 	wxLogDebug ("enabling disk parameters");
+	EnableParam (BXP_ATA0_MASTER_MODE+delta, 1);
 	EnableParam (BXP_ATA0_MASTER_CYLINDERS+delta, 1);
 	EnableParam (BXP_ATA0_MASTER_HEADS+delta, 1);
 	EnableParam (BXP_ATA0_MASTER_SPT+delta, 1);
 	EnableParam (BXP_ATA0_MASTER_STATUS+delta, 0);
+	EnableParam (BXP_ATA0_MASTER_TRANSLATION+delta, 1);
+
+        bx_id mode_id = (bx_id) (BXP_ATA0_MASTER_MODE+delta);
+        ParamStruct *mode_param = (ParamStruct*) paramHash->Get(mode_id);
+        int mode = BX_ATA_MODE_FLAT;
+        if(mode_param) mode=mode_param->u.choice->GetSelection();
+        switch(mode) {
+          case BX_ATA_MODE_UNDOABLE:
+          case BX_ATA_MODE_VOLATILE:
+	    EnableParam (BXP_ATA0_MASTER_JOURNAL+delta, 1);
+            break;
+          default:
+	    EnableParam (BXP_ATA0_MASTER_JOURNAL+delta, 0);
+            break;
+        }
+
       } else {
 	// enable inserted
 	wxLogDebug ("enabling cdrom parameters");
+	EnableParam (BXP_ATA0_MASTER_MODE+delta, 0);
 	EnableParam (BXP_ATA0_MASTER_CYLINDERS+delta, 0);
 	EnableParam (BXP_ATA0_MASTER_HEADS+delta, 0);
 	EnableParam (BXP_ATA0_MASTER_SPT+delta, 0);
 	EnableParam (BXP_ATA0_MASTER_STATUS+delta, 1);
+	EnableParam (BXP_ATA0_MASTER_JOURNAL+delta, 0);
+	EnableParam (BXP_ATA0_MASTER_TRANSLATION+delta, 0);
       }
     }
+    break;
+    case BXP_ATA0_MASTER_MODE:
+    case BXP_ATA0_SLAVE_MODE:
+    case BXP_ATA1_MASTER_MODE:
+    case BXP_ATA1_SLAVE_MODE:
+    case BXP_ATA2_MASTER_MODE:
+    case BXP_ATA2_SLAVE_MODE:
+    case BXP_ATA3_MASTER_MODE:
+    case BXP_ATA3_SLAVE_MODE: {
+      int delta = id - BXP_ATA0_MASTER_MODE;
+      // find out if "present" checkbox is checked
+      bx_id present_id = (bx_id) (BXP_ATA0_MASTER_PRESENT+delta);
+      ParamStruct *present = (ParamStruct*) paramHash->Get (present_id);
+      wxASSERT (present && present->param->get_type () == BXT_PARAM_BOOL);
+      if (!present->u.checkbox->GetValue ())
+	break;  // device not enabled, leave it alone
+      if (!present->u.checkbox->IsEnabled ())
+	break;  // enable button for the device is not enabled
+      wxASSERT (pstr->param->get_type () == BXT_PARAM_ENUM);
+      int mode = pstr->u.choice->GetSelection ();
+      switch(mode) {
+        case BX_ATA_MODE_UNDOABLE:
+        case BX_ATA_MODE_VOLATILE:
+          EnableParam (BXP_ATA0_MASTER_JOURNAL+delta, 1);
+          break;
+        default:
+          EnableParam (BXP_ATA0_MASTER_JOURNAL+delta, 0);
+          break;
+        }
+      }
+      break;
+    case BXP_LOAD32BITOS_WHICH: {
+      int os = pstr->u.choice->GetSelection ();
+      if (os != Load32bitOSNone) {
+	EnableParam (BXP_LOAD32BITOS_PATH, 1);
+	EnableParam (BXP_LOAD32BITOS_IOLOG, 1);
+	EnableParam (BXP_LOAD32BITOS_INITRD, 1);
+      } else {
+	EnableParam (BXP_LOAD32BITOS_PATH, 0);
+	EnableParam (BXP_LOAD32BITOS_IOLOG, 0);
+	EnableParam (BXP_LOAD32BITOS_INITRD, 0);
+      }
+    }
+
   }
 }
 
@@ -2290,7 +1616,94 @@ void ParamDialog::OnEvent(wxCommandEvent& event)
 
 void ParamDialog::ShowHelp ()
 {
-  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR );
+  wxMessageBox(MSG_NO_HELP, MSG_NO_HELP_CAPTION, wxOK | wxICON_ERROR, this );
+}
+
+//////////////////////////////////////////////////////////////////////
+// ConfigMemoryDialog implementation
+//////////////////////////////////////////////////////////////////////
+// Structure:
+//   mainSizer:
+//     box1 = static box "Standard Options"
+//       box1sizer:
+//         box1gridSizer, 3 columns:
+//           "memsize"
+//           megs = textfield
+//           spacer
+//           "biosimg"
+//           biosImage = textfield
+//           browse button
+//           "biosaddr"
+//           biosAddr = textfield
+//           spacer
+//           "vgabiosimg"
+//           vgabios = textfield
+//           browse button
+//           "vgabiosaddr"
+//           "0xc0000"
+//     box2 = static box "Optional ROM images"
+//       box2sizer:
+//         box2gridSizer, 3 columns:
+//           "opt rom 1"
+//           romImage[0] = textfield
+//           browse button
+//           "opt rom 2"
+//           romImage[1] = textfield
+//           browse button
+//           "opt rom 3"
+//           romImage[2] = textfield
+//           browse button
+//           "opt rom 4"
+//           romImage[3] = textfield
+//           browse button
+//     buttonSizer:
+//       help
+//       cancel
+//       ok
+//
+
+// all events go to OnEvent method
+BEGIN_EVENT_TABLE(ConfigMemoryDialog, wxDialog)
+  EVT_BUTTON(-1, ConfigMemoryDialog::OnEvent)
+  EVT_CHECKBOX(-1, ConfigMemoryDialog::OnEvent)
+  EVT_TEXT(-1, ConfigMemoryDialog::OnEvent)
+END_EVENT_TABLE()
+
+ConfigMemoryDialog::ConfigMemoryDialog(
+    wxWindow* parent,
+    wxWindowID id)
+  : ParamDialog (parent, id)
+{
+  bx_id standardList[] = {BXP_MEM_SIZE, BXP_ROM_PATH, BXP_ROM_ADDRESS,
+                          BXP_VGA_ROM_PATH, BXP_NULL};
+  bx_id optionalList[] = {BXP_OPTROM1_PATH, BXP_OPTROM1_ADDRESS,
+                          BXP_OPTROM2_PATH, BXP_OPTROM2_ADDRESS,
+                          BXP_OPTROM3_PATH, BXP_OPTROM3_ADDRESS,
+                          BXP_OPTROM4_PATH, BXP_OPTROM4_ADDRESS, BXP_NULL};
+  int insideStaticBoxMargin = 15;
+  SetTitle (CONFIG_MEMORY_TITLE);
+
+  // top level objects
+  wxStaticBox *box1 = new wxStaticBox (this, -1, CONFIG_MEMORY_BOX1_TITLE);
+  wxStaticBoxSizer *box1sizer = new wxStaticBoxSizer (box1, wxVERTICAL);
+  mainSizer->Add (box1sizer, 0, wxALL|wxGROW, 10);
+
+  wxStaticBox *box2 = new wxStaticBox (this, -1, CONFIG_MEMORY_BOX2_TITLE);
+  wxStaticBoxSizer *box2sizer = new wxStaticBoxSizer (box2, wxVERTICAL);
+  mainSizer->Add (box2sizer, 0, wxALL|wxGROW, 10);
+
+  // box1 contents
+  box1gridSizer = new wxFlexGridSizer (3);
+  box1sizer->Add (box1gridSizer, 0, wxALL, insideStaticBoxMargin);
+  AddParamList (standardList, box1gridSizer);
+  wxStaticText *vgabiosaddr1 = new wxStaticText (this, -1, "VGA BIOS address");
+  box1gridSizer->Add (vgabiosaddr1, 0, wxALIGN_RIGHT|wxALL, 2);
+  wxStaticText *vgabiosaddr2 = new wxStaticText (this, -1, "0xC0000");
+  box1gridSizer->Add (vgabiosaddr2, 0, wxALL, 2);
+  // box2 contents
+  box2gridSizer = new wxFlexGridSizer (3);
+  box2sizer->Add (box2gridSizer, 0, wxALL, insideStaticBoxMargin);
+  AddParamList (optionalList, box2gridSizer);
 }
 
 /////////////////////////////////////////////////////////////////
@@ -2470,12 +1883,12 @@ CpuRegistersDialog::CopyParamToGui ()
 // synchronous event called BX_SYNC_GET_DBG_COMMAND which is sent from
 // the simulation thread to wxWindows.  When the user chooses a debugger
 // action (step, continue, breakpoint, etc.) the simulation awakens and
-// interprets the event by calling a function in debug/dbg_main.cc.
+// interprets the event by calling a function in bx_debug/dbg_main.cc.
 //
 // The equivalent of a control-C is pressing the "Stop" button during
 // a long step or continue command.  This can be implemented by setting
 // bx_guard.interrupt_requested = 1, just like the SIGINT handler in
-// debug/dbg_main.cc does.
+// bx_debug/dbg_main.cc does.
 // 
 // input loop model is good.  Create a debugger input loop, possibly in
 // siminterface.
@@ -2613,7 +2026,6 @@ wxChoice *makeLogOptionChoiceBox (wxWindow *parent,
 {
   static char *choices[] = LOG_OPTS_CHOICES;
   static int integers[LOG_OPTS_N_CHOICES] = {0, 1, 2, 3, 4};
-  static const wxString stupid[2] = { "little1", "little2" };
   wxChoice *control = new wxChoice (parent, id, wxDefaultPosition, wxDefaultSize);
   int lastChoice = 0;  // remember index of last choice
   int nchoice = includeNoChange? LOG_OPTS_N_CHOICES : LOG_OPTS_N_CHOICES_NORMAL;

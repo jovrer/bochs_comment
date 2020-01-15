@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_tap.cc,v 1.11 2002/11/20 19:06:23 bdenney Exp $
+// $Id: eth_tap.cc,v 1.16 2003/10/02 11:33:41 danielg4 Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001  MandrakeSoft S.A.
@@ -92,15 +92,21 @@
 #include <signal.h>
 #include <sys/param.h>
 #include <sys/ioctl.h>
+#ifndef __APPLE__
 #include <sys/poll.h>
+#endif
 #include <sys/time.h>
 #include <sys/resource.h>
-#include <asm/types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
+#if defined(__FreeBSD__) || defined(__APPLE__)  // Should be fixed for other *BSD
+#include <net/if.h>
+#else
+#include <asm/types.h>
 #include <linux/netlink.h>
 #include <linux/if.h>
+#endif
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -160,6 +166,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
   }
   sprintf (filename, "/dev/%s", netif);
 
+#if defined(__linux__)
   // check if the TAP devices is running, and turn on ARP.  This is based
   // on code from the Mac-On-Linux project. http://http://www.maconlinux.org/
   int sock = socket( AF_INET, SOCK_DGRAM, 0 );
@@ -190,6 +197,7 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
     }
   }
   close(sock);
+#endif
 
   fd = open (filename, O_RDWR);
   if (fd < 0) {
@@ -208,13 +216,24 @@ bx_tap_pktmover_c::bx_tap_pktmover_c(const char *netif,
 
   BX_INFO (("eth_tap: opened %s device", netif));
 
-#if BX_ETH_TAP_LOGGING
+  /* Execute the configuration script */
+  char intname[IFNAMSIZ];
+  strcpy(intname,netif);
+  char *scriptname=bx_options.ne2k.Oscript->getptr();
+  if((scriptname != NULL)
+   &&(strcmp(scriptname, "") != 0)
+   &&(strcmp(scriptname, "none") != 0)) {
+    if (execute_script(scriptname, intname) < 0)
+      BX_ERROR (("execute script '%s' on %s failed", scriptname, intname));
+    }
+
   // Start the rx poll 
   this->rx_timer_index = 
     bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
 				1, 1, "eth_tap"); // continuous, active
   this->rxh   = rxh;
   this->rxarg = rxarg;
+#if BX_ETH_TAP_LOGGING
   // eventually Bryce wants txlog to dump in pcap format so that
   // tcpdump -r FILE can read it and interpret packets.
   txlog = fopen ("ne2k-tx.log", "wb");
@@ -250,9 +269,15 @@ bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
   Bit8u txbuf[BX_PACKET_BUFSIZ];
   txbuf[0] = 0;
   txbuf[1] = 0;
+#if defined(__FreeBSD__) || defined(__APPLE__)  // Should be fixed for other *BSD
+  memcpy (txbuf, buf, io_len);
+  unsigned int size = write (fd, txbuf, io_len);
+  if (size != io_len) {
+#else
   memcpy (txbuf+2, buf, io_len);
   unsigned int size = write (fd, txbuf, io_len+2);
   if (size != io_len+2) {
+#endif
     BX_PANIC (("write on tap device: %s", strerror (errno)));
   } else {
     BX_INFO (("wrote %d bytes + 2 byte pad on tap", io_len));
@@ -266,7 +291,7 @@ bx_tap_pktmover_c::sendpkt(void *buf, unsigned io_len)
   // dump packet in hex into an ascii log file
   fprintf (txlog_txt, "NE2K transmitting a packet, length %u\n", io_len);
   Bit8u *charbuf = (Bit8u *)buf;
-  for (n=0; n<io_len; n++) {
+  for (n=0; n<(int)io_len; n++) {
     if (((n % 16) == 0) && n>0)
       fprintf (txlog_txt, "\n");
     fprintf (txlog_txt, "%02x ", charbuf[n]);
@@ -293,13 +318,19 @@ void bx_tap_pktmover_c::rx_timer ()
   nbytes = read (fd, buf, sizeof(buf));
 
   // hack: discard first two bytes
+#if defined(__FreeBSD__) || defined(__APPLE__)  // Should be fixed for other *BSD
+  rxbuf = buf;
+#else
   rxbuf = buf+2;
   nbytes-=2;
+#endif
   
   // hack: TAP device likes to create an ethernet header which has
   // the same source and destination address FE:FD:00:00:00:00.
   // Change the dest address to FE:FD:00:00:00:01.
+#if defined(__linux__)
   rxbuf[5] = 1;
+#endif
 
   if (nbytes>0)
     BX_INFO (("tap read returned %d bytes", nbytes));

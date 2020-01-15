@@ -1,6 +1,6 @@
 ###################################################################
 # doc/docbook/Makefile
-# $Id: Makefile.in,v 1.12.2.1 2003/01/01 22:47:04 cbothamy Exp $
+# $Id: Makefile.in,v 1.17 2004/01/08 22:27:07 cbothamy Exp $
 #
 # Builds documentation in various formats from SGML source, and
 # allows easy update to the Bochs web site.
@@ -41,12 +41,23 @@ all: $(SECTION_HTML)
 user/book1.html: $(srcdir)/user/user.dbk
 	-mkdir -p user
 	$(DOCBOOK2HTML) -o user $(srcdir)/user/user.dbk
+	if [ -f $(srcdir)/user/index.html ]; \
+		then mv $(srcdir)/user/index.html $(srcdir)/user/book1.html; \
+	fi
+
 documentation/book1.html: $(srcdir)/documentation/documentation.dbk
 	-mkdir -p documentation
 	$(DOCBOOK2HTML) -o documentation $(srcdir)/documentation/documentation.dbk 
+	if [ -f $(srcdir)/documentation/index.html ]; \
+		then mv $(srcdir)/documentation/index.html $(srcdir)/documentation/book1.html; \
+	fi
+
 development/book1.html: $(srcdir)/development/development.dbk
 	-mkdir -p development
 	$(DOCBOOK2HTML) -o development $(srcdir)/development/development.dbk
+	if [ -f $(srcdir)/development/index.html ]; \
+		then mv $(srcdir)/development/index.html $(srcdir)/development/book1.html; \
+	fi
 
 fixperm::
 	# fix permissions locally so that tar will install things right
@@ -58,11 +69,12 @@ copy_from_srcdir::
 
 $(TARGZ): all copy_from_srcdir fixperm
 	rm -f $(TARGZ)
-	tar cf - $(INSTALL_LIST) --exclude=CVS --exclude=*.dbk | gzip > $(TARGZ)
+	tar cf - $(INSTALL_LIST) --exclude=CVS --exclude=.cvsignore --exclude=*.dbk | gzip > $(TARGZ)
 
 install: all copy_from_srcdir
-	for i in $(DESTDIR)$(docdir); do if test ! -d $$i; then mkdir $$i; fi; done
-	for i in $(INSTALL_LIST); do cp -r $$i $(DESTDIR)$(docdir); done
+	for i in $(DESTDIR)$(docdir); do if test ! -d $$i; then mkdir -p $$i; fi; done
+	#for i in $(INSTALL_LIST); do cp -r $$i $(DESTDIR)$(docdir); done
+	for i in $(INSTALL_LIST); do tar cf - --exclude=CVS --exclude=.cvsignore --exclude=*.dbk $$i | ( cd $(DESTDIR)$(docdir); tar xf - ); done
 
 test_sfuser:
 	@if test "$$SFUSER" = ""; then SFUSER=`whoami`; export SFUSER; fi; \

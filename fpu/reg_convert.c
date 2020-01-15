@@ -1,6 +1,6 @@
 /*---------------------------------------------------------------------------+
  |  reg_convert.c                                                            |
- |  $Id: reg_convert.c,v 1.2 2001/10/06 03:53:46 bdenney Exp $
+ |  $Id: reg_convert.c,v 1.5 2003/10/04 12:32:56 sshwarts Exp $
  |                                                                           |
  |  Convert register representation.                                         |
  |                                                                           |
@@ -15,7 +15,8 @@
 #include "fpu_emu.h"
 
 
-int FPU_to_exp16(FPU_REG const *a, FPU_REG *x)
+int  BX_CPP_AttrRegparmN(2)
+FPU_to_exp16(FPU_REG const *a, FPU_REG *x)
 {
   int sign = getsign(a);
 
@@ -50,7 +51,7 @@ int FPU_to_exp16(FPU_REG const *a, FPU_REG *x)
 
   if ( !(x->sigh & 0x80000000) )
     {
-      EXCEPTION(EX_INTERNAL | 0x180);
+      INTERNAL(0x180);
     }
 
   return sign;

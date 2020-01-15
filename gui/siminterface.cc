@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: siminterface.cc,v 1.93 2002/12/17 05:58:44 bdenney Exp $
+// $Id: siminterface.cc,v 1.105 2004/01/05 22:18:01 cbothamy Exp $
 /////////////////////////////////////////////////////////////////////////
 //
 // See siminterface.h for description of the siminterface concept.
@@ -435,25 +435,35 @@ bx_real_sim_c::get_cdrom_options (int level, bx_atadevice_options *out, int *whe
 
 char *bochs_start_names[] = { "quick", "load", "edit", "run" };
 int n_bochs_start_names = 3;
-char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", NULL };
-int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9 };
-int n_floppy_type_names = 6;
+
+char *floppy_type_names[] = { "none", "1.2M", "1.44M", "2.88M", "720K", "360K", "160K", "180K", "320K", NULL };
+int floppy_type_n_sectors[] = { -1, 80*2*15, 80*2*18, 80*2*36, 80*2*9, 40*2*9, 40*1*8, 40*1*9, 40*2*8 };
+int n_floppy_type_names = 9;
+
 char *floppy_status_names[] = { "ejected", "inserted", NULL };
 int n_floppy_status_names = 2;
-char *floppy_bootdisk_names[] = { "floppy", "hard","cdrom", NULL };
+char *floppy_bootdisk_names[] = { "floppy", "disk","cdrom", NULL };
 int n_floppy_bootdisk_names = 3;
 char *loader_os_names[] = { "none", "linux", "nullkernel", NULL };
 int n_loader_os_names = 3;
 char *keyboard_type_names[] = { "xt", "at", "mf", NULL };
 int n_keyboard_type_names = 3;
-char *atadevice_type_names[] = { "hard disk", "cdrom", NULL };
+
+char *atadevice_type_names[] = { "disk", "cdrom", NULL };
 int n_atadevice_type_names = 2;
+//char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "split", "undoable", "growing", "volatile", "z-undoable", "z-volatile", NULL };
+char *atadevice_mode_names[] = { "flat", "concat", "external", "dll", "sparse", "vmware3", "undoable", "growing", "volatile", NULL };
+int n_atadevice_mode_names = 9;
 char *atadevice_status_names[] = { "ejected", "inserted", NULL };
 int n_atadevice_status_names = 2;
 char *atadevice_biosdetect_names[] = { "none", "auto", "cmos", NULL };
 int n_atadevice_biosdetect_names = 3;
 char *atadevice_translation_names[] = { "none", "lba", "large", "rechs", "auto", NULL };
-int n_atadevice_translation_names = 3;
+int n_atadevice_translation_names = 5;
+char *clock_sync_names[] = { "none", "realtime", "slowdown", "both", NULL };
+int clock_sync_n_names=4;
+
+
 
 char *
 bx_real_sim_c::get_floppy_type_name (int type)
@@ -528,7 +538,7 @@ bx_real_sim_c::ask_filename (char *filename, int maxlen, char *prompt, char *the
   // implement using ASK_PARAM on a newly created param.  I can't use
   // ask_param because I don't intend to register this param.
   BxEvent event;
-  bx_param_string_c param (BXP_NULL, "filename", prompt, the_default, maxlen);
+  bx_param_string_c param (BXP_NULL, prompt, "filename", the_default, maxlen);
   flags |= param.IS_FILENAME;
   param.get_options()->set (flags);
   event.type = BX_SYNC_EVT_ASK_PARAM;
@@ -791,6 +801,7 @@ bx_param_c::bx_param_c (bx_id id, char *name, char *description)
   this->description = description;
   this->text_format = default_text_format;
   this->ask_format = NULL;
+  this->label = NULL;
   this->runtime_param = 0;
   this->enabled = 1;
   SIM->register_param (id, this);
@@ -814,6 +825,7 @@ bx_param_num_c::bx_param_num_c (bx_id id,
   this->initial_val = initial_val;
   this->val.number = initial_val;
   this->handler = NULL;
+  this->enable_handler = NULL;
   this->base = default_base;
   // dependent_list must be initialized before the set(),
   // because set calls update_dependents().
@@ -841,6 +853,12 @@ bx_param_num_c::set_handler (param_event_handler handler)
   this->handler = handler; 
   // now that there's a handler, call set once to run the handler immediately
   //set (get ());
+}
+
+void 
+bx_param_num_c::set_enable_handler (param_enable_handler handler)
+{ 
+  this->enable_handler = handler; 
 }
 
 void bx_param_num_c::set_dependent_list (bx_list_c *l) {
@@ -871,8 +889,8 @@ bx_param_num_c::set (Bit64s newval)
     // just set the value.  This code does not check max/min.
     val.number = newval;
   }
-  if ((val.number < min || val.number > max) && max != BX_MAX_BIT64U)
-    BX_PANIC (("numerical parameter %s was set to %lld, which is out of range %lld to %lld", get_name (), val.number, min, max));
+  if ((val.number < min || val.number > max) && (Bit64u)max != BX_MAX_BIT64U)
+    BX_PANIC (("numerical parameter %s was set to " FMT_LL "d, which is out of range " FMT_LL "d to " FMT_LL "d", get_name (), val.number, min, max));
   if (dependent_list != NULL) update_dependents ();
 }
 
@@ -901,6 +919,10 @@ void bx_param_num_c::update_dependents ()
 void
 bx_param_num_c::set_enabled (int en)
 {
+  // The enable handler may wish to allow/disallow the action
+  if (enable_handler) {
+    en = (*enable_handler) (this, en);
+    }
   bx_param_c::set_enabled (en);
   update_dependents ();
 }
@@ -1049,23 +1071,23 @@ void
 bx_shadow_num_c::set (Bit64s newval)
 {
   Bit64u tmp = 0;
-  if ((newval < min || newval > max) && max != BX_MAX_BIT64U)
-    BX_PANIC (("numerical parameter %s was set to %lld, which is out of range %lld to %lld", get_name (), newval, min, max));
+  if ((newval < min || newval > max) && (Bit64u)max != BX_MAX_BIT64U)
+    BX_PANIC (("numerical parameter %s was set to " FMT_LL "d, which is out of range " FMT_LL "d to " FMT_LL "d", get_name (), newval, min, max));
   switch (varsize) {
     case 8: 
       tmp = (*(val.p8bit) >> lowbit) & mask;
       tmp |= (newval & mask) << lowbit;
-      *(val.p8bit) = tmp;
+      *(val.p8bit) = (Bit8s)tmp;
       break;
     case 16:
       tmp = (*(val.p16bit) >> lowbit) & mask;
       tmp |= (newval & mask) << lowbit;
-      *(val.p16bit) = tmp;
+      *(val.p16bit) = (Bit16s)tmp;
       break;
     case 32:
       tmp = (*(val.p32bit) >> lowbit) & mask;
       tmp |= (newval & mask) << lowbit;
-      *(val.p32bit) = tmp;
+      *(val.p32bit) = (Bit32s)tmp;
       break;
     case 64:
       tmp = (*(val.p64bit) >> lowbit) & mask;
@@ -1180,6 +1202,7 @@ bx_param_string_c::bx_param_string_c (bx_id id,
   this->val = new char[maxsize];
   this->initial_val = new char[maxsize];
   this->handler = NULL;
+  this->enable_handler = NULL;
   this->maxsize = maxsize;
   strncpy (this->val, initial_val, maxsize);
   strncpy (this->initial_val, initial_val, maxsize);
@@ -1229,6 +1252,22 @@ bx_param_string_c::set_handler (param_string_event_handler handler)
   this->handler = handler; 
   // now that there's a handler, call set once to run the handler immediately
   //set (getptr ());
+}
+
+void 
+bx_param_string_c::set_enable_handler (param_enable_handler handler)
+{ 
+  this->enable_handler = handler; 
+}
+
+void
+bx_param_string_c::set_enabled (int en)
+{
+  // The enable handler may wish to allow/disallow the action
+  if (enable_handler) {
+    en = (*enable_handler) (this, en);
+    }
+  bx_param_c::set_enabled (en);
 }
 
 Bit32s
