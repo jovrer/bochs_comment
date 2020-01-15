@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amd_k6_2_chomper.cc 10877 2011-12-28 21:54:51Z sshwarts $
+// $Id: amd_k6_2_chomper.cc 11679 2013-04-17 19:46:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -27,15 +27,12 @@
 
 #define LOG_THIS cpu->
 
-#if BX_CPU_LEVEL >= 5 && BX_SUPPORT_X86_64 == 0
+#if BX_CPU_LEVEL >= 5
 
 amd_k6_2_chomper_t::amd_k6_2_chomper_t(BX_CPU_C *cpu): bx_cpuid_t(cpu)
 {
-  if (BX_SUPPORT_X86_64)
-    BX_PANIC(("x86-64 should be disabled for AMD K6-2 configuration"));
-
-  if (BX_CPU_LEVEL != 5)
-    BX_PANIC(("AMD K6-2 configuration should be compiled with BX_CPU_LEVEL=5"));
+  if (BX_CPU_LEVEL < 5)
+    BX_PANIC(("AMD K6-2 configuration should be compiled with BX_CPU_LEVEL=5 or higher"));
 
   BX_INFO(("WARNING: 3DNow! is not implemented yet !"));
 }

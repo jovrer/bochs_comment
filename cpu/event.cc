@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: event.cc 11653 2013-03-13 19:06:55Z sshwarts $
+// $Id: event.cc 11683 2013-05-04 19:10:50Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011-2012 Stanislav Shwartsman
@@ -373,9 +373,13 @@ bx_bool BX_CPU_C::handleAsyncEvent(void)
 // Certain instructions inhibit interrupts, some debug exceptions and single-step traps.
 void BX_CPU_C::inhibit_interrupts(unsigned mask)
 {
-  BX_DEBUG(("inhibit interrupts mask = %d", mask));
-  BX_CPU_THIS_PTR inhibit_mask = mask;
-  BX_CPU_THIS_PTR inhibit_icount = get_icount() + 1; // inhibit for next instruction
+  // Loading of SS disables interrupts until the next instruction completes
+  // but only under assumption that previous instruction didn't load SS also.
+  if (! interrupts_inhibited(BX_INHIBIT_INTERRUPTS_BY_MOVSS)) {
+    BX_DEBUG(("inhibit interrupts mask = %d", mask));
+    BX_CPU_THIS_PTR inhibit_mask = mask;
+    BX_CPU_THIS_PTR inhibit_icount = get_icount() + 1; // inhibit for next instruction
+  }
 }
 
 bx_bool BX_CPU_C::interrupts_inhibited(unsigned mask)
@@ -386,6 +390,10 @@ bx_bool BX_CPU_C::interrupts_inhibited(unsigned mask)
 void BX_CPU_C::deliver_SIPI(unsigned vector)
 {
   if (BX_CPU_THIS_PTR activity_state == BX_ACTIVITY_STATE_WAIT_FOR_SIPI) {
+#if BX_SUPPORT_VMX
+    if (BX_CPU_THIS_PTR in_vmx_guest)
+      VMexit(VMX_VMEXIT_SIPI, vector);
+#endif
     BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
     RIP = 0;
     load_seg_reg(&BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS], vector*0x100);
@@ -393,7 +401,7 @@ void BX_CPU_C::deliver_SIPI(unsigned vector)
     BX_INFO(("CPU %d started up at %04X:%08X by APIC",
                    BX_CPU_THIS_PTR bx_cpuid, vector*0x100, EIP));
   } else {
-    BX_INFO(("CPU %d started up by APIC, but was not halted at the time", BX_CPU_THIS_PTR bx_cpuid));
+    BX_INFO(("CPU %d started up by APIC, but was not halted at that time", BX_CPU_THIS_PTR bx_cpuid));
   }
 }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: param_names.h 11633 2013-02-16 12:22:13Z vruppert $
+// $Id: param_names.h 11679 2013-04-17 19:46:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2009-2013  The Bochs Project
@@ -46,6 +46,7 @@
 #define BXPN_MWAIT_IS_NOP                "cpu.mwait_is_nop"
 #define BXPN_VENDOR_STRING               "cpuid.vendor_string"
 #define BXPN_BRAND_STRING                "cpuid.brand_string"
+#define BXPN_CPUID_LEVEL                 "cpuid.level"
 #define BXPN_CPUID_FAMILY                "cpuid.family"
 #define BXPN_CPUID_MODEL                 "cpuid.model"
 #define BXPN_CPUID_STEPPING              "cpuid.stepping"

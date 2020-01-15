@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: core_duo_t2400_yonah.cc 11217 2012-06-14 18:56:47Z sshwarts $
+// $Id: core_duo_t2400_yonah.cc 11685 2013-05-07 15:34:58Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -417,10 +417,16 @@ void core_duo_t2400_yonah_t::get_std_cpuid_leaf_6(cpuid_function_t *leaf) const
 void core_duo_t2400_yonah_t::get_std_cpuid_leaf_A(cpuid_function_t *leaf) const
 {
   // CPUID function 0x0000000A - Architectural Performance Monitoring Leaf
+/*
   leaf->eax = 0x07280201;
   leaf->ebx = 0x00000000;
   leaf->ecx = 0x00000000;
   leaf->edx = 0x00000000;
+*/
+  leaf->eax = 0; // reporting true capabilities breaks Win7 x64 installation
+  leaf->ebx = 0;
+  leaf->ecx = 0;
+  leaf->edx = 0;
 
   BX_INFO(("WARNING: Architectural Performance Monitoring is not implemented"));
 }

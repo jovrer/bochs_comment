@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amd_k6_2_chomper.h 10668 2011-09-14 20:22:24Z sshwarts $
+// $Id: amd_k6_2_chomper.h 11679 2013-04-17 19:46:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -21,10 +21,10 @@
 //
 /////////////////////////////////////////////////////////////////////////
 
-#ifndef BX_amd_k6_2_chomper_CPUID_DEFINITIONS_H
-#define BX_amd_k6_2_chomper_CPUID_DEFINITIONS_H
+#ifndef BX_AMD_K6_2_CHOMPER_CPUID_DEFINITIONS_H
+#define BX_AMD_K6_2_CHOMPER_CPUID_DEFINITIONS_H
 
-#if BX_CPU_LEVEL >= 5 && BX_SUPPORT_X86_64 == 0
+#if BX_CPU_LEVEL >= 5
 
 #include "cpu/cpuid.h"
 

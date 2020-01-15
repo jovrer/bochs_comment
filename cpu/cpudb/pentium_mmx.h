@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pentium_mmx.h 11033 2012-02-13 23:29:01Z sshwarts $
+// $Id: pentium_mmx.h 11679 2013-04-17 19:46:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -24,7 +24,7 @@
 #ifndef BX_PENTIUM_MMX_CPUID_DEFINITIONS_H
 #define BX_PENTIUM_MMX_CPUID_DEFINITIONS_H
 
-#if BX_CPU_LEVEL >= 5 && BX_SUPPORT_X86_64 == 0
+#if BX_CPU_LEVEL >= 5
 
 #include "cpu/cpuid.h"
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpu.h 11648 2013-03-06 21:11:23Z sshwarts $
+// $Id: cpu.h 11680 2013-04-17 19:59:56Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2013  The Bochs Project
@@ -1100,12 +1100,17 @@ public: // for now...
                 * or if not related to current instruction,
                 * 0 if current CS:IP caused exception */
 
-#define BX_ACTIVITY_STATE_ACTIVE        (0)
-#define BX_ACTIVITY_STATE_HLT           (1)
-#define BX_ACTIVITY_STATE_SHUTDOWN      (2)
-#define BX_ACTIVITY_STATE_WAIT_FOR_SIPI (3)
-#define BX_ACTIVITY_STATE_MWAIT         (4)
-#define BX_ACTIVITY_STATE_MWAIT_IF      (5)
+  enum CPU_Activity_State {
+    BX_ACTIVITY_STATE_ACTIVE = 0,
+    BX_ACTIVITY_STATE_HLT,
+    BX_ACTIVITY_STATE_SHUTDOWN,
+    BX_ACTIVITY_STATE_WAIT_FOR_SIPI,
+    BX_ACTIVITY_STATE_MWAIT,
+    BX_ACTIVITY_STATE_MWAIT_IF
+  };
+
+#define BX_VMX_LAST_ACTIVITY_STATE (BX_ACTIVITY_STATE_WAIT_FOR_SIPI)
+
   unsigned activity_state;
 
 #define BX_EVENT_NMI                          (1 <<  0)
@@ -4056,6 +4061,7 @@ public: // for now...
 
   BX_SMF void reset(unsigned source);
   BX_SMF void shutdown(void);
+  BX_SMF void enter_sleep_state(unsigned state);
   BX_SMF void handleCpuModeChange(void);
   BX_SMF void handleCpuContextChange(void);
   BX_SMF void handleInterruptMaskChange(void);
@@ -4190,6 +4196,8 @@ public: // for now...
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_pae(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_pge(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_pse(void);
+  BX_SMF BX_CPP_INLINE int bx_cpuid_support_pat(void);
+  BX_SMF BX_CPP_INLINE int bx_cpuid_support_mtrr(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_mmx(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_sse(void);
   BX_SMF BX_CPP_INLINE int bx_cpuid_support_sep(void);
@@ -4770,6 +4778,16 @@ BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_debug_extensions(void)
 BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pse(void)
 {
   return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PSE) != 0;
+}
+
+BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pat(void)
+{
+  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_PAT) != 0;
+}
+
+BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_mtrr(void)
+{
+  return (BX_CPU_THIS_PTR cpu_extensions_bitmask & BX_CPU_MTRR) != 0;
 }
 
 BX_CPP_INLINE int BX_CPU_C::bx_cpuid_support_pae(void)

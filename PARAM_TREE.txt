@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt 11633 2013-02-16 12:22:13Z vruppert $
+$Id: PARAM_TREE.txt 11679 2013-04-17 19:46:11Z sshwarts $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -29,6 +29,7 @@ cpu
   mwait_is_nop
 
 cpuid
+  level
   family
   model
   stepping

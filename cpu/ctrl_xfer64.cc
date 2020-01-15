@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ctrl_xfer64.cc 11648 2013-03-06 21:11:23Z sshwarts $
+// $Id: ctrl_xfer64.cc 11683 2013-05-04 19:10:50Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2012  The Bochs Project
@@ -73,7 +73,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear64(bxInstruction_c *i)
   Bit64u return_RIP = stack_read_qword(RSP);
 
   if (! IsCanonical(return_RIP)) {
-    BX_ERROR(("RETnear64: canonical RIP violation %08x%08x", GET32H(return_RIP), GET32L(return_RIP)));
+    BX_ERROR(("RETnear64: canonical RIP violation 0x%08x%08x", GET32H(return_RIP), GET32L(return_RIP)));
     exception(BX_GP_EXCEPTION, 0);
   }
 

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.cc 11645 2013-02-27 19:11:28Z sshwarts $
+// $Id: crregs.cc 11679 2013-04-17 19:46:11Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2010-2012 Stanislav Shwartsman
@@ -1125,7 +1125,7 @@ Bit32u BX_CPU_C::get_cr4_allow_mask(void)
 
   // CR4 bits definitions:
   //   [31-22] Reserved, Must be Zero
-  //   [21]    SMAP: Supervisor Mode Access Protection R/W
+  //   [21]    SMAP: Supervisor Mode Access Prevention R/W
   //   [20]    SMEP: Supervisor Mode Execution Protection R/W
   //   [19]    Reserved, Must be Zero
   //   [18]    OSXSAVE: Operating System XSAVE Support R/W

@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rombios.c 11569 2013-01-08 18:12:14Z sshwarts $
+// $Id: rombios.c 11682 2013-04-21 20:09:49Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002  MandrakeSoft S.A.
@@ -927,7 +927,7 @@ Bit16u cdrom_boot();
 
 #endif // BX_ELTORITO_BOOT
 
-static char bios_cvs_version_string[] = "$Revision: 11569 $ $Date: 2013-01-08 19:12:14 +0100 (Di, 08. Jan 2013) $";
+static char bios_cvs_version_string[] = "$Revision: 11682 $ $Date: 2013-04-21 22:09:49 +0200 (So, 21. Apr 2013) $";
 
 #define BIOS_COPYRIGHT_STRING "(c) 2002-2010 MandrakeSoft S.A. Written by Kevin Lawton & the Bochs team."
 
@@ -11620,6 +11620,31 @@ int08_store_ticks:
   iret
 
 .org 0xfef3 ; Initial Interrupt Vector Offsets Loaded by POST
+initial_int_vector_offset_08_1f:
+  dw int08_handler
+  dw int09_handler
+  dw dummy_master_pic_irq_handler
+  dw dummy_master_pic_irq_handler
+  dw dummy_master_pic_irq_handler
+  dw dummy_master_pic_irq_handler
+  dw int0e_handler
+  dw dummy_master_pic_irq_handler
+  dw int10_handler
+  dw int11_handler
+  dw int12_handler
+  dw int13_handler
+  dw int14_handler
+  dw int15_handler
+  dw int16_handler
+  dw int17_handler
+  dw int18_handler
+  dw int19_handler
+  dw int1a_handler
+  dw dummy_iret_handler
+  dw dummy_iret_handler
+  dw 0
+  dw diskette_param_table2
+  dw 0
 
 ;------------------------------------------------
 ;- IRET Instruction for Dummy Interrupt Handler -
