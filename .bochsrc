@@ -52,7 +52,7 @@ vgaromimage: bios/VGABIOS-elpin-2.40
 #floppya: file=../1.44, status=ejected
 #floppya: 1_44=/dev/fd0H1440, status=ejected
 #floppya: 1_2=../1_2, status=ejected
-floppya: 1_44=a.img, status=inserted
+floppya: 1_44=test/test.img, status=inserted
 
 #=======================================================================
 # FLOPPYB:
