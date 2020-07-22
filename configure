@@ -3990,7 +3990,7 @@ if test "$with_x11" = yes; then
   echo "$ac_t""X windows" 1>&6
   if test "$no_x" = yes; then
     echo ERROR: X windows gui was selected, but X windows libraries were not found.
-    exit 1
+    #exit 1
   fi
   cat >> confdefs.h <<\EOF
 #define BX_WITH_X11 1
