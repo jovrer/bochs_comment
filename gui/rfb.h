@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: rfb.h 11378 2012-08-28 17:16:10Z vruppert $
+// $Id: rfb.h 11698 2013-05-30 09:31:21Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,6 +24,10 @@
 #ifndef BX_RFB_GUI
 #define BX_RFB_GUI
 
+#ifdef HAVE_LIBVNCSERVER
+#include <rfb/rfb.h>
+#endif
+
 // Define the RFB types
 typedef Bit32u         U32;
 typedef Bit16u         U16;
@@ -31,6 +35,9 @@ typedef Bit8u          U8;
 typedef Bit32s         S32;
 typedef Bit16s         S16;
 typedef Bit8s          S8;
+
+
+#ifndef HAVE_LIBVNCSERVER
 
 // Port range
 #define BX_RFB_PORT_MIN 5900
@@ -392,5 +399,7 @@ typedef union {
 	rfbBellMessage              b;
 	rfbServerCutTextMessage     sct;
 } rfbServerToClientMessage;
+
+#endif // HAVE_LIBVNCSERVER
 
 #endif

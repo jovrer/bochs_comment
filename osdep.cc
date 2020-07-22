@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: osdep.cc 13297 2017-09-14 16:18:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -30,6 +30,7 @@
 //
 
 #include "bochs.h"
+#include "bxthread.h"
 
 //////////////////////////////////////////////////////////////////////
 // Missing library functions.  These should work on any platform
@@ -192,7 +193,7 @@ int main (int argc, char **argv)
   Bit64s ll;
   while (1) {
     printf ("Enter a long int: ");
-    gets (buf);
+    fgets (buf, sizeof(buf), stdin);
     l = strtoul (buf, &endbuf, 10);
     printf ("As a long, %ld\n", l);
     printf ("Endbuf is at buf[%d]\n", endbuf-buf);
@@ -206,14 +207,12 @@ int main (int argc, char **argv)
 
 #if !BX_HAVE_STRDUP
 /* XXX use real strdup */
-char *bx_strdup(const char *str)
+char *bx_strdup(const char *s)
 {
-  char *temp = (char*)malloc(strlen(str)+1);
-  sprintf(temp, "%s", str);
-  return temp;
-
-  // Well, I'm sure this isn't how strdup is REALLY implemented,
-  // but it works...
+  char *p = malloc (strlen (s) + 1);   // allocate memory
+  if (p != NULL)
+      strcpy (p,s);                    // copy string
+  return p;                            // return the memory
 }
 #endif  /* !BX_HAVE_STRDUP */
 
@@ -303,6 +302,40 @@ int fd_stat(struct stat *buf)
   return result;
 }
 #endif /* BX_WITH_MACOS */
+
+//////////////////////////////////////////////////////////////////////
+// Missing library functions, implemented for MorphOS only
+//////////////////////////////////////////////////////////////////////
+
+#ifdef __MORPHOS__
+#include <stdio.h>
+#include <time.h>
+typedef unsigned int u_int32_t;
+typedef unsigned short u_int16_t;
+typedef unsigned char u_int8_t;
+
+int fseeko(FILE *stream, off_t offset, int whence)
+{
+  while(offset != (long) offset)
+  {
+     long pos = (offset < 0) ? LONG_MIN : LONG_MAX;
+     if(fseek(stream, pos, whence) != 0)
+       return -1;
+     offset -= pos;
+     whence = SEEK_CUR;
+  }
+  return fseek(stream, (long) offset, whence);
+}
+
+struct tm *localtime_r(const time_t *timep, struct tm *result)
+{
+  struct tm *s = localtime(timep);
+  if(s == NULL)
+    return NULL;
+  *result = *s;
+  return(result);
+}
+#endif
 
 //////////////////////////////////////////////////////////////////////
 // New functions to replace library functions

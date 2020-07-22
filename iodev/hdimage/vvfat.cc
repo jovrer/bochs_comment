@@ -1,12 +1,12 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vvfat.cc 11384 2012-08-31 12:08:19Z vruppert $
+// $Id: vvfat.cc 13475 2018-03-18 09:07:31Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 // Virtual VFAT image support (shadows a local directory)
 // ported from QEMU block driver with some additions (see below)
 //
 // Copyright (c) 2004,2005  Johannes E. Schindelin
-// Copyright (C) 2010-2012  The Bochs Project
+// Copyright (C) 2010-2018  The Bochs Project
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -59,16 +59,7 @@
 #define VVFAT_BOOT "vvfat_boot.bin"
 #define VVFAT_ATTR "vvfat_attr.cfg"
 
-#if defined (BX_LITTLE_ENDIAN)
-#define htod16(val) (val)
-#else
-#define htod16(val) ( (((val)&0xff00)>>8) | (((val)&0xff)<<8) )
-#endif
-#define dtoh16 htod16
-
-#ifndef F_OK
-#define F_OK 0
-#endif
+static int vvfat_count = 0;
 
 // portable mkdir / rmdir
 static int bx_mkdir(const char *path)
@@ -350,6 +341,10 @@ infosector_t;
 
 vvfat_image_t::vvfat_image_t(Bit64u size, const char* _redolog_name)
 {
+  if (sizeof(bootsector_t) != 512) {
+    BX_FATAL(("system error: invalid bootsector structure size"));
+  }
+
   first_sectors = new Bit8u[0xc000];
   memset(&first_sectors[0], 0, 0xc000);
 
@@ -358,7 +353,7 @@ vvfat_image_t::vvfat_image_t(Bit64u size, const char* _redolog_name)
   redolog_temp = NULL;
   redolog_name = NULL;
   if (_redolog_name != NULL) {
-    if (strcmp(_redolog_name,"") != 0) {
+    if ((strlen(_redolog_name) > 0) && (strcmp(_redolog_name,"none") != 0)) {
       redolog_name = strdup(_redolog_name);
     }
   }
@@ -491,33 +486,6 @@ static inline Bit8u fat_chksum(const direntry_t* entry)
   return chksum;
 }
 
-// if return_time==0, this returns the fat_date, else the fat_time
-#ifndef WIN32
-Bit16u fat_datetime(time_t time, int return_time)
-{
-  struct tm* t;
-  struct tm t1;
-
-  t = &t1;
-  localtime_r(&time, t);
-  if (return_time)
-    return htod16((t->tm_sec/2) | (t->tm_min<<5) | (t->tm_hour<<11));
-  return htod16((t->tm_mday) | ((t->tm_mon+1)<<5) | ((t->tm_year-80)<<9));
-}
-#else
-Bit16u fat_datetime(FILETIME time, int return_time)
-{
-  FILETIME localtime;
-  SYSTEMTIME systime;
-
-  FileTimeToLocalFileTime(&time, &localtime);
-  FileTimeToSystemTime(&localtime, &systime);
-  if (return_time)
-    return htod16((systime.wSecond/2) | (systime.wMinute<<5) | (systime.wHour<<11));
-  return htod16((systime.wDay) | (systime.wMonth<<5) | ((systime.wYear-1980)<<9));
-}
-#endif
-
 void vvfat_image_t::fat_set(unsigned int cluster, Bit32u value)
 {
   if (fat_type == 32) {
@@ -567,6 +535,7 @@ direntry_t* vvfat_image_t::create_short_and_long_name(
   int i, j, long_index = directory.next;
   direntry_t* entry = NULL;
   direntry_t* entry_long = NULL;
+  char tempfn[BX_PATHNAME_LEN];
 
   if (is_dot) {
     entry = (direntry_t*)array_get_next(&directory);
@@ -577,8 +546,16 @@ direntry_t* vvfat_image_t::create_short_and_long_name(
 
   entry_long = create_long_filename(filename);
 
-  i = strlen(filename);
-  for (j = i - 1; j>0  && filename[j]!='.';j--);
+  // short name should not contain spaces
+  j = 0;
+  for (i = 0; i < (int)strlen(filename); i++) {
+    if (filename[i] != ' ')
+      tempfn[j++] = filename[i];
+  }
+  tempfn[j] = 0;
+
+  i = strlen(tempfn);
+  for (j = i - 1; j > 0  && tempfn[j] != '.'; j--);
   if (j > 0)
     i = (j > 8 ? 8 : j);
   else if (i > 8)
@@ -586,16 +563,16 @@ direntry_t* vvfat_image_t::create_short_and_long_name(
 
   entry = (direntry_t*)array_get_next(&directory);
   memset(entry->name, 0x20, 11);
-  memcpy(entry->name, filename, i);
+  memcpy(entry->name, tempfn, i);
 
   if (j > 0)
-    for (i = 0; i < 3 && filename[j+1+i]; i++)
-      entry->extension[i] = filename[j+1+i];
+    for (i = 0; i < 3 && tempfn[j+1+i]; i++)
+      entry->extension[i] = tempfn[j+1+i];
 
   // upcase & remove unwanted characters
   for (i=10;i>=0;i--) {
     if (i==10 || i==7) for (;i>0 && entry->name[i]==' ';i--);
-    if (entry->name[i]<=' ' || entry->name[i]>0x7f
+    if ((entry->name[i]<' ') || (entry->name[i]>0x7f)
       || strchr(".*?<>|\":/\\[];,+='",entry->name[i]))
       entry->name[i]='_';
     else if (entry->name[i]>='a' && entry->name[i]<='z')
@@ -938,7 +915,7 @@ int vvfat_image_t::init_directories(const char* dirname)
   if (!use_boot_file) {
     volume_sector_count = sector_count - offset_to_bootsector;
     tmpsc = volume_sector_count - reserved_sectors - root_entries / 16;
-    cluster_count = (tmpsc * 0x200) / ((sectors_per_cluster * 0x200) + fat_type / 4);
+    cluster_count = (Bit32u)((tmpsc * 0x200) / ((sectors_per_cluster * 0x200) + fat_type / 4));
     sectors_per_fat = ((cluster_count + 2) * fat_type / 8) / 0x200;
     sectors_per_fat += (((cluster_count + 2) * fat_type / 8) % 0x200) > 0;
   } else {
@@ -1060,7 +1037,7 @@ int vvfat_image_t::init_directories(const char* dirname)
     if (fat_type != 32) {
       bootsector->root_entries = htod16(root_entries);
     }
-    bootsector->total_sectors16 = (volume_sector_count > 0xffff) ? 0:htod16(volume_sector_count);
+    bootsector->total_sectors16 = (Bit16u)((volume_sector_count > 0xffff) ? 0:htod16(volume_sector_count));
     bootsector->media_type = ((fat_type != 12) ? 0xf8:0xf0);
     if (fat_type != 32) {
       bootsector->sectors_per_fat = htod16(sectors_per_fat);
@@ -1068,11 +1045,11 @@ int vvfat_image_t::init_directories(const char* dirname)
     bootsector->sectors_per_track = htod16(spt);
     bootsector->number_of_heads = htod16(heads);
     bootsector->hidden_sectors = htod32(offset_to_bootsector);
-    bootsector->total_sectors = htod32((volume_sector_count > 0xffff) ? volume_sector_count:0);
+    bootsector->total_sectors = (Bit32u)(htod32((volume_sector_count > 0xffff) ? volume_sector_count:0));
     if (fat_type != 32) {
       bootsector->u.fat16.drive_number = (fat_type == 12) ? 0:0x80; // assume this is hda (TODO)
       bootsector->u.fat16.signature = 0x29;
-      bootsector->u.fat16.id = htod32(0xfabe1afd);
+      bootsector->u.fat16.id = htod32(0xfabe1afd + vvfat_count);
       memcpy(bootsector->u.fat16.volume_label, "BOCHS VVFAT", 11);
       memcpy(bootsector->u.fat16.fat_type, (fat_type==12) ? "FAT12   ":"FAT16   ", 8);
     } else {
@@ -1082,7 +1059,7 @@ int vvfat_image_t::init_directories(const char* dirname)
       bootsector->u.fat32.backup_boot_sector = htod16(6);
       bootsector->u.fat32.drive_number = 0x80; // assume this is hda (TODO)
       bootsector->u.fat32.signature = 0x29;
-      bootsector->u.fat32.id = htod32(0xfabe1afd);
+      bootsector->u.fat32.id = htod32(0xfabe1afd + vvfat_count);
       memcpy(bootsector->u.fat32.volume_label, "BOCHS VVFAT", 11);
       memcpy(bootsector->u.fat32.fat_type, "FAT32   ", 8);
     }
@@ -1121,8 +1098,8 @@ bx_bool vvfat_image_t::read_sector_from_file(const char *path, Bit8u *buffer, Bi
     return 0;
   int offset = sector * 0x200;
   if (::lseek(fd, offset, SEEK_SET) != offset) {
-    return 0;
     ::close(fd);
+    return 0;
   }
   int result = ::read(fd, buffer, 0x200);
   ::close(fd);
@@ -1159,6 +1136,10 @@ void vvfat_image_t::set_file_attributes(void)
         if (fpath[strlen(fpath) - 1] == 34) {
           fpath[strlen(fpath) - 1] = '\0';
         }
+        if (strncmp(fpath, vvfat_path, strlen(vvfat_path))) {
+          strcpy(path, fpath);
+          sprintf(fpath, "%s/%s", vvfat_path, path);
+        }
         mapping_t* mapping = find_mapping_for_path(fpath);
         if (mapping != NULL) {
           direntry_t* entry = (direntry_t*)array_get(&directory, mapping->dir_index);
@@ -1188,7 +1169,7 @@ void vvfat_image_t::set_file_attributes(void)
   }
 }
 
-int vvfat_image_t::open(const char* dirname)
+int vvfat_image_t::open(const char* dirname, int flags)
 {
   Bit32u size_in_mb;
   char path[BX_PATHNAME_LEN];
@@ -1198,6 +1179,7 @@ int vvfat_image_t::open(const char* dirname)
   char ftype[10];
   bx_bool ftype_ok;
 
+  UNUSED(flags);
   use_mbr_file = 0;
   use_boot_file = 0;
   fat_type = 0;
@@ -1218,6 +1200,7 @@ int vvfat_image_t::open(const char* dirname)
       if (fat_type != 0) {
         sector_count = partition->start_sector_long + partition->length_sector_long;
         spt = partition->start_sector_long;
+        sect_size = 512;
         if (partition->end_CHS.head > 15) {
           heads = 16;
         } else {
@@ -1384,6 +1367,7 @@ int vvfat_image_t::open(const char* dirname)
 #endif
 
   vvfat_modified = 0;
+  vvfat_count++;
 
   BX_INFO(("'vvfat' disk opened: directory is '%s', redolog is '%s'", dirname, redolog_temp));
 
@@ -1468,7 +1452,7 @@ bx_bool vvfat_image_t::write_file(const char *path, direntry_t *entry, bx_bool c
   int fd;
   Bit32u csize, fsize, fstart, cur, next, rsvd_clusters, bad_cluster;
   Bit64u offset;
-  Bit8u *buffer;
+  Bit8u *buffer = NULL;
 #ifndef WIN32
   struct tm tv;
   struct utimbuf ut;
@@ -1573,7 +1557,8 @@ bx_bool vvfat_image_t::write_file(const char *path, direntry_t *entry, bx_bool c
     CloseHandle(hFile);
   }
 #endif
-
+  if(buffer)
+    free(buffer);
   return 1;
 }
 
@@ -1586,6 +1571,7 @@ void vvfat_image_t::parse_directory(const char *path, Bit32u start_cluster)
   char filename[BX_PATHNAME_LEN];
   char full_path[BX_PATHNAME_LEN];
   char attr_txt[4];
+  const char *rel_path;
   mapping_t *mapping;
 
   csize = sectors_per_cluster * 0x200;
@@ -1624,7 +1610,12 @@ void vvfat_image_t::parse_directory(const char *path, Bit32u start_cluster)
           if (newentry->attributes & 0x04) strcpy(attr_txt, "S");
           if (newentry->attributes & 0x02) strcat(attr_txt, "H");
           if (newentry->attributes & 0x01) strcat(attr_txt, "R");
-          fprintf(vvfat_attr_fd, "\"%s\":%s\n", full_path, attr_txt);
+          if (!strncmp(full_path, vvfat_path, strlen(vvfat_path))) {
+            rel_path = (const char*)(full_path + strlen(vvfat_path) + 1);
+          } else {
+            rel_path = (const char*)full_path;
+          }
+          fprintf(vvfat_attr_fd, "\"%s\":%s\n", rel_path, attr_txt);
         }
       }
       fstart = dtoh16(newentry->begin) | (dtoh16(newentry->begin_hi) << 16);

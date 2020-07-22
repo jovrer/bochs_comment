@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: load32bitOShack.cc 10409 2011-06-19 05:37:30Z vruppert $
+// $Id: load32bitOShack.cc 13192 2017-04-17 13:26:44Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -29,6 +23,8 @@
 #include "cpu/cpu.h"
 #include "iodev/iodev.h"
 #define LOG_THIS genlog->
+
+#if BX_LOAD32BITOSHACK
 
 static void bx_load_linux_hack(void);
 static void bx_load_null_kernel_hack(void);
@@ -71,6 +67,7 @@ void bx_load32bitOSimagehack(void)
       }
       if (feof(fp)) break;
     }
+    fclose(fp);
   } //if iolog file to load
 
   // Invoke proper hack depending on which OS image we're loading
@@ -209,13 +206,7 @@ void bx_load_linux_hack(void)
 
   // Enter protected mode
   // Fixed by george (kyriazis at nvidia.com)
-  // BX_CPU(0)->cr0.pe = 1;
-  // BX_CPU(0)->cr0.val32 |= 0x01;
-
-  if (! BX_CPU(0)->SetCR0(BX_CPU(0)->cr0.val32 | 0x01)) {
-    BX_INFO(("bx_load_linux_hack: can't enable protected mode in CR0"));
-    BX_EXIT(1);
-  }
+  BX_CPU(0)->cr0.set_PE(1); // protected mode
 
   // load esi with real_mode
   BX_CPU(0)->gen_reg[BX_32BIT_REG_ESI].dword.erx = 0x90000;
@@ -303,3 +294,4 @@ Bit32u bx_load_kernel_image(char *path, Bit32u paddr)
 
   return page_size;
 }
+#endif

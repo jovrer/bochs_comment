@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: generic_cpuid.h 11169 2012-05-11 06:51:04Z sshwarts $
+// $Id: generic_cpuid.h 12895 2016-03-02 20:44:42Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2015 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -26,7 +26,7 @@
 
 #if BX_CPU_LEVEL >= 4
 
-#include "cpu/cpuid.h"
+#include "cpuid.h"
 
 class bx_generic_cpuid_t : public bx_cpuid_t {
 public:
@@ -36,8 +36,6 @@ public:
   // return CPU name
   virtual const char *get_name(void) const { return "bochs"; }
 
-  virtual Bit64u get_isa_extensions_bitmask(void) const { return isa_extensions_bitmask; }
-  virtual Bit32u get_cpu_extensions_bitmask(void) const { return cpu_extensions_bitmask; }
 #if BX_SUPPORT_VMX
   virtual Bit32u get_vmx_extensions_bitmask(void) const { return vmx_extensions_bitmask; }
 #endif
@@ -50,7 +48,6 @@ public:
   virtual void dump_cpuid(void) const;
 
 private:
-  void init_isa_extensions_bitmask(void);
   void init_cpu_extensions_bitmask(void);
 #if BX_SUPPORT_VMX
   void init_vmx_extensions_bitmask(void);
@@ -59,8 +56,6 @@ private:
   void init_svm_extensions_bitmask(void);
 #endif
 
-  Bit64u isa_extensions_bitmask;
-  Bit32u cpu_extensions_bitmask;
 #if BX_SUPPORT_VMX
   Bit32u vmx_extensions_bitmask;
 #endif
@@ -80,12 +75,9 @@ private:
   void get_std_cpuid_leaf_6(cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_7(Bit32u subfunction, cpuid_function_t *leaf) const;
   void get_std_cpuid_leaf_A(cpuid_function_t *leaf) const;
-  void get_std_cpuid_extended_topology_leaf(Bit32u subfunction, cpuid_function_t *leaf) const;
-  void get_std_cpuid_xsave_leaf(Bit32u subfunction, cpuid_function_t *leaf) const;
 
   void get_ext_cpuid_leaf_0(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_1(cpuid_function_t *leaf) const;
-  void get_ext_cpuid_brand_string_leaf(Bit32u function, cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_5(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_6(cpuid_function_t *leaf) const;
   void get_ext_cpuid_leaf_7(cpuid_function_t *leaf) const;
@@ -97,6 +89,7 @@ private:
   Bit32u get_std2_cpuid_features(void) const;
   Bit32u get_ext2_cpuid_features(void) const;
   Bit32u get_ext3_cpuid_features(void) const;
+  Bit32u get_ext4_cpuid_features(void) const;
   Bit32u get_extended_cpuid_features(void) const;
 #endif
 

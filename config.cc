@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: config.cc 11347 2012-08-19 11:45:50Z vruppert $
+// $Id: config.cc 13653 2019-12-09 16:29:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -36,7 +36,7 @@
 #endif
 
 
-int bochsrc_include_count = 0;
+int bochsrc_include_level = 0;
 #if BX_PLUGINS
 Bit8u bx_user_plugin_count = 0;
 #endif
@@ -45,7 +45,6 @@ Bit8u bx_user_plugin_count = 0;
 
 extern bx_debug_t bx_dbg;
 
-static const char *get_builtin_variable(const char *varname);
 static int parse_line_unformatted(const char *context, char *line);
 static int parse_line_formatted(const char *context, int num_params, char *params[]);
 static int parse_bochsrc(const char *rcfile);
@@ -119,8 +118,12 @@ const char *bx_param_string_handler(bx_param_string_c *param, int set,
 
   param->get_param_path(pname, BX_PATHNAME_LEN);
   if (!strcmp(pname, BXPN_SCREENMODE)) {
-    if (set==1) {
+    if (set == 1) {
       BX_INFO(("Screen mode changed to %s", val));
+    }
+  } else if (!strcmp(pname, BXPN_USER_SHORTCUT)) {
+    if ((set == 1) && (SIM->get_init_done())) {
+      bx_gui->parse_user_shortcut(val);
     }
 #if BX_PLUGINS
   } else if (!strncmp(pname, "misc.user_plugin", 16)) {
@@ -163,22 +166,24 @@ void bx_init_std_nic_options(const char *name, bx_list_c *menu)
 #if BX_NETMOD_SLIRP
     "slirp",
 #endif
+#if BX_NETMOD_SOCKET
+    "socket",
+#endif
     "vnet",
     NULL
   };
 
   bx_param_enum_c *ethmod;
-  bx_param_string_c *macaddr;
+  bx_param_bytestring_c *macaddr;
   bx_param_filename_c *path, *bootrom;
   char descr[120];
 
   sprintf(descr, "MAC address of the %s device. Don't use an address of a machine on your net.", name);
-  macaddr = new bx_param_string_c(menu,
-    "macaddr",
+  macaddr = new bx_param_bytestring_c(menu,
+    "mac",
     "MAC Address",
     descr,
     "", 6);
-  macaddr->set_options(macaddr->RAW_BYTES);
   macaddr->set_initial_val("\xfe\xfd\xde\xad\xbe\xef");
   macaddr->set_separator(':');
   ethmod = new bx_param_enum_c(menu,
@@ -220,7 +225,7 @@ void bx_init_usb_options(const char *usb_name, const char *pname, int maxports)
   menu->set_options(menu->SHOW_PARENT);
   sprintf(label, "Enable %s emulation", usb_name);
   sprintf(descr, "Enables the %s emulation", usb_name);
-  bx_param_bool_c *enabled = new bx_param_bool_c(menu, "enabled", label, descr, 0);
+  bx_param_bool_c *enabled = new bx_param_bool_c(menu, "enabled", label, descr, 1);
   bx_list_c *deplist = new bx_list_c(NULL);
   for (int i = 0; i < maxports; i++) {
     sprintf(name, "port%d", i+1);
@@ -275,8 +280,8 @@ void bx_init_options()
   bx_list_c *menu;
   bx_list_c *deplist;
   bx_param_num_c *ioaddr, *ioaddr2, *irq;
-  bx_param_bool_c *enabled, *readonly, *status;
-  bx_param_enum_c *mode, *type, *toggle;
+  bx_param_bool_c *enabled, *readonly;
+  bx_param_enum_c *mode, *type, *toggle, *status;
   bx_param_filename_c *path;
   char name[BX_PATHNAME_LEN], descr[512], label[512];
 
@@ -287,7 +292,7 @@ void bx_init_options()
 
  // config interface option, set in bochsrc or command line
   static const char *config_interface_list[] = {
-#ifdef WIN32
+#if BX_USE_WIN32CONFIG
     "win32config",
 #endif
 #if BX_USE_TEXTCONFIG
@@ -336,6 +341,19 @@ void bx_init_options()
       "set benchmark mode",
       0, BX_MAX_BIT32U, 0);
 
+  // dump statistics, set by command line arg
+  new bx_param_num_c(menu,
+      "dumpstats",
+      "dumpstats mode",
+      "dump statistics period",
+      0, BX_MAX_BIT32U, 0);
+  // unlock disk images
+  new bx_param_bool_c(menu,
+      "unlock_images",
+      "Unlock disk images",
+      "Unlock disk images leftover previous from Bochs session",
+      0);
+
   // subtree for setting up log actions by device in bochsrc
   bx_list_c *logfn = new bx_list_c(menu, "logfn", "Logfunctions");
   new bx_list_c(logfn, "debug", "");
@@ -382,18 +400,21 @@ void bx_init_options()
       1, BX_CPU_PROCESSORS_LIMIT,
       1);
   nprocessors->set_enabled(BX_CPU_PROCESSORS_LIMIT > 1);
+  nprocessors->set_options(bx_param_c::CI_ONLY);
   bx_param_num_c *ncores = new bx_param_num_c(cpu_param,
       "n_cores", "Number of cores in each processor in SMP mode",
       "Sets the number of cores per processor for multiprocessor emulation",
       1, BX_CPU_CORES_LIMIT,
       1);
   ncores->set_enabled(BX_CPU_CORES_LIMIT > 1);
+  ncores->set_options(bx_param_c::CI_ONLY);
   bx_param_num_c *nthreads = new bx_param_num_c(cpu_param,
       "n_threads", "Number of HT threads per each core in SMP mode",
       "Sets the number of HT (Intel(R) HyperThreading Technology) threads per core for multiprocessor emulation",
       1, BX_CPU_HT_THREADS_LIMIT,
       1);
   nthreads->set_enabled(BX_CPU_HT_THREADS_LIMIT > 1);
+  nthreads->set_options(bx_param_c::CI_ONLY);
   new bx_param_num_c(cpu_param,
       "ips", "Emulated instructions per second (IPS)",
       "Emulated instructions per second, used to calibrate bochs emulated time with wall clock time.",
@@ -408,7 +429,7 @@ void bx_init_options()
 #endif
   new bx_param_bool_c(cpu_param,
       "reset_on_triple_fault", "Enable CPU reset on triple fault",
-      "Enable CPU reset if triple fault occured (highly recommended)",
+      "Enable CPU reset if triple fault occurred (highly recommended)",
       1);
 #if BX_CPU_LEVEL >= 5
   new bx_param_bool_c(cpu_param,
@@ -440,6 +461,30 @@ void bx_init_options()
 #if BX_CPU_LEVEL >= 4
   bx_list_c *cpuid_param = new bx_list_c(root_param, "cpuid", "CPUID Options");
 
+  new bx_param_num_c(cpuid_param,
+      "level", "CPU Level",
+      "CPU level",
+     (BX_CPU_LEVEL < 5) ? BX_CPU_LEVEL : 5, BX_CPU_LEVEL,
+      BX_CPU_LEVEL);
+
+  new bx_param_num_c(cpuid_param,
+      "stepping", "Stepping ID",
+      "Processor 4-bits stepping ID",
+      0, 15,
+      3);
+
+  new bx_param_num_c(cpuid_param,
+      "model", "Model ID",
+      "Processor model ID, extended model ID",
+      0, 255,
+      3);
+
+  new bx_param_num_c(cpuid_param,
+      "family", "Family ID",
+      "Processor family ID, extended family ID",
+      BX_CPU_LEVEL, (BX_CPU_LEVEL >= 6) ? 4095 : BX_CPU_LEVEL,
+      BX_CPU_LEVEL);
+
   new bx_param_string_c(cpuid_param,
       "vendor_string",
       "CPUID vendor string",
@@ -460,24 +505,6 @@ void bx_init_options()
       "AMD Athlon(tm) processor",
 #endif
       BX_CPUID_BRAND_LEN+1);
-
-  new bx_param_num_c(cpuid_param,
-      "stepping", "Stepping ID",
-      "Processor 4-bits stepping ID",
-      0, 15,
-      3);
-
-  new bx_param_num_c(cpuid_param,
-      "model", "Model ID",
-      "Processor model ID, extended model ID",
-      0, 255,
-      3);
-
-  new bx_param_num_c(cpuid_param,
-      "family", "Family ID",
-      "Processor family ID, extended family ID",
-      BX_CPU_LEVEL, (BX_CPU_LEVEL >= 6) ? 4095 : BX_CPU_LEVEL,
-      BX_CPU_LEVEL);
 
 #if BX_CPU_LEVEL >= 5
   new bx_param_bool_c(cpuid_param,
@@ -506,17 +533,37 @@ void bx_init_options()
 
 #if BX_CPU_LEVEL >= 6
   // configure defaults to CPU_LEVEL = 6 with SSE2 enabled
-  static const char *sse_names[] = { "none", "sse", "sse2", "sse3", "ssse3", "sse4_1", "sse4_2", NULL };
+  static const char *simd_names[] = {
+      "none",
+      "sse",
+      "sse2",
+      "sse3",
+      "ssse3",
+      "sse4_1",
+      "sse4_2",
+#if BX_SUPPORT_AVX
+      "avx",
+      "avx2",
+#if BX_SUPPORT_EVEX
+      "avx512",
+#endif
+#endif
+      NULL };
+
   new bx_param_enum_c(cpuid_param,
-      "sse", "Support for SSE instruction set",
-      "Support for SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2 instruction set",
-      sse_names,
+      "simd", "Support for SIMD instruction set",
+      "Support for SIMD (SSE/SSE2/SSE3/SSSE3/SSE4_1/SSE4_2/AVX/AVX2/AVX512) instruction set",
+      simd_names,
       BX_CPUID_SUPPORT_SSE2,
       BX_CPUID_SUPPORT_NOSSE);
 
   new bx_param_bool_c(cpuid_param,
       "sse4a", "Support for AMD SSE4A instructions",
       "Support for AMD SSE4A instructions",
+      0);
+  new bx_param_bool_c(cpuid_param,
+      "misaligned_sse", "Support for AMD Misaligned SSE mode",
+      "Support for AMD Misaligned SSE mode",
       0);
 
   new bx_param_bool_c(cpuid_param,
@@ -536,6 +583,10 @@ void bx_init_options()
       "Support for AES instruction set",
       0);
   new bx_param_bool_c(cpuid_param,
+      "sha", "Support for SHA instruction set",
+      "Support for SHA instruction set",
+      0);
+  new bx_param_bool_c(cpuid_param,
       "xsave", "Support for XSAVE extensions",
       "Support for XSAVE extensions",
       0);
@@ -544,11 +595,6 @@ void bx_init_options()
       "Support for XSAVEOPT instruction",
       0);
 #if BX_SUPPORT_AVX
-  new bx_param_num_c(cpuid_param,
-      "avx", "Support for AVX instruction set",
-      "Support for AVX instruction set",
-      0, 2,
-      0);
   new bx_param_bool_c(cpuid_param,
       "avx_f16c", "Support for AVX F16 convert instructions",
       "Support for AVX F16 convert instructions",
@@ -597,6 +643,10 @@ void bx_init_options()
       "smep", "Supervisor Mode Execution Protection support",
       "Supervisor Mode Execution Protection support",
       0);
+  new bx_param_bool_c(cpuid_param,
+      "smap", "Supervisor Mode Access Prevention support",
+      "Supervisor Mode Access Prevention support",
+      0);
 #if BX_SUPPORT_MONITOR_MWAIT
   new bx_param_bool_c(cpuid_param,
       "mwait", "MONITOR/MWAIT instructions support",
@@ -618,7 +668,7 @@ void bx_init_options()
 #endif
 #endif // CPU_LEVEL >= 6
 
-  cpuid_param->set_options(menu->SHOW_PARENT);
+  cpuid_param->set_options(menu->SHOW_PARENT | menu->USE_SCROLL_WINDOW);
 
   // CPUID subtree depends on CPU model
   SIM->get_param_enum(BXPN_CPU_MODEL)->set_dependent_list(cpuid_param->clone(), 0);
@@ -644,7 +694,6 @@ void bx_init_options()
       1, ((Bit64u)(1) << BX_PHY_ADDRESS_WIDTH) / (1024*1024),
       BX_DEFAULT_MEM_MEGS);
   ramsize->set_ask_format("Enter memory size (MB): [%d] ");
-  ramsize->set_options(ramsize->USE_SPIN_CONTROL);
 
   bx_param_num_c *host_ramsize = new bx_param_num_c(ram,
       "host_size",
@@ -653,11 +702,10 @@ void bx_init_options()
       1, 2048,
       BX_DEFAULT_MEM_MEGS);
   host_ramsize->set_ask_format("Enter host memory size (MB): [%d] ");
-  host_ramsize->set_options(ramsize->USE_SPIN_CONTROL);
   ram->set_options(ram->SERIES_ASK);
 
   path = new bx_param_filename_c(rom,
-      "path",
+      "file",
       "ROM BIOS image",
       "Pathname of ROM image to load",
       "", BX_PATHNAME_LEN);
@@ -665,18 +713,23 @@ void bx_init_options()
   sprintf(name, "%s/BIOS-bochs-latest", (char *)get_builtin_variable("BXSHARE"));
   path->set_initial_val(name);
   bx_param_num_c *romaddr = new bx_param_num_c(rom,
-      "addr",
+      "address",
       "ROM BIOS address",
       "The address at which the ROM image should be loaded",
       0, BX_MAX_BIT32U,
       0);
   romaddr->set_base(16);
-  romaddr->set_format("0x%05x");
-  romaddr->set_long_format("ROM BIOS address: 0x%05x");
+  romaddr->set_format("0x%08x");
+  romaddr->set_long_format("ROM BIOS address: 0x%08x");
+  new bx_param_string_c(rom,
+      "options",
+      "BIOS options",
+      "Options for the Bochs BIOS",
+      "", BX_PATHNAME_LEN);
   rom->set_options(rom->SERIES_ASK);
 
   path = new bx_param_filename_c(vgarom,
-      "path",
+      "file",
       "VGA BIOS image",
       "Pathname of VGA ROM image to load",
       "", BX_PATHNAME_LEN);
@@ -685,15 +738,16 @@ void bx_init_options()
   path->set_initial_val(name);
   vgarom->set_options(vgarom->SERIES_ASK);
 
+  bx_list_c *optnum;
   bx_param_num_c *optaddr;
 
   for (i=0; i<BX_N_OPTROM_IMAGES; i++) {
     sprintf(name, "%d", i+1);
     sprintf(descr, "Pathname of optional ROM image #%d to load", i+1);
     sprintf(label, "Optional ROM image #%d", i+1);
-    bx_list_c *optnum1 = new bx_list_c(optrom, name, label);
-    path = new bx_param_filename_c(optnum1,
-      "path",
+    optnum = new bx_list_c(optrom, name, label);
+    path = new bx_param_filename_c(optnum,
+      "file",
       "Path",
       descr,
       "", BX_PATHNAME_LEN);
@@ -701,8 +755,8 @@ void bx_init_options()
     strcat(label, " : %s");
     path->set_format(strdup(label));
     sprintf(descr, "The address at which the optional ROM image #%d should be loaded", i+1);
-    optaddr = new bx_param_num_c(optnum1,
-      "addr",
+    optaddr = new bx_param_num_c(optnum,
+      "address",
       "Address",
       descr,
       0, BX_MAX_BIT32U,
@@ -712,7 +766,10 @@ void bx_init_options()
     sprintf(label, "Optional ROM #%d address:", i+1);
     strcat(label, " 0x%05x");
     optaddr->set_long_format(strdup(label));
-    optnum1->set_options(optnum1->SERIES_ASK | optnum1->USE_BOX_TITLE);
+    deplist = new bx_list_c(NULL);
+    deplist->add(optaddr);
+    path->set_dependent_list(deplist);
+    optnum->set_options(optnum->SERIES_ASK | optnum->USE_BOX_TITLE);
   }
   optrom->set_options(optrom->SHOW_PARENT);
 
@@ -720,9 +777,9 @@ void bx_init_options()
     sprintf(name, "%d", i+1);
     sprintf(descr, "Pathname of optional RAM image #%d to load", i+1);
     sprintf(label, "Optional RAM image #%d", i+1);
-    bx_list_c *optnum2 = new bx_list_c(optram, name, label);
-    path = new bx_param_filename_c(optnum2,
-      "path",
+    optnum = new bx_list_c(optram, name, label);
+    path = new bx_param_filename_c(optnum,
+      "file",
       "Path",
       descr,
       "", BX_PATHNAME_LEN);
@@ -730,8 +787,8 @@ void bx_init_options()
     strcat(label, " : %s");
     path->set_format(strdup(label));
     sprintf(descr, "The address at which the optional RAM image #%d should be loaded", i+1);
-    optaddr = new bx_param_num_c(optnum2,
-      "addr",
+    optaddr = new bx_param_num_c(optnum,
+      "address",
       "Address",
       descr,
       0, BX_MAX_BIT32U,
@@ -741,7 +798,10 @@ void bx_init_options()
     sprintf(label, "Optional RAM #%d address:", i+1);
     strcat(label, " 0x%05x");
     optaddr->set_long_format(strdup(label));
-    optnum2->set_options(optnum2->SERIES_ASK | optnum2->USE_BOX_TITLE);
+    deplist = new bx_list_c(NULL);
+    deplist->add(optaddr);
+    path->set_dependent_list(deplist);
+    optnum->set_options(optnum->SERIES_ASK | optnum->USE_BOX_TITLE);
   }
   optram->set_options(optram->SHOW_PARENT);
   memory->set_options(memory->SHOW_PARENT | memory->USE_TAB_WINDOW);
@@ -801,13 +861,21 @@ void bx_init_options()
   bx_list_c *pci = new bx_list_c(root_param, "pci", "PCI Options");
 
   // pci options
+  static const char *pci_chipset_names[] = { "i430fx", "i440fx", "i440bx", NULL };
   deplist = new bx_list_c(NULL);
 
-  bx_param_bool_c *i440fx_support = new bx_param_bool_c(pci,
-      "i440fx_support",
-      "Enable i440FX PCI Support",
-      "Controls whether to emulate the i440FX PCI chipset",
+  enabled = new bx_param_bool_c(pci,
+      "enabled",
+      "Enable PCI Support",
+      "Controls whether to emulate a PCI chipset",
       BX_SUPPORT_PCI);
+  bx_param_enum_c *pci_chipset = new bx_param_enum_c(pci,
+      "chipset", "PCI chipset",
+      "Select PCI chipset to emulate",
+      pci_chipset_names,
+      BX_PCI_CHIPSET_I440FX,
+      BX_PCI_CHIPSET_I430FX);
+  deplist->add(pci_chipset);
   // pci slots
   bx_list_c *slot = new bx_list_c(pci, "slot", "PCI Slots");
   deplist->add(slot);
@@ -822,7 +890,7 @@ void bx_init_options()
         "", BX_PATHNAME_LEN);
     deplist->add(devname);
   }
-  i440fx_support->set_dependent_list(deplist);
+  enabled->set_dependent_list(deplist);
   pci->set_options(pci->SHOW_PARENT);
   slot->set_options(slot->SHOW_PARENT);
 
@@ -852,6 +920,9 @@ void bx_init_options()
 #if BX_WITH_SDL
     "sdl",
 #endif
+#if BX_WITH_SDL2
+    "sdl2",
+#endif
 #if BX_WITH_SVGA
     "svga",
 #endif
@@ -860,6 +931,9 @@ void bx_init_options()
 #endif
 #if BX_WITH_RFB
     "rfb",
+#endif
+#if BX_WITH_VNCSRV
+    "vncsrv",
 #endif
 #if BX_WITH_WX
     "wx",
@@ -889,6 +963,7 @@ void bx_init_options()
       "Request that the GUI create and use it's own non-shared colormap. This colormap will be used when in the bochs window. If not enabled, a shared colormap scheme may be used. Not implemented on all GUI's.",
       0);
 
+#if BX_WITH_AMIGAOS
   bx_param_bool_c *fullscreen = new bx_param_bool_c(display,
       "fullscreen", "Use full screen mode",
       "When enabled, bochs occupies the whole screen instead of just a window.",
@@ -899,10 +974,13 @@ void bx_init_options()
       "Screen mode name",
       "", BX_PATHNAME_LEN);
   screenmode->set_handler(bx_param_string_handler);
-#if !BX_WITH_AMIGAOS
-  fullscreen->set_enabled(0);
-  screenmode->set_enabled(0);
 #endif
+
+  new bx_param_bool_c(display,
+      "vga_realtime",
+      "VGA timer realtime",
+      "If enabled, the VGA timer is based on realtime",
+      1);
 
   bx_param_num_c *vga_update_freq = new bx_param_num_c(display,
       "vga_update_frequency",
@@ -939,17 +1017,18 @@ void bx_init_options()
   new bx_param_num_c(keyboard,
       "serial_delay", "Keyboard serial delay",
       "Approximate time in microseconds that it takes one character to be transferred from the keyboard to controller over the serial path.",
-      1, BX_MAX_BIT32U,
+      5, BX_MAX_BIT32U,
       250);
   new bx_param_num_c(keyboard,
       "paste_delay", "Keyboard paste delay",
-      "Approximate time in microseconds between attemps to paste characters to the keyboard controller.",
+      "Approximate time in microseconds between attempts to paste characters to the keyboard controller.",
       1000, BX_MAX_BIT32U,
       100000);
   bx_param_bool_c *use_kbd_mapping = new bx_param_bool_c(keyboard,
       "use_mapping", "Use keyboard mapping",
       "Controls whether to use the keyboard mapping feature",
       0);
+  use_kbd_mapping->set_options(bx_param_c::CI_ONLY);
   bx_param_filename_c *keymap = new bx_param_filename_c(keyboard,
       "keymap", "Keymap filename",
       "Pathname of the keymap file used",
@@ -964,13 +1043,14 @@ void bx_init_options()
       "Userbutton shortcut",
       "Defines the keyboard shortcut to be sent when you press the 'user' button in the headerbar.",
       "none", 20);
-  user_shortcut->set_runtime_param(1);
+  user_shortcut->set_handler(bx_param_string_handler);
 
   static const char *mouse_type_list[] = {
     "none",
     "ps2",
     "imps2",
 #if BX_SUPPORT_BUSMOUSE
+    "inport",
     "bus",
 #endif
     "serial",
@@ -1037,6 +1117,7 @@ void bx_init_options()
       "Skips check for the 0xaa55 signature on floppy boot device.",
       0);
 
+#if BX_LOAD32BITOSHACK
   // loader hack
   bx_list_c *load32bitos = new bx_list_c(boot_params, "load32bitos", "32-bit OS Loader Hack");
 
@@ -1072,6 +1153,7 @@ void bx_init_options()
   whichOS->set_dependent_list(load32bitos->clone(), 1);
   whichOS->set_dependent_bitmap(Load32bitOSNone, 0);
   whichOS->set(Load32bitOSNone);
+#endif
   boot_params->set_options(menu->SHOW_PARENT);
 
   // floppy subtree
@@ -1124,12 +1206,14 @@ void bx_init_options()
       0);
     readonly->set_ask_format("Is media write protected? [%s] ");
 
-    status = new bx_param_bool_c(floppyX,
+    status = new bx_param_enum_c(floppyX,
       "status",
-      "Inserted",
+      "Status",
       "Floppy media status (inserted / ejected)",
-      0);
-    status->set_ask_format("Is media inserted in drive? [%s] ");
+      media_status_names,
+      BX_EJECTED,
+      BX_EJECTED);
+    status->set_ask_format("Is the device inserted or ejected? [%s] ");
 
     deplist = new bx_list_c(NULL);
     deplist->add(path);
@@ -1205,7 +1289,7 @@ void bx_init_options()
     ioaddr = new bx_param_num_c(ata_res[channel],
       "ioaddr1",
       "I/O Address 1",
-      "IO adress of ata command block",
+      "IO address of ata command block",
       0, 0xffff,
       ata_default_ioaddr1[channel]);
     ioaddr->set_base(16);
@@ -1214,7 +1298,7 @@ void bx_init_options()
     ioaddr2 = new bx_param_num_c(ata_res[channel],
       "ioaddr2",
       "I/O Address 2",
-      "IO adress of ata control block",
+      "IO address of ata control block",
       0, 0xffff,
       ata_default_ioaddr2[channel]);
     ioaddr2->set_base(16);
@@ -1241,22 +1325,15 @@ void bx_init_options()
           s_atadevice[channel][slave]);
       menu->set_options(menu->SERIES_ASK);
 
-      bx_param_bool_c *present = new bx_param_bool_c(menu,
-        "present",
-        "Enable this device",
-        "Controls whether ata device is installed or not",
-        0);
-      present->set_ask_format("Device is enabled: [%s] ");
-
-      static const char *atadevice_type_names[] = { "disk", "cdrom", NULL };
+      static const char *atadevice_type_names[] = { "none", "disk", "cdrom", NULL };
 
       type = new bx_param_enum_c(menu,
         "type",
         "Type of ATA device",
         "Type of ATA device (disk or cdrom)",
         atadevice_type_names,
-        BX_ATA_DEVICE_DISK,
-        BX_ATA_DEVICE_DISK);
+        BX_ATA_DEVICE_NONE,
+        BX_ATA_DEVICE_NONE);
       type->set_ask_format("Enter type of ATA device, disk or cdrom: [%s] ");
 
       path = new bx_param_filename_c(menu,
@@ -1276,12 +1353,14 @@ void bx_init_options()
         BX_HDIMAGE_MODE_FLAT);
       mode->set_ask_format("Enter mode of ATA device, (flat, concat, etc.): [%s] ");
 
-      status = new bx_param_bool_c(menu,
+      status = new bx_param_enum_c(menu,
         "status",
-        "Inserted",
+        "Status",
         "CD-ROM media status (inserted / ejected)",
-        0);
-      status->set_ask_format("Is media inserted in drive? [%s] ");
+        media_status_names,
+        BX_EJECTED,
+        BX_EJECTED);
+      status->set_ask_format("Is the device inserted or ejected? [%s] ");
 
       bx_param_filename_c *journal = new bx_param_filename_c(menu,
         "journal",
@@ -1318,6 +1397,17 @@ void bx_init_options()
         0);
       spt->set_ask_format("Enter number of sectors per track: [%d] ");
 
+      static const char *sector_size_names[] = { "512", "1024", "4096", NULL };
+
+      bx_param_enum_c *sect_size = new bx_param_enum_c(menu,
+        "sect_size",
+        "Sector size",
+        "Size of a disk sector in bytes",
+        sector_size_names,
+        BX_SECT_SIZE_512,
+        BX_SECT_SIZE_512);
+      sect_size->set_ask_format("Enter sector size: [%s]");
+
       bx_param_string_c *model = new bx_param_string_c(menu,
         "model",
         "Model name",
@@ -1325,7 +1415,7 @@ void bx_init_options()
         "Generic 1234", 41);
       model->set_ask_format("Enter new model name: [%s]");
 
-      static const char *atadevice_biosdetect_names[] = { "none", "auto", "cmos", NULL };
+      static const char *atadevice_biosdetect_names[] = { "auto", "cmos", "none", NULL };
 
       bx_param_enum_c *biosdetect = new bx_param_enum_c(menu,
         "biosdetect",
@@ -1333,7 +1423,7 @@ void bx_init_options()
         "Type of bios detection",
         atadevice_biosdetect_names,
         BX_ATA_BIOSDETECT_AUTO,
-        BX_ATA_BIOSDETECT_NONE);
+        BX_ATA_BIOSDETECT_AUTO);
       biosdetect->set_ask_format("Enter bios detection type: [%s]");
 
       static const char *atadevice_translation_names[] = { "none", "lba", "large", "rechs", "auto", NULL };
@@ -1347,32 +1437,15 @@ void bx_init_options()
         BX_ATA_TRANSLATION_NONE);
       translation->set_ask_format("Enter translation type: [%s]");
 
-      // the menu and all items on it depend on the present flag
-      deplist = new bx_list_c(NULL);
-      deplist->add(type);
-      deplist->add(path);
-      deplist->add(model);
-      deplist->add(biosdetect);
-      present->set_dependent_list(deplist);
       // the master/slave menu depends on the ATA channel's enabled flag
       enabled->get_dependent_list()->add(menu);
-      // the present flag depends on the ATA channel's enabled flag
-      enabled->get_dependent_list()->add(present);
+      // the type selector depends on the ATA channel's enabled flag
+      enabled->get_dependent_list()->add(type);
 
-      // some items depend on the drive type
-      bx_param_c *type_deplist[] = {
-        mode,
-        status,
-        cylinders,
-        heads,
-        spt,
-        translation,
-        NULL
-      };
-      deplist = new bx_list_c(NULL, "deplist", "", type_deplist);
-      type->set_dependent_list(deplist, 0);
-      type->set_dependent_bitmap(BX_ATA_DEVICE_DISK, 0x3d);
-      type->set_dependent_bitmap(BX_ATA_DEVICE_CDROM, 0x02);
+      // all items depend on the drive type
+      type->set_dependent_list(menu->clone(), 0);
+      type->set_dependent_bitmap(BX_ATA_DEVICE_DISK, 0xfe6);
+      type->set_dependent_bitmap(BX_ATA_DEVICE_CDROM, 0x60a);
 
       type->set_handler(bx_param_handler);
     }
@@ -1412,6 +1485,7 @@ void bx_init_options()
   menu = new bx_list_c(special_menus, "disk", "Bochs Disk Options", disk_menu_init_list);
   menu->set_options(menu->SHOW_PARENT);
 
+#ifdef WIN32
   // disk menu for win32paramdlg
   bx_param_c *disk_menu2_init_list[] = {
     SIM->get_param("floppy"),
@@ -1430,6 +1504,7 @@ void bx_init_options()
   };
   menu = new bx_list_c(special_menus, "disk_win32", "Bochs Disk Options", disk_menu2_init_list);
   menu->set_options(menu->USE_TAB_WINDOW);
+#endif
 
   // ports subtree
   bx_list_c *ports = new bx_list_c(root_param, "ports", "Serial and Parallel Port Options");
@@ -1458,6 +1533,51 @@ void bx_init_options()
   // sound subtree
   bx_list_c *sound = new bx_list_c(root_param, "sound", "Sound Configuration");
   sound->set_options(sound->USE_TAB_WINDOW | sound->SHOW_PARENT);
+  bx_list_c *soundlow = new bx_list_c(sound, "lowlevel", "Lowlevel Sound Configuration");
+  soundlow->set_options(soundlow->SHOW_PARENT | soundlow->SERIES_ASK);
+  soundlow->set_enabled(BX_SUPPORT_SOUNDLOW);
+
+#if BX_SUPPORT_SOUNDLOW
+  bx_param_enum_c *driver = new bx_param_enum_c(soundlow,
+    "waveoutdrv",
+    "Waveout driver",
+    "This is the waveout driver to use for emulated sound devices",
+    sound_driver_names,
+    BX_SOUNDDRV_DUMMY,
+    BX_SOUNDDRV_DUMMY);
+  driver->set_by_name(BX_SOUND_LOWLEVEL_NAME);
+  new bx_param_filename_c(soundlow,
+    "waveout",
+    "Wave output device",
+    "This is the device where the wave output is sent to",
+    "", BX_PATHNAME_LEN);
+  driver = new bx_param_enum_c(soundlow,
+    "waveindrv",
+    "Wavein driver",
+    "This is the wavein driver to use for emulated sound devices",
+    sound_driver_names,
+    BX_SOUNDDRV_DUMMY,
+    BX_SOUNDDRV_DUMMY);
+  driver->set_by_name(BX_SOUND_LOWLEVEL_NAME);
+  new bx_param_filename_c(soundlow,
+    "wavein",
+    "Wave input device",
+    "This is the device to be used as the wave input source",
+    "", BX_PATHNAME_LEN);
+  driver = new bx_param_enum_c(soundlow,
+    "midioutdrv",
+    "Midiout driver",
+    "This is the midiout driver to use for emulated sound devices",
+    sound_driver_names,
+    BX_SOUNDDRV_DUMMY,
+    BX_SOUNDDRV_DUMMY);
+  driver->set_by_name(BX_SOUND_LOWLEVEL_NAME);
+  new bx_param_filename_c(soundlow,
+    "midiout",
+    "MIDI output device",
+    "This is the device where the MIDI output is sent to",
+    "", BX_PATHNAME_LEN);
+#endif
   // sound device options initialized in the devive plugin code
 
   // misc options subtree
@@ -1541,7 +1661,7 @@ void bx_init_options()
       "prefix",
       "Log output prefix",
       "Prefix prepended to log output",
-      "%t%e%d", BX_PATHNAME_LEN);
+      "%t%e%d", BX_LOGPREFIX_LEN);
   prefix->set_ask_format("Enter log prefix: [%s] ");
 
   path = new bx_param_filename_c(menu,
@@ -1556,11 +1676,14 @@ void bx_init_options()
   // runtime options
   menu = new bx_list_c(special_menus, "runtime", "Runtime options");
   bx_list_c *cdrom = new bx_list_c(menu, "cdrom", "CD-ROM options");
+  cdrom->set_runtime_param(1);
   cdrom->set_options(cdrom->SHOW_PARENT);
   usb = new bx_list_c(menu, "usb", "USB options");
+  usb->set_runtime_param(1);
   usb->set_options(usb->SHOW_PARENT | usb->USE_TAB_WINDOW);
   // misc runtime options
   misc = new bx_list_c(menu, "misc", "Misc options");
+  misc->set_runtime_param(1);
   misc->add(SIM->get_param(BXPN_VGA_UPDATE_FREQUENCY));
   misc->add(SIM->get_param(BXPN_MOUSE_ENABLED));
   misc->add(SIM->get_param(BXPN_KBD_PASTE_DELAY));
@@ -1640,23 +1763,30 @@ int bx_read_configuration(const char *rcfile)
     int action = SIM->get_default_log_action(level);
     io->set_log_action(level, action);
   }
+  bx_set_log_actions_by_device(0);
   return 0;
 }
 
 int bx_parse_cmdline(int arg, int argc, char *argv[])
 {
-  //if (arg < argc) BX_INFO (("parsing command line arguments"));
+  int level, def_action[N_LOGLEV];
 
+  for (level=0; level<N_LOGLEV; level++) {
+    def_action[level] = SIM->get_default_log_action(level);
+  }
   while (arg < argc) {
     BX_INFO (("parsing arg %d, %s", arg, argv[arg]));
     parse_line_unformatted("cmdline args", argv[arg]);
     arg++;
   }
-  // update log actions
-  for (int level=0; level<N_LOGLEV; level++) {
+  // update log actions if default has been changed
+  for (level=0; level<N_LOGLEV; level++) {
     int action = SIM->get_default_log_action(level);
-    io->set_log_action(level, action);
+    if (action != def_action[level]) {
+      io->set_log_action(level, action);
+    }
   }
+  bx_set_log_actions_by_device(0);
   return 0;
 }
 
@@ -1708,7 +1838,7 @@ static int parse_bochsrc(const char *rcfile)
 
   // try several possibilities for the bochsrc before giving up
 
-  bochsrc_include_count++;
+  bochsrc_include_level++;
 
   fd = fopen (rcfile, "r");
   if (fd == NULL) return -1;
@@ -1730,11 +1860,11 @@ static int parse_bochsrc(const char *rcfile)
     linenum++;
   } while (!feof(fd));
   fclose(fd);
-  bochsrc_include_count--;
+  bochsrc_include_level--;
   return retval;
 }
 
-static const char *get_builtin_variable(const char *varname)
+const char *get_builtin_variable(const char *varname)
 {
 #ifdef WIN32
   int code;
@@ -1749,7 +1879,7 @@ static const char *get_builtin_variable(const char *varname)
   else {
     if (!strcmp(varname, "BXSHARE")) {
 #ifdef WIN32
-      wsprintf(keyname, "Software\\Bochs %s", VER_STRING);
+      wsprintf(keyname, "Software\\Bochs");
       code = RegOpenKeyEx(HKEY_LOCAL_MACHINE, keyname, 0, KEY_READ, &hkey);
       if (code == ERROR_SUCCESS) {
         data[0] = 0;
@@ -1827,21 +1957,33 @@ static int parse_line_unformatted(const char *context, char *line)
           *pv = 0;
           if (strlen(varname)<1 || !(value = getenv(varname))) {
             if ((value = get_builtin_variable(varname))) {
+              if ((string_i + strlen(value)) < 512) {
+                // append value to the string
+                for (pv=(char *)value; *pv; pv++)
+                    string[string_i++] = *pv;
+              } else {
+                BX_PANIC(("parse_line_unformatted(): out of memory"));
+              }
+            } else {
+              BX_PANIC(("could not look up environment variable '%s'", varname));
+            }
+          } else {
+            if ((string_i + strlen(value)) < 512) {
               // append value to the string
               for (pv=(char *)value; *pv; pv++)
                   string[string_i++] = *pv;
             } else {
-              BX_PANIC (("could not look up environment variable '%s'", varname));
+              BX_PANIC(("parse_line_unformatted(): out of memory"));
             }
-          } else {
-            // append value to the string
-            for (pv=(char *)value; *pv; pv++)
-                string[string_i++] = *pv;
           }
         }
 #endif
         if (!isspace(ptr[i]) || inquotes) {
-          string[string_i++] = ptr[i];
+          if (string_i < 511) {
+            string[string_i++] = ptr[i];
+          } else {
+            BX_PANIC(("parse_line_unformatted(): out of memory"));
+          }
         }
       }
     }
@@ -1952,16 +2094,15 @@ static Bit32s parse_log_options(const char *context, int num_params, char *param
     actstr = strtok(NULL, "");
     if (actstr != NULL) {
       def_action = !strcmp(module, "action");
-      if (!strcmp(actstr, "fatal"))
-        action = ACT_FATAL;
-      else if (!strcmp (actstr, "report"))
-        action = ACT_REPORT;
-      else if (!strcmp (actstr, "ignore"))
-        action = ACT_IGNORE;
-      else if (!strcmp (actstr, "ask"))
-        action = ACT_ASK;
-      else {
+      action = SIM->is_action_name(actstr);
+      if (action < ACT_IGNORE) {
         PARSE_ERR(("%s: %s directive malformed.", context, params[0]));
+        free(param);
+        return -1;
+      }
+      // exclude some action / level combinations (see siminterface.h)
+      if (BX_LOG_OPTS_EXCLUDE(level, action)) {
+        PARSE_ERR(("%s: event type '%s' does not support log action '%s'.", context, params[0], actstr));
         free(param);
         return -1;
       }
@@ -2024,12 +2165,55 @@ static int parse_debug_symbols(const char *context, const char **params, int num
 
 static int parse_param_bool(const char *input, int len, const char *param)
 {
-  if (input[len] == '0' || input[len] == '1') {
-    SIM->get_param_bool(param)->set(input[len] - '0');
+  if (SIM->get_param_bool(param)->parse_param(&input[len]) == 1) {
     return 0;
   }
 
   return -1;
+}
+
+int bx_parse_param_from_list(const char *context, const char *input, bx_list_c *list)
+{
+  char *propval, *property, *value;
+  bx_param_c *param;
+  int ret = 0;
+
+  if (list == NULL) {
+    PARSE_WARN(("%s: parameter list == NULL!", context));
+    return -1;
+  }
+  propval = strdup(input);
+  property = strtok(propval, "=");
+  value = strtok(NULL, "");
+  if (!strcmp(property, input)) {
+    PARSE_WARN(("%s: incorrect parameter format", context));
+    free(propval);
+    return -1;
+  }
+  param = list->get_by_name(property);
+  if (param != NULL) {
+    if ((param->get_options() & param->CI_ONLY) > 0) {
+      PARSE_WARN(("%s: ignoring hidden parameter '%s'", context, property));
+      free(propval);
+      return 0;
+    }
+    int res = param->parse_param(value);
+    if (res != -1) {
+      if (res == 0) {
+        PARSE_WARN(("%s: wrong value for parameter '%s'", context, property));
+        ret = -1;
+      }
+    }
+    else {
+      PARSE_WARN(("%s: parameter '%s': unknown type", context, property));
+      ret = -1;
+    }
+  } else {
+    PARSE_WARN(("%s: unknown parameter '%s'", context, property));
+    ret = -1;
+  }
+  free(propval);
+  return ret;
 }
 
 int bx_parse_usb_port_params(const char *context, bx_bool devopt, const char *param, int maxports, bx_list_c *base)
@@ -2059,55 +2243,66 @@ int bx_parse_usb_port_params(const char *context, bx_bool devopt, const char *pa
 
 int bx_parse_nic_params(const char *context, const char *param, bx_list_c *base)
 {
-  int tmp[6];
-  char tmpchar[6];
   int valid = 0;
   int n;
+  bx_param_bytestring_c *bsp;
 
   if (!strncmp(param, "enabled=", 8)) {
-    if (atol(&param[8]) == 0) valid |= 0x80;
+    SIM->get_param_bool("enabled", base)->parse_param(&param[8]);
+    n = SIM->get_param_bool("enabled", base)->get();
+    if (n == 0) valid |= 0x80;
+    else valid &= 0x7f;
   } else if (!strncmp(param, "mac=", 4)) {
-    n = sscanf(&param[4], "%x:%x:%x:%x:%x:%x",
-               &tmp[0],&tmp[1],&tmp[2],&tmp[3],&tmp[4],&tmp[5]);
-    if (n != 6) {
+    bsp = (bx_param_bytestring_c*)SIM->get_param_string("mac", base);
+    if (bsp->parse_param(&param[4]) == 0) {
       PARSE_ERR(("%s: '%s' mac address malformed.", context, base->get_name()));
+    } else {
+      valid |= 0x04;
     }
-    for (n=0;n<6;n++)
-      tmpchar[n] = (unsigned char)tmp[n];
-    SIM->get_param_string("macaddr", base)->set(tmpchar);
-    valid |= 0x04;
   } else if (!strncmp(param, "ethmod=", 7)) {
     if (!SIM->get_param_enum("ethmod", base)->set_by_name(&param[7]))
       PARSE_ERR(("%s: ethernet module '%s' not available", context, &param[7]));
-  } else if (!strncmp(param, "ethdev=", 7)) {
-    SIM->get_param_string("ethdev", base)->set(&param[7]);
-  } else if (!strncmp(param, "script=", 7)) {
-    SIM->get_param_string("script", base)->set(&param[7]);
-  } else if (!strncmp(param, "bootrom=", 8)) {
-    SIM->get_param_string("bootrom", base)->set(&param[8]);
-  } else {
-    PARSE_WARN(("%s: unknown parameter '%s' for '%s' ignored.", context, param, base->get_name()));
+  } else if (bx_parse_param_from_list(context, param, base) < 0) {
+    PARSE_WARN(("%s: expected parameter '%s' for '%s' ignored.", context, param, base->get_name()));
     return -1;
   }
   return valid;
+}
+
+bx_bool is_deprecated_option(const char *oldparam, const char **newparam)
+{
+  if ((!strcmp(oldparam, "keyboard_serial_delay")) ||
+             (!strcmp(oldparam, "keyboard_paste_delay")) ||
+             (!strcmp(oldparam, "keyboard_type")) ||
+             (!strcmp(oldparam, "keyboard_mapping")) ||
+             (!strcmp(oldparam, "keyboardmapping"))) {
+    // replaced v2.6 / removed v2.6.7
+    *newparam = "keyboard";
+    return 1;
+  } else if (!strcmp(oldparam, "user_shortcut")) {
+    // replaced v2.6.1 / removed v2.6.9
+    *newparam = "keyboard";
+    return 1;
+#if BX_SUPPORT_PCIPNIC
+  } else if (!strcmp(oldparam, "pnic")) {
+    // replaced v2.6 / removed v2.6.5
+    *newparam = "pcipnic";
+    return 1;
+#endif
+  }
+  return 0;
 }
 
 static int parse_line_formatted(const char *context, int num_params, char *params[])
 {
   int i, slot, t;
   bx_list_c *base;
+  const char *newparam;
 
   if (num_params < 1) return 0;
   if (num_params < 2) {
     PARSE_ERR(("%s: a bochsrc option needs at least one parameter", context));
   }
-
-#if BX_SUPPORT_PCIPNIC
-  // Temporary HACK for the PCI Pseudo NIC's bochsrc option name change
-  if (!strcmp(params[0], "pnic")) {
-    strcpy(params[0], "pcipnic");
-  }
-#endif
 
   if (!strcmp(params[0], "#include")) {
     if (num_params != 2) {
@@ -2116,12 +2311,49 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     if (!strcmp(params[1], context)) {
       PARSE_ERR(("%s: cannot include this file again.", context));
     }
-    if (bochsrc_include_count == 2) {
-      PARSE_ERR(("%s: include directive in an included file not supported yet.", context));
+    if (bochsrc_include_level > 2) {
+      PARSE_ERR(("%s: maximum include level exceeded (limit = 2).", context));
     }
     bx_read_configuration(params[1]);
-  }
-  else if ((!strcmp(params[0], "floppya")) ||
+  } else if (!strcmp(params[0], "plugin_ctrl")) {
+    char *param, *pname, *val;
+    for (i=1; i<num_params; i++) {
+      param = strdup(params[i]);
+      pname = strtok(param, "=");
+      val = strtok(NULL, "");
+      if (val != NULL) {
+        if (!strcmp(val, "0") || !stricmp(val, "false")) {
+          SIM->opt_plugin_ctrl(pname, 0);
+        } else if (!strcmp(val, "1") || !stricmp(val, "true")) {
+          SIM->opt_plugin_ctrl(pname, 1);
+        } else {
+          PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
+        }
+      } else {
+        PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
+      }
+      free(param);
+    }
+  } else if (!strcmp(params[0], "config_interface")) {
+    if (num_params != 2) {
+      PARSE_ERR(("%s: config_interface directive: wrong # args.", context));
+    }
+    if (!SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->set_by_name(params[1]))
+      PARSE_ERR(("%s: config_interface '%s' not available", context, params[1]));
+  } else if (!strcmp(params[0], "display_library")) {
+    if ((num_params < 2) || (num_params > 3)) {
+      PARSE_ERR(("%s: display_library directive: wrong # args.", context));
+    }
+    if (!SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY)->set_by_name(params[1]))
+      PARSE_ERR(("%s: display library '%s' not available", context, params[1]));
+    if (num_params == 3) {
+      if (!strncmp(params[2], "options=", 8)) {
+        SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->set(&params[2][8]);
+      } else {
+        PARSE_ERR(("%s: display_library directive malformed", context));
+      }
+    }
+  } else if ((!strcmp(params[0], "floppya")) ||
            (!strcmp(params[0], "floppyb"))) {
     if (!strcmp(params[0], "floppya")) {
       base = (bx_list_c*) SIM->get_param(BXPN_FLOPPYA);
@@ -2194,10 +2426,10 @@ static int parse_line_formatted(const char *context, int num_params, char *param
             context, params[0]));
       }
       else if (!strcmp(params[i], "status=inserted")) {
-        SIM->get_param_bool("status", base)->set(1);
+        SIM->get_param_enum("status", base)->set(BX_INSERTED);
       }
       else if (!strcmp(params[i], "status=ejected")) {
-        SIM->get_param_bool("status", base)->set(0);
+        SIM->get_param_enum("status", base)->set(BX_EJECTED);
       }
       else if (!strncmp(params[i], "write_protected=", 16)) {
         SIM->get_param_bool("readonly", base)->set(atol(&params[i][16]));
@@ -2207,9 +2439,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
           params[i]));
       }
     }
-  }
-
-  else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) == 4)) {
+  } else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) == 4)) {
     char tmpname[80];
     Bit8u channel = params[0][3];
 
@@ -2225,51 +2455,15 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: ataX directive malformed.", context));
     }
     sprintf(tmpname, "ata.%d.resources", channel);
-    base = (bx_list_c*) SIM->get_param(tmpname);
-    if (strncmp(params[1], "enabled=", 8)) {
-      PARSE_ERR(("%s: ataX directive malformed.", context));
-    } else {
-      SIM->get_param_bool("enabled", base)->set(atol(&params[1][8]));
-    }
-
-    if (num_params > 2) {
-      if (strncmp(params[2], "ioaddr1=", 8)) {
+    for (i=1; i<num_params; i++) {
+      if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param(tmpname)) < 0) {
         PARSE_ERR(("%s: ataX directive malformed.", context));
       }
-      else {
-        if ((params[2][8] == '0') && (params[2][9] == 'x'))
-          SIM->get_param_num("ioaddr1", base)->set(strtoul(&params[2][8], NULL, 16));
-        else
-          SIM->get_param_num("ioaddr1", base)->set(strtoul(&params[2][8], NULL, 10));
-      }
     }
-
-    if (num_params > 3) {
-      if (strncmp(params[3], "ioaddr2=", 8)) {
-        PARSE_ERR(("%s: ataX directive malformed.", context));
-      }
-      else {
-        if ((params[3][8] == '0') && (params[3][9] == 'x'))
-          SIM->get_param_num("ioaddr2", base)->set(strtoul(&params[3][8], NULL, 16));
-        else
-          SIM->get_param_num("ioaddr2", base)->set(strtoul(&params[3][8], NULL, 10));
-      }
-    }
-
-    if (num_params > 4) {
-      if (strncmp(params[4], "irq=", 4)) {
-        PARSE_ERR(("%s: ataX directive malformed.", context));
-      }
-      else {
-        SIM->get_param_num("irq", base)->set(atol(&params[4][4]));
-      }
-    }
-  }
-
-  // ataX-master, ataX-slave
-  else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) > 4)) {
+  } else if ((!strncmp(params[0], "ata", 3)) && (strlen(params[0]) > 4)) {
+    // ataX-master, ataX-slave
     Bit8u channel = params[0][3];
-    int type = -1, mode = BX_HDIMAGE_MODE_FLAT, biosdetect = BX_ATA_BIOSDETECT_AUTO;
+    int type = -1;
     Bit32u cylinders = 0, heads = 0, sectors = 0;
     char tmpname[80];
 
@@ -2293,78 +2487,39 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         type = SIM->get_param_enum("type", base)->find_by_name(&params[i][5]);
         if (type < 0) {
           PARSE_ERR(("%s: ataX-master/slave: unknown type '%s'", context, &params[i][5]));
+        } else {
+          SIM->get_param_enum("type", base)->set(type);
         }
-      } else if (!strncmp(params[i], "mode=", 5)) {
-        mode = SIM->get_param_enum("mode", base)->find_by_name(&params[i][5]);
-        if (mode < 0) {
-          PARSE_ERR(("%s: ataX-master/slave: unknown mode '%s'", context, &params[i][5]));
-        }
-      } else if (!strncmp(params[i], "path=", 5)) {
-        SIM->get_param_string("path", base)->set(&params[i][5]);
       } else if (!strncmp(params[i], "cylinders=", 10)) {
         cylinders = atol(&params[i][10]);
       } else if (!strncmp(params[i], "heads=", 6)) {
         heads = atol(&params[i][6]);
       } else if (!strncmp(params[i], "spt=", 4)) {
         sectors = atol(&params[i][4]);
-      } else if (!strncmp(params[i], "model=", 6)) {
-        SIM->get_param_string("model", base)->set(&params[i][6]);
-      } else if (!strncmp(params[i], "biosdetect=", 11)) {
-        biosdetect = SIM->get_param_enum("biosdetect", base)->find_by_name(&params[i][11]);
-        if (biosdetect < 0) {
-          PARSE_ERR(("%s: ataX-master/slave: unknown biosdetect '%s'", context, &params[i][11]));
-        }
-      } else if (!strcmp(params[i], "translation=none")) {
-        SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_NONE);
-      } else if (!strcmp(params[i], "translation=lba")) {
-        SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_LBA);
-      } else if (!strcmp(params[i], "translation=large")) {
-        SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_LARGE);
       } else if (!strcmp(params[i], "translation=echs")) { // synonym of large
         SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_LARGE);
-      } else if (!strcmp(params[i], "translation=rechs")) {
-        SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_RECHS);
-      } else if (!strcmp(params[i], "translation=auto")) {
-        SIM->get_param_enum("translation", base)->set(BX_ATA_TRANSLATION_AUTO);
-      } else if (!strcmp(params[i], "status=ejected")) {
-        SIM->get_param_bool("status", base)->set(0);
-      } else if (!strcmp(params[i], "status=inserted")) {
-        SIM->get_param_bool("status", base)->set(1);
-      } else if (!strncmp(params[i], "journal=", 8)) {
-        SIM->get_param_string("journal", base)->set(&params[i][8]);
-      } else {
+      } else if (bx_parse_param_from_list(context, params[i], base) < 0) {
         PARSE_ERR(("%s: ataX-master/slave directive malformed.", context));
       }
     }
 
-    // Enables the ata device
-    if (type >= 0) {
-      SIM->get_param_enum("type", base)->set(type);
-      SIM->get_param_num("biosdetect", base)->set(biosdetect);
-      if (type == BX_ATA_DEVICE_DISK) {
-        if (strlen(SIM->get_param_string("path", base)->getptr()) > 0) {
-          SIM->get_param_bool("present", base)->set(1);
-          SIM->get_param_enum("mode", base)->set(mode);
-          SIM->get_param_num("cylinders", base)->set(cylinders);
-          if ((cylinders == 0) && (heads == 0) && (sectors == 0)) {
-            PARSE_WARN(("%s: ataX-master/slave CHS set to 0/0/0 - autodetection enabled", context));
-            // using heads = 16 and spt = 63 for autodetection (bximage defaults)
-            SIM->get_param_num("heads", base)->set(16);
-            SIM->get_param_num("spt", base)->set(63);
-          } else {
-            SIM->get_param_num("heads", base)->set(heads);
-            SIM->get_param_num("spt", base)->set(sectors);
-          }
+    // Check for geometry autodetection mode
+    if (type == BX_ATA_DEVICE_DISK) {
+      if (strlen(SIM->get_param_string("path", base)->getptr()) > 0) {
+        SIM->get_param_num("cylinders", base)->set(cylinders);
+        if ((cylinders == 0) && (heads == 0) && (sectors == 0)) {
+          PARSE_WARN(("%s: ataX-master/slave CHS set to 0/0/0 - autodetection enabled", context));
+          // using heads = 16 and spt = 63 for autodetection (bximage defaults)
+          SIM->get_param_num("heads", base)->set(16);
+          SIM->get_param_num("spt", base)->set(63);
         } else {
-          SIM->get_param_bool("present", base)->set(0);
+          SIM->get_param_num("heads", base)->set(heads);
+          SIM->get_param_num("spt", base)->set(sectors);
         }
-      } else if (type == BX_ATA_DEVICE_CDROM) {
-        SIM->get_param_bool("present", base)->set(1);
+      } else {
+        SIM->get_param_enum("type", base)->set(BX_ATA_DEVICE_NONE);
       }
-    } else {
-      SIM->get_param_bool("present", base)->set(0);
     }
-
   } else if (!strcmp(params[0], "boot")) {
     char tmppath[80];
     if (num_params < 2) {
@@ -2467,38 +2622,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         SIM->get_param_num(BXPN_CPU_NPROCESSORS)->set(processors);
         SIM->get_param_num(BXPN_CPU_NCORES)->set(cores);
         SIM->get_param_num(BXPN_CPU_NTHREADS)->set(threads);
-      } else if (!strncmp(params[i], "model=", 6)) {
-        if (! SIM->get_param_enum(BXPN_CPU_MODEL)->set_by_name(&params[i][6]))
-          PARSE_ERR(("%s: unsupported CPU model option.", context));
-      } else if (!strncmp(params[i], "ips=", 4)) {
-        SIM->get_param_num(BXPN_IPS)->set(atol(&params[i][4]));
-#if BX_SUPPORT_SMP
-      } else if (!strncmp(params[i], "quantum=", 8)) {
-        SIM->get_param_num(BXPN_SMP_QUANTUM)->set(atol(&params[i][8]));
-#endif
-      } else if (!strncmp(params[i], "reset_on_triple_fault=", 22)) {
-        if (parse_param_bool(params[i], 22, BXPN_RESET_ON_TRIPLE_FAULT) < 0) {
-          PARSE_ERR(("%s: cpu directive malformed.", context));
-        }
-#if BX_CPU_LEVEL >= 5
-      } else if (!strncmp(params[i], "ignore_bad_msrs=", 16)) {
-        if (parse_param_bool(params[i], 16, BXPN_IGNORE_BAD_MSRS) < 0) {
-          PARSE_ERR(("%s: cpu directive malformed.", context));
-        }
-#endif
-#if BX_SUPPORT_MONITOR_MWAIT
-      } else if (!strncmp(params[i], "mwait_is_nop=", 13)) {
-        if (parse_param_bool(params[i], 13, BXPN_MWAIT_IS_NOP) < 0) {
-          PARSE_ERR(("%s: cpu directive malformed.", context));
-        }
-#endif
-      } else if (!strncmp(params[i], "msrs=", 5)) {
-        SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->set(&params[i][5]);
-      } else if (!strncmp(params[i], "cpuid_limit_winnt=", 18)) {
-        if (parse_param_bool(params[i], 18, BXPN_CPUID_LIMIT_WINNT) < 0) {
-          PARSE_ERR(("%s: cpu directive malformed.", context));
-        }
-      } else {
+      } else if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param("cpu")) < 0) {
         PARSE_ERR(("%s: cpu directive malformed.", context));
       }
     }
@@ -2508,133 +2632,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: cpuid directive malformed.", context));
     }
     for (i=1; i<num_params; i++) {
-      if (!strncmp(params[i], "vendor_string=", 14)) {
-        if (strlen(&params[i][14]) != BX_CPUID_VENDOR_LEN) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-        SIM->get_param_string(BXPN_VENDOR_STRING)->set(&params[i][14]);
-      } else if (!strncmp(params[i], "brand_string=", 13)) {
-        if (strlen(&params[i][13]) > BX_CPUID_BRAND_LEN) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        } 
-        SIM->get_param_string(BXPN_BRAND_STRING)->set(&params[i][13]);
-      } else if (!strncmp(params[i], "stepping=", 9)) {
-        SIM->get_param_num(BXPN_CPUID_STEPPING)->set(atol(&params[i][9]));
-      } else if (!strncmp(params[i], "model=", 6)) {
-        SIM->get_param_num(BXPN_CPUID_MODEL)->set(strtoul(&params[i][6], NULL, 0));
-      } else if (!strncmp(params[i], "family=", 7)) {
-        SIM->get_param_num(BXPN_CPUID_FAMILY)->set(strtoul(&params[i][7], NULL, 0));
-#if BX_CPU_LEVEL >= 5
-      } else if (!strncmp(params[i], "mmx=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_MMX) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "apic=", 5)) {
-        if (! SIM->get_param_enum(BXPN_CPUID_APIC)->set_by_name(&params[i][5]))
-          PARSE_ERR(("%s: unsupported apic option.", context));
-      } else if (!strncmp(params[i], "xapic=", 6)) {
-        PARSE_ERR(("%s: unsupported xapic option (deprecated).", context));
-#endif
-#if BX_CPU_LEVEL >= 6
-      } else if (!strncmp(params[i], "sse=", 4)) {
-        if (! SIM->get_param_enum(BXPN_CPUID_SSE)->set_by_name(&params[i][4]))
-          PARSE_ERR(("%s: unsupported sse option.", context));
-      } else if (!strncmp(params[i], "sse4a=", 6)) {
-        if (parse_param_bool(params[i], 6, BXPN_CPUID_SSE4A) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "aes=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_AES) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "movbe=", 6)) {
-        if (parse_param_bool(params[i], 6, BXPN_CPUID_MOVBE) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "adx=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_ADX) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "sep=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_SEP) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "xsave=", 6)) {
-        if (parse_param_bool(params[i], 6, BXPN_CPUID_XSAVE) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "xsaveopt=", 9)) {
-        if (parse_param_bool(params[i], 9, BXPN_CPUID_XSAVEOPT) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-#if BX_SUPPORT_AVX
-      } else if (!strncmp(params[i], "avx=", 4)) {
-        SIM->get_param_num(BXPN_CPUID_AVX)->set(atol(&params[i][4]));
-      } else if (!strncmp(params[i], "avx_f16c=", 9)) {
-        if (parse_param_bool(params[i], 9, BXPN_CPUID_AVX_F16CVT) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "avx_fma=", 8)) {
-        if (parse_param_bool(params[i], 8, BXPN_CPUID_AVX_FMA) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "bmi=", 4)) {
-        SIM->get_param_num(BXPN_CPUID_BMI)->set(atol(&params[i][4]));
-      } else if (!strncmp(params[i], "xop=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_XOP) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "tbm=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_TBM) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "fma4=", 5)) {
-        if (parse_param_bool(params[i], 5, BXPN_CPUID_FMA4) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-#endif
-#if BX_SUPPORT_VMX
-      } else if (!strncmp(params[i], "vmx=", 4)) {
-        SIM->get_param_num(BXPN_CPUID_VMX)->set(atol(&params[i][4]));
-#endif
-#if BX_SUPPORT_SVM
-      } else if (!strncmp(params[i], "svm=", 4)) {
-        if (parse_param_bool(params[i], 4, BXPN_CPUID_SVM) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-#endif
-#if BX_SUPPORT_X86_64
-      } else if (!strncmp(params[i], "x86_64=", 7)) {
-        if (parse_param_bool(params[i], 7, BXPN_CPUID_X86_64) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "1g_pages=", 9)) {
-        if (parse_param_bool(params[i], 9, BXPN_CPUID_1G_PAGES) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "pcid=", 5)) {
-        if (parse_param_bool(params[i], 5, BXPN_CPUID_PCID) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "fsgsbase=", 9)) {
-        if (parse_param_bool(params[i], 9, BXPN_CPUID_FSGSBASE) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-#endif
-      } else if (!strncmp(params[i], "smep=", 5)) {
-        if (parse_param_bool(params[i], 5, BXPN_CPUID_SMEP) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-#if BX_SUPPORT_MONITOR_MWAIT
-      } else if (!strncmp(params[i], "mwait=", 6)) {
-        if (parse_param_bool(params[i], 6, BXPN_CPUID_MWAIT) < 0) {
-          PARSE_ERR(("%s: cpuid directive malformed.", context));
-        }
-#endif
-#endif
-      } else if (!strncmp(params[i], "cpuid_limit_winnt=", 18)) {
-        PARSE_ERR(("%s: cpuid_limit_winnt moved to CPU .bochsrc option.", context));
-      } else {
+      if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param("cpuid")) < 0) {
         PARSE_ERR(("%s: cpuid directive malformed.", context));
       }
     }
@@ -2659,25 +2657,24 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       }
     }
   } else if (!strcmp(params[0], "romimage")) {
-    if ((num_params < 2) || (num_params > 3)) {
+    if ((num_params < 2) || (num_params > 4)) {
       PARSE_ERR(("%s: romimage directive: wrong # args.", context));
     }
-    if (!strncmp(params[1], "file=", 5)) {
-      SIM->get_param_string(BXPN_ROM_PATH)->set(&params[1][5]);
-    } else {
-      PARSE_ERR(("%s: romimage directive malformed.", context));
-    }
-    if (num_params == 3) {
-      if (!strncmp(params[2], "address=", 8)) {
-        if ((params[2][8] == '0') && (params[2][9] == 'x'))
-          SIM->get_param_num(BXPN_ROM_ADDRESS)->set(strtoul(&params[2][8], NULL, 16));
+    // set to default value 0 (auto-detect if no specified)
+    SIM->get_param_num(BXPN_ROM_ADDRESS)->set(0);
+    for (i=1; i<num_params; i++) {
+      if (!strncmp(params[i], "file=", 5)) {
+        SIM->get_param_string(BXPN_ROM_PATH)->set(&params[i][5]);
+      } else  if (!strncmp(params[i], "address=", 8)) {
+        if ((params[i][8] == '0') && (params[i][9] == 'x'))
+          SIM->get_param_num(BXPN_ROM_ADDRESS)->set(strtoul(&params[i][8], NULL, 16));
         else
-          SIM->get_param_num(BXPN_ROM_ADDRESS)->set(strtoul(&params[2][8], NULL, 10));
+          SIM->get_param_num(BXPN_ROM_ADDRESS)->set(strtoul(&params[i][8], NULL, 10));
+      } else  if (!strncmp(params[i], "options=", 8)) {
+        SIM->get_param_string(BXPN_ROM_OPTIONS)->set(&params[i][8]);
       } else {
         PARSE_ERR(("%s: romimage directive malformed.", context));
       }
-    } else {
-      SIM->get_param_num(BXPN_ROM_ADDRESS)->set(0);
     }
   } else if (!strcmp(params[0], "vgaromimage")) {
     if (num_params != 2) {
@@ -2690,61 +2687,49 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     }
   } else if (!strncmp(params[0], "optromimage", 11)) {
     int num = atoi(&params[0][11]);
-    char tmppath[80], tmpaddr[80];
+    char pname[16];
     if ((num < 1) || (num > BX_N_OPTROM_IMAGES)) {
       PARSE_ERR(("%s: optromimage%d: not supported", context, num));
     }
-    if (num_params != 3) {
+    if (num_params > 3) {
       PARSE_ERR(("%s: optromimage%d directive: wrong # args.", context, num));
     }
-    sprintf(tmppath, "memory.optrom.%d.path", num);
-    sprintf(tmpaddr, "memory.optrom.%d.addr", num);
+    sprintf(pname, "%s.%d", BXPN_OPTROM_BASE, num);
+    base = (bx_list_c*) SIM->get_param(pname);
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "file=", 5)) {
-        SIM->get_param_string(tmppath)->set(&params[i][5]);
+        SIM->get_param_string("file", base)->set(&params[i][5]);
       } else if (!strncmp(params[i], "address=", 8)) {
         if ((params[i][8] == '0') && (params[2][9] == 'x'))
-          SIM->get_param_num(tmpaddr)->set(strtoul(&params[i][8], NULL, 16));
+          SIM->get_param_num("address", base)->set(strtoul(&params[i][8], NULL, 16));
         else
-          SIM->get_param_num(tmpaddr)->set(strtoul(&params[i][8], NULL, 10));
+          SIM->get_param_num("address", base)->set(strtoul(&params[i][8], NULL, 10));
       } else {
         PARSE_ERR(("%s: optromimage%d directive malformed.", context, num));
       }
     }
   } else if (!strncmp(params[0], "optramimage", 11)) {
     int num = atoi(&params[0][11]);
-    char tmppath[80], tmpaddr[80];
+    char pname[16];
     if ((num < 1) || (num > BX_N_OPTRAM_IMAGES)) {
       PARSE_ERR(("%s: optramimage%d: not supported", context, num));
     }
-    if (num_params != 3) {
+    if (num_params > 3) {
       PARSE_ERR(("%s: optramimage%d directive: wrong # args.", context, num));
     }
-    sprintf(tmppath, "memory.optram.%d.path", num);
-    sprintf(tmpaddr, "memory.optram.%d.addr", num);
+    sprintf(pname, "%s.%d", BXPN_OPTRAM_BASE, num);
+    base = (bx_list_c*) SIM->get_param(pname);
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "file=", 5)) {
-        SIM->get_param_string(tmppath)->set(&params[i][5]);
+        SIM->get_param_string("file", base)->set(&params[i][5]);
       } else if (!strncmp(params[i], "address=", 8)) {
         if ((params[i][8] == '0') && (params[2][9] == 'x'))
-          SIM->get_param_num(tmpaddr)->set(strtoul(&params[i][8], NULL, 16));
+          SIM->get_param_num("address", base)->set(strtoul(&params[i][8], NULL, 16));
         else
-          SIM->get_param_num(tmpaddr)->set(strtoul(&params[i][8], NULL, 10));
+          SIM->get_param_num("address", base)->set(strtoul(&params[i][8], NULL, 10));
       } else {
         PARSE_ERR(("%s: optramimage%d directive malformed.", context, num));
       }
-    }
-  } else if (!strcmp(params[0], "vga_update_interval")) {
-    Bit64u value;
-    if (num_params != 2) {
-      PARSE_ERR(("%s: vga_update_interval directive: wrong # args.", context));
-    }
-    value = atol(params[1]);
-    if (value > 0) {
-      SIM->get_param_num(BXPN_VGA_UPDATE_FREQUENCY)->set(1000000 / value);
-      PARSE_WARN(("%s: 'vga_update_interval' will be replaced by new 'vga: update_freq' option.", context));
-    } else {
-      PARSE_ERR(("%s: invalid value for vga_update_interval", context));
     }
   } else if (!strcmp(params[0], "vga")) {
     if (num_params < 2) {
@@ -2752,9 +2737,16 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     }
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "extension=", 10)) {
-        SIM->get_param_string(BXPN_VGA_EXTENSION)->set(&params[i][10]);
+        const char *vgaext = &params[i][10];
+        SIM->get_param_string(BXPN_VGA_EXTENSION)->set(vgaext);
+        if ((strlen(vgaext) > 0) &&
+            (strcmp(vgaext, "none") && strcmp(vgaext, "vbe") && strcmp(vgaext, "cirrus"))) {
+          PLUG_load_vga_plugin(vgaext);
+        }
       } else if (!strncmp(params[i], "update_freq=", 12)) {
         SIM->get_param_num(BXPN_VGA_UPDATE_FREQUENCY)->set(atol(&params[i][12]));
+      } else if (!strncmp(params[i], "realtime=", 9)) {
+        SIM->get_param_bool(BXPN_VGA_REALTIME)->set(atol(&params[i][9]));
       } else {
         PARSE_ERR(("%s: vga directive malformed.", context));
       }
@@ -2764,63 +2756,20 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       PARSE_ERR(("%s: keyboard directive malformed.", context));
     }
     for (i=1; i<num_params; i++) {
-      if (!strncmp(params[i], "serial_delay=", 13)) {
-        SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->set(atol(&params[i][13]));
-        if (SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->get() < 5) {
-          PARSE_ERR (("%s: keyboard serial delay not big enough!", context));
-        }
-      } else if (!strncmp(params[i], "paste_delay=", 12)) {
-        SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set(atol(&params[i][12]));
-        if (SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->get() < 1000) {
-          PARSE_ERR (("%s: keyboard paste delay not big enough!", context));
-        }
-      } else if (!strncmp(params[i], "type=", 5)) {
-        if (!SIM->get_param_enum(BXPN_KBD_TYPE)->set_by_name(&params[i][5])) {
-          PARSE_ERR(("%s: keyboard_type directive: wrong arg '%s'.", context,params[1]));
-        }
-      } else if (!strncmp(params[i], "keymap=", 7)) {
-        SIM->get_param_bool(BXPN_KBD_USEMAPPING)->set(strlen(params[i]) > 7);
-        SIM->get_param_string(BXPN_KBD_KEYMAP)->set(&params[i][7]);
-      } else {
+      if (!strncmp(params[i], "keymap=", 7)) {
+        char *kmap = &params[i][7];
+        SIM->get_param_bool(BXPN_KBD_USEMAPPING)->set((strlen(kmap) > 0) && (strcmp(kmap, "none")));
+        SIM->get_param_string(BXPN_KBD_KEYMAP)->set(kmap);
+      } else if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param(BXPN_KEYBOARD)) < 0) {
         PARSE_ERR(("%s: keyboard directive malformed.", context));
       }
     }
-  } else if (!strcmp(params[0], "keyboard_serial_delay")) {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: keyboard_serial_delay directive: wrong # args.", context));
-    }
-    SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->set(atol(params[1]));
-    if (SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->get() < 5) {
-      PARSE_ERR (("%s: keyboard_serial_delay not big enough!", context));
-    }
-    PARSE_WARN(("%s: 'keyboard_serial_delay' will be replaced by new 'keyboard' option.", context));
-  } else if (!strcmp(params[0], "keyboard_paste_delay")) {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: keyboard_paste_delay directive: wrong # args.", context));
-    }
-    SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->set(atol(params[1]));
-    if (SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->get() < 1000) {
-      PARSE_ERR (("%s: keyboard_paste_delay not big enough!", context));
-    }
-    PARSE_WARN(("%s: 'keyboard_paste_delay' will be replaced by new 'keyboard' option.", context));
-  } else if (!strcmp(params[0], "text_snapshot_check")) {
-    PARSE_ERR(("%s: the 'text_snapshot_check' feature has been removed.", context));
   } else if (!strcmp(params[0], "mouse")) {
     if (num_params < 2) {
       PARSE_ERR(("%s: mouse directive malformed.", context));
     }
     for (i=1; i<num_params; i++) {
-      if (!strncmp(params[i], "enabled=", 8)) {
-        if (parse_param_bool(params[1], 8, BXPN_MOUSE_ENABLED) < 0) {
-          PARSE_ERR(("%s: mouse directive malformed.", context));
-        }
-      } else if (!strncmp(params[i], "type=", 5)) {
-        if (!SIM->get_param_enum(BXPN_MOUSE_TYPE)->set_by_name(&params[i][5]))
-          PARSE_ERR(("%s: mouse type '%s' not available", context, &params[i][5]));
-      } else if (!strncmp(params[i], "toggle=", 7)) {
-        if (!SIM->get_param_enum(BXPN_MOUSE_TOGGLE)->set_by_name(&params[i][7]))
-          PARSE_ERR(("%s: mouse toggle method '%s' not available", context, &params[i][7]));
-      } else {
+      if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param(BXPN_MOUSE)) < 0) {
         PARSE_ERR(("%s: mouse directive malformed.", context));
       }
     }
@@ -2856,24 +2805,18 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     }
     SIM->get_param_string(BXPN_SCREENMODE)->set(&params[1][5]);
 #endif
-  } else if ((!strcmp(params[0], "pci")) ||
-             (!strcmp(params[0], "i440fxsupport"))) {
-    // new option 'pci' for future extensions
+  } else if (!strcmp(params[0], "pci")) {
     char tmpdev[80];
     int enabled = -1;
-    int chipset = -1;
-    if (!strcmp(params[0], "i440fxsupport")) {
-      chipset = 1;
-      PARSE_WARN(("%s: 'i440fxsupport' will be replaced by new 'pci' option.", context));
-    }
+    bx_bool chipset = 0;
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "enabled=", 8)) {
         enabled = atol(&params[i][8]);
       } else if (!strncmp(params[i], "chipset=", 8)) {
-        if (!strcmp(&params[i][8], "i440fx")) {
-          chipset = 1;
-        } else {
+        if (!SIM->get_param_enum(BXPN_PCI_CHIPSET)->set_by_name(&params[i][8])) {
           PARSE_ERR(("%s: pci: unknown chipset '%s'", context, &params[i][8]));
+        } else {
+          chipset = 1;
         }
       } else if ((!strncmp(params[i], "slot", 4)) && (params[i][5] == '=')) {
         slot = atol(&params[i][4]);
@@ -2888,10 +2831,10 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       }
     }
     if (enabled == 0) {
-      SIM->get_param_bool(BXPN_I440FX_SUPPORT)->set(0);
+      SIM->get_param_bool(BXPN_PCI_ENABLED)->set(0);
     } else if (enabled == 1) {
       if (chipset == 1) {
-        SIM->get_param_bool(BXPN_I440FX_SUPPORT)->set(1);
+        SIM->get_param_bool(BXPN_PCI_ENABLED)->set(1);
       } else {
         PARSE_ERR(("%s: pci: chipset not specified", context));
       }
@@ -2905,14 +2848,17 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       } else if (!strcmp(params[i], "rtc_init=image")) {
         SIM->get_param_bool(BXPN_CMOSIMAGE_RTC_INIT)->set(1);
       } else {
-        // for backward compatiblity
-        SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->set(params[i]);
+        BX_ERROR(("%s: unknown parameter for cmosimage ignored.", context));
       }
     }
     if (strlen(SIM->get_param_string(BXPN_CMOSIMAGE_PATH)->getptr()) > 0) {
       SIM->get_param_bool(BXPN_CMOSIMAGE_ENABLED)->set(1);
     }
   } else if (!strcmp(params[0], "clock")) {
+    const char months[] = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec ";
+    char wday[4], mon[4];
+    int n, year;
+    struct tm tm_time;
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "sync=", 5)) {
         SIM->get_param_enum(BXPN_CLOCK_SYNC)->set_by_name(&params[i][5]);
@@ -2927,14 +2873,47 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         SIM->get_param_num(BXPN_CLOCK_TIME0)->set(BX_CLOCK_TIME0_UTC);
       }
       else if (!strncmp(params[i], "time0=", 6)) {
-        SIM->get_param_num(BXPN_CLOCK_TIME0)->set(atoi(&params[i][6]));
+        if (isalpha(params[i][6])) {
+          memset(&tm_time, 0, sizeof(tm_time));
+          n = sscanf(&params[i][6], "%3s %3s%3d %2d:%2d:%2d %d", wday, mon, &tm_time.tm_mday,
+                     &tm_time.tm_hour, &tm_time.tm_min, &tm_time.tm_sec, &year);
+          if ((n == 7) && (year >= 1980) && (strstr(months, mon) != NULL)) {
+            tm_time.tm_year = year - 1900;
+            tm_time.tm_mon = 12 - (strlen(strstr(months, mon)) / 4);
+            SIM->get_param_num(BXPN_CLOCK_TIME0)->set(mktime(&tm_time));
+          } else {
+            PARSE_ERR(("%s: time0 string format malformed.", context));
+          }
+        } else {
+          SIM->get_param_num(BXPN_CLOCK_TIME0)->set(atoi(&params[i][6]));
+        }
       }
       else {
         BX_ERROR(("%s: unknown parameter for clock ignored.", context));
       }
     }
-  }
-  else if (!strcmp(params[0], "gdbstub")) {
+  } else if (!strcmp(params[0], "sound")) {
+#if BX_SUPPORT_SOUNDLOW
+    static const char default_drv[] = BX_SOUND_LOWLEVEL_NAME;
+    const char *driver;
+    for (i=1; i<num_params; i++) {
+      if (!strncmp(params[i], "driver=", 7)) {
+        if (!strcmp(&params[i][7], "default")) {
+          driver = default_drv;
+        } else {
+          driver = &params[i][7];
+        }
+        SIM->get_param_enum(BXPN_SOUND_WAVEOUT_DRV)->set_by_name(driver);
+        SIM->get_param_enum(BXPN_SOUND_WAVEIN_DRV)->set_by_name(driver);
+        SIM->get_param_enum(BXPN_SOUND_MIDIOUT_DRV)->set_by_name(driver);
+      } else if (bx_parse_param_from_list(context, params[i], (bx_list_c*) SIM->get_param(BXPN_SOUNDLOW)) < 0) {
+        BX_ERROR(("%s: unknown parameter for sound ignored.", context));
+      }
+    }
+#else
+    PARSE_ERR(("%s: Bochs is not compiled with lowlevel sound support", context));
+#endif
+  } else if (!strcmp(params[0], "gdbstub")) {
 #if BX_GDBSTUB
     if (num_params < 2) {
       PARSE_ERR(("%s: gdbstub directive: wrong # args.", context));
@@ -2975,8 +2954,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
 #else
     PARSE_ERR(("%s: Bochs is not compiled with gdbstub support", context));
 #endif
-  }
-  else if (!strcmp(params[0], "magic_break")) {
+  } else if (!strcmp(params[0], "magic_break")) {
 #if BX_DEBUGGER
     if (num_params != 2) {
       PARSE_ERR(("%s: magic_break directive: wrong # args.", context));
@@ -2998,13 +2976,11 @@ static int parse_line_formatted(const char *context, int num_params, char *param
 #else
     PARSE_WARN(("%s: Bochs is not compiled with internal debugger support", context));
 #endif
-  }
-  else if (!strcmp(params[0], "debug_symbols")) {
+  } else if (!strcmp(params[0], "debug_symbols")) {
     if (parse_debug_symbols(context, (const char **)(params + 1), num_params - 1) < 0) {
       return -1;
     }
-  }
-  else if (!strcmp(params[0], "print_timestamps")) {
+  } else if (!strcmp(params[0], "print_timestamps")) {
     if (num_params != 2) {
       PARSE_ERR(("%s: print_timestamps directive: wrong # args.", context));
     }
@@ -3017,8 +2993,7 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     else {
       PARSE_ERR(("%s: print_timestamps directive malformed.", context));
     }
-  }
-  else if (!strcmp(params[0], "port_e9_hack")) {
+  } else if (!strcmp(params[0], "port_e9_hack")) {
     if (num_params != 2) {
       PARSE_ERR(("%s: port_e9_hack directive: wrong # args.", context));
     }
@@ -3028,8 +3003,8 @@ static int parse_line_formatted(const char *context, int num_params, char *param
     if (parse_param_bool(params[1], 8, BXPN_PORT_E9_HACK) < 0) {
       PARSE_ERR(("%s: port_e9_hack directive malformed.", context));
     }
-  }
-  else if (!strcmp(params[0], "load32bitOSImage")) {
+  } else if (!strcmp(params[0], "load32bitOSImage")) {
+#if BX_LOAD32BITOSHACK
     if ((num_params!=4) && (num_params!=5)) {
       PARSE_ERR(("%s: load32bitOSImage directive: wrong # args.", context));
     }
@@ -3059,63 +3034,12 @@ static int parse_line_formatted(const char *context, int num_params, char *param
       }
       SIM->get_param_string(BXPN_LOAD32BITOS_INITRD)->set(&params[4][7]);
     }
-  }
-  else if (!strcmp(params[0], "keyboard_type")) {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: keyboard_type directive: wrong # args.", context));
-    }
-    if (!SIM->get_param_enum(BXPN_KBD_TYPE)->set_by_name(params[1])) {
-      PARSE_ERR(("%s: keyboard_type directive: wrong arg '%s'.", context,params[1]));
-    }
-    PARSE_WARN(("%s: 'keyboard_type' will be replaced by new 'keyboard' option.", context));
-  }
-  else if (!strcmp(params[0], "keyboard_mapping")
-         ||!strcmp(params[0], "keyboardmapping")) {
-    for (i=1; i<num_params; i++) {
-      if (!strncmp(params[i], "enabled=", 8)) {
-        SIM->get_param_bool(BXPN_KBD_USEMAPPING)->set(atol(&params[i][8]));
-      }
-      else if (!strncmp(params[i], "map=", 4)) {
-        SIM->get_param_string(BXPN_KBD_KEYMAP)->set(&params[i][4]);
-      }
-    }
-    PARSE_WARN(("%s: '%s' will be replaced by new 'keyboard' option.", context, params[0]));
-  }
-  else if (!strcmp(params[0], "user_shortcut"))
-  {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: user_shortcut directive: wrong # args.", context));
-    }
-    if(!strncmp(params[1], "keys=", 4)) {
-      SIM->get_param_string(BXPN_USER_SHORTCUT)->set(&params[1][5]);
-      if ((strchr(&params[1][5], '-') == NULL) && (strlen(&params[1][5]) > 5))
-        PARSE_WARN(("user_shortcut: old-style syntax detected"));
-    } else {
-      PARSE_ERR(("%s: user_shortcut directive malformed.", context));
-    }
-  }
-  else if (!strcmp(params[0], "config_interface"))
-  {
-    if (num_params != 2) {
-      PARSE_ERR(("%s: config_interface directive: wrong # args.", context));
-    }
-    if (!SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->set_by_name(params[1]))
-      PARSE_ERR(("%s: config_interface '%s' not available", context, params[1]));
-  }
-  else if (!strcmp(params[0], "display_library")) {
-    if ((num_params < 2) || (num_params > 3)) {
-      PARSE_ERR(("%s: display_library directive: wrong # args.", context));
-    }
-    if (!SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY)->set_by_name(params[1]))
-      PARSE_ERR(("%s: display library '%s' not available", context, params[1]));
-    if (num_params == 3) {
-      if (!strncmp(params[2], "options=", 8)) {
-        SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->set(&params[2][8]);
-      }
-    }
-  }
+    PARSE_WARN(("%s: WARNING: This Bochs feature is not maintained yet", context));
+#else
+    PARSE_ERR(("%s: load32bitOSImage: BX_LOAD32BITOSHACK must be set to 1.", context));
+#endif
+  } else if (!strcmp(params[0], "user_plugin")) {
 #if BX_PLUGINS
-  else if (!strcmp(params[0], "user_plugin")) {
     char tmpname[80];
     for (i=1; i<num_params; i++) {
       if (!strncmp(params[i], "name=", 5)) {
@@ -3129,48 +3053,80 @@ static int parse_line_formatted(const char *context, int num_params, char *param
         PARSE_ERR(("%s: unknown user plugin parameter '%s'", context, params[i]));
       }
     }
-  }
+#else
+    PARSE_ERR(("%s: Bochs is not compiled with plugin support", context));
 #endif
-  else if (!strcmp(params[0], "plugin_ctrl")) {
-    char *param, *pname, *val;
-    for (i=1; i<num_params; i++) {
-      param = strdup(params[i]);
-      pname = strtok(param, "=");
-      val = strtok(NULL, "");
-      if (val != NULL) {
-        if (isdigit(val[0])) {
-          SIM->opt_plugin_ctrl(pname, atoi(val));
-        } else {
-          PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
-        }
-      } else {
-        PARSE_ERR(("%s: plugin_ctrl directive malformed", context));
-      }
-      free(param);
-    }
-  }
-  // add-on options handled by registered functions
-  else if (SIM->is_addon_option(params[0]))
-  {
+  } else if (SIM->is_addon_option(params[0])) {
+    // add-on options handled by registered functions
     return SIM->parse_addon_option(context, num_params, &params[0]);
-  }
-  // treat unknown option as plugin name and try to load it
-  else if (SIM->opt_plugin_ctrl(params[0], 1))
-  {
-    // after loading the plugin a bochsrc option with it's name must exist
+  } else if (is_deprecated_option(params[0], &newparam)) {
+    PARSE_ERR(("%s: '%s' is deprecated - use '%s' option instead.", context, params[0], newparam));
+  } else if (SIM->opt_plugin_ctrl(params[0], 1)) {
+    // treat unknown option as plugin name and try to load it
     if (SIM->is_addon_option(params[0])) {
+      // after loading the plugin a bochsrc option with it's name must exist
       return SIM->parse_addon_option(context, num_params, &params[0]);
     } else {
       PARSE_ERR(("%s: directive '%s' not understood", context, params[0]));
     }
-  }
-  else
-  {
+  } else {
     PARSE_ERR(("%s: directive '%s' not understood", context, params[0]));
   }
   return 0;
 }
 
+
+int bx_write_param_list(FILE *fp, bx_list_c *base, const char *optname, bx_bool multiline)
+{
+  char bxrcline[BX_PATHNAME_LEN], tmpstr[BX_PATHNAME_LEN];
+  bx_bool newline = 1;
+  int p = 0;
+
+  if (base == NULL) return -1;
+  if (!base->get_enabled()) return -1;
+  bxrcline[0] = 0;
+  for (int i = 0; i < base->get_size(); i++) {
+    if (newline) {
+      if (strlen(bxrcline) > 0) {
+        fprintf(fp, "%s\n", bxrcline);
+      }
+      if (optname == NULL) {
+        sprintf(bxrcline, "%s: ", base->get_name());
+      } else {
+        sprintf(bxrcline, "%s: ", optname);
+      }
+      newline = 0;
+      p = 0;
+    }
+    bx_param_c *param = base->get(i);
+    if (param->get_enabled() && ((param->get_options() & param->CI_ONLY) == 0)) {
+      if (p > 0) {
+        strcat(bxrcline, ", ");
+      }
+      sprintf(tmpstr, "%s=", param->get_name());
+      strcat(bxrcline, tmpstr);
+      switch (param->get_type()) {
+        case BXT_PARAM_NUM:
+        case BXT_PARAM_BOOL:
+        case BXT_PARAM_ENUM:
+        case BXT_PARAM_STRING:
+        case BXT_PARAM_BYTESTRING:
+          param->dump_param(tmpstr, BX_PATHNAME_LEN, 1);
+          break;
+        default:
+          BX_ERROR(("bx_write_param_list(): unsupported parameter type"));
+          tmpstr[0] = 0;
+      }
+      strcat(bxrcline, tmpstr);
+      p++;
+    }
+    if (multiline && (strlen(bxrcline) > 80)) {
+      newline = 1;
+    }
+  }
+  fprintf(fp, "%s\n", bxrcline);
+  return 0;
+}
 
 static const char *fdtypes[] = {
   "none", "1_2", "1_44", "2_88", "720k", "360k", "160k", "180k", "320k"
@@ -3210,138 +3166,52 @@ int bx_write_floppy_options(FILE *fp, int drive)
     fprintf(fp, ", %s=\"%s\", status=%s, write_protected=%d",
       fdtypes[SIM->get_param_enum(type)->get() - BX_FLOPPY_NONE],
       SIM->get_param_string(path)->getptr(),
-      SIM->get_param_bool(status)->get() ? "inserted":"ejected",
+      SIM->get_param_enum(status)->get_selected(),
       SIM->get_param_bool(readonly)->get());
   }
   fprintf(fp, "\n");
   return 0;
 }
 
-int bx_write_ata_options(FILE *fp, Bit8u channel, bx_list_c *base)
-{
-  fprintf(fp, "ata%d: enabled=%d", channel, SIM->get_param_bool("enabled", base)->get());
-
-  if (SIM->get_param_bool("enabled", base)->get()) {
-    fprintf(fp, ", ioaddr1=0x%x, ioaddr2=0x%x, irq=%d", SIM->get_param_num("ioaddr1", base)->get(),
-      SIM->get_param_num("ioaddr2", base)->get(), SIM->get_param_num("irq", base)->get());
-    }
-
-  fprintf(fp, "\n");
-  return 0;
-}
-
-int bx_write_atadevice_options(FILE *fp, Bit8u channel, Bit8u drive, bx_list_c *base)
-{
-  if (SIM->get_param_bool("present", base)->get()) {
-    fprintf(fp, "ata%d-%s: ", channel, drive==0?"master":"slave");
-
-    if (SIM->get_param_enum("type", base)->get() == BX_ATA_DEVICE_DISK) {
-      fprintf(fp, "type=disk");
-
-      fprintf(fp, ", mode=%s", SIM->get_param_enum("mode", base)->get_selected());
-      fprintf(fp, ", translation=%s", SIM->get_param_enum("translation", base)->get_selected());
-      fprintf(fp, ", path=\"%s\", cylinders=%d, heads=%d, spt=%d",
-          SIM->get_param_string("path", base)->getptr(),
-          SIM->get_param_num("cylinders", base)->get(),
-          SIM->get_param_num("heads", base)->get(),
-          SIM->get_param_num("spt", base)->get());
-
-      if (SIM->get_param_string("journal", base)->getptr() != NULL)
-        if (strcmp(SIM->get_param_string("journal", base)->getptr(), "") != 0)
-          fprintf(fp, ", journal=\"%s\"", SIM->get_param_string("journal", base)->getptr());
-
-    } else if (SIM->get_param_enum("type", base)->get() == BX_ATA_DEVICE_CDROM) {
-      fprintf(fp, "type=cdrom, path=\"%s\", status=%s",
-        SIM->get_param_string("path", base)->getptr(),
-        SIM->get_param_bool("status", base)->get() ? "inserted":"ejected");
-    }
-
-    fprintf(fp, ", biosdetect=%s", SIM->get_param_enum("biosdetect", base)->get_selected());
-
-    if (SIM->get_param_string("model", base)->getptr()>0) {
-        fprintf(fp, ", model=\"%s\"", SIM->get_param_string("model", base)->getptr());
-    }
-
-    fprintf(fp, "\n");
-  }
-  return 0;
-}
-
 int bx_write_usb_options(FILE *fp, int maxports, bx_list_c *base)
 {
   int i;
-  char tmpname[20];
+  char tmpname[24], tmpstr[BX_PATHNAME_LEN];
 
   fprintf(fp, "usb_%s: enabled=%d", base->get_name(), SIM->get_param_bool("enabled", base)->get());
   if (SIM->get_param_bool("enabled", base)->get()) {
     for (i = 1; i <= maxports; i++) {
       sprintf(tmpname, "port%d.device", i);
-      fprintf(fp, ", port%d=%s", i, SIM->get_param_string(tmpname, base)->getptr());
+      SIM->get_param_string(tmpname, base)->dump_param(tmpstr, BX_PATHNAME_LEN, 1);
+      fprintf(fp, ", port%d=%s", i, tmpstr);
       sprintf(tmpname, "port%d.options", i);
-      fprintf(fp, ", options%d=%s", i, SIM->get_param_string(tmpname, base)->getptr());
+      SIM->get_param_string(tmpname, base)->dump_param(tmpstr, BX_PATHNAME_LEN, 1);
+      fprintf(fp, ", options%d=%s", i, tmpstr);
     }
   }
   fprintf(fp, "\n");
   return 0;
 }
 
-int bx_write_pci_nic_options(FILE *fp, bx_list_c *base)
-{
-  fprintf (fp, "%s: enabled=%d", base->get_name(), SIM->get_param_bool("enabled", base)->get());
-  if (SIM->get_param_bool("enabled", base)->get()) {
-    char *ptr = SIM->get_param_string("macaddr", base)->getptr();
-    fprintf (fp, ", mac=%02x:%02x:%02x:%02x:%02x:%02x, ethmod=%s, ethdev=%s, script=%s, bootrom=%s",
-      (unsigned int)(0xff & ptr[0]),
-      (unsigned int)(0xff & ptr[1]),
-      (unsigned int)(0xff & ptr[2]),
-      (unsigned int)(0xff & ptr[3]),
-      (unsigned int)(0xff & ptr[4]),
-      (unsigned int)(0xff & ptr[5]),
-      SIM->get_param_enum("ethmod", base)->get_selected(),
-      SIM->get_param_string("ethdev", base)->getptr(),
-      SIM->get_param_string("script", base)->getptr(),
-      SIM->get_param_string("bootrom", base)->getptr());
-  }
-  fprintf (fp, "\n");
-  return 0;
-}
-
+#if BX_LOAD32BITOSHACK
 int bx_write_loader_options(FILE *fp)
 {
   if (SIM->get_param_enum(BXPN_LOAD32BITOS_WHICH)->get() == Load32bitOSNone) {
     fprintf(fp, "# no loader\n");
     return 0;
   }
-  BX_ASSERT((SIM->get_param_enum(BXPN_LOAD32BITOS_WHICH)->get() == Load32bitOSLinux) ||
-            (SIM->get_param_enum(BXPN_LOAD32BITOS_WHICH)->get() == Load32bitOSNullKernel));
   fprintf (fp, "load32bitOSImage: os=%s, path=%s, iolog=%s, initrd=%s\n",
-      (SIM->get_param_enum(BXPN_LOAD32BITOS_WHICH)->get() == Load32bitOSLinux) ? "linux" : "nullkernel",
+      SIM->get_param_enum(BXPN_LOAD32BITOS_WHICH)->get_selected(),
       SIM->get_param_string(BXPN_LOAD32BITOS_PATH)->getptr(),
       SIM->get_param_string(BXPN_LOAD32BITOS_IOLOG)->getptr(),
       SIM->get_param_string(BXPN_LOAD32BITOS_INITRD)->getptr());
   return 0;
 }
+#endif
 
 int bx_write_clock_cmos_options(FILE *fp)
 {
-  fprintf(fp, "clock: ");
-
-  switch (SIM->get_param_enum(BXPN_CLOCK_SYNC)->get()) {
-    case BX_CLOCK_SYNC_NONE:
-      fprintf(fp, "sync=none");
-      break;
-    case BX_CLOCK_SYNC_REALTIME:
-      fprintf(fp, "sync=realtime");
-      break;
-    case BX_CLOCK_SYNC_SLOWDOWN:
-      fprintf(fp, "sync=slowdown");
-      break;
-    case BX_CLOCK_SYNC_BOTH:
-      fprintf(fp, "sync=both");
-      break;
-    default:
-      BX_PANIC(("Unknown value for sync method"));
-  }
+  fprintf(fp, "clock: sync=%s", SIM->get_param_enum(BXPN_CLOCK_SYNC)->get_selected());
 
   switch (SIM->get_param_num(BXPN_CLOCK_TIME0)->get()) {
     case 0: break;
@@ -3368,31 +3238,37 @@ int bx_write_clock_cmos_options(FILE *fp)
 
 int bx_write_log_options(FILE *fp, bx_list_c *base)
 {
+  char pname[20];
+  bx_list_c *logfn, *loglev;
+  bx_param_num_c *mparam;
+  int action, def_action, level, mod;
+
   fprintf(fp, "log: %s\n", SIM->get_param_string("filename", base)->getptr());
   fprintf(fp, "logprefix: %s\n", SIM->get_param_string("prefix", base)->getptr());
-  fprintf(fp, "panic: action=%s\n",
-      io->getaction(logfunctions::get_default_action(LOGLEV_PANIC)));
-  fprintf(fp, "error: action=%s\n",
-      io->getaction(logfunctions::get_default_action(LOGLEV_ERROR)));
-  fprintf(fp, "info: action=%s\n",
-      io->getaction(logfunctions::get_default_action(LOGLEV_INFO)));
-  fprintf(fp, "debug: action=%s\n",
-      io->getaction(logfunctions::get_default_action(LOGLEV_DEBUG)));
-  return 0;
-}
 
-int bx_write_keyboard_options(FILE *fp)
-{
-  fprintf(fp, "keyboard: type=%s, serial_delay=%u, paste_delay=%u, ",
-    SIM->get_param_enum(BXPN_KBD_TYPE)->get_selected(),
-    SIM->get_param_num(BXPN_KBD_SERIAL_DELAY)->get(),
-    SIM->get_param_num(BXPN_KBD_PASTE_DELAY)->get());
-  if (SIM->get_param_bool(BXPN_KBD_USEMAPPING)->get()) {
-    fprintf(fp, "keymap=%s\n", SIM->get_param_string(BXPN_KBD_KEYMAP)->getptr());
-  } else {
-    fprintf(fp, "keymap=\n");
+  strcpy(pname, "general.logfn");
+  logfn = (bx_list_c*) SIM->get_param(pname);
+  for (level = 0; level < N_LOGLEV; level++) {
+    loglev = (bx_list_c*) logfn->get(level);
+    def_action = SIM->get_default_log_action(level);
+    fprintf(fp, "%s: action=%s", loglev->get_name(), SIM->get_action_name(def_action));
+    // stage #1: save log actions of existing modules
+    for (mod = 0; mod < SIM->get_n_log_modules(); mod++) {
+      action = SIM->get_log_action(mod, level);
+      if (action != def_action) {
+        fprintf(fp, ", %s=%s", SIM->get_logfn_name(mod), SIM->get_action_name(action));
+      }
+    }
+    // stage #2: save log actions of not yet existing modules (from bochsrc)
+    for (mod = 0; mod < loglev->get_size(); mod++) {
+      mparam = (bx_param_num_c*)loglev->get(mod);
+      action = mparam->get();
+      if ((action >= 0) && (action != def_action)) {
+        fprintf(fp, ", %s=%s", mparam->get_name(), SIM->get_action_name(action));
+      }
+    }
+    fprintf(fp, "\n");
   }
-  fprintf(fp, "user_shortcut: keys=%s\n", SIM->get_param_string(BXPN_USER_SHORTCUT)->getptr());
   return 0;
 }
 
@@ -3424,7 +3300,8 @@ int bx_write_debugger_options(FILE *fp)
 int bx_write_configuration(const char *rc, int overwrite)
 {
   int i;
-  char *strptr, tmppath[80], tmpaddr[80], tmpdev[80];
+  char pname[16], tmppath[80], tmpdev[80];
+  bx_param_string_c *sparam;
   bx_list_c *base;
   BX_INFO(("write current configuration to %s", rc));
   // check if it exists.  If so, only proceed if overwrite is set.
@@ -3437,16 +3314,7 @@ int bx_write_configuration(const char *rc, int overwrite)
   if (fp == NULL) return -1;
   // finally it's open and we can start writing.
   fprintf(fp, "# configuration file generated by Bochs\n");
-  base = (bx_list_c*) SIM->get_param(BXPN_PLUGIN_CTRL);
-  if (base->get_size() > 0) {
-    fprintf(fp, "plugin_ctrl: ");
-    for (i = 0; i < base->get_size(); i++) {
-      if (i > 0) fprintf(fp, ", ");
-      bx_param_bool_c *plugin = (bx_param_bool_c*)(base->get(i));
-      fprintf(fp, "%s=1", plugin->get_name());
-    }
-    fprintf(fp, "\n");
-  }
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_PLUGIN_CTRL), NULL, 0);
 #if BX_PLUGINS
   // user plugins
   for (i=0; i<BX_N_USER_PLUGINS; i++) {
@@ -3459,29 +3327,16 @@ int bx_write_configuration(const char *rc, int overwrite)
 #endif
   fprintf(fp, "config_interface: %s\n", SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected());
   fprintf(fp, "display_library: %s", SIM->get_param_enum(BXPN_SEL_DISPLAY_LIBRARY)->get_selected());
-  strptr = SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS)->getptr();
-  if (strlen(strptr) > 0)
-    fprintf(fp, ", options=\"%s\"\n", strptr);
+  sparam = SIM->get_param_string(BXPN_DISPLAYLIB_OPTIONS);
+  if (!sparam->isempty())
+    fprintf(fp, ", options=\"%s\"\n", sparam->getptr());
   else
     fprintf(fp, "\n");
   fprintf(fp, "memory: host=%d, guest=%d\n", SIM->get_param_num(BXPN_HOST_MEM_SIZE)->get(),
     SIM->get_param_num(BXPN_MEM_SIZE)->get());
-  strptr = SIM->get_param_string(BXPN_ROM_PATH)->getptr();
-  if (strlen(strptr) > 0) {
-    fprintf(fp, "romimage: file=\"%s\"", strptr);
-    if (SIM->get_param_num(BXPN_ROM_ADDRESS)->get() != 0)
-      fprintf(fp, ", address=0x%08x\n", (unsigned int) SIM->get_param_num(BXPN_ROM_ADDRESS)->get());
-    else
-      fprintf(fp, "\n");
-  }
-  else {
-    fprintf(fp, "# no romimage\n");
-  }
-  strptr = SIM->get_param_string(BXPN_VGA_ROM_PATH)->getptr();
-  if (strlen(strptr) > 0)
-    fprintf(fp, "vgaromimage: file=\"%s\"\n", strptr);
-  else
-    fprintf(fp, "# no vgaromimage\n");
+
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_ROMIMAGE), "romimage", 0);
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_VGA_ROMIMAGE), "vgaromimage", 0);
   fprintf(fp, "boot: %s", SIM->get_param_enum(BXPN_BOOTDRIVE1)->get_selected());
   for (i=1; i<3; i++) {
     sprintf(tmppath, "boot_params.boot_drive%d", i+1);
@@ -3498,43 +3353,41 @@ int bx_write_configuration(const char *rc, int overwrite)
   for (Bit8u channel=0; channel<BX_MAX_ATA_CHANNEL; channel++) {
     sprintf(tmppath, "ata.%d", channel);
     base = (bx_list_c*) SIM->get_param(tmppath);
-    bx_write_ata_options(fp, channel, (bx_list_c*) SIM->get_param("resources", base));
-    bx_write_atadevice_options(fp, channel, 0, (bx_list_c*) SIM->get_param("master", base));
-    bx_write_atadevice_options(fp, channel, 1, (bx_list_c*) SIM->get_param("slave", base));
+    sprintf(tmppath, "ata%d", channel);
+    bx_write_param_list(fp, (bx_list_c*) SIM->get_param("resources", base), tmppath, 0);
+    sprintf(tmppath, "ata%d-master", channel);
+    bx_write_param_list(fp, (bx_list_c*) SIM->get_param("master", base), tmppath, 0);
+    sprintf(tmppath, "ata%d-slave", channel);
+    bx_write_param_list(fp, (bx_list_c*) SIM->get_param("slave", base), tmppath, 0);
   }
   for (i=0; i<BX_N_OPTROM_IMAGES; i++) {
-    sprintf(tmppath, "memory.optrom.%d.path", i+1);
-    sprintf(tmpaddr, "memory.optrom.%d.addr", i+1);
-    strptr = SIM->get_param_string(tmppath)->getptr();
-    if (strlen(strptr) > 0)
-      fprintf(fp, "optromimage%d: file=\"%s\", address=0x%05x\n", i+1, strptr,
-              (unsigned int)SIM->get_param_num(tmpaddr)->get());
+    sprintf(pname, "%s.%d", BXPN_OPTROM_BASE, i+1);
+    sprintf(tmppath, "optromimage%d", i+1);
+    bx_write_param_list(fp, (bx_list_c*) SIM->get_param(pname), tmppath, 0);
   }
   for (i=0; i<BX_N_OPTRAM_IMAGES; i++) {
-    sprintf(tmppath, "memory.optram.%d.path", i+1);
-    sprintf(tmpaddr, "memory.optram.%d.addr", i+1);
-    strptr = SIM->get_param_string(tmppath)->getptr();
-    if (strlen(strptr) > 0)
-      fprintf(fp, "optramimage%d: file=\"%s\", address=0x%05x\n", i+1, strptr,
-              (unsigned int)SIM->get_param_num(tmpaddr)->get());
+    sprintf(pname, "%s.%d", BXPN_OPTRAM_BASE, i+1);
+    sprintf(tmppath, "optramimage%d", i+1);
+    bx_write_param_list(fp, (bx_list_c*) SIM->get_param(pname), tmppath, 0);
   }
   // pci
   fprintf(fp, "pci: enabled=%d",
-          SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get());
-  if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-    fprintf(fp, ", chipset=i440fx");
+          SIM->get_param_bool(BXPN_PCI_ENABLED)->get());
+  if (SIM->get_param_bool(BXPN_PCI_ENABLED)->get()) {
+    fprintf(fp, ", chipset=%s", SIM->get_param_enum(BXPN_PCI_CHIPSET)->get_selected());
     for (i=0; i<BX_N_PCI_SLOTS; i++) {
       sprintf(tmpdev, "pci.slot.%d", i+1);
-      strptr = SIM->get_param_string(tmpdev)->getptr();
-      if (strlen(strptr) > 0) {
-        fprintf(fp, ", slot%d=%s", i+1, strptr);
+      sparam = SIM->get_param_string(tmpdev);
+      if (!sparam->isempty()) {
+        fprintf(fp, ", slot%d=%s", i+1, sparam->getptr());
       }
     }
   }
   fprintf(fp, "\n");
-  fprintf(fp, "vga: extension=%s, update_freq=%u\n",
+  fprintf(fp, "vga: extension=%s, update_freq=%u, realtime=%u\n",
     SIM->get_param_string(BXPN_VGA_EXTENSION)->getptr(),
-    SIM->get_param_num(BXPN_VGA_UPDATE_FREQUENCY)->get());
+    SIM->get_param_num(BXPN_VGA_UPDATE_FREQUENCY)->get(),
+    SIM->get_param_bool(BXPN_VGA_REALTIME)->get());
 #if BX_SUPPORT_SMP
   fprintf(fp, "cpu: count=%u:%u:%u, ips=%u, quantum=%d, ",
     SIM->get_param_num(BXPN_CPU_NPROCESSORS)->get(), SIM->get_param_num(BXPN_CPU_NCORES)->get(),
@@ -3554,71 +3407,16 @@ int bx_write_configuration(const char *rc, int overwrite)
   fprintf(fp, ", mwait_is_nop=%d", SIM->get_param_bool(BXPN_MWAIT_IS_NOP)->get());
 #endif
 #if BX_CONFIGURE_MSRS
-  strptr = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH)->getptr();
-  if (strlen(strptr) > 0)
-    fprintf(fp, ", msrs=\"%s\"", strptr);
+  sparam = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH);
+  if (!sparam->isempty())
+    fprintf(fp, ", msrs=\"%s\"", sparam->getptr());
 #endif
   fprintf(fp, "\n");
 
 #if BX_CPU_LEVEL >= 4
   if (! SIM->get_param_enum(BXPN_CPU_MODEL)->get()) {
     // dump only when using BX_GENERIC CPUDB profile
-    fprintf(fp, "cpuid: family=%d, model=0x%02x, stepping=%d", 
-      SIM->get_param_num(BXPN_CPUID_FAMILY)->get(),
-      SIM->get_param_num(BXPN_CPUID_MODEL)->get(),
-      SIM->get_param_num(BXPN_CPUID_STEPPING)->get());
-#if BX_CPU_LEVEL >= 5
-    fprintf(fp, ", mmx=%d, apic=%s", SIM->get_param_bool(BXPN_CPUID_MMX)->get(),
-      SIM->get_param_enum(BXPN_CPUID_APIC)->get_selected());
-#endif
-#if BX_CPU_LEVEL >= 6
-    fprintf(fp, ", sse=%s, sse4a=%d, sep=%d, aes=%d, xsave=%d, xsaveopt=%d, movbe=%d, adx=%d, smep=%d",
-      SIM->get_param_enum(BXPN_CPUID_SSE)->get_selected(),
-      SIM->get_param_bool(BXPN_CPUID_SSE4A)->get(),
-      SIM->get_param_bool(BXPN_CPUID_SEP)->get(),
-      SIM->get_param_bool(BXPN_CPUID_AES)->get(),
-      SIM->get_param_bool(BXPN_CPUID_XSAVE)->get(),
-      SIM->get_param_bool(BXPN_CPUID_XSAVEOPT)->get(),
-      SIM->get_param_bool(BXPN_CPUID_MOVBE)->get(),
-      SIM->get_param_bool(BXPN_CPUID_ADX)->get(),
-      SIM->get_param_bool(BXPN_CPUID_SMEP)->get());
-#if BX_SUPPORT_AVX
-    fprintf(fp, ", avx=%d, avx_f16c=%d, avx_fma=%d, bmi=%d, xop=%d, tbm=%d, fma4=%d", 
-      SIM->get_param_num(BXPN_CPUID_AVX)->get(),
-      SIM->get_param_bool(BXPN_CPUID_AVX_F16CVT)->get(),
-      SIM->get_param_bool(BXPN_CPUID_AVX_FMA)->get(),
-      SIM->get_param_num(BXPN_CPUID_BMI)->get(),
-      SIM->get_param_bool(BXPN_CPUID_XOP)->get(),
-      SIM->get_param_bool(BXPN_CPUID_TBM)->get(),
-      SIM->get_param_bool(BXPN_CPUID_FMA4)->get());
-#endif
-#if BX_SUPPORT_VMX
-    fprintf(fp, ", vmx=%d", SIM->get_param_num(BXPN_CPUID_VMX)->get());
-#endif
-#if BX_SUPPORT_SVM
-    fprintf(fp, ", svm=%d", SIM->get_param_num(BXPN_CPUID_SVM)->get());
-#endif
-#if BX_SUPPORT_X86_64
-    fprintf(fp, ", x86_64=%d, 1g_pages=%d, pcid=%d, fsgsbase=%d",
-      SIM->get_param_bool(BXPN_CPUID_X86_64)->get(),
-      SIM->get_param_bool(BXPN_CPUID_1G_PAGES)->get(),
-      SIM->get_param_bool(BXPN_CPUID_PCID)->get(),
-      SIM->get_param_bool(BXPN_CPUID_FSGSBASE)->get());
-#endif
-#if BX_SUPPORT_MONITOR_MWAIT
-    fprintf(fp, ", mwait=%d",
-      SIM->get_param_bool(BXPN_CPUID_MWAIT)->get());
-#endif
-#endif
-    fprintf(fp, "\n");
-
-    const char *vendor_string = SIM->get_param_string(BXPN_VENDOR_STRING)->getptr();
-    if (vendor_string)
-      fprintf(fp, "cpuid: vendor_string=\"%s\"\n", vendor_string);
-    const char *brand_string = SIM->get_param_string(BXPN_BRAND_STRING)->getptr();
-    if (brand_string)
-      fprintf(fp, "cpuid: brand_string=\"%s\"\n", brand_string);
-    fprintf(fp, "\n");
+    bx_write_param_list(fp, (bx_list_c*) SIM->get_param("cpuid"), NULL, 1);
   }
 #endif
 
@@ -3631,13 +3429,13 @@ int bx_write_configuration(const char *rc, int overwrite)
   fprintf(fp, "screenmode: name=\"%s\"\n", SIM->get_param_string(BXPN_SCREENMODE)->getptr());
 #endif
   bx_write_clock_cmos_options(fp);
+#if BX_LOAD32BITOSHACK
   bx_write_loader_options(fp);
+#endif
   bx_write_log_options(fp, (bx_list_c*) SIM->get_param("log"));
-  bx_write_keyboard_options(fp);
-  fprintf(fp, "mouse: enabled=%d, type=%s, toggle=%s\n",
-    SIM->get_param_bool(BXPN_MOUSE_ENABLED)->get(),
-    SIM->get_param_enum(BXPN_MOUSE_TYPE)->get_selected(),
-    SIM->get_param_enum(BXPN_MOUSE_TOGGLE)->get_selected());
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_KEYBOARD), NULL, 0);
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_MOUSE), NULL, 0);
+  bx_write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_SOUNDLOW),"sound", 0);
   SIM->save_addon_options(fp);
   fclose(fp);
   return 0;

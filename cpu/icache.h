@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: icache.h 11389 2012-09-01 19:13:01Z sshwarts $
+// $Id: icache.h 13654 2019-12-09 16:44:36Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2007-2011 Stanislav Shwartsman
+//   Copyright (c) 2007-2015 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,7 +28,7 @@ extern void handleSMC(bx_phy_address pAddr, Bit32u mask);
 
 class bxPageWriteStampTable
 {
-#define PHY_MEM_PAGES (1024*1024)
+  const Bit32u PHY_MEM_PAGES = 1024*1024;
   Bit32u *fineGranularityMapping;
 
 public:
@@ -38,7 +38,7 @@ public:
   }
  ~bxPageWriteStampTable() { delete [] fineGranularityMapping; }
 
-  BX_CPP_INLINE Bit32u hash(bx_phy_address pAddr) const {
+  BX_CPP_INLINE static Bit32u hash(bx_phy_address pAddr) {
     // can share writeStamps between multiple pages if >32 bit phy address
     return ((Bit32u) pAddr) >> 12;
   }
@@ -101,10 +101,8 @@ BX_CPP_INLINE void bxPageWriteStampTable::resetWriteStamps(void)
 
 extern bxPageWriteStampTable pageWriteStampTable;
 
-#define BxICacheEntries (256 * 1024)  // Must be a power of 2.
+#define BxICacheEntries (64  * 1024)  // Must be a power of 2.
 #define BxICacheMemPool (576 * 1024)
-
-#define BX_MAX_TRACE_LENGTH 32
 
 struct bxICacheEntry_c
 {
@@ -115,13 +113,30 @@ struct bxICacheEntry_c
   bxInstruction_c *i;
 };
 
-#define BX_ICACHE_INVALID_PHY_ADDRESS (bx_phy_address(-1))
+#define BX_MAX_TRACE_LENGTH 32
+
+static const bx_phy_address BX_ICACHE_INVALID_PHY_ADDRESS = bx_phy_address(-1);
+
+BX_CPP_INLINE void flushSMC(bxICacheEntry_c *e)
+{
+  if (e->pAddr != BX_ICACHE_INVALID_PHY_ADDRESS) {
+    e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
+#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
+    extern void genDummyICacheEntry(bxInstruction_c *i);
+//  for (unsigned instr=0;instr < e->tlen; instr++)
+//    genDummyICacheEntry(e->i + instr);
+    genDummyICacheEntry(e->i);
+#endif
+  }
+}
 
 class BOCHSAPI bxICache_c {
 public:
   bxICacheEntry_c entry[BxICacheEntries];
   bxInstruction_c mpool[BxICacheMemPool];
   unsigned mpindex;
+
+  Bit32u traceLinkTimeStamp;
 
 #define BX_ICACHE_PAGE_SPLIT_ENTRIES 8 /* must be power of two */
   struct pageSplitEntryIndex {
@@ -130,17 +145,10 @@ public:
   } pageSplitIndex[BX_ICACHE_PAGE_SPLIT_ENTRIES];
   int nextPageSplitIndex;
 
-#define BX_ICACHE_VICTIM_ENTRIES 8 /* must be power of two */
-  struct bxVictimCacheEntry {
-    Bit32u fetchModeMask;
-    bxICacheEntry_c vc_entry;
-  } victimCache[BX_ICACHE_VICTIM_ENTRIES];
-  int nextVictimCacheIndex;
-
 public:
   bxICache_c() { flushICacheEntries(); }
 
-  BX_CPP_INLINE unsigned hash(bx_phy_address pAddr, unsigned fetchModeMask) const
+  BX_CPP_INLINE static unsigned hash(bx_phy_address pAddr, unsigned fetchModeMask)
   {
 //  return ((pAddr + (pAddr << 2) + (pAddr>>6)) & (BxICacheEntries-1)) ^ fetchModeMask;
     return ((pAddr) & (BxICacheEntries-1)) ^ fetchModeMask;
@@ -158,39 +166,18 @@ public:
 
   BX_CPP_INLINE void commit_trace(unsigned len) { mpindex += len; }
 
-  BX_CPP_INLINE void commit_page_split_trace(bx_phy_address paddr, bxICacheEntry_c *entry)
+  BX_CPP_INLINE void commit_page_split_trace(bx_phy_address paddr, bxICacheEntry_c *e)
   {
-    mpindex += entry->tlen;
+    mpindex += e->tlen;
 
     // register page split entry
     if (pageSplitIndex[nextPageSplitIndex].ppf != BX_ICACHE_INVALID_PHY_ADDRESS)
       pageSplitIndex[nextPageSplitIndex].e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
 
     pageSplitIndex[nextPageSplitIndex].ppf = paddr;
-    pageSplitIndex[nextPageSplitIndex].e = entry;
+    pageSplitIndex[nextPageSplitIndex].e = e;
 
     nextPageSplitIndex = (nextPageSplitIndex+1) & (BX_ICACHE_PAGE_SPLIT_ENTRIES-1);
-  }
-
-  BX_CPP_INLINE bxICacheEntry_c *lookup_victim_cache(bx_phy_address pAddr, Bit32u fetchModeMask)
-  {
-    for (int i=0; i < BX_ICACHE_VICTIM_ENTRIES;i++) {
-      bxVictimCacheEntry *e = &victimCache[i];
-      if (e->vc_entry.pAddr == pAddr && e->fetchModeMask == fetchModeMask) {
-        return &e->vc_entry;
-      }
-    }
-
-    return NULL;
-  }
-
-  BX_CPP_INLINE void victim_entry(bxICacheEntry_c *entry, Bit32u fetchModeMask)
-  {
-    if (entry->pAddr != BX_ICACHE_INVALID_PHY_ADDRESS) {
-      victimCache[nextVictimCacheIndex].fetchModeMask = fetchModeMask;
-      victimCache[nextVictimCacheIndex].vc_entry = *entry;
-      nextVictimCacheIndex = (nextVictimCacheIndex+1) & (BX_ICACHE_VICTIM_ENTRIES-1);
-    }
   }
 
   BX_CPP_INLINE void handleSMC(bx_phy_address pAddr, Bit32u mask);
@@ -200,6 +187,25 @@ public:
   BX_CPP_INLINE bxICacheEntry_c* get_entry(bx_phy_address pAddr, unsigned fetchModeMask)
   {
     return &(entry[hash(pAddr, fetchModeMask)]);
+  }
+
+  BX_CPP_INLINE bxICacheEntry_c* find_entry(bx_phy_address pAddr, unsigned fetchModeMask)
+  {
+    bxICacheEntry_c* e = get_entry(pAddr, fetchModeMask);
+    if (e->pAddr != pAddr)
+       return NULL;
+
+    return e;
+  }
+
+  BX_CPP_INLINE bx_bool breakLinks()
+  {
+    // break all links bewteen traces
+    if (++traceLinkTimeStamp == 0xffffffff) {
+      flushICacheEntries();
+      return true;
+    }
+    return false;
   }
 };
 
@@ -217,51 +223,50 @@ BX_CPP_INLINE void bxICache_c::flushICacheEntries(void)
   for (i=0;i<BX_ICACHE_PAGE_SPLIT_ENTRIES;i++)
     pageSplitIndex[i].ppf = BX_ICACHE_INVALID_PHY_ADDRESS;
 
-  nextVictimCacheIndex = 0;
-  for (i=0;i<BX_ICACHE_VICTIM_ENTRIES;i++)
-    victimCache[i].vc_entry.pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
-
   mpindex = 0;
-}
 
-#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
-extern void genDummyICacheEntry(bxInstruction_c *i);
-#endif
+  traceLinkTimeStamp = 0;
+}
 
 BX_CPP_INLINE void bxICache_c::handleSMC(bx_phy_address pAddr, Bit32u mask)
 {
-  pAddr = LPFOf(pAddr);
+  Bit32u pAddrIndex = bxPageWriteStampTable::hash(pAddr);
 
-  unsigned i;
+  // break all links bewteen traces
+  if (breakLinks()) return;
+
+  // Need to invalidate all traces in the trace cache that might include an
+  // instruction that was modified.  But this is not enough, it is possible
+  // that some another trace is linked into  invalidated trace and it won't
+  // be invalidated. In order to solve this issue  replace all instructions
+  // from the invalidated trace with dummy EndOfTrace opcodes.
+
+  // Another corner case that has to be handled - pageWriteStampTable wrap.
+  // Multiple physical addresses could be mapped into single pageWriteStampTable
+  // entry and all of them have to be invalidated here now.
 
   if (mask & 0x1) {
     // the store touched 1st cache line in the page, check for
     // page split traces to invalidate.
-    for (i=0;i<BX_ICACHE_PAGE_SPLIT_ENTRIES;i++) {
-      if (pAddr == pageSplitIndex[i].ppf) {
-        pageSplitIndex[i].ppf = BX_ICACHE_INVALID_PHY_ADDRESS;
+    for (unsigned i=0;i<BX_ICACHE_PAGE_SPLIT_ENTRIES;i++) {
+      if (pageSplitIndex[i].ppf != BX_ICACHE_INVALID_PHY_ADDRESS) {
+        if (pAddrIndex == bxPageWriteStampTable::hash(pageSplitIndex[i].ppf)) {
+          pageSplitIndex[i].ppf = BX_ICACHE_INVALID_PHY_ADDRESS;
+          flushSMC(pageSplitIndex[i].e);
+        }
       }
     }
   }
 
-  for (i=0;i < BX_ICACHE_VICTIM_ENTRIES; i++) {
-    bxVictimCacheEntry *e = &victimCache[i];
-    e->vc_entry.pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
-  }
-
-  bxICacheEntry_c *e = get_entry(pAddr, 0);
+  bxICacheEntry_c *e = get_entry(LPFOf(pAddr), 0);
 
   // go over 32 "cache lines" of 128 byte each
   for (unsigned n=0; n < 32; n++) {
     Bit32u line_mask = (1 << n);
     if (line_mask > mask) break;
     for (unsigned index=0; index < 128; index++, e++) {
-      if (pAddr == LPFOf(e->pAddr) && (e->traceMask & mask) != 0) {
-        e->pAddr = BX_ICACHE_INVALID_PHY_ADDRESS;
-#if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
-        for (unsigned instr=0;instr < e->tlen; instr++)
-          genDummyICacheEntry(e->i + instr);
-#endif
+      if (pAddrIndex == bxPageWriteStampTable::hash(e->pAddr) && (e->traceMask & mask) != 0) {
+        flushSMC(e);
       }
     }
   }

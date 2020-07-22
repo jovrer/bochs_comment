@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pci2isa.cc 13497 2018-05-01 15:54:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -18,9 +18,10 @@
 //  License along with this library; if not, write to the Free Software
 //  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
 
-//
-// i440FX Support - PCI-to-ISA bridge (PIIX3)
-//
+// PCI-to-ISA bridge
+// i430FX - PIIX
+// i440FX - PIIX3
+// i440BX - PIIX4
 
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
@@ -38,7 +39,7 @@
 
 bx_piix3_c *thePci2IsaBridge = NULL;
 
-int libpci2isa_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libpci2isa_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   if (type == PLUGTYPE_CORE) {
     thePci2IsaBridge = new bx_piix3_c();
@@ -50,14 +51,14 @@ int libpci2isa_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, ch
   }
 }
 
-void libpci2isa_LTX_plugin_fini(void)
+void CDECL libpci2isa_LTX_plugin_fini(void)
 {
   delete thePci2IsaBridge;
 }
 
 bx_piix3_c::bx_piix3_c()
 {
-  put("pci2isa", "P2I");
+  put("pci2isa", "P2ISA");
 }
 
 bx_piix3_c::~bx_piix3_c()
@@ -68,11 +69,16 @@ bx_piix3_c::~bx_piix3_c()
 
 void bx_piix3_c::init(void)
 {
-  unsigned i;
+  unsigned i, j;
   // called once when bochs initializes
 
-  Bit8u devfunc = BX_PCI_DEVICE(1,0);
-  DEV_register_pci_handlers(this, &devfunc, BX_PLUGIN_PCI2ISA,
+  BX_P2I_THIS s.chipset = SIM->get_param_enum(BXPN_PCI_CHIPSET)->get();
+  if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440BX) {
+    BX_P2I_THIS s.devfunc = BX_PCI_DEVICE(7, 0);
+  } else {
+    BX_P2I_THIS s.devfunc = BX_PCI_DEVICE(1, 0);
+  }
+  DEV_register_pci_handlers(this, &BX_P2I_THIS s.devfunc, BX_PLUGIN_PCI2ISA,
       "PIIX3 PCI-to-ISA bridge");
 
   DEV_register_iowrite_handler(this, write_handler, 0x00B2, "PIIX3 PCI-to-ISA bridge", 1);
@@ -87,21 +93,22 @@ void bx_piix3_c::init(void)
   DEV_register_ioread_handler(this, read_handler, 0x04D1, "PIIX3 PCI-to-ISA bridge", 1);
   DEV_register_ioread_handler(this, read_handler, 0x0CF9, "PIIX3 PCI-to-ISA bridge", 1);
 
-  for (i=0; i<256; i++)
-    BX_P2I_THIS pci_conf[i] = 0x0;
   for (i=0; i<16; i++)
     BX_P2I_THIS s.irq_registry[i] = 0x0;
-  for (i=0; i<16; i++)
-    BX_P2I_THIS s.irq_level[i] = 0x0;
-  // readonly registers
-  BX_P2I_THIS pci_conf[0x00] = 0x86;
-  BX_P2I_THIS pci_conf[0x01] = 0x80;
-  BX_P2I_THIS pci_conf[0x02] = 0x00;
-  BX_P2I_THIS pci_conf[0x03] = 0x70;
+  for (i=0; i<4; i++) {
+    for (j=0; j<16; j++) {
+      BX_P2I_THIS s.irq_level[i][j] = 0x0;
+    }
+  }
+  // initialize readonly registers
+  if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I430FX) {
+    init_pci_conf(0x8086, 0x122e, 0x01, 0x060100, 0x80, 0);
+  } else if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440BX) {
+    init_pci_conf(0x8086, 0x7110, 0x00, 0x060100, 0x80, 0);
+  } else {
+    init_pci_conf(0x8086, 0x7000, 0x00, 0x060100, 0x80, 0);
+  }
   BX_P2I_THIS pci_conf[0x04] = 0x07;
-  BX_P2I_THIS pci_conf[0x0a] = 0x01;
-  BX_P2I_THIS pci_conf[0x0b] = 0x06;
-  BX_P2I_THIS pci_conf[0x0e] = 0x80;
   // irq routing registers
   BX_P2I_THIS pci_conf[0x60] = 0x80;
   BX_P2I_THIS pci_conf[0x61] = 0x80;
@@ -143,8 +150,8 @@ void bx_piix3_c::reset(unsigned type)
   BX_P2I_THIS pci_conf[0xae] = 0x00;
 
   for (unsigned i = 0; i < 4; i++) {
-    pci_set_irq(0x08, i+1, 0);
-    pci_unregister_irq(i);
+    pci_set_irq(BX_P2I_THIS s.devfunc, i+1, 0);
+    pci_unregister_irq(i, 0x80);
   }
 
   BX_P2I_THIS s.elcr1 = 0x00;
@@ -156,7 +163,7 @@ void bx_piix3_c::reset(unsigned type)
 
 void bx_piix3_c::register_state(void)
 {
-  unsigned i;
+  unsigned i, j;
   char name[6];
 
   bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pci2isa", "PCI-to-ISA Bridge State");
@@ -169,15 +176,13 @@ void bx_piix3_c::register_state(void)
   BXRS_HEX_PARAM_FIELD(list, apms, BX_P2I_THIS s.apms);
   BXRS_HEX_PARAM_FIELD(list, pci_reset, BX_P2I_THIS s.pci_reset);
 
-  bx_list_c *irqr = new bx_list_c(list, "irq_registry");
-  for (i=0; i<16; i++) {
-    sprintf(name, "%d", i);
-    new bx_shadow_num_c(irqr, name, &BX_P2I_THIS s.irq_registry[i]);
-  }
+  new bx_shadow_data_c(list, "irq_registry", BX_P2I_THIS s.irq_registry, 16, 1);
   bx_list_c *irql = new bx_list_c(list, "irq_level");
-  for (i=0; i<16; i++) {
-    sprintf(name, "%d", i);
-    new bx_shadow_num_c(irql, name, &BX_P2I_THIS s.irq_level[i]);
+  for (i=0; i<4; i++) {
+    for (j=0; j<16; j++) {
+      sprintf(name, "%u_%u", i, j);
+      new bx_shadow_num_c(irql, name, &BX_P2I_THIS s.irq_level[i][j]);
+    }
   }
 }
 
@@ -190,11 +195,11 @@ void bx_piix3_c::after_restore_state(void)
   }
 }
 
-void bx_piix3_c::pci_register_irq(unsigned pirq, unsigned irq)
+void bx_piix3_c::pci_register_irq(unsigned pirq, Bit8u irq)
 {
   if ((irq < 16) && (((1 << irq) & 0xdef8) > 0)) {
     if (BX_P2I_THIS pci_conf[0x60 + pirq] < 16) {
-      pci_unregister_irq(pirq);
+      pci_unregister_irq(pirq, irq);
     }
     BX_P2I_THIS pci_conf[0x60 + pirq] = irq;
     if (!BX_P2I_THIS s.irq_registry[irq]) {
@@ -204,22 +209,23 @@ void bx_piix3_c::pci_register_irq(unsigned pirq, unsigned irq)
   }
 }
 
-void bx_piix3_c::pci_unregister_irq(unsigned pirq)
+void bx_piix3_c::pci_unregister_irq(unsigned pirq, Bit8u irq)
 {
-  Bit8u irq =  BX_P2I_THIS pci_conf[0x60 + pirq];
-  if (irq < 16) {
-    BX_P2I_THIS s.irq_registry[irq] &= ~(1 << pirq);
-    if (!BX_P2I_THIS s.irq_registry[irq]) {
-      BX_P2I_THIS pci_set_irq(0x08, pirq+1, 0);
-      DEV_unregister_irq(irq, "PIIX3 IRQ routing");
+  Bit8u oldirq =  BX_P2I_THIS pci_conf[0x60 + pirq];
+  if (oldirq < 16) {
+    BX_P2I_THIS s.irq_registry[oldirq] &= ~(1 << pirq);
+    if (!BX_P2I_THIS s.irq_registry[oldirq]) {
+      BX_P2I_THIS pci_set_irq(BX_P2I_THIS s.devfunc, pirq+1, 0);
+      DEV_unregister_irq(oldirq, "PIIX3 IRQ routing");
     }
-    BX_P2I_THIS pci_conf[0x60 + pirq] = 0x80;
+    BX_P2I_THIS pci_conf[0x60 + pirq] = irq;
   }
 }
 
 void bx_piix3_c::pci_set_irq(Bit8u devfunc, unsigned line, bx_bool level)
 {
-  Bit8u pirq = ((devfunc >> 3) + line - 2) & 0x03;
+  Bit8u offset = (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I440BX) ? 8 : 2;
+  Bit8u pirq = ((devfunc >> 3) + line - offset) & 0x03;
 #if BX_SUPPORT_APIC
   // forward this function call to the ioapic too
   if (DEV_ioapic_present()) {
@@ -229,14 +235,16 @@ void bx_piix3_c::pci_set_irq(Bit8u devfunc, unsigned line, bx_bool level)
   Bit8u irq = BX_P2I_THIS pci_conf[0x60 + pirq];
   if ((irq < 16) && (((1 << irq) & 0xdef8) > 0)) {
     if (level == 1) {
-      if (!BX_P2I_THIS s.irq_level[irq]) {
+      if (!BX_P2I_THIS s.irq_level[0][irq] && !BX_P2I_THIS s.irq_level[1][irq] &&
+          !BX_P2I_THIS s.irq_level[2][irq] && !BX_P2I_THIS s.irq_level[3][irq]) {
         DEV_pic_raise_irq(irq);
         BX_DEBUG(("PIRQ%c -> IRQ %d = 1", pirq+65, irq));
       }
-      BX_P2I_THIS s.irq_level[irq] |= (1 << (devfunc >> 3));
+      BX_P2I_THIS s.irq_level[pirq][irq] |= (1 << (devfunc >> 3));
     } else {
-      BX_P2I_THIS s.irq_level[irq] &= ~(1 << (devfunc >> 3));
-      if (!BX_P2I_THIS s.irq_level[irq]) {
+      BX_P2I_THIS s.irq_level[pirq][irq] &= ~(1 << (devfunc >> 3));
+      if (!BX_P2I_THIS s.irq_level[0][irq] && !BX_P2I_THIS s.irq_level[1][irq] &&
+          !BX_P2I_THIS s.irq_level[2][irq] && !BX_P2I_THIS s.irq_level[3][irq]) {
         DEV_pic_lower_irq(irq);
         BX_DEBUG(("PIRQ%c -> IRQ %d = 0", pirq+65, irq));
       }
@@ -298,11 +306,11 @@ void bx_piix3_c::write(Bit32u address, Bit32u value, unsigned io_len)
 
   switch (address) {
     case 0x00b2:
-#if BX_SUPPORT_PCI
-      DEV_acpi_generate_smi((Bit8u)value);
-#else
-      BX_ERROR(("write %08x: APM command register not supported without ACPI", value));
-#endif
+      if (PLUG_device_present(BX_PLUGIN_ACPI)) {
+        DEV_acpi_generate_smi((Bit8u)value);
+      } else {
+        BX_ERROR(("write 0x%02x: APM command register not supported without ACPI", value));
+      }
       BX_P2I_THIS s.apmc = value & 0xff;
       break;
     case 0x00b3:
@@ -338,41 +346,83 @@ void bx_piix3_c::write(Bit32u address, Bit32u value, unsigned io_len)
   }
 }
 
-// pci configuration space read callback handler
-Bit32u bx_piix3_c::pci_read_handler(Bit8u address, unsigned io_len)
-{
-  Bit32u value = 0;
-
-  for (unsigned i=0; i<io_len; i++) {
-    value |= (BX_P2I_THIS pci_conf[address+i] << (i*8));
-  }
-  BX_DEBUG(("PIIX3 PCI-to-ISA read  register 0x%02x value 0x%08x", address, value));
-  return value;
-}
-
 // pci configuration space write callback handler
 void bx_piix3_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
+  Bit8u value8, oldval;
+
   if ((address >= 0x10) && (address < 0x34))
     return;
+
+  BX_DEBUG_PCI_WRITE(address, value, io_len);
   for (unsigned i=0; i<io_len; i++) {
-    Bit8u value8 = (value >> (i*8)) & 0xFF;
+    value8 = (value >> (i*8)) & 0xFF;
+    oldval = BX_P2I_THIS pci_conf[address+i];
     switch (address+i) {
       case 0x04:
+        BX_P2I_THIS pci_conf[address+i] = (value8 & 0x08) | 0x07;
+        break;
+      case 0x05:
+        if (BX_P2I_THIS s.chipset != BX_PCI_CHIPSET_I430FX) {
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0x01);
+        }
+        break;
       case 0x06:
+        break;
+      case 0x07:
+        if (BX_P2I_THIS s.chipset == BX_PCI_CHIPSET_I430FX) {
+          value8 &= 0x38;
+        } else {
+          value8 &= 0x78;
+        }
+        BX_P2I_THIS pci_conf[address+i] = (oldval & ~value8) | 0x02;
+        break;
+      case 0x4e:
+        if ((value8 & 0x04) != (oldval & 0x04)) {
+          BX_DEBUG(("Set BIOS write support to %d", (value8 & 0x04) != 0));
+          DEV_mem_set_bios_write((value8 & 0x04) != 0);
+        }
+        BX_P2I_THIS pci_conf[address+i] = value8;
+        break;
+      case 0x4f:
+        if (BX_P2I_THIS s.chipset != BX_PCI_CHIPSET_I430FX) {
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0x01);
+#if BX_SUPPORT_APIC
+          if (DEV_ioapic_present()) {
+            DEV_ioapic_set_enabled(value8 & 0x01, (BX_P2I_THIS pci_conf[0x80] & 0x3f) << 10);
+          }
+#endif
+        }
         break;
       case 0x60:
       case 0x61:
       case 0x62:
       case 0x63:
-        if (value8 != BX_P2I_THIS pci_conf[address+i]) {
+        value8 &= 0x8f;
+        if (value8 != oldval) {
           if (value8 >= 0x80) {
-            pci_unregister_irq((address+i) & 0x03);
+            pci_unregister_irq((address+i) & 0x03, value8);
           } else {
             pci_register_irq((address+i) & 0x03, value8);
           }
           BX_INFO(("PCI IRQ routing: PIRQ%c# set to 0x%02x", address+i-31,
                    value8));
+        }
+        break;
+      case 0x6a:
+        if (BX_P2I_THIS s.chipset != BX_PCI_CHIPSET_I430FX) {
+          // TODO: bit #4: enable / disable USB function at boot time
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0xd7);
+        }
+        break;
+      case 0x80:
+        if (BX_P2I_THIS s.chipset != BX_PCI_CHIPSET_I430FX) {
+          BX_P2I_THIS pci_conf[address+i] = (value8 & 0x7f);
+#if BX_SUPPORT_APIC
+          if (DEV_ioapic_present()) {
+            DEV_ioapic_set_enabled(BX_P2I_THIS pci_conf[0x4f] & 0x01, (value8 & 0x3f) << 10);
+          }
+#endif
         }
         break;
       default:
@@ -396,7 +446,7 @@ void bx_piix3_c::debug_dump(int argc, char **argv)
       dbg_printf("PIRQ%c# = 0x%02x", i + 65, BX_P2I_THIS pci_conf[0x60 + i]);
       Bit8u irq = BX_P2I_THIS pci_conf[0x60 + i];
       if (irq < 16) {
-        dbg_printf(" (level=%d)\n", BX_P2I_THIS s.irq_level[irq] > 0);
+        dbg_printf(" (level=%d)\n", BX_P2I_THIS s.irq_level[i][irq] > 0);
       } else {
         dbg_printf("\n");
       }

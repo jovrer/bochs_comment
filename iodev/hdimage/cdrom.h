@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom.h 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: cdrom.h 11924 2013-11-06 11:15:22Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -21,61 +21,38 @@
 
 // Header file for low-level OS specific CDROM emulation
 
+extern unsigned int bx_cdrom_count;
+
 
 class cdrom_base_c : public logfunctions {
 public:
-  virtual ~cdrom_base_c(void) {}
+  cdrom_base_c() {}
+  cdrom_base_c(const char *dev);
+  virtual ~cdrom_base_c(void);
 
   // Load CD-ROM. Returns 0 if CD is not ready.
-  virtual bx_bool insert_cdrom(const char *dev = NULL) = 0;
+  virtual bx_bool insert_cdrom(const char *dev = NULL);
 
   // Logically eject the CD.
-  virtual void eject_cdrom() = 0;
+  virtual void eject_cdrom();
 
   // Read CD TOC. Returns 0 if start track is out of bounds.
-  virtual bx_bool read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format) = 0;
+  virtual bx_bool read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format);
 
   // Return CD-ROM capacity (in 2048 byte frames)
-  virtual Bit32u capacity() = 0;
+  virtual Bit32u capacity();
 
   // Read a single block from the CD. Returns 0 on failure.
-  virtual bx_bool read_block(Bit8u* buf, Bit32u lba, int blocksize) BX_CPP_AttrRegparmN(3) = 0;
+  virtual bx_bool read_block(Bit8u* buf, Bit32u lba, int blocksize) BX_CPP_AttrRegparmN(3);
 
   // Start (spin up) the CD.
-  virtual bx_bool start_cdrom() = 0;
+  virtual bx_bool start_cdrom();
 
   // Seek for new block address.
-  virtual bx_bool seek(Bit32u lba) = 0;
+  virtual bx_bool seek(Bit32u lba);
 
-  // Create CD TOC from image. Called from read_toc().
-  virtual bx_bool create_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format) = 0;
-};
-
-class cdrom_interface : public cdrom_base_c {
-public:
-  cdrom_interface(const char *dev);
-  virtual ~cdrom_interface(void);
-
-  bx_bool insert_cdrom(const char *dev = NULL);
-  void eject_cdrom();
-  bx_bool read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format);
-  Bit32u capacity();
-  bx_bool read_block(Bit8u* buf, Bit32u lba, int blocksize) BX_CPP_AttrRegparmN(3);
-  bx_bool start_cdrom();
-  bx_bool seek(Bit32u lba);
-  bx_bool create_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format);
-
-private:
+protected:
   int fd;
   char *path;
-
-  int using_file;
-#ifdef WIN32
-  BOOL bUseASPI;
-  HANDLE hFile;
-  int hid;
-  int tid;
-  int lun;
-#endif
+  bx_bool using_file;
 };
-

@@ -1,8 +1,24 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wx.cc 11370 2012-08-26 12:32:10Z vruppert $
+// $Id: wx.cc 13593 2019-11-11 19:40:09Z vruppert $
 /////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2019  The Bochs Project
+//
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////
 //
 // wxWidgets VGA display for Bochs.  wx.cc implements a custom
 // wxPanel called a MyPanel, which has methods to display
@@ -10,22 +26,7 @@
 // is instantiated within a MyFrame created by wxmain.cc, but
 // this is not a requirement.
 //
-// The separation between wxmain.cc and wx.cc is as follows:
-// - wxmain.cc implements a Bochs configuration interface (CI),
-//   which is the wxWidgets equivalent of textconfig.cc. wxmain creates
-//   a frame with several menus and a toolbar, and allows the user to
-//   choose the machine configuration and start the simulation.  Note
-//   that wxmain.cc does NOT include bochs.h.  All interactions
-//   between the CI and the simulator are through the siminterface
-//   object.
-// - wx.cc implements a VGA display screen using wxWidgets.  It is
-//   is the wxWidgets equivalent of x.cc, win32.cc, macos.cc, etc.
-//   wx.cc includes bochs.h and has access to all Bochs devices.
-//   The VGA panel accepts only paint, key, and mouse events.  As it
-//   receives events, it builds BxEvents and places them into a
-//   thread-safe BxEvent queue.  The simulation thread periodically
-//   processes events from the BxEvent queue (bx_wx_gui_c::handle_events)
-//   and notifies the appropriate emulated I/O device.
+// See the top of the source file wxmain.cc for more information.
 //
 /////////////////////////////////////////////////////////////////
 
@@ -33,6 +34,11 @@
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
 #define BX_PLUGGABLE
+
+#include "config.h"
+#if WX_MSW_UNICODE
+#define UNICODE
+#endif
 
 #include "bochs.h"
 #include "param_names.h"
@@ -50,6 +56,7 @@
 #endif
 #include <wx/image.h>
 #include <wx/clipbrd.h>
+#include <wx/display.h>
 
 //#include "gui/icon_bochs.h"
 #include "osdep.h"
@@ -64,10 +71,11 @@
 //////////////////////////////////////////////////////////////
 class bx_wx_gui_c : public bx_gui_c {
 public:
-  bx_wx_gui_c (void) {}
+  bx_wx_gui_c(void) {}
   DECLARE_GUI_VIRTUAL_METHODS()
   DECLARE_GUI_NEW_VIRTUAL_METHODS()
-  void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
+  virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
+  virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
   virtual void set_mouse_mode_absxy(bx_bool mode);
 #if BX_SHOW_IPS
   void show_ips(Bit32u ips_count);
@@ -78,8 +86,9 @@ public:
 // plugin code
 static bx_wx_gui_c *theGui = NULL;
 
-void MyPanel::OnPluginInit () {
-  theGui = new bx_wx_gui_c ();
+void MyPanel::OnPluginInit()
+{
+  theGui = new bx_wx_gui_c();
   bx_gui = theGui;
 }
 
@@ -91,6 +100,7 @@ void MyPanel::OnPluginInit () {
 // The bits to be displayed on the VGA screen are stored in wxScreen.
 // wxScreen is an array (size=width*height*3) of RGB values.  Each
 // pixel is represented by three bytes, one for red, green, and blue.
+static wxRect wx_maxres;
 static char *wxScreen = NULL;
 wxCriticalSection wxScreen_lock;
 static long wxScreenX = 0;
@@ -106,7 +116,7 @@ static unsigned long wxFontY = 0;
 static unsigned int text_rows=25, text_cols=80;
 static Bit8u h_panning = 0, v_panning = 0;
 static Bit16u line_compare = 1023;
-static unsigned vga_bpp=8;
+static unsigned disp_bpp = 8;
 static struct {
   unsigned char red;
   unsigned char green;
@@ -114,7 +124,7 @@ static struct {
 } wxBochsPalette[256];
 wxCriticalSection event_thread_lock;
 BxEvent event_queue[MAX_EVENTS];
-unsigned long num_events = 0;
+unsigned long num_events;
 static bx_bool mouse_captured = 0;
 static bx_bool wx_hide_ips = 0;
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXGTK__)
@@ -136,6 +146,7 @@ BEGIN_EVENT_TABLE(MyPanel, wxPanel)
   EVT_TIMER(-1, MyPanel::OnTimer)
   EVT_PAINT(MyPanel::OnPaint)
   EVT_MOUSE_EVENTS(MyPanel::OnMouse)
+  EVT_KILL_FOCUS(MyPanel::OnKillFocus)
 END_EVENT_TABLE()
 
 MyPanel::MyPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSize& size, long style, const wxString& name)
@@ -145,14 +156,11 @@ MyPanel::MyPanel(wxWindow* parent, wxWindowID id, const wxPoint& pos, const wxSi
   refreshTimer.SetOwner (this);
   refreshTimer.Start (100);
   needRefresh = true;
-  const char bits[1] = { 0 };
-  blankCursor = new wxCursor (bits, 1, 1, -1, -1, bits);
   thePanel = this;
 }
 
-MyPanel::~MyPanel ()
+MyPanel::~MyPanel()
 {
-  delete blankCursor;
   thePanel = NULL;
 }
 
@@ -199,22 +207,23 @@ void MyPanel::OnPaint(wxPaintEvent& WXUNUSED(event))
   needRefresh = false;
 }
 
-void MyPanel::ToggleMouse (bool fromToolbar)
+void MyPanel::ToggleMouse(bool fromToolbar)
 {
   static bool first_enable = true;
   bx_param_bool_c *enable = SIM->get_param_bool(BXPN_MOUSE_ENABLED);
   bool en = ! enable->get();
-  bool is_main_thread = wxThread::IsMain ();
-  bool needmutex = !is_main_thread && SIM->is_sim_thread ();
+  bool is_main_thread = wxThread::IsMain();
+  bool needmutex = !is_main_thread && SIM->is_sim_thread();
   if (needmutex) wxMutexGuiEnter();
   if (fromToolbar && first_enable && en) {
     // only show this help if you click on the toolbar.  If they already
     // know the shortcut, don't annoy them with the message.
-    wxString msg = wxT(
+    wxString msg;
+    msg.Printf(wxT(
       "You have enabled the mouse in Bochs, so now your mouse actions will\n"
       "be sent into the simulator.  The usual mouse cursor will be trapped\n"
-      "inside the Bochs window until you press a CTRL key + the middle button\n"
-      "to turn mouse capture off.");
+      "inside the Bochs window until you press %s\n"
+      "to turn mouse capture off."), theGui->get_toggle_info());
     wxMessageBox(msg, wxT("Mouse Capture Enabled"), wxOK | wxICON_INFORMATION);
     first_enable = false;
   }
@@ -227,7 +236,7 @@ void MyPanel::ToggleMouse (bool fromToolbar)
 #if defined(__WXMSW__)
     ShowCursor(0);
 #else
-    SetCursor(*blankCursor);
+    SetCursor(wxCURSOR_BLANK);
 #endif
   } else {
 #if defined(__WXMSW__)
@@ -242,18 +251,23 @@ void MyPanel::ToggleMouse (bool fromToolbar)
 void MyPanel::OnMouse(wxMouseEvent& event)
 {
   long x,y;
-  event.GetPosition (&x, &y);
+  int wheel = 0;
+
+  if (theFrame->GetSimThread() == NULL)
+    return;
+
+  event.GetPosition(&x, &y);
   IFDBG_MOUSE (
-    if (event.IsButton ()) {
-      wxLogDebug (wxT ("mouse button event at %d,%d", x, y));
-    } else if (event.Entering ()) {
-      wxLogDebug (wxT ("mouse entering at %d,%d", x, y));
-    } else if (event.Leaving ()) {
-      wxLogDebug (wxT ("mouse leaving at %d,%d", x, y));
-    } else if (event.Moving() || event.Dragging ()) {
-      wxLogDebug (wxT ("mouse moved to %d,%d", x, y));
+    if (event.IsButton()) {
+      wxLogDebug(wxT("mouse button event at %d,%d", x, y));
+    } else if (event.Entering()) {
+      wxLogDebug(wxT("mouse entering at %d,%d", x, y));
+    } else if (event.Leaving()) {
+      wxLogDebug(wxT("mouse leaving at %d,%d", x, y));
+    } else if (event.Moving() || event.Dragging()) {
+      wxLogDebug(wxT("mouse moved to %d,%d", x, y));
     } else {
-      wxLogDebug (wxT ("other mouse event at %d,%d", x, y));
+      wxLogDebug(wxT("other mouse event at %d,%d", x, y));
     }
   )
 
@@ -274,7 +288,10 @@ void MyPanel::OnMouse(wxMouseEvent& event)
   buttons  = event.LeftIsDown()  ? 1 : 0;
   buttons |= event.RightIsDown() ? 2 : 0;
   buttons |= event.MiddleIsDown() ? 4 : 0;
-  if (x==mouseSavedX && y==mouseSavedY && !event.IsButton ()) {
+  if (event.GetWheelRotation() != 0) {
+    wheel = event.GetWheelRotation() / event.GetWheelDelta();
+  }
+  if ((x == mouseSavedX) && (y == mouseSavedY) && !event.IsButton() && (wheel == 0)) {
     // nothing happened.  This could have been generated by the WarpPointer.
     return;
   } else {
@@ -291,7 +308,7 @@ void MyPanel::OnMouse(wxMouseEvent& event)
         event_queue[num_events].u.mouse.dx = dx;
         event_queue[num_events].u.mouse.dy = -dy;
       }
-      // TODO: handle mouse wheel
+      event_queue[num_events].u.mouse.dz = wheel;
       event_queue[num_events].u.mouse.buttons = buttons;
       num_events++;
       mouseSavedX = x;
@@ -312,18 +329,30 @@ void MyPanel::OnMouse(wxMouseEvent& event)
   // will move the cursor to (mouseSavedX, mouseSavedY).
 }
 
-void MyPanel::MyRefresh ()
+void MyPanel::OnKillFocus(wxFocusEvent& event)
 {
-  IFDBG_VGA (wxLogDebug (wxT ("set needRefresh=true")));
+  // Send the request to release all keys as a key event
+  wxCriticalSectionLocker lock(event_thread_lock);
+  if (num_events < MAX_EVENTS) {
+    event_queue[num_events].type = BX_ASYNC_EVT_KEY;
+    event_queue[num_events].u.key.bx_key = BX_KEY_NBKEYS | BX_KEY_RELEASED;
+    event_queue[num_events].u.key.raw_scancode = false;
+    num_events++;
+  }
+}
+
+void MyPanel::MyRefresh()
+{
+  IFDBG_VGA(wxLogDebug(wxT("set needRefresh=true")));
   needRefresh = true;
 }
 
 void MyPanel::OnKeyDown(wxKeyEvent& event)
 {
   wxCriticalSectionLocker lock(event_thread_lock);
-  if(num_events < MAX_EVENTS) {
+  if (num_events < MAX_EVENTS) {
     event_queue[num_events].type = BX_ASYNC_EVT_KEY;
-    fillBxKeyEvent (event, event_queue[num_events].u.key, false);
+    fillBxKeyEvent(event, event_queue[num_events].u.key, false);
     num_events++;
   }
 }
@@ -332,9 +361,9 @@ void MyPanel::OnKeyDown(wxKeyEvent& event)
 void MyPanel::OnKeyUp(wxKeyEvent& event)
 {
   wxCriticalSectionLocker lock(event_thread_lock);
-  if(num_events < MAX_EVENTS) {
+  if (num_events < MAX_EVENTS) {
     event_queue[num_events].type = BX_ASYNC_EVT_KEY;
-    fillBxKeyEvent (event, event_queue[num_events].u.key, true);
+    fillBxKeyEvent(event, event_queue[num_events].u.key, true);
     num_events++;
   }
 }
@@ -593,7 +622,12 @@ bx_bool MyPanel::fillBxKeyEvent_MSW (wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool
 
 #if defined (wxHAS_RAW_KEY_CODES) && defined(__WXGTK__)
 // get those keysym definitions
+#if WX_GDK_VERSION == 3
+#include <gdk/gdkkeysyms-compat.h>
+#else
 #include <gdk/gdkkeysyms.h>
+#endif
+
 #endif
 
 // GTK specific key mapping, which uses wxKeyEvent::m_rawCode.
@@ -778,6 +812,9 @@ bx_bool MyPanel::fillBxKeyEvent(wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rele
   Bit32u key = wxev.m_keyCode;
   bx_bool mouse_toggle = 0;
 
+  if (theFrame->GetSimThread() == NULL)
+    return false;
+
   if (key == WXK_CONTROL) {
     mouse_toggle = bx_gui->mouse_toggle_check(BX_MT_KEY_CTRL, !release);
   } else if (key == WXK_ALT) {
@@ -823,8 +860,8 @@ bx_bool MyPanel::fillBxKeyEvent(wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rele
     case WXK_ALT:                  bx_key = BX_KEY_ALT_L;        break;
     case WXK_MENU:                 bx_key = BX_KEY_MENU;         break;
     case WXK_PAUSE:                bx_key = BX_KEY_PAUSE;        break;
-    case WXK_PRIOR:                bx_key = BX_KEY_PAGE_UP;      break;
-    case WXK_NEXT:                 bx_key = BX_KEY_PAGE_DOWN;    break;
+    case WXK_PAGEUP:               bx_key = BX_KEY_PAGE_UP;      break;
+    case WXK_PAGEDOWN:             bx_key = BX_KEY_PAGE_DOWN;    break;
     case WXK_END:                  bx_key = BX_KEY_END;          break;
     case WXK_HOME:                 bx_key = BX_KEY_HOME;         break;
     case WXK_LEFT:                 bx_key = BX_KEY_LEFT;         break;
@@ -868,14 +905,8 @@ bx_bool MyPanel::fillBxKeyEvent(wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rele
     case WXK_NUMPAD_UP:            bx_key = BX_KEY_KP_UP;        break;
     case WXK_NUMPAD_RIGHT:         bx_key = BX_KEY_KP_RIGHT;     break;
     case WXK_NUMPAD_DOWN:          bx_key = BX_KEY_KP_DOWN;      break;
-    case WXK_NUMPAD_PRIOR:         bx_key = BX_KEY_KP_PAGE_UP;   break;
-#if WXK_NUMPAD_PAGEUP != WXK_NUMPAD_PRIOR
     case WXK_NUMPAD_PAGEUP:        bx_key = BX_KEY_KP_PAGE_UP;   break;
-#endif
-    case WXK_NUMPAD_NEXT:          bx_key = BX_KEY_KP_PAGE_DOWN; break;
-#if WXK_NUMPAD_PAGEDOWN != WXK_NUMPAD_NEXT
     case WXK_NUMPAD_PAGEDOWN:      bx_key = BX_KEY_KP_PAGE_DOWN; break;
-#endif
     case WXK_NUMPAD_END:           bx_key = BX_KEY_KP_END;       break;
     case WXK_NUMPAD_BEGIN:         bx_key = BX_KEY_KP_HOME;      break;
     case WXK_NUMPAD_INSERT:        bx_key = BX_KEY_KP_INSERT;    break;
@@ -917,16 +948,30 @@ bx_bool MyPanel::fillBxKeyEvent(wxKeyEvent& wxev, BxKeyEvent& bxev, bx_bool rele
   return true;
 }
 
-//////////////////////////////////////////////////////////////
-// fill in methods of bx_gui
-//////////////////////////////////////////////////////////////
+#if defined(WIN32) && BX_DEBUGGER && BX_DEBUGGER_GUI
+DWORD WINAPI DebugGuiThread(LPVOID)
+{
+  MSG msg;
+
+  bx_gui->init_debug_dialog();
+  while (GetMessage(&msg, NULL, 0, 0)) {
+    TranslateMessage(&msg);
+    DispatchMessage(&msg);
+  }
+  return 0;
+}
+#endif
+
+// wxWidgets implementation of the bx_gui_c methods (see nogui.cc for details)
 
 void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
-  int b,i,j;
-  unsigned char fc, vc;
+  int i, j;
+  wxDisplay display;
 
   put("WX");
+  wx_maxres = display.GetGeometry();
+  info("Current display dimensions %d x %d", wx_maxres.GetWidth(), wx_maxres.GetHeight());
   if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get()) {
     BX_INFO(("private_colormap option ignored."));
   }
@@ -939,13 +984,7 @@ void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 
   for(i = 0; i < 256; i++) {
     for(j = 0; j < 16; j++) {
-      vc = bx_vgafont[i].data[j];
-      fc = 0;
-      for (b = 0; b < 8; b++) {
-        fc |= (vc & 0x01) << (7 - b);
-        vc >>= 1;
-      }
-      vga_charmap[i*32+j] = fc;
+      vga_charmap[i * 32 + j] = reverse_bitorder(bx_vgafont[i].data[j]);
     }
   }
 
@@ -954,11 +993,10 @@ void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::specific_init trying to get lock. wxScreen=%p", wxScreen)));
   wxCriticalSectionLocker lock(wxScreen_lock);
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::specific_init got lock. wxScreen=%p", wxScreen)));
-  if (wxScreen == NULL) {
-    wxScreen = (char *)malloc(wxScreenX * wxScreenY * 3);
-  } else {
-    wxScreen = (char *)realloc(wxScreen, wxScreenX * wxScreenY * 3);
+  if (wxScreen != NULL) {
+    delete [] wxScreen;
   }
+  wxScreen = new char[wxScreenX * wxScreenY * 3];
   memset(wxScreen, 0, wxScreenX * wxScreenY * 3);
 
   wxTileX = x_tilesize;
@@ -988,125 +1026,153 @@ void bx_wx_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
     }
   }
 
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+#ifdef WIN32
+  // on Windows the debugger gui must run in a separate thread
+  DWORD threadID;
+  CreateThread(NULL, 0, DebugGuiThread, NULL, 0, &threadID);
+#else
+  wxMutexGuiEnter();
+  init_debug_dialog();
+  wxMutexGuiLeave();
+#endif
+#endif
+
+  wxString msg;
+  msg.Printf(wxT("Enable mouse capture\nThere is also a shortcut for this: %s."),
+             theGui->get_toggle_info());
+  theFrame->SetToolBarHelp(ID_Toolbar_Mouse_en, msg);
+
+  num_events = 0;
+
   new_gfx_api = 1;
   dialog_caps = BX_GUI_DLG_USER | BX_GUI_DLG_SNAPSHOT | BX_GUI_DLG_SAVE_RESTORE;
 }
 
-// ::HANDLE_EVENTS()
-//
-// Called periodically (vga_update_interval in .bochsrc) so the
-// the gui code can poll for keyboard, mouse, and other
-// relevant events.
-
 void bx_wx_gui_c::handle_events(void)
 {
-  wxCriticalSectionLocker lock(event_thread_lock);
-  Bit32u bx_key = 0;
-  for(unsigned int i = 0; i < num_events; i++) {
-    switch(event_queue[i].type) {
-      case BX_ASYNC_EVT_TOOLBAR:
-        switch (event_queue[i].u.toolbar.button) {
-          case BX_TOOLBAR_FLOPPYA: floppyA_handler(); break;
-          case BX_TOOLBAR_FLOPPYB: floppyB_handler(); break;
-          case BX_TOOLBAR_CDROM1: cdrom1_handler(); break;
-          case BX_TOOLBAR_RESET: reset_handler(); break;
-          case BX_TOOLBAR_POWER: power_handler(); break;
-          case BX_TOOLBAR_SAVE_RESTORE: save_restore_handler(); break;
-          case BX_TOOLBAR_COPY: copy_handler(); break;
-          case BX_TOOLBAR_PASTE: paste_handler(); break;
-          case BX_TOOLBAR_SNAPSHOT: snapshot_handler(); break;
-          case BX_TOOLBAR_CONFIG: config_handler(); break;
-          case BX_TOOLBAR_MOUSE_EN: thePanel->ToggleMouse(true); break;
-          case BX_TOOLBAR_USER: userbutton_handler(); break;
-          default:
-            wxLogDebug (wxT ("unknown toolbar id %d"), event_queue[i].u.toolbar.button);
-        }
-        break;
-      case BX_ASYNC_EVT_KEY:
-        bx_key = event_queue[i].u.key.bx_key;
-        if (event_queue[i].u.key.raw_scancode) {
-          // event contains raw scancodes: convert to BX_KEY values first
-          bx_bool released = ((bx_key & 0x80) > 0);
-          if (bx_key & 0xFF00) { // for extended keys
-            switch (bx_key & 0x7f) {
-              case 0x1C:
-                bx_key = BX_KEY_KP_ENTER;
-                break;
-              case 0x1D:
-                bx_key = BX_KEY_CTRL_R;
-                break;
-              case 0x35:
-                bx_key = BX_KEY_KP_DIVIDE;
-                break;
-              case 0x38:
-                // This makes the "AltGr" key on European keyboards work
-                DEV_kbd_gen_scancode(BX_KEY_CTRL_L | BX_KEY_RELEASED);
-                bx_key = BX_KEY_ALT_R;
-                break;
-              case 0x45:
-                bx_key = BX_KEY_NUM_LOCK;
-                break;
-              case 0x47:
-                bx_key = BX_KEY_HOME;
-                break;
-              case 0x48:
-                bx_key = BX_KEY_UP;
-                break;
-              case 0x49:
-                bx_key = BX_KEY_PAGE_UP;
-                break;
-              case 0x4B:
-                bx_key = BX_KEY_LEFT;
-                break;
-              case 0x4D:
-                bx_key = BX_KEY_RIGHT;
-                break;
-              case 0x4F:
-                bx_key = BX_KEY_END;
-                break;
-              case 0x50:
-                bx_key = BX_KEY_DOWN;
-                break;
-              case 0x51:
-                bx_key = BX_KEY_PAGE_DOWN;
-                break;
-              case 0x52:
-                bx_key = BX_KEY_INSERT;
-                break;
-              case 0x53:
-                bx_key = BX_KEY_DELETE;
-                break;
-              case 0x5B:
-                bx_key = BX_KEY_WIN_L;
-                break;
-              case 0x5C:
-                bx_key = BX_KEY_WIN_R;
-                break;
-              case 0x5D:
-                bx_key = BX_KEY_MENU;
-                break;
-            }
-          } else {
-            bx_key = wxMSW_to_bx_key[bx_key & 0x7f];
+  unsigned tb_button = 0;
+  { // critical section start
+    wxCriticalSectionLocker lock(event_thread_lock);
+    Bit32u bx_key = 0;
+    for(unsigned int i = 0; i < num_events; i++) {
+      switch(event_queue[i].type) {
+        case BX_ASYNC_EVT_TOOLBAR:
+          switch (event_queue[i].u.toolbar.button) {
+            case BX_TOOLBAR_RESET: reset_handler(); break;
+            case BX_TOOLBAR_POWER: tb_button = 1; break;
+            case BX_TOOLBAR_SAVE_RESTORE: tb_button = 2; break;
+            case BX_TOOLBAR_COPY: copy_handler(); break;
+            case BX_TOOLBAR_PASTE: paste_handler(); break;
+            case BX_TOOLBAR_SNAPSHOT: snapshot_handler(); break;
+            case BX_TOOLBAR_USER: tb_button = 3; break;
+            default:
+              wxLogDebug (wxT ("unknown toolbar id %d"), event_queue[i].u.toolbar.button);
           }
-          if (released) bx_key |= BX_KEY_RELEASED;
-        }
-        // event contains BX_KEY_* codes: use gen_scancode
-        IFDBG_KEY (wxLogDebug (wxT ("sending key event 0x%02x", bx_key)));
-        DEV_kbd_gen_scancode(bx_key);
-        break;
-      case BX_ASYNC_EVT_MOUSE:
-        DEV_mouse_motion(
-            event_queue[i].u.mouse.dx,
-            event_queue[i].u.mouse.dy,
-            0,
-            event_queue[i].u.mouse.buttons, wxMouseModeAbsXY);
-        break;
-      default:
-        wxLogError (wxT ("handle_events received unhandled event type %d in queue"), (int)event_queue[i].type);
+          break;
+        case BX_ASYNC_EVT_KEY:
+          bx_key = event_queue[i].u.key.bx_key;
+          if (event_queue[i].u.key.raw_scancode) {
+            // event contains raw scancodes: convert to BX_KEY values first
+            bx_bool released = ((bx_key & 0x80) > 0);
+            if (bx_key & 0xFF00) { // for extended keys
+              switch (bx_key & 0x7f) {
+                case 0x1C:
+                  bx_key = BX_KEY_KP_ENTER;
+                  break;
+                case 0x1D:
+                  bx_key = BX_KEY_CTRL_R;
+                  break;
+                case 0x35:
+                  bx_key = BX_KEY_KP_DIVIDE;
+                  break;
+                case 0x38:
+                  // This makes the "AltGr" key on European keyboards work
+                  DEV_kbd_gen_scancode(BX_KEY_CTRL_L | BX_KEY_RELEASED);
+                  bx_key = BX_KEY_ALT_R;
+                  break;
+                case 0x45:
+                  bx_key = BX_KEY_NUM_LOCK;
+                  break;
+                case 0x47:
+                  bx_key = BX_KEY_HOME;
+                  break;
+                case 0x48:
+                  bx_key = BX_KEY_UP;
+                  break;
+                case 0x49:
+                  bx_key = BX_KEY_PAGE_UP;
+                  break;
+                case 0x4B:
+                  bx_key = BX_KEY_LEFT;
+                  break;
+                case 0x4D:
+                  bx_key = BX_KEY_RIGHT;
+                  break;
+                case 0x4F:
+                  bx_key = BX_KEY_END;
+                  break;
+                case 0x50:
+                  bx_key = BX_KEY_DOWN;
+                  break;
+                case 0x51:
+                  bx_key = BX_KEY_PAGE_DOWN;
+                  break;
+                case 0x52:
+                  bx_key = BX_KEY_INSERT;
+                  break;
+                case 0x53:
+                  bx_key = BX_KEY_DELETE;
+                  break;
+                case 0x5B:
+                  bx_key = BX_KEY_WIN_L;
+                  break;
+                case 0x5C:
+                  bx_key = BX_KEY_WIN_R;
+                  break;
+                case 0x5D:
+                  bx_key = BX_KEY_MENU;
+                  break;
+              }
+            } else {
+              bx_key = wxMSW_to_bx_key[bx_key & 0x7f];
+            }
+            if (released) bx_key |= BX_KEY_RELEASED;
+          }
+          if ((bx_key & 0xff) < BX_KEY_NBKEYS) {
+            // event contains BX_KEY_* codes: use gen_scancode
+            IFDBG_KEY(wxLogDebug(wxT("sending key event 0x%02x", bx_key)));
+            DEV_kbd_gen_scancode(bx_key);
+          } else {
+            // value BX_KEY_NBKEYS forces sending release for all pressed keys
+            DEV_kbd_release_keys();
+          }
+          break;
+        case BX_ASYNC_EVT_MOUSE:
+          DEV_mouse_motion(
+              event_queue[i].u.mouse.dx,
+              event_queue[i].u.mouse.dy,
+              event_queue[i].u.mouse.dz,
+              event_queue[i].u.mouse.buttons, wxMouseModeAbsXY);
+          break;
+        default:
+          wxLogError (wxT ("handle_events received unhandled event type %d in queue"), (int)event_queue[i].type);
+      }
+      if (tb_button == 1) break;
     }
+    num_events = 0;
+  } // critical section end
+  // These button handlers must be placed outside of the critical section
+  if (tb_button == 1) {
+    // power_handler() never returns.
+    power_handler();
+  } else if (tb_button == 2) {
+    // save_restore_handler() calls a dialog.
+    save_restore_handler();
+  } else if (tb_button == 3) {
+    // userbutton_handler() also calls a dialog.
+    userbutton_handler();
   }
-  num_events = 0;
 }
 
 void bx_wx_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_bool w)
@@ -1131,19 +1197,9 @@ void bx_wx_gui_c::statusbar_setitem_specific(int element, bx_bool active, bx_boo
   wxMutexGuiLeave();
 }
 
-// ::FLUSH()
-//
-// Called periodically, requesting that the gui code flush all pending
-// screen update requests.
-
 void bx_wx_gui_c::flush(void)
 {
 }
-
-// ::CLEAR_SCREEN()
-//
-// Called to request that the VGA region is cleared.  Don't
-// clear the area that defines the headerbar.
 
 void bx_wx_gui_c::clear_screen(void)
 {
@@ -1160,7 +1216,7 @@ static void UpdateScreen(unsigned char *newBits, int x, int y, int width, int he
   wxCriticalSectionLocker lock(wxScreen_lock);
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::UpdateScreen got lock. wxScreen=%p", wxScreen)));
   if(wxScreen != NULL) {
-    switch (vga_bpp) {
+    switch (disp_bpp) {
       case 8: /* 8 bpp */
         for(int i = 0; i < height; i++) {
           char *pwxScreen = &wxScreen[(y * wxScreenX * 3) + (x * 3)];
@@ -1176,7 +1232,7 @@ static void UpdateScreen(unsigned char *newBits, int x, int y, int width, int he
         }
         break;
       default:
-        BX_PANIC(("%u bpp modes handled by new graphics API", vga_bpp));
+        BX_PANIC(("%u bpp modes handled by new graphics API", disp_bpp));
         return;
     }
   } else {
@@ -1186,9 +1242,10 @@ static void UpdateScreen(unsigned char *newBits, int x, int y, int width, int he
 
 static void DrawBochsBitmap(int x, int y, int width, int height, char *bmap, char fgcolor, char bgcolor, int fontx, int fonty, bx_bool gfxchar)
 {
-  static unsigned char newBits[9 * 32];
+  static unsigned char newBits[18 * 32];
   unsigned char mask;
   int bytes = width * height;
+  bx_bool dwidth = (width > 9);
 
   if (y > wxScreenY) return;
 
@@ -1204,32 +1261,13 @@ static void DrawBochsBitmap(int x, int y, int width, int height, char *bmap, cha
           newBits[i + j] = bgcolor;
         }
       }
-      mask >>= 1;
+      if (!dwidth || (j & 1)) mask >>= 1;
     }
     fonty++;
   }
   UpdateScreen(newBits, x, y, width, height);
 }
 
-
-// ::TEXT_UPDATE()
-//
-// Called in a VGA text mode, to update the screen with
-// new content.
-//
-// old_text: array of character/attributes making up the contents
-//           of the screen from the last call.  See below
-// new_text: array of character/attributes making up the current
-//           contents, which should now be displayed.  See below
-//
-// format of old_text & new_text: each is tm_info->line_offset*text_rows
-//     bytes long. Each character consists of 2 bytes.  The first by is
-//     the character value, the second is the attribute byte.
-//
-// cursor_x: new x location of cursor
-// cursor_y: new y location of cursor
-// tm_info:  this structure contains information for additional
-//           features in text mode (cursor shape, line offset,...)
 
 void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                               unsigned long cursor_x, unsigned long cursor_y,
@@ -1416,14 +1454,7 @@ void bx_wx_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
   thePanel->MyRefresh();
 }
 
-// ::PALETTE_CHANGE()
-//
-// Allocate a color in the native GUI, for this color, and put
-// it in the colormap location 'index'.
-// returns: 0=no screen update needed (color map change has direct effect)
-//          1=screen update needed (redraw using current colormap)
-
-bx_bool bx_wx_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+bx_bool bx_wx_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
 {
   IFDBG_VGA(wxLogDebug (wxT ("palette_change")));
   wxBochsPalette[index].red = red;
@@ -1432,21 +1463,6 @@ bx_bool bx_wx_gui_c::palette_change(unsigned index, unsigned red, unsigned green
   return(1);  // screen update needed
 }
 
-
-// ::GRAPHICS_TILE_UPDATE()
-//
-// Called to request that a tile of graphics be drawn to the
-// screen, since info in this region has changed.
-//
-// tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
-//       Each value specifies an index into the
-//       array of colors you allocated for ::palette_change()
-// x0: x origin of tile
-// y0: y origin of tile
-//
-// note: origin of tile and of window based on (0,0) being in the upper
-//       left of the window.
 
 void bx_wx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
@@ -1457,13 +1473,6 @@ void bx_wx_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 
 bx_svga_tileinfo_t *bx_wx_gui_c::graphics_tile_info(bx_svga_tileinfo_t *info)
 {
-  if (!info) {
-    info = (bx_svga_tileinfo_t *)malloc(sizeof(bx_svga_tileinfo_t));
-    if (!info) {
-      return NULL;
-    }
-  }
-
   info->bpp = 24;
   info->pitch = wxScreenX * 3;
   info->red_shift = 8;
@@ -1508,18 +1517,6 @@ void bx_wx_gui_c::graphics_tile_update_in_place(unsigned x0, unsigned y0,
   thePanel->MyRefresh();
 }
 
-// ::DIMENSION_UPDATE()
-//
-// Called from the simulator when the VGA mode changes it's X,Y dimensions.
-// Resize the window to this size, but you need to add on
-// the height of the headerbar to the Y value.
-//
-// x:       new VGA x size
-// y:       new VGA y size
-// fheight: new VGA character height in text mode
-// fwidth : new VGA character width in text mode
-// bpp : bits per pixel in graphics mode
-
 void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::dimension_update trying to get lock. wxScreen=%p", wxScreen)));
@@ -1528,21 +1525,27 @@ void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, uns
   BX_INFO (("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
   if ((bpp == 8) || (bpp == 15) || (bpp == 16) || (bpp == 24) || (bpp == 32)) {
     if (bpp == 32) BX_INFO(("wxWidgets ignores bit 24..31 in 32bpp mode"));
-    vga_bpp = bpp;
-  }
-  else
-  {
+    disp_bpp = guest_bpp = bpp;
+  } else {
     BX_PANIC(("%d bpp graphics mode not supported", bpp));
   }
-  if (fheight > 0) {
+  guest_textmode = (fheight > 0);
+  guest_xres = x;
+  guest_yres = y;
+  if (guest_textmode) {
     wxFontX = fwidth;
     wxFontY = fheight;
     text_cols = x / wxFontX;
     text_rows = y / wxFontY;
   }
+  if (((int)x > wx_maxres.GetWidth()) || ((int)y > wx_maxres.GetHeight())) {
+    BX_PANIC(("dimension_update(): resolution of out of display bounds"));
+    return;
+  }
   wxScreenX = x;
   wxScreenY = y;
-  wxScreen = (char *)realloc(wxScreen, wxScreenX * wxScreenY * 3);
+  delete [] wxScreen;
+  wxScreen = new char[wxScreenX * wxScreenY * 3];
   wxASSERT (wxScreen != NULL);
   wxScreen_lock.Leave ();
   IFDBG_VGA(wxLogDebug (wxT ("MyPanel::dimension_update gave up lock. wxScreen=%p", wxScreen)));
@@ -1565,17 +1568,6 @@ void bx_wx_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, uns
 }
 
 
-// ::CREATE_BITMAP()
-//
-// Create a monochrome bitmap of size 'xdim' by 'ydim', which will
-// be drawn in the headerbar.  Return an integer ID to the bitmap,
-// with which the bitmap can be referenced later.
-//
-// bmap: packed 8 pixels-per-byte bitmap.  The pixel order is:
-//       bit0 is the left most pixel, bit7 is the right most pixel.
-// xdim: x dimension of bitmap
-// ydim: y dimension of bitmap
-
 unsigned bx_wx_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
 {
   UNUSED(bmap);
@@ -1585,20 +1577,6 @@ unsigned bx_wx_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, un
 }
 
 
-// ::HEADERBAR_BITMAP()
-//
-// Called to install a bitmap in the bochs headerbar (toolbar).
-//
-// bmap_id: will correspond to an ID returned from
-//     ::create_bitmap().  'alignment' is either BX_GRAVITY_LEFT
-//     or BX_GRAVITY_RIGHT, meaning install the bitmap in the next
-//     available leftmost or rightmost space.
-// alignment: is either BX_GRAVITY_LEFT or BX_GRAVITY_RIGHT,
-//     meaning install the bitmap in the next
-//     available leftmost or rightmost space.
-// f: a 'C' function pointer to callback when the mouse is clicked in
-//     the boundaries of this bitmap.
-
 unsigned bx_wx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
 {
   UNUSED(bmap_id);
@@ -1607,44 +1585,29 @@ unsigned bx_wx_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, voi
   return(0);
 }
 
-// ::SHOW_HEADERBAR()
-//
-// Show (redraw) the current headerbar, which is composed of
-// currently installed bitmaps.
-
 void bx_wx_gui_c::show_headerbar(void)
 {
 }
 
-// ::REPLACE_BITMAP()
-//
-// Replace the bitmap installed in the headerbar ID slot 'hbar_id',
-// with the one specified by 'bmap_id'.  'bmap_id' will have
-// been generated by ::create_bitmap().  The old and new bitmap
-// must be of the same size.  This allows the bitmap the user
-// sees to change, when some action occurs.  For example when
-// the user presses on the floppy icon, it then displays
-// the ejected status.
-//
-// hbar_id: headerbar slot ID
-// bmap_id: bitmap ID
-
-  void
-bx_wx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
+void bx_wx_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
   UNUSED(hbar_id);
   UNUSED(bmap_id);
 }
 
 
-// ::EXIT()
-//
-// Called before bochs terminates, to allow for a graceful
-// exit from the native GUI mechanism.
-
 void bx_wx_gui_c::exit(void)
 {
   clear_screen();
+  if (mouse_captured) {
+    thePanel->ToggleMouse(false);
+    mouse_captured = 0;
+  }
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+  wxMutexGuiEnter();
+  close_debug_dialog();
+  wxMutexGuiLeave();
+#endif
 }
 
 void bx_wx_gui_c::mouse_enabled_changed_specific(bx_bool val)
@@ -1690,6 +1653,16 @@ int bx_wx_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   }
   wxMutexGuiLeave();
   return ret;
+}
+
+void bx_wx_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
+{
+  wxDisplay display;
+
+  wx_maxres = display.GetGeometry();
+  *xres = wx_maxres.GetWidth();
+  *yres = wx_maxres.GetHeight();
+  *bpp = 32;
 }
 
 void bx_wx_gui_c::set_mouse_mode_absxy(bx_bool mode)

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial.h 11224 2012-06-21 17:33:37Z vruppert $
+// $Id: serial.h 13048 2017-01-27 16:20:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2004-2009  The Bochs Project
+//  Copyright (C) 2001-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -33,11 +33,11 @@
 #  define BX_SER_THIS this->
 #endif
 
-#if defined(WIN32)
+#ifdef BX_SER_WIN32
 #define SERIAL_ENABLE
 #endif
 
-#if defined(__NetBSD__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__linux__) || defined(__GNU__) || defined(__GLIBC__) || defined(__APPLE__) || defined(__sun__)
+#if defined(__NetBSD__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__linux__) || defined(__GNU__) || defined(__GLIBC__) || defined(__APPLE__) || defined(__sun__) || defined(__CYGWIN__)
 #define SERIAL_ENABLE
 extern "C" {
 #include <termios.h>
@@ -63,13 +63,15 @@ extern "C" {
 #define BX_SER_MSR  6
 #define BX_SER_SCR  7
 
-#define BX_SER_MODE_NULL  0
-#define BX_SER_MODE_FILE  1
-#define BX_SER_MODE_TERM  2
-#define BX_SER_MODE_RAW   3
-#define BX_SER_MODE_MOUSE 4
-#define BX_SER_MODE_SOCKET 5
-#define BX_SER_MODE_PIPE  6
+#define BX_SER_MODE_NULL          0
+#define BX_SER_MODE_FILE          1
+#define BX_SER_MODE_TERM          2
+#define BX_SER_MODE_RAW           3
+#define BX_SER_MODE_MOUSE         4
+#define BX_SER_MODE_SOCKET_CLIENT 5
+#define BX_SER_MODE_SOCKET_SERVER 6
+#define BX_SER_MODE_PIPE_CLIENT   7
+#define BX_SER_MODE_PIPE_SERVER   8
 
 enum {
   BX_SER_INT_IER,
@@ -104,24 +106,25 @@ typedef struct {
   Bit8u tx_fifo_end;
 
   int  baudrate;
-  int  tx_timer_index;
+  Bit32u databyte_usec;
 
-  int  rx_pollstate;
   int  rx_timer_index;
+  int  tx_timer_index;
   int  fifo_timer_index;
 
   int io_mode;
   int tty_id;
   SOCKET socket_id;
   FILE *output;
-#ifdef WIN32
+  bx_param_string_c *file;
+#ifdef BX_SER_WIN32
   HANDLE pipe;
 #endif
 
 #if USE_RAW_SERIAL
   serial_raw* raw;
 #endif
-#if defined(SERIAL_ENABLE) && !defined(WIN32)
+#if defined(SERIAL_ENABLE) && !defined(BX_SER_WIN32)
   struct termios term_orig, term_new;
 #endif
 
@@ -215,6 +218,8 @@ private:
   int   mouse_delayed_dx;
   int   mouse_delayed_dy;
   int   mouse_delayed_dz;
+  Bit8u mouse_buttons;
+  bx_bool mouse_update;
   struct {
     int     num_elements;
     Bit8u   buffer[BX_MOUSE_BUFF_SIZE];
@@ -237,6 +242,7 @@ private:
 
   static void mouse_enq_static(void *dev, int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy);
   void mouse_enq(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy);
+  void update_mouse_data(void);
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -244,6 +250,9 @@ private:
   Bit32u read(Bit32u address, unsigned io_len);
   void   write(Bit32u address, Bit32u value, unsigned io_len);
 #endif
+  static const char* serial_file_param_handler(bx_param_string_c *param, int set,
+                                               const char *oldval, const char *val,
+                                               int maxlen);
 };
 
 #endif

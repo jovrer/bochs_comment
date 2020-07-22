@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.h 11203 2012-06-04 14:27:34Z sshwarts $
+// $Id: apic.h 13661 2019-12-10 21:07:19Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2002-2012 Zwane Mwaikambo, Stanislav Shwartsman
+//  Copyright (c) 2002-2017 Zwane Mwaikambo, Stanislav Shwartsman
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -25,22 +25,113 @@
 
 #if BX_SUPPORT_APIC
 
-#define APIC_LEVEL_TRIGGERED	1
-#define APIC_EDGE_TRIGGERED	0
+enum {
+  APIC_EDGE_TRIGGERED  = 0,
+  APIC_LEVEL_TRIGGERED = 1
+};
 
-#define BX_LAPIC_BASE_ADDR  0xfee00000  // default Local APIC address
+const bx_phy_address BX_LAPIC_BASE_ADDR = 0xfee00000;  // default Local APIC address
+
 #define BX_NUM_LOCAL_APICS  BX_SMP_PROCESSORS
-#define BX_LAPIC_MAX_INTS   256
 
-#define BX_APIC_GLOBALLY_DISABLED 0
-#define BX_APIC_STATE_INVALID     1
-#define BX_APIC_XAPIC_MODE        2
-#define BX_APIC_X2APIC_MODE       3
+enum {
+  BX_APIC_GLOBALLY_DISABLED = 0,
+  BX_APIC_STATE_INVALID     = 1,
+  BX_APIC_XAPIC_MODE        = 2,
+  BX_APIC_X2APIC_MODE       = 3
+};
 
 #define BX_XAPIC_EXT_SUPPORT_IER  (1 << 0)
 #define BX_XAPIC_EXT_SUPPORT_SEOI (1 << 1)
 
 typedef Bit32u apic_dest_t; /* same definition in ioapic.h */
+
+// local apic registers
+
+#define BX_LAPIC_ID                   0x020
+#define BX_LAPIC_VERSION              0x030
+#define BX_LAPIC_TPR                  0x080
+#define BX_LAPIC_ARBITRATION_PRIORITY 0x090
+#define BX_LAPIC_PPR                  0x0A0
+#define BX_LAPIC_EOI                  0x0B0
+#define BX_LAPIC_RRD                  0x0C0
+#define BX_LAPIC_LDR                  0x0D0
+#define BX_LAPIC_DESTINATION_FORMAT   0x0E0
+#define BX_LAPIC_SPURIOUS_VECTOR      0x0F0
+#define BX_LAPIC_ISR1                 0x100
+#define BX_LAPIC_ISR2                 0x110
+#define BX_LAPIC_ISR3                 0x120
+#define BX_LAPIC_ISR4                 0x130
+#define BX_LAPIC_ISR5                 0x140
+#define BX_LAPIC_ISR6                 0x150
+#define BX_LAPIC_ISR7                 0x160
+#define BX_LAPIC_ISR8                 0x170
+#define BX_LAPIC_TMR1                 0x180
+#define BX_LAPIC_TMR2                 0x190
+#define BX_LAPIC_TMR3                 0x1A0
+#define BX_LAPIC_TMR4                 0x1B0
+#define BX_LAPIC_TMR5                 0x1C0
+#define BX_LAPIC_TMR6                 0x1D0
+#define BX_LAPIC_TMR7                 0x1E0
+#define BX_LAPIC_TMR8                 0x1F0
+#define BX_LAPIC_IRR1                 0x200
+#define BX_LAPIC_IRR2                 0x210
+#define BX_LAPIC_IRR3                 0x220
+#define BX_LAPIC_IRR4                 0x230
+#define BX_LAPIC_IRR5                 0x240
+#define BX_LAPIC_IRR6                 0x250
+#define BX_LAPIC_IRR7                 0x260
+#define BX_LAPIC_IRR8                 0x270
+#define BX_LAPIC_ESR                  0x280
+#define BX_LAPIC_LVT_CMCI             0x2F0
+#define BX_LAPIC_ICR_LO               0x300
+#define BX_LAPIC_ICR_HI               0x310
+#define BX_LAPIC_LVT_TIMER            0x320
+#define BX_LAPIC_LVT_THERMAL          0x330
+#define BX_LAPIC_LVT_PERFMON          0x340
+#define BX_LAPIC_LVT_LINT0            0x350
+#define BX_LAPIC_LVT_LINT1            0x360
+#define BX_LAPIC_LVT_ERROR            0x370
+#define BX_LAPIC_TIMER_INITIAL_COUNT  0x380
+#define BX_LAPIC_TIMER_CURRENT_COUNT  0x390
+#define BX_LAPIC_TIMER_DIVIDE_CFG     0x3E0
+#define BX_LAPIC_SELF_IPI             0x3F0
+
+// extended AMD 
+#define BX_LAPIC_EXT_APIC_FEATURE     0x400
+#define BX_LAPIC_EXT_APIC_CONTROL     0x410
+#define BX_LAPIC_SPECIFIC_EOI         0x420
+#define BX_LAPIC_IER1                 0x480
+#define BX_LAPIC_IER2                 0x490
+#define BX_LAPIC_IER3                 0x4A0
+#define BX_LAPIC_IER4                 0x4B0
+#define BX_LAPIC_IER5                 0x4C0
+#define BX_LAPIC_IER6                 0x4D0
+#define BX_LAPIC_IER7                 0x4E0
+#define BX_LAPIC_IER8                 0x4F0
+
+/* APIC delivery modes */
+enum {
+  APIC_DM_FIXED	   = 0,
+  APIC_DM_LOWPRI   = 1,
+  APIC_DM_SMI      = 2,
+  APIC_DM_RESERVED = 3,
+  APIC_DM_NMI      = 4,
+  APIC_DM_INIT     = 5,
+  APIC_DM_SIPI     = 6,
+  APIC_DM_EXTINT   = 7
+};
+
+enum {
+  APIC_LVT_TIMER   = 0,
+  APIC_LVT_THERMAL = 1,
+  APIC_LVT_PERFMON = 2,
+  APIC_LVT_LINT0   = 3,
+  APIC_LVT_LINT1   = 4,
+  APIC_LVT_ERROR   = 5,
+  APIC_LVT_CMCI    = 6,
+  APIC_LVT_ENTRIES
+};
 
 class BOCHSAPI bx_local_apic_c : public logfunctions
 {
@@ -64,19 +155,19 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
 
   // ISR=in-service register. When an IRR bit is cleared, the corresponding
   // bit in ISR is set.
-  Bit8u isr[BX_LAPIC_MAX_INTS];
+  Bit32u isr[8];
   // TMR=trigger mode register.  Cleared for edge-triggered interrupts
   // and set for level-triggered interrupts. If set, local APIC must send
   // EOI message to all other APICs.
-  Bit8u tmr[BX_LAPIC_MAX_INTS];
+  Bit32u tmr[8];
   // IRR=interrupt request register. When an interrupt is triggered by
   // the I/O APIC or another processor, it sets a bit in irr. The bit is
   // cleared when the interrupt is acknowledged by the processor.
-  Bit8u irr[BX_LAPIC_MAX_INTS];
+  Bit32u irr[8];
 #if BX_CPU_LEVEL >= 6
   // IER=interrupt enable register. Only vectors that are enabled in IER
   // participare in APIC's computation of highest priority pending interrupt.
-  Bit8u ier[BX_LAPIC_MAX_INTS];
+  Bit32u ier[8];
 #endif
 
 #define APIC_ERR_ILLEGAL_ADDR    0x80
@@ -94,14 +185,7 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
   Bit32u icr_hi;                // Interrupt command register (ICR)
   Bit32u icr_lo;
 
-#define APIC_LVT_ENTRIES 6
   Bit32u lvt[APIC_LVT_ENTRIES];
-#define APIC_LVT_TIMER   0
-#define APIC_LVT_THERMAL 1
-#define APIC_LVT_PERFMON 2
-#define APIC_LVT_LINT0   3
-#define APIC_LVT_LINT1   4
-#define APIC_LVT_ERROR   5
 
   Bit32u timer_initial;         // Initial timer count (in order to reload periodic timer)
   Bit32u timer_current;         // Current timer count
@@ -114,16 +198,6 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
   bx_bool timer_active;
   int timer_handle;
 
-/* APIC delivery modes */
-#define APIC_DM_FIXED	0
-#define APIC_DM_LOWPRI	1
-#define APIC_DM_SMI	2
-/* RESERVED		3 */
-#define APIC_DM_NMI	4
-#define APIC_DM_INIT	5
-#define APIC_DM_SIPI	6
-#define APIC_DM_EXTINT	7
-
 #if BX_SUPPORT_VMX >= 2
   int vmx_timer_handle;
   Bit32u vmx_preemption_timer_value;
@@ -133,7 +207,16 @@ class BOCHSAPI bx_local_apic_c : public logfunctions
   bx_bool vmx_timer_active;
 #endif 
 
+#if BX_SUPPORT_MONITOR_MWAIT
+  int mwaitx_timer_handle;
+  bx_bool mwaitx_timer_active;
+#endif
+
   BX_CPU_C *cpu;
+
+  bx_bool get_vector(Bit32u *reg, unsigned vector);
+  void set_vector(Bit32u *reg, unsigned vector);
+  void clear_vector(Bit32u *reg, unsigned vector);
 
 public:
   bx_bool INTR;
@@ -159,7 +242,7 @@ public:
   void trigger_irq(Bit8u vector, unsigned trigger_mode, bx_bool bypass_irr_isr = 0);
   void untrigger_irq(Bit8u vector, unsigned trigger_mode);
   Bit8u acknowledge_int(void);  // only the local CPU should call this
-  int highest_priority_int(Bit8u *array);
+  int highest_priority_int(Bit32u *array);
   void receive_EOI(Bit32u value);
   void send_ipi(apic_dest_t dest, Bit32u lo_cmd);
   void write_spurious_interrupt_register(Bit32u value);
@@ -195,11 +278,19 @@ public:
   void deactivate_vmx_preemption_timer(void);
   static void vmx_preemption_timer_expired(void *);
 #endif  
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  void set_mwaitx_timer(Bit32u value);
+  void deactivate_mwaitx_timer(void);
+  static void mwaitx_timer_expired(void *);
+#endif
 };
 
 int apic_bus_deliver_lowest_priority(Bit8u vector, apic_dest_t dest, bx_bool trig_mode, bx_bool broadcast);
 BOCHSAPI_MSVCONLY int apic_bus_deliver_interrupt(Bit8u vector, apic_dest_t dest, Bit8u delivery_mode, bx_bool logical_dest, bx_bool level, bx_bool trig_mode);
 int apic_bus_broadcast_interrupt(Bit8u vector, Bit8u delivery_mode, bx_bool trig_mode, int exclude_cpu);
+
+BX_CPP_INLINE bx_bool is_x2apic_msr_range(Bit32u index) { return index >= 0x800 && index <= 0x8FF; }
 
 #endif // if BX_SUPPORT_APIC
 

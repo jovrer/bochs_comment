@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: sse_string.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: sse_string.cc 13466 2018-02-16 07:57:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2007-2012 Stanislav Shwartsman
+//   Copyright (c) 2007-2018 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -29,7 +29,7 @@
 #if BX_CPU_LEVEL >= 6
 
 // Compare all pairs of Ai, Bj according to imm8 control
-static void compare_strings(Bit8u BoolRes[16][16], BxPackedXmmRegister op1, BxPackedXmmRegister op2, Bit8u imm)
+static void compare_strings(Bit8u BoolRes[16][16], const BxPackedXmmRegister &op1, const BxPackedXmmRegister &op2, Bit8u imm)
 {
   unsigned i, j;
   unsigned aggregation_operation = (imm >> 2) & 3;
@@ -147,7 +147,7 @@ static unsigned find_eos64(Bit64s reg64, Bit8u imm)
 }
 #endif
 
-static unsigned find_eos(BxPackedXmmRegister op, Bit8u imm)
+static unsigned find_eos(const BxPackedXmmRegister &op, Bit8u imm)
 {
   unsigned i = 0;
 
@@ -279,7 +279,7 @@ static Bit16u aggregate(Bit8u BoolRes[16][16], unsigned len1, unsigned len2, Bit
 }
 
 /* 66 0F 3A 60 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRM_VdqWdqIbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRM_VdqWdqIbR(bxInstruction_c *i)
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->dst());
   BxPackedXmmRegister op2 = BX_READ_XMM_REG(i->src()), result;
@@ -335,7 +335,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRM_VdqWdqIbR(bxInstruction_
 }
 
 /* 66 0F 3A 61 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRI_VdqWdqIbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRI_VdqWdqIbR(bxInstruction_c *i)
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->dst()), op2 = BX_READ_XMM_REG(i->src());
   Bit8u imm8 = i->Ib();
@@ -386,7 +386,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPESTRI_VdqWdqIbR(bxInstruction_
 }
 
 /* 66 0F 3A 62 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRM_VdqWdqIbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRM_VdqWdqIbR(bxInstruction_c *i)
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->dst());
   BxPackedXmmRegister op2 = BX_READ_XMM_REG(i->src()), result;
@@ -433,7 +433,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRM_VdqWdqIbR(bxInstruction_
 }
 
 /* 66 0F 3A 63 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRI_VdqWdqIbR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PCMPISTRI_VdqWdqIbR(bxInstruction_c *i)
 {
   BxPackedXmmRegister op1 = BX_READ_XMM_REG(i->dst()), op2 = BX_READ_XMM_REG(i->src());
   Bit8u imm8 = i->Ib();

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: symbols.cc 11161 2012-05-05 18:40:37Z sshwarts $
+// $Id: symbols.cc 13281 2017-08-22 21:03:58Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -27,7 +27,7 @@
 
 static const char BX_HAVE_MAP_ERR[] = "context not implemented because BX_HAVE_MAP=0\n";
 
-const char* bx_dbg_symbolic_address(Bit32u context, Bit32u eip, Bit32u base)
+const char* bx_dbg_symbolic_address(bx_address context, bx_address eip, bx_address base)
 {
   static bx_bool first = true;
   if (first) {
@@ -37,35 +37,29 @@ const char* bx_dbg_symbolic_address(Bit32u context, Bit32u eip, Bit32u base)
   return "unk. ctxt";
 }
 
-const char* bx_dbg_symbolic_address_16bit(Bit32u eip, Bit32u cs)
-{
-  // just prints an error anyway
-  return bx_dbg_symbolic_address (0,0,0);
-}
-
-int bx_dbg_symbol_command(const char* filename, bx_bool global, Bit32u offset)
+int bx_dbg_symbol_command(const char* filename, bx_bool global, bx_address offset)
 {
   dbg_printf(BX_HAVE_MAP_ERR);
   return -1;
 }
 
-void bx_dbg_info_symbols_command(const char *Symbol)
+void bx_dbg_info_symbols_command(const char *symbol)
 {
   dbg_printf(BX_HAVE_MAP_ERR);
 }
 
-int bx_dbg_lbreakpoint_symbol_command(const char *Symbol)
+int bx_dbg_lbreakpoint_symbol_command(const char *symbol, const char *condition)
 {
   dbg_printf(BX_HAVE_MAP_ERR);
   return -1;
 }
 
-Bit32u bx_dbg_get_symbol_value(const char *Symbol)
+bx_address bx_dbg_get_symbol_value(const char *symbol)
 {
   return 0;
 }
 
-const char* bx_dbg_disasm_symbolic_address(Bit32u eip, Bit32u base)
+const char* bx_dbg_disasm_symbolic_address(bx_address eip, bx_address base)
 {
   return 0;
 }
@@ -86,7 +80,7 @@ const char* bx_dbg_disasm_symbolic_address(Bit32u eip, Bit32u base)
 
 struct symbol_entry_t
 {
-  symbol_entry_t (Bit32u _start = 0, const char* _name = 0)
+  symbol_entry_t (bx_address _start = 0, const char* _name = 0)
   {
     start = _start;
     name = _name ? strdup(_name) : 0;
@@ -100,7 +94,7 @@ struct symbol_entry_t
   void trim_quotes(void);
 
   char* name;
-  Bit32u start;
+  bx_address start;
 
 private:
   symbol_entry_t(const symbol_entry_t&);  // No definition
@@ -127,14 +121,14 @@ struct context_t
 {
   typedef std::set<symbol_entry_t*,lt_symbol_entry_t>  sym_set_t;
   typedef std::set<symbol_entry_t*,lt_rsymbol_entry_t> rsym_set_t;
-  typedef std::map<Bit32u,context_t*> map_t;
+  typedef std::map<bx_address,context_t*> map_t;
 
-  context_t (Bit32u);
+  context_t (bx_address);
  ~context_t();
 
-  static context_t* get_context(Bit32u);
-  symbol_entry_t* get_symbol_entry(Bit32u);
-  symbol_entry_t* get_symbol_entry(const char *Symbol) const;
+  static context_t* get_context(bx_address);
+  symbol_entry_t* get_symbol_entry(bx_address);
+  symbol_entry_t* get_symbol_entry(const char *symbol) const;
   void add_symbol(symbol_entry_t*);
   const sym_set_t* get_all_symbols() const {return &m_syms;}
   const rsym_set_t* get_all_rsymbols() const {return &m_rsyms;}
@@ -146,12 +140,12 @@ protected:
   sym_set_t m_syms;
   // Reverse references (find address by name)
   rsym_set_t m_rsyms;
-  Bit32u m_id;
+  bx_address m_id;
 };
 
 context_t::map_t context_t::s_map;
 
-context_t::context_t (Bit32u id)
+context_t::context_t (bx_address id)
 {
   m_id = id;
   s_map[m_id] = this;
@@ -168,12 +162,12 @@ context_t::~context_t()
   }
 }
 
-context_t* context_t::get_context(Bit32u i)
+context_t* context_t::get_context(bx_address i)
 {
   return s_map[i];
 }
 
-symbol_entry_t* context_t::get_symbol_entry(Bit32u ip)
+symbol_entry_t* context_t::get_symbol_entry(bx_address ip)
 {
   symbol_entry_t probe(ip, 0);
   // find the first symbol whose address is greater than ip.
@@ -191,12 +185,12 @@ symbol_entry_t* context_t::get_symbol_entry(Bit32u ip)
   return *iter;
 }
 
-symbol_entry_t* context_t::get_symbol_entry(const char *Symbol) const
+symbol_entry_t* context_t::get_symbol_entry(const char *symbol) const
 {
   if (m_rsyms.empty())
     return 0;
 
-  symbol_entry_t probe(0, Symbol);
+  symbol_entry_t probe(0, symbol);
   rsym_set_t::const_iterator iter;
   iter=m_rsyms.find(&probe);
   if(iter==m_rsyms.end()) // No symbol found
@@ -220,23 +214,23 @@ void symbol_entry_t::trim_quotes(void)
   }
 }
 
-Bit32u bx_dbg_get_symbol_value(const char *Symbol)
+bx_address bx_dbg_get_symbol_value(const char *symbol)
 {
   context_t* cntx = context_t::get_context(0);
   if(!cntx) // Context not found
     return 0;
 
-  symbol_entry_t s(0, Symbol);
+  symbol_entry_t s(0, symbol);
   s.trim_quotes();
 
   symbol_entry_t* sym=cntx->get_symbol_entry(s.name);
-  if(!sym) // Symbol not found
+  if(!sym) // symbol not found
     return 0;
 
   return sym->start;
 }
 
-const char* bx_dbg_symbolic_address(Bit32u context, Bit32u eip, Bit32u base)
+const char* bx_dbg_symbolic_address(bx_address context, bx_address xip, bx_address base)
 {
   static char buf[80];
 
@@ -250,17 +244,17 @@ const char* bx_dbg_symbolic_address(Bit32u context, Bit32u eip, Bit32u base)
       return buf;
     }
   }
-  // full linear address not only eip (for nonzero based segments)
-  symbol_entry_t* entr = cntx->get_symbol_entry(base+eip);
+  // full linear address not only xip (for nonzero based segments)
+  symbol_entry_t* entr = cntx->get_symbol_entry(base+xip);
   if (!entr) {
     snprintf (buf, 80, "no symbol");
     return buf;
   }
-  snprintf (buf, 80, "%s+%x", entr->name, (base+eip) - entr->start);
+  snprintf (buf, 80, "%s+%x", entr->name, (base+xip) - entr->start);
   return buf;
 }
 
-const char* bx_dbg_disasm_symbolic_address(Bit32u eip, Bit32u base)
+const char* bx_dbg_disasm_symbolic_address(bx_address xip, bx_address base)
 {
   static char buf[80];
 
@@ -270,25 +264,16 @@ const char* bx_dbg_disasm_symbolic_address(Bit32u eip, Bit32u base)
     return 0;
   }
 
-  // full linear address not only eip (for nonzero based segments)
-  symbol_entry_t* entr = cntx->get_symbol_entry(base+eip);
+  // full linear address not only xip (for nonzero based segments)
+  symbol_entry_t* entr = cntx->get_symbol_entry(base+xip);
   if (!entr) {
     return 0;
   }
-  snprintf (buf, 80, "%s+%x", entr->name, (base+eip) - entr->start);
+  snprintf (buf, 80, "%s+%" FMT_64 "x", entr->name, (base+xip) - entr->start);
   return buf;
 }
 
-const char* bx_dbg_symbolic_address_16bit(Bit32u eip, Bit32u cs)
-{
-  // in 16-bit code, the segment selector and offset are combined into a
-  // 20-bit linear address = (segment selector<<4) + offset.
-  eip &= 0xffff;
-  cs &= 0xffff;
-  return bx_dbg_symbolic_address (0, eip+(cs<<4), 0);
-}
-
-int bx_dbg_symbol_command(const char* filename, bx_bool global, Bit32u offset)
+int bx_dbg_symbol_command(const char* filename, bx_bool global, bx_address offset)
 {
   symbol_entry_t file(0, filename);
   file.trim_quotes();
@@ -297,7 +282,7 @@ int bx_dbg_symbol_command(const char* filename, bx_bool global, Bit32u offset)
   // The file format should be
   // address symbol (example '00002afe _StartLoseNT')
 
-  Bit32u context_id = (global) ? 0 : (BX_CPU(dbg_cpu)->cr3) >> 12;
+  bx_address context_id = (global) ? 0 : ((bx_address)BX_CPU(dbg_cpu)->cr3) >> 12;
 
   context_t* cntx = context_t::get_context(context_id);
 
@@ -324,13 +309,19 @@ int bx_dbg_symbol_command(const char* filename, bx_bool global, Bit32u offset)
 
     // parse
     char* sym_name;
-    Bit32u addr = strtoul(buf, &sym_name, 16);
-
+#if BX_SUPPORT_X86_64 && BX_HAVE_STRTOUQ
+    bx_address addr = strtouq(buf, &sym_name, 16);
+#elif BX_SUPPORT_X86_64 && BX_HAVE_STRTOULL
+    bx_address addr = strtoull(buf, &sym_name, 16);
+#else
+    bx_address addr = strtoul(buf, &sym_name, 16);
+#endif
     if (!isspace(*sym_name)) {
       if (*sym_name == 0)
         dbg_printf("%s:%d: missing symbol name\n", file.name, line_num);
       else
         dbg_printf("%s:%d: syntax error near '%s'\n", file.name, line_num, sym_name);
+      fclose(fp);
       return -1;
     }
     ++sym_name;
@@ -348,6 +339,7 @@ int bx_dbg_symbol_command(const char* filename, bx_bool global, Bit32u offset)
     }
     ++line_num;
   }
+  fclose(fp);
   return 0;
 }
 
@@ -364,7 +356,7 @@ static bool bx_dbg_strprefix(const char *s1, const char *s2)
   return strncmp(s1, s2, len)==0;
 }
 
-void bx_dbg_info_symbols_command(const char *Symbol)
+void bx_dbg_info_symbols_command(const char *symbol)
 {
   context_t* cntx = context_t::get_context(0);
 
@@ -373,16 +365,16 @@ void bx_dbg_info_symbols_command(const char *Symbol)
     return;
   }
 
-  if(Symbol) {
+  if(symbol) {
     const context_t::rsym_set_t* rsyms;
 
     rsyms=cntx->get_all_rsymbols();
     if (rsyms->empty ()) {
-      dbg_printf ("Symbols not loaded\n");
+      dbg_printf ("symbols not loaded\n");
       return;
     }
 
-    symbol_entry_t probe(0, Symbol);
+    symbol_entry_t probe(0, symbol);
     // remove leading and trailing quotas
     probe.trim_quotes();
     context_t::rsym_set_t::const_iterator iter;
@@ -392,7 +384,11 @@ void bx_dbg_info_symbols_command(const char *Symbol)
       dbg_printf ("No symbols found\n");
     else {
       for(;iter!=rsyms->end() && bx_dbg_strprefix(probe.name, (*iter)->name);++iter) {
+#if BX_SUPPORT_X86_64 && (BX_HAVE_STRTOULL || BX_HAVE_STRTOUQ)
+        dbg_printf (FMT_ADDRX64 ": %s\n", (*iter)->start, (*iter)->name);
+#else
         dbg_printf ("%08x: %s\n", (*iter)->start, (*iter)->name);
+#endif
       }
     }
   }
@@ -400,19 +396,26 @@ void bx_dbg_info_symbols_command(const char *Symbol)
     const context_t::sym_set_t* syms;
 
     syms=cntx->get_all_symbols();
-    if (syms->empty ()) {
-      dbg_printf ("Symbols not loaded\n");
+    if (syms->empty()) {
+      dbg_printf ("symbols not loaded\n");
       return;
     }
 
     context_t::sym_set_t::const_iterator iter;
     for(iter = syms->begin();iter!=syms->end();++iter) {
+#if BX_SUPPORT_X86_64 && (BX_HAVE_STRTOULL || BX_HAVE_STRTOUQ)
+        if (sizeof(long) == 8)
+            dbg_printf ("%16lx: %s\n", (*iter)->start, (*iter)->name);
+        else
+            dbg_printf ("%16llx: %s\n", (*iter)->start, (*iter)->name);
+#else
       dbg_printf ("%08x: %s\n", (*iter)->start, (*iter)->name);
+#endif
     }
   }
 }
 
-int bx_dbg_lbreakpoint_symbol_command(const char *symbol)
+int bx_dbg_lbreakpoint_symbol_command(const char *symbol, const char *condition)
 {
   context_t* cntx = context_t::get_context(0);
   if(!cntx) {
@@ -425,8 +428,8 @@ int bx_dbg_lbreakpoint_symbol_command(const char *symbol)
 
   const symbol_entry_t* sym=cntx->get_symbol_entry(probe.name);
   if(sym)
-    return bx_dbg_lbreakpoint_command(bkRegular, sym->start);
-  dbg_printf ("Symbol not found\n");
+    return bx_dbg_lbreakpoint_command(bkRegular, sym->start, condition);
+  dbg_printf ("symbol not found\n");
   return -1;
 }
 

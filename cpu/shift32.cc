@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: shift32.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: shift32.cc 13466 2018-02-16 07:57:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,12 +24,14 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdM(bxInstruction_c *i)
+#include "decoder/ia_opcodes.h"
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned of, cf;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -45,19 +47,19 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdM(bxInstruction_c *i)
 
     Bit32u result_32 = (op1_32 << count) | (op2_32 >> (32 - count));
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
 
     cf = (op1_32 >> (32 - count)) & 0x1;
     of = cf ^ (result_32 >> 31); // of = cf ^ result31
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, result_32;
   unsigned count;
@@ -85,18 +87,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EdGdR(bxInstruction_c *i)
 
     cf = (op1_32 >> (32 - count)) & 0x1;
     of = cf ^ (result_32 >> 31); // of = cf ^ result31
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned cf, of;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -112,19 +114,19 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdM(bxInstruction_c *i)
 
     Bit32u result_32 = (op2_32 << (32 - count)) | (op1_32 >> count);
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
 
     cf = (op1_32 >> (count - 1)) & 0x1;
     of = ((result_32 << 1) ^ result_32) >> 31; // of = result30 ^ result31
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdR(bxInstruction_c *i)
 {
   Bit32u op1_32, op2_32, result_32;
   unsigned count;
@@ -152,17 +154,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EdGdR(bxInstruction_c *i)
 
     cf = (op1_32 >> (count - 1)) & 0x1;
     of = ((result_32 << 1) ^ result_32) >> 31; // of = result30 ^ result31
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdM(bxInstruction_c *i)
 {
   unsigned count;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -176,18 +178,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdM(bxInstruction_c *i)
   if (count) {
     Bit32u result_32 = (op1_32 << count) | (op1_32 >> (32 - count));
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     unsigned bit0  = (result_32 & 0x1);
     unsigned bit31 = (result_32 >> 31);
     // of = cf ^ result31
-    SET_FLAGS_OxxxxC(bit0 ^ bit31, bit0);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit0 ^ bit31, bit0);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdR(bxInstruction_c *i)
 {
   Bit32u op1_32, result_32;
   unsigned count;
@@ -211,18 +213,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EdR(bxInstruction_c *i)
     bit0  = (result_32 & 0x1);
     bit31 = (result_32 >> 31);
     // of = cf ^ result31
-    SET_FLAGS_OxxxxC(bit0 ^ bit31, bit0);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit0 ^ bit31, bit0);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned bit31, bit30;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -236,18 +238,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdM(bxInstruction_c *i)
   if (count) {
     Bit32u result_32 = (op1_32 >> count) | (op1_32 << (32 - count));
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     bit31 = (result_32 >> 31) & 1;
     bit30 = (result_32 >> 30) & 1;
     // of = result30 ^ result31
-    SET_FLAGS_OxxxxC(bit30 ^ bit31, bit31);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit30 ^ bit31, bit31);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdR(bxInstruction_c *i)
 {
   Bit32u op1_32, result_32;
   unsigned count;
@@ -271,19 +273,19 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EdR(bxInstruction_c *i)
     bit31 = (result_32 >> 31) & 1;
     bit30 = (result_32 >> 30) & 1;
     // of = result30 ^ result31
-    SET_FLAGS_OxxxxC(bit30 ^ bit31, bit31);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit30 ^ bit31, bit31);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdM(bxInstruction_c *i)
 {
   Bit32u result_32;
   unsigned count;
   unsigned cf, of;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -297,24 +299,26 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdM(bxInstruction_c *i)
     BX_NEXT_INSTR(i);
   }
 
+  Bit32u temp_CF = getB_CF();
+
   if (count==1) {
-    result_32 = (op1_32 << 1) | getB_CF();
+    result_32 = (op1_32 << 1) | temp_CF;
   }
   else {
-    result_32 = (op1_32 << count) | (getB_CF() << (count - 1)) |
+    result_32 = (op1_32 << count) | (temp_CF << (count - 1)) |
                 (op1_32 >> (33 - count));
   }
 
-  write_RMW_virtual_dword(result_32);
+  write_RMW_linear_dword(result_32);
 
   cf = (op1_32 >> (32 - count)) & 0x1;
   of = cf ^ (result_32 >> 31); // of = cf ^ result31
-  SET_FLAGS_OxxxxC(of, cf);
+  BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
 {
   Bit32u result_32;
   unsigned count;
@@ -333,11 +337,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
 
   Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
 
+  Bit32u temp_CF = getB_CF();
+
   if (count==1) {
-    result_32 = (op1_32 << 1) | getB_CF();
+    result_32 = (op1_32 << 1) | temp_CF;
   }
   else {
-    result_32 = (op1_32 << count) | (getB_CF() << (count - 1)) |
+    result_32 = (op1_32 << count) | (temp_CF << (count - 1)) |
                 (op1_32 >> (33 - count));
   }
 
@@ -345,18 +351,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EdR(bxInstruction_c *i)
 
   cf = (op1_32 >> (32 - count)) & 0x1;
   of = cf ^ (result_32 >> 31); // of = cf ^ result31
-  SET_FLAGS_OxxxxC(of, cf);
+  BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdM(bxInstruction_c *i)
 {
   Bit32u result_32;
   unsigned count;
   unsigned cf, of;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -371,24 +377,26 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdM(bxInstruction_c *i)
     BX_NEXT_INSTR(i);
   }
 
+  Bit32u temp_CF = getB_CF();
+
   if (count==1) {
-    result_32 = (op1_32 >> 1) | (getB_CF() << 31);
+    result_32 = (op1_32 >> 1) | (temp_CF << 31);
   }
   else {
-    result_32 = (op1_32 >> count) | (getB_CF() << (32 - count)) |
+    result_32 = (op1_32 >> count) | (temp_CF << (32 - count)) |
                 (op1_32 << (33 - count));
   }
 
-  write_RMW_virtual_dword(result_32);
+  write_RMW_linear_dword(result_32);
 
   cf = (op1_32 >> (count - 1)) & 0x1;
   of = ((result_32 << 1) ^ result_32) >> 31; // of = result30 ^ result31
-  SET_FLAGS_OxxxxC(of, cf);
+  BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
 {
   Bit32u result_32;
   unsigned count;
@@ -408,11 +416,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
 
   Bit32u op1_32 = BX_READ_32BIT_REG(i->dst());
 
+  Bit32u temp_CF = getB_CF();
+
   if (count==1) {
-    result_32 = (op1_32 >> 1) | (getB_CF() << 31);
+    result_32 = (op1_32 >> 1) | (temp_CF << 31);
   }
   else {
-    result_32 = (op1_32 >> count) | (getB_CF() << (32 - count)) |
+    result_32 = (op1_32 >> count) | (temp_CF << (32 - count)) |
                 (op1_32 << (33 - count));
   }
 
@@ -420,17 +430,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EdR(bxInstruction_c *i)
 
   cf = (op1_32 >> (count - 1)) & 0x1;
   of = ((result_32 << 1) ^ result_32) >> 31; // of = result30 ^ result31
-  SET_FLAGS_OxxxxC(of, cf);
+  BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned cf, of;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -445,18 +455,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdM(bxInstruction_c *i)
     /* count < 32, since only lower 5 bits used */
     Bit32u result_32 = (op1_32 << count);
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     cf = (op1_32 >> (32 - count)) & 0x1;
     of = cf ^ (result_32 >> 31);
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdR(bxInstruction_c *i)
 {
   unsigned count;
 
@@ -482,17 +492,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EdR(bxInstruction_c *i)
     unsigned of = cf ^ (result_32 >> 31);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdM(bxInstruction_c *i)
 {
   unsigned count;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -506,7 +516,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdM(bxInstruction_c *i)
   if (count) {
     Bit32u result_32 = (op1_32 >> count);
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     unsigned cf = (op1_32 >> (count - 1)) & 0x1;
     // note, that of == result31 if count == 1 and
@@ -514,13 +524,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdM(bxInstruction_c *i)
     unsigned of = ((result_32 << 1) ^ result_32) >> 31;
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdR(bxInstruction_c *i)
 {
   unsigned count;
 
@@ -545,17 +555,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EdR(bxInstruction_c *i)
     unsigned of = ((result_32 << 1) ^ result_32) >> 31;
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdM(bxInstruction_c *i)
 {
   unsigned count;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
   Bit32u op1_32 = read_RMW_virtual_dword(i->seg(), eaddr);
 
@@ -570,17 +580,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdM(bxInstruction_c *i)
     /* count < 32, since only lower 5 bits used */
     Bit32u result_32 = ((Bit32s) op1_32) >> count;
 
-    write_RMW_virtual_dword(result_32);
+    write_RMW_linear_dword(result_32);
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
     unsigned cf = (op1_32 >> (count - 1)) & 1;
-    SET_FLAGS_OxxxxC(0, cf); /* signed overflow cannot happen in SAR instruction */
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(0, cf); /* signed overflow cannot happen in SAR instruction */
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdR(bxInstruction_c *i)
 {
   unsigned count;
 
@@ -604,7 +614,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EdR(bxInstruction_c *i)
 
     SET_FLAGS_OSZAPC_LOGIC_32(result_32);
     unsigned cf = (op1_32 >> (count - 1)) & 1;
-    SET_FLAGS_OxxxxC(0, cf); /* signed overflow cannot happen in SAR instruction */
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(0, cf); /* signed overflow cannot happen in SAR instruction */
   }
 
   BX_NEXT_INSTR(i);

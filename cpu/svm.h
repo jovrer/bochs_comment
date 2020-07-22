@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svm.h 11033 2012-02-13 23:29:01Z sshwarts $
+// $Id: svm.h 12857 2015-10-09 19:33:36Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2015 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -42,6 +42,7 @@ enum SVM_intercept_codes {
    SVM_VMEXIT_DR0_READ  = 32,
    SVM_VMEXIT_DR0_WRITE = 48,
    SVM_VMEXIT_EXCEPTION = 64,
+   SVM_VMEXIT_PF_EXCEPTION = (64+BX_PF_EXCEPTION),
    SVM_VMEXIT_INTR = 96,
    SVM_VMEXIT_NMI = 97,
    SVM_VMEXIT_SMI = 98,
@@ -89,6 +90,8 @@ enum SVM_intercept_codes {
    SVM_VMEXIT_MWAIT_CONDITIONAL = 140,
    SVM_VMEXIT_XSETBV = 141,
    SVM_VMEXIT_NPF = 1024,
+   SVM_VMEXIT_AVIC_INCOMPLETE_IPI = 1025,
+   SVM_VMEXIT_AVIC_NOACCEL = 1026
 };
 
 #define SVM_VMEXIT_INVALID (-1)
@@ -125,12 +128,21 @@ enum SVM_intercept_codes {
 #define SVM_CONTROL32_EXITINTINFO_ERROR_CODE    (0x08c)
 #define SVM_CONTROL_NESTED_PAGING_ENABLE        (0x090)
 
+#define SVM_VIRTUAL_APIC_BAR                    (0x098)
+
 #define SVM_CONTROL32_EVENT_INJECTION           (0x0a8)
 #define SVM_CONTROL32_EVENT_INJECTION_ERRORCODE (0x0ac)
 #define SVM_CONTROL64_NESTED_PAGING_HOST_CR3    (0x0b0)
 #define SVM_CONTROL_LBR_VIRTUALIZATION_ENABLE   (0x0b8)
 #define SVM_CONTROL32_VMCB_CLEAN_BITS           (0x0c0)
 #define SVM_CONTROL64_NRIP                      (0x0c8)
+
+#define SVM_CONTROL64_GUEST_INSTR_BYTES         (0x0d0)
+#define SVM_CONTROL64_GUEST_INSTR_BYTES_HI      (0x0d8)
+
+#define SVM_AVIC_BACKING_PAGE                   (0x0e0)
+#define SVM_AVIC_LOGICAL_TABLE_PTR              (0x0f0)
+#define SVM_AVIC_PHYSICAL_TABLE_PTR             (0x0f8)
 
 // ======================
 //  VMCB save state area
@@ -213,7 +225,7 @@ enum SVM_intercept_codes {
 #define SVM_GUEST_STAR_MSR                      (0x600)
 #define SVM_GUEST_LSTAR_MSR                     (0x608)
 #define SVM_GUEST_CSTAR_MSR                     (0x610)
-#define SVM_GUEST_SFMASK_MSR                    (0x618)
+#define SVM_GUEST_FMASK_MSR                     (0x618)
 #define SVM_GUEST_KERNEL_GSBASE_MSR             (0x620)
 #define SVM_GUEST_SYSENTER_CS_MSR               (0x628)
 #define SVM_GUEST_SYSENTER_ESP_MSR              (0x630)
@@ -289,7 +301,6 @@ typedef struct bx_SVM_CONTROLS
   bx_phy_address msrpm_base;
 
   Bit8u v_tpr;
-  bx_bool v_irq;
   Bit8u v_intr_prio;
   bx_bool v_ignore_tpr;
   bx_bool v_intr_masking;
@@ -298,12 +309,14 @@ typedef struct bx_SVM_CONTROLS
   bx_bool nested_paging;
   Bit64u ncr3;
 
+  Bit16u pause_filter_count;
+//Bit16u pause_filter_threshold;
+
 } SVM_CONTROLS;
 
 #if defined(NEED_CPU_REG_SHORTCUTS)
 
 #define SVM_V_TPR          (BX_CPU_THIS_PTR vmcb.ctrls.v_tpr)
-#define SVM_V_IRQ          (BX_CPU_THIS_PTR vmcb.ctrls.v_irq)
 #define SVM_V_INTR_PRIO    (BX_CPU_THIS_PTR vmcb.ctrls.v_intr_prio)
 #define SVM_V_IGNORE_TPR   (BX_CPU_THIS_PTR vmcb.ctrls.v_ignore_tpr)
 #define SVM_V_INTR_MASKING (BX_CPU_THIS_PTR vmcb.ctrls.v_intr_masking)
@@ -323,53 +336,54 @@ typedef struct bx_VMCB_CACHE
 //  SVM intercept controls
 // ========================
 
-#define SVM_INTERCEPT0_INTR               (0)
-#define SVM_INTERCEPT0_NMI                (1)
-#define SVM_INTERCEPT0_SMI                (2)
-#define SVM_INTERCEPT0_INIT               (3)
-#define SVM_INTERCEPT0_VINTR              (4)
-#define SVM_INTERCEPT0_CR0_WRITE_NO_TS_MP (5)
-#define SVM_INTERCEPT0_IDTR_READ          (6)
-#define SVM_INTERCEPT0_GDTR_READ          (7)
-#define SVM_INTERCEPT0_LDTR_READ          (8)
-#define SVM_INTERCEPT0_TR_READ            (9)
-#define SVM_INTERCEPT0_IDTR_WRITE         (10)
-#define SVM_INTERCEPT0_GDTR_WRITE         (11)
-#define SVM_INTERCEPT0_LDTR_WRITE         (12)
-#define SVM_INTERCEPT0_TR_WRITE           (13)
-#define SVM_INTERCEPT0_RDTSC              (14)
-#define SVM_INTERCEPT0_RDPMC              (15)
-#define SVM_INTERCEPT0_PUSHF              (16)
-#define SVM_INTERCEPT0_POPF               (17)
-#define SVM_INTERCEPT0_CPUID              (18)
-#define SVM_INTERCEPT0_RSM                (19)
-#define SVM_INTERCEPT0_IRET               (20)
-#define SVM_INTERCEPT0_SOFTINT            (21)
-#define SVM_INTERCEPT0_INVD               (22)
-#define SVM_INTERCEPT0_PAUSE              (23)
-#define SVM_INTERCEPT0_HLT                (24)
-#define SVM_INTERCEPT0_INVLPG             (25)
-#define SVM_INTERCEPT0_INVLPGA            (26)
-#define SVM_INTERCEPT0_IO                 (27)
-#define SVM_INTERCEPT0_MSR                (28)
-#define SVM_INTERCEPT0_TASK_SWITCH        (29)
-#define SVM_INTERCEPT0_FERR_FREEZE        (30)
-#define SVM_INTERCEPT0_SHUTDOWN           (31)
-
-#define SVM_INTERCEPT1_VMRUN              (32)
-#define SVM_INTERCEPT1_VMMCALL            (33)
-#define SVM_INTERCEPT1_VMLOAD             (34)
-#define SVM_INTERCEPT1_VMSAVE             (35)
-#define SVM_INTERCEPT1_STGI               (36)
-#define SVM_INTERCEPT1_CLGI               (37)
-#define SVM_INTERCEPT1_SKINIT             (38)
-#define SVM_INTERCEPT1_RDTSCP             (39)
-#define SVM_INTERCEPT1_ICEBP              (40)
-#define SVM_INTERCEPT1_WBINVD             (41)
-#define SVM_INTERCEPT1_MONITOR            (42)
-#define SVM_INTERCEPT1_MWAIT              (43)
-#define SVM_INTERCEPT1_MWAIT_ARMED        (44)
-#define SVM_INTERCEPT1_XSETBV             (45)
+enum {
+  SVM_INTERCEPT0_INTR = 0,
+  SVM_INTERCEPT0_NMI = 1,
+  SVM_INTERCEPT0_SMI = 2,
+  SVM_INTERCEPT0_INIT = 3,
+  SVM_INTERCEPT0_VINTR = 4,
+  SVM_INTERCEPT0_CR0_WRITE_NO_TS_MP = 5,
+  SVM_INTERCEPT0_IDTR_READ = 6,
+  SVM_INTERCEPT0_GDTR_READ = 7,
+  SVM_INTERCEPT0_LDTR_READ = 8,
+  SVM_INTERCEPT0_TR_READ = 9,
+  SVM_INTERCEPT0_IDTR_WRITE = 10,
+  SVM_INTERCEPT0_GDTR_WRITE = 11,
+  SVM_INTERCEPT0_LDTR_WRITE = 12,
+  SVM_INTERCEPT0_TR_WRITE = 13,
+  SVM_INTERCEPT0_RDTSC = 14,
+  SVM_INTERCEPT0_RDPMC = 15,
+  SVM_INTERCEPT0_PUSHF = 16,
+  SVM_INTERCEPT0_POPF = 17,
+  SVM_INTERCEPT0_CPUID = 18,
+  SVM_INTERCEPT0_RSM = 19,
+  SVM_INTERCEPT0_IRET = 20,
+  SVM_INTERCEPT0_SOFTINT = 21,
+  SVM_INTERCEPT0_INVD = 22,
+  SVM_INTERCEPT0_PAUSE = 23,
+  SVM_INTERCEPT0_HLT = 24,
+  SVM_INTERCEPT0_INVLPG = 25,
+  SVM_INTERCEPT0_INVLPGA = 26,
+  SVM_INTERCEPT0_IO = 27,
+  SVM_INTERCEPT0_MSR = 28,
+  SVM_INTERCEPT0_TASK_SWITCH = 29,
+  SVM_INTERCEPT0_FERR_FREEZE = 30,
+  SVM_INTERCEPT0_SHUTDOWN = 31,
+  SVM_INTERCEPT1_VMRUN = 32,
+  SVM_INTERCEPT1_VMMCALL = 33,
+  SVM_INTERCEPT1_VMLOAD = 34,
+  SVM_INTERCEPT1_VMSAVE = 35,
+  SVM_INTERCEPT1_STGI = 36,
+  SVM_INTERCEPT1_CLGI = 37,
+  SVM_INTERCEPT1_SKINIT = 38,
+  SVM_INTERCEPT1_RDTSCP = 39,
+  SVM_INTERCEPT1_ICEBP = 40,
+  SVM_INTERCEPT1_WBINVD = 41,
+  SVM_INTERCEPT1_MONITOR = 42,
+  SVM_INTERCEPT1_MWAIT = 43,
+  SVM_INTERCEPT1_MWAIT_ARMED = 44,
+  SVM_INTERCEPT1_XSETBV = 45,
+};
 
 #define SVM_INTERCEPT(intercept_bitnum) \
   (BX_CPU_THIS_PTR vmcb.ctrls.intercept_vector[intercept_bitnum / 32] & (1 << (intercept_bitnum & 31)))

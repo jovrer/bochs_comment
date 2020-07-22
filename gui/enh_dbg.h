@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.h 11250 2012-07-01 14:37:13Z vruppert $
+// $Id: enh_dbg.h 13677 2019-12-14 12:55:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,8 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2019  The Bochs Project
+
 
 #ifndef BX_ENH_DBG_DEF_H
 #define BX_ENH_DBG_DEF_H
@@ -64,12 +66,13 @@ int GetNextSelectedLI(int listnum, int StartPt);
 
 bx_bool OSInit();
 void SpecialInit();
+void CloseDialog();
+bx_bool ParseOSSettings(const char *param, const char *value);
+void WriteOSSettings(FILE *fd);
 
 void HitBreak();
 void ParseIDText(const char *x);
 
-extern char *debug_cmd;
-extern bx_bool debug_cmd_ready;
 extern bx_bool vgaw_refresh;
 
 #ifdef WIN32
@@ -86,6 +89,7 @@ extern bx_bool vgaw_refresh;
 #define CHK_CMD_IGNNT   CMD_IGNNT
 #define CHK_CMD_RCLR    CMD_RCLR
 #define CHK_CMD_EREG    CMD_EREG
+#define CHK_CMD_LOGVIEW CMD_LOGVIEW
 
 #else // GTK+
 
@@ -109,6 +113,7 @@ extern bx_bool vgaw_refresh;
 #define XMM_R       16
 #define D_REG       17
 //#define T_REG     18
+#define LOG_VIEW    19
 
 #define CHK_CMD_MODEB   MODE_BRK
 #define CHK_CMD_ONECPU  ONE_CPU
@@ -122,6 +127,7 @@ extern bx_bool vgaw_refresh;
 #define CHK_CMD_IGNNT   IGN_NT
 #define CHK_CMD_RCLR    R_CLR
 #define CHK_CMD_EREG    E_REG
+#define CHK_CMD_LOGVIEW LOG_VIEW
 
 #endif
 
@@ -164,6 +170,8 @@ extern bx_bool ignoreNxtT;      // Do not show "Next at t=" output lines
 extern bx_bool ignSSDisasm;     // Do not show extra disassembly line at each break
 extern int UprCase;             // 1 = convert all Asm, Register names, Register values to uppercase
 extern int DumpInAsciiMode;     // bit 1 = show ASCII in dumps, bit 2 = show hex, value=0 is illegal
+extern int DumpWSIndex;         // word size index for memory dump
+extern bx_bool LogView;         // Send log to output window
 
 extern bx_bool isLittleEndian;
 
@@ -177,8 +185,12 @@ extern short DockOrder;        // set the default List "docking" (Reg, ASM, Dump
 
 // END of User Customizable settings
 
-#ifndef WIN32
+#if !defined(_MSC_VER)
+#if SIZEOF_UNSIGNED_LONG == 8
+#define FMT_LLCAPX  "%016lX"
+#else
 #define FMT_LLCAPX  "%016llX"
+#endif
 #else
 #define FMT_LLCAPX  "%016I64X"
 #endif
@@ -222,7 +234,8 @@ extern unsigned short BarClix[2];
 extern bx_bool AtBreak;        // Status indicators
 extern bx_bool StatusChange;
 
-extern bx_bool doOneTimeInit;  // Internal flags
+extern bx_bool doOneTimeInit;  // Internal flag #1
+extern bx_bool doSimuInit;     // Internal flag #2
 extern bx_bool ResizeColmns;   // address/value column autosize flag
 extern bx_bool FWflag;         // friendly warning has been shown to user once already
 
@@ -381,7 +394,7 @@ extern Bit8u RegColor[TOT_REG_NUM];    // specifies foreground and background co
 extern int RitemToRnum[TOT_REG_NUM];   // mapping from Reg List Item# to register number
 
 // do the linear breakpoint list as 2 arrays, rather than a structure -- much easier to search!
-extern bx_address BrkLAddr[BX_DBG_MAX_LIN_BPOINTS];
+extern bx_address BrkLAddr[BX_DBG_MAX_LIN_BPOINTS+1];
 extern int BreakCount;
 
 // Breakpoint Dump Window stuff

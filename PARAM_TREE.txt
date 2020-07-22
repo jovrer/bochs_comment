@@ -1,4 +1,4 @@
-$Id: PARAM_TREE.txt 11276 2012-07-12 14:51:54Z sshwarts $
+$Id: PARAM_TREE.txt 13474 2018-03-13 20:35:56Z vruppert $
 
 Starting from Bochs 2.3 the parameters are organized in a tree structure
 instead of a huge flat list. The parameter tree was required for implementing
@@ -12,6 +12,7 @@ general
   config_interface
   start_mode
   benchmark
+  dumpstats
   restore
   restore_path
   debug_running
@@ -29,6 +30,7 @@ cpu
   mwait_is_nop
 
 cpuid
+  level
   family
   model
   stepping
@@ -36,28 +38,30 @@ cpuid
   brand_string
   mmx
   sep
-  sse
+  simd
   sse4a
+  misaligned_sse
+  avx_f16c
+  avx_fma
   aes
+  sha
   movbe
   adx
   xsave
   xsaveopt
   svm
   vmx
-  avx
-  avx_f16c
-  avx_fma
   bmi
   xop
-  tbm
   fma4
+  tbm
   apic
   x86_64
   1g_pages
   pcid
   fsgsbase
   smep
+  smap
   mwait
 
 memory
@@ -67,6 +71,7 @@ memory
     rom
       path
       address
+      options
     vgarom
       path
   optrom
@@ -105,7 +110,8 @@ clock_cmos
     rtc_init
 
 pci
-  i440fx_support
+  enabled
+  chipset
   slot
     1
     2
@@ -124,6 +130,9 @@ display
   screenmode
   vga_extension
   vga_update_interval
+  voodoo
+    enabled
+    model
 
 keyboard_mouse
   keyboard
@@ -170,7 +179,6 @@ ata
       ioaddr2
       irq
     master
-      present
       type
       path
       mode
@@ -178,6 +186,7 @@ ata
       cylinders
       heads
       spt
+      sect_size
       status
       model
       biosdetect
@@ -220,6 +229,8 @@ ports
         options
     ohci
       (same options as ports.usb.uhci)
+    ehci
+      (same options as ports.usb.uhci)
     xhci
       (same options as ports.usb.uhci)
 
@@ -250,18 +261,31 @@ network
     bootrom
 
 sound
+  lowlevel
+    waveoutdrv
+    waveout
+    waveindrv
+    wavein
+    midioutdrv
+    midiout
+  speaker
+    enabled
+    mode
   sb16
     enabled
-    midifile
-    wavefile
-    logfile
     midimode
+    midifile
     wavemode
+    wavefile
+    log
     loglevel
     dmatimer
   es1370
     enabled
-    wavedev
+    midimode
+    midifile
+    wavemode
+    wavefile
 
 misc
   port_e9_hack
@@ -289,9 +313,6 @@ menu
 
 bochs
   (subtree containing Bochs state)
-
-wxdebug
-  (special subtree for wxBochs debugger)
 
 user
   (subtree for user-defined options)

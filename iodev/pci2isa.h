@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci2isa.h 11148 2012-04-23 17:06:19Z vruppert $
+// $Id: pci2isa.h 13470 2018-02-24 18:04:36Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -40,8 +40,7 @@ public:
   virtual void register_state(void);
   virtual void after_restore_state(void);
 
-  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
-  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+  virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 #if BX_DEBUGGER
   virtual void debug_dump(int argc, char **argv);
 #endif
@@ -49,17 +48,19 @@ public:
 private:
 
   struct {
+    unsigned chipset;
+    Bit8u devfunc;
     Bit8u elcr1;
     Bit8u elcr2;
     Bit8u apmc;
     Bit8u apms;
     Bit8u irq_registry[16];
-    Bit32u irq_level[16];
+    Bit32u irq_level[4][16];
     Bit8u pci_reset;
   } s;
 
-  static void pci_register_irq(unsigned pirq, unsigned irq);
-  static void pci_unregister_irq(unsigned pirq);
+  static void pci_register_irq(unsigned pirq, Bit8u irq);
+  static void pci_unregister_irq(unsigned pirq, Bit8u irq);
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);

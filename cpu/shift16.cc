@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: shift16.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: shift16.cc 13466 2018-02-16 07:57:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,7 +24,9 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwM(bxInstruction_c *i)
+#include "decoder/ia_opcodes.h"
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwM(bxInstruction_c *i)
 {
   Bit32u temp_32, result_32;
   unsigned count;
@@ -38,39 +40,42 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwM(bxInstruction_c *i)
 
   count &= 0x1f; // use only 5 LSB's
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
-  Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
+  Bit32u op1_16 = (Bit32u) read_RMW_virtual_word(i->seg(), eaddr);
 
   if (count) {
-    Bit16u op2_16 = BX_READ_16BIT_REG(i->src());
+    Bit32u op2_16 = (Bit32u) BX_READ_16BIT_REG(i->src());
 
     /* count < 32, since only lower 5 bits used */
-    temp_32 = ((Bit32u)(op1_16) << 16) | (op2_16); // double formed by op1:op2
+    temp_32 = (op1_16 << 16) | (op2_16); // double formed by op1:op2
     result_32 = temp_32 << count;
 
     // hack to act like x86 SHLD when count > 16
     if (count > 16) {
-      // when count > 16 actually shifting op1:op2:op2 << count,
+      // for Pentium processor, when count > 16, actually shifting op1:op2:op2 << count,
       // it is the same as shifting op2:op2 by count-16
+      // For P6 and later (CPU_LEVEL >= 6), when count > 16, actually shifting op1:op2:op1 << count,
+      // which is the same as shifting op2:op1 by count-16
+      // The behavior is undefined so both ways are correct, we prefer P6 way of implementation
       result_32 |= (op1_16 << (count - 16));
     }
 
     Bit16u result_16 = (Bit16u)(result_32 >> 16);
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
 
     cf = (temp_32 >> (32 - count)) & 0x1;
     of = cf ^ (result_16 >> 15); // of = cf ^ result15
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwR(bxInstruction_c *i)
 {
   Bit32u temp_32, result_32;
   unsigned count;
@@ -85,17 +90,20 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwR(bxInstruction_c *i)
   count &= 0x1f; // use only 5 LSB's
 
   if (count) {
-    Bit16u op1_16 = BX_READ_16BIT_REG(i->dst());
-    Bit16u op2_16 = BX_READ_16BIT_REG(i->src());
+    Bit32u op1_16 = (Bit32u) BX_READ_16BIT_REG(i->dst());
+    Bit32u op2_16 = (Bit32u) BX_READ_16BIT_REG(i->src());
 
     /* count < 32, since only lower 5 bits used */
-    temp_32 = ((Bit32u)(op1_16) << 16) | (op2_16); // double formed by op1:op2
+    temp_32 = (op1_16 << 16) | (op2_16); // double formed by op1:op2
     result_32 = temp_32 << count;
 
     // hack to act like x86 SHLD when count > 16
     if (count > 16) {
-      // when count > 16 actually shifting op1:op2:op2 << count,
+      // for Pentium processor, when count > 16, actually shifting op1:op2:op2 << count,
       // it is the same as shifting op2:op2 by count-16
+      // For P6 and later (CPU_LEVEL >= 6), when count > 16, actually shifting op1:op2:op1 << count,
+      // which is the same as shifting op2:op1 by count-16
+      // The behavior is undefined so both ways are correct, we prefer P6 way of implementation
       result_32 |= (op1_16 << (count - 16));
     }
 
@@ -107,13 +115,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHLD_EwGwR(bxInstruction_c *i)
 
     cf = (temp_32 >> (32 - count)) & 0x1;
     of = cf ^ (result_16 >> 15); // of = cf ^ result15
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwM(bxInstruction_c *i)
 {
   Bit32u temp_32, result_32;
   unsigned count;
@@ -126,12 +134,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwM(bxInstruction_c *i)
 
   count &= 0x1f; /* use only 5 LSB's */
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
 
-  Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
+  Bit32u op1_16 = (Bit32u) read_RMW_virtual_word(i->seg(), eaddr);
 
   if (count) {
-    Bit16u op2_16 = BX_READ_16BIT_REG(i->src());
+    Bit32u op2_16 = (Bit32u) BX_READ_16BIT_REG(i->src());
 
     /* count < 32, since only lower 5 bits used */
     temp_32 = (op2_16 << 16) | op1_16; // double formed by op2:op1
@@ -139,26 +147,30 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwM(bxInstruction_c *i)
 
     // hack to act like x86 SHRD when count > 16
     if (count > 16) {
-      // when count > 16 actually shifting op2:op2:op1 >> count,
+      // for Pentium processor, when count > 16, actually shifting op2:op2:op1 >> count,
       // it is the same as shifting op2:op2 by count-16
+      // For P6 and later (CPU_LEVEL >= 6), when count > 16, actually shifting op1:op2:op1 >> count,
+      // which is the same as shifting op1:op2 by count-16
+      // The behavior is undefined so both ways are correct, we prefer P6 way of implementation
       result_32 |= (op1_16 << (32 - count));
     }
 
     Bit16u result_16 = (Bit16u) result_32;
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
 
     cf = (op1_16 >> (count - 1)) & 0x1;
     of = ((Bit16u)((result_16 << 1) ^ result_16) >> 15) & 0x1; // of = result14 ^ result15
-    SET_FLAGS_OxxxxC(of, cf);
+    if (count > 16) cf = (op2_16 >> (count - 17)) & 0x1; // undefined flags behavior matching real HW
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwR(bxInstruction_c *i)
 {
   Bit32u temp_32, result_32;
   unsigned count;
@@ -172,8 +184,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwR(bxInstruction_c *i)
   count &= 0x1f; /* use only 5 LSB's */
 
   if (count) {
-    Bit16u op1_16 = BX_READ_16BIT_REG(i->dst());
-    Bit16u op2_16 = BX_READ_16BIT_REG(i->src());
+    Bit32u op1_16 = (Bit32u) BX_READ_16BIT_REG(i->dst());
+    Bit32u op2_16 = (Bit32u) BX_READ_16BIT_REG(i->src());
 
     /* count < 32, since only lower 5 bits used */
     temp_32 = (op2_16 << 16) | op1_16; // double formed by op2:op1
@@ -181,8 +193,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwR(bxInstruction_c *i)
 
     // hack to act like x86 SHRD when count > 16
     if (count > 16) {
-      // when count > 16 actually shifting op2:op2:op1 >> count,
+      // for Pentium processor, when count > 16, actually shifting op2:op2:op1 >> count,
       // it is the same as shifting op2:op2 by count-16
+      // For P6 and later (CPU_LEVEL >= 6), when count > 16, actually shifting op1:op2:op1 >> count,
+      // which is the same as shifting op1:op2 by count-16
+      // The behavior is undefined so both ways are correct, we prefer P6 way of implementation
       result_32 |= (op1_16 << (32 - count));
     }
 
@@ -194,13 +209,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHRD_EwGwR(bxInstruction_c *i)
 
     cf = (op1_16 >> (count - 1)) & 0x1;
     of = ((Bit16u)((result_16 << 1) ^ result_16) >> 15) & 0x1; // of = result14 ^ result15
-    SET_FLAGS_OxxxxC(of, cf);
+    if (count > 16) cf = (op2_16 >> (count - 17)) & 0x1; // undefined flags behavior matching real HW
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned bit0, bit15;
@@ -210,7 +226,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwM(bxInstruction_c *i)
   else
     count = i->Ib();
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   /* pointer, segment address pair */
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
@@ -219,7 +235,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwM(bxInstruction_c *i)
       bit0  = (op1_16 & 0x1);
       bit15 = (op1_16 >> 15);
       // of = cf ^ result15
-      SET_FLAGS_OxxxxC(bit0 ^ bit15, bit0);
+      BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit0 ^ bit15, bit0);
     }
   }
   else {
@@ -227,18 +243,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwM(bxInstruction_c *i)
 
     Bit16u result_16 = (op1_16 << count) | (op1_16 >> (16 - count));
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     bit0  = (result_16 & 0x1);
     bit15 = (result_16 >> 15);
     // of = cf ^ result15
-    SET_FLAGS_OxxxxC(bit0 ^ bit15, bit0);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit0 ^ bit15, bit0);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwR(bxInstruction_c *i)
 {
   unsigned count;
   unsigned bit0, bit15;
@@ -255,7 +271,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwR(bxInstruction_c *i)
       bit0  = (op1_16 & 0x1);
       bit15 = (op1_16 >> 15);
       // of = cf ^ result15
-      SET_FLAGS_OxxxxC(bit0 ^ bit15, bit0);
+      BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit0 ^ bit15, bit0);
     }
   }
   else {
@@ -268,13 +284,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROL_EwR(bxInstruction_c *i)
     bit0  = (result_16 & 0x1);
     bit15 = (result_16 >> 15);
     // of = cf ^ result15
-    SET_FLAGS_OxxxxC(bit0 ^ bit15, bit0);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit0 ^ bit15, bit0);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned bit14, bit15;
@@ -284,7 +300,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwM(bxInstruction_c *i)
   else
     count = i->Ib();
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   /* pointer, segment address pair */
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
@@ -293,7 +309,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwM(bxInstruction_c *i)
       bit14 = (op1_16 >> 14) & 1;
       bit15 = (op1_16 >> 15) & 1;
       // of = result14 ^ result15
-      SET_FLAGS_OxxxxC(bit14 ^ bit15, bit15);
+      BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit14 ^ bit15, bit15);
     }
   }
   else {
@@ -301,18 +317,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwM(bxInstruction_c *i)
 
     Bit16u result_16 = (op1_16 >> count) | (op1_16 << (16 - count));
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     bit14 = (result_16 >> 14) & 1;
     bit15 = (result_16 >> 15) & 1;
     // of = result14 ^ result15
-    SET_FLAGS_OxxxxC(bit14 ^ bit15, bit15);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit14 ^ bit15, bit15);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwR(bxInstruction_c *i)
 {
   unsigned count;
   unsigned bit14, bit15;
@@ -329,7 +345,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwR(bxInstruction_c *i)
       bit14 = (op1_16 >> 14) & 1;
       bit15 = (op1_16 >> 15) & 1;
       // of = result14 ^ result15
-      SET_FLAGS_OxxxxC(bit14 ^ bit15, bit15);
+      BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit14 ^ bit15, bit15);
     }
   }
   else {
@@ -342,13 +358,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::ROR_EwR(bxInstruction_c *i)
     bit14 = (result_16 >> 14) & 1;
     bit15 = (result_16 >> 15) & 1;
     // of = result14 ^ result15
-    SET_FLAGS_OxxxxC(bit14 ^ bit15, bit15);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(bit14 ^ bit15, bit15);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwM(bxInstruction_c *i)
 {
   Bit16u result_16;
   unsigned count;
@@ -361,33 +377,35 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwM(bxInstruction_c *i)
 
   count = (count & 0x1f) % 17;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   /* pointer, segment address pair */
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
+  unsigned temp_CF = getB_CF();
+
   if (count) {
     if (count==1) {
-      result_16 = (op1_16 << 1) | getB_CF();
+      result_16 = (op1_16 << 1) | temp_CF;
     }
     else if (count==16) {
-      result_16 = (getB_CF() << 15) | (op1_16 >> 1);
+      result_16 = (temp_CF << 15) | (op1_16 >> 1);
     }
     else { // 2..15
-      result_16 = (op1_16 << count) | (getB_CF() << (count - 1)) |
+      result_16 = (op1_16 << count) | (temp_CF << (count - 1)) |
                   (op1_16 >> (17 - count));
     }
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     cf = (op1_16 >> (16 - count)) & 0x1;
     of = cf ^ (result_16 >> 15); // of = cf ^ result15
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwR(bxInstruction_c *i)
 {
   Bit16u result_16;
   unsigned count;
@@ -400,17 +418,19 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwR(bxInstruction_c *i)
 
   count = (count & 0x1f) % 17;
 
+  unsigned temp_CF = getB_CF();
+
   if (count) {
     Bit16u op1_16 = BX_READ_16BIT_REG(i->dst());
 
     if (count==1) {
-      result_16 = (op1_16 << 1) | getB_CF();
+      result_16 = (op1_16 << 1) | temp_CF;
     }
     else if (count==16) {
-      result_16 = (getB_CF() << 15) | (op1_16 >> 1);
+      result_16 = (temp_CF << 15) | (op1_16 >> 1);
     }
     else { // 2..15
-      result_16 = (op1_16 << count) | (getB_CF() << (count - 1)) |
+      result_16 = (op1_16 << count) | (temp_CF << (count - 1)) |
                   (op1_16 >> (17 - count));
     }
 
@@ -418,13 +438,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCL_EwR(bxInstruction_c *i)
 
     cf = (op1_16 >> (16 - count)) & 0x1;
     of = cf ^ (result_16 >> 15); // of = cf ^ result15
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EwM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned of, cf;
@@ -436,25 +456,27 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EwM(bxInstruction_c *i)
 
   count = (count & 0x1f) % 17;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   /* pointer, segment address pair */
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
   if (count) {
-    Bit16u result_16 = (op1_16 >> count) | (getB_CF() << (16 - count)) |
+    unsigned temp_CF = getB_CF();
+
+    Bit16u result_16 = (op1_16 >> count) | (temp_CF << (16 - count)) |
                        (op1_16 << (17 - count));
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     cf = (op1_16 >> (count - 1)) & 0x1;
     of = ((Bit16u)((result_16 << 1) ^ result_16) >> 15) & 0x1; // of = result15 ^ result14
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EwR(bxInstruction_c *i)
 {
   unsigned count;
   unsigned of, cf;
@@ -469,20 +491,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RCR_EwR(bxInstruction_c *i)
   if (count) {
     Bit16u op1_16 = BX_READ_16BIT_REG(i->dst());
 
-    Bit16u result_16 = (op1_16 >> count) | (getB_CF() << (16 - count)) |
+    unsigned temp_CF = getB_CF();
+
+    Bit16u result_16 = (op1_16 >> count) | (temp_CF << (16 - count)) |
                        (op1_16 << (17 - count));
 
     BX_WRITE_16BIT_REG(i->dst(), result_16);
 
     cf = (op1_16 >> (count - 1)) & 0x1;
     of = ((Bit16u)((result_16 << 1) ^ result_16) >> 15) & 0x1; // of = result15 ^ result14
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwM(bxInstruction_c *i)
 {
   Bit16u result_16;
   unsigned count;
@@ -495,7 +519,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwM(bxInstruction_c *i)
 
   count &= 0x1f; /* use only 5 LSB's */
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   /* pointer, segment address pair */
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
@@ -509,16 +533,16 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwM(bxInstruction_c *i)
       result_16 = 0;
     }
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwR(bxInstruction_c *i)
 {
   Bit16u result_16;
   unsigned count;
@@ -546,13 +570,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHL_EwR(bxInstruction_c *i)
     BX_WRITE_16BIT_REG(i->dst(), result_16);
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwM(bxInstruction_c *i)
 {
   unsigned count;
   unsigned of, cf;
@@ -564,14 +588,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwM(bxInstruction_c *i)
 
   count &= 0x1f; /* use only 5 LSB's */
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   /* pointer, segment address pair */
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
   if (count) {
     Bit16u result_16 = (op1_16 >> count);
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
 
     cf = (op1_16 >> (count - 1)) & 0x1;
     // note, that of == result15 if count == 1 and
@@ -579,13 +603,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwM(bxInstruction_c *i)
     of = ((Bit16u)((result_16 << 1) ^ result_16) >> 15) & 0x1;
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwR(bxInstruction_c *i)
 {
   unsigned count;
   unsigned of, cf;
@@ -608,13 +632,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SHR_EwR(bxInstruction_c *i)
     of = ((Bit16u)((result_16 << 1) ^ result_16) >> 15) & 0x1;
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
-    SET_FLAGS_OxxxxC(of, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(of, cf);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwM(bxInstruction_c *i)
 {
   unsigned count, cf;
 
@@ -625,8 +649,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwM(bxInstruction_c *i)
 
   count &= 0x1f;  /* use only 5 LSB's */
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  /* pointer, segment address pair */
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   Bit16u op1_16 = read_RMW_virtual_word(i->seg(), eaddr);
 
   if (count) {
@@ -636,15 +659,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwM(bxInstruction_c *i)
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
     /* signed overflow cannot happen in SAR instruction */
-    SET_FLAGS_OxxxxC(0, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(0, cf);
 
-    write_RMW_virtual_word(result_16);
+    write_RMW_linear_word(result_16);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwR(bxInstruction_c *i)
 {
   unsigned count, cf;
 
@@ -664,7 +687,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SAR_EwR(bxInstruction_c *i)
 
     SET_FLAGS_OSZAPC_LOGIC_16(result_16);
     /* signed overflow cannot happen in SAR instruction */
-    SET_FLAGS_OxxxxC(0, cf);
+    BX_CPU_THIS_PTR oszapc.set_flags_OxxxxC(0, cf);
   }
 
   BX_NEXT_INSTR(i);

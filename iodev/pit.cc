@@ -1,8 +1,8 @@
 ///////////////////////////////////////////////////////////////////////
-// $Id: pit.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pit.cc 13508 2018-05-14 18:17:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -33,7 +33,7 @@
 
 bx_pit_c *thePit = NULL;
 
-int libpit_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libpit_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   if (type == PLUGTYPE_CORE) {
     thePit = new bx_pit_c();
@@ -45,7 +45,7 @@ int libpit_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
   }
 }
 
-void libpit_LTX_plugin_fini(void)
+void CDECL libpit_LTX_plugin_fini(void)
 {
   delete thePit;
 }
@@ -97,7 +97,12 @@ bx_pit_c::~bx_pit_c()
 
 void bx_pit_c::init(void)
 {
+  int clock_mode = SIM->get_param_enum(BXPN_CLOCK_SYNC)->get();
+  BX_PIT_THIS is_realtime = (clock_mode == BX_CLOCK_SYNC_REALTIME) ||
+      (clock_mode == BX_CLOCK_SYNC_BOTH);
+
   DEV_register_irq(0, "8254 PIT");
+  BX_PIT_THIS s.irq_enabled = 1;
   DEV_register_ioread_handler(this, read_handler, 0x0040, "8254 PIT", 1);
   DEV_register_ioread_handler(this, read_handler, 0x0041, "8254 PIT", 1);
   DEV_register_ioread_handler(this, read_handler, 0x0042, "8254 PIT", 1);
@@ -114,14 +119,20 @@ void bx_pit_c::init(void)
 
   BX_PIT_THIS s.speaker_data_on = 0;
   BX_PIT_THIS s.speaker_active = 0;
+  BX_PIT_THIS s.speaker_level = 0;
 
   BX_PIT_THIS s.timer.init();
   BX_PIT_THIS s.timer.set_OUT_handler(0, irq_handler);
+  BX_PIT_THIS s.timer.set_OUT_handler(2, speaker_handler);
 
-  Bit64u my_time_usec = bx_virt_timer.time_usec();
+  Bit64u my_time_usec = bx_virt_timer.time_usec(BX_PIT_THIS is_realtime);
 
   if (BX_PIT_THIS s.timer_handle[0] == BX_NULL_TIMER_HANDLE) {
-    BX_PIT_THIS s.timer_handle[0] = bx_virt_timer.register_timer(this, timer_handler, (unsigned) 100 , 1, 1, "pit");
+    BX_PIT_THIS s.timer_handle[0] = bx_virt_timer.register_timer(this, timer_handler,
+                                                                 (unsigned) 100 , 1, 1, BX_PIT_THIS is_realtime, "pit");
+    if (BX_PIT_THIS is_realtime) {
+      BX_INFO(("PIT using realtime synchronisation method"));
+    }
   }
   BX_DEBUG(("RESETting timer."));
   bx_virt_timer.deactivate_timer(BX_PIT_THIS s.timer_handle[0]);
@@ -140,7 +151,7 @@ void bx_pit_c::init(void)
 
   BX_DEBUG(("finished init"));
 
-  BX_DEBUG(("s.last_usec="FMT_LL"d",BX_PIT_THIS s.last_usec));
+  BX_DEBUG(("s.last_usec=" FMT_LL "d",BX_PIT_THIS s.last_usec));
   BX_DEBUG(("s.timer_id=%d",BX_PIT_THIS s.timer_handle[0]));
   BX_DEBUG(("s.timer.get_next_event_time=%d", BX_PIT_THIS s.timer.get_next_event_time()));
   BX_DEBUG(("s.last_next_event_time=%d", BX_PIT_THIS s.last_next_event_time));
@@ -161,12 +172,23 @@ void bx_pit_c::register_state(void)
   bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "pit", "8254 PIT State");
   new bx_shadow_bool_c(list, "speaker_data_on", &BX_PIT_THIS s.speaker_data_on);
   new bx_shadow_bool_c(list, "speaker_active", &BX_PIT_THIS s.speaker_active);
+  new bx_shadow_bool_c(list, "speaker_level", &BX_PIT_THIS s.speaker_level);
   new bx_shadow_num_c(list, "last_usec", &BX_PIT_THIS s.last_usec);
   new bx_shadow_num_c(list, "last_next_event_time", &BX_PIT_THIS s.last_next_event_time);
   new bx_shadow_num_c(list, "total_ticks", &BX_PIT_THIS s.total_ticks);
   new bx_shadow_num_c(list, "total_usec", &BX_PIT_THIS s.total_usec);
+  BXRS_PARAM_BOOL(list, irq_enabled, BX_PIT_THIS s.irq_enabled);
   bx_list_c *counter = new bx_list_c(list, "counter");
   BX_PIT_THIS s.timer.register_state(counter);
+}
+
+void bx_pit_c::after_restore_state(void)
+{
+  if (BX_PIT_THIS s.speaker_active && (BX_PIT_THIS s.timer.get_mode(2) == 3)) {
+    Bit32u value32 = BX_PIT_THIS get_timer(2);
+    if (value32 == 0) value32 = 0x10000;
+    DEV_speaker_beep_on((float)(1193180.0 / value32));
+  }
 }
 
 void bx_pit_c::timer_handler(void *this_ptr)
@@ -177,7 +199,7 @@ void bx_pit_c::timer_handler(void *this_ptr)
 
 void bx_pit_c::handle_timer()
 {
-  Bit64u my_time_usec = bx_virt_timer.time_usec();
+  Bit64u my_time_usec = bx_virt_timer.time_usec(BX_PIT_THIS is_realtime);
   Bit64u time_passed = my_time_usec-BX_PIT_THIS s.last_usec;
   Bit32u time_passed32 = (Bit32u)time_passed;
 
@@ -199,7 +221,7 @@ void bx_pit_c::handle_timer()
     }
     BX_PIT_THIS s.last_next_event_time = BX_PIT_THIS s.timer.get_next_event_time();
   }
-  BX_DEBUG(("s.last_usec="FMT_LL"d", BX_PIT_THIS s.last_usec));
+  BX_DEBUG(("s.last_usec=" FMT_LL "d", BX_PIT_THIS s.last_usec));
   BX_DEBUG(("s.timer_id=%d", BX_PIT_THIS s.timer_handle[0]));
   BX_DEBUG(("s.timer.get_next_event_time=%x", BX_PIT_THIS s.timer.get_next_event_time()));
   BX_DEBUG(("s.last_next_event_time=%d", BX_PIT_THIS s.last_next_event_time));
@@ -242,7 +264,7 @@ Bit32u bx_pit_c::read(Bit32u address, unsigned io_len)
 
     case 0x61:
       /* AT, port 61h */
-      refresh_clock_div2 = (bx_bool)((bx_virt_timer.time_usec() / 15) & 1);
+      refresh_clock_div2 = (bx_bool)((bx_virt_timer.time_usec(BX_PIT_THIS is_realtime) / 15) & 1);
       value = (BX_PIT_THIS s.timer.read_OUT(2)  << 5) |
               (refresh_clock_div2               << 4) |
               (BX_PIT_THIS s.speaker_data_on    << 1) |
@@ -273,12 +295,12 @@ void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
   UNUSED(this_ptr);
 #endif  // !BX_USE_PIT_SMF
   Bit8u   value;
-  Bit64u my_time_usec = bx_virt_timer.time_usec();
+  Bit64u my_time_usec = bx_virt_timer.time_usec(BX_PIT_THIS is_realtime);
   Bit64u time_passed = my_time_usec-BX_PIT_THIS s.last_usec;
   Bit32u value32, time_passed32 = (Bit32u)time_passed;
-  bx_bool new_speaker_active;
+  bx_bool new_speaker_active, new_speaker_level;
 
-  if(time_passed32) {
+  if (time_passed32) {
     periodic(time_passed32);
   }
   BX_PIT_THIS s.last_usec = BX_PIT_THIS s.last_usec + time_passed;
@@ -298,6 +320,12 @@ void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
 
     case 0x42: /* timer 2: write count register */
       BX_PIT_THIS s.timer.write(2, value);
+      if (BX_PIT_THIS s.speaker_active && (BX_PIT_THIS s.timer.get_mode(2) == 3) &&
+          BX_PIT_THIS new_timer_count(2)) {
+        value32 = BX_PIT_THIS get_timer(2);
+        if (value32 == 0) value32 = 0x10000;
+        DEV_speaker_beep_on((float)(1193180.0 / value32));
+      }
       break;
 
     case 0x43: /* timer 0-2 mode control */
@@ -308,15 +336,23 @@ void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
       BX_PIT_THIS s.timer.set_GATE(2, value & 0x01);
       BX_PIT_THIS s.speaker_data_on = (value >> 1) & 0x01;
       new_speaker_active = ((value & 3) == 3);
-      if (BX_PIT_THIS s.speaker_active != new_speaker_active) {
-        if (new_speaker_active) {
-          value32 = BX_PIT_THIS get_timer(2);
-          if (value32 == 0) value32 = 0x10000;
-          DEV_speaker_beep_on((float)(1193180.0 / value32));
-        } else {
-          DEV_speaker_beep_off();
+      if (BX_PIT_THIS s.timer.get_mode(2) == 3) {
+        if (BX_PIT_THIS s.speaker_active != new_speaker_active) {
+          if (new_speaker_active) {
+            value32 = BX_PIT_THIS get_timer(2);
+            if (value32 == 0) value32 = 0x10000;
+            DEV_speaker_beep_on((float)(1193180.0 / value32));
+          } else {
+            DEV_speaker_beep_off();
+          }
+          BX_PIT_THIS s.speaker_active = new_speaker_active;
         }
-        BX_PIT_THIS s.speaker_active = new_speaker_active;
+      } else {
+        new_speaker_level = BX_PIT_THIS s.speaker_data_on & BX_PIT_THIS s.timer.read_OUT(2);
+        if (BX_PIT_THIS s.speaker_level != new_speaker_level) {
+          DEV_speaker_set_line(new_speaker_level);
+          BX_PIT_THIS s.speaker_level = new_speaker_level;
+        }
       }
       break;
 
@@ -336,7 +372,7 @@ void bx_pit_c::write(Bit32u address, Bit32u dvalue, unsigned io_len)
     }
     BX_PIT_THIS s.last_next_event_time = BX_PIT_THIS s.timer.get_next_event_time();
   }
-  BX_DEBUG(("s.last_usec="FMT_LL"d", BX_PIT_THIS s.last_usec));
+  BX_DEBUG(("s.last_usec=" FMT_LL "d", BX_PIT_THIS s.last_usec));
   BX_DEBUG(("s.timer_id=%d", BX_PIT_THIS s.timer_handle[0]));
   BX_DEBUG(("s.timer.get_next_event_time=%x", BX_PIT_THIS s.timer.get_next_event_time()));
   BX_DEBUG(("s.last_next_event_time=%d", BX_PIT_THIS s.last_next_event_time));
@@ -371,16 +407,30 @@ bx_bool bx_pit_c::periodic(Bit32u usec_delta)
 
 void bx_pit_c::irq_handler(bx_bool value)
 {
-  if (value == 1) {
-    DEV_pic_raise_irq(0);
-  } else {
-    DEV_pic_lower_irq(0);
+  if (BX_PIT_THIS s.irq_enabled) {
+    if (value == 1) {
+      DEV_pic_raise_irq(0);
+    } else {
+      DEV_pic_lower_irq(0);
+    }
+  }
+}
+
+void bx_pit_c::speaker_handler(bx_bool value)
+{
+  if (BX_PIT_THIS s.timer.get_mode(2) != 3) {
+    DEV_speaker_set_line(value & BX_PIT_THIS s.speaker_data_on);
   }
 }
 
 Bit16u bx_pit_c::get_timer(int Timer)
 {
   return BX_PIT_THIS s.timer.get_inlatch(Timer);
+}
+
+Bit16u bx_pit_c::new_timer_count(int Timer)
+{
+  return BX_PIT_THIS s.timer.new_count_ready(Timer);
 }
 
 #if BX_DEBUGGER

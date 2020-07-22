@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: proc_ctrl.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: proc_ctrl.cc 13699 2019-12-20 07:42:07Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,11 +22,35 @@
 
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
-#include "param_names.h"
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i)
+#include "decoder/ia_opcodes.h"
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
+{
+  unsigned ia_opcode = i->getIaOpcode();
+ 
+  if (ia_opcode == BX_IA_ERROR) {
+    BX_DEBUG(("BxError: Encountered an unknown instruction (signalling #UD)"));
+
+#if BX_DISASM && BX_DEBUGGER == 0 // with debugger it easy to see the #UD
+    if (LOG_THIS getonoff(LOGLEV_DEBUG))
+      debug_disasm_instruction(BX_CPU_THIS_PTR prev_rip);
+#endif
+  }
+  else {
+    BX_DEBUG(("%s: instruction not supported - signalling #UD", get_bx_opcode_name(ia_opcode)));
+    for (unsigned n=0; n<BX_ISA_EXTENSIONS_ARRAY_SIZE; n++)
+      BX_DEBUG(("ia_extensions_bitmask[%d]: %08x", n, BX_CPU_THIS_PTR ia_extensions_bitmask[n]));
+  }
+
+  exception(BX_UD_EXCEPTION, 0);
+
+  BX_NEXT_TRACE(i); // keep compiler happy
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i)
 {
   BX_DEBUG(("UndefinedOpcode: generate #UD exception"));
   exception(BX_UD_EXCEPTION, 0);
@@ -34,14 +58,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i
   BX_NEXT_TRACE(i); // keep compiler happy
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::NOP(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::NOP(bxInstruction_c *i)
 {
   // No operation.
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)
@@ -50,29 +74,28 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PAUSE(bxInstruction_c *i)
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT0_PAUSE)) Svm_Vmexit(SVM_VMEXIT_PAUSE);
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_PAUSE)) SvmInterceptPAUSE();
   }
 #endif
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::PREFETCH(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::PREFETCH(bxInstruction_c *i)
 {
 #if BX_INSTRUMENTATION
-  BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->src(), i->seg(), BX_CPU_CALL_METHODR(i->ResolveModrm, (i)));
+  BX_INSTR_PREFETCH_HINT(BX_CPU_ID, i->src(), i->seg(), BX_CPU_RESOLVE_ADDR(i));
 #endif
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 4
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
-    BX_DEBUG(("VMEXIT: CPUID in VMX non-root operation"));
     VMexit(VMX_VMEXIT_CPUID, 0);
   }
 #endif
@@ -110,16 +133,42 @@ void BX_CPU_C::shutdown(void)
   }
 #endif
 
-  BX_PANIC(("Entering to shutdown state still not implemented"));
+  enter_sleep_state(BX_ACTIVITY_STATE_SHUTDOWN);
 
-  BX_CPU_THIS_PTR clear_IF();
+  longjmp(BX_CPU_THIS_PTR jmp_buf_env, 1); // go back to main decode loop
+}
+
+void BX_CPU_C::enter_sleep_state(unsigned state)
+{
+  switch(state) {
+  case BX_ACTIVITY_STATE_ACTIVE:
+    BX_ASSERT(0); // should not be used for entering active CPU state
+    break;
+
+  case BX_ACTIVITY_STATE_HLT:
+    break;
+
+  case BX_ACTIVITY_STATE_WAIT_FOR_SIPI:
+    mask_event(BX_EVENT_INIT | BX_EVENT_SMI | BX_EVENT_NMI); // FIXME: all events should be masked
+    // fall through - mask interrupts as well
+
+  case BX_ACTIVITY_STATE_SHUTDOWN:
+    BX_CPU_THIS_PTR clear_IF(); // masking interrupts
+    break;
+   
+  case BX_ACTIVITY_STATE_MWAIT:
+  case BX_ACTIVITY_STATE_MWAIT_IF:
+    break;
+
+  default:
+    BX_PANIC(("enter_sleep_state: unknown state %d", state));
+  }
 
   // artificial trap bit, why use another variable.
-  BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_HLT;
+  BX_CPU_THIS_PTR activity_state = state;
   BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
-  // Execution of this instruction completes.  The processor
-  // will remain in a halt state until one of the above conditions
-  // is met.
+  // Execution completes.  The processor will remain in a sleep 
+  // state until one of the wakeup conditions is met.
 
   BX_INSTR_HLT(BX_CPU_ID);
 
@@ -130,11 +179,9 @@ void BX_CPU_C::shutdown(void)
 #if BX_USE_IDLE_HACK
   bx_gui->sim_is_idle();
 #endif
-
-  longjmp(BX_CPU_THIS_PTR jmp_buf_env, 1); // go back to main decode loop
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
@@ -150,7 +197,6 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_HLT_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: HLT"));
       VMexit(VMX_VMEXIT_HLT, 0);
     }
   }
@@ -163,43 +209,26 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::HLT(bxInstruction_c *i)
 #endif
 
   // stops instruction execution and places the processor in a
-  // HALT state.  An enabled interrupt, NMI, or reset will resume
-  // execution.  If interrupt (including NMI) is used to resume
+  // HALT state. An enabled interrupt, NMI, or reset will resume
+  // execution. If interrupt (including NMI) is used to resume
   // execution after HLT, the saved CS:eIP points to instruction
   // following HLT.
-
-  // artificial trap bit, why use another variable.
-  BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_HLT;
-  BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
-  // Execution of this instruction completes.  The processor
-  // will remain in a halt state until one of the above conditions
-  // is met.
-
-  BX_INSTR_HLT(BX_CPU_ID);
-
-#if BX_DEBUGGER
-  bx_dbg_halt(BX_CPU_ID);
-#endif
-
-#if BX_USE_IDLE_HACK
-  bx_gui->sim_is_idle();
-#endif
+  enter_sleep_state(BX_ACTIVITY_STATE_HLT);
 
   BX_NEXT_TRACE(i);
 }
 
 /* 0F 08 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("INVD: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
-    BX_ERROR(("VMEXIT: INVD in VMX non-root operation"));
     VMexit(VMX_VMEXIT_INVD, 0);
   }
 #endif
@@ -221,18 +250,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVD(bxInstruction_c *i)
 }
 
 /* 0F 09 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("WBINVD: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_WBINVD_VMEXIT)) {
-      BX_ERROR(("VMEXIT: WBINVD in VMX non-root operation"));
       VMexit(VMX_VMEXIT_WBINVD, 0);
     }
   }
@@ -244,55 +272,47 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WBINVD(bxInstruction_c *i)
   }
 #endif
 
-  invalidate_prefetch_q();
+//invalidate_prefetch_q();
 
-  BX_DEBUG(("WBINVD: Flush internal caches !"));
+  BX_DEBUG(("WBINVD: WB-Invalidate internal caches !"));
   BX_INSTR_CACHE_CNTRL(BX_CPU_ID, BX_INSTR_WBINVD);
 
-  flushICaches();
+//flushICaches();
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLFLUSH(bxInstruction_c *i)
 {
-  bx_segment_reg_t *seg = &BX_CPU_THIS_PTR sregs[i->seg()];
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
+  bx_address laddr;
 
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
-  bx_address laddr = get_laddr(i->seg(), eaddr);
-
+  // CLFLUSH performs all the segmentation and paging checks that a 1-byte read would perform,
+  // except that it also allows references to execute-only segments.
 #if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-    if (! IsCanonical(laddr)) {
-      BX_ERROR(("CLFLUSH: non-canonical access !"));
-      exception(int_number(i->seg()), 0);
-    }
-  }
-  else
+  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
+    laddr = get_laddr64(i->seg(), eaddr);
+  else 
 #endif
-  {
-    // check if we could access the memory segment
-    if (!(seg->cache.valid & SegAccessROK)) {
-      if (! execute_virtual_checks(seg, (Bit32u) eaddr, 1))
-        exception(int_number(i->seg()), 0);
-    }
-    else {
-      if (eaddr > seg->cache.u.segment.limit_scaled) {
-        BX_ERROR(("CLFLUSH: segment limit violation"));
-        exception(int_number(i->seg()), 0);
-      }
-    }
+    laddr = agen_read_execute32(i->seg(), (Bit32u)eaddr, 1);
+
+  tickle_read_linear(i->seg(), laddr);
+
+  BX_INSTR_CLFLUSH(BX_CPU_ID, laddr, BX_CPU_THIS_PTR address_xlation.paddress1);
+
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLZERO(bxInstruction_c *i)
+{
+#if BX_CPU_LEVEL >= 6
+  bx_address eaddr = RAX & ~BX_CONST64(CACHE_LINE_SIZE-1) & i->asize_mask();
+
+  BxPackedZmmRegister zmmzero; // zmm is always made available even if EVEX is not compiled in
+  zmmzero.clear();
+  for (unsigned n=0; n<CACHE_LINE_SIZE; n += 64) {
+    write_virtual_zmmword(i->seg(), eaddr+n, &zmmzero);
   }
-
-#if BX_INSTRUMENTATION
-  bx_phy_address paddr =
-#endif
-    translate_linear(laddr, USER_PL, BX_READ);
-
-  BX_INSTR_CLFLUSH(BX_CPU_ID, laddr, paddr);
-
-#if BX_X86_DEBUGGER
-  hwbreakpoint_match(laddr, 1, BX_READ);
 #endif
 
   BX_NEXT_INSTR(i);
@@ -352,6 +372,11 @@ void BX_CPU_C::handleCpuModeChange(void)
 #endif
 #endif
 
+  // re-initialize protection keys
+#if BX_SUPPORT_PKEYS
+  set_PKRU(BX_CPU_THIS_PTR pkru);
+#endif
+
   if (mode != BX_CPU_THIS_PTR cpu_mode) {
     BX_DEBUG(("%s activated", cpu_mode_string(BX_CPU_THIS_PTR cpu_mode)));
 #if BX_DEBUGGER
@@ -397,7 +422,7 @@ void BX_CPU_C::handleSseModeChange(void)
   updateFetchModeMask(); /* SSE_OK changed */
 }  
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoSSE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoSSE(bxInstruction_c *i)
 {
   if(BX_CPU_THIS_PTR cr0.get_EM() || !BX_CPU_THIS_PTR cr4.get_OSFXSR())
     exception(BX_UD_EXCEPTION, 0);
@@ -418,20 +443,76 @@ void BX_CPU_C::handleAvxModeChange(void)
   }
   else {
     if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE() ||
-        (~BX_CPU_THIS_PTR xcr0.val32 & 0x6) != 0) BX_CPU_THIS_PTR avx_ok = 0;
-    else
+        (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK)) != 0) {
+      BX_CPU_THIS_PTR avx_ok = 0;
+    }
+    else {
       BX_CPU_THIS_PTR avx_ok = 1;
+
+#if BX_SUPPORT_EVEX
+      if ((~BX_CPU_THIS_PTR xcr0.val32 & BX_XCR0_OPMASK_MASK) != 0) {
+        BX_CPU_THIS_PTR opmask_ok = BX_CPU_THIS_PTR evex_ok = 0;
+      }
+      else {
+        BX_CPU_THIS_PTR opmask_ok = 1;
+
+        if ((~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_ZMM_HI256_MASK | BX_XCR0_HI_ZMM_MASK)) != 0)
+          BX_CPU_THIS_PTR evex_ok = 0;
+        else
+          BX_CPU_THIS_PTR evex_ok = 1;
+      }
+#endif
+    }
   }
+
+#if BX_SUPPORT_EVEX
+  if (! BX_CPU_THIS_PTR avx_ok)
+        BX_CPU_THIS_PTR opmask_ok = BX_CPU_THIS_PTR evex_ok = 0;
+#endif
 
   updateFetchModeMask(); /* AVX_OK changed */
 }  
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoAVX(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoAVX(bxInstruction_c *i)
 {
   if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (~BX_CPU_THIS_PTR xcr0.val32 & 0x6)
+  if (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK))
+    exception(BX_UD_EXCEPTION, 0);
+
+  if(BX_CPU_THIS_PTR cr0.get_TS())
+    exception(BX_NM_EXCEPTION, 0);
+
+  BX_ASSERT(0);
+
+  BX_NEXT_TRACE(i); // keep compiler happy
+}
+#endif
+
+#if BX_SUPPORT_EVEX
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoOpMask(bxInstruction_c *i)
+{
+  if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  if (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK | BX_XCR0_OPMASK_MASK))
+    exception(BX_UD_EXCEPTION, 0);
+
+  if(BX_CPU_THIS_PTR cr0.get_TS())
+    exception(BX_NM_EXCEPTION, 0);
+
+  BX_ASSERT(0);
+
+  BX_NEXT_TRACE(i); // keep compiler happy
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxNoEVEX(bxInstruction_c *i)
+{
+  if (! protected_mode() || ! BX_CPU_THIS_PTR cr4.get_OSXSAVE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  if (~BX_CPU_THIS_PTR xcr0.val32 & (BX_XCR0_SSE_MASK | BX_XCR0_YMM_MASK | BX_XCR0_OPMASK_MASK | BX_XCR0_ZMM_HI256_MASK | BX_XCR0_HI_ZMM_MASK))
     exception(BX_UD_EXCEPTION, 0);
 
   if(BX_CPU_THIS_PTR cr0.get_TS())
@@ -451,10 +532,15 @@ void BX_CPU_C::handleCpuContextChange(void)
 
   invalidate_prefetch_q();
   invalidate_stack_cache();
+
+  handleInterruptMaskChange();
+
 #if BX_CPU_LEVEL >= 4
   handleAlignmentCheck();
 #endif
+
   handleCpuModeChange();
+
 #if BX_CPU_LEVEL >= 6
   handleSseModeChange();
 #if BX_SUPPORT_AVX
@@ -463,18 +549,18 @@ void BX_CPU_C::handleCpuContextChange(void)
 #endif
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPMC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
-  if (! BX_CPU_THIS_PTR cr4.get_PCE() && CPL != 0 ) {
-    BX_ERROR(("RDPMC: not allowed to use instruction !"));
+  // in real mode CPL=0
+  if (! BX_CPU_THIS_PTR cr4.get_PCE() && CPL != 0 /* && protected_mode() */) {
+    BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)  {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_RDPMC_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: RDPMC"));
       VMexit(VMX_VMEXIT_RDPMC, 0);
     }
   }
@@ -522,6 +608,12 @@ Bit64u BX_CPU_C::get_TSC(void)
 {
   Bit64u tsc = bx_pc_system.time_ticks() - BX_CPU_THIS_PTR tsc_last_reset;
 #if BX_SUPPORT_VMX || BX_SUPPORT_SVM
+#if BX_SUPPORT_VMX
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (VMEXIT(VMX_VM_EXEC_CTRL2_TSC_OFFSET) && SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_TSC_SCALING))
+      tsc = (tsc * BX_CPU_THIS_PTR vmcs.tsc_multiplier) >> 48;
+  }
+#endif
   tsc += BX_CPU_THIS_PTR tsc_offset;
 #endif
   return tsc;
@@ -538,18 +630,17 @@ void BX_CPU_C::set_TSC(Bit64u newval)
 }
 #endif
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   if (BX_CPU_THIS_PTR cr4.get_TSD() && CPL != 0) {
-    BX_ERROR(("RDTSC: not allowed to use instruction !"));
+    BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_RDTSC_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: RDTSC"));
       VMexit(VMX_VMEXIT_RDTSC, 0);
     }
   }
@@ -572,29 +663,28 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSC(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
 {
 #if BX_SUPPORT_X86_64
 
 #if BX_SUPPORT_VMX
-  // RDTSCP will always #UD in legacy VMX mode
+  // RDTSCP will always #UD in legacy VMX mode, the #UD takes priority over any other exception the instruction may incur.
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_RDTSCP)) {
-       BX_ERROR(("RDTSCP in VMX guest: not allowed to use instruction !"));
+       BX_ERROR(("%s in VMX guest: not allowed to use instruction !", i->getIaOpcodeNameShort()));
        exception(BX_UD_EXCEPTION, 0);
     }
   }
 #endif
 
   if (BX_CPU_THIS_PTR cr4.get_TSD() && CPL != 0) {
-    BX_ERROR(("RDTSCP: not allowed to use instruction !"));
+    BX_ERROR(("%s: not allowed to use instruction !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
     if (VMEXIT(VMX_VM_EXEC_CTRL2_RDTSC_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: RDTSCP"));
       VMexit(VMX_VMEXIT_RDTSCP, 0);
     }
   }
@@ -610,209 +700,38 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDTSCP(bxInstruction_c *i)
 
   RAX = GET32L(ticks);
   RDX = GET32H(ticks);
-  RCX = MSR_TSC_AUX;
+  RCX = BX_CPU_THIS_PTR msr.tsc_aux;
 
 #endif
 
   BX_NEXT_INSTR(i);
 }
 
-#if BX_SUPPORT_MONITOR_MWAIT
-bx_bool BX_CPU_C::is_monitor(bx_phy_address begin_addr, unsigned len)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPID_Ed(bxInstruction_c *i)
 {
-  if (! BX_CPU_THIS_PTR monitor.armed) return 0;
-
-  bx_phy_address monitor_begin = BX_CPU_THIS_PTR monitor.monitor_addr;
-  bx_phy_address monitor_end = monitor_begin + CACHE_LINE_SIZE - 1;
-
-  bx_phy_address end_addr = begin_addr + len;
-  if (begin_addr >= monitor_end || end_addr <= monitor_begin)
-    return 0;
-  else
-    return 1;
-}
-
-void BX_CPU_C::check_monitor(bx_phy_address begin_addr, unsigned len)
-{
-  if (is_monitor(begin_addr, len)) {
-    // wakeup from MWAIT state
-    if(BX_CPU_THIS_PTR activity_state >= BX_ACTIVITY_STATE_MWAIT)
-       BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_ACTIVE;
-    // clear monitor
-    BX_CPU_THIS_PTR monitor.reset_monitor();
-  }
-}
-#endif
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MONITOR(bxInstruction_c *i)
-{
-#if BX_SUPPORT_MONITOR_MWAIT
-  // CPL is always 0 in real mode
-  if (/* !real_mode() && */ CPL != 0) {
-    BX_DEBUG(("MWAIT instruction not recognized when CPL != 0"));
-    exception(BX_UD_EXCEPTION, 0);
-  }
-
-  BX_DEBUG(("MONITOR instruction executed EAX = 0x%08x", EAX));
-
-#if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest) {
-    if (VMEXIT(VMX_VM_EXEC_CTRL2_MONITOR_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: MONITOR"));
-      VMexit(VMX_VMEXIT_MONITOR, 0);
-    }
-  }
-#endif
-
-  if (RCX != 0) {
-    BX_ERROR(("MONITOR: no optional extensions supported"));
-    exception(BX_GP_EXCEPTION, 0);
-  }
-
-  bx_segment_reg_t *seg = &BX_CPU_THIS_PTR sregs[i->seg()];
-
-  bx_address offset = RAX & i->asize_mask();
-
-  // set MONITOR
-  bx_address laddr = get_laddr(i->seg(), offset);
-
 #if BX_SUPPORT_X86_64
-  if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-    if (! IsCanonical(laddr)) {
-      BX_ERROR(("MONITOR: non-canonical access !"));
-      exception(int_number(i->seg()), 0);
-    }
-  }
-  else
-#endif
-  {
-    // check if we could access the memory segment
-    if (!(seg->cache.valid & SegAccessROK)) {
-      if (! execute_virtual_checks(seg, (Bit32u) offset, 1))
-        exception(int_number(i->seg()), 0);
-    }
-    else {
-      if (offset > seg->cache.u.segment.limit_scaled) {
-        BX_ERROR(("MONITOR: segment limit violation"));
-        exception(int_number(i->seg()), 0);
-      }
-    }
-  }
 
-  bx_phy_address paddr = translate_linear(laddr, USER_PL, BX_READ);
-
-#if BX_SUPPORT_SVM
-  if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT1_MONITOR)) Svm_Vmexit(SVM_VMEXIT_MONITOR);
+#if BX_SUPPORT_VMX
+  // RDTSCP will always #UD in legacy VMX mode
+  if (BX_CPU_THIS_PTR in_vmx_guest) {
+    if (! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_RDTSCP)) {
+       BX_ERROR(("%s in VMX guest: not allowed to use instruction !", i->getIaOpcodeNameShort()));
+       exception(BX_UD_EXCEPTION, 0);
+    }
   }
 #endif
 
-  // Set the monitor immediately. If monitor is still armed when we MWAIT,
-  // the processor will stall.
-
-  bx_pc_system.invlpg(paddr);
-
-  BX_CPU_THIS_PTR monitor.arm(paddr);
-
-  BX_DEBUG(("MONITOR for phys_addr=0x" FMT_PHY_ADDRX, BX_CPU_THIS_PTR monitor.monitor_addr));
+  BX_WRITE_32BIT_REGZ(i->dst(), BX_CPU_THIS_PTR msr.tsc_aux);
 #endif
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MWAIT(bxInstruction_c *i)
-{
-#if BX_SUPPORT_MONITOR_MWAIT
-  // CPL is always 0 in real mode
-  if (/* !real_mode() && */ CPL != 0) {
-    BX_DEBUG(("MWAIT instruction not recognized when CPL != 0"));
-    exception(BX_UD_EXCEPTION, 0);
-  }
-
-  BX_DEBUG(("MWAIT instruction executed ECX = 0x%08x", ECX));
-
-#if BX_SUPPORT_VMX
-  if (BX_CPU_THIS_PTR in_vmx_guest) {
-    if (VMEXIT(VMX_VM_EXEC_CTRL2_MWAIT_VMEXIT)) {
-      BX_DEBUG(("VMEXIT: MWAIT"));
-      VMexit(VMX_VMEXIT_MWAIT, BX_CPU_THIS_PTR monitor.armed);
-    }
-  }
-#endif
-
-  // only one extension is supported
-  //   ECX[0] - interrupt MWAIT even if EFLAGS.IF = 0
-  if (RCX & ~(BX_CONST64(1))) {
-    BX_ERROR(("MWAIT: incorrect optional extensions in RCX"));
-    exception(BX_GP_EXCEPTION, 0);
-  }
-
-#if BX_SUPPORT_SVM
-  if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT1_MWAIT_ARMED))
-      if (BX_CPU_THIS_PTR monitor.armed) Svm_Vmexit(SVM_VMEXIT_MWAIT_CONDITIONAL);
-    
-    if (SVM_INTERCEPT(SVM_INTERCEPT1_MWAIT)) Svm_Vmexit(SVM_VMEXIT_MWAIT);
-  }
-#endif
-
-  // If monitor has already triggered, we just return.
-  if (! BX_CPU_THIS_PTR monitor.armed) {
-    BX_DEBUG(("MWAIT: the MONITOR was not armed or already triggered"));
-    BX_NEXT_TRACE(i);
-  }
-
-  static bx_bool mwait_is_nop = SIM->get_param_bool(BXPN_MWAIT_IS_NOP)->get();
-  if (mwait_is_nop) {
-    BX_NEXT_TRACE(i);
-  }
-
-  // stops instruction execution and places the processor in a optimized
-  // state.  Events that cause exit from MWAIT state are:
-  // A store from another processor to monitored range, any unmasked
-  // interrupt, including INTR, NMI, SMI, INIT or reset will resume
-  // the execution. Any far control transfer between MONITOR and MWAIT
-  // resets the monitoring logic.
-
-  if (ECX & 1) {
-#if BX_SUPPORT_VMX
-    // When "interrupt window exiting" VMX control is set MWAIT instruction
-    // won't cause the processor to enter BX_ACTIVITY_STATE_MWAIT_IF sleep
-    // state with EFLAGS.IF = 0
-    if (BX_CPU_THIS_PTR vmx_interrupt_window && ! BX_CPU_THIS_PTR get_IF()) {
-      BX_NEXT_TRACE(i);
-    }
-#endif
-    BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_MWAIT_IF;
-  }
-  else {
-    BX_CPU_THIS_PTR activity_state = BX_ACTIVITY_STATE_MWAIT;
-  }
-
-  BX_CPU_THIS_PTR async_event = 1; // so processor knows to check
-  // Execution of this instruction completes.  The processor
-  // will remain in a optimized state until one of the above
-  // conditions is met.
-
-  BX_INSTR_MWAIT(BX_CPU_ID, BX_CPU_THIS_PTR monitor.monitor_addr, CACHE_LINE_SIZE, ECX);
-
-#if BX_USE_IDLE_HACK
-  bx_gui->sim_is_idle();
-#endif
-
-#if BX_DEBUGGER
-  bx_dbg_halt(BX_CPU_ID);
-#endif
-#endif
-
-  BX_NEXT_TRACE(i);
-}
-
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   if (real_mode()) {
-    BX_ERROR(("SYSENTER not recognized in real mode !"));
+    BX_ERROR(("%s: not recognized in real mode !", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
   if ((BX_CPU_THIS_PTR msr.sysenter_cs_msr & BX_SELECTOR_RPL_MASK) == 0) {
@@ -821,6 +740,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   }
 
   invalidate_prefetch_q();
+
+  BX_INSTR_FAR_BRANCH_ORIGIN();
 
   BX_CPU_THIS_PTR clear_VM();       // do this just like the book says to do
   BX_CPU_THIS_PTR clear_IF();
@@ -839,10 +760,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   }
 #endif
 
+#if BX_SUPPORT_CET
+  if (ShadowStackEnabled(CPL))
+    BX_CPU_THIS_PTR msr.ia32_pl_ssp[3] = SSP;
+  if (ShadowStackEnabled(0)) SSP = 0;
+  track_indirect(0);
+#endif
+
   parse_selector(BX_CPU_THIS_PTR msr.sysenter_cs_msr & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -869,7 +797,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   parse_selector((BX_CPU_THIS_PTR msr.sysenter_cs_msr + 8) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl      = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment  = 1; /* data/code segment */
@@ -896,13 +824,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSENTER(bxInstruction_c *i)
   }
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_SYSENTER,
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 #endif
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 6
   if (real_mode() || CPL != 0) {
@@ -915,6 +844,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
   }
 
   invalidate_prefetch_q();
+
+  BX_INSTR_FAR_BRANCH_ORIGIN();
 
 #if BX_SUPPORT_X86_64
   if (i->os64L()) {
@@ -930,7 +861,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + 32) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -951,7 +882,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + 16) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -980,7 +911,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
   parse_selector(((BX_CPU_THIS_PTR msr.sysenter_cs_msr + (i->os64L() ? 40:24)) & BX_SELECTOR_RPL_MASK) | 3,
             &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl      = 3;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment  = 1; /* data/code segment */
@@ -994,14 +925,20 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.l            = 0;
 #endif
 
+#if BX_SUPPORT_CET
+  if (ShadowStackEnabled(CPL))
+    SSP = BX_CPU_THIS_PTR msr.ia32_pl_ssp[3];
+#endif
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_SYSEXIT,
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 #endif
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   bx_address temp_RIP;
@@ -1014,6 +951,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
 
   invalidate_prefetch_q();
 
+  BX_INSTR_FAR_BRANCH_ORIGIN();
+
+#if BX_SUPPORT_CET
+  unsigned old_CPL = CPL;
+#endif
+
 #if BX_SUPPORT_X86_64
   if (long_mode())
   {
@@ -1021,17 +964,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     R11 = read_eflags() & ~(EFlagsRFMask);
 
     if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64) {
-      temp_RIP = MSR_LSTAR;
+      temp_RIP = BX_CPU_THIS_PTR msr.lstar;
     }
     else {
-      temp_RIP = MSR_CSTAR;
+      temp_RIP = BX_CPU_THIS_PTR msr.cstar;
     }
 
     // set up CS segment, flat, 64-bit DPL=0
-    parse_selector((MSR_STAR >> 32) & BX_SELECTOR_RPL_MASK,
+    parse_selector((BX_CPU_THIS_PTR msr.star >> 32) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -1050,10 +993,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
 #endif
 
     // set up SS segment, flat, 64-bit DPL=0
-    parse_selector(((MSR_STAR >> 32) + 8) & BX_SELECTOR_RPL_MASK,
+    parse_selector(((BX_CPU_THIS_PTR msr.star >> 32) + 8) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1; /* data/code segment */
@@ -1065,8 +1008,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.l            = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.u.segment.avl          = 0; /* available for use by system */
 
-    writeEFlags(read_eflags() & (~MSR_FMASK), EFlagsValidMask);
-    BX_CPU_THIS_PTR clear_RF();
+    writeEFlags(read_eflags() & ~(BX_CPU_THIS_PTR msr.fmask) & ~(EFlagsRFMask), EFlagsValidMask);
     RIP = temp_RIP;
   }
   else
@@ -1075,13 +1017,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     // legacy mode
 
     ECX = EIP;
-    temp_RIP = MSR_STAR & 0xFFFFFFFF;
+    temp_RIP = (Bit32u)(BX_CPU_THIS_PTR msr.star);
 
     // set up CS segment, flat, 32-bit DPL=0
-    parse_selector((MSR_STAR >> 32) & BX_SELECTOR_RPL_MASK,
+    parse_selector((BX_CPU_THIS_PTR msr.star >> 32) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -1102,10 +1044,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
 #endif
 
     // set up SS segment, flat, 32-bit DPL=0
-    parse_selector(((MSR_STAR >> 32) + 8) & BX_SELECTOR_RPL_MASK,
+    parse_selector(((BX_CPU_THIS_PTR msr.star >> 32) + 8) & BX_SELECTOR_RPL_MASK,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 0;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1; /* data/code segment */
@@ -1125,14 +1067,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSCALL(bxInstruction_c *i)
     RIP = temp_RIP;
   }
 
+#if BX_SUPPORT_CET
+  if (ShadowStackEnabled(old_CPL))
+    BX_CPU_THIS_PTR msr.ia32_pl_ssp[3] = SSP;
+  if (ShadowStackEnabled(0)) SSP = 0;
+  track_indirect(0);
+#endif
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_SYSCALL,
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 #endif
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   bx_address temp_RIP;
@@ -1144,11 +1094,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
   }
 
   if(!protected_mode() || CPL != 0) {
-    BX_ERROR(("SYSRET: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
   invalidate_prefetch_q();
+
+  BX_INSTR_FAR_BRANCH_ORIGIN();
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR cpu_mode == BX_MODE_LONG_64)
@@ -1160,10 +1112,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
       }
 
       // Return to 64-bit mode, set up CS segment, flat, 64-bit DPL=3
-      parse_selector((((MSR_STAR >> 48) + 16) & BX_SELECTOR_RPL_MASK) | 3,
+      parse_selector((((BX_CPU_THIS_PTR msr.star >> 48) + 16) & BX_SELECTOR_RPL_MASK) | 3,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -1179,10 +1131,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     }
     else {
       // Return to 32-bit compatibility mode, set up CS segment, flat, 32-bit DPL=3
-      parse_selector((MSR_STAR >> 48) | 3,
+      parse_selector((BX_CPU_THIS_PTR msr.star >> 48) | 3,
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -1202,10 +1154,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     handleAlignmentCheck(/* CPL change */);
 
     // SS base, limit, attributes unchanged
-    parse_selector((Bit16u)(((MSR_STAR >> 48) + 8) | 3),
+    parse_selector((Bit16u)(((BX_CPU_THIS_PTR msr.star >> 48) + 8) | 3),
                        &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1;  /* data/code segment */
@@ -1217,10 +1169,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 #endif
   {
     // Return to 32-bit legacy mode, set up CS segment, flat, 32-bit DPL=3
-    parse_selector((MSR_STAR >> 48) | 3,
+    parse_selector((BX_CPU_THIS_PTR msr.star >> 48) | 3,
                      &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment = 1;  /* data/code segment */
@@ -1239,10 +1191,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
     handleAlignmentCheck(/* CPL change */);
 
     // SS base, limit, attributes unchanged
-    parse_selector((Bit16u)(((MSR_STAR >> 48) + 8) | 3),
+    parse_selector((Bit16u)(((BX_CPU_THIS_PTR msr.star >> 48) + 8) | 3),
                      &BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].selector);
 
-    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK;
+    BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.valid   = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.p       = 1;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.dpl     = 3;
     BX_CPU_THIS_PTR sregs[BX_SEG_REG_SS].cache.segment = 1;  /* data/code segment */
@@ -1256,7 +1208,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 
   RIP = temp_RIP;
 
+#if BX_SUPPORT_CET
+  if (ShadowStackEnabled(CPL))
+    SSP = BX_CPU_THIS_PTR msr.ia32_pl_ssp[3];
+#endif
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_SYSRET,
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 #endif
 
@@ -1264,91 +1222,171 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SWAPGS(bxInstruction_c *i)
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SWAPGS(bxInstruction_c *i)
 {
   if(CPL != 0)
     exception(BX_GP_EXCEPTION, 0);
 
   Bit64u temp_GS_base = MSR_GSBASE;
-  MSR_GSBASE = MSR_KERNELGSBASE;
-  MSR_KERNELGSBASE = temp_GS_base;
+  MSR_GSBASE = BX_CPU_THIS_PTR msr.kernelgsbase;
+  BX_CPU_THIS_PTR msr.kernelgsbase = temp_GS_base;
 
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /0 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    BX_WRITE_64BIT_REG(i->dst(), MSR_FSBASE);
-  }
-  else {
-    BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_FSBASE);
-  }
+  BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_FSBASE);
+  BX_NEXT_INSTR(i);
+}
 
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDFSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  BX_WRITE_64BIT_REG(i->dst(), MSR_FSBASE);
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /1 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    BX_WRITE_64BIT_REG(i->dst(), MSR_GSBASE);
-  }
-  else {
-    BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_GSBASE);
-  }
+  BX_WRITE_32BIT_REGZ(i->dst(), (Bit32u) MSR_GSBASE);
+  BX_NEXT_INSTR(i);
+}
 
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDGSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  BX_WRITE_64BIT_REG(i->dst(), MSR_GSBASE);
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /2 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    Bit64u fsbase = BX_READ_64BIT_REG(i->src());
-    if (!IsCanonical(fsbase)) {
-      BX_ERROR(("WRFSBASE: canonical failure !"));
-      exception(BX_GP_EXCEPTION, 0);
-    }
-    MSR_FSBASE = fsbase;
+  // 32-bit value is always canonical
+  MSR_FSBASE = BX_READ_32BIT_REG(i->src());
+
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRFSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  Bit64u fsbase = BX_READ_64BIT_REG(i->src());
+  if (!IsCanonical(fsbase)) {
+    BX_ERROR(("%s: canonical failure !", i->getIaOpcodeNameShort()));
+    exception(BX_GP_EXCEPTION, 0);
   }
-  else {
-    // 32-bit value is always canonical
-    MSR_FSBASE = BX_READ_32BIT_REG(i->src());
-  }
+  MSR_FSBASE = fsbase;
 
   BX_NEXT_INSTR(i);
 }
 
 /* F3 0F AE /3 */
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE_Ed(bxInstruction_c *i)
 {
   if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
     exception(BX_UD_EXCEPTION, 0);
 
-  if (i->os64L()) {
-    Bit64u gsbase = BX_READ_64BIT_REG(i->src());
-    if (!IsCanonical(gsbase)) {
-      BX_ERROR(("WRGSBASE: canonical failure !"));
-      exception(BX_GP_EXCEPTION, 0);
-    }
-    MSR_GSBASE = gsbase;
-  }
-  else {
-    // 32-bit value is always canonical
-    MSR_GSBASE = BX_READ_32BIT_REG(i->src());
-  }
+  // 32-bit value is always canonical
+  MSR_GSBASE = BX_READ_32BIT_REG(i->src());
 
   BX_NEXT_INSTR(i);
 }
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRGSBASE_Eq(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_FSGSBASE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  Bit64u gsbase = BX_READ_64BIT_REG(i->src());
+  if (!IsCanonical(gsbase)) {
+    BX_ERROR(("%s: canonical failure !", i->getIaOpcodeNameShort()));
+    exception(BX_GP_EXCEPTION, 0);
+  }
+  MSR_GSBASE = gsbase;
+
+  BX_NEXT_INSTR(i);
+}
+
+#endif // BX_SUPPORT_X86_64
+
+#if BX_SUPPORT_PKEYS
+
+void BX_CPU_C::set_PKRU(Bit32u pkru_val)
+{
+  BX_CPU_THIS_PTR pkru = pkru_val;
+
+  for (unsigned i=0; i<16; i++) {
+    BX_CPU_THIS_PTR rd_pkey[i] = BX_CPU_THIS_PTR wr_pkey[i] =
+      TLB_SysReadOK | TLB_UserReadOK | TLB_SysWriteOK | TLB_UserWriteOK;
+
+    if (long_mode() && BX_CPU_THIS_PTR cr4.get_PKE()) {
+      // accessDisable bit set
+      if (pkru_val & (1<<(i*2))) {
+        BX_CPU_THIS_PTR rd_pkey[i] &= ~(TLB_UserReadOK | TLB_UserWriteOK);
+        BX_CPU_THIS_PTR wr_pkey[i] &= ~(TLB_UserReadOK | TLB_UserWriteOK);
+      }
+    
+      // writeDisable bit set
+      if (pkru_val & (1<<(i*2+1))) {
+        BX_CPU_THIS_PTR wr_pkey[i] &= ~(TLB_UserWriteOK);
+        if (BX_CPU_THIS_PTR cr0.get_WP())
+          BX_CPU_THIS_PTR wr_pkey[i] &= ~(TLB_SysWriteOK);
+      }
+    }
+
+#if BX_SUPPORT_CET
+    // replicate pkey access bits for shadow stack checks
+    BX_CPU_THIS_PTR rd_pkey[i] |= BX_CPU_THIS_PTR rd_pkey[i]<<4;
+    BX_CPU_THIS_PTR wr_pkey[i] |= BX_CPU_THIS_PTR wr_pkey[i]<<4;
 #endif
+  }
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RDPKRU(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_PKE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  if (ECX != 0)
+    exception(BX_GP_EXCEPTION, 0);
+
+  RAX = BX_CPU_THIS_PTR pkru;
+  RDX = 0;
+
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::WRPKRU(bxInstruction_c *i)
+{
+  if (! BX_CPU_THIS_PTR cr4.get_PKE())
+    exception(BX_UD_EXCEPTION, 0);
+
+  if ((ECX|EDX) != 0)
+    exception(BX_GP_EXCEPTION, 0);
+
+  BX_CPU_THIS_PTR set_PKRU(EAX);
+
+  BX_NEXT_TRACE(i);
+}
+
+#endif // BX_SUPPORT_PKEYS

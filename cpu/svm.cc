@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: svm.cc 11221 2012-06-18 11:41:26Z sshwarts $
+// $Id: svm.cc 13729 2019-12-27 13:02:30Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2018 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,8 +28,9 @@
 
 #if BX_SUPPORT_SVM
 
-// for debugging and save/restore
-static const char *svm_segname[] = { "ES", "CS", "SS", "DS", "FS", "GS", "GDTR", "LDTR", "IDTR", "TR" };
+#include "decoder/ia_opcodes.h"
+
+extern const char *segname[];
 
 // When loading segment bases from the VMCB or the host save area
 // (on VMRUN or #VMEXIT), segment bases are canonicalized (i.e.
@@ -57,7 +58,7 @@ BX_CPP_INLINE Bit8u BX_CPU_C::vmcb_read8(unsigned offset)
     access_read_physical(pAddr, 1, (Bit8u*)(&val_8));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_8));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_8));
   return val_8;
 }
 
@@ -68,13 +69,13 @@ BX_CPP_INLINE Bit16u BX_CPU_C::vmcb_read16(unsigned offset)
 
   if (BX_CPU_THIS_PTR vmcbhostptr) {
     Bit16u *hostAddr = (Bit16u*) (BX_CPU_THIS_PTR vmcbhostptr | offset);
-    ReadHostWordFromLittleEndian(hostAddr, val_16);
+    val_16 = ReadHostWordFromLittleEndian(hostAddr);
   }
   else {
     access_read_physical(pAddr, 2, (Bit8u*)(&val_16));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 2, BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_16));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 2, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_16));
   return val_16;
 }
 
@@ -85,13 +86,13 @@ BX_CPP_INLINE Bit32u BX_CPU_C::vmcb_read32(unsigned offset)
 
   if (BX_CPU_THIS_PTR vmcbhostptr) {
     Bit32u *hostAddr = (Bit32u*) (BX_CPU_THIS_PTR vmcbhostptr | offset);
-    ReadHostDWordFromLittleEndian(hostAddr, val_32);
+    val_32 = ReadHostDWordFromLittleEndian(hostAddr);
   }
   else {
     access_read_physical(pAddr, 4, (Bit8u*)(&val_32));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 4, BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_32));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 4, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_32));
   return val_32;
 }
 
@@ -102,13 +103,13 @@ BX_CPP_INLINE Bit64u BX_CPU_C::vmcb_read64(unsigned offset)
 
   if (BX_CPU_THIS_PTR vmcbhostptr) {
     Bit64u *hostAddr = (Bit64u*) (BX_CPU_THIS_PTR vmcbhostptr | offset);
-    ReadHostQWordFromLittleEndian(hostAddr, val_64);
+    val_64 = ReadHostQWordFromLittleEndian(hostAddr);
   }
   else {
     access_read_physical(pAddr, 8, (Bit8u*)(&val_64));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 8, BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_64));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 8, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_READ, BX_VMCS_ACCESS, (Bit8u*)(&val_64));
   return val_64;
 }
 
@@ -125,7 +126,7 @@ BX_CPP_INLINE void BX_CPU_C::vmcb_write8(unsigned offset, Bit8u val_8)
     access_write_physical(pAddr, 1, (Bit8u*)(&val_8));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_8));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_8));
 }
 
 BX_CPP_INLINE void BX_CPU_C::vmcb_write16(unsigned offset, Bit16u val_16)
@@ -141,7 +142,7 @@ BX_CPP_INLINE void BX_CPU_C::vmcb_write16(unsigned offset, Bit16u val_16)
     access_write_physical(pAddr, 2, (Bit8u*)(&val_16));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 2, BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_16));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 2, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_16));
 }
 
 BX_CPP_INLINE void BX_CPU_C::vmcb_write32(unsigned offset, Bit32u val_32)
@@ -157,7 +158,7 @@ BX_CPP_INLINE void BX_CPU_C::vmcb_write32(unsigned offset, Bit32u val_32)
     access_write_physical(pAddr, 4, (Bit8u*)(&val_32));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 4, BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_32));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 4, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_32));
 }
 
 BX_CPP_INLINE void BX_CPU_C::vmcb_write64(unsigned offset, Bit64u val_64)
@@ -173,7 +174,7 @@ BX_CPP_INLINE void BX_CPU_C::vmcb_write64(unsigned offset, Bit64u val_64)
     access_write_physical(pAddr, 8, (Bit8u*)(&val_64));
   }
 
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 8, BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_64));
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 8, MEMTYPE(BX_CPU_THIS_PTR vmcb_memtype), BX_WRITE, BX_VMCS_ACCESS, (Bit8u*)(&val_64));
 }
 
 BX_CPP_INLINE void BX_CPU_C::svm_segment_read(bx_segment_reg_t *seg, unsigned offset)
@@ -297,7 +298,8 @@ void BX_CPU_C::SvmExitSaveGuestState(void)
   SVM_CONTROLS *ctrls = &BX_CPU_THIS_PTR vmcb.ctrls;
 
   vmcb_write8(SVM_CONTROL_VTPR, ctrls->v_tpr);
-  vmcb_write8(SVM_CONTROL_VIRQ, ctrls->v_irq);
+  vmcb_write8(SVM_CONTROL_VIRQ, is_pending(BX_EVENT_SVM_VIRQ_PENDING));
+  clear_event(BX_EVENT_SVM_VIRQ_PENDING);
 }
 
 extern bx_bool isValidMSR_PAT(Bit64u pat_msr);
@@ -341,13 +343,17 @@ bx_bool BX_CPU_C::SvmEnterLoadCheckControls(SVM_CONTROLS *ctrls)
   }
 
   ctrls->v_tpr = vmcb_read8(SVM_CONTROL_VTPR);
-  ctrls->v_irq = vmcb_read8(SVM_CONTROL_VIRQ) & 0x1;
   ctrls->v_intr_masking = vmcb_read8(SVM_CONTROL_VINTR_MASKING) & 0x1;
   ctrls->v_intr_vector = vmcb_read8(SVM_CONTROL_VINTR_VECTOR);
 
   Bit8u vintr_control = vmcb_read8(SVM_CONTROL_VINTR_PRIO_IGN_TPR);
   ctrls->v_intr_prio = vintr_control & 0xf;
   ctrls->v_ignore_tpr = (vintr_control >> 4) & 0x1;
+
+  if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_PAUSE_FILTER))
+    ctrls->pause_filter_count = vmcb_read16(SVM_CONTROL16_PAUSE_FILTER_COUNT);
+  else
+    ctrls->pause_filter_count = 0;
 
   ctrls->nested_paging = vmcb_read8(SVM_CONTROL_NESTED_PAGING_ENABLE);
   if (! BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_NESTED_PAGING)) {
@@ -464,7 +470,7 @@ bx_bool BX_CPU_C::SvmEnterLoadCheckGuestState(void)
   {
     // real or vm8086 mode: make all segments valid
     for (n=0;n < 4; n++) {
-      guest.sregs[n].cache.valid = 1;
+      guest.sregs[n].cache.valid = SegValidCache;
     }
 
     if (! guest.cr0.get_PE() && guest.cr0.get_PG()) {
@@ -555,8 +561,9 @@ bx_bool BX_CPU_C::SvmEnterLoadCheckGuestState(void)
   setEFlags((Bit32u) guest.eflags);
 
   // injecting virtual interrupt
-  if (SVM_V_IRQ)
-    BX_CPU_THIS_PTR async_event = 1;
+  Bit8u v_irq = vmcb_read8(SVM_CONTROL_VIRQ) & 0x1;
+  if (v_irq)
+    signal_event(BX_EVENT_SVM_VIRQ_PENDING);
 
   handleCpuContextChange();
 
@@ -586,6 +593,31 @@ void BX_CPU_C::Svm_Vmexit(int reason, Bit64u exitinfo1, Bit64u exitinfo2)
   RIP = BX_CPU_THIS_PTR prev_rip;
   if (BX_CPU_THIS_PTR speculative_rsp)
     RSP = BX_CPU_THIS_PTR prev_rsp;
+  BX_CPU_THIS_PTR speculative_rsp = 0;
+
+  if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST)) {
+    //
+    // In the case of a Nested #PF or intercepted #PF, guest instruction bytes at
+    // guest CS:RIP are stored into the 16-byte wide field Guest Instruction Bytes.
+    // Up to 15 bytes are recorded, read from guest CS:RIP. The number of bytes
+    // fetched is put into the first byte of this field. Zero indicates that no
+    // bytes were fetched.
+    //
+    // This field is filled in only during data page faults. Instruction-fetch
+    // page faults provide no additional information. All other intercepts clear
+    // bits 0:7 in this field to zero.
+    //
+
+    if ((reason == SVM_VMEXIT_PF_EXCEPTION || reason == SVM_VMEXIT_NPF) && !(exitinfo1 & 0x10))
+    {
+      // TODO
+    }
+    else {
+      vmcb_write8(SVM_CONTROL64_GUEST_INSTR_BYTES, 0);
+    }
+  }
+
+  mask_event(BX_EVENT_SVM_VIRQ_PENDING);
 
   BX_CPU_THIS_PTR in_svm_guest = 0;
   BX_CPU_THIS_PTR svm_gif = 0;
@@ -626,8 +658,8 @@ void BX_CPU_C::Svm_Vmexit(int reason, Bit64u exitinfo1, Bit64u exitinfo2)
   // STEP 3: Go back to SVM host
   //
 
-  BX_CPU_THIS_PTR errorno = 0;
   BX_CPU_THIS_PTR EXT = 0;
+  BX_CPU_THIS_PTR last_exception_type = 0;
 
 #if BX_DEBUGGER
   if (BX_CPU_THIS_PTR vmexit_break) {
@@ -656,7 +688,11 @@ bx_bool BX_CPU_C::SvmInjectEvents(void)
 
   switch(type) {
     case BX_NMI:
+      mask_event(BX_EVENT_NMI);
+      BX_CPU_THIS_PTR EXT = 1;
       vector = 2;
+      break;
+
     case BX_EXTERNAL_INTERRUPT:
       BX_CPU_THIS_PTR EXT = 1;
       break;
@@ -685,8 +721,7 @@ bx_bool BX_CPU_C::SvmInjectEvents(void)
   if (type == BX_HARDWARE_EXCEPTION) {
     // record exception the same way as BX_CPU_C::exception does
     BX_ASSERT(vector < BX_CPU_HANDLED_EXCEPTIONS);
-    BX_CPU_THIS_PTR curr_exception = exceptions_info[vector].exception_type;
-    BX_CPU_THIS_PTR errorno = 1;
+    BX_CPU_THIS_PTR last_exception_type = exceptions_info[vector].exception_type;
   }
 
   ctrls->exitintinfo = ctrls->eventinj & ~0x80000000;
@@ -694,8 +729,7 @@ bx_bool BX_CPU_C::SvmInjectEvents(void)
 
   interrupt(vector, type, push_error, error_code);
 
-  BX_CPU_THIS_PTR errorno = 0; // injection success
-  BX_CPU_THIS_PTR EXT = 0;
+  BX_CPU_THIS_PTR last_exception_type = 0; // error resolved
 
   return 1;
 }
@@ -715,8 +749,8 @@ void BX_CPU_C::SvmInterceptException(unsigned type, unsigned vector, Bit16u errc
     // -----------------------------------------
     //              EXITINTINFO
     // -----------------------------------------
-    // [.7:.0] | Interrupt/Exception vector
-    // [10:.8] | Interrupt/Exception type
+    // [07:00] | Interrupt/Exception vector
+    // [10:08] | Interrupt/Exception type
     // [11:11] | error code pushed to the stack
     // [30:12] | reserved
     // [31:31] | interruption info valid
@@ -765,11 +799,11 @@ void BX_CPU_C::SvmInterceptIO(bxInstruction_c *i, unsigned port, unsigned len)
   // access_read_physical cannot read 2 bytes cross 4K boundary :(
   pAddr = BX_CPU_THIS_PTR vmcb.ctrls.iopm_base + (port / 8);
   access_read_physical(pAddr, 1, &bitmap[0]);
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, BX_READ, BX_IO_BITMAP_ACCESS, &bitmap[0]);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(resolve_memtype(pAddr)), BX_READ, BX_IO_BITMAP_ACCESS, &bitmap[0]);
 
   pAddr++;
   access_read_physical(pAddr, 1, &bitmap[1]);
-  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, BX_READ, BX_IO_BITMAP_ACCESS, &bitmap[1]);
+  BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(resolve_memtype(pAddr)), BX_READ, BX_IO_BITMAP_ACCESS, &bitmap[1]);
 
   Bit16u combined_bitmap = bitmap[1];
   combined_bitmap = (combined_bitmap << 8) | bitmap[0];
@@ -816,7 +850,7 @@ void BX_CPU_C::SvmInterceptIO(bxInstruction_c *i, unsigned port, unsigned len)
         break;
 
       default:
-        BX_PANIC(("VMexit_IO: I/O instruction %s unknown", i->getIaOpcodeName()));
+        BX_PANIC(("VMexit_IO: I/O instruction %s unknown", i->getIaOpcodeNameShort()));
     }
 
     qualification |= (port << 16);
@@ -858,8 +892,9 @@ void BX_CPU_C::SvmInterceptMSR(unsigned op, Bit32u msr)
     Bit32u msr_offset = (msr & 0x1fff) * 2 + op;
 
     Bit8u msr_bitmap;
-    access_read_physical(msr_bitmap_addr + (msr_offset / 8), 1, (Bit8u*)(&msr_bitmap));
-    BX_NOTIFY_PHY_MEMORY_ACCESS(msr_bitmap_addr + (msr_offset / 8), 1, BX_READ, BX_MSR_BITMAP_ACCESS, &msr_bitmap);
+    bx_phy_address pAddr = msr_bitmap_addr + (msr_offset / 8);
+    access_read_physical(pAddr, 1, (Bit8u*)(&msr_bitmap));
+    BX_NOTIFY_PHY_MEMORY_ACCESS(pAddr, 1, MEMTYPE(resolve_memtype(pAddr)), BX_READ, BX_MSR_BITMAP_ACCESS, &msr_bitmap);
 
     vmexit = (msr_bitmap >> (msr_offset & 7)) & 0x1;
   }
@@ -901,16 +936,29 @@ void BX_CPU_C::SvmInterceptTaskSwitch(Bit16u tss_selector, unsigned source, bx_b
   Svm_Vmexit(SVM_VMEXIT_TASK_SWITCH, tss_selector, qualification);
 }
 
+void BX_CPU_C::SvmInterceptPAUSE(void)
+{
+  if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_PAUSE_FILTER)) {
+    SVM_CONTROLS *ctrls = &BX_CPU_THIS_PTR vmcb.ctrls;
+    if (ctrls->pause_filter_count) {
+      ctrls->pause_filter_count--;
+      return;
+    }
+  }
+
+  Svm_Vmexit(SVM_VMEXIT_PAUSE);
+}
+
 #endif
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMRUN(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMRUN(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("VMRUN with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -920,12 +968,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMRUN(bxInstruction_c *i)
   }
 
   bx_address pAddr = RAX & i->asize_mask();
-  if ((pAddr & 0xfff) != 0 || ! IsValidPhyAddr(pAddr)) {
+  if (! IsValidPageAlignedPhyAddr(pAddr)) {
     BX_ERROR(("VMRUN: invalid or not page aligned VMCB physical address !"));
     exception(BX_GP_EXCEPTION, 0);
   }
   BX_CPU_THIS_PTR vmcbptr = pAddr;
   BX_CPU_THIS_PTR vmcbhostptr = BX_CPU_THIS_PTR getHostMemAddr(pAddr, BX_WRITE);
+#if BX_SUPPORT_MEMTYPE
+  BX_CPU_THIS_PTR vmcb_memtype = resolve_memtype(BX_CPU_THIS_PTR vmcbptr);
+#endif
 
   BX_DEBUG(("VMRUN VMCB ptr: 0x" FMT_ADDRX64, BX_CPU_THIS_PTR vmcbptr));
 
@@ -948,6 +999,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMRUN(bxInstruction_c *i)
 
   BX_CPU_THIS_PTR in_svm_guest = 1;
   BX_CPU_THIS_PTR svm_gif = 1;
+  BX_CPU_THIS_PTR async_event = 1;
 
   //
   // Step 4: Inject events to the guest
@@ -959,7 +1011,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMRUN(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMMCALL(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMMCALL(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR efer.get_SVME()) {
@@ -974,14 +1026,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMMCALL(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMLOAD(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMLOAD(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("VMLOAD with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -990,7 +1042,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMLOAD(bxInstruction_c *i)
   }
 
   bx_address pAddr = RAX & i->asize_mask();
-  if ((pAddr & 0xfff) != 0 || ! IsValidPhyAddr(pAddr)) {
+  if (! IsValidPageAlignedPhyAddr(pAddr)) {
     BX_ERROR(("VMLOAD: invalid or not page aligned VMCB physical address !"));
     exception(BX_GP_EXCEPTION, 0);
   }
@@ -1011,11 +1063,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMLOAD(bxInstruction_c *i)
   BX_CPU_THIS_PTR tr = guest_tr;
   BX_CPU_THIS_PTR ldtr = guest_ldtr;
 
-  MSR_KERNELGSBASE = CanonicalizeAddress(vmcb_read64(SVM_GUEST_KERNEL_GSBASE_MSR));
-  MSR_STAR = vmcb_read64(SVM_GUEST_STAR_MSR);
-  MSR_LSTAR = CanonicalizeAddress(vmcb_read64(SVM_GUEST_LSTAR_MSR));
-  MSR_CSTAR = CanonicalizeAddress(vmcb_read64(SVM_GUEST_CSTAR_MSR));
-  MSR_FMASK = vmcb_read64(SVM_GUEST_SFMASK_MSR);
+  BX_CPU_THIS_PTR msr.kernelgsbase = CanonicalizeAddress(vmcb_read64(SVM_GUEST_KERNEL_GSBASE_MSR));
+  BX_CPU_THIS_PTR msr.star = vmcb_read64(SVM_GUEST_STAR_MSR);
+  BX_CPU_THIS_PTR msr.lstar = CanonicalizeAddress(vmcb_read64(SVM_GUEST_LSTAR_MSR));
+  BX_CPU_THIS_PTR msr.cstar = CanonicalizeAddress(vmcb_read64(SVM_GUEST_CSTAR_MSR));
+  BX_CPU_THIS_PTR msr.fmask = vmcb_read64(SVM_GUEST_FMASK_MSR);
 
   BX_CPU_THIS_PTR msr.sysenter_cs_msr = vmcb_read64(SVM_GUEST_SYSENTER_CS_MSR);
   BX_CPU_THIS_PTR msr.sysenter_eip_msr = CanonicalizeAddress(vmcb_read64(SVM_GUEST_SYSENTER_EIP_MSR));
@@ -1025,14 +1077,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMLOAD(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMSAVE(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMSAVE(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("VMSAVE with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1041,7 +1093,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMSAVE(bxInstruction_c *i)
   }
 
   bx_address pAddr = RAX & i->asize_mask();
-  if ((pAddr & 0xfff) != 0 || ! IsValidPhyAddr(pAddr)) {
+  if (! IsValidPageAlignedPhyAddr(pAddr)) {
     BX_ERROR(("VMSAVE: invalid or not page aligned VMCB physical address !"));
     exception(BX_GP_EXCEPTION, 0);
   }
@@ -1055,11 +1107,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMSAVE(bxInstruction_c *i)
   svm_segment_write(&BX_CPU_THIS_PTR tr, SVM_GUEST_TR_SELECTOR);
   svm_segment_write(&BX_CPU_THIS_PTR ldtr, SVM_GUEST_LDTR_SELECTOR);
 
-  vmcb_write64(SVM_GUEST_KERNEL_GSBASE_MSR, MSR_KERNELGSBASE);
-  vmcb_write64(SVM_GUEST_STAR_MSR, MSR_STAR);
-  vmcb_write64(SVM_GUEST_LSTAR_MSR, MSR_LSTAR);
-  vmcb_write64(SVM_GUEST_CSTAR_MSR, MSR_CSTAR);
-  vmcb_write64(SVM_GUEST_SFMASK_MSR, MSR_FMASK);
+  vmcb_write64(SVM_GUEST_KERNEL_GSBASE_MSR, BX_CPU_THIS_PTR msr.kernelgsbase);
+  vmcb_write64(SVM_GUEST_STAR_MSR, BX_CPU_THIS_PTR msr.star);
+  vmcb_write64(SVM_GUEST_LSTAR_MSR, BX_CPU_THIS_PTR msr.lstar);
+  vmcb_write64(SVM_GUEST_CSTAR_MSR, BX_CPU_THIS_PTR msr.cstar);
+  vmcb_write64(SVM_GUEST_FMASK_MSR, BX_CPU_THIS_PTR msr.fmask);
 
   vmcb_write64(SVM_GUEST_SYSENTER_CS_MSR, BX_CPU_THIS_PTR msr.sysenter_cs_msr);
   vmcb_write64(SVM_GUEST_SYSENTER_ESP_MSR, BX_CPU_THIS_PTR msr.sysenter_esp_msr);
@@ -1069,14 +1121,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMSAVE(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SKINIT(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SKINIT(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("SKINIT with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1090,14 +1142,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SKINIT(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLGI(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLGI(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("CLGI with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1106,20 +1158,19 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLGI(bxInstruction_c *i)
   }
 
   BX_CPU_THIS_PTR svm_gif = 0;
-  BX_CPU_THIS_PTR async_event = 1;
 #endif
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::STGI(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::STGI(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("STGI with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1134,14 +1185,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::STGI(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVLPGA(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INVLPGA(bxInstruction_c *i)
 {
 #if BX_SUPPORT_SVM
   if (! protected_mode() || ! BX_CPU_THIS_PTR efer.get_SVME())
     exception(BX_UD_EXCEPTION, 0);
 
   if (CPL != 0) {
-    BX_ERROR(("INVLPGA with CPL != 0"));
+    BX_ERROR(("%s: with CPL!=0 cause #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1158,7 +1209,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INVLPGA(bxInstruction_c *i)
 #if BX_SUPPORT_SVM
 void BX_CPU_C::register_svm_state(bx_param_c *parent)
 {
-  if (! bx_cpuid_support_svm()) return;
+  if (! is_cpu_extension_supported(BX_ISA_SVM)) return;
 
   // register SVM state for save/restore param tree
   bx_list_c *svm = new bx_list_c(parent, "SVM");
@@ -1186,7 +1237,6 @@ void BX_CPU_C::register_svm_state(bx_param_c *parent)
   BXRS_HEX_PARAM_FIELD(vmcb_ctrls, eventinj, BX_CPU_THIS_PTR vmcb.ctrls.eventinj);
 
   BXRS_HEX_PARAM_FIELD(vmcb_ctrls, v_tpr, BX_CPU_THIS_PTR vmcb.ctrls.v_tpr);
-  BXRS_PARAM_BOOL(vmcb_ctrls, v_irq, BX_CPU_THIS_PTR vmcb.ctrls.v_irq);
   BXRS_HEX_PARAM_FIELD(vmcb_ctrls, v_intr_prio, BX_CPU_THIS_PTR vmcb.ctrls.v_intr_prio);
   BXRS_PARAM_BOOL(vmcb_ctrls, v_ignore_tpr, BX_CPU_THIS_PTR vmcb.ctrls.v_ignore_tpr);
   BXRS_PARAM_BOOL(vmcb_ctrls, v_intr_masking, BX_CPU_THIS_PTR vmcb.ctrls.v_intr_masking);
@@ -1202,7 +1252,7 @@ void BX_CPU_C::register_svm_state(bx_param_c *parent)
 
   for(unsigned n=0; n<4; n++) {
     bx_segment_reg_t *segment = &BX_CPU_THIS_PTR vmcb.host_state.sregs[n];
-    bx_list_c *sreg = new bx_list_c(host, svm_segname[n]);
+    bx_list_c *sreg = new bx_list_c(host, segname[n]);
     BXRS_HEX_PARAM_FIELD(sreg, selector, segment->selector.value);
     BXRS_HEX_PARAM_FIELD(sreg, valid, segment->cache.valid);
     BXRS_PARAM_BOOL(sreg, p, segment->cache.p);

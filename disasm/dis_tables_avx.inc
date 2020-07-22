@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_tables_avx.inc 11330 2012-08-09 13:11:25Z sshwarts $
+// $Id: dis_tables_avx.inc 13416 2017-12-28 20:20:13Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2011 Stanislav Shwartsman
@@ -50,25 +50,19 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f12[4] = {
   /* F2 */ { 0, &Ia_vmovddup_Vdq_Wq }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f13[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f13[2] = {
   /* -- */ { 0, &Ia_vmovlps_Mq_Vps },
-  /* 66 */ { 0, &Ia_vmovlpd_Mq_Vpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vmovlpd_Mq_Vpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f14[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f14[2] = {
   /* -- */ { 0, &Ia_vunpcklps_Vps_Hps_Wps },
-  /* 66 */ { 0, &Ia_vunpcklpd_Vpd_Hpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vunpcklpd_Vpd_Hpd_Wpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f15[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f15[2] = {
   /* -- */ { 0, &Ia_vunpckhps_Vps_Hps_Wps },
-  /* 66 */ { 0, &Ia_vunpckhpd_Vpd_Hpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vunpckhpd_Vpd_Hpd_Wpd }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupModVMOVLHPS[2] = {
@@ -83,25 +77,19 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f16[4] = {
   /* F2 */ { 0, &Ia_Invalid }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f17[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f17[2] = {
   /* -- */ { 0, &Ia_vmovhps_Mq_Vps },
-  /* 66 */ { 0, &Ia_vmovhpd_Mq_Vpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vmovhpd_Mq_Vpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f28[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f28[2] = {
   /* -- */ { 0, &Ia_vmovaps_Vps_Wps },
-  /* 66 */ { 0, &Ia_vmovapd_Vpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vmovapd_Vpd_Wpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f29[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f29[2] = {
   /* -- */ { 0, &Ia_vmovaps_Wps_Vps },
-  /* 66 */ { 0, &Ia_vmovapd_Wpd_Vpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vmovapd_Wpd_Vpd }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2a[4] = {
@@ -111,11 +99,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2a[4] = {
   /* F2 */ { 0, &Ia_vcvtsi2sd_Vsd_Hpd_Ey }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2b[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2b[2] = {
   /* -- */ { 0, &Ia_vmovntps_Mps_Vps },
-  /* 66 */ { 0, &Ia_vmovntpd_Mpd_Vpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vmovntpd_Mpd_Vpd }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2c[4] = {
@@ -132,25 +118,19 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2d[4] = {
   /* F2 */ { 0, &Ia_vcvtsd2si_Gy_Wsd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2e[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2e[2] = {
   /* -- */ { 0, &Ia_vucomiss_Vss_Wss },
-  /* 66 */ { 0, &Ia_vucomisd_Vsd_Wsd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vucomisd_Vsd_Wsd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2f[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f2f[2] = {
   /* -- */ { 0, &Ia_vcomiss_Vss_Wss },
-  /* 66 */ { 0, &Ia_vcomisd_Vsd_Wsd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vcomisd_Vsd_Wsd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f50[4] = {
-  /* -- */ { 0, &Ia_vmovmskps_Gd_Vps },
-  /* 66 */ { 0, &Ia_vmovmskpd_Gd_Vpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f50[2] = {
+  /* -- */ { 0, &Ia_vmovmskps_Gd_Ups },
+  /* 66 */ { 0, &Ia_vmovmskpd_Gd_Upd }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f51[4] = {
@@ -174,32 +154,24 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f53[4] = {
   /* F2 */ { 0, &Ia_Invalid }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f54[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f54[2] = {
   /* -- */ { 0, &Ia_vandps_Vps_Hps_Wps },
-  /* 66 */ { 0, &Ia_vandpd_Vpd_Hpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vandpd_Vpd_Hpd_Wpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f55[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f55[2] = {
   /* -- */ { 0, &Ia_vandnps_Vps_Hps_Wps },
-  /* 66 */ { 0, &Ia_vandnpd_Vpd_Hpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vandnpd_Vpd_Hpd_Wpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f56[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f56[2] = {
   /* -- */ { 0, &Ia_vorps_Vps_Hps_Wps },
-  /* 66 */ { 0, &Ia_vorpd_Vpd_Hpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vorpd_Vpd_Hpd_Wpd }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f57[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f57[2] = {
   /* -- */ { 0, &Ia_vxorps_Vps_Hps_Wps },
-  /* 66 */ { 0, &Ia_vxorpd_Vpd_Hpd_Wpd },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vxorpd_Vpd_Hpd_Wpd }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f58[4] = {
@@ -277,11 +249,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f70[4] = {
   /* F2 */ { 0, &Ia_vpshuflw_Vdq_Hdq_Wdq_Ib }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f77[4] = {
-  /* -- */ { 0, &Ia_vzeroupper },
-  /* 66 */ { 0, &Ia_Invalid },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+static BxDisasmOpcodeTable_t BxDisasmGrpVexL_0f77[4] = {
+  /* 128 */ { GRPSSENONE(Ia_vzeroupper) },
+  /* 256 */ { GRPSSENONE(Ia_vzeroall) }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0f7c[4] = {
@@ -324,11 +294,9 @@ static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0fc2[4] = {
   /* F2 */ { 0, &Ia_vcmpsd_Vsd_Hpd_Wsd_Ib }
 };
 
-static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0fc6[4] = {
+static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0fc6[2] = {
   /* -- */ { 0, &Ia_vshufps_Vps_Hps_Wps_Ib },
-  /* 66 */ { 0, &Ia_vshufpd_Vpd_Hpd_Wpd_Ib },
-  /* F3 */ { 0, &Ia_Invalid },
-  /* F2 */ { 0, &Ia_Invalid }
+  /* 66 */ { 0, &Ia_vshufpd_Vpd_Hpd_Wpd_Ib }
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGroupAVX_0fd0[4] = {
@@ -434,7 +402,7 @@ static BxDisasmOpcodeTable_t BxDisasmGrpVexW_0f388c[2] = {
 };
 
 static BxDisasmOpcodeTable_t BxDisasmGrpVexW_0f388e[2] = {
-  /* 0 */ { GRPSSE66(Ia_vmaskmovq_Mdq_Hdq_Vdq) },
+  /* 0 */ { GRPSSE66(Ia_vmaskmovd_Mdq_Hdq_Vdq) },
   /* 1 */ { GRPSSE66(Ia_vmaskmovq_Mdq_Hdq_Vdq) }
 };
 
@@ -759,11 +727,11 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* 10 */ { GRPAVX(0f10) },
   /* 11 */ { GRPAVX(0f11) },
   /* 12 */ { GRPAVX(0f12) },
-  /* 13 */ { GRPAVX(0f13) },
-  /* 14 */ { GRPAVX(0f14) },
-  /* 15 */ { GRPAVX(0f15) },
+  /* 13 */ { GRPAVX2(0f13) },
+  /* 14 */ { GRPAVX2(0f14) },
+  /* 15 */ { GRPAVX2(0f15) },
   /* 16 */ { GRPAVX(0f16) },
-  /* 17 */ { GRPAVX(0f17) },
+  /* 17 */ { GRPAVX2(0f17) },
   /* 18 */ { 0, &Ia_Invalid },
   /* 19 */ { 0, &Ia_Invalid },
   /* 1A */ { 0, &Ia_Invalid },
@@ -780,14 +748,14 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* 25 */ { 0, &Ia_Invalid },
   /* 26 */ { 0, &Ia_Invalid },
   /* 27 */ { 0, &Ia_Invalid },
-  /* 28 */ { GRPAVX(0f28) },
-  /* 29 */ { GRPAVX(0f29) },
+  /* 28 */ { GRPAVX2(0f28) },
+  /* 29 */ { GRPAVX2(0f29) },
   /* 2A */ { GRPAVX(0f2a) },
-  /* 2B */ { GRPAVX(0f2b) },
+  /* 2B */ { GRPAVX2(0f2b) },
   /* 2C */ { GRPAVX(0f2c) },
   /* 2C */ { GRPAVX(0f2d) },
-  /* 2E */ { GRPAVX(0f2e) },
-  /* 2F */ { GRPAVX(0f2f) },
+  /* 2E */ { GRPAVX2(0f2e) },
+  /* 2F */ { GRPAVX2(0f2f) },
   /* 30 */ { 0, &Ia_Invalid },
   /* 31 */ { 0, &Ia_Invalid },
   /* 32 */ { 0, &Ia_Invalid },
@@ -820,14 +788,14 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* 4D */ { 0, &Ia_Invalid },
   /* 4E */ { 0, &Ia_Invalid },
   /* 4F */ { 0, &Ia_Invalid },
-  /* 50 */ { GRPAVX(0f50) },
+  /* 50 */ { GRPAVX2(0f50) },
   /* 51 */ { GRPAVX(0f51) },
   /* 52 */ { GRPAVX(0f52) },
   /* 53 */ { GRPAVX(0f53) },
-  /* 54 */ { GRPAVX(0f54) },
-  /* 55 */ { GRPAVX(0f55) },
-  /* 56 */ { GRPAVX(0f56) },
-  /* 57 */ { GRPAVX(0f57) },
+  /* 54 */ { GRPAVX2(0f54) },
+  /* 55 */ { GRPAVX2(0f55) },
+  /* 56 */ { GRPAVX2(0f56) },
+  /* 57 */ { GRPAVX2(0f57) },
   /* 58 */ { GRPAVX(0f58) },
   /* 59 */ { GRPAVX(0f59) },
   /* 5A */ { GRPAVX(0f5a) },
@@ -859,7 +827,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* 74 */ { GRPSSE66(Ia_vpcmpeqb_Vdq_Hdq_Wdq) },
   /* 75 */ { GRPSSE66(Ia_vpcmpeqw_Vdq_Hdq_Wdq) },
   /* 76 */ { GRPSSE66(Ia_vpcmpeqd_Vdq_Hdq_Wdq) },
-  /* 77 */ { GRPAVX(0f77) },
+  /* 77 */ { GRPVEXL(0f77) },
   /* 78 */ { 0, &Ia_Invalid },
   /* 79 */ { 0, &Ia_Invalid },
   /* 7A */ { 0, &Ia_Invalid },
@@ -938,7 +906,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* C3 */ { 0, &Ia_Invalid },
   /* C4 */ { GRPSSE66(Ia_vpinsrw_Vdq_Hdq_Ew_Ib) },
   /* C5 */ { GRPSSE66(Ia_vpextrw_Gd_Udq_Ib) },
-  /* C6 */ { GRPAVX(0fc6) },
+  /* C6 */ { GRPAVX2(0fc6) },
   /* C7 */ { 0, &Ia_Invalid },
   /* C8 */ { 0, &Ia_Invalid },
   /* C9 */ { 0, &Ia_Invalid },
@@ -1244,7 +1212,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* F3 */ { GRPN(AVXG17) },
   /* F4 */ { 0, &Ia_Invalid },
   /* F5 */ { GRPAVX(0f38f5) },
-  /* F6 */ { GRPSSEF3(Ia_mulx_By_Gy_Ey) },
+  /* F6 */ { GRPSSEF2(Ia_mulx_By_Gy_Ey) },
   /* F7 */ { GRPAVX(0f38f7) },
   /* F8 */ { 0, &Ia_Invalid },
   /* F9 */ { 0, &Ia_Invalid },
@@ -1288,7 +1256,7 @@ static BxDisasmOpcodeTable_t BxDisasmOpcodesAVX[256*3] = {
   /* 1D */ { GRPSSE66(Ia_vcvtps2ph_Wq_Vps_Ib) },
   /* 1E */ { 0, &Ia_Invalid },
   /* 1F */ { 0, &Ia_Invalid },
-  /* 20 */ { GRPSSE66(Ia_vpinsrb_Vdq_Hdq_Ed_Ib) },
+  /* 20 */ { GRPSSE66(Ia_vpinsrb_Vdq_Hdq_Ew_Ib) },
   /* 21 */ { GRPSSE66(Ia_vinsertps_Vps_Hps_Wss_Ib) },
   /* 22 */ { GRPVEXW(0f3a22) },
   /* 23 */ { 0, &Ia_Invalid },

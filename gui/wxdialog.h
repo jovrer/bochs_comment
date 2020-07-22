@@ -1,6 +1,24 @@
 ////////////////////////////////////////////////////////////////////
-// $Id: wxdialog.h 11339 2012-08-15 12:47:08Z vruppert $
+// $Id: wxdialog.h 13010 2016-12-28 15:06:34Z vruppert $
 ////////////////////////////////////////////////////////////////////
+//
+//  Copyright (C) 2002-2016  The Bochs Project
+//
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
+/////////////////////////////////////////////////////////////////
 
 // wxWidgets dialogs for Bochs
 
@@ -12,18 +30,12 @@
 ////////////////////////////////////////////////////////////////////
 #define MSG_NO_HELP wxT("No help is available yet.")
 #define MSG_NO_HELP_CAPTION wxT("No help")
-#define MSG_ENABLED wxT("Enabled")
 #define BTNLABEL_HELP wxT("Help")
 #define BTNLABEL_CANCEL wxT("Cancel")
 #define BTNLABEL_OK wxT("Ok")
+#define BTNLABEL_CLOSE wxT("Close")
 #define BTNLABEL_CREATE_IMG wxT("Create Image")
 #define BTNLABEL_BROWSE wxT("<--Browse")
-#define BTNLABEL_DEBUG_CONTINUE wxT("Continue")
-#define BTNLABEL_DEBUG_STOP wxT("Stop")
-#define BTNLABEL_DEBUG_STEP wxT("Step")
-#define BTNLABEL_DEBUG_COMMIT wxT("Commit")
-#define BTNLABEL_CLOSE wxT("Close")
-#define BTNLABEL_EXECUTE wxT("Execute")
 
 #if defined(WIN32)
 // On win32, apparantly the spinctrl depends on a native control which only
@@ -41,7 +53,7 @@ void SetTextCtrl(wxTextCtrl *text, const char *format, int val);
 int GetTextCtrlInt(wxTextCtrl *text, bool *valid = NULL, bool complain=false, wxString complaint = wxT("Invalid integer!"));
 bool BrowseTextCtrl(wxTextCtrl *text,
     wxString prompt= wxT("Choose a file"),
-    long style=wxOPEN);
+    long style=wxFD_OPEN);
 wxChoice *makeLogOptionChoiceBox(wxWindow *parent, wxWindowID id, int evtype, bool includeNoChange = false);
 
 ////////////////////////////////////////////////////////////////////
@@ -151,6 +163,7 @@ private:
   wxButton *applyDefault;
   // 2d array of wxChoice pointers. Each wxChoice* is action[dev][type].
   wxChoice*  **action;
+  bool runtime;
 public:
   AdvancedLogOptionsDialog(wxWindow* parent, wxWindowID id);
   ~AdvancedLogOptionsDialog();
@@ -162,60 +175,9 @@ public:
   void CopyGuiToParam();
   void SetAction(int dev, int evtype, int act);
   int GetAction(int dev, int evtype);
+  void SetRuntimeFlag(bool val) { runtime = val; }
 DECLARE_EVENT_TABLE()
 };
-
-
-#if BX_DEBUGGER
-////////////////////////////////////////////////////////////////////////////
-// DebugLogDialog
-////////////////////////////////////////////////////////////////////////////
-// DebugLogDialog allows the user to decide how Bochs will
-// behave for each type of log event.
-//
-// +---- Debugger log ---------------------------------------+
-// |                                                         |
-// |  +--------------------------------------------------+   |
-// |  |(0) f000:fff0: ea5be000f0: jmp f000:e05b          |   |
-// |  |(0) 0010:00001868: 83fb10: cmp EBX, #10           |   |
-// |  |                                                  |   |
-// |  |                                                  |   |
-// |  |                                                  |   |
-// |  |                                                  |   |
-// |  +--------------------------------------------------+   |
-// |  Type a debugger command:                               |
-// |  +----------------------------------------+ +-------+   |
-// |  | step 1000                              | |Execute|   |
-// |  +----------------------------------------+ +-------+   |
-// |                                                         |
-// |                                              [ Close ]  |
-// +---------------------------------------------------------+
-class DebugLogDialog: public wxDialog
-{
-private:
-#define DEBUG_LOG_TITLE wxT("Debugger log")
-#define DEBUG_CMD_PROMPT wxT("Type a debugger command:")
-  wxBoxSizer *mainSizer, *commandSizer, *buttonSizer;
-  wxTextCtrl *log, *command;
-  Bit32u lengthMax;
-  Bit32u lengthTolerance;
-#define DEBUG_LOG_DEFAULT_LENGTH_MAX (400*80)
-#define DEBUG_LOG_DEFAULT_TOLERANCE (200*80)
-public:
-  DebugLogDialog(wxWindow* parent, wxWindowID id);
-  void Init();  // called automatically by ShowModal()
-  void OnEvent(wxCommandEvent& event);
-  void OnEnterEvent(wxCommandEvent& event) { Execute(true); }
-  void OnKeyEvent(wxKeyEvent& event);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void Execute(bool clearCommand);
-  void CheckLogLength();
-  void AppendCommand(const char *);
-  void AppendText(wxString text);
-  void CopyParamToGui() { /* empty for now */ }
-DECLARE_EVENT_TABLE()
-};
-#endif
 
 ////////////////////////////////////////////////////////////////////////////
 // PluginControlDialog
@@ -234,6 +196,29 @@ public:
   ~PluginControlDialog() {}
   void OnEvent(wxCommandEvent& event);
   int ShowModal() { Init(); return wxDialog::ShowModal(); }
+DECLARE_EVENT_TABLE()
+};
+
+////////////////////////////////////////////////////////////////////////////
+// LogViewDialog
+////////////////////////////////////////////////////////////////////////////
+class LogViewDialog: public wxDialog
+{
+private:
+  wxBoxSizer *mainSizer, *logSizer, *buttonSizer;
+  wxTextCtrl *log;
+  Bit32u lengthMax;
+  Bit32u lengthTolerance;
+#define LOG_VIEW_DEFAULT_LENGTH_MAX (400*80)
+#define LOG_VIEW_DEFAULT_TOLERANCE (200*80)
+  void CheckLogLength();
+public:
+  LogViewDialog(wxWindow* parent, wxWindowID id);
+  ~LogViewDialog() {}
+  void Init();
+  bool Show(bool val);
+  void AppendText(int level, wxString msg);
+  void OnEvent(wxCommandEvent& event);
 DECLARE_EVENT_TABLE()
 };
 
@@ -294,15 +279,12 @@ class ParamDialog: public wxDialog
 {
 private:
   void ShowHelp();
-  wxChoice *type;
-  wxTextCtrl *serialDelay, *pasteDelay, *mappingFile;
-  wxCheckBox *enableKeymap;
   int genId();
   bool isShowing;
   int nbuttons;
   bool runtime;
 protected:
-  wxBoxSizer *mainSizer, *buttonSizer;
+  wxBoxSizer *mainSizer, *buttonSizer, *infoSizer;
   // hash table that maps the ID of a wxWidgets control (e.g. wxChoice,
   // wxTextCtrl) to the associated ParamStruct object.  Data in the hash table
   // is of ParamStruct*.
@@ -370,21 +352,12 @@ class LogOptionsDialog : public ParamDialog
 private:
 #define LOG_OPTS_TITLE wxT("Configure Log Events")
 #define LOG_OPTS_PROMPT wxT("How should Bochs respond to each type of event?")
-#define LOG_OPTS_TYPE_NAMES { wxT("Debug events: "), wxT("Info events: "), wxT("Error events: "), wxT("Panic events: "), wxT("Pass events: ") }
-#define LOG_OPTS_N_TYPES 5
-#define LOG_OPTS_CHOICES { wxT("ignore"), wxT("log"), wxT("ask user"), wxT("end simulation"), wxT("no change") }
-#define LOG_OPTS_N_CHOICES_NORMAL 4
-#define LOG_OPTS_N_CHOICES 5   // number of choices, including "no change"
-#define LOG_OPTS_NO_CHANGE 4   // index of "no change"
-// normally all choices are available for all event types. The exclude
-// expression allows some choices to be eliminated if they don't make any
-// sense.  For example, it would be stupid to ignore a panic.
-#define LOG_OPTS_EXCLUDE(type,choice)  ( \
-   /* can't die or ask, on debug or info events */   \
-   (type <= 1 && (choice==2 || choice==3)) \
-   /* can't ignore panics or errors */ \
-   || (type >= 2 && choice==0) \
-   )
+#define LOG_OPTS_TYPE_NAMES { wxT("Debug events"), wxT("Info events"), wxT("Error events"), wxT("Panic events") }
+#define LOG_OPTS_N_TYPES 4
+#define LOG_OPTS_CHOICES { wxT("ignore"), wxT("log"), wxT("warn user"), wxT("ask user"), wxT("end simulation"), wxT("no change") }
+#define LOG_OPTS_N_CHOICES_NORMAL 5
+#define LOG_OPTS_N_CHOICES 6   // number of choices, including "no change"
+#define LOG_OPTS_NO_CHANGE 5   // index of "no change"
 #define LOG_OPTS_ADV wxT("For additional control over how each device responds to events, use the menu option \"Log ... By Device\".")
   wxFlexGridSizer *gridSizer;
   wxChoice *action[LOG_OPTS_N_TYPES];
@@ -392,101 +365,6 @@ public:
   LogOptionsDialog(wxWindow* parent, wxWindowID id);
   int GetAction(int evtype);
   void SetAction(int evtype, int action);
-  DECLARE_EVENT_TABLE()
-};
-
-////////////////////////////////////////////////////////////////////////////
-// CpuRegistersDialog
-////////////////////////////////////////////////////////////////////////////
-//
-// this would display the current values of all CPU registers, possibly you can
-// enable different groups like debug, FPU, MMX registers.  Certainly if you
-// interrupt the simulation, these would be updated.  we could update
-// periodically during simulation if it was useful.  If we get the debugger
-// integrated with wxwidgets, you could single step and update the cpu
-// registers, with regs that change marked in a different color.  Modeless
-// dialog.
-//
-// +--- CPU Registers ---------------------------------------+
-// |                                                         |
-// |  EAX 0x00000000   EIP    0xffff   LDTR 0x00000000       |
-// |  EBX 0x00000000   CS     0x0018   TR   0x00000000       |
-// |  ECX 0x00000000   SS     0x0018   GDTR 0x00000000       |
-// |  EDX 0x00000000   DS     0x0018    lim 0x00000000       |
-// |  EBP 0x00000000   ES     0x0018   IDTR 0x00000000       |
-// |  ESI 0x00000000   FS     0x0018    lim 0x00000000       |
-// |  EDI 0x00000000   GS     0x0018                         |
-// |  ESP 0x00000000   EFLAGS 0x0012                         |
-// |                                                         |
-// | ID AC VM RF NT IOPL CF PF AF ZF SF TF IF DF OF          |
-// | [] [] [] [] [] [0]  [] [] [] [] [] [] [] [] []          |
-// |                                                         |
-// | DR0 0x00000000   TR3 0x00000000  CR0 0x00000000         |
-// | DR1 0x00000000   TR4 0x00000000  CR1 0x00000000         |
-// | DR2 0x00000000   TR5 0x00000000  CR2 0x00000000         |
-// | DR3 0x00000000   TR6 0x00000000  CR3 0x00000000         |
-// | DR6 0x00000000   TR7 0x00000000  CR4 0x00000000         |
-// | DR7 0x00000000                                          |
-// |                                                         |
-// |      [Go]  [Stop]  [Step]  [Step N]  N=[____]           |
-// +---------------------------------------------------------+
-//
-// +--- CPU Extended Registers ------------------------------+
-// |                                                         |
-// |                                                         |
-// |      [Go]  [Stop]  [Step]  [Step N]  N=[____]           |
-// +---------------------------------------------------------+
-//
-class CpuRegistersDialog : public ParamDialog
-{
-
-#define CPU_REGS_MAIN_REGS1     \
-  { "EAX", "EBX", "ECX", "EDX", \
-    "EBP", "ESI", "EDI", "ESP", \
-    NULL }
-#define CPU_REGS_MAIN_REGS2     \
-  { "EIP", "CS", "SS", "DS",    \
-    "ES", "FS", "GS", "EFLAGS", \
-    NULL }
-#define CPU_REGS_MAIN_REGS3     \
-  { "LDTR", "TR",               \
-    "GDTR_base", "IDTR_limit",  \
-    "IDTR_base", "GDTR_limit",  \
-    NULL }
-#define CPU_REGS_FLAGS          \
-  { "ID", "VIP", "VIF",         \
-    "AC", "VM", "RF",           \
-    "NT", "IOPL", "OF",         \
-    "DF", "IF", "TF",           \
-    "SF", "ZF", "AF",           \
-    "PF", "CF", \
-    NULL }
-#define CPU_REGS_DEBUG_REGS     \
-  { "DR0", "DR1", "DR2",        \
-    "DR3", "DR6", "DR7",        \
-    NULL }
-#define CPU_REGS_TEST_REGS             \
-  { "TR3", "TR4", "TR5", "TR6", "TR7", \
-    NULL }
-#define CPU_REGS_CONTROL_REGS          \
-  { "CR0", "CR2", "CR3", "CR4", \
-    NULL  }
-
-  void Init();  // called automatically by ShowModal()
-  wxFlexGridSizer *mainRegsSizer, *flagsSizer, *extRegsSizer;
-#define CPU_REGS_MAX_FLAGS 17
-  bx_param_c *flagptr[CPU_REGS_MAX_FLAGS];
-  int nflags;
-#if BX_DEBUGGER
-  wxButton *contButton, *stopButton, *stepButton, *commitButton;
-#endif
-  void stateChanged(bool simRunning);
-public:
-  CpuRegistersDialog(wxWindow* parent, wxWindowID id);
-  int ShowModal() { Init(); return wxDialog::ShowModal(); }
-  void AddFlag(bx_param_c *param);
-  void OnEvent(wxCommandEvent& event);
-  virtual void CopyParamToGui();
   DECLARE_EVENT_TABLE()
 };
 
@@ -596,24 +474,6 @@ Or if you choose the CD-ROM, you get to edit the settings for it.
 |                                                     [Help] [Cancel] [Ok]  |
 +---------------------------------------------------------------------------+
 
-The CD-ROM media can still be configured during the simulation.  In this
-context we can just show the Media section.  The same code can be written to
-serve both purposes.  This is the dialog that would appear when you click the
-CD-ROM button on the toolbar at runtime.
-
-+-- CD-ROM Media -----------------------------+
-|                                             |
-|  Bochs can use a physical CD-ROM drive as   |
-|  the data source, or use an image file.     |
-|                                             |
-|   [X]  Ejected                              |
-|   [ ]  Physical CD-ROM drive /dev/cdrom     |
-|   [ ]  Disk image: [_____________] [Browse] |
-|                                             |
-|                                             |
-|                       [Help] [Cancel] [Ok]  |
-+---------------------------------------------+
-
 ////////////////////////////////////////////////////////////////////////////
 // ChooseConfigDialog
 ////////////////////////////////////////////////////////////////////////////
@@ -644,48 +504,6 @@ could grow.
 |    ??      Create new configuration                    |
 |                                                        |
 +--------------------------------------------------------+
-
-////////////////////////////////////////////////////////////////////////////
-// ChooseBootDialog
-////////////////////////////////////////////////////////////////////////////
-
-This dialog basically lets you choose which disk you want to boot: floppy A,
-disk c, or cdrom.  The boot selection could be as simple as
-+-------------------------------------------+
-|  Choose boot drive                        |
-|    [ ] Floppy A                           |
-|    [X] Hard Disk C                        |
-|    [ ] CD-ROM                             |
-|                [ Help ] [ Cancel ] [ Ok ] |
-+-------------------------------------------+
-or fancier with icons for the device types, and Edit buttons that
-let you go right to the configure screen for that disk drive.
-+---------------------------------------------------------------+
-|                                                               |
-|          /----+                                               |
-|          |=  =|   A Drive                             +----+  |
-| [    ]   | __ |   Raw Floppy Drive                    |Edit|  |
-|          ||  ||   A:                                  +----+  |
-|          ++--++                                               |
-|                                                               |
-|          /----+                                               |
-|          |=  =|   B Drive                             +----+  |
-| [    ]   | __ |   Floppy Disk Image                   |Edit|  |
-|          ||  ||   C:\Bochs\Images\A.img               +----+  |
-|          ++--++                                               |
-|                                                               |
-|          +-----+  C Drive                                     |
-|          |=====|  Hard Disk Image                     +----+  |
-| [BOOT]   |    o|  C:\Bochs\Images\HD30meg.img         |Edit|  |
-|          +-----+                                      +----+  |
-|                                                               |
-|            ___                                                |
-|           /   \   D Drive                             +----+  |
-| [    ]   |  O  |  ISO CD Image                        |Edit|  |
-|           \___/   C:\Bochs\Images\BootCD.img          +----+  |
-|                                                               |
-|                                    [ Help ] [ Cancel ] [ Ok ] |
-+---------------------------------------------------------------+
 
 ////////////////////////////////////////////////////////////////////////////
 // KeymappingDialog

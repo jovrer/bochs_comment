@@ -1,5 +1,23 @@
 /////////////////////////////////////////////////////////////////
-// $Id: wxmain.h 11339 2012-08-15 12:47:08Z vruppert $
+// $Id: wxmain.h 13250 2017-06-03 14:32:56Z vruppert $
+/////////////////////////////////////////////////////////////////
+//
+//  Copyright (C) 2002-2017  The Bochs Project
+//
+//  This library is free software; you can redistribute it and/or
+//  modify it under the terms of the GNU Lesser General Public
+//  License as published by the Free Software Foundation; either
+//  version 2 of the License, or (at your option) any later version.
+//
+//  This library is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+//  Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public
+//  License along with this library; if not, write to the Free Software
+//  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301 USA
+//
 /////////////////////////////////////////////////////////////////
 
 // This file defines variables and classes that the wxWidgets .cc files
@@ -11,9 +29,7 @@ class MyFrame;
 class MyPanel;
 class SimThread;
 class ParamDialog;
-#if BX_DEBUGGER
-class DebugLogDialog;
-#endif
+class LogViewDialog;
 
 //hack alert; yuck; FIXME
 extern MyFrame *theFrame;
@@ -56,8 +72,6 @@ enum
   ID_Simulate_Start,
   ID_Simulate_PauseResume,
   ID_Simulate_Stop,
-  ID_Debug_ShowCpu,
-  ID_Debug_Console,
   ID_Log_View,
   ID_Log_Prefs,
   ID_Log_PrefsDevice,
@@ -69,7 +83,6 @@ enum
   ID_Toolbar_Copy,
   ID_Toolbar_Paste,
   ID_Toolbar_Snapshot,
-  ID_Toolbar_Config,
   ID_Toolbar_Mouse_en,
   ID_Toolbar_User,
   ID_Toolbar_SaveRestore,
@@ -139,11 +152,11 @@ public:
   void OnTimer(wxTimerEvent& event);
   void OnPaint(wxPaintEvent& event);
   void OnMouse(wxMouseEvent& event);
+  void OnKillFocus(wxFocusEvent& event);
   void MyRefresh();
   static void OnPluginInit();
   void ToggleMouse(bool fromToolbar);
 private:
-  wxCursor *blankCursor;
   bool needRefresh;
   wxTimer refreshTimer;
   Bit16s mouseSavedX, mouseSavedY;
@@ -168,9 +181,10 @@ public:
   void OnAbout(wxCommandEvent& event);
   void OnStartSim(wxCommandEvent& event);
   void OnPauseResumeSim(wxCommandEvent& event);
+  bx_bool SimThreadControl(bx_bool resume);
   void OnKillSim(wxCommandEvent& event);
   void OnSim2CIEvent(wxCommandEvent& event);
-  void OnLogMsg(BxEvent *logMsgEvent);
+  void OnLogDlg(BxEvent *be);
   void OnEditPluginCtrl(wxCommandEvent& event);
   void OnEditCPU(wxCommandEvent& event);
   void OnEditCPUID(wxCommandEvent& event);
@@ -186,14 +200,8 @@ public:
   void OnEditOther(wxCommandEvent& event);
   void OnLogPrefs(wxCommandEvent& event);
   void OnLogPrefsDevice(wxCommandEvent& event);
+  void OnLogView(wxCommandEvent& event);
   void OnEditATA(wxCommandEvent& event);
-  void OnShowCpu(wxCommandEvent& event);
-#if BX_DEBUGGER
-  void OnDebugLog(wxCommandEvent& event);
-  void DebugBreak();
-  void DebugCommand(wxString string);
-  void DebugCommand(const char *cmd);
-#endif
   void editFloppyConfig(int drive);
   void editFirstCdrom();
   void OnToolbarClick(wxCommandEvent& event);
@@ -204,6 +212,9 @@ public:
   void OnSimThreadExit();
   SimThread *GetSimThread() { return sim_thread; }
 
+  void UpdateToolBar(bool simPresent);
+  void SetToolBarHelp(int id, wxString& text);
+
 private:
   wxCriticalSection sim_thread_lock;
   SimThread *sim_thread; // get the lock before accessing sim_thread
@@ -211,19 +222,11 @@ private:
   wxMenu *menuConfiguration;
   wxMenu *menuEdit;
   wxMenu *menuSimulate;
-  wxMenu *menuDebug;
   wxMenu *menuLog;
   wxMenu *menuHelp;
   wxToolBar *bxToolBar;
-  ParamDialog *showCpu, *showKbd;
-#if BX_DEBUGGER
-  DebugLogDialog *showDebugLog;
-#endif
-  void RefreshDialogs();
-  char *debugCommand; // maybe need lock on this
-  BxEvent *debugCommandEvent;  // maybe need lock on this
+  LogViewDialog *showLogView;
 public:
-  bool WantRefresh();
 
 DECLARE_EVENT_TABLE()
 };

@@ -1,10 +1,11 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pcidev.cc 10961 2012-01-09 17:15:03Z vruppert $
+// $Id: pcidev.cc 13497 2018-05-01 15:54:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
  *  PCIDEV: PCI host device mapping
- *  Copyright (C) 2003 - Frank Cornelis
+ *  Copyright (C) 2003       Frank Cornelis
+ *  Copyright (C) 2003-2018  The Bochs Project
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -69,7 +70,7 @@ void pcidev_init_options(void)
   pcidid->set_format("0x%04x");
   pcidid->set_long_format("PCI Device ID: 0x%04x");
   pcidev->set_options(pcidev->SHOW_PARENT | pcidev->USE_BOX_TITLE);
-  bx_list_c *deplist = ((bx_param_bool_c*)SIM->get_param(BXPN_I440FX_SUPPORT))->get_dependent_list();
+  bx_list_c *deplist = ((bx_param_bool_c*)SIM->get_param(BXPN_PCI_ENABLED))->get_dependent_list();
   deplist->add(pcidev);
   deplist->add(pcivid);
   deplist->add(pcidid);
@@ -114,7 +115,7 @@ Bit32s pcidev_options_save(FILE *fp)
 
 // device plugin entry points
 
-int libpcidev_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libpcidev_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   thePciDevAdapter = new bx_pcidev_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, thePciDevAdapter, BX_PLUGIN_PCIDEV);
@@ -125,7 +126,7 @@ int libpcidev_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, cha
   return 0; // Success
 }
 
-void libpcidev_LTX_plugin_fini(void)
+void CDECL libpcidev_LTX_plugin_fini(void)
 {
   SIM->unregister_addon_option("pcidev");
   bx_list_c *menu = (bx_list_c*)SIM->get_param("network");
@@ -137,7 +138,7 @@ void libpcidev_LTX_plugin_fini(void)
 
 bx_pcidev_c::bx_pcidev_c()
 {
-  put("pcidev", "PCI2H");
+  put("PCIDEV");
 }
 
 bx_pcidev_c::~bx_pcidev_c()
@@ -383,6 +384,7 @@ void bx_pcidev_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len
   if (fd == -1)
     return;
 
+  BX_DEBUG_PCI_WRITE(address, value, io_len);
   // we do a host 2 guest irq line mapping
   if (address == PCI_INTERRUPT_LINE) {
     value &= 0xff;
@@ -436,7 +438,7 @@ void bx_pcidev_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len
       /*
        * Remap our I/O port handlers here.
        */
-      iomask = (Bit8u*)malloc(BX_PCIDEV_THIS regions[io_reg_idx].size);
+      iomask = new Bit8u[BX_PCIDEV_THIS regions[io_reg_idx].size];
       memset(iomask, 7, BX_PCIDEV_THIS regions[io_reg_idx].size);
       if (DEV_pci_set_base_io(&(BX_PCIDEV_THIS regions[io_reg_idx]),
             read_handler, write_handler,
@@ -446,7 +448,7 @@ void bx_pcidev_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len
         BX_INFO(("new base #%d i/o address: 0x%04x", io_reg_idx,
                  (Bit16u)BX_PCIDEV_THIS regions[io_reg_idx].start));
       }
-      free(iomask);
+      delete [] iomask;
     }
     return;
   }

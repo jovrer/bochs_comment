@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmfunc.cc 11301 2012-07-27 08:13:39Z sshwarts $
+// $Id: vmfunc.cc 13466 2018-02-16 07:57:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2018 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -26,7 +26,7 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::VMFUNC(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::VMFUNC(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX >= 2
   if (! BX_CPU_THIS_PTR in_vmx_guest || ! SECONDARY_VMEXEC_CONTROL(VMX_VM_EXEC_CTRL3_VMFUNC_ENABLE))
@@ -80,5 +80,10 @@ void BX_CPU_C::vmfunc_eptp_switching(void)
   vm->eptptr = temp_eptp;
   VMwrite64(VMCS_64BIT_CONTROL_EPTPTR, temp_eptp);
   TLB_flush();
+
+  if (BX_SUPPORT_VMX_EXTENSION(BX_VMX_EPT_EXCEPTION)) {
+    vm->eptp_index = eptp_list_entry /* & 0xffff */ /* not needed because eptp_list_entry < 512 */;
+    VMwrite16(VMCS_16BIT_CONTROL_EPTP_INDEX, vm->eptp_index);
+  }
 }
 #endif

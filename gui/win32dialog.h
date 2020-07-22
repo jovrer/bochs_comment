@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32dialog.h 10241 2011-03-04 20:39:54Z sshwarts $
+// $Id: win32dialog.h 12381 2014-06-20 09:31:56Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2009  The Bochs Project
+//  Copyright (C) 2009-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -41,7 +41,7 @@ extern "C" {
 #include <ctype.h>
 }
 
-#if BX_USE_TEXTCONFIG && defined(WIN32)
+#if BX_USE_WIN32CONFIG
 
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
 void InitDebugDialog();

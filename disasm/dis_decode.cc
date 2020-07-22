@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_decode.cc 11327 2012-08-08 20:11:27Z sshwarts $
+// $Id: dis_decode.cc 13417 2017-12-28 20:52:46Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2011 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -70,13 +70,13 @@ static const unsigned char instruction_has_modrm[512] = {
   /*       0 1 2 3 4 5 6 7 8 9 a b c d e f           */
 };
 
-unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+unsigned disassembler::disasm(bx_bool is_32, bx_bool is_64, bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
 {
-  x86_insn insn = decode(is_32, is_64, base, ip, instr, disbuf);
+  x86_insn insn = decode(is_32, is_64, cs_base, ip, instr, disbuf);
   return insn.ilen;
 }
 
-x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
+x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
 {
   if (is_64) is_32 = 1;
   x86_insn insn(is_32, is_64);
@@ -84,7 +84,7 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
   resolve_modrm = NULL;
 
   db_eip = ip;
-  db_base = base; // cs linear base (base for PM & cs<<4 for RM & VM)
+  db_cs_base = cs_base; // cs linear base (cs_base for PM & cs<<4 for RM & VM)
 
   disbufptr = disbuf; // start sprintf()'ing into beginning of buffer
 
@@ -92,7 +92,7 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 #define SSE_PREFIX_66   1
 #define SSE_PREFIX_F3   2
 #define SSE_PREFIX_F2   3      /* only one SSE prefix could be used */
-  unsigned sse_prefix = SSE_PREFIX_NONE, sse_opcode = 0;
+  unsigned sse_prefix = SSE_PREFIX_NONE, rep_opcode = 0;
   unsigned rex_prefix = 0, prefixes = 0;
 
   for(;;)
@@ -213,6 +213,22 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
     else
       entry = BxDisasmOpcodesAVX + (insn.b1 - 256);
   }
+/*
+  if (insn.b1== 0x62 && (is_64 || (peek_byte() & 0xc0) == 0xc0))
+  {
+    if (sse_prefix)
+      dis_sprintf("(bad evex+rex prefix) ");
+    if (rex_prefix)
+      dis_sprintf("(bad evex+sse prefix) ");
+
+    // decode 0x62 EVEX prefix
+    sse_prefix = decode_evex(&insn);
+    if (insn.b1 < 256 || insn.b1 >= 1024)
+      entry = &BxDisasmGroupSSE_ERR[0];
+//  else
+//    entry = BxDisasmOpcodesEVEX + (insn.b1 - 256);
+  }
+*/
   else if (insn.b1 == 0x8f && (is_64 || (peek_byte() & 0xc0) == 0xc0) && (peek_byte() & 0x8) == 0x8)
   {
     if (sse_prefix)
@@ -248,7 +264,6 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
        case _GRPSSE66:
          /* SSE opcode group with only prefix 0x66 allowed */
-         sse_opcode = 1;
          if (sse_prefix != SSE_PREFIX_66)
              entry = &(BxDisasmGroupSSE_ERR[sse_prefix]);
          attr = 0;
@@ -256,7 +271,6 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
        case _GRPSSEF2:
          /* SSE opcode group with only prefix 0xF2 allowed */
-         sse_opcode = 1;
          if (sse_prefix != SSE_PREFIX_F2)
              entry = &(BxDisasmGroupSSE_ERR[sse_prefix]);
          attr = 0;
@@ -264,17 +278,37 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
        case _GRPSSEF3:
          /* SSE opcode group with only prefix 0xF3 allowed */
-         sse_opcode = 1;
          if (sse_prefix != SSE_PREFIX_F3)
              entry = &(BxDisasmGroupSSE_ERR[sse_prefix]);
          attr = 0;
          continue;
 
+       case _GRPREP:
+         rep_opcode = 1;
+         attr = 0;
+         continue;
+
+       case _GRPSSENONE:
+         /* SSE opcode group with no prefix only allowed */
+         if (sse_prefix != SSE_PREFIX_NONE)
+             entry = &(BxDisasmGroupSSE_ERR[sse_prefix]);
+         attr = 0;
+         continue;
+
        case _GRPSSE:
-         sse_opcode = 1;
          /* For SSE opcodes, look into another 4 entries table
             with the opcode prefixes (NONE, 0x66, 0xF2, 0xF3) */
          entry = &(OPCODE_TABLE(entry)[sse_prefix]);
+         break;
+
+       case _GRPSSE2:
+         /* For SSE opcodes, look into another 2 entries table
+            with the opcode prefixes (NONE, 0x66)
+            SSE prefixes 0xF2 and 0xF3 are not allowed */
+         if (sse_prefix > SSE_PREFIX_66)
+             entry = &(BxDisasmGroupSSE_ERR[sse_prefix]);
+         else
+             entry = &(OPCODE_TABLE(entry)[sse_prefix]);
          break;
 
        case _SPLIT11B:
@@ -309,6 +343,10 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
          entry = &(OPCODE_TABLE(entry)[insn.vex_w]);
          break;
 
+       case _GRPVEXL:
+         entry = &(OPCODE_TABLE(entry)[insn.vex_l]);
+         break;
+
        default:
          printf("Internal disassembler error - unknown attribute !\n");
          return x86_insn(is_32, is_64);
@@ -335,7 +373,7 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
         continue;
 
       if (prefix_byte == 0xF3 || prefix_byte == 0xF2) {
-        if (! sse_opcode) {
+        if (rep_opcode) {
           const BxDisasmOpcodeTable_t *prefix = &(opcode_table[prefix_byte]);
           dis_sprintf("%s ", OPCODE(prefix)->IntelOpcode);
         }
@@ -384,6 +422,10 @@ x86_insn disassembler::decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_
 
   if (insn.is_vex < 0)
     dis_sprintf(" (bad vex)");
+  else if (insn.is_evex < 0)
+    dis_sprintf(" (bad evex)");
+  else if (insn.is_xop < 0)
+    dis_sprintf(" (bad xop)");
 
   insn.ilen = (unsigned)(instruction - instruction_begin);
 
@@ -417,23 +459,71 @@ unsigned disassembler::decode_vex(x86_insn *insn)
   }
 
   insn->vex_vvv = 15 - ((b2 >> 3) & 0xf);
+  if (! insn->is_64) insn->vex_vvv &= 7;
   insn->vex_l = (b2 >> 2) & 0x1;
   insn->b1 = fetch_byte() + 256 * vex_opcode_extension;
   return b2 & 0x3;
+}
+
+unsigned disassembler::decode_evex(x86_insn *insn)
+{
+  insn->is_evex = 1;
+
+  Bit32u evex = fetch_dword();
+
+  // check for reserved EVEX bits
+  if ((evex & 0x0c) != 0 || (evex & 0x400) == 0) {
+    insn->is_evex = -1;
+  }
+
+  unsigned evex_opcext = evex & 0x3;
+  if (evex_opcext == 0) {
+    insn->is_evex = -1;
+  }
+    
+  if (insn->is_64) {
+    insn->rex_r = ((evex >> 4) & 0x8) ^ 0x8;
+    insn->rex_r |= (evex & 0x10) ^ 0x10;
+    insn->rex_x = ((evex >> 3) & 0x8) ^ 0x8;
+    insn->rex_b = ((evex >> 2) & 0x8) ^ 0x8;
+    insn->rex_b |= (insn->rex_x << 1);
+  }
+
+  unsigned sse_prefix = (evex >> 8) & 0x3;
+
+  insn->vex_vvv = 15 - ((evex >> 11) & 0xf);
+  unsigned evex_v = ((evex >> 15) & 0x10) ^ 0x10;
+  insn->vex_vvv |= evex_v;
+  if (! insn->is_64) insn->vex_vvv &= 7;
+
+  insn->vex_w = (evex >> 15) & 0x1;
+  if (insn->vex_w) {
+    insn->os_64 = 1;
+    insn->os_32 = 1;
+  }
+
+  insn->evex_b = (evex >> 20) & 0x1;
+  insn->evex_ll_rc = (evex >> 21) & 0x3;
+  insn->evex_z = (evex >> 23) & 0x1;
+  
+  insn->b1 = (evex >> 24);
+  insn->b1 += 256 * (evex_opcext-1);
+
+  return sse_prefix;
 }
 
 unsigned disassembler::decode_xop(x86_insn *insn)
 {
   insn->is_xop = 1;
 
-  unsigned b2 = fetch_byte(), xop_opcode_extension = 1;
+  unsigned b2 = fetch_byte();
 
   insn->rex_r = (b2 & 0x80) ? 0 : 0x8;
   insn->rex_x = (b2 & 0x40) ? 0 : 0x8;
   if (insn->is_64)
     insn->rex_b = (b2 & 0x20) ? 0 : 0x8;
 
-  xop_opcode_extension = (b2 & 0x1f) - 8;
+  unsigned xop_opcode_extension = (b2 & 0x1f) - 8;
   if (xop_opcode_extension >= 3)
     insn->is_xop = -1;
 
@@ -445,6 +535,7 @@ unsigned disassembler::decode_xop(x86_insn *insn)
   }
 
   insn->vex_vvv = 15 - ((b2 >> 3) & 0xf);
+  if (! insn->is_64) insn->vex_vvv &= 7;
   insn->vex_l = (b2 >> 2) & 0x1;
   insn->b1 = fetch_byte() + 256 * xop_opcode_extension;
 

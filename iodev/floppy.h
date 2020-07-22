@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: floppy.h 11277 2012-07-12 21:20:46Z vruppert $
+// $Id: floppy.h 12810 2015-08-23 07:04:56Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2015  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -54,6 +54,7 @@ public:
   virtual void reset(unsigned type);
   virtual unsigned set_media_status(unsigned drive, bx_bool status);
   virtual void register_state(void);
+  virtual void after_restore_state(void);
 #if BX_DEBUGGER
   virtual void debug_dump(int argc, char **argv);
 #endif
@@ -126,6 +127,7 @@ private:
     Bit8u    perp_mode; // perpendicular mode
 
     int      statusbar_id[2]; // IDs of the status LEDs
+    int      rt_conf_id;      // ID of the runtime config handler
   } s;  // state information
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);

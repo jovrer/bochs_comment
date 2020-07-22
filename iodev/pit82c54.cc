@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit82c54.cc 11156 2012-05-01 15:53:28Z vruppert $
+// $Id: pit82c54.cc 13508 2018-05-14 18:17:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -211,7 +211,7 @@ void pit_82C54::register_state(bx_param_c *parent)
   char name[4];
 
   for (unsigned i=0; i<3; i++) {
-    sprintf(name, "%d", i);
+    sprintf(name, "%u", i);
     bx_list_c *tim = new bx_list_c(parent, name);
     new bx_shadow_bool_c(tim, "GATE", &counter[i].GATE);
     new bx_shadow_bool_c(tim, "OUTpin", &counter[i].OUTpin);
@@ -961,6 +961,16 @@ Bit32u pit_82C54::get_next_event_time(void)
 Bit16u pit_82C54::get_inlatch(int counternum)
 {
   return counter[counternum].inlatch;
+}
+
+bx_bool pit_82C54::new_count_ready(int countnum)
+{
+  return (counter[countnum].write_state != MSByte_multiple);
+}
+
+Bit8u pit_82C54::get_mode(int countnum)
+{
+  return counter[countnum].mode;
 }
 
 void pit_82C54::set_OUT_handler(Bit8u counternum, out_handler_t outh)

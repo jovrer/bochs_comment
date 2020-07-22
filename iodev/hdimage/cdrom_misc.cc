@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom_misc.cc 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: cdrom_misc.cc 12870 2015-10-25 17:02:12Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2015  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -34,6 +34,7 @@
 #if BX_SUPPORT_CDROM
 
 #include "cdrom.h"
+#include "cdrom_misc.h"
 
 #define LOG_THIS /* no SMF tricks here, not needed */
 
@@ -45,6 +46,7 @@ extern "C" {
 extern "C" {
 #include <sys/ioctl.h>
 #include <linux/cdrom.h>
+#include <linux/fs.h>
 // I use the framesize in non OS specific code too
 #define BX_CD_FRAMESIZE CD_FRAMESIZE
 }
@@ -93,117 +95,63 @@ extern "C" {
 #define CD_FRAMESIZE    2048
 
 #elif !defined(WIN32) // all others (Irix, Tru64)
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #define BX_CD_FRAMESIZE 2048
 #define CD_FRAMESIZE 2048
+
+#else // WIN32
+
+#define BX_CD_FRAMESIZE 2048
+#define CD_FRAMESIZE 2048
+
 #endif
 
 #include <stdio.h>
 
 
-static unsigned int cdrom_count = 0;
-
-cdrom_interface::cdrom_interface(const char *dev)
-{
-  char prefix[6];
-
-  sprintf(prefix, "CD%d", ++cdrom_count);
-  put(prefix);
-  fd = -1; // File descriptor not yet allocated
-
-  if (dev == NULL) {
-    path = NULL;
-  } else {
-    path = strdup(dev);
-  }
-  using_file=0;
-}
-
-cdrom_interface::~cdrom_interface(void)
-{
-  if (fd >= 0)
-    close(fd);
-  if (path)
-    free(path);
-  BX_DEBUG(("Exit"));
-}
-
-bx_bool cdrom_interface::insert_cdrom(const char *dev)
-{
-  unsigned char buffer[BX_CD_FRAMESIZE];
-  ssize_t ret;
-
-  // Load CD-ROM. Returns 0 if CD is not ready.
-  if (dev != NULL) path = strdup(dev);
-  BX_INFO (("load cdrom with path=%s", path));
-  // all platforms except win32
-  fd = open(path, O_RDONLY);
-  if (fd < 0) {
-    BX_ERROR(("open cd failed for %s: %s", path, strerror(errno)));
-    return 0;
-  }
-  // do fstat to determine if it's a file or a device, then set using_file.
-  struct stat stat_buf;
-  ret = fstat (fd, &stat_buf);
-  if (ret) {
-    BX_PANIC (("fstat cdrom file returned error: %s", strerror (errno)));
-  }
-  if (S_ISREG (stat_buf.st_mode)) {
-    using_file = 1;
-    BX_INFO (("Opening image file as a cd."));
-  } else {
-    using_file = 0;
-    BX_INFO (("Using direct access for cdrom."));
-  }
-
-  // I just see if I can read a sector to verify that a
-  // CD is in the drive and readable.
-  return read_block(buffer, 0, 2048);
-}
-
-bx_bool cdrom_interface::start_cdrom()
+bx_bool cdrom_misc_c::start_cdrom()
 {
   // Spin up the cdrom drive.
 
   if (fd >= 0) {
+    if (!using_file) {
 #if defined(__NetBSD__) || defined(__NetBSD_kernel__)
-    if (ioctl (fd, CDIOCSTART) < 0)
-       BX_DEBUG(("start_cdrom: start returns error: %s", strerror (errno)));
-    return 1;
+      if (ioctl (fd, CDIOCSTART) < 0)
+        BX_DEBUG(("start_cdrom: start returns error: %s", strerror (errno)));
+      return 1;
 #else
-    BX_INFO(("start_cdrom: your OS is not supported yet"));
-    return 0; // OS not supported yet, return 0 always
+      BX_INFO(("start_cdrom: your OS is not supported yet"));
+      return 0; // OS not supported yet, return 0 always
 #endif
+    }
   }
   return 0;
 }
 
-void cdrom_interface::eject_cdrom()
+void cdrom_misc_c::eject_cdrom()
 {
   // Logically eject the CD.  I suppose we could stick in
   // some ioctl() calls to really eject the CD as well.
 
   if (fd >= 0) {
+    if (!using_file) {
 #if (defined(__OpenBSD__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__))
-    (void) ioctl (fd, CDIOCALLOW);
-    if (ioctl (fd, CDIOCEJECT) < 0)
-      BX_DEBUG(("eject_cdrom: eject returns error"));
-#endif
-
-
-#if __linux__
-    if (!using_file)
+      (void) ioctl (fd, CDIOCALLOW);
+      if (ioctl (fd, CDIOCEJECT) < 0)
+        BX_DEBUG(("eject_cdrom: eject returns error"));
+#elif defined(__linux__)
       ioctl (fd, CDROMEJECT, NULL);
 #endif
-
+    }
     close(fd);
     fd = -1;
   }
 }
 
-bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format)
+bx_bool cdrom_misc_c::read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format)
 {
   // Read CD TOC. Returns 0 if start track is out of bounds.
 
@@ -214,7 +162,7 @@ bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int star
 
   // This is a hack and works okay if there's one rom track only
   if (using_file || (format != 0)) {
-    return create_toc(buf, length, msf, start_track, format);
+    return cdrom_base_c::read_toc(buf, length, msf, start_track, format);
   }
   // all these implementations below are the platform-dependent code required
   // to read the TOC from a physical cdrom.
@@ -382,22 +330,13 @@ bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int star
 #endif
 }
 
-Bit32u cdrom_interface::capacity()
+Bit32u cdrom_misc_c::capacity()
 {
   // Return CD-ROM capacity.  I believe you want to return
   // the number of blocks of capacity the actual media has.
 
   if (using_file) {
-    // return length of the image file
-    struct stat stat_buf;
-    int ret = fstat (fd, &stat_buf);
-    if (ret) {
-       BX_PANIC (("fstat on cdrom image returned err: %s", strerror(errno)));
-    }
-    if ((stat_buf.st_size % 2048) != 0)  {
-      BX_ERROR (("expected cdrom image to be a multiple of 2048 bytes"));
-    }
-    return (stat_buf.st_size / 2048);
+    return cdrom_base_c::capacity();
   }
 
 #if defined(__sun)
@@ -437,41 +376,57 @@ Bit32u cdrom_interface::capacity()
   int dtrk = 0;
   struct cdrom_tochdr td;
   struct cdrom_tocentry te;
+  struct stat stat_buf;
+  Bit64u fsize;
 
-  if (fd < 0)
+  if (fd < 0) {
     BX_PANIC(("cdrom: capacity: file not open."));
-
-  if (ioctl(fd, CDROMREADTOCHDR, &td) < 0)
-    BX_PANIC(("cdrom: ioctl(CDROMREADTOCHDR) failed"));
-
-  num_sectors = -1;
-  dtrk_lba = -1;
-
-  for (i = td.cdth_trk0; i <= td.cdth_trk1; i++) {
-    te.cdte_track = i;
-    te.cdte_format = CDROM_LBA;
-    if (ioctl(fd, CDROMREADTOCENTRY, &te) < 0)
-      BX_PANIC(("cdrom: ioctl(CDROMREADTOCENTRY) failed"));
-
-    if (dtrk_lba != -1) {
-      num_sectors = te.cdte_addr.lba - dtrk_lba;
-      break;
-    }
-    if (te.cdte_ctrl & CDROM_DATA_TRACK) {
-      dtrk = i;
-      dtrk_lba = te.cdte_addr.lba;
-    }
+    return 0;
   }
 
-  if (num_sectors < 0) {
-    if (dtrk_lba != -1) {
-      te.cdte_track = CDROM_LEADOUT;
+  if (fstat(fd, &stat_buf)) {
+    BX_PANIC(("fstat() returns error!"));
+  }
+  if (S_ISBLK(stat_buf.st_mode)) { // Is this a special device file (e.g. /dev/sr0) ?
+    ioctl(fd, BLKGETSIZE64, &fsize);
+  } else {
+    fsize = (Bit64u)stat_buf.st_size;
+  }
+  num_sectors = (Bit32u)(fsize / 2048);
+
+  if (num_sectors <= 0) {
+    if (ioctl(fd, CDROMREADTOCHDR, &td) < 0)
+      BX_PANIC(("cdrom: ioctl(CDROMREADTOCHDR) failed"));
+
+    num_sectors = -1;
+    dtrk_lba = -1;
+
+    for (i = td.cdth_trk0; i <= td.cdth_trk1; i++) {
+      te.cdte_track = i;
       te.cdte_format = CDROM_LBA;
       if (ioctl(fd, CDROMREADTOCENTRY, &te) < 0)
         BX_PANIC(("cdrom: ioctl(CDROMREADTOCENTRY) failed"));
-      num_sectors = te.cdte_addr.lba - dtrk_lba;
-    } else
-      BX_PANIC(("cdrom: no data track found"));
+
+      if (dtrk_lba != -1) {
+        num_sectors = te.cdte_addr.lba - dtrk_lba;
+        break;
+      }
+      if (te.cdte_ctrl & CDROM_DATA_TRACK) {
+        dtrk = i;
+        dtrk_lba = te.cdte_addr.lba;
+      }
+    }
+
+    if (num_sectors < 0) {
+      if (dtrk_lba != -1) {
+        te.cdte_track = CDROM_LEADOUT;
+        te.cdte_format = CDROM_LBA;
+        if (ioctl(fd, CDROMREADTOCENTRY, &te) < 0)
+          BX_PANIC(("cdrom: ioctl(CDROMREADTOCENTRY) failed"));
+        num_sectors = te.cdte_addr.lba - dtrk_lba;
+      } else
+        BX_PANIC(("cdrom: no data track found"));
+    }
   }
 
   BX_INFO(("cdrom: Data track %d, length %d", dtrk, num_sectors));
@@ -529,39 +484,6 @@ Bit32u cdrom_interface::capacity()
   BX_ERROR(("capacity: your OS is not supported yet"));
   return(0);
 #endif
-}
-
-bx_bool BX_CPP_AttrRegparmN(3) cdrom_interface::read_block(Bit8u* buf, Bit32u lba, int blocksize)
-{
-  // Read a single block from the CD
-
-  off_t pos;
-  ssize_t n = 0;
-  Bit8u try_count = 3;
-  Bit8u* buf1;
-
-  if (blocksize == 2352) {
-    memset(buf, 0, 2352);
-    memset(buf+1, 0xff, 10);
-    Bit32u raw_block = lba + 150;
-    buf[12] = (raw_block / 75) / 60;
-    buf[13] = (raw_block / 75) % 60;
-    buf[14] = (raw_block % 75);
-    buf[15] = 0x01;
-    buf1 = buf + 16;
-  } else {
-    buf1 = buf;
-  }
-  do {
-    pos = lseek(fd, (off_t) lba * BX_CD_FRAMESIZE, SEEK_SET);
-    if (pos < 0) {
-      BX_PANIC(("cdrom: read_block: lseek returned error."));
-    } else {
-      n = read(fd, (char*) buf1, BX_CD_FRAMESIZE);
-    }
-  } while ((n != BX_CD_FRAMESIZE) && (--try_count > 0));
-
-  return (n == BX_CD_FRAMESIZE);
 }
 
 #endif /* if BX_SUPPORT_CDROM */

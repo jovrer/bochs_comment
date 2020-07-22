@@ -1,3 +1,448 @@
+Changes in 2.6.11 (January 5, 2020):
+
+- General
+  - Added 64-bit support to the NSIS installer script
+  - Several fixes in the build system based on Debian patches
+
+- CPU / CPUDB
+  - Bugfixes for CPU emulation correctness
+    - Many critical bugfixes for Protection Keys, AVX512*, VMX/SVM, SHA, GFNI emulation
+  ! Implemented CET (Control Flow Enforcement Technology) emulation according to Intel SDM rev071
+
+- I/O Devices
+  - Added missing Cirrus SVGA bitblt feature "transparent color compare"
+  - Some fixes in HPET emulation (patch by Oleg)
+  - Fixed disk image lock mechanism in the USB MSD case
+
+- BIOS / VGABIOS
+  - LGPL'd VGABIOS updated to version 0.7b (Fixed VESA extension 'read EDID'
+    for Bochs VBE and Cirrus)
+  - Updated SeaBIOS ROM image to current version 1.13.0
+  - Added SeaVGABIOS ROM image for the Cirrus adapter
+  - Bochs BIOS built to work with CPU level 5 again
+
+-------------------------------------------------------------------------
+Changes in 2.6.10 (December 1, 2019):
+
+Brief summary :
+  - CPU: Bugfixes for CPU emulation correctness (critical bugfixes for PCID, ADCX/ADOX, MOVBE, AVX/AVX-512 and VMX emulation)
+  - CPU: implemented AVX-512 VBMI2/VNNI/BITALG, VAES, VPCLMULQDQ / GFNI instructions emulation
+  - VMX: Implement EPT-Based Sub-Page Protection
+  - CPUID: Added new CPU models Skylake-X, Cannonlake and Icelake-U
+  - CPUID: Implemented side-channel attack prevention reporting and corresponding MSR registers, enabled for Icelake-U
+  - Added basic support for the i440BX PCI/AGP chipset.
+  - Added basic Voodoo Banshee / Voodoo3 emulation support.
+  - Added basic DDC support for the VGA-compatible adapters.
+  - Implemented HPET emulation (ported from Qemu).
+
+Detailed change log :
+
+- General
+  - Disabled legacy "load32bitOShack" feature.
+  - Improved NSIS win32 installer script.
+
+- CPU / CPUDB
+  - Significant speedup to simulation of milti-threaded guest (patch by Luigu.B)
+  - Bugfixes for CPU emulation correctness (critical bugfixes for PCID, ADCX/ADOX, MOVBE, AVX/AVX-512 and VMX emulation)
+  ! x87: implemented FOPCODE and FDP deprecation features
+  ! AVX-512: implemented AVX-512 VBMI2/VNNI/BITALG instructions
+  ! Crypto: Implemented VAES instructions / VPCLMULQDQ / GFNI instruction
+  ! VMX: Implement EPT-Based Sub-Page Protection
+  ! CPUID: Added Skylake-X CPU definition (features AVX-512 support)
+  ! CPUID: Added Cannonlake CPU definition (features more AVX-512 levels, UMIP, SHA, PKU support)
+  ! CPUID: Added Icelake-U CPU definition (features more AVX-512 levels, UMIP, SHA, GFNI, VAES, PKU support)
+  ! CPUID: Implemented SCA (Side-Channel-Attack) Prevention reporting and corresponding MSR registers, enabled for Icelake-U CPU definition
+
+- Bochs Debugger and Instrumentation
+  - Added support for conditional breakpoints and conditional step/continue to Bochs debugger
+  - Support 'info tab' command for 64-bit mode as well
+  - Bochs debugger improvements patch by Doug Gale
+    - better handling of 64-bit addresses in the debugger, added support for 64 bit symbols,
+      added more symbol lookups.
+
+- I/O Devices
+  - PCI
+    - Added basic support for the i440BX PCI/AGP chipset.
+  - Timers
+    - Implemented HPET emulation (ported from Qemu).
+  - Hard drive / HD image
+    - Added support for unlocking disk images (locks leftover from previous
+      Bochs session) with the new command line argument '-unlock'.
+    - Added ATAPI command "get event status notification".
+    - Bugfix: undoable/volatile mode images now inherit the base image geometry
+      if present.
+  - Voodoo
+    - Voodoo1 emulation speedup with combined PCI / memory FIFO implementation
+      and multi-threading support (separate FIFO thread).
+    - Voodoo2 model now working after some fixes and implementation of the
+      CMDFIFO (using FIFO thread) and one of the bitBLT functions.
+    - Added Voodoo Banshee / Voodoo3 emulation support (still under construction,
+      but basically usable). The AGP models are available if chipset is i440BX.
+  - Display (general)
+    - Added basic DDC support for Bochs VBE, Cirrus and Voodoo Banshee / Voodoo3
+      adapters (reporting plug&play monitor "Bochs Screen").
+  - USB
+    - Now creating separate plugins for each USB device implementation.
+    - Added sector size option for USB disks (size 1024 and 4096 supported).
+  - Networking
+    - bxhub: Added DNS service support for the server "vnet" and connected
+      clients.
+  - Sound
+    - PC speaker now can play digitized sound by driving speaker gate.
+
+- GUI and display libraries
+  - Added new win32 gui option "traphotkeys" for fullscreen mode.
+  - wx: Fixes and updates for wxWidgets 3.0 support.
+  - Removed legacy guis "macos" and "svga" from display library auto-
+    detection (still available using --with-XXX option).
+
+- LGPL'd VGABIOS updated from CVS (VESA extension 'read EDID' for Bochs VBE
+  and Cirrus added).
+
+- Misc
+  - Added sector size option to bximage for creating flat, sparse and growing
+    mode images with big sectors (size 1024 and 4096 currently supported).
+
+-------------------------------------------------------------------------
+Changes in 2.6.9 (April 9, 2017):
+
+Brief summary :
+  - CPU: implemented new instructions and x86 architecture extensions.
+  - Bugfixes for CPU emulation correctness.
+  - Added Android host platform support.
+  - Added USB EHCI device emulation support.
+  - Added USB floppy (UFI/CBI) support.
+  - Added ethernet module 'socket', designed to interconnect Bochs instances.
+  - Show textconfig at runtime in the Bochs VGA window (gui console).
+
+Detailed change log :
+
+- General
+  - Added new log action "warn", designed to show a message box on error events.
+  - Show message box before exit if log action is set to "fatal".
+  - Added macro BX_FATAL for all cases when continuing is not recommended, since
+    it can cause an application crash or incorrect simulation behaviour.
+
+- Configure and compile
+  - Added Android host platform support.
+  - Configure script now prints warnings for features not maintained yet.
+
+- GUI and display libraries
+  - Show the runtime configuration in the Bochs VGA window (gui console) instead
+    of console / xterm (rfb, sdl, sdl2, vncsrv and X11 guis).
+  - SDL2: Added get/set clipboard text support.
+
+- CPU / CPUDB
+  - Bugfixes for CPU emulation correctness (critical bugfix for x86-64 and AVX opcodes emulation,
+    fixed assertion failures in proc_ctrl.cc)
+  ! VMX: Implemented Page Modification Logging (PML)
+  ! VMX: Implemented TSC Scaling Extension
+  ! Paging: Implemented Protection Keys
+  ! Implemented UMIP: User Mode Instruction Prevention (don't allow execution of SLDT/SIDT/SGDT/STR/SMSW with CPL>0)
+  ! Implemented RDPID instruction
+  ! Implemented VPOPCNTD/VPOPCNTQ AVX512 instructions
+  ! Implemented XSAVES/XRSTORS instructions and IA32_XSS MSR
+  ! Implemented Translation Cache Extensions (TCE) for AMD CPUID and EFER.TCE control
+  ! Implemented CLZERO instruction (AMD), enabled in Ryzen CPU model
+  ! Implemented MONITORX/MWAITX instructions (AMD), enabled in Ryzen CPU model
+  ! CPUDB: Added AMD Ryzen configuration to CPUDB
+
+- I/O Devices
+  - Busmouse
+    - Added standard bus mouse support in addition to the existing InPort
+      emulation code. (patch by Ben Lunt).
+  - Hard drive
+    - Implemented lock mechanism for hard disk images. An image that is opened
+      in r/w mode cannot be used multiple times (e.g. by another Bochs session).
+    - Several fixes in some disk image modes.
+  - Serial / Parallel ports
+    - Added support for changing output file at runtime.
+  - Networking
+    - Added ethernet module 'socket', designed to interconnect Bochs instances
+      with external program 'bxhub' (simulating a multi-port ethernet hub).
+    - Now creating separate plugins for each network driver implementation
+      (slirp, win32, etc.).
+  - Sound
+    - Added PCM output data resampling in a separate thread. The resampler
+      requires either libsamplerate or the SoX resampler library installed.
+    - SDL: Added audio capture support (requires library version >= 2.0.5).
+    - Now creating separate plugins for each sound driver (alsa, win, etc.).
+  - USB
+    - Added USB EHCI device emulation support (EHCI core ported from Qemu).
+    - Added USB floppy (UFI/CBI) support (patch by Ben Lunt).
+    - Added asynchronus USB packet completion support (needed by disk/cdrom
+      seek and read/write latency emulation).
+    - Implemented USB remote wakeup mechanism.
+    - Fixed NAK response handling in all USB HCs.
+    - USB printer: added support for changing output file at runtime.
+    - Added common USB device option "debug" to turn on BX_DEBUG reporting at
+      connection time.
+
+- ROM BIOS
+  - Implemented Bochs BIOS option "fastboot" for skipping the boot menu delay.
+
+-------------------------------------------------------------------------
+Changes in 2.6.8 (May 3, 2015):
+
+- CPU / CPUDB
+  - Bugfixes for CPU emulation correctness (critical bugfix for x86-64 emulation)
+  - Memory type calculation support for Bochs debugger and instrumentation,
+    to enable configure with --enable-memtype option.
+  - CPUDB: Added Pentium (P54C) configuration to CPUDB
+  - CPUDB: Added Broadwell ULT configuration to CPUDB
+  - Updated definition of instrumentation callbacks, see description in
+    instrumentation.txt / Fixed instrumentation examples
+
+- Configure and compile
+  - Configure option --enable-fast-function-calls now also used for MSVC nmake.
+  - Some configure fixes for the GTK debugger support.
+
+- GUI and display libraries
+  - The VGA update timer mode now can be selected with the 'vga' option.
+  - Release all pressed keys when the simwindow gets back the keyboard focus.
+  - Win32 gui: Captured mouse cursor now really trapped in window.
+  - SDL2: Implemented yes/no dialog (e.g. for VVFAT commit).
+  - Some fixes for wxWidgets 3.0 and unicode version compatiblity.
+  - Full save/restore support for enhanced gui debugger settings (window+font).
+  - Added debugger support for the term gui using a pseudo-terminal.
+
+- I/O Devices
+  - Hard drive
+    - Added Oracle(tm) VM VirtualBox image support (VDI version 1.1)
+    - Re-enable "bulk I/O" repeat speedups extension.
+    - Some lowlevel cdrom code fixes for Windows and Linux.
+  - Sound
+    - SB16: Fixed OPL chip detection by implementing ISA bus delay.
+    - SB16: Ported OPL3 emulation from DOSBox and partly removed legacy code.
+    - ES1370: Added MIDI UART output support.
+    - ES1370: Fixed critical bug that made Win9x drivers crash.
+    - Major rewrite of the lowlevel sound code.
+      - Added mixer thread support (required for all modules except 'sdl').
+      - New mixer and SDL mixer are polling data from the PCM output buffers,
+        the PC speaker beep generator and the OPL3 FM generator.
+      - PCM format conversion to 16 bit signed little endian.
+      - Added sound 'file' module for VOC, WAV, MID and raw data output
+        and added dual output support (device+file) in midi/wave mode 3.
+      - Added capability to set up the sound driver per service.
+  - Floppy
+    - Fixed "Read ID" command for single-sided media (patch by Ben Lunt).
+
+- ROM BIOS
+  - Fixed keyboard scancode processing after keyboard intercept.
+  - Fixed rombios32 code to avoid incorrect ACPI table detection.
+
+-------------------------------------------------------------------------
+Changes in 2.6.7 (November 2, 2014):
+
+- CPU / CPUDB
+  - Implemented AVX-512BW/AVX-512DQ/AVX-512VL extensions emulation.
+  - implemented AVX512-IFMA532 instructions emulation.
+  - implemented AVX512-VBMI instructions emulation.
+  - Bugfixes for CPU emulation correctness (critical fixes for AVX-512, CMPXCHG16B and VMX)
+  - Fixed Bochs segmentation fault crash with Handlers Chaining Speedups enabled when
+    compiling with gcc, especially with low optimization levels.
+  - Reverted removal of reporting Architectural Perfmon support in pre-defined CPUID modules.
+    Windows 8 and Windows 10 require Performance Monitoring to be reported to boot.
+    To workaround possible Windows 7 64-bit installation issues: use bx_generic CPUID module,
+    which doesn't report Performance Monitoring in CPUID.
+
+- GUI and display libraries
+  - The VGA update timer and the status LED timer now always use the realtime mode
+    independent from the 'clock' option setting.
+  - Added native SDL2 GUI support to Bochs. To enable configure with --with-sdl2.
+  - Added new user shortcut "scrlck" (SDL/SDL2 using "Scroll Lock" for fullscreen toggle).
+  - Write enhanced gui debugger settings to file on exit and restore on initialization.
+
+- I/O Devices
+  - USB
+    - xHCI model now emulates a NEC/Renesas uPD720202 device (patch by Ben Lunt).
+    - Added USB port specific option 'size' for VVFAT disks (range 128M ... 128G).
+      If the size is not specified or invalid, it defaults to 504M.
+  - Hard drive / HD image
+    - Fixed crash when using a "fixed" type VPC image.
+
+- ROM BIOS
+  - Fixed int74_function() for 4-byte (wheel mouse) packets.
+
+- LGPL'd VGABIOS updated from CVS (fixed building VBE modes list)
+
+- Misc
+  - Visual Studio workspace files updated to VS2013Ex format.
+  - bximage_old/bxcommit: removed old obsolete image manipulation tools.
+  - Documentation fixes and updates.
+
+-------------------------------------------------------------------------
+Changes in 2.6.6 (June 15, 2014):
+
+- CPU / CPUDB
+  - allow sandy bridge configuration even when AVX is not compiled in
+
+- Configure and compile
+  - fixed compilation error when 3dnow support is enabled
+  - speedup Visual Studio build by almost 20% by adding /Gr compiler option
+
+- Misc
+  - fixed minimizing win32 gui window and resolution change while minimized
+  - added compiled SeaBIOS 1.7.5 image into Bochs tree along with Bochs BIOS images
+  - documentation fixes and updates
+
+-------------------------------------------------------------------------
+Changes in 2.6.5 (June 1, 2014):
+
+Brief summary :
+- CPU: extra 5-10% emulation speedup with new trace linking optimization
+- CPU: implemented new instructions (e.g. AVX-512, SHA, XSAVEC)
+- CPUDB: added 2 new CPU models
+- Bugfixes for CPU emulation correctness (including some critical ones)
+- Gui debugger output window now can be used as a log viewer
+- Added built-in slirp (user-mode networking) support (ported from Qemu)
+- Added global sound config option and volume control support to the devices
+- Added new experimental gui 'vncsrv" using the LibVNCServer library
+- Rewrite of the bximage utility in C++ for image creation, conversion and resize
+
+Detailed change log :
+
+- CPU
+  - Bugfixes for CPU emulation correctness (critical fixes for XSAVE, VMX, TBM/BMI and RDRAND instructions)
+  - Implemented FCS/FDS Deprecation CPU feature
+  - Implemented SHA instructions emulation
+  - Implemented XSAVEC instruction emulation and XINUSE optimization in the XSAVEOPT instruction
+  - Implemented AVX-512 instructions emulation (experimental)
+  ! CPUDB: Added Intel(R) Core(TM) i7-4770 CPU (Haswell) configuration to CPUDB
+  ! CPUDB: Added AMD A8-5600K APU (Trinity) configuration to CPUDB
+
+  - Replace 'SSE' and 'AVX' .bochsrc option with single 'SIMD' option which controls presence
+    of all CPU SIMD extensions from SSE to AVX-512
+
+  - Extra 5-10% emulation speedup with new trace linking optimization. The optimization
+    is enabled by default when configuring with --enable-all-optimizations option,
+    to disable trace linking optimization configure with --disable-trace-linking.
+    The optimization require to compile Bochs with at least -O2 optimization level on gcc.
+
+- Bochs Debugger and Instrumentation
+  - Added disasm for Bochs internal instruction representation, especially useful for instrumentation
+  - Updated definition of instrumentation callbacks, see description in
+    instrumentation.txt / Fixed instrumentation examples
+  - added capability to use the gui debugger output window as a log viewer
+
+- General
+  - Increased max. device log prefix size to 6 and added / modified prefixes
+  - plugin version now uses the native DLL handling code for all Windows ports
+  - critical bugfixes in save/restore functionality
+
+- Configure and compile
+  - configure and compilation fixes for Cygwin and Visual Studio environment
+  - configure option --enable-cdrom now only controls the presence of
+    platform-specific code for device access
+  - building plugin version with MSVC nmake now supported
+
+- Config interface
+  - Added global sound control option for the driver and wave input/output
+  - Added new bochsrc option to control the speaker output mode
+  - Added support to specify the initial time for 'clock' option in ctime(3) string format
+  - Added support for the LTDL_LIBRARY_PATH variable with MSVC plugins
+  - All SB16 / ES1370 options are now changeable at runtime
+  - textconfig: added menu item for saving configuration at runtime
+  - Added bochsrc option for the Voodoo Graphics emulation (experimental)
+
+- I/O Devices
+  - Hard drive / CD-ROM
+    - seek latency implemented for ATA/ATAPI read commands
+    - portable ISO image file access now available on all platforms
+  - Networking
+    - added built-in slirp (user-mode networking) support (ported from Qemu)
+    - removed the "slirp backend" support (required external slirp binary)
+    - slirp/vnet: all supported TFTP extension options implemented now
+  - Sound
+    - SB16 / ES1370: added volume control support for wave output
+    - SB16: fixed audio distortion when playing stereo wave files
+    - ES1370: added 'wavemode' support similar to the SB16
+    - soundwin: added capability to specify the ID of the MIDI device to use
+  - Serial
+    - Serial mouse detection fixes
+  - Busmouse
+    - Non-functional device rewritten to make it work in DOS and Win95 guests
+      (use --enable-busmouse to configure and "mouse: type=bus" at runtime)
+
+- ROM BIOS
+  - PS/2 mouse function: allow setting mouse packet size to 4 for wheel support
+
+- GUI and display libraries
+  - Added new experimental gui 'vncsrv" using the LibVNCServer library
+  - RFB: set maximum resolution to 1280x1024 (same as vncsrv)
+  - RFB: don't wait for client connection on startup if timeout is set to 0
+  - Added mouse wheel support to the rfb, vncsrv and wx guis
+  - wx: added viewer window for the Bochs log output
+  - win32: fixes and improvements for the fullscreen mode
+
+- Tools
+  - bximage utility rewritten in C++ for image creation, conversion, resize
+    and redolog commit. Now vmware4 and vpc images can be created.
+
+-------------------------------------------------------------------------
+Changes in 2.6.2 (May 26, 2013):
+
+- CPU
+  - VMX: implemented VMENTER to non-active guest state (HLT, SHUTDOWN, WAIT-FOR-SIPI)
+  - VMX: fixed write of guest segment access rights VMCS fields (32-bit field
+    was truncated to 16-bit)
+  - CPUID: Don't report Architectural Performance Monitoring in CPUID.
+    Reporting true capabilities without actually supporting them breaks Win7 x64 installation.
+  - CPUID: Fixed bx_generic CPUID std leafs (all std leafs > 2 were corrupted)
+  - CPUID: Enable all supported VMX capabilities for bx_generic CPUID configuration.
+  - CPUID: Enable X2APIC support for Ivy Bridge CPUDB configuration.
+
+- Configure and compile
+  - Enabled VMX compilation by default in shortcut scripts.
+  - Allow CPU_LEVEL=5 configurations (pentium_mmx and amd_k2_chomper) even when Bochs was
+    compiled with CPU_LEVEL > 5.
+
+- Misc
+  - Fixes for Bochs port on MorphOS (based on a patch by Thore Sittly):
+    missing functions, byte-swapping and cdrom support.
+
+-------------------------------------------------------------------------
+Changes in 2.6.1 (April 7, 2013):
+
+- CPU / CPUDB
+  - Bochs is fully aligned with rev45 of the of Intel(R) Architecture Manual.
+    - Implemented Supervisor Mode Access Prevention (SMAP) support
+    - Implemented VMX APIC Registers Virtualization and VMX Virtual Interrupt Delivery
+    - Implemented VMCS Shadowing and #VE exception secondary VMEXIT controls emulation
+    - Implemented RDRAND and RDSEED instructions
+  ! CPUDB: Added AMD FX-4100 (Zambezi) configuration to CPUDB
+  - Bugfixes for CPU emulation correctness (critical fixes for SVM and AVX2 emulation)
+
+- Bochs Debugger and Instrumentation
+  - Use Enhanced GUI Debugger instead of old-style wx debugger with wx gui.
+    The old-style wx debugger support was deprecated and removed from the source code.
+
+- I/O Devices
+  - Implemented 3dfx Voodoo Graphics card emulation based on DOSBox patch, to enable
+    configure with --enable-voodoo option.
+  - Hard drive / HD image
+    - Added full save restore support for most of the disk image formats
+    - undoable / volatile mode: added support of other types of r/o base images
+    - DLL HD support rewritten and enabled for WIN32 host
+  - PCI chipset
+    - Implemented i430FX chipset emulation
+    - USB UHCI always enabled in the i440FX case
+
+- Config interface
+  - Configure option --enable-misaligned-sse moved to runtime option in .bochsrc. The old
+    option is deprecated and should not be used anymore.
+  - moved 'user_shortcut' bochsrc option to the 'keyboard' option
+  - save log options per device to bochsrc
+  - win32: implemented scrollable dialog items for large parameter lists
+
+- GUI and display libraries
+  - Graphics snapshot feature rewritten to support all kinds of graphics modes
+  - wx: starting a second simulation without closing Bochs now almost possible
+
+- Tools
+  - bxcommit: added support for converting flat to growing mode images
+
+-------------------------------------------------------------------------
 Changes in 2.6 (September 2, 2012):
 
 Brief summary :
@@ -682,7 +1127,7 @@ Detailed change log :
  [2905385] Bochs crash
  [2901481] Instruction SYSRET and SS(PL)
  [2900632] Broken long mode RETF to outer priviledge with null SS
- [1429011] Use bx_phyaddr_t for physaddr vars and bx_adress for lin adr
+ [1429011] Use bx_phyaddr_t for physaddr vars and bx_address for lin adr
 
 - these S.F. feature requests were closed/implemented
  [2955911] RPM preuninstall scriptlet removes /core
@@ -1589,7 +2034,7 @@ Detailed change log :
 
 - CPU
   - fixed XMM registers restore in FXRSTOR instruction (Andrej Palkovsky)
-  - print registers dump to the log if tripple fault occured
+  - print registers dump to the log if tripple fault occurred
   - fixed PANIC in LTR instruction (Stanislav)
   - added virtual 8086 mode extensions (VME) implementation, to enable
     configure with --enable-vme (Stanislav)
@@ -2107,7 +2552,7 @@ Detailed change log :
  #1112836 PGE-Bit crashes Bochs
   #947586 The specification difference in x86-64 emulation
  #1117145 Push reset Button, APIC0 Error occur
- #1123043 fpu stack pointer changed *despite* fault occured (e.g. #pf)
+ #1123043 fpu stack pointer changed *despite* fault occurred (e.g. #pf)
  #1122066 PANIC: iret: IP > descriptor limit when installing os/2 warp
   #809574 rm -f segfaults
   #593952 SuSE rm segfaults
@@ -2285,7 +2730,7 @@ Changes in 2.1.1 (February 8, 2004):
 - notify display libraries on change of bpp (Volker)
 - fix bug in int13h function 0x10 (Volker)
 - fix floppy dialog error on win2k (Volker)
-- fix adress check in TSS IO permission bitmap (Christophe)
+- fix address check in TSS IO permission bitmap (Christophe)
 - fix buffer overflow vulnerability pointed out by SeSoX (Christophe)
 - updates for MacOS compile (Daniel Gimpelevich)
 

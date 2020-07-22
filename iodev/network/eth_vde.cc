@@ -1,8 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_vde.cc 10975 2012-01-14 17:03:00Z vruppert $
+// $Id: eth_vde.cc 13257 2017-06-16 08:27:55Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2003  Renzo Davoli
+//  Copyright (C) 2003       Renzo Davoli
+//  Copyright (C) 2003-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -32,6 +33,21 @@
 #include "netmod.h"
 
 #if BX_NETWORKING && BX_NETMOD_VDE
+
+// network driver plugin entry points
+
+int CDECL libvde_net_plugin_init(plugin_t *plugin, plugintype_t type)
+{
+  // Nothing here yet
+  return 0; // Success
+}
+
+void CDECL libvde_net_plugin_fini(void)
+{
+  // Nothing here yet
+}
+
+// network driver implementation
 
 #define LOG_THIS netdev->
 
@@ -72,6 +88,7 @@ public:
   bx_vde_pktmover_c(const char *netif, const char *macaddr,
                     eth_rx_handler_t rxh, eth_rx_status_t rxstat,
                     bx_devmodel_c *dev, const char *script);
+  virtual ~bx_vde_pktmover_c();
   void sendpkt(void *buf, unsigned io_len);
 private:
   int fd;
@@ -149,17 +166,17 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
 
   // Start the rx poll
   this->rx_timer_index =
-    bx_pc_system.register_timer(this, this->rx_timer_handler, 1000,
-                                1, 1, "eth_vde"); // continuous, active
+    DEV_register_timer(this, this->rx_timer_handler, 1000, 1, 1,
+                       "eth_vde"); // continuous, active
   this->rxh    = rxh;
   this->rxstat = rxstat;
 #if BX_ETH_VDE_LOGGING
   // eventually Bryce wants txlog to dump in pcap format so that
   // tcpdump -r FILE can read it and interpret packets.
-  txlog = fopen("ne2k-tx.log", "wb");
-  if (!txlog) BX_PANIC(("open ne2k-tx.log failed"));
-  txlog_txt = fopen("ne2k-txdump.txt", "wb");
-  if (!txlog_txt) BX_PANIC(("open ne2k-txdump.txt failed"));
+  txlog = fopen("eth_vde-tx.log", "wb");
+  if (!txlog) BX_PANIC(("open eth_vde-tx.log failed"));
+  txlog_txt = fopen("eth_vde-txdump.txt", "wb");
+  if (!txlog_txt) BX_PANIC(("open eth_vde-txdump.txt failed"));
   fprintf(txlog_txt, "vde packetmover readable log file\n");
   fprintf(txlog_txt, "net IF = %s\n", netif);
   fprintf(txlog_txt, "MAC address = ");
@@ -168,10 +185,10 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
   fprintf(txlog_txt, "\n--\n");
   fflush(txlog_txt);
 
-  rxlog = fopen("ne2k-rx.log", "wb");
-  if (!rxlog) BX_PANIC(("open ne2k-rx.log failed"));
-  rxlog_txt = fopen("ne2k-rxdump.txt", "wb");
-  if (!rxlog_txt) BX_PANIC(("open ne2k-rxdump.txt failed"));
+  rxlog = fopen("eth_vde-rx.log", "wb");
+  if (!rxlog) BX_PANIC(("open eth_vde-rx.log failed"));
+  rxlog_txt = fopen("eth_vde-rxdump.txt", "wb");
+  if (!rxlog_txt) BX_PANIC(("open eth_vde-rxdump.txt failed"));
   fprintf(rxlog_txt, "vde packetmover readable log file\n");
   fprintf(rxlog_txt, "net IF = %s\n", netif);
   fprintf(rxlog_txt, "MAC address = ");
@@ -180,6 +197,16 @@ bx_vde_pktmover_c::bx_vde_pktmover_c(const char *netif,
   fprintf(rxlog_txt, "\n--\n");
   fflush(rxlog_txt);
 
+#endif
+}
+
+bx_vde_pktmover_c::~bx_vde_pktmover_c()
+{
+#if BX_ETH_VDE_LOGGING
+  fclose(txlog);
+  fclose(txlog_txt);
+  fclose(rxlog);
+  fclose(rxlog_txt);
 #endif
 }
 
@@ -249,9 +276,9 @@ void bx_vde_pktmover_c::rx_timer()
   }
 #endif
   BX_DEBUG(("eth_vde: got packet: %d bytes, dst=%x:%x:%x:%x:%x:%x, src=%x:%x:%x:%x:%x:%x\n", nbytes, rxbuf[0], rxbuf[1], rxbuf[2], rxbuf[3], rxbuf[4], rxbuf[5], rxbuf[6], rxbuf[7], rxbuf[8], rxbuf[9], rxbuf[10], rxbuf[11]));
-  if (nbytes < 60) {
-    BX_INFO(("packet too short (%d), padding to 60", nbytes));
-    nbytes = 60;
+  if (nbytes < MIN_RX_PACKET_LEN) {
+    BX_INFO(("packet too short (%d), padding to %d", nbytes, MIN_RX_PACKET_LEN));
+    nbytes = MIN_RX_PACKET_LEN;
   }
   if (this->rxstat(this->netdev) & BX_NETDEV_RXREADY) {
     this->rxh(this->netdev, rxbuf, nbytes);

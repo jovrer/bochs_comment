@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pc_system.cc 11058 2012-02-23 17:16:35Z vruppert $
+// $Id: pc_system.cc 13188 2017-04-15 20:31:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2001-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,13 +24,6 @@
 #include "cpu/cpu.h"
 #include "iodev/iodev.h"
 #define LOG_THIS bx_pc_system.
-
-#ifdef WIN32
-#ifndef __MINGW32__
-// #include <winsock2.h> // +++
-#include <winsock.h>
-#endif
-#endif
 
 #if defined(PROVIDE_M_IPS)
 double     m_ips; // Millions of Instructions Per Second
@@ -89,11 +82,20 @@ void bx_pc_system_c::set_HRQ(bx_bool val)
     BX_CPU(0)->async_event = 1;
 }
 
-void bx_pc_system_c::set_INTR(bx_bool value)
+void bx_pc_system_c::raise_INTR(void)
 {
   if (bx_dbg.interrupts)
-    BX_INFO(("pc_system: Setting INTR=%d on bootstrap processor %d", (int)value, BX_BOOTSTRAP_PROCESSOR));
-  BX_CPU(BX_BOOTSTRAP_PROCESSOR)->set_INTR(value);
+    BX_INFO(("pc_system: Setting INTR=1 on bootstrap processor %d", BX_BOOTSTRAP_PROCESSOR));
+
+  BX_CPU(BX_BOOTSTRAP_PROCESSOR)->raise_INTR();
+}
+
+void bx_pc_system_c::clear_INTR(void)
+{
+  if (bx_dbg.interrupts)
+    BX_INFO(("pc_system: Setting INTR=0 on bootstrap processor %d", BX_BOOTSTRAP_PROCESSOR));
+
+  BX_CPU(BX_BOOTSTRAP_PROCESSOR)->clear_INTR();
 }
 
 //
@@ -232,13 +234,14 @@ void bx_pc_system_c::register_state(void)
   bx_list_c *timers = new bx_list_c(list, "timer");
   for (unsigned i = 0; i < numTimers; i++) {
     char name[4];
-    sprintf(name, "%d", i);
+    sprintf(name, "%u", i);
     bx_list_c *bxtimer = new bx_list_c(timers, name);
     BXRS_PARAM_BOOL(bxtimer, inUse, timer[i].inUse);
     BXRS_DEC_PARAM_FIELD(bxtimer, period, timer[i].period);
     BXRS_DEC_PARAM_FIELD(bxtimer, timeToFire, timer[i].timeToFire);
     BXRS_PARAM_BOOL(bxtimer, active, timer[i].active);
     BXRS_PARAM_BOOL(bxtimer, continuous, timer[i].continuous);
+    BXRS_DEC_PARAM_FIELD(bxtimer, param, timer[i].param);
   }
 }
 
@@ -268,17 +271,17 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
     ticks = MinAllowableTimerPeriod;
   }
 
-  // search for new timer for i=1, i=0 is reserved for NullTimer
-  for (i=1; i < numTimers; i++) {
+  // search for new timer (i = 0 is reserved for NullTimer)
+  for (i = 1; i < numTimers; i++) {
     if (timer[i].inUse == 0)
       break;
   }
 
-#if BX_TIMER_DEBUG
-  if (i==0)
-    BX_PANIC(("register_timer: cannot register NullTimer again!"));
-  if (numTimers >= BX_MAX_TIMERS)
+  if (numTimers >= BX_MAX_TIMERS) {
     BX_PANIC(("register_timer: too many registered timers"));
+    return -1;
+  }
+#if BX_TIMER_DEBUG
   if (this_ptr == NULL)
     BX_PANIC(("register_timer_ticks: this_ptr is NULL!"));
   if (funct == NULL)
@@ -294,6 +297,7 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
   timer[i].this_ptr   = this_ptr;
   strncpy(timer[i].id, id, BxMaxTimerIDLen);
   timer[i].id[BxMaxTimerIDLen-1] = 0; // Null terminate if not already.
+  timer[i].param      = 0;
 
   if (active) {
     if (ticks < Bit64u(currCountdown)) {
@@ -311,12 +315,12 @@ int bx_pc_system_c::register_timer_ticks(void* this_ptr, bx_timer_handler_t func
     numTimers++; // One new timer installed.
 
   // Return timer id.
-  return(i);
+  return i;
 }
 
 void bx_pc_system_c::countdownEvent(void)
 {
-  unsigned i;
+  unsigned i, first = numTimers, last = 0;
   Bit64u   minTimeToFire;
   bx_bool  triggered[BX_MAX_TIMERS];
 
@@ -332,7 +336,7 @@ void bx_pc_system_c::countdownEvent(void)
   ticksTotal += Bit64u(currCountdownPeriod);
   minTimeToFire = (Bit64u) -1;
 
-  for (i=0; i < numTimers; i++) {
+  for (i = 0; i < numTimers; i++) {
     triggered[i] = 0; // Reset triggered flag.
     if (timer[i].active) {
 #if BX_TIMER_DEBUG
@@ -347,15 +351,15 @@ void bx_pc_system_c::countdownEvent(void)
         if (timer[i].continuous==0) {
           // If triggered timer is one-shot, deactive.
           timer[i].active = 0;
-        }
-        else {
+        } else {
           // Continuous timer, increment time-to-fire by period.
           timer[i].timeToFire += timer[i].period;
           if (timer[i].timeToFire < minTimeToFire)
             minTimeToFire = timer[i].timeToFire;
         }
-      }
-      else {
+        if (i < first) first = i;
+        last = i;
+      } else {
         // This timer is not ready to fire yet.
         if (timer[i].timeToFire < minTimeToFire)
           minTimeToFire = timer[i].timeToFire;
@@ -369,10 +373,10 @@ void bx_pc_system_c::countdownEvent(void)
   currCountdown = currCountdownPeriod =
       Bit32u(minTimeToFire - ticksTotal);
 
-  for (i=0; i < numTimers; i++) {
+  for (i = first; i <= last; i++) {
     // Call requested timer function.  It may request a different
     // timer period or deactivate etc.
-    if (triggered[i]) {
+    if (triggered[i] && (timer[i].funct != NULL)) {
       triggeredTimer = i;
       timer[i].funct(timer[i].this_ptr);
       triggeredTimer = 0;
@@ -413,6 +417,15 @@ void bx_pc_system_c::benchmarkTimer(void* this_ptr)
   bx_user_quit = 1;
 }
 
+#if BX_ENABLE_STATISTICS
+void bx_pc_system_c::dumpStatsTimer(void* this_ptr)
+{
+  printf("=== statistics dump " FMT_LL "u ===\n", bx_pc_system.time_ticks());
+  print_statistics_tree(SIM->get_statistics_root());
+  fflush(stdout);
+}
+#endif
+
 #if BX_DEBUGGER
 void bx_pc_system_c::timebp_handler(void* this_ptr)
 {
@@ -436,9 +449,9 @@ Bit64u bx_pc_system_c::time_usec_sequential()
       Bit64u diff_usec = this_time_usec-lastTimeUsec;
       lastTimeUsec = this_time_usec;
       if(diff_usec >= usecSinceLast) {
-	usecSinceLast = 0;
+        usecSinceLast = 0;
       } else {
-	usecSinceLast -= diff_usec;
+        usecSinceLast -= diff_usec;
       }
    }
    usecSinceLast++;
@@ -448,6 +461,11 @@ Bit64u bx_pc_system_c::time_usec_sequential()
 Bit64u bx_pc_system_c::time_usec()
 {
   return (Bit64u) (((double)(Bit64s)time_ticks()) / m_ips);
+}
+
+Bit64u bx_pc_system_c::time_nsec()
+{
+  return (Bit64u) (((double)(Bit64s)time_ticks()) / m_ips * 1000.0);
 }
 
 void bx_pc_system_c::start_timers(void) { }
@@ -501,16 +519,37 @@ void bx_pc_system_c::activate_timer(unsigned i, Bit32u useconds, bx_bool continu
   // else set new period from useconds
   if (useconds==0) {
     ticks = timer[i].period;
-  }
-  else {
+  } else {
     // convert useconds to number of ticks
     ticks = (Bit64u) (double(useconds) * m_ips);
 
     // If the timer frequency is rediculously low, make it more sane.
     // This happens when 'ips' is too low.
     if (ticks < MinAllowableTimerPeriod) {
-      //BX_INFO(("activate_timer: adjusting ticks of %llu to min of %u",
-      //          ticks, MinAllowableTimerPeriod));
+      ticks = MinAllowableTimerPeriod;
+    }
+
+    timer[i].period = ticks;
+  }
+
+  activate_timer_ticks(i, ticks, continuous);
+}
+
+void bx_pc_system_c::activate_timer_nsec(unsigned i, Bit64u nseconds, bx_bool continuous)
+{
+  Bit64u ticks;
+
+  // if nseconds = 0, use default stored in period field
+  // else set new period from useconds
+  if (nseconds==0) {
+    ticks = timer[i].period;
+  } else {
+    // convert nseconds to number of ticks
+    ticks = (Bit64u) (double(nseconds) * m_ips / 1000.0);
+
+    // If the timer frequency is rediculously low, make it more sane.
+    // This happens when 'ips' is too low.
+    if (ticks < MinAllowableTimerPeriod) {
       ticks = MinAllowableTimerPeriod;
     }
 
@@ -545,7 +584,7 @@ bx_bool bx_pc_system_c::unregisterTimer(unsigned timerIndex)
 
   if (timer[timerIndex].active) {
     BX_PANIC(("unregisterTimer: timer '%s' is still active!", timer[timerIndex].id));
-    return(0); // Fail.
+    return 0; // Fail.
   }
 
   // Reset timer fields for good measure.
@@ -557,7 +596,24 @@ bx_bool bx_pc_system_c::unregisterTimer(unsigned timerIndex)
   timer[timerIndex].this_ptr   = NULL;
   memset(timer[timerIndex].id, 0, BxMaxTimerIDLen);
 
-  if (timerIndex == (numTimers-1)) numTimers--;
+  if (timerIndex == (numTimers - 1)) numTimers--;
 
-  return(1); // OK
+  return 1; // OK
+}
+
+void bx_pc_system_c::setTimerParam(unsigned timerIndex, Bit32u param)
+{
+#if BX_TIMER_DEBUG
+  if (timerIndex >= numTimers)
+    BX_PANIC(("setTimerParam: timer %u OOB", timerIndex));
+#endif
+  timer[timerIndex].param = param;
+}
+
+void bx_pc_system_c::isa_bus_delay(void)
+{
+  // Emulate 8 MHz ISA bus speed
+  if (m_ips > 4.0) {
+    tickn((Bit32u)(m_ips * 2.0));
+  }
 }

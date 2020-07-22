@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: disasm.h 11276 2012-07-12 14:51:54Z sshwarts $
+// $Id: disasm.h 12925 2016-06-12 21:23:48Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2011 Stanislav Shwartsman
+//   Copyright (c) 2005-2014 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -26,6 +26,8 @@
 
 #include "config.h"
 
+#include "cpu/decoder/decoder.h"
+
 #define BX_DECODE_MODRM(modrm_byte, mod, opcode, rm) { \
   mod    = (modrm_byte >> 6) & 0x03; \
   opcode = (modrm_byte >> 3) & 0x07; \
@@ -37,73 +39,6 @@
   index = (sib_byte >> 3) & 0x07;  \
   base  =  sib_byte & 0x07;        \
 }
-
-/* Instruction set attributes (duplicated in cpu.h) */
-#define IA_X87              (BX_CONST64(1) << 0)   /* FPU (X87) instruction */
-#define IA_486              (BX_CONST64(1) << 1)   /* 486 new instruction */
-#define IA_PENTIUM          (BX_CONST64(1) << 2)   /* Pentium new instruction */
-#define IA_P6               (BX_CONST64(1) << 3)   /* P6 new instruction */
-#define IA_MMX              (BX_CONST64(1) << 4)   /* MMX instruction */
-#define IA_3DNOW            (BX_CONST64(1) << 5)   /* 3DNow! instruction (AMD) */
-#define IA_SYSCALL_SYSRET   (BX_CONST64(1) << 6)   /* SYSCALL/SYSRET in legacy mode (AMD) */
-#define IA_SYSENTER_SYSEXIT (BX_CONST64(1) << 7)   /* SYSENTER/SYSEXIT instruction */
-#define IA_CLFLUSH          (BX_CONST64(1) << 8)   /* CLFLUSH instruction */
-#define IA_SSE              (BX_CONST64(1) << 9)   /* SSE  instruction */
-#define IA_SSE2             (BX_CONST64(1) << 10)  /* SSE2 instruction */
-#define IA_SSE3             (BX_CONST64(1) << 11)  /* SSE3 instruction */
-#define IA_SSSE3            (BX_CONST64(1) << 12)  /* SSSE3 instruction */
-#define IA_SSE4_1           (BX_CONST64(1) << 13)  /* SSE4_1 instruction */
-#define IA_SSE4_2           (BX_CONST64(1) << 14)  /* SSE4_2 instruction */
-#define IA_POPCNT           (BX_CONST64(1) << 15)  /* POPCNT instruction */
-#define IA_MONITOR_MWAIT    (BX_CONST64(1) << 16)  /* MONITOR/MWAIT instruction */
-#define IA_VMX              (BX_CONST64(1) << 17)  /* VMX instruction */
-#define IA_SMX              (BX_CONST64(1) << 18)  /* SMX instruction */
-#define IA_LM_LAHF_SAHF     (BX_CONST64(1) << 19)  /* Long Mode LAHF/SAHF instruction */
-#define IA_CMPXCHG16B       (BX_CONST64(1) << 20)  /* CMPXCHG16B instruction */
-#define IA_RDTSCP           (BX_CONST64(1) << 21)  /* RDTSCP instruction */
-#define IA_XSAVE            (BX_CONST64(1) << 22)  /* XSAVE/XRSTOR extensions instruction */
-#define IA_XSAVEOPT         (BX_CONST64(1) << 23)  /* XSAVEOPT instruction */
-#define IA_AES_PCLMULQDQ    (BX_CONST64(1) << 24)  /* AES+PCLMULQDQ instruction */
-#define IA_MOVBE            (BX_CONST64(1) << 25)  /* MOVBE Intel Atom(R) instruction */
-#define IA_FSGSBASE         (BX_CONST64(1) << 26)  /* FS/GS BASE access instruction */
-#define IA_INVPCID          (BX_CONST64(1) << 27)  /* INVPCID instruction */
-#define IA_AVX              (BX_CONST64(1) << 28)  /* AVX instruction */
-#define IA_AVX2             (BX_CONST64(1) << 29)  /* AVX2 instruction */
-#define IA_AVX_F16C         (BX_CONST64(1) << 30)  /* AVX F16 convert instruction */
-#define IA_AVX_FMA          (BX_CONST64(1) << 31)  /* AVX FMA instruction */
-#define IA_SSE4A            (BX_CONST64(1) << 32)  /* SSE4A instruction (AMD) */
-#define IA_LZCNT            (BX_CONST64(1) << 33)  /* LZCNT instruction */
-#define IA_BMI1             (BX_CONST64(1) << 34)  /* BMI1 instruction */
-#define IA_BMI2             (BX_CONST64(1) << 35)  /* BMI2 instruction */
-#define IA_FMA4             (BX_CONST64(1) << 36)  /* FMA4 instruction (AMD) */
-#define IA_XOP              (BX_CONST64(1) << 37)  /* XOP instruction (AMD) */
-#define IA_TBM              (BX_CONST64(1) << 38)  /* TBM instruction (AMD) */
-#define IA_SVM              (BX_CONST64(1) << 39)  /* SVM instruction (AMD) */
-#define IA_ADX              (BX_CONST64(1) << 40)  /* ADCX/ADOX instruction */
-
-/* general purpose bit register */
-enum {
-	rAX_REG,
-	rCX_REG,
-	rDX_REG,
-	rBX_REG,
-	rSP_REG,
-	rBP_REG,
-	rSI_REG,
-	rDI_REG
-};
-
-/* segment register */
-enum {
-	ES_REG,
-	CS_REG,
-	SS_REG,
-	DS_REG,
-	FS_REG,
-	GS_REG,
-        INVALID_SEG1,
-        INVALID_SEG2
-};
 
 class disassembler;
 struct x86_insn;
@@ -119,7 +54,7 @@ struct BxDisasmOpcodeInfo_t
     BxDisasmPtr_t Operand2;
     BxDisasmPtr_t Operand3;
     BxDisasmPtr_t Operand4;
-    Bit64u Feature;
+    Bit8u Feature;
 };
 
 struct BxDisasmOpcodeTable_t
@@ -171,6 +106,7 @@ public:
 #define BX_AVX_VL256 1
   Bit8u vex_vvv, vex_l, vex_w;
   int is_vex; // 0 - no VEX used, 1 - VEX is used, -1 - invalid VEX
+  int is_evex; // 0 - no EVEX used, 1 - EVEX is used, -1 - invalid EVEX
   int is_xop; // 0 - no XOP used, 1 - XOP is used, -1 - invalid XOP
   Bit8u modrm, mod, nnn, rm;
   Bit8u sib, scale, index, base;
@@ -178,6 +114,10 @@ public:
      Bit16u displ16;
      Bit32u displ32;
   } displacement;
+
+  bx_bool evex_b;
+  bx_bool evex_z;
+  unsigned evex_ll_rc; 
 };
 
 BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
@@ -205,6 +145,7 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
   b1 = 0;
 
   is_vex = 0;
+  is_evex = 0;
   is_xop = 0;
   vex_vvv = 0;
   vex_l = BX_AVX_VL128;
@@ -212,43 +153,48 @@ BX_CPP_INLINE x86_insn::x86_insn(bx_bool is32, bx_bool is64)
   modrm = mod = nnn = rm = 0;
   sib = scale = index = base = 0;
   displacement.displ32 = 0;
+
+  evex_b = 0;
+  evex_ll_rc = 0;
+  evex_z = 0;
 }
 
 class disassembler {
 public:
-  disassembler(): offset_mode_hex(0) { set_syntax_intel(); }
+  disassembler(): offset_mode_hex(0), print_mem_datasize(1) { set_syntax_intel(); }
 
-  unsigned disasm(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf);
+  unsigned disasm(bx_bool is_32, bx_bool is_64, bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf);
 
-  unsigned disasm16(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return disasm(0, 0, base, ip, instr, disbuf); }
+  unsigned disasm16(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(0, 0, cs_base, ip, instr, disbuf); }
 
-  unsigned disasm32(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return disasm(1, 0, base, ip, instr, disbuf); }
+  unsigned disasm32(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(1, 0, cs_base, ip, instr, disbuf); }
 
-  unsigned disasm64(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return disasm(1, 1, base, ip, instr, disbuf); }
+  unsigned disasm64(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return disasm(1, 1, cs_base, ip, instr, disbuf); }
 
-  x86_insn decode(bx_bool is_32, bx_bool is_64, bx_address base, bx_address ip, const Bit8u *instr, char *disbuf);
+  x86_insn decode(bx_bool is_32, bx_bool is_64, bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf);
 
-  x86_insn decode16(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return decode(0, 0, base, ip, instr, disbuf); }
+  x86_insn decode16(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(0, 0, cs_base, ip, instr, disbuf); }
 
-  x86_insn decode32(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return decode(1, 0, base, ip, instr, disbuf); }
+  x86_insn decode32(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(1, 0, cs_base, ip, instr, disbuf); }
 
-  x86_insn decode64(bx_address base, bx_address ip, const Bit8u *instr, char *disbuf)
-    { return decode(1, 1, base, ip, instr, disbuf); }
+  x86_insn decode64(bx_address cs_base, bx_address ip, const Bit8u *instr, char *disbuf)
+    { return decode(1, 1, cs_base, ip, instr, disbuf); }
 
   void set_syntax_intel();
   void set_syntax_att();
 
   void set_offset_mode_hex(bx_bool mode) { offset_mode_hex = mode; }
+  void set_mem_datasize_print(bx_bool mode) { print_mem_datasize = mode; }
 
   void toggle_syntax_mode();
 
 private:
-  bx_bool intel_mode, offset_mode_hex;
+  bx_bool intel_mode, offset_mode_hex, print_mem_datasize;
 
   const char **general_16bit_regname;
   const char **general_8bit_regname;
@@ -267,7 +213,7 @@ private:
 
 private:
 
-  bx_address db_eip, db_base;
+  bx_address db_eip, db_cs_base;
 
   const Bit8u *instruction;        // for fetching of next byte of instruction
 
@@ -313,6 +259,7 @@ private:
   void dis_sprintf(const char *fmt, ...);
   void decode_modrm(x86_insn *insn);
   unsigned decode_vex(x86_insn *insn);
+  unsigned decode_evex(x86_insn *insn);
   unsigned decode_xop(x86_insn *insn);
 
   void resolve16_mod0   (const x86_insn *insn, unsigned mode);
@@ -445,9 +392,6 @@ public:
 
   // segment registers
   void Sw(const x86_insn *insn);
-
-  // test registers
-  void Td(const x86_insn *insn);
 
   // control register
   void Cd(const x86_insn *insn);

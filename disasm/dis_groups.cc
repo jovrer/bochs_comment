@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_groups.cc 10857 2011-12-25 19:35:29Z sshwarts $
+// $Id: dis_groups.cc 13385 2017-12-13 18:18:20Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //   Copyright (c) 2005-2011 Stanislav Shwartsman
@@ -22,75 +22,77 @@
 #include <stdio.h>
 #include <assert.h>
 #include "disasm.h"
+#include "osdep.h"
 
-/*
-#if BX_DEBUGGER
+#if BX_DEBUGGER && 0
 #include "../bx_debug/debug.h"
+#define SYMBOLIC_JUMP(fmt)  fmt " (%s)"
+#define GET_SYMBOL(addr) bx_dbg_disasm_symbolic_address((addr), 0)
+#else
+#define SYMBOLIC_JUMP(fmt)  fmt "%s"
+#define GET_SYMBOL(addr) ""
 #endif
-*/
+
+#if BX_SUPPORT_X86_64 == 0
+#define BX_64BIT_REG_RAX BX_32BIT_REG_EAX
+#define BX_64BIT_REG_RCX BX_32BIT_REG_ECX
+#define BX_64BIT_REG_RSI BX_32BIT_REG_ESI
+#define BX_64BIT_REG_RDI BX_32BIT_REG_EDI
+#endif
 
 void disassembler::Apw(const x86_insn *insn)
 {
   Bit16u imm16 = fetch_word();
   Bit16u cs_selector = fetch_word();
-  dis_sprintf("%04x:%04x", (unsigned) cs_selector, (unsigned) imm16);
+  dis_sprintf("0x%04x:%04x", (unsigned) cs_selector, (unsigned) imm16);
 }
 
 void disassembler::Apd(const x86_insn *insn)
 {
   Bit32u imm32 = fetch_dword();
   Bit16u cs_selector = fetch_word();
-  dis_sprintf("%04x:%08x", (unsigned) cs_selector, (unsigned) imm32);
+  dis_sprintf("0x%04x:%08x", (unsigned) cs_selector, (unsigned) imm32);
 }
 
 // 8-bit general purpose registers
-void disassembler::AL_Reg(const x86_insn *insn) { dis_sprintf("%s", general_8bit_regname[rAX_REG]); }
-void disassembler::CL_Reg(const x86_insn *insn) { dis_sprintf("%s", general_8bit_regname[rCX_REG]); }
+void disassembler::AL_Reg(const x86_insn *insn) { dis_sprintf("%s", general_8bit_regname[BX_8BIT_REG_AL]); }
+void disassembler::CL_Reg(const x86_insn *insn) { dis_sprintf("%s", general_8bit_regname[BX_8BIT_REG_CL]); }
 
 // 16-bit general purpose registers
 void disassembler::AX_Reg(const x86_insn *insn) {
-  dis_sprintf("%s", general_16bit_regname[rAX_REG]);
+  dis_sprintf("%s", general_16bit_regname[BX_16BIT_REG_AX]);
 }
 
 void disassembler::DX_Reg(const x86_insn *insn) {
-  dis_sprintf("%s", general_16bit_regname[rDX_REG]);
+  dis_sprintf("%s", general_16bit_regname[BX_16BIT_REG_DX]);
 }
 
 // 32-bit general purpose registers
 void disassembler::EAX_Reg(const x86_insn *insn)
 {
-  dis_sprintf("%s", general_32bit_regname[rAX_REG]);
+  dis_sprintf("%s", general_32bit_regname[BX_32BIT_REG_EAX]);
 }
 
 // 64-bit general purpose registers
 void disassembler::RAX_Reg(const x86_insn *insn)
 {
-  dis_sprintf("%s", general_64bit_regname[rAX_REG]);
+  dis_sprintf("%s", general_64bit_regname[BX_64BIT_REG_RAX]);
 }
 
 void disassembler::RCX_Reg(const x86_insn *insn)
 {
-  dis_sprintf("%s", general_64bit_regname[rCX_REG]);
+  dis_sprintf("%s", general_64bit_regname[BX_64BIT_REG_RCX]);
 }
 
 // segment registers
-void disassembler::CS(const x86_insn *insn) { dis_sprintf("%s", segment_name[CS_REG]); }
-void disassembler::DS(const x86_insn *insn) { dis_sprintf("%s", segment_name[DS_REG]); }
-void disassembler::ES(const x86_insn *insn) { dis_sprintf("%s", segment_name[ES_REG]); }
-void disassembler::SS(const x86_insn *insn) { dis_sprintf("%s", segment_name[SS_REG]); }
-void disassembler::FS(const x86_insn *insn) { dis_sprintf("%s", segment_name[FS_REG]); }
-void disassembler::GS(const x86_insn *insn) { dis_sprintf("%s", segment_name[GS_REG]); }
+void disassembler::CS(const x86_insn *insn) { dis_sprintf("%s", segment_name[BX_SEG_REG_CS]); }
+void disassembler::DS(const x86_insn *insn) { dis_sprintf("%s", segment_name[BX_SEG_REG_DS]); }
+void disassembler::ES(const x86_insn *insn) { dis_sprintf("%s", segment_name[BX_SEG_REG_ES]); }
+void disassembler::SS(const x86_insn *insn) { dis_sprintf("%s", segment_name[BX_SEG_REG_SS]); }
+void disassembler::FS(const x86_insn *insn) { dis_sprintf("%s", segment_name[BX_SEG_REG_FS]); }
+void disassembler::GS(const x86_insn *insn) { dis_sprintf("%s", segment_name[BX_SEG_REG_GS]); }
 
 void disassembler::Sw(const x86_insn *insn) { dis_sprintf("%s", segment_name[insn->nnn]); }
-
-// test registers
-void disassembler::Td(const x86_insn *insn)
-{
-  if (intel_mode)
-    dis_sprintf  ("tr%d", insn->nnn);
-  else
-    dis_sprintf("%%tr%d", insn->nnn);
-}
 
 // control register
 void disassembler::Cd(const x86_insn *insn)
@@ -245,7 +247,7 @@ void disassembler::By(const x86_insn *insn)
 void disassembler::I1(const x86_insn *insn)
 {
   if (! intel_mode) dis_putc('$');
-  dis_putc ('1');
+  dis_sprintf("0x01");
 }
 
 void disassembler::Ib(const x86_insn *insn)
@@ -502,7 +504,7 @@ void disassembler::OP_O(const x86_insn *insn, unsigned size)
   if (insn->is_seg_override())
     seg = segment_name[insn->seg_override];
   else
-    seg = segment_name[DS_REG];
+    seg = segment_name[BX_SEG_REG_DS];
 
   print_datasize(size);
 
@@ -512,11 +514,11 @@ void disassembler::OP_O(const x86_insn *insn, unsigned size)
   }
   else if (insn->as_32) {
     Bit32u imm32 = fetch_dword();
-    dis_sprintf("%s:0x%x", seg, (unsigned) imm32);
+    dis_sprintf("%s:0x%08x", seg, (unsigned) imm32);
   }
   else {
     Bit16u imm16 = fetch_word();
-    dis_sprintf("%s:0x%x", seg, (unsigned) imm16);
+    dis_sprintf("%s:0x%04x", seg, (unsigned) imm16);
   }
 }
 
@@ -566,19 +568,19 @@ void disassembler::OP_X(const x86_insn *insn, unsigned size)
   const char *rsi, *seg;
 
   if (insn->as_64) {
-    rsi = general_64bit_regname[rSI_REG];
+    rsi = general_64bit_regname[BX_64BIT_REG_RSI];
   }
   else {
     if (insn->as_32)
-      rsi = general_32bit_regname[rSI_REG];
+      rsi = general_32bit_regname[BX_32BIT_REG_ESI];
     else
-      rsi = general_16bit_regname[rSI_REG];
+      rsi = general_16bit_regname[BX_16BIT_REG_SI];
   }
 
   if (insn->is_seg_override())
     seg = segment_name[insn->seg_override];
   else
-    seg = segment_name[DS_REG];
+    seg = segment_name[BX_SEG_REG_DS];
 
   print_datasize(size);
 
@@ -598,21 +600,21 @@ void disassembler::OP_Y(const x86_insn *insn, unsigned size)
   const char *rdi;
 
   if (insn->as_64) {
-    rdi = general_64bit_regname[rDI_REG];
+    rdi = general_64bit_regname[BX_64BIT_REG_RDI];
   }
   else {
     if (insn->as_32)
-      rdi = general_32bit_regname[rDI_REG];
+      rdi = general_32bit_regname[BX_32BIT_REG_EDI];
     else
-      rdi = general_16bit_regname[rDI_REG];
+      rdi = general_16bit_regname[BX_16BIT_REG_DI];
   }
 
   print_datasize(size);
 
   if (intel_mode)
-    dis_sprintf("%s:[%s]", segment_name[ES_REG], rdi);
+    dis_sprintf("%s:[%s]", segment_name[BX_SEG_REG_ES], rdi);
   else
-    dis_sprintf("%s:(%s)", segment_name[ES_REG], rdi);
+    dis_sprintf("%s:(%s)", segment_name[BX_SEG_REG_ES], rdi);
 }
 
 void disassembler::Yb(const x86_insn *insn) { OP_Y(insn, B_SIZE); }
@@ -625,13 +627,13 @@ void disassembler::OP_sY(const x86_insn *insn, unsigned size)
   const char *rdi, *seg;
 
   if (insn->as_64) {
-    rdi = general_64bit_regname[rDI_REG];
+    rdi = general_64bit_regname[BX_64BIT_REG_RDI];
   }
   else {
     if (insn->as_32)
-      rdi = general_32bit_regname[rDI_REG];
+      rdi = general_32bit_regname[BX_32BIT_REG_EDI];
     else
-      rdi = general_16bit_regname[rDI_REG];
+      rdi = general_16bit_regname[BX_16BIT_REG_DI];
   }
 
   print_datasize(size);
@@ -639,7 +641,7 @@ void disassembler::OP_sY(const x86_insn *insn, unsigned size)
   if (insn->is_seg_override())
     seg = segment_name[insn->seg_override];
   else
-    seg = segment_name[DS_REG];
+    seg = segment_name[BX_SEG_REG_DS];
 
   if (intel_mode)
     dis_sprintf("%s:[%s]", seg, rdi);
@@ -656,21 +658,23 @@ void disassembler::sYdq(const x86_insn *insn) { OP_sY(insn, XMM_SIZE + insn->vex
 void disassembler::Jb(const x86_insn *insn)
 {
   Bit8s imm8 = (Bit8s) fetch_byte();
+  const char *sym;
 
   if (insn->is_64) {
     Bit64u imm64 = (Bit8s) imm8;
+    Bit64u target = db_eip + imm64;
+    sym = GET_SYMBOL(target);
+    sym = sym ? sym : "<unknown>";
 
     if (offset_mode_hex) {
-      dis_sprintf(".+0x%08x%08x", GET32H(imm64), GET32L(imm64));
+      dis_sprintf(SYMBOLIC_JUMP(".+0x" FMT_ADDRX64), imm64, sym);
     }
     else {
-      dis_sprintf(".%+d", (int) imm8);
+      dis_sprintf(SYMBOLIC_JUMP(".%+d"), (int) imm8, sym);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit64u target = db_eip + imm64;
-      target += db_base;
-      dis_sprintf(" (0x%08x%08x)", GET32H(target), GET32L(target));
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+      dis_sprintf(" (0x" FMT_ADDRX64 ")", target);
     }
 
     return;
@@ -678,32 +682,36 @@ void disassembler::Jb(const x86_insn *insn)
 
   if (insn->os_32) {
     Bit32u imm32 = (Bit8s) imm8;
+    Bit32u target = (Bit32u)(db_cs_base + db_eip + (Bit32s) imm32);
+    sym = GET_SYMBOL(target);
+    sym = sym ? sym : "<unknown>";
 
     if (offset_mode_hex) {
-      dis_sprintf(".+0x%08x", (unsigned) imm32);
+      dis_sprintf(SYMBOLIC_JUMP(".+0x%08x"), (unsigned) imm32, sym);
     }
     else {
-      dis_sprintf(".%+d", (int) imm8);
+      dis_sprintf(SYMBOLIC_JUMP(".%+d"), (int) imm8, sym);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit32u target = (Bit32u)(db_base + db_eip + (Bit32s) imm32);
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
       dis_sprintf(" (0x%08x)", target);
     }
   }
   else {
     Bit16u imm16 = (Bit8s) imm8;
+    Bit16u target = (Bit16u)((db_eip + (Bit16s) imm16) & 0xffff);
+    sym = GET_SYMBOL(target);
+    sym = sym ? sym : "<unknown>";
 
     if (offset_mode_hex) {
-      dis_sprintf(".+0x%04x", (unsigned) imm16);
+      dis_sprintf(SYMBOLIC_JUMP(".+0x%04x"), (unsigned) imm16, sym);
     }
     else {
-      dis_sprintf(".%+d", (int) imm8);
+      dis_sprintf(SYMBOLIC_JUMP(".%+d"), (int) imm8, sym);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit16u target = (Bit16u)((db_eip + (Bit16s) imm16) & 0xffff);
-      dis_sprintf(" (0x%08x)", target + db_base);
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+      dis_sprintf(" (0x%08x)", target + db_cs_base);
     }
   }
 }
@@ -714,51 +722,61 @@ void disassembler::Jw(const x86_insn *insn)
   assert(! insn->is_64);
 
   Bit16s imm16 = (Bit16s) fetch_word();
+  const char *sym;
 
+  Bit16u target = (db_eip + imm16) & 0xffff;
+  sym = GET_SYMBOL(target);
+  sym = sym ? sym : "<unknown>";
   if (offset_mode_hex) {
-    dis_sprintf(".+0x%04x", (unsigned) (Bit16u) imm16);
+    dis_sprintf(SYMBOLIC_JUMP(".+0x%04x"),
+        (unsigned) (Bit16u) imm16, sym);
   }
   else {
-    dis_sprintf(".%+d", (int) imm16);
+    dis_sprintf(SYMBOLIC_JUMP(".%+d"), (int) imm16, sym);
   }
 
-  if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-    Bit16u target = (db_eip + imm16) & 0xffff;
-    dis_sprintf(" (0x%08x)", target + db_base);
+  if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+    dis_sprintf(" (0x%08x)", target + db_cs_base);
   }
 }
 
 void disassembler::Jd(const x86_insn *insn)
 {
   Bit32s imm32 = (Bit32s) fetch_dword();
+  const char *sym;
 
   if (insn->is_64) {
     Bit64u imm64 = (Bit32s) imm32;
+    Bit64u target = db_eip + (Bit64s) imm64;
+    sym = GET_SYMBOL(target);
+    sym = sym ? sym : "<unknown>";
 
     if (offset_mode_hex) {
-      dis_sprintf(".+0x%08x%08x", GET32H(imm64), GET32L(imm64));
+      dis_sprintf(SYMBOLIC_JUMP(".+0x" FMT_ADDRX64),
+          imm64, sym);
     }
     else {
-      dis_sprintf(".%+d", (int) imm32);
+      dis_sprintf(SYMBOLIC_JUMP(".%+d"), (int) imm32, sym);
     }
 
-    if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-      Bit64u target = db_base + db_eip + (Bit64s) imm64;
-      dis_sprintf(" (0x%08x%08x)", GET32H(target), GET32L(target));
+    if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
+      dis_sprintf(" (0x" FMT_ADDRX64 ")", target);
     }
 
     return;
   }
 
+  Bit32u target = (Bit32u)(db_cs_base + db_eip + (Bit32s) imm32);
+  sym = GET_SYMBOL(target);
+  sym = sym ? sym : "<unknown>";
   if (offset_mode_hex) {
-    dis_sprintf(".+0x%08x", (unsigned) imm32);
+    dis_sprintf(SYMBOLIC_JUMP(".+0x%08x"), (unsigned) imm32, sym);
   }
   else {
-    dis_sprintf(".%+d", (int) imm32);
+    dis_sprintf(SYMBOLIC_JUMP(".%+d"), (int) imm32, sym);
   }
 
-  if (db_base != BX_JUMP_TARGET_NOT_REQ) {
-    Bit32u target = (Bit32u)(db_base + db_eip + (Bit32s) imm32);
+  if (db_cs_base != BX_JUMP_TARGET_NOT_REQ) {
     dis_sprintf(" (0x%08x)", target);
   }
 }

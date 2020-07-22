@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: enh_dbg.cc 11250 2012-07-01 14:37:13Z vruppert $
+// $Id: enh_dbg.cc 13677 2019-12-14 12:55:08Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,7 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2019  The Bochs Project
 
 #include "config.h"
 
@@ -16,7 +17,6 @@
 #include <math.h>
 
 #include "bochs.h"
-#include "param_names.h"
 #include "cpu/cpu.h"
 #include "disasm/disasm.h"
 
@@ -76,6 +76,8 @@ bx_bool ignoreNxtT = TRUE;      // Do not show "Next at t=" output lines
 bx_bool ignSSDisasm = TRUE;     // Do not show extra disassembly line at each break
 int UprCase = 0;                // 1 = convert all Asm, Register names, Register values to uppercase
 int DumpInAsciiMode = 3;        // bit 1 = show ASCII in dumps, bit 2 = show hex, value=0 is illegal
+int DumpWSIndex = 0;            // word size index for memory dump
+bx_bool LogView = 0;            // Send log to output window
 
 bx_bool isLittleEndian = TRUE;
 int DefaultAsmLines = 512;      // default # of asm lines disassembled and "cached"
@@ -114,7 +116,7 @@ bx_bool DumpHasFocus = FALSE;
 unsigned short BarClix[2];
 
 bx_bool AtBreak = FALSE;    // Status indicators
-bx_bool CpuModeChange = TRUE;
+bx_bool CpuModeChange;
 bx_bool StatusChange = TRUE;
 
 bx_bool In64Mode = FALSE;       // CPU modes
@@ -122,7 +124,8 @@ bx_bool In32Mode = FALSE;
 unsigned CpuMode = 0;
 Bit32u InPaging = 0;            // Storage for the top bit of CR0, unmodified
 
-bx_bool doOneTimeInit = TRUE;   // Internal flags
+bx_bool doOneTimeInit = TRUE;   // Internal flag #1
+bx_bool doSimuInit;             // Internal flag #2
 bx_bool ResizeColmns;           // address/value column autosize flag
 bx_bool FWflag = FALSE;         // friendly warning has been shown to user once already
 
@@ -219,8 +222,8 @@ static const char *BrkName[5] = {
    "Read Watchpoint",
 };
 
-bx_address BrkLAddr[BX_DBG_MAX_LIN_BPOINTS];
-unsigned BrkIdx[BX_DBG_MAX_LIN_BPOINTS];
+bx_address BrkLAddr[BX_DBG_MAX_LIN_BPOINTS+1];
+unsigned BrkIdx[BX_DBG_MAX_LIN_BPOINTS+1];
 int BreakCount = 0;
 
 // Breakpoint Dump Window stuff
@@ -233,6 +236,13 @@ unsigned short WWPSnapCount;
 unsigned short RWPSnapCount;
 bx_phy_address WWP_Snapshot[16];
 bx_phy_address RWP_Snapshot[16];
+
+char *debug_cmd;
+bx_bool debug_cmd_ready;
+bx_bool vgaw_refresh;
+
+static bxevent_handler old_callback = NULL;
+static void *old_callback_arg = NULL;
 
 short nDock[36] = {     // lookup table for alternate DockOrders
     0x231, 0x312, 0x231, 0x213, 0x132, 0x132,
@@ -767,7 +777,7 @@ int FillSSE(int LineCount)
     ssetxt[10] = '0';       // I'm putting a hex value in the decimal column -- more room there!
     ssetxt[11] = 'x';
     strcpy (ssetxt + 28, " : ");
-    for (int i = 0; i < BX_XMM_REGISTERS; i++)
+    for (int i = 0; i < /*BX_XMM_REGISTERS*/ 16; i++)
     {
         if (i >= 10)
         {
@@ -1071,7 +1081,7 @@ void LoadRegList()
             ++itemnum;
         }
     }
-    // display System regsiters (if requested)
+    // display System registers (if requested)
     // displaying these once may be necessary for column resizing
     if (SeeReg[2] || (ResizeColmns != FALSE && NeedSysRresize != FALSE))
     {
@@ -1350,7 +1360,7 @@ void InitRegObjects()
 void doUpdate()
 {
     void FillStack();
-    if (doOneTimeInit != FALSE)
+    if (doSimuInit != FALSE)
         SpecialInit();
     // begin an autoupdate of Register and Asm windows
     LoadRegList();      // build and show ListView
@@ -1961,7 +1971,7 @@ void FillBrkp()
             for (i = 0; i < totqty; i++)
             {
                 WWP_Snapshot[i] = write_watchpoint[i].addr;
-                sprintf (cols[0],"%08X",write_watchpoint[i].addr);
+                sprintf (cols[0], FMT_PHY_ADDRX, (bx_phy_address) write_watchpoint[i].addr);
                 InsertListRow(cols, 18, DUMP_WND, LineCount++, 8);
             }
         }
@@ -1973,7 +1983,7 @@ void FillBrkp()
             for (i = 0; i < totqty; i++)
             {
                 RWP_Snapshot[i] = read_watchpoint[i].addr;
-                sprintf (cols[0],"%08X",read_watchpoint[i].addr);
+                sprintf (cols[0], FMT_PHY_ADDRX, (bx_phy_address) read_watchpoint[i].addr);
                 InsertListRow(cols, 18, DUMP_WND, LineCount++, 8);
             }
         }
@@ -2104,6 +2114,8 @@ void DoAllInit()
     char *p;
     int i;
 
+    doSimuInit = TRUE;
+    CpuModeChange = TRUE;
     CurrentCPU = 0;     // need to init CPU info once only
     if (SingleCPU == FALSE)
         TotCPUs = BX_SMP_PROCESSORS;
@@ -2364,6 +2376,7 @@ void doNewWSize(int i)
     if (j != i)
     {
         ToggleWSchecks(i, j);
+        DumpWSIndex = i;
         DumpAlign = 1<<i;
         if (DViewMode == VIEW_MEMDUMP && DumpInitted != FALSE)
         {
@@ -2551,10 +2564,8 @@ void doStepN()
     PrevStepNSize = i;
     AtBreak = FALSE;
     StatusChange = TRUE;
-    bx_dbg_stepN_command(CurrentCPU, i);
-    AtBreak = TRUE;
-    StatusChange = TRUE;
-    OnBreak();
+    sprintf(debug_cmd, "s %d %d", CurrentCPU, i);
+    debug_cmd_ready = TRUE;
 }
 
 // User wants a custom disassembly
@@ -2622,7 +2633,7 @@ void SetBreak(int OneEntry)
         {
             bx_address nbrk = (bx_address) AsmLA[L];
             // Set a "regular" bochs linear breakpoint to that address
-            int BpId = bx_dbg_lbreakpoint_command(bkRegular, nbrk);
+            int BpId = bx_dbg_lbreakpoint_command(bkRegular, nbrk, NULL);
             if (BpId >= 0)
             {
                 // insertion sort the new Brkpt into the local list
@@ -3374,13 +3385,213 @@ void ActivateMenuItem (int cmd)
             ResizeColmns = TRUE;        // column widths are font dependent
             if (NewFont() != FALSE)
                 VSizeChange();
+            break;
+
+        case CMD_LOGVIEW: // Toggle sending log to output window
+            LogView ^= 1;
+            SIM->set_log_viewer(LogView);
+            SetMenuCheckmark((int)LogView, CHK_CMD_LOGVIEW);
+            break;
     }
+}
+
+BxEvent *enh_dbg_notify_callback(void *unused, BxEvent *event)
+{
+  switch (event->type)
+  {
+    case BX_SYNC_EVT_GET_DBG_COMMAND:
+      {
+        debug_cmd = new char[512];
+        debug_cmd_ready = 0;
+        HitBreak();
+        while (debug_cmd_ready == 0 && bx_user_quit == 0)
+        {
+          if (vgaw_refresh != 0)  // is the GUI frontend requesting a VGAW refresh?
+            SIM->refresh_vga();
+          vgaw_refresh = 0;
+#ifdef WIN32
+          Sleep(10);
+#elif BX_HAVE_USLEEP
+          usleep(10000);
+#else
+          sleep(1);
+#endif
+        }
+        if (bx_user_quit != 0) {
+          bx_dbg_exit(0);
+        }
+        event->u.debugcmd.command = debug_cmd;
+        event->retcode = 1;
+        return event;
+      }
+    case BX_ASYNC_EVT_DBG_MSG:
+      {
+        ParseIDText(event->u.logmsg.msg);
+        return event;
+      }
+    case BX_ASYNC_EVT_LOG_MSG:
+      if (LogView) {
+        ParseIDText(event->u.logmsg.msg);
+        delete [] event->u.logmsg.msg;
+        return event;
+      }
+    default:
+      return (*old_callback)(old_callback_arg, event);
+  }
+}
+
+static size_t strip_whitespace(char *s)
+{
+  size_t ptr = 0;
+  char *tmp = new char[strlen(s)+1];
+  strcpy(tmp, s);
+  while (s[ptr] == ' ') ptr++;
+  if (ptr > 0) strcpy(s, tmp+ptr);
+  delete [] tmp;
+  ptr = strlen(s);
+  while ((ptr > 0) && (s[ptr-1] == ' ')) {
+    s[--ptr] = 0;
+  }
+  return ptr;
+}
+
+void ReadSettings()
+{
+  FILE *fd = NULL;
+  char line[512];
+  char *ret, *param, *val;
+  bx_bool format_checked = 0;
+  size_t len1 = 0, len2;
+  int i;
+
+  fd = fopen("bx_enh_dbg.ini", "r");
+  if (fd == NULL) return;
+  do {
+    ret = fgets(line, sizeof(line)-1, fd);
+    line[sizeof(line) - 1] = '\0';
+    size_t len = strlen(line);
+    if ((len>0) && (line[len-1] < ' '))
+      line[len-1] = '\0';
+    if ((ret != NULL) && (strlen(line) > 0)) {
+      if (!format_checked) {
+        if (!strncmp(line, "# bx_enh_dbg_ini", 16)) {
+          format_checked = 1;
+        } else {
+          fprintf(stderr, "bx_enh_dbg.ini: wrong file format\n");
+          fclose(fd);
+          return;
+        }
+      } else {
+        if (line[0] == '#') continue;
+        param = strtok(line, "=");
+        if (param != NULL) {
+          len1 = strip_whitespace(param);
+          val = strtok(NULL, "");
+          if (val == NULL) {
+            fprintf(stderr, "bx_enh_dbg.ini: missing value for parameter '%s'\n", param);
+            continue;
+          }
+        } else {
+          continue;
+        }
+        len2 = strip_whitespace(val);
+        if ((len1 == 0) || (len2 == 0)) continue;
+        if ((len1 == 9) && !strncmp(param, "SeeReg[", 7) && (param[8] == ']')) {
+          if ((param[7] < '0') || (param[7] > '7')) {
+            fprintf(stderr, "bx_enh_dbg.ini: invalid index for option SeeReg[x]\n");
+            continue;
+          }
+          i = atoi(&param[7]);
+          SeeReg[i] = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "SingleCPU")) {
+          SingleCPU = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ShowIOWindows")) {
+          ShowIOWindows = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ShowButtons")) {
+          ShowButtons = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "SeeRegColors")) {
+          SeeRegColors = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ignoreNxtT")) {
+          ignoreNxtT = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "ignSSDisasm")) {
+          ignSSDisasm = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "UprCase")) {
+          UprCase = atoi(val);
+        } else if (!strcmp(param, "DumpInAsciiMode")) {
+          DumpInAsciiMode = atoi(val);
+        } else if (!strcmp(param, "isLittleEndian")) {
+          isLittleEndian = !strcmp(val, "TRUE");
+        } else if (!strcmp(param, "DefaultAsmLines")) {
+          DefaultAsmLines = atoi(val);
+        } else if (!strcmp(param, "DumpWSIndex")) {
+          DumpWSIndex = atoi(val);
+          DumpAlign = (1 << DumpWSIndex);
+          PrevDAD = 0;
+        } else if (!strcmp(param, "DockOrder")) {
+          DockOrder = strtoul(val, NULL, 16);
+        } else if ((len1 == 15) && !strncmp(param, "ListWidthPix[", 13) && (param[14] == ']')) {
+          if ((param[13] < '0') || (param[13] > '2')) {
+            fprintf(stderr, "bx_enh_dbg.ini: invalid index for option SeeReg[x]\n");
+            continue;
+          }
+          i = atoi(&param[13]);
+          ListWidthPix[i] = atoi(val);
+        } else if (!ParseOSSettings(param, val)) {
+          fprintf(stderr, "bx_enh_dbg.ini: unknown option '%s'\n", line);
+        }
+      }
+    }
+  } while (!feof(fd));
+  fclose(fd);
+}
+
+void WriteSettings()
+{
+  FILE *fd = NULL;
+  int i;
+
+  fd = fopen("bx_enh_dbg.ini", "w");
+  if (fd == NULL) return;
+  fprintf(fd, "# bx_enh_dbg_ini\n");
+  for (i = 0; i < 8; i++) {
+    fprintf(fd, "SeeReg[%d] = %s\n", i, SeeReg[i] ? "TRUE" : "FALSE");
+  }
+  fprintf(fd, "SingleCPU = %s\n", SingleCPU ? "TRUE" : "FALSE");
+  fprintf(fd, "ShowIOWindows = %s\n", ShowIOWindows ? "TRUE" : "FALSE");
+  fprintf(fd, "ShowButtons = %s\n", ShowButtons ? "TRUE" : "FALSE");
+  fprintf(fd, "SeeRegColors = %s\n", SeeRegColors ? "TRUE" : "FALSE");
+  fprintf(fd, "ignoreNxtT = %s\n", ignoreNxtT ? "TRUE" : "FALSE");
+  fprintf(fd, "ignSSDisasm = %s\n", ignSSDisasm ? "TRUE" : "FALSE");
+  fprintf(fd, "UprCase = %d\n", UprCase);
+  fprintf(fd, "DumpInAsciiMode = %d\n", DumpInAsciiMode);
+  fprintf(fd, "isLittleEndian = %s\n", isLittleEndian ? "TRUE" : "FALSE");
+  fprintf(fd, "DefaultAsmLines = %d\n", DefaultAsmLines);
+  fprintf(fd, "DumpWSIndex = %d\n", DumpWSIndex);
+  fprintf(fd, "DockOrder = 0x%03x\n", DockOrder);
+  for (i = 0; i < 3; i++) {
+    fprintf(fd, "ListWidthPix[%d] = %d\n", i, ListWidthPix[i]);
+  }
+  WriteOSSettings(fd);
+  fclose(fd);
 }
 
 void InitDebugDialog()
 {
-    DoAllInit();    // non-os-specific init stuff
-    OSInit();
+  // redirect notify callback to the debugger specific code
+  SIM->get_notify_callback(&old_callback, &old_callback_arg);
+  assert (old_callback != NULL);
+  SIM->set_notify_callback(enh_dbg_notify_callback, NULL);
+  ReadSettings();
+  DoAllInit();    // non-os-specific init stuff
+  OSInit();
+}
+
+void CloseDebugDialog()
+{
+  WriteSettings();
+  SIM->set_log_viewer(0);
+  SIM->set_notify_callback(old_callback, old_callback_arg);
+  CloseDialog();
 }
 
 #endif

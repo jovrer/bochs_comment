@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: acpi.h 10419 2011-06-23 15:56:02Z vruppert $
+// $Id: acpi.h 13744 2019-12-28 21:04:53Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2006  Volker Ruppert
+//  Copyright (C) 2006-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -42,8 +42,7 @@ public:
   virtual void register_state(void);
   virtual void after_restore_state(void);
 
-  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
-  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+  virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);
   static void   write_handler(void *this_ptr, Bit32u address, Bit32u value, unsigned io_len);
@@ -67,6 +66,7 @@ private:
     Bit16u pmsts;
     Bit16u pmen;
     Bit16u pmcntrl;
+    Bit32u glbctl;
     Bit64u tmr_overflow_time;
     int timer_index;
     struct {

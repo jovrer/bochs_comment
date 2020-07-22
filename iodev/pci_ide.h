@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pci_ide.h 10424 2011-06-25 12:43:27Z vruppert $
+// $Id: pci_ide.h 13147 2017-03-24 19:57:25Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2004-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -38,6 +38,7 @@ public:
   virtual void init(void);
   virtual void reset(unsigned type);
   virtual bx_bool bmdma_present(void);
+  virtual void bmdma_start_transfer(Bit8u channel);
   virtual void bmdma_set_irq(Bit8u channel);
   virtual void register_state(void);
   virtual void after_restore_state(void);
@@ -48,8 +49,7 @@ public:
   void param_restore(bx_param_c *param, Bit64s val);
 #endif
 
-  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
-  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+  virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
 
   static void timer_handler(void *);
   BX_PIDE_SMF void timer(void);
@@ -57,6 +57,7 @@ public:
 private:
 
   struct {
+    unsigned chipset;
     struct {
       bx_bool cmd_ssbm;
       bx_bool cmd_rwcon;
@@ -67,6 +68,7 @@ private:
       Bit8u *buffer;
       Bit8u *buffer_top;
       Bit8u *buffer_idx;
+      bx_bool data_ready;
     } bmdma[2];
   } s;
 

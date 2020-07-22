@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: debugstuff.cc 11142 2012-04-16 19:18:23Z sshwarts $
+// $Id: debugstuff.cc 13653 2019-12-09 16:29:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2001-2009  The Bochs Project
@@ -98,7 +98,7 @@ const char* cpu_state_string(unsigned state)
      "in shutdown",
      "waiting for SIPI",
      "executing mwait",
-     "executing mwait inhibit interrups",
+     "executing mwait inhibit interrupts",
      "unknown state"
   };
 
@@ -108,8 +108,14 @@ const char* cpu_state_string(unsigned state)
 
 void BX_CPU_C::debug(bx_address offset)
 {
+#if BX_SUPPORT_VMX
+  BX_INFO(("CPU is in %s (%s%s)", cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode()),
+    cpu_state_string(BX_CPU_THIS_PTR activity_state),
+    BX_CPU_THIS_PTR in_vmx_guest ? ", vmx guest" : ""));
+#else
   BX_INFO(("CPU is in %s (%s)", cpu_mode_string(BX_CPU_THIS_PTR get_cpu_mode()),
     cpu_state_string(BX_CPU_THIS_PTR activity_state)));
+#endif
   BX_INFO(("CS.mode = %u bit",
     long64_mode() ? 64 : (BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.u.segment.d_b ? 32 : 16)));
   BX_INFO(("SS.mode = %u bit",
@@ -119,38 +125,20 @@ void BX_CPU_C::debug(bx_address offset)
 #endif
 #if BX_SUPPORT_X86_64
   if (long_mode()) {
-    BX_INFO(("| RAX=%08x%08x  RBX=%08x%08x",
-          (unsigned) (RAX >> 32), (unsigned) EAX,
-          (unsigned) (RBX >> 32), (unsigned) EBX));
-    BX_INFO(("| RCX=%08x%08x  RDX=%08x%08x",
-          (unsigned) (RCX >> 32), (unsigned) ECX,
-          (unsigned) (RDX >> 32), (unsigned) EDX));
-    BX_INFO(("| RSP=%08x%08x  RBP=%08x%08x",
-          (unsigned) (RSP >> 32), (unsigned) ESP,
-          (unsigned) (RBP >> 32), (unsigned) EBP));
-    BX_INFO(("| RSI=%08x%08x  RDI=%08x%08x",
-          (unsigned) (RSI >> 32), (unsigned) ESI,
-          (unsigned) (RDI >> 32), (unsigned) EDI));
-    BX_INFO(("|  R8=%08x%08x   R9=%08x%08x",
-          (unsigned) (R8  >> 32), (unsigned) (R8  & 0xFFFFFFFF),
-          (unsigned) (R9  >> 32), (unsigned) (R9  & 0xFFFFFFFF)));
-    BX_INFO(("| R10=%08x%08x  R11=%08x%08x",
-          (unsigned) (R10 >> 32), (unsigned) (R10 & 0xFFFFFFFF),
-          (unsigned) (R11 >> 32), (unsigned) (R11 & 0xFFFFFFFF)));
-    BX_INFO(("| R12=%08x%08x  R13=%08x%08x",
-          (unsigned) (R12 >> 32), (unsigned) (R12 & 0xFFFFFFFF),
-          (unsigned) (R13 >> 32), (unsigned) (R13 & 0xFFFFFFFF)));
-    BX_INFO(("| R14=%08x%08x  R15=%08x%08x",
-          (unsigned) (R14 >> 32), (unsigned) (R14 & 0xFFFFFFFF),
-          (unsigned) (R15 >> 32), (unsigned) (R15 & 0xFFFFFFFF)));
+    BX_INFO(("| RAX=" FMT_ADDRX64 "  RBX=" FMT_ADDRX64 "", RAX, RBX));
+    BX_INFO(("| RCX=" FMT_ADDRX64 "  RDX=" FMT_ADDRX64 "", RCX, RDX));
+    BX_INFO(("| RSP=" FMT_ADDRX64 "  RBP=" FMT_ADDRX64 "", RSP, RBP));
+    BX_INFO(("| RSI=" FMT_ADDRX64 "  RDI=" FMT_ADDRX64 "", RSI, RDI));
+    BX_INFO(("|  R8=" FMT_ADDRX64 "   R9=" FMT_ADDRX64 "", R8,  R9));
+    BX_INFO(("| R10=" FMT_ADDRX64 "  R11=" FMT_ADDRX64 "", R10, R11));
+    BX_INFO(("| R12=" FMT_ADDRX64 "  R13=" FMT_ADDRX64 "", R12, R13));
+    BX_INFO(("| R14=" FMT_ADDRX64 "  R15=" FMT_ADDRX64 "", R14, R15));
   }
   else
 #endif
   {
-    BX_INFO(("| EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x",
-          (unsigned) EAX, (unsigned) EBX, (unsigned) ECX, (unsigned) EDX));
-    BX_INFO(("| ESP=%08x  EBP=%08x  ESI=%08x  EDI=%08x",
-          (unsigned) ESP, (unsigned) EBP, (unsigned) ESI, (unsigned) EDI));
+    BX_INFO(("| EAX=%08x  EBX=%08x  ECX=%08x  EDX=%08x", EAX, EBX, ECX, EDX));
+    BX_INFO(("| ESP=%08x  EBP=%08x  ESI=%08x  EDI=%08x", ESP, EBP, ESI, EDI));
   }
   BX_INFO(("| IOPL=%1u %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s %s",
     BX_CPU_THIS_PTR get_IOPL(),
@@ -228,22 +216,19 @@ void BX_CPU_C::debug(bx_address offset)
     (unsigned) BX_CPU_THIS_PTR sregs[BX_SEG_REG_GS].cache.u.segment.d_b));
 #if BX_SUPPORT_X86_64
   if (long_mode()) {
-    BX_INFO(("|  MSR_FS_BASE:%08x%08x",
-      (unsigned) (MSR_FSBASE >> 32), (unsigned) (MSR_FSBASE & 0xFFFFFFFF)));
-    BX_INFO(("|  MSR_GS_BASE:%08x%08x",
-      (unsigned) (MSR_GSBASE >> 32), (unsigned) (MSR_GSBASE & 0xFFFFFFFF)));
+    BX_INFO(("|  MSR_FS_BASE:" FMT_ADDRX64,
+      MSR_FSBASE));
+    BX_INFO(("|  MSR_GS_BASE:" FMT_ADDRX64,
+      MSR_GSBASE));
 
-    BX_INFO(("| RIP=%08x%08x (%08x%08x)",
-      (unsigned) (BX_CPU_THIS_PTR gen_reg[BX_64BIT_REG_RIP].dword.hrx),
-      (unsigned)  EIP,
-      (unsigned) (BX_CPU_THIS_PTR prev_rip >> 32),
-      (unsigned) (BX_CPU_THIS_PTR prev_rip & 0xffffffff)));
-    BX_INFO(("| CR0=0x%08x CR2=0x%08x%08x",
-      (unsigned) (BX_CPU_THIS_PTR cr0.get32()),
-      (unsigned) (BX_CPU_THIS_PTR cr2 >> 32),
-      (unsigned) (BX_CPU_THIS_PTR cr2 & 0xffffffff)));
-    BX_INFO(("| CR3=0x%08x CR4=0x%08x",
-      (unsigned) BX_CPU_THIS_PTR cr3, (unsigned) BX_CPU_THIS_PTR cr4.get32()));
+    BX_INFO(("| RIP=" FMT_ADDRX64 " (" FMT_ADDRX64 ")",
+      BX_CPU_THIS_PTR gen_reg[BX_64BIT_REG_RIP].rrx,
+      BX_CPU_THIS_PTR prev_rip));
+    BX_INFO(("| CR0=0x%08x CR2=0x" FMT_ADDRX64,
+      (BX_CPU_THIS_PTR cr0.get32()),
+      (BX_CPU_THIS_PTR cr2)));
+    BX_INFO(("| CR3=0x" FMT_ADDRX64 " CR4=0x%08x",
+      BX_CPU_THIS_PTR cr3, BX_CPU_THIS_PTR cr4.get32()));
   }
   else
 #endif // BX_SUPPORT_X86_64
@@ -257,7 +242,7 @@ void BX_CPU_C::debug(bx_address offset)
       (unsigned) BX_CPU_THIS_PTR cr2, (unsigned) BX_CPU_THIS_PTR cr3));
 #else
     BX_INFO(("| CR0=0x%08x CR2=0x%08x",
-      BX_CPU_THIS_PTR cr0.get32(), BX_CPU_THIS_PTR cr2));
+      BX_CPU_THIS_PTR cr0.get32(), (unsigned) BX_CPU_THIS_PTR cr2));
     BX_INFO(("| CR3=0x%08x CR4=0x%08x",
       (unsigned) BX_CPU_THIS_PTR cr3, 
       (unsigned) BX_CPU_THIS_PTR cr4.get32()));
@@ -271,41 +256,38 @@ void BX_CPU_C::debug(bx_address offset)
 
 
 #if BX_DEBUGGER
-bx_bool BX_CPU_C::dbg_set_reg(unsigned reg, Bit32u val)
+void BX_CPU_C::dbg_set_eip(bx_address val)
+{
+  RIP = BX_CPU_THIS_PTR prev_rip = val;
+  invalidate_prefetch_q();
+}
+
+bx_bool BX_CPU_C::dbg_set_eflags(Bit32u val)
 {
   // returns 1=OK, 0=can't change
-  Bit32u current_sys_bits;
 
-  switch (reg) {
-    case BX_DBG_REG_EIP:
-      RIP = BX_CPU_THIS_PTR prev_rip = val;
-      invalidate_prefetch_q();
-      return(1);
-    case BX_DBG_REG_EFLAGS:
-      if (val & 0xffff0000) {
-        BX_INFO(("dbg_set_reg: can not set upper 16 bits of eflags."));
-        return(0);
-      }
-      // make sure none of the system bits are being changed
-      current_sys_bits = ((BX_CPU_THIS_PTR getB_NT()) << 14) |
-                         (BX_CPU_THIS_PTR get_IOPL () << 12) |
-                         ((BX_CPU_THIS_PTR getB_TF()) << 8);
-      if (current_sys_bits != (val & 0x0000f100)) {
-        BX_INFO(("dbg_set_reg: can not modify NT, IOPL, or TF."));
-        return(0);
-      }
-      BX_CPU_THIS_PTR set_CF(val & 0x01); val >>= 2;
-      BX_CPU_THIS_PTR set_PF(val & 0x01); val >>= 2;
-      BX_CPU_THIS_PTR set_AF(val & 0x01); val >>= 2;
-      BX_CPU_THIS_PTR set_ZF(val & 0x01); val >>= 1;
-      BX_CPU_THIS_PTR set_SF(val & 0x01); val >>= 2;
-      BX_CPU_THIS_PTR set_IF(val & 0x01); val >>= 1;
-      BX_CPU_THIS_PTR set_DF(val & 0x01); val >>= 1;
-      BX_CPU_THIS_PTR set_OF(val & 0x01);
-      return(1);
+  if (val & 0xffff0000) {
+    BX_INFO(("dbg_set_eflags: can't set upper 16 bits of EFLAGS !"));
+    return(0);
   }
 
-  return(0);
+  // make sure none of the system bits are being changed
+  Bit32u current_sys_bits = ((BX_CPU_THIS_PTR getB_NT()) << 14) |
+                             (BX_CPU_THIS_PTR get_IOPL () << 12) |
+                            ((BX_CPU_THIS_PTR getB_TF()) << 8);
+  if (current_sys_bits != (val & 0x0000f100)) {
+    BX_INFO(("dbg_set_eflags: can't modify NT, IOPL, or TF !"));
+    return(0);
+  }
+
+  BX_CPU_THIS_PTR set_CF(val & 0x01); val >>= 2;
+  BX_CPU_THIS_PTR set_PF(val & 0x01); val >>= 2;
+  BX_CPU_THIS_PTR set_AF(val & 0x01); val >>= 2;
+  BX_CPU_THIS_PTR set_ZF(val & 0x01); val >>= 1;
+  BX_CPU_THIS_PTR set_SF(val & 0x01); val >>= 2;
+  BX_CPU_THIS_PTR set_DF(val & 0x01); val >>= 1;
+  BX_CPU_THIS_PTR set_OF(val & 0x01);
+  return(1);
 }
 
 unsigned BX_CPU_C::dbg_query_pending(void)
@@ -316,11 +298,11 @@ unsigned BX_CPU_C::dbg_query_pending(void)
     ret |= BX_DBG_PENDING_DMA;
   }
 
-  if (BX_CPU_THIS_PTR INTR && BX_CPU_THIS_PTR get_IF()) {
+  if (is_unmasked_event_pending(BX_EVENT_PENDING_INTR)) {
     ret |= BX_DBG_PENDING_IRQ;
   }
 
-  return(ret);
+  return ret;
 }
 
 bx_bool BX_CPU_C::dbg_get_sreg(bx_dbg_sreg_t *sreg, unsigned sreg_no)

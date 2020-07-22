@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: scsi_device.h 11382 2012-08-30 20:41:25Z vruppert $
+// $Id: scsi_device.h 13476 2018-03-23 19:02:38Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  SCSI emulation layer (ported from QEMU)
@@ -9,7 +9,7 @@
 //
 //  Written by Paul Brook
 //
-//  Copyright (C) 2007-2012  The Bochs Project
+//  Copyright (C) 2007-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -30,8 +30,7 @@
 
 typedef void (*scsi_completionfn)(void *opaque, int reason, Bit32u tag,
                                   Bit32u arg);
-class scsi_device_t;
-class LOWLEVEL_CDROM;
+class cdrom_base_c;
 
 enum scsidev_type {
   SCSIDEV_TYPE_DISK,
@@ -45,6 +44,7 @@ enum scsi_reason {
 
 #define SENSE_NO_SENSE        0
 #define SENSE_NOT_READY       2
+#define SENSE_MEDIUM_ERROR    3
 #define SENSE_HARDWARE_ERROR  4
 #define SENSE_ILLEGAL_REQUEST 5
 
@@ -55,13 +55,15 @@ enum scsi_reason {
 #define SCSI_MAX_INQUIRY_LEN 256
 
 typedef struct SCSIRequest {
-  scsi_device_t *dev;
   Bit32u tag;
   Bit64u sector;
   Bit32u sector_count;
   int buf_len;
-  Bit8u dma_buf[SCSI_DMA_BUF_SIZE];
+  Bit8u *dma_buf;
   Bit32u status;
+  bx_bool write_cmd;
+  bx_bool async_mode;
+  Bit8u seek_pending;
   struct SCSIRequest *next;
 } SCSIRequest;
 
@@ -70,24 +72,27 @@ class scsi_device_t : public logfunctions {
 public:
   scsi_device_t(device_image_t *_hdimage, int _tcq,
                scsi_completionfn _completion, void *_dev);
-#ifdef LOWLEVEL_CDROM
-  scsi_device_t(LOWLEVEL_CDROM *_cdrom, int _tcq,
+  scsi_device_t(cdrom_base_c *_cdrom, int _tcq,
                scsi_completionfn _completion, void *_dev);
-#endif
   virtual ~scsi_device_t(void);
 
   void register_state(bx_list_c *parent, const char *name);
-  Bit32s scsi_send_command(Bit32u tag, Bit8u *buf, int lun);
+  Bit32s scsi_send_command(Bit32u tag, Bit8u *buf, int lun, bx_bool async);
   void scsi_command_complete(SCSIRequest *r, int status, int sense);
   void scsi_cancel_io(Bit32u tag);
   void scsi_read_complete(void *req, int ret);
   void scsi_read_data(Bit32u tag);
   void scsi_write_complete(void *req, int ret);
-  int scsi_write_data(Bit32u tag);
+  void scsi_write_data(Bit32u tag);
   Bit8u* scsi_get_buf(Bit32u tag);
   const char *get_serial_number() {return drive_serial_str;}
-  void set_inserted(bx_bool value) {inserted = value;}
+  void set_inserted(bx_bool value);
   bx_bool get_inserted() {return inserted;}
+  bx_bool get_locked() {return locked;}
+  static void seek_timer_handler(void *);
+  bx_bool save_requests(const char *path);
+  void restore_requests(const char *path);
+  void set_debug_mode();
 
 protected:
   SCSIRequest* scsi_new_request(Bit32u tag);
@@ -95,21 +100,29 @@ protected:
   SCSIRequest *scsi_find_request(Bit32u tag);
 
 private:
+  void start_seek(SCSIRequest *r);
+  void seek_timer(void);
+  void seek_complete(SCSIRequest *r);
+
+  // members set in constructor
   enum scsidev_type type;
   device_image_t *hdimage;
-#ifdef LOWLEVEL_CDROM
-  LOWLEVEL_CDROM *cdrom;
-#endif
-  SCSIRequest *requests;
-  int cluster_size;
-  Bit64u max_lba;
-  int sense;
+  cdrom_base_c *cdrom;
+  int block_size;
   int tcq;
   scsi_completionfn completion;
   void *dev;
-  bx_bool locked;
-  bx_bool inserted;
   char drive_serial_str[21];
+  int seek_timer_index;
+  int statusbar_id;
+  // members set in constructor / runtime config
+  Bit64u max_lba;
+  bx_bool inserted;
+  // members handled by save/restore
+  Bit64u curr_lba;
+  int sense;
+  bx_bool locked;
+  SCSIRequest *requests;
 };
 
 #endif

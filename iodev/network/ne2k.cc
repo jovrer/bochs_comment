@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: ne2k.cc 13497 2018-05-01 15:54:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -59,7 +59,7 @@ void ne2k_init_options(void)
     "enabled",
     "Enable NE2K NIC emulation",
     "Enables the NE2K NIC emulation",
-    0);
+    1);
   bx_param_num_c *ioaddr = new bx_param_num_c(menu,
     "ioaddr",
     "NE2K I/O Address",
@@ -76,7 +76,6 @@ void ne2k_init_options(void)
   irq->set_options(irq->USE_SPIN_CONTROL);
   SIM->init_std_nic_options("NE2K", menu);
   enabled->set_dependent_list(menu->clone());
-
 }
 
 Bit32s ne2k_options_parser(const char *context, int num_params, char *params[])
@@ -85,18 +84,15 @@ Bit32s ne2k_options_parser(const char *context, int num_params, char *params[])
 
   if (!strcmp(params[0], "ne2k")) {
     bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_NE2K);
-    char tmpdev[80];
     if (!SIM->get_param_bool("enabled", base)->get()) {
       SIM->get_param_enum("ethmod", base)->set_by_name("null");
     }
-    if (SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) {
-      for (int slot = 1; slot < 6; slot++) {
-        sprintf(tmpdev, "pci.slot.%d", slot);
-        if (!strcmp(SIM->get_param_string(tmpdev)->getptr(), "ne2k")) {
-          valid |= 0x03;
-          break;
-        }
-      }
+    if (SIM->is_pci_device(BX_PLUGIN_NE2K)) {
+      valid |= 0x03;
+    }
+    if (!SIM->get_param_string("mac", base)->isempty()) {
+      // MAC address is already initialized
+      valid |= 0x04;
     }
     for (int i = 1; i < num_params; i++) {
       if (!strncmp(params[i], "ioaddr=", 7)) {
@@ -106,26 +102,21 @@ Bit32s ne2k_options_parser(const char *context, int num_params, char *params[])
         SIM->get_param_num("irq", base)->set(atol(&params[i][4]));
         valid |= 0x02;
       } else {
+        if (valid == 0x07) {
+          SIM->get_param_bool("enabled", base)->set(1);
+        }
         ret = SIM->parse_nic_params(context, params[i], base);
         if (ret > 0) {
           valid |= ret;
         }
       }
     }
-    if (!SIM->get_param_bool("enabled", base)->get()) {
-      if (valid == 0x07) {
-        SIM->get_param_bool("enabled", base)->set(1);
-      } else if (valid < 0x80) {
-        if ((valid & 0x03) != 0x03) {
-          BX_ERROR(("%s: 'ne2k' directive incomplete (ioaddr and irq are required)", context));
-        }
-        if ((valid & 0x04) == 0) {
-          BX_ERROR(("%s: 'ne2k' directive incomplete (mac address is required)", context));
-        }
+    if (valid < 0x80) {
+      if ((valid & 0x03) != 0x03) {
+        BX_ERROR(("%s: 'ne2k' directive incomplete (ioaddr and irq are required)", context));
       }
-    } else {
-      if (valid & 0x80) {
-        SIM->get_param_bool("enabled", base)->set(0);
+      if ((valid & 0x04) == 0) {
+        BX_ERROR(("%s: 'ne2k' directive incomplete (mac address is required)", context));
       }
     }
   } else {
@@ -136,31 +127,12 @@ Bit32s ne2k_options_parser(const char *context, int num_params, char *params[])
 
 Bit32s ne2k_options_save(FILE *fp)
 {
-  bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_NE2K);
-  fprintf(fp, "ne2k: enabled=%d", SIM->get_param_bool("enabled", base)->get());
-  if (SIM->get_param_bool("enabled", base)->get()) {
-    char *ptr = SIM->get_param_string("macaddr", base)->getptr();
-    fprintf(fp, ", ioaddr=0x%x, irq=%d, mac=%02x:%02x:%02x:%02x:%02x:%02x, ethmod=%s, ethdev=%s, script=%s, bootrom=%s",
-      SIM->get_param_num("ioaddr", base)->get(),
-      SIM->get_param_num("irq", base)->get(),
-      (unsigned int)(0xff & ptr[0]),
-      (unsigned int)(0xff & ptr[1]),
-      (unsigned int)(0xff & ptr[2]),
-      (unsigned int)(0xff & ptr[3]),
-      (unsigned int)(0xff & ptr[4]),
-      (unsigned int)(0xff & ptr[5]),
-      SIM->get_param_enum("ethmod", base)->get_selected(),
-      SIM->get_param_string("ethdev", base)->getptr(),
-      SIM->get_param_string("script", base)->getptr(),
-      SIM->get_param_string("bootrom", base)->getptr());
-  }
-  fprintf(fp, "\n");
-  return 0;
+  return SIM->write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_NE2K), NULL, 0);
 }
 
 // device plugin entry points
 
-int libne2k_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libne2k_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   theNE2kDevice = new bx_ne2k_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theNE2kDevice, BX_PLUGIN_NE2K);
@@ -171,7 +143,7 @@ int libne2k_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
   return(0); // Success
 }
 
-void libne2k_LTX_plugin_fini(void)
+void CDECL libne2k_LTX_plugin_fini(void)
 {
   SIM->unregister_addon_option("ne2k");
   ((bx_list_c*)SIM->get_param("network"))->remove("ne2k");
@@ -200,11 +172,11 @@ bx_ne2k_c::~bx_ne2k_c()
 
 void bx_ne2k_c::init(void)
 {
-  char devname[16];
+  static char devname[16];
   Bit8u macaddr[6];
-  const char *bootrom;
+  bx_param_string_c *bootrom;
 
-  BX_DEBUG(("Init $Id: ne2k.cc 11346 2012-08-19 08:16:20Z vruppert $"));
+  BX_DEBUG(("Init $Id: ne2k.cc 13497 2018-05-01 15:54:37Z vruppert $"));
 
   // Read in values from config interface
   bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_NE2K);
@@ -215,45 +187,36 @@ void bx_ne2k_c::init(void)
     ((bx_param_bool_c*)((bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL))->get_by_name("ne2k"))->set(0);
     return;
   }
-  memcpy(macaddr, SIM->get_param_string("macaddr", base)->getptr(), 6);
-  BX_NE2K_THIS s.pci_enabled = 0;
+  memcpy(macaddr, SIM->get_param_string("mac", base)->getptr(), 6);
   strcpy(devname, "NE2000 NIC");
+  BX_NE2K_THIS s.pci_enabled = SIM->is_pci_device(BX_PLUGIN_NE2K);
 
 #if BX_SUPPORT_PCI
-  if ((SIM->get_param_bool(BXPN_I440FX_SUPPORT)->get()) &&
-      (DEV_is_pci_device(BX_PLUGIN_NE2K))) {
-    BX_NE2K_THIS s.pci_enabled = 1;
+  if (BX_NE2K_THIS s.pci_enabled) {
     strcpy(devname, "NE2000 PCI NIC");
     BX_NE2K_THIS s.devfunc = 0x00;
     DEV_register_pci_handlers(this, &BX_NE2K_THIS s.devfunc,
         BX_PLUGIN_NE2K, devname);
 
-    for (unsigned i=0; i<256; i++)
-      BX_NE2K_THIS pci_conf[i] = 0x0;
-    // readonly registers
-    BX_NE2K_THIS pci_conf[0x00] = 0xec;
-    BX_NE2K_THIS pci_conf[0x01] = 0x10;
-    BX_NE2K_THIS pci_conf[0x02] = 0x29;
-    BX_NE2K_THIS pci_conf[0x03] = 0x80;
+    // initialize readonly registers
+    init_pci_conf(0x10ec, 0x8029, 0x00, 0x020000, 0x00, BX_PCI_INTA);
     BX_NE2K_THIS pci_conf[0x04] = 0x01;
-    BX_NE2K_THIS pci_conf[0x0a] = 0x00;
-    BX_NE2K_THIS pci_conf[0x0b] = 0x02;
-    BX_NE2K_THIS pci_conf[0x0e] = 0x00;
-    BX_NE2K_THIS pci_conf[0x10] = 0x01;
-    BX_NE2K_THIS pci_conf[0x3d] = BX_PCI_INTA;
+    BX_NE2K_THIS pci_conf[0x07] = 0x02;
+    init_bar_io(0, 32, read_handler, write_handler, &ne2k_iomask[0]);
     BX_NE2K_THIS s.base_address = 0x0;
     BX_NE2K_THIS pci_rom_address = 0;
-    bootrom = SIM->get_param_string("bootrom", base)->getptr();
-    if (strlen(bootrom) > 0) {
-      BX_NE2K_THIS load_pci_rom(bootrom);
+    BX_NE2K_THIS pci_rom_read_handler = mem_read_handler;
+    bootrom = SIM->get_param_string("bootrom", base);
+    if (!bootrom->isempty()) {
+      BX_NE2K_THIS load_pci_rom(bootrom->getptr());
     }
   }
 #endif
 
   if (BX_NE2K_THIS s.tx_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_NE2K_THIS s.tx_timer_index =
-      bx_pc_system.register_timer(this, tx_timer_handler, 0,
-                                  0,0, "ne2k"); // one-shot, inactive
+      DEV_register_timer(this, tx_timer_handler, 0, 0, 0,
+                         "ne2k"); // one-shot, inactive
   }
   // Register the IRQ and i/o port addresses
   if (!BX_NE2K_THIS s.pci_enabled) {
@@ -283,8 +246,8 @@ void bx_ne2k_c::init(void)
                                  BX_NE2K_THIS s.base_address + 0x1F,
                                  devname, 1);
 
-    bootrom = SIM->get_param_string("bootrom", base)->getptr();
-    if (strlen(bootrom) > 0) {
+    bootrom = SIM->get_param_string("bootrom", base);
+    if (!bootrom->isempty()) {
       BX_PANIC(("%s: boot ROM support not present yet", devname));
     }
 
@@ -384,9 +347,6 @@ void bx_ne2k_c::reset(unsigned type)
 
 void bx_ne2k_c::register_state(void)
 {
-  unsigned i;
-  char name[6];
-
   bx_list_c *list = new bx_list_c(SIM->get_bochs_root(), "ne2k", "NE2000 State");
   bx_list_c *CR = new bx_list_c(list, "CR");
   new bx_shadow_bool_c(CR, "stop", &BX_NE2K_THIS s.CR.stop);
@@ -461,17 +421,9 @@ void bx_ne2k_c::register_state(void)
   new bx_shadow_num_c(list, "tallycnt_0", &BX_NE2K_THIS s.tallycnt_0, BASE_HEX);
   new bx_shadow_num_c(list, "tallycnt_1", &BX_NE2K_THIS s.tallycnt_1, BASE_HEX);
   new bx_shadow_num_c(list, "tallycnt_2", &BX_NE2K_THIS s.tallycnt_2, BASE_HEX);
-  bx_list_c *paddr = new bx_list_c(list, "physaddr");
-  for (i=0; i<6; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(paddr, name, &BX_NE2K_THIS s.physaddr[i], BASE_HEX);
-  }
+  new bx_shadow_data_c(list, "physaddr", BX_NE2K_THIS s.physaddr, 6, 1);
   new bx_shadow_num_c(list, "curr_page", &BX_NE2K_THIS s.curr_page, BASE_HEX);
-  bx_list_c *mchash = new bx_list_c(list, "mchash");
-  for (i=0; i<8; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(mchash, name, &BX_NE2K_THIS s.mchash[i], BASE_HEX);
-  }
+  new bx_shadow_data_c(list, "mchash", BX_NE2K_THIS s.mchash, 8, 1);
   new bx_shadow_num_c(list, "rempkt_ptr", &BX_NE2K_THIS s.rempkt_ptr, BASE_HEX);
   new bx_shadow_num_c(list, "localpkt_ptr", &BX_NE2K_THIS s.localpkt_ptr, BASE_HEX);
   new bx_shadow_num_c(list, "address_cnt", &BX_NE2K_THIS s.address_cnt, BASE_HEX);
@@ -488,21 +440,7 @@ void bx_ne2k_c::register_state(void)
 void bx_ne2k_c::after_restore_state(void)
 {
   if (BX_NE2K_THIS s.pci_enabled) {
-    if (DEV_pci_set_base_io(BX_NE2K_THIS_PTR, read_handler, write_handler,
-                            &BX_NE2K_THIS s.base_address,
-                            &BX_NE2K_THIS pci_conf[0x10],
-                            32, &ne2k_iomask[0], "NE2000 PCI NIC")) {
-      BX_INFO(("new base address: 0x%04x", BX_NE2K_THIS s.base_address));
-    }
-    if (BX_NE2K_THIS pci_rom_size > 0) {
-      if (DEV_pci_set_base_mem(BX_NE2K_THIS_PTR, mem_read_handler,
-                               mem_write_handler,
-                               &BX_NE2K_THIS pci_rom_address,
-                               &BX_NE2K_THIS pci_conf[0x30],
-                               BX_NE2K_THIS pci_rom_size)) {
-        BX_INFO(("new ROM address: 0x%08x", BX_NE2K_THIS pci_rom_address));
-      }
-    }
+    bx_pci_device_c::after_restore_pci_state(mem_read_handler);
   }
 }
 #endif
@@ -582,7 +520,17 @@ void bx_ne2k_c::write_cr(Bit32u value)
 
     // Send the packet to the system driver
     BX_NE2K_THIS s.CR.tx_packet = 1;
-    BX_NE2K_THIS ethdev->sendpkt(& BX_NE2K_THIS s.mem[BX_NE2K_THIS s.tx_page_start*256 - BX_NE2K_MEMSTART], BX_NE2K_THIS s.tx_bytes);
+    Bit16u tx_start_ofs = BX_NE2K_THIS s.tx_page_start*256;
+    // The following test and decrement is required for Novell Netware
+    // 3.11-3.12, see
+    // https://lists.gnu.org/archive/html/qemu-devel/2005-03/msg00313.html
+    // for the corresponding change in QEMU.
+    if (tx_start_ofs >= BX_NE2K_MEMEND)
+      tx_start_ofs -= BX_NE2K_MEMSIZ;
+    if (tx_start_ofs + BX_NE2K_THIS s.tx_bytes > BX_NE2K_MEMEND)
+      BX_PANIC(("tx start with start offset %d and byte count %d would overrun memory",
+                tx_start_ofs, BX_NE2K_THIS s.tx_bytes));
+    BX_NE2K_THIS ethdev->sendpkt(& BX_NE2K_THIS s.mem[tx_start_ofs - BX_NE2K_MEMSTART], BX_NE2K_THIS s.tx_bytes);
 
     // some more debug
     if (BX_NE2K_THIS s.tx_timer_active)
@@ -1419,13 +1367,6 @@ bx_bool bx_ne2k_c::mem_read_handler(bx_phy_address addr, unsigned len,
   }
   return 1;
 }
-
-bx_bool bx_ne2k_c::mem_write_handler(bx_phy_address addr, unsigned len,
-                                     void *data, void *param)
-{
-  BX_INFO(("write to ROM ignored (addr=0x%08x len=%d)", (Bit32u)addr, len));
-  return 1;
-}
 #endif
 
 //
@@ -1608,7 +1549,7 @@ void bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
   int pages;
   int avail;
   unsigned idx;
-  int wrapped;
+//int wrapped;
   int nextpage;
   unsigned char pkthdr[4];
   unsigned char *pktbuf = (unsigned char *) buf;
@@ -1634,7 +1575,7 @@ void bx_ne2k_c::rx_frame(const void *buf, unsigned io_len)
   } else {
     avail = (BX_NE2K_THIS s.page_stop - BX_NE2K_THIS s.page_start) -
       (BX_NE2K_THIS s.curr_page - BX_NE2K_THIS s.bound_ptr);
-    wrapped = 1;
+//  wrapped = 1;
   }
 
   // Avoid getting into a buffer overflow condition by not attempting
@@ -1743,92 +1684,33 @@ void bx_ne2k_c::set_irq_level(bx_bool level)
 }
 
 #if BX_SUPPORT_PCI
-
-// pci configuration space read callback handler
-Bit32u bx_ne2k_c::pci_read_handler(Bit8u address, unsigned io_len)
-{
-  Bit32u value = 0;
-
-  for (unsigned i=0; i<io_len; i++) {
-    value |= (BX_NE2K_THIS pci_conf[address+i] << (i*8));
-  }
-  BX_DEBUG(("NE2000 PCI NIC read  register 0x%02x value 0x%08x", address, value));
-  return value;
-}
-
 // pci configuration space write callback handler
 void bx_ne2k_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
   Bit8u value8, oldval;
-  bx_bool baseaddr_change = 0;
-  bx_bool romaddr_change = 0;
 
   if ((address > 0x13) && (address < 0x30))
     return;
 
+  BX_DEBUG_PCI_WRITE(address, value, io_len);
   for (unsigned i=0; i<io_len; i++) {
     oldval = BX_NE2K_THIS pci_conf[address+i];
     value8 = (value >> (i*8)) & 0xFF;
     switch (address+i) {
       case 0x04:
-        value8 &= 0x01;
+        value8 &= 0x03;
         break;
-      case 0x3c:
-        if (value8 != oldval) {
-          BX_INFO(("new irq line = %d", value8));
-        }
-        break;
-      case 0x10:
-        value8 = (value8 & 0xfc) | 0x01;
-      case 0x11:
-      case 0x12:
-      case 0x13:
-        baseaddr_change |= (value8 != oldval);
-        break;
-      case 0x30:
-      case 0x31:
-      case 0x32:
-      case 0x33:
-        if (BX_NE2K_THIS pci_rom_size > 0) {
-          if ((address+i) == 0x30) {
-            value8 &= 0x01;
-          } else if ((address+i) == 0x31) {
-            value8 &= 0xfc;
-          }
-          romaddr_change = 1;
-          break;
-        }
       default:
         value8 = oldval;
     }
     BX_NE2K_THIS pci_conf[address+i] = value8;
   }
-  if (baseaddr_change) {
-    if (DEV_pci_set_base_io(BX_NE2K_THIS_PTR, read_handler, write_handler,
-                            &BX_NE2K_THIS s.base_address,
-                            &BX_NE2K_THIS pci_conf[0x10],
-                            32, &ne2k_iomask[0], "NE2000 PCI NIC")) {
-      BX_INFO(("new base address: 0x%04x", BX_NE2K_THIS s.base_address));
-    }
-  }
-  if (romaddr_change) {
-    if (DEV_pci_set_base_mem(BX_NE2K_THIS_PTR, mem_read_handler,
-                             mem_write_handler,
-                             &BX_NE2K_THIS pci_rom_address,
-                             &BX_NE2K_THIS pci_conf[0x30],
-                             BX_NE2K_THIS pci_rom_size)) {
-      BX_INFO(("new ROM address: 0x%08x", BX_NE2K_THIS pci_rom_address));
-    }
-  }
-
-  if (io_len == 1)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%02x", address, value));
-  else if (io_len == 2)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%04x", address, value));
-  else if (io_len == 4)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%08x", address, value));
 }
 
+void bx_ne2k_c::pci_bar_change_notify(void)
+{
+  BX_NE2K_THIS s.base_address = pci_bar[0].addr;
+}
 #endif /* BX_SUPPORT_PCI */
 
 #if BX_DEBUGGER

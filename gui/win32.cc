@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32.cc 11381 2012-08-29 20:36:12Z vruppert $
+// $Id: win32.cc 13217 2017-05-05 21:44:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2012  The Bochs Project
+//  Copyright (C) 2002-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -44,7 +44,7 @@
 
 class bx_win32_gui_c : public bx_gui_c {
 public:
-  bx_win32_gui_c (void) {}
+  bx_win32_gui_c(void);
   DECLARE_GUI_VIRTUAL_METHODS();
   virtual void statusbar_setitem_specific(int element, bx_bool active, bx_bool w);
   virtual void get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp);
@@ -75,8 +75,9 @@ IMPLEMENT_GUI_PLUGIN_CODE(win32)
 // Keyboard/mouse stuff
 #define SCANCODE_BUFSIZE    20
 #define MOUSE_PRESSED       0x20000000
-#define HEADERBAR_CLICKED   0x08000000
+#define TOOLBAR_CLICKED     0x08000000
 #define MOUSE_MOTION        0x22000000
+#define FOCUS_CHANGED       0x44000000
 #define BX_SYSKEY           (KF_UP|KF_REPEAT|KF_ALTDOWN)
 void enq_key_event(Bit32u, Bit32u);
 void enq_mouse_event(void);
@@ -91,17 +92,19 @@ struct QueueEvent {
 QueueEvent* deq_key_event(void);
 
 static QueueEvent keyevents[SCANCODE_BUFSIZE];
-static unsigned head=0, tail=0;
+static unsigned head = 0, tail = 0;
 static int mouse_button_state = 0;
-static int ms_xdelta=0, ms_ydelta=0, ms_zdelta=0;
-static int ms_lastx=0, ms_lasty=0;
-static int ms_savedx=0, ms_savedy=0;
+static int ms_xdelta = 0, ms_ydelta = 0, ms_zdelta = 0;
+static int ms_lastx = 0, ms_lasty = 0;
+static int ms_savedx = 0, ms_savedy = 0;
 static BOOL mouseCaptureMode, mouseCaptureNew, mouseToggleReq;
 static BOOL win32MouseModeAbsXY = 0;
-static UINT_PTR workerThread = 0;
+static HANDLE workerThread = 0;
 static DWORD workerThreadID = 0;
 static int mouse_buttons = 3;
 static bx_bool win32_nokeyrepeat = 0;
+static bx_bool win32_traphotkeys = 0;
+HHOOK hKeyboardHook;
 
 // Graphics screen stuff
 static unsigned x_tilesize = 0;
@@ -117,6 +120,7 @@ static RECT desktop;
 static BOOL queryFullScreen = FALSE;
 static int desktop_x, desktop_y;
 static BOOL toolbarVisible, statusVisible;
+static BOOL fullscreenMode;
 
 // Text mode screen stuff
 static unsigned prev_cursor_x = 0;
@@ -141,9 +145,9 @@ static struct {
   unsigned bmap_id;
   void (*f)(void);
   const char *tooltip;
-} bx_headerbar_entry[BX_MAX_HEADERBAR_ENTRIES];
+} win32_toolbar_entry[BX_MAX_HEADERBAR_ENTRIES];
 
-static int bx_headerbar_entries;
+static int win32_toolbar_entries;
 static unsigned bx_hb_separator;
 
 // Status Bar stuff
@@ -156,7 +160,7 @@ static char ipsText[20];
 #define SIZE_OF_SB_ELEMENT        40
 #define SIZE_OF_SB_MOUSE_MESSAGE 170
 #define SIZE_OF_SB_IPS_MESSAGE    90
-long SB_Edges[BX_MAX_STATUSITEMS+BX_SB_MAX_TEXT_ELEMENTS+1];
+Bit32s SB_Edges[BX_MAX_STATUSITEMS+BX_SB_MAX_TEXT_ELEMENTS+1];
 char SB_Text[BX_MAX_STATUSITEMS][10];
 unsigned SB_Text_Elements;
 bx_bool SB_Active[BX_MAX_STATUSITEMS];
@@ -165,8 +169,7 @@ bx_bool SB_ActiveW[BX_MAX_STATUSITEMS];
 // Misc stuff
 static unsigned dimension_x, dimension_y, current_bpp;
 static unsigned stretched_x, stretched_y;
-static unsigned stretch_factor=1;
-static BOOL BxTextMode = TRUE;
+static unsigned stretch_factor_x, stretch_factor_y;
 static BOOL fix_size = FALSE;
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
 static BOOL gui_debug = FALSE;
@@ -196,18 +199,15 @@ typedef struct {
 
 sharedThreadInfo stInfo;
 
-LRESULT CALLBACK mainWndProc (HWND, UINT, WPARAM, LPARAM);
-LRESULT CALLBACK simWndProc (HWND, UINT, WPARAM, LPARAM);
-VOID CDECL UIThread(PVOID);
+LRESULT CALLBACK mainWndProc(HWND, UINT, WPARAM, LPARAM);
+LRESULT CALLBACK simWndProc(HWND, UINT, WPARAM, LPARAM);
+DWORD WINAPI UIThread(PVOID);
 void SetStatusText(unsigned Num, const char *Text, bx_bool active, bx_bool w=0);
 void terminateEmul(int);
 void create_vga_font(void);
-static unsigned char reverse_bitorder(unsigned char);
-void DrawBitmap (HDC, HBITMAP, int, int, int, int, int, int, DWORD, unsigned char);
-void DrawChar (HDC, unsigned char, int, int, unsigned char cColor, int, int);
+void DrawBitmap(HDC, HBITMAP, int, int, int, int, int, int, DWORD, unsigned char);
 void updateUpdated(int,int,int,int);
-static void headerbar_click(int x);
-
+static void win32_toolbar_click(int x);
 
 Bit32u win32_to_bx_key[2][0x100] =
 {
@@ -474,63 +474,95 @@ Bit32u win32_to_bx_key[2][0x100] =
 
 /* Macro to convert WM_ button state to BX button state */
 
+void gen_key_event(Bit32u key, Bit32u press_release)
+{
+  EnterCriticalSection(&stInfo.keyCS);
+  enq_key_event(key, press_release);
+  LeaveCriticalSection(&stInfo.keyCS);
+}
+
+LRESULT CALLBACK LowLevelKeyboardProc( int nCode, WPARAM wParam, LPARAM lParam )
+{
+  if (nCode < 0 || nCode != HC_ACTION || (!mouseCaptureMode && !fullscreenMode))
+    return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam); 
+
+  KBDLLHOOKSTRUCT* p = (KBDLLHOOKSTRUCT*)lParam;
+  Bit32u press_release = (p->flags & LLKHF_UP) ? BX_KEY_RELEASED : BX_KEY_PRESSED;
+  BOOL bAltKeyDown = (p->flags & LLKHF_ALTDOWN);
+  BOOL bControlKeyDown = GetAsyncKeyState(VK_CONTROL) >> ((sizeof(SHORT) * 8) - 1); //checks ctrl key pressed
+
+  if (p->vkCode == VK_TAB && bAltKeyDown) {
+    gen_key_event(p->scanCode, press_release);
+    return 1; //disable alt-tab
+  }
+  if (p->vkCode == VK_SPACE && bAltKeyDown) {
+    gen_key_event(p->scanCode, press_release);
+    return 1; //disable alt-space
+  }
+  if ((p->vkCode == VK_LWIN) || (p->vkCode == VK_RWIN)) {
+    gen_key_event(p->vkCode | 0x100, press_release);
+    return 1;//disable windows keys
+  }
+  if (p->vkCode == VK_ESCAPE && bAltKeyDown) {
+    gen_key_event(p->scanCode, press_release);
+    return 1;//disable alt-escape
+  }
+  if (p->vkCode == VK_ESCAPE && bControlKeyDown) {
+    gen_key_event(p->scanCode, press_release);
+    return 1; //disable ctrl-escape
+  }
+
+  return CallNextHookEx(hKeyboardHook, nCode, wParam, lParam);
+}
+
 #if BX_SHOW_IPS
 VOID CALLBACK MyTimer(HWND,UINT,UINT,DWORD);
 #endif
+
+static void cursorWarped()
+{
+  POINT pt = { 0, 0 };
+
+  ClientToScreen(stInfo.simWnd, &pt);
+  SetCursorPos(pt.x + stretched_x / 2, pt.y + stretched_y / 2);
+  EnterCriticalSection(&stInfo.mouseCS);
+  ms_savedx = stretched_x / 2;
+  ms_savedy = stretched_y / 2;
+  LeaveCriticalSection(&stInfo.mouseCS);
+}
 
 static void processMouseXY(int x, int y, int z, int windows_state, int implied_state_change)
 {
   int bx_state;
   int old_bx_state;
   EnterCriticalSection(&stInfo.mouseCS);
-  bx_state=((windows_state & MK_LBUTTON) ? 1 : 0) + ((windows_state & MK_RBUTTON) ? 2 : 0) +
-           ((windows_state & MK_MBUTTON) ? 4 : 0);
-  old_bx_state=bx_state ^ implied_state_change;
-  if (old_bx_state!=mouse_button_state)
-  {
+  bx_state = ((windows_state & MK_LBUTTON) ? 1 : 0) + ((windows_state & MK_RBUTTON) ? 2 : 0) +
+             ((windows_state & MK_MBUTTON) ? 4 : 0);
+  old_bx_state = bx_state ^ implied_state_change;
+  if (old_bx_state != mouse_button_state) {
     /* Make up for missing message */
     BX_INFO(("&&&missing mouse state change"));
     EnterCriticalSection(&stInfo.keyCS);
     enq_mouse_event();
-    mouse_button_state=old_bx_state;
+    mouse_button_state = old_bx_state;
     enq_key_event(mouse_button_state, MOUSE_PRESSED);
     LeaveCriticalSection(&stInfo.keyCS);
   }
-  ms_ydelta=ms_savedy-y;
-  ms_xdelta=x-ms_savedx;
-  ms_zdelta=z;
-  ms_lastx=x;
-  ms_lasty=y;
-  if (bx_state!=mouse_button_state)
-  {
+  ms_ydelta = ms_savedy - y;
+  ms_xdelta = x - ms_savedx;
+  ms_zdelta = z;
+  ms_lastx = x;
+  ms_lasty = y;
+  if (bx_state!=mouse_button_state) {
     EnterCriticalSection(&stInfo.keyCS);
     enq_mouse_event();
-    mouse_button_state=bx_state;
+    mouse_button_state = bx_state;
     enq_key_event(mouse_button_state, MOUSE_PRESSED);
     LeaveCriticalSection(&stInfo.keyCS);
   }
-  LeaveCriticalSection(&stInfo.mouseCS);
-}
-
-static void resetDelta()
-{
-  EnterCriticalSection(&stInfo.mouseCS);
-  ms_savedx=ms_lastx;
-  ms_savedy=ms_lasty;
-  ms_ydelta=ms_xdelta=ms_zdelta=0;
-  LeaveCriticalSection(&stInfo.mouseCS);
-}
-
-static void cursorWarped()
-{
-  EnterCriticalSection(&stInfo.mouseCS);
-  EnterCriticalSection(&stInfo.keyCS);
-  enq_mouse_event();
-  LeaveCriticalSection(&stInfo.keyCS);
-  ms_lastx=stretched_x/2;
-  ms_lasty=stretched_y/2;
-  ms_savedx=ms_lastx;
-  ms_savedy=ms_lasty;
+  if (mouseCaptureMode && !win32MouseModeAbsXY) {
+    cursorWarped();
+  }
   LeaveCriticalSection(&stInfo.mouseCS);
 }
 
@@ -549,27 +581,25 @@ void terminateEmul(int reason)
   if (MemoryDC) DeleteDC (MemoryDC);
   if (MemoryBitmap) DeleteObject (MemoryBitmap);
 
-  if (bitmap_info) delete[] (char*)bitmap_info;
+  delete[] (char*)bitmap_info;
 
   for (unsigned b=0; b<bx_bitmap_entries; b++)
     if (bx_bitmaps[b].bmap) DeleteObject(bx_bitmaps[b].bmap);
   for (unsigned c=0; c<256; c++)
     if (vgafont[c]) DeleteObject(vgafont[c]);
 
-  LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-
   switch (reason) {
   case EXIT_GUI_SHUTDOWN:
-    BX_PANIC(("Window closed, exiting!"));
+    BX_FATAL(("Window closed, exiting!"));
     break;
   case EXIT_GMH_FAILURE:
-    BX_PANIC(("GetModuleHandle failure!"));
+    BX_FATAL(("GetModuleHandle failure!"));
     break;
   case EXIT_FONT_BITMAP_ERROR:
-    BX_PANIC(("Font bitmap creation failure!"));
+    BX_FATAL(("Font bitmap creation failure!"));
     break;
   case EXIT_HEADER_BITMAP_ERROR:
-    BX_PANIC(("Header bitmap creation failure!"));
+    BX_FATAL(("Header bitmap creation failure!"));
     break;
   case EXIT_NORMAL:
     break;
@@ -577,18 +607,17 @@ void terminateEmul(int reason)
 }
 
 
-// ::SPECIFIC_INIT()
-//
-// Called from gui.cc, once upon program startup, to allow for the
-// specific GUI code (X11, Win32, ...) to be initialized.
-//
-// argc, argv: used to pass display library specific options to the init code
-//     (X11 options, Win32 options,...)
-//
-// headerbar_y:  A headerbar (toolbar) is display on the top of the
-//     VGA window, showing floppy status, and other information.  It
-//     always assumes the width of the current VGA mode width, but
-//     it's height is defined by this parameter.
+// WIN32 implementation of the bx_gui_c methods (see nogui.cc for details)
+
+bx_win32_gui_c::bx_win32_gui_c()
+{
+  // prepare for possible fullscreen mode
+  desktopWindow = GetDesktopWindow();
+  GetWindowRect(desktopWindow, &desktop);
+  desktop_x = desktop.right - desktop.left;
+  desktop_y = desktop.bottom - desktop.top;
+}
+
 
 void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
@@ -596,14 +625,10 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   bx_bool gui_ci;
 
   gui_ci = !strcmp(SIM->get_param_enum(BXPN_SEL_CONFIG_INTERFACE)->get_selected(), "win32config");
-  put("WGUI");
+  put("WINGUI");
 
-  // prepare for possible fullscreen mode
-  desktopWindow = GetDesktopWindow();
-  GetWindowRect(desktopWindow, &desktop);
-  desktop_x = desktop.right - desktop.left;
-  desktop_y = desktop.bottom - desktop.top;
   hotKeyReceiver = stInfo.simWnd;
+  fullscreenMode = FALSE;
   BX_INFO(("Desktop Window dimensions: %d x %d", desktop_x, desktop_y));
 
   static RGBQUAD black_quad={ 0, 0, 0, 0};
@@ -618,7 +643,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   win32_max_yres = this->max_yres;
 
   bx_bitmap_entries = 0;
-  bx_headerbar_entries = 0;
+  win32_toolbar_entries = 0;
   bx_hb_separator = 0;
   mouseCaptureMode = FALSE;
   mouseCaptureNew = FALSE;
@@ -631,8 +656,9 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
       if (!strcmp(argv[i], "nokeyrepeat")) {
         BX_INFO(("disabled host keyboard repeat"));
         win32_nokeyrepeat = 1;
-      } else if (!strcmp(argv[i], "legacyF12")) {
-        BX_PANIC(("The option 'legacyF12' is now deprecated - use 'mouse: toggle=f12' instead"));
+      } else if (!strcmp(argv[i], "traphotkeys")) {
+        BX_INFO(("trap system hotkeys for Bochs window"));
+        win32_traphotkeys = 1;
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       } else if (!strcmp(argv[i], "gui_debug")) {
         if (gui_ci) {
@@ -674,13 +700,13 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   current_bpp = 8;
   stretched_x = dimension_x;
   stretched_y = dimension_y;
-  stretch_factor = 1;
+  stretch_factor_x = 1;
+  stretch_factor_y = 1;
 
   for(unsigned c=0; c<256; c++) vgafont[c] = NULL;
   create_vga_font();
 
-  bitmap_info=(BITMAPINFO*)new char[sizeof(BITMAPINFOHEADER)+
-    259*sizeof(RGBQUAD)]; // 256 + 3 entries for 16 bpp mode
+  bitmap_info=(BITMAPINFO*)new char[sizeof(BITMAPINFOHEADER)+259*sizeof(RGBQUAD)]; // 256 + 3 entries for 16 bpp mode
   bitmap_info->bmiHeader.biSize=sizeof(BITMAPINFOHEADER);
   bitmap_info->bmiHeader.biWidth=x_tilesize;
   // Height is negative for top-down bitmap
@@ -702,7 +728,7 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   }
 
   if (stInfo.hInstance)
-    workerThread = _beginthread (UIThread, 0, NULL);
+    workerThread = CreateThread(NULL, 0, UIThread, NULL, 0, &workerThreadID);
   else
     terminateEmul(EXIT_GMH_FAILURE);
 
@@ -727,42 +753,35 @@ void bx_win32_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
   }
 }
 
-void resize_main_window()
+void set_fullscreen_mode(BOOL enable)
 {
-  RECT R;
-  int toolbar_y = 0;
-  int statusbar_y = 0;
-  unsigned long mainStyle;
+  unsigned long mainStyle, simExStyle;
 
-  if (IsWindowVisible(hwndTB)) {
-    toolbarVisible = TRUE;
-    GetWindowRect(hwndTB, &R);
-    toolbar_y = R.bottom - R.top;
-  }
-
-  if (IsWindowVisible(hwndSB)) {
-    statusVisible = TRUE;
-    GetWindowRect(hwndSB, &R);
-    statusbar_y = R.bottom - R.top;
-  }
-
-  // stretched_x and stretched_y were set in dimension_update()
-  // if we need to do any additional resizing, do it now
-  if ((desktop_y > 0) && (stretched_y >= (unsigned)desktop_y)) {
+  if (enable) {
+    if (desktop_y > 0) {
+      stretched_x = desktop_x;
+      stretched_y = desktop_y;
+    } else {
+      return;
+    }
     if (!queryFullScreen) {
       MessageBox(NULL,
         "Going into fullscreen mode -- Alt-Enter to revert",
         "Going fullscreen",
         MB_APPLMODAL);
       queryFullScreen = TRUE;
+      enq_key_event(0x38, BX_KEY_RELEASED); // send lost ALT keyup event
     }
     // hide toolbar and status bars to get some additional space
     ShowWindow(hwndTB, SW_HIDE);
     ShowWindow(hwndSB, SW_HIDE);
-    // hide title bar
+    // hide title bar and border
     mainStyle = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
-    mainStyle &= ~(WS_CAPTION | WS_BORDER);
+    mainStyle &= ~WS_CAPTION;
     SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
+    simExStyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
+    simExStyle &= ~WS_EX_CLIENTEDGE;
+    SetWindowLong(stInfo.simWnd, GWL_EXSTYLE, simExStyle);
     // maybe need to adjust stInfo.simWnd here also?
     saveParent = SetParent(stInfo.mainWnd, desktopWindow);
     if (saveParent) {
@@ -770,7 +789,10 @@ void resize_main_window()
       SetWindowPos(stInfo.mainWnd, HWND_TOPMOST, desktop.left, desktop.top,
        desktop.right, desktop.bottom, SWP_SHOWWINDOW);
     }
+    fullscreenMode = TRUE;
   } else {
+    stretched_x = dimension_x;
+    stretched_y = dimension_y;
     if (saveParent) {
       BX_DEBUG(("Restoring parent window"));
       SetParent(stInfo.mainWnd, saveParent);
@@ -778,10 +800,52 @@ void resize_main_window()
     }
     // put back the title bar, border, etc...
     mainStyle = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
-    mainStyle |= WS_CAPTION | WS_BORDER;
+    mainStyle |= WS_CAPTION;
     SetWindowLong(stInfo.mainWnd, GWL_STYLE, mainStyle);
-    if (toolbarVisible) ShowWindow(hwndTB, SW_SHOW);
-    if (statusVisible) ShowWindow(hwndSB, SW_SHOW);
+    simExStyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
+    simExStyle |= WS_EX_CLIENTEDGE;
+    SetWindowLong(stInfo.simWnd, GWL_EXSTYLE, simExStyle);
+    fullscreenMode = FALSE;
+  }
+}
+
+void resize_main_window(BOOL disable_fullscreen)
+{
+  RECT R;
+  int toolbar_y = 0;
+  int statusbar_y = 0;
+
+  if (IsWindowVisible(hwndTB)) {
+    toolbarVisible = TRUE;
+  }
+  if (IsWindowVisible(hwndSB)) {
+    statusVisible = TRUE;
+  }
+
+  if ((desktop_y > 0) && (dimension_y >= (unsigned)desktop_y)) {
+    set_fullscreen_mode(true);
+  } else {
+    if (fullscreenMode && disable_fullscreen) {
+      set_fullscreen_mode(false);
+    }
+    if (stretch_factor_x > 1) {
+      stretched_x *= stretch_factor_x;
+    }
+    if (stretch_factor_y > 1) {
+      stretched_y *= stretch_factor_y;
+    }
+    if (!fullscreenMode) {
+      if (toolbarVisible) {
+        ShowWindow(hwndTB, SW_SHOW);
+        GetWindowRect(hwndTB, &R);
+        toolbar_y = R.bottom - R.top;
+      }
+      if (statusVisible) {
+        ShowWindow(hwndSB, SW_SHOW);
+        GetWindowRect(hwndSB, &R);
+        statusbar_y = R.bottom - R.top;
+      }
+    }
     SetRect(&R, 0, 0, stretched_x, stretched_y);
     DWORD style = GetWindowLong(stInfo.simWnd, GWL_STYLE);
     DWORD exstyle = GetWindowLong(stInfo.simWnd, GWL_EXSTYLE);
@@ -789,14 +853,13 @@ void resize_main_window()
     style = GetWindowLong(stInfo.mainWnd, GWL_STYLE);
     AdjustWindowRect(&R, style, FALSE);
     SetWindowPos(stInfo.mainWnd, HWND_TOP, 0, 0, R.right - R.left,
-               R.bottom - R.top + toolbar_y + statusbar_y,
-               SWP_NOMOVE | SWP_NOZORDER);
+                 R.bottom - R.top + toolbar_y + statusbar_y,
+                 SWP_NOMOVE | SWP_NOZORDER);
   }
-  fix_size = FALSE;
 }
 
 // This thread controls the GUI window.
-VOID CDECL UIThread(PVOID pvoid)
+DWORD WINAPI UIThread(LPVOID)
 {
   MSG msg;
   HDC hdc;
@@ -907,10 +970,9 @@ VOID CDECL UIThread(PVOID pvoid)
     SetFocus(stInfo.simWnd);
 
     ShowCursor(!mouseCaptureMode);
-    POINT pt = { 0, 0 };
-    ClientToScreen(stInfo.simWnd, &pt);
-    SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
-    cursorWarped();
+    if (mouseCaptureMode && !win32MouseModeAbsXY) {
+      cursorWarped();
+    }
 
     hdc = GetDC(stInfo.simWnd);
     MemoryBitmap = CreateCompatibleBitmap(hdc, win32_max_xres, win32_max_yres);
@@ -918,7 +980,7 @@ VOID CDECL UIThread(PVOID pvoid)
     ReleaseDC(stInfo.simWnd, hdc);
 
     if (MemoryBitmap && MemoryDC) {
-      resize_main_window();
+      resize_main_window(FALSE);
       ShowWindow(stInfo.mainWnd, SW_SHOW);
 #if BX_DEBUGGER && BX_DEBUGGER_GUI
       if (gui_debug) {
@@ -944,7 +1006,7 @@ VOID CDECL UIThread(PVOID pvoid)
 
   stInfo.kill = EXIT_GUI_SHUTDOWN;
 
-  _endthread();
+  return 0;
 }
 
 void SetStatusText(unsigned Num, const char *Text, bx_bool active, bx_bool w)
@@ -982,18 +1044,25 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
   switch (iMsg) {
   case WM_CREATE:
     SetStatusText(0, szMouseEnable, TRUE);
+    if (win32_traphotkeys) {
+      hKeyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, GetModuleHandle(NULL), 0);
+    }
     return 0;
 
   case WM_COMMAND:
     if (LOWORD(wParam) >= 101) {
       EnterCriticalSection(&stInfo.keyCS);
-      enq_key_event(LOWORD(wParam)-101, HEADERBAR_CLICKED);
+      enq_key_event(LOWORD(wParam)-101, TOOLBAR_CLICKED);
       LeaveCriticalSection(&stInfo.keyCS);
     }
     break;
 
   case WM_SETFOCUS:
     SetFocus(stInfo.simWnd);
+    return 0;
+
+  case WM_KILLFOCUS:
+    enq_key_event(0, FOCUS_CHANGED);
     return 0;
 
   case WM_CLOSE:
@@ -1005,7 +1074,7 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     return 0;
 
   case WM_SIZE:
-    {
+    if (!IsIconic(hwnd)) {
       int x, y;
       SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
       SendMessage(hwndSB, WM_SIZE, 0, 0);
@@ -1052,8 +1121,8 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       lpttt = (LPTOOLTIPTEXT)lParam;
       idTT = (int)wParam;
       hbar_id = idTT - 101;
-      if (SendMessage(hwndTB, TB_GETSTATE, idTT, 0) && bx_headerbar_entry[hbar_id].tooltip != NULL) {
-        lstrcpy(lpttt->szText, bx_headerbar_entry[hbar_id].tooltip);
+      if (SendMessage(hwndTB, TB_GETSTATE, idTT, 0) && win32_toolbar_entry[hbar_id].tooltip != NULL) {
+        lstrcpy(lpttt->szText, win32_toolbar_entry[hbar_id].tooltip);
       }
     }
     return FALSE;
@@ -1065,7 +1134,8 @@ LRESULT CALLBACK mainWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 
 void SetMouseCapture()
 {
-  POINT pt = {0, 0};
+  POINT pt = { 0, 0 };
+  RECT  re;
 
   if (mouseToggleReq) {
     mouseCaptureMode = mouseCaptureNew;
@@ -1075,44 +1145,39 @@ void SetMouseCapture()
   }
   ShowCursor(!mouseCaptureMode);
   ShowCursor(!mouseCaptureMode);   // somehow one didn't do the trick (win98)
-  ClientToScreen(stInfo.simWnd, &pt);
-  SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
-  cursorWarped();
-  if (mouseCaptureMode)
+  if (mouseCaptureMode && !win32MouseModeAbsXY) {
+    cursorWarped();
+  }
+  if (mouseCaptureMode) {
+    ClientToScreen(stInfo.simWnd, &pt);
+    re.left = pt.x;
+    re.top = pt.y;
+    re.right = pt.x + stretched_x;
+    re.bottom = pt.y + stretched_y;
+    ClipCursor(&re);
     SetStatusText(0, szMouseDisable, TRUE);
-  else
+  } else {
+    ClipCursor(NULL);
     SetStatusText(0, szMouseEnable, TRUE);
+  }
 }
 
 LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 {
   HDC hdc, hdcMem;
   PAINTSTRUCT ps;
-  POINT pt;
   bx_bool mouse_toggle = 0;
   static BOOL mouseModeChange = FALSE;
 
   switch (iMsg) {
 
   case WM_CREATE:
-    SetTimer (hwnd, 1, 330, NULL);
+    SetTimer(hwnd, 1, 250, NULL);
     return 0;
 
   case WM_TIMER:
     if (mouseToggleReq && (GetActiveWindow() == stInfo.mainWnd)) {
       SetMouseCapture();
-    }
-    // If mouse escaped, bring it back
-    if (mouseCaptureMode && !win32MouseModeAbsXY)
-    {
-      pt.x = 0;
-      pt.y = 0;
-      ClientToScreen(hwnd, &pt);
-      SetCursorPos(pt.x + stretched_x/2, pt.y + stretched_y/2);
-      cursorWarped();
-    }
-    if (fix_size) {
-      resize_main_window();
     }
     return 0;
 
@@ -1123,7 +1188,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     hdcMem = CreateCompatibleDC (hdc);
     SelectObject (hdcMem, MemoryBitmap);
 
-    if (stretch_factor == 1) {
+    if ((stretch_factor_x == 1) && (stretch_factor_y == 1)) {
       BitBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
              ps.rcPaint.right - ps.rcPaint.left + 1,
              ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
@@ -1132,18 +1197,35 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       StretchBlt(hdc, ps.rcPaint.left, ps.rcPaint.top,
                  ps.rcPaint.right - ps.rcPaint.left + 1,
                  ps.rcPaint.bottom - ps.rcPaint.top + 1, hdcMem,
-                 ps.rcPaint.left/stretch_factor, ps.rcPaint.top,
-                 (ps.rcPaint.right - ps.rcPaint.left+1)/stretch_factor,
-                 (ps.rcPaint.bottom - ps.rcPaint.top+1), SRCCOPY);
+                 ps.rcPaint.left/stretch_factor_x, ps.rcPaint.top/stretch_factor_y,
+                 (ps.rcPaint.right - ps.rcPaint.left+1)/stretch_factor_x,
+                 (ps.rcPaint.bottom - ps.rcPaint.top+1)/stretch_factor_y, SRCCOPY);
     }
     DeleteDC (hdcMem);
     EndPaint (hwnd, &ps);
     LeaveCriticalSection(&stInfo.drawCS);
     return 0;
 
+  case WM_SIZE:
+    if (mouseCaptureMode) {
+      POINT pt = { 0, 0 };
+      RECT  re;
+      ClientToScreen(stInfo.simWnd, &pt);
+      re.left = pt.x;
+      re.top = pt.y;
+      re.right = pt.x + stretched_x;
+      re.bottom = pt.y + stretched_y;
+      ClipCursor(&re);
+    }
+    break;
+
   case WM_MOUSEMOVE:
+    if ((LOWORD(lParam) == ms_savedx) && (HIWORD(lParam) == ms_savedy)) {
+      // Ignore mouse event generated by SetCursorPos().
+      return 0;
+    }
     if (!mouseModeChange) {
-      processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 0);
+      processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, (int) wParam, 0);
     }
     return 0;
 
@@ -1173,11 +1255,11 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
         bx_gui->mouse_toggle_check(BX_MT_LBUTTON, 0);
         mouseModeChange = FALSE;
       } else {
-        processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 1);
+        processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, (int) wParam, 1);
       }
       return 0;
     }
-    processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 1);
+    processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, (int) wParam, 1);
     return 0;
 
   case WM_MBUTTONDOWN:
@@ -1193,7 +1275,7 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       bx_gui->mouse_toggle_check(BX_MT_MBUTTON, 0);
       mouseModeChange = FALSE;
     } else {
-      processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 4);
+      processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, (int) wParam, 4);
     }
     return 0;
 
@@ -1211,11 +1293,11 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
         bx_gui->mouse_toggle_check(BX_MT_RBUTTON, 0);
         mouseModeChange = FALSE;
       } else {
-        processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 2);
+        processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, (int) wParam, 2);
       }
       return 0;
     }
-    processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, wParam, 2);
+    processMouseXY(LOWORD(lParam), HIWORD(lParam), 0, (int) wParam, 2);
     return 0;
 
   case WM_CLOSE:
@@ -1257,12 +1339,10 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
         ((HIWORD(lParam) & BX_SYSKEY) == (KF_ALTDOWN | KF_UP))) {
       if (!saveParent) {
         BX_INFO(("entering fullscreen mode"));
-        theGui->dimension_update(desktop_x, desktop_y,
-                                 0, 0, current_bpp);
+        set_fullscreen_mode(TRUE);
       } else {
         BX_INFO(("leaving fullscreen mode"));
-        theGui->dimension_update(dimension_x, desktop_y - 1,
-                               0, 0, current_bpp);
+        resize_main_window(TRUE);
       }
     } else {
       if (wParam == VK_CONTROL) {
@@ -1287,12 +1367,10 @@ LRESULT CALLBACK simWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
       if ((HIWORD(lParam) & BX_SYSKEY) == KF_ALTDOWN) {
         if (!saveParent) {
           BX_INFO(("entering fullscreen mode"));
-          theGui->dimension_update(desktop_x, desktop_y,
-                                   0, 0, current_bpp);
+          set_fullscreen_mode(TRUE);
         } else {
           BX_INFO(("leaving fullscreen mode"));
-          theGui->dimension_update(dimension_x, desktop_y - 1,
-                                   0, 0, current_bpp);
+          resize_main_window(TRUE);
         }
       }
     }
@@ -1314,8 +1392,15 @@ void enq_key_event(Bit32u key, Bit32u press_release)
   static BOOL shift_pressed_l = FALSE;
   static BOOL shift_pressed_r = FALSE;
 
-  // Windows generates multiple keypresses when holding down these keys
-  if (press_release == BX_KEY_PRESSED) {
+  if (press_release == FOCUS_CHANGED) {
+    alt_pressed_l = FALSE;
+    alt_pressed_r = FALSE;
+    ctrl_pressed_l = FALSE;
+    ctrl_pressed_r = FALSE;
+    shift_pressed_l = FALSE;
+    shift_pressed_r = FALSE;
+  } else if (press_release == BX_KEY_PRESSED) {
+    // Windows generates multiple keypresses when holding down these keys
     switch (key) {
       case 0x1d:
         if (ctrl_pressed_l)
@@ -1387,8 +1472,7 @@ void enq_key_event(Bit32u key, Bit32u press_release)
 void enq_mouse_event(void)
 {
   EnterCriticalSection(&stInfo.mouseCS);
-  if (ms_xdelta || ms_ydelta || ms_zdelta)
-  {
+  if (ms_xdelta || ms_ydelta || ms_zdelta) {
     if (((tail+1) % SCANCODE_BUFSIZE) == head) {
       LeaveCriticalSection(&stInfo.mouseCS);
       BX_ERROR(("enq_scancode: buffer full"));
@@ -1403,9 +1487,9 @@ void enq_mouse_event(void)
       current.mouse_x = ms_xdelta;
       current.mouse_y = ms_ydelta;
     }
-    current.mouse_z=ms_zdelta;
-    current.mouse_button_state=mouse_button_state;
-    resetDelta();
+    current.mouse_z = ms_zdelta;
+    current.mouse_button_state = mouse_button_state;
+    ms_ydelta = ms_xdelta = ms_zdelta = 0;
     tail = (tail + 1) % SCANCODE_BUFSIZE;
   }
   LeaveCriticalSection(&stInfo.mouseCS);
@@ -1426,12 +1510,6 @@ QueueEvent* deq_key_event(void)
 }
 
 
-// ::HANDLE_EVENTS()
-//
-// Called periodically (vga_update_interval in .bochsrc) so the
-// the gui code can poll for keyboard, mouse, and other
-// relevant events.
-
 void bx_win32_gui_c::handle_events(void)
 {
   Bit32u key;
@@ -1439,27 +1517,35 @@ void bx_win32_gui_c::handle_events(void)
 
   if (stInfo.kill) terminateEmul(stInfo.kill);
 
+  if (fix_size) {
+    resize_main_window(FALSE);
+    fix_size = FALSE;
+  }
+
   // Handle mouse moves
   enq_mouse_event();
 
   // Handle keyboard and mouse clicks
   EnterCriticalSection(&stInfo.keyCS);
   while (head != tail) {
-    QueueEvent* queue_event=deq_key_event();
-    if (! queue_event)
+    QueueEvent* queue_event = deq_key_event();
+    if (!queue_event)
       break;
     key = queue_event->key_event;
-    if (key==MOUSE_MOTION)
+    if (key == MOUSE_MOTION)
     {
       DEV_mouse_motion(queue_event->mouse_x, queue_event->mouse_y,
                        queue_event->mouse_z, queue_event->mouse_button_state, win32MouseModeAbsXY);
+    }
+    else if (key == FOCUS_CHANGED) {
+      DEV_kbd_release_keys();
     }
     // Check for mouse buttons first
     else if (key & MOUSE_PRESSED) {
       DEV_mouse_motion(0, 0, 0, LOWORD(key), 0);
     }
-    else if (key & HEADERBAR_CLICKED) {
-      headerbar_click(LOWORD(key));
+    else if (key & TOOLBAR_CLICKED) {
+      win32_toolbar_click(LOWORD(key));
     }
     else {
       key_event = win32_to_bx_key[(key & 0x100) ? 1 : 0][key & 0xff];
@@ -1477,11 +1563,6 @@ void bx_win32_gui_c::handle_events(void)
 }
 
 
-// ::FLUSH()
-//
-// Called periodically, requesting that the gui code flush all pending
-// screen update requests.
-
 void bx_win32_gui_c::flush(void)
 {
   EnterCriticalSection(&stInfo.drawCS);
@@ -1494,11 +1575,6 @@ void bx_win32_gui_c::flush(void)
   }
   LeaveCriticalSection(&stInfo.drawCS);
 }
-
-// ::CLEAR_SCREEN()
-//
-// Called to request that the VGA region is cleared.  Don't
-// clear the area that defines the headerbar.
 
 void bx_win32_gui_c::clear_screen(void)
 {
@@ -1517,25 +1593,6 @@ void bx_win32_gui_c::clear_screen(void)
   LeaveCriticalSection(&stInfo.drawCS);
 }
 
-
-// ::TEXT_UPDATE()
-//
-// Called in a VGA text mode, to update the screen with
-// new content.
-//
-// old_text: array of character/attributes making up the contents
-//           of the screen from the last call.  See below
-// new_text: array of character/attributes making up the current
-//           contents, which should now be displayed.  See below
-//
-// format of old_text & new_text: each is tm_info->line_offset*text_rows
-//     bytes long. Each character consists of 2 bytes.  The first by is
-//     the character value, the second is the attribute byte.
-//
-// cursor_x: new x location of cursor
-// cursor_y: new y location of cursor
-// tm_info:  this structure contains information for additional
-//           features in text mode (cursor shape, line offset,...)
 
 void bx_win32_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                                  unsigned long cursor_x, unsigned long cursor_y,
@@ -1782,15 +1839,8 @@ int bx_win32_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
 }
 
 
-// ::PALETTE_CHANGE()
-//
-// Allocate a color in the native GUI, for this color, and put
-// it in the colormap location 'index'.
-// returns: 0=no screen update needed (color map change has direct effect)
-//          1=screen updated needed (redraw using current colormap)
-
-bx_bool bx_win32_gui_c::palette_change(unsigned index, unsigned red,
-                                 unsigned green, unsigned blue) {
+bx_bool bx_win32_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green,
+                                       Bit8u blue) {
   if ((current_bpp == 16) && (index < 3)) {
     cmap_index[256+index].rgbRed = red;
     cmap_index[256+index].rgbBlue = blue;
@@ -1804,21 +1854,6 @@ bx_bool bx_win32_gui_c::palette_change(unsigned index, unsigned red,
   return(1);
 }
 
-
-// ::GRAPHICS_TILE_UPDATE()
-//
-// Called to request that a tile of graphics be drawn to the
-// screen, since info in this region has changed.
-//
-// tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
-//       Each value specifies an index into the
-//       array of colors you allocated for ::palette_change()
-// x0: x origin of tile
-// y0: y origin of tile
-//
-// note: origin of tile and of window based on (0,0) being in the upper
-//       left of the window.
 
 void bx_win32_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
@@ -1843,43 +1878,46 @@ void bx_win32_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 
 
 
-// ::DIMENSION_UPDATE()
-//
-// Called when the VGA mode changes it's X,Y dimensions.
-// Resize the window to this size, but you need to add on
-// the height of the headerbar to the Y value.
-//
-// x: new VGA x size
-// y: new VGA y size (add headerbar_y parameter from ::specific_init().
-// fheight: new VGA character height in text mode
-// fwidth : new VGA character width in text mode
-// bpp : bits per pixel in graphics mode
-
 void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
-  BxTextMode = (fheight > 0);
-  if (BxTextMode) {
+  guest_textmode = (fheight > 0);
+  if (guest_textmode && (fwidth > 9)) {
+    // use existing stretching feature for text mode CO40
+    x >>= 1;
+    fwidth >>= 1;
+  }
+  xChar = fwidth;
+  yChar = fheight;
+  guest_xres = x;
+  guest_yres = y;
+  if (guest_textmode) {
     text_cols = x / fwidth;
     text_rows = y / fheight;
-    xChar = fwidth;
-    yChar = fheight;
   }
 
-  if (x==dimension_x && y==dimension_y && bpp==current_bpp)
+  if ((x == dimension_x) && (y == dimension_y) && (bpp == current_bpp))
     return;
   dimension_x = x;
   dimension_y = y;
-  stretched_x = dimension_x;
-  stretched_y = dimension_y;
-  stretch_factor = 1;
-  if (BxTextMode && (stretched_x<400)) {
-    stretched_x *= 2;
-    stretch_factor *= 2;
+
+  if ((desktop_y > 0) && (((int)x > desktop_x) | ((int)y > desktop_y))) {
+    BX_ERROR(("dimension_update(): resolution of out of desktop bounds - screen only partly visible"));
+  }
+  if (!fullscreenMode) {
+    stretched_x = x;
+    stretched_y = y;
+  }
+  stretch_factor_x = 1;
+  stretch_factor_y = 1;
+  if (guest_textmode && (x < 400)) {
+    stretch_factor_x = 2;
+  } else if (x < 400) {
+    stretch_factor_x = 2;
+    stretch_factor_y = 2;
   }
 
   bitmap_info->bmiHeader.biBitCount = bpp;
-  if (bpp == 16)
-  {
+  if (bpp == 16) {
     bitmap_info->bmiHeader.biCompression = BI_BITFIELDS;
     static RGBQUAD red_mask   = {0x00, 0xF8, 0x00, 0x00};
     static RGBQUAD green_mask = {0xE0, 0x07, 0x00, 0x00};
@@ -1890,24 +1928,20 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, 
     bitmap_info->bmiColors[0] = red_mask;
     bitmap_info->bmiColors[1] = green_mask;
     bitmap_info->bmiColors[2] = blue_mask;
-  }
-  else
-  {
-    if (current_bpp == 16)
-    {
+  } else {
+    if (current_bpp == 16) {
       bitmap_info->bmiColors[0] = bitmap_info->bmiColors[256];
       bitmap_info->bmiColors[1] = bitmap_info->bmiColors[257];
       bitmap_info->bmiColors[2] = bitmap_info->bmiColors[258];
     }
     bitmap_info->bmiHeader.biCompression = BI_RGB;
-    if (bpp == 15)
-    {
+    if (bpp == 15) {
       bitmap_info->bmiHeader.biBitCount = 16;
     }
   }
-  current_bpp = bpp;
+  current_bpp = guest_bpp = bpp;
 
-  resize_main_window();
+  resize_main_window(FALSE);
 
   BX_INFO(("dimension update x=%d y=%d fontheight=%d fontwidth=%d bpp=%d", x, y, fheight, fwidth, bpp));
 
@@ -1917,19 +1951,7 @@ void bx_win32_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, 
 }
 
 
-// ::CREATE_BITMAP()
-//
-// Create a monochrome bitmap of size 'xdim' by 'ydim', which will
-// be drawn in the headerbar.  Return an integer ID to the bitmap,
-// with which the bitmap can be referenced later.
-//
-// bmap: packed 8 pixels-per-byte bitmap.  The pixel order is:
-//       bit0 is the left most pixel, bit7 is the right most pixel.
-// xdim: x dimension of bitmap
-// ydim: y dimension of bitmap
-
-unsigned bx_win32_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim,
-				 unsigned ydim)
+unsigned bx_win32_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
 {
   unsigned char *data;
   TBADDBITMAP tbab;
@@ -1960,31 +1982,15 @@ unsigned bx_win32_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim,
 }
 
 
-// ::HEADERBAR_BITMAP()
-//
-// Called to install a bitmap in the bochs headerbar (toolbar).
-//
-// bmap_id: will correspond to an ID returned from
-//     ::create_bitmap().  'alignment' is either BX_GRAVITY_LEFT
-//     or BX_GRAVITY_RIGHT, meaning install the bitmap in the next
-//     available leftmost or rightmost space.
-// alignment: is either BX_GRAVITY_LEFT or BX_GRAVITY_RIGHT,
-//     meaning install the bitmap in the next
-//     available leftmost or rightmost space.
-// f: a 'C' function pointer to callback when the mouse is clicked in
-//     the boundaries of this bitmap.
-
-unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
-				    void (*f)(void))
+unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
 {
   unsigned hb_index;
   TBBUTTON tbb[1];
 
-  if ((bx_headerbar_entries+1) > BX_MAX_HEADERBAR_ENTRIES)
+  if ((win32_toolbar_entries+1) > BX_MAX_HEADERBAR_ENTRIES)
     terminateEmul(EXIT_HEADER_BITMAP_ERROR);
 
-  bx_headerbar_entries++;
-  hb_index = bx_headerbar_entries - 1;
+  hb_index = win32_toolbar_entries++;
 
   memset(tbb,0,sizeof(tbb));
   if (bx_hb_separator==0) {
@@ -2005,47 +2011,29 @@ unsigned bx_win32_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment,
     SendMessage(hwndTB, TB_INSERTBUTTON, bx_hb_separator+1, (LPARAM)(LPTBBUTTON)&tbb);
   }
 
-  bx_headerbar_entry[hb_index].bmap_id = bmap_id;
-  bx_headerbar_entry[hb_index].f = f;
-  bx_headerbar_entry[hb_index].tooltip = NULL;
+  win32_toolbar_entry[hb_index].bmap_id = bmap_id;
+  win32_toolbar_entry[hb_index].f = f;
+  win32_toolbar_entry[hb_index].tooltip = NULL;
 
   return(hb_index);
 }
 
-
-// ::SHOW_HEADERBAR()
-//
-// Show (redraw) the current headerbar, which is composed of
-// currently installed bitmaps.
 
 void bx_win32_gui_c::show_headerbar(void)
 {
   if (!IsWindowVisible(hwndTB)) {
     SendMessage(hwndTB, TB_AUTOSIZE, 0, 0);
     ShowWindow(hwndTB, SW_SHOW);
-    resize_main_window();
+    resize_main_window(FALSE);
     bx_gui->set_tooltip(bx_gui->get_mouse_headerbar_id(), szMouseTooltip);
   }
 }
 
 
-// ::REPLACE_BITMAP()
-//
-// Replace the bitmap installed in the headerbar ID slot 'hbar_id',
-// with the one specified by 'bmap_id'.  'bmap_id' will have
-// been generated by ::create_bitmap().  The old and new bitmap
-// must be of the same size.  This allows the bitmap the user
-// sees to change, when some action occurs.  For example when
-// the user presses on the floppy icon, it then displays
-// the ejected status.
-//
-// hbar_id: headerbar slot ID
-// bmap_id: bitmap ID
-
 void bx_win32_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
-  if (bmap_id != bx_headerbar_entry[hbar_id].bmap_id) {
-    bx_headerbar_entry[hbar_id].bmap_id = bmap_id;
+  if (bmap_id != win32_toolbar_entry[hbar_id].bmap_id) {
+    win32_toolbar_entry[hbar_id].bmap_id = bmap_id;
     bx_bool is_visible = IsWindowVisible(hwndTB);
     if (is_visible) {
       ShowWindow(hwndTB, SW_HIDE);
@@ -2060,12 +2048,14 @@ void bx_win32_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 }
 
 
-// ::EXIT()
-//
-// Called before bochs terminates, to allow for a graceful
-// exit from the native GUI mechanism.
 void bx_win32_gui_c::exit(void)
 {
+#if BX_DEBUGGER && BX_DEBUGGER_GUI
+  if (SIM->has_debug_gui()) {
+    close_debug_dialog();
+  }
+#endif
+
   // kill thread first...
   PostMessage(stInfo.mainWnd, WM_CLOSE, 0, 0);
 
@@ -2089,19 +2079,6 @@ void create_vga_font(void)
       data[i*2] = reverse_bitorder(bx_vgafont[c].data[i]);
     SetBitmapBits(vgafont[c], 64, data);
   }
-}
-
-
-unsigned char reverse_bitorder(unsigned char b)
-{
-  unsigned char ret=0;
-
-  for (unsigned i=0; i<8; i++) {
-    ret |= (b & 0x01) << (7-i);
-    b >>= 1;
-  }
-
-  return(ret);
 }
 
 
@@ -2155,8 +2132,10 @@ void DrawBitmap(HDC hdc, HBITMAP hBitmap, int xStart, int yStart, int width,
 
 void updateUpdated(int x1, int y1, int x2, int y2)
 {
-  x1*=stretch_factor;
-  x2*=stretch_factor;
+  x1 *= stretch_factor_x;
+  y1 *= stretch_factor_y;
+  x2 *= stretch_factor_x;
+  y2 *= stretch_factor_y;
   if (!updated_area_valid) {
     updated_area.left = x1 ;
     updated_area.top = y1 ;
@@ -2173,10 +2152,10 @@ void updateUpdated(int x1, int y1, int x2, int y2)
 }
 
 
-void headerbar_click(int x)
+void win32_toolbar_click(int x)
 {
-  if (x < bx_headerbar_entries) {
-    bx_headerbar_entry[x].f();
+  if (x < win32_toolbar_entries) {
+    win32_toolbar_entry[x].f();
   }
 }
 
@@ -2203,7 +2182,7 @@ void bx_win32_gui_c::get_capabilities(Bit16u *xres, Bit16u *yres, Bit16u *bpp)
 
 void bx_win32_gui_c::set_tooltip(unsigned hbar_id, const char *tip)
 {
-  bx_headerbar_entry[hbar_id].tooltip = tip;
+  win32_toolbar_entry[hbar_id].tooltip = tip;
 }
 
 void bx_win32_gui_c::set_mouse_mode_absxy(bx_bool mode)

@@ -1,8 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: speaker.h 11195 2012-05-24 18:06:40Z vruppert $
+// $Id: speaker.h 13504 2018-05-10 10:50:42Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright 2003 by David N. Welton <davidw@dedasys.com>.
+//  Copyright (C) 2003       David N. Welton <davidw@dedasys.com>.
+//  Copyright (C) 2003-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -28,6 +29,8 @@
 #ifndef BX_PC_SPEAKER_H
 #define BX_PC_SPEAKER_H
 
+class bx_soundlow_waveout_c;
+
 class bx_speaker_c : public bx_speaker_stub_c {
 public:
     bx_speaker_c();
@@ -38,15 +41,34 @@ public:
 
     void beep_on(float frequency);
     void beep_off();
+    void set_line(bx_bool level);
+#if BX_SUPPORT_SOUNDLOW
+    Bit32u beep_generator(Bit16u rate, Bit8u *buffer, Bit32u len);
+#if BX_HAVE_REALTIME_USEC
+    Bit32u dsp_generator(Bit16u rate, Bit8u *buffer, Bit32u len);
+#endif
+#endif
 private:
     float beep_frequency;  // 0 : beep is off
-    bx_bool outputinit;
+    unsigned output_mode;
 #ifdef __linux__
     /* Do we have access?  If not, just skip everything else. */
     signed int consolefd;
     const static unsigned int clock_tick_rate = 1193180;
 #elif defined(WIN32)
     Bit64u usec_start;
+#endif
+#if BX_SUPPORT_SOUNDLOW
+  bx_soundlow_waveout_c *waveout;
+  int beep_callback_id;
+  bx_bool beep_active;
+#if BX_HAVE_REALTIME_USEC
+  bx_bool dsp_active;
+  Bit64u dsp_start_usec;
+  Bit64u dsp_cb_usec;
+  Bit32u dsp_count;
+  Bit64u dsp_event_buffer[500];
+#endif
 #endif
 };
 

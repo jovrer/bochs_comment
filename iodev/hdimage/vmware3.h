@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware3.h 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: vmware3.h 11879 2013-10-13 14:33:55Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -34,12 +34,19 @@ class vmware3_image_t : public device_image_t
   public:
       vmware3_image_t() : FL_SHIFT(25), FL_MASK(0xFE000000)
       { };
-      int open(const char* pathname);
+      int open(const char* pathname, int flags);
       void close();
       Bit64s lseek(Bit64s offset, int whence);
       ssize_t read(void* buf, size_t count);
       ssize_t write(const void* buf, size_t count);
+
       Bit32u get_capabilities();
+      static int check_format(int fd, Bit64u imgsize);
+
+#ifndef BXIMAGE
+      bx_bool save_state(const char *backup_fname);
+      void restore_state(const char *backup_fname);
+#endif
 
   private:
       static const off_t INVALID_OFFSET;
@@ -105,14 +112,13 @@ class vmware3_image_t : public device_image_t
           bool synced;
       } * images, * current;
 
-      int read_header(int fd, COW_Header & header);
+      bx_bool read_header(int fd, COW_Header & header);
       int write_header(int fd, COW_Header & header);
 
       int read_ints(int fd, Bit32u *buffer, size_t count);
       int write_ints(int fd, Bit32u *buffer, size_t count);
 
       char * generate_cow_name(const char * filename, Bit32u   chain);
-      bool is_valid_header(COW_Header & header);
       off_t perform_seek();
       bool sync();
 
@@ -122,5 +128,7 @@ class vmware3_image_t : public device_image_t
       off_t requested_offset;
       Bit32u   slb_count;
       Bit32u   tlb_size;
+
+      const char *pathname;
 };
 #endif

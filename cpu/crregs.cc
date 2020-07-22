@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: crregs.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: crregs.cc 13767 2020-01-03 19:33:16Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2010-2012 Stanislav Shwartsman
+//   Copyright (c) 2010-2019 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -26,7 +26,7 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)
@@ -36,7 +36,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 5
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->dst() & 0xE) == 4) {
-      BX_ERROR(("MOV_DdRd: access to DR4/DR5 causes #UD"));
+      BX_ERROR(("%s: access to DR4/DR5 causes #UD", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
     }
   }
@@ -45,20 +45,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
   // Note: processor clears GD upon entering debug exception
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7.get_GD()) {
-    BX_ERROR(("MOV_DdRd: DR7 GD bit is set"));
+    BX_ERROR(("%s: DR7 GD bit is set", i->getIaOpcodeNameShort()));
     BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0);
   }
 
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_DdRd: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_DR_WRITE_INTERCEPTED(i->dst())) Svm_Vmexit(SVM_VMEXIT_DR0_WRITE + i->dst());
+    if (SVM_DR_WRITE_INTERCEPTED(i->dst()))
+      Svm_Vmexit(SVM_VMEXIT_DR0_WRITE + i->dst(), BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->src() : 0);
   }
 #endif
 
@@ -114,7 +115,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
           (BX_CPU_THIS_PTR dr7.get_R_W3() == BX_HWDebugInstruction && BX_CPU_THIS_PTR dr7.get_LEN3()))
       {
         // Instruction breakpoint with LENx not 00b (1-byte length)
-        BX_ERROR(("MOV_DdRd: write of %08x, R/W=00b LEN!=00b", val_32));
+        BX_ERROR(("%s: write of 0x%08x, R/W=00b LEN!=00b", i->getIaOpcodeNameShort(), val_32));
       }
 #endif
 
@@ -122,14 +123,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DdRd(bxInstruction_c *i)
       break;
 
     default:
-      BX_ERROR(("MOV_DdRd: #UD - register index out of range"));
+      BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
   }
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 {
   Bit32u val_32;
 
@@ -141,7 +142,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 #if BX_CPU_LEVEL >= 5
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->src() & 0xE) == 4) {
-      BX_ERROR(("MOV_RdDd: access to DR4/DR5 causes #UD"));
+      BX_ERROR(("%s: access to DR4/DR5 causes #UD", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
     }
   }
@@ -150,20 +151,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
   // Note: processor clears GD upon entering debug exception
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7.get_GD()) {
-    BX_ERROR(("MOV_RdDd: DR7 GD bit is set"));
+    BX_ERROR(("%s: DR7 GD bit is set", i->getIaOpcodeNameShort()));
     BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0);
   }
 
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_RdDd: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_DR_READ_INTERCEPTED(i->src())) Svm_Vmexit(SVM_VMEXIT_DR0_READ + i->src());
+    if (SVM_DR_READ_INTERCEPTED(i->src()))
+      Svm_Vmexit(SVM_VMEXIT_DR0_READ + i->src(), BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
   }
 #endif
 
@@ -190,7 +192,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
       break;
 
     default:
-      BX_ERROR(("MOV_RdDd: #UD - register index out of range"));
+      BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
   }
 
@@ -200,7 +202,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdDd(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
 {
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest)
@@ -209,33 +211,34 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
 
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->dst() & 0xE) == 4) {
-      BX_ERROR(("MOV_DqRq: access to DR4/DR5 causes #UD"));
+      BX_ERROR(("%s: access to DR4/DR5 causes #UD", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
     }
   }
 
   if (i->dst() >= 8) {
-    BX_ERROR(("MOV_DqRq: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   // Note: processor clears GD upon entering debug exception
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7.get_GD()) {
-    BX_ERROR(("MOV_DqRq: DR7 GD bit is set"));
+    BX_ERROR(("%s: DR7 GD bit is set", i->getIaOpcodeNameShort()));
     BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0);
   }
 
   /* #GP(0) if CPL is not 0 */
   if (CPL != 0) {
-    BX_ERROR(("MOV_DqRq: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_DR_WRITE_INTERCEPTED(i->dst())) Svm_Vmexit(SVM_VMEXIT_DR0_WRITE + i->dst());
+    if (SVM_DR_WRITE_INTERCEPTED(i->dst()))
+      Svm_Vmexit(SVM_VMEXIT_DR0_WRITE + i->dst(), BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->src() : 0);
   }
 #endif
 
@@ -257,7 +260,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
       // access to DR4 causes #UD
     case 6: // DR6
       if (GET32H(val_64)) {
-        BX_ERROR(("MOV_DqRq: attempt to set upper part of DR6"));
+        BX_ERROR(("%s: attempt to set upper part of DR6", i->getIaOpcodeNameShort()));
         exception(BX_GP_EXCEPTION, 0);
       }
       // On Pentium+, bit12 is always zero
@@ -274,7 +277,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
       // by setting the LE and/or GE flags.
 
       if (GET32H(val_64)) {
-        BX_ERROR(("MOV_DqRq: attempt to set upper part of DR7"));
+        BX_ERROR(("%s: attempt to set upper part of DR7", i->getIaOpcodeNameShort()));
         exception(BX_GP_EXCEPTION, 0);
       }
 
@@ -289,7 +292,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
           (BX_CPU_THIS_PTR dr7.get_R_W3() == BX_HWDebugInstruction && BX_CPU_THIS_PTR dr7.get_LEN3()))
       {
         // Instruction breakpoint with LENx not 00b (1-byte length)
-        BX_ERROR(("MOV_DqRq: write of %08x, R/W=00b LEN!=00b", BX_CPU_THIS_PTR dr7.get32()));
+        BX_ERROR(("%s: write of 0x%08x, R/W=00b LEN!=00b", i->getIaOpcodeNameShort(), BX_CPU_THIS_PTR dr7.get32()));
       }
 #endif
 
@@ -297,14 +300,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_DqRq(bxInstruction_c *i)
       break;
 
     default:
-      BX_ERROR(("MOV_DqRq: #UD - register index out of range"));
+      BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
   }
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
 {
   Bit64u val_64;
 
@@ -315,33 +318,34 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
 
   if (BX_CPU_THIS_PTR cr4.get_DE()) {
     if ((i->src() & 0xE) == 4) {
-      BX_ERROR(("MOV_RqDq: access to DR4/DR5 causes #UD"));
+      BX_ERROR(("%s: access to DR4/DR5 causes #UD", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
     }
   }
 
   if (i->src() >= 8) {
-    BX_ERROR(("MOV_RqDq: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   // Note: processor clears GD upon entering debug exception
   // handler, to allow access to the debug registers
   if (BX_CPU_THIS_PTR dr7.get_GD()) {
-    BX_ERROR(("MOV_RqDq: DR7 GD bit is set"));
+    BX_ERROR(("%s: DR7 GD bit is set", i->getIaOpcodeNameShort()));
     BX_CPU_THIS_PTR debug_trap |= BX_DEBUG_DR_ACCESS_BIT;
     exception(BX_DB_EXCEPTION, 0);
   }
 
   /* #GP(0) if CPL is not 0 */
   if (CPL != 0) {
-    BX_ERROR(("MOV_RqDq: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_DR_READ_INTERCEPTED(i->src())) Svm_Vmexit(SVM_VMEXIT_DR0_READ + i->src());
+    if (SVM_DR_READ_INTERCEPTED(i->src()))
+      Svm_Vmexit(SVM_VMEXIT_DR0_READ + i->src(), BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
   }
 #endif
 
@@ -368,7 +372,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
       break;
 
     default:
-      BX_ERROR(("MOV_RqDq: #UD - register index out of range"));
+      BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
       exception(BX_UD_EXCEPTION, 0);
   }
 
@@ -378,11 +382,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqDq(bxInstruction_c *i)
 }
 #endif // #if BX_SUPPORT_X86_64
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rd(bxInstruction_c *i)
+#if BX_SUPPORT_SVM
+const Bit64u BX_SVM_CR_WRITE_MASK = (BX_CONST64(1) << 63);
+#endif
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rd(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_CR0Rd: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -396,7 +404,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rd(bxInstruction_c *i)
     if (BX_CPU_THIS_PTR in_vmx_guest)
       val_32 = (Bit32u) VMexit_CR0_Write(i, val_32);
 #endif
-    if (! SetCR0(val_32))
+    if (! SetCR0(i, val_32))
       exception(BX_GP_EXCEPTION, 0);
 
     BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR0, val_32);
@@ -411,17 +419,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rd(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR2Rd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR2Rd(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_CR2Rd: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_WRITE_INTERCEPTED(2)) Svm_Vmexit(SVM_VMEXIT_CR2_WRITE);
+    if(SVM_CR_WRITE_INTERCEPTED(2)) {
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR2_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR2_WRITE);
+    }
   }
 #endif
 
@@ -430,11 +443,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR2Rd(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rd(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_CR3Rd: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -447,10 +460,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rd(bxInstruction_c *i)
     VMexit_CR3_Write(i, val_32);
 #endif
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if(SVM_CR_WRITE_INTERCEPTED(3)) {
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR3_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR3_WRITE);
+    }
+  }
+#endif
+
 #if BX_CPU_LEVEL >= 6
   if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
     if (! CheckPDPTR(val_32)) {
-      BX_ERROR(("SetCR3(): PDPTR check failed !"));
+      BX_ERROR(("%s: PDPTR check failed !", i->getIaOpcodeNameShort()));
       exception(BX_GP_EXCEPTION, 0);
     }
   }
@@ -464,12 +488,12 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rd(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rd(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rd(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_CR4Rd: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -480,7 +504,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rd(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR in_vmx_guest)
     val_32 = (Bit32u) VMexit_CR4_Write(i, val_32);
 #endif
-  if (! SetCR4(val_32))
+  if (! SetCR4(i, val_32))
     exception(BX_GP_EXCEPTION, 0);
 
   BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR4, val_32);
@@ -489,11 +513,11 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rd(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR0(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR0(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_RdCR0: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -501,6 +525,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR0(bxInstruction_c *i)
 
   if (i->src() == 0) {
     // CR0
+#if BX_SUPPORT_SVM
+    if (BX_CPU_THIS_PTR in_svm_guest) {
+      if(SVM_CR_READ_INTERCEPTED(0))
+        Svm_Vmexit(SVM_VMEXIT_CR0_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
+    }
+#endif
+
     val_32 = (Bit32u) read_CR0(); /* correctly handle VMX */
   }
 #if BX_CPU_LEVEL >= 6
@@ -515,17 +546,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR0(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR2(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR2(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_RdCR2: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_READ_INTERCEPTED(2)) Svm_Vmexit(SVM_VMEXIT_CR2_READ);
+    if(SVM_CR_READ_INTERCEPTED(2))
+      Svm_Vmexit(SVM_VMEXIT_CR2_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
   }
 #endif
 
@@ -534,17 +566,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR2(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR3(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR3(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_RdCR3: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_READ_INTERCEPTED(3)) Svm_Vmexit(SVM_VMEXIT_CR3_READ);
+    if(SVM_CR_READ_INTERCEPTED(3))
+      Svm_Vmexit(SVM_VMEXIT_CR3_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
   }
 #endif
 
@@ -560,14 +593,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR3(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR4(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR4(bxInstruction_c *i)
 {
 #if BX_CPU_LEVEL >= 5
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("MOV_RdCR4: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if(SVM_CR_READ_INTERCEPTED(4))
+      Svm_Vmexit(SVM_VMEXIT_CR4_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
+  }
+#endif
 
   Bit32u val_32 = (Bit32u) read_CR4(); /* correctly handle VMX */
 
@@ -578,10 +618,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RdCR4(bxInstruction_c *i)
 }
 
 #if BX_SUPPORT_X86_64
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rq(bxInstruction_c *i)
 {
   if (CPL!=0) {
-    BX_ERROR(("MOV_CR0Rq: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -595,7 +635,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rq(bxInstruction_c *i)
     if (BX_CPU_THIS_PTR in_vmx_guest)
       val_64 = VMexit_CR0_Write(i, val_64);
 #endif
-    if (! SetCR0(val_64))
+    if (! SetCR0(i, val_64))
       exception(BX_GP_EXCEPTION, 0);
 
     BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR0, (Bit32u) val_64);
@@ -607,21 +647,26 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR0Rq(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR2Rq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR2Rq(bxInstruction_c *i)
 {
   if (i->dst() != 2) {
-    BX_ERROR(("MOV_CR2Rq: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   if (CPL!=0) {
-    BX_ERROR(("MOV_CR2Rq: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_WRITE_INTERCEPTED(2)) Svm_Vmexit(SVM_VMEXIT_CR2_WRITE);
+    if(SVM_CR_WRITE_INTERCEPTED(2)) {
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR2_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR2_WRITE);
+    }
   }
 #endif
 
@@ -630,15 +675,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR2Rq(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rq(bxInstruction_c *i)
 {
   if (i->dst() != 3) {
-    BX_ERROR(("MOV_CR3Rq: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   if (CPL!=0) {
-    BX_ERROR(("MOV_CR3Rq: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -651,7 +696,23 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rq(bxInstruction_c *i)
     VMexit_CR3_Write(i, val_64);
 #endif
 
-  // no PDPTR checks in long mode
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if(SVM_CR_WRITE_INTERCEPTED(3)) {
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR3_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR3_WRITE);
+    }
+  }
+#endif
+
+  // allow bit 63 (hint that TLB doesn't need to be cleared) to be set when
+  // PCIDE is set, but ignore the hint if given
+  if (BX_CPU_THIS_PTR cr4.get_PCIDE()) {
+    val_64 &= ~(BX_CONST64(1)<<63);
+  }
+
   if (! SetCR3(val_64))
     exception(BX_GP_EXCEPTION, 0);
 
@@ -660,15 +721,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR3Rq(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rq(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rq(bxInstruction_c *i)
 {
   if (i->dst() != 4) {
-    BX_ERROR(("MOV_CR4Rq: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   if (CPL!=0) {
-    BX_ERROR(("MOV_CR4Rq: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -679,7 +740,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rq(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR in_vmx_guest)
     val_64 = VMexit_CR4_Write(i, val_64);
 #endif
-  if (! SetCR4(val_64))
+  if (! SetCR4(i, val_64))
     exception(BX_GP_EXCEPTION, 0);
 
   BX_INSTR_TLB_CNTRL(BX_CPU_ID, BX_INSTR_MOV_CR4, (Bit32u) val_64);
@@ -687,10 +748,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_CR4Rq(bxInstruction_c *i)
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR0(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR0(bxInstruction_c *i)
 {
   if (CPL!=0) {
-    BX_ERROR(("MOV_RqCR0: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -698,6 +759,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR0(bxInstruction_c *i)
 
   if (i->src() == 0) {
     // CR0
+#if BX_SUPPORT_SVM
+    if (BX_CPU_THIS_PTR in_svm_guest) {
+      if(SVM_CR_READ_INTERCEPTED(0))
+        Svm_Vmexit(SVM_VMEXIT_CR0_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
+    }
+#endif
+
     val_64 = read_CR0(); /* correctly handle VMX */
   }
   else {
@@ -710,21 +778,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR0(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR2(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR2(bxInstruction_c *i)
 {
   if (i->src() != 2) {
-    BX_ERROR(("MOV_RqCR2: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   if (CPL!=0) {
-    BX_ERROR(("MOV_RqCR2: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_READ_INTERCEPTED(2)) Svm_Vmexit(SVM_VMEXIT_CR2_READ);
+    if(SVM_CR_READ_INTERCEPTED(2))
+      Svm_Vmexit(SVM_VMEXIT_CR2_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
   }
 #endif
 
@@ -733,21 +802,22 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR2(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR3(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR3(bxInstruction_c *i)
 {
   if (i->src() != 3) {
-    BX_ERROR(("MOV_RqCR3: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   if (CPL!=0) {
-    BX_ERROR(("MOV_RqCR3: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_READ_INTERCEPTED(3)) Svm_Vmexit(SVM_VMEXIT_CR3_READ);
+    if(SVM_CR_READ_INTERCEPTED(3))
+      Svm_Vmexit(SVM_VMEXIT_CR3_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
   }
 #endif
 
@@ -761,17 +831,24 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR3(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR4(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR4(bxInstruction_c *i)
 {
   if (i->src() != 4) {
-    BX_ERROR(("MOV_RqCR4: #UD - register index out of range"));
+    BX_ERROR(("%s: #UD - register index out of range", i->getIaOpcodeNameShort()));
     exception(BX_UD_EXCEPTION, 0);
   }
 
   if (CPL!=0) {
-    BX_ERROR(("MOV_RqCR4: #GP(0) if CPL is not 0"));
+    BX_ERROR(("%s: #GP(0) if CPL is not 0", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
+
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if(SVM_CR_READ_INTERCEPTED(4))
+      Svm_Vmexit(SVM_VMEXIT_CR4_READ, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? i->dst() : 0);
+  }
+#endif
 
   Bit64u val_64 = read_CR4(); /* correctly handle VMX */
 
@@ -781,13 +858,13 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::MOV_RqCR4(bxInstruction_c *i)
 }
 #endif // #if BX_SUPPORT_X86_64
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
 {
   Bit16u msw;
 
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("LMSW: CPL!=0 not in real mode"));
+    BX_ERROR(("%s: CPL!=0 not in real mode", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -802,7 +879,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
   }
   else {
     /* use RMAddr(i) to save address for VMexit */
-    RMAddr(i) = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+    RMAddr(i) = BX_CPU_RESOLVE_ADDR(i);
     /* pointer, segment address pair */
     msw = read_virtual_word(i->seg(), RMAddr(i));
   }
@@ -821,14 +898,21 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::LMSW_Ew(bxInstruction_c *i)
   msw &= 0xf; // LMSW only affects last 4 flags
 
   Bit32u cr0 = (BX_CPU_THIS_PTR cr0.get32() & 0xfffffff0) | msw;
-  if (! SetCR0(cr0))
+  if (! SetCR0(i, cr0))
     exception(BX_GP_EXCEPTION, 0);
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwR(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwR(bxInstruction_c *i)
 {
+#if BX_CPU_LEVEL >= 5
+  if (CPL!=0 && BX_CPU_THIS_PTR cr4.get_UMIP()) {
+    BX_ERROR(("SMSW: CPL != 0 causes #GP when CR4.UMIP set"));
+    exception(BX_GP_EXCEPTION, 0);
+  }
+#endif
+
   Bit32u msw = (Bit32u) read_CR0();  // handle CR0 shadow in VMX
 
   if (i->os32L()) {
@@ -841,10 +925,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwR(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwM(bxInstruction_c *i)
 {
+#if BX_CPU_LEVEL >= 5
+  if (CPL!=0 && BX_CPU_THIS_PTR cr4.get_UMIP()) {
+    BX_ERROR(("SMSW: CPL != 0 causes #GP when CR4.UMIP set"));
+    exception(BX_GP_EXCEPTION, 0);
+  }
+#endif
+
   Bit16u msw = read_CR0() & 0xffff;   // handle CR0 shadow in VMX
-  bx_address eaddr = BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  bx_address eaddr = BX_CPU_RESOLVE_ADDR(i);
   write_virtual_word(i->seg(), eaddr, msw);
 
   BX_NEXT_INSTR(i);
@@ -852,13 +943,14 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::SMSW_EwM(bxInstruction_c *i)
 
 bx_address BX_CPU_C::read_CR0(void)
 {
-  bx_address cr0_val = BX_CPU_THIS_PTR cr0.get32();
-
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
+    // used for SMSW instruction only
     if(SVM_CR_READ_INTERCEPTED(0)) Svm_Vmexit(SVM_VMEXIT_CR0_READ);
   }
 #endif
+
+  bx_address cr0_val = BX_CPU_THIS_PTR cr0.get32();
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
@@ -874,12 +966,6 @@ bx_address BX_CPU_C::read_CR0(void)
 bx_address BX_CPU_C::read_CR4(void)
 {
   bx_address cr4_val = BX_CPU_THIS_PTR cr4.get32();
-
-#if BX_SUPPORT_SVM
-  if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_READ_INTERCEPTED(4)) Svm_Vmexit(SVM_VMEXIT_CR4_READ);
-  }
-#endif
 
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx_guest) {
@@ -905,9 +991,14 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::check_CR0(bx_address cr0_val)
 
   temp_cr0.set32((Bit32u) cr0_val);
 
-  if (temp_cr0.get_PG() && !temp_cr0.get_PE()) {
-    BX_ERROR(("check_CR0(0x%08x): attempt to set CR0.PG with CR0.PE cleared !", temp_cr0.get32()));
-    return 0;
+#if BX_SUPPORT_SVM
+  if (! BX_CPU_THIS_PTR in_svm_guest) // it should be fine to enter paged real mode in SVM guest
+#endif
+  {
+    if (temp_cr0.get_PG() && !temp_cr0.get_PE()) {
+      BX_ERROR(("check_CR0(0x%08x): attempt to set CR0.PG with CR0.PE cleared !", temp_cr0.get32()));
+      return 0;
+    }
   }
 
 #if BX_CPU_LEVEL >= 4
@@ -935,11 +1026,18 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::check_CR0(bx_address cr0_val)
   return 1;
 }
 
-bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(bx_address val)
+bx_bool BX_CPU_C::SetCR0(bxInstruction_c *i, bx_address val)
 {
   if (! check_CR0(val)) return 0;
 
   Bit32u val_32 = GET32L(val);
+
+#if BX_SUPPORT_CET
+  if ((val_32 & BX_CR0_WP_MASK) == 0 && BX_CPU_THIS_PTR cr4.get_CET()) {
+    BX_ERROR(("SetCR0: attempt to clear CR0.WP when CR4.CET=1"));
+    return 0;
+  }
+#endif
 
 #if BX_CPU_LEVEL >= 6
   bx_bool pg = (val_32 >> 31) & 0x1;
@@ -998,7 +1096,13 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(bx_address val)
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_WRITE_INTERCEPTED(0)) Svm_Vmexit(SVM_VMEXIT_CR0_WRITE);
+    if(SVM_CR_WRITE_INTERCEPTED(0)) {
+      // LMSW instruction should VMEXIT before
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR0_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR0_WRITE);
+    }
 
     if (SVM_INTERCEPT(SVM_INTERCEPT0_CR0_WRITE_NO_TS_MP)) {
       if ((oldCR0 & 0xfffffff5) != (val_32 & 0xfffffff5)) {
@@ -1036,8 +1140,12 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR0(bx_address val)
   // Modification of PG,PE flushes TLB cache according to docs.
   // Additionally, the TLB strategy is based on the current value of
   // WP, so if that changes we must also flush the TLB.
-  if ((oldCR0 & 0x80010001) != (val_32 & 0x80010001))
+  if ((oldCR0 & 0x80010001) != (val_32 & 0x80010001)) {
     TLB_flush(); // Flush Global entries also
+#if BX_SUPPORT_PKEYS
+    set_PKRU(BX_CPU_THIS_PTR pkru); // recalculate protection keys due to CR0.WP change
+#endif
+  }
 
   return 1;
 }
@@ -1048,7 +1156,10 @@ Bit32u BX_CPU_C::get_cr4_allow_mask(void)
   Bit32u allowMask = 0;
 
   // CR4 bits definitions:
-  //   [31-21] Reserved, Must be Zero
+  //   [31-24] Reserved, Must be Zero
+  //   [23]    CET: Control Flow Enforcement R/W
+  //   [22]    PKE: Protection Keys Enable R/W
+  //   [21]    SMAP: Supervisor Mode Access Prevention R/W
   //   [20]    SMEP: Supervisor Mode Execution Protection R/W
   //   [19]    Reserved, Must be Zero
   //   [18]    OSXSAVE: Operating System XSAVE Support R/W
@@ -1057,7 +1168,8 @@ Bit32u BX_CPU_C::get_cr4_allow_mask(void)
   //   [15]    Reserved, Must be Zero
   //   [14]    SMXE: SMX Extensions R/W
   //   [13]    VMXE: VMX Extensions R/W
-  //   [12-11] Reserved, Must be Zero
+  //   [12] Reserved, Must be Zero
+  //   [11]    UMIP: User Mode Instruction Prevention R/W
   //   [10]    OSXMMEXCPT: Operating System Unmasked Exception Support R/W
   //   [9]     OSFXSR: Operating System FXSAVE/FXRSTOR Support R/W
   //   [8]     PCE: Performance-Monitoring Counter Enable R/W
@@ -1071,20 +1183,20 @@ Bit32u BX_CPU_C::get_cr4_allow_mask(void)
   //   [0]     VME: Virtual-8086 Mode Extensions R/W
 
   /* VME */
-  if (bx_cpuid_support_vme())
+  if (is_cpu_extension_supported(BX_ISA_VME))
     allowMask |= BX_CR4_VME_MASK | BX_CR4_PVI_MASK;
 
-  if (bx_cpuid_support_tsc())
+  if (is_cpu_extension_supported(BX_ISA_PENTIUM))
     allowMask |= BX_CR4_TSD_MASK;
 
-  if (bx_cpuid_support_debug_extensions())
+  if (is_cpu_extension_supported(BX_ISA_DEBUG_EXTENSIONS))
     allowMask |= BX_CR4_DE_MASK;
 
-  if (bx_cpuid_support_pse())
+  if (is_cpu_extension_supported(BX_ISA_PSE))
     allowMask |= BX_CR4_PSE_MASK;
 
 #if BX_CPU_LEVEL >= 6
-  if (bx_cpuid_support_pae())
+  if (is_cpu_extension_supported(BX_ISA_PAE))
     allowMask |= BX_CR4_PAE_MASK;
 #endif
 
@@ -1092,41 +1204,58 @@ Bit32u BX_CPU_C::get_cr4_allow_mask(void)
   allowMask |= BX_CR4_MCE_MASK;
 
 #if BX_CPU_LEVEL >= 6
-  if (bx_cpuid_support_pge())
+  if (is_cpu_extension_supported(BX_ISA_PGE))
     allowMask |= BX_CR4_PGE_MASK;
 
   allowMask |= BX_CR4_PCE_MASK;
 
   /* OSFXSR */
-  if (bx_cpuid_support_fxsave_fxrstor())
+  if (is_cpu_extension_supported(BX_ISA_SSE))
     allowMask |= BX_CR4_OSFXSR_MASK;
 
   /* OSXMMEXCPT */
-  if (bx_cpuid_support_sse())
+  if (is_cpu_extension_supported(BX_ISA_SSE))
     allowMask |= BX_CR4_OSXMMEXCPT_MASK;
 
 #if BX_SUPPORT_VMX
-  if (bx_cpuid_support_vmx())
+  if (is_cpu_extension_supported(BX_ISA_VMX))
     allowMask |= BX_CR4_VMXE_MASK;
 #endif
 
-  if (bx_cpuid_support_smx())
+  if (is_cpu_extension_supported(BX_ISA_SMX))
     allowMask |= BX_CR4_SMXE_MASK;
 
 #if BX_SUPPORT_X86_64
-  if (bx_cpuid_support_pcid())
+  if (is_cpu_extension_supported(BX_ISA_PCID))
     allowMask |= BX_CR4_PCIDE_MASK;
 
-  if (bx_cpuid_support_fsgsbase())
+  if (is_cpu_extension_supported(BX_ISA_FSGSBASE))
     allowMask |= BX_CR4_FSGSBASE_MASK;
 #endif
 
   /* OSXSAVE */
-  if (bx_cpuid_support_xsave())
+  if (is_cpu_extension_supported(BX_ISA_XSAVE))
     allowMask |= BX_CR4_OSXSAVE_MASK;
 
-  if (bx_cpuid_support_smep())
+  if (is_cpu_extension_supported(BX_ISA_SMEP))
     allowMask |= BX_CR4_SMEP_MASK;
+
+  if (is_cpu_extension_supported(BX_ISA_SMAP))
+    allowMask |= BX_CR4_SMAP_MASK;
+
+#if BX_SUPPORT_PKEYS
+  if (is_cpu_extension_supported(BX_ISA_PKU))
+    allowMask |= BX_CR4_PKE_MASK;
+#endif
+
+  if (is_cpu_extension_supported(BX_ISA_UMIP))
+    allowMask |= BX_CR4_UMIP_MASK;
+
+#if BX_SUPPORT_CET
+  if (is_cpu_extension_supported(BX_ISA_CET))
+    allowMask |= BX_CR4_CET_MASK;
+#endif
+
 #endif
 
   return allowMask;
@@ -1150,9 +1279,8 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::check_CR4(bx_address cr4_val)
       return 0;
     }
   }
-
-  if (temp_cr4.get_PCIDE()) {
-    if (! long_mode()) {
+  else {
+    if (temp_cr4.get_PCIDE()) {
       BX_ERROR(("check_CR4(): attempt to set CR4.PCIDE when EFER.LMA=0"));
       return 0;
     }
@@ -1177,13 +1305,14 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::check_CR4(bx_address cr4_val)
   return 1;
 }
 
-bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
+bx_bool BX_CPU_C::SetCR4(bxInstruction_c *i, bx_address val)
 {
   if (! check_CR4(val)) return 0;
 
-#if BX_SUPPORT_SVM
-  if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_WRITE_INTERCEPTED(4)) Svm_Vmexit(SVM_VMEXIT_CR4_WRITE);
+#if BX_SUPPORT_CET
+  if((val & BX_CR4_CET_MASK) && !BX_CPU_THIS_PTR cr0.get_WP()) {
+    BX_ERROR(("check_CR4(): attempt to set CR4.CET when CR0.WP=0"));
+    return 0;
   }
 #endif
 
@@ -1212,6 +1341,17 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
   }
 #endif
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if(SVM_CR_WRITE_INTERCEPTED(4)) {
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR4_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR4_WRITE);
+    }
+  }
+#endif
+
   BX_CPU_THIS_PTR cr4.set32((Bit32u) val);
 
 #if BX_CPU_LEVEL >= 6
@@ -1219,6 +1359,11 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR4(bx_address val)
 #if BX_SUPPORT_AVX
   handleAvxModeChange();
 #endif
+#endif
+
+  // re-calculate protection keys if CR4.PKE was set
+#if BX_SUPPORT_PKEYS
+  set_PKRU(BX_CPU_THIS_PTR pkru);
 #endif
 
   return 1;
@@ -1233,12 +1378,6 @@ bx_bool BX_CPP_AttrRegparmN(1) BX_CPU_C::SetCR3(bx_address val)
       BX_ERROR(("SetCR3(): Attempt to write to reserved bits of CR3 !"));
       return 0;
     }
-  }
-#endif
-
-#if BX_SUPPORT_SVM
-  if (BX_CPU_THIS_PTR in_svm_guest) {
-    if(SVM_CR_WRITE_INTERCEPTED(3)) Svm_Vmexit(SVM_VMEXIT_CR3_WRITE);
   }
 #endif
 
@@ -1288,7 +1427,12 @@ void BX_CPU_C::WriteCR8(bxInstruction_c *i, bx_address val)
 {
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_CR_WRITE_INTERCEPTED(8)) Svm_Vmexit(SVM_VMEXIT_CR8_WRITE);
+    if(SVM_CR_WRITE_INTERCEPTED(8)) {
+      if (BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST))
+        Svm_Vmexit(SVM_VMEXIT_CR8_WRITE, BX_SVM_CR_WRITE_MASK | i->src());
+      else
+        Svm_Vmexit(SVM_VMEXIT_CR8_WRITE);
+    }
   }
 #endif
 
@@ -1311,13 +1455,15 @@ void BX_CPU_C::WriteCR8(bxInstruction_c *i, bx_address val)
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
     SVM_V_TPR = tpr;
+    handleInterruptMaskChange();
     if (SVM_V_INTR_MASKING) return;
   }
 #endif
 
 #if BX_SUPPORT_VMX && BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR in_vmx_guest && VMEXIT(VMX_VM_EXEC_CTRL2_TPR_SHADOW)) {
-    VMX_Write_VTPR(tpr);
+    VMX_Write_Virtual_APIC(BX_LAPIC_TPR, tpr);
+    VMX_TPR_Virtualization();
     return;
   }
 #endif
@@ -1340,7 +1486,7 @@ Bit32u BX_CPU_C::ReadCR8(bxInstruction_c *i)
     VMexit_CR8_Read(i);
 
   if (BX_CPU_THIS_PTR in_vmx_guest && VMEXIT(VMX_VM_EXEC_CTRL2_TPR_SHADOW)) {
-     Bit32u tpr = (VMX_Read_VTPR() >> 4) & 0xf;
+     Bit32u tpr = (VMX_Read_Virtual_APIC(BX_LAPIC_TPR) >> 4) & 0xf;
      return tpr;
   }
 #endif
@@ -1355,11 +1501,11 @@ Bit32u BX_CPU_C::ReadCR8(bxInstruction_c *i)
 
 #endif
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::CLTS(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::CLTS(bxInstruction_c *i)
 {
   // CPL is always 0 in real mode
   if (/* !real_mode() && */ CPL!=0) {
-    BX_ERROR(("CLTS: priveledge check failed, generate #GP(0)"));
+    BX_ERROR(("%s: priveledge check failed, generate #GP(0)", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
   }
 
@@ -1510,5 +1656,136 @@ void BX_CPU_C::iobreakpoint_match(unsigned port, unsigned len)
   }
 }
 #endif
+
+#endif
+
+#if BX_CPU_LEVEL >= 6
+
+XSaveRestoreStateHelper xsave_restore[xcr0_t::BX_XCR0_LAST] = { {0, 0, NULL, NULL, NULL, NULL} };
+
+void BX_CPU_C::xsave_xrestor_init(void)
+{
+  // XCR0[0]: x87 state
+  xsave_restore[xcr0_t::BX_XCR0_FPU_BIT].len    = XSAVE_FPU_STATE_LEN;
+  xsave_restore[xcr0_t::BX_XCR0_FPU_BIT].xstate_in_use_method = &BX_CPU_C::xsave_x87_state_xinuse;
+  xsave_restore[xcr0_t::BX_XCR0_FPU_BIT].xsave_method = &BX_CPU_C::xsave_x87_state;
+  xsave_restore[xcr0_t::BX_XCR0_FPU_BIT].xrstor_method = &BX_CPU_C::xrstor_x87_state;
+  xsave_restore[xcr0_t::BX_XCR0_FPU_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_x87_state;
+
+  // XCR0[1]: SSE state
+  xsave_restore[xcr0_t::BX_XCR0_SSE_BIT].len    = XSAVE_SSE_STATE_LEN;
+  xsave_restore[xcr0_t::BX_XCR0_SSE_BIT].offset = XSAVE_SSE_STATE_OFFSET;
+  xsave_restore[xcr0_t::BX_XCR0_SSE_BIT].xstate_in_use_method = &BX_CPU_C::xsave_sse_state_xinuse;
+  xsave_restore[xcr0_t::BX_XCR0_SSE_BIT].xsave_method = &BX_CPU_C::xsave_sse_state;
+  xsave_restore[xcr0_t::BX_XCR0_SSE_BIT].xrstor_method = &BX_CPU_C::xrstor_sse_state;
+  xsave_restore[xcr0_t::BX_XCR0_SSE_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_sse_state;
+
+#if BX_SUPPORT_AVX
+  // XCR0[2]: YMM state
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX)) {
+    xsave_restore[xcr0_t::BX_XCR0_YMM_BIT].len    = XSAVE_YMM_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_YMM_BIT].offset = XSAVE_YMM_STATE_OFFSET;
+    xsave_restore[xcr0_t::BX_XCR0_YMM_BIT].xstate_in_use_method = &BX_CPU_C::xsave_ymm_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_YMM_BIT].xsave_method = &BX_CPU_C::xsave_ymm_state;
+    xsave_restore[xcr0_t::BX_XCR0_YMM_BIT].xrstor_method = &BX_CPU_C::xrstor_ymm_state;
+    xsave_restore[xcr0_t::BX_XCR0_YMM_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_ymm_state;
+  }
+#endif
+
+  // XCR0[3]: BNDREGS state (not implemented)
+  // XCR0[4]: BNDCFG state (not implemented)
+
+#if BX_SUPPORT_EVEX
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX512)) {
+    // XCR0[5]: OPMASK state
+    xsave_restore[xcr0_t::BX_XCR0_OPMASK_BIT].len    = XSAVE_OPMASK_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_OPMASK_BIT].offset = XSAVE_OPMASK_STATE_OFFSET;
+    xsave_restore[xcr0_t::BX_XCR0_OPMASK_BIT].xstate_in_use_method = &BX_CPU_C::xsave_opmask_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_OPMASK_BIT].xsave_method = &BX_CPU_C::xsave_opmask_state;
+    xsave_restore[xcr0_t::BX_XCR0_OPMASK_BIT].xrstor_method = &BX_CPU_C::xrstor_opmask_state;
+    xsave_restore[xcr0_t::BX_XCR0_OPMASK_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_opmask_state;
+
+    // XCR0[6]: ZMM_HI256 state
+    xsave_restore[xcr0_t::BX_XCR0_ZMM_HI256_BIT].len    = XSAVE_ZMM_HI256_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_ZMM_HI256_BIT].offset = XSAVE_ZMM_HI256_STATE_OFFSET;
+    xsave_restore[xcr0_t::BX_XCR0_ZMM_HI256_BIT].xstate_in_use_method = &BX_CPU_C::xsave_zmm_hi256_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_ZMM_HI256_BIT].xsave_method = &BX_CPU_C::xsave_zmm_hi256_state;
+    xsave_restore[xcr0_t::BX_XCR0_ZMM_HI256_BIT].xrstor_method = &BX_CPU_C::xrstor_zmm_hi256_state;
+    xsave_restore[xcr0_t::BX_XCR0_ZMM_HI256_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_zmm_hi256_state;
+
+    // XCR0[7]: ZMM_HI state
+    xsave_restore[xcr0_t::BX_XCR0_HI_ZMM_BIT].len    = XSAVE_HI_ZMM_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_HI_ZMM_BIT].offset = XSAVE_HI_ZMM_STATE_OFFSET;
+    xsave_restore[xcr0_t::BX_XCR0_HI_ZMM_BIT].xstate_in_use_method = &BX_CPU_C::xsave_hi_zmm_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_HI_ZMM_BIT].xsave_method = &BX_CPU_C::xsave_hi_zmm_state;
+    xsave_restore[xcr0_t::BX_XCR0_HI_ZMM_BIT].xrstor_method = &BX_CPU_C::xrstor_hi_zmm_state;
+    xsave_restore[xcr0_t::BX_XCR0_HI_ZMM_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_hi_zmm_state;
+  }
+#endif
+
+  // XCR0[8]: Processor Trace state (not implemented)
+
+#if BX_SUPPORT_PKEYS
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_PKU)) {
+    // XCR0[9]: PKRU state
+    xsave_restore[xcr0_t::BX_XCR0_PKRU_BIT].len    = XSAVE_PKRU_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_PKRU_BIT].offset = XSAVE_PKRU_STATE_OFFSET;
+    xsave_restore[xcr0_t::BX_XCR0_PKRU_BIT].xstate_in_use_method = &BX_CPU_C::xsave_pkru_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_PKRU_BIT].xsave_method = &BX_CPU_C::xsave_pkru_state;
+    xsave_restore[xcr0_t::BX_XCR0_PKRU_BIT].xrstor_method = &BX_CPU_C::xrstor_pkru_state;
+    xsave_restore[xcr0_t::BX_XCR0_PKRU_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_pkru_state;
+  }
+#endif
+
+  // XCR0[10]: Reserved
+
+#if BX_SUPPORT_CET
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_CET)) {
+    // XCR0[11]: CET User State
+    xsave_restore[xcr0_t::BX_XCR0_CET_U_BIT].len    = XSAVE_CET_U_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_CET_U_BIT].offset = 0;    // IA32_XSS only
+    xsave_restore[xcr0_t::BX_XCR0_CET_U_BIT].xstate_in_use_method = &BX_CPU_C::xsave_cet_u_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_CET_U_BIT].xsave_method = &BX_CPU_C::xsave_cet_u_state;
+    xsave_restore[xcr0_t::BX_XCR0_CET_U_BIT].xrstor_method = &BX_CPU_C::xrstor_cet_u_state;
+    xsave_restore[xcr0_t::BX_XCR0_CET_U_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_cet_u_state;
+
+    // XCR0[12]: CET Supervisor State
+    xsave_restore[xcr0_t::BX_XCR0_CET_S_BIT].len    = XSAVE_CET_S_STATE_LEN;
+    xsave_restore[xcr0_t::BX_XCR0_CET_S_BIT].offset = 0;    // IA32_XSS only
+    xsave_restore[xcr0_t::BX_XCR0_CET_S_BIT].xstate_in_use_method = &BX_CPU_C::xsave_cet_s_state_xinuse;
+    xsave_restore[xcr0_t::BX_XCR0_CET_S_BIT].xsave_method = &BX_CPU_C::xsave_cet_s_state;
+    xsave_restore[xcr0_t::BX_XCR0_CET_S_BIT].xrstor_method = &BX_CPU_C::xrstor_cet_s_state;
+    xsave_restore[xcr0_t::BX_XCR0_CET_S_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_cet_s_state;
+  }
+#endif
+}
+
+Bit32u BX_CPU_C::get_xcr0_allow_mask(void)
+{
+  Bit32u allowMask = 0x3;
+#if BX_SUPPORT_AVX
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX))
+    allowMask |= BX_XCR0_YMM_MASK;
+#if BX_SUPPORT_EVEX
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AVX512))
+    allowMask |= BX_XCR0_OPMASK_MASK | BX_XCR0_ZMM_HI256_MASK | BX_XCR0_HI_ZMM_MASK;
+#endif
+#endif // BX_SUPPORT_AVX
+#if BX_SUPPORT_PKEYS
+  if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_PKU))
+    allowMask |= BX_XCR0_PKRU_MASK;
+#endif
+
+  return allowMask;
+}
+
+Bit32u BX_CPU_C::get_ia32_xss_allow_mask(void)
+{
+  Bit64u ia32_xss_support_mask = 0;
+#if BX_SUPPORT_CET
+         ia32_xss_support_mask |= BX_XCR0_CET_U_MASK | BX_XCR0_CET_S_MASK;
+#endif
+  return ia32_xss_support_mask;
+}
 
 #endif

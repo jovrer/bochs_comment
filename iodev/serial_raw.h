@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: serial_raw.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: serial_raw.h 12575 2014-12-23 17:13:29Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2004  The Bochs Project
+//  Copyright (C) 2004-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -56,8 +56,8 @@ public:
     serial_raw(const char *devname);
     virtual ~serial_raw();
     void set_baudrate(int rate);
-    void set_data_bits(int);
-    void set_stop_bits(int);
+    void set_data_bits(int val);
+    void set_stop_bits(int val);
     void set_parity_mode(int mode);
     void set_break(int mode);
     void set_modem_control(int ctrl);
@@ -65,7 +65,7 @@ public:
     void transmit(Bit8u byte);
     bx_bool ready_transmit();
     bx_bool ready_receive();
-    int receive ();
+    int receive();
 #ifdef WIN32_RECEIVE_RAW
     void serial_thread();
 #endif
@@ -91,6 +91,7 @@ public:
     OVERLAPPED thread_ovl;
     unsigned thread_rxdata_count;
     Bit16s thread_rxdata_buffer[THREAD_RX_BUFSIZE];
+    CRITICAL_SECTION serialCS;
 #endif
 #endif
 };

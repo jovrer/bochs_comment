@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: apic.cc 11203 2012-06-04 14:27:34Z sshwarts $
+// $Id: apic.cc 13645 2019-12-06 19:38:59Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (c) 2002-2012 Zwane Mwaikambo, Stanislav Shwartsman
+//  Copyright (c) 2002-2019 Zwane Mwaikambo, Stanislav Shwartsman
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,7 @@
 #define NEED_CPU_REG_SHORTCUTS 1
 #include "bochs.h"
 #include "cpu.h"
+#include "scalar_arith.h"
 #include "iodev/iodev.h"
 
 #if BX_SUPPORT_APIC
@@ -33,8 +34,8 @@ extern bx_bool simulate_xapic;
 
 #define BX_CPU_APIC(i) (&(BX_CPU(i)->lapic))
 
-#define BX_LAPIC_FIRST_VECTOR	0x10
-#define BX_LAPIC_LAST_VECTOR	0xff
+const unsigned BX_LAPIC_FIRST_VECTOR = 0x10;
+const unsigned BX_LAPIC_LAST_VECTOR  = 0xff;
 
 ///////////// APIC BUS /////////////
 
@@ -191,10 +192,17 @@ bx_local_apic_c::bx_local_apic_c(BX_CPU_C *mycpu, unsigned id)
 #if BX_SUPPORT_VMX >= 2
   // Register a non-active timer for VMX preemption timer.
   vmx_timer_handle = bx_pc_system.register_timer_ticks(this,
-            bx_local_apic_c::vmx_preemption_timer_expired, 0, 0, 0, "vmx_preemtion");
+            bx_local_apic_c::vmx_preemption_timer_expired, 0, 0, 0, "vmx_preemption");
   BX_DEBUG(("vmx_timer is = %d", vmx_timer_handle));
   vmx_preemption_timer_rate = VMX_MISC_PREEMPTION_TIMER_RATE;
   vmx_timer_active = 0;
+#endif
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  mwaitx_timer_handle = bx_pc_system.register_timer_ticks(this,
+            bx_local_apic_c::mwaitx_timer_expired, 0, 0, 0, "mwaitx_timer");
+  BX_DEBUG(("mwaitx_timer is = %d", mwaitx_timer_handle));
+  mwaitx_timer_active = 0;
 #endif
 
   xapic = simulate_xapic; // xAPIC or legacy APIC
@@ -215,10 +223,10 @@ void bx_local_apic_c::reset(unsigned type)
   icr_lo = 0;
   task_priority = 0;
 
-  for(i=0; i<BX_LAPIC_MAX_INTS; i++) {
+  for(i=0; i<8; i++) {
     irr[i] = isr[i] = tmr[i] = 0;
 #if BX_CPU_LEVEL >= 6
-    ier[i] = 1; // all interrupts are enabled
+    ier[i] = 0xFFFFFFFF; // all interrupts are enabled
 #endif
   }
 
@@ -240,6 +248,13 @@ void bx_local_apic_c::reset(unsigned type)
   }
 #endif
 
+#if BX_SUPPORT_MONITOR_MWAIT
+  if(mwaitx_timer_active) {
+    bx_pc_system.deactivate_timer(mwaitx_timer_handle);
+    mwaitx_timer_active = 0;
+  }
+#endif
+
   for(i=0; i<APIC_LVT_ENTRIES; i++) {
     lvt[i] = 0x10000;	// all LVT are masked
   }
@@ -250,8 +265,6 @@ void bx_local_apic_c::reset(unsigned type)
   focus_disable = 0;
 
   mode = BX_APIC_XAPIC_MODE;
-
-  INTR = 0;
 
   if (xapic)
     apic_version_id = 0x00050014; // P4 has 6 LVT entries
@@ -332,68 +345,6 @@ void bx_local_apic_c::write(bx_phy_address addr, void *data, unsigned len)
   write_aligned(addr, *((Bit32u*) data));
 }
 
-#define BX_LAPIC_ID                   0x020
-#define BX_LAPIC_VERSION              0x030
-#define BX_LAPIC_TPR                  0x080
-#define BX_LAPIC_ARBITRATION_PRIORITY 0x090
-#define BX_LAPIC_PPR                  0x0A0
-#define BX_LAPIC_EOI                  0x0B0
-#define BX_LAPIC_RRD                  0x0C0
-#define BX_LAPIC_LDR                  0x0D0
-#define BX_LAPIC_DESTINATION_FORMAT   0x0E0
-#define BX_LAPIC_SPURIOUS_VECTOR      0x0F0
-#define BX_LAPIC_ISR1                 0x100
-#define BX_LAPIC_ISR2                 0x110
-#define BX_LAPIC_ISR3                 0x120
-#define BX_LAPIC_ISR4                 0x130
-#define BX_LAPIC_ISR5                 0x140
-#define BX_LAPIC_ISR6                 0x150
-#define BX_LAPIC_ISR7                 0x160
-#define BX_LAPIC_ISR8                 0x170
-#define BX_LAPIC_TMR1                 0x180
-#define BX_LAPIC_TMR2                 0x190
-#define BX_LAPIC_TMR3                 0x1A0
-#define BX_LAPIC_TMR4                 0x1B0
-#define BX_LAPIC_TMR5                 0x1C0
-#define BX_LAPIC_TMR6                 0x1D0
-#define BX_LAPIC_TMR7                 0x1E0
-#define BX_LAPIC_TMR8                 0x1F0
-#define BX_LAPIC_IRR1                 0x200
-#define BX_LAPIC_IRR2                 0x210
-#define BX_LAPIC_IRR3                 0x220
-#define BX_LAPIC_IRR4                 0x230
-#define BX_LAPIC_IRR5                 0x240
-#define BX_LAPIC_IRR6                 0x250
-#define BX_LAPIC_IRR7                 0x260
-#define BX_LAPIC_IRR8                 0x270
-#define BX_LAPIC_ESR                  0x280
-#define BX_LAPIC_LVT_CMCI             0x2F0
-#define BX_LAPIC_ICR_LO               0x300
-#define BX_LAPIC_ICR_HI               0x310
-#define BX_LAPIC_LVT_TIMER            0x320
-#define BX_LAPIC_LVT_THERMAL          0x330
-#define BX_LAPIC_LVT_PERFMON          0x340
-#define BX_LAPIC_LVT_LINT0            0x350
-#define BX_LAPIC_LVT_LINT1            0x360
-#define BX_LAPIC_LVT_ERROR            0x370
-#define BX_LAPIC_TIMER_INITIAL_COUNT  0x380
-#define BX_LAPIC_TIMER_CURRENT_COUNT  0x390
-#define BX_LAPIC_TIMER_DIVIDE_CFG     0x3E0
-#define BX_LAPIC_SELF_IPI             0x3F0
-
-// extended AMD 
-#define BX_LAPIC_EXT_APIC_FEATURE     0x400
-#define BX_LAPIC_EXT_APIC_CONTROL     0x410
-#define BX_LAPIC_SPECIFIC_EOI         0x420
-#define BX_LAPIC_IER1                 0x480
-#define BX_LAPIC_IER2                 0x490
-#define BX_LAPIC_IER3                 0x4A0
-#define BX_LAPIC_IER4                 0x4B0
-#define BX_LAPIC_IER5                 0x4C0
-#define BX_LAPIC_IER6                 0x4D0
-#define BX_LAPIC_IER7                 0x4E0
-#define BX_LAPIC_IER8                 0x4F0
-
 // APIC read: 4 byte read from 16-byte aligned APIC address
 Bit32u bx_local_apic_c::read_aligned(bx_phy_address addr)
 {
@@ -404,7 +355,7 @@ Bit32u bx_local_apic_c::read_aligned(bx_phy_address addr)
   BX_DEBUG(("LAPIC read from register 0x%04x", apic_reg));
 
 #if BX_CPU_LEVEL >= 6
-  if (apic_reg >= 0x400 && !cpu->bx_cpuid_support_xapic_extensions())
+  if (apic_reg >= 0x400 && !cpu->is_cpu_extension_supported(BX_ISA_XAPIC_EXT))
     apic_reg = 0xffffffff; // choose some obviosly invalid register if extended xapic is not supported
 #endif
 
@@ -445,43 +396,28 @@ Bit32u bx_local_apic_c::read_aligned(bx_phy_address addr)
   case BX_LAPIC_ISR5: case BX_LAPIC_ISR6:
   case BX_LAPIC_ISR7: case BX_LAPIC_ISR8:
     {
-      unsigned index = (apic_reg - BX_LAPIC_ISR1) << 1;
-      Bit32u value = 0, mask = 1;
-      for(int i=0;i<32;i++) {
-        if(isr[index+i]) value |= mask;
-        mask <<= 1;
-      }
-      data = value;
+      int index = (apic_reg - BX_LAPIC_ISR1) >> 4;
+      data = isr[index];
+      break;
     }
-    break;
   case BX_LAPIC_TMR1: case BX_LAPIC_TMR2:
   case BX_LAPIC_TMR3: case BX_LAPIC_TMR4:
   case BX_LAPIC_TMR5: case BX_LAPIC_TMR6:
   case BX_LAPIC_TMR7: case BX_LAPIC_TMR8:
     {
-      unsigned index = (apic_reg - BX_LAPIC_TMR1) << 1;
-      Bit32u value = 0, mask = 1;
-      for(int i=0;i<32;i++) {
-        if(tmr[index+i]) value |= mask;
-        mask <<= 1;
-      }
-      data = value;
+      int index = (apic_reg - BX_LAPIC_TMR1) >> 4;
+      data = tmr[index];
+      break;
     }
-    break;
   case BX_LAPIC_IRR1: case BX_LAPIC_IRR2:
   case BX_LAPIC_IRR3: case BX_LAPIC_IRR4:
   case BX_LAPIC_IRR5: case BX_LAPIC_IRR6:
   case BX_LAPIC_IRR7: case BX_LAPIC_IRR8:
     {
-      unsigned index = (apic_reg - BX_LAPIC_IRR1) << 1;
-      Bit32u value = 0, mask = 1;
-      for(int i=0;i<32;i++) {
-        if(irr[index+i]) value |= mask;
-        mask <<= 1;
-      }
-      data = value;
+      int index = (apic_reg - BX_LAPIC_IRR1) >> 4;
+      data = irr[index];
+      break;
     }
-    break;
   case BX_LAPIC_ESR:     // error status reg
     data = error_status; break;
   case BX_LAPIC_ICR_LO:  // interrupt command reg  0-31
@@ -499,6 +435,9 @@ Bit32u bx_local_apic_c::read_aligned(bx_phy_address addr)
       data = lvt[index];
       break;
     }
+  case BX_LAPIC_LVT_CMCI:
+    data = lvt[APIC_LVT_CMCI];
+    break;
   case BX_LAPIC_TIMER_INITIAL_COUNT: // initial count for timer
     data = timer_initial;
     break;
@@ -529,15 +468,10 @@ Bit32u bx_local_apic_c::read_aligned(bx_phy_address addr)
   case BX_LAPIC_IER5: case BX_LAPIC_IER6:
   case BX_LAPIC_IER7: case BX_LAPIC_IER8:
     {
-      unsigned index = (apic_reg - BX_LAPIC_IER1) << 1;
-      Bit32u value = 0, mask = 1;
-      for(int i=0;i<32;i++) {
-        if(ier[index+i]) value |= mask;
-        mask <<= 1;
-      }
-      data = value;
+      int index = (apic_reg - BX_LAPIC_IER1) >> 4;
+      data = ier[index];
+      break;
     }
-    break;
 #endif
   default:
       shadow_error_status |= APIC_ERR_ILLEGAL_ADDR;
@@ -558,7 +492,7 @@ void bx_local_apic_c::write_aligned(bx_phy_address addr, Bit32u value)
   BX_DEBUG(("LAPIC write 0x%08x to register 0x%04x", value, apic_reg));
 
 #if BX_CPU_LEVEL >= 6
-  if (apic_reg >= 0x400 && !cpu->bx_cpuid_support_xapic_extensions())
+  if (apic_reg >= 0x400 && !cpu->is_cpu_extension_supported(BX_ISA_XAPIC_EXT))
     apic_reg = 0xffffffff; // choose some obviosly invalid register if extended xapic is not supported
 #endif
   
@@ -601,6 +535,7 @@ void bx_local_apic_c::write_aligned(bx_phy_address addr, Bit32u value)
     case BX_LAPIC_LVT_LINT0:   // LVT LINT0 Reg
     case BX_LAPIC_LVT_LINT1:   // LVT LINT1 Reg
     case BX_LAPIC_LVT_ERROR:   // LVT Error Reg
+    case BX_LAPIC_LVT_CMCI:
       set_lvt_entry(apic_reg, value);
       break;
     case BX_LAPIC_TIMER_INITIAL_COUNT:
@@ -659,12 +594,8 @@ void bx_local_apic_c::write_aligned(bx_phy_address addr, Bit32u value)
           break;
         }
 
-        unsigned index = (apic_reg - BX_LAPIC_IER1) << 1;
-        Bit32u mask = 1;
-        for(int i=0;i<32;i++) {
-          if(value & mask) ier[index+i] = 1;
-          mask <<= 1;
-        }
+        int index = (apic_reg - BX_LAPIC_IER1) >> 4;
+        ier[index] = value;
       }
       break;
 #endif
@@ -683,13 +614,14 @@ void bx_local_apic_c::set_lvt_entry(unsigned apic_reg, Bit32u value)
     0x000117ff, /* PERFMON */
     0x0001f7ff, /* LINT0 */
     0x0001f7ff, /* LINT1 */
-    0x000110ff  /* ERROR */
+    0x000110ff, /* ERROR */
+    0x000117ff, /* CMCI */
   };
 
-  unsigned lvt_entry = (apic_reg - BX_LAPIC_LVT_TIMER) >> 4;
+  unsigned lvt_entry = (apic_reg == BX_LAPIC_LVT_CMCI) ? APIC_LVT_CMCI : (apic_reg - BX_LAPIC_LVT_TIMER) >> 4;
 #if BX_CPU_LEVEL >= 6
   if (apic_reg == BX_LAPIC_LVT_TIMER) {
-    if (! cpu->bx_cpuid_support_tsc_deadline()) {
+    if (! cpu->is_cpu_extension_supported(BX_ISA_TSC_DEADLINE)) {
       value &= ~0x40000; // cannot enable TSC-Deadline when not supported
     }
     else {
@@ -786,10 +718,10 @@ void bx_local_apic_c::receive_EOI(Bit32u value)
   else {
     if ((Bit32u) vec != spurious_vector) {
        BX_DEBUG(("local apic received EOI, hopefully for vector 0x%02x", vec));
-       isr[vec] = 0;
-       if(tmr[vec]) {
+       clear_vector(isr, vec);
+       if(get_vector(tmr, vec)) {
            apic_bus_broadcast_eoi(vec);
-           tmr[vec] = 0;
+           clear_vector(tmr, vec);
        }
        service_local_apic();
     }
@@ -806,12 +738,12 @@ void bx_local_apic_c::receive_SEOI(Bit8u vec)
      return;
   }
 
-  if (isr[vec]) {
+  if (get_vector(isr, vec)) {
      BX_DEBUG(("local apic received SEOI for vector 0x%02x", vec));
-     isr[vec] = 0;
-     if(tmr[vec]) {
+     clear_vector(isr, vec);
+     if(get_vector(tmr, vec)) {
          apic_bus_broadcast_eoi(vec);
-         tmr[vec] = 0;
+         clear_vector(tmr, vec);
      }
      service_local_apic();
   }
@@ -825,13 +757,34 @@ void bx_local_apic_c::startup_msg(Bit8u vector)
   cpu->deliver_SIPI(vector);
 }
 
-int bx_local_apic_c::highest_priority_int(Bit8u *array)
+bx_bool bx_local_apic_c::get_vector(Bit32u *reg, unsigned vector)
 {
-  for(int i=BX_LAPIC_LAST_VECTOR; i>=BX_LAPIC_FIRST_VECTOR; i--) {
+  return (reg[vector / 32] >> (vector % 32)) & 0x1;
+}
+
+void bx_local_apic_c::set_vector(Bit32u *reg, unsigned vector)
+{
+  reg[vector / 32] |= (1 << (vector % 32));
+}
+
+void bx_local_apic_c::clear_vector(Bit32u *reg, unsigned vector)
+{
+  reg[vector / 32] &= ~(1 << (vector % 32));
+}
+
+int bx_local_apic_c::highest_priority_int(Bit32u *array)
+{
+  for (int reg=7; reg>=0; reg--) {
+    Bit32u tmp = array[reg];
 #if BX_CPU_LEVEL >= 6
-    if (! ier[i]) continue;
+    tmp &= ier[reg];
 #endif
-    if (array[i]) return i;
+// ignore of interrupt vectors < 16 happen naturally as there is no way to ISR to it
+//  if (reg == 0) tmp &= 0xffff0000;
+    if (tmp) {
+      int vector = (reg * 32) + (31 - lzcntd(tmp));
+      return vector;
+    }
   }
 
   return -1;
@@ -843,7 +796,9 @@ void bx_local_apic_c::service_local_apic(void)
     BX_INFO(("service_local_apic()"));
     print_status();
   }
-  if(INTR) return;  // INTR already up; do nothing
+
+  if(cpu->is_pending(BX_EVENT_PENDING_LAPIC_INTR)) return;  // INTR already up; do nothing
+
   // find first interrupt in irr.
   int first_irr = highest_priority_int(irr);
   if (first_irr < 0) return;   // no interrupts, leave INTR=0
@@ -860,8 +815,7 @@ void bx_local_apic_c::service_local_apic(void)
   // acknowledges, we will run highest_priority_int again and
   // return it.
   BX_DEBUG(("service_local_apic(): setting INTR=1 for vector 0x%02x", first_irr));
-  INTR = 1;
-  cpu->async_event = 1;
+  cpu->signal_event(BX_EVENT_PENDING_LAPIC_INTR);
 }
 
 bx_bool bx_local_apic_c::deliver(Bit8u vector, Bit8u delivery_mode, Bit8u trig_mode)
@@ -911,18 +865,19 @@ void bx_local_apic_c::trigger_irq(Bit8u vector, unsigned trigger_mode, bx_bool b
 
   BX_DEBUG(("triggered vector %#02x", vector));
 
-  if(bypass_irr_isr) {
-    goto service_vector;
+  if(! bypass_irr_isr) {
+    if(get_vector(irr, vector)) {
+      BX_DEBUG(("triggered vector %#02x not accepted", vector));
+      return;
+    }
   }
 
-  if(irr[vector] != 0) {
-    BX_DEBUG(("triggered vector %#02x not accepted", vector));
-    return;
-  }
+  set_vector(irr, vector);
+  if (trigger_mode)
+      set_vector(tmr, vector); // set for level triggered
+  else
+    clear_vector(tmr, vector);
 
-service_vector:
-  irr[vector] = 1;
-  tmr[vector] = trigger_mode;	// set for level triggered
   service_local_apic();
 }
 
@@ -931,46 +886,43 @@ void bx_local_apic_c::untrigger_irq(Bit8u vector, unsigned trigger_mode)
   BX_DEBUG(("untrigger interrupt vector=0x%02x", vector));
   // hardware says "no more".  clear the bit.  If the CPU hasn't yet
   // acknowledged the interrupt, it will never be serviced.
-  BX_ASSERT(irr[vector] == 1);
-  irr[vector] = 0;
+  BX_ASSERT(get_vector(irr, vector));
+  clear_vector(irr, vector);
   if(bx_dbg.apic) print_status();
 }
 
 Bit8u bx_local_apic_c::acknowledge_int(void)
 {
   // CPU calls this when it is ready to service one interrupt
-  if(!INTR)
+  if(! cpu->is_pending(BX_EVENT_PENDING_LAPIC_INTR))
     BX_PANIC(("APIC %d acknowledged an interrupt, but INTR=0", apic_id));
 
-  BX_ASSERT(INTR);
   int vector = highest_priority_int(irr);
-  if (vector < 0) goto spurious;
-  if((vector & 0xf0) <= get_ppr()) goto spurious;
-  BX_ASSERT(irr[vector] == 1);
+  if (vector < 0 || (vector & 0xf0) <= get_ppr()) {
+    cpu->clear_event(BX_EVENT_PENDING_LAPIC_INTR);
+    return spurious_vector;
+  }
+
+  BX_ASSERT(get_vector(irr, vector));
   BX_DEBUG(("acknowledge_int() returning vector 0x%02x", vector));
-  irr[vector] = 0;
-  isr[vector] = 1;
+  clear_vector(irr, vector);
+  set_vector(isr, vector);
   if(bx_dbg.apic) {
     BX_INFO(("Status after setting isr:"));
     print_status();
   }
-  INTR = 0;
-  cpu->async_event = 1;
+
+  cpu->clear_event(BX_EVENT_PENDING_LAPIC_INTR);
   service_local_apic();  // will set INTR again if another is ready
   return vector;
-
-spurious:
-  INTR = 0;
-  cpu->async_event = 1;
-  return spurious_vector;
 }
 
 void bx_local_apic_c::print_status(void)
 {
   BX_INFO(("lapic %d: status is {:", apic_id));
-  for(int vec=0; vec<BX_LAPIC_MAX_INTS; vec++) {
-    if(irr[vec] || isr[vec]) {
-      BX_INFO(("vec 0x%x: irr=%d, isr=%d", vec,(int)irr[vec],(int)isr[vec]));
+  for(unsigned vec=0; vec<=BX_LAPIC_LAST_VECTOR; vec++) {
+    if(get_vector(irr, vec) || get_vector(isr, vec)) {
+      BX_INFO(("vec: %u, irr=%u, isr=%u", get_vector(irr, vec), get_vector(isr, vec)));
     }
   }
   BX_INFO(("}"));
@@ -1061,7 +1013,7 @@ Bit8u bx_local_apic_c::get_apr(void)
 bx_bool bx_local_apic_c::is_focus(Bit8u vector)
 {
   if(focus_disable) return 0;
-  return(irr[vector] || isr[vector]) ? 1 : 0;
+  return get_vector(irr, vector) || get_vector(isr, vector);
 }
 
 void bx_local_apic_c::periodic_smf(void *this_ptr)
@@ -1118,9 +1070,9 @@ void bx_local_apic_c::set_divide_configuration(Bit32u value)
 
 void bx_local_apic_c::set_initial_timer_count(Bit32u value)
 {
+#if BX_CPU_LEVEL >= 6
   Bit32u timervec = lvt[APIC_LVT_TIMER];
 
-#if BX_CPU_LEVEL >= 6
   // in TSC-deadline mode writes to initial time count are ignored
   if (timervec & 0x40000) return;
 #endif
@@ -1186,7 +1138,7 @@ void bx_local_apic_c::set_tsc_deadline(Bit64u deadline)
 
   ticksInitial = deadline;
   if (deadline != 0) {
-    BX_INFO(("APIC: TSC-Deadline is set to " FMT_LL "d", deadline));
+    BX_DEBUG(("APIC: TSC-Deadline is set to " FMT_LL "d", deadline));
     Bit64u currtime = bx_pc_system.time_ticks();
     timer_active = 1;
     bx_pc_system.activate_timer_ticks(timer_handle, (deadline > currtime) ? (deadline - currtime) : 1 , 0);
@@ -1219,7 +1171,7 @@ void bx_local_apic_c::set_vmx_preemption_timer(Bit32u value)
   vmx_preemption_timer_value = value;
   vmx_preemption_timer_initial = bx_pc_system.time_ticks();
   vmx_preemption_timer_fire = ((vmx_preemption_timer_initial >> vmx_preemption_timer_rate) + value) << vmx_preemption_timer_rate;
-  BX_DEBUG(("VMX Preemption timer. value = %u, rate = %u, init = %u, fire = %u", value, vmx_preemption_timer_rate, vmx_preemption_timer_initial, vmx_preemption_timer_fire));
+  BX_DEBUG(("VMX Preemption timer: value = %u, rate = %u, init = %u, fire = %u", value, vmx_preemption_timer_rate, vmx_preemption_timer_initial, vmx_preemption_timer_fire));
   bx_pc_system.activate_timer_ticks(vmx_timer_handle, vmx_preemption_timer_fire - vmx_preemption_timer_initial, 0);
   vmx_timer_active = 1;
 }
@@ -1235,10 +1187,35 @@ void bx_local_apic_c::deactivate_vmx_preemption_timer(void)
 void bx_local_apic_c::vmx_preemption_timer_expired(void *this_ptr)
 {
   bx_local_apic_c *class_ptr = (bx_local_apic_c *) this_ptr;
-  class_ptr->cpu->pending_vmx_timer_expired = 1;
-  class_ptr->cpu->async_event = 1;
+  class_ptr->cpu->signal_event(BX_EVENT_VMX_PREEMPTION_TIMER_EXPIRED);
   class_ptr->deactivate_vmx_preemption_timer();
 }
+#endif
+
+#if BX_SUPPORT_MONITOR_MWAIT
+
+void bx_local_apic_c::set_mwaitx_timer(Bit32u value)
+{
+  BX_DEBUG(("MWAITX timer: value = %u", value));
+  bx_pc_system.activate_timer_ticks(mwaitx_timer_active, value, 0);
+  mwaitx_timer_active = 1;
+}
+
+void bx_local_apic_c::deactivate_mwaitx_timer(void)
+{
+  if (! mwaitx_timer_active) return;
+  bx_pc_system.deactivate_timer(mwaitx_timer_handle);
+  mwaitx_timer_active = 0;
+}
+
+// Invoked when MWAITX timer expired
+void bx_local_apic_c::mwaitx_timer_expired(void *this_ptr)
+{
+  bx_local_apic_c *class_ptr = (bx_local_apic_c *) this_ptr;
+  class_ptr->cpu->wakeup_monitor();
+  class_ptr->deactivate_mwaitx_timer();
+}
+
 #endif
   
 #if BX_CPU_LEVEL >= 6
@@ -1302,13 +1279,14 @@ bx_bool bx_local_apic_c::read_x2apic(unsigned index, Bit64u *val_64)
   case BX_LAPIC_LVT_LINT0:
   case BX_LAPIC_LVT_LINT1:
   case BX_LAPIC_LVT_ERROR:
+  case BX_LAPIC_LVT_CMCI:
   case BX_LAPIC_TIMER_INITIAL_COUNT:
   case BX_LAPIC_TIMER_CURRENT_COUNT:
   case BX_LAPIC_TIMER_DIVIDE_CFG:
     *val_64 = read_aligned(index);
     break;
   default:
-    BX_DEBUG(("read_x2apic: not supported apic register 0x%08x", index));
+    BX_ERROR(("read_x2apic: not supported apic register 0x%08x", index));
     return 0;
   }
 
@@ -1390,11 +1368,12 @@ bx_bool bx_local_apic_c::write_x2apic(unsigned index, Bit32u val32_hi, Bit32u va
   case BX_LAPIC_LVT_LINT0:
   case BX_LAPIC_LVT_LINT1:
   case BX_LAPIC_LVT_ERROR:
+  case BX_LAPIC_LVT_CMCI:
   case BX_LAPIC_TIMER_INITIAL_COUNT:
   case BX_LAPIC_TIMER_DIVIDE_CFG:
     break; // use legacy write
   default:
-    BX_DEBUG(("write_x2apic: not supported apic register 0x%08x", index));
+    BX_ERROR(("write_x2apic: not supported apic register 0x%08x", index));
     return 0;
   }
 
@@ -1420,23 +1399,23 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, ldr);
   BXRS_HEX_PARAM_SIMPLE(lapic, dest_format);
 
-  bx_list_c *ISR = new bx_list_c(lapic, "isr");
-  bx_list_c *TMR = new bx_list_c(lapic, "tmr");
-  bx_list_c *IRR = new bx_list_c(lapic, "irr");
-  for (i=0; i<BX_LAPIC_MAX_INTS; i++) {
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(ISR, name, &isr[i]);
-    new bx_shadow_num_c(TMR, name, &tmr[i]);
-    new bx_shadow_num_c(IRR, name, &irr[i]);
+  for (i=0; i<8; i++) {
+    sprintf(name, "isr%u", i);
+    new bx_shadow_num_c(lapic, name, &isr[i], BASE_HEX);
+
+    sprintf(name, "tmr%u", i);
+    new bx_shadow_num_c(lapic, name, &tmr[i], BASE_HEX);
+
+    sprintf(name, "irr%u", i);
+    new bx_shadow_num_c(lapic, name, &irr[i], BASE_HEX);
   }
 
 #if BX_CPU_LEVEL >= 6
-  if (cpu->bx_cpuid_support_xapic_extensions()) {
+  if (cpu->is_cpu_extension_supported(BX_ISA_XAPIC_EXT)) {
     BXRS_HEX_PARAM_SIMPLE(lapic, xapic_ext);
-    bx_list_c *IER = new bx_list_c(lapic, "ier");
-    for (i=0; i<BX_LAPIC_MAX_INTS; i++) {
-      sprintf(name, "0x%02x", i);
-      new bx_shadow_num_c(IER, name, &ier[i]);
+    for (i=0; i<8; i++) {
+      sprintf(name, "ier%u", i);
+      new bx_shadow_num_c(lapic, name, &ier[i], BASE_HEX);
     }
   }
 #endif
@@ -1446,10 +1425,9 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, icr_hi);
   BXRS_HEX_PARAM_SIMPLE(lapic, icr_lo);
 
-  bx_list_c *LVT = new bx_list_c(lapic, "lvt");
   for (i=0; i<APIC_LVT_ENTRIES; i++) {
-    sprintf(name, "%d", i);
-    new bx_shadow_num_c(LVT, name, &lvt[i], BASE_HEX);
+    sprintf(name, "lvt%u", i);
+    new bx_shadow_num_c(lapic, name, &lvt[i], BASE_HEX);
   }
 
   BXRS_HEX_PARAM_SIMPLE(lapic, timer_initial);
@@ -1459,7 +1437,6 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_DEC_PARAM_SIMPLE(lapic, timer_handle);
   BXRS_PARAM_BOOL(lapic, timer_active, timer_active);
   BXRS_HEX_PARAM_SIMPLE(lapic, ticksInitial);
-  BXRS_PARAM_BOOL(lapic, INTR, INTR);
 
 #if BX_SUPPORT_VMX >= 2
   BXRS_DEC_PARAM_SIMPLE(lapic, vmx_timer_handle);
@@ -1468,6 +1445,11 @@ void bx_local_apic_c::register_state(bx_param_c *parent)
   BXRS_HEX_PARAM_SIMPLE(lapic, vmx_preemption_timer_value);
   BXRS_HEX_PARAM_SIMPLE(lapic, vmx_preemption_timer_rate);
   BXRS_PARAM_BOOL(lapic, vmx_timer_active, vmx_timer_active);
+#endif
+
+#if BX_SUPPORT_MONITOR_MWAIT
+  BXRS_DEC_PARAM_SIMPLE(lapic, mwaitx_timer_handle);
+  BXRS_PARAM_BOOL(lapic, mwaitx_timer_active, mwaitx_timer_active);
 #endif
 }
 

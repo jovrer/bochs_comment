@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pit82c54.h 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: pit82c54.h 13508 2018-05-14 18:17:04Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -141,6 +141,8 @@ public:
   Bit32u get_clock_event_time(Bit8u cnum);
   Bit32u get_next_event_time(void);
   Bit16u get_inlatch(int countnum);
+  bx_bool new_count_ready(int countnum);
+  Bit8u  get_mode(int countnum);
 
   void print_cnum(Bit8u cnum);
 };

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: ne2k.h 11148 2012-04-23 17:06:19Z vruppert $
+// $Id: ne2k.h 13457 2018-02-04 09:41:50Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -197,9 +197,11 @@ typedef struct {
 #endif
 } bx_ne2k_t;
 
-class bx_ne2k_c : public bx_devmodel_c
+class bx_ne2k_c
 #if BX_SUPPORT_PCI
-  , public bx_pci_device_stub_c
+: public bx_pci_device_c
+#else
+: public bx_devmodel_c
 #endif
 {
 public:
@@ -216,8 +218,8 @@ public:
 #endif
 
 #if BX_SUPPORT_PCI
-  virtual Bit32u pci_read_handler(Bit8u address, unsigned io_len);
-  virtual void   pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+  virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+  virtual void pci_bar_change_notify(void);
 #endif
 
 private:
@@ -254,7 +256,6 @@ private:
 
 #if BX_SUPPORT_PCI
   BX_NE2K_SMF bx_bool mem_read_handler(bx_phy_address addr, unsigned len, void *data, void *param);
-  BX_NE2K_SMF bx_bool mem_write_handler(bx_phy_address addr, unsigned len, void *data, void *param);
 #endif
 
   static Bit32u read_handler(void *this_ptr, Bit32u address, unsigned io_len);

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: smm.cc 11305 2012-08-01 14:56:51Z sshwarts $
+// $Id: smm.cc 13466 2018-02-16 07:57:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2006-2012 Stanislav Shwartsman
+//   Copyright (c) 2006-2018 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -28,7 +28,7 @@
 
 #if BX_CPU_LEVEL >= 3
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
 {
   /* If we are not in System Management Mode, then #UD should be generated */
   if (! BX_CPU_THIS_PTR smm_mode()) {
@@ -36,10 +36,15 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
     exception(BX_UD_EXCEPTION, 0);
   }
 
+#if BX_SUPPORT_SVM
+  if (BX_CPU_THIS_PTR in_svm_guest) {
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_RSM)) Svm_Vmexit(SVM_VMEXIT_RSM);
+  }
+#endif
+
 #if BX_SUPPORT_VMX
   if (BX_CPU_THIS_PTR in_vmx) {
     if (BX_CPU_THIS_PTR in_vmx_guest) {
-      BX_ERROR(("VMEXIT: RSM in VMX non-root operation"));
       VMexit(VMX_VMEXIT_RSM, 0);
     }
     else {
@@ -51,7 +56,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
 
   BX_INFO(("RSM: Resuming from System Management Mode"));
 
-  BX_CPU_THIS_PTR disable_NMI = 0;
+  unmask_event(BX_EVENT_SMI | BX_EVENT_NMI | BX_EVENT_VMX_VIRTUAL_NMI);
 
   Bit32u saved_state[SMM_SAVE_STATE_MAP_SIZE], n;
   // reset reserved bits
@@ -62,7 +67,7 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::RSM(bxInstruction_c *i)
   for(n=0;n<SMM_SAVE_STATE_MAP_SIZE;n++) {
     base -= 4;
     access_read_physical(base, 4, &saved_state[n]);
-    BX_NOTIFY_PHY_MEMORY_ACCESS(base, 4, BX_READ, BX_SMRAM_ACCESS, (Bit8u*)(&saved_state[n]));
+    BX_NOTIFY_PHY_MEMORY_ACCESS(base, 4, BX_MEMTYPE_WB, BX_READ, BX_SMRAM_ACCESS, (Bit8u*)(&saved_state[n]));
   }
   BX_CPU_THIS_PTR in_smm = 0;
 
@@ -114,7 +119,8 @@ void BX_CPU_C::enter_system_management_mode(void)
 #endif
 
   BX_CPU_THIS_PTR in_smm = 1;
-  BX_CPU_THIS_PTR disable_NMI = 1;
+
+  mask_event(BX_EVENT_SMI | BX_EVENT_NMI | BX_EVENT_VMX_VIRTUAL_NMI);
 
   Bit32u saved_state[SMM_SAVE_STATE_MAP_SIZE], n;
   // reset reserved bits
@@ -127,7 +133,7 @@ void BX_CPU_C::enter_system_management_mode(void)
   for(n=0;n<SMM_SAVE_STATE_MAP_SIZE;n++) {
     base -= 4;
     access_write_physical(base, 4, &saved_state[n]);
-    BX_NOTIFY_PHY_MEMORY_ACCESS(base, 4, BX_WRITE, BX_SMRAM_ACCESS, (Bit8u*)(&saved_state[n]));
+    BX_NOTIFY_PHY_MEMORY_ACCESS(base, 4, BX_MEMTYPE_WB, BX_WRITE, BX_SMRAM_ACCESS, (Bit8u*)(&saved_state[n]));
   }
 
   BX_CPU_THIS_PTR setEFlags(0x2); // Bit1 is always set
@@ -151,7 +157,7 @@ void BX_CPU_C::enter_system_management_mode(void)
   parse_selector(BX_CPU_THIS_PTR smbase >> 4,
                &BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.dpl      = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].cache.segment  = 1;  /* data/code segment */
@@ -170,7 +176,7 @@ void BX_CPU_C::enter_system_management_mode(void)
   parse_selector(0x0000,
                &BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].selector);
 
-  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK;
+  BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.valid    = SegValidCache | SegAccessROK | SegAccessWOK | SegAccessROK4G | SegAccessWOK4G;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.p        = 1;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.dpl      = 0;
   BX_CPU_THIS_PTR sregs[BX_SEG_REG_DS].cache.segment  = 1; /* data/code segment */
@@ -427,14 +433,16 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_BASE_HI32) = GET32H(BX_CPU_THIS_PTR tr.cache.u.segment.base);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_BASE) = GET32L(BX_CPU_THIS_PTR tr.cache.u.segment.base);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_LIMIT) = BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled;
-  Bit32u tr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR tr.cache) >> 8) & 0xf0ff) | (BX_CPU_THIS_PTR tr.cache.valid << 8);
+  bx_bool tr_valid = (BX_CPU_THIS_PTR tr.cache.valid != 0);
+  Bit32u tr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR tr.cache) >> 8) & 0xf0ff) | (tr_valid << 8);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR) = BX_CPU_THIS_PTR tr.selector.value | (tr_ar << 16);
 
   // --- LDTR --- //
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_BASE_HI32) = GET32H(BX_CPU_THIS_PTR ldtr.cache.u.segment.base);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_BASE) = GET32L(BX_CPU_THIS_PTR ldtr.cache.u.segment.base);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_LIMIT) = BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled;
-  Bit32u ldtr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR ldtr.cache) >> 8) & 0xf0ff) | (BX_CPU_THIS_PTR ldtr.cache.valid << 8);
+  bx_bool ldtr_valid = (BX_CPU_THIS_PTR ldtr.cache.valid != 0);
+  Bit32u ldtr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR ldtr.cache) >> 8) & 0xf0ff) | (ldtr_valid << 8);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR) = BX_CPU_THIS_PTR ldtr.selector.value | (ldtr_ar << 16);
 
   // --- IDTR --- //
@@ -452,7 +460,8 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_BASE_HI32 + 4*segreg) = GET32H(seg->cache.u.segment.base);
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_BASE + 4*segreg) = GET32L(seg->cache.u.segment.base);
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_LIMIT + 4*segreg) = seg->cache.u.segment.limit_scaled;
-    Bit32u seg_ar = ((get_descriptor_h(&seg->cache) >> 8) & 0xf0ff) | (seg->cache.valid << 8);
+    bx_bool seg_valid = (seg->cache.valid != 0);
+    Bit32u seg_ar = ((get_descriptor_h(&seg->cache) >> 8) & 0xf0ff) | (seg_valid << 8);
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg) = seg->selector.value | (seg_ar << 16);
   }
 }
@@ -534,14 +543,16 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR) = BX_CPU_THIS_PTR tr.selector.value;
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_BASE) = BX_CPU_THIS_PTR tr.cache.u.segment.base;
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_LIMIT) = BX_CPU_THIS_PTR tr.cache.u.segment.limit_scaled;
-  Bit32u tr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR tr.cache) >> 8) & 0xf0ff) | (BX_CPU_THIS_PTR tr.cache.valid << 8);
+  bx_bool tr_valid = (BX_CPU_THIS_PTR tr.cache.valid != 0);
+  Bit32u tr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR tr.cache) >> 8) & 0xf0ff) | (tr_valid << 8);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_TR_SELECTOR_AR) = BX_CPU_THIS_PTR tr.selector.value | (tr_ar << 16);
 
   // --- LDTR --- //
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR) = BX_CPU_THIS_PTR ldtr.selector.value;
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_BASE) = BX_CPU_THIS_PTR ldtr.cache.u.segment.base;
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_LIMIT) = BX_CPU_THIS_PTR ldtr.cache.u.segment.limit_scaled;
-  Bit32u ldtr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR ldtr.cache) >> 8) & 0xf0ff) | (BX_CPU_THIS_PTR ldtr.cache.valid << 8);
+  bx_bool ldtr_valid = (BX_CPU_THIS_PTR ldtr.cache.valid != 0);
+  Bit32u ldtr_ar = ((get_descriptor_h(&BX_CPU_THIS_PTR ldtr.cache) >> 8) & 0xf0ff) | (ldtr_valid << 8);
   SMRAM_FIELD(saved_state, SMRAM_FIELD_LDTR_SELECTOR_AR) = BX_CPU_THIS_PTR ldtr.selector.value | (ldtr_ar << 16);
 
   // --- IDTR --- //
@@ -557,7 +568,8 @@ void BX_CPU_C::smram_save_state(Bit32u *saved_state)
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR + 4*segreg) = seg->selector.value;
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_BASE + 4*segreg) = seg->cache.u.segment.base;
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_LIMIT + 4*segreg) = seg->cache.u.segment.limit_scaled;
-    Bit32u seg_ar = ((get_descriptor_h(&seg->cache) >> 8) & 0xf0ff) | (seg->cache.valid << 8);
+    bx_bool seg_valid = (seg->cache.valid != 0);
+    Bit32u seg_ar = ((get_descriptor_h(&seg->cache) >> 8) & 0xf0ff) | (seg_valid << 8);
     SMRAM_FIELD(saved_state, SMRAM_FIELD_ES_SELECTOR_AR + 4*segreg) = seg->selector.value | (seg_ar << 16);
   }
 }
@@ -662,6 +674,15 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
   }
 #endif
 
+#if BX_CPU_LEVEL >= 5
+  if (smm_state->efer.get32() & ~((Bit64u) BX_CPU_THIS_PTR efer_suppmask)) {
+    BX_PANIC(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", smm_state->efer.get32()));
+    return 0;
+  }
+
+  BX_CPU_THIS_PTR efer.set32(smm_state->efer.val32);
+#endif
+
   // check CR0 conditions for entering to shutdown state
   if (!check_CR0(smm_state->cr0.get32())) {
     BX_PANIC(("SMM restore: CR0 consistency check failed !"));
@@ -673,19 +694,13 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     BX_PANIC(("SMM restore: CR4 consistency check failed !"));
     return 0;
   }
+#endif
 
-  // shutdown if write to reserved CR4 bits
-  if (!SetCR4(smm_state->cr4.get32())) {
-    BX_PANIC(("SMM restore: incorrect CR4 state !"));
-    return 0;
-  }
-
-  if (smm_state->efer.get32() & ~((Bit64u) BX_CPU_THIS_PTR efer_suppmask)) {
-    BX_PANIC(("SMM restore: Attempt to set EFER reserved bits: 0x%08x !", smm_state->efer.get32()));
-    return 0;
-  }
-
-  BX_CPU_THIS_PTR efer.set32(smm_state->efer.val32);
+  BX_CPU_THIS_PTR cr0.set32(smm_state->cr0.get32());
+#if BX_CPU_LEVEL >= 5
+  BX_CPU_THIS_PTR cr4.set32(smm_state->cr4.get32());
+#endif
+  BX_CPU_THIS_PTR cr3 = smm_state->cr3;
 
 #if BX_SUPPORT_X86_64
   if (BX_CPU_THIS_PTR efer.get_LMA()) {
@@ -694,7 +709,7 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
       return 0;
     }
 
-    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !smm_state->cr0.get_PG() || !smm_state->cr0.get_PE() || !BX_CPU_THIS_PTR efer.get_LME()) {
+    if (!BX_CPU_THIS_PTR cr4.get_PAE() || !BX_CPU_THIS_PTR cr0.get_PG() || !BX_CPU_THIS_PTR cr0.get_PE() || !BX_CPU_THIS_PTR efer.get_LME()) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
       return 0;
     }
@@ -706,29 +721,13 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     }
   }
 
-  if (BX_CPU_THIS_PTR cr4.get_PAE() && smm_state->cr0.get_PG() && smm_state->cr0.get_PE() && BX_CPU_THIS_PTR efer.get_LME()) {
+  if (BX_CPU_THIS_PTR cr4.get_PAE() && BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr0.get_PE() && BX_CPU_THIS_PTR efer.get_LME()) {
     if (! BX_CPU_THIS_PTR efer.get_LMA()) {
       BX_PANIC(("SMM restore: If EFER.LMA = 1 <=> CR4.PAE, CR0.PG, CR0.PE, EFER.LME=1 !"));
       return 0;
     }
   }
 #endif
-
-#endif
-
-  // hack CR0 to be able to back to long mode correctly
-  BX_CPU_THIS_PTR cr0.set_PE(0); // real mode (bit 0)
-  BX_CPU_THIS_PTR cr0.set_PG(0); // paging disabled (bit 31)
-  if (! SetCR0(smm_state->cr0.get32())) {
-    BX_PANIC(("SMM restore: failed to restore CR0 !"));
-    return 0;
-  }
-  setEFlags(smm_state->eflags);
-
-  if (!SetCR3(smm_state->cr3)) {
-    BX_PANIC(("SMM restore: failed to restore CR3 !"));
-    return 0;
-  }
 
 #if BX_CPU_LEVEL >= 6
   if (BX_CPU_THIS_PTR cr0.get_PG() && BX_CPU_THIS_PTR cr4.get_PAE() && !long_mode()) {
@@ -738,6 +737,8 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     }
   }
 #endif
+
+  setEFlags(smm_state->eflags);
 
 #if BX_SUPPORT_X86_64
   for (int n=0; n<BX_GENERAL_REGISTERS; n++)
@@ -759,7 +760,7 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
     Bit16u ar_data = smm_state->segreg[segreg].selector_ar >> 16;
     if (set_segment_ar_data(&BX_CPU_THIS_PTR sregs[segreg],
           (ar_data >> 8) & 1,
-          smm_state->segreg[segreg].selector_ar & 0xf0ff,
+          smm_state->segreg[segreg].selector_ar & 0xffff,
           smm_state->segreg[segreg].base,
           smm_state->segreg[segreg].limit, ar_data))
     {
@@ -773,7 +774,7 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
   Bit16u ar_data = smm_state->ldtr.selector_ar >> 16;
   if (set_segment_ar_data(&BX_CPU_THIS_PTR ldtr,
           (ar_data >> 8) & 1,
-          smm_state->ldtr.selector_ar & 0xf0ff,
+          smm_state->ldtr.selector_ar & 0xffff,
           smm_state->ldtr.base,
           smm_state->ldtr.limit, ar_data))
   {
@@ -786,7 +787,7 @@ bx_bool BX_CPU_C::resume_from_system_management_mode(BX_SMM_State *smm_state)
   ar_data = smm_state->tr.selector_ar >> 16;
   if (set_segment_ar_data(&BX_CPU_THIS_PTR tr,
           (ar_data >> 8) & 1,
-          smm_state->tr.selector_ar & 0xf0ff,
+          smm_state->tr.selector_ar & 0xffff,
           smm_state->tr.base,
           smm_state->tr.limit, ar_data))
   {

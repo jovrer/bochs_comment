@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: bswap.h 11289 2012-07-19 18:03:10Z sshwarts $
+// $Id: bswap.h 11891 2013-10-16 19:33:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2012  The Bochs Project
+//  Copyright (C) 2012-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,11 @@
 
 #ifndef BX_BSWAP_H
 #define BX_BSWAP_H
+
+BX_CPP_INLINE Bit16u bx_bswap16(Bit16u val16)
+{
+  return (val16<<8) | (val16>>8);
+}
 
 #if BX_HAVE___BUILTIN_BSWAP32
 #define bx_bswap32 __builtin_bswap32

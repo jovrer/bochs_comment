@@ -1,14 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: make_cmos_image.cc 10209 2011-02-24 22:05:47Z sshwarts $
+// $Id: make_cmos_image.cc 13653 2019-12-09 16:29:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001  MandrakeSoft S.A.
-//
-//    MandrakeSoft S.A.
-//    43, rue d'Aboukir
-//    75002 Paris - France
-//    http://www.linux-mandrake.com/
-//    http://www.mandrakesoft.com/
+//  Copyright (C) 2001-2014  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -49,7 +43,7 @@ unsigned char cmos[] = {
   0x00, 0x48, 0x2b, 0x03, 0x03, 0x03, 0x04, 0xce,
   0x00, 0x3c, 0x19, 0xff, 0xff, 0xf0, 0x00, 0xf0,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x7b
-  };
+};
 
 #else
 unsigned char cmos[] = {
@@ -70,7 +64,7 @@ unsigned char cmos[] = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // 70
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-  };
+};
 #endif
 
   int
@@ -81,23 +75,26 @@ main(int argc, char *argv[])
   if (argc != 2) {
     fprintf(stderr, "usage: %s pathname\n", argv[0]);
     exit(1);
-    }
+  }
 
   fd = open(argv[1], O_WRONLY | O_CREAT
 #ifdef O_BINARY
-                                    | O_BINARY
+                              | O_BINARY
 #endif
-           , S_IRUSR | S_IWUSR
-           );
+           , S_IRUSR | S_IWUSR);
   if (fd < 0) {
     perror("trying to open cmos image file to write.\n");
     exit(1);
-    }
+  }
 
   ret = write(fd, cmos, sizeof(cmos));
   if (ret != sizeof(cmos)) {
     perror("write() did not write all CMOS data.\n");
+    close(fd);
     exit(1);
-    }
-  printf("CMOS data successfuly written to file '%s'.\n", argv[1]);
+  }
+
+  close(fd);
+  printf("CMOS data successfully written to file '%s'.\n", argv[1]);
+  return 0;
 }

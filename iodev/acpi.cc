@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: acpi.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: acpi.cc 13744 2019-12-28 21:04:53Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2006  Volker Ruppert
+//  Copyright (C) 2006-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -22,7 +22,6 @@
 // PIIX4 ACPI support
 //
 
-
 // Define BX_PLUGGABLE in files that can be compiled into plugins.  For
 // platforms that require a special tag on exported symbols, BX_PLUGGABLE
 // is used to know when we are exporting symbols and when we are importing.
@@ -40,7 +39,7 @@
 bx_acpi_ctrl_c* theACPIController = NULL;
 
 // FIXME
-const Bit8u acpi_pm_iomask[64] = {2, 0, 2, 0, 2, 0, 0, 0, 4, 0, 0, 0, 7, 7, 7, 7,
+const Bit8u acpi_pm_iomask[64] = {3, 0, 3, 0, 3, 0, 0, 0, 4, 0, 0, 0, 7, 7, 7, 7,
                                   7, 7, 7, 7, 1, 1, 0, 0, 7, 7, 0, 0, 7, 7, 7, 7,
                                   7, 7, 0, 0, 0, 0, 0, 0, 7, 7, 7, 7, 7, 7, 7, 7,
                                   1, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -67,7 +66,7 @@ const Bit8u acpi_sm_iomask[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 0, 2, 0, 0, 0
 
 extern void apic_bus_deliver_smi(void);
 
-int libacpi_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libacpi_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   theACPIController = new bx_acpi_ctrl_c();
   bx_devices.pluginACPIController = theACPIController;
@@ -75,7 +74,7 @@ int libacpi_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char 
   return 0; // Success
 }
 
-void libacpi_LTX_plugin_fini(void)
+void CDECL libacpi_LTX_plugin_fini(void)
 {
   bx_devices.pluginACPIController = &bx_devices.stubACPIController;
   delete theACPIController;
@@ -125,40 +124,26 @@ void bx_acpi_ctrl_c::init(void)
 {
   // called once when bochs initializes
 
-  unsigned i;
-
-  BX_ACPI_THIS s.devfunc = BX_PCI_DEVICE(1, 3);
+  Bit8u chipset = SIM->get_param_enum(BXPN_PCI_CHIPSET)->get();
+  if (chipset == BX_PCI_CHIPSET_I440BX) {
+    BX_ACPI_THIS s.devfunc = BX_PCI_DEVICE(7, 3);
+  } else {
+    BX_ACPI_THIS s.devfunc = BX_PCI_DEVICE(1, 3);
+  }
   DEV_register_pci_handlers(this, &BX_ACPI_THIS s.devfunc, BX_PLUGIN_ACPI,
                             "ACPI Controller");
 
   if (BX_ACPI_THIS s.timer_index == BX_NULL_TIMER_HANDLE) {
     BX_ACPI_THIS s.timer_index =
-      bx_pc_system.register_timer(this, timer_handler, 1000, 0, 0, "ACPI");
+      DEV_register_timer(this, timer_handler, 1000, 0, 0, "ACPI");
   }
   DEV_register_iowrite_handler(this, write_handler, ACPI_DBG_IO_ADDR, "ACPI", 4);
 
-  for (i=0; i<256; i++) {
-    BX_ACPI_THIS pci_conf[i] = 0x0;
-  }
   BX_ACPI_THIS s.pm_base = 0x0;
   BX_ACPI_THIS s.sm_base = 0x0;
 
-  // readonly registers
-  static const struct init_vals_t {
-    unsigned      addr;
-    unsigned char val;
-  } init_vals[] = {
-    { 0x00, 0x86 }, { 0x01, 0x80 },
-    { 0x02, 0x13 }, { 0x03, 0x71 },
-    { 0x08, 0x03 },                 // revision number
-    { 0x0a, 0x80 },                 // other bridge device
-    { 0x0b, 0x06 },                 // bridge device
-    { 0x0e, 0x00 },                 // header type
-    { 0x3d, BX_PCI_INTA }           // interrupt pin #1
-  };
-  for (i = 0; i < sizeof(init_vals) / sizeof(*init_vals); ++i) {
-    BX_ACPI_THIS pci_conf[init_vals[i].addr] = init_vals[i].val;
-  }
+  // initialize readonly registers
+  init_pci_conf(0x8086, 0x7113, 0x03, 0x068000, 0x00, BX_PCI_INTA);
 }
 
 void bx_acpi_ctrl_c::reset(unsigned type)
@@ -195,6 +180,7 @@ void bx_acpi_ctrl_c::reset(unsigned type)
   BX_ACPI_THIS s.pmsts = 0;
   BX_ACPI_THIS s.pmen = 0;
   BX_ACPI_THIS s.pmcntrl = 0;
+  BX_ACPI_THIS s.glbctl = 0;
   BX_ACPI_THIS s.tmr_overflow_time = 0xffffff;
 
   BX_ACPI_THIS s.smbus.stat = 0;
@@ -216,6 +202,7 @@ void bx_acpi_ctrl_c::register_state(void)
   BXRS_HEX_PARAM_FIELD(list, pmsts, BX_ACPI_THIS s.pmsts);
   BXRS_HEX_PARAM_FIELD(list, pmen, BX_ACPI_THIS s.pmen);
   BXRS_HEX_PARAM_FIELD(list, pmcntrl, BX_ACPI_THIS s.pmcntrl);
+  BXRS_HEX_PARAM_FIELD(list, glbctl, BX_ACPI_THIS s.glbctl);
   BXRS_HEX_PARAM_FIELD(list, tmr_overflow_time, BX_ACPI_THIS s.tmr_overflow_time);
   bx_list_c *smbus = new bx_list_c(list, "smbus", "ACPI SMBus");
   BXRS_HEX_PARAM_FIELD(smbus, stat, BX_ACPI_THIS s.smbus.stat);
@@ -225,12 +212,7 @@ void bx_acpi_ctrl_c::register_state(void)
   BXRS_HEX_PARAM_FIELD(smbus, data0, BX_ACPI_THIS s.smbus.data0);
   BXRS_HEX_PARAM_FIELD(smbus, data1, BX_ACPI_THIS s.smbus.data1);
   BXRS_HEX_PARAM_FIELD(smbus, index, BX_ACPI_THIS s.smbus.index);
-  bx_list_c *data = new bx_list_c(smbus, "data", "ACPI SMBus data");
-  for (unsigned i = 0; i < 32; i++) {
-    char name[6];
-    sprintf(name, "0x%02x", i);
-    new bx_shadow_num_c(data, name, &BX_ACPI_THIS s.smbus.data[i], BASE_HEX);
-  }
+  new bx_shadow_data_c(smbus, "data", BX_ACPI_THIS s.smbus.data, 32, 1);
   register_pci_state(list);
 }
 
@@ -336,10 +318,23 @@ Bit32u bx_acpi_ctrl_c::read(Bit32u address, unsigned io_len)
       case 0x08:
         value = BX_ACPI_THIS get_pmtmr();
         break;
+      case 0x28:
+        value = (BX_ACPI_THIS s.glbctl & 0xfffffffd);
+        break;
+      case 0x0c: // GPSTS
+      case 0x14: // PLVL2
+      case 0x15: // PLVL3
+      case 0x18: // GLBSTS
+      case 0x1c: // DEVSTS
+      case 0x30: // GPI
+      case 0x31: // GPI
+      case 0x32: // GPI
+        value = 0x00;
+        break;
       default:
-        BX_INFO(("ACPI read from PM register 0x%02x not implemented yet", reg));
+        BX_INFO(("read from PM register 0x%02x not implemented yet (len=%d)", reg, io_len));
     }
-    BX_DEBUG(("ACPI read from PM register 0x%02x returns 0x%08x", reg, value));
+    BX_DEBUG(("read from PM register 0x%02x returns 0x%08x (len=%d)", reg, value, io_len));
   } else {
     if (((BX_ACPI_THIS pci_conf[0x04] & 0x01) == 0) &&
         ((BX_ACPI_THIS pci_conf[0xd2] & 0x01) == 0)) {
@@ -373,9 +368,9 @@ Bit32u bx_acpi_ctrl_c::read(Bit32u address, unsigned io_len)
         break;
       default:
         value = 0;
-        BX_INFO(("ACPI read from SMBus register 0x%02x not implemented yet", reg));
+        BX_INFO(("read from SMBus register 0x%02x not implemented yet", reg));
     }
-    BX_DEBUG(("ACPI read from SMBus register 0x%02x returns 0x%08x", reg, value));
+    BX_DEBUG(("read from SMBus register 0x%02x returns 0x%08x", reg, value));
   }
   return value;
 }
@@ -401,7 +396,7 @@ void bx_acpi_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
     if ((BX_ACPI_THIS pci_conf[0x80] & 0x01) == 0) {
       return;
     }
-    BX_DEBUG(("ACPI write to PM register 0x%02x, value = 0x%04x", reg, value));
+    BX_DEBUG(("write to PM register 0x%02x, value = 0x%08x (len=%d)", reg, value, io_len));
     switch (reg) {
       case 0x00:
         {
@@ -428,8 +423,7 @@ void bx_acpi_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
             switch (sus_typ) {
               case 0: // soft power off
                 bx_user_quit = 1;
-                LOG_THIS setonoff(LOGLEV_PANIC, ACT_FATAL);
-                BX_PANIC(("ACPI control: soft power off"));
+                BX_FATAL(("ACPI control: soft power off"));
                 break;
               case 1:
                 BX_INFO(("ACPI control: suspend to ram"));
@@ -443,15 +437,20 @@ void bx_acpi_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
           }
         }
         break;
+      case 0x28:
+        if (io_len == 4) {
+          BX_ACPI_THIS s.glbctl = value;
+        }
+        break;
       default:
-        BX_INFO(("ACPI write to PM register 0x%02x not implemented yet", reg));
+        BX_INFO(("write to PM register 0x%02x not implemented yet (len=%d)", reg, io_len));
     }
   } else if ((address & 0xfff0) == BX_ACPI_THIS s.sm_base) {
     if (((BX_ACPI_THIS pci_conf[0x04] & 0x01) == 0) &&
         ((BX_ACPI_THIS pci_conf[0xd2] & 0x01) == 0)) {
       return;
     }
-    BX_DEBUG(("ACPI write to SMBus register 0x%02x, value = 0x%04x", reg, value));
+    BX_DEBUG(("write to SMBus register 0x%02x, value = 0x%04x", reg, value));
     switch (reg) {
       case 0x00:
         BX_ACPI_THIS s.smbus.stat = 0;
@@ -480,7 +479,7 @@ void bx_acpi_ctrl_c::write(Bit32u address, Bit32u value, unsigned io_len)
         }
         break;
       default:
-        BX_INFO(("ACPI write to SMBus register 0x%02x not implemented yet", reg));
+        BX_INFO(("write to SMBus register 0x%02x not implemented yet", reg));
     }
   } else {
     BX_DEBUG(("DBG: 0x%08x", value));
@@ -498,25 +497,6 @@ void bx_acpi_ctrl_c::timer()
   BX_ACPI_THIS pm_update_sci();
 }
 
-// pci configuration space read callback handler
-Bit32u bx_acpi_ctrl_c::pci_read_handler(Bit8u address, unsigned io_len)
-{
-  Bit32u value = 0;
-
-  for (unsigned i=0; i<io_len; i++) {
-    value |= (BX_ACPI_THIS pci_conf[address+i] << (i*8));
-  }
-
-  if (io_len == 1)
-    BX_DEBUG(("read  PCI register 0x%02x value 0x%02x", address, value));
-  else if (io_len == 2)
-    BX_DEBUG(("read  PCI register 0x%02x value 0x%04x", address, value));
-  else if (io_len == 4)
-    BX_DEBUG(("read  PCI register 0x%02x value 0x%08x", address, value));
-
-  return value;
-}
-
 
 // static pci configuration space write callback handler
 void bx_acpi_ctrl_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
@@ -527,6 +507,7 @@ void bx_acpi_ctrl_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_
   if ((address >= 0x10) && (address < 0x34))
     return;
 
+  BX_DEBUG_PCI_WRITE(address, value, io_len);
   for (unsigned i=0; i<io_len; i++) {
     value8 = (value >> (i*8)) & 0xFF;
     oldval = BX_ACPI_THIS pci_conf[address+i];
@@ -536,12 +517,6 @@ void bx_acpi_ctrl_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_
         goto set_value;
         break;
       case 0x06: // disallowing write to status lo-byte (is that expected?)
-        break;
-      case 0x3c:
-        if (value8 != oldval) {
-          BX_INFO(("new irq line = %d", value8));
-        }
-        goto set_value;
         break;
       case 0x40:
         value8 = (value8 & 0xc0) | 0x01;
@@ -580,13 +555,6 @@ set_value:
        BX_INFO(("new SM base address: 0x%04x", BX_ACPI_THIS s.sm_base));
     }
   }
-
-  if (io_len == 1)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%02x", address, value));
-  else if (io_len == 2)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%04x", address, value));
-  else if (io_len == 4)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%08x", address, value));
 }
 
 #endif // BX_SUPPORT_PCI

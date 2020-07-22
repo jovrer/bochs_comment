@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: eth_win32.cc 10975 2012-01-14 17:03:00Z vruppert $
+// $Id: eth_win32.cc 13648 2019-12-08 18:14:30Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2011  The Bochs Project
+//  Copyright (C) 2001-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -41,6 +41,25 @@
 #include "netmod.h"
 
 #if BX_NETWORKING && BX_NETMOD_WIN32
+
+// network driver plugin entry points
+
+int CDECL libwin32_net_plugin_init(plugin_t *plugin, plugintype_t type)
+{
+  // Nothing here yet
+  return 0; // Success
+}
+
+void CDECL libwin32_net_plugin_fini(void)
+{
+  // Nothing here yet
+}
+
+// network driver implementation
+
+#ifndef __CYGWIN__
+#include <winsock2.h>
+#endif
 
 // windows.h included by bochs.h
 #define LOG_THIS netdev->
@@ -122,7 +141,7 @@ struct bpf_insn {
 	u_short	code;
 	u_char 	jt;
 	u_char 	jf;
-	bpf_int32 k;
+	bpf_u_int32 k;
 };
 
 struct bpf_program {
@@ -164,24 +183,36 @@ LPADAPTER lpAdapter = 0;
 LPPACKET  pkSend;
 LPPACKET  pkRecv;
 char      buffer[256000];
-DWORD     dwVersion, dwMajorVersion;
 char      AdapterList[10][1024];
 char      cMacAddr[6];
 char      NetDev[512];
-BOOL      IsNT = FALSE;
+BOOL      IsNT = TRUE;
 
-LPADAPTER (*PacketOpenAdapter)     (LPTSTR);
-VOID      (*PacketCloseAdapter)    (LPADAPTER);
-BOOLEAN   (*PacketSetHwFilter)     (LPADAPTER, ULONG);
-BOOLEAN   (*PacketSetBpf)          (LPADAPTER, struct bpf_program *);
-BOOLEAN   (*PacketGetAdapterNames) (PTSTR, PULONG);
-BOOLEAN   (*PacketSendPacket)      (LPADAPTER, LPPACKET, BOOLEAN);
-BOOLEAN   (*PacketReceivePacket)   (LPADAPTER, LPPACKET, BOOLEAN);
-BOOLEAN   (*PacketSetBuff)         (LPADAPTER, int);
-BOOLEAN   (*PacketSetReadTimeout)  (LPADAPTER, int);
-LPPACKET  (*PacketAllocatePacket)  (void);
-VOID      (*PacketInitPacket)      (LPPACKET, PVOID, UINT);
-VOID      (*PacketFreePacket)      (LPPACKET);
+typedef LPADAPTER (CDECL *POpenAdapter)     (LPTSTR);
+typedef VOID      (CDECL *PCloseAdapter)    (LPADAPTER);
+typedef BOOLEAN   (CDECL *PSetHwFilter)     (LPADAPTER, ULONG);
+typedef BOOLEAN   (CDECL *PSetBpf)          (LPADAPTER, struct bpf_program *);
+typedef BOOLEAN   (CDECL *PGetAdapterNames) (PTSTR, PULONG);
+typedef BOOLEAN   (CDECL *PSendPacket)      (LPADAPTER, LPPACKET, BOOLEAN);
+typedef BOOLEAN   (CDECL *PReceivePacket)   (LPADAPTER, LPPACKET, BOOLEAN);
+typedef BOOLEAN   (CDECL *PSetBuff)         (LPADAPTER, int);
+typedef BOOLEAN   (CDECL *PSetReadTimeout)  (LPADAPTER, int);
+typedef LPPACKET  (CDECL *PAllocatePacket)  (void);
+typedef VOID      (CDECL *PInitPacket)      (LPPACKET, PVOID, UINT);
+typedef VOID      (CDECL *PFreePacket)      (LPPACKET);
+
+POpenAdapter     PacketOpenAdapter;
+PCloseAdapter    PacketCloseAdapter;
+PSetHwFilter     PacketSetHwFilter;
+PSetBpf          PacketSetBpf;
+PGetAdapterNames PacketGetAdapterNames;
+PSendPacket      PacketSendPacket;
+PReceivePacket   PacketReceivePacket;
+PSetBuff         PacketSetBuff;
+PSetReadTimeout  PacketSetReadTimeout;
+PAllocatePacket  PacketAllocatePacket;
+PInitPacket      PacketInitPacket;
+PFreePacket      PacketFreePacket;
 
 // template filter for a unicast mac address and all
 // multicast/broadcast frames
@@ -205,6 +236,7 @@ public:
                       eth_rx_handler_t rxh, eth_rx_status_t rxstat,
                       bx_devmodel_c *dev,
                       const char *script);
+  virtual ~bx_win32_pktmover_c();
   void sendpkt(void *buf, unsigned io_len);
 private:
   struct bpf_insn filter[8];
@@ -244,8 +276,6 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
   this->netdev = dev;
   BX_INFO(("win32 network driver"));
   // Open Packet Driver Here.
-  DWORD dwVersion;
-  DWORD dwWindowsMajorVersion;
 
   this->rxh    = rxh;
   this->rxstat = rxstat;
@@ -253,33 +283,25 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
   hPacket = LoadLibrary("PACKET.DLL");
   memcpy(cMacAddr, macaddr, 6);
   if (hPacket) {
-    PacketOpenAdapter     = (LPADAPTER (*)(LPTSTR))                          GetProcAddress(hPacket, "PacketOpenAdapter");
-    PacketCloseAdapter    = (VOID      (*)(LPADAPTER))                       GetProcAddress(hPacket, "PacketCloseAdapter");
-    PacketSetHwFilter     = (BOOLEAN   (*)(LPADAPTER, ULONG))                GetProcAddress(hPacket, "PacketSetHwFilter");
-    PacketSetBpf          = (BOOLEAN   (*)(LPADAPTER, struct bpf_program *)) GetProcAddress(hPacket, "PacketSetBpf");
-    PacketGetAdapterNames = (BOOLEAN   (*)(PTSTR, PULONG))                   GetProcAddress(hPacket, "PacketGetAdapterNames");
-    PacketSendPacket      = (BOOLEAN   (*)(LPADAPTER, LPPACKET, BOOLEAN))    GetProcAddress(hPacket, "PacketSendPacket");
-    PacketReceivePacket   = (BOOLEAN   (*)(LPADAPTER, LPPACKET, BOOLEAN))    GetProcAddress(hPacket, "PacketReceivePacket");
-    PacketSetBuff         = (BOOLEAN   (*)(LPADAPTER, int))                  GetProcAddress(hPacket, "PacketSetBuff");
-    PacketSetReadTimeout  = (BOOLEAN   (*)(LPADAPTER, int))                  GetProcAddress(hPacket, "PacketSetReadTimeout");
-    PacketAllocatePacket  = (LPPACKET  (*)(void))                            GetProcAddress(hPacket, "PacketAllocatePacket");
-    PacketInitPacket      = (VOID      (*)(LPPACKET, PVOID, UINT))           GetProcAddress(hPacket, "PacketInitPacket");
-    PacketFreePacket      = (VOID      (*)(LPPACKET))                        GetProcAddress(hPacket, "PacketFreePacket");
+    PacketOpenAdapter     = (POpenAdapter)     GetProcAddress(hPacket, "PacketOpenAdapter");
+    PacketCloseAdapter    = (PCloseAdapter)    GetProcAddress(hPacket, "PacketCloseAdapter");
+    PacketSetHwFilter     = (PSetHwFilter)     GetProcAddress(hPacket, "PacketSetHwFilter");
+    PacketSetBpf          = (PSetBpf)          GetProcAddress(hPacket, "PacketSetBpf");
+    PacketGetAdapterNames = (PGetAdapterNames) GetProcAddress(hPacket, "PacketGetAdapterNames");
+    PacketSendPacket      = (PSendPacket)      GetProcAddress(hPacket, "PacketSendPacket");
+    PacketReceivePacket   = (PReceivePacket)   GetProcAddress(hPacket, "PacketReceivePacket");
+    PacketSetBuff         = (PSetBuff)         GetProcAddress(hPacket, "PacketSetBuff");
+    PacketSetReadTimeout  = (PSetReadTimeout)  GetProcAddress(hPacket, "PacketSetReadTimeout");
+    PacketAllocatePacket  = (PAllocatePacket)  GetProcAddress(hPacket, "PacketAllocatePacket");
+    PacketInitPacket      = (PInitPacket)      GetProcAddress(hPacket, "PacketInitPacket");
+    PacketFreePacket      = (PFreePacket)      GetProcAddress(hPacket, "PacketFreePacket");
   } else {
     BX_PANIC(("Could not load WPCap Drivers for ethernet support!"));
   }
 
   memset(&NetDev, 0, sizeof(NetDev));
-  dwVersion=GetVersion();
-  dwWindowsMajorVersion =  (DWORD)(LOBYTE(LOWORD(dwVersion)));
-  if (!(dwVersion >= 0x80000000 && dwWindowsMajorVersion >= 4))
-  {  // Windows NT/2k
-    int nLen = MultiByteToWideChar(CP_ACP, 0, netif, -1, NULL, 0);
-    MultiByteToWideChar(CP_ACP, 0, netif, -1, (WCHAR *)NetDev, nLen);
-    IsNT = TRUE;
-  } else { // Win9x
-    strcpy(NetDev, netif);
-  }
+  // Expecting ANSI format for WinPCap 3.1 or newer
+  strcpy(NetDev, netif);
 
   lpAdapter = PacketOpenAdapter(NetDev);
   if (!lpAdapter || (lpAdapter->hFile == INVALID_HANDLE_VALUE)) {
@@ -314,11 +336,11 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
     BX_PANIC(("Could not allocate a recv packet"));
   }
   rx_timer_index =
-    bx_pc_system.register_timer(this, this->rx_timer_handler, 10000, 1, 1, "eth_win32");
+    DEV_register_timer(this, this->rx_timer_handler, 10000, 1, 1, "eth_win32");
 
 #if BX_ETH_WIN32_LOGGING
-  pktlog_txt = fopen("ne2k-pktlog.txt", "wb");
-  if (!pktlog_txt) BX_PANIC(("ne2k-pktlog.txt failed"));
+  pktlog_txt = fopen("eth_win32-pktlog.txt", "wb");
+  if (!pktlog_txt) BX_PANIC(("eth_win32-pktlog.txt failed"));
   fprintf(pktlog_txt, "win32 packetmover readable log file\n");
   fprintf(pktlog_txt, "host adapter = %s\n", netif);
   fprintf(pktlog_txt, "guest MAC address = ");
@@ -327,6 +349,13 @@ bx_win32_pktmover_c::bx_win32_pktmover_c(
     fprintf(pktlog_txt, "%02x%s", 0xff & macaddr[i], i<5?":" : "\n");
   fprintf(pktlog_txt, "--\n");
   fflush(pktlog_txt);
+#endif
+}
+
+bx_win32_pktmover_c::~bx_win32_pktmover_c()
+{
+#if BX_ETH_WIN32_LOGGING
+  fclose(pktlog_txt);
 #endif
 }
 
@@ -340,7 +369,7 @@ void bx_win32_pktmover_c::sendpkt(void *buf, unsigned io_len)
   PacketInitPacket(pkSend, (char *)buf, io_len);
 
   if (!PacketSendPacket(lpAdapter, pkSend, TRUE)) {
-    fprintf(stderr, "[ETH-WIN32] Error sending packet: %lu\n", GetLastError());
+    BX_ERROR(("Error sending packet: %lu\n", GetLastError()));
   }
 }
 
@@ -374,7 +403,7 @@ void bx_win32_pktmover_c::rx_timer(void)
         if(memcmp(pPacket, cMacAddr, 6) == 0 || memcmp(pPacket, broadcast_macaddr, 6) == 0)
         {
           pktlen = hdr->bh_caplen;
-          if (pktlen < 60) pktlen = 60;
+          if (pktlen < MIN_RX_PACKET_LEN) pktlen = MIN_RX_PACKET_LEN;
 #if BX_ETH_WIN32_LOGGING
           write_pktlog_txt(pktlog_txt, pPacket, pktlen, 1);
 #endif

@@ -1,4 +1,4 @@
-# Copyright (C) 2001-2012  The Bochs Project
+# Copyright (C) 2001-2019  The Bochs Project
 #
 # This library is free software; you can redistribute it and/or
 # modify it under the terms of the GNU Lesser General Public
@@ -38,18 +38,17 @@ top_srcdir      = $(srcdir)
 DESTDIR =
 
 VERSION=@VERSION@
-VER_STRING=@VER_STRING@
 REL_STRING=@REL_STRING@
-MAN_PAGE_1_LIST=bochs bximage bxcommit bochs-dlx
+MAN_PAGE_1_LIST=bochs bximage bochs-dlx
 MAN_PAGE_5_LIST=bochsrc
-INSTALL_LIST_SHARE=bios/BIOS-bochs-* bios/VGABIOS* @INSTALL_LIST_FOR_PLATFORM@
-INSTALL_LIST_DOC=CHANGES COPYING LICENSE README TODO
-INSTALL_LIST_BIN=bochs@EXE@ bximage@EXE@ bxcommit@EXE@
-INSTALL_LIST_BIN_OPTIONAL=bochsdbg@EXE@
-INSTALL_LIST_WIN32=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) $(INSTALL_LIST_BIN) $(INSTALL_LIST_BIN_OPTIONAL) niclist@EXE@
+INSTALL_LIST_SHARE=bios/BIOS-bochs-* bios/VGABIOS* bios/SeaBIOS* bios/bios.bin-* bios/vgabios-cirrus.bin-* @INSTALL_LIST_FOR_PLATFORM@
+INSTALL_LIST_DOC=CHANGES COPYING LICENSE README TODO misc/slirp.conf
+INSTALL_LIST_BIN=bochs@EXE@ bximage@EXE@
+INSTALL_LIST_BIN_OPTIONAL=bochsdbg@EXE@ @OPTIONAL_TARGET@
+INSTALL_LIST_WIN32=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) $(INSTALL_LIST_BIN) $(INSTALL_LIST_BIN_OPTIONAL)
 INSTALL_LIST_MACOSX=$(INSTALL_LIST_SHARE) $(INSTALL_LIST_DOC) bochs.scpt
 # for win32 and macosx, these files get renamed to *.txt in install process
-TEXT_FILE_LIST=README CHANGES COPYING TODO VGABIOS-elpin-LICENSE VGABIOS-lgpl-README
+TEXT_FILE_LIST=README CHANGES COPYING LICENSE TODO VGABIOS-elpin-LICENSE VGABIOS-lgpl-README SeaBIOS-README SeaVGABIOS-README
 CP=cp
 CAT=cat
 RM=rm
@@ -96,23 +95,26 @@ LIBS = @LIBS@
 X_LIBS = @X_LIBS@
 X_PRE_LIBS = @X_PRE_LIBS@
 GUI_LINK_OPTS_X = $(X_LIBS) $(X_PRE_LIBS)
-GUI_LINK_OPTS_SDL = `sdl-config --cflags --libs`
+GUI_LINK_OPTS_SDL = @GUI_LINK_OPTS_SDL@
+GUI_LINK_OPTS_SDL2 = @GUI_LINK_OPTS_SDL2@
 GUI_LINK_OPTS_SVGA =  -lvga -lvgagl
 GUI_LINK_OPTS_RFB = @RFB_LIBS@
+GUI_LINK_OPTS_VNCSRV = @GUI_LINK_OPTS_VNCSRV@
 GUI_LINK_OPTS_AMIGAOS =
-GUI_LINK_OPTS_WIN32 = -luser32 -lgdi32 -lcomdlg32 -lcomctl32 -lwsock32 -lshell32
+GUI_LINK_OPTS_WIN32 = -luser32 -lgdi32 -lcomdlg32 -lcomctl32 -lshell32
 GUI_LINK_OPTS_WIN32_VCPP = user32.lib gdi32.lib winmm.lib \
-  comdlg32.lib comctl32.lib wsock32.lib advapi32.lib shell32.lib
+  comdlg32.lib comctl32.lib advapi32.lib shell32.lib
 GUI_LINK_OPTS_MACOS =
 GUI_LINK_OPTS_CARBON = -framework Carbon
 GUI_LINK_OPTS_NOGUI =
 GUI_LINK_OPTS_TERM = @GUI_LINK_OPTS_TERM@
 GUI_LINK_OPTS_WX = @GUI_LINK_OPTS_WX@
-GUI_LINK_OPTS = @GUI_LINK_OPTS@  @DEVICE_LINK_OPTS@
+GUI_LINK_OPTS = @GUI_LINK_OPTS@
+DEVICE_LINK_OPTS = @DEVICE_LINK_OPTS@
 RANLIB = @RANLIB@
 
 CFLAGS_CONSOLE = @CFLAGS@ $(MCH_CFLAGS) $(FLA_FLAGS)
-CXXFLAGS_CONSOLE = @CXXFLAGS@ $(MCH_CFLAGS) $(FLA_FLAGS)
+CXXFLAGS_CONSOLE = @CXXFLAGS_CONSOLE@ $(MCH_CFLAGS) $(FLA_FLAGS)
 BXIMAGE_LINK_OPTS = @BXIMAGE_LINK_OPTS@
 
 BX_INCDIRS = -I. -I$(srcdir)/. -I@INSTRUMENT_DIR@ -I$(srcdir)/@INSTRUMENT_DIR@
@@ -140,6 +142,7 @@ NONINLINE_OBJS = \
 	osdep.o \
 	plugin.o \
 	crc.o \
+	bxthread.o \
 	@EXTRA_BX_OBJS@
 
 EXTERN_ENVIRONMENT_OBJS = \
@@ -151,7 +154,8 @@ EXTERN_ENVIRONMENT_OBJS = \
 DEBUGGER_LIB   = bx_debug/libdebug.a
 DISASM_LIB     = disasm/libdisasm.a
 INSTRUMENT_LIB = @INSTRUMENT_DIR@/libinstrument.a
-FPU_LIB        = fpu/libfpu.a
+FPU_LIB        = cpu/fpu/libfpu.a
+AVX_LIB        = cpu/avx/libavx.a
 READLINE_LIB   = @READLINE_LIB@
 EXTRA_LINK_OPTS = @EXTRA_LINK_OPTS@
 
@@ -168,21 +172,22 @@ BX_INCLUDES = bochs.h config.h osdep.h
 	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS) $(FPU_FLAGS) $< @OFP@$@
 
 
-all: @PRIMARY_TARGET@ @PLUGIN_TARGET@ bximage@EXE@ bxcommit@EXE@ @BUILD_DOCBOOK_VAR@
+all: @PRIMARY_TARGET@ @PLUGIN_TARGET@ bximage@EXE@ @OPTIONAL_TARGET@ @BUILD_DOCBOOK_VAR@
 
 @EXTERNAL_DEPENDENCY@
 
-bochs@EXE@: @IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
-		@DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a \
+bochs@EXE@: @IODEV_LIB_VAR@ @DISPLAY_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		@DEBUGGER_VAR@ cpu/libcpu.a @AVX_LIB_VAR@ cpu/cpudb/libcpudb.a memory/libmemory.a \
 		gui/libgui.a @DISASM_VAR@ @INSTRUMENT_VAR@ $(BX_OBJS) \
 		$(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
 	@LINK@ @EXPORT_DYNAMIC@ $(BX_OBJS) $(SIMX86_OBJS) \
-		@IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
-		@DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
+		@IODEV_LIB_VAR@ @DISPLAY_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		@DEBUGGER_VAR@ cpu/libcpu.a @AVX_LIB_VAR@ cpu/cpudb/libcpudb.a \
 		 memory/libmemory.a gui/libgui.a \
-		@DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
+		@DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_LIB@ \
 		@GDBSTUB_VAR@ @FPU_VAR@ \
 		@NONPLUGIN_GUI_LINK_OPTS@ \
+		$(DEVICE_LINK_OPTS) \
 		$(MCH_LINK_FLAGS) \
 		$(SIMX86_LINK_FLAGS) \
 		$(READLINE_LIB) \
@@ -192,25 +197,26 @@ bochs@EXE@: @IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @S
 # Special make target for cygwin/mingw using dlltool instead of
 # libtool.  This creates a .DEF file, and exports file, an import library,
 # and then links bochs.exe with the exports file.
-.win32_dll_plugin_target: @IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ \
-		@SOUND_LIB_VAR@ @DEBUGGER_VAR@ cpu/libcpu.a cpu/cpudb/libcpudb.a \
+.win32_dll_plugin_target: @IODEV_LIB_VAR@ @DISPLAY_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ \
+		@SOUND_LIB_VAR@ @DEBUGGER_VAR@ cpu/libcpu.a @AVX_LIB_VAR@ cpu/cpudb/libcpudb.a \
 		memory/libmemory.a gui/libgui.a @DISASM_VAR@ @INSTRUMENT_VAR@ \
 		$(BX_OBJS) $(SIMX86_OBJS) @FPU_VAR@ @GDBSTUB_VAR@ @PLUGIN_VAR@
 	$(DLLTOOL) --export-all-symbols --output-def bochs.def \
 		$(BX_OBJS) $(SIMX86_OBJS) \
-		@IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
-		cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
+		@IODEV_LIB_VAR@ @DISPLAY_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		cpu/libcpu.a @AVX_LIB_VAR@ cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
 		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
 		@GDBSTUB_VAR@ @FPU_VAR@
 	$(DLLTOOL) --dllname bochs.exe --def bochs.def --output-lib dllexports.a
 	$(DLLTOOL) --dllname bochs.exe --output-exp bochs.exp --def bochs.def
-	$(CXX) -o bochs.exe $(CXXFLAGS) $(LDFLAGS) -export-dynamic \
+	$(CXX) -o bochs.exe $(CXXFLAGS) $(LDFLAGS) \
 	    $(BX_OBJS) bochs.exp $(SIMX86_OBJS) \
-		@IODEV_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
-		cpu/libcpu.a cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
-		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_VAR@ \
+		@IODEV_LIB_VAR@ @DISPLAY_LIB_VAR@ @HDIMAGE_LIB_VAR@ @USB_LIB_VAR@ @NETWORK_LIB_VAR@ @SOUND_LIB_VAR@ \
+		cpu/libcpu.a @AVX_LIB_VAR@ cpu/cpudb/libcpudb.a memory/libmemory.a gui/libgui.a \
+		@DEBUGGER_VAR@ @DISASM_VAR@ @INSTRUMENT_VAR@ @PLUGIN_LIB@ \
 		@GDBSTUB_VAR@ @FPU_VAR@ \
 		$(GUI_LINK_OPTS) \
+		$(DEVICE_LINK_OPTS) \
 		$(MCH_LINK_FLAGS) \
 		$(SIMX86_LINK_FLAGS) \
 		$(READLINE_LIB) \
@@ -225,6 +231,9 @@ bochs_plugins:
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) plugins
 	@CD_UP_ONE@
+	cd iodev/display @COMMAND_SEPARATOR@
+	$(MAKE) plugins
+	@CD_UP_TWO@
 	cd iodev/hdimage @COMMAND_SEPARATOR@
 	$(MAKE) plugins
 	@CD_UP_TWO@
@@ -238,22 +247,49 @@ bochs_plugins:
 	$(MAKE) plugins
 	@CD_UP_TWO@
 
-bximage@EXE@: misc/bximage.o
-	@LINK_CONSOLE@ $(BXIMAGE_LINK_OPTS) misc/bximage.o
-
-bxcommit@EXE@: misc/bxcommit.o
-	@LINK_CONSOLE@ misc/bxcommit.o
+bximage@EXE@: misc/bximage.o misc/hdimage.o misc/vmware3.o misc/vmware4.o misc/vpc-img.o misc/vbox.o
+	@LINK_CONSOLE@ $(BXIMAGE_LINK_OPTS) misc/bximage.o misc/hdimage.o misc/vmware3.o misc/vmware4.o misc/vpc-img.o misc/vbox.o
 
 niclist@EXE@: misc/niclist.o
 	@LINK_CONSOLE@ misc/niclist.o
 
+bxhub@EXE@: misc/bxhub.o misc/netutil.o
+	@LINK_CONSOLE@ misc/bxhub.o misc/netutil.o @BXHUB_LINK_OPTS@
+
 # compile with console CXXFLAGS, not gui CXXFLAGS
-misc/bximage.o: $(srcdir)/misc/bximage.c $(srcdir)/misc/bswap.h $(srcdir)/iodev/hdimage/hdimage.h
-	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) $(srcdir)/misc/bximage.c @OFP@$@
+misc/bximage.o: $(srcdir)/misc/bximage.cc $(srcdir)/misc/bswap.h \
+  $(srcdir)/misc/bxcompat.h $(srcdir)/iodev/hdimage/hdimage.h
+	$(CXX) @DASH@c $(BX_INCDIRS) $(CXXFLAGS_CONSOLE) $(srcdir)/misc/bximage.cc @OFP@$@
 
-misc/bxcommit.o: $(srcdir)/misc/bxcommit.c $(srcdir)/misc/bswap.h $(srcdir)/iodev/hdimage/hdimage.h
-	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) $(srcdir)/misc/bxcommit.c @OFP@$@
+misc/hdimage.o: $(srcdir)/iodev/hdimage/hdimage.cc \
+  $(srcdir)/iodev/hdimage/hdimage.h $(srcdir)/misc/bxcompat.h
+	$(CXX) @DASH@c $(BX_INCDIRS) @BXIMAGE_FLAG@ $(CXXFLAGS_CONSOLE) $(srcdir)/iodev/hdimage/hdimage.cc @OFP@$@
 
+misc/vmware3.o: $(srcdir)/iodev/hdimage/vmware3.cc $(srcdir)/iodev/hdimage/vmware3.h \
+  $(srcdir)/iodev/hdimage/hdimage.h $(srcdir)/misc/bxcompat.h
+	$(CXX) @DASH@c $(BX_INCDIRS) @BXIMAGE_FLAG@ $(CXXFLAGS_CONSOLE) $(srcdir)/iodev/hdimage/vmware3.cc @OFP@$@
+
+misc/vmware4.o: $(srcdir)/iodev/hdimage/vmware4.cc $(srcdir)/iodev/hdimage/vmware4.h \
+  $(srcdir)/iodev/hdimage/hdimage.h $(srcdir)/misc/bxcompat.h
+	$(CXX) @DASH@c $(BX_INCDIRS) @BXIMAGE_FLAG@ $(CXXFLAGS_CONSOLE) $(srcdir)/iodev/hdimage/vmware4.cc @OFP@$@
+
+misc/vpc-img.o: $(srcdir)/iodev/hdimage/vpc-img.cc $(srcdir)/iodev/hdimage/vpc-img.h \
+  $(srcdir)/iodev/hdimage/hdimage.h $(srcdir)/misc/bxcompat.h
+	$(CXX) @DASH@c $(BX_INCDIRS) @BXIMAGE_FLAG@ $(CXXFLAGS_CONSOLE) $(srcdir)/iodev/hdimage/vpc-img.cc @OFP@$@
+
+misc/vbox.o: $(srcdir)/iodev/hdimage/vbox.cc $(srcdir)/iodev/hdimage/vbox.h \
+  $(srcdir)/iodev/hdimage/hdimage.h $(srcdir)/misc/bxcompat.h
+	$(CXX) @DASH@c $(BX_INCDIRS) @BXIMAGE_FLAG@ $(CXXFLAGS_CONSOLE) $(srcdir)/iodev/hdimage/vbox.cc @OFP@$@
+
+misc/bxhub.o: $(srcdir)/misc/bxhub.cc $(srcdir)/iodev/network/netmod.h \
+  $(srcdir)/misc/bxcompat.h
+	$(CC) @DASH@c $(BX_INCDIRS) $(CXXFLAGS_CONSOLE) $(srcdir)/misc/bxhub.cc @OFP@$@
+
+misc/netutil.o: $(srcdir)/iodev/network/netutil.cc $(srcdir)/iodev/network/netutil.h \
+  $(srcdir)/iodev/network/netmod.h $(srcdir)/misc/bxcompat.h
+	$(CXX) @DASH@c $(BX_INCDIRS) @BXHUB_FLAG@ $(CXXFLAGS_CONSOLE) $(srcdir)/iodev/network/netutil.cc @OFP@$@
+
+# compile with console CFLAGS, not gui CXXFLAGS
 misc/niclist.o: $(srcdir)/misc/niclist.c
 	$(CC) @DASH@c $(BX_INCDIRS) $(CFLAGS_CONSOLE) $(srcdir)/misc/niclist.c @OFP@$@
 
@@ -264,6 +300,11 @@ iodev/libiodev.a::
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) $(MDEFINES) libiodev.a
 	@CD_UP_ONE@
+
+iodev/display/libdisplay.a::
+	cd iodev/display @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libdisplay.a
+	@CD_UP_TWO@
 
 iodev/hdimage/libhdimage.a::
 	cd iodev/hdimage @COMMAND_SEPARATOR@
@@ -295,9 +336,19 @@ cpu/libcpu.a::
 	$(MAKE) $(MDEFINES) libcpu.a
 	@CD_UP_ONE@
 
+cpu/avx/libavx.a::
+	cd cpu/avx @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libavx.a
+	@CD_UP_TWO@
+
 cpu/cpudb/libcpudb.a::
 	cd cpu/cpudb @COMMAND_SEPARATOR@
 	$(MAKE) $(MDEFINES) libcpudb.a
+	@CD_UP_TWO@
+
+cpu/fpu/libfpu.a::
+	cd cpu/fpu @COMMAND_SEPARATOR@
+	$(MAKE) $(MDEFINES) libfpu.a
 	@CD_UP_TWO@
 
 memory/libmemory.a::
@@ -320,20 +371,10 @@ disasm/libdisasm.a::
 	$(MAKE) $(MDEFINES) libinstrument.a
 	@CD_UP_TWO@
 
-fpu/libfpu.a::
-	cd fpu @COMMAND_SEPARATOR@
-	$(MAKE) $(MDEFINES) libfpu.a
-	@CD_UP_ONE@
-
 libbochs.a:
 	-rm -f libbochs.a
 	ar rv libbochs.a $(EXTERN_ENVIRONMENT_OBJS)
 	$(RANLIB) libbochs.a
-
-libbochs_cpu.a: @DEBUGGER_VAR@ $(BX_OBJS)
-	-rm -f libbochs_cpu.a
-	ar rv libbochs_cpu.a $(BX_OBJS)
-	$(RANLIB) libbochs_cpu.a
 
 # for wxWidgets port, on win32 platform
 wxbochs_resources.o: wxbochs.rc
@@ -356,25 +397,27 @@ install: all @INSTALL_TARGET@
 # tools.
 #####################################################################
 
-install_win32: download_dlx @INSTALL_DOCBOOK_VAR@
-	-mkdir -p $(prefix)
-	cp obj-release/*.exe .
-	for i in $(INSTALL_LIST_WIN32); do if test -f $$i; then cp $$i $(prefix); else cp $(srcdir)/$$i $(prefix); fi; done
-	cp $(srcdir)/misc/sb16/sb16ctrl.example $(prefix)/sb16ctrl.txt
-	cp $(srcdir)/misc/sb16/sb16ctrl.exe $(prefix)
-	#cat $(srcdir)/build/win32/DOC-win32.htm | $(SED) -e 's/@VERSION@/$(VERSION)/g' > $(prefix)/DOC-win32.htm
-	cp $(srcdir)/.bochsrc $(prefix)/bochsrc-sample.txt
-	-mkdir $(prefix)/keymaps
-	cp $(srcdir)/gui/keymaps/*.map $(prefix)/keymaps
-	cat $(DLXLINUX_TAR) | (cd $(prefix) && tar xzvf -)
-	echo '..\bochs' > $(prefix)/dlxlinux/start.bat
-	dlxrc=$(prefix)/dlxlinux/bochsrc.txt; mv $$dlxrc $$dlxrc.orig && sed < $$dlxrc.orig 's/\/usr\/local\/bochs\/latest/../' > $$dlxrc && rm -f $$dlxrc.orig
-	mv $(prefix)/README $(prefix)/README.orig
-	cat $(srcdir)/build/win32/README.win32-binary $(prefix)/README.orig > $(prefix)/README
-	rm -f $(prefix)/README.orig
-	for i in $(TEXT_FILE_LIST); do mv $(prefix)/$$i $(prefix)/$$i.txt; done
-	cd $(prefix); $(UNIX2DOS) *.txt */*.txt
-	cd $(prefix); NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(ZIP) $$NAME.zip -r $$NAME); ls -l ../$$NAME.zip
+install_win32: download_dlx dl_docbook
+	-mkdir -p $(INSTDIR)
+	-cp -p obj-release/*.exe .
+	for i in $(INSTALL_LIST_WIN32); do if test -f $$i; then cp -p $$i $(INSTDIR); else cp -p $(srcdir)/$$i $(INSTDIR); fi; done
+	cp $(srcdir)/misc/sb16/sb16ctrl.example $(INSTDIR)/sb16ctrl.txt
+	cp -p $(srcdir)/misc/sb16/sb16ctrl.exe $(INSTDIR)
+	cp $(srcdir)/.bochsrc $(INSTDIR)/bochsrc-sample.txt
+	cp $(srcdir)/TESTFORM.txt $(INSTDIR)
+	-mkdir $(INSTDIR)/keymaps
+	cp -p $(srcdir)/gui/keymaps/*.map $(INSTDIR)/keymaps
+	cat $(DLXLINUX_TAR) | (cd $(INSTDIR) && tar xzvf -)
+	echo '..\bochs -q' > $(INSTDIR)/dlxlinux/run.bat
+	dlxrc=$(INSTDIR)/dlxlinux/bochsrc; mv $$dlxrc.txt $$dlxrc.orig && sed < $$dlxrc.orig 's/$$BXSHARE/../' > $$dlxrc.bxrc && rm -f $$dlxrc.orig
+	mv $(INSTDIR)/README $(INSTDIR)/README.orig
+	cat $(srcdir)/build/win32/README.win32-binary $(INSTDIR)/README.orig > $(INSTDIR)/README
+	rm -f $(INSTDIR)/README.orig
+	for i in $(TEXT_FILE_LIST); do mv $(INSTDIR)/$$i $(INSTDIR)/$$i.txt; done
+	cd $(INSTDIR); $(UNIX2DOS) *.txt */*.txt
+	-mkdir -p $(INSTDIR)/docs
+	$(GUNZIP) -c $(srcdir)/doc/docbook/bochsdoc.tar.gz | $(TAR) -xvf - -C $(INSTDIR)/docs
+	cd $(INSTDIR); NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(ZIP) $$NAME.zip -r $$NAME); ls -l ../$$NAME.zip
 
 #####################################################################
 # install target for unix
@@ -389,22 +432,14 @@ install_bin::
 
 install_libtool_plugins::
 	for i in $(DESTDIR)$(plugdir); do mkdir -p $$i && test -d $$i && test -w $$i; done
-	list=`cd gui && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install gui/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/hdimage && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/hdimage/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/usb && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/usb/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/network && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/network/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/sound && echo *.la`; for i in $$list; do $(LIBTOOL) --mode=install install iodev/sound/$$i $(DESTDIR)$(plugdir); done
+	for i in gui iodev; do \
+		find $$i -type f -name '*.la' -exec $(LIBTOOL) --mode=install install '{}' $(DESTDIR)$(plugdir) ';'; done
 	$(LIBTOOL) --finish $(DESTDIR)$(plugdir)
 
 install_dll_plugins::
 	for i in $(DESTDIR)$(plugdir); do mkdir -p $$i && test -d $$i && test -w $$i; done
-	list=`cd gui && echo *.dll`; for i in $$list; do cp gui/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev && echo *.dll`; for i in $$list; do cp iodev/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/hdimage && echo *.dll`; for i in $$list; do cp iodev/hdimage/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/usb && echo *.dll`; for i in $$list; do cp iodev/usb/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/network && echo *.dll`; for i in $$list; do cp iodev/network/$$i $(DESTDIR)$(plugdir); done
-	list=`cd iodev/sound && echo *.dll`; for i in $$list; do cp iodev/sound/$$i $(DESTDIR)$(plugdir); done
+	for i in gui iodev; do \
+		find $$i -type f -name '*.dll' -exec cp '{}' $(DESTDIR)$(plugdir) ';'; done
 
 install_share::
 	for i in $(DESTDIR)$(sharedir);	do mkdir -p $$i && test -d $$i && test -w $$i; done
@@ -464,15 +499,16 @@ uninstall::
 	$(RM) -rf $(DESTDIR)$(sharedir)
 	$(RM) -rf $(DESTDIR)$(docdir)
 	$(RM) -rf $(DESTDIR)$(libdir)/bochs
-	for i in bochs bximage bxcommit bochs-dlx; do rm -f $(DESTDIR)$(bindir)/$$i; done
+	for i in $(INSTALL_LIST_BIN); do rm -f $(DESTDIR)$(bindir)/$$i; done
+	-for i in $(INSTALL_LIST_BIN_OPTIONAL); do rm -f $(DESTDIR)$(bindir)/$$i; done
 	for i in $(MAN_PAGE_1_LIST); do $(RM) -f $(man1dir)/$$i.1.gz; done
 	for i in $(MAN_PAGE_5_LIST); do $(RM) -f $(man5dir)/$$i.5.gz; done
 
-VS2008_WORKSPACE_ZIP=build/win32/vs2008ex-workspace.zip
-VS2008_WORKSPACE_FILES=vs2008/bochs.sln vs2008/*.vcproj
+VS2013_WORKSPACE_ZIP=build/win32/vs2013ex-workspace.zip
+VS2013_WORKSPACE_FILES=vs2013/bochs.sln vs2013/*.vcxproj
 
-vs2008workspace:
-	zip $(VS2008_WORKSPACE_ZIP) $(VS2008_WORKSPACE_FILES)
+vs2013workspace:
+	zip $(VS2013_WORKSPACE_ZIP) $(VS2013_WORKSPACE_FILES)
 
 ########
 # the win32_snap target is used to create a ZIP of bochs sources configured
@@ -482,14 +518,14 @@ vs2008workspace:
 # "make win32_snap" to unzip the workspace files and create the ZIP.
 ########
 win32_snap:
-	unzip $(VS2008_WORKSPACE_ZIP)
+	unzip $(VS2013_WORKSPACE_ZIP)
 	$(MAKE) zip
 
 tar:
 	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(RM) -f $$NAME.zip; tar cf - $$NAME | $(GZIP_BIN) > $$NAME.tar.gz); ls -l ../$$NAME.tar.gz
 
 zip:
-	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(RM) -f $$NAME-msvc-src.zip; $(ZIP) $$NAME-msvc-src.zip -r $$NAME -x \*CVS\* -x \*.cvsignore -x \*.svn\* ); ls -l ../$$NAME-msvc-src.zip
+	NAME=`pwd|$(SED) 's/.*\///'`; (cd ..; $(RM) -f $$NAME-msvc-src.zip; $(ZIP) $$NAME-msvc-src.zip -r $$NAME -x \*.svn\* ); ls -l ../$$NAME-msvc-src.zip
 
 clean:
 	@RMCOMMAND@ *.o
@@ -498,13 +534,13 @@ clean:
 	@RMCOMMAND@ bochs.exe
 	@RMCOMMAND@ bximage
 	@RMCOMMAND@ bximage.exe
-	@RMCOMMAND@ bxcommit
-	@RMCOMMAND@ bxcommit.exe
+	@RMCOMMAND@ bxhub
+	@RMCOMMAND@ bxhub.exe
 	@RMCOMMAND@ niclist
 	@RMCOMMAND@ niclist.exe
 	@RMCOMMAND@ bochs.out
 	@RMCOMMAND@ bochsout.txt
-	@RMCOMMAND@ bochs.exp
+	@RMCOMMAND@ *.exp *.lib
 	@RMCOMMAND@ bochs.def
 	@RMCOMMAND@ bochs.scpt
 	@RMCOMMAND@ -rf bochs.app
@@ -529,6 +565,9 @@ all-clean: clean @CLEAN_DOCBOOK_VAR@ @CLEAN_PCIDEV_VAR@
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
+	cd iodev/display @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
 	cd iodev/hdimage @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_TWO@
@@ -547,7 +586,13 @@ all-clean: clean @CLEAN_DOCBOOK_VAR@ @CLEAN_PCIDEV_VAR@
 	cd cpu @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
+	cd cpu/avx @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
 	cd cpu/cpudb @COMMAND_SEPARATOR@
+	$(MAKE) clean
+	@CD_UP_TWO@
+	cd cpu/fpu @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_TWO@
 	cd memory @COMMAND_SEPARATOR@
@@ -565,14 +610,14 @@ all-clean: clean @CLEAN_DOCBOOK_VAR@ @CLEAN_PCIDEV_VAR@
 	cd misc @COMMAND_SEPARATOR@
 	$(MAKE) clean
 	@CD_UP_ONE@
-	cd fpu @COMMAND_SEPARATOR@
-	$(MAKE) clean
-	@CD_UP_ONE@
 
 dist-clean: local-dist-clean
 	cd iodev @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@
+	cd iodev/display @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
 	cd iodev/hdimage @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_TWO@
@@ -594,7 +639,13 @@ dist-clean: local-dist-clean
 	cd cpu @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@
+	cd cpu/avx @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
 	cd cpu/cpudb @COMMAND_SEPARATOR@
+	$(MAKE) dist-clean
+	@CD_UP_TWO@
+	cd cpu/fpu @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_TWO@
 	cd memory @COMMAND_SEPARATOR@
@@ -610,9 +661,6 @@ dist-clean: local-dist-clean
 	$(MAKE) dist-clean
 	@CD_UP_TWO@
 	cd misc @COMMAND_SEPARATOR@
-	$(MAKE) dist-clean
-	@CD_UP_ONE@
-	cd fpu @COMMAND_SEPARATOR@
 	$(MAKE) dist-clean
 	@CD_UP_ONE@
 	cd doc/docbook @COMMAND_SEPARATOR@
@@ -736,57 +784,62 @@ install_macosx: all download_dlx install_man @INSTALL_DOCBOOK_VAR@
 # dependencies generated by
 #  gcc -MM -I. -Iinstrument/stubs *.cc | sed -e 's/\.cc/.@CPP_SUFFIX@/g' -e 's,cpu/,cpu/,g'
 ###########################################
+bxthread.o: bxthread.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h \
+ config.h osdep.h gui/siminterface.h cpudb.h gui/paramtree.h \
+ memory/memory-bochs.h pc_system.h gui/gui.h \
+ instrument/stubs/instrument.h bxthread.h
 config.o: config.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h config.h \
-  osdep.h bxversion.h gui/siminterface.h gui/paramtree.h memory/memory.h \
-  pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h iodev/iodev.h bochs.h param_names.h \
-  param_names.h cpudb.h
+ osdep.h gui/siminterface.h cpudb.h gui/paramtree.h memory/memory-bochs.h \
+ pc_system.h gui/gui.h instrument/stubs/instrument.h bxversion.h \
+ iodev/iodev.h bochs.h plugin.h extplugin.h param_names.h param_names.h \
+ cpudb.h
 crc.o: crc.@CPP_SUFFIX@ config.h
 gdbstub.o: gdbstub.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h config.h \
-  osdep.h bxversion.h gui/siminterface.h gui/paramtree.h memory/memory.h \
-  pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h param_names.h cpu/cpu.h \
-  cpu/cpuid.h cpu/crregs.h cpu/descriptor.h cpu/instr.h \
-  cpu/ia_opcodes.h cpu/lazy_flags.h cpu/icache.h cpu/apic.h cpu/i387.h \
-  fpu/softfloat.h fpu/tag_w.h fpu/status_w.h fpu/control_w.h cpu/xmm.h \
-  cpu/stack.h iodev/iodev.h bochs.h param_names.h
+ osdep.h gui/siminterface.h cpudb.h gui/paramtree.h memory/memory-bochs.h \
+ pc_system.h gui/gui.h instrument/stubs/instrument.h param_names.h \
+ cpu/cpu.h cpu/decoder/decoder.h cpu/i387.h cpu/fpu/softfloat.h \
+ cpu/fpu/tag_w.h cpu/fpu/status_w.h cpu/fpu/control_w.h cpu/crregs.h \
+ cpu/descriptor.h cpu/decoder/instr.h cpu/lazy_flags.h cpu/tlb.h \
+ cpu/icache.h cpu/apic.h cpu/xmm.h cpu/vmx.h cpu/svm.h cpu/cpuid.h \
+ cpu/stack.h cpu/access.h
 load32bitOShack.o: load32bitOShack.@CPP_SUFFIX@ bochs.h config.h osdep.h \
-  bx_debug/debug.h config.h osdep.h bxversion.h gui/siminterface.h \
-  gui/paramtree.h memory/memory.h pc_system.h plugin.h extplugin.h ltdl.h \
-  gui/gui.h instrument/stubs/instrument.h param_names.h cpu/cpu.h \
-  cpu/cpuid.h cpu/crregs.h cpu/descriptor.h cpu/instr.h \
-  cpu/ia_opcodes.h cpu/lazy_flags.h cpu/icache.h cpu/apic.h cpu/i387.h \
-  fpu/softfloat.h fpu/tag_w.h fpu/status_w.h fpu/control_w.h cpu/xmm.h \
-  iodev/iodev.h bochs.h param_names.h
+ bx_debug/debug.h config.h osdep.h gui/siminterface.h cpudb.h \
+ gui/paramtree.h memory/memory-bochs.h pc_system.h gui/gui.h \
+ instrument/stubs/instrument.h param_names.h cpu/cpu.h \
+ cpu/decoder/decoder.h cpu/i387.h cpu/fpu/softfloat.h cpu/fpu/tag_w.h \
+ cpu/fpu/status_w.h cpu/fpu/control_w.h cpu/crregs.h cpu/descriptor.h \
+ cpu/decoder/instr.h cpu/lazy_flags.h cpu/tlb.h cpu/icache.h cpu/apic.h \
+ cpu/xmm.h cpu/vmx.h cpu/svm.h cpu/cpuid.h cpu/access.h iodev/iodev.h \
+ bochs.h plugin.h extplugin.h param_names.h
 logio.o: logio.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h config.h \
-  osdep.h bxversion.h gui/siminterface.h gui/paramtree.h memory/memory.h \
-  pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h cpu/cpu.h cpu/cpuid.h \
-  cpu/crregs.h cpu/descriptor.h cpu/instr.h cpu/ia_opcodes.h \
-  cpu/lazy_flags.h cpu/icache.h cpu/apic.h cpu/i387.h fpu/softfloat.h \
-  fpu/tag_w.h fpu/status_w.h fpu/control_w.h cpu/xmm.h iodev/iodev.h \
-  bochs.h param_names.h
+ osdep.h gui/siminterface.h cpudb.h gui/paramtree.h memory/memory-bochs.h \
+ pc_system.h gui/gui.h instrument/stubs/instrument.h bxthread.h cpu/cpu.h \
+ cpu/decoder/decoder.h cpu/i387.h cpu/fpu/softfloat.h cpu/fpu/tag_w.h \
+ cpu/fpu/status_w.h cpu/fpu/control_w.h cpu/crregs.h cpu/descriptor.h \
+ cpu/decoder/instr.h cpu/lazy_flags.h cpu/tlb.h cpu/icache.h cpu/apic.h \
+ cpu/xmm.h cpu/vmx.h cpu/svm.h cpu/cpuid.h cpu/access.h
 main.o: main.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h config.h \
-  osdep.h bxversion.h gui/siminterface.h gui/paramtree.h memory/memory.h \
-  pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h param_names.h gui/textconfig.h cpu/cpu.h \
-  cpu/cpuid.h cpu/crregs.h cpu/descriptor.h cpu/instr.h \
-  cpu/ia_opcodes.h cpu/lazy_flags.h cpu/icache.h cpu/apic.h cpu/i387.h \
-  fpu/softfloat.h fpu/tag_w.h fpu/status_w.h fpu/control_w.h cpu/xmm.h \
-  iodev/iodev.h bochs.h param_names.h
+ osdep.h gui/siminterface.h cpudb.h gui/paramtree.h memory/memory-bochs.h \
+ pc_system.h gui/gui.h instrument/stubs/instrument.h bxversion.h \
+ param_names.h gui/textconfig.h cpu/cpu.h cpu/decoder/decoder.h \
+ cpu/i387.h cpu/fpu/softfloat.h cpu/fpu/tag_w.h cpu/fpu/status_w.h \
+ cpu/fpu/control_w.h cpu/crregs.h cpu/descriptor.h cpu/decoder/instr.h \
+ cpu/lazy_flags.h cpu/tlb.h cpu/icache.h cpu/apic.h cpu/xmm.h cpu/vmx.h \
+ cpu/svm.h cpu/cpuid.h cpu/access.h iodev/iodev.h bochs.h plugin.h \
+ extplugin.h param_names.h
 osdep.o: osdep.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h config.h \
-  osdep.h bxversion.h gui/siminterface.h gui/paramtree.h memory/memory.h \
-  pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h
+ osdep.h gui/siminterface.h cpudb.h gui/paramtree.h memory/memory-bochs.h \
+ pc_system.h gui/gui.h instrument/stubs/instrument.h bxthread.h
 pc_system.o: pc_system.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h \
-  config.h osdep.h bxversion.h gui/siminterface.h gui/paramtree.h \
-  memory/memory.h pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h cpu/cpu.h cpu/cpuid.h \
-  cpu/crregs.h cpu/descriptor.h cpu/instr.h cpu/ia_opcodes.h \
-  cpu/lazy_flags.h cpu/icache.h cpu/apic.h cpu/i387.h fpu/softfloat.h \
-  fpu/tag_w.h fpu/status_w.h fpu/control_w.h cpu/xmm.h iodev/iodev.h \
-  bochs.h param_names.h
+ config.h osdep.h gui/siminterface.h cpudb.h gui/paramtree.h \
+ memory/memory-bochs.h pc_system.h gui/gui.h \
+ instrument/stubs/instrument.h cpu/cpu.h cpu/decoder/decoder.h cpu/i387.h \
+ cpu/fpu/softfloat.h cpu/fpu/tag_w.h cpu/fpu/status_w.h \
+ cpu/fpu/control_w.h cpu/crregs.h cpu/descriptor.h cpu/decoder/instr.h \
+ cpu/lazy_flags.h cpu/tlb.h cpu/icache.h cpu/apic.h cpu/xmm.h cpu/vmx.h \
+ cpu/svm.h cpu/cpuid.h cpu/access.h iodev/iodev.h bochs.h plugin.h \
+ extplugin.h param_names.h
 plugin.o: plugin.@CPP_SUFFIX@ bochs.h config.h osdep.h bx_debug/debug.h config.h \
-  osdep.h bxversion.h gui/siminterface.h gui/paramtree.h memory/memory.h \
-  pc_system.h plugin.h extplugin.h ltdl.h gui/gui.h \
-  instrument/stubs/instrument.h iodev/iodev.h bochs.h param_names.h
+ osdep.h gui/siminterface.h cpudb.h gui/paramtree.h memory/memory-bochs.h \
+ pc_system.h gui/gui.h instrument/stubs/instrument.h iodev/iodev.h \
+ bochs.h plugin.h extplugin.h param_names.h plugin.h

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cpudb.h 11196 2012-05-26 19:40:18Z sshwarts $
+// $Id: cpudb.h 13570 2019-09-24 20:26:14Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2011-2012 Stanislav Shwartsman
+//   Copyright (c) 2011-2017 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -22,10 +22,11 @@
 /////////////////////////////////////////////////////////////////////////
 
 bx_define_cpudb(bx_generic)
-#if BX_CPU_LEVEL == 5
+#if BX_CPU_LEVEL >= 5
+bx_define_cpudb(pentium)
 bx_define_cpudb(pentium_mmx)
 bx_define_cpudb(amd_k6_2_chomper)
-#elif BX_CPU_LEVEL >= 6
+#if BX_CPU_LEVEL >= 6
 bx_define_cpudb(p2_klamath)
 bx_define_cpudb(p3_katmai)
 bx_define_cpudb(p4_willamette)
@@ -40,9 +41,18 @@ bx_define_cpudb(phenom_8650_toliman)
 bx_define_cpudb(core2_penryn_t9600)
 bx_define_cpudb(corei5_lynnfield_750)
 bx_define_cpudb(corei5_arrandale_m520)
-#if BX_SUPPORT_AVX
 bx_define_cpudb(corei7_sandy_bridge_2600k)
+#if BX_SUPPORT_AVX
+bx_define_cpudb(zambezi)
+bx_define_cpudb(trinity_apu)
+bx_define_cpudb(ryzen)
 bx_define_cpudb(corei7_ivy_bridge_3770k)
+bx_define_cpudb(corei7_haswell_4770)
+bx_define_cpudb(broadwell_ult)
+bx_define_cpudb(corei7_skylake_x)
+bx_define_cpudb(corei3_cnl)
+bx_define_cpudb(corei7_icelake_u)
+#endif
 #endif
 #endif
 #endif

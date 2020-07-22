@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: osdep.h 11371 2012-08-26 14:43:14Z vruppert $
+// $Id: osdep.h 13515 2018-05-21 16:11:46Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -43,22 +43,23 @@ extern "C" {
 //////////////////////////////////////////////////////////////////////
 #ifdef WIN32
 
-// Definitions that are needed for all WIN32 compilers.
-#  define ssize_t long
-
 #ifndef __MINGW32__
 
 // Definitions that are needed for WIN32 compilers EXCEPT FOR
 // cygwin compiling with -mno-cygwin.  e.g. VC++.
 
 #if !defined(_MSC_VER)		// gcc without -mno-cygwin
+#define FMT_64 "ll"
 #define FMT_LL "%ll"
 #define FMT_TICK "%011llu"
 #define FMT_ADDRX64 "%016llx"
+#define FMT_PHY_ADDRX64 "%012llx"
 #else
+#define FMT_64 "I64"
 #define FMT_LL "%I64"
 #define FMT_TICK "%011I64u"
 #define FMT_ADDRX64 "%016I64x"
+#define FMT_PHY_ADDRX64 "%012I64x"
 #endif
 
 // always return regular file.
@@ -69,6 +70,7 @@ extern "C" {
 #  define S_ISCHR(m)      (((m) & S_IFMT) == S_IFCHR)
 #endif
 
+#if defined(_MSC_VER)
 // win32 has snprintf though with different name.
 #define snprintf _snprintf
 #define vsnprintf _vsnprintf
@@ -77,7 +79,6 @@ extern "C" {
 #define BX_HAVE_SNPRINTF 1
 #define BX_HAVE_VSNPRINTF 1
 
-#if defined(_MSC_VER)
 #define access _access
 #define fdopen _fdopen
 #define mktemp _mktemp
@@ -95,14 +96,19 @@ extern "C" {
 #define strrev _strrev
 #define stricmp _stricmp
 #define getch _getch
+#define strtoll _strtoi64
 #define strtoull _strtoui64
+#define isatty _isatty
+#define fileno _fileno
 #endif
 
 #else   /* __MINGW32__ defined */
 // Definitions for cygwin compiled with -mno-cygwin
+#define FMT_64 "I64"
 #define FMT_LL "%I64"
 #define FMT_TICK "%011I64u"
 #define FMT_ADDRX64 "%016I64x"
+#define FMT_PHY_ADDRX64 "%012I64x"
 
 #define off_t __int64
 // mingw gcc 4.6.1 already has lseek defined
@@ -113,17 +119,23 @@ extern "C" {
 
 #else    /* not WIN32 definitions */
 #if SIZEOF_UNSIGNED_LONG == 8
+#define FMT_64 "l"
 #define FMT_LL "%l"
 #define FMT_TICK "%011lu"
 #define FMT_ADDRX64 "%016lx"
+#define FMT_PHY_ADDRX64 "%012lx"
 #else
+#define FMT_64 "ll"
 #define FMT_LL "%ll"
 #define FMT_TICK "%011llu"
 #define FMT_ADDRX64 "%016llx"
+#define FMT_PHY_ADDRX64 "%012llx"
 #endif
 #endif   /* not WIN32 definitions */
 
 #define FMT_ADDRX32 "%08x"
+#define FMT_ADDRX16 "%04x"
+
 
 // Missing defines for open
 #ifndef S_IRUSR
@@ -196,6 +208,11 @@ extern "C" {
 typedef int socklen_t;
 #endif
 
+#if !BX_HAVE_SSIZE_T
+// needed on Windows
+typedef Bit64s ssize_t;
+#endif
+
 #if !BX_HAVE_MKSTEMP
 #define mkstemp bx_mkstemp
   BOCHSAPI_MSVCONLY extern int bx_mkstemp(char *tpl);
@@ -219,13 +236,116 @@ typedef long ssize_t ;
 #endif
 
 //////////////////////////////////////////////////////////////////////
+// Missing library functions and byte-swapping stuff,
+// implemented for MorphOS only
+//////////////////////////////////////////////////////////////////////
+
+#ifdef __MORPHOS__
+int fseeko(FILE *stream, off_t offset, int whence);
+struct tm *localtime_r(const time_t *timep, struct tm *result);
+
+BX_CPP_INLINE Bit16u bx_ppc_bswap16(Bit16u val)
+{
+  Bit32u res;
+
+  __asm__("rlwimi %0,%0,16,8,15"
+          : "=r" (res)
+          : "0" (val));
+
+  return (Bit16u)(res >> 8);
+}
+
+BX_CPP_INLINE Bit32u bx_ppc_bswap32(Bit32u val)
+{
+  Bit32u res;
+
+  __asm__("rotlwi %0,%1,8\n\t"
+          "rlwimi %0,%1,24,0,7\n\t"
+          "rlwimi %0,%1,24,16,23"
+          : "=&r" (res)
+          : "r" (val));
+
+  return res;
+}
+
+BX_CPP_INLINE Bit64u bx_ppc_bswap64(Bit64u val)
+{
+  Bit32u hi, lo;
+
+  __asm__("rotlwi %0,%2,8\n\t"
+          "rlwimi %0,%2,24,0,7\n\t"
+          "rlwimi %0,%2,24,16,23\n\t"
+          "rotlwi %1,%3,8\n\t"
+          "rlwimi %1,%3,24,0,7\n\t"
+          "rlwimi %1,%3,24,16,23"
+          : "=&r" (hi), "=&r" (lo)
+          : "r" ((Bit32u)(val & 0xffffffff)), "r" ((Bit32u)(val >> 32)));
+
+  return ((Bit64u)hi << 32) | (Bit64u)lo;
+}
+
+BX_CPP_INLINE Bit16u bx_ppc_load_le16(const Bit16u *p)
+{
+  Bit16u v;
+  __asm__("lhbrx %0, 0, %1"
+          : "=r" (v)
+          : "r" (p), "m" (*p));
+  return v;
+}
+
+BX_CPP_INLINE void bx_ppc_store_le16(Bit16u *p, Bit16u v)
+{
+  __asm__("sthbrx %1, 0, %2"
+          : "=m" (*p)
+          : "r" (v), "r" (p));
+}
+
+BX_CPP_INLINE Bit32u bx_ppc_load_le32(const Bit32u *p)
+{
+  Bit32u v;
+  __asm__("lwbrx %0, 0, %1"
+          : "=r" (v)
+          : "r" (p), "m" (*p));
+  return v;
+}
+
+BX_CPP_INLINE void bx_ppc_store_le32(Bit32u *p, Bit32u v)
+{
+  __asm__("stwbrx %1, 0, %2"
+          : "=m" (*p)
+          : "r" (v), "r" (p));
+}
+
+BX_CPP_INLINE Bit64u bx_ppc_load_le64(const Bit64u *p)
+{
+  Bit32u hi, lo;
+
+  __asm__("lwbrx %0, 0, %2\n\t"
+          "lwbrx %1, 0, %3"
+          : "=&r" (lo), "=&r" (hi)
+          : "r" ((Bit32u *)p), "r" ((Bit32u *)p+1));
+
+  return ((Bit64u)hi << 32) | (Bit64u)lo;
+}
+
+BX_CPP_INLINE void bx_ppc_store_le64(Bit64u *p, Bit64u v)
+{
+  __asm__("stwbrx %1, 0, %3\n\t"
+          "stwbrx %2, 0, %4"
+          : "=m" (*p)
+          : "r" ((Bit32u)(v & 0xffffffff)), "r" ((Bit32u)(v >> 32)),
+            "r" ((Bit32u *)p), "r" ((Bit32u *)p+1));
+}
+#endif
+
+//////////////////////////////////////////////////////////////////////
 // New functions to replace library functions
 //   with OS-independent versions
 //////////////////////////////////////////////////////////////////////
 
 #if BX_HAVE_REALTIME_USEC
 // 64-bit time in useconds.
-extern Bit64u bx_get_realtime64_usec (void);
+BOCHSAPI_MSVCONLY extern Bit64u bx_get_realtime64_usec (void);
 #endif
 
 #ifdef WIN32

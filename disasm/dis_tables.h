@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: dis_tables.h 10857 2011-12-25 19:35:29Z sshwarts $
+// $Id: dis_tables.h 13417 2017-12-28 20:52:46Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2005-2011 Stanislav Shwartsman
+//   Copyright (c) 2005-2012 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -31,14 +31,20 @@
 #define _GRPSSE66      6
 #define _GRPSSEF2      7
 #define _GRPSSEF3      8
-#define _GRPRM         9
-#define _GRP3BOP       10
-#define _GRP64B        11
-#define _GRPVEXW       12
+#define _GRPSSENONE    9
+#define _GRPSSE2       10
+#define _GRPREP        11
+#define _GRPRM         12
+#define _GRP3BOP       13
+#define _GRP64B        14
+#define _GRPVEXW       15
+#define _GRPVEXL       16
 
 /* ************************************************************************ */
 #define GRPSSE(n)       _GRPSSE,   BxDisasmGroupSSE_##n
+#define GRPSSE2(n)      _GRPSSE2,  BxDisasmGroupSSE_##n
 #define GRPAVX(n)       _GRPSSE,   BxDisasmGroupAVX_##n
+#define GRPAVX2(n)      _GRPSSE2,  BxDisasmGroupAVX_##n
 #define GRPN(n)         _GROUPN,   BxDisasmGroup##n
 #define GRPRM(n)        _GRPRM,    BxDisasmGroupRm##n
 #define GRPMOD(n)       _SPLIT11B, BxDisasmGroupMod##n
@@ -47,12 +53,15 @@
 #define GR3BTAB(n)      _GRP3BOP,  BxDisasm3ByteOpTable##n
 #define GR64BIT(n)      _GRP64B,   BxDisasmGrpOs64B_##n
 #define GRPVEXW(n)      _GRPVEXW,  BxDisasmGrpVexW_##n
+#define GRPVEXL(n)      _GRPVEXL,  BxDisasmGrpVexL_##n
 /* ************************************************************************ */
 
 /* ************************************************************************ */
-#define GRPSSE66(n)     _GRPSSE66, &n
-#define GRPSSEF2(n)     _GRPSSEF2, &n
-#define GRPSSEF3(n)     _GRPSSEF3, &n
+#define GRPSSE66(n)     _GRPSSE66,   &n
+#define GRPSSEF2(n)     _GRPSSEF2,   &n
+#define GRPSSEF3(n)     _GRPSSEF3,   &n
+#define GRPSSENONE(n)   _GRPSSENONE, &n
+#define GRPREP(n)       _GRPREP,     &n
 /* ************************************************************************ */
 
 #define Apw &disassembler::Apw
@@ -75,8 +84,6 @@
 #define GS &disassembler::GS
 
 #define Sw &disassembler::Sw
-
-#define Td &disassembler::Td
 
 #define Cd &disassembler::Cd
 #define Cq &disassembler::Cq

@@ -1,9 +1,9 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: usb_xhci.h 10972 2012-01-14 12:36:32Z vruppert $
+// $Id: usb_xhci.h 13651 2019-12-09 15:14:23Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2010       Benjamin D Lunt (fys [at] fysnet [dot] net)
-//                2011-2012  The Bochs Project
+//  Copyright (C) 2010-2017  Benjamin D Lunt (fys [at] fysnet [dot] net)
+//                2011-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -35,7 +35,7 @@
 #if BX_PHY_ADDRESS_LONG
   #define FORMATADDRESS   FMT_ADDRX64
 #else
-  #define FORMATADDRESS   "%08x"
+  #define FORMATADDRESS   "%08X"
 #endif
 
 /************************************************************************************************
@@ -44,46 +44,70 @@
 #define IO_SPACE_SIZE     8192
 
 #define OPS_REGS_OFFSET   0x20
-// Change this to 0.95, 0.96, or 1.00, according to the desired effects (LINK chain bit, etc)
-#define VERSION_MAJOR        0
-#define VERSION_MINOR     0x96
+// Change this to 0.95, 0.96, 1.00, 1.10, according to the desired effects (LINK chain bit, etc)
+//   uPD720202 is 1.00
+#define VERSION_MAJOR     0x01
+#define VERSION_MINOR     0x00
 
 // HCSPARAMS1
-#define INTERRUPTERS         8
 #define MAX_SLOTS           32   // (1 based)
-#define USB_XHCI_PORTS       4   // 2 physical sockets, each supporting USB3 or USB2
+#define INTERRUPTERS         8   //
+#define USB_XHCI_PORTS       4   // Port Registers, each supporting USB3 or USB2 (0x08 = uPD720201, 0x04 = uPD720202)
+
+#if (USB_XHCI_PORTS != 4)
+  #error "USB_XHCI_PORTS must equal 4"
+#endif
 
 // HCSPARAMS2
 #define ISO_SECH_THRESHOLD   1
 #define MAX_SEG_TBL_SZ_EXP   1
-#define SCATCH_PAD_RESTORE   0  // 1 = uses system memory and must be maintained.  0 = uses controller's internal memory
-#define MAX_SCRATCH_PADS     0  // 0 to 1023
+#define SCATCH_PAD_RESTORE   1  // 1 = uses system memory and must be maintained.  0 = uses controller's internal memory
+#define MAX_SCRATCH_PADS     4  // 0 to 1023
 
 // HCSPARAMS3
 #define U1_DEVICE_EXIT_LAT   0
 #define U2_DEVICE_EXIT_LAT   0
 
-// HCCPARAMS
+// HCCPARAMS1
 #define ADDR_CAP_64              1
 #define BW_NEGOTIATION           1
-#define CONTEXT_SIZE            32  // Size of the CONTEXT blocks (32 or 64)
+#define CONTEXT_SIZE            64  // Size of the CONTEXT blocks (32 or 64)
 #define PORT_POWER_CTRL          1
 #define PORT_INDICATORS          0
 #define LIGHT_HC_RESET           0  // Do we support the Light HC Reset function
-#define FORCED_STOPPED           0  // version 0.96 and below only (MUST BE 1 in v1.00+)
+#define LAT_TOL_MSGING_CAP       1  // Latency Tolerance Messaging Capability (v1.00+)
+#define NO_SSD_SUPPORT           1  // No Secondary SID Support (v1.00+)
+#define PARSE_ALL_EVENT          1  // version 0.96 and below only (MUST BE 1 in v1.00+)
 #define SEC_DOMAIN_BAND          1  // version 0.96 and below only (MUST BE 1 in v1.00+)
-#define MAX_PSA_SIZE          0x04
+#define STOPPED_EDTLA            0
+#define CONT_FRAME_ID            0
+#define MAX_PSA_SIZE          0x05
 #define EXT_CAPS_OFFSET      0x500
-  #define EXT_CAPS_SIZE         48
+  #define EXT_CAPS_SIZE        144
 
-#define PAGE_SIZE                1  // Page size operational register value
+// HCCPARAMS2 (v1.10+)
+#if ((VERSION_MAJOR == 1) && (VERSION_MINOR >= 0x10))
+  #define U3_ENTRY_CAP             0
+  #define CONFIG_EP_CMND_CAP       0
+  #define FORCE_SAVE_CONTEXT_CAP   0
+  #define COMPLNC_TRANS_CAP        0
+  #define LARGE_ESIT_PAYLOAD_CAP   0
+  #define CONFIG_INFO_CAP          0
+#endif
+
+#define XHCI_PAGE_SIZE    1  // Page size operational register value
+
+#define DOORBELL_OFFSET   0x800
+
+#define RUNTIME_OFFSET    0x600
 
 #define PORT_SET_OFFSET  (0x400 + OPS_REGS_OFFSET)
-#define RUNTIME_OFFSET    0x600
-#define DOORBELL_OFFSET   0x800
+
 /************************************************************************************************/
 
-#if (((VERSION_MAJOR == 0) && ((VERSION_MINOR != 0x95) && (VERSION_MINOR != 0x96))) || ((VERSION_MAJOR == 1) && (VERSION_MINOR != 0x00)))
+#if ((VERSION_MAJOR > 1) ||                                                              \
+    ((VERSION_MAJOR == 0) && ((VERSION_MINOR != 0x95) && (VERSION_MINOR != 0x96))) ||    \
+    ((VERSION_MAJOR == 1) && ((VERSION_MINOR != 0x00) && (VERSION_MINOR != 0x10))))
 #  error "Unknown Controller Version number specified."
 #endif
 
@@ -99,12 +123,20 @@
 #  error "Must set SCATCH_PAD_RESTORE to 1 if MAX_SCRATCH_PADS > 0"
 #endif
 
-#if ((FORCED_STOPPED == 0) && (VERSION_MAJOR > 0))
-#  error "FORCED_STOPPED must be 1 in version 1.0 and above"
+#if ((PARSE_ALL_EVENT == 0) && (VERSION_MAJOR > 0))
+#  error "PARSE_ALL_EVENT must be 1 in version 1.0 and above"
 #endif
 
 #if ((SEC_DOMAIN_BAND == 0) && (VERSION_MAJOR > 0))
 #  error "SEC_DOMAIN_BAND must be 1 in version 1.0 and above"
+#endif
+
+#if ((LAT_TOL_MSGING_CAP == 1) && ((VERSION_MAJOR < 1) || (VERSION_MINOR < 0)))
+#  error "LAT_TOL_MSGING_CAP must be used with in version 1.1 and above"
+#endif
+
+#if ((NO_SSD_SUPPORT == 1) && ((VERSION_MAJOR < 1) || (VERSION_MINOR < 0)))
+#  error "NO_SSD_SUPPORT must be used with in version 1.1 and above"
 #endif
 
 // Each controller supports its own number of ports.  We must adhere to that for now.
@@ -115,13 +147,7 @@
 //  ie.: Each physical port (socket) has two defined port register sets.  One for USB3, one for USB2
 // Only one port type may be used at a time.  Port0 or Port1, not both.  If Port0 is used, then
 //  Port1 must be vacant.
-#ifndef BX_N_USB_XHCI_PORTS
-  #error "BX_N_USB_XHCI_PORTS was not defined in bochs.h"
-#else
-  #if (BX_N_USB_XHCI_PORTS < USB_XHCI_PORTS)
-    #error "BX_N_USB_XHCI_PORTS is less than USB_XHCI_PORTS."
-  #endif
-#endif
+#define BX_N_USB_XHCI_PORTS 4
 
 // xHCI speed values
 #define SPEED_FULL   1
@@ -192,8 +218,11 @@ struct HC_SLOT_CONTEXT {
   struct {
     struct EP_CONTEXT   ep_context;
     // our internal registers follow
-    Bit64u enqueue_pointer;
-    bx_bool  rcs;
+    Bit32u  edtla;
+    Bit64u  enqueue_pointer;
+    bx_bool rcs;
+    bx_bool retry;
+    int     retry_counter;
   } ep_context[32];  // first one is ignored by controller.
 };
 
@@ -227,6 +256,11 @@ enum { PLS_U0 = 0, PLS_U1, PLS_U2, PLS_U3_SUSPENDED, PLS_DISABLED, PLS_RXDETECT,
        PLS_RESUME = 15
 };
 
+
+// Reset type
+#define HOT_RESET   0
+#define WARM_RESET  1
+
 // Direction
 #define EP_DIR_OUT  0
 #define EP_DIR_IN   1
@@ -234,7 +268,7 @@ enum { PLS_U0 = 0, PLS_U1, PLS_U2, PLS_U3_SUSPENDED, PLS_DISABLED, PLS_RXDETECT,
 // Slot State
 #define SLOT_STATE_DISABLED_ENABLED  0
 #define SLOT_STATE_DEFAULT           1
-#define SLOT_STATE_ADRESSED          2
+#define SLOT_STATE_ADDRESSED         2
 #define SLOT_STATE_CONFIGURED        3
 
 // EP State
@@ -247,6 +281,8 @@ enum { PLS_U0 = 0, PLS_U1, PLS_U2, PLS_U3_SUSPENDED, PLS_DISABLED, PLS_RXDETECT,
 // NEC Vendor specific TRB types
 #define NEC_TRB_TYPE_CMD_COMP 48
 #define NEC_TRB_TYPE_GET_FW   49
+#define NEC_TRB_TYPE_GET_UN   50
+  #define NEC_MAGIC           0x49434878
 #define NEC_FW_MAJOR(v)       (((v) & 0x0000FF00) >> 8)
 #define NEC_FW_MINOR(v)       (((v) & 0x000000FF) >> 0)
 
@@ -289,14 +325,21 @@ typedef struct {
     Bit32u HcSParams1;
     Bit32u HcSParams2;
     Bit32u HcSParams3;
-    Bit32u HcCParams;
+    Bit32u HcCParams1;
+#if ((VERSION_MAJOR == 1) && (VERSION_MINOR >= 1))
+    Bit32u HcCParams2;
+#endif
     Bit32u DBOFF;
     Bit32u RTSOFF;
   } cap_regs;
 
   struct XHCI_OP_REGS {
     struct {
-      Bit32u  RsvdP1;            // 20 bit reserved and preserved      = 0x000000       RW
+      Bit32u  RsvdP1;            // 18/20 bit reserved and preserved   = 0x000000       RW
+#if ((VERSION_MAJOR == 1) && (VERSION_MINOR >= 0x10))
+      bx_bool cme;               //  1 bit Max Exit Latecy to Large    = 0b             RW
+      bx_bool spe;               //  1 bit Generate Short Packet Comp  = 0b             RW
+#endif
       bx_bool eu3s;              //  1 bit Enable U3 MFINDEX Stop      = 0b             RW
       bx_bool ewe;               //  1 bit Enable Wrap Event           = 0b             RW
       bx_bool crs;               //  1 bit Controller Restore State    = 0b             RW
@@ -358,7 +401,11 @@ typedef struct {
       Bit8u   RsvdZ;             //  6 bit reserved and zero'd         = 000000b        RW
     } HcDCBAAP;
     struct {
-      Bit32u  RsvdP;             // 24 bit reserved and preserved      = 0x000000       RW
+      Bit32u  RsvdP;             // 22/24 bit reserved and preserved   = 0x000000       RW
+#if ((VERSION_MAJOR == 1) && (VERSION_MINOR >= 0x10))
+      bx_bool u3e;               //  1 bit U3 Entry Enable             = 0              RW
+      bx_bool cie;               //  1 bit Config Info Enable          = 0              RW
+#endif
       Bit8u   MaxSlotsEn;        //  8 bit Max Device Slots Enabled    = 0x00           RW
     } HcConfig;
   } op_regs;
@@ -367,6 +414,7 @@ typedef struct {
     // our data
     usb_device_c *device;   // device connected to this port
     bx_bool is_usb3;        // set if usb3 port, cleared if usb2 port.
+    bx_bool has_been_reset; // set if the port has been reset aftet powered up.
 
     struct {
       bx_bool wpr;               //  1 bit Warm Port Reset             = 0b             RW or RsvdZ
@@ -385,7 +433,7 @@ typedef struct {
       bx_bool csc;               //  1 bit Connect Status Change       = 0b             RW1C
       bx_bool lws;               //  1 bit Port Link State Write Strobe= 0b             RW
       Bit8u   pic;               //  2 bit Port Indicator Control      = 00b            RW
-      bx_bool speed;             //  1 bit Port Speed                  = 0b             RO
+      Bit8u   speed;             //  4 bit Port Speed                  = 0000b          RO
       bx_bool pp;                //  1 bit Port Power                  = 0b             RW
       Bit8u   pls;               //  4 bit Port Link State             = 0x00           RW
       bx_bool pr;                //  1 bit Port Reset                  = 0b             RW
@@ -456,7 +504,7 @@ typedef struct {
       } erstsz;
       Bit32u  RsvdP;             // 32 bit reserved and preseved       = 0x00000000     RW
       struct {
-        Bit64u  erstabadd;       // 64 bit Event Ring Seg Tab Addy     = 0x00000000     RW
+        Bit64u  erstabadd;       // 64 bit Event Ring Seg Tab Addy     = 0x00000000     RW  (See #define below)
         Bit16u  RsvdP;           //  6 bit reserved and preseved       = 0x0000         RW
       } erstba;
       struct {
@@ -470,14 +518,21 @@ typedef struct {
   struct HC_SLOT_CONTEXT slots[MAX_SLOTS];  // first one is ignored by controller.
 
   struct RING_MEMBERS ring_members;
-
-  Bit8u devfunc;
-
-  int statusbar_id; // ID of the status LEDs
-  Bit8u device_change;
 } bx_usb_xhci_t;
 
-class bx_usb_xhci_c : public bx_devmodel_c, public bx_pci_device_stub_c {
+// Version 3.0.23.0 of the Renesas uPD720202 driver, even though the card is
+//  version 1.00, the driver still uses bits 3:0 as RsvdP as with version 0.96
+//  instead of bits 5:0 as RsvdP as with version 1.00+
+#define RENESAS_ERSTABADD_BUG 1
+#if ((VERSION_MAJOR < 1) || (RENESAS_ERSTABADD_BUG == 1))
+  #define ERSTABADD_MASK   0x0F  // versions before 1.0 use 3:0 as preserved
+#elif ((VERSION_MAJOR == 1) && (VERSION_MINOR >= 0x00))
+  #define ERSTABADD_MASK   0x3F  // versions 1.0 and above use 5:0 as preserved
+#else
+  #error "ERSTABADD_MASK not defined"
+#endif
+
+class bx_usb_xhci_c : public bx_pci_device_c {
 public:
   bx_usb_xhci_c();
   virtual ~bx_usb_xhci_c();
@@ -485,18 +540,25 @@ public:
   virtual void reset(unsigned);
   virtual void register_state(void);
   virtual void after_restore_state(void);
-  virtual Bit32u  pci_read_handler(Bit8u address, unsigned io_len);
-  virtual void    pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+
+  virtual void pci_write_handler(Bit8u address, Bit32u value, unsigned io_len);
+
+  void event_handler(int event, USBPacket *packet, int port);
 
   static const char *usb_param_handler(bx_param_string_c *param, int set,
                                        const char *oldval, const char *val, int maxlen);
 
 private:
   bx_usb_xhci_t hub;
-  Bit8u         *device_buffer;
+  Bit8u         devfunc;
+  Bit8u         device_change;
+  int           rt_conf_id;
+  int           xhci_timer_index;
+  USBAsync      *packets;
 
   static void reset_hc();
   static void reset_port(int);
+  static void reset_port_usb3(int, const int);
   static bx_bool save_hc_state(void);
   static bx_bool restore_hc_state(void);
 
@@ -507,8 +569,8 @@ private:
   static void usb_set_connect_status(Bit8u port, int type, bx_bool connected);
 
   static int  broadcast_packet(USBPacket *p, const int port);
-  //static void usb_frame_handler(void *);
-  //void usb_frame_timer(void);
+  static void xhci_timer_handler(void *);
+  void xhci_timer(void);
 
   static void process_transfer_ring(const int slot, const int ep);
   static void process_command_ring(void);
@@ -524,8 +586,8 @@ private:
   static void dump_ep_context(const Bit32u *context, const int slot, const int ep);
   static void copy_slot_from_buffer(struct SLOT_CONTEXT *slot_context, const Bit8u *buffer);
   static void copy_ep_from_buffer(struct EP_CONTEXT *ep_context, const Bit8u *buffer);
-  static void copy_slot_to_buffer(const Bit8u *buffer, const int slot);
-  static void copy_ep_to_buffer(const Bit8u *buffer, const int slot, const int ep);
+  static void copy_slot_to_buffer(Bit32u *buffer, const int slot);
+  static void copy_ep_to_buffer(Bit32u *buffer, const int slot, const int ep);
   static bx_bool validate_slot_context(const struct SLOT_CONTEXT *slot_context);
   static bx_bool validate_ep_context(const struct EP_CONTEXT *ep_context, int speed, int ep_num);
   static int  create_unique_address(const int slot);

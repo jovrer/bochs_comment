@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: vmware4.h 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: vmware4.h 11921 2013-11-03 07:41:29Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 
 /*
@@ -10,6 +10,7 @@
  * Contact: snrrrub@gmail.com
  *
  * Copyright (C) 2006 Sharvil Nanavati.
+ * Copyright (C) 2006-2013  The Bochs Project
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -29,46 +30,31 @@
 #ifndef _VMWARE4_H
 #define _VMWARE4_H 1
 
-class vmware4_image_t : public device_image_t
-{
-    public:
-        vmware4_image_t();
-        virtual ~vmware4_image_t();
-
-        int open(const char* pathname);
-        void close();
-        Bit64s lseek(Bit64s offset, int whence);
-        ssize_t read(void* buf, size_t count);
-        ssize_t write(const void* buf, size_t count);
-        Bit32u get_capabilities();
-
-    private:
-        static const off_t INVALID_OFFSET;
-        static const int SECTOR_SIZE;
-
 #if defined(_MSC_VER)
 #pragma pack(push, 1)
 #elif defined(__MWERKS__) && defined(macintosh)
 #pragma options align=packed
 #endif
-        typedef struct _VM4_Header
-        {
-            Bit8u  id[4];
-            Bit32u version;
-            Bit32u flags;
-            Bit64u total_sectors;
-            Bit64u tlb_size_sectors;
-            Bit64u description_offset_sectors;
-            Bit64u description_size_sectors;
-            Bit32u slb_count;
-            Bit64u flb_offset_sectors;
-            Bit64u flb_copy_offset_sectors;
-            Bit64u tlb_offset_sectors;
-        }
+typedef struct _VM4_Header
+{
+    Bit8u  id[4];
+    Bit32u version;
+    Bit32u flags;
+    Bit64u total_sectors;
+    Bit64u tlb_size_sectors;
+    Bit64u description_offset_sectors;
+    Bit64u description_size_sectors;
+    Bit32u slb_count;
+    Bit64u flb_offset_sectors;
+    Bit64u flb_copy_offset_sectors;
+    Bit64u tlb_offset_sectors;
+    Bit8u  filler;
+    Bit8u  check_bytes[4];
+}
 #if !defined(_MSC_VER)
-        GCC_ATTRIBUTE((packed))
+GCC_ATTRIBUTE((packed))
 #endif
-        VM4_Header;
+VM4_Header;
 
 #if defined(_MSC_VER)
 #pragma pack(pop)
@@ -76,10 +62,33 @@ class vmware4_image_t : public device_image_t
 #pragma options align=reset
 #endif
 
-        bool is_open() const;
-        bool is_valid_header() const;
+class vmware4_image_t : public device_image_t
+{
+    public:
+        vmware4_image_t();
+        virtual ~vmware4_image_t();
 
-        bool read_header();
+        int open(const char* pathname, int flags);
+        void close();
+        Bit64s lseek(Bit64s offset, int whence);
+        ssize_t read(void* buf, size_t count);
+        ssize_t write(const void* buf, size_t count);
+
+        Bit32u get_capabilities();
+        static int check_format(int fd, Bit64u imgsize);
+
+#ifndef BXIMAGE
+        bx_bool save_state(const char *backup_fname);
+        void restore_state(const char *backup_fname);
+#endif
+
+    private:
+        static const off_t INVALID_OFFSET;
+        static const int SECTOR_SIZE;
+
+        bx_bool is_open() const;
+
+        bx_bool read_header();
         off_t perform_seek();
         void flush();
         Bit32u read_block_index(Bit64u sector, Bit32u index);
@@ -90,7 +99,8 @@ class vmware4_image_t : public device_image_t
         Bit8u* tlb;
         off_t tlb_offset;
         off_t current_offset;
-        bool is_dirty;
+        bx_bool is_dirty;
+        const char *pathname;
 };
 
 #endif

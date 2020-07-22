@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: slowdown_timer.cc 10898 2011-12-30 11:13:37Z vruppert $
+// $Id: slowdown_timer.cc 12081 2013-12-29 12:56:52Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Copyright (C) 2002-2009  The Bochs Project
@@ -50,7 +50,7 @@ bx_slowdown_timer_c bx_slowdown_timer;
 
 bx_slowdown_timer_c::bx_slowdown_timer_c()
 {
-  put("slowdown_timer", "STIME");
+  put("slowdown_timer", "STIMER");
 
   s.start_time=0;
   s.start_emulated_time=0;

@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: keyboard.h 11224 2012-06-21 17:33:37Z vruppert $
+// $Id: keyboard.h 13206 2017-04-22 15:32:07Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -226,7 +226,6 @@ private:
   void mouse_motion(int delta_x, int delta_y, int delta_z, unsigned button_state, bx_bool absxy);
 
   static void   timer_handler(void *);
-  void   timer(void);
   int    timer_handle;
   int    statusbar_id[3];
 };

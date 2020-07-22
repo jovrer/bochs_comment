@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: amigaos.cc 11224 2012-06-21 17:33:37Z vruppert $
+// $Id: amigaos.cc 13606 2019-11-14 10:34:39Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2000-2012  The Bochs Project
+//  Copyright (C) 2000-2019  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -164,7 +164,7 @@ bx_bool open_screen(void)
 
   struct Hook screenreqhook = { 0, 0, (ULONG(*)())&GATEDispatcherFunc, (ULONG(*)())screenreqfunc, 0 };
 
-  sprintf (verstr, "Bochs x86 Emulator %s", VER_STRING);
+  sprintf (verstr, "Bochs x86 Emulator %s", VERSION);
 
   if (SIM->get_param_bool(BXPN_FULLSCREEN)->get())
   {
@@ -202,7 +202,7 @@ bx_bool open_screen(void)
     h = GetCyberIDAttr(CYBRIDATTR_HEIGHT, id);
     w = GetCyberIDAttr(CYBRIDATTR_WIDTH, id);
     d = GetCyberIDAttr(CYBRIDATTR_DEPTH, id);
-    
+
     //sprintf(scrmode, "%d", id);
     //setenv("env:bochs/screenmode", scrmode, 1);
 
@@ -302,8 +302,11 @@ bx_bool open_screen(void)
   black = ObtainBestPen(window->WScreen->ViewPort.ColorMap, 0x00000000, 0x00000000, 0x00000000, NULL);
 }
 
+// AmigaOS implementation of the bx_gui_c methods (see nogui.cc for details)
+
 void bx_amigaos_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
+  put("AMGUI");
   bx_headerbar_y = headerbar_y;
 
   IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 39);
@@ -585,7 +588,7 @@ int bx_amigaos_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   return 1;
 }
 
-bx_bool bx_amigaos_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+bx_bool bx_amigaos_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
 {
   Bit8u *ptr = (Bit8u *)(cmap+index);
 
@@ -625,10 +628,14 @@ void bx_amigaos_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight
   if (bpp > 8) {
     BX_PANIC(("%d bpp graphics mode not supported yet", bpp));
   }
+  guest_textmode = (fheight > 0);
+  guest_xres = x;
+  guest_yres = y;
+  guest_bpp = bpp;
 
   int xdiff = w - x;
 
-  if (fheight > 0) {
+  if (guest_textmode) {
     text_cols = x / fwidth;
     text_rows = y / fheight;
     if (fwidth != 8) {

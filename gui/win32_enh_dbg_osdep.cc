@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: win32_enh_dbg_osdep.cc 11131 2012-04-10 12:44:06Z sshwarts $
+// $Id: win32_enh_dbg_osdep.cc 13438 2018-01-19 20:27:04Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
 //  BOCHS ENHANCED DEBUGGER Ver 1.2
@@ -8,6 +8,7 @@
 //
 //  Modified by Bruce Ewing
 //
+//  Copyright (C) 2008-2014  The Bochs Project
 
 #include "config.h"
 
@@ -23,8 +24,8 @@
 // to use the "A" functions instead of the "W" functions. That is, strcpyA(), sprintfA(), etc.
 // This will require setting macros for the non-os-specific code, too.
 
-#include <windows.h>
 #include <commctrl.h>
+#include <commdlg.h>
 
 #ifdef _WIN64
 #define DWL_MSGRESULT DWLP_MSGRESULT
@@ -110,6 +111,9 @@ HWND hCPUt[BX_MAX_SMP_THREADS_SUPPORTED];   // "tabs" for the individual CPUs
 HFONT CustomFont[4];
 HFONT DefFont;
 LOGFONT mylf;
+UINT fontInit = 0;
+RECT rY = {0};
+BOOL windowInit = FALSE;
 HMENU hOptMenu;     // "Options" popup menu (needed to set check marks)
 HMENU hViewMenu;    // "View" popup menu (needed to gray entries)
 HMENU hCmdMenu;     // "Command" popup menu (needed to gray entries)
@@ -592,7 +596,7 @@ bx_bool SpBtn()             // Superclasses a button control
 void SpecialInit()
 {
     int i = 8;
-    doOneTimeInit = FALSE;
+    doSimuInit = FALSE;
     EnableMenuItem (hOptMenu, CMD_EREG, MF_GRAYED);
     EnableMenuItem (hCmdMenu, CMD_WPTWR, MF_GRAYED);
     EnableMenuItem (hCmdMenu, CMD_WPTRD, MF_GRAYED);
@@ -633,7 +637,7 @@ void SpecialInit()
         CheckMenuItem (hOptMenu, CMD_IOWIN, MF_CHECKED);
 
     HMENU wsMenu = GetSubMenu (hOptMenu, WS_POPUP_IDX);
-    CheckMenuItem (wsMenu, CMD_WS_1, MF_CHECKED);
+    CheckMenuItem (wsMenu, CMD_WS_1+DumpWSIndex, MF_CHECKED);
     EnableMenuItem (hOptMenu, CMD_TREG, MF_GRAYED);     // not currently supported by bochs
     EnableMenuItem (hViewMenu, CMD_PAGEV, MF_GRAYED);
 #if BX_SUPPORT_FPU == 0
@@ -1211,15 +1215,14 @@ void MakeTreeChild (HTREEITEM *h_P, int ChildCount, HTREEITEM *h_TC)
 
 bx_bool NewFont()
 {
-    LOGFONT lf;
     if (AtBreak == FALSE)
         return FALSE;
-    GetObject(DefFont,sizeof(lf),&lf);
     CHOOSEFONT cF = {0};
     cF.lStructSize = sizeof(cF);
     cF.hwndOwner = hY;
-    cF.lpLogFont = &lf;
+    cF.lpLogFont = &mylf;
     cF.Flags = CF_SCREENFONTS | CF_EFFECTS | CF_INITTOLOGFONTSTRUCT;
+    mylf.lfItalic = 0;
     if (ChooseFont(&cF) == FALSE)
         return FALSE;
 
@@ -1229,20 +1232,20 @@ bx_bool NewFont()
     ShowWindow(hS_S,SW_HIDE);
     ShowWindow(hE_I,SW_HIDE);
     if (*CustomFont != DefFont)             // destroy all variations of the prev. font
-        DeleteObject (*CustomFont);
-    DeleteObject (CustomFont[1]);
-    DeleteObject (CustomFont[2]);
-    DeleteObject (CustomFont[3]);
-    *CustomFont = CreateFontIndirect(&lf);
+        DeleteObject(*CustomFont);
+    DeleteObject(CustomFont[1]);
+    DeleteObject(CustomFont[2]);
+    DeleteObject(CustomFont[3]);
+    *CustomFont = CreateFontIndirect(&mylf);
     // create a bold version of the deffont
-    lf.lfWeight = FW_BOLD;
-    CustomFont[1] = CreateFontIndirect (&lf);
+    mylf.lfWeight = FW_BOLD;
+    CustomFont[1] = CreateFontIndirect(&mylf);
     // create a bold + italic version of the deffont
-    lf.lfItalic = 1;
-    CustomFont[3] = CreateFontIndirect (&lf);
+    mylf.lfItalic = 1;
+    CustomFont[3] = CreateFontIndirect(&mylf);
     // create an italic version of the deffont (turn off bold)
-    lf.lfWeight = FW_NORMAL;
-    CustomFont[2] = CreateFontIndirect (&lf);
+    mylf.lfWeight = FW_NORMAL;
+    CustomFont[2] = CreateFontIndirect(&mylf);
 
     CallWindowProc(wListView,hL[REG_WND],WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
     CallWindowProc(wListView,hL[ASM_WND],WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
@@ -1515,7 +1518,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 NMLVKEYDOWN* key = (NMLVKEYDOWN*)ll;        // pass any keystrokes from listview up to parent
                 SendMessage(hh,WM_KEYDOWN,key->wVKey,0);
             }
-            if (n->code == NM_CUSTOMDRAW && n->hwndFrom == hL[ASM_WND]) // custom drawing of ASM window
+            if (n->code == (UINT)NM_CUSTOMDRAW && n->hwndFrom == hL[ASM_WND]) // custom drawing of ASM window
             {
                 // highlight the breakpoints, and current opcode, if any
                 NMLVCUSTOMDRAW *d = (NMLVCUSTOMDRAW *) ll;
@@ -1567,7 +1570,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 }
                 break;
             }
-            if (n->code == NM_CUSTOMDRAW && n->hwndFrom == hL[DUMP_WND])    // custom drawing of data window
+            if (n->code == (UINT)NM_CUSTOMDRAW && n->hwndFrom == hL[DUMP_WND])    // custom drawing of data window
             {
                 NMLVCUSTOMDRAW *d = (NMLVCUSTOMDRAW *) ll;
                 if (d->nmcd.dwDrawStage == CDDS_PREPAINT)
@@ -1634,7 +1637,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 }
                 break;
             }
-            if (n->code == NM_CUSTOMDRAW && n->hwndFrom == hL[REG_WND]) // custom drawing of register window
+            if (n->code == (UINT)NM_CUSTOMDRAW && n->hwndFrom == hL[REG_WND]) // custom drawing of register window
             {
                 // highlight changed registers
                 NMLVCUSTOMDRAW *d = (NMLVCUSTOMDRAW *) ll;
@@ -1661,7 +1664,7 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
                 }
                 break;
             }
-            if (n->code == NM_DBLCLK)
+            if (n->code == (UINT)NM_DBLCLK)
             {
                 if (AtBreak == FALSE)
                     break;
@@ -1745,15 +1748,17 @@ LRESULT CALLBACK B_WP(HWND hh,UINT mm,WPARAM ww,LPARAM ll)
         }
         case WM_CLOSE:
         {
+            GetWindowRect(hY, &rY);
             bx_user_quit = 1;
             SIM->debug_break();
             KillTimer(hh,2);
             if (*CustomFont != DefFont)
                 DeleteObject (*CustomFont);
-            DeleteObject (CustomFont[1]);
-            DeleteObject (CustomFont[2]);
-            DeleteObject (CustomFont[3]);
+            DeleteObject(CustomFont[1]);
+            DeleteObject(CustomFont[2]);
+            DeleteObject(CustomFont[3]);
             DestroyWindow(hY);
+            hY = NULL;
             break;
         }
     }
@@ -1777,47 +1782,78 @@ void HitBreak()
 bx_bool OSInit()
 {
     TEXTMETRIC tm;
-    InitCommonControls();   // start the common control dll
-    SpListView();       // create superclass for listviews to use when they are created
-    SpBtn();            // same for buttons
-    WNDCLASSEX wC = {0};
-    wC.cbSize = sizeof(wC);
-    wC.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
-    hCursArrow = LoadCursor(NULL,IDC_ARROW);
-    wC.hCursor = hCursArrow;
-    wC.hInstance = GetModuleHandle(0);
-    wC.style = CS_HREDRAW | CS_VREDRAW | CS_GLOBALCLASS | CS_DBLCLKS;
-    wC.lpfnWndProc = B_WP;
-    wC.cbWndExtra = sizeof(void*);
-    wC.lpszClassName = "bochs_dbg_x";
-    wC.hIcon = LoadIcon(GetModuleHandle(0),"ICON_D");
-    wC.hIconSm = LoadIcon(GetModuleHandle(0),"ICON_D");
-    RegisterClassEx(&wC);
+
+    if (doOneTimeInit) {
+        InitCommonControls();   // start the common control dll
+        SpListView();       // create superclass for listviews to use when they are created
+        SpBtn();            // same for buttons
+        WNDCLASSEX wC = {0};
+        wC.cbSize = sizeof(wC);
+        wC.hbrBackground = (HBRUSH)GetStockObject(WHITE_BRUSH);
+        hCursArrow = LoadCursor(NULL,IDC_ARROW);
+        wC.hCursor = hCursArrow;
+        wC.hInstance = GetModuleHandle(0);
+        wC.style = CS_HREDRAW | CS_VREDRAW | CS_GLOBALCLASS | CS_DBLCLKS;
+        wC.lpfnWndProc = B_WP;
+        wC.cbWndExtra = sizeof(void*);
+        wC.lpszClassName = "bochs_dbg_x";
+        wC.hIcon = LoadIcon(GetModuleHandle(0),"ICON_D");
+        wC.hIconSm = LoadIcon(GetModuleHandle(0),"ICON_D");
+        RegisterClassEx(&wC);
+        doOneTimeInit = FALSE;
+    }
+    CurXSize = 0;
+    CurYSize = 0;
     HMENU hTopMenu = LoadMenu(GetModuleHandle(0),"MENU_1");     // build the menus from the resource
-    hOptMenu = GetSubMenu (hTopMenu, 2);                // need the main menu handles
-    hViewMenu = GetSubMenu (hTopMenu, 1);
-    hCmdMenu = GetSubMenu (hTopMenu, 0);
+    hOptMenu = GetSubMenu(hTopMenu, 2);                // need the main menu handles
+    hViewMenu = GetSubMenu(hTopMenu, 1);
+    hCmdMenu = GetSubMenu(hTopMenu, 0);
     hY = CreateWindowEx(0,"bochs_dbg_x","Bochs Enhanced Debugger",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,
         0,hTopMenu,GetModuleHandle(0),0);
     if (hY == NULL)
         return FALSE;
-    HDC hdc = GetDC (hY);
-    *CustomFont = DefFont;  // create the deffont with modded attributes (bold, italic)
-    GetTextFace(hdc, LF_FULLFACESIZE, mylf.lfFaceName); // (constant is max length of a fontname)
-    GetTextMetrics (hdc, &tm);
-    ReleaseDC (hY, hdc);
-    mylf.lfHeight = -(tm.tmHeight);     // request a TOTAL font height of tmHeight
+    if (windowInit) {
+      if ((rY.left >= 0) && (rY.top >= 0)) {
+        MoveWindow(hY, rY.left, rY.top, rY.right-rY.left, rY.bottom-rY.top, TRUE);
+      } else {
+        ShowWindow(hY, SW_MAXIMIZE);
+      }
+    }
+    if (!fontInit) {
+      *CustomFont = DefFont;  // create the deffont with modded attributes (bold, italic)
+      HDC hdc = GetDC(hY);
+      memset(&mylf, 0, sizeof(LOGFONT));
+      mylf.lfWeight = FW_NORMAL;
+      GetTextFace(hdc, LF_FULLFACESIZE, mylf.lfFaceName); // (constant is max length of a fontname)
+      GetTextMetrics(hdc, &tm);
+      ReleaseDC(hY, hdc);
+      mylf.lfHeight = -(tm.tmHeight);     // request a TOTAL font height of tmHeight
+    } else {
+      *CustomFont = CreateFontIndirect(&mylf);
+    }
     // create a bold version of the deffont
     mylf.lfWeight = FW_BOLD;
-    CustomFont[1] = CreateFontIndirect (&mylf);
+    CustomFont[1] = CreateFontIndirect(&mylf);
     // create a bold + italic version of the deffont
     mylf.lfItalic = 1;
-    CustomFont[3] = CreateFontIndirect (&mylf);
+    CustomFont[3] = CreateFontIndirect(&mylf);
     // create an italic version of the deffont (turn off bold)
     mylf.lfWeight = FW_NORMAL;
-    CustomFont[2] = CreateFontIndirect (&mylf);
+    CustomFont[2] = CreateFontIndirect(&mylf);
+    if (fontInit) {
+      CallWindowProc(wListView,hL[REG_WND],WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
+      CallWindowProc(wListView,hL[ASM_WND],WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
+      CallWindowProc(wListView,hL[DUMP_WND],WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
+      CallWindowProc(*wEdit,hE_I,WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
+      SendMessage(hS_S,WM_SETFONT,(WPARAM)*CustomFont,MAKELPARAM(TRUE,0));
+    }
     return TRUE;
+}
+
+void CloseDialog()
+{
+  SendMessage(hY, WM_CLOSE, 0, 0);
 }
 
 // recurse displaying each leaf/branch of param_tree -- with values for each leaf
@@ -1826,48 +1862,26 @@ void MakeBL(HTREEITEM *h_P, bx_param_c *p)
     HTREEITEM h_new;
     bx_list_c *as_list = NULL;
     int i = 0;
-    strcpy (tmpcb, p->get_name());
+    char tmpstr[BX_PATHNAME_LEN];
+    strcpy(tmpcb, p->get_name());
     int j = strlen (tmpcb);
     switch (p->get_type())
     {
-        case BXT_PARAM_NUM:
-            if (((bx_param_num_c*)p)->get_base() == BASE_DEC)
-                sprintf (tmpcb + j,": " FMT_LL "d",((bx_param_num_c*)p)->get64());
-            else
-                sprintf (tmpcb + j,": 0x" FMT_LL "X",((bx_param_num_c*)p)->get64());
-            break;
         case BXT_LIST:
             as_list = (bx_list_c *)p;
             i = as_list->get_size();
             break;
+        case BXT_PARAM_NUM:
         case BXT_PARAM_BOOL:
-            sprintf (tmpcb + j,": %s",((bx_param_bool_c*)p)->get()?"true":"false");
-            break;
         case BXT_PARAM_ENUM:
-            sprintf (tmpcb + j,": %s",((bx_param_enum_c*)p)->get_selected());
-            break;
         case BXT_PARAM_STRING:
-            if (((bx_param_string_c*)p)->get_options() & bx_param_string_c::RAW_BYTES)
-            {
-                char *cp = tmpcb + j;
-                unsigned char *rp = (unsigned char *)((bx_param_string_c*)p)->getptr();
-                char sc = ((bx_param_string_c*)p)->get_separator();
-                int k = ((bx_param_string_c*)p)->get_maxsize();
-                *(cp++) = ':';
-                *(cp++) = ' ';
-                while (k-- > 0)
-                {
-                    *(cp++) = AsciiHex[2* *rp];
-                    *(cp++) = AsciiHex[2* *rp + 1];
-                    *(cp++) = sc;
-                }
-                *--cp = 0;  // overwrite the last separator char
-            }
-            else
-                sprintf (tmpcb + j,": %s",((bx_param_string_c*)p)->getptr());
+        case BXT_PARAM_BYTESTRING:
+            p->dump_param(tmpstr, BX_PATHNAME_LEN);
+            sprintf(tmpcb + j,": %s", tmpstr);
             break;
         case BXT_PARAM_DATA:
             sprintf (tmpcb + j,": binary data, size=%d",((bx_shadow_data_c*)p)->get_size());
+            break;
     }
     MakeTreeChild (h_P, i, &h_new);
     if (i > 0)
@@ -1875,6 +1889,47 @@ void MakeBL(HTREEITEM *h_P, bx_param_c *p)
         while (--i >= 0)
             MakeBL(&h_new, as_list->get(i));    // recurse for all children that are lists
     }
+}
+
+bx_bool ParseOSSettings(const char *param, const char *value)
+{
+  char *val2, *ptr;
+
+  if (!strcmp(param, "FontName")) {
+    memset(&mylf, 0, sizeof(LOGFONT));
+    mylf.lfWeight = FW_NORMAL;
+    strcpy(mylf.lfFaceName, value);
+    fontInit |= 1;
+    return 1;
+  } else if (!strcmp(param, "FontSize")) {
+    mylf.lfHeight = atoi(value);
+    fontInit |= 2;
+    return 1;
+  } else if (!strcmp(param, "MainWindow")) {
+    val2 = strdup(value);
+    ptr = strtok(val2, ",");
+    rY.left = atoi(ptr);
+    ptr = strtok(NULL, ",");
+    rY.top = atoi(ptr);
+    ptr = strtok(NULL, ",");
+    rY.right = atoi(ptr);
+    ptr = strtok(NULL, "\n");
+    rY.bottom = atoi(ptr);
+    windowInit = TRUE;
+    free(val2);
+    return 1;
+  }
+  return 0;
+}
+
+void WriteOSSettings(FILE *fd)
+{
+  fprintf(fd, "FontName = %s\n", mylf.lfFaceName);
+  fprintf(fd, "FontSize = %d\n", mylf.lfHeight);
+  if (hY != NULL) {
+    GetWindowRect(hY, &rY);
+  }
+  fprintf(fd, "MainWindow = %d, %d, %d, %d\n", rY.left, rY.top, rY.right, rY.bottom);
 }
 
 #endif

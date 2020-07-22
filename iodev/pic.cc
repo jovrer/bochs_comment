@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: pic.cc 11346 2012-08-19 08:16:20Z vruppert $
+// $Id: pic.cc 13051 2017-01-28 09:52:09Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2009  The Bochs Project
+//  Copyright (C) 2002-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -31,7 +31,7 @@
 
 bx_pic_c *thePic = NULL;
 
-int libpic_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libpic_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   if (type == PLUGTYPE_CORE) {
     thePic = new bx_pic_c();
@@ -43,7 +43,7 @@ int libpic_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *
   }
 }
 
-void libpic_LTX_plugin_fini(void)
+void CDECL libpic_LTX_plugin_fini(void)
 {
   delete thePic;
 }
@@ -295,7 +295,7 @@ void bx_pic_c::write(Bit32u address, Bit32u value, unsigned io_len)
         else {
           BX_DEBUG(("master: ICW1: edge triggered mode selected"));
         }
-        BX_SET_INTR(0);
+        BX_CLEAR_INTR();
         return;
       }
 
@@ -743,7 +743,7 @@ void bx_pic_c::service_master_pic(void)
           BX_DEBUG(("signalling IRQ(%u)", (unsigned) irq));
           BX_PIC_THIS s.master_pic.INT = 1;
           BX_PIC_THIS s.master_pic.irq = irq;
-          BX_SET_INTR(1);
+          BX_RAISE_INTR();
           return;
         } /* if (unmasked_requests & ... */
       }
@@ -822,7 +822,7 @@ Bit8u bx_pic_c::IAC(void)
   Bit8u vector;
   Bit8u irq;
 
-  BX_SET_INTR(0);
+  BX_CLEAR_INTR();
   BX_PIC_THIS s.master_pic.INT = 0;
   // Check for spurious interrupt
   if (BX_PIC_THIS s.master_pic.irr == 0) {

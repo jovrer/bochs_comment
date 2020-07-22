@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: iodebug.cc 11146 2012-04-19 18:03:13Z vruppert $
+// $Id: iodebug.cc 13051 2017-01-28 09:52:09Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2009  The Bochs Project
+//  Copyright (C) 2001-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -35,7 +35,7 @@
 
 bx_iodebug_c *theIODebugDevice = NULL;
 
-int libiodebug_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libiodebug_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   theIODebugDevice = new bx_iodebug_c();
   bx_devices.pluginIODebug = theIODebugDevice;
@@ -43,7 +43,7 @@ int libiodebug_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, ch
   return(0); // Success
 }
 
-void libiodebug_LTX_plugin_fini(void)
+void CDECL libiodebug_LTX_plugin_fini(void)
 {
   bx_devices.pluginIODebug = &bx_devices.stubIODebug;
   delete theIODebugDevice;
@@ -199,7 +199,7 @@ void bx_iodebug_c::mem_write(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, v
     }
     bx_guard.interrupt_requested=1;
 #else
-    fprintf(stderr, "IODEBUG write to monitored memory area: %2i\t", area);
+    fprintf(stderr, "IODEBUG write to monitored memory area: %2u\t", area);
 
     if (cpu != NULL)
       fprintf(stderr, "by EIP:\t\t" FMT_ADDRX "\n\t", cpu->get_instruction_pointer());
@@ -262,7 +262,7 @@ void bx_iodebug_c::mem_read(BX_CPU_C *cpu, bx_phy_address addr, unsigned len, vo
     }
     bx_guard.interrupt_requested=1;
 #else
-    fprintf(stderr, "IODEBUG read at monitored memory area: %2i\t", area);
+    fprintf(stderr, "IODEBUG read at monitored memory area: %2u\t", area);
 
     if (cpu != NULL)
       fprintf(stderr, "by EIP:\t\t" FMT_ADDRX "\n\t", cpu->get_instruction_pointer());

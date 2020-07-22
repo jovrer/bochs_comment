@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: cdrom_osx.cc 11315 2012-08-05 18:13:38Z vruppert $
+// $Id: cdrom_osx.cc 13408 2017-12-22 08:35:04Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2011  The Bochs Project
+//  Copyright (C) 2002-2013  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -34,6 +34,7 @@
 #if BX_SUPPORT_CDROM
 
 #include "cdrom.h"
+#include "cdrom_osx.h"
 
 #define LOG_THIS /* no SMF tricks here, not needed */
 
@@ -188,13 +189,13 @@ static struct _CDTOC * ReadTOC(const char *devpath)
   CFDictionaryRef properties = 0;
   CFDataRef data = 0;
   mach_port_t port = 0;
-  char *devname;
+  const char *devname;
 
   if ((devname = strrchr(devpath, '/')) != NULL) {
     ++devname;
   }
   else {
-    devname = (char *) devpath;
+    devname = (const char *) devpath;
   }
 
   if (IOMasterPort(bootstrap_port, &port) != KERN_SUCCESS) {
@@ -278,34 +279,7 @@ Exit:
 }
 
 
-static unsigned int cdrom_count = 0;
-
-cdrom_interface::cdrom_interface(const char *dev)
-{
-  char prefix[6];
-
-  sprintf(prefix, "CD%d", ++cdrom_count);
-  put(prefix);
-  fd = -1; // File descriptor not yet allocated
-
-  if (dev == NULL) {
-    path = NULL;
-  } else {
-    path = strdup(dev);
-  }
-  using_file=0;
-}
-
-cdrom_interface::~cdrom_interface(void)
-{
-  if (fd >= 0)
-    close(fd);
-  if (path)
-    free(path);
-  BX_DEBUG(("Exit"));
-}
-
-bx_bool cdrom_interface::insert_cdrom(const char *dev)
+bx_bool cdrom_osx_c::insert_cdrom(const char *dev)
 {
   unsigned char buffer[BX_CD_FRAMESIZE];
   ssize_t ret;
@@ -313,7 +287,7 @@ bx_bool cdrom_interface::insert_cdrom(const char *dev)
   // Load CD-ROM. Returns 0 if CD is not ready.
   if (dev != NULL) path = strdup(dev);
   BX_INFO (("load cdrom with path=%s", path));
-  if(strcmp(path, "drive") == 0) {
+  if (strcmp(path, "drive") == 0) {
     mach_port_t masterPort = NULL;
     io_iterator_t mediaIterator;
     kern_return_t kernResult;
@@ -363,29 +337,7 @@ bx_bool cdrom_interface::insert_cdrom(const char *dev)
   return read_block(buffer, 0, 2048);
 }
 
-bx_bool cdrom_interface::start_cdrom()
-{
-  // Spin up the cdrom drive.
-
-  if (fd >= 0) {
-    BX_INFO(("start_cdrom: your OS is not supported yet"));
-    return 0; // OS not supported yet, return 0 always
-  }
-  return 0;
-}
-
-void cdrom_interface::eject_cdrom()
-{
-  // Logically eject the CD.  I suppose we could stick in
-  // some ioctl() calls to really eject the CD as well.
-
-  if (fd >= 0) {
-    close(fd);
-    fd = -1;
-  }
-}
-
-bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format)
+bx_bool cdrom_osx_c::read_toc(Bit8u* buf, int* length, bx_bool msf, int start_track, int format)
 {
   // Read CD TOC. Returns 0 if start track is out of bounds.
 
@@ -396,7 +348,7 @@ bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int star
 
   // This is a hack and works okay if there's one rom track only
   if (using_file || (format != 0)) {
-    return create_toc(buf, length, msf, start_track, format);
+    return cdrom_base_c::read_toc(buf, length, msf, start_track, format);
   }
   // all these implementations below are the platform-dependent code required
   // to read the TOC from a physical cdrom.
@@ -464,22 +416,13 @@ bx_bool cdrom_interface::read_toc(Bit8u* buf, int* length, bx_bool msf, int star
   }
 }
 
-Bit32u cdrom_interface::capacity()
+Bit32u cdrom_osx_c::capacity()
 {
   // Return CD-ROM capacity.  I believe you want to return
   // the number of blocks of capacity the actual media has.
 
   if (using_file) {
-    // return length of the image file
-    struct stat stat_buf;
-    int ret = fstat (fd, &stat_buf);
-    if (ret) {
-       BX_PANIC (("fstat on cdrom image returned err: %s", strerror(errno)));
-    }
-    if ((stat_buf.st_size % 2048) != 0)  {
-      BX_ERROR (("expected cdrom image to be a multiple of 2048 bytes"));
-    }
-    return (stat_buf.st_size / 2048);
+    return cdrom_base_c::capacity();
   }
 
 // Find the size of the first data track on the cd.  This has produced
@@ -501,7 +444,7 @@ Bit32u cdrom_interface::capacity()
 
   size_t toc_entries = (toc->length - 2) / sizeof(struct _CDTOC_Desc);
 
-  BX_DEBUG(("reading %d toc entries\n", toc_entries));
+  BX_DEBUG(("reading %d toc entries\n", (int)toc_entries));
 
   int start_sector = -1;
   int data_track = -1;
@@ -511,7 +454,7 @@ Bit32u cdrom_interface::capacity()
   // on how you look at it).  The difference in the sector numbers
   // is returned as the sized of the data track.
   for (int i=toc_entries - 1; i>=0; i--) {
-    BX_DEBUG(("session %d ctl_adr %d tno %d point %d lba %d z %d p lba %d\n",
+    BX_DEBUG(("session %d ctl_adr %d tno %d point %d lba %ld z %d p lba %ld\n",
              (int)toc->trackdesc[i].session,
              (int)toc->trackdesc[i].ctrl_adr,
              (int)toc->trackdesc[i].tno,
@@ -545,7 +488,7 @@ Bit32u cdrom_interface::capacity()
   }
 }
 
-bx_bool BX_CPP_AttrRegparmN(3) cdrom_interface::read_block(Bit8u* buf, Bit32u lba, int blocksize)
+bx_bool BX_CPP_AttrRegparmN(3) cdrom_osx_c::read_block(Bit8u* buf, Bit32u lba, int blocksize)
 {
   // Read a single block from the CD
 

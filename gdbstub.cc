@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: gdbstub.cc 11087 2012-03-11 18:12:50Z vruppert $
+// $Id: gdbstub.cc 13102 2017-03-06 21:30:05Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2002-2006  The Bochs Project Team
+//  Copyright (C) 2002-2017  The Bochs Project Team
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -33,6 +33,7 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include <netdb.h>
+#define closesocket(s)    close(s)
 #endif
 
 #define NEED_CPU_REG_SHORTCUTS 1
@@ -40,7 +41,6 @@
 #include "bochs.h"
 #include "param_names.h"
 #include "cpu/cpu.h"
-#include "iodev/iodev.h"
 
 #define LOG_THIS gdbstublog->
 #define IFDBG(x) x
@@ -242,7 +242,7 @@ static Bit32u registers[NUMREGS];
 #endif
 
 #define MAX_BREAKPOINTS (255)
-static unsigned breakpoints[MAX_BREAKPOINTS] = {0,};
+static Bit64u breakpoints[MAX_BREAKPOINTS] = {0,};
 static unsigned nr_breakpoints = 0;
 
 static int stub_trace_flag = 0;
@@ -259,11 +259,12 @@ int bx_gdbstub_check(unsigned int eip)
 {
   unsigned int i;
   unsigned char ch;
-  long arg;
   int r;
 #if defined(__CYGWIN__) || defined(__MINGW32__) || defined(_MSC_VER)
   fd_set fds;
   struct timeval tv = {0, 0};
+#else
+  long arg;
 #endif
 
   if (bx_enter_gdbstub)
@@ -277,12 +278,7 @@ int bx_gdbstub_check(unsigned int eip)
 
   if ((instr_count % 500) == 0)
   {
-#if !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(_MSC_VER)
-    arg = fcntl(socket_fd, F_GETFL);
-    fcntl(socket_fd, F_SETFL, arg | O_NONBLOCK);
-    r = recv(socket_fd, &ch, 1, 0);
-    fcntl(socket_fd, F_SETFL, arg);
-#else
+#if defined(__CYGWIN__) || defined(__MINGW32__) || defined(_MSC_VER)
     FD_ZERO(&fds);
     FD_SET(socket_fd, &fds);
     r = select(socket_fd + 1, &fds, NULL, NULL, &tv);
@@ -290,6 +286,11 @@ int bx_gdbstub_check(unsigned int eip)
     {
       r = recv(socket_fd, (char *)&ch, 1, 0);
     }
+#else
+    arg = fcntl(socket_fd, F_GETFL);
+    fcntl(socket_fd, F_SETFL, arg | O_NONBLOCK);
+    r = recv(socket_fd, &ch, 1, 0);
+    fcntl(socket_fd, F_SETFL, arg);
 #endif
     if (r == 1)
     {
@@ -318,7 +319,7 @@ int bx_gdbstub_check(unsigned int eip)
   return GDBSTUB_STOP_NO_REASON;
 }
 
-static int remove_breakpoint(unsigned addr, int len)
+static int remove_breakpoint(Bit64u addr, int len)
 {
   if (len != 1)
   {
@@ -329,7 +330,7 @@ static int remove_breakpoint(unsigned addr, int len)
   {
     if (breakpoints[i] == addr)
     {
-      BX_INFO(("Removing breakpoint at %x", addr));
+      BX_INFO(("Removing breakpoint at " FMT_ADDRX64, addr));
       breakpoints[i] = 0;
       return(1);
     }
@@ -337,11 +338,11 @@ static int remove_breakpoint(unsigned addr, int len)
   return(0);
 }
 
-static void insert_breakpoint(unsigned addr)
+static void insert_breakpoint(Bit64u addr)
 {
   unsigned int i;
 
-  BX_INFO(("setting breakpoint at %x", addr));
+  BX_INFO(("Setting breakpoint at " FMT_ADDRX64, addr));
 
   for (i = 0; i < (unsigned)MAX_BREAKPOINTS; i++)
   {
@@ -473,7 +474,7 @@ static void debug_loop(void)
         stub_trace_flag = 0;
         bx_cpu.cpu_loop();
 
-        DEV_vga_refresh();
+        SIM->refresh_vga();
 
         if (buffer[1] != 0)
         {
@@ -506,7 +507,7 @@ static void debug_loop(void)
         BX_INFO(("stepping"));
         stub_trace_flag = 1;
         bx_cpu.cpu_loop();
-        DEV_vga_refresh();
+        SIM->refresh_vga();
         stub_trace_flag = 0;
         BX_INFO(("stopped with %x", last_stop_reason));
         buf[0] = 'S';
@@ -575,7 +576,7 @@ static void debug_loop(void)
 
         addr = strtoull(&buffer[1], &ebuf, 16);
         len = strtoul(ebuf + 1, NULL, 16);
-        BX_INFO(("addr "FMT_ADDRX64" len %x", addr, len));
+        BX_INFO(("addr " FMT_ADDRX64 " len %x", addr, len));
 
         access_linear(addr, len, BX_READ, mem);
         mem2hex(mem, obuf, len);
@@ -596,7 +597,7 @@ static void debug_loop(void)
         ++ebuf;
         value = read_little_endian_hex(ebuf);
 
-        BX_INFO(("reg %d set to "FMT_ADDRX64, reg, value));
+        BX_INFO(("reg %d set to " FMT_ADDRX64, reg, value));
 #if BX_SUPPORT_X86_64 == 0
         switch (reg)
         {
@@ -871,7 +872,7 @@ static void wait_for_connect(int portn)
   {
     BX_PANIC(("Failed to accept on socket"));
   }
-  close(listen_socket_fd);
+  closesocket(listen_socket_fd);
 
   protoent = getprotobyname ("tcp");
   if (!protoent)
@@ -918,4 +919,8 @@ void bx_gdbstub_init(void)
 
   /* CPU loop */
   bx_cpu.cpu_loop();
+
+#ifdef WIN32
+  WSACleanup();
+#endif
 }

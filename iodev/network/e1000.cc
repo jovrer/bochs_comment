@@ -1,5 +1,5 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: e1000.cc 11382 2012-08-30 20:41:25Z vruppert $
+// $Id: e1000.cc 13497 2018-05-01 15:54:37Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
 //  Intel(R) 82540EM Gigabit Ethernet support (ported from QEMU)
@@ -12,7 +12,7 @@
 //  Copyright (c) 2007 Dan Aloni
 //  Copyright (c) 2004 Antony T Curtis
 //
-//  Copyright (C) 2011  The Bochs Project
+//  Copyright (C) 2011-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -296,7 +296,7 @@ void e1000_init_options(void)
     "enabled",
     "Enable Intel(R) Gigabit Ethernet emulation",
     "Enables the Intel(R) Gigabit Ethernet emulation",
-    0);
+    1);
   SIM->init_std_nic_options("Intel(R) Gigabit Ethernet", menu);
   enabled->set_dependent_list(menu->clone());
 }
@@ -310,6 +310,10 @@ Bit32s e1000_options_parser(const char *context, int num_params, char *params[])
     if (!SIM->get_param_bool("enabled", base)->get()) {
       SIM->get_param_enum("ethmod", base)->set_by_name("null");
     }
+    if (!SIM->get_param_string("mac", base)->isempty()) {
+      // MAC address is already initialized
+      valid |= 0x04;
+    }
     for (int i = 1; i < num_params; i++) {
       ret = SIM->parse_nic_params(context, params[i], base);
       if (ret > 0) {
@@ -319,12 +323,11 @@ Bit32s e1000_options_parser(const char *context, int num_params, char *params[])
     if (!SIM->get_param_bool("enabled", base)->get()) {
       if (valid == 0x04) {
         SIM->get_param_bool("enabled", base)->set(1);
-      } else if (valid < 0x80) {
-        BX_PANIC(("%s: 'e1000' directive incomplete (mac is required)", context));
       }
-    } else {
-      if (valid & 0x80) {
-        SIM->get_param_bool("enabled", base)->set(0);
+    }
+    if (valid < 0x80) {
+      if ((valid & 0x04) == 0) {
+        BX_PANIC(("%s: 'e1000' directive incomplete (mac is required)", context));
       }
     }
   } else {
@@ -335,13 +338,12 @@ Bit32s e1000_options_parser(const char *context, int num_params, char *params[])
 
 Bit32s e1000_options_save(FILE *fp)
 {
-  SIM->write_pci_nic_options(fp, (bx_list_c*) SIM->get_param(BXPN_E1000));
-  return 0;
+  return SIM->write_param_list(fp, (bx_list_c*) SIM->get_param(BXPN_E1000), NULL, 0);
 }
 
 // device plugin entry points
 
-int libe1000_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char *argv[])
+int CDECL libe1000_LTX_plugin_init(plugin_t *plugin, plugintype_t type)
 {
   theE1000Device = new bx_e1000_c();
   BX_REGISTER_DEVICE_DEVMODEL(plugin, type, theE1000Device, BX_PLUGIN_E1000);
@@ -352,7 +354,7 @@ int libe1000_LTX_plugin_init(plugin_t *plugin, plugintype_t type, int argc, char
   return 0; // Success
 }
 
-void libe1000_LTX_plugin_fini(void)
+void CDECL libe1000_LTX_plugin_fini(void)
 {
   SIM->unregister_addon_option("e1000");
   bx_list_c *menu = (bx_list_c*)SIM->get_param("network");
@@ -360,32 +362,17 @@ void libe1000_LTX_plugin_fini(void)
   delete theE1000Device;
 }
 
-// temporary helper functions 
-// we should use host from/to little endian conversion directly
+// macros and helper functions
 
-Bit16u cpu_to_le16(Bit16u value)
-{
-  Bit16u hvalue;
-
-  WriteHostWordToLittleEndian(&hvalue, value);
-  return hvalue;
-}
-
-Bit32u cpu_to_le32(Bit32u value)
-{
-  Bit32u hvalue;
-
-  WriteHostDWordToLittleEndian(&hvalue, value);
-  return hvalue;
-}
-
-Bit64u cpu_to_le64(Bit64u value)
-{
-  Bit64u hvalue;
-
-  WriteHostQWordToLittleEndian(&hvalue, value);
-  return hvalue;
-}
+#if defined (BX_LITTLE_ENDIAN)
+#define cpu_to_le16(val) (val)
+#define cpu_to_le32(val) (val)
+#define cpu_to_le64(val) (val)
+#else
+#define cpu_to_le16(val) bx_bswap16(val)
+#define cpu_to_le32(val) bx_bswap32(val)
+#define cpu_to_le64(val) bx_bswap64(val)
+#endif
 
 #define le16_to_cpu  cpu_to_le16
 #define le32_to_cpu  cpu_to_le32
@@ -443,7 +430,7 @@ void bx_e1000_c::init(void)
   Bit8u macaddr[6];
   int i;
   Bit16u checksum = 0;
-  const char *bootrom;
+  bx_param_string_c *bootrom;
 
   // Read in values from config interface
   bx_list_c *base = (bx_list_c*) SIM->get_param(BXPN_E1000);
@@ -454,7 +441,7 @@ void bx_e1000_c::init(void)
     ((bx_param_bool_c*)((bx_list_c*)SIM->get_param(BXPN_PLUGIN_CTRL))->get_by_name("e1000"))->set(0);
     return;
   }
-  memcpy(macaddr, SIM->get_param_string("macaddr", base)->getptr(), 6);
+  memcpy(macaddr, SIM->get_param_string("mac", base)->getptr(), 6);
 
   memcpy(BX_E1000_THIS s.eeprom_data, e1000_eeprom_template,
          sizeof(e1000_eeprom_template));
@@ -470,23 +457,23 @@ void bx_e1000_c::init(void)
 
   BX_E1000_THIS s.devfunc = 0x00;
   DEV_register_pci_handlers(this, &BX_E1000_THIS s.devfunc, BX_PLUGIN_E1000,
-                            "Experimental Intel(R) Gigabit Ethernet");
+                            "Intel(R) Gigabit Ethernet");
 
-  for (unsigned i=0; i<256; i++) {
-    BX_E1000_THIS pci_conf[i] = 0x0;
-  }
-  BX_E1000_THIS pci_base_address[0] = 0;
-  BX_E1000_THIS pci_base_address[1] = 0;
+  // initialize readonly registers
+  init_pci_conf(0x8086, 0x100e, 0x03, 0x020000, 0x00, BX_PCI_INTA);
+
+  BX_E1000_THIS init_bar_mem(0, 0x20000, mem_read_handler, mem_write_handler);
+  BX_E1000_THIS init_bar_io(1, 64, read_handler, write_handler, &e1000_iomask[0]);
   BX_E1000_THIS pci_rom_address = 0;
-  bootrom = SIM->get_param_string("bootrom", base)->getptr();
-  if (strlen(bootrom) > 0) {
-    BX_E1000_THIS load_pci_rom(bootrom);
+  BX_E1000_THIS pci_rom_read_handler = mem_read_handler;
+  bootrom = SIM->get_param_string("bootrom", base);
+  if (!bootrom->isempty()) {
+    BX_E1000_THIS load_pci_rom(bootrom->getptr());
   }
 
   if (BX_E1000_THIS s.tx_timer_index == BX_NULL_TIMER_HANDLE) {
     BX_E1000_THIS s.tx_timer_index =
-      bx_pc_system.register_timer(this, tx_timer_handler, 0,
-                                  0, 0, "e1000"); // one-shot, inactive
+      DEV_register_timer(this, tx_timer_handler, 0, 0, 0, "e1000"); // one-shot, inactive
   }
   BX_E1000_THIS s.statusbar_id = bx_gui->register_statusitem("E1000", 1);
 
@@ -505,15 +492,8 @@ void bx_e1000_c::reset(unsigned type)
     unsigned      addr;
     unsigned char val;
   } reset_vals[] = {
-    { 0x00, 0x86 }, { 0x01, 0x80 },
-    { 0x02, 0x0e }, { 0x03, 0x10 },
     { 0x04, 0x03 }, { 0x05, 0x00 }, // command io / memory
     { 0x06, 0x00 }, { 0x07, 0x00 }, // status
-    { 0x08, 0x03 },                 // revision number
-    { 0x09, 0x00 },                 // interface
-    { 0x0a, 0x00 },                 // class_sub
-    { 0x0b, 0x02 },                 // class_base Network Controller
-    { 0x0e, 0x00 },                 // header type generic
     // address space 0x10 - 0x13
     { 0x10, 0x00 }, { 0x11, 0x00 },
     { 0x12, 0x00 }, { 0x13, 0x00 },
@@ -521,8 +501,6 @@ void bx_e1000_c::reset(unsigned type)
     { 0x14, 0x01 }, { 0x15, 0x00 },
     { 0x16, 0x00 }, { 0x17, 0x00 },
     { 0x3c, 0x00 },                 // IRQ
-    { 0x3d, BX_PCI_INTA },          // INT
-
   };
   for (i = 0; i < sizeof(reset_vals) / sizeof(*reset_vals); ++i) {
       BX_E1000_THIS pci_conf[reset_vals[i].addr] = reset_vals[i].val;
@@ -584,16 +562,8 @@ void bx_e1000_c::register_state(void)
   BXRS_DEC_PARAM_FIELD(list, rxbuf_min_shift, BX_E1000_THIS s.rxbuf_min_shift);
   BXRS_PARAM_BOOL(list, check_rxov, BX_E1000_THIS s.check_rxov);
   bx_list_c *tx = new bx_list_c(list, "tx", "");
-  bx_list_c *header = new bx_list_c(tx, "header", "");
-  for (i = 0; i < 256; i++) {
-    sprintf(pname, "0x%02x", i);
-    new bx_shadow_num_c(header, pname, &BX_E1000_THIS s.tx.header[i], BASE_HEX);
-  }
-  bx_list_c *vlh = new bx_list_c(tx, "vlan_header", "");
-  for (i = 0; i < 4; i++) {
-    sprintf(pname, "0x%02x", i);
-    new bx_shadow_num_c(vlh, pname, &BX_E1000_THIS s.tx.vlan_header[i], BASE_HEX);
-  }
+  new bx_shadow_data_c(tx, "header", BX_E1000_THIS s.tx.header, 256, 1);
+  new bx_shadow_data_c(tx, "vlan_header", BX_E1000_THIS s.tx.vlan_header, 4, 1);
   new bx_shadow_data_c(list, "tx_vlan_data", BX_E1000_THIS s.tx.vlan, 0x10004);
   BXRS_DEC_PARAM_FIELD(tx, size, BX_E1000_THIS s.tx.size);
   BXRS_DEC_PARAM_FIELD(tx, sum_needed, BX_E1000_THIS s.tx.sum_needed);
@@ -625,34 +595,14 @@ void bx_e1000_c::register_state(void)
 
 void bx_e1000_c::after_restore_state(void)
 {
-  if (DEV_pci_set_base_mem(BX_E1000_THIS_PTR, mem_read_handler, mem_write_handler,
-                           &BX_E1000_THIS pci_base_address[0],
-                           &BX_E1000_THIS pci_conf[0x10],
-                           0x20000)) {
-    BX_INFO(("new mem base address: 0x%08x", BX_E1000_THIS pci_base_address[0]));
-  }
-  if (DEV_pci_set_base_io(BX_E1000_THIS_PTR, read_handler, write_handler,
-                          &BX_E1000_THIS pci_base_address[1],
-                          &BX_E1000_THIS pci_conf[0x14],
-                          64, &e1000_iomask[0], "e1000")) {
-    BX_INFO(("new i/o base address: 0x%04x", BX_E1000_THIS pci_base_address[1]));
-  }
-  if (BX_E1000_THIS pci_rom_size > 0) {
-    if (DEV_pci_set_base_mem(BX_E1000_THIS_PTR, mem_read_handler,
-                             mem_write_handler,
-                             &BX_E1000_THIS pci_rom_address,
-                             &BX_E1000_THIS pci_conf[0x30],
-                             BX_E1000_THIS pci_rom_size)) {
-      BX_INFO(("new ROM address: 0x%08x", BX_E1000_THIS pci_rom_address));
-    }
-  }
+  bx_pci_device_c::after_restore_pci_state(mem_read_handler);
 }
 
 bx_bool bx_e1000_c::mem_read_handler(bx_phy_address addr, unsigned len,
                                      void *data, void *param)
 {
   Bit32u *data_ptr = (Bit32u*) data;
-  Bit8u  *data8_ptr;
+  Bit8u  *data8_ptr = (Bit8u*) data;
   Bit32u offset, value = 0;
   Bit16u index;
 
@@ -748,14 +698,16 @@ bx_bool bx_e1000_c::mem_read_handler(bx_phy_address addr, unsigned len,
           BX_DEBUG(("mem read from offset 0x%08x returns 0", offset));
         }
     }
+    BX_DEBUG(("val =  0x%08x", value));
+    *data_ptr = value;
   } else if ((len == 1) && (offset == E1000_STATUS)) {
     BX_DEBUG(("mem read from offset 0x%08x with len 1 -", offset));
     value = BX_E1000_THIS s.mac_reg[index] & 0xff;
+    BX_DEBUG(("val =  0x%02x", (Bit8u)value));
+    *data8_ptr = (Bit8u)value;
   } else {
     BX_DEBUG(("mem read from offset 0x%08x with len %d not implemented", offset, len));
   }
-  BX_DEBUG(("val =  0x%08x", value));
-  *data_ptr = value;
   return 1;
 }
 
@@ -765,14 +717,6 @@ bx_bool bx_e1000_c::mem_write_handler(bx_phy_address addr, unsigned len,
   Bit32u value = *(Bit32u*) data;
   Bit32u offset;
   Bit16u index;
-
-  if (BX_E1000_THIS pci_rom_size > 0) {
-    Bit32u mask = (BX_E1000_THIS pci_rom_size - 1);
-    if ((addr & ~mask) == BX_E1000_THIS pci_rom_address) {
-      BX_INFO(("write to ROM ignored (addr=0x%08x len=%d)", (Bit32u)addr, len));
-      return 1;
-    }
-  }
 
   offset = addr & 0x1ffff;
   index = (offset >> 2);
@@ -870,7 +814,7 @@ Bit32u bx_e1000_c::read(Bit32u address, unsigned io_len)
 #endif // !BX_USE_E1000_SMF
   Bit8u offset;
 
-  offset = address - BX_E1000_THIS pci_base_address[1];
+  offset = address - BX_E1000_THIS pci_bar[1].addr;
 
   BX_ERROR(("register read from offset 0x%02x returns 0", offset));
 
@@ -895,7 +839,7 @@ void bx_e1000_c::write(Bit32u address, Bit32u value, unsigned io_len)
 #endif // !BX_USE_E1000_SMF
   Bit8u  offset;
 
-  offset = address - BX_E1000_THIS pci_base_address[1];
+  offset = address - BX_E1000_THIS pci_bar[1].addr;
 
   BX_ERROR(("register write to offset 0x%02x ignored - value = 0x%08x", offset, value));
 }
@@ -1089,7 +1033,7 @@ void bx_e1000_c::xmit_seg()
     BX_DEBUG(("frames %d size %d ipcss %d", frames, tp->size, css));
     if (tp->ip) { // IPv4
       put_net2(tp->data+css+2, tp->size - css);
-      put_net2(tp->data+css+4, get_net2(tp->data+css+4+frames));
+      put_net2(tp->data+css+4, get_net2(tp->data+css+4)+frames);
     } else // IPv6
       put_net2(tp->data+css+4, tp->size - css);
     css = tp->tucss;
@@ -1098,7 +1042,7 @@ void bx_e1000_c::xmit_seg()
     if (tp->tcp) {
       sofar = frames * tp->mss;
       put_net4(tp->data+css+4, // seq
-               get_net4(tp->data+css+4+sofar));
+               get_net4(tp->data+css+4)+sofar);
       if (tp->paylen - sofar > tp->mss)
         tp->data[css + 13] &= ~9; // PSH, FIN
     } else // UDP
@@ -1504,37 +1448,15 @@ void bx_e1000_c::rx_frame(const void *buf, unsigned buf_size)
 }
 
 
-// pci configuration space read callback handler
-Bit32u bx_e1000_c::pci_read_handler(Bit8u address, unsigned io_len)
-{
-  Bit32u value = 0;
-
-  for (unsigned i=0; i<io_len; i++) {
-    value |= (BX_E1000_THIS pci_conf[address+i] << (i*8));
-  }
-
-  if (io_len == 1)
-    BX_DEBUG(("read  PCI register 0x%02x value 0x%02x", address, value));
-  else if (io_len == 2)
-    BX_DEBUG(("read  PCI register 0x%02x value 0x%04x", address, value));
-  else if (io_len == 4)
-    BX_DEBUG(("read  PCI register 0x%02x value 0x%08x", address, value));
-
-  return value;
-}
-
-
 // pci configuration space write callback handler
 void bx_e1000_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
 {
   Bit8u value8, oldval;
-  bx_bool baseaddr0_change = 0;
-  bx_bool baseaddr1_change = 0;
-  bx_bool romaddr_change = 0;
 
   if ((address >= 0x18) && (address < 0x30))
     return;
 
+  BX_DEBUG_PCI_WRITE(address, value, io_len);
   for (unsigned i=0; i<io_len; i++) {
     value8 = (value >> (i*8)) & 0xFF;
     oldval = BX_E1000_THIS pci_conf[address+i];
@@ -1542,75 +1464,11 @@ void bx_e1000_c::pci_write_handler(Bit8u address, Bit32u value, unsigned io_len)
       case 0x04:
         value8 &= 0x07;
         break;
-      case 0x3c:
-        if (value8 != oldval) {
-          BX_INFO(("new irq line = %d", value8));
-        }
-        break;
-      case 0x10:
-        value8 = (value8 & 0xf0) | (oldval & 0x0f);
-      case 0x11:
-      case 0x12:
-      case 0x13:
-        baseaddr0_change |= (value8 != oldval);
-        break;
-      case 0x14:
-        value8 = (value8 & 0xf0) | (oldval & 0x0f);
-      case 0x15:
-      case 0x16:
-      case 0x17:
-        baseaddr1_change |= (value8 != oldval);
-        break;
-      case 0x30:
-      case 0x31:
-      case 0x32:
-      case 0x33:
-        if (BX_E1000_THIS pci_rom_size > 0) {
-          if ((address+i) == 0x30) {
-            value8 &= 0x01;
-          } else if ((address+i) == 0x31) {
-            value8 &= 0xfc;
-          }
-          romaddr_change = 1;
-          break;
-        }
       default:
         value8 = oldval;
     }
     BX_E1000_THIS pci_conf[address+i] = value8;
   }
-  if (baseaddr0_change) {
-    if (DEV_pci_set_base_mem(BX_E1000_THIS_PTR, mem_read_handler, mem_write_handler,
-                             &BX_E1000_THIS pci_base_address[0],
-                             &BX_E1000_THIS pci_conf[0x10],
-                             0x20000)) {
-      BX_INFO(("new mem base address: 0x%08x", BX_E1000_THIS pci_base_address[0]));
-    }
-  }
-  if (baseaddr1_change) {
-    if (DEV_pci_set_base_io(BX_E1000_THIS_PTR, read_handler, write_handler,
-                            &BX_E1000_THIS pci_base_address[1],
-                            &BX_E1000_THIS pci_conf[0x14],
-                            64, &e1000_iomask[0], "e1000")) {
-      BX_INFO(("new i/o base address: 0x%04x", BX_E1000_THIS pci_base_address[1]));
-    }
-  }
-  if (romaddr_change) {
-    if (DEV_pci_set_base_mem(BX_E1000_THIS_PTR, mem_read_handler,
-                             mem_write_handler,
-                             &BX_E1000_THIS pci_rom_address,
-                             &BX_E1000_THIS pci_conf[0x30],
-                             BX_E1000_THIS pci_rom_size)) {
-      BX_INFO(("new ROM address: 0x%08x", BX_E1000_THIS pci_rom_address));
-    }
-  }
-
-  if (io_len == 1)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%02x", address, value));
-  else if (io_len == 2)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%04x", address, value));
-  else if (io_len == 4)
-    BX_DEBUG(("write PCI register 0x%02x value 0x%08x", address, value));
 }
 
 #endif // BX_SUPPORT_PCI && BX_SUPPORT_E1000

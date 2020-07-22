@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: instrument.cc 11295 2012-07-24 15:32:55Z sshwarts $
+// $Id: instrument.cc 12655 2015-02-19 20:23:08Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//   Copyright (c) 2006-2012 Stanislav Shwartsman
+//   Copyright (c) 2006-2015 Stanislav Shwartsman
 //          Written by Stanislav Shwartsman [sshwarts at sourceforge net]
 //
 //  This library is free software; you can redistribute it and/or
@@ -41,7 +41,7 @@ void bx_instr_initialize(unsigned cpu)
 
   icpu[cpu].set_cpu_id(cpu);
 
-  fprintf(stderr, "Initialize cpu %d\n", cpu);
+  fprintf(stderr, "Initialize cpu %u\n", cpu);
 }
 
 void bxInstrumentation::bx_instr_reset(unsigned type)
@@ -61,8 +61,8 @@ void bxInstrumentation::bx_print_instruction(void)
     unsigned n;
 
     fprintf(stderr, "----------------------------------------------------------\n");
-    fprintf(stderr, "CPU: %d: %s\n", cpu_id, disasm_tbuf);
-    fprintf(stderr, "LEN: %d\tBYTES: ", opcode_length);
+    fprintf(stderr, "CPU %d: %s\n", cpu_id, disasm_tbuf);
+    fprintf(stderr, "LEN %d\tBYTES: ", opcode_length);
     for(n=0;n < opcode_length;n++) fprintf(stderr, "%02x", opcode[n]);
     if(is_branch)
     {
@@ -142,7 +142,7 @@ void bxInstrumentation::bx_instr_ucnear_branch(unsigned what, bx_address branch_
   branch_taken(new_eip);
 }
 
-void bxInstrumentation::bx_instr_far_branch(unsigned what, Bit16u new_cs, bx_address new_eip)
+void bxInstrumentation::bx_instr_far_branch(unsigned what, Bit16u prev_cs, bx_address prev_eip, Bit16u new_cs, bx_address new_eip)
 {
   branch_taken(new_eip);
 }
@@ -171,7 +171,7 @@ void bxInstrumentation::bx_instr_hwinterrupt(unsigned vector, Bit16u cs, bx_addr
   }
 }
 
-void bxInstrumentation::bx_instr_lin_access(bx_address lin, bx_phy_adress phy, unsigned len, unsigned rw)
+void bxInstrumentation::bx_instr_lin_access(bx_address lin, bx_phy_address phy, unsigned len, unsigned memtype, unsigned rw)
 {
   if(!active || !ready) return;
 
@@ -180,6 +180,7 @@ void bxInstrumentation::bx_instr_lin_access(bx_address lin, bx_phy_adress phy, u
     data_access[num_data_accesses].paddr = phy;
     data_access[num_data_accesses].rw    = rw;
     data_access[num_data_accesses].size  = len;
+    data_access[num_data_accesses].memtype = memtype;
     num_data_accesses++;
   }
 }

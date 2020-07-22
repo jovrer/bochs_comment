@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: soft_int.cc 11313 2012-08-05 13:52:40Z sshwarts $
+// $Id: soft_int.cc 13466 2018-02-16 07:57:32Z sshwarts $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2018  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -24,34 +24,34 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GwMa(bxInstruction_c *i)
 {
   Bit16s op1_16 = BX_READ_16BIT_REG(i->dst());
 
-  Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  Bit32u eaddr = (Bit32u) BX_CPU_RESOLVE_ADDR_32(i);
 
   Bit16s bound_min = (Bit16s) read_virtual_word_32(i->seg(), eaddr);
   Bit16s bound_max = (Bit16s) read_virtual_word_32(i->seg(), (eaddr+2) & i->asize_mask());
 
   if (op1_16 < bound_min || op1_16 > bound_max) {
-    BX_INFO(("BOUND_GdMa: fails bounds test"));
+    BX_DEBUG(("%s: fails bounds test", i->getIaOpcodeNameShort()));
     exception(BX_BR_EXCEPTION, 0);
   }
 
   BX_NEXT_INSTR(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
 {
   Bit32s op1_32 = BX_READ_32BIT_REG(i->dst());
 
-  Bit32u eaddr = (Bit32u) BX_CPU_CALL_METHODR(i->ResolveModrm, (i));
+  Bit32u eaddr = (Bit32u) BX_CPU_RESOLVE_ADDR_32(i);
 
   Bit32s bound_min = (Bit32s) read_virtual_dword_32(i->seg(), eaddr);
   Bit32s bound_max = (Bit32s) read_virtual_dword_32(i->seg(), (eaddr+4) & i->asize_mask());
 
   if (op1_32 < bound_min || op1_32 > bound_max) {
-    BX_INFO(("BOUND_GdMa: fails bounds test"));
+    BX_DEBUG(("%s: fails bounds test", i->getIaOpcodeNameShort()));
     exception(BX_BR_EXCEPTION, 0);
   }
 
@@ -60,8 +60,10 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::BOUND_GdMa(bxInstruction_c *i)
 
 // This is an undocumented instrucion (opcode 0xf1) which
 // is useful for an ICE system
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT1(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INT1(bxInstruction_c *i)
 {
+  BX_INSTR_FAR_BRANCH_ORIGIN();
+
 #if BX_SUPPORT_VMX
   VMexit_Event(BX_PRIVILEGED_SOFTWARE_INTERRUPT, 1, 0, 0);
 #endif
@@ -81,17 +83,17 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT1(bxInstruction_c *i)
   // interrupt is not RSP safe
   interrupt(1, BX_PRIVILEGED_SOFTWARE_INTERRUPT, 0, 0);
 
-  BX_CPU_THIS_PTR EXT = 0;
-
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
-                      EIP);
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT3(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INT3(bxInstruction_c *i)
 {
+  BX_INSTR_FAR_BRANCH_ORIGIN();
+
   // INT 3 is not IOPL sensitive
 
 #if BX_SUPPORT_VMX
@@ -110,16 +112,18 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT3(bxInstruction_c *i)
   interrupt(3, BX_SOFTWARE_EXCEPTION, 0, 0);
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
-                      EIP);
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 
   BX_NEXT_TRACE(i);
 }
 
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
 {
   Bit8u vector = i->Ib();
+
+  BX_INSTR_FAR_BRANCH_ORIGIN();
 
 #if BX_SUPPORT_VMX
   VMexit_Event(BX_SOFTWARE_INTERRUPT, vector, 0, 0);
@@ -127,7 +131,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
 
 #if BX_SUPPORT_SVM
   if (BX_CPU_THIS_PTR in_svm_guest) {
-    if (SVM_INTERCEPT(SVM_INTERCEPT0_SOFTINT)) Svm_Vmexit(SVM_VMEXIT_SOFTWARE_INTERRUPT);
+    if (SVM_INTERCEPT(SVM_INTERCEPT0_SOFTINT))
+      Svm_Vmexit(SVM_VMEXIT_SOFTWARE_INTERRUPT, BX_SUPPORT_SVM_EXTENSION(BX_CPUID_SVM_DECODE_ASSIST) ? vector : 0);
   }
 #endif
 
@@ -144,15 +149,16 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INT_Ib(bxInstruction_c *i)
   interrupt(vector, BX_SOFTWARE_INTERRUPT, 0, 0);
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
-                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
-                      EIP);
+                      FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
+                      BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
 
   BX_NEXT_TRACE(i);
 }
 
-BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INTO(bxInstruction_c *i)
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::INTO(bxInstruction_c *i)
 {
   if (get_OF()) {
+    BX_INSTR_FAR_BRANCH_ORIGIN();
 
 #if BX_SUPPORT_VMX
     VMexit_Event(BX_SOFTWARE_EXCEPTION, 4, 0, 0);
@@ -170,8 +176,8 @@ BX_INSF_TYPE BX_CPP_AttrRegparmN(1) BX_CPU_C::INTO(bxInstruction_c *i)
     interrupt(4, BX_SOFTWARE_EXCEPTION, 0, 0);
 
     BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_INT,
-                        BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value,
-                        EIP);
+                        FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
+                        BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
   }
 
   BX_NEXT_TRACE(i);

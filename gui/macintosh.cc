@@ -1,8 +1,8 @@
 /////////////////////////////////////////////////////////////////////////
-// $Id: macintosh.cc 11224 2012-06-21 17:33:37Z vruppert $
+// $Id: macintosh.cc 13042 2017-01-15 11:44:43Z vruppert $
 /////////////////////////////////////////////////////////////////////////
 //
-//  Copyright (C) 2001-2012  The Bochs Project
+//  Copyright (C) 2001-2017  The Bochs Project
 //
 //  This library is free software; you can redistribute it and/or
 //  modify it under the terms of the GNU Lesser General Public
@@ -129,7 +129,7 @@ Point                prevPt;
 unsigned             width, height, gMinTop, gMaxTop, gLeft;
 GWorldPtr            gOffWorld;
 Ptr                  gMyBuffer;
-static unsigned      vga_bpp=8;
+static unsigned      disp_bpp=8;
 static EventModifiers oldMods = 0;
 static unsigned int text_rows=25, text_cols=80;
 
@@ -183,7 +183,6 @@ void CreateVGAFont(void);
 BitMap *CreateBitMap(unsigned width,  unsigned height);
 PixMapHandle CreatePixMap(unsigned left, unsigned top, unsigned width,
         unsigned height, unsigned depth, CTabHandle clut);
-unsigned char reverse_bitorder(unsigned char);
 
 //this routine moves the initial window position so that it is entirely onscreen
 //it is needed for os 8.x with appearance managaer
@@ -247,14 +246,13 @@ void CreateTile(void)
   CGrafPtr  savePort;
   OSErr     err;
   unsigned  long p_f;
-  long      theRowBytes = ((((long) (vga_bpp==24?32:(((vga_bpp+1)>>1)<<1)) * ((long) (srcTileRect.right-srcTileRect.left)) + 31) >> 5) << 2);
+  long      theRowBytes = ((((long) (disp_bpp==24?32:(((disp_bpp+1)>>1)<<1)) * ((long) (srcTileRect.right-srcTileRect.left)) + 31) >> 5) << 2);
 
 //if (SIM->get_param_bool(BXPN_PRIVATE_COLORMAP)->get())
 //{
 
   GetGWorld(&savePort, &saveDevice);
-  switch(vga_bpp)
-  {
+  switch (disp_bpp) {
       case 1:
         p_f = k1MonochromePixelFormat;
         break;
@@ -283,7 +281,7 @@ void CreateTile(void)
 
   BX_ASSERT((gMyBuffer = (Ptr)malloc(theRowBytes * (srcTileRect.bottom - srcTileRect.top))) != NULL);
   err = QTNewGWorldFromPtr(&gOffWorld, p_f,
-      &srcTileRect, vga_bpp>8 ? NULL : gCTable, NULL, keepLocal, gMyBuffer, theRowBytes);
+      &srcTileRect, disp_bpp>8 ? NULL : gCTable, NULL, keepLocal, gMyBuffer, theRowBytes);
   if (err != noErr || gOffWorld == NULL)
     BX_PANIC(("mac: can't create gOffWorld; err=%hd", err));
 
@@ -382,22 +380,11 @@ void CreateWindows(void)
   SetPort(win);
 }
 
-// ::SPECIFIC_INIT()
-//
-// Called from gui.cc, once upon program startup, to allow for the
-// specific GUI code (X11, Win32, ...) to be initialized.
-//
-// argc, argv: not used right now, but the intention is to pass native GUI
-//     specific options from the command line.  (X11 options, Win32 options,...)
-//
-// headerbar_y:  A headerbar (toolbar) is display on the top of the
-//     VGA window, showing floppy status, and other information.  It
-//     always assumes the width of the current VGA mode width, but
-//     it's height is defined by this parameter.
+// MACINTOSH implementation of the bx_gui_c methods (see nogui.cc for details)
 
 void bx_macintosh_gui_c::specific_init(int argc, char **argv, unsigned headerbar_y)
 {
-  put("MGUI");
+  put("MACGUI");
   InitToolbox();
 
   //SouixWin = FrontWindow();
@@ -724,12 +711,6 @@ void UpdateWindow(WindowPtr window)
   SetPort(oldPort);
 }
 
-// ::HANDLE_EVENTS()
-//
-// Called periodically (vga_update_interval in .bochsrc) so the
-// the gui code can poll for keyboard, mouse, and other
-// relevant events.
-
 void bx_macintosh_gui_c::handle_events(void)
 {
   EventRecord event;
@@ -831,21 +812,11 @@ void bx_macintosh_gui_c::handle_events(void)
   SetPort(oldport);
 }
 
-// ::FLUSH()
-//
-// Called periodically, requesting that the gui code flush all pending
-// screen update requests.
-
 void bx_macintosh_gui_c::flush(void)
 {
   // an opportunity to make the Window Manager happy.
   // not needed on the macintosh....
 }
-
-// ::CLEAR_SCREEN()
-//
-// Called to request that the VGA region is cleared.    Don't
-// clear the area that defines the headerbar.
 
 void bx_macintosh_gui_c::clear_screen(void)
 {
@@ -856,25 +827,6 @@ void bx_macintosh_gui_c::clear_screen(void)
 
   FillRect(&win->portRect, &qd.black);
 }
-
-// ::TEXT_UPDATE()
-//
-// Called in a VGA text mode, to update the screen with
-// new content.
-//
-// old_text: array of character/attributes making up the contents
-//           of the screen from the last call.  See below
-// new_text: array of character/attributes making up the current
-//           contents, which should now be displayed.  See below
-//
-// format of old_text & new_text: each is tm_info->line_offset*text_rows
-//     bytes long. Each character consists of 2 bytes.  The first by is
-//     the character value, the second is the attribute byte.
-//
-// cursor_x: new x location of cursor
-// cursor_y: new y location of cursor
-// tm_info:  this structure contains information for additional
-//           features in text mode (cursor shape, line offset,...)
 
 void bx_macintosh_gui_c::text_update(Bit8u *old_text, Bit8u *new_text,
                  unsigned long cursor_x, unsigned long cursor_y,
@@ -960,14 +912,7 @@ int bx_macintosh_gui_c::set_clipboard_text(char *text_snapshot, Bit32u len)
   return 0;
 }
 
-// ::PALETTE_CHANGE()
-//
-// Allocate a color in the native GUI, for this color, and put
-// it in the colormap location 'index'.
-// returns: 0=no screen update needed (color map change has direct effect)
-//          1=screen updated needed (redraw using current colormap)
-
-bx_bool bx_macintosh_gui_c::palette_change(unsigned index, unsigned red, unsigned green, unsigned blue)
+bx_bool bx_macintosh_gui_c::palette_change(Bit8u index, Bit8u red, Bit8u green, Bit8u blue)
 {
   PaletteHandle thePal, oldpal;
   GDHandle  saveDevice;
@@ -1016,21 +961,6 @@ bx_bool bx_macintosh_gui_c::palette_change(unsigned index, unsigned red, unsigne
   return((**gTile).pixelType != RGBDirect);
 }
 
-// ::GRAPHICS_TILE_UPDATE()
-//
-// Called to request that a tile of graphics be drawn to the
-// screen, since info in this region has changed.
-//
-// tile: array of 8bit values representing a block of pixels with
-//       dimension equal to the 'x_tilesize' & 'y_tilesize' members.
-//       Each value specifies an index into the
-//       array of colors you allocated for ::palette_change()
-// x0: x origin of tile
-// y0: y origin of tile
-//
-// note: origin of tile and of window based on (0,0) being in the upper
-//       left of the window.
-
 void bx_macintosh_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned y0)
 {
   Rect      destRect;
@@ -1051,22 +981,19 @@ void bx_macintosh_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned
   //(**gTile).baseAddr = (Ptr)tile;
   if ((theBaseAddr = GetPixBaseAddr(gTile)) == NULL)
     BX_PANIC(("mac: gTile has NULL baseAddr (offscreen buffer purged)"));
-  else if (vga_bpp == 24 || vga_bpp == 32)
-  {
-    for (unsigned iY = 0; iY < (srcTileRect.bottom-srcTileRect.top); iY++)
-    {
+  else if (disp_bpp == 24 || disp_bpp == 32) {
+    for (unsigned iY = 0; iY < (srcTileRect.bottom-srcTileRect.top); iY++) {
       Bit8u *iA = ((Bit8u *)theBaseAddr) + iY * GetPixRowBytes(gTile);
-      for (unsigned iX = 0; iX < (srcTileRect.right-srcTileRect.left); iX++)
-      {
-        iA[iX*4 + 3] = tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*(vga_bpp>>3)];
-        iA[iX*4 + 2] = tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*(vga_bpp>>3) + 1];
-        iA[iX*4 + 1] = tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*(vga_bpp>>3) + 2];
-        iA[iX*4] = vga_bpp == 24 ? 0 : tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*4 + 3];
+      for (unsigned iX = 0; iX < (srcTileRect.right-srcTileRect.left); iX++) {
+        iA[iX*4 + 3] = tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*(disp_bpp>>3)];
+        iA[iX*4 + 2] = tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*(disp_bpp>>3) + 1];
+        iA[iX*4 + 1] = tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*(disp_bpp>>3) + 2];
+        iA[iX*4] = disp_bpp == 24 ? 0 : tile[((srcTileRect.right-srcTileRect.left)*iY+iX)*4 + 3];
       }
     }
-  }
-  else
+  } else {
     BlockMoveData(tile, theBaseAddr, (srcTileRect.bottom-srcTileRect.top) * GetPixRowBytes(gTile));
+  }
   RGBForeColor(&black);
   RGBBackColor(&white);
   CopyBits(GetPortBitMapForCopyBits(gOffWorld), &WINBITMAP(win),
@@ -1078,33 +1005,24 @@ void bx_macintosh_gui_c::graphics_tile_update(Bit8u *tile, unsigned x0, unsigned
 //SetGWorld(savePort, saveDevice);
 }
 
-// ::DIMENSION_UPDATE()
-//
-// Called when the VGA mode changes it's X,Y dimensions.
-// Resize the window to this size, but you need to add on
-// the height of the headerbar to the Y value.
-//
-// x: new VGA x size
-// y: new VGA y size (add headerbar_y parameter from ::specific_init().
-// fheight: new VGA character height in text mode
-// fwidth : new VGA character width in text mode
-// bpp : bits per pixel in graphics mode
-
 void bx_macintosh_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheight, unsigned fwidth, unsigned bpp)
 {
   if ((bpp != 1) && (bpp != 2) && (bpp != 4) && (bpp != 8) && (bpp != 15) && (bpp != 16) && (bpp != 24) && (bpp != 32)) {
     BX_PANIC(("%d bpp graphics mode not supported yet", bpp));
   }
-  if (bpp != vga_bpp)
-  {
+  guest_textmode = (fheight > 0);
+  guest_xres = x;
+  guest_yres = y;
+  guest_bpp = bpp;
+  if (bpp != disp_bpp) {
     free(gMyBuffer);
     if ((**gTile).pixelType == RGBDirect)
       gCTable = GetCTable(128);
     DisposeGWorld(gOffWorld);
-    vga_bpp = bpp;
+    disp_bpp = bpp;
     CreateTile();
   }
-  if (fheight > 0) {
+  if (guest_textmode) {
     text_cols = x / fwidth;
     text_rows = y / fheight;
     if (fwidth != 8) {
@@ -1131,15 +1049,6 @@ void bx_macintosh_gui_c::dimension_update(unsigned x, unsigned y, unsigned fheig
 
 // ::CREATE_BITMAP()
 //
-// Create a monochrome bitmap of size 'xdim' by 'ydim', which will
-// be drawn in the headerbar.  Return an integer ID to the bitmap,
-// with which the bitmap can be referenced later.
-//
-// bmap: packed 8 pixels-per-byte bitmap.  The pixel order is:
-//       bit0 is the left most pixel, bit7 is the right most pixel.
-// xdim: x dimension of bitmap
-// ydim: y dimension of bitmap
-
 // rewritten by tim senecal to use the cicn (color icon) resources instead
 
 unsigned bx_macintosh_gui_c::create_bitmap(const unsigned char *bmap, unsigned xdim, unsigned ydim)
@@ -1155,17 +1064,6 @@ unsigned bx_macintosh_gui_c::create_bitmap(const unsigned char *bmap, unsigned x
 
   return(numPixMaps-1);
 }
-
-// ::HEADERBAR_BITMAP()
-//
-// Called to install a bitmap in the bochs headerbar (toolbar).
-//
-// bmap_id: will correspond to an ID returned from
-//     ::create_bitmap().  'alignment' is either BX_GRAVITY_LEFT
-//     or BX_GRAVITY_RIGHT, meaning install the bitmap in the next
-//     available leftmost or rightmost space.
-// f: a 'C' function pointer to callback when the mouse is clicked in
-//     the boundaries of this bitmap.
 
 unsigned bx_macintosh_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignment, void (*f)(void))
 {
@@ -1195,11 +1093,6 @@ unsigned bx_macintosh_gui_c::headerbar_bitmap(unsigned bmap_id, unsigned alignme
   return(hb_index);
 }
 
-// ::SHOW_HEADERBAR()
-//
-// Show (redraw) the current headerbar, which is composed of
-// currently installed bitmaps.
-
 void bx_macintosh_gui_c::show_headerbar(void)
 {
   Rect destRect;
@@ -1224,30 +1117,12 @@ void bx_macintosh_gui_c::show_headerbar(void)
 
 }
 
-// ::REPLACE_BITMAP()
-//
-// Replace the bitmap installed in the headerbar ID slot 'hbar_id',
-// with the one specified by 'bmap_id'.  'bmap_id' will have
-// been generated by ::create_bitmap().  The old and new bitmap
-// must be of the same size.  This allows the bitmap the user
-// sees to change, when some action occurs.  For example when
-// the user presses on the floppy icon, it then displays
-// the ejected status.
-//
-// hbar_id: headerbar slot ID
-// bmap_id: bitmap ID
-
 void bx_macintosh_gui_c::replace_bitmap(unsigned hbar_id, unsigned bmap_id)
 {
 //bx_tool_pixmap[hbar_id].pm = bx_pixmap[bmap_id];
   bx_tool_pixmap[hbar_id].cicn = bx_cicn[bmap_id];
   show_headerbar();
 }
-
-// ::EXIT()
-//
-// Called before bochs terminates, to allow for a graceful
-// exit from the native GUI mechanism.
 
 void bx_macintosh_gui_c::exit(void)
 {
@@ -1671,19 +1546,6 @@ PixMapHandle CreatePixMap(unsigned left, unsigned top, unsigned width,
   // use one we created earlier.
 
   return pm;
-}
-
-unsigned char reverse_bitorder(unsigned char b)
-{
-  unsigned char ret=0;
-
-  for (unsigned i=0; i<8; i++)
-  {
-    ret |= (b & 0x01) << (7-i);
-    b >>= 1;
-  }
-
-  return(ret);
 }
 
 void bx_macintosh_gui_c::mouse_enabled_changed_specific (bx_bool val)
