@@ -1,0 +1,172 @@
+This file contains any messages produced by compilers while
+running configure, to aid debugging if configure makes a mistake.
+
+configure:597: checking for gcc
+configure:710: checking whether the C compiler (gcc  ) works
+configure:726: gcc -o conftest    conftest.c  1>&5
+configure:752: checking whether the C compiler (gcc  ) is a cross-compiler
+configure:757: checking whether we are using GNU C
+configure:766: gcc -E conftest.c
+configure:785: checking whether gcc accepts -g
+configure:821: checking for c++
+configure:853: checking whether the C++ compiler (c++  ) works
+configure:869: c++ -o conftest    conftest.C  1>&5
+configure:895: checking whether the C++ compiler (c++  ) is a cross-compiler
+configure:900: checking whether we are using GNU C++
+configure:909: c++ -E conftest.C
+configure:928: checking whether c++ accepts -g
+configure:960: checking whether make sets ${MAKE}
+configure:989: checking for ranlib
+configure:1018: checking how to run the C preprocessor
+configure:1039: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1102: checking for X
+configure:1169: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:1165:27: fatal error: X11/Intrinsic.h: No such file or directory
+ #include <$x_direct_test_include>
+                           ^
+compilation terminated.
+configure: failed program was:
+#line 1164 "configure"
+#include "confdefs.h"
+#include <X11/Intrinsic.h>
+configure:1245: gcc -o conftest -g -O2   conftest.c -lXt  1>&5
+/usr/bin/ld: cannot find -lXt
+collect2: error: ld returned 1 exit status
+configure: failed program was:
+#line 1238 "configure"
+#include "confdefs.h"
+
+int main() {
+XtMalloc()
+; return 0; }
+configure:1933: checking whether byte ordering is bigendian
+configure:1951: gcc -c -g -O2  conftest.c 1>&5
+configure:1966: gcc -c -g -O2  conftest.c 1>&5
+configure: In function 'main':
+configure:1961:2: error: unknown type name 'not'
+  not big endian
+  ^
+configure:1961:10: error: expected '=', ',', ';', 'asm' or '__attribute__' before 'endian'
+  not big endian
+          ^
+configure: failed program was:
+#line 1955 "configure"
+#include "confdefs.h"
+#include <sys/types.h>
+#include <sys/param.h>
+int main() {
+
+#if BYTE_ORDER != BIG_ENDIAN
+ not big endian
+#endif
+; return 0; }
+configure:2023: checking for inline
+configure:2037: gcc -c -g -O2  conftest.c 1>&5
+configure:2063: checking size of unsigned char
+configure:2082: gcc -o conftest -g -O2   conftest.c  1>&5
+configure: In function 'main':
+configure:2076:11: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+   if (!f) exit(1);
+           ^
+configure:2102: checking size of unsigned short
+configure:2121: gcc -o conftest -g -O2   conftest.c  1>&5
+configure: In function 'main':
+configure:2115:11: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+   if (!f) exit(1);
+           ^
+configure:2141: checking size of unsigned int
+configure:2160: gcc -o conftest -g -O2   conftest.c  1>&5
+configure: In function 'main':
+configure:2154:11: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+   if (!f) exit(1);
+           ^
+configure:2180: checking size of unsigned long
+configure:2199: gcc -o conftest -g -O2   conftest.c  1>&5
+configure: In function 'main':
+configure:2193:11: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+   if (!f) exit(1);
+           ^
+configure:2219: checking size of unsigned long long
+configure:2238: gcc -o conftest -g -O2   conftest.c  1>&5
+configure: In function 'main':
+configure:2232:11: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+   if (!f) exit(1);
+           ^
+configure:2258: checking size of int *
+configure:2277: gcc -o conftest -g -O2   conftest.c  1>&5
+configure: In function 'main':
+configure:2271:11: warning: incompatible implicit declaration of built-in function 'exit' [enabled by default]
+   if (!f) exit(1);
+           ^
+configure:2299: checking for select
+configure:2327: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:2357: checking for snprintf
+configure:2385: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:2369:6: warning: conflicting types for built-in function 'snprintf' [enabled by default]
+ char $ac_func();
+      ^
+configure:2415: checking for strtoull
+configure:2443: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:2473: checking for strtouq
+configure:2501: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:2531: checking for strdup
+configure:2559: gcc -o conftest -g -O2   conftest.c  1>&5
+configure:2543:6: warning: conflicting types for built-in function 'strdup' [enabled by default]
+ char $ac_func();
+      ^
+configure:2588: checking if compiler allows empty structs
+configure:2597: gcc -c -g -O2  conftest.c 1>&5
+configure:2615: checking if compiler allows __attribute__
+configure:2624: gcc -c -g -O2  conftest.c 1>&5
+configure:2650: checking for hash_map.h
+configure:2659: c++ -c -g -O2  conftest.C 1>&5
+configure:2653:22: fatal error: hash_map.h: No such file or directory
+ #include <hash_map.h>
+                      ^
+compilation terminated.
+configure: failed program was:
+#line 2652 "configure"
+#include "confdefs.h"
+#include <hash_map.h>
+int main() {
+
+; return 0; }
+configure:2684: checking for number of processors
+configure:2788: checking if compiler allows blank labels
+configure:2797: gcc -c -g -O2  conftest.c 1>&5
+configure: In function 'main':
+configure:2793:4: error: label at end of compound statement
+  { label1: } 
+    ^
+configure: failed program was:
+#line 2790 "configure"
+#include "confdefs.h"
+
+int main() {
+ { label1: } 
+; return 0; }
+configure:2815: checking if compiler allows LL for 64-bit constants
+configure:2824: gcc -c -g -O2  conftest.c 1>&5
+configure:2842: checking for cpu level
+configure:2936: checking for dynamic translation support
+configure:3009: checking for APIC support
+configure:3064: checking for split hard disk image support
+configure:3095: checking for NE2000 support
+configure:3163: checking for i440FX PCI support
+configure:3198: checking for port e9 hack
+configure:3229: checking for use of .cpp as suffix
+configure:3271: checking for Bochs internal debugger support
+configure:3309: checking for disassembler support
+configure:3356: checking whether to use readline
+configure:3378: checking for readline in -lreadline
+configure:3397: gcc -o conftest -g -O2   conftest.c -lreadline   1>&5
+configure:3432: checking for readline/history.h
+configure:3442: gcc -E  conftest.c >/dev/null 2>conftest.out
+configure:3470: checking for loader support
+configure:3508: checking for instrumentation support
+configure:3643: checking for VGA emulation
+configure:3677: checking for FPU emulation
+configure:3722: checking for x86 debugger support
+configure:3758: checking for CDROM support
+configure:3800: checking for Sound Blaster 16 support
+configure:3949: checking for gui library to use
