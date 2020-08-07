@@ -848,7 +848,7 @@ S["SHELL"]="/bin/sh"
 _ACAWK
 cat >>"$ac_tmp/subs1.awk" <<_ACAWK &&
   for (key in S) S_is_set[key] = 1
-  FS = ""
+  FS = ""
 
 }
 {
@@ -1053,7 +1053,7 @@ D["BX_WITH_X11"]=" 1"
 D["BX_USE_TEXTCONFIG"]=" 1"
 D["BX_USE_GUI_CONSOLE"]=" 1"
   for (key in D) D_is_set[key] = 1
-  FS = ""
+  FS = ""
 }
 /^[\t ]*#[\t ]*(define|undef)[\t ]+[_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ][_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789]*([\t (]|$)/ {
   line = $ 0

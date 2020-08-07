@@ -466,7 +466,7 @@ configure:8667: checking whether stripping libraries is possible
 configure:8672: result: yes
 configure:8770: checking for shl_load
 configure:8770: gcc -o conftest -g -O2   conftest.c  >&5
-/tmp/ccr45OvR.o: In function `main':
+/tmp/ccQ1jEHQ.o: In function `main':
 /media/sf_srccode/bochs_comment/conftest.c:54: undefined reference to `shl_load'
 collect2: error: ld returned 1 exit status
 configure:8770: $? = 1
@@ -572,7 +572,7 @@ configure: failed program was:
 configure:8808: result: no
 configure:8813: checking for dlopen
 configure:8813: gcc -o conftest -g -O2   conftest.c  >&5
-/tmp/ccz3Y8B6.o: In function `main':
+/tmp/ccG8Jv5X.o: In function `main':
 /media/sf_srccode/bochs_comment/conftest.c:54: undefined reference to `dlopen'
 collect2: error: ld returned 1 exit status
 configure:8813: $? = 1
@@ -1797,7 +1797,7 @@ configure:20712: $? = 0
 configure:20712: result: yes
 configure:20724: checking for strrev
 configure:20724: gcc -o conftest -g -O2   conftest.c  >&5
-/tmp/cc35L13z.o: In function `main':
+/tmp/ccvSRW8J.o: In function `main':
 /media/sf_srccode/bochs_comment/conftest.c:109: undefined reference to `strrev'
 collect2: error: ld returned 1 exit status
 configure:20724: $? = 1
@@ -1917,7 +1917,7 @@ configure: failed program was:
 configure:20724: result: no
 configure:20736: checking for stricmp
 configure:20736: gcc -o conftest -g -O2   conftest.c  >&5
-/tmp/ccRb5sbJ.o: In function `main':
+/tmp/cchgL0hU.o: In function `main':
 /media/sf_srccode/bochs_comment/conftest.c:109: undefined reference to `stricmp'
 collect2: error: ld returned 1 exit status
 configure:20736: $? = 1
@@ -2078,7 +2078,7 @@ configure:20866: $? = 0
 configure:20866: result: yes
 configure:20878: checking for fseek64
 configure:20878: gcc -o conftest -g -O2   conftest.c  >&5
-/tmp/ccw86XoZ.o: In function `main':
+/tmp/cc80fes3.o: In function `main':
 /media/sf_srccode/bochs_comment/conftest.c:122: undefined reference to `fseek64'
 collect2: error: ld returned 1 exit status
 configure:20878: $? = 1
@@ -3955,7 +3955,7 @@ configure: failed program was:
 configure:25906: result: no
 configure:25853: checking whether pthreads work without any flags
 configure:25897: gcc -o conftest -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES   -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES  conftest.c   >&5
-/tmp/ccfO4TFA.o: In function `main':
+/tmp/ccekN9pj.o: In function `main':
 /media/sf_srccode/bochs_comment/conftest.c:173: undefined reference to `pthread_join'
 /media/sf_srccode/bochs_comment/conftest.c:174: undefined reference to `__pthread_register_cancel'
 /media/sf_srccode/bochs_comment/conftest.c:175: undefined reference to `pthread_create'
@@ -4759,7 +4759,9 @@ config.status:1142: creating build/win32/nsis/Makefile
 config.status:1142: creating build/win32/nsis/bochs.nsi
 config.status:1142: creating host/linux/pcidev/Makefile
 config.status:1142: creating config.h
+config.status:1312: config.h is unchanged
 config.status:1142: creating ltdlconf.h
+config.status:1312: ltdlconf.h is unchanged
 
 ## ---------------- ##
 ## Cache variables. ##
