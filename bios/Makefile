@@ -27,7 +27,7 @@ SHELL = /bin/sh
 
 
 CXX = g++
-CXXFLAGS = -ggdb3 -O0 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES -pthread
+CXXFLAGS = -g -O2 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILES -pthread
 
 LDFLAGS = 
 LIBS = 

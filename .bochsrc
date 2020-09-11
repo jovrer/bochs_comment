@@ -644,7 +644,8 @@ private_colormap: enabled=0
 #floppya: 1_44=/dev/fd0H1440, status=inserted
 #floppya: 1_2=../1_2, status=inserted
 #floppya: 1_44=a:, status=inserted
-floppya: 1_44=./test/test.img, status=inserted
+#floppya: 1_44=./bootimage-0.11.img, status=inserted
+floppya: 1_44=./Image, status=inserted
 #floppya: 1_44=/dev/rfd0a, status=inserted
 
 #=======================================================================
@@ -729,7 +730,8 @@ ata3: enabled=0, ioaddr1=0x168, ioaddr2=0x360, irq=9
 #=======================================================================
 #ata0-master: type=disk, mode=flat, path="./test/test.bin"
 #ata0-master: type=disk, mode=flat, path="30M.sample", cylinders=615, heads=6, spt=17
-ata0-master: type=disk, mode=flat, path="test/test.bin", cylinders=0 # autodetect
+#ata0-master: type=disk, mode=flat, path="test/test.bin", cylinders=0 # autodetect
+ata0-master: type=disk, path="./hdc.img", mode=flat, cylinders=121, heads=16, spt=63
 #ata0-slave: type=disk, mode=vvfat, path=/bochs/images/vvfat, journal=vvfat.redolog
 #ata0-slave: type=cdrom, path=D:, status=inserted
 #ata0-slave: type=cdrom, path=/dev/cdrom, status=inserted
@@ -1183,7 +1185,7 @@ parport1: enabled=1, file="parport.out"
 # Default value is enabled=0.
 # WARNING: This Bochs feature is not maintained yet and may fail.
 #=======================================================================
-#gdbstub: enabled=0, port=1234, text_base=0, data_base=0, bss_base=0
+#gdbstub: enabled=1, port=1234, text_base=0, data_base=0, bss_base=0
 
 #=======================================================================
 # MAGIC_BREAK:
