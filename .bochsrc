@@ -2,7 +2,7 @@
 megs: 32
 #megs: 16
 #megs: 8
-boot: c
+boot: a
 vgaromimage: bios/VGABIOS-elpin-2.40
 
 # You many now use double quotes around pathnames, in case
@@ -33,7 +33,7 @@ vgaromimage: bios/VGABIOS-elpin-2.40
 #diskc: file=../528M, cyl=1024, heads=16, spt=63
 
 #diskc: file=../62M.980115, cyl=940, heads=8, spt=17
-diskc: file="../10M.vga", cyl=306, heads=4, spt=17
+#diskc: file="../10M.vga", cyl=306, heads=4, spt=17
 #diskc: file=../10M.dos622, cyl=306, heads=4, spt=17
 #diskc: file=../30M.freebsd, cyl=615, heads=6, spt=17
 #diskc: file=../126M.freeBSD_2.2.8, cyl=256, heads=16, spt=63
@@ -58,7 +58,7 @@ diskc: file="../10M.vga", cyl=306, heads=4, spt=17
 #floppya: 1_44=../1.44.freebsd, status=inserted
 #floppya: 720k=../720k.dos33, status=inserted
 
-floppya: 1_44=../1.44a, status=inserted
+floppya: 1_44=./test/test.img, status=inserted
 #floppyb: 1_44=../1.44b, status=inserted
 #floppya: 1_44=/dev/fd0, status=inserted
 #floppyb: 1_44=../1.44b, status=inserted
